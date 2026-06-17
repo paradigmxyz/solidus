@@ -86,7 +86,8 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
     - [x] argument preparation and primitive expression evaluation;
     - [x] internal function calls and recursive expression capability;
     - [x] list sequencing and returned-body packaging;
-    - [ ] leaf and compound statements;
+    - [x] leaf statements;
+    - [ ] compound statements;
   - [ ] prove every remaining compiler construct respects the program static
     measure;
   - [ ] cover remaining leaf/compound statements, loops, and terminal outcomes;

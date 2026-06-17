@@ -113,6 +113,15 @@ theorem localCost_le_executionBudgetFor
   simp only [executionBudgetFor]
   nlinarith
 
+theorem targetBudgetFor_add_localCost_le_executionBudgetFor
+    (globalCost localCost sourceFuel : Nat) :
+    targetBudgetFor globalCost sourceFuel + localCost ≤
+      executionBudgetFor globalCost localCost sourceFuel := by
+  have hTarget :=
+    targetBudgetFor_ge_sixteen globalCost sourceFuel
+  simp only [executionBudgetFor]
+  nlinarith
+
 theorem executionBudgetFor_mono
     (globalCost localCost : Nat) {left right : Nat}
     (hLe : left ≤ right) :
@@ -136,6 +145,14 @@ theorem executionBudgetFor_add_local
     executionBudgetFor globalCost left sourceFuel +
         executionBudgetFor globalCost right sourceFuel =
       executionBudgetFor globalCost (left + right + 1) sourceFuel := by
+  simp [executionBudgetFor, Nat.add_mul, two_mul, Nat.add_assoc,
+    Nat.add_comm, Nat.add_left_comm]
+
+theorem executionBudgetFor_add_one_local
+    (globalCost localCost sourceFuel : Nat) :
+    executionBudgetFor globalCost (localCost + 1) sourceFuel =
+      executionBudgetFor globalCost localCost sourceFuel +
+        targetBudgetFor globalCost sourceFuel := by
   simp [executionBudgetFor, Nat.add_mul, two_mul, Nat.add_assoc,
     Nat.add_comm, Nat.add_left_comm]
 

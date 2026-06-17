@@ -13,6 +13,48 @@ constructors. It does not define a compiler or an interpreter.
 
 abbrev Trace := Assembly.ResourceTrace
 
+namespace PreparedExpression
+
+theorem requiredFuel_le_prepared
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {results : Nat}
+    {pre : List Functions.Stmt}
+    {lower : Locals.Expr results}
+    {fresh : Fresh.State}
+    {source sourcePrepared :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {values : List Assembly.Word}
+    (result :
+      FunctionsObserverExpression.PreparedExpression
+        contract transcript codeRel program pre lower fresh
+        source target ctx values)
+    (prepared :
+      FunctionsObserverExpression.Prepared
+        contract transcript codeRel program pre fresh
+        sourcePrepared target ctx) :
+    result.requiredFuel ≤ prepared.requiredFuel := by
+  have hResultRun :=
+    FunctionsObserverExpression.PreparedExpression.run_requiredFuel result
+  have hPreparedRun :=
+    FunctionsObserverExpression.Prepared.run_requiredFuel prepared
+  obtain ⟨hFinalTarget, hFinalCtx⟩ :=
+    Functions.Source.Effectful.Block.runOpen_regular_unique
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hResultRun hPreparedRun
+  rw [← hFinalTarget, ← hFinalCtx] at hPreparedRun
+  exact
+    FunctionsObserverExpression.PreparedExpression.requiredFuel_le_of_run
+      result hPreparedRun
+
+end PreparedExpression
+
 namespace PreparedArgs
 
 theorem empty_bounded
@@ -1752,6 +1794,206 @@ theorem ofPrimitive_programBounded
           hDirect hLower hRel hDomain hScope hRun
 
 end ScopedPreparedValue
+
+namespace ScopedPreparedExpression
+
+/--
+Program-indexed quantitative preservation for an arbitrary-result
+compiler-selected primitive expression.
+-/
+theorem ofPrimitive_programBounded
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {fuel results globalCost : Nat}
+    {prim : EvmYul.Operation .Yul}
+    {args : List AstExpr}
+    {pre : List Functions.Stmt}
+    {lower : Locals.Expr results}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {values : List Assembly.Word}
+    {Eligible : AstExpr → Prop}
+    (hLower :
+      Expr.lowerUnchecked? results before (.Call (.inl prim) args) =
+        some (pre, lower, after))
+    (hEligible : ∀ expr, expr ∈ args → Eligible expr)
+    (hCallCost :
+      FunctionsObserverStaticCost.expr (.Call (.inl prim) args) ≤
+        globalCost)
+    (hCost :
+      ∀ expr, expr ∈ args →
+        FunctionsObserverStaticCost.expr expr ≤ globalCost)
+    (hExprOrdinary :
+      ∀ {exprFuel : Nat} {exprBefore exprAfter : Fresh.State}
+        {expr : AstExpr}
+        {exprPre : List Functions.Stmt}
+        {exprLower : Locals.Expr 1}
+        {exprSource exprSource' :
+          ObserverSemantics.SourceReplay.State transcript}
+        {exprTarget : Functions.ObserverSemantics.State transcript}
+        {exprCtx : Functions.Source.Ctx}
+        {value : Assembly.Word},
+        exprFuel < fuel →
+          Eligible expr →
+          Expr.lower1Unchecked? exprBefore expr =
+            some (exprPre, exprLower, exprAfter) →
+          StateRelation.Replay.ScopedExactRel codeRel layout
+            exprSource exprTarget →
+          StateRelation.Vars.TargetDomainWithin
+              exprBefore.used exprTarget.source.vars →
+          StateRelation.Vars.NamesWithin exprBefore.used exprCtx.scope →
+          Yul.Source.Effectful.eval
+              (ObserverSemantics.SourceReplay.stateModel transcript)
+              (ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              exprFuel expr codeOverride exprSource =
+            .ok (exprSource', value) →
+          Nonempty
+            (FunctionsObserverExpression.ScopedPreparedValue
+              contract transcript codeRel program
+              exprPre exprLower exprAfter layout exprSource'
+              exprTarget exprCtx value))
+    (hExpr :
+      ∀ {exprFuel : Nat} {exprBefore exprAfter : Fresh.State}
+        {expr : AstExpr}
+        {exprPre : List Functions.Stmt}
+        {exprLower : Locals.Expr 1}
+        {exprSource exprSource' :
+          ObserverSemantics.SourceReplay.State transcript}
+        {exprTarget : Functions.ObserverSemantics.State transcript}
+        {exprCtx : Functions.Source.Ctx}
+        {value : Assembly.Word},
+        exprFuel < fuel →
+          FunctionsObserverStaticCost.expr expr ≤ globalCost →
+          Eligible expr →
+          Expr.lower1Unchecked? exprBefore expr =
+            some (exprPre, exprLower, exprAfter) →
+          StateRelation.Replay.ScopedExactRel codeRel layout
+            exprSource exprTarget →
+          StateRelation.Vars.TargetDomainWithin
+              exprBefore.used exprTarget.source.vars →
+          StateRelation.Vars.NamesWithin exprBefore.used exprCtx.scope →
+          Yul.Source.Effectful.eval
+              (ObserverSemantics.SourceReplay.stateModel transcript)
+              (ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              exprFuel expr codeOverride exprSource =
+            .ok (exprSource', value) →
+          Nonempty
+            { result :
+                FunctionsObserverExpression.ScopedPreparedValue
+                  contract transcript codeRel program
+                  exprPre exprLower exprAfter layout exprSource'
+                  exprTarget exprCtx value //
+              FunctionsObserverFuel.PreparedValue.ProgramBounded
+                globalCost (FunctionsObserverStaticCost.expr expr)
+                exprFuel result.prepared })
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hRun :
+      Yul.Source.Effectful.evalValues
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel (.Call (.inl prim) args) codeOverride source =
+        .ok (source', values)) :
+    Nonempty
+      { result :
+          FunctionsObserverExpression.ScopedPreparedExpression
+            contract transcript codeRel program pre lower after layout
+            source' target ctx values //
+        FunctionsObserverFuel.PreparedExpression.ProgramBounded
+          globalCost
+          (FunctionsObserverStaticCost.expr (.Call (.inl prim) args))
+          fuel result.prepared } := by
+  obtain ⟨result⟩ :=
+    FunctionsObserverExpression.ScopedPreparedExpression.ofPrimitive
+      hLower hEligible hExprOrdinary hRel hDomain hScope hRun
+  cases
+      Expr.uncheckedPrimitiveLowering_of_lowerUnchecked? hLower with
+  | @direct _ _ op lowerArgs seq
+      hDirect hOp hArgs hSeq hOutputs =>
+      let empty :=
+        FunctionsObserverExpression.Prepared.empty
+          (contract := contract) (program := program)
+          (StateRelation.Replay.rel_of_scopedExact hRel)
+          hDomain hScope
+      have hRequired :=
+        PreparedExpression.requiredFuel_le_prepared
+          result.prepared empty
+      have hEmpty :=
+        FunctionsObserverExpression.Prepared.requiredFuel_empty_le
+          (contract := contract) (program := program)
+          (StateRelation.Replay.rel_of_scopedExact hRel)
+          hDomain hScope
+      have hEmpty' : empty.requiredFuel ≤ 1 := by
+        exact hEmpty
+      refine ⟨⟨result, ?_⟩⟩
+      dsimp [FunctionsObserverFuel.PreparedExpression.ProgramBounded]
+      have hBudget :=
+        FunctionsObserverFuel.executionBudgetFor_ge_sixteen
+          globalCost
+          (FunctionsObserverStaticCost.expr (.Call (.inl prim) args))
+          fuel
+      omega
+  | @bound _ _ _ op _ lowerArgs seq
+      hBound hOp hArgs hSeq hOutputs =>
+      obtain
+          ⟨callFuel, sourceAfterArgs, reversedValues,
+            hSourceFuel, hArgsRun, hPrimRun⟩ :=
+        Yul.Source.Effectful.evalValues_primitive_ok_parts
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          hRun
+      obtain ⟨argsBounded⟩ :=
+        FunctionsObserverExpressionFuel.ScopedPreparedArgs.ofUncheckedLowering_programBounded
+          FunctionsObserverStaticCost.expr hArgs hEligible hCost
+          (fun hLt hExprCost hExprEligible hExprLower hExprRel
+              hExprDomain hExprScope hExprRun =>
+            hExpr (by omega) hExprCost hExprEligible hExprLower hExprRel
+              hExprDomain hExprScope hExprRun)
+          hRel hDomain hScope hArgsRun
+      have hRequired :=
+        PreparedExpression.requiredFuel_le_prepared
+          result.prepared argsBounded.1.prepared.prepared
+      have hArgsBound :
+          argsBounded.1.prepared.prepared.requiredFuel ≤
+            FunctionsObserverFuel.executionBudgetFor
+              globalCost
+              (FunctionsObserverStaticCost.exprList args)
+              callFuel :=
+        by
+          simpa [FunctionsObserverStaticCost.exprList_eq_exprListBy] using
+            argsBounded.2
+      have hDynamic :=
+        FunctionsObserverFuel.executionBudgetFor_mono
+          globalCost (FunctionsObserverStaticCost.exprList args)
+          (show callFuel ≤ fuel by omega)
+      have hLocal :=
+        FunctionsObserverFuel.executionBudgetFor_local_mono
+          globalCost fuel
+          (show
+            FunctionsObserverStaticCost.exprList args ≤
+              FunctionsObserverStaticCost.expr
+                (.Call (.inl prim) args) by
+            simp [FunctionsObserverStaticCost.expr])
+      refine ⟨⟨result, ?_⟩⟩
+      dsimp [FunctionsObserverFuel.PreparedExpression.ProgramBounded]
+      exact hRequired.trans
+        (hArgsBound.trans (hDynamic.trans hLocal))
+
+end ScopedPreparedExpression
 
 end FunctionsObserverExpressionFuel
 end Yul

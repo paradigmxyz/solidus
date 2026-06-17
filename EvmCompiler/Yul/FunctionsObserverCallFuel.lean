@@ -1233,6 +1233,905 @@ theorem ofReturnedBodyFresh_sourceBoundedOfCosts
                 resultStatic sourceFuel :=
             hResultStatic⟩⟩
 
+/--
+Program-indexed lifting for visible returned-call targets.
+
+The call statement's local cost does not need to include the selected body.
+Argument preparation and body execution are smaller source computations whose
+local costs are each bounded by the whole-program ceiling.
+-/
+theorem ofReturnedBody_programBounded
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {functionName : Name}
+    {targets : List Name}
+    {fn : Functions.FunDef}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {fresh : Fresh.State}
+    {layout : List Name}
+    {argValues returnValues : List Word}
+    {bodyFuel argsSourceFuel bodySourceFuel sourceFuel : Nat}
+    {globalCost argsLocal bodyLocal resultLocal : Nat}
+    {sourceAfterArgs sourceAfterBody sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (argsPrepared :
+      FunctionsObserverExpression.ScopedPreparedArgs
+        contract transcript codeRel program preArgs lowerArgs fresh layout
+        sourceAfterArgs target ctx argValues)
+    (hArgsBound :
+      argsPrepared.prepared.prepared.requiredFuel ≤
+        FunctionsObserverFuel.executionBudgetFor
+          globalCost argsLocal argsSourceFuel)
+    (hArgsCost : argsLocal ≤ globalCost)
+    (hArgsFuel : argsSourceFuel < sourceFuel)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsVisible :
+      ∀ name, name ∈ targets → name ∈ layout)
+    (hFind :
+      Functions.Source.FunList.find? functionName program.functions =
+        some fn)
+    (body :
+      FunctionsObserverCall.ReturnedBody
+        contract transcript codeRel program fn argValues bodyFuel
+        sourceAfterBody argsPrepared.prepared.prepared.finalTarget)
+    (hBodyBound :
+      bodyFuel ≤
+        FunctionsObserverFuel.executionBudgetFor
+          globalCost bodyLocal bodySourceFuel)
+    (hBodyCost : bodyLocal ≤ globalCost)
+    (hBodyFuel : bodySourceFuel < sourceFuel)
+    (hReturnValues :
+      List.map sourceAfterBody.source.lookup! fn.returns = returnValues)
+    (hLength : returnValues.length = targets.length)
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterBody.withSource
+          (((sourceAfterBody.source.reviveJump.overwrite?
+            sourceAfterArgs.source).setStore sourceAfterArgs.source).multifill
+              targets returnValues)) :
+    Nonempty
+      { result :
+          FunctionsObserverCall.ScopedReturnedCall
+            contract transcript codeRel program functionName targets
+            preArgs lowerArgs fresh layout sourceFinal target ctx //
+        requiredFuel result ≤
+          FunctionsObserverFuel.executionBudgetFor
+            globalCost resultLocal sourceFuel } := by
+  obtain ⟨bounded⟩ :=
+    ofReturnedBody_bounded
+      argsPrepared hTargetsNodup hTargetsVisible hFind body
+      hReturnValues hLength hSourceFinal
+  have hChildren :=
+    FunctionsObserverFuel.two_executionBudgetsFor_add_eight_le_target_of_lt
+      globalCost argsLocal bodyLocal
+      hArgsCost hBodyCost hArgsFuel hBodyFuel
+  have hParent :=
+    FunctionsObserverFuel.targetBudgetFor_le_executionBudgetFor
+      globalCost resultLocal sourceFuel
+  exact
+    ⟨⟨bounded.1, by
+        calc
+          requiredFuel bounded.1 ≤
+              argsPrepared.prepared.prepared.requiredFuel +
+                bodyFuel + 3 :=
+            bounded.2
+          _ ≤
+              FunctionsObserverFuel.executionBudgetFor
+                  globalCost argsLocal argsSourceFuel +
+                FunctionsObserverFuel.executionBudgetFor
+                  globalCost bodyLocal bodySourceFuel + 8 := by
+            omega
+          _ ≤ FunctionsObserverFuel.targetBudgetFor globalCost sourceFuel :=
+            hChildren
+          _ ≤
+              FunctionsObserverFuel.executionBudgetFor
+                globalCost resultLocal sourceFuel :=
+            hParent⟩⟩
+
+/--
+Program-indexed lifting for fresh returned-call declaration targets.
+-/
+theorem ofReturnedBodyFresh_programBounded
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {functionName : Name}
+    {targets : List Name}
+    {fn : Functions.FunDef}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {fresh : Fresh.State}
+    {layout : List Name}
+    {argValues returnValues : List Word}
+    {bodyFuel argsSourceFuel bodySourceFuel sourceFuel : Nat}
+    {globalCost argsLocal bodyLocal resultLocal : Nat}
+    {sourceAfterArgs sourceAfterBody sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (argsPrepared :
+      FunctionsObserverExpression.ScopedPreparedArgs
+        contract transcript codeRel program preArgs lowerArgs fresh layout
+        sourceAfterArgs target ctx argValues)
+    (hArgsBound :
+      argsPrepared.prepared.prepared.requiredFuel ≤
+        FunctionsObserverFuel.executionBudgetFor
+          globalCost argsLocal argsSourceFuel)
+    (hArgsCost : argsLocal ≤ globalCost)
+    (hArgsFuel : argsSourceFuel < sourceFuel)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsFresh :
+      ∀ name, name ∈ targets → name ∉ layout)
+    (hTargetsContain :
+      ∀ name, name ∈ targets →
+        argsPrepared.prepared.prepared.finalTarget.source.vars.contains name =
+          true)
+    (hFind :
+      Functions.Source.FunList.find? functionName program.functions =
+        some fn)
+    (body :
+      FunctionsObserverCall.ReturnedBody
+        contract transcript codeRel program fn argValues bodyFuel
+        sourceAfterBody argsPrepared.prepared.prepared.finalTarget)
+    (hBodyBound :
+      bodyFuel ≤
+        FunctionsObserverFuel.executionBudgetFor
+          globalCost bodyLocal bodySourceFuel)
+    (hBodyCost : bodyLocal ≤ globalCost)
+    (hBodyFuel : bodySourceFuel < sourceFuel)
+    (hReturnValues :
+      List.map sourceAfterBody.source.lookup! fn.returns = returnValues)
+    (hLength : returnValues.length = targets.length)
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterBody.withSource
+          (((sourceAfterBody.source.reviveJump.overwrite?
+            sourceAfterArgs.source).setStore sourceAfterArgs.source).multifill
+              targets returnValues)) :
+    Nonempty
+      { result :
+          FunctionsObserverCall.ScopedReturnedCall
+            contract transcript codeRel program functionName targets
+            preArgs lowerArgs fresh (targets ++ layout)
+            sourceFinal target ctx //
+        requiredFuel result ≤
+          FunctionsObserverFuel.executionBudgetFor
+            globalCost resultLocal sourceFuel } := by
+  obtain ⟨bounded⟩ :=
+    ofReturnedBodyFresh_bounded
+      argsPrepared hTargetsNodup hTargetsFresh hTargetsContain hFind body
+      hReturnValues hLength hSourceFinal
+  have hChildren :=
+    FunctionsObserverFuel.two_executionBudgetsFor_add_eight_le_target_of_lt
+      globalCost argsLocal bodyLocal
+      hArgsCost hBodyCost hArgsFuel hBodyFuel
+  have hParent :=
+    FunctionsObserverFuel.targetBudgetFor_le_executionBudgetFor
+      globalCost resultLocal sourceFuel
+  exact
+    ⟨⟨bounded.1, by
+        calc
+          requiredFuel bounded.1 ≤
+              argsPrepared.prepared.prepared.requiredFuel +
+                bodyFuel + 3 :=
+            bounded.2
+          _ ≤
+              FunctionsObserverFuel.executionBudgetFor
+                  globalCost argsLocal argsSourceFuel +
+                FunctionsObserverFuel.executionBudgetFor
+                  globalCost bodyLocal bodySourceFuel + 8 := by
+            omega
+          _ ≤ FunctionsObserverFuel.targetBudgetFor globalCost sourceFuel :=
+            hChildren
+          _ ≤
+              FunctionsObserverFuel.executionBudgetFor
+                globalCost resultLocal sourceFuel :=
+            hParent⟩⟩
+
+private theorem ofFunctionCall_programBoundedOfResult
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {layout targets finalLayout : List Name}
+    {functionName : Name}
+    {args : List AstExpr}
+    {initial final : Fresh.State}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {bound argsFuel callFuel parentFuel resultLocal : Nat}
+    {source sourceAfterArgs sourceAfterCall sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {reversedValues returnValues : List Word}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition
+        sourceProgram targetProgram)
+    (hArgsLowering :
+      Expr.UncheckedCallArgsLowering initial args
+        preArgs lowerArgs final)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract
+          layout targets.length
+          (.Call (.inr functionName) args) =
+        true)
+    (hTargetsNodup : targets.Nodup)
+    (hCallCost :
+      FunctionsObserverStaticCost.expr
+          (.Call (.inr functionName) args) ≤
+        FunctionsObserverStaticCost.program sourceProgram)
+    (hTargetContains :
+      ∀ name, name ∈ targets →
+        target.source.vars.contains name = true)
+    (hExpr :
+      RecursiveScopedExpressionForwardProgramBounded
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hBody :
+      RecursiveBodyForwardProgramBounded
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        initial.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin initial.used ctx.scope)
+    (hArgsFuel : argsFuel < bound)
+    (hCallFuel : callFuel < bound)
+    (hArgsParent : argsFuel < parentFuel)
+    (hCallParent : callFuel < parentFuel)
+    (hArgsRun :
+      Yul.Source.Effectful.evalArgs
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          argsFuel args.reverse (some sourceProgram.contract) source =
+        .ok (sourceAfterArgs, reversedValues))
+    (hCallRun :
+      Yul.Source.Effectful.call
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          callFuel reversedValues.reverse (some functionName)
+          (some sourceProgram.contract) sourceAfterArgs =
+        .ok (sourceAfterCall, returnValues))
+    (result :
+      FunctionsObserverCall.ScopedReturnedCall
+        contract transcript codeRel targetProgram.toFunctions
+        functionName targets preArgs lowerArgs final finalLayout
+        sourceFinal target ctx) :
+    FunctionsObserverCallFuel.ScopedReturnedCall.requiredFuel result ≤
+      FunctionsObserverFuel.executionBudgetFor
+        (FunctionsObserverStaticCost.program sourceProgram)
+        resultLocal parentFuel := by
+  cases callFuel with
+  | zero =>
+      simp [Yul.Source.Effectful.call,
+        Yul.Source.Effectful.fail] at hCallRun
+  | succ bodyFuel =>
+      obtain
+          ⟨_accountContract, params, returns, body, sourceAfterBody,
+            _hAccount, hFunction, hBodyRun, _hSourceAfterCall,
+            hSourceReturns⟩ :=
+        Yul.Source.Effectful.call_succ_ok_parts
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          (by simpa [Nat.succ_eq_add_one] using hCallRun)
+      have hLookup :
+          sourceProgram.contract.functions.lookup functionName =
+            some (.Def params returns body) := by
+        simpa using hFunction
+      have hArgsOk :
+          SolcValidation.ExprsOk? profile sourceProgram.contract
+              layout args =
+            true :=
+        SolcValidation.exprsOk_of_exprOk_functionCall hExprOk hLookup
+      obtain ⟨_hReturnCount, hArgCount, hSignature⟩ :=
+        SolcValidation.programOkWith_functionCall_partsN
+          hProgramOk hExprOk hLookup
+      have hArgsCost :
+          FunctionsObserverStaticCost.exprList args ≤
+            FunctionsObserverStaticCost.program sourceProgram := by
+        have hLocal :
+            FunctionsObserverStaticCost.exprList args ≤
+              FunctionsObserverStaticCost.expr
+                (.Call (.inr functionName) args) := by
+          simp [FunctionsObserverStaticCost.expr]
+        exact hLocal.trans hCallCost
+      have hArgCost :
+          ∀ expr, expr ∈ args →
+            FunctionsObserverStaticCost.expr expr ≤
+              FunctionsObserverStaticCost.program sourceProgram := by
+        intro expr hMem
+        exact
+          (FunctionsObserverStaticCost.expr_le_exprList_of_mem hMem).trans
+            hArgsCost
+      have hPreparedArgs :
+          Nonempty
+            { prepared :
+                FunctionsObserverExpression.ScopedPreparedArgs
+                  contract transcript codeRel targetProgram.toFunctions
+                  preArgs lowerArgs final layout sourceAfterArgs target ctx
+                  reversedValues.reverse //
+              FunctionsObserverFuel.PreparedArgs.ProgramBounded
+                (FunctionsObserverStaticCost.program sourceProgram)
+                (FunctionsObserverStaticCost.exprList args)
+                argsFuel prepared.prepared } := by
+        cases hArgsLowering with
+        | empty =>
+            cases argsFuel with
+            | zero =>
+                simp [Yul.Source.Effectful.evalArgs,
+                  Yul.Source.Effectful.fail] at hArgsRun
+            | succ previous =>
+                simp [Yul.Source.Effectful.evalArgs] at hArgsRun
+                rcases hArgsRun with ⟨rfl, rfl⟩
+                let preparedBase :=
+                  FunctionsObserverExpression.PreparedArgs.empty
+                    (contract := contract)
+                    (program := targetProgram.toFunctions)
+                    (StateRelation.Replay.rel_of_scopedExact hRel)
+                    hDomain hScope
+                let prepared :
+                    FunctionsObserverExpression.ScopedPreparedArgs
+                      contract transcript codeRel targetProgram.toFunctions
+                      [] [] initial layout source target ctx [] :=
+                  { prepared := preparedBase
+                    relation := hRel }
+                refine ⟨⟨prepared, ?_⟩⟩
+                simpa [FunctionsObserverStaticCost.exprList,
+                  prepared, preparedBase] using
+                  FunctionsObserverExpressionFuel.PreparedArgs.empty_programBounded
+                    (contract := contract)
+                    (program := targetProgram.toFunctions)
+                    (FunctionsObserverStaticCost.program sourceProgram)
+                    (Nat.succ previous)
+                    (StateRelation.Replay.rel_of_scopedExact hRel)
+                    hDomain hScope
+        | bound hNonempty hBoundLowering =>
+            obtain ⟨bounded⟩ :=
+              FunctionsObserverExpressionFuel.ScopedPreparedArgs.ofUncheckedLowering_programBounded
+                FunctionsObserverStaticCost.expr hBoundLowering
+                (fun expr hMem =>
+                  SolcValidation.exprOk_of_exprsOk_of_mem hArgsOk hMem)
+                hArgCost
+                (fun hLt hCost hArgOk hExprLower hExprRel
+                    hExprDomain hExprScope hExprRun =>
+                  hExpr (by omega) hCost hArgOk hExprLower hExprRel
+                    hExprDomain hExprScope hExprRun)
+                hRel hDomain hScope hArgsRun
+            exact
+              ⟨⟨bounded.1, by
+                  simpa
+                    [FunctionsObserverStaticCost.exprList_eq_exprListBy] using
+                    bounded.2⟩⟩
+      obtain ⟨preparedArgsBounded⟩ := hPreparedArgs
+      let preparedArgs := preparedArgsBounded.1
+      have hArgsBound :
+          preparedArgs.prepared.prepared.requiredFuel ≤
+            FunctionsObserverFuel.executionBudgetFor
+              (FunctionsObserverStaticCost.program sourceProgram)
+              (FunctionsObserverStaticCost.exprList args)
+              argsFuel := by
+        exact preparedArgsBounded.2
+      have hTargetsContain :
+          ∀ name, name ∈ targets →
+            preparedArgs.prepared.prepared.finalTarget.source.vars.contains
+                name =
+              true := by
+        intro name hMem
+        cases hLookupTarget : target.source.vars name with
+        | none =>
+            have hContains := hTargetContains name hMem
+            simp [Locals.Source.Store.contains, hLookupTarget] at hContains
+        | some value =>
+            have hFinalLookup :
+                preparedArgs.prepared.prepared.finalTarget.source.vars name =
+                  some value :=
+              preparedArgs.prepared.prepared.varsExtends
+                name value hLookupTarget
+            simp [Locals.Source.Store.contains, hFinalLookup]
+      obtain
+          ⟨before, after, fn, hPrefix, hFind, _hName, hParams,
+            hFnReturns, hLowerBody, hReserved⟩ :=
+        hDecomposition.findFunction_parts hLookup
+      have hArgsLength :
+          reversedValues.reverse.length = (identNames params).length := by
+        have hEvaluatedLength :=
+          Yul.Source.Effectful.evalArgs_ok_length
+            (ObserverSemantics.SourceReplay.stateModel transcript)
+            (ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            hArgsRun
+        simpa [identNames, hArgCount] using hEvaluatedLength
+      obtain ⟨paramStore, hParamStore⟩ :=
+        Functions.Source.Store.insertMany_exists_of_length
+          (names := identNames params)
+          (values := reversedValues.reverse)
+          (store := Locals.Source.Store.empty)
+          hArgsLength
+      have hEntry :
+          StateRelation.Replay.ScopedExactRel codeRel
+            (fn.returns ++ fn.params)
+            (sourceAfterArgs.withSource
+              (EvmYul.Yul.State.mkOk
+                (sourceAfterArgs.source.initcall
+                  params returns reversedValues.reverse)))
+            (preparedArgs.prepared.prepared.finalTarget.withSource
+              { shared :=
+                  preparedArgs.prepared.prepared.finalTarget.source.shared
+                vars :=
+                  Functions.Source.Store.initReturns
+                    fn.returns paramStore }) := by
+        have hIdentParams : identNames params = params :=
+          identNames_eq_self params
+        have hIdentReturns : identNames returns = returns :=
+          identNames_eq_self returns
+        have hSignature' : (returns ++ params).Nodup := by
+          rw [hIdentReturns, hIdentParams] at hSignature
+          exact hSignature
+        have hParamStore' :
+            Functions.Source.Store.insertMany params reversedValues.reverse
+                Locals.Source.Store.empty =
+              some paramStore := by
+          rw [hIdentParams] at hParamStore
+          exact hParamStore
+        have hParams' : fn.params = params :=
+          hParams.trans hIdentParams
+        have hFnReturns' : fn.returns = returns :=
+          hFnReturns.trans hIdentReturns
+        have hEntryBase :=
+          StateRelation.Replay.scopedExact_initcall
+            (params := params)
+            (returns := returns)
+            (args := reversedValues.reverse)
+            (paramStore := paramStore)
+            (StateRelation.Replay.rel_of_scopedExact
+              preparedArgs.relation)
+            hSignature' hParamStore'
+        simpa [hParams', hFnReturns'] using hEntryBase
+      have hBodyOk :
+          SolcValidation.StmtsOk? profile sourceProgram.contract
+              ((Contract.functionEntries
+                sourceProgram.contract).map Prod.fst)
+              (fn.returns ++ fn.params) false false true body =
+            true := by
+        rw [hFnReturns, hParams]
+        exact
+          SolcValidation.programOkWith_function_bodyOk
+            hProgramOk hLookup
+      have hBodyNames :
+          StateRelation.Vars.NamesWithin before.used
+            (Stmt.List.names body) := by
+        intro candidate hMem
+        apply hPrefix candidate
+        change candidate ∈ Contract.names sourceProgram.contract
+        exact
+          (Contract.function_names_mem_names_of_lookup hLookup).2 candidate
+            (by
+              simp [FunctionDefinition.names, hMem])
+      have hBodyCost :
+          FunctionsObserverStaticCost.stmtList body ≤
+            FunctionsObserverStaticCost.program sourceProgram :=
+        FunctionsObserverStaticCost.function_body_le_program_of_lookup
+          hLookup
+      obtain ⟨targetBodyFuel, returnedBodyBoundedNonempty⟩ :=
+        hBody (by omega) hBodyCost hLowerBody hParams hFnReturns
+          (by simpa [hParams] using hParamStore)
+          hReserved hBodyNames hBodyOk hEntry hBodyRun
+      obtain ⟨returnedBodyBounded⟩ := returnedBodyBoundedNonempty
+      let returnedBody := returnedBodyBounded.1
+      have hBodyBound :
+          targetBodyFuel ≤
+            FunctionsObserverFuel.executionBudgetFor
+              (FunctionsObserverStaticCost.program sourceProgram)
+              (FunctionsObserverStaticCost.stmtList body) bodyFuel :=
+        returnedBodyBounded.2
+      have hReturnedValues :
+          List.map sourceAfterBody.source.lookup! fn.returns =
+            returnValues := by
+        rw [hFnReturns, identNames_eq_self]
+        exact hSourceReturns.symm
+      have hReturnLength :
+          returnValues.length = targets.length := by
+        have hResultLength :=
+          SolcValidation.programOkWith_functionCall_partsN
+            hProgramOk hExprOk hLookup
+        obtain ⟨hReturnCount, _hArgs, _hSignature⟩ := hResultLength
+        calc
+          returnValues.length =
+              (List.map sourceAfterBody.source.lookup! fn.returns).length := by
+                rw [hReturnedValues]
+          _ = fn.returns.length := by simp
+          _ = returns.length := by
+            rw [hFnReturns, identNames_eq_self]
+          _ = targets.length := hReturnCount.symm
+      have hRequired :=
+        requiredFuel_le_of_parts
+          preparedArgs hTargetsNodup hTargetsContain hFind returnedBody
+          hReturnedValues hReturnLength result
+      have hChildren :=
+        FunctionsObserverFuel.two_executionBudgetsFor_add_eight_le_target_of_lt
+          (FunctionsObserverStaticCost.program sourceProgram)
+          (FunctionsObserverStaticCost.exprList args)
+          (FunctionsObserverStaticCost.stmtList body)
+          (leftFuel := argsFuel) (rightFuel := bodyFuel)
+          (parentFuel := parentFuel)
+          hArgsCost hBodyCost hArgsParent (by omega)
+      have hParent :=
+        FunctionsObserverFuel.targetBudgetFor_le_executionBudgetFor
+          (FunctionsObserverStaticCost.program sourceProgram)
+          resultLocal parentFuel
+      omega
+
+/--
+Program-indexed quantitative preservation for visible-target call parts with
+independent argument and callee source-fuel indices.
+-/
+theorem ofFunctionCallParts_programBounded
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {layout targets : List Name}
+    {functionName : Name}
+    {args : List AstExpr}
+    {initial final : Fresh.State}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {bound argsFuel callFuel parentFuel resultLocal : Nat}
+    {source sourceAfterArgs sourceAfterCall sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {reversedValues returnValues : List Word}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition
+        sourceProgram targetProgram)
+    (hArgsLowering :
+      Expr.UncheckedCallArgsLowering initial args
+        preArgs lowerArgs final)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract
+          layout targets.length
+          (.Call (.inr functionName) args) =
+        true)
+    (hCallCost :
+      FunctionsObserverStaticCost.expr
+          (.Call (.inr functionName) args) ≤
+        FunctionsObserverStaticCost.program sourceProgram)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsVisible :
+      ∀ name, name ∈ targets → name ∈ layout)
+    (hExprOrdinary :
+      FunctionsObserverCall.RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hBodyOrdinary :
+      FunctionsObserverCall.RecursiveBodyForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hExpr :
+      RecursiveScopedExpressionForwardProgramBounded
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hBody :
+      RecursiveBodyForwardProgramBounded
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        initial.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin initial.used ctx.scope)
+    (hArgsFuel : argsFuel < bound)
+    (hCallFuel : callFuel < bound)
+    (hArgsParent : argsFuel < parentFuel)
+    (hCallParent : callFuel < parentFuel)
+    (hArgsRun :
+      Yul.Source.Effectful.evalArgs
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          argsFuel args.reverse (some sourceProgram.contract) source =
+        .ok (sourceAfterArgs, reversedValues))
+    (hCallRun :
+      Yul.Source.Effectful.call
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          callFuel reversedValues.reverse (some functionName)
+          (some sourceProgram.contract) sourceAfterArgs =
+        .ok (sourceAfterCall, returnValues))
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterCall.withSource
+          (sourceAfterCall.source.multifill targets returnValues)) :
+    Nonempty
+      { result :
+          FunctionsObserverCall.ScopedReturnedCall
+            contract transcript codeRel targetProgram.toFunctions
+            functionName targets preArgs lowerArgs final layout
+            sourceFinal target ctx //
+        requiredFuel result ≤
+          FunctionsObserverFuel.executionBudgetFor
+            (FunctionsObserverStaticCost.program sourceProgram)
+            resultLocal parentFuel } := by
+  obtain ⟨result⟩ :=
+    FunctionsObserverCall.ScopedReturnedCall.ofFunctionCallParts
+      hDecomposition hArgsLowering hProgramOk hExprOk
+      hTargetsNodup hTargetsVisible hExprOrdinary hBodyOrdinary
+      hRel hDomain hScope hArgsFuel hCallFuel hArgsRun hCallRun
+      hSourceFinal
+  have hTargetContains :
+      ∀ name, name ∈ targets →
+        target.source.vars.contains name = true := by
+    obtain
+        ⟨_sourceShared, _sourceVars, _hSource, _hShared,
+          hScoped, hSourceDomain⟩ :=
+      hRel.2
+    intro name hMem
+    exact
+      StateRelation.Vars.target_contains_of_scopedExact
+        hScoped hSourceDomain (hTargetsVisible name hMem)
+  exact
+    ⟨⟨result,
+      ofFunctionCall_programBoundedOfResult
+        hDecomposition hArgsLowering hProgramOk hExprOk hTargetsNodup
+        hCallCost hTargetContains hExpr hBody hRel hDomain hScope
+        hArgsFuel hCallFuel hArgsParent hCallParent hArgsRun hCallRun
+        result⟩⟩
+
+/--
+Program-indexed quantitative preservation for a visible-target internal call.
+-/
+theorem ofFunctionCall_programBounded
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {layout targets : List Name}
+    {functionName : Name}
+    {args : List AstExpr}
+    {initial final : Fresh.State}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {bound fuel resultLocal : Nat}
+    {source sourceAfterCall sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {returnValues : List Word}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition
+        sourceProgram targetProgram)
+    (hArgsLowering :
+      Expr.UncheckedCallArgsLowering initial args
+        preArgs lowerArgs final)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract
+          layout targets.length
+          (.Call (.inr functionName) args) =
+        true)
+    (hCallCost :
+      FunctionsObserverStaticCost.expr
+          (.Call (.inr functionName) args) ≤
+        FunctionsObserverStaticCost.program sourceProgram)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsVisible :
+      ∀ name, name ∈ targets → name ∈ layout)
+    (hExprOrdinary :
+      FunctionsObserverCall.RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hBodyOrdinary :
+      FunctionsObserverCall.RecursiveBodyForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hExpr :
+      RecursiveScopedExpressionForwardProgramBounded
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hBody :
+      RecursiveBodyForwardProgramBounded
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        initial.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin initial.used ctx.scope)
+    (hFuel : fuel < bound)
+    (hRun :
+      Yul.Source.Effectful.evalValues
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel (.Call (.inr functionName) args)
+          (some sourceProgram.contract) source =
+        .ok (sourceAfterCall, returnValues))
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterCall.withSource
+          (sourceAfterCall.source.multifill targets returnValues)) :
+    Nonempty
+      { result :
+          FunctionsObserverCall.ScopedReturnedCall
+            contract transcript codeRel targetProgram.toFunctions
+            functionName targets preArgs lowerArgs final layout
+            sourceFinal target ctx //
+        requiredFuel result ≤
+          FunctionsObserverFuel.executionBudgetFor
+            (FunctionsObserverStaticCost.program sourceProgram)
+            resultLocal fuel } := by
+  obtain ⟨result⟩ :=
+    FunctionsObserverCall.ScopedReturnedCall.ofFunctionCall
+      hDecomposition hArgsLowering hProgramOk hExprOk
+      hTargetsNodup hTargetsVisible
+      (FunctionsObserverCall.RecursiveScopedExpressionForward.mono
+        hExprOrdinary (Nat.le_of_lt hFuel))
+      (FunctionsObserverCall.RecursiveBodyForward.mono
+        hBodyOrdinary (Nat.le_of_lt hFuel))
+      hRel hDomain hScope hRun hSourceFinal
+  have hTargetContains :
+      ∀ name, name ∈ targets →
+        target.source.vars.contains name = true := by
+    obtain
+        ⟨_sourceShared, _sourceVars, _hSource, _hShared,
+          hScoped, hSourceDomain⟩ :=
+      hRel.2
+    intro name hMem
+    exact
+      StateRelation.Vars.target_contains_of_scopedExact
+        hScoped hSourceDomain (hTargetsVisible name hMem)
+  obtain
+      ⟨callFuel, sourceAfterArgs, reversedValues,
+        hSourceFuel, hArgsRun, hCallRun⟩ :=
+    Yul.Source.Effectful.evalValues_function_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  exact
+    ⟨⟨result,
+      ofFunctionCall_programBoundedOfResult
+        hDecomposition hArgsLowering hProgramOk hExprOk hTargetsNodup
+        hCallCost
+        hTargetContains hExpr hBody hRel hDomain hScope
+        (by omega) (by omega) (by omega) (by omega)
+        hArgsRun hCallRun
+        result⟩⟩
+
+/--
+Program-indexed quantitative preservation for a fresh-target internal call.
+-/
+theorem ofFunctionCallFresh_programBounded
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {layout targets : List Name}
+    {functionName : Name}
+    {args : List AstExpr}
+    {initial final : Fresh.State}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {bound fuel resultLocal : Nat}
+    {source sourceAfterCall sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {returnValues : List Word}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition
+        sourceProgram targetProgram)
+    (hArgsLowering :
+      Expr.UncheckedCallArgsLowering initial args
+        preArgs lowerArgs final)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract
+          layout targets.length
+          (.Call (.inr functionName) args) =
+        true)
+    (hCallCost :
+      FunctionsObserverStaticCost.expr
+          (.Call (.inr functionName) args) ≤
+        FunctionsObserverStaticCost.program sourceProgram)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsFresh :
+      ∀ name, name ∈ targets → name ∉ layout)
+    (hTargetsContain :
+      ∀ name, name ∈ targets →
+        target.source.vars.contains name = true)
+    (hExprOrdinary :
+      FunctionsObserverCall.RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hBodyOrdinary :
+      FunctionsObserverCall.RecursiveBodyForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hExpr :
+      RecursiveScopedExpressionForwardProgramBounded
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hBody :
+      RecursiveBodyForwardProgramBounded
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        initial.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin initial.used ctx.scope)
+    (hFuel : fuel < bound)
+    (hRun :
+      Yul.Source.Effectful.evalValues
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel (.Call (.inr functionName) args)
+          (some sourceProgram.contract) source =
+        .ok (sourceAfterCall, returnValues))
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterCall.withSource
+          (sourceAfterCall.source.multifill targets returnValues)) :
+    Nonempty
+      { result :
+          FunctionsObserverCall.ScopedReturnedCall
+            contract transcript codeRel targetProgram.toFunctions
+            functionName targets preArgs lowerArgs final
+            (targets ++ layout) sourceFinal target ctx //
+        requiredFuel result ≤
+          FunctionsObserverFuel.executionBudgetFor
+            (FunctionsObserverStaticCost.program sourceProgram)
+            resultLocal fuel } := by
+  obtain ⟨result⟩ :=
+    FunctionsObserverCall.ScopedReturnedCall.ofFunctionCallFresh
+      hDecomposition hArgsLowering hProgramOk hExprOk
+      hTargetsNodup hTargetsFresh hTargetsContain
+      (FunctionsObserverCall.RecursiveScopedExpressionForward.mono
+        hExprOrdinary (Nat.le_of_lt hFuel))
+      (FunctionsObserverCall.RecursiveBodyForward.mono
+        hBodyOrdinary (Nat.le_of_lt hFuel))
+      hRel hDomain hScope hRun hSourceFinal
+  obtain
+      ⟨callFuel, sourceAfterArgs, reversedValues,
+        hSourceFuel, hArgsRun, hCallRun⟩ :=
+    Yul.Source.Effectful.evalValues_function_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  exact
+    ⟨⟨result,
+      ofFunctionCall_programBoundedOfResult
+        hDecomposition hArgsLowering hProgramOk hExprOk hTargetsNodup
+        hCallCost
+        hTargetsContain hExpr hBody hRel hDomain hScope
+        (by omega) (by omega) (by omega) (by omega)
+        hArgsRun hCallRun
+        result⟩⟩
+
 end ScopedReturnedCall
 
 namespace PreparedValue
