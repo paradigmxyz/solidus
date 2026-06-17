@@ -1689,6 +1689,27 @@ theorem openRun_single_code
   intro final _
   rfl
 
+theorem openRun_single_code_done
+    (program : Expressions.Program) (targetFuel : Nat)
+    (code : Structured.Code)
+    (source final : Structured.RunState)
+    (hFuel : 2 ≤ targetFuel)
+    (hRun :
+      Structured.InteractionSemantics.Code.openRun code source =
+        .done (.ok final)) :
+    Expressions.InteractionSemantics.Block.openRun
+        program targetFuel { stmts := [.code code] } source =
+      .done (.ok (Structured.Outcome.regular final)) := by
+  let extra := targetFuel - 2
+  have hFuelEq : targetFuel = extra + 2 := by
+    omega
+  rw [hFuelEq, openRun_single_code]
+  unfold Structured.InteractionSemantics.Code.openRun at hRun
+  unfold Expressions.InteractionSemantics.Stmt.openRun
+  simp only [Expressions.EffectSemantics.Control.Stmt.run]
+  rw [hRun]
+  rfl
+
 theorem openRun_code_brk
     (program : Expressions.Program) (fuel : Nat)
     (code : Structured.Code)
@@ -3308,6 +3329,167 @@ theorem terminalArgs_of_compile
     simp only [Locals.Source.Effectful.Control.Stmt.run]
   rw [hSourceEq, hFuelEq]
   exact Simulation.Interaction.ForwardRel.ofRel hRel
+
+/--
+Lexical block preservation from an already-related open body and the
+compiler-owned scoped cleanup. This helper is artifact-explicit only inside the
+Locals owner; `block_of_compile` below derives those artifacts from the ordinary
+compiler result.
+-/
+theorem block_generated
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx)
+    (targetCtx bodyCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat) (body : Locals.Block)
+    (bodyCode : List Expressions.Stmt) (cleanup : Structured.Code)
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hLayout : ∃ pre, bodyCtx.layout = pre ++ targetCtx.layout)
+    (hCleanup :
+      bodyCtx.cleanupTo? targetCtx.layout.length = some cleanup)
+    (hCleanupFuel : 2 ≤ targetFuel - bodyCode.length)
+    (hBody :
+      Simulation.Interaction.ForwardRel
+        Block.FuelTruncated
+        (OpenOutcomeRel bodyCtx suffix returns)
+        (InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx sourceFuel body source)
+        (Expressions.InteractionSemantics.Block.openRun
+          targetProgram targetFuel { stmts := bodyCode } target)) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel targetCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel (.block body) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel
+          { stmts := bodyCode ++ Locals.codeStmt cleanup } target) := by
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  unfold InteractionSemantics.Stmt.openRun
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+  simp only [Locals.Source.Effectful.Control.Stmt.run]
+  unfold Locals.Source.Effectful.Control.Block.runScoped
+  change
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel targetCtx suffix returns)
+      (Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (InteractionSemantics.Block.openRun
+            sourceProgram sourceCtx sourceFuel body source)
+          _)
+        _)
+      _
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.ForwardRel.bind hBody
+  intro sourceResult targetResult hResult
+  cases hResult with
+  | @regular sourceAfter sourceAfterCtx targetAfter hInnerCtx hState =>
+      obtain ⟨pre, hLayout⟩ := hLayout
+      obtain ⟨afterCleanup, hCleanupRun, hFinal⟩ :=
+        hState.openRun_cleanupTo hLayout hCleanup
+      have hTargetCleanup :=
+        TargetBlock.openRun_single_code_done
+          targetProgram (targetFuel - bodyCode.length)
+          cleanup targetAfter afterCleanup
+          hCleanupFuel hCleanupRun
+      simp only [Structured.Outcome.regular_mode,
+        Structured.Outcome.regular_state,
+        Locals.Source.Effectful.Outcome.regular,
+        Locals.codeStmt]
+      rw [hTargetCleanup]
+      apply Simulation.Interaction.ForwardRel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      apply OpenResultRel.regular hCtx
+      simpa [hCtx.layout] using hFinal
+  | brk hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact OpenResultRel.brk hState
+  | cont hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact OpenResultRel.cont hState
+  | leave hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact OpenResultRel.leave hState
+  | halt hShared hReturns =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact OpenResultRel.halt hShared hReturns
+
+/--
+Compiler-facing lexical block theorem. All body code, final layout, cleanup,
+and target fuel arithmetic are derived from the ordinary `Stmt.compile`
+result; the only recursive input is the adjacent theorem for the source body.
+-/
+theorem block_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat) (body : Locals.Block)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hOwned : Locals.Source.Block.SourceOwned body)
+    (hTargetFuel : stmts.length + 1 ≤ targetFuel)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.block body) =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hBody :
+      ∀ {bodyCode : List Expressions.Stmt}
+        {bodyCtx : Locals.Ctx},
+        Locals.Block.compileOpen targetCtx body =
+            some (bodyCode, bodyCtx) →
+          Simulation.Interaction.ForwardRel
+            Block.FuelTruncated
+            (OpenOutcomeRel bodyCtx suffix returns)
+            (InteractionSemantics.Block.openRun
+              sourceProgram sourceCtx sourceFuel body source)
+            (Expressions.InteractionSemantics.Block.openRun
+              targetProgram targetFuel
+                { stmts := bodyCode } target)) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel (.block body) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := stmts } target) := by
+  obtain ⟨bodyCode, bodyCtx, lowerBody,
+    hBodyCompile, hFinish, hCode, hFinal⟩ :=
+    Locals.Stmt.compile_block_components hCompile
+  obtain ⟨cleanup, hCleanup, hLowerBody⟩ :=
+    Locals.finishScoped_components hFinish
+  subst finalCtx
+  subst stmts
+  rw [hLowerBody] at hTargetFuel ⊢
+  have hLayout :=
+    Locals.Block.compileOpen_layout_extends_of_sourceOwned
+      hOwned hBodyCompile
+  have hCleanupFuel : 2 ≤ targetFuel - bodyCode.length := by
+    have hLen : bodyCode.length + 2 ≤ targetFuel := by
+      simpa [Locals.codeStmt, List.length_append] using hTargetFuel
+    omega
+  exact
+    block_generated
+      sourceProgram targetProgram sourceCtx targetCtx bodyCtx
+      sourceFuel targetFuel body bodyCode cleanup
+      hCtx hLayout hCleanup hCleanupFuel
+      (hBody hBodyCompile)
 
 end Stmt.Forward
 

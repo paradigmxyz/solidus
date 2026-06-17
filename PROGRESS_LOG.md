@@ -31305,3 +31305,14 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-Lean hole scan, axiom audit, and `git diff --check`; every new
   sequence theorem depends only on
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 14:24:54 PDT - proof/locals-lexical-block - proved that ordinary
+  source-owned statement and block compilation preserves the incoming layout
+  as an exact suffix, added arbitrary-fuel singleton cleanup execution, and
+  proved compiler-facing lexical blocks from one adjacent recursive body
+  theorem. Regular bodies restore the outer frame through `finishScoped`;
+  abrupt bodies bypass unreachable cleanup through the Expressions append law.
+- 2026-06-17 14:25:41 PDT - validation/locals-lexical-block - passed focused
+  Locals builds, the full verification root, architecture checks, touched-Lean
+  hole scan, axiom audit, and `git diff --check`; all new layout and lexical
+  block theorems depend only on
+  `[propext, Classical.choice, Quot.sound]`.

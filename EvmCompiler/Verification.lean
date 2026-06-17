@@ -217,6 +217,11 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.terminal_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.terminalArgs_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Block.forward_cons
+#check EvmCompiler.Locals.Stmt.compile_layout_extends_of_sourceOwned
+#check EvmCompiler.Locals.Block.compileOpen_layout_extends_of_sourceOwned
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.block_generated
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.block_of_compile
 #check EvmCompiler.Simulation.ExternalKind.classifies_call
 #check EvmCompiler.Simulation.ExternalKind.classifies_callcode
 #check EvmCompiler.Simulation.ExternalKind.classifies_delegatecall

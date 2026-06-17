@@ -794,6 +794,8 @@ Exit: the shared core builds with no compiler layer changed.
       exit, and terminal leaf.
     - [x] Context-stable abrupt outcome relation plus generic regular/abrupt
       sequence kernel over compiler-produced head and tail blocks.
+    - [x] Source-owned compiler layout-extension invariant and recursive
+      lexical-block preservation through compiler-owned `finishScoped` cleanup.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
 - [ ] Functions.
@@ -853,6 +855,8 @@ Exit: every layer exposes one canonical open computation.
       truncation from checked terminal outcomes.
     - [x] Expressions-owned append execution law, Locals-owned nonempty
       compiler decomposition, and generic adjacent sequence composition.
+    - [x] Lexical blocks consume only an adjacent recursive body theorem;
+      regular cleanup and abrupt cleanup bypass are both checked generically.
 - [ ] Functions -> allocated Locals/Expressions.
   - [ ] Own the emitted internal-call and stack-protocol constructs rather
     than extending stack-free Locals with an operand stack.
