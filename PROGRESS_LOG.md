@@ -30793,3 +30793,21 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   Structured, Locals, Functions, observer, adequacy, and compiler proofs were
   migrated off direct recursive unfolding. The full verification root,
   architecture, hole, axiom, and diff checks pass.
+- 2026-06-17 04:33:06 PDT - compaction-resume - Resumed from the committed
+  shared Structured control kernel. Next is its thin open-world specialization,
+  an Assembly-owned hidden-stack-suffix interaction lemma, and the adjacent
+  `Structured → TypedCfg` preservation theorem for all resource and
+  CALL/CREATE effects.
+- 2026-06-17 04:45:19 PDT - compaction-resume - Resumed with the Structured
+  open specialization and one-instruction lowering theorem checked locally.
+  Next is to finish the Assembly-owned stack-delta contract, thread
+  source-frame-fit evidence through the open interaction relation, and lift
+  the result compositionally over Structured code.
+- 2026-06-17 04:54:34 PDT - proof/structured-open-code - Added the thin
+  Structured specialization of the shared open interaction semantics and
+  checked the adjacent straight-line `Structured → TypedCfg` theorem. Assembly
+  now owns a uniform stack-delta theorem for every response to gas, msize,
+  CALL, CALLCODE, DELEGATECALL, STATICCALL, CREATE, and CREATE2; Structured
+  consumes that contract while preserving hidden target stack data and the
+  source-frame invariant. The full verification root, open-effects axiom
+  smoke, architecture and hole checks, and `git diff --check` pass.

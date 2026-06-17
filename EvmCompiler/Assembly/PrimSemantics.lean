@@ -409,6 +409,69 @@ theorem exists_pop6_of_six_le
                       | cons f remaining =>
                           exact ⟨remaining, a, b, c, d, e, f, rfl⟩
 
+theorem exists_pop7_of_seven_le
+    {stack : EvmYul.Stack α} (h : 7 ≤ stack.length) :
+    ∃ rest a b c d e f g,
+      EvmYul.Stack.pop7 stack =
+        some (rest, a, b, c, d, e, f, g) := by
+  cases stack with
+  | nil => simp at h
+  | cons a rest =>
+      cases rest with
+      | nil => simp at h
+      | cons b tail =>
+          cases tail with
+          | nil => simp at h
+          | cons c suffix =>
+              cases suffix with
+              | nil => simp at h
+              | cons d final =>
+                  cases final with
+                  | nil => simp at h
+                  | cons e last =>
+                      cases last with
+                      | nil => simp at h
+                      | cons f remaining =>
+                          cases remaining with
+                          | nil => simp at h
+                          | cons g hidden =>
+                              exact
+                                ⟨hidden, a, b, c, d, e, f, g, rfl⟩
+
+theorem length_of_pop7_some {stack rest : EvmYul.Stack α}
+    {a b c d e f g : α}
+    (h :
+      EvmYul.Stack.pop7 stack =
+        some (rest, a, b, c, d, e, f, g)) :
+    stack.length = rest.length + 7 := by
+  cases stack with
+  | nil => simp [EvmYul.Stack.pop7] at h
+  | cons x xs =>
+      cases xs with
+      | nil => simp [EvmYul.Stack.pop7] at h
+      | cons y ys =>
+          cases ys with
+          | nil => simp [EvmYul.Stack.pop7] at h
+          | cons z zs =>
+              cases zs with
+              | nil => simp [EvmYul.Stack.pop7] at h
+              | cons w ws =>
+                  cases ws with
+                  | nil => simp [EvmYul.Stack.pop7] at h
+                  | cons v vs =>
+                      cases vs with
+                      | nil => simp [EvmYul.Stack.pop7] at h
+                      | cons u us =>
+                          cases us with
+                          | nil => simp [EvmYul.Stack.pop7] at h
+                          | cons t ts =>
+                              simp [EvmYul.Stack.pop7] at h
+                              rcases h with
+                                ⟨hRest, _hA, _hB, _hC, _hD, _hE, _hF,
+                                  _hG⟩
+                              subst rest
+                              simp
+
 end Stack
 
 def run (step : PrimStep) (state : EvmYul.EVM.State) :
@@ -2277,6 +2340,62 @@ theorem run_append_stack_rel_of_inputArity_le
         List.drop_append_of_le_length hBound,
         List.append_assoc]
 
+/--
+A successful primitive whose operands fit in the visible stack prefix remains
+successful when a compiler-owned suffix is appended below that prefix.
+-/
+theorem exists_append_run_of_inputArity_le_of_run
+    {step : PrimStep} {state final : EvmYul.EVM.State}
+    {hidden : EvmYul.Stack Word}
+    (hBound : inputArity step ≤ state.stack.length)
+    (hRun : step.run state = .ok final) :
+    ∃ framedFinal,
+      step.run { state with stack := state.stack ++ hidden } =
+        .ok framedFinal := by
+  by_cases hSafe : SuffixSafe step
+  · let isolated := isoState state.toSharedState state.stack
+    have hInitialRel : SameRuntimeData isolated state := by
+      cases state
+      rfl
+    have hCongruence :=
+      run_map_eraseRuntimeControl
+        (step := step) hInitialRel
+    rw [hRun] at hCongruence
+    cases hIsolated : step.run isolated with
+    | error err =>
+        simp [hIsolated, Except.map] at hCongruence
+    | ok isolatedFinal =>
+        obtain ⟨framedFinal, hFramed, _hShared, _hStack⟩ :=
+          run_suffix_exists_safe
+            (step := step) (stack := state.stack)
+            (base := hidden)
+            (evm :=
+              { state with stack := state.stack ++ hidden })
+            hSafe hIsolated rfl rfl
+        exact ⟨framedFinal, hFramed⟩
+  · cases step <;> simp [SuffixSafe] at hSafe
+    case neg.dup n =>
+      simp only [inputArity] at hBound
+      have hFramedBound :
+          n ≤ (state.stack ++ hidden).length := by
+        simp
+        omega
+      simp [PrimStep.run, EvmYul.dup,
+        List.length_take, Nat.min_eq_left hBound,
+        Nat.min_eq_left hFramedBound,
+        List.take_append_of_le_length hBound]
+    case neg.swap n =>
+      simp only [inputArity] at hBound
+      have hFramedBound :
+          n + 1 ≤ (state.stack ++ hidden).length := by
+        simp
+        omega
+      simp [PrimStep.run, EvmYul.swap,
+        List.length_take, Nat.min_eq_left hBound,
+        Nat.min_eq_left hFramedBound,
+        List.take_append_of_le_length hBound,
+        List.drop_append_of_le_length hBound]
+
 end PrimStep
 
 namespace PrimOp
@@ -2596,6 +2715,43 @@ theorem exists_step_of_stackArity_le_of_append_step
         simp [PrimOp.step, continuingStep?, PrimOp.stackArity?,
           PrimOp.toEVM, EvmYul.EVM.δ, EvmYul.EVM.α]
           at hCont hArity hFramed ⊢
+      case none.pc =>
+        exact ⟨_, rfl⟩
+      case none.gas =>
+        exact ⟨_, rfl⟩
+
+/--
+A successful primitive whose declared operands fit in the visible stack
+prefix remains successful after appending compiler-owned stack data.
+-/
+theorem exists_append_step_of_stackArity_le_of_step
+    {op : PrimOp} {input output : Nat}
+    {state final : EvmYul.EVM.State}
+    {hidden : EvmYul.Stack Word}
+    (hArity : op.stackArity? = some (input, output))
+    (hBound : input ≤ state.stack.length)
+    (hRun : op.step state = .ok final) :
+    ∃ framedFinal,
+      op.step { state with stack := state.stack ++ hidden } =
+        .ok framedFinal := by
+  cases hCont : op.continuingStep? with
+  | some step =>
+      have hInput :
+          input = PrimStep.inputArity step := by
+        rcases stackArity_values hArity with ⟨hDeclared, _⟩
+        rcases continuingStep?_delta_alpha hCont with
+          ⟨hStep, _⟩
+        exact hDeclared.trans hStep
+      rw [step_eq_continuingStep_run hCont] at hRun ⊢
+      exact
+        PrimStep.exists_append_run_of_inputArity_le_of_run
+          (step := step) (hidden := hidden)
+          (by simpa [← hInput] using hBound) hRun
+  | none =>
+      cases op <;>
+        simp [PrimOp.step, continuingStep?, PrimOp.stackArity?,
+          PrimOp.toEVM, EvmYul.EVM.δ, EvmYul.EVM.α]
+          at hCont hArity hRun ⊢
       case none.pc =>
         exact ⟨_, rfl⟩
       case none.gas =>

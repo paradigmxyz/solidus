@@ -71,6 +71,44 @@ theorem finishCreate_sameRuntimeData
     InteractionSemantics.EVMState.installWorld,
     EvmYul.EVM.State.incrPC]
 
+theorem finishCall_append_stack
+    (state : EVMState) (rest hidden : EvmYul.Stack Word)
+    (callLocal : Simulation.CallLocal)
+    (response : Simulation.CallResponse) :
+    SameRuntimeData
+      (InteractionSemantics.EVMState.finishCall
+        { state with stack := state.stack ++ hidden }
+        (rest ++ hidden) callLocal response)
+      { InteractionSemantics.EVMState.finishCall
+          state rest callLocal response with
+        stack :=
+          (InteractionSemantics.EVMState.finishCall
+            state rest callLocal response).stack ++ hidden } := by
+  cases state
+  simp [SameRuntimeData, eraseRuntimeControl,
+    InteractionSemantics.EVMState.finishCall,
+    InteractionSemantics.EVMState.installWorld,
+    EvmYul.EVM.State.incrPC, List.append_assoc]
+
+theorem finishCreate_append_stack
+    (state : EVMState) (rest hidden : EvmYul.Stack Word)
+    (createLocal : Simulation.CreateLocal)
+    (response : Simulation.CreateResponse) :
+    SameRuntimeData
+      (InteractionSemantics.EVMState.finishCreate
+        { state with stack := state.stack ++ hidden }
+        (rest ++ hidden) createLocal response)
+      { InteractionSemantics.EVMState.finishCreate
+          state rest createLocal response with
+        stack :=
+          (InteractionSemantics.EVMState.finishCreate
+            state rest createLocal response).stack ++ hidden } := by
+  cases state
+  simp [SameRuntimeData, eraseRuntimeControl,
+    InteractionSemantics.EVMState.finishCreate,
+    InteractionSemantics.EVMState.installWorld,
+    EvmYul.EVM.State.incrPC, List.append_assoc]
+
 end EVMState
 
 namespace PrimOp
@@ -82,11 +120,36 @@ abbrev RuntimeStateRel :
     (fun left right : EVMException => left = right)
     Assembly.SameRuntimeData
 
+/--
+The target may carry compiler-owned words below the complete source-visible
+stack. Errors need only agree as failures; successful states preserve that
+suffix modulo compiler-owned runtime counters.
+-/
+def StackSuffixStateRel (hidden : EvmYul.Stack Word)
+    (source target : EVMState) : Prop :=
+  SameRuntimeData target
+    { source with stack := source.stack ++ hidden }
+
+abbrev StackSuffixRuntimeRel (hidden : EvmYul.Stack Word) :
+    Except EVMException EVMState →
+      Except EVMException EVMState → Prop :=
+  Simulation.Interaction.ExceptRel
+    (fun _sourceError _targetError => True)
+    (StackSuffixStateRel hidden)
+
 def AdvancesPC (state : EVMState) :
     Except EVMException EVMState → Prop
   | .error _ => True
   | .ok final =>
       final.pc = state.pc + EvmYul.UInt256.ofNat 1
+
+def RealizesStackArity (state : EVMState)
+    (input output : Nat) :
+    Except EVMException EVMState → Prop
+  | .error _ => True
+  | .ok final =>
+      final.stack.length =
+        state.stack.length - input + output
 
 theorem resourceStep_advancesPC
     (kind : Simulation.ResourceQuery) (state : EVMState) :
@@ -99,6 +162,19 @@ theorem resourceStep_advancesPC
     InteractionSemantics.PrimOp.resourceStep,
     EvmYul.EVM.State.replaceStackAndIncrPC,
     EvmYul.EVM.State.incrPC]
+
+theorem resourceStep_realizesStackArity
+    (kind : Simulation.ResourceQuery) (state : EVMState) :
+    Simulation.Interaction.AllDone
+      (RealizesStackArity state 0 1)
+      (InteractionSemantics.PrimOp.resourceStep kind state) := by
+  apply Simulation.Interaction.AllDone.request
+  intro value
+  apply Simulation.Interaction.AllDone.done
+  simp [RealizesStackArity,
+    InteractionSemantics.PrimOp.resourceStep,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC, EvmYul.Stack.push]
 
 theorem callStep_advancesPC
     (kind : Simulation.CallKind) (state : EVMState) :
@@ -117,6 +193,113 @@ theorem callStep_advancesPC
         exact .done (EVMState.finishCall_pc _ _ _ _)
       · exact .done trivial
 
+theorem callStep_realizesStackArity
+    (kind : Simulation.CallKind) (state : EVMState) :
+    Simulation.Interaction.AllDone
+      (RealizesStackArity state kind.inputArity 1)
+      (InteractionSemantics.PrimOp.callStep kind state) := by
+  cases kind with
+  | call =>
+      unfold InteractionSemantics.PrimOp.callStep
+      cases hPop : state.stack.pop7 with
+      | none =>
+          simp only [Simulation.CallKind.evmOperands?, hPop]
+          apply Simulation.Interaction.AllDone.done
+          exact True.intro
+      | some popped =>
+          rcases popped with
+            ⟨rest, gas, address, value, inputOffset, inputSize,
+              outputOffset, outputSize⟩
+          simp only [Simulation.CallKind.evmOperands?, hPop]
+          split
+          · apply Simulation.Interaction.AllDone.request
+            intro response
+            apply Simulation.Interaction.AllDone.done
+            have hLength :=
+              Assembly.PrimStep.Stack.length_of_pop7_some hPop
+            simp [RealizesStackArity,
+              InteractionSemantics.EVMState.finishCall,
+              InteractionSemantics.EVMState.installWorld,
+              EvmYul.EVM.State.incrPC,
+              Simulation.CallKind.inputArity, hLength]
+          · apply Simulation.Interaction.AllDone.done
+            exact True.intro
+  | callcode =>
+      unfold InteractionSemantics.PrimOp.callStep
+      cases hPop : state.stack.pop7 with
+      | none =>
+          simp only [Simulation.CallKind.evmOperands?, hPop]
+          apply Simulation.Interaction.AllDone.done
+          exact True.intro
+      | some popped =>
+          rcases popped with
+            ⟨rest, gas, address, value, inputOffset, inputSize,
+              outputOffset, outputSize⟩
+          simp only [Simulation.CallKind.evmOperands?, hPop]
+          split
+          · apply Simulation.Interaction.AllDone.request
+            intro response
+            apply Simulation.Interaction.AllDone.done
+            have hLength :=
+              Assembly.PrimStep.Stack.length_of_pop7_some hPop
+            simp [RealizesStackArity,
+              InteractionSemantics.EVMState.finishCall,
+              InteractionSemantics.EVMState.installWorld,
+              EvmYul.EVM.State.incrPC,
+              Simulation.CallKind.inputArity, hLength]
+          · apply Simulation.Interaction.AllDone.done
+            exact True.intro
+  | delegatecall =>
+      unfold InteractionSemantics.PrimOp.callStep
+      cases hPop : state.stack.pop6 with
+      | none =>
+          simp only [Simulation.CallKind.evmOperands?, hPop]
+          apply Simulation.Interaction.AllDone.done
+          exact True.intro
+      | some popped =>
+          rcases popped with
+            ⟨rest, gas, address, inputOffset, inputSize,
+              outputOffset, outputSize⟩
+          simp only [Simulation.CallKind.evmOperands?, hPop]
+          split
+          · apply Simulation.Interaction.AllDone.request
+            intro response
+            apply Simulation.Interaction.AllDone.done
+            have hLength :=
+              Assembly.PrimStep.Stack.length_of_pop6_some hPop
+            simp [RealizesStackArity,
+              InteractionSemantics.EVMState.finishCall,
+              InteractionSemantics.EVMState.installWorld,
+              EvmYul.EVM.State.incrPC,
+              Simulation.CallKind.inputArity, hLength]
+          · apply Simulation.Interaction.AllDone.done
+            exact True.intro
+  | staticcall =>
+      unfold InteractionSemantics.PrimOp.callStep
+      cases hPop : state.stack.pop6 with
+      | none =>
+          simp only [Simulation.CallKind.evmOperands?, hPop]
+          apply Simulation.Interaction.AllDone.done
+          exact True.intro
+      | some popped =>
+          rcases popped with
+            ⟨rest, gas, address, inputOffset, inputSize,
+              outputOffset, outputSize⟩
+          simp only [Simulation.CallKind.evmOperands?, hPop]
+          split
+          · apply Simulation.Interaction.AllDone.request
+            intro response
+            apply Simulation.Interaction.AllDone.done
+            have hLength :=
+              Assembly.PrimStep.Stack.length_of_pop6_some hPop
+            simp [RealizesStackArity,
+              InteractionSemantics.EVMState.finishCall,
+              InteractionSemantics.EVMState.installWorld,
+              EvmYul.EVM.State.incrPC,
+              Simulation.CallKind.inputArity, hLength]
+          · apply Simulation.Interaction.AllDone.done
+            exact True.intro
+
 theorem createStep_advancesPC
     (kind : Simulation.CreateKind) (state : EVMState) :
     Simulation.Interaction.AllDone (AdvancesPC state)
@@ -134,6 +317,61 @@ theorem createStep_advancesPC
         exact .done (EVMState.finishCreate_pc _ _ _ _)
       · exact .done trivial
 
+theorem createStep_realizesStackArity
+    (kind : Simulation.CreateKind) (state : EVMState) :
+    Simulation.Interaction.AllDone
+      (RealizesStackArity state kind.inputArity 1)
+      (InteractionSemantics.PrimOp.createStep kind state) := by
+  cases kind with
+  | create =>
+      unfold InteractionSemantics.PrimOp.createStep
+      cases hPop : state.stack.pop3 with
+      | none =>
+          simp only [Simulation.CreateKind.evmOperands?, hPop]
+          apply Simulation.Interaction.AllDone.done
+          exact True.intro
+      | some popped =>
+          rcases popped with
+            ⟨rest, value, inputOffset, inputSize⟩
+          simp only [Simulation.CreateKind.evmOperands?, hPop]
+          split
+          · apply Simulation.Interaction.AllDone.request
+            intro response
+            apply Simulation.Interaction.AllDone.done
+            have hLength :=
+              Assembly.PrimStep.Stack.length_of_pop3_some hPop
+            simp [RealizesStackArity,
+              InteractionSemantics.EVMState.finishCreate,
+              InteractionSemantics.EVMState.installWorld,
+              EvmYul.EVM.State.incrPC,
+              Simulation.CreateKind.inputArity, hLength]
+          · apply Simulation.Interaction.AllDone.done
+            exact True.intro
+  | create2 =>
+      unfold InteractionSemantics.PrimOp.createStep
+      cases hPop : state.stack.pop4 with
+      | none =>
+          simp only [Simulation.CreateKind.evmOperands?, hPop]
+          apply Simulation.Interaction.AllDone.done
+          exact True.intro
+      | some popped =>
+          rcases popped with
+            ⟨rest, value, inputOffset, inputSize, salt⟩
+          simp only [Simulation.CreateKind.evmOperands?, hPop]
+          split
+          · apply Simulation.Interaction.AllDone.request
+            intro response
+            apply Simulation.Interaction.AllDone.done
+            have hLength :=
+              Assembly.PrimStep.Stack.length_of_pop4_some hPop
+            simp [RealizesStackArity,
+              InteractionSemantics.EVMState.finishCreate,
+              InteractionSemantics.EVMState.installWorld,
+              EvmYul.EVM.State.incrPC,
+              Simulation.CreateKind.inputArity, hLength]
+          · apply Simulation.Interaction.AllDone.done
+            exact True.intro
+
 theorem resourceStep_runtimeRel
     (kind : Simulation.ResourceQuery)
     {target source : EVMState}
@@ -149,6 +387,23 @@ theorem resourceStep_runtimeRel
     SameRuntimeData.replaceStackAndIncrPC hRel
       (congrArg (fun stack => stack.push value)
         (SameRuntimeData.stack_eq hRel))
+
+theorem resourceStep_append_stack_rel
+    (kind : Simulation.ResourceQuery) (state : EVMState)
+    (hidden : EvmYul.Stack Word) :
+    Simulation.Interaction.Rel (StackSuffixRuntimeRel hidden)
+      (InteractionSemantics.PrimOp.resourceStep kind state)
+      (InteractionSemantics.PrimOp.resourceStep kind
+        { state with stack := state.stack ++ hidden }) := by
+  apply Simulation.Interaction.Rel.request
+  intro value
+  apply Simulation.Interaction.Rel.done
+  apply Simulation.Interaction.ExceptRel.ok
+  cases state
+  simp [StackSuffixStateRel, SameRuntimeData, eraseRuntimeControl,
+    InteractionSemantics.PrimOp.resourceStep,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC, EvmYul.Stack.push]
 
 theorem callStep_runtimeRel
     (kind : Simulation.CallKind)
@@ -183,6 +438,96 @@ theorem callStep_runtimeRel
           .done
             (Simulation.Interaction.ExceptRel.error rfl)
 
+theorem callStep_append_stack_rel
+    (kind : Simulation.CallKind) (state : EVMState)
+    (hidden : EvmYul.Stack Word)
+    (hBound : kind.inputArity ≤ state.stack.length) :
+    Simulation.Interaction.Rel (StackSuffixRuntimeRel hidden)
+      (InteractionSemantics.PrimOp.callStep kind state)
+      (InteractionSemantics.PrimOp.callStep kind
+        { state with stack := state.stack ++ hidden }) := by
+  have hExists :
+      ∃ rest operands,
+        kind.evmOperands? state.stack = some (rest, operands) := by
+    cases kind with
+    | call =>
+        obtain ⟨rest, gas, address, value, inputOffset, inputSize,
+            outputOffset, outputSize, hPop⟩ :=
+          Assembly.PrimStep.Stack.exists_pop7_of_seven_le
+            (by simpa [Simulation.CallKind.inputArity] using hBound)
+        exact
+          ⟨rest,
+            { requestedGas := gas
+              address := address
+              valueArg := value
+              inputOffset := inputOffset
+              inputSize := inputSize
+              outputOffset := outputOffset
+              outputSize := outputSize },
+            by simp [Simulation.CallKind.evmOperands?, hPop]⟩
+    | callcode =>
+        obtain ⟨rest, gas, address, value, inputOffset, inputSize,
+            outputOffset, outputSize, hPop⟩ :=
+          Assembly.PrimStep.Stack.exists_pop7_of_seven_le
+            (by simpa [Simulation.CallKind.inputArity] using hBound)
+        exact
+          ⟨rest,
+            { requestedGas := gas
+              address := address
+              valueArg := value
+              inputOffset := inputOffset
+              inputSize := inputSize
+              outputOffset := outputOffset
+              outputSize := outputSize },
+            by simp [Simulation.CallKind.evmOperands?, hPop]⟩
+    | delegatecall =>
+        obtain ⟨rest, gas, address, inputOffset, inputSize,
+            outputOffset, outputSize, hPop⟩ :=
+          Assembly.PrimStep.Stack.exists_pop6_of_six_le
+            (by simpa [Simulation.CallKind.inputArity] using hBound)
+        exact
+          ⟨rest,
+            { requestedGas := gas
+              address := address
+              valueArg := EvmYul.UInt256.ofNat 0
+              inputOffset := inputOffset
+              inputSize := inputSize
+              outputOffset := outputOffset
+              outputSize := outputSize },
+            by simp [Simulation.CallKind.evmOperands?, hPop]⟩
+    | staticcall =>
+        obtain ⟨rest, gas, address, inputOffset, inputSize,
+            outputOffset, outputSize, hPop⟩ :=
+          Assembly.PrimStep.Stack.exists_pop6_of_six_le
+            (by simpa [Simulation.CallKind.inputArity] using hBound)
+        exact
+          ⟨rest,
+            { requestedGas := gas
+              address := address
+              valueArg := EvmYul.UInt256.ofNat 0
+              inputOffset := inputOffset
+              inputSize := inputSize
+              outputOffset := outputOffset
+              outputSize := outputSize },
+            by simp [Simulation.CallKind.evmOperands?, hPop]⟩
+  rcases hExists with ⟨rest, operands, hOperands⟩
+  have hAppend :=
+    Simulation.CallKind.evmOperands?_append_of_some
+      kind hidden hOperands
+  unfold InteractionSemantics.PrimOp.callStep
+  simp only [hOperands, hAppend]
+  split
+  · apply Simulation.Interaction.Rel.request
+    intro response
+    apply Simulation.Interaction.Rel.done
+    apply Simulation.Interaction.ExceptRel.ok
+    exact
+      EVMState.finishCall_append_stack
+        state rest hidden operands.callLocal response
+  · exact
+      .done
+        (Simulation.Interaction.ExceptRel.error True.intro)
+
 theorem createStep_runtimeRel
     (kind : Simulation.CreateKind)
     {target source : EVMState}
@@ -215,6 +560,58 @@ theorem createStep_runtimeRel
       · exact
           .done
             (Simulation.Interaction.ExceptRel.error rfl)
+
+theorem createStep_append_stack_rel
+    (kind : Simulation.CreateKind) (state : EVMState)
+    (hidden : EvmYul.Stack Word)
+    (hBound : kind.inputArity ≤ state.stack.length) :
+    Simulation.Interaction.Rel (StackSuffixRuntimeRel hidden)
+      (InteractionSemantics.PrimOp.createStep kind state)
+      (InteractionSemantics.PrimOp.createStep kind
+        { state with stack := state.stack ++ hidden }) := by
+  have hExists :
+      ∃ rest operands,
+        kind.evmOperands? state.stack = some (rest, operands) := by
+    cases kind with
+    | create =>
+        obtain ⟨rest, value, inputOffset, inputSize, hPop⟩ :=
+          Assembly.PrimStep.Stack.exists_pop3_of_three_le
+            (by simpa [Simulation.CreateKind.inputArity] using hBound)
+        exact
+          ⟨rest,
+            { value := value
+              initOffset := inputOffset
+              initSize := inputSize
+              saltArg := EvmYul.UInt256.ofNat 0 },
+            by simp [Simulation.CreateKind.evmOperands?, hPop]⟩
+    | create2 =>
+        obtain ⟨rest, value, inputOffset, inputSize, salt, hPop⟩ :=
+          Assembly.PrimStep.Stack.exists_pop4_of_four_le
+            (by simpa [Simulation.CreateKind.inputArity] using hBound)
+        exact
+          ⟨rest,
+            { value := value
+              initOffset := inputOffset
+              initSize := inputSize
+              saltArg := salt },
+            by simp [Simulation.CreateKind.evmOperands?, hPop]⟩
+  rcases hExists with ⟨rest, operands, hOperands⟩
+  have hAppend :=
+    Simulation.CreateKind.evmOperands?_append_of_some
+      kind hidden hOperands
+  unfold InteractionSemantics.PrimOp.createStep
+  simp only [hOperands, hAppend]
+  split
+  · apply Simulation.Interaction.Rel.request
+    intro response
+    apply Simulation.Interaction.Rel.done
+    apply Simulation.Interaction.ExceptRel.ok
+    exact
+      EVMState.finishCreate_append_stack
+        state rest hidden operands.createLocal response
+  · exact
+      .done
+        (Simulation.Interaction.ExceptRel.error True.intro)
 
 theorem noExternalCallCreate_of_unclassified
     {op : Assembly.PrimOp}
@@ -266,6 +663,117 @@ theorem closedStep_runtimeRel
           exact
             Simulation.Interaction.ExceptRel.ok hRun
 
+theorem closedStep_append_stack_rel
+    {op : Assembly.PrimOp} {input output : Nat}
+    (state : EVMState) (hidden : EvmYul.Stack Word)
+    (hArity : op.stackArity? = some (input, output))
+    (hBound : input ≤ state.stack.length)
+    (hExternal :
+      Simulation.ExternalKind.ofEVMOperation? op.toEVM = none)
+    (hGas : op ≠ .gas) (hMsize : op ≠ .msize) :
+    Simulation.Interaction.Rel (StackSuffixRuntimeRel hidden)
+      (InteractionSemantics.PrimOp.openStep op state)
+      (InteractionSemantics.PrimOp.openStep op
+        { state with stack := state.stack ++ hidden }) := by
+  rw [InteractionSemantics.PrimOp.openStep_closed
+      hExternal hGas hMsize,
+    InteractionSemantics.PrimOp.openStep_closed
+      hExternal hGas hMsize]
+  cases hSource : op.step state with
+  | error sourceError =>
+      cases hTarget :
+          op.step { state with stack := state.stack ++ hidden } with
+      | error targetError =>
+          exact
+            .done
+              (Simulation.Interaction.ExceptRel.error True.intro)
+      | ok targetFinal =>
+          obtain ⟨sourceFinal, hSourceFinal⟩ :=
+            Assembly.PrimOp.exists_step_of_stackArity_le_of_append_step
+              hArity hBound hTarget
+          rw [hSource] at hSourceFinal
+          contradiction
+  | ok sourceFinal =>
+      obtain ⟨targetFinal, hTarget⟩ :=
+        Assembly.PrimOp.exists_append_step_of_stackArity_le_of_step
+          (hidden := hidden) hArity hBound hSource
+      rw [hTarget]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact
+        Assembly.PrimOp.step_append_stack_rel_of_stackArity_le
+          hArity hBound hSource hTarget
+
+theorem call_inputArity_eq_of_classified
+    {op : Assembly.PrimOp} {kind : Simulation.CallKind}
+    {input output : Nat}
+    (hExternal :
+      Simulation.ExternalKind.ofEVMOperation? op.toEVM =
+        some (.call kind))
+    (hArity : op.stackArity? = some (input, output)) :
+    kind.inputArity = input := by
+  cases op <;> cases kind <;>
+    simp [Assembly.PrimOp.toEVM,
+      Simulation.ExternalKind.ofEVMOperation?,
+      Simulation.CallKind.ofEVMOperation?,
+      Simulation.CreateKind.ofEVMOperation?,
+      Assembly.PrimOp.stackArity?,
+      EvmYul.EVM.δ, EvmYul.EVM.α,
+      Simulation.CallKind.inputArity] at hExternal hArity ⊢
+  all_goals exact hArity.1
+
+theorem call_outputArity_eq_one_of_classified
+    {op : Assembly.PrimOp} {kind : Simulation.CallKind}
+    {input output : Nat}
+    (hExternal :
+      Simulation.ExternalKind.ofEVMOperation? op.toEVM =
+        some (.call kind))
+    (hArity : op.stackArity? = some (input, output)) :
+    output = 1 := by
+  cases op <;> cases kind <;>
+    simp [Assembly.PrimOp.toEVM,
+      Simulation.ExternalKind.ofEVMOperation?,
+      Simulation.CallKind.ofEVMOperation?,
+      Simulation.CreateKind.ofEVMOperation?,
+      Assembly.PrimOp.stackArity?,
+      EvmYul.EVM.δ, EvmYul.EVM.α] at hExternal hArity ⊢
+  all_goals omega
+
+theorem create_inputArity_eq_of_classified
+    {op : Assembly.PrimOp} {kind : Simulation.CreateKind}
+    {input output : Nat}
+    (hExternal :
+      Simulation.ExternalKind.ofEVMOperation? op.toEVM =
+        some (.create kind))
+    (hArity : op.stackArity? = some (input, output)) :
+    kind.inputArity = input := by
+  cases op <;> cases kind <;>
+    simp [Assembly.PrimOp.toEVM,
+      Simulation.ExternalKind.ofEVMOperation?,
+      Simulation.CallKind.ofEVMOperation?,
+      Simulation.CreateKind.ofEVMOperation?,
+      Assembly.PrimOp.stackArity?,
+      EvmYul.EVM.δ, EvmYul.EVM.α,
+      Simulation.CreateKind.inputArity] at hExternal hArity ⊢
+  all_goals exact hArity.1
+
+theorem create_outputArity_eq_one_of_classified
+    {op : Assembly.PrimOp} {kind : Simulation.CreateKind}
+    {input output : Nat}
+    (hExternal :
+      Simulation.ExternalKind.ofEVMOperation? op.toEVM =
+        some (.create kind))
+    (hArity : op.stackArity? = some (input, output)) :
+    output = 1 := by
+  cases op <;> cases kind <;>
+    simp [Assembly.PrimOp.toEVM,
+      Simulation.ExternalKind.ofEVMOperation?,
+      Simulation.CallKind.ofEVMOperation?,
+      Simulation.CreateKind.ofEVMOperation?,
+      Assembly.PrimOp.stackArity?,
+      EvmYul.EVM.δ, EvmYul.EVM.α] at hExternal hArity ⊢
+  all_goals omega
+
 /--
 Open primitive execution is insensitive to compiler-owned PC and execution
 counters. External calls and creates remain in scope: related states issue the
@@ -313,6 +821,146 @@ theorem openStep_runtimeRel
         · exact
             closedStep_runtimeRel
               hArity hNoPc hExternal hGas hMsize hRel
+
+/--
+Open primitive execution preserves compiler-owned words below the complete
+source-visible operand prefix. CALL/CREATE requests remain exactly equal and
+the suffix is restored for every shared open-world response.
+-/
+theorem openStep_append_stack_rel_of_stackArity_le
+    {op : Assembly.PrimOp} {input output : Nat}
+    (state : EVMState) (hidden : EvmYul.Stack Word)
+    (hArity : op.stackArity? = some (input, output))
+    (hBound : input ≤ state.stack.length) :
+    Simulation.Interaction.Rel (StackSuffixRuntimeRel hidden)
+      (InteractionSemantics.PrimOp.openStep op state)
+      (InteractionSemantics.PrimOp.openStep op
+        { state with stack := state.stack ++ hidden }) := by
+  cases hExternal :
+      Simulation.ExternalKind.ofEVMOperation? op.toEVM with
+  | some external =>
+      cases external with
+      | call kind =>
+          rw [show
+            InteractionSemantics.PrimOp.openStep op state =
+              InteractionSemantics.PrimOp.callStep kind state by
+                simp [InteractionSemantics.PrimOp.openStep, hExternal]]
+          rw [show
+            InteractionSemantics.PrimOp.openStep op
+                { state with stack := state.stack ++ hidden } =
+              InteractionSemantics.PrimOp.callStep kind
+                { state with stack := state.stack ++ hidden } by
+                simp [InteractionSemantics.PrimOp.openStep, hExternal]]
+          apply callStep_append_stack_rel
+          rw [call_inputArity_eq_of_classified hExternal hArity]
+          exact hBound
+      | create kind =>
+          rw [show
+            InteractionSemantics.PrimOp.openStep op state =
+              InteractionSemantics.PrimOp.createStep kind state by
+                simp [InteractionSemantics.PrimOp.openStep, hExternal]]
+          rw [show
+            InteractionSemantics.PrimOp.openStep op
+                { state with stack := state.stack ++ hidden } =
+              InteractionSemantics.PrimOp.createStep kind
+                { state with stack := state.stack ++ hidden } by
+                simp [InteractionSemantics.PrimOp.openStep, hExternal]]
+          apply createStep_append_stack_rel
+          rw [create_inputArity_eq_of_classified hExternal hArity]
+          exact hBound
+  | none =>
+      by_cases hGas : op = .gas
+      · subst op
+        exact resourceStep_append_stack_rel .gas state hidden
+      · by_cases hMsize : op = .msize
+        · subst op
+          exact resourceStep_append_stack_rel .msize state hidden
+        · exact
+            closedStep_append_stack_rel
+              state hidden hArity hBound hExternal hGas hMsize
+
+/--
+Closed primitive execution realizes the stack transition declared by
+`stackArity?` on every terminal branch.
+-/
+theorem closedStep_realizesStackArity
+    {op : Assembly.PrimOp} {input output : Nat}
+    {state : EVMState}
+    (hArity : op.stackArity? = some (input, output))
+    (hExternal :
+      Simulation.ExternalKind.ofEVMOperation? op.toEVM = none)
+    (hGas : op ≠ .gas) (hMsize : op ≠ .msize) :
+    Simulation.Interaction.AllDone
+      (RealizesStackArity state input output)
+      (InteractionSemantics.PrimOp.openStep op state) := by
+  rw [InteractionSemantics.PrimOp.openStep_closed
+    hExternal hGas hMsize]
+  cases hRun : op.step state with
+  | error err =>
+      apply Simulation.Interaction.AllDone.done
+      exact True.intro
+  | ok final =>
+      apply Simulation.Interaction.AllDone.done
+      exact
+        Assembly.PrimOp.step_stack_length_of_stackArity
+          hArity hRun
+
+/--
+Every successful branch of an open, well-typed Assembly primitive realizes
+its declared stack transition. This is the stack contract consumed by the
+adjacent Structured-to-TypedCfg proof.
+-/
+theorem openStep_realizesStackArity
+    {op : Assembly.PrimOp} {input output : Nat}
+    {state : EVMState}
+    (hArity : op.stackArity? = some (input, output)) :
+    Simulation.Interaction.AllDone
+      (RealizesStackArity state input output)
+      (InteractionSemantics.PrimOp.openStep op state) := by
+  cases hExternal :
+      Simulation.ExternalKind.ofEVMOperation? op.toEVM with
+  | some external =>
+      cases external with
+      | call kind =>
+          rw [show
+            InteractionSemantics.PrimOp.openStep op state =
+              InteractionSemantics.PrimOp.callStep kind state by
+                simp [InteractionSemantics.PrimOp.openStep, hExternal]]
+          have hInput :=
+            call_inputArity_eq_of_classified hExternal hArity
+          have hOutput :=
+            call_outputArity_eq_one_of_classified hExternal hArity
+          simpa [hInput, hOutput] using
+            callStep_realizesStackArity kind state
+      | create kind =>
+          rw [show
+            InteractionSemantics.PrimOp.openStep op state =
+              InteractionSemantics.PrimOp.createStep kind state by
+                simp [InteractionSemantics.PrimOp.openStep, hExternal]]
+          have hInput :=
+            create_inputArity_eq_of_classified hExternal hArity
+          have hOutput :=
+            create_outputArity_eq_one_of_classified hExternal hArity
+          simpa [hInput, hOutput] using
+            createStep_realizesStackArity kind state
+  | none =>
+      by_cases hGas : op = .gas
+      · subst op
+        simp [Assembly.PrimOp.stackArity?,
+          Assembly.PrimOp.toEVM, EvmYul.EVM.δ,
+          EvmYul.EVM.α] at hArity
+        rcases hArity with ⟨rfl, rfl⟩
+        exact resourceStep_realizesStackArity .gas state
+      · by_cases hMsize : op = .msize
+        · subst op
+          simp [Assembly.PrimOp.stackArity?,
+            Assembly.PrimOp.toEVM, EvmYul.EVM.δ,
+            EvmYul.EVM.α] at hArity
+          rcases hArity with ⟨rfl, rfl⟩
+          exact resourceStep_realizesStackArity .msize state
+        · exact
+            closedStep_realizesStackArity
+              hArity hExternal hGas hMsize
 
 /--
 Every successful branch of an open, well-typed Assembly primitive advances

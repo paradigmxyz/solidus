@@ -403,6 +403,102 @@ def evmOperands? :
   cases kind <;> rfl
 
 /--
+Appending an opaque suffix below a complete CALL-family operand prefix leaves
+the parsed operands unchanged and appends the suffix only to the remainder.
+-/
+theorem evmOperands?_append_of_some
+    (kind : CallKind) {stack rest : InteractionStack}
+    {operands : CallOperands} (hidden : InteractionStack)
+    (hOperands :
+      kind.evmOperands? stack = some (rest, operands)) :
+    kind.evmOperands? (stack ++ hidden) =
+      some (rest ++ hidden, operands) := by
+  cases kind with
+  | call | callcode =>
+      unfold evmOperands? at hOperands ⊢
+      cases hPop : stack.pop7 with
+      | none =>
+          simp [hPop] at hOperands
+      | some popped =>
+          rcases popped with
+            ⟨parsedRest, gas, address, value, inputOffset, inputSize,
+              outputOffset, outputSize⟩
+          have hAppend :
+              (stack ++ hidden).pop7 =
+                some
+                  (parsedRest ++ hidden, gas, address, value,
+                    inputOffset, inputSize, outputOffset, outputSize) := by
+            cases stack with
+            | nil => simp [EvmYul.Stack.pop7] at hPop
+            | cons a stack =>
+                cases stack with
+                | nil => simp [EvmYul.Stack.pop7] at hPop
+                | cons b stack =>
+                    cases stack with
+                    | nil => simp [EvmYul.Stack.pop7] at hPop
+                    | cons c stack =>
+                        cases stack with
+                        | nil => simp [EvmYul.Stack.pop7] at hPop
+                        | cons d stack =>
+                            cases stack with
+                            | nil => simp [EvmYul.Stack.pop7] at hPop
+                            | cons e stack =>
+                                cases stack with
+                                | nil => simp [EvmYul.Stack.pop7] at hPop
+                                | cons f stack =>
+                                    cases stack with
+                                    | nil =>
+                                        simp [EvmYul.Stack.pop7] at hPop
+                                    | cons g tail =>
+                                        simp [EvmYul.Stack.pop7] at hPop ⊢
+                                        rcases hPop with
+                                          ⟨rfl, rfl, rfl, rfl, rfl, rfl,
+                                            rfl, rfl⟩
+                                        simp
+          simp [hPop] at hOperands
+          rcases hOperands with ⟨rfl, rfl⟩
+          simp [hAppend]
+  | delegatecall | staticcall =>
+      unfold evmOperands? at hOperands ⊢
+      cases hPop : stack.pop6 with
+      | none =>
+          simp [hPop] at hOperands
+      | some popped =>
+          rcases popped with
+            ⟨parsedRest, gas, address, inputOffset, inputSize,
+              outputOffset, outputSize⟩
+          have hAppend :
+              (stack ++ hidden).pop6 =
+                some
+                  (parsedRest ++ hidden, gas, address, inputOffset,
+                    inputSize, outputOffset, outputSize) := by
+            cases stack with
+            | nil => simp [EvmYul.Stack.pop6] at hPop
+            | cons a stack =>
+                cases stack with
+                | nil => simp [EvmYul.Stack.pop6] at hPop
+                | cons b stack =>
+                    cases stack with
+                    | nil => simp [EvmYul.Stack.pop6] at hPop
+                    | cons c stack =>
+                        cases stack with
+                        | nil => simp [EvmYul.Stack.pop6] at hPop
+                        | cons d stack =>
+                            cases stack with
+                            | nil => simp [EvmYul.Stack.pop6] at hPop
+                            | cons e stack =>
+                                cases stack with
+                                | nil => simp [EvmYul.Stack.pop6] at hPop
+                                | cons f tail =>
+                                    simp [EvmYul.Stack.pop6] at hPop ⊢
+                                    rcases hPop with
+                                      ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+                                    simp
+          simp [hPop] at hOperands
+          rcases hOperands with ⟨rfl, rfl⟩
+          simp [hAppend]
+
+/--
 Intrinsic static-mode legality checked by the suspended caller before an
 external request is exposed.
 -/
@@ -464,6 +560,78 @@ def evmOperands? :
     kind.evmOperands? (kind.args operands ++ rest) =
       some (rest, kind.canonicalOperands operands) := by
   cases kind <;> rfl
+
+/--
+Appending an opaque suffix below a complete CREATE-family operand prefix
+leaves the parsed operands unchanged and appends the suffix only to the
+remainder.
+-/
+theorem evmOperands?_append_of_some
+    (kind : CreateKind) {stack rest : InteractionStack}
+    {operands : CreateOperands} (hidden : InteractionStack)
+    (hOperands :
+      kind.evmOperands? stack = some (rest, operands)) :
+    kind.evmOperands? (stack ++ hidden) =
+      some (rest ++ hidden, operands) := by
+  cases kind with
+  | create =>
+      unfold evmOperands? at hOperands ⊢
+      cases hPop : stack.pop3 with
+      | none =>
+          simp [hPop] at hOperands
+      | some popped =>
+          rcases popped with
+            ⟨parsedRest, value, inputOffset, inputSize⟩
+          have hAppend :
+              (stack ++ hidden).pop3 =
+                some
+                  (parsedRest ++ hidden, value, inputOffset, inputSize) := by
+            cases stack with
+            | nil => simp [EvmYul.Stack.pop3] at hPop
+            | cons a stack =>
+                cases stack with
+                | nil => simp [EvmYul.Stack.pop3] at hPop
+                | cons b stack =>
+                    cases stack with
+                    | nil => simp [EvmYul.Stack.pop3] at hPop
+                    | cons c tail =>
+                        simp [EvmYul.Stack.pop3] at hPop ⊢
+                        rcases hPop with ⟨rfl, rfl, rfl, rfl⟩
+                        simp
+          simp [hPop] at hOperands
+          rcases hOperands with ⟨rfl, rfl⟩
+          simp [hAppend]
+  | create2 =>
+      unfold evmOperands? at hOperands ⊢
+      cases hPop : stack.pop4 with
+      | none =>
+          simp [hPop] at hOperands
+      | some popped =>
+          rcases popped with
+            ⟨parsedRest, value, inputOffset, inputSize, salt⟩
+          have hAppend :
+              (stack ++ hidden).pop4 =
+                some
+                  (parsedRest ++ hidden, value, inputOffset, inputSize,
+                    salt) := by
+            cases stack with
+            | nil => simp [EvmYul.Stack.pop4] at hPop
+            | cons a stack =>
+                cases stack with
+                | nil => simp [EvmYul.Stack.pop4] at hPop
+                | cons b stack =>
+                    cases stack with
+                    | nil => simp [EvmYul.Stack.pop4] at hPop
+                    | cons c stack =>
+                        cases stack with
+                        | nil => simp [EvmYul.Stack.pop4] at hPop
+                        | cons d tail =>
+                            simp [EvmYul.Stack.pop4] at hPop ⊢
+                            rcases hPop with ⟨rfl, rfl, rfl, rfl, rfl⟩
+                            simp
+          simp [hPop] at hOperands
+          rcases hOperands with ⟨rfl, rfl⟩
+          simp [hAppend]
 
 end CreateKind
 

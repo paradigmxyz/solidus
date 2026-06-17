@@ -97,6 +97,15 @@ for theorem in \
   fi
 done
 
+if ! rg -Fq \
+    '#check EvmCompiler.Structured.InteractionPreservation.Code.openRun_toCfg' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing Structured straight-line open preservation.' \
+    >&2
+  failed=1
+fi
+
 report_matches \
   'Open-effect proofs must not restore context bisimulation or per-pass equivalence wrappers:' \
   'ExternalContext\.Rel|OpenEffectEquiv' \
@@ -844,6 +853,8 @@ report_matches \
   EvmCompiler/Assembly/InteractionSemantics.lean \
   EvmCompiler/Assembly/InteractionPreservation.lean \
   EvmCompiler/Assembly/InteractionBytecode.lean \
+  EvmCompiler/Structured/InteractionSemantics.lean \
+  EvmCompiler/Structured/InteractionPreservation.lean \
   EvmCompiler/Locals/Allocation.lean \
   EvmCompiler/Locals/EffectSemantics.lean \
   EvmCompiler/Functions/AllocationObserverRelation.lean \
