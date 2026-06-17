@@ -1056,6 +1056,56 @@ mutual
         CaseList.SourceOwned rest
 end
 
+namespace CaseList
+
+theorem sourceOwned_of_mem
+    {cases : List (Word × Block)}
+    {value : Word} {body : Block}
+    (hOwned : SourceOwned cases)
+    (hMem : (value, body) ∈ cases) :
+    Block.SourceOwned body := by
+  induction cases with
+  | nil => simp at hMem
+  | cons head rest ih =>
+      rcases head with ⟨headValue, headBody⟩
+      rcases hOwned with ⟨hHead, hRest⟩
+      simp only [List.mem_cons, Prod.mk.injEq] at hMem
+      rcases hMem with hEq | hMem
+      · rcases hEq with ⟨rfl, rfl⟩
+        exact hHead
+      · exact ih hRest hMem
+
+end CaseList
+
+namespace Switch
+
+theorem case_sourceOwned_of_mem
+    {scrutinee : Expr 1}
+    {cases : List (Word × Block)}
+    {defaultBody : Option Block}
+    {value : Word} {body : Block}
+    (hOwned : Stmt.SourceOwned (.switch scrutinee cases defaultBody))
+    (hMem : (value, body) ∈ cases) :
+    Block.SourceOwned body := by
+  cases defaultBody with
+  | none =>
+      exact CaseList.sourceOwned_of_mem hOwned.2.1 hMem
+  | some default =>
+      exact CaseList.sourceOwned_of_mem hOwned.2.1 hMem
+
+theorem default_sourceOwned_of_eq
+    {scrutinee : Expr 1}
+    {cases : List (Word × Block)}
+    {defaultBody : Option Block}
+    {body : Block}
+    (hOwned : Stmt.SourceOwned (.switch scrutinee cases defaultBody))
+    (hDefault : defaultBody = some body) :
+    Block.SourceOwned body := by
+  subst defaultBody
+  exact hOwned.2.2
+
+end Switch
+
 def Program.SourceOwned (program : Program) : Prop :=
   program.procs = [] ∧ Block.SourceOwned program.body
 

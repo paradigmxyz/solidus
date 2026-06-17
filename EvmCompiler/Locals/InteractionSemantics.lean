@@ -219,6 +219,27 @@ mutual
     | some body => Block.OpenSupported body
 end
 
+namespace CaseList
+
+theorem openSupported_of_mem
+    {cases : List (Word × Locals.Block)}
+    {value : Word} {body : Locals.Block}
+    (hSupported : OpenSupported cases)
+    (hMem : (value, body) ∈ cases) :
+    Block.OpenSupported body := by
+  induction cases with
+  | nil => simp at hMem
+  | cons head rest ih =>
+      rcases head with ⟨headValue, headBody⟩
+      rcases hSupported with ⟨hHead, hRest⟩
+      simp only [List.mem_cons, Prod.mk.injEq] at hMem
+      rcases hMem with hEq | hMem
+      · rcases hEq with ⟨rfl, rfl⟩
+        exact hHead
+      · exact ih hRest hMem
+
+end CaseList
+
 def primitiveSemantics :
     Locals.Source.Effectful.Control.PrimitiveSemantics
       (Simulation.Interaction EVMException) State where

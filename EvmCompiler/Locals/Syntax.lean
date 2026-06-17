@@ -290,6 +290,28 @@ theorem scoped_outEnv_nodup {env : List Name} {block : Block}
 
 end Block
 
+namespace Scope.CaseList
+
+theorem scoped_of_mem
+    {env : List Name}
+    {cases : List (Word × Block)}
+    {value : Word} {body : Block}
+    (hScoped : Scope.CaseList.Scoped env cases)
+    (hMem : (value, body) ∈ cases) :
+    Scope.Block.Scoped env body := by
+  induction cases with
+  | nil => simp at hMem
+  | cons head rest ih =>
+      rcases head with ⟨headValue, headBody⟩
+      rcases hScoped with ⟨hHead, hRest⟩
+      simp only [List.mem_cons, Prod.mk.injEq] at hMem
+      rcases hMem with hEq | hMem
+      · rcases hEq with ⟨rfl, rfl⟩
+        exact hHead
+      · exact ih hRest hMem
+
+end Scope.CaseList
+
 namespace Program
 
 def Scoped (program : Program) : Prop :=

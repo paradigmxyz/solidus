@@ -292,6 +292,65 @@ mutual
         some (some lowerBody)
 end
 
+namespace CaseList
+
+theorem compile_cons_components
+    {ctx : Ctx} {value : Word} {body : Block}
+    {rest : List (Word × Block)}
+    {compiled : List (Word × Expressions.Block)}
+    (hCompile :
+      compile ctx ((value, body) :: rest) = some compiled) :
+    ∃ bodyCode bodyCtx lowerBody lowerRest,
+      Block.compileOpen ctx body = some (bodyCode, bodyCtx) ∧
+      finishScoped ctx bodyCtx bodyCode = some lowerBody ∧
+      compile ctx rest = some lowerRest ∧
+      compiled = (value, lowerBody) :: lowerRest := by
+  cases hBody : Block.compileOpen ctx body with
+  | none =>
+      simp [compile, hBody] at hCompile
+  | some bodyResult =>
+      rcases bodyResult with ⟨bodyCode, bodyCtx⟩
+      cases hFinish : finishScoped ctx bodyCtx bodyCode with
+      | none =>
+          simp [compile, hBody, hFinish] at hCompile
+      | some lowerBody =>
+          cases hRest : compile ctx rest with
+          | none =>
+              simp [compile, hBody, hFinish, hRest] at hCompile
+          | some lowerRest =>
+              simp [compile, hBody, hFinish, hRest] at hCompile
+              subst compiled
+              exact
+                ⟨bodyCode, bodyCtx, lowerBody, lowerRest,
+                  rfl, hFinish, rfl, rfl⟩
+
+end CaseList
+
+namespace Default
+
+theorem compile_some_components
+    {ctx : Ctx} {body : Block}
+    {compiled : Option Expressions.Block}
+    (hCompile : compile ctx (some body) = some compiled) :
+    ∃ bodyCode bodyCtx lowerBody,
+      Block.compileOpen ctx body = some (bodyCode, bodyCtx) ∧
+      finishScoped ctx bodyCtx bodyCode = some lowerBody ∧
+      compiled = some lowerBody := by
+  cases hBody : Block.compileOpen ctx body with
+  | none =>
+      simp [compile, hBody] at hCompile
+  | some bodyResult =>
+      rcases bodyResult with ⟨bodyCode, bodyCtx⟩
+      cases hFinish : finishScoped ctx bodyCtx bodyCode with
+      | none =>
+          simp [compile, hBody, hFinish] at hCompile
+      | some lowerBody =>
+          simp [compile, hBody, hFinish] at hCompile
+          subst compiled
+          exact ⟨bodyCode, bodyCtx, lowerBody, rfl, hFinish, rfl⟩
+
+end Default
+
 namespace Stmt
 
 /--

@@ -31478,3 +31478,14 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   build, full verification root, architecture dependency check, touched-file
   hole scan, axiom audit, and `git diff --check` passed; compound theorems use
   only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 15:48:48 PDT - compaction-resume - resumed the open-world
+  CALL/CREATE proof at the final recursive Locals owner theorem; current task is
+  to shrink its mutual elaboration while preserving the checked horizontal API.
+- 2026-06-17 15:58:03 PDT - proof/locals-recursive-owner - closed the complete
+  source-owned Locals statement/block family with one syntax-sized owner over
+  ordinary compiler output, then exposed callback-free statement and block
+  preservation theorems for the adjacent Functions boundary.
+- 2026-06-17 15:58:03 PDT - validation/locals-recursive-owner - focused Locals
+  build, 1301-job verification root, architecture dependency check, touched
+  hole scan, axiom audit, and `git diff --check` passed; public owner theorems
+  use only `[propext, Classical.choice, Quot.sound]`.

@@ -841,7 +841,7 @@ Exit: the shared core builds with no compiler layer changed.
     - [x] Prove bounded compound capability constructors for lexical blocks,
       conditionals, source-selected switches, and full loops; each computes its
       compiler slack internally from adjacent child capabilities.
-    - [ ] Close the source-owned recursive whole-statement/block owner and
+    - [x] Close the source-owned recursive whole-statement/block owner and
       remove recursive callback premises from the compiler-facing loop theorem.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
@@ -886,7 +886,7 @@ Exit: every layer exposes one canonical open computation.
   - [x] Recursive compiler-owned Locals expression composition.
   - [x] Transparent whole-program Expressions-to-Structured open
     preservation, including loops and internal calls.
-  - [ ] Recursive compiler-owned source-Locals statement and control
+  - [x] Recursive compiler-owned source-Locals statement and control
     composition.
     - [x] Source assignment constructor through the ordinary compiler stack
       protocol and canonical Expressions statement semantics.

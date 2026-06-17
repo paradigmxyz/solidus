@@ -2513,6 +2513,123 @@ theorem if_of_compile
           sourceFuel (targetFuel - 2) hPolicy hCtx hAfter
         omega
 
+theorem selected_switch_bound_of_compile
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx : Locals.Ctx)
+    (cases : List (Word × Locals.Block))
+    (defaultBody : Option Locals.Block)
+    (compiledCases : List (Word × Expressions.Block))
+    (compiledDefault : Option Expressions.Block)
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (hCasesCompile :
+      Locals.CaseList.compile targetCtx cases = some compiledCases)
+    (hDefaultCompile :
+      Locals.Default.compile targetCtx defaultBody = some compiledDefault)
+    (hCase :
+      ∀ {value body}, (value, body) ∈ cases →
+        ∀ {bodyCode : List Expressions.Stmt} {bodyCtx : Locals.Ctx},
+          Locals.Block.compileOpen targetCtx body =
+              some (bodyCode, bodyCtx) →
+            ∃ bodyCost,
+              BlockForwardBound policy sourceProgram targetProgram
+                targetCtx bodyCtx body bodyCode suffix returns bodyCost)
+    (hDefault :
+      ∀ {body}, defaultBody = some body →
+        ∀ {bodyCode : List Expressions.Stmt} {bodyCtx : Locals.Ctx},
+          Locals.Block.compileOpen targetCtx body =
+              some (bodyCode, bodyCtx) →
+            ∃ bodyCost,
+              BlockForwardBound policy sourceProgram targetProgram
+                targetCtx bodyCtx body bodyCode suffix returns bodyCost) :
+    ∃ branchCost,
+      ∀ {selected : Locals.Block}
+        {selectedTarget : Expressions.Block}
+        {bodyCode : List Expressions.Stmt}
+        {bodyCtx : Locals.Ctx}
+        (value : Word),
+        Locals.Source.Switch.select value cases defaultBody =
+            some selected →
+        Locals.Block.compileOpen targetCtx selected =
+            some (bodyCode, bodyCtx) →
+        Locals.finishScoped targetCtx bodyCtx bodyCode =
+            some selectedTarget →
+          ∃ bodyCost,
+            bodyCode.length + 3 ≤ branchCost ∧
+            bodyCost + 1 ≤ branchCost ∧
+            BlockForwardBound policy sourceProgram targetProgram
+              targetCtx bodyCtx selected bodyCode suffix returns bodyCost := by
+  induction cases generalizing compiledCases with
+  | nil =>
+      simp [Locals.CaseList.compile] at hCasesCompile
+      subst compiledCases
+      cases defaultBody with
+      | none =>
+          refine ⟨0, ?_⟩
+          intro selected selectedTarget bodyCode bodyCtx value
+            hSelect hBodyCompile hFinish
+          simp [Locals.Source.Switch.select] at hSelect
+      | some default =>
+          obtain ⟨defaultCode, defaultCtx, lowerDefault,
+            hDefaultBody, hDefaultFinish, hCompiledDefault⟩ :=
+            Locals.Default.compile_some_components hDefaultCompile
+          obtain ⟨defaultCost, hDefaultBound⟩ :=
+            hDefault rfl hDefaultBody
+          let branchCost :=
+            Nat.max (defaultCode.length + 3) (defaultCost + 1)
+          refine ⟨branchCost, ?_⟩
+          intro selected selectedTarget bodyCode bodyCtx value
+            hSelect hBodyCompile hFinish
+          simp [Locals.Source.Switch.select] at hSelect
+          subst selected
+          rw [hDefaultBody] at hBodyCompile
+          rcases hBodyCompile with ⟨rfl, rfl⟩
+          refine ⟨defaultCost, ?_, ?_, hDefaultBound⟩
+          · exact Nat.le_max_left _ _
+          · exact Nat.le_max_right _ _
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, caseBody⟩
+      obtain ⟨caseCode, caseCtx, lowerCase, lowerRest,
+        hCaseBody, hCaseFinish, hRestCompile, hCompiledCases⟩ :=
+        Locals.CaseList.compile_cons_components hCasesCompile
+      obtain ⟨caseCost, hCaseBound⟩ :=
+        hCase (value := caseValue) (body := caseBody)
+          (by simp) hCaseBody
+      obtain ⟨restCost, hRestBound⟩ :=
+        ih lowerRest hRestCompile
+          (fun {value body} hMem =>
+            hCase (value := value) (body := body) (by simp [hMem]))
+      let caseBound :=
+        Nat.max (caseCode.length + 3) (caseCost + 1)
+      let branchCost := Nat.max caseBound restCost
+      refine ⟨branchCost, ?_⟩
+      intro selected selectedTarget bodyCode bodyCtx value
+        hSelect hBodyCompile hFinish
+      by_cases hMatch : caseValue = value
+      · simp [Locals.Source.Switch.select, hMatch] at hSelect
+        subst selected
+        rw [hCaseBody] at hBodyCompile
+        rcases hBodyCompile with ⟨rfl, rfl⟩
+        refine ⟨caseCost, ?_, ?_, hCaseBound⟩
+        · have hLocal : caseCode.length + 3 ≤ caseBound :=
+            Nat.le_max_left _ _
+          have hOuter : caseBound ≤ branchCost := Nat.le_max_left _ _
+          omega
+        · have hLocal : caseCost + 1 ≤ caseBound :=
+            Nat.le_max_right _ _
+          have hOuter : caseBound ≤ branchCost := Nat.le_max_left _ _
+          omega
+      · simp [Locals.Source.Switch.select, hMatch] at hSelect
+        obtain ⟨bodyCost, hCodeCost, hBodyCost, hBound⟩ :=
+          hRestBound value hSelect hBodyCompile hFinish
+        refine ⟨bodyCost, ?_, ?_, hBound⟩
+        · have hOuter : restCost ≤ branchCost := Nat.le_max_right _ _
+          omega
+        · have hOuter : restCost ≤ branchCost := Nat.le_max_right _ _
+          omega
+
 theorem switch_of_compile
     (policy : Stmt.ControlPolicy)
     (sourceProgram : Locals.Program)
@@ -2817,6 +2934,453 @@ theorem cons
       hTail sourceMidCtx sourceMid targetMid sourceFuel targetFuel
         hMidPolicy hMidCtx hMidState hBound
   · exact hFuel
+
+structure VerifiedStmt
+    (canLeave : Bool)
+    (stmt : Locals.Stmt) : Prop where
+  forward : ∀ (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (code : List Expressions.Stmt)
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest),
+    (∀ scope, policy.leave scope) →
+    targetCtx.layout.Nodup →
+    (canLeave = true → returns ≠ []) →
+    Locals.Source.Stmt.SourceOwned stmt →
+    Scope.Stmt.Scoped targetCtx.layout stmt →
+    InteractionSemantics.Stmt.OpenSupported stmt →
+    Locals.Stmt.compile targetCtx stmt = some (code, finalCtx) →
+      ∃ cost,
+        StmtForwardBound policy sourceProgram targetProgram
+          targetCtx finalCtx stmt code suffix returns cost
+
+structure VerifiedBlock
+    (canLeave : Bool)
+    (block : Locals.Block) : Prop where
+  forward : ∀ (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (code : List Expressions.Stmt)
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest),
+    (∀ scope, policy.leave scope) →
+    targetCtx.layout.Nodup →
+    (canLeave = true → returns ≠ []) →
+    Locals.Source.Block.SourceOwned block →
+    Scope.Block.Scoped targetCtx.layout block →
+    InteractionSemantics.Block.OpenSupported block →
+    Locals.Block.compileOpen targetCtx block = some (code, finalCtx) →
+      ∃ cost,
+        BlockForwardBound policy sourceProgram targetProgram
+          targetCtx finalCtx block code suffix returns cost
+
+private theorem sizeOf_lt_list_of_mem
+    {α : Type} [SizeOf α] {x : α} {xs : List α}
+    (hMem : x ∈ xs) :
+    sizeOf x < sizeOf xs := by
+  induction xs with
+  | nil => simp at hMem
+  | cons head tail ih =>
+      cases hMem <;> rw [List.cons.sizeOf_spec]
+      · omega
+      · specialize ih ‹x ∈ tail›
+        omega
+
+inductive OwnerInput : Type where
+  | stmt (canBreak canContinue canLeave : Bool) (stmt : Locals.Stmt)
+      (hWF : Locals.Stmt.WF canBreak canContinue canLeave stmt)
+  | block (canBreak canContinue canLeave : Bool) (block : Locals.Block)
+      (hWF : Locals.Block.WF canBreak canContinue canLeave block)
+
+namespace OwnerInput
+
+noncomputable def size : OwnerInput → Nat
+  | .stmt _ _ _ sourceStmt _ => sizeOf sourceStmt
+  | .block _ _ _ sourceBlock _ => sizeOf sourceBlock
+
+def Verified : OwnerInput → Prop
+  | .stmt _ _ canLeave sourceStmt _ => VerifiedStmt canLeave sourceStmt
+  | .block _ _ canLeave sourceBlock _ => VerifiedBlock canLeave sourceBlock
+
+end OwnerInput
+
+theorem sourceOwned (input : OwnerInput) : input.Verified := by
+  cases input with
+  | stmt canBreak canContinue canLeave stmt hWF =>
+    simp only [OwnerInput.Verified]
+    constructor
+    cases hWF with
+    | expr =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns
+          hOwned hScoped hSupported hCompile
+        rcases hOwned with ⟨hResults, hExprOwned⟩
+        subst hResults
+        exact
+          ⟨2, expr_of_compile policy sourceProgram targetProgram
+            targetCtx finalCtx _ suffix returns hCompile
+            hScoped hSupported⟩
+    | exprs =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns
+          hOwned
+        simp [Locals.Source.Stmt.SourceOwned] at hOwned
+    | let_ =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns
+          hOwned hScoped hSupported hCompile
+        exact
+          ⟨2, let_of_compile policy sourceProgram targetProgram
+            targetCtx finalCtx _ suffix returns hCompile
+            hScoped.1 hScoped.2 hSupported⟩
+    | assign =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns
+          hOwned hScoped hSupported hCompile
+        exact
+          ⟨2, assign_of_compile policy sourceProgram targetProgram
+            targetCtx finalCtx _ suffix returns hCompile
+            hNodup hScoped.2 hSupported⟩
+    | assignTop =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns hOwned
+        simp [Locals.Source.Stmt.SourceOwned] at hOwned
+    | assignTopWithOffset =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns hOwned
+        simp [Locals.Source.Stmt.SourceOwned] at hOwned
+    | promoteName =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns hOwned
+        simp [Locals.Source.Stmt.SourceOwned] at hOwned
+    | cleanupTo =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns hOwned
+        simp [Locals.Source.Stmt.SourceOwned] at hOwned
+    | block hBody =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns
+          hOwned hScoped hSupported hCompile
+        apply block_of_compile policy sourceProgram targetProgram
+          targetCtx finalCtx _ suffix returns hOwned hCompile
+        intro bodyCode bodyCtx hBodyCompile
+        exact
+          VerifiedBlock.forward
+            (sourceOwned
+              (.block canBreak canContinue canLeave _ hBody))
+            policy sourceProgram targetProgram
+            targetCtx bodyCtx bodyCode suffix returns hLeave hNodup
+            hLeaveReturns hOwned hScoped hSupported hBodyCompile
+    | if_ hBody =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns
+          hOwned hScoped hSupported hCompile
+        apply if_of_compile policy sourceProgram targetProgram
+          targetCtx finalCtx _ _ suffix returns hOwned.2 hCompile
+          hScoped.1 hSupported.1
+        intro bodyCode bodyCtx hBodyCompile
+        exact
+          VerifiedBlock.forward
+            (sourceOwned
+              (.block canBreak canContinue canLeave _ hBody))
+            policy sourceProgram targetProgram
+            targetCtx bodyCtx bodyCode suffix returns hLeave hNodup
+            hLeaveReturns hOwned.2 hScoped.2 hSupported.2 hBodyCompile
+    | @switch canBreak canContinue canLeave
+        scrutinee cases defaultBody hCases hDefault =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns
+          hOwned hScoped hSupported hCompile
+        obtain ⟨scrutineeCode, compiledCases, compiledDefault,
+          hScrutineeCompile, hCasesCompile, hDefaultCompile,
+          hCode, hFinal⟩ :=
+          Locals.Stmt.compile_switch_components hCompile
+        obtain ⟨branchCost, hSelectedBound⟩ :=
+          selected_switch_bound_of_compile
+            policy sourceProgram targetProgram targetCtx _ _
+            compiledCases compiledDefault suffix returns
+            hCasesCompile hDefaultCompile
+            (fun {value body} hMem {bodyCode bodyCtx} hBodyCompile =>
+              VerifiedBlock.forward
+                (sourceOwned
+                  (.block canBreak canContinue canLeave body
+                    (hCases value body hMem)))
+                policy sourceProgram targetProgram targetCtx bodyCtx
+                bodyCode suffix returns hLeave hNodup hLeaveReturns
+                (Locals.Source.Switch.case_sourceOwned_of_mem
+                  hOwned hMem)
+                (Scope.CaseList.scoped_of_mem hScoped.2.1 hMem)
+                (InteractionSemantics.CaseList.openSupported_of_mem
+                  hSupported.2.1 hMem)
+                hBodyCompile)
+            (fun {body} hDefaultEq {bodyCode bodyCtx} hBodyCompile =>
+              VerifiedBlock.forward
+                (sourceOwned
+                  (.block canBreak canContinue canLeave body
+                    (hDefault body hDefaultEq)))
+                policy sourceProgram targetProgram targetCtx bodyCtx
+                bodyCode suffix returns hLeave hNodup hLeaveReturns
+                (Locals.Source.Switch.default_sourceOwned_of_eq
+                  hOwned hDefaultEq)
+                (by simpa [hDefaultEq] using hScoped.2.2)
+                (by simpa [hDefaultEq] using hSupported.2.2)
+                hBodyCompile)
+        refine
+          ⟨Nat.max branchCost 3,
+            switch_of_compile policy sourceProgram targetProgram
+              targetCtx finalCtx _ _ _ suffix returns branchCost
+              hCompile hScoped.1 hSupported.1 ?_ hSelectedBound⟩
+        · intro value selected hSelect
+          apply Locals.Source.Switch.property_of_select
+            (scrutinee := value) (cases := cases)
+            (defaultBody := defaultBody) (selected := selected)
+          · intro caseValue caseBody hMem
+            exact
+              Locals.Source.Switch.case_sourceOwned_of_mem
+                hOwned hMem
+          · intro default hDefaultEq
+            exact
+              Locals.Source.Switch.default_sourceOwned_of_eq
+                hOwned hDefaultEq
+          · exact hSelect
+    | for_ hInitWF hPostWF hBodyWF =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns
+          hOwned hScoped hSupported hCompile
+        apply for_of_compile policy sourceProgram targetProgram
+          targetCtx finalCtx _ _ _ _ suffix returns hLeave
+          hOwned.1 hOwned.2.2.1 hOwned.2.2.2 hCompile
+        · intro initCode initCtx hInitCompile
+          have hLayout :=
+            Locals.Block.compileOpen_layout_eq_outEnv_of_sourceOwned
+              hOwned.1 hInitCompile
+          simpa [hLayout] using hScoped.2.1
+        · exact hSupported.2.1
+        · intro initCode initCtx hInitCompile
+          exact
+            VerifiedBlock.forward
+              (sourceOwned (.block false false canLeave _ hInitWF))
+              Stmt.ControlPolicy.noLoop
+              sourceProgram targetProgram targetCtx.withoutLoopControl
+              initCtx initCode suffix returns (fun _ => trivial)
+              (by simpa [Locals.Ctx.withoutLoopControl] using hNodup)
+              hLeaveReturns hOwned.1
+              (by simpa [Locals.Ctx.withoutLoopControl] using hScoped.1)
+              hSupported.1 hInitCompile
+        · intro initCode initCtx postCode postCtx
+            hInitCompile hPostCompile
+          have hLayout :=
+            Locals.Block.compileOpen_layout_eq_outEnv_of_sourceOwned
+              hOwned.1 hInitCompile
+          have hLoopNodup : initCtx.layout.Nodup := by
+            rw [hLayout]
+            exact Locals.Block.scoped_outEnv_nodup hNodup hScoped.1
+          exact
+            VerifiedBlock.forward
+              (sourceOwned (.block false false canLeave _ hPostWF))
+              Stmt.ControlPolicy.noLoop
+              sourceProgram targetProgram initCtx.withoutLoopControl
+              postCtx postCode suffix returns (fun _ => trivial)
+              (by simpa [Locals.Ctx.withoutLoopControl] using hLoopNodup)
+              hLeaveReturns hOwned.2.2.1
+              (by
+                simpa [Locals.Ctx.withoutLoopControl, hLayout] using
+                  hScoped.2.2.1)
+              hSupported.2.2.1 hPostCompile
+        · intro initCode initCtx bodyCode bodyCtx
+            hInitCompile hBodyCompile
+          have hLayout :=
+            Locals.Block.compileOpen_layout_eq_outEnv_of_sourceOwned
+              hOwned.1 hInitCompile
+          have hLoopNodup : initCtx.layout.Nodup := by
+            rw [hLayout]
+            exact Locals.Block.scoped_outEnv_nodup hNodup hScoped.1
+          exact
+            VerifiedBlock.forward
+              (sourceOwned (.block true true canLeave _ hBodyWF))
+              (Stmt.ControlPolicy.loop initCtx.layout)
+              sourceProgram targetProgram
+              (initCtx.withLoopControl initCtx.layout.length)
+              bodyCtx bodyCode suffix returns (fun _ => trivial)
+              (by
+                simpa [Locals.Ctx.withLoopControl] using hLoopNodup)
+              hLeaveReturns hOwned.2.2.2
+              (by
+                simpa [Locals.Ctx.withLoopControl, hLayout] using
+                  hScoped.2.2.2)
+              hSupported.2.2.2 hBodyCompile
+    | brk hAllowed =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns
+          hOwned hScoped hSupported hCompile
+        exact
+          ⟨3, brk_of_compile policy sourceProgram targetProgram
+            targetCtx finalCtx suffix returns hCompile⟩
+    | cont hAllowed =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns
+          hOwned hScoped hSupported hCompile
+        exact
+          ⟨3, cont_of_compile policy sourceProgram targetProgram
+            targetCtx finalCtx suffix returns hCompile⟩
+    | leave hAllowed =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns
+          hOwned hScoped hSupported hCompile
+        exact
+          ⟨3, leave_of_compile policy sourceProgram targetProgram
+            targetCtx finalCtx suffix returns
+            (hLeaveReturns hAllowed) hCompile⟩
+    | call =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns hOwned
+        simp [Locals.Source.Stmt.SourceOwned] at hOwned
+    | terminal =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns
+          hOwned hScoped hSupported hCompile
+        exact
+          ⟨3, terminal_of_compile policy sourceProgram targetProgram
+            targetCtx finalCtx _ suffix returns hLeave hOwned hCompile⟩
+    | terminalArgs =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns
+          hOwned hScoped hSupported hCompile
+        exact
+          ⟨3, terminalArgs_of_compile policy sourceProgram targetProgram
+            targetCtx finalCtx _ _ suffix returns hLeave
+            hScoped hSupported hCompile⟩
+  | block canBreak canContinue canLeave block hWF =>
+    simp only [OwnerInput.Verified]
+    constructor
+    cases hWF with
+    | nil =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns
+          hOwned hScoped hSupported hCompile
+        simp [Locals.Block.compileOpen] at hCompile
+        rcases hCompile with ⟨rfl, rfl⟩
+        exact ⟨1, empty policy sourceProgram targetProgram
+          targetCtx suffix returns⟩
+    | cons hStmtWF hRestWF =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns
+          hOwned hScoped hSupported hCompile
+        obtain ⟨headCode, middleCtx, tailCode,
+          hHeadCompile, hTailCompile, hCode⟩ :=
+          Locals.Block.compileOpen_cons_components hCompile
+        have hMiddleLayout :=
+          Locals.Stmt.compile_layout_eq_outEnv_of_sourceOwned
+            hOwned.1 hHeadCompile
+        have hMiddleNodup : middleCtx.layout.Nodup := by
+          rw [hMiddleLayout]
+          exact Locals.Stmt.scoped_outEnv_nodup hNodup hScoped.1
+        obtain ⟨headCost, hHeadBound⟩ :=
+          VerifiedStmt.forward
+            (sourceOwned
+              (.stmt canBreak canContinue canLeave _ hStmtWF))
+            policy sourceProgram targetProgram
+            targetCtx middleCtx headCode suffix returns hLeave hNodup
+            hLeaveReturns hOwned.1 hScoped.1 hSupported.1 hHeadCompile
+        obtain ⟨tailCost, hTailBound⟩ :=
+          VerifiedBlock.forward
+            (sourceOwned
+              (.block canBreak canContinue canLeave _ hRestWF))
+            policy sourceProgram targetProgram
+            middleCtx finalCtx tailCode suffix returns hLeave
+            hMiddleNodup hLeaveReturns hOwned.2
+            (by rw [hMiddleLayout]; exact hScoped.2)
+            hSupported.2 hTailCompile
+        subst code
+        exact
+          ⟨Nat.max headCost (headCode.length + tailCost) + 1,
+            cons policy sourceProgram targetProgram targetCtx middleCtx
+              finalCtx _ _ headCode tailCode suffix returns
+              headCost tailCost hHeadBound hTailBound⟩
+termination_by input.size
+decreasing_by
+  all_goals try simp [OwnerInput.size]
+  all_goals subst_vars
+  all_goals try simp_wf
+  all_goals
+    first
+    | omega
+    | have hSize := sizeOf_lt_list_of_mem (by assumption)
+      simp only [Prod.mk.sizeOf_spec] at hSize
+      omega
+
+theorem sourceOwned_stmt
+    (stmt : Locals.Stmt)
+    {canBreak canContinue canLeave : Bool}
+    (hWF : Locals.Stmt.WF canBreak canContinue canLeave stmt) :
+    VerifiedStmt canLeave stmt :=
+  sourceOwned (.stmt canBreak canContinue canLeave stmt hWF)
+
+theorem sourceOwned_block
+    (block : Locals.Block)
+    {canBreak canContinue canLeave : Bool}
+    (hWF : Locals.Block.WF canBreak canContinue canLeave block) :
+    VerifiedBlock canLeave block :=
+  sourceOwned (.block canBreak canContinue canLeave block hWF)
+
+/-- Compiler-facing source-statement preservation. Recursive control evidence
+is discharged internally from the source `WF` derivation. -/
+theorem sourceOwned_stmt_of_compile
+    {canBreak canContinue canLeave : Bool}
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (stmt : Locals.Stmt)
+    (code : List Expressions.Stmt)
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (hLeave : ∀ scope, policy.leave scope)
+    (hNodup : targetCtx.layout.Nodup)
+    (hLeaveReturns : canLeave = true → returns ≠ [])
+    (hWF : Locals.Stmt.WF canBreak canContinue canLeave stmt)
+    (hOwned : Locals.Source.Stmt.SourceOwned stmt)
+    (hScoped : Scope.Stmt.Scoped targetCtx.layout stmt)
+    (hSupported : InteractionSemantics.Stmt.OpenSupported stmt)
+    (hCompile :
+      Locals.Stmt.compile targetCtx stmt = some (code, finalCtx)) :
+    ∃ cost,
+      StmtForwardBound policy sourceProgram targetProgram
+        targetCtx finalCtx stmt code suffix returns cost :=
+  (sourceOwned_stmt stmt hWF).forward
+    policy sourceProgram targetProgram targetCtx finalCtx code suffix returns
+    hLeave hNodup hLeaveReturns hOwned hScoped hSupported hCompile
+
+/-- Compiler-facing source-block preservation. The result has no branch,
+loop, or recursive-block callback premise. -/
+theorem sourceOwned_block_of_compile
+    {canBreak canContinue canLeave : Bool}
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (block : Locals.Block)
+    (code : List Expressions.Stmt)
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (hLeave : ∀ scope, policy.leave scope)
+    (hNodup : targetCtx.layout.Nodup)
+    (hLeaveReturns : canLeave = true → returns ≠ [])
+    (hWF : Locals.Block.WF canBreak canContinue canLeave block)
+    (hOwned : Locals.Source.Block.SourceOwned block)
+    (hScoped : Scope.Block.Scoped targetCtx.layout block)
+    (hSupported : InteractionSemantics.Block.OpenSupported block)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx block = some (code, finalCtx)) :
+    ∃ cost,
+      BlockForwardBound policy sourceProgram targetProgram
+        targetCtx finalCtx block code suffix returns cost :=
+  (sourceOwned_block block hWF).forward
+    policy sourceProgram targetProgram targetCtx finalCtx code suffix returns
+    hLeave hNodup hLeaveReturns hOwned hScoped hSupported hCompile
 
 end Recursive
 end InteractionPreservation
