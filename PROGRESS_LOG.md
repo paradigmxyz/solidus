@@ -30341,3 +30341,17 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   changed-file hole/axiom-marker scan, standalone axiom audit, and
   `git diff --check` passed. Both new bounded forward lemmas depend only on
   `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 17:08:24 PDT - proof/yul-expression-fuel - Added the pass-owned
+  `FunctionsObserverExpressionFuel` layer. It proves exact source-AST bounds
+  for empty/direct/spill-bound argument preparation and for literal, variable,
+  and compiler-selected primitive values, while reusing the ordinary
+  expression compiler and semantics.
+- 2026-06-16 17:08:24 PDT - architecture/yul-expression-fuel - Added canonical
+  least-fuel comparison lemmas to the expression owner so quantitative wrappers
+  compare equal generated preludes through Functions determinism instead of
+  unfolding proof-dependent constructor casts.
+- 2026-06-16 17:08:24 PDT - validation/yul-expression-fuel - Focused expression
+  build, full 1,268-job verification root, architecture guard including the new
+  module, changed-file forbidden-marker scan, standalone axiom audit, and
+  `git diff --check` passed. Audited public theorems depend only on `propext`,
+  `Classical.choice`, and `Quot.sound`.

@@ -204,6 +204,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverCall.lean \
   EvmCompiler/Yul/FunctionsObserverOutcome.lean \
   EvmCompiler/Yul/FunctionsObserverStatement.lean \
+  EvmCompiler/Yul/FunctionsObserverExpressionFuel.lean \
   EvmCompiler/Yul/FunctionsObserverForward.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive \

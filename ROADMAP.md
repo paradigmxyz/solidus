@@ -71,6 +71,8 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
     assignments, and `break`/`continue`/`leave`;
   - [x] lift prepared single-value declarations and assignments into the
     source-static/dynamic bounded forward interface;
+  - [x] bound direct and spill-bound expression argument preparation,
+    including compiler-selected primitive calls, by exact source-AST cost;
   - [ ] prove every remaining compiler construct respects the program static
     measure;
   - [ ] cover remaining leaf/compound statements, loops, and terminal outcomes;

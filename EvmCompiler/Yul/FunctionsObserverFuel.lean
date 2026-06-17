@@ -140,6 +140,20 @@ theorem executionBudget_mono
     executionBudget staticCost left ≤ executionBudget staticCost right := by
   exact Nat.mul_le_mul_left _ (targetBudget_mono hLe)
 
+theorem executionBudget_static_mono
+    {left right : Nat} (hLe : left ≤ right) (sourceFuel : Nat) :
+    executionBudget left sourceFuel ≤
+      executionBudget right sourceFuel := by
+  exact Nat.mul_le_mul_right (targetBudget sourceFuel) (by omega)
+
+theorem executionBudget_add_static
+    (left right sourceFuel : Nat) :
+    executionBudget left sourceFuel +
+        executionBudget right sourceFuel =
+      executionBudget (left + right + 1) sourceFuel := by
+  simp [executionBudget, Nat.add_mul, two_mul, Nat.add_assoc,
+    Nat.add_comm, Nat.add_left_comm]
+
 theorem executionBudget_child_add_eight_le_of_lt
     (staticCost : Nat) {child parent : Nat}
     (hLt : child < parent) :
@@ -149,6 +163,17 @@ theorem executionBudget_child_add_eight_le_of_lt
   have hScaled := Nat.mul_le_mul_left (staticCost + 1) hMain
   simp only [executionBudget, Nat.mul_add] at hScaled ⊢
   nlinarith
+
+theorem executionBudget_static_children_add_eight_le_of_lt
+    (leftStatic rightStatic : Nat) {child parent : Nat}
+    (hLt : child < parent) :
+    executionBudget leftStatic parent +
+        executionBudget rightStatic child + 8 ≤
+      executionBudget (leftStatic + rightStatic + 1) parent := by
+  have hChild :=
+    executionBudget_child_add_eight_le_of_lt rightStatic hLt
+  rw [← executionBudget_add_static leftStatic rightStatic parent]
+  omega
 
 theorem executionBudget_two_children_add_eight_le_of_lt
     (staticCost : Nat) {left right parent : Nat}
@@ -216,6 +241,25 @@ def PreparedExpression.Bounded
         contract transcript codeRel program pre lower fresh
         source target ctx values) : Prop :=
   result.requiredFuel ≤ executionBudget staticCost sourceFuel
+
+def PreparedArgs.Bounded
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {pre : List Functions.Stmt}
+    {lower : List (Locals.Expr 1)}
+    {fresh : Fresh.State}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {values : List Assembly.Word}
+    (staticCost sourceFuel : Nat)
+    (result :
+      FunctionsObserverExpression.PreparedArgs
+        contract transcript codeRel program pre lower fresh
+        source target ctx values) : Prop :=
+  result.prepared.requiredFuel ≤ executionBudget staticCost sourceFuel
 
 def ScopedOpenResult.Bounded
     {transcript : Assembly.ResourceTrace}

@@ -1696,6 +1696,50 @@ theorem requiredFuel_le_of_run
   classical
   simpa [requiredFuel] using Nat.find_min' result.run hRun
 
+/--
+Least sufficient fuel is independent of proof and relation packaging around the
+same generated statement list and target input.
+-/
+theorem requiredFuel_le_of_code_eq
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {leftPre rightPre : List Functions.Stmt}
+    {leftFresh rightFresh : Fresh.State}
+    {leftSource rightSource :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (left :
+      Prepared contract transcript codeRel program leftPre leftFresh
+        leftSource target ctx)
+    (right :
+      Prepared contract transcript codeRel program rightPre rightFresh
+        rightSource target ctx)
+    (hCode : leftPre = rightPre) :
+    left.requiredFuel ≤ right.requiredFuel := by
+  have hLeftRun := run_requiredFuel left
+  have hRightRun := run_requiredFuel right
+  have hRightRun' :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx right.requiredFuel { stmts := leftPre } target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular right.finalTarget,
+            right.finalCtx) := by
+    simpa [hCode] using hRightRun
+  obtain ⟨hFinalTarget, hFinalCtx⟩ :=
+    Functions.Source.Effectful.Block.runOpen_regular_unique
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hLeftRun hRightRun'
+  rw [← hFinalTarget, ← hFinalCtx] at hRightRun'
+  exact requiredFuel_le_of_run left hRightRun'
+
 def empty
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
@@ -2186,6 +2230,93 @@ theorem requiredFuel_le_of_run
     result.requiredFuel ≤ fuel := by
   classical
   simpa [requiredFuel] using Nat.find_min' result.run hRun
+
+/--
+A prepared value cannot require more prelude fuel than a prepared artifact for
+the same generated statement list and target input.
+-/
+theorem requiredFuel_le_of_prepared_code_eq
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {valuePre preparedPre : List Functions.Stmt}
+    {valueFresh preparedFresh : Fresh.State}
+    {valueSource preparedSource :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {lower : Locals.Expr 1}
+    {value : Word}
+    (result :
+      PreparedValue contract transcript codeRel program valuePre lower
+        valueFresh valueSource target ctx value)
+    (prepared :
+      Prepared contract transcript codeRel program preparedPre
+        preparedFresh preparedSource target ctx)
+    (hCode : valuePre = preparedPre) :
+    result.requiredFuel ≤ prepared.requiredFuel := by
+  have hResultRun := run_requiredFuel result
+  have hPreparedRun := Prepared.run_requiredFuel prepared
+  have hPreparedRun' :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx prepared.requiredFuel
+          { stmts := valuePre } target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular
+            prepared.finalTarget,
+            prepared.finalCtx) := by
+    simpa [hCode] using hPreparedRun
+  obtain ⟨hFinalTarget, hFinalCtx⟩ :=
+    Functions.Source.Effectful.Block.runOpen_regular_unique
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hResultRun hPreparedRun'
+  rw [← hFinalTarget, ← hFinalCtx] at hPreparedRun'
+  exact requiredFuel_le_of_run result hPreparedRun'
+
+theorem requiredFuel_nil_le
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {fresh : Fresh.State}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {lower : Locals.Expr 1}
+    {value : Word}
+    (result :
+      PreparedValue contract transcript codeRel program [] lower
+        fresh source target ctx value) :
+    result.requiredFuel ≤ 1 := by
+  have hResultRun := run_requiredFuel result
+  have hEmpty :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx 1 { stmts := [] } target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular target, ctx) := by
+    exact
+      Functions.Source.Effectful.Block.runOpen_nil
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program ctx 0 target
+  obtain ⟨hFinalTarget, hFinalCtx⟩ :=
+    Functions.Source.Effectful.Block.runOpen_regular_unique
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hResultRun hEmpty
+  apply requiredFuel_le_of_run result
+  simpa only [hFinalTarget, hFinalCtx] using hEmpty
 
 def evaluated
     {contract : MemoryContract.Contract}

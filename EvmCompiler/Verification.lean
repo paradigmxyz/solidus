@@ -65,6 +65,7 @@ import EvmCompiler.Yul.FunctionsObserverCall
 import EvmCompiler.Yul.FunctionsObserverCallBackward
 import EvmCompiler.Yul.FunctionsObserverCallFuel
 import EvmCompiler.Yul.FunctionsObserverCompoundBackward
+import EvmCompiler.Yul.FunctionsObserverExpressionFuel
 import EvmCompiler.Yul.FunctionsObserverFuel
 import EvmCompiler.Yul.FunctionsObserverForward
 import EvmCompiler.Yul.FunctionsObserverForwardFuel
@@ -311,6 +312,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.requiredFuel_bind_le
 #check EvmCompiler.Yul.FunctionsObserverFuel.targetBudget
 #check EvmCompiler.Yul.FunctionsObserverFuel.executionBudget
+#check EvmCompiler.Yul.FunctionsObserverFuel.executionBudget_static_mono
+#check EvmCompiler.Yul.FunctionsObserverFuel.executionBudget_add_static
+#check EvmCompiler.Yul.FunctionsObserverFuel.executionBudget_static_children_add_eight_le_of_lt
 #check EvmCompiler.Yul.FunctionsObserverFuel.staticCost_le_executionBudget
 #check EvmCompiler.Yul.FunctionsObserverFuel.three_children_add_eight_le_of_lt
 #check EvmCompiler.Yul.FunctionsObserverStaticCost.program
@@ -320,6 +324,16 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverStatement.InitializedValue.run_at_requiredFuel_add_two
 #check EvmCompiler.Yul.FunctionsObserverStatement.AssignedValue.run_at_requiredFuel_add_two
 #check EvmCompiler.Yul.FunctionsObserverStatement.InitNames.run_at_length
+#check EvmCompiler.Yul.FunctionsObserverExpression.Prepared.requiredFuel_le_of_code_eq
+#check EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.requiredFuel_le_of_prepared_code_eq
+#check EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.requiredFuel_nil_le
+#check EvmCompiler.Yul.FunctionsObserverExpressionFuel.PreparedArgs.empty_bounded
+#check EvmCompiler.Yul.FunctionsObserverExpressionFuel.PreparedArgs.direct_bounded
+#check EvmCompiler.Yul.FunctionsObserverExpressionFuel.PreparedArgs.bound_bounded
+#check EvmCompiler.Yul.FunctionsObserverExpressionFuel.ScopedPreparedArgs.ofUncheckedLowering_bounded
+#check EvmCompiler.Yul.FunctionsObserverExpressionFuel.ScopedPreparedValue.ofLiteral_bounded
+#check EvmCompiler.Yul.FunctionsObserverExpressionFuel.ScopedPreparedValue.ofVariable_bounded
+#check EvmCompiler.Yul.FunctionsObserverExpressionFuel.ScopedPreparedValue.ofPrimitive_bounded
 #check EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.requiredFuel
 #check EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBody_bounded
 #check EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBody_sourceBounded
