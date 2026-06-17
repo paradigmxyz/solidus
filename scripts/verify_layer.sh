@@ -99,4 +99,5 @@ if [[ "$layer" == "proofs" || "$layer" == "all" ]]; then
   lake env lean proof_artifacts/public_artifact_simulation_smoke.lean
   lake env lean proof_artifacts/resource_observer_oracle_smoke.lean
   lake env lean proof_artifacts/memory_contract_smoke.lean
+  lake env lean proof_artifacts/open_effects_smoke.lean
 fi

@@ -1,5 +1,40 @@
 # Full Resource-Observer Proof Roadmap
 
+External CALL/CREATE support is planned separately in
+`EXTERNAL_EFFECTS_ROADMAP.md`. That migration does not turn CALL/CREATE into
+another concrete replay transcript. It introduces one ordered open interaction
+tree over one code-erased source/target world. External nodes expose the same
+pre-world and request and quantify over every exact shared response and
+post-world, while resource nodes are resolved from a concrete EVM run only for
+`gas()`/`msize()`. The migration preserves adjacent pass ownership and short
+end-to-end composition. Concrete linked-world adequacy is not a compiler
+completion requirement.
+
+The shared `OpenWorld`/`Interaction` core and the Assembly-owned primitive
+semantics for `gas`, `msize`, `CALL`, `CALLCODE`, `DELEGATECALL`, `STATICCALL`,
+`CREATE`, and `CREATE2` are now checked. Recursive Assembly/bytecode control
+and all higher adjacent preservation boundaries remain active work.
+
+## Relation To External Effects
+
+The checked theorem in this file is intentionally asymmetric because EVM
+resource values have no intrinsic Yul source meaning.
+
+The external-effects theorem has a different public shape:
+
+- no terminal target run or external-event trace is a premise;
+- source and target expose related open computations;
+- every exact shared CALL/CREATE response and post-world has a related
+  continuation;
+- interpreting those computations with any one shared external strategy yields
+  equivalent behavior sets;
+- the generic strategy may return arbitrary world mutations, including for
+  static requests; concrete EVM legality is proved only by a strategy adapter;
+- the active Yul program is immutable evaluator input, while arbitrary
+  external accounts contain only observable byte images and world state;
+- target-to-source reasoning is limited to observable-node reflection and does
+  not restore generic pass-by-pass backward adequacy.
+
 ## Public Spine
 
 Accepted Yul

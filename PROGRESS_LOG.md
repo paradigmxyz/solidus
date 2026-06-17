@@ -30563,3 +30563,182 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   standalone axiom smoke, and `git diff --check` passed. New public theorems
   depend only on `propext`, `Classical.choice`, and `Quot.sound`; the obsolete
   one-level `runtimeProgram` budget was removed.
+- 2026-06-16 22:32:43 PDT - compaction-resume - Resuming the external-effects
+  architecture design after auditing the current horizontal semantics and the
+  retired open CALL/CREATE corridor. The active design direction is a shared,
+  transcript-driven external primitive protocol with adjacent pass-owned
+  preservation theorems, retaining the existing control interpreters and
+  keeping the public end-to-end theorem a short composition.
+- 2026-06-16 22:32:43 PDT - design/external-effects-roadmap - Added
+  `EXTERNAL_EFFECTS_ROADMAP.md`, covering one ordered resource/external trace,
+  canonical primitive-handler specializations at every layer, adjacent
+  forward-preservation interfaces, scratch-spill obligations, target exact
+  replay, contextual composition, and a separate concrete EvmYul world
+  adequacy proof. The plan explicitly forbids trace-specific replay
+  certificates and response functions at the public boundary.
+- 2026-06-16 22:32:43 PDT - audit/external-history - Recorded reusable request,
+  response, continuation, and spill-headroom concepts from the retired
+  `28a27919a` and `24a50cf11` proof lines without restoring their vertical
+  control interpreters or compiler corridors.
+- 2026-06-16 22:32:43 PDT - theorem-boundary/external-observations - Corrected
+  the external-effects roadmap after auditing current log proofs. `LOG0`
+  through `LOG4` are already preserved as ordered substate effects and do not
+  belong in the replay trace. Requested CALL gas remains request identity, but
+  EIP-150 forwarding, stipend, and returned gas are target-internal because
+  Yul has no corresponding gas-accounting model; only explicit `gas()`
+  observations cross the compiler boundary.
+- 2026-06-16 22:32:43 PDT - theorem-boundary/external-gas-stability - Recovered
+  the semantic content of the retired
+  `OpenCallResponsesCommittedSafeEquivalent` and
+  `OpenCallResponseTracksReferenceOrAllGasOOG` interfaces as an
+  `EventuallyGasStable` external-context capability. For a fixed gas-erased
+  request and world, sufficiently large child gas yields one stable observable
+  response; smaller budgets may instead exhaust child gas without committed
+  child effects. Returned gas and caller post-call sufficiency remain separate
+  target-internal concerns.
+- 2026-06-16 22:32:43 PDT - theorem-boundary/child-state-erasure - Removed the
+  unnecessary `NoCommittedChildEffects` field from `EventuallyGasStable`.
+  Compiler correctness compares the caller-visible response and committed
+  post-call world; transient child states and rolled-back child mutations are
+  internal to concrete EVM execution.
+- 2026-06-16 22:32:43 PDT - theorem-boundary/effect-interspersal - Made the
+  cursor-indexed state invariant explicit in the external-effects roadmap.
+  Logs leave the effect cursor unchanged while preserving the ordered substate;
+  calls and creates advance the cursor only from related pre-states and restore
+  the full relation after response. This proves caller-level log/external-event
+  ordering without adding logs to the trace. Internal callee ordering remains a
+  recursive closed-world adequacy obligation.
+- 2026-06-16 22:58:13 PDT - compaction-resume - Resumed the external-world
+  architecture audit, comparing the pre-pivot concrete `World.lean` CALL proof
+  with the later six-opcode open request/response protocol.
+- 2026-06-16 22:58:13 PDT - theorem-boundary/external-context - Replaced the
+  proposed response-carried polymorphic world mutation with a context-owned
+  transition relation over pre-world, request, observable response, and
+  post-world. The stable context relation now names forward matching separately
+  from the one-event target-to-source replay capability; neither is per-trace
+  evidence.
+- 2026-06-16 22:58:13 PDT - theorem-boundary/external-gas - Clarified that exact
+  closed-world equivalence must derive the stable response branch at every
+  external event. A below-threshold child-OOG branch supports target
+  safety/refinement, but cannot generally equal a gasless source child when the
+  caller catches failure and continues.
+- 2026-06-16 22:58:13 PDT - audit/external-history - Confirmed that the
+  pre-pivot concrete world campaign was substantial but `CALL`-only; abstract
+  support for `CALLCODE`, `DELEGATECALL`, `STATICCALL`, `CREATE`, and `CREATE2`
+  came from the later open protocol and was not a completed concrete-world
+  adequacy proof for those variants.
+- 2026-06-16 23:00:30 PDT - theorem-boundary/open-world-correction -
+  Superseded the roadmap's concrete-world adequacy and closed-world corollary.
+  The desired final result is the open-world contextual compiler theorem over
+  a global, trace-independent `ExternalContext.Rel`; recursive linked-contract
+  or blockchain-model adequacy is optional client work, not a completion
+  requirement.
+- 2026-06-16 23:00:30 PDT - theorem-boundary/open-context-effects - Clarified
+  that nested calls, reentrancy, transfer, CREATE behavior, precompiles, and
+  external logs are atomic environment behavior constrained only by the
+  related open contexts. The compiler theorem proves request/response and
+  caller-state preservation, including the ordering of the compiled contract's
+  own logs around external events, without inspecting the environment's
+  internal execution.
+- 2026-06-16 23:00:30 PDT - deletion/closed-world-roadmap - Removed concrete
+  EvmYul world adequacy and the final closed-world theorem from implementation
+  order and completion tracking; retained the old concrete `World.lean`
+  campaign only as historical evidence of the vertical architecture to avoid.
+- 2026-06-16 23:24:19 PDT - theorem-boundary/reentrant-world-mutation -
+  Preserved the old open model's essential reentrancy contract in the revised
+  roadmap: an external CALL/CREATE boundary may change the suspended
+  contract's persistent and transient storage and other chain-visible world
+  state, while its frame-local continuation state remains protected.
+  Static-mode and rollback restrictions are laws of the open context step;
+  the compiler relation must not assume that caller storage is unchanged
+  across an external interaction.
+- 2026-06-17 00:12:20 PDT - theorem-boundary/universal-external-worlds -
+  Corrected the external-effects theorem from concrete mixed-trace replay to
+  universal open-world contextual equivalence. CALL/CREATE nodes now quantify
+  over every admissible related response and post-world through a future-closed
+  context bisimulation; the public external theorem accepts no terminal target
+  run, external-event trace, response schedule, or trace certificate.
+- 2026-06-17 00:12:20 PDT - architecture/ordered-open-effects - Replaced the
+  proposed concrete mixed trace with one ordered shared interaction carrier.
+  Its external nodes remain open and response-polymorphic, while only
+  `gas()`/`msize()` resource nodes are later resolved from a concrete EVM run.
+  This preserves ordering between resource queries and external calls without
+  using CALL/CREATE replay as the correctness argument.
+- 2026-06-17 00:12:20 PDT - architecture/canonical-open-semantics - Revised
+  the migration to generalize the canonical effectful evaluators over the
+  shared interaction carrier instead of adding finite-schedule specializations
+  or restoring the old Yul-owned `OpenResult` interpreters. The useful
+  historical `OpenResultRel` idea, relating continuations for every response,
+  is retained as shared semantic infrastructure owned below all compiler
+  passes.
+- 2026-06-17 00:12:20 PDT - theorem-boundary/resource-separation - Isolated
+  the existing concrete-run reverse bridge to target-defined resource
+  observations. The mixed real-EVM corollary may extract the exact
+  `gas()`/`msize()` projection from one target run, but external-world
+  correctness is already universal and does not replay that run's CALL/CREATE
+  events.
+- 2026-06-17 00:16:10 PDT - audit/historical-open-world - Confirmed that the
+  retired open proof's semantic core was universal before its finite-path
+  wrappers: `OpenCall`/`OpenCreate` resumed for every response,
+  `OpenResultRel` related every admissible continuation, and responses carried
+  an arbitrary polymorphic reentrant state mutation. The revised horizontal
+  plan retains this response-polymorphic behavior in shared infrastructure.
+- 2026-06-17 00:16:10 PDT - theorem-boundary/static-context-overapprox -
+  Relaxed the generic external context so static requests may select arbitrary
+  related post-worlds. Intrinsic caller-side static failures remain in source
+  and target semantics; EIP-214 mutation and rollback restrictions move to the
+  optional concrete EVM-world implementation theorem.
+- 2026-06-17 00:16:10 PDT - theorem-boundary/external-account-relation -
+  Split active-frame compiler code correctness from arbitrary external-account
+  observation equality. Open worlds no longer require every external or newly
+  created account to contain compiler-produced bytecode; external code needs
+  only the byte-image agreement required by `EXTCODE*` observations.
+- 2026-06-17 00:16:10 PDT - architecture/external-memory-sites - Restored full
+  caller-local CALL input/output windows and CREATE initcode windows so request
+  reads and response copies preserve later `msize()` observations. Zero-length
+  ranges are explicitly inert regardless of offset and create no host-index,
+  no-wrap, scratch-disjointness, or memory-expansion obligation.
+- 2026-06-17 - architecture/open-effects-simplification - Re-audited the
+  proposed context-bisimulation design before implementation. Replaced
+  `ExternalContext.Rel`, behavior-set machinery in pass proofs, and per-pass
+  `OpenEffectEquiv` records with one shared dependent `Interaction` tree and
+  one structural `Interaction.Rel`. External queries carry the exact
+  code-erased pre-world and normalized request; both continuations consume the
+  same arbitrary response and post-world. A shared external strategy is now an
+  optional interpreter corollary, not compiler-proof infrastructure.
+- 2026-06-17 - architecture/active-code-separation - Identified Yul AST
+  installation as legacy concrete-interpreter duplication rather than a
+  semantic requirement. The revised migration first makes the active Yul
+  program and active code byte image protected evaluator inputs, removes
+  internal-call lookup from the mutable account map, and represents external
+  accounts through one common code-byte world view. This also removes the need
+  for compiler provenance on external account code and makes reentrant changes
+  to the active account compatible with an immutable suspended frame.
+- 2026-06-17 - validation/interaction-prototype - Checked a standalone Lean
+  prototype of the proposed dependent query/answer carrier, `Interaction.bind`,
+  structural `Interaction.Rel`, `Interaction.Rel.bind`, and
+  `Interaction.Rel.trans`. The minimal core elaborates without additional
+  axioms or proof holes.
+- 2026-06-17 00:33:51 PDT - compaction-resume - Resumed the active horizontal
+  open-effects migration; next checkpoint is the shared code-erased world and
+  `Interaction` foundation before migrating an adjacent compiler boundary.
+- 2026-06-17 00:45:36 PDT - proof/open-effects-foundation - Added the sole
+  shared `Simulation.OpenWorld` and dependent `Simulation.Interaction`,
+  including code-erased Yul/EVM projections/installers, normalized requests
+  for all six CALL/CREATE opcodes, exact shared-answer continuations,
+  `Rel.bind`, `Rel.trans`, symmetry, inversion, and shared-strategy
+  interpretation.
+- 2026-06-17 00:45:36 PDT - proof/assembly-open-primitive - Added
+  `Assembly.InteractionSemantics.PrimOp.openStep` for `gas`, `msize`, `CALL`,
+  `CALLCODE`, `DELEGATECALL`, `STATICCALL`, `CREATE`, and `CREATE2`, with
+  pre-request static-mode checks, private memory windows, arbitrary post-world
+  installation, returndata/result application, and checked exact primitive
+  source/resolved-target relation
+  `InteractionSemantics.Source.prim_openStep_rel`.
+- 2026-06-17 00:45:36 PDT - audit/open-effects-checkpoint - Focused module
+  builds, `proof_artifacts/open_effects_smoke.lean`, full
+  `lake build EvmCompiler.Verification`, architecture checks, hole scan, axiom
+  prints, and `git diff --check` pass. Axiom output contains only standard
+  `propext`, `Classical.choice`, and quotient soundness. Recursive
+  Assembly/bytecode control, world projection/install round trips, and higher
+  adjacent pass theorems remain incomplete.

@@ -18,6 +18,57 @@ report_matches() {
   fi
 }
 
+require_single_owner() {
+  local title="$1"
+  local pattern="$2"
+  local owner="$3"
+  local matches
+  local count
+  matches="$(rg -n "$pattern" EvmCompiler -g '*.lean' 2>/dev/null || true)"
+  count="$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')"
+  if [[ "$count" != "1" ]] ||
+      ! printf '%s\n' "$matches" | rg -q "^${owner}:"; then
+    printf '%s\n%s\n\n' "$title" "$matches" >&2
+    failed=1
+  fi
+}
+
+require_single_owner \
+  'OpenWorld must have exactly one shared Simulation owner:' \
+  '^structure OpenWorld where$' \
+  'EvmCompiler/Simulation/OpenWorld.lean'
+
+require_single_owner \
+  'Open-effect Query must have exactly one shared Simulation owner:' \
+  '^inductive Query where$' \
+  'EvmCompiler/Simulation/Interaction.lean'
+
+require_single_owner \
+  'Open-effect Answer must have exactly one shared Simulation owner:' \
+  '^def Answer : Query → Type$' \
+  'EvmCompiler/Simulation/Interaction.lean'
+
+require_single_owner \
+  'Interaction must have exactly one shared Simulation owner:' \
+  '^inductive Interaction \(Error' \
+  'EvmCompiler/Simulation/Interaction.lean'
+
+report_matches \
+  'Open-effect proofs must not restore context bisimulation or per-pass equivalence wrappers:' \
+  'ExternalContext\.Rel|OpenEffectEquiv' \
+  EvmCompiler -g '*.lean'
+
+report_matches \
+  'The shared open-effect foundation must not import compiler layers:' \
+  '^import EvmCompiler\.(Assembly|TypedCfg|Structured|Expressions|Locals|Functions|Objects|Yul|Public)' \
+  EvmCompiler/Simulation/OpenWorld.lean \
+  EvmCompiler/Simulation/Interaction.lean
+
+report_matches \
+  'Open-effect specialization modules must not add recursive control evaluators:' \
+  '^[[:space:]]*(partial[[:space:]]+)?def[[:space:]]+(run|runN|runList|exec|eval|loop)([^A-Za-z0-9_]|$)' \
+  EvmCompiler -g '*InteractionSemantics.lean'
+
 report_matches \
   'Syntax modules must not import aggregate layer modules:' \
   '^import EvmCompiler\.(Assembly|TypedCfg|Structured|Expressions|Locals|Functions|Objects|Yul|Solidity)$' \
