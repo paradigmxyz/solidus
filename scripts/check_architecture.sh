@@ -133,11 +133,15 @@ fi
 for theorem in \
     'OpenOutcome.target_allStopped' \
     'OpenOutcome.PreservesWithin.sequence' \
+    'OpenOutcome.PreservesWithin.ignore_tail_of_no_fallthrough' \
+    'OpenOutcome.PreservesWithin.pad_stop' \
+    'OpenOutcome.PreservesWithin.of_openStep' \
     'Stmt.openStep_code_of_compileStmtFuel?' \
     'Stmt.openRun_code_within_stop_of_compileStmtFuel?' \
     'Stmt.openRun_code_within_resume_of_compileStmtFuel?' \
     'Stmt.openRun_code_of_compileStmtFuel?' \
     'Block.openRun_nil_of_compileStmtListFuel?' \
+    'Block.openRun_cons_within_of_compileStmtListFuel?' \
     'Block.openRun_code_cons_within_of_compileStmtListFuel?'; do
   if ! rg -Fq \
       "#check EvmCompiler.Structured.InteractionControlPreservation.${theorem}" \

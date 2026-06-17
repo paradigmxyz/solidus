@@ -30874,3 +30874,14 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   Focused and full 1,286-job verification builds, architecture and changed-file
   hole checks, open-effects axiom smoke, and `git diff --check` pass; axioms
   remain `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-17 06:01:28 PDT - proof/structured-generic-list-control - Replaced
+  the code-only boundary lift with a generic one-step constructor that
+  automatically retargets nonregular outcomes to the enclosing continuation.
+  Added inert fuel padding after semantic stops, unreachable-tail elimination
+  from compiler `fallthrough? = none`, and a statement-form-independent
+  nonempty list theorem owning compiler decomposition and block inheritance.
+  The code-list theorem is now only an instantiation, and its specialized
+  source-regularity predicate was deleted. Focused and full 1,286-job
+  verification builds, architecture and changed-file hole checks,
+  open-effects axiom smoke, and `git diff --check` pass; axioms remain
+  `propext`, `Classical.choice`, and `Quot.sound`.

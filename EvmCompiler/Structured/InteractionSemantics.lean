@@ -13,11 +13,6 @@ def ReturnsEq (returns : List ReturnDest) :
   | .error _ => True
   | .ok final => final.returns = returns
 
-def OutcomeRegular :
-    Except EVMException Structured.Outcome → Prop
-  | .error _ => True
-  | .ok outcome => outcome.mode = .regular
-
 namespace BasicInstr
 
 /--
@@ -187,20 +182,6 @@ def openRun (program : Structured.Program) (fuel : Nat)
   EffectSemantics.Control.Stmt.run
     EffectSemantics.Ordinary.runStateModel handler
     program fuel stmt state
-
-theorem openRun_code_regular
-    (program : Structured.Program) (fuel : Nat)
-    (code : Structured.Code) (state : RunState) :
-    Simulation.Interaction.AllDone OutcomeRegular
-      (openRun program fuel (.code code) state) := by
-  unfold openRun EffectSemantics.Control.Stmt.run
-  apply Simulation.Interaction.AllDone.bind
-    (Simulation.Interaction.AllDone.trivial
-      (Code.openRun code state))
-  · intro err _h
-    trivial
-  · intro final _h
-    exact Simulation.Interaction.AllDone.done rfl
 
 end Stmt
 
