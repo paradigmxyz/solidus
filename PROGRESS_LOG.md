@@ -31206,3 +31206,20 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   `bash scripts/check_architecture.sh`, touched-Lean hole scans, axiom prints,
   and `git diff --check`. New lemmas use only the project-standard
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 13:28:42 PDT - compaction-resume - resumed the Locals adjacent
+  proof with uncommitted work limited to pass-owned SWAP/POP open-run lemmas
+  and verification checks. The immediate target is to finish those operational
+  reductions, prove the assignment frame law, and keep all stack protocol
+  reasoning inside the Locals boundary.
+- 2026-06-17 13:36:03 PDT - proof/locals-open-assignment - proved the
+  Locals-owned open execution of `SWAP; POP`, the duplicate-free assignment
+  frame law, the one-result expression adapter, and a checked source-statement
+  theorem for ordinary generated assignment code. CALL/CREATE effects in the
+  assigned expression remain universally synchronized before the silent stack
+  update; no observer compiler, trace replay, or lower-pass import was added.
+- 2026-06-17 13:37:08 PDT - validation/locals-open-assignment - passed
+  `lake build EvmCompiler.Locals.InteractionPreservation`, the full
+  `EvmCompiler/Verification.lean` root, architecture checks, touched-Lean hole
+  scans, and `git diff --check`. Axiom audits for all new assignment theorems
+  report only `[propext, Classical.choice, Quot.sound]`; architecture debt
+  remains limited to the pre-existing oversized legacy observer modules.

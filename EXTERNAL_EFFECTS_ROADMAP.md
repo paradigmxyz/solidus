@@ -772,6 +772,11 @@ Exit: the shared core builds with no compiler layer changed.
     `assignTop`, promotion, and explicit cleanup are lower stack-protocol
     constructs owned by the Functions allocation boundary, not by the
     stack-free Locals source semantics.
+    - [x] Locals-owned frame/context invariant with exact active-layout stack
+      realization over an abstract caller suffix.
+    - [x] Checked source assignment preservation through the ordinary emitted
+      expression code, `SWAP; POP`, and `bindLocals`, including arbitrary
+      ordered open effects in the assigned expression.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
 - [ ] Functions.
@@ -817,6 +822,8 @@ Exit: every layer exposes one canonical open computation.
     preservation, including loops and internal calls.
   - [ ] Recursive compiler-owned source-Locals statement and control
     composition.
+    - [x] Source assignment constructor through the ordinary compiler stack
+      protocol and canonical Expressions statement semantics.
 - [ ] Functions -> allocated Locals/Expressions.
   - [ ] Own the emitted internal-call and stack-protocol constructs rather
     than extending stack-free Locals with an operand stack.

@@ -1,5 +1,6 @@
 import EvmCompiler.Locals.InteractionSemantics
 import EvmCompiler.Locals.Compiler
+import EvmCompiler.Expressions.InteractionSemantics
 import EvmCompiler.Structured.InteractionPrimitivePreservation
 
 namespace EvmCompiler
@@ -11,6 +12,41 @@ private theorem take_succ_getLast?_getD_of_getElem?_eq_some
     {index : Nat} {value : α}
     (hGet : values[index]? = some value) :
     (values.take (index + 1)).getLast?.getD default = value := by
+  induction index generalizing values with
+  | zero =>
+      cases values with
+      | nil =>
+          simp at hGet
+      | cons head tail =>
+          simp at hGet
+          subst head
+          rfl
+  | succ index ih =>
+      cases values with
+      | nil =>
+          simp at hGet
+      | cons head tail =>
+          simp only [List.getElem?_cons_succ] at hGet
+          have hTail := ih hGet
+          have hIndex : index < tail.length :=
+            List.getElem?_eq_some_iff.mp hGet |>.1
+          have hLength :
+              (tail.take (index + 1)).length = index + 1 := by
+            simp [List.length_take,
+              Nat.min_eq_left (Nat.succ_le_iff.mpr hIndex)]
+          cases hTake : tail.take (index + 1) with
+          | nil =>
+              rw [hTake] at hLength
+              simp at hLength
+          | cons next rest =>
+              rw [hTake] at hTail
+              simpa [List.take_succ_cons, hTake] using hTail
+
+private theorem take_succ_getLast!_of_getElem?_eq_some
+    {α : Type} [Inhabited α] {values : List α}
+    {index : Nat} {value : α}
+    (hGet : values[index]? = some value) :
+    (values.take (index + 1)).getLast! = value := by
   induction index generalizing values with
   | zero =>
       cases values with
@@ -92,6 +128,72 @@ private theorem dup?_openStep
   | 16 => simp [StackOp.dup?] at hOp; cases hOp; rfl
   | depth + 17 => simp [StackOp.dup?] at hOp
 
+private theorem swap?_openStep
+    {depth : Nat} {op : Structured.BasicOp}
+    (hOp : StackOp.swap? depth = some op)
+    (state : EVMState) :
+    Assembly.InteractionSemantics.PrimOp.openStep
+        op.toPrimOp state =
+      .done ((Assembly.PrimStep.swap depth).run state) := by
+  match depth with
+  | 0 => simp [StackOp.swap?] at hOp
+  | 1 => simp [StackOp.swap?] at hOp; cases hOp; rfl
+  | 2 => simp [StackOp.swap?] at hOp; cases hOp; rfl
+  | 3 => simp [StackOp.swap?] at hOp; cases hOp; rfl
+  | 4 => simp [StackOp.swap?] at hOp; cases hOp; rfl
+  | 5 => simp [StackOp.swap?] at hOp; cases hOp; rfl
+  | 6 => simp [StackOp.swap?] at hOp; cases hOp; rfl
+  | 7 => simp [StackOp.swap?] at hOp; cases hOp; rfl
+  | 8 => simp [StackOp.swap?] at hOp; cases hOp; rfl
+  | 9 => simp [StackOp.swap?] at hOp; cases hOp; rfl
+  | 10 => simp [StackOp.swap?] at hOp; cases hOp; rfl
+  | 11 => simp [StackOp.swap?] at hOp; cases hOp; rfl
+  | 12 => simp [StackOp.swap?] at hOp; cases hOp; rfl
+  | 13 => simp [StackOp.swap?] at hOp; cases hOp; rfl
+  | 14 => simp [StackOp.swap?] at hOp; cases hOp; rfl
+  | 15 => simp [StackOp.swap?] at hOp; cases hOp; rfl
+  | 16 => simp [StackOp.swap?] at hOp; cases hOp; rfl
+  | depth + 17 => simp [StackOp.swap?] at hOp
+
+private theorem swap_stack_eq_set
+    {depth : Nat} {value old : Word} {rest : List Word}
+    (hGet : rest[depth]? = some old) :
+    let top := (value :: rest).take ((depth + 1) + 1)
+    let bottom := (value :: rest).drop ((depth + 1) + 1)
+    top.getLast! :: top.tail!.dropLast ++ [top.head!] ++ bottom =
+      old :: rest.set depth value := by
+  have hDepth : depth < rest.length :=
+    List.getElem?_eq_some_iff.mp hGet |>.1
+  have hStackGet :
+      (value :: rest)[depth + 1]? = some old := by
+    simpa using hGet
+  have hLast :
+      ((value :: rest).take ((depth + 1) + 1)).getLast! = old :=
+    take_succ_getLast!_of_getElem?_eq_some hStackGet
+  have hTake :
+      (value :: rest).take ((depth + 1) + 1) =
+        value :: rest.take (depth + 1) := by
+    simp [Nat.add_assoc]
+  have hTakeLength :
+      (rest.take (depth + 1)).length = depth + 1 := by
+    simp [List.length_take,
+      Nat.min_eq_left (Nat.succ_le_iff.mpr hDepth)]
+  have hDropLast :
+      (rest.take (depth + 1)).dropLast = rest.take depth := by
+    rw [List.dropLast_eq_take, hTakeLength]
+    simp [List.take_take]
+  simp only
+  rw [hLast, hTake]
+  simp only [List.tail!_cons, List.head!_cons]
+  rw [hDropLast, List.set_eq_take_cons_drop value hDepth]
+  simp [List.drop_succ_cons, List.append_assoc]
+
+private theorem pop_openStep (state : EVMState) :
+    Assembly.InteractionSemantics.PrimOp.openStep
+        Structured.BasicOp.pop.toPrimOp state =
+      .done (Assembly.PrimStep.pop.run state) := by
+  rfl
+
 namespace Code
 
 theorem openRun_push (value : Word) (target : Structured.RunState) :
@@ -111,6 +213,13 @@ theorem openRun_push (value : Word) (target : Structured.RunState) :
     Assembly.Target.stepInstrWith, EvmYul.Stack.push,
     Simulation.Interaction.map, Simulation.Interaction.bind_pure,
     Simulation.Interaction.pure]
+  rfl
+
+theorem openRun_bindLocals (offset : Nat) (layout : Layout)
+    (target : Structured.RunState) :
+    Structured.InteractionSemantics.Code.openRun
+        [.bindLocals offset layout] target =
+      .done (.ok target) := by
   rfl
 
 theorem openRun_dup
@@ -146,6 +255,122 @@ theorem openRun_dup
   simp [hTakeLength, hLast, Simulation.Interaction.map,
     Simulation.Interaction.bind_pure, Simulation.Interaction.pure]
   rfl
+
+theorem openRun_pop
+    {target : Structured.RunState}
+    {value : Word} {rest : List Word}
+    (hStack : target.evm.stack = value :: rest) :
+    Structured.InteractionSemantics.Code.openRun
+        [.op .pop] target =
+      .done
+        (.ok
+          (target.withEVM
+            (target.evm.replaceStackAndIncrPC rest))) := by
+  have hRun :
+      Assembly.PrimStep.pop.run target.evm =
+        .ok (target.evm.replaceStackAndIncrPC rest) := by
+    unfold Assembly.PrimStep.run
+    rw [hStack]
+    rfl
+  unfold Structured.InteractionSemantics.Code.openRun
+  simp only [Structured.EffectSemantics.Control.Code.run,
+    Structured.InteractionSemantics.handler,
+    Structured.InteractionSemantics.BasicInstr.openStep,
+    Structured.InteractionSemantics.BasicInstr.openStepEVM]
+  rw [pop_openStep, hRun]
+  rfl
+
+theorem openRun_swap
+    {target : Structured.RunState}
+    {depth : Nat} {value old : Word} {rest : List Word}
+    {op : Structured.BasicOp}
+    (hOp : StackOp.swap? (depth + 1) = some op)
+    (hGet : rest[depth]? = some old)
+    (hStack : target.evm.stack = value :: rest) :
+    Structured.InteractionSemantics.Code.openRun [.op op] target =
+      .done
+        (.ok
+          (target.withEVM
+            (target.evm.replaceStackAndIncrPC
+              (old :: rest.set depth value)))) := by
+  have hDepth : depth < rest.length :=
+    List.getElem?_eq_some_iff.mp hGet |>.1
+  have hTakeBound :
+      (depth + 1) + 1 ≤ (value :: rest).length := by
+    simp only [List.length_cons]
+    omega
+  have hTakeLength :
+      ((value :: rest).take ((depth + 1) + 1)).length =
+        (depth + 1) + 1 :=
+    List.length_take_of_le hTakeBound
+  have hSwap := swap_stack_eq_set (value := value) hGet
+  have hRun :
+      (Assembly.PrimStep.swap (depth + 1)).run target.evm =
+        .ok
+          (target.evm.replaceStackAndIncrPC
+            (old :: rest.set depth value)) := by
+    change EvmYul.swap (depth + 1) target.evm =
+      .ok
+        (target.evm.replaceStackAndIncrPC
+          (old :: rest.set depth value))
+    unfold EvmYul.swap
+    rw [hStack, if_pos hTakeLength, hSwap]
+  unfold Structured.InteractionSemantics.Code.openRun
+  simp only [Structured.EffectSemantics.Control.Code.run,
+    Structured.InteractionSemantics.handler,
+    Structured.InteractionSemantics.BasicInstr.openStep,
+    Structured.InteractionSemantics.BasicInstr.openStepEVM]
+  rw [swap?_openStep hOp, hRun]
+  rfl
+
+theorem openRun_swap_pop
+    {target : Structured.RunState}
+    {depth : Nat} {value old : Word} {rest : List Word}
+    {op : Structured.BasicOp}
+    (hOp : StackOp.swap? (depth + 1) = some op)
+    (hGet : rest[depth]? = some old)
+    (hStack : target.evm.stack = value :: rest) :
+    ∃ final,
+      Structured.InteractionSemantics.Code.openRun
+          [.op op, .op .pop] target =
+        .done (.ok final) ∧
+      final.evm.stack = rest.set depth value ∧
+      final.evm.toSharedState = target.evm.toSharedState ∧
+      final.returns = target.returns := by
+  let afterSwap :=
+    target.withEVM
+      (target.evm.replaceStackAndIncrPC
+        (old :: rest.set depth value))
+  let final :=
+    afterSwap.withEVM
+      (afterSwap.evm.replaceStackAndIncrPC
+        (rest.set depth value))
+  refine ⟨final, ?_, ?_, ?_, ?_⟩
+  · change
+      Structured.InteractionSemantics.Code.openRun
+          ([Structured.BasicInstr.op op] ++
+            [Structured.BasicInstr.op .pop]) target =
+        .done (.ok final)
+    rw [Structured.InteractionSemantics.Code.openRun_append,
+      openRun_swap hOp hGet hStack]
+    change
+      Structured.InteractionSemantics.Code.openRun
+          [.op .pop] afterSwap =
+        .done (.ok final)
+    exact
+      openRun_pop
+        (target := afterSwap) (value := old)
+        (rest := rest.set depth value) (by
+          simp [afterSwap,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC])
+  · simp [final, afterSwap,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC]
+  · simp [final, afterSwap,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC]
+  · simp [final, afterSwap]
 
 end Code
 
@@ -546,6 +771,112 @@ theorem ofExprResultOneInsert
     rw [hResult.vars]
     exact hInitial.storeScoped hNotTail
 
+/--
+Replace one existing local with the single expression result emitted above the
+active layout. The target-side stack equation is exactly the effect of the
+compiler's `SWAP depth; POP` sequence.
+-/
+theorem ofExprResultOneAssign
+    {layout : Layout} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {name : Name} {depth : Nat} {value : Word}
+    {initialSource sourceFinal : Locals.Source.State}
+    {initialTarget targetAfterValue finalTarget : Structured.RunState}
+    (hNodup : layout.Nodup)
+    (hDepth :
+      Layout.lookupDepth? name layout = some (depth + 1))
+    (hInitial :
+      Frame.StateRel layout suffix returns initialSource initialTarget)
+    (hResult :
+      Expr.ResultRel 1 initialSource initialTarget
+        (sourceFinal, [value]) targetAfterValue)
+    (hFinalShared :
+      finalTarget.evm.toSharedState =
+        targetAfterValue.evm.toSharedState)
+    (hFinalReturns :
+      finalTarget.returns = targetAfterValue.returns)
+    (hFinalStack :
+      finalTarget.evm.stack =
+        initialTarget.evm.stack.set depth value) :
+    Frame.StateRel layout suffix returns
+      (sourceFinal.insert name value) finalTarget := by
+  have hAt :
+      layout[depth]? = some name :=
+    Layout.getElem?_eq_some_of_lookupDepth?_eq_some hDepth
+  have hDepthBound : depth < layout.length :=
+    List.getElem?_eq_some_iff.mp hAt |>.1
+  have hStackDepthBound :
+      depth < initialTarget.evm.stack.length := by
+    rw [hInitial.stackLength]
+    omega
+  constructor
+  · rw [hFinalShared]
+    simpa [Locals.Source.State.insert] using hResult.shared
+  · exact hFinalReturns.trans (hResult.returns.trans hInitial.returns)
+  · rw [hFinalStack, List.length_set]
+    exact hInitial.stackLength
+  · rw [hFinalStack, List.drop_set_of_lt hDepthBound]
+    exact hInitial.suffix
+  · intro index slotName hSlot
+    by_cases hIndex : index = depth
+    · subst index
+      rw [hAt] at hSlot
+      cases hSlot
+      rw [hFinalStack,
+        List.getElem?_set_eq_of_lt value hStackDepthBound]
+      simp [Locals.Source.State.insert,
+        Locals.Source.Store.insert]
+    · have hName : slotName ≠ name := by
+        intro hEq
+        subst slotName
+        have hOtherDepth :=
+          Layout.lookupDepth?_eq_some_of_getElem?_eq_some_of_nodup
+            hNodup hSlot
+        rw [hDepth] at hOtherDepth
+        cases hOtherDepth
+        exact hIndex rfl
+      rw [hFinalStack,
+        List.getElem?_set_of_lt' value
+          initialTarget.evm.stack hStackDepthBound]
+      simp only [if_neg (Ne.symm hIndex)]
+      rw [show
+        (sourceFinal.insert name value).vars slotName =
+          sourceFinal.vars slotName by
+        simp [Locals.Source.State.insert,
+          Locals.Source.Store.insert, hName]]
+      rw [hResult.vars]
+      exact hInitial.slot hSlot
+  · intro slotName hMem
+    by_cases hName : slotName = name
+    · subst slotName
+      exact
+        ⟨value, by
+          simp [Locals.Source.State.insert,
+            Locals.Source.Store.insert]⟩
+    · obtain ⟨oldValue, hOldValue⟩ :=
+        hInitial.defined hMem
+      refine ⟨oldValue, ?_⟩
+      rw [show
+        (sourceFinal.insert name value).vars slotName =
+          sourceFinal.vars slotName by
+        simp [Locals.Source.State.insert,
+          Locals.Source.Store.insert, hName]]
+      rw [hResult.vars]
+      exact hOldValue
+  · intro slotName hNotMem
+    have hName : slotName ≠ name := by
+      intro hEq
+      subst slotName
+      exact hNotMem
+        (Layout.mem_of_lookupDepth?_eq_some hDepth)
+    rw [show
+      (sourceFinal.insert name value).vars slotName =
+        sourceFinal.vars slotName by
+      simp [Locals.Source.State.insert,
+        Locals.Source.Store.insert, hName]]
+    rw [hResult.vars]
+    exact hInitial.storeScoped hNotMem
+
 end Frame.StateRel
 
 namespace Expr
@@ -900,7 +1231,286 @@ mutual
                     List.reverse_append, List.append_assoc]
 end
 
+abbrev OneOutcomeRel
+    (initialSource : Locals.Source.State)
+    (initialTarget : Structured.RunState) :
+    Except EVMException (Locals.Source.State × Word) →
+      Except EVMException Structured.RunState → Prop :=
+  Simulation.Interaction.ExceptRel
+    (fun _sourceError _targetError => True)
+    (fun source target =>
+      ResultRel 1 initialSource initialTarget
+        (source.1, [source.2]) target)
+
+/--
+The one-result source adapter used by statement semantics preserves the same
+compiled expression code and open interaction order.
+-/
+theorem openEvalOne_compileCode
+    (expr : Locals.Expr 1)
+    (ctx : Locals.Ctx) (offset : Nat)
+    {code : Structured.Code}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hScoped : Scope.ExprScoped ctx.layout expr)
+    (hSupported :
+      InteractionSemantics.Expr.OpenSupported expr)
+    (hCompile :
+      Locals.Expr.compileCode ctx offset expr = some code)
+    (hInitial :
+      StateRel ctx.layout offset source target) :
+    Simulation.Interaction.Rel
+      (OneOutcomeRel source target)
+      (InteractionSemantics.Expr.openEvalOne expr source)
+      (Structured.InteractionSemantics.Code.openRun
+        code target) := by
+  have hEval :=
+    openEval_compileCode expr ctx offset
+      hScoped hSupported hCompile hInitial
+  unfold InteractionSemantics.Expr.openEvalOne
+    Locals.Source.Effectful.Expr.Control.evalOne
+  rw [← Simulation.Interaction.bind_pure
+    (Structured.InteractionSemantics.Code.openRun code target)]
+  apply Simulation.Interaction.Rel.bind hEval
+  intro sourceResult targetFinal hResult
+  rcases sourceResult with ⟨sourceFinal, values⟩
+  cases values with
+  | nil =>
+      have hLength := hResult.length
+      simp at hLength
+  | cons value rest =>
+      cases rest with
+      | nil =>
+          apply Simulation.Interaction.Rel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact hResult
+      | cons next tail =>
+          have hLength := hResult.length
+          simp at hLength
+
 end Expr
+
+namespace Stmt
+
+abbrev StateOutcomeRel (layout : Layout) (suffix : List Word)
+    (returns : List Structured.ReturnDest) :
+    Except EVMException Locals.Source.State →
+      Except EVMException Structured.RunState → Prop :=
+  Simulation.Interaction.ExceptRel
+    (fun _sourceError _targetError => True)
+    (Frame.StateRel layout suffix returns)
+
+/--
+One source-owned assignment is preserved by the ordinary Locals compiler code.
+Any open effects in the assigned expression occur before the silent
+`SWAP; POP; bindLocals` stack update.
+-/
+theorem openAssign_compileCode
+    (ctx : Locals.Ctx) {name : Name} (valueExpr : Locals.Expr 1)
+    {depth : Nat} {valueCode : Structured.Code}
+    {swapOp : Structured.BasicOp}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hNodup : ctx.layout.Nodup)
+    (hDepth :
+      Layout.lookupDepth? name ctx.layout = some (depth + 1))
+    (hValueScoped :
+      Scope.ExprScoped ctx.layout valueExpr)
+    (hValueSupported :
+      InteractionSemantics.Expr.OpenSupported valueExpr)
+    (hValueCompile :
+      Locals.Expr.compileCode ctx 0 valueExpr = some valueCode)
+    (hSwap :
+      StackOp.swap? (depth + 1) = some swapOp)
+    (hInitial :
+      Frame.StateRel ctx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (StateOutcomeRel ctx.layout suffix returns)
+      (Simulation.Interaction.bind
+        (InteractionSemantics.Expr.openEvalOne valueExpr source)
+        (fun result =>
+          Simulation.Interaction.pure
+            (result.1.insert name result.2)))
+      (Structured.InteractionSemantics.Code.openRun
+        (valueCode ++
+          [.op swapOp, .op .pop] ++
+            Locals.bindLocals 0 ctx.layout)
+        target) := by
+  rw [List.append_assoc,
+    Structured.InteractionSemantics.Code.openRun_append]
+  have hValueRel :=
+    Expr.openEvalOne_compileCode valueExpr ctx 0
+      hValueScoped hValueSupported hValueCompile hInitial.expr
+  apply Simulation.Interaction.Rel.bind hValueRel
+  intro sourceAfterValue targetAfterValue hValueResult
+  rcases sourceAfterValue with ⟨sourceFinal, value⟩
+  have hAt :
+      ctx.layout[depth]? = some name :=
+    Layout.getElem?_eq_some_of_lookupDepth?_eq_some hDepth
+  have hMem : name ∈ ctx.layout :=
+    List.mem_of_getElem? hAt
+  obtain ⟨old, hOld⟩ := hInitial.defined hMem
+  have hOldStack :
+      target.evm.stack[depth]? = some old := by
+    have hSlot := hInitial.slot hAt
+    rw [hOld] at hSlot
+    exact hSlot
+  have hValueStack :
+      targetAfterValue.evm.stack =
+        value :: target.evm.stack := by
+    simpa using hValueResult.stack
+  obtain ⟨finalTarget, hSwapRun, hFinalStack,
+      hFinalShared, hFinalReturns⟩ :=
+    Code.openRun_swap_pop hSwap hOldStack hValueStack
+  rw [Structured.InteractionSemantics.Code.openRun_append,
+    hSwapRun]
+  change
+    Simulation.Interaction.Rel
+      (StateOutcomeRel ctx.layout suffix returns)
+      (Simulation.Interaction.pure
+        (sourceFinal.insert name value))
+      (Structured.InteractionSemantics.Code.openRun
+        (Locals.bindLocals 0 ctx.layout) finalTarget)
+  rw [show
+      Locals.bindLocals 0 ctx.layout =
+        [.bindLocals 0 ctx.layout] by rfl,
+    Code.openRun_bindLocals]
+  apply Simulation.Interaction.Rel.done
+  apply Simulation.Interaction.ExceptRel.ok
+  exact
+    Frame.StateRel.ofExprResultOneAssign
+      hNodup hDepth hInitial hValueResult
+        hFinalShared hFinalReturns hFinalStack
+
+structure RegularResultRel (targetCtx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest)
+    (source :
+      Locals.Source.Effectful.Outcome Locals.Source.State ×
+        Locals.Source.Ctx)
+    (target : Structured.Outcome) : Prop where
+  sourceMode : source.1.mode = .regular
+  targetMode : target.mode = .regular
+  context : Frame.CtxRel source.2 targetCtx
+  state :
+    Frame.StateRel targetCtx.layout suffix returns
+      source.1.state target.state
+
+abbrev RegularOutcomeRel (targetCtx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest) :
+    Except EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State ×
+          Locals.Source.Ctx) →
+      Except EVMException Structured.Outcome → Prop :=
+  Simulation.Interaction.ExceptRel
+    (fun _sourceError _targetError => True)
+    (RegularResultRel targetCtx suffix returns)
+
+/--
+Checked source-statement form of assignment preservation. This theorem uses the
+ordinary source statement semantics and the ordinary emitted Expressions code
+statement; the external-effect tree is inherited solely from the assigned
+expression.
+-/
+theorem openRun_assign_generated
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
+    (fuel : Nat) {name : Name} (valueExpr : Locals.Expr 1)
+    {depth : Nat} {valueCode : Structured.Code}
+    {swapOp : Structured.BasicOp}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hNodup : targetCtx.layout.Nodup)
+    (hDepth :
+      Layout.lookupDepth? name targetCtx.layout = some (depth + 1))
+    (hValueScoped :
+      Scope.ExprScoped targetCtx.layout valueExpr)
+    (hValueSupported :
+      InteractionSemantics.Expr.OpenSupported valueExpr)
+    (hValueCompile :
+      Locals.Expr.compileCode targetCtx 0 valueExpr = some valueCode)
+    (hSwap :
+      StackOp.swap? (depth + 1) = some swapOp)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (RegularOutcomeRel targetCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx fuel (.assign name valueExpr) source)
+      (Expressions.InteractionSemantics.Stmt.openRun
+        targetProgram fuel
+        (.code
+          (valueCode ++
+            [.op swapOp, .op .pop] ++
+              Locals.bindLocals 0 targetCtx.layout))
+        target) := by
+  have hMem :
+      name ∈ targetCtx.layout :=
+    Layout.mem_of_lookupDepth?_eq_some hDepth
+  obtain ⟨old, hOld⟩ := hInitial.defined hMem
+  have hContains :
+      source.vars.contains name = true := by
+    simp [Locals.Source.Store.contains, hOld]
+  have hAssign :=
+    openAssign_compileCode targetCtx valueExpr
+      hNodup hDepth hValueScoped hValueSupported
+      hValueCompile hSwap hInitial
+  have hWrapped :
+      Simulation.Interaction.Rel
+        (RegularOutcomeRel targetCtx suffix returns)
+        (Simulation.Interaction.bind
+          (Simulation.Interaction.bind
+            (InteractionSemantics.Expr.openEvalOne valueExpr source)
+            (fun result =>
+              Simulation.Interaction.pure
+                (result.1.insert name result.2)))
+          (fun final =>
+            Simulation.Interaction.pure
+              (Locals.Source.Effectful.Outcome.regular final,
+                sourceCtx)))
+        (Simulation.Interaction.bind
+          (Structured.InteractionSemantics.Code.openRun
+            (valueCode ++
+              [.op swapOp, .op .pop] ++
+                Locals.bindLocals 0 targetCtx.layout)
+            target)
+          (fun final =>
+            Simulation.Interaction.pure
+              (Structured.Outcome.regular final))) := by
+    apply Simulation.Interaction.Rel.bind hAssign
+    intro sourceFinal targetFinal hFinal
+    apply Simulation.Interaction.Rel.done
+    apply Simulation.Interaction.ExceptRel.ok
+    exact
+      { sourceMode := rfl
+        targetMode := rfl
+        context := hCtx
+        state := hFinal }
+  unfold InteractionSemantics.Expr.openEvalOne
+    Structured.InteractionSemantics.Code.openRun
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel at hWrapped
+  simp only [Locals.Source.State.insert] at hWrapped
+  unfold InteractionSemantics.Stmt.openRun
+    Expressions.InteractionSemantics.Stmt.openRun
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+  simp only [Locals.Source.Effectful.Control.Stmt.run,
+    Locals.Source.Effectful.StateModel.vars,
+    Expressions.EffectSemantics.Control.Stmt.run]
+  dsimp only [id]
+  rw [hContains]
+  simp only [Locals.Source.Effectful.StateModel.withVars,
+    if_true,
+    Locals.Source.State.withVars]
+  simpa [Simulation.Interaction.bind_assoc] using hWrapped
+
+end Stmt
 
 end InteractionPreservation
 end Locals

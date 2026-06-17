@@ -174,6 +174,11 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.expr
 #check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.ofExprResultZero
 #check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.ofExprResultOneInsert
+#check EvmCompiler.Locals.InteractionPreservation.Code.openRun_swap_pop
+#check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.ofExprResultOneAssign
+#check EvmCompiler.Locals.InteractionPreservation.Expr.openEvalOne_compileCode
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.openAssign_compileCode
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_assign_generated
 #check EvmCompiler.Simulation.ExternalKind.classifies_call
 #check EvmCompiler.Simulation.ExternalKind.classifies_callcode
 #check EvmCompiler.Simulation.ExternalKind.classifies_delegatecall
