@@ -197,7 +197,7 @@ internal continuation that the enclosing fragment must resume.
 -/
 inductive RegularExit where
   | stop
-  | continue
+  | resume
   deriving DecidableEq
 
 def SegmentRunRel (result : TypedCfgCompiler.Result)
@@ -207,7 +207,7 @@ def SegmentRunRel (result : TypedCfgCompiler.Result)
     (source : Structured.Outcome) :
     TypedCfg.Control.Program.RunResult → Prop :=
   match regularExit, source.mode with
-  | .continue, .regular =>
+  | .resume, .regular =>
       fun
       | .exhausted label target =>
           Rel result ctx regular returns tokens source
@@ -412,7 +412,7 @@ theorem sequence
     {headFuel tailFuel : Nat}
     (hHead :
       PreservesWithin headResult boundaryResult cfg entry ctx
-        middle boundaryRegular .continue source tokens
+        middle boundaryRegular .resume source tokens
         headRun headFuel)
     (hTail :
       ∀ middleSource,
@@ -773,10 +773,11 @@ end OpenOutcome
 namespace Stmt
 
 /--
-The existing straight-line statement lowering preserves the complete open
-interaction tree and reaches its regular continuation in one CFG block.
+One compiled straight-line statement preserves the complete open interaction
+tree through the ambient TypedCfg step. Boundary stopping is deliberately left
+to the enclosing control theorem.
 -/
-theorem openRun_code_of_compileStmtFuel?
+theorem openStep_code_of_compileStmtFuel?
     {compilerFuel sourceFuel : Nat}
     {code : Structured.Code}
     {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
@@ -784,6 +785,7 @@ theorem openRun_code_of_compileStmtFuel?
     {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
     {sourceProgram : Structured.Program}
     {source : RunState} {tokens : List Word}
+    {target : EVMState}
     (hCompile :
       TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
           (.code code) ctx supply entry input regular =
@@ -792,10 +794,16 @@ theorem openRun_code_of_compileStmtFuel?
       TypedCfgPreservation.BlocksInProgram result cfg)
     (hFits :
       TypedCfgCompiler.Shape.SourceFrameFits
-        input source.evm.stack.length) :
-    OpenOutcome.Preserves result cfg entry ctx regular source tokens
+        input source.evm.stack.length)
+    (hStateRel :
+      TypedCfgPreservation.StateRel source tokens target) :
+    Simulation.Interaction.Rel
+      (OpenOutcome.OutcomeDoneRel
+        result ctx regular source.returns tokens)
       (InteractionSemantics.Stmt.openRun
-        sourceProgram sourceFuel (.code code) source) := by
+        sourceProgram sourceFuel (.code code) source)
+      (TypedCfg.InteractionSemantics.Program.openStep
+        cfg entry target) := by
   obtain ⟨output, hType, rfl⟩ :=
     TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_code
       hCompile
@@ -808,13 +816,6 @@ theorem openRun_code_of_compileStmtFuel?
   have hFind :
       cfg.findBlock? entry = some generated := by
     exact hBlocks generated (by simp [generated])
-  intro target hStateRel
-  refine ⟨1, ?_⟩
-  rw [show 1 = 0 + 1 by rfl,
-    TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_succ_eq_bind]
-  simp only [
-    TypedCfg.InteractionSemantics.Program.openStep,
-    TypedCfg.Control.Program.step, hFind]
   have hCode :=
     InteractionPreservation.Code.openRun_toCfg
       hType hFits hStateRel
@@ -898,43 +899,239 @@ theorem openRun_code_of_compileStmtFuel?
                   Simulation.Interaction.Rel.done
                     (Simulation.Interaction.ExceptRel.ok hRelated)
                 simpa [generated, TypedCfg.Block.runTerm] using hLeaf
-  have hLifted :
-      Simulation.Interaction.Rel
-        (OpenOutcome.DoneRel
-          { blocks := [generated]
-            next := supply + 1
-            calls := []
-            fallthrough? := some output }
-          ctx regular source.returns tokens)
-        (Simulation.Interaction.bind
-          (Simulation.Interaction.bind
-            (InteractionSemantics.Code.openRun code source)
-            (fun final =>
-              Simulation.Interaction.pure
-                (Structured.Outcome.regular final)))
-          Simulation.Interaction.pure)
-        (Simulation.Interaction.bind
-          (TypedCfg.InteractionSemantics.Block.openRun
-            generated target)
-          (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
-            (OpenOutcome.stopJump
-              { blocks := [generated]
-                next := supply + 1
-                calls := []
-                fallthrough? := some output }
-              ctx regular source.returns tokens)
-            cfg 0)) := by
-    apply Simulation.Interaction.Rel.bind hBlock
-    intro sourceOutcome targetOutcome hOutcome
-    exact
-      OpenOutcome.afterOpenStepResultWithStop_zero_rel
-        (cfg := cfg) hOutcome
   simpa [
     InteractionSemantics.Stmt.openRun,
     EffectSemantics.Control.Stmt.run,
-    TypedCfg.InteractionSemantics.Block.openRun,
-    Simulation.Interaction.bind_pure,
-    generated, TypedCfg.Block.runTerm] using hLifted
+    TypedCfg.InteractionSemantics.Program.openStep,
+    TypedCfg.Control.Program.step, hFind] using hBlock
+
+/--
+Fixed-fuel straight-line preservation under an arbitrary enclosing boundary
+policy. The policy premise is needed only for the statement's regular jump;
+the source invariant rules out every other successful control mode.
+-/
+theorem openRun_code_within_of_compileStmtFuel?
+    {compilerFuel sourceFuel : Nat}
+    {code : Structured.Code}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular boundaryRegular : Assembly.Label}
+    {input : TypedCfg.Shape}
+    {result boundaryResult : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {sourceProgram : Structured.Program}
+    {source : RunState} {tokens : List Word}
+    {regularExit : OpenOutcome.RegularExit}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.code code) ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        input source.evm.stack.length)
+    (hRegularPolicy :
+      ∀ {final : RunState} {targetState : EVMState},
+        OpenOutcome.Rel result ctx regular source.returns tokens
+            (Structured.Outcome.regular final)
+            (.jump regular targetState) →
+          OpenOutcome.stopJump boundaryResult ctx boundaryRegular
+              source.returns tokens regular targetState =
+            match regularExit with
+            | .stop => true
+            | .resume => false) :
+    OpenOutcome.PreservesWithin result boundaryResult cfg entry ctx
+      regular boundaryRegular regularExit source tokens
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceFuel (.code code) source)
+      1 := by
+  intro target hStateRel
+  rw [show 1 = 0 + 1 by rfl,
+    TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_succ_eq_bind]
+  have hStep :=
+    openStep_code_of_compileStmtFuel?
+      (sourceProgram := sourceProgram)
+      (sourceFuel := sourceFuel)
+      hCompile hBlocks hFits hStateRel
+  have hStepRegular :=
+    Simulation.Interaction.Rel.strengthen_left hStep
+      (InteractionSemantics.Stmt.openRun_code_regular
+        sourceProgram sourceFuel code source)
+  have hLifted :
+      Simulation.Interaction.Rel
+        (OpenOutcome.SegmentDoneRel result ctx regular
+          source.returns tokens regularExit)
+        (Simulation.Interaction.bind
+          (InteractionSemantics.Stmt.openRun
+            sourceProgram sourceFuel (.code code) source)
+          Simulation.Interaction.pure)
+        (Simulation.Interaction.bind
+          (TypedCfg.InteractionSemantics.Program.openStep
+            cfg entry target)
+          (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
+            (OpenOutcome.stopJump boundaryResult ctx boundaryRegular
+              source.returns tokens)
+            cfg 0)) := by
+    apply Simulation.Interaction.Rel.bind_custom hStepRegular
+    intro sourceDone targetDone hDone
+    rcases hDone with ⟨hOriginal, hRegular⟩
+    cases sourceDone with
+    | error sourceError =>
+        cases targetDone with
+        | error targetError =>
+            exact
+              Simulation.Interaction.Rel.done
+                (Simulation.Interaction.ExceptRel.error trivial)
+        | ok targetOutcome =>
+            cases hOriginal
+    | ok sourceOutcome =>
+        cases targetDone with
+        | error targetError =>
+            cases hOriginal
+        | ok targetOutcome =>
+            cases hOriginal with
+            | ok hOutcome =>
+                rcases sourceOutcome with
+                  ⟨final, sourceMode⟩
+                change sourceMode = .regular at hRegular
+                cases sourceMode with
+                | regular =>
+                    obtain ⟨targetState, rfl, _hState⟩ :=
+                      TypedCfgPreservation.OutcomeSimulation.Rel.regular_elim
+                        hOutcome.1
+                    have hOutcome' :
+                        OpenOutcome.Rel result ctx regular
+                          source.returns tokens
+                          (Structured.Outcome.regular final)
+                          (.jump regular targetState) := by
+                      simpa [
+                        TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext]
+                        using hOutcome
+                    have hPolicy := hRegularPolicy hOutcome'
+                    cases regularExit with
+                    | stop =>
+                        simp only [
+                          TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+                          TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext,
+                          hPolicy, if_true]
+                        exact
+                          Simulation.Interaction.Rel.done
+                            (Simulation.Interaction.ExceptRel.ok hOutcome')
+                    | resume =>
+                        simp only [
+                          TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+                          TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext,
+                          hPolicy, if_false,
+                          TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_zero]
+                        exact
+                          Simulation.Interaction.Rel.done
+                            (Simulation.Interaction.ExceptRel.ok hOutcome')
+                | brk | cont | leave | halt kind =>
+                    cases hRegular
+  simpa [Simulation.Interaction.bind_pure] using hLifted
+
+/--
+Straight-line code at an externally visible fragment boundary stops in one
+TypedCfg step.
+-/
+theorem openRun_code_within_stop_of_compileStmtFuel?
+    {compilerFuel sourceFuel : Nat}
+    {code : Structured.Code}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {sourceProgram : Structured.Program}
+    {source : RunState} {tokens : List Word}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.code code) ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        input source.evm.stack.length) :
+    OpenOutcome.PreservesWithin result result cfg entry ctx
+      regular regular .stop source tokens
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceFuel (.code code) source)
+      1 := by
+  apply
+    openRun_code_within_of_compileStmtFuel?
+      hCompile hBlocks hFits
+  intro final targetState hRel
+  exact OpenOutcome.targetStopped_of_rel hRel
+
+/--
+Straight-line code followed by a statement-list tail leaves its generated rest
+label as tagged exhaustion under the enclosing fragment's stop policy.
+-/
+theorem openRun_code_within_resume_of_compileStmtFuel?
+    {compilerFuel sourceFuel : Nat}
+    {code : Structured.Code}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry boundaryRegular : Assembly.Label}
+    {input : TypedCfg.Shape}
+    {result boundaryResult : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {sourceProgram : Structured.Program}
+    {source : RunState} {tokens : List Word}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.code code) ctx supply entry input
+            (TypedCfgCompiler.restLabel supply) =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        input source.evm.stack.length)
+    (hBefore :
+      TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
+        ctx boundaryRegular supply) :
+    OpenOutcome.PreservesWithin result boundaryResult cfg entry ctx
+      (TypedCfgCompiler.restLabel supply) boundaryRegular .resume
+      source tokens
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceFuel (.code code) source)
+      1 := by
+  apply
+    openRun_code_within_of_compileStmtFuel?
+      hCompile hBlocks hFits
+  intro final targetState _hRel
+  exact
+    OpenOutcome.stopJump_restLabel_eq_false
+      hBefore source.returns tokens targetState
+
+/--
+The existing straight-line statement lowering preserves the complete open
+interaction tree and reaches its regular continuation in one CFG block.
+-/
+theorem openRun_code_of_compileStmtFuel?
+    {compilerFuel sourceFuel : Nat}
+    {code : Structured.Code}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {sourceProgram : Structured.Program}
+    {source : RunState} {tokens : List Word}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.code code) ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        input source.evm.stack.length) :
+    OpenOutcome.Preserves result cfg entry ctx regular source tokens
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceFuel (.code code) source) := by
+  intro target hStateRel
+  refine ⟨1, ?_⟩
+  exact
+    openRun_code_within_stop_of_compileStmtFuel?
+      hCompile hBlocks hFits target hStateRel
 
 end Stmt
 
@@ -1084,6 +1281,99 @@ theorem openRun_nil_of_compileStmtListFuel?
     InteractionSemantics.Block.openRun,
     EffectSemantics.Control.Block.run,
     Simulation.Interaction.pure] using hDone
+
+/--
+The first nonempty statement-list composition theorem: straight-line code
+followed by an already-preserved tail. Compiler decomposition, ambient block
+inheritance, the generated rest label, and target-fuel addition are owned by
+the Structured-to-TypedCfg pass.
+-/
+theorem openRun_code_cons_within_of_compileStmtListFuel?
+    {compilerFuel sourceFuel tailTargetFuel : Nat}
+    {code : Structured.Code} {rest : List Structured.Stmt}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {sourceProgram : Structured.Program}
+    {source : RunState} {tokens : List Word}
+    (hCompile :
+      TypedCfgCompiler.compileStmtListFuel? (compilerFuel + 1)
+          (.code code :: rest) ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        input source.evm.stack.length)
+    (hBefore :
+      TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
+        ctx regular supply)
+    (hTail :
+      ∀ {headResult tailResult : TypedCfgCompiler.Result}
+        {tailInput : TypedCfg.Shape} {middleSource : RunState},
+        TypedCfgCompiler.compileStmtFuel? compilerFuel (.code code)
+            ctx supply entry input (TypedCfgCompiler.restLabel supply) =
+          some headResult →
+        headResult.fallthrough? = some tailInput →
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
+            headResult.next (TypedCfgCompiler.restLabel supply)
+            tailInput regular =
+          some tailResult →
+        TypedCfgPreservation.BlocksInProgram tailResult cfg →
+        middleSource.returns = source.returns →
+        OpenOutcome.PreservesWithin tailResult result cfg
+          (TypedCfgCompiler.restLabel supply) ctx
+          regular regular .stop middleSource tokens
+          (InteractionSemantics.Block.openRun
+            sourceProgram sourceFuel { stmts := rest } middleSource)
+          tailTargetFuel) :
+    OpenOutcome.PreservesWithin result result cfg entry ctx
+      regular regular .stop source tokens
+      (InteractionSemantics.Block.openRun
+        sourceProgram (sourceFuel + 1)
+        { stmts := .code code :: rest } source)
+      (1 + tailTargetFuel) := by
+  cases compilerFuel with
+  | zero =>
+      simp [TypedCfgCompiler.compileStmtListFuel?,
+        TypedCfgCompiler.compileStmtFuel?] at hCompile
+  | succ compilerFuel =>
+      rcases
+          TypedCfgPreservation.Block.components_of_compileStmtListFuel?_cons
+            hCompile with
+        ⟨headResult, hHeadCompile, hNoTail | hWithTail⟩
+      · rcases hNoTail with ⟨hFallthrough, _hResult⟩
+        obtain ⟨output, _hType, hHeadResult⟩ :=
+          TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_code
+            hHeadCompile
+        rw [hHeadResult] at hFallthrough
+        cases hFallthrough
+      · rcases hWithTail with
+          ⟨tailInput, tailResult, hFallthrough, hTailCompile, rfl⟩
+        have hHeadBlocks :=
+          TypedCfgPreservation.BlocksInProgram.left_of_append hBlocks
+        have hTailBlocks :=
+          TypedCfgPreservation.BlocksInProgram.right_of_append hBlocks
+        have hHeadPreserves :
+            OpenOutcome.PreservesWithin headResult
+              (headResult.append tailResult) cfg entry ctx
+              (TypedCfgCompiler.restLabel supply) regular .resume
+              source tokens
+              (InteractionSemantics.Stmt.openRun
+                sourceProgram sourceFuel (.code code) source)
+              1 :=
+          Stmt.openRun_code_within_resume_of_compileStmtFuel?
+            hHeadCompile hHeadBlocks hFits hBefore
+        have hComposed :=
+          OpenOutcome.PreservesWithin.sequence
+            hHeadPreserves
+            (fun middleSource hReturns =>
+              hTail hHeadCompile hFallthrough hTailCompile
+                hTailBlocks hReturns)
+        simpa [
+          InteractionSemantics.Block.openRun,
+          InteractionSemantics.Stmt.openRun,
+          EffectSemantics.Control.Block.run] using hComposed
 
 end Block
 

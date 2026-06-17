@@ -30860,3 +30860,17 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   open-effects axiom smoke, architecture and changed-file hole checks, and
   `git diff --check` pass; axioms remain `propext`, `Classical.choice`, and
   `Quot.sound`.
+- 2026-06-17 05:49:40 PDT - compaction-resume - Resumed the active horizontal
+  CALL/CREATE proof goal with the partially checked Structured
+  boundary-parametric code theorem intact. Next is to verify that theorem,
+  replace the duplicated existential-fuel code proof with its fixed-fuel
+  wrapper, and use the resulting interface for compositional statement lists.
+- 2026-06-17 05:53:06 PDT - proof/structured-code-list-composition - Split
+  straight-line Structured preservation into one-step, boundary-parametric
+  fixed-fuel, stop, and resume theorems; the prior existential-fuel theorem is
+  now a short compatibility wrapper. Added the first compiler-owned nonempty
+  statement-list theorem, composing a code head and preserved tail under one
+  activation-aware outer stop policy via the canonical TypedCfg fuel-add law.
+  Focused and full 1,286-job verification builds, architecture and changed-file
+  hole checks, open-effects axiom smoke, and `git diff --check` pass; axioms
+  remain `propext`, `Classical.choice`, and `Quot.sound`.

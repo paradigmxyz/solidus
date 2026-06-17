@@ -199,8 +199,13 @@ or audit-alias corridor.
 #check EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_add_eq_of_allStopped
 #check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.target_allStopped
 #check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.PreservesWithin.sequence
+#check EvmCompiler.Structured.InteractionSemantics.Stmt.openRun_code_regular
+#check EvmCompiler.Structured.InteractionControlPreservation.Stmt.openStep_code_of_compileStmtFuel?
+#check EvmCompiler.Structured.InteractionControlPreservation.Stmt.openRun_code_within_stop_of_compileStmtFuel?
+#check EvmCompiler.Structured.InteractionControlPreservation.Stmt.openRun_code_within_resume_of_compileStmtFuel?
 #check EvmCompiler.Structured.InteractionControlPreservation.Stmt.openRun_code_of_compileStmtFuel?
 #check EvmCompiler.Structured.InteractionControlPreservation.Block.openRun_nil_of_compileStmtListFuel?
+#check EvmCompiler.Structured.InteractionControlPreservation.Block.openRun_code_cons_within_of_compileStmtListFuel?
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_call
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_callcode
