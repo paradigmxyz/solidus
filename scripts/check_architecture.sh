@@ -1002,6 +1002,7 @@ report_matches \
   EvmCompiler/Assembly/InteractionPreservation.lean \
   EvmCompiler/Assembly/InteractionBytecode.lean \
   EvmCompiler/Structured/InteractionSemantics.lean \
+  EvmCompiler/Structured/InteractionPrimitivePreservation.lean \
   EvmCompiler/Structured/InteractionPreservation.lean \
   EvmCompiler/Structured/InteractionControlPreservation.lean \
   EvmCompiler/Structured/InteractionLeafPreservation.lean \
@@ -1009,6 +1010,8 @@ report_matches \
   EvmCompiler/Structured/InteractionSwitchPreservation.lean \
   EvmCompiler/Locals/Allocation.lean \
   EvmCompiler/Locals/EffectSemantics.lean \
+  EvmCompiler/Locals/InteractionSemantics.lean \
+  EvmCompiler/Locals/InteractionPreservation.lean \
   EvmCompiler/Functions/AllocationObserverRelation.lean \
   EvmCompiler/Functions/ObserverSafety.lean \
   EvmCompiler/Functions/AllocationObserverSafety.lean \

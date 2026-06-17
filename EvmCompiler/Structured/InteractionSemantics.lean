@@ -122,6 +122,16 @@ def openRun (code : Structured.Code) (state : RunState) :
     Open RunState :=
   EffectSemantics.Control.Code.run handler code state
 
+@[simp] theorem openRun_single
+    (instr : Structured.BasicInstr) (state : RunState) :
+    openRun [instr] state =
+      BasicInstr.openStep instr state := by
+  unfold openRun
+  simp only [EffectSemantics.Control.Code.run]
+  exact
+    Simulation.Interaction.bind_pure
+      (BasicInstr.openStep instr state)
+
 def openPopCondition (state : RunState) :
     Open (RunState × Bool) :=
   EffectSemantics.Control.Code.popCondition
@@ -131,6 +141,35 @@ def openRunCondition (code : Structured.Code) (state : RunState) :
     Open (RunState × Bool) :=
   EffectSemantics.Control.Code.runCondition
     EffectSemantics.Ordinary.runStateModel handler code state
+
+theorem openRun_append
+    (left right : Structured.Code) (state : RunState) :
+    openRun (left ++ right) state =
+      Simulation.Interaction.bind
+        (openRun left state) (openRun right) := by
+  induction left generalizing state with
+  | nil =>
+      rfl
+  | cons instr rest ih =>
+      simp only [openRun, List.cons_append,
+        EffectSemantics.Control.Code.run]
+      change
+        Simulation.Interaction.bind
+            (handler.stepInstr instr state)
+            (fun middle =>
+              EffectSemantics.Control.Code.run
+                handler (rest ++ right) middle) =
+          Simulation.Interaction.bind
+            (Simulation.Interaction.bind
+              (handler.stepInstr instr state)
+              (EffectSemantics.Control.Code.run handler rest))
+            (openRun right)
+      rw [Simulation.Interaction.bind_assoc]
+      apply Simulation.Interaction.AllDone.bind_congr
+        (Simulation.Interaction.AllDone.trivial
+          (handler.stepInstr instr state))
+      intro middle _
+      exact ih middle
 
 def ConditionReturnsEq (returns : List ReturnDest) :
     Except EVMException (RunState × Bool) → Prop

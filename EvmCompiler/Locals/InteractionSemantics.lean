@@ -160,6 +160,24 @@ def openTerminal (kind : Assembly.HaltKind) (state : State)
 
 end Primitive
 
+mutual
+  def Expr.OpenSupported {results : Nat} :
+      Locals.Expr results → Prop
+    | .lit _value => True
+    | .var _name => True
+    | .code _code => False
+    | .prim op args =>
+        Primitive.supportsOpen op = true ∧
+          ExprSeq.OpenSupported args
+
+  def ExprSeq.OpenSupported {results : Nat} :
+      Locals.ExprSeq results → Prop
+    | .nil => True
+    | .cons head tail =>
+        Expr.OpenSupported head ∧
+          ExprSeq.OpenSupported tail
+end
+
 def primitiveSemantics :
     Locals.Source.Effectful.Control.PrimitiveSemantics
       (Simulation.Interaction EVMException) State where
@@ -184,6 +202,15 @@ def openEvalCondition (expr : Locals.Expr 1)
     stateModel primitiveSemantics expr state
 
 end Expr
+
+namespace ExprSeq
+
+def openEval {results : Nat} (exprs : Locals.ExprSeq results)
+    (state : State) : Open (State × List Word) :=
+  Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+    stateModel primitiveSemantics exprs state
+
+end ExprSeq
 
 namespace Block
 

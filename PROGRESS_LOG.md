@@ -31128,3 +31128,19 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   marker scans, open-effects and resource-observer axiom smokes, and
   `git diff --check` all pass. The checked interaction theorems depend only on
   `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-17 12:43:12 PDT - proof/compaction-resume - Resumed the horizontal
+  CALL/CREATE proof at the recursive Locals expression and expression-sequence
+  boundary, preserving the green canonical open-kernel checkpoint.
+- 2026-06-17 12:55:56 PDT - proof/locals-open-expressions - Proved the mutual
+  adjacent `Expr.openEval_compileCode` and `Expr.openEvalSeq_compileCode`
+  theorems over the existing Locals compiler. The checked relation preserves
+  exact ordered resource/external interactions, initialized named locals,
+  result arity, variable stores, return destinations, shared state, and exact
+  stack-prefix growth from arbitrary target runtime-control positions.
+- 2026-06-17 13:00:17 PDT - verification/locals-open-expressions - The focused
+  Locals owner build and full 1,297-job verification root pass, together with
+  architecture dependency/single-owner checks, changed-file forbidden-marker
+  and hole scans, public/resource/memory/open-effects proof smokes, and
+  `git diff --check`. The new recursive expression theorems depend only on
+  `propext`, `Classical.choice`, and `Quot.sound`; architecture reports only
+  the pre-existing soft module-size debt.

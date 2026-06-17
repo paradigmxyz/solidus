@@ -764,7 +764,10 @@ Exit: the shared core builds with no compiler layer changed.
     opcodes, and both CREATE-family opcodes.
   - [x] Stack-free primitive to emitted Structured instruction relation,
     including arbitrary caller-owned stack suffixes.
-  - [ ] Recursive Locals expression, statement, block, loop, call, and program
+  - [x] Recursive Locals expression and expression-sequence preservation,
+    including initialized named-local lookup, exact result arity, arbitrary
+    target runtime control, and ordered open effects.
+  - [ ] Recursive Locals statement, block, loop, call, and program
     preservation.
   - [ ] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
@@ -806,7 +809,8 @@ Exit: every layer exposes one canonical open computation.
       whole-program wrapper.
 - [ ] Locals/Expressions -> Structured.
   - [x] Adjacent primitive leaf over the shared ordered interaction tree.
-  - [ ] Recursive compiler-owned expression and control composition.
+  - [x] Recursive compiler-owned Locals expression composition.
+  - [ ] Recursive compiler-owned statement and control composition.
 - [ ] Functions -> allocated Locals/Expressions.
 - [ ] Yul -> Functions.
 

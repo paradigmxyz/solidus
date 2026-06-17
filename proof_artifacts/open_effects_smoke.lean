@@ -49,6 +49,8 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_create
 #check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_create2
 #check EvmCompiler.Locals.InteractionPreservation.Primitive.openEval_op
+#check EvmCompiler.Locals.InteractionPreservation.Expr.openEval_compileCode
+#check EvmCompiler.Locals.InteractionPreservation.Expr.openEvalSeq_compileCode
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches.of_stateRel
 #check EvmCompiler.Structured.InteractionSemantics.Code.openRun_returns
@@ -154,6 +156,8 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_create
 #print axioms EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_create2
 #print axioms EvmCompiler.Locals.InteractionPreservation.Primitive.openEval_op
+#print axioms EvmCompiler.Locals.InteractionPreservation.Expr.openEval_compileCode
+#print axioms EvmCompiler.Locals.InteractionPreservation.Expr.openEvalSeq_compileCode
 #print axioms EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches.of_stateRel
 #print axioms EvmCompiler.Structured.InteractionSemantics.Code.openRun_returns
 #print axioms EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNWithStop_one

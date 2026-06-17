@@ -210,6 +210,8 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_create
 #check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_create2
 #check EvmCompiler.Locals.InteractionPreservation.Primitive.openEval_op
+#check EvmCompiler.Locals.InteractionPreservation.Expr.openEval_compileCode
+#check EvmCompiler.Locals.InteractionPreservation.Expr.openEvalSeq_compileCode
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches.of_stateRel
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationExtension
