@@ -102,6 +102,8 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
       argument prelude;
     - [x] lift compiler-selected primitive expression failure into the
       recursive program-indexed terminal family;
+    - [x] lift internal-call argument and callee-body failure into the
+      recursive program-indexed terminal expression family;
     - [ ] lift terminal expressions, calls, and compound control through the
       recursive program-indexed family;
   - [x] expose the bounded regular whole-program forward theorem;

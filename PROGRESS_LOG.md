@@ -30462,3 +30462,17 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   public/resource/memory proof smokes, changed-file hole/axiom scan, and
   `git diff --check` passed. Both new primitive-expression theorems depend only
   on `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 20:27:52 PDT - proof/yul-terminal-call-expression-fuel - Added
+  exact quantitative constructors for terminal call statements and hidden
+  return-temporary call expressions, a bounded selected-callee body theorem,
+  and the recursive internal-call terminal expression case. Argument failure
+  preserves an unreachable call suffix; callee failure composes source-owned
+  argument and body budgets without a call oracle or generated public
+  evidence.
+- 2026-06-16 20:31:34 PDT -
+  validation/yul-terminal-call-expression-fuel - Focused terminal-fuel build,
+  full 1,269-job verification root, architecture dependency guard,
+  changed-file hole/axiom scan, full resource-observer axiom smoke, and
+  `git diff --check` passed. The call constructors, selected-body theorem, and
+  recursive expression dispatcher depend only on `propext`,
+  `Classical.choice`, and `Quot.sound`.
