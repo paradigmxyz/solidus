@@ -31543,3 +31543,17 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1154-job Functions build, 1304-job verification root, architecture check,
   touched-file hole scan, and `git diff --check` passed; query-equality
   theorems use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 16:56:02 PDT - compaction-resume - resumed the open-world
+  Functions-to-allocation boundary from exact external-query equality; the
+  current checkpoint preserves shared machine state across arbitrary common
+  CALL/CREATE responses, with scratch/store and returned-stack preservation
+  next.
+- 2026-06-17 16:57:57 PDT - proof/functions-external-response - proved
+  `finishExternalCall_both`, `SharedRel.finishCall`, and
+  `SharedRel.finishCreate`: related allocation machines remain related after
+  every common CALL/CREATE response and arbitrary post-world, including
+  response-memory copying and zero-length windows.
+- 2026-06-17 16:57:57 PDT - validation/functions-external-response - the
+  1154-job Functions build, 1304-job verification root, architecture guards,
+  touched-file hole scan, and `git diff --check` passed; all three response
+  theorems use only `[propext, Classical.choice, Quot.sound]`.

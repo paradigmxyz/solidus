@@ -169,6 +169,76 @@ theorem createRequest_eq
       Simulation.ExternalFrame.initCode,
       Simulation.ExternalFrame.ofShared, hEnv, hCode]
 
+theorem finishCall
+    {contract : MemoryContract.Contract}
+    {source target : Assembly.EVMState}
+    (hRel : SharedRel contract source.toSharedState target.toSharedState)
+    (hTargetNoWrap :
+      target.toMachineState.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (callLocal : Simulation.CallLocal)
+    (response : Simulation.CallResponse)
+    (sourceRest targetRest : EvmYul.Stack Word)
+    (hInput :
+      Simulation.MemorySafety.WindowSafe contract
+        callLocal.inputOffset.toNat callLocal.inputSize.toNat)
+    (hOutput :
+      Simulation.MemorySafety.WindowSafe contract
+        callLocal.outputOffset.toNat callLocal.outputSize.toNat) :
+    SharedRel contract
+      (Assembly.InteractionSemantics.EVMState.finishCall
+        source sourceRest callLocal response).toSharedState
+      (Assembly.InteractionSemantics.EVMState.finishCall
+        target targetRest callLocal response).toSharedState := by
+  refine ⟨?_, ?_⟩
+  · have hMachine :=
+      Simulation.MemorySafety.finishExternalCall_both
+        hRel.machine hTargetNoWrap response.returnData
+        callLocal.inputOffset callLocal.inputSize
+        callLocal.outputOffset callLocal.outputSize hInput hOutput
+    simpa [Assembly.InteractionSemantics.EVMState.finishCall,
+      Assembly.InteractionSemantics.EVMState.installWorld,
+      Simulation.CallLocal.finishMachine,
+      EvmYul.EVM.State.incrPC] using hMachine
+  · simp [Assembly.InteractionSemantics.EVMState.finishCall,
+      Assembly.InteractionSemantics.EVMState.installWorld,
+      EvmYul.EVM.State.incrPC,
+      Simulation.OpenWorld.installEVMShared, hRel.world]
+
+theorem finishCreate
+    {contract : MemoryContract.Contract}
+    {source target : Assembly.EVMState}
+    (hRel : SharedRel contract source.toSharedState target.toSharedState)
+    (hTargetNoWrap :
+      target.toMachineState.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (createLocal : Simulation.CreateLocal)
+    (response : Simulation.CreateResponse)
+    (sourceRest targetRest : EvmYul.Stack Word)
+    (hInput :
+      Simulation.MemorySafety.WindowSafe contract
+        createLocal.initOffset.toNat createLocal.initSize.toNat) :
+    SharedRel contract
+      (Assembly.InteractionSemantics.EVMState.finishCreate
+        source sourceRest createLocal response).toSharedState
+      (Assembly.InteractionSemantics.EVMState.finishCreate
+        target targetRest createLocal response).toSharedState := by
+  refine ⟨?_, ?_⟩
+  · have hMachine :=
+      Simulation.MemorySafety.finishExternalCall_both
+        hRel.machine hTargetNoWrap response.returnData
+        createLocal.initOffset createLocal.initSize
+        (EvmYul.UInt256.ofNat 0) (EvmYul.UInt256.ofNat 0)
+        hInput (Simulation.MemorySafety.windowSafe_zero contract 0)
+    simpa [Assembly.InteractionSemantics.EVMState.finishCreate,
+      Assembly.InteractionSemantics.EVMState.installWorld,
+      Simulation.CreateLocal.finishMachine,
+      EvmYul.EVM.State.incrPC] using hMachine
+  · simp [Assembly.InteractionSemantics.EVMState.finishCreate,
+      Assembly.InteractionSemantics.EVMState.installWorld,
+      EvmYul.EVM.State.incrPC,
+      Simulation.OpenWorld.installEVMShared, hRel.world]
+
 end SharedRel
 
 /-- Core allocation relation, independent of observers and interaction history. -/

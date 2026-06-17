@@ -855,6 +855,10 @@ Exit: the shared core builds with no compiler layer changed.
     with checked cursor-erasure bridges from the legacy observer relation.
   - [x] Zero-length-aware source-facing memory-window safety for all
     CALL/CREATE request and response windows.
+  - [x] Exact CALL/CREATE query equality and shared-state preservation for
+    every common response and arbitrary post-world.
+  - [ ] Preserve concrete scratch slots and returned stack prefixes across
+    CALL/CREATE response installation.
   - [ ] Recursive allocation preservation for expressions, statements,
     internal calls, loops, terminals, and whole programs.
 - [ ] Yul.

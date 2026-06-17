@@ -174,6 +174,37 @@ def WindowSafe (contract : MemoryContract.Contract)
     WindowSafe contract address 0 :=
   Or.inl rfl
 
+namespace WindowSafe
+
+theorem expansion
+    {contract : MemoryContract.Contract} {address size : Nat}
+    (hSafe : WindowSafe contract address size) :
+    Compiler.MemoryRelation.ExpansionNoWrap address size := by
+  rcases hSafe with hZero | ⟨_hAllowed, hExpansion, _hHost⟩
+  · subst size
+    simp [Compiler.MemoryRelation.ExpansionNoWrap,
+      EvmYul.MachineState.M]
+    norm_num [EvmYul.UInt256.size]
+  · exact hExpansion
+
+theorem host_of_pos
+    {contract : MemoryContract.Contract} {address size : Nat}
+    (hSafe : WindowSafe contract address size) (hPos : 0 < size) :
+    address + size < USize.size := by
+  rcases hSafe with hZero | ⟨_hAllowed, _hExpansion, hHost⟩
+  · omega
+  · exact hHost
+
+theorem allowed_of_pos
+    {contract : MemoryContract.Contract} {address size : Nat}
+    (hSafe : WindowSafe contract address size) (hPos : 0 < size) :
+    RegionAllowed contract address size := by
+  rcases hSafe with hZero | ⟨hAllowed, _hExpansion, _hHost⟩
+  · omega
+  · exact hAllowed
+
+end WindowSafe
+
 /-- Related machines expose identical bytes through every safe source window. -/
 theorem readWithPadding_eq_of_windowSafe
     {contract : MemoryContract.Contract}
@@ -202,6 +233,148 @@ theorem readWithPadding_eq_of_windowSafe
         exact
           Compiler.MemoryRelation.OutsideReservation.readWithPadding
             hMemory address size hAllowed' (by omega)
+
+/--
+Finishing the same external response preserves the compiler memory relation.
+The response bytes are arbitrary; only the caller-owned input/output windows
+are constrained.
+-/
+theorem finishExternalCall_both
+    {contract : MemoryContract.Contract}
+    {source target : EvmYul.MachineState}
+    (hRel : Compiler.MemoryRelation.MachineRel contract source target)
+    (hTargetNoWrap :
+      target.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (returnData : ByteArray)
+    (inputOffset inputSize outputOffset outputSize : Word)
+    (hInput : WindowSafe contract inputOffset.toNat inputSize.toNat)
+    (hOutput : WindowSafe contract outputOffset.toNat outputSize.toNat) :
+    Compiler.MemoryRelation.MachineRel contract
+      (source.finishExternalCall returnData
+        inputOffset inputSize outputOffset outputSize)
+      (target.finishExternalCall returnData
+        inputOffset inputSize outputOffset outputSize) := by
+  let sourceInputWords :=
+    EvmYul.MachineState.M source.activeWords.toNat
+      inputOffset.toNat inputSize.toNat
+  let targetInputWords :=
+    EvmYul.MachineState.M target.activeWords.toNat
+      inputOffset.toNat inputSize.toNat
+  let sourceFinalWords :=
+    EvmYul.MachineState.M sourceInputWords
+      outputOffset.toNat outputSize.toNat
+  let targetFinalWords :=
+    EvmYul.MachineState.M targetInputWords
+      outputOffset.toNat outputSize.toNat
+  let copyLen := min outputSize.toNat returnData.size
+  have hInputExpansion := hInput.expansion
+  have hOutputExpansion := hOutput.expansion
+  have hTargetInputBytes :
+      targetInputWords * MemoryContract.wordBytes <
+        EvmYul.UInt256.size := by
+    exact
+      Compiler.MemoryRelation.M_activeBytes_lt_of_expansionNoWrap
+        hTargetNoWrap hInputExpansion
+  have hTargetFinalBytes :
+      targetFinalWords * MemoryContract.wordBytes <
+        EvmYul.UInt256.size := by
+    exact
+      Compiler.MemoryRelation.M_activeBytes_lt_of_expansionNoWrap
+        hTargetInputBytes hOutputExpansion
+  have hTargetInputLt : targetInputWords < EvmYul.UInt256.size := by
+    have hPositive : 0 < MemoryContract.wordBytes := by decide
+    nlinarith
+  have hTargetFinalLt : targetFinalWords < EvmYul.UInt256.size := by
+    have hPositive : 0 < MemoryContract.wordBytes := by decide
+    nlinarith
+  cases hReservation : contract.scratch? with
+  | none =>
+      have hMemory : source.memory = target.memory := by
+        simpa [hReservation] using hRel.memory
+      have hActive : source.activeWords = target.activeWords := by
+        simpa [hReservation] using hRel.activeWords
+      refine
+        { memory := ?_
+          activeWords := ?_
+          returnData := ?_
+          output := ?_ }
+      · rw [hReservation]
+        simp [EvmYul.MachineState.finishExternalCall,
+          EvmYul.writeBytes, hMemory]
+      · rw [hReservation]
+        simp [EvmYul.MachineState.finishExternalCall,
+          EvmYul.writeBytes, hActive]
+      · simp [EvmYul.MachineState.finishExternalCall]
+      · simp [EvmYul.MachineState.finishExternalCall]
+  | some reservation =>
+      have hMemory :
+          Compiler.MemoryRelation.OutsideReservation
+            reservation source.memory target.memory := by
+        simpa [hReservation] using hRel.memory
+      have hActive :
+          source.activeWords.toNat ≤ target.activeWords.toNat := by
+        simpa [hReservation] using hRel.activeWords
+      have hSourceNoWrap :
+          source.activeWords.toNat * MemoryContract.wordBytes <
+            EvmYul.UInt256.size :=
+        lt_of_le_of_lt
+          (Nat.mul_le_mul_right MemoryContract.wordBytes hActive)
+          hTargetNoWrap
+      have hSourceInputBytes :
+          sourceInputWords * MemoryContract.wordBytes <
+            EvmYul.UInt256.size := by
+        exact
+          Compiler.MemoryRelation.M_activeBytes_lt_of_expansionNoWrap
+            hSourceNoWrap hInputExpansion
+      have hSourceFinalBytes :
+          sourceFinalWords * MemoryContract.wordBytes <
+            EvmYul.UInt256.size := by
+        exact
+          Compiler.MemoryRelation.M_activeBytes_lt_of_expansionNoWrap
+            hSourceInputBytes hOutputExpansion
+      have hSourceFinalLt : sourceFinalWords < EvmYul.UInt256.size := by
+        have hPositive : 0 < MemoryContract.wordBytes := by decide
+        nlinarith
+      refine
+        { memory := ?_
+          activeWords := ?_
+          returnData := ?_
+          output := ?_ }
+      · rw [hReservation]
+        by_cases hOutputZero : outputSize.toNat = 0
+        ·
+            simpa [EvmYul.MachineState.finishExternalCall,
+              EvmYul.writeBytes, copyLen, hOutputZero] using hMemory
+        ·
+            have hOutputPos : 0 < outputSize.toNat :=
+              Nat.pos_of_ne_zero hOutputZero
+            have hHost :
+                outputOffset.toNat + outputSize.toNat < USize.size :=
+              hOutput.host_of_pos hOutputPos
+            have hCopyLe : copyLen ≤ outputSize.toNat := by
+              exact min_le_left _ _
+            have hCopyHost :
+                outputOffset.toNat + copyLen < USize.size := by
+              omega
+            have hWritten :=
+              Compiler.MemoryRelation.OutsideReservation.write_both
+                returnData 0 outputOffset.toNat copyLen hMemory hCopyHost
+            simpa [EvmYul.MachineState.finishExternalCall,
+              EvmYul.writeBytes, copyLen] using hWritten
+      · simp only [hReservation]
+        simp only [EvmYul.MachineState.finishExternalCall,
+          EvmYul.writeBytes]
+        change
+          (EvmYul.UInt256.ofNat sourceFinalWords).toNat ≤
+            (EvmYul.UInt256.ofNat targetFinalWords).toNat
+        rw [EvmYul.UInt256.toNat_ofNat_of_lt hSourceFinalLt,
+          EvmYul.UInt256.toNat_ofNat_of_lt hTargetFinalLt]
+        exact
+          Compiler.MemoryRelation.M_mono_active
+            (Compiler.MemoryRelation.M_mono_active hActive)
+      · simp [EvmYul.MachineState.finishExternalCall]
+      · simp [EvmYul.MachineState.finishExternalCall]
 
 /--
 Source-facing primitive safety for the open interaction semantics.
