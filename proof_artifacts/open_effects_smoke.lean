@@ -176,5 +176,7 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Structured.InteractionCallPreservation.Call.openStep_entry_of_compileStmtFuel?
 #print axioms EvmCompiler.Structured.InteractionCallPreservation.Call.openRunNResult_procEntry
 #print axioms EvmCompiler.Structured.InteractionCallPreservation.Call.openStep_dispatch
+#print axioms EvmCompiler.Structured.InteractionCallPreservation.Call.openRun_call_exec_under
+#print axioms EvmCompiler.Structured.InteractionCallPreservation.Call.openRun_call_exec_under_of_compileStmtFuel?
 #print axioms EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes
 #print axioms EvmCompiler.Assembly.Bytecode.compile_openRunNResult_executes

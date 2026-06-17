@@ -31005,3 +31005,18 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   guard, changed-file hole scan, open-effects axiom audit, and
   `git diff --check` pass. Axioms remain `propext`, `Classical.choice`, and
   `Quot.sound`. Recursive procedure-body preservation remains the call frontier.
+- 2026-06-17 10:33:50 PDT - proof/structured-open-call-composition - Added the
+  execution-indexed Structured internal-call owner theorem. Successful source
+  calls are inverted through the canonical parameterized evaluator, so their
+  exact interaction transcript is the callee body transcript. The adjacent
+  theorem prepends only the real generated call-site and optional relabel
+  routing, composes the recursive procedure-body callback, dispatches regular
+  and `leave` returns through the globally unique compiler token, restores the
+  caller frame and checked return shape, and propagates halts without dispatch.
+  A thin compiler-facing wrapper discovers the generated procedure fragment
+  and exposes only its block/call ownership facts to the recursive block owner.
+  The focused 1,134-job call build, full 1,291-job verification root,
+  architecture guard, changed-file hole scan, open-effects axiom audit, and
+  `git diff --check` pass. Axioms remain `propext`, `Classical.choice`, and
+  `Quot.sound`. The remaining Structured gap is instantiating this callback in
+  the mutual whole-statement/block owner and generated main wrapper.

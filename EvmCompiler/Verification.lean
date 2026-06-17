@@ -274,6 +274,8 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.InteractionCallPreservation.Call.openStep_entry_of_compileStmtFuel?
 #check EvmCompiler.Structured.InteractionCallPreservation.Call.openRunNResult_procEntry
 #check EvmCompiler.Structured.InteractionCallPreservation.Call.openStep_dispatch
+#check EvmCompiler.Structured.InteractionCallPreservation.Call.openRun_call_exec_under
+#check EvmCompiler.Structured.InteractionCallPreservation.Call.openRun_call_exec_under_of_compileStmtFuel?
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_call
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_callcode
