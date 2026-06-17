@@ -86,37 +86,29 @@ theorem argListEval_toSeq
                       have hHeadEval :
                           Functions.Source.Effectful.Expr.eval
                               model prim head source =
-                            .ok (afterHead, [value]) := by
-                        unfold Functions.Source.Effectful.Expr.evalOne at hHead
-                        unfold Locals.Source.Effectful.Expr.evalOne at hHead
-                        cases hEval :
-                            Functions.Source.Effectful.Expr.eval
-                              model prim head source with
-                        | error evalErr =>
-                            simp [hEval] at hHead
-                        | ok evalResult =>
-                            rcases evalResult with ⟨headFinal, headValues⟩
-                            cases headValues with
-                            | nil =>
-                                simp [hEval, Functions.Source.invalid,
-                                  Structured.invalid] at hHead
-                            | cons first remaining =>
-                                cases remaining with
-                                | nil =>
-                                    simp [hEval] at hHead
-                                    rcases hHead with ⟨rfl, rfl⟩
-                                    simpa using hEval
-                                | cons second tail =>
-                                    simp [hEval, Functions.Source.invalid,
-                                      Structured.invalid] at hHead
+                            .ok (afterHead, [value]) :=
+                        Functions.Source.Effectful.Expr.eval_singleton_of_evalOne
+                          model prim hHead
                       have hTailEval :
                           Locals.Source.Effectful.Expr.ExprSeq.eval
                               model prim tailSeq afterHead =
                             .ok (afterRest, restValues) :=
                         argListEval_toSeq model prim hTailSeq hRest
+                      have hHeadControl :
+                          Locals.Source.Effectful.Expr.Control.eval
+                              model prim head source =
+                            .ok (afterHead, [value]) := by
+                        simpa [Functions.Source.Effectful.Expr.eval,
+                          Locals.Source.Effectful.Expr.eval] using hHeadEval
+                      have hTailControl :
+                          Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+                              model prim tailSeq afterHead =
+                            .ok (afterRest, restValues) := by
+                        simpa [Locals.Source.Effectful.Expr.ExprSeq.eval] using
+                          hTailEval
                       rw [exprSeqEval_seqCast]
                       simp [Locals.Source.Effectful.Expr.ExprSeq.eval,
-                        hHeadEval, hTailEval]
+                        hHeadControl, hTailControl]
 
 theorem argListEval_of_toSeq
     {σ : Type}
@@ -161,7 +153,7 @@ theorem argListEval_of_toSeq
               subst seq
               rw [exprSeqEval_seqCast] at hRun
               cases hHead :
-                  Functions.Source.Effectful.Expr.eval
+                  Locals.Source.Effectful.Expr.Control.eval
                     model prim head source with
               | error err =>
                   simp [Locals.Source.Effectful.Expr.ExprSeq.eval,
@@ -169,7 +161,7 @@ theorem argListEval_of_toSeq
               | ok headResult =>
                   rcases headResult with ⟨afterHead, headValues⟩
                   cases hTail :
-                      Locals.Source.Effectful.Expr.ExprSeq.eval
+                      Locals.Source.Effectful.Expr.Control.ExprSeq.eval
                         model prim tailSeq afterHead with
                   | error err =>
                       simp [Locals.Source.Effectful.Expr.ExprSeq.eval,
@@ -179,11 +171,23 @@ theorem argListEval_of_toSeq
                       simp [Locals.Source.Effectful.Expr.ExprSeq.eval,
                         hHead, hTail] at hRun
                       rcases hRun with ⟨rfl, hValues⟩
+                      have hHeadPublic :
+                          Functions.Source.Effectful.Expr.eval
+                              model prim head source =
+                            .ok (afterHead, headValues) := by
+                        simpa [Functions.Source.Effectful.Expr.eval,
+                          Locals.Source.Effectful.Expr.eval] using hHead
+                      have hTailPublic :
+                          Locals.Source.Effectful.Expr.ExprSeq.eval
+                              model prim tailSeq afterHead =
+                            .ok (afterTail, tailValues) := by
+                        simpa [Locals.Source.Effectful.Expr.ExprSeq.eval] using
+                          hTail
                       have hHeadLength :
                           headValues.length = 1 := by
                         exact
                           Functions.Source.Effectful.Expr.eval_outputs_length_of
-                            model prim hPrimitive hHead
+                            model prim hPrimitive hHeadPublic
                       cases headValues with
                       | nil =>
                           simp at hHeadLength
@@ -192,13 +196,13 @@ theorem argListEval_of_toSeq
                           | nil =>
                               have hTailRun :=
                                 argListEval_of_toSeq
-                                  model prim hPrimitive hTailSeq hTail
+                                  model prim hPrimitive hTailSeq hTailPublic
                               have hHeadOne :
                                   Functions.Source.Effectful.Expr.evalOne
                                       model prim head source =
                                     .ok (afterHead, value) :=
                                 Functions.Source.Effectful.Expr.evalOne_of_eval_singleton
-                                  model prim hHead
+                                  model prim hHeadPublic
                               rw [← hValues]
                               simp [Functions.Source.Effectful.ArgList.eval,
                                 hHeadOne, hTailRun]
@@ -568,9 +572,12 @@ theorem cons
           (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
             contract transcript)
           head candidate =
-        .ok (candidate, value) := by
-    simp [Functions.Source.Effectful.Expr.evalOne,
-      Locals.Source.Effectful.Expr.evalOne, hHeadEval]
+        .ok (candidate, value) :=
+    Functions.Source.Effectful.Expr.evalOne_of_eval_singleton
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hHeadEval
   have hRestEval := hRest candidate hExtends
   simp [Functions.Source.Effectful.ArgList.eval, hHeadOne, hRestEval]
 
@@ -849,9 +856,22 @@ theorem directAt
                                             ⟨targetFinal, ?_, hFinalRel, ?_,
                                               hPrimitiveStore.trans hArgsStore⟩
                                           · rw [exprEval_cast]
+                                            have hTargetArgsControl :
+                                                Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+                                                    (Functions.ObserverSemantics.stateModel
+                                                      transcript)
+                                                    (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                                                      contract transcript)
+                                                    seq target =
+                                                  .ok
+                                                    (targetAfterArgs,
+                                                      reversedValues) := by
+                                              simpa [Locals.Source.Effectful.Expr.ExprSeq.eval]
+                                                using hTargetArgs
                                             simp [Functions.Source.Effectful.Expr.eval,
                                               Locals.Source.Effectful.Expr.eval,
-                                              hTargetArgs, hTargetPrimitive']
+                                              hTargetArgsControl,
+                                              hTargetPrimitive']
                                           · have hLength :=
                                               Functions.ObserverSafety.SafeSemantics.eval_outputs_length
                                                 hTargetPrimitive'
@@ -971,10 +991,13 @@ theorem directAt
                                                 lowerHead target =
                                               .ok
                                                 (targetAfterHead,
-                                                  headValues.head!) := by
-                                          simp [Functions.Source.Effectful.Expr.evalOne,
-                                            Locals.Source.Effectful.Expr.evalOne,
-                                            hTargetHead]
+                                                  headValues.head!) :=
+                                          Functions.Source.Effectful.Expr.evalOne_of_eval_singleton
+                                            (Functions.ObserverSemantics.stateModel
+                                              transcript)
+                                            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                                              contract transcript)
+                                            hTargetHead
                                         refine
                                           ⟨targetFinal, ?_, hFinalRel,
                                             hRestStore.trans hHeadStore⟩
@@ -1556,18 +1579,12 @@ theorem bindGenerated
           (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
             contract transcript)
           lower targetBefore =
-        .ok (targetAfter, value) := by
-    unfold Functions.Source.Effectful.Expr.evalOne
-    unfold Locals.Source.Effectful.Expr.evalOne
-    change
-      Locals.Source.Effectful.Expr.eval
-          (Functions.ObserverSemantics.stateModel transcript)
-          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
-            contract transcript)
-          lower targetBefore =
-        .ok (targetAfter, [value]) at hEval
-    rw [hEval]
-    rfl
+        .ok (targetAfter, value) :=
+    Functions.Source.Effectful.Expr.evalOne_of_eval_singleton
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hEval
   obtain ⟨hUsed, hNotMem⟩ := Fresh.fresh?_components hFresh
   have hSourceHidden :
       source.source.lookup? tmp = none :=
@@ -3803,9 +3820,18 @@ noncomputable def ofDirectPrimitive
                   target =
                 .ok (targetFinal, values) := by
             rw [exprEval_cast]
+            have hTargetArgsControl :
+                Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+                    (Functions.ObserverSemantics.stateModel transcript)
+                    (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                      contract transcript)
+                    seq target =
+                  .ok (targetAfterArgs, reversedValues) := by
+              simpa [Locals.Source.Effectful.Expr.ExprSeq.eval] using
+                hTargetArgs
             simp [Functions.Source.Effectful.Expr.eval,
               Locals.Source.Effectful.Expr.eval,
-              hTargetArgs, hTargetPrimitive']
+              hTargetArgsControl, hTargetPrimitive']
           have hLength : values.length = 1 := by
             have hResultLength :=
               Functions.ObserverSafety.SafeSemantics.eval_outputs_length
@@ -3986,9 +4012,18 @@ noncomputable def ofBoundPrimitive
                   targetAfterArgs =
                 .ok (targetFinal, values) := by
             rw [exprEval_cast]
+            have hTargetArgsControl :
+                Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+                    (Functions.ObserverSemantics.stateModel transcript)
+                    (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                      contract transcript)
+                    seq targetAfterArgs =
+                  .ok (targetAfterArgs, reversedValues) := by
+              simpa [Locals.Source.Effectful.Expr.ExprSeq.eval] using
+                hTargetArgs
             simp [Functions.Source.Effectful.Expr.eval,
               Locals.Source.Effectful.Expr.eval,
-              hTargetArgs, hTargetPrimitive']
+              hTargetArgsControl, hTargetPrimitive']
           have hLength : values.length = 1 := by
             have hResultLength :=
               Functions.ObserverSafety.SafeSemantics.eval_outputs_length
@@ -4238,9 +4273,18 @@ noncomputable def ofPrimitive
                   target =
                 .ok (targetFinal, values) := by
             rw [exprEval_cast]
+            have hTargetArgsControl :
+                Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+                    (Functions.ObserverSemantics.stateModel transcript)
+                    (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                      contract transcript)
+                    seq target =
+                  .ok (targetAfterArgs, reversedValues) := by
+              simpa [Locals.Source.Effectful.Expr.ExprSeq.eval] using
+                hTargetArgs
             simp [Functions.Source.Effectful.Expr.eval,
               Locals.Source.Effectful.Expr.eval,
-              hTargetArgs, hTargetPrimitive']
+              hTargetArgsControl, hTargetPrimitive']
           have hVars :
               targetFinal.source.vars = target.source.vars :=
             Functions.ObserverSafety.SafeSemantics.expr_eval_vars_eq hTarget
@@ -4353,9 +4397,18 @@ noncomputable def ofPrimitive
                   targetAfterArgs =
                 .ok (targetFinal, values) := by
             rw [exprEval_cast]
+            have hTargetArgsControl :
+                Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+                    (Functions.ObserverSemantics.stateModel transcript)
+                    (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                      contract transcript)
+                    seq targetAfterArgs =
+                  .ok (targetAfterArgs, reversedValues) := by
+              simpa [Locals.Source.Effectful.Expr.ExprSeq.eval] using
+                hTargetArgs
             simp [Functions.Source.Effectful.Expr.eval,
               Locals.Source.Effectful.Expr.eval,
-              hTargetArgs, hTargetPrimitive']
+              hTargetArgsControl, hTargetPrimitive']
           let prepared :=
             PreparedExpression.afterPrepared
               argsPrepared.prepared.prepared hTarget hFinalRel
@@ -4648,14 +4701,30 @@ noncomputable def ofNullaryPrimitive
       ⟨rfl, rfl, op, hInputs, hOutputs, hOp, rfl⟩ :=
     EvmCompiler.Yul.Expr.lower1Unchecked?_nullaryPrimitive_parts hLower
   rw [exprEval_cast] at hTarget
+  have hArgs :
+      Locals.Source.Effectful.Expr.ExprSeq.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          (EvmCompiler.Yul.Expr.seqCast hInputs.symm .nil) target =
+        .ok (target, []) := by
+    rw [exprSeqEval_seqCast]
+    rfl
+  have hArgsControl :
+      Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          (EvmCompiler.Yul.Expr.seqCast hInputs.symm .nil) target =
+        .ok (target, []) := by
+    simpa [Locals.Source.Effectful.Expr.ExprSeq.eval] using hArgs
   have hPrimitive :
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target [] =
         .ok (targetFinal, values) := by
     simpa [Functions.Source.Effectful.Expr.eval,
       Locals.Source.Effectful.Expr.eval,
-      Locals.Source.Effectful.Expr.ExprSeq.eval,
-      exprSeqEval_seqCast] using hTarget
+      hArgsControl] using hTarget
   obtain ⟨sourceFinal, hSourcePrimitive, hFinalRel, hStore⟩ :=
     EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelectedBackward
       (contract := contract) (sourceValues := [])

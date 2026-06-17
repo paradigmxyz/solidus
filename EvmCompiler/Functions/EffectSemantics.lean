@@ -151,7 +151,8 @@ theorem eval_var {σ : Type}
     (hLookup : model.vars state name = some value) :
     eval model prim (.var name : Functions.Expr 1) state =
       .ok (state, [value]) := by
-  simp [eval, Locals.Source.Effectful.Expr.eval, hLookup]
+  simp [eval, Locals.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.Control.eval, hLookup]
 
 theorem evalOne_of_eval_singleton {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
@@ -161,7 +162,14 @@ theorem evalOne_of_eval_singleton {σ : Type}
         .ok (final, [value])) :
     evalOne model prim expr state =
       .ok (final, value) := by
-  simp [evalOne, Locals.Source.Effectful.Expr.evalOne, hEval]
+  have hEvalControl :
+      Locals.Source.Effectful.Expr.Control.eval
+          model prim expr state =
+        .ok (final, [value]) := by
+    simpa [eval, Locals.Source.Effectful.Expr.eval] using hEval
+  simp [evalOne, Locals.Source.Effectful.Expr.evalOne,
+    Locals.Source.Effectful.Expr.Control.evalOne,
+    hEvalControl]
 
 theorem evalCondition_of_eval_singleton {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
@@ -171,8 +179,16 @@ theorem evalCondition_of_eval_singleton {σ : Type}
         .ok (final, [value])) :
     evalCondition model prim expr state =
       .ok (final, value != EvmYul.UInt256.ofNat 0) := by
+  have hEvalControl :
+      Locals.Source.Effectful.Expr.Control.eval
+          model prim expr state =
+        .ok (final, [value]) := by
+    simpa [eval, Locals.Source.Effectful.Expr.eval] using hEval
   simp [evalCondition, Locals.Source.Effectful.Expr.evalCondition,
-    Locals.Source.Effectful.Expr.evalOne, hEval]
+    Locals.Source.Effectful.Expr.Control.evalCondition,
+    Locals.Source.Effectful.Expr.evalOne,
+    Locals.Source.Effectful.Expr.Control.evalOne,
+    hEvalControl]
 
 theorem evalCondition_false_of_eval_singleton {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
@@ -219,10 +235,20 @@ theorem evalCondition_iszero_of_eval_singleton {σ : Type}
       .ok
         (final,
           EvmYul.UInt256.isZero value != EvmYul.UInt256.ofNat 0) := by
+  have hEvalControl :
+      Locals.Source.Effectful.Expr.Control.eval
+          model prim expr state =
+        .ok (final, [value]) := by
+    simpa [eval, Locals.Source.Effectful.Expr.eval] using hEval
   simp [evalCondition, Locals.Source.Effectful.Expr.evalCondition,
+    Locals.Source.Effectful.Expr.Control.evalCondition,
     Locals.Source.Effectful.Expr.evalOne, eval,
+    Locals.Source.Effectful.Expr.Control.evalOne,
     Locals.Source.Effectful.Expr.eval,
-    Locals.Source.Effectful.Expr.ExprSeq.eval, hEval, hIszero]
+    Locals.Source.Effectful.Expr.Control.eval,
+    Locals.Source.Effectful.Expr.ExprSeq.eval,
+    Locals.Source.Effectful.Expr.Control.ExprSeq.eval,
+    hEvalControl, hIszero]
 
 theorem evalCondition_iszero_true_of_eval_singleton {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
@@ -1912,7 +1938,9 @@ theorem run_let_lit {σ : Type}
           { ctx with scope := name :: ctx.scope }) := by
   simp [Stmt.run, Expr.evalOne, Expr.eval,
     Locals.Source.Effectful.Expr.evalOne,
-    Locals.Source.Effectful.Expr.eval]
+    Locals.Source.Effectful.Expr.Control.evalOne,
+    Locals.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.Control.eval]
 
 theorem run_let_of_eval {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)

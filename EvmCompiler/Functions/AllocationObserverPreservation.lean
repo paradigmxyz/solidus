@@ -4301,6 +4301,7 @@ theorem stackVar_forward {transcript : Trace}
     hRel.push_target value⟩
   simp [Functions.Source.Effectful.Expr.eval,
     Locals.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.Control.eval,
     Functions.ObserverSemantics.stateModel,
     Locals.ObserverSemantics.stateModel,
     Locals.Source.Effectful.StateModel.vars, hSource]
@@ -4345,6 +4346,7 @@ theorem stackVar_backward {transcript : Trace}
   refine ⟨?_, hRel.push_target value⟩
   simp [Functions.Source.Effectful.Expr.eval,
     Locals.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.Control.eval,
     Functions.ObserverSemantics.stateModel,
     Locals.ObserverSemantics.stateModel,
     Locals.Source.Effectful.StateModel.vars, hSource]
@@ -4456,6 +4458,7 @@ theorem scratchVar_forward {transcript : Trace}
   refine ⟨targetFinal, ?_, ?_, hFinalRel, rfl, ?_⟩
   · simp [Functions.Source.Effectful.Expr.eval,
       Locals.Source.Effectful.Expr.eval,
+      Locals.Source.Effectful.Expr.Control.eval,
       Functions.ObserverSemantics.stateModel,
       Locals.ObserverSemantics.stateModel,
       Locals.Source.Effectful.StateModel.vars, hSource]
@@ -5385,6 +5388,7 @@ theorem stackVar_forward_result_scratch {transcript : Trace}
       hRel.push_target value, rfl, rfl⟩
   simp [Functions.Source.Effectful.Expr.eval,
     Locals.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.Control.eval,
     Functions.ObserverSemantics.stateModel,
     Locals.ObserverSemantics.stateModel,
     Locals.Source.Effectful.StateModel.vars, hSource]
@@ -5588,6 +5592,7 @@ theorem stackVar_forward_result_activation {transcript : Trace}
       hRel.push_target value, rfl, rfl⟩
   simp [Functions.Source.Effectful.Expr.eval,
     Locals.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.Control.eval,
     Functions.ObserverSemantics.stateModel,
     Locals.ObserverSemantics.stateModel,
     Locals.Source.Effectful.StateModel.vars, hSource]
@@ -5784,6 +5789,7 @@ theorem stackVar_backward_result {transcript : Trace}
   refine ⟨?_, ⟨by simpa using hRel.push_target value, rfl, rfl⟩⟩
   simp [Functions.Source.Effectful.Expr.eval,
     Locals.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.Control.eval,
     Functions.ObserverSemantics.stateModel,
     Locals.ObserverSemantics.stateModel,
     Locals.Source.Effectful.StateModel.vars, hSource]

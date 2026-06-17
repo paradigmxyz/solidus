@@ -164,6 +164,8 @@ end Program
       .ok ({ source := source, cursor := 1 }, [value]) := by
   simp [Locals.Source.Effectful.Expr.eval,
     Locals.Source.Effectful.Expr.ExprSeq.eval, primitiveSemantics,
+    Locals.Source.Effectful.Expr.Control.eval,
+    Locals.Source.Effectful.Expr.Control.ExprSeq.eval,
     basicOpObserver?, Structured.BasicOp.toPrimOp,
     Assembly.ResourceObserver.ofPrimOp?,
     Simulation.ResourceReplay.consume?]
@@ -178,6 +180,8 @@ end Program
       .ok ({ source := source, cursor := 1 }, [value]) := by
   simp [Locals.Source.Effectful.Expr.eval,
     Locals.Source.Effectful.Expr.ExprSeq.eval, primitiveSemantics,
+    Locals.Source.Effectful.Expr.Control.eval,
+    Locals.Source.Effectful.Expr.Control.ExprSeq.eval,
     basicOpObserver?, Structured.BasicOp.toPrimOp,
     Assembly.ResourceObserver.ofPrimOp?,
     Simulation.ResourceReplay.consume?]

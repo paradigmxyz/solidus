@@ -756,6 +756,18 @@ Exit: the shared core builds with no compiler layer changed.
   - [x] One fuel-founded whole-statement/block owner theorem and checked
     generated-main wrapper.
 - [ ] Locals/Expressions.
+  - [x] One monad-polymorphic Locals expression/control kernel with the legacy
+    ordinary and resource-observer APIs as thin specializations.
+  - [x] Stable owner-provided constructor equations, so adjacent proofs do not
+    depend on the representation depth of those thin specializations.
+  - [x] Locals open primitive handler for `gas`, `msize`, all CALL-family
+    opcodes, and both CREATE-family opcodes.
+  - [x] Stack-free primitive to emitted Structured instruction relation,
+    including arbitrary caller-owned stack suffixes.
+  - [ ] Recursive Locals expression, statement, block, loop, call, and program
+    preservation.
+  - [ ] Canonical Expressions open semantics and transparent
+    Expressions-to-Structured preservation.
 - [ ] Functions.
 - [ ] Yul.
 
@@ -793,6 +805,8 @@ Exit: every layer exposes one canonical open computation.
     - [x] Fuel-founded recursive owner instantiation and successful-generation
       whole-program wrapper.
 - [ ] Locals/Expressions -> Structured.
+  - [x] Adjacent primitive leaf over the shared ordered interaction tree.
+  - [ ] Recursive compiler-owned expression and control composition.
 - [ ] Functions -> allocated Locals/Expressions.
 - [ ] Yul -> Functions.
 

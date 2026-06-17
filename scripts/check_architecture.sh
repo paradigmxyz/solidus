@@ -247,6 +247,11 @@ report_matches \
   EvmCompiler -g '*InteractionSemantics.lean'
 
 report_matches \
+  'The Locals interaction owner must consume only the adjacent Structured preservation interface:' \
+  '^import EvmCompiler\.Assembly\..*Preservation' \
+  EvmCompiler/Locals/InteractionPreservation.lean
+
+report_matches \
   'Horizontal open-effect proofs must not depend on observer proof corridors:' \
   '^import .*Observer' \
   EvmCompiler/Assembly/*Interaction*.lean \

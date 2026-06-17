@@ -16,7 +16,8 @@ theorem eval_lit {σ : Type}
     (value : Word) (state : σ) :
     eval model prim (.lit value : Functions.Expr 1) state =
       .ok (state, [value]) := by
-  simp [eval, Locals.Source.Effectful.Expr.eval]
+  simp [eval, Locals.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.Control.eval]
 
 theorem eval_lit_ok_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
@@ -25,7 +26,8 @@ theorem eval_lit_ok_parts {σ : Type}
       eval model prim (.lit value : Functions.Expr 1) state =
         .ok (final, values)) :
     final = state ∧ values = [value] := by
-  simp [eval, Locals.Source.Effectful.Expr.eval] at hEval
+  simp [eval, Locals.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.Control.eval] at hEval
   exact ⟨hEval.1.symm, hEval.2.symm⟩
 
 theorem eval_var_ok_parts {σ : Type}
@@ -40,10 +42,12 @@ theorem eval_var_ok_parts {σ : Type}
   cases hLookup : model.vars state name with
   | none =>
       simp [eval, Locals.Source.Effectful.Expr.eval,
+        Locals.Source.Effectful.Expr.Control.eval,
         hLookup, Functions.Source.invalid,
         Structured.invalid] at hEval
   | some value =>
       simp [eval, Locals.Source.Effectful.Expr.eval,
+        Locals.Source.Effectful.Expr.Control.eval,
         hLookup] at hEval
       exact
         ⟨value, rfl, hEval.1.symm, hEval.2.symm⟩
@@ -54,7 +58,8 @@ theorem eval_var_of_lookup {σ : Type}
     (hLookup : model.vars state name = some value) :
     eval model prim (.var name : Functions.Expr 1) state =
       .ok (state, [value]) := by
-  simp [eval, Locals.Source.Effectful.Expr.eval, hLookup]
+  simp [eval, Locals.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.Control.eval, hLookup]
 
 theorem eval_singleton_of_evalOne {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
@@ -66,7 +71,9 @@ theorem eval_singleton_of_evalOne {σ : Type}
       .ok (final, [value]) := by
   unfold evalOne at hEval
   unfold Locals.Source.Effectful.Expr.evalOne at hEval
-  cases hExpr : eval model prim expr state with
+  unfold Locals.Source.Effectful.Expr.Control.evalOne at hEval
+  cases hExpr :
+      Locals.Source.Effectful.Expr.Control.eval model prim expr state with
   | error err =>
       simp [hExpr] at hEval
   | ok result =>
@@ -80,7 +87,7 @@ theorem eval_singleton_of_evalOne {σ : Type}
           | nil =>
               simp [hExpr] at hEval
               rcases hEval with ⟨rfl, rfl⟩
-              rfl
+              simpa [eval, Locals.Source.Effectful.Expr.eval] using hExpr
           | cons second tail =>
               simp [hExpr, Functions.Source.invalid,
                 Structured.invalid] at hEval
@@ -97,8 +104,10 @@ theorem evalCondition_ok_parts {σ : Type}
       condition = (value != EvmYul.UInt256.ofNat 0) := by
   unfold evalCondition at hEval
   unfold Locals.Source.Effectful.Expr.evalCondition at hEval
-  unfold Locals.Source.Effectful.Expr.evalOne at hEval
-  cases hExpr : eval model prim expr state with
+  unfold Locals.Source.Effectful.Expr.Control.evalCondition at hEval
+  unfold Locals.Source.Effectful.Expr.Control.evalOne at hEval
+  cases hExpr :
+      Locals.Source.Effectful.Expr.Control.eval model prim expr state with
   | error err =>
       simp [hExpr] at hEval
   | ok result =>
@@ -112,7 +121,10 @@ theorem evalCondition_ok_parts {σ : Type}
           | nil =>
               simp [hExpr] at hEval
               rcases hEval with ⟨rfl, rfl⟩
-              exact ⟨value, rfl, rfl⟩
+              exact
+                ⟨value,
+                  by simpa [eval, Locals.Source.Effectful.Expr.eval] using hExpr,
+                  rfl⟩
           | cons second tail =>
               simp [hExpr, Functions.Source.invalid,
                 Structured.invalid] at hEval
@@ -184,15 +196,18 @@ theorem eval_prim_ok_parts {σ : Type}
         .ok (final, values) := by
   unfold eval at hEval
   unfold Locals.Source.Effectful.Expr.eval at hEval
+  unfold Locals.Source.Effectful.Expr.Control.eval at hEval
   cases hArgs :
-      Locals.Source.Effectful.Expr.ExprSeq.eval
+      Locals.Source.Effectful.Expr.Control.ExprSeq.eval
         model prim args state with
   | error err =>
       simp [hArgs] at hEval
   | ok result =>
       rcases result with ⟨afterArgs, inputValues⟩
       exact
-        ⟨afterArgs, inputValues, rfl,
+        ⟨afterArgs, inputValues,
+          by
+            simpa [Locals.Source.Effectful.Expr.ExprSeq.eval] using hArgs,
           by simpa [hArgs] using hEval⟩
 
 theorem eval_outputs_length_of {σ : Type}
@@ -211,22 +226,26 @@ theorem eval_outputs_length_of {σ : Type}
     values.length = results := by
   cases expr with
   | lit value =>
-      simp [eval, Locals.Source.Effectful.Expr.eval] at hEval
+      simp [eval, Locals.Source.Effectful.Expr.eval,
+        Locals.Source.Effectful.Expr.Control.eval] at hEval
       rcases hEval with ⟨rfl, rfl⟩
       rfl
   | var name =>
       cases hLookup : model.vars state name with
       | none =>
           simp [eval, Locals.Source.Effectful.Expr.eval,
+            Locals.Source.Effectful.Expr.Control.eval,
             hLookup, Functions.Source.invalid,
             Structured.invalid] at hEval
       | some value =>
           simp [eval, Locals.Source.Effectful.Expr.eval,
+            Locals.Source.Effectful.Expr.Control.eval,
             hLookup] at hEval
           rcases hEval with ⟨rfl, rfl⟩
           rfl
   | code code =>
       simp [eval, Locals.Source.Effectful.Expr.eval,
+        Locals.Source.Effectful.Expr.Control.eval,
         Functions.Source.invalid, Structured.invalid] at hEval
   | prim op args =>
       obtain ⟨afterArgs, inputValues, _hArgs, hOp⟩ :=

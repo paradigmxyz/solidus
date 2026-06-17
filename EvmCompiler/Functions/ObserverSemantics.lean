@@ -1,4 +1,4 @@
-import EvmCompiler.Functions.EffectSemantics
+import EvmCompiler.Functions.EffectSemanticsInversion
 import EvmCompiler.Locals.ObserverSemantics
 
 namespace EvmCompiler
@@ -53,7 +53,8 @@ mutual
     cases expr with
     | lit value =>
         simp [Functions.Source.Effectful.Expr.eval,
-          Locals.Source.Effectful.Expr.eval] at hEval
+          Locals.Source.Effectful.Expr.eval,
+          Locals.Source.Effectful.Expr.Control.eval] at hEval
         rcases hEval with ⟨rfl, rfl⟩
         rfl
     | var name =>
@@ -61,6 +62,7 @@ mutual
         | none =>
             simp [Functions.Source.Effectful.Expr.eval,
               Locals.Source.Effectful.Expr.eval, stateModel,
+              Locals.Source.Effectful.Expr.Control.eval,
               Locals.ObserverSemantics.stateModel,
               Locals.Source.Effectful.StateModel.vars,
               Functions.Source.invalid, Structured.invalid,
@@ -68,6 +70,7 @@ mutual
         | some value =>
             simp [Functions.Source.Effectful.Expr.eval,
               Locals.Source.Effectful.Expr.eval, stateModel,
+              Locals.Source.Effectful.Expr.Control.eval,
               Locals.ObserverSemantics.stateModel,
               Locals.Source.Effectful.StateModel.vars,
               hLookup] at hEval
@@ -76,12 +79,14 @@ mutual
     | code code =>
         simp [Functions.Source.Effectful.Expr.eval,
           Locals.Source.Effectful.Expr.eval,
+          Locals.Source.Effectful.Expr.Control.eval,
           Functions.Source.invalid, Structured.invalid] at hEval
     | prim op args =>
         unfold Functions.Source.Effectful.Expr.eval at hEval
         unfold Locals.Source.Effectful.Expr.eval at hEval
+        unfold Locals.Source.Effectful.Expr.Control.eval at hEval
         cases hArgs :
-            Locals.Source.Effectful.Expr.ExprSeq.eval
+            Locals.Source.Effectful.Expr.Control.ExprSeq.eval
               (stateModel transcript) (primitiveSemantics transcript)
               args source with
         | error err =>
@@ -92,7 +97,13 @@ mutual
             have hPrimVars :
                 final.source.vars = afterArgs.source.vars :=
               Locals.ObserverSemantics.primitiveSemantics_eval_vars_eq hEval
-            exact hPrimVars.trans (exprSeq_eval_vars_eq hArgs)
+            have hArgsPublic :
+                Locals.Source.Effectful.Expr.ExprSeq.eval
+                    (stateModel transcript) (primitiveSemantics transcript)
+                    args source =
+                  .ok (afterArgs, argValues) := by
+              simpa [Locals.Source.Effectful.Expr.ExprSeq.eval] using hArgs
+            exact hPrimVars.trans (exprSeq_eval_vars_eq hArgsPublic)
 
   theorem exprSeq_eval_vars_eq
       {transcript : Trace} {results : Nat}
@@ -106,13 +117,15 @@ mutual
       final.source.vars = source.source.vars := by
     cases exprs with
     | nil =>
-        simp [Locals.Source.Effectful.Expr.ExprSeq.eval] at hEval
+        simp [Locals.Source.Effectful.Expr.ExprSeq.eval,
+          Locals.Source.Effectful.Expr.Control.ExprSeq.eval] at hEval
         rcases hEval with ⟨rfl, rfl⟩
         rfl
     | @cons left right head tail =>
         unfold Locals.Source.Effectful.Expr.ExprSeq.eval at hEval
+        unfold Locals.Source.Effectful.Expr.Control.ExprSeq.eval at hEval
         cases hHead :
-            Functions.Source.Effectful.Expr.eval
+            Locals.Source.Effectful.Expr.Control.eval
               (stateModel transcript) (primitiveSemantics transcript)
               head source with
         | error err =>
@@ -121,7 +134,7 @@ mutual
             rcases headResult with ⟨afterHead, headValues⟩
             simp only [hHead, Bind.bind, Except.bind] at hEval
             cases hTail :
-                Locals.Source.Effectful.Expr.ExprSeq.eval
+                Locals.Source.Effectful.Expr.Control.ExprSeq.eval
                   (stateModel transcript) (primitiveSemantics transcript)
                   tail afterHead with
             | error err =>
@@ -129,9 +142,22 @@ mutual
             | ok tailResult =>
                 rcases tailResult with ⟨afterTail, tailValues⟩
                 simp only [hTail, Bind.bind, Except.bind] at hEval
+                have hHeadPublic :
+                    Functions.Source.Effectful.Expr.eval
+                        (stateModel transcript) (primitiveSemantics transcript)
+                        head source =
+                      .ok (afterHead, headValues) := by
+                  simpa [Functions.Source.Effectful.Expr.eval,
+                    Locals.Source.Effectful.Expr.eval] using hHead
+                have hTailPublic :
+                    Locals.Source.Effectful.Expr.ExprSeq.eval
+                        (stateModel transcript) (primitiveSemantics transcript)
+                        tail afterHead =
+                      .ok (afterTail, tailValues) := by
+                  simpa [Locals.Source.Effectful.Expr.ExprSeq.eval] using hTail
                 rcases hEval with ⟨rfl, rfl⟩
-                exact (exprSeq_eval_vars_eq hTail).trans
-                  (expr_eval_vars_eq hHead)
+                exact (exprSeq_eval_vars_eq hTailPublic).trans
+                  (expr_eval_vars_eq hHeadPublic)
 end
 
 theorem argList_eval_vars_eq
@@ -170,34 +196,9 @@ theorem argList_eval_vars_eq
               rcases restResult with ⟨afterRest, restValues⟩
               simp only [hRest, Bind.bind, Except.bind] at hEval
               rcases hEval with ⟨rfl, rfl⟩
-              have hHeadEval :
-                  Functions.Source.Effectful.Expr.eval
-                      (stateModel transcript) (primitiveSemantics transcript)
-                      head source =
-                    .ok (afterHead, [headValue]) := by
-                unfold Functions.Source.Effectful.Expr.evalOne at hHead
-                unfold Locals.Source.Effectful.Expr.evalOne at hHead
-                cases hExpr :
-                    Functions.Source.Effectful.Expr.eval
-                      (stateModel transcript) (primitiveSemantics transcript)
-                      head source with
-                | error err =>
-                    simp [hExpr] at hHead
-                | ok result =>
-                    rcases result with ⟨stateAfterExpr, exprValues⟩
-                    cases exprValues with
-                    | nil =>
-                        simp [hExpr, Functions.Source.invalid,
-                          Structured.invalid] at hHead
-                    | cons value tail =>
-                        cases tail with
-                        | nil =>
-                            simp [hExpr] at hHead
-                            rcases hHead with ⟨rfl, rfl⟩
-                            rfl
-                        | cons second remaining =>
-                            simp [hExpr, Functions.Source.invalid,
-                              Structured.invalid] at hHead
+              have hHeadEval :=
+                Functions.Source.Effectful.Expr.eval_singleton_of_evalOne
+                  (stateModel transcript) (primitiveSemantics transcript) hHead
               exact (ih hRest).trans (expr_eval_vars_eq hHeadEval)
 
 theorem primitiveSemantics_eval_observer
@@ -313,6 +314,8 @@ theorem expr_eval_gas
   simp [Functions.Source.Effectful.Expr.eval,
     Locals.Source.Effectful.Expr.eval,
     Locals.Source.Effectful.Expr.ExprSeq.eval,
+    Locals.Source.Effectful.Expr.Control.eval,
+    Locals.Source.Effectful.Expr.Control.ExprSeq.eval,
     primitiveSemantics_eval_observer (op := .gas) (by rfl) hConsume]
 
 theorem expr_eval_msize
@@ -328,6 +331,8 @@ theorem expr_eval_msize
   simp [Functions.Source.Effectful.Expr.eval,
     Locals.Source.Effectful.Expr.eval,
     Locals.Source.Effectful.Expr.ExprSeq.eval,
+    Locals.Source.Effectful.Expr.Control.eval,
+    Locals.Source.Effectful.Expr.Control.ExprSeq.eval,
     primitiveSemantics_eval_observer (op := .msize) (by rfl) hConsume]
 
 theorem expr_evalOne_gas
@@ -342,13 +347,20 @@ theorem expr_evalOne_gas
       .ok (state', value) := by
   unfold Functions.Source.Effectful.Expr.evalOne
   unfold Locals.Source.Effectful.Expr.evalOne
+  unfold Locals.Source.Effectful.Expr.Control.evalOne
   have hEval :
       Locals.Source.Effectful.Expr.eval
           (stateModel transcript) (primitiveSemantics transcript)
           (.prim .gas .nil : Functions.Expr 1) state =
         .ok (state', [value]) :=
     expr_eval_gas hConsume
-  rw [hEval]
+  have hEvalControl :
+      Locals.Source.Effectful.Expr.Control.eval
+          (stateModel transcript) (primitiveSemantics transcript)
+          (.prim .gas .nil : Functions.Expr 1) state =
+        .ok (state', [value]) := by
+    simpa [Locals.Source.Effectful.Expr.eval] using hEval
+  rw [hEvalControl]
   simp [Bind.bind, Except.bind]
 
 theorem expr_evalOne_msize
@@ -363,13 +375,20 @@ theorem expr_evalOne_msize
       .ok (state', value) := by
   unfold Functions.Source.Effectful.Expr.evalOne
   unfold Locals.Source.Effectful.Expr.evalOne
+  unfold Locals.Source.Effectful.Expr.Control.evalOne
   have hEval :
       Locals.Source.Effectful.Expr.eval
           (stateModel transcript) (primitiveSemantics transcript)
           (.prim .msize .nil : Functions.Expr 1) state =
         .ok (state', [value]) :=
     expr_eval_msize hConsume
-  rw [hEval]
+  have hEvalControl :
+      Locals.Source.Effectful.Expr.Control.eval
+          (stateModel transcript) (primitiveSemantics transcript)
+          (.prim .msize .nil : Functions.Expr 1) state =
+        .ok (state', [value]) := by
+    simpa [Locals.Source.Effectful.Expr.eval] using hEval
+  rw [hEvalControl]
   simp [Bind.bind, Except.bind]
 
 theorem stmt_run_let_gas
@@ -465,6 +484,9 @@ end Program
     Locals.Source.Effectful.Expr.evalOne,
     Locals.Source.Effectful.Expr.eval,
     Locals.Source.Effectful.Expr.ExprSeq.eval,
+    Locals.Source.Effectful.Expr.Control.evalOne,
+    Locals.Source.Effectful.Expr.Control.eval,
+    Locals.Source.Effectful.Expr.Control.ExprSeq.eval,
     primitiveSemantics, Locals.ObserverSemantics.primitiveSemantics,
     Locals.ObserverSemantics.basicOpObserver?,
     Structured.BasicOp.toPrimOp,
@@ -510,6 +532,9 @@ end Program
     Locals.Source.Effectful.Expr.evalOne,
     Locals.Source.Effectful.Expr.eval,
     Locals.Source.Effectful.Expr.ExprSeq.eval,
+    Locals.Source.Effectful.Expr.Control.evalOne,
+    Locals.Source.Effectful.Expr.Control.eval,
+    Locals.Source.Effectful.Expr.Control.ExprSeq.eval,
     Functions.Source.Store.insertMany, Functions.Source.Store.initReturns,
     Functions.Source.Store.lookupMany,
     primitiveSemantics, Locals.ObserverSemantics.primitiveSemantics,
@@ -558,6 +583,9 @@ end Program
     Locals.Source.Effectful.Expr.evalOne,
     Locals.Source.Effectful.Expr.eval,
     Locals.Source.Effectful.Expr.ExprSeq.eval,
+    Locals.Source.Effectful.Expr.Control.evalOne,
+    Locals.Source.Effectful.Expr.Control.eval,
+    Locals.Source.Effectful.Expr.Control.ExprSeq.eval,
     Functions.Source.Store.insertMany, Functions.Source.Store.initReturns,
     Functions.Source.Store.lookupMany, Functions.Source.Store.assignMany,
     primitiveSemantics, Locals.ObserverSemantics.primitiveSemantics,

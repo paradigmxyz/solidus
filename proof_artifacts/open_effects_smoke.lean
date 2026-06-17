@@ -6,6 +6,7 @@ import EvmCompiler.Structured.InteractionSwitchPreservation
 import EvmCompiler.Structured.InteractionLoopPreservation
 import EvmCompiler.Structured.InteractionCallPreservation
 import EvmCompiler.Structured.InteractionOwnerPreservation
+import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 
 #check EvmCompiler.Simulation.OpenWorld
@@ -40,6 +41,14 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #check EvmCompiler.TypedCfg.InteractionPreservation.Program.compileCertified?_entry_openRunN_rel
 #check EvmCompiler.Structured.InteractionPreservation.BasicInstr.openRunAt_toCfg
 #check EvmCompiler.Structured.InteractionPreservation.Code.openRun_toCfg
+#check EvmCompiler.Structured.InteractionPrimitivePreservation.BasicOp.openStepEVM_append_stack_rel
+#check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_call
+#check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_callcode
+#check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_delegatecall
+#check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_staticcall
+#check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_create
+#check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_create2
+#check EvmCompiler.Locals.InteractionPreservation.Primitive.openEval_op
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches.of_stateRel
 #check EvmCompiler.Structured.InteractionSemantics.Code.openRun_returns
@@ -137,6 +146,14 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.TypedCfg.InteractionPreservation.Program.compileCertified?_entry_openRunN_rel
 #print axioms EvmCompiler.Structured.InteractionPreservation.BasicInstr.openRunAt_toCfg
 #print axioms EvmCompiler.Structured.InteractionPreservation.Code.openRun_toCfg
+#print axioms EvmCompiler.Structured.InteractionPrimitivePreservation.BasicOp.openStepEVM_append_stack_rel
+#print axioms EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_call
+#print axioms EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_callcode
+#print axioms EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_delegatecall
+#print axioms EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_staticcall
+#print axioms EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_create
+#print axioms EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_create2
+#print axioms EvmCompiler.Locals.InteractionPreservation.Primitive.openEval_op
 #print axioms EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches.of_stateRel
 #print axioms EvmCompiler.Structured.InteractionSemantics.Code.openRun_returns
 #print axioms EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNWithStop_one

@@ -31,6 +31,8 @@ import EvmCompiler.Functions.EffectSemanticsInversion
 import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Functions.ObserverSafety
 import EvmCompiler.Locals.EffectSemantics
+import EvmCompiler.Locals.InteractionSemantics
+import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.Locals.ObserverSemantics
 import EvmCompiler.Locals.PrimitivePreservation
 import EvmCompiler.Simulation.Interaction
@@ -40,6 +42,7 @@ import EvmCompiler.Structured.TypedCfgPreservation
 import EvmCompiler.Structured.EffectSemantics
 import EvmCompiler.Structured.InteractionSemantics
 import EvmCompiler.Structured.InteractionPreservation
+import EvmCompiler.Structured.InteractionPrimitivePreservation
 import EvmCompiler.Structured.InteractionControlPreservation
 import EvmCompiler.Structured.InteractionBoundaryPreservation
 import EvmCompiler.Structured.InteractionLeafPreservation
@@ -197,6 +200,16 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.InteractionSemantics.BasicInstr.openStep_create2
 #check EvmCompiler.Structured.InteractionPreservation.BasicInstr.openRunAt_toCfg
 #check EvmCompiler.Structured.InteractionPreservation.Code.openRun_toCfg
+#check EvmCompiler.Structured.InteractionPrimitivePreservation.BasicOp.openStepEVM_append_stack_rel
+#check EvmCompiler.Locals.Source.Effectful.Control.PrimitiveSemantics
+#check EvmCompiler.Locals.Source.Effectful.Control.Program.runState
+#check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_call
+#check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_callcode
+#check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_delegatecall
+#check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_staticcall
+#check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_create
+#check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_create2
+#check EvmCompiler.Locals.InteractionPreservation.Primitive.openEval_op
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches.of_stateRel
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationExtension

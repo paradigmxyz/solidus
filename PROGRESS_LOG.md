@@ -31109,3 +31109,22 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   `git diff --check`. New public owner theorems depend only on `propext`,
   `Classical.choice`, and `Quot.sound`; the architecture report contains only
   the pre-existing soft module-size debt.
+- 2026-06-17 12:26:53 PDT - architecture/locals-open-kernel - Refactored the
+  canonical stack-free Locals evaluator into one monad-polymorphic expression
+  and control kernel. Ordinary execution and resource replay remain thin
+  checked specializations, while the new open handler delegates gas, msize,
+  all four CALL-family opcodes, and both CREATE-family opcodes to the shared
+  Assembly interaction semantics. Added a Structured-owned primitive suffix
+  interface and the first adjacent Locals-to-Structured `Interaction.Rel`
+  theorem, preserving exact queries and every response beneath an arbitrary
+  caller stack suffix without importing Assembly preservation into the Locals
+  proof owner.
+- 2026-06-17 12:40:41 PDT - verification/locals-open-kernel - Repaired all
+  downstream equation-facing proofs through the canonical Locals `Control`
+  kernel and exposed stable constructor equations from the owning module.
+  The focused Locals, Functions allocation-safety/preservation, and Yul
+  expression builds pass. The complete 1,297-job proof-layer gate,
+  architecture dependency and single-owner guards, changed-file hole/forbidden
+  marker scans, open-effects and resource-observer axiom smokes, and
+  `git diff --check` all pass. The checked interaction theorems depend only on
+  `propext`, `Classical.choice`, and `Quot.sound`.
