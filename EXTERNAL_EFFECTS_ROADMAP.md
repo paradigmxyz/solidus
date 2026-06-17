@@ -714,7 +714,12 @@ Exit: the shared core builds with no compiler layer changed.
     all four CALL-family opcodes, and both CREATE-family opcodes.
   - [x] Exact primitive source/resolved-target
     `Interaction.Rel` seed theorem.
-  - [ ] Parameterized recursive Assembly control and bytecode execution.
+  - [x] One parameterized target control kernel specialized by both ordinary
+    bytecode semantics and the shared open interaction semantics.
+  - [x] Exact state and outcome-indexed `Interaction.Rel` theorems for every
+    emitted Assembly instruction block.
+  - [ ] Whole-program Assembly source control and bytecode-run composition.
+  - [ ] Migrate the legacy resource-observer runners onto the common kernel.
 - [ ] TypedCfg.
 - [ ] Structured.
 - [ ] Locals/Expressions.
@@ -734,6 +739,8 @@ Exit: every layer exposes one canonical open computation.
 ### Phase 5: Prove Adjacent Boundaries Bottom-Up
 
 - [ ] Assembly -> bytecode.
+  - [x] Per-instruction emitted-block state and outcome preservation.
+  - [ ] Whole-program open execution preservation.
 - [ ] TypedCfg -> Assembly.
 - [ ] Structured -> TypedCfg.
 - [ ] Locals/Expressions -> Structured.

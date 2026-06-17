@@ -920,7 +920,7 @@ theorem runPops_source_runNResultWithOracle
       | ok state' =>
           simp only [Assembly.Source.stepAtResultWithOracle,
             Assembly.Source.stepAtResult, Assembly.Source.stepAt,
-            Assembly.Target.stepInstr, hStep, Bind.bind, Except.bind,
+            Assembly.Target.stepInstr_prim, hStep, Bind.bind, Except.bind,
             Assembly.Instr.haltKind?, Assembly.PrimOp.haltKind?,
             Assembly.ResourceObserver.ofInstr?,
             Assembly.ResourceObserver.ofPrimOp?, Except.map]
@@ -2516,7 +2516,7 @@ theorem lowerAt?_eventuallyWithOracle_of_direct
         rw [Assembly.Source.stepAtResultWithOracle_of_observer_none
           (by rfl)]
         simp only [Assembly.Source.stepAtResult,
-          Assembly.Source.stepAt, Assembly.Target.stepInstr]
+          Assembly.Source.stepAt, Assembly.Target.stepInstr_prim]
         rw [Assembly.PrimOp.step_eq_continuingStep_run (by rfl)]
         rfl
       · exact ⟨.InvalidInstruction, rfl⟩

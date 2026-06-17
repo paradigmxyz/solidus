@@ -1,4 +1,4 @@
-import EvmCompiler.Assembly.InteractionSemantics
+import EvmCompiler.Assembly.InteractionPreservation
 
 #check EvmCompiler.Simulation.OpenWorld
 #check EvmCompiler.Simulation.OpenWorld.installYulShared
@@ -12,6 +12,9 @@ import EvmCompiler.Assembly.InteractionSemantics
 #check EvmCompiler.Simulation.Interaction.Rel.interpret
 #check EvmCompiler.Assembly.InteractionSemantics.PrimOp.openStep
 #check EvmCompiler.Assembly.InteractionSemantics.Source.prim_openStep_rel
+#check EvmCompiler.Assembly.InteractionSemantics.Target.openRunNResult
+#check EvmCompiler.Assembly.InteractionPreservation.stepAt_emit_open_rel
+#check EvmCompiler.Assembly.InteractionPreservation.stepAt_emit_open_result_rel
 
 #print axioms EvmCompiler.Simulation.OpenAccount.ofYul_toYul
 #print axioms EvmCompiler.Simulation.OpenAccount.ofEVM_toEVM
@@ -25,3 +28,4 @@ import EvmCompiler.Assembly.InteractionSemantics
 #print axioms EvmCompiler.Simulation.Interaction.Rel.trans
 #print axioms EvmCompiler.Simulation.Interaction.Rel.interpret
 #print axioms EvmCompiler.Assembly.InteractionSemantics.Source.prim_openStep_rel
+#print axioms EvmCompiler.Assembly.InteractionPreservation.stepAt_emit_open_result_rel

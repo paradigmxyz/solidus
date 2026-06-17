@@ -854,7 +854,6 @@ mutual
         cases hStep : Terminal.step kind state.evm with
         | error err =>
             simp [hStep] at hRun
-            cases hRun
         | ok evm =>
             simp [hStep] at hRun
             cases hRun

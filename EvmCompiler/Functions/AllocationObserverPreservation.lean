@@ -180,7 +180,7 @@ theorem run_dup {transcript : Trace}
   unfold Structured.ObserverSemantics.Code.run
     Structured.EffectSemantics.Code.run
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
-    Assembly.Target.stepInstr,
+    Assembly.Target.stepInstr_prim,
     Structured.ObserverSemantics.stateModel_evm]
   rw [Assembly.PrimOp.step_eq_continuingStep_run hStep]
   unfold Assembly.PrimStep.run EvmYul.dup
@@ -210,7 +210,7 @@ theorem run_pop {transcript : Trace}
   unfold Structured.ObserverSemantics.Code.run
     Structured.EffectSemantics.Code.run
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
-    Assembly.Target.stepInstr,
+    Assembly.Target.stepInstr_prim,
     Structured.ObserverSemantics.stateModel_evm]
   simp only [Structured.BasicOp.toPrimOp]
   rw [Assembly.PrimOp.step_eq_continuingStep_run
@@ -343,7 +343,7 @@ theorem run_swap {transcript : Trace}
   unfold Structured.ObserverSemantics.Code.run
     Structured.EffectSemantics.Code.run
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
-    Assembly.Target.stepInstr,
+    Assembly.Target.stepInstr_prim,
     Structured.ObserverSemantics.stateModel_evm]
   rw [Assembly.PrimOp.step_eq_continuingStep_run hStep]
   unfold Assembly.PrimStep.run EvmYul.swap
@@ -695,7 +695,7 @@ theorem run_add {transcript : Trace}
   unfold Structured.ObserverSemantics.Code.run
     Structured.EffectSemantics.Code.run
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
-    Assembly.Target.stepInstr,
+    Assembly.Target.stepInstr_prim,
     Structured.ObserverSemantics.stateModel_evm]
   simp only [Structured.BasicOp.toPrimOp]
   rw [Assembly.PrimOp.step_eq_continuingStep_run
@@ -726,7 +726,7 @@ theorem run_sub {transcript : Trace}
   unfold Structured.ObserverSemantics.Code.run
     Structured.EffectSemantics.Code.run
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
-    Assembly.Target.stepInstr,
+    Assembly.Target.stepInstr_prim,
     Structured.ObserverSemantics.stateModel_evm]
   simp only [Structured.BasicOp.toPrimOp]
   rw [Assembly.PrimOp.step_eq_continuingStep_run
@@ -760,7 +760,7 @@ theorem run_mload {transcript : Trace}
   unfold Structured.ObserverSemantics.Code.run
     Structured.EffectSemantics.Code.run
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
-    Assembly.Target.stepInstr,
+    Assembly.Target.stepInstr_prim,
     Structured.ObserverSemantics.stateModel_evm]
   simp only [Structured.BasicOp.toPrimOp]
   rw [Assembly.PrimOp.step_eq_continuingStep_run
@@ -793,7 +793,7 @@ theorem run_mstore {transcript : Trace}
   unfold Structured.ObserverSemantics.Code.run
     Structured.EffectSemantics.Code.run
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
-    Assembly.Target.stepInstr,
+    Assembly.Target.stepInstr_prim,
     Structured.ObserverSemantics.stateModel_evm]
   simp only [Structured.BasicOp.toPrimOp]
   rw [Assembly.PrimOp.step_eq_continuingStep_run
@@ -828,7 +828,7 @@ theorem run_gas {transcript : Trace}
   unfold Structured.ObserverSemantics.Code.run
     Structured.EffectSemantics.Code.run
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
-    Assembly.Target.stepInstr]
+    Assembly.Target.stepInstr_prim]
   simp only [Structured.BasicOp.toPrimOp]
   have hGasStep :
       Assembly.PrimOp.gas.step target.source.evm =
@@ -867,7 +867,7 @@ theorem run_gas_none {transcript : Trace}
   unfold Structured.ObserverSemantics.Code.run
     Structured.EffectSemantics.Code.run
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
-    Assembly.Target.stepInstr, Structured.BasicOp.toPrimOp]
+    Assembly.Target.stepInstr_prim, Structured.BasicOp.toPrimOp]
   have hGasStep :
       Assembly.PrimOp.gas.step target.source.evm =
         EvmYul.EVM.machineStateOp EvmYul.MachineState.gas
@@ -923,7 +923,7 @@ theorem run_msize {transcript : Trace}
   unfold Structured.ObserverSemantics.Code.run
     Structured.EffectSemantics.Code.run
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
-    Assembly.Target.stepInstr]
+    Assembly.Target.stepInstr_prim]
   simp only [Structured.BasicOp.toPrimOp]
   have hMsizeStep :
       Assembly.PrimOp.msize.step target.source.evm =
@@ -962,7 +962,7 @@ theorem run_msize_none {transcript : Trace}
   unfold Structured.ObserverSemantics.Code.run
     Structured.EffectSemantics.Code.run
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
-    Assembly.Target.stepInstr, Structured.BasicOp.toPrimOp]
+    Assembly.Target.stepInstr_prim, Structured.BasicOp.toPrimOp]
   have hMsizeStep :
       Assembly.PrimOp.msize.step target.source.evm =
         EvmYul.EVM.machineStateOp EvmYul.MachineState.msize

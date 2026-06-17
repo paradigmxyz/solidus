@@ -6,6 +6,7 @@ import EvmCompiler.Compiler.AllocatedTypedCfg
 import EvmCompiler.Compiler.MemoryRelation
 import EvmCompiler.Core.MemoryContract
 import EvmCompiler.Assembly.InteractionSemantics
+import EvmCompiler.Assembly.InteractionPreservation
 import EvmCompiler.Expressions.ObserverPreservation
 import EvmCompiler.Functions.AllocationLowering
 import EvmCompiler.Functions.AllocationObserverRelation
@@ -158,6 +159,9 @@ or audit-alias corridor.
 #check EvmCompiler.Assembly.InteractionSemantics.PrimOp.openStep_create
 #check EvmCompiler.Assembly.InteractionSemantics.PrimOp.openStep_create2
 #check EvmCompiler.Assembly.InteractionSemantics.Source.prim_openStep_rel
+#check EvmCompiler.Assembly.InteractionSemantics.Target.openRunNResult
+#check EvmCompiler.Assembly.InteractionPreservation.stepAt_emit_open_rel
+#check EvmCompiler.Assembly.InteractionPreservation.stepAt_emit_open_result_rel
 #check EvmCompiler.Functions.AllocationObserverContext.ExprContext
 #check EvmCompiler.Functions.AllocationObserverContext.classify_var
 #check EvmCompiler.Functions.AllocationObserverContext.classify_let_transition

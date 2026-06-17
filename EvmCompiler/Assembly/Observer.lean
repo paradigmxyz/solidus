@@ -338,7 +338,7 @@ theorem runListResultWithObservers_sound
   | nil =>
       simp [runListResultWithObservers] at hRun
       rcases hRun with ⟨hResult, _hTrace⟩
-      simp [runListResult, hResult.symm]
+      simp [runListResult, Target.runListResultWith, hResult.symm]
   | cons instr rest ih =>
       unfold runListResultWithObservers at hRun
       cases hStep : stepInstrResultWithObservers instr state with
@@ -352,6 +352,7 @@ theorem runListResultWithObservers_sound
               stepInstrResult instr state = .ok stepResult :=
             stepInstrResultWithObservers_sound hStep
           unfold runListResult
+          unfold Target.runListResultWith
           rw [hPlainStep]
           cases stepResult with
           | running state' =>
@@ -379,7 +380,7 @@ theorem runNResultWithObservers_sound
   | zero =>
       simp [runNResultWithObservers] at hRun
       rcases hRun with ⟨hResult, _hTrace⟩
-      simp [runNResult, hResult.symm]
+      simp [runNResult, Target.runNResultWith, hResult.symm]
   | succ fuel ih =>
       unfold runNResultWithObservers at hRun
       cases hFetch : target.fetch state.pc.toNat with
@@ -408,17 +409,15 @@ theorem runNResultWithObservers_sound
                       simp [hTail] at hRun
                       rcases hRun with ⟨hResult, _hTrace⟩
                       cases hResult
-                      simpa [runNResult, Target.stepResult, hFetch, hPlainStep]
+                      simpa [runNResult, Target.runNResultWith,
+                        Target.stepResult, Target.stepResultWith,
+                        hFetch, hPlainStep]
                         using ih hTail
               | halted halt =>
                   cases hRun
-                  have hTargetStep :
-                      Target.stepResult target state =
-                        .ok (StepResult.halted halt) := by
-                    simp [Target.stepResult, hFetch, hPlainStep]
-                  unfold runNResult
-                  rw [hTargetStep]
-                  rfl
+                  simp [runNResult, Target.runNResultWith,
+                    Target.stepResult, Target.stepResultWith,
+                    hFetch, hPlainStep]
 
 theorem stepInstrResult_observer_running_stack
     {instr : TargetInstr} {state : EVMState} {result : StepResult}
@@ -2238,7 +2237,6 @@ theorem stepAt_emit_result_withObservers_sound
               cases hPop : state.stack.pop with
               | none =>
                   simp [hPop] at hPlain
-                  cases hPlain
               | some pair =>
                   cases pair with
                   | mk stack cond =>
@@ -2356,7 +2354,6 @@ theorem stepAt_emit_result_withOracle_sound
               cases hPop : state.stack.pop with
               | none =>
                   simp [hPop] at hPlain
-                  cases hPlain
               | some pair =>
                   cases pair with
                   | mk stack cond =>
@@ -2512,7 +2509,6 @@ theorem source_stepAtResultWithOracle_running_boundary
               simp [Source.stepAtResult, Source.stepAt, Target.stepInstr,
                 Instr.haltKind?, TargetInstr.haltKind?, hOp, hHalt]
                 at hPlain
-              cases hPlain
           | none =>
               simp [Source.stepAtResult, Source.stepAt, Target.stepInstr,
                 Instr.haltKind?, TargetInstr.haltKind?, hOp, hHalt]
@@ -3048,7 +3044,6 @@ theorem source_compiled_step_result_withObservers_sound
                   simp [emitInstr?, hDest] at hEmit
                   unfold Source.stepAtResult Source.stepAt Source.invalid at hPlain
                   simp [hDest, Instr.haltKind?] at hPlain
-                  cases hPlain
               | some dest =>
                   simp [emitInstr?, hDest] at hEmit
           | jumpi target =>
@@ -3057,7 +3052,6 @@ theorem source_compiled_step_result_withObservers_sound
                   simp [emitInstr?, hDest] at hEmit
                   unfold Source.stepAtResult Source.stepAt Source.invalid at hPlain
                   simp [hDest, Instr.haltKind?] at hPlain
-                  cases hPlain
               | some dest =>
                   simp [emitInstr?, hDest] at hEmit
   | some code =>

@@ -563,6 +563,25 @@ def map {Error : Type u1} {Source : Type v1} {Target : Type w1}
     Interaction Error Target :=
   bind result fun value => pure (f value)
 
+def tryCatch {Error : Type u1} {Result : Type v1}
+    (result : Interaction Error Result)
+    (handler : Error → Interaction Error Result) :
+    Interaction Error Result :=
+  match result with
+  | .done (.error err) => handler err
+  | .done (.ok value) => .done (.ok value)
+  | .request query resume =>
+      .request query fun answer => tryCatch (resume answer) handler
+
+instance {Error : Type u1} : Monad (Interaction Error) where
+  pure := pure
+  bind := bind
+  map := map
+
+instance {Error : Type u1} : MonadExceptOf Error (Interaction Error) where
+  throw := error
+  tryCatch := tryCatch
+
 @[simp] theorem bind_done_ok
     {Error : Type u1} {Source : Type v1} {Target : Type w1}
     (value : Source) (next : Source → Interaction Error Target) :
@@ -581,6 +600,44 @@ theorem bind_request
     (next : Source → Interaction Error Target) :
     bind (.request query resume) next =
       .request query fun answer => bind (resume answer) next := rfl
+
+@[simp] theorem bind_pure
+    {Error : Type u1} {Result : Type v1}
+    (result : Interaction Error Result) :
+    bind result pure = result := by
+  induction result with
+  | done outcome =>
+      cases outcome <;> rfl
+  | request query resume ih =>
+      simp only [bind_request]
+      congr
+      funext answer
+      exact ih answer
+
+@[simp] theorem monad_pure_bind
+    {Error : Type u1} {Source Target : Type v1}
+    (value : Source) (next : Source → Interaction Error Target) :
+    (do
+      let source ← (pure value : Interaction Error Source)
+      next source) =
+      next value := rfl
+
+@[simp] theorem monad_error_bind
+    {Error : Type u1} {Source Target : Type v1}
+    (err : Error) (next : Source → Interaction Error Target) :
+    (do
+      let source ← (error err : Interaction Error Source)
+      next source) =
+      error err := rfl
+
+@[simp] theorem monad_bind_pure
+    {Error : Type u1} {Result : Type v1}
+    (result : Interaction Error Result) :
+    (do
+      let value ← result
+      pure value) =
+      result := by
+  exact bind_pure result
 
 inductive ExceptRel
     {Error₁ : Type u1} {Result₁ : Type v1}

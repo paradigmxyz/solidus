@@ -38,15 +38,14 @@ theorem run_push_jumpi (dest : Nat) (state : EVMState) :
 
 theorem runList_single (instr : TargetInstr) (state : EVMState) :
     Target.runList [instr] state = Target.stepInstr instr state := by
+  change
+    Target.runListWith Target.stepInstr [instr] state =
+      Target.stepInstr instr state
   cases h : Target.stepInstr instr state with
   | error e =>
-      unfold Target.runList
-      rw [h]
-      rfl
+      simp [Target.runListWith, h]
   | ok state' =>
-      unfold Target.runList
-      rw [h]
-      rfl
+      simp [Target.runListWith, h]
 
 theorem run_push_jump_result (dest : Nat) (state : EVMState) :
     Target.runListResult
@@ -81,15 +80,14 @@ theorem run_push_jumpi_result (dest : Nat) (state : EVMState) :
 
 theorem runListResult_single (instr : TargetInstr) (state : EVMState) :
     Target.runListResult [instr] state = Target.stepInstrResult instr state := by
+  change
+    Target.runListResultWith Target.stepInstrResult [instr] state =
+      Target.stepInstrResult instr state
   cases h : Target.stepInstrResult instr state with
   | error e =>
-      unfold Target.runListResult
-      rw [h]
-      rfl
+      simp [Target.runListResultWith, h]
   | ok result =>
-      unfold Target.runListResult
-      rw [h]
-      cases result <;> rfl
+      cases result <;> simp [Target.runListResultWith, h]
 
 theorem stepAt_emit_sound {program : Program} {pc : Nat} {instr : Instr}
     {located : List LocatedTarget} {state sourceState : EVMState}
@@ -122,7 +120,7 @@ theorem stepAt_emit_sound {program : Program} {pc : Nat} {instr : Instr}
                 state =
               .ok sourceState
           rw [run_push_jump dest state]
-          exact hStep
+          exact congrArg (fun result => Except.ok result) hStep
   | jumpi target =>
       cases hDest : Program.labelPc program target with
       | none =>
@@ -189,10 +187,6 @@ theorem stepAt_emit_result_sound {program : Program} {pc : Nat} {instr : Instr}
           cases hPop : state.stack.pop with
           | none =>
               simp [hPop] at hStep
-              change
-                (Except.error EvmYul.EVM.ExecutionException.StackUnderflow :
-                  Except EVMException StepResult) = .ok result at hStep
-              cases hStep
           | some pair =>
               cases pair with
               | mk stack cond =>
@@ -469,13 +463,6 @@ theorem source_compiled_step_sound {program : Program}
                       simp [emitInstr?, hDest] at hEmitInstr
                       unfold Source.stepAt at hStep
                       simp [hDest, Source.invalid] at hStep
-                      change
-                        Except.bind
-                            (Except.error EvmYul.EVM.ExecutionException.InvalidInstruction :
-                              Except EVMException Nat)
-                            _ =
-                          Except.ok sourceState at hStep
-                      simp [Except.bind] at hStep
                   | some dest =>
                       simp [emitInstr?, hDest] at hEmitInstr
           | some emitted =>
@@ -511,11 +498,6 @@ theorem source_compiled_step_result_sound {program : Program}
                       have hBad : False := by
                         unfold Source.stepAtResult Source.stepAt Source.invalid at hStep
                         simp [hDest, Instr.haltKind?] at hStep
-                        change
-                          (Except.error
-                              EvmYul.EVM.ExecutionException.InvalidInstruction :
-                            Except EVMException StepResult) = .ok result at hStep
-                        cases hStep
                       cases hBad
                   | some dest =>
                       simp [emitInstr?, hDest] at hEmitInstr
@@ -526,11 +508,6 @@ theorem source_compiled_step_result_sound {program : Program}
                       have hBad : False := by
                         unfold Source.stepAtResult Source.stepAt Source.invalid at hStep
                         simp [hDest, Instr.haltKind?] at hStep
-                        change
-                          (Except.error
-                              EvmYul.EVM.ExecutionException.InvalidInstruction :
-                            Except EVMException StepResult) = .ok result at hStep
-                        cases hStep
                       cases hBad
                   | some dest =>
                       simp [emitInstr?, hDest] at hEmitInstr
@@ -718,14 +695,15 @@ theorem Target.runListResult_halted_output
     halt.output = halt.kind.output halt.state := by
   induction code generalizing state with
   | nil =>
-      simp [Target.runListResult] at hRun
+      simp [Target.runListResult, Target.runListResultWith] at hRun
   | cons instr rest ih =>
-      cases hStep : Target.stepInstrResult instr state with
+      cases hStep :
+          Target.stepInstrResult instr state with
       | error err =>
-          rw [Target.runListResult, hStep] at hRun
-          cases hRun
+          simp [Target.runListResult, Target.runListResultWith, hStep] at hRun
       | ok result =>
-          rw [Target.runListResult, hStep] at hRun
+          simp only [Target.runListResult, Target.runListResultWith,
+            hStep, Bind.bind, Except.bind] at hRun
           cases result with
           | running mid =>
               exact ih hRun

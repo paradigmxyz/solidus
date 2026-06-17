@@ -30742,3 +30742,17 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   `propext`, `Classical.choice`, and quotient soundness. Recursive
   Assembly/bytecode control, world projection/install round trips, and higher
   adjacent pass theorems remain incomplete.
+- 2026-06-17 01:05:18 PDT - architecture/assembly-control-kernel - Replaced
+  target bytecode control recursion with one handler-parameterized kernel.
+  Existing ordinary `Target` APIs are thin specializations, while open
+  instruction, list, fetched-step, and fuel-bounded execution specialize the
+  same recursion to `Simulation.Interaction`. Existing Assembly observer,
+  stack-shuffle, TypedCfg, and Structured proofs remain checked after the API
+  compatibility migration.
+- 2026-06-17 01:05:18 PDT - proof/assembly-open-emitted-block - Added the
+  pass-owned `Assembly.InteractionPreservation` boundary. Its checked state and
+  outcome-indexed theorems prove that every successfully emitted Assembly
+  instruction block has exactly the source instruction's interaction tree,
+  including universal continuations for all CALL/CREATE-family answers and
+  terminal halt outcomes. Whole-program source control composition and legacy
+  resource-observer specialization remain open.

@@ -194,7 +194,6 @@ theorem runCleanupTo_stack_drop {ctx : Ctx} {targetDepth : Nat}
             (Structured.BasicInstr.op .pop)) state.evm with
     | error err =>
         simp [hCode] at hRun
-        cases hRun
     | ok evmClean =>
         simp [hCode] at hRun
         cases hRun
@@ -485,7 +484,6 @@ theorem runScoped_regular_cleanup {program : Program} {ctx : Ctx}
   cases hOpen : runOpen program ctx fuel block state with
   | error err =>
       simp [hOpen] at hRun
-      cases hRun
   | ok openResult =>
       rcases openResult with ⟨openOutcome, finalCtx⟩
       rcases openOutcome with ⟨openFinal, mode⟩
@@ -501,7 +499,6 @@ theorem runScoped_regular_cleanup {program : Program} {ctx : Ctx}
             Ctx.runCleanupTo finalCtx ctx.layout.length openFinal with
         | error err =>
             simp [hCleanup] at hRun
-            cases hRun
         | ok cleaned =>
             simp [hCleanup] at hRun
             cases hRun

@@ -394,7 +394,7 @@ theorem step_map_eraseRuntimeControl
     (op.step target).map eraseRuntimeControl =
       (op.step source).map eraseRuntimeControl := by
   unfold Structured.BasicOp.step
-  simp only [Assembly.Target.stepInstr]
+  simp only [Assembly.Target.stepInstr_prim]
   cases hStep : op.toPrimOp.continuingStep? with
   | some step =>
       rw [Assembly.PrimOp.step_eq_continuingStep_run hStep target,

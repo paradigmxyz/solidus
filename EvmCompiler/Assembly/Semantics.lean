@@ -8,6 +8,20 @@ namespace Assembly
 
 abbrev EVMException := EvmYul.EVM.ExecutionException
 
+@[simp] theorem pure_except {α : Type} (value : α) :
+    (pure value : Except EVMException α) = .ok value := rfl
+
+@[simp] theorem throw_except {α : Type} (err : EVMException) :
+    (throw err : Except EVMException α) = .error err := rfl
+
+@[simp] theorem bind_except_error {α β : Type}
+    (err : EVMException) (next : α → Except EVMException β) :
+    ((.error err : Except EVMException α) >>= next) = .error err := rfl
+
+@[simp] theorem bind_except_ok {α β : Type}
+    (value : α) (next : α → Except EVMException β) :
+    ((.ok value : Except EVMException α) >>= next) = next value := rfl
+
 structure Halt where
   kind : HaltKind
   state : EVMState
@@ -79,16 +93,21 @@ end Instr
 
 namespace Target
 
-def stepInstr (instr : TargetInstr) (state : EVMState) : Except EVMException EVMState :=
+abbrev stepInstrWith {Result : Type}
+    (pureState : EVMState → Result)
+    (throwState : EVMException → Result)
+    (primStep : PrimOp → EVMState → Result)
+    (instr : TargetInstr) (state : EVMState) : Result :=
   match instr with
   | .push32 value =>
-      .ok <| state.replaceStackAndIncrPC (state.stack.push value) (pcΔ := 33)
+      pureState <| state.replaceStackAndIncrPC
+        (state.stack.push value) (pcΔ := 33)
   | .jump =>
     match state.stack.pop with
     | some (stack, dest) =>
-        .ok { state with pc := dest, stack := stack }
+        pureState { state with pc := dest, stack := stack }
     | none =>
-        .error .StackUnderflow
+        throwState .StackUnderflow
   | .jumpi =>
     match state.stack.pop2 with
     | some (stack, dest, cond) =>
@@ -97,13 +116,49 @@ def stepInstr (instr : TargetInstr) (state : EVMState) : Except EVMException EVM
             dest
           else
             state.pc + EvmYul.UInt256.ofNat 1
-        .ok { state with pc := pc', stack := stack }
+        pureState { state with pc := pc', stack := stack }
     | none =>
-        .error .StackUnderflow
+        throwState .StackUnderflow
   | .jumpdest =>
-      .ok state.incrPC
+      pureState state.incrPC
   | .prim op =>
-      op.step state
+      primStep op state
+
+@[simp] theorem stepInstrWith_prim {Result : Type}
+    (pureState : EVMState → Result)
+    (throwState : EVMException → Result)
+    (primStep : PrimOp → EVMState → Result)
+    (op : PrimOp) (state : EVMState) :
+    stepInstrWith pureState throwState primStep (.prim op) state =
+      primStep op state := rfl
+
+def stepInstr (instr : TargetInstr) (state : EVMState) :
+    Except EVMException EVMState :=
+  match instr with
+  | .push32 value =>
+      stepInstrWith Except.ok Except.error PrimOp.step (.push32 value) state
+  | .jump =>
+      stepInstrWith Except.ok Except.error PrimOp.step .jump state
+  | .jumpi =>
+      stepInstrWith Except.ok Except.error PrimOp.step .jumpi state
+  | .jumpdest =>
+      stepInstrWith Except.ok Except.error PrimOp.step .jumpdest state
+  | .prim op =>
+      stepInstrWith Except.ok Except.error PrimOp.step (.prim op) state
+
+@[simp] theorem stepInstr_prim (op : PrimOp) (state : EVMState) :
+    stepInstr (.prim op) state = op.step state := rfl
+
+def stepInstrResultWith {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (instrStep : TargetInstr → EVMState → M EVMState)
+    (instr : TargetInstr) (state : EVMState) : M StepResult := do
+  let state' ← instrStep instr state
+  match instr.haltKind? with
+  | some kind =>
+      pure (.halted { kind := kind, state := state', output := kind.output state' })
+  | none =>
+      pure (.running state')
 
 def stepInstrResult (instr : TargetInstr) (state : EVMState) :
     Except EVMException StepResult := do
@@ -114,44 +169,85 @@ def stepInstrResult (instr : TargetInstr) (state : EVMState) :
   | none =>
       .ok (.running state')
 
-def runList : List TargetInstr → EVMState → Except EVMException EVMState
-  | [], state => .ok state
+def runListWith {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (instrStep : TargetInstr → EVMState → M EVMState) :
+    List TargetInstr → EVMState → M EVMState
+  | [], state => pure state
   | instr :: rest, state => do
-      let state' ← stepInstr instr state
-      runList rest state'
+      let state' ← instrStep instr state
+      runListWith instrStep rest state'
 
-def runListResult : List TargetInstr → EVMState → Except EVMException StepResult
-  | [], state => .ok (.running state)
+def runListResultWith {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (instrStep : TargetInstr → EVMState → M StepResult) :
+    List TargetInstr → EVMState → M StepResult
+  | [], state => pure (.running state)
   | instr :: rest, state => do
-      let result ← stepInstrResult instr state
+      let result ← instrStep instr state
       match result with
-      | .running state' => runListResult rest state'
-      | .halted halt => .ok (.halted halt)
+      | .running state' => runListResultWith instrStep rest state'
+      | .halted halt => pure (.halted halt)
 
-def step (target : TargetProgram) (state : EVMState) : Except EVMException EVMState :=
+def stepWith {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (instrStep : TargetInstr → EVMState → M EVMState)
+    (target : TargetProgram) (state : EVMState) : M EVMState :=
   match target.fetch state.pc.toNat with
-  | some instr => stepInstr instr state
-  | none => .error .InvalidInstruction
+  | some instr => instrStep instr state
+  | none => throw .InvalidInstruction
 
-def stepResult (target : TargetProgram) (state : EVMState) :
+def stepResultWith {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (instrStep : TargetInstr → EVMState → M StepResult)
+    (target : TargetProgram) (state : EVMState) : M StepResult :=
+  match target.fetch state.pc.toNat with
+  | some instr => instrStep instr state
+  | none => throw .InvalidInstruction
+
+def runNWith {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (instrStep : TargetInstr → EVMState → M EVMState)
+    (target : TargetProgram) : Nat → EVMState → M EVMState
+  | 0, state => pure state
+  | fuel + 1, state => do
+      let state' ← stepWith instrStep target state
+      runNWith instrStep target fuel state'
+
+def runNResultWith {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (instrStep : TargetInstr → EVMState → M StepResult)
+    (target : TargetProgram) : Nat → EVMState → M StepResult
+  | 0, state => pure (.running state)
+  | fuel + 1, state => do
+      let result ← stepResultWith instrStep target state
+      match result with
+      | .running state' => runNResultWith instrStep target fuel state'
+      | .halted halt => pure (.halted halt)
+
+abbrev runList (code : List TargetInstr) (state : EVMState) :
+    Except EVMException EVMState :=
+  runListWith stepInstr code state
+
+abbrev runListResult (code : List TargetInstr) (state : EVMState) :
     Except EVMException StepResult :=
-  match target.fetch state.pc.toNat with
-  | some instr => stepInstrResult instr state
-  | none => .error .InvalidInstruction
+  runListResultWith stepInstrResult code state
 
-def runN (target : TargetProgram) : Nat → EVMState → Except EVMException EVMState
-  | 0, state => .ok state
-  | fuel + 1, state => do
-      let state' ← step target state
-      runN target fuel state'
+abbrev step (target : TargetProgram) (state : EVMState) :
+    Except EVMException EVMState :=
+  stepWith stepInstr target state
 
-def runNResult (target : TargetProgram) : Nat → EVMState → Except EVMException StepResult
-  | 0, state => .ok (.running state)
-  | fuel + 1, state => do
-      let result ← stepResult target state
-      match result with
-      | .running state' => runNResult target fuel state'
-      | .halted halt => .ok (.halted halt)
+abbrev stepResult (target : TargetProgram) (state : EVMState) :
+    Except EVMException StepResult :=
+  stepResultWith stepInstrResult target state
+
+abbrev runN (target : TargetProgram) (fuel : Nat) (state : EVMState) :
+    Except EVMException EVMState :=
+  runNWith stepInstr target fuel state
+
+abbrev runNResult (target : TargetProgram) (fuel : Nat) (state : EVMState) :
+    Except EVMException StepResult :=
+  runNResultWith stepInstrResult target fuel state
 
 end Target
 

@@ -1332,7 +1332,6 @@ theorem returnDispatchCase_eventually
     rw [source_runNResult_one_at_boundary hLabelFit hPc]
     simp [Assembly.Source.stepAtResult, Assembly.Source.stepAt,
       Assembly.Instr.haltKind?, Assembly.Target.stepInstr, afterLabel]
-    rfl
   have hAfterLabelStack :
       afterLabel.stack = front ++ site.token :: suffix := by
     simpa [afterLabel] using hStack
@@ -1788,7 +1787,6 @@ theorem returnDispatch_unknown_token_eventually
         simp [Assembly.Source.stepAtResult, Assembly.Source.stepAt,
           Assembly.Target.stepInstr, Assembly.PrimOp.step,
           Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run]
-        rfl
       simpa [hCodeEq, List.append_assoc] using hInvalid
     · simp [Block.runTerm, hDepth, hGet, hFind, Outcome.Simulates]
 
@@ -1865,7 +1863,6 @@ theorem returnDispatch_missing_token_eventually
             (Assembly.StackShuffle.dupInstr_sourceLocal
               (n := depth + 1) (by omega) (by omega)),
           hDupError]
-        rfl
       · simp [Block.runTerm, hDepth, hGet, Outcome.Simulates]
 
 theorem lowerAt?_eventually_of_direct
@@ -1956,7 +1953,6 @@ theorem lowerAt?_eventually_of_direct
             simp [Assembly.Source.stepAtResult, Assembly.Source.stepAt,
               Assembly.Instr.haltKind?, hTargetDest', hPop,
               Assembly.Source.invalid]
-            rfl
           · simp [Block.runTerm, hPop, Outcome.Simulates]
       | some popResult =>
           rcases popResult with ⟨stack, cond⟩
@@ -2173,7 +2169,7 @@ theorem lowerAt?_eventually_of_direct
           simp]
         rw [source_runNResult_one_at_boundary hFits.1 hPc]
         simp only [Assembly.Source.stepAtResult, Assembly.Source.stepAt,
-          Assembly.Target.stepInstr]
+          Assembly.Target.stepInstr_prim]
         rw [Assembly.PrimOp.step_eq_continuingStep_run (by rfl)]
         rfl
       · exact ⟨.InvalidInstruction, rfl⟩

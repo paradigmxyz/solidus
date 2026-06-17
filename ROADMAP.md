@@ -12,8 +12,11 @@ completion requirement.
 
 The shared `OpenWorld`/`Interaction` core and the Assembly-owned primitive
 semantics for `gas`, `msize`, `CALL`, `CALLCODE`, `DELEGATECALL`, `STATICCALL`,
-`CREATE`, and `CREATE2` are now checked. Recursive Assembly/bytecode control
-and all higher adjacent preservation boundaries remain active work.
+`CREATE`, and `CREATE2` are now checked. Target bytecode control now uses one
+parameterized recursive kernel for ordinary and open execution, and the exact
+state/outcome relation for each emitted Assembly instruction block is checked.
+Whole-program Assembly composition, legacy observer specialization, and all
+higher adjacent preservation boundaries remain active work.
 
 ## Relation To External Effects
 

@@ -8,6 +8,9 @@ namespace InteractionSemantics
 abbrev OpenStep :=
   Simulation.Interaction EVMException EVMState
 
+abbrev OpenStepResult :=
+  Simulation.Interaction EVMException StepResult
+
 namespace EVMState
 
 def installWorld (state : EVMState) (world : Simulation.OpenWorld) :
@@ -138,9 +141,36 @@ end PrimOp
 namespace Target
 
 def openStepInstr (instr : TargetInstr) (state : EVMState) : OpenStep :=
-  match instr with
-  | .prim op => PrimOp.openStep op state
-  | _ => .done (Assembly.Target.stepInstr instr state)
+  Assembly.Target.stepInstrWith
+    (fun next => .done (.ok next))
+    (fun err => .done (.error err))
+    PrimOp.openStep instr state
+
+def openStepInstrResult (instr : TargetInstr) (state : EVMState) :
+    OpenStepResult :=
+  Assembly.Target.stepInstrResultWith openStepInstr instr state
+
+def openRunList (code : List TargetInstr) (state : EVMState) : OpenStep :=
+  Assembly.Target.runListWith openStepInstr code state
+
+def openRunListResult (code : List TargetInstr) (state : EVMState) :
+    OpenStepResult :=
+  Assembly.Target.runListResultWith openStepInstrResult code state
+
+def openStep (target : TargetProgram) (state : EVMState) : OpenStep :=
+  Assembly.Target.stepWith openStepInstr target state
+
+def openStepResult (target : TargetProgram) (state : EVMState) :
+    OpenStepResult :=
+  Assembly.Target.stepResultWith openStepInstrResult target state
+
+def openRunN (target : TargetProgram) (fuel : Nat) (state : EVMState) :
+    OpenStep :=
+  Assembly.Target.runNWith openStepInstr target fuel state
+
+def openRunNResult (target : TargetProgram) (fuel : Nat)
+    (state : EVMState) : OpenStepResult :=
+  Assembly.Target.runNResultWith openStepInstrResult target fuel state
 
 end Target
 
@@ -151,6 +181,15 @@ def openStepAt (program : Program) (pc : Nat) (instr : Instr)
   match instr with
   | .prim op => PrimOp.openStep op state
   | _ => .done (Assembly.Source.stepAt program pc instr state)
+
+def openStepAtResult (program : Program) (pc : Nat) (instr : Instr)
+    (state : EVMState) : OpenStepResult := do
+  let state' ← openStepAt program pc instr state
+  match instr.haltKind? with
+  | some kind =>
+      pure (.halted { kind := kind, state := state', output := kind.output state' })
+  | none =>
+      pure (.running state')
 
 /--
 The primitive case of the Assembly-to-resolved-instruction boundary is exact:
