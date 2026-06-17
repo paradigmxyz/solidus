@@ -276,8 +276,13 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Recursive.leave_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Recursive.terminal_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Recursive.terminalArgs_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Recursive.block_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Recursive.if_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Recursive.switch_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Recursive.for_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Recursive.empty
 #check EvmCompiler.Locals.InteractionPreservation.Recursive.cons
+#check EvmCompiler.Locals.Source.Switch.property_of_select
 #check EvmCompiler.Locals.Stmt.compile_layout_extends_of_sourceOwned
 #check EvmCompiler.Locals.Stmt.compile_layout_eq_outEnv_of_sourceOwned
 #check EvmCompiler.Locals.Block.compileOpen_layout_extends_of_sourceOwned

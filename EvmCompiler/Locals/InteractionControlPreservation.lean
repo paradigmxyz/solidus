@@ -2405,6 +2405,366 @@ theorem terminalArgs_of_compile
       sourceFuel targetFuel kind args (by omega) hCompile hPolicy
       hLeave hCtx hScoped hSupported hInitial
 
+theorem block_of_compile
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (body : Locals.Block)
+    {code : List Expressions.Stmt}
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (hOwned : Locals.Source.Block.SourceOwned body)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.block body) =
+        some (code, finalCtx))
+    (hBody :
+      ∀ {bodyCode : List Expressions.Stmt}
+        {bodyCtx : Locals.Ctx},
+        Locals.Block.compileOpen targetCtx body =
+            some (bodyCode, bodyCtx) →
+          ∃ bodyCost,
+            BlockForwardBound policy sourceProgram targetProgram
+              targetCtx bodyCtx body bodyCode suffix returns bodyCost) :
+    ∃ cost,
+      StmtForwardBound policy sourceProgram targetProgram
+        targetCtx finalCtx (.block body) code suffix returns cost := by
+  obtain ⟨bodyCode, bodyCtx, lowerBody,
+    hBodyCompile, hFinish, hCode, hFinal⟩ :=
+    Locals.Stmt.compile_block_components hCompile
+  obtain ⟨bodyCost, hBodyBound⟩ := hBody hBodyCompile
+  let cost := Nat.max bodyCost (code.length + 1)
+  refine ⟨cost, ?_⟩
+  intro sourceCtx source target sourceFuel targetFuel
+    hPolicy hCtx hInitial hFuel
+  have hBodyCost : bodyCost ≤ cost := Nat.le_max_left _ _
+  have hCodeCost : code.length + 1 ≤ cost := Nat.le_max_right _ _
+  apply Stmt.Forward.policy_block_of_compile
+    policy sourceProgram targetProgram sourceCtx targetCtx finalCtx
+    sourceFuel targetFuel body hOwned
+  · omega
+  · exact hCompile
+  · exact hPolicy
+  · exact hCtx
+  · intro actualCode actualCtx hActualCompile
+    rw [hBodyCompile] at hActualCompile
+    rcases hActualCompile with ⟨rfl, rfl⟩
+    apply hBodyBound sourceCtx source target sourceFuel targetFuel
+      hPolicy hCtx hInitial
+    omega
+
+theorem if_of_compile
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (cond : Locals.Expr 1) (body : Locals.Block)
+    {code : List Expressions.Stmt}
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (hOwned : Locals.Source.Block.SourceOwned body)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.if_ cond body) =
+        some (code, finalCtx))
+    (hCondScoped : Scope.ExprScoped targetCtx.layout cond)
+    (hCondSupported : InteractionSemantics.Expr.OpenSupported cond)
+    (hBody :
+      ∀ {bodyCode : List Expressions.Stmt}
+        {bodyCtx : Locals.Ctx},
+        Locals.Block.compileOpen targetCtx body =
+            some (bodyCode, bodyCtx) →
+          ∃ bodyCost,
+            BlockForwardBound policy sourceProgram targetProgram
+              targetCtx bodyCtx body bodyCode suffix returns bodyCost) :
+    ∃ cost,
+      StmtForwardBound policy sourceProgram targetProgram
+        targetCtx finalCtx (.if_ cond body) code suffix returns cost := by
+  obtain ⟨condCode, bodyCode, bodyCtx, lowerBody,
+    hCondCompile, hBodyCompile, hFinish, hCode, hFinal⟩ :=
+    Locals.Stmt.compile_if_components hCompile
+  obtain ⟨bodyCost, hBodyBound⟩ := hBody hBodyCompile
+  let cost := Nat.max (bodyCost + 1) (bodyCode.length + 3)
+  refine ⟨cost, ?_⟩
+  intro sourceCtx source target sourceFuel targetFuel
+    hPolicy hCtx hInitial hFuel
+  cases sourceFuel with
+  | zero =>
+      unfold InteractionSemantics.Stmt.openRun
+        InteractionSemantics.stateModel
+        Locals.Source.Effectful.Ordinary.stateModel
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      apply Simulation.Interaction.ForwardRel.truncated
+      rfl
+  | succ sourceFuel =>
+      have hBodyCost : bodyCost + 1 ≤ cost := Nat.le_max_left _ _
+      have hCodeCost : bodyCode.length + 3 ≤ cost :=
+        Nat.le_max_right _ _
+      apply Stmt.Forward.policy_if_of_compile
+        policy sourceProgram targetProgram sourceCtx targetCtx finalCtx
+        sourceFuel targetFuel cond body hOwned hCompile hPolicy hCtx
+        hCondScoped hCondSupported hInitial
+      intro actualCode actualCtx hActualCompile
+      rw [hBodyCompile] at hActualCompile
+      rcases hActualCompile with ⟨rfl, rfl⟩
+      constructor
+      · omega
+      · intro sourceAfter targetAfter hAfter
+        apply hBodyBound sourceCtx sourceAfter targetAfter
+          sourceFuel (targetFuel - 2) hPolicy hCtx hAfter
+        omega
+
+theorem switch_of_compile
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (scrutinee : Locals.Expr 1)
+    (cases : List (Word × Locals.Block))
+    (defaultBody : Option Locals.Block)
+    {code : List Expressions.Stmt}
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (branchCost : Nat)
+    (hCompile :
+      Locals.Stmt.compile targetCtx
+          (.switch scrutinee cases defaultBody) =
+        some (code, finalCtx))
+    (hScrutineeScoped : Scope.ExprScoped targetCtx.layout scrutinee)
+    (hScrutineeSupported :
+      InteractionSemantics.Expr.OpenSupported scrutinee)
+    (hSelectedOwned :
+      ∀ {value selected},
+        Locals.Source.Switch.select value cases defaultBody =
+            some selected →
+          Locals.Source.Block.SourceOwned selected)
+    (hSelected :
+      ∀ {selected : Locals.Block}
+        {selectedTarget : Expressions.Block}
+        {bodyCode : List Expressions.Stmt}
+        {bodyCtx : Locals.Ctx}
+        (value : Word),
+        Locals.Source.Switch.select value cases defaultBody =
+            some selected →
+        Locals.Block.compileOpen targetCtx selected =
+            some (bodyCode, bodyCtx) →
+        Locals.finishScoped targetCtx bodyCtx bodyCode =
+            some selectedTarget →
+          ∃ bodyCost,
+            bodyCode.length + 3 ≤ branchCost ∧
+            bodyCost + 1 ≤ branchCost ∧
+            BlockForwardBound policy sourceProgram targetProgram
+              targetCtx bodyCtx selected bodyCode suffix returns bodyCost) :
+    StmtForwardBound policy sourceProgram targetProgram
+      targetCtx finalCtx (.switch scrutinee cases defaultBody)
+        code suffix returns (Nat.max branchCost 3) := by
+  intro sourceCtx source target sourceFuel targetFuel
+    hPolicy hCtx hInitial hFuel
+  cases sourceFuel with
+  | zero =>
+      unfold InteractionSemantics.Stmt.openRun
+        InteractionSemantics.stateModel
+        Locals.Source.Effectful.Ordinary.stateModel
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      apply Simulation.Interaction.ForwardRel.truncated
+      rfl
+  | succ sourceFuel =>
+      have hBranchCost : branchCost ≤ Nat.max branchCost 3 :=
+        Nat.le_max_left _ _
+      have hBaseCost : 3 ≤ Nat.max branchCost 3 :=
+        Nat.le_max_right _ _
+      apply Stmt.Forward.policy_switch_of_compile
+        policy sourceProgram targetProgram sourceCtx targetCtx finalCtx
+        sourceFuel targetFuel scrutinee cases defaultBody
+        (by omega) hCompile hPolicy hCtx hScrutineeScoped
+        hScrutineeSupported hInitial
+      intro selected selectedTarget bodyCode bodyCtx
+        value hSelect hBodyCompile hFinish
+      obtain ⟨bodyCost, hCodeCost, hBodyCost, hBodyBound⟩ :=
+        hSelected value hSelect hBodyCompile hFinish
+      refine ⟨?_, ?_, ?_⟩
+      · omega
+      · exact
+          Locals.Block.compileOpen_layout_extends_of_sourceOwned
+            (hSelectedOwned hSelect) hBodyCompile
+      · intro sourceAfter targetAfter hAfter
+        apply hBodyBound sourceCtx sourceAfter targetAfter
+          sourceFuel (targetFuel - 2) hPolicy hCtx hAfter
+        omega
+
+theorem for_of_compile
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (init : Locals.Block) (cond : Locals.Expr 1)
+    (post body : Locals.Block)
+    {code : List Expressions.Stmt}
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (hLeave : ∀ scope, policy.leave scope)
+    (hOwnedInit : Locals.Source.Block.SourceOwned init)
+    (hOwnedPost : Locals.Source.Block.SourceOwned post)
+    (hOwnedBody : Locals.Source.Block.SourceOwned body)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.for_ init cond post body) =
+        some (code, finalCtx))
+    (hCondScoped :
+      ∀ {initCode : List Expressions.Stmt} {initCtx : Locals.Ctx},
+        Locals.Block.compileOpen targetCtx.withoutLoopControl init =
+            some (initCode, initCtx) →
+          Scope.ExprScoped initCtx.layout cond)
+    (hCondSupported : InteractionSemantics.Expr.OpenSupported cond)
+    (hInit :
+      ∀ {initCode : List Expressions.Stmt} {initCtx : Locals.Ctx},
+        Locals.Block.compileOpen targetCtx.withoutLoopControl init =
+            some (initCode, initCtx) →
+          ∃ initCost,
+            BlockForwardBound Stmt.ControlPolicy.noLoop
+              sourceProgram targetProgram targetCtx.withoutLoopControl
+              initCtx init initCode suffix returns initCost)
+    (hPost :
+      ∀ {initCode : List Expressions.Stmt} {initCtx : Locals.Ctx}
+        {postCode : List Expressions.Stmt} {postCtx : Locals.Ctx},
+        Locals.Block.compileOpen targetCtx.withoutLoopControl init =
+            some (initCode, initCtx) →
+        Locals.Block.compileOpen initCtx.withoutLoopControl post =
+            some (postCode, postCtx) →
+          ∃ postCost,
+            BlockForwardBound Stmt.ControlPolicy.noLoop
+              sourceProgram targetProgram initCtx.withoutLoopControl
+              postCtx post postCode suffix returns postCost)
+    (hBody :
+      ∀ {initCode : List Expressions.Stmt} {initCtx : Locals.Ctx}
+        {bodyCode : List Expressions.Stmt} {bodyCtx : Locals.Ctx},
+        Locals.Block.compileOpen targetCtx.withoutLoopControl init =
+            some (initCode, initCtx) →
+        Locals.Block.compileOpen
+            (initCtx.withLoopControl initCtx.layout.length) body =
+          some (bodyCode, bodyCtx) →
+          ∃ bodyCost,
+            BlockForwardBound
+              (Stmt.ControlPolicy.loop initCtx.layout)
+              sourceProgram targetProgram
+              (initCtx.withLoopControl initCtx.layout.length)
+              bodyCtx body bodyCode suffix returns bodyCost) :
+    ∃ cost,
+      StmtForwardBound policy sourceProgram targetProgram
+        targetCtx finalCtx (.for_ init cond post body)
+          code suffix returns cost := by
+  obtain ⟨initCode, initCtx, condCode,
+    postCode, postCtx, compiledPost,
+    bodyCode, bodyCtx, compiledBody, outerCleanup,
+    hInitCompile, hCondCompile, hPostCompile, hFinishPost,
+    hBodyCompile, hFinishBody, hOuterCleanup, hCode, hFinal⟩ :=
+    Locals.Stmt.compile_for_components hCompile
+  obtain ⟨initCost, hInitBound⟩ := hInit hInitCompile
+  obtain ⟨postCost, hPostBound⟩ :=
+    hPost hInitCompile hPostCompile
+  obtain ⟨bodyCost, hBodyBound⟩ :=
+    hBody hInitCompile hBodyCompile
+  let needed :=
+    (initCode.length + 1) + initCost +
+      (postCode.length + 2) + postCost +
+      (bodyCode.length + 2) + bodyCost
+  let cost := needed + 1
+  refine ⟨cost, ?_⟩
+  intro sourceCtx source target sourceFuel targetFuel
+    hPolicy hCtx hInitial hFuel
+  cases sourceFuel with
+  | zero =>
+      unfold InteractionSemantics.Stmt.openRun
+        InteractionSemantics.stateModel
+        Locals.Source.Effectful.Ordinary.stateModel
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      apply Simulation.Interaction.ForwardRel.truncated
+      rfl
+  | succ sourceFuel =>
+      let slack := targetFuel - sourceFuel - 2
+      have hTargetEq :
+          targetFuel = sourceFuel + slack + 2 := by
+        dsimp [slack, cost, needed] at *
+        omega
+      have hInitCode : initCode.length + 1 ≤ slack := by
+        dsimp [slack, cost, needed] at *
+        omega
+      have hInitCost : initCost ≤ slack := by
+        dsimp [slack, cost, needed] at *
+        omega
+      have hPostCode : postCode.length + 2 ≤ slack := by
+        dsimp [slack, cost, needed] at *
+        omega
+      have hPostCost : postCost ≤ slack := by
+        dsimp [slack, cost, needed] at *
+        omega
+      have hBodyCode : bodyCode.length + 2 ≤ slack := by
+        dsimp [slack, cost, needed] at *
+        omega
+      have hBodyCost : bodyCost ≤ slack := by
+        dsimp [slack, cost, needed] at *
+        omega
+      rw [hTargetEq]
+      apply Stmt.Forward.policy_for_of_forward
+        policy sourceProgram sourceCtx sourceFuel init cond post body
+        hPolicy hLeave
+      apply Stmt.Forward.for_of_compile
+        sourceProgram targetProgram sourceCtx targetCtx finalCtx
+        sourceFuel slack init cond post body
+        hOwnedInit hOwnedPost hOwnedBody hCompile hCtx
+        hCondScoped hCondSupported
+      · intro actualCode actualCtx hActualCompile
+        rw [hInitCompile] at hActualCompile
+        rcases hActualCompile with ⟨rfl, rfl⟩
+        constructor
+        · exact hInitCode
+        · apply hInitBound sourceCtx.withoutLoopControl
+            source target sourceFuel (sourceFuel + slack)
+            (Stmt.ControlPolicy.noLoop_contextCompatible_withoutLoopControl
+              sourceCtx)
+            hCtx.withoutLoopControl hInitial
+          omega
+      · intro actualInitCode actualInitCtx actualPostCode actualPostCtx
+          hActualInit hActualPost
+        rw [hInitCompile] at hActualInit
+        rcases hActualInit with ⟨rfl, rfl⟩
+        rw [hPostCompile] at hActualPost
+        rcases hActualPost with ⟨rfl, rfl⟩
+        constructor
+        · exact hPostCode
+        · intro loopSourceCtx fuel sourceAfter targetAfter
+            hLoopCtx hAfter
+          apply hPostBound loopSourceCtx.withoutLoopControl
+            sourceAfter targetAfter fuel (fuel + slack)
+            (Stmt.ControlPolicy.noLoop_contextCompatible_withoutLoopControl
+              loopSourceCtx)
+            hLoopCtx.withoutLoopControl hAfter
+          omega
+      · intro actualInitCode actualInitCtx actualBodyCode actualBodyCtx
+          hActualInit hActualBody
+        rw [hInitCompile] at hActualInit
+        rcases hActualInit with ⟨rfl, rfl⟩
+        rw [hBodyCompile] at hActualBody
+        rcases hActualBody with ⟨rfl, rfl⟩
+        constructor
+        · exact hBodyCode
+        · intro loopSourceCtx fuel sourceAfter targetAfter
+            hLoopCtx hAfter
+          have hBodyPolicy :
+              Stmt.ControlPolicy.ContextCompatible
+                (Stmt.ControlPolicy.loop initCtx.layout)
+                (loopSourceCtx.withLoopControl
+                  loopSourceCtx.scope loopSourceCtx.scope) := by
+            rw [hLoopCtx.layout]
+            exact
+              Stmt.ControlPolicy.loop_contextCompatible
+                loopSourceCtx loopSourceCtx.scope
+          have hForward :=
+            hBodyBound
+              (loopSourceCtx.withLoopControl
+                loopSourceCtx.scope loopSourceCtx.scope)
+              sourceAfter targetAfter fuel (fuel + slack)
+              hBodyPolicy hLoopCtx.withLoopControl hAfter (by omega)
+          simpa [hLoopCtx.layout] using hForward
+
 theorem empty
     (policy : Stmt.ControlPolicy)
     (sourceProgram : Locals.Program)

@@ -420,6 +420,33 @@ def select (scrutinee : Word) :
       else
         select scrutinee rest defaultBody
 
+theorem property_of_select
+    {motive : Block → Prop}
+    {scrutinee : Word}
+    {cases : List (Word × Block)}
+    {defaultBody : Option Block}
+    {selected : Block}
+    (hCases :
+      ∀ value body, (value, body) ∈ cases → motive body)
+    (hDefault :
+      ∀ body, defaultBody = some body → motive body)
+    (hSelect : select scrutinee cases defaultBody = some selected) :
+    motive selected := by
+  induction cases with
+  | nil =>
+      exact hDefault selected hSelect
+  | cons head rest ih =>
+      rcases head with ⟨value, body⟩
+      by_cases hMatch : value = scrutinee
+      · simp [select, hMatch] at hSelect
+        subst selected
+        exact hCases value body (by simp)
+      · simp [select, hMatch] at hSelect
+        apply ih
+        · intro restValue restBody hMem
+          exact hCases restValue restBody (by simp [hMem])
+        · exact hSelect
+
 end Switch
 
 mutual

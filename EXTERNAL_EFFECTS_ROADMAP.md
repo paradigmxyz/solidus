@@ -838,6 +838,9 @@ Exit: the shared core builds with no compiler layer changed.
     - [x] Define source-facing statement/block `OpenSupported` and a stable
       bounded recursive capability; prove every straight-line leaf, terminal,
       abrupt exit, empty block, and generic sequence constructor implements it.
+    - [x] Prove bounded compound capability constructors for lexical blocks,
+      conditionals, source-selected switches, and full loops; each computes its
+      compiler slack internally from adjacent child capabilities.
     - [ ] Close the source-owned recursive whole-statement/block owner and
       remove recursive callback premises from the compiler-facing loop theorem.
   - [x] Canonical Expressions open semantics and transparent

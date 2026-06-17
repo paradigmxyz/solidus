@@ -31471,3 +31471,10 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   build, full verification root, architecture dependency check, touched-file
   hole scan, axiom audit, and `git diff --check` passed; checked capability
   constructors use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 15:38:48 PDT - proof/locals-recursive-compounds - proved bounded
+  block, conditional, source-selected switch, and loop capability constructors;
+  each computes static compiler slack internally from adjacent child bounds.
+- 2026-06-17 15:38:48 PDT - validation/locals-recursive-compounds - focused
+  build, full verification root, architecture dependency check, touched-file
+  hole scan, axiom audit, and `git diff --check` passed; compound theorems use
+  only `[propext, Classical.choice, Quot.sound]`.
