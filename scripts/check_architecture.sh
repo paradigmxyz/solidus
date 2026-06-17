@@ -153,6 +153,24 @@ for theorem in \
 done
 
 for theorem in \
+    'Stmt.openStep_brk_of_compileStmtFuel?' \
+    'Stmt.openRun_brk_within_of_compileStmtFuel?' \
+    'Stmt.openStep_cont_of_compileStmtFuel?' \
+    'Stmt.openRun_cont_within_of_compileStmtFuel?' \
+    'Stmt.openStep_leave_of_compileStmtFuel?' \
+    'Stmt.openRun_leave_within_of_compileStmtFuel?' \
+    'Stmt.openStep_terminal_of_compileStmtFuel?' \
+    'Stmt.openRun_terminal_within_of_compileStmtFuel?'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.Structured.InteractionLeafPreservation.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing Structured open leaf theorem %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
+for theorem in \
     'openRunNResultWithStop_add' \
     'openRunNResultWithStop_add_eq_of_allStopped'; do
   if ! rg -Fq \

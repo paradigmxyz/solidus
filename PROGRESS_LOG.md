@@ -30885,3 +30885,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   verification builds, architecture and changed-file hole checks,
   open-effects axiom smoke, and `git diff --check` pass; axioms remain
   `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-17 06:08:24 PDT - proof/structured-open-leaf-control - Split
+  pass-owned leaf control into `InteractionLeafPreservation` and proved checked
+  one-step plus boundary-parametric preservation for `break`, `continue`,
+  `leave`, and every terminal kind. The `leave` theorem carries the honest
+  active-return-frame premise, while terminal preservation keeps hidden
+  activation words related across halt outcomes. The focused build, full
+  1,287-job verification root, architecture and changed-file hole checks,
+  open-effects axiom smoke, and `git diff --check` pass; axioms remain
+  `propext`, `Classical.choice`, and `Quot.sound`.
