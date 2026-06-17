@@ -813,6 +813,9 @@ Exit: the shared core builds with no compiler layer changed.
     - [x] Fuel-aligned recursive loop kernel covering false conditions,
       regular body/post recursion, break, continue, leave, halt, and impossible
       post exits with one fixed compiler slack.
+    - [x] Whole generated `for` composition through initializer execution,
+      recursive loop outcomes, abrupt outer-cleanup bypass, and regular
+      compiler-owned outer cleanup.
     - [x] Split policy/control recursion into a dedicated adjacent Locals owner
       before adding the whole compiled `for` wrapper; the current proof module
       is again below the 5K-line architecture soft limit.

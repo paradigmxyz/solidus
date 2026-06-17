@@ -31396,3 +31396,13 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   builds for both Locals owners, the full verification root, architecture
   dependency and size checks, touched-Lean hole scan, axiom audit, and
   `git diff --check`; the newly introduced Locals size warning is resolved.
+- 2026-06-17 15:06:02 PDT - proof/locals-for-generated - composed initializer
+  execution, the checked fuel-aligned loop kernel, and compiler-owned outer
+  cleanup into `Stmt.Forward.for_generated`. Regular loops restrict back to
+  the enclosing source scope and execute cleanup; initializer/loop leave and
+  halt bypass unreachable cleanup, while impossible break/continue cases are
+  discharged by the no-loop policy.
+- 2026-06-17 15:06:02 PDT - validation/locals-for-generated - passed the
+  focused control-owner build, full verification root, architecture dependency
+  and size checks, touched-Lean hole scan, axiom audit, and `git diff --check`;
+  the theorem depends only on `[propext, Classical.choice, Quot.sound]`.

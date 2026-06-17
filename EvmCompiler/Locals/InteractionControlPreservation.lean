@@ -328,6 +328,225 @@ theorem forLoop_generated
               apply Simulation.Interaction.ExceptRel.ok
               exact PolicyScopedResultRel.halt hShared hReturns
 
+/-- Compose initializer, recursive loop, and outer lexical cleanup. -/
+theorem for_generated
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx)
+    (targetCtx initTargetCtx postFinalCtx bodyFinalCtx : Locals.Ctx)
+    (sourceFuel slack : Nat)
+    (init : Locals.Block) (cond : Locals.Expr 1)
+    (post body : Locals.Block)
+    (initCode postCode bodyCode : List Expressions.Stmt)
+    (condCode : Structured.Code)
+    (postCleanup bodyCleanup outerCleanup : Structured.Code)
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hOuterLayout :
+      ∃ pre, initTargetCtx.layout = pre ++ targetCtx.layout)
+    (hOuterCleanup :
+      initTargetCtx.cleanupTo? targetCtx.layout.length =
+        some outerCleanup)
+    (hPostLayout :
+      ∃ pre,
+        postFinalCtx.layout =
+          pre ++ initTargetCtx.withoutLoopControl.layout)
+    (hBodyLayout :
+      ∃ pre,
+        bodyFinalCtx.layout =
+          pre ++
+            (initTargetCtx.withLoopControl
+              initTargetCtx.layout.length).layout)
+    (hPostCleanup :
+      postFinalCtx.cleanupTo?
+          initTargetCtx.withoutLoopControl.layout.length =
+        some postCleanup)
+    (hBodyCleanup :
+      bodyFinalCtx.cleanupTo?
+          (initTargetCtx.withLoopControl
+            initTargetCtx.layout.length).layout.length =
+        some bodyCleanup)
+    (hInitSlack : initCode.length + 1 ≤ slack)
+    (hPostSlack : postCode.length + 2 ≤ slack)
+    (hBodySlack : bodyCode.length + 2 ≤ slack)
+    (hCondScoped : Scope.ExprScoped initTargetCtx.layout cond)
+    (hCondSupported : InteractionSemantics.Expr.OpenSupported cond)
+    (hCondCompile :
+      Locals.Expr.compileCode initTargetCtx 0 cond = some condCode)
+    (hInit :
+      Simulation.Interaction.ForwardRel
+        Block.FuelTruncated
+        (PolicyOpenOutcomeRel ControlPolicy.noLoop
+          initTargetCtx suffix returns)
+        (InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx.withoutLoopControl
+            sourceFuel init source)
+        (Expressions.InteractionSemantics.Block.openRun
+          targetProgram (sourceFuel + slack)
+            { stmts := initCode } target))
+    (hPost :
+      ∀ {loopSourceCtx : Locals.Source.Ctx}
+        (fuel : Nat)
+        {sourceAfter : Locals.Source.State}
+        {targetAfter : Structured.RunState},
+        Frame.CtxRel loopSourceCtx initTargetCtx →
+        Frame.StateRel initTargetCtx.layout suffix returns
+            sourceAfter targetAfter →
+          Simulation.Interaction.ForwardRel
+            Block.FuelTruncated
+            (PolicyOpenOutcomeRel ControlPolicy.noLoop
+              postFinalCtx suffix returns)
+            (InteractionSemantics.Block.openRun
+              sourceProgram loopSourceCtx.withoutLoopControl
+                fuel post sourceAfter)
+            (Expressions.InteractionSemantics.Block.openRun
+              targetProgram (fuel + slack)
+                { stmts := postCode } targetAfter))
+    (hBody :
+      ∀ {loopSourceCtx : Locals.Source.Ctx}
+        (fuel : Nat)
+        {sourceAfter : Locals.Source.State}
+        {targetAfter : Structured.RunState},
+        Frame.CtxRel loopSourceCtx initTargetCtx →
+        Frame.StateRel initTargetCtx.layout suffix returns
+            sourceAfter targetAfter →
+          Simulation.Interaction.ForwardRel
+            Block.FuelTruncated
+            (PolicyOpenOutcomeRel
+              (ControlPolicy.loop loopSourceCtx.scope)
+              bodyFinalCtx suffix returns)
+            (InteractionSemantics.Block.openRun
+              sourceProgram
+                (loopSourceCtx.withLoopControl
+                  loopSourceCtx.scope loopSourceCtx.scope)
+                fuel body sourceAfter)
+            (Expressions.InteractionSemantics.Block.openRun
+              targetProgram (fuel + slack)
+                { stmts := bodyCode } targetAfter)) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel targetCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx (sourceFuel + 1)
+          (.for_ init cond post body) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram (sourceFuel + slack + 2)
+          { stmts :=
+              [Expressions.Stmt.for_
+                { stmts := initCode } (.code condCode)
+                { stmts := postCode ++ Locals.codeStmt postCleanup }
+                { stmts := bodyCode ++ Locals.codeStmt bodyCleanup }] ++
+                Locals.codeStmt outerCleanup }
+          target) := by
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  have hHeadFuel :
+      sourceFuel + slack + 2 = (sourceFuel + slack) + 2 := by
+    omega
+  rw [hHeadFuel, TargetBlock.openRun_single_stmt]
+  unfold InteractionSemantics.Stmt.openRun
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+    Expressions.InteractionSemantics.Stmt.openRun
+  simp only [Locals.Source.Effectful.Control.Stmt.run,
+    Expressions.EffectSemantics.Control.Stmt.run]
+  change
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel targetCtx suffix returns)
+      (Simulation.Interaction.bind
+        (InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx.withoutLoopControl
+            sourceFuel init source)
+        _)
+      (Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Expressions.InteractionSemantics.Block.openRun
+            targetProgram (sourceFuel + slack)
+              { stmts := initCode } target)
+          _)
+        _)
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.ForwardRel.bind hInit
+  intro sourceInit targetInit hInitResult
+  cases hInitResult with
+  | @regular sourceAfter sourceAfterCtx targetAfter
+      hInitPolicy hInitCtx hInitState =>
+      have hLoop :=
+        forLoop_generated
+          sourceProgram targetProgram sourceAfterCtx
+          sourceAfterCtx.withoutLoopControl
+          (sourceAfterCtx.withLoopControl
+            sourceAfterCtx.scope sourceAfterCtx.scope)
+          initTargetCtx initTargetCtx.withoutLoopControl
+          (initTargetCtx.withLoopControl initTargetCtx.layout.length)
+          postFinalCtx bodyFinalCtx slack cond post body
+          condCode postCode bodyCode postCleanup bodyCleanup
+          hInitCtx hInitCtx.withoutLoopControl hInitCtx.withLoopControl
+          rfl rfl hPostLayout hBodyLayout hPostCleanup hBodyCleanup
+          hPostSlack hBodySlack hCondScoped hCondSupported hCondCompile
+          (fun fuel {source} {target} hState =>
+            hPost (sourceAfter := source) (targetAfter := target)
+              fuel hInitCtx hState)
+          (fun fuel {source} {target} hState =>
+            hBody (sourceAfter := source) (targetAfter := target)
+              fuel hInitCtx hState)
+          sourceFuel hInitState
+      apply Simulation.Interaction.ForwardRel.bind hLoop
+      intro sourceLoop targetLoop hLoopResult
+      cases hLoopResult with
+      | @regular sourceFinal targetFinal hLoopState =>
+          obtain ⟨pre, hOuterLayout⟩ := hOuterLayout
+          obtain ⟨afterCleanup, hCleanupRun, hFinal⟩ :=
+            hLoopState.openRun_cleanupTo hOuterLayout hOuterCleanup
+          have hCleanupFuel :
+              2 ≤ sourceFuel + slack + 2 - 1 := by
+            omega
+          have hTargetCleanup :=
+            TargetBlock.openRun_single_code_done
+              targetProgram (sourceFuel + slack + 2 - 1)
+              outerCleanup targetFinal afterCleanup
+              hCleanupFuel hCleanupRun
+          simp only [Structured.Outcome.regular_mode,
+            Structured.Outcome.regular_state,
+            Locals.Source.Effectful.Outcome.regular,
+            Locals.codeStmt, List.length_singleton]
+          rw [hTargetCleanup]
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          apply OpenResultRel.regular hCtx
+          simpa [hCtx.layout] using hFinal
+      | brk hImpossible hState =>
+          exact False.elim hImpossible
+      | cont hImpossible hState =>
+          exact False.elim hImpossible
+      | leave hPolicy hState =>
+          apply Simulation.Interaction.ForwardRel.ofRel
+          apply Simulation.Interaction.Rel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact OpenResultRel.leave hState
+      | halt hShared hReturns =>
+          apply Simulation.Interaction.ForwardRel.ofRel
+          apply Simulation.Interaction.Rel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact OpenResultRel.halt hShared hReturns
+  | brk hInitPolicy hImpossible hState =>
+      exact False.elim hImpossible
+  | cont hInitPolicy hImpossible hState =>
+      exact False.elim hImpossible
+  | leave hInitPolicy hPolicy hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact OpenResultRel.leave hState
+  | halt hInitPolicy hShared hReturns =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact OpenResultRel.halt hShared hReturns
+
 end Stmt.Forward
 
 namespace Block

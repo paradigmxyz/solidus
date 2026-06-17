@@ -252,6 +252,7 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.scopedBlock_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.policyScopedBlock_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.forLoop_generated
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.for_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.if_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.if_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.switch_generated
