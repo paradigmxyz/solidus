@@ -617,6 +617,7 @@ theorem ofUncheckedLowering_programBounded
         {exprCtx : Functions.Source.Ctx}
         {value : Assembly.Word},
         exprFuel < fuel →
+          cost expr ≤ globalCost →
           Eligible expr →
           Expr.lower1Unchecked? before expr =
             some (exprPre, lower, after) →
@@ -790,7 +791,8 @@ theorem ofUncheckedLowering_programBounded
           hExpr hRel hDomain hScope hRestRun
       let restPrepared := restBounded.1
       obtain ⟨headBounded⟩ :=
-        hExpr (by omega) (hEligible expr (by simp)) hHead
+        hExpr (by omega) (hCost expr (by simp))
+          (hEligible expr (by simp)) hHead
           restPrepared.relation
           restPrepared.prepared.prepared.domain
           restPrepared.prepared.prepared.scope hHeadEval
@@ -1523,6 +1525,7 @@ theorem ofBoundPrimitive_programBounded
         {exprCtx : Functions.Source.Ctx}
         {value : Assembly.Word},
         exprFuel < fuel →
+          FunctionsObserverStaticCost.expr expr ≤ globalCost →
           Eligible expr →
           Expr.lower1Unchecked? exprBefore expr =
             some (exprPre, exprLower, exprAfter) →
@@ -1573,11 +1576,16 @@ theorem ofBoundPrimitive_programBounded
               fuel result.prepared } := by
   obtain ⟨value, hValues, ⟨result⟩⟩ :=
     FunctionsObserverExpression.ScopedPreparedValue.ofBoundPrimitive
-      hBound hLower hEligible
-      (fun hExprFuel hExprEligible hExprLower hExprRel hExprDomain
+      (Eligible := fun expr =>
+        Eligible expr ∧
+          FunctionsObserverStaticCost.expr expr ≤ globalCost)
+      hBound hLower
+      (fun expr hMem => ⟨hEligible expr hMem, hCost expr hMem⟩)
+      (fun hExprFuel hExprEligibleCost hExprLower hExprRel hExprDomain
           hExprScope hExprRun => by
         obtain ⟨bounded⟩ :=
-          hExpr hExprFuel hExprEligible hExprLower hExprRel
+          hExpr hExprFuel hExprEligibleCost.2 hExprEligibleCost.1
+            hExprLower hExprRel
             hExprDomain hExprScope hExprRun
         exact ⟨bounded.1⟩)
       hRel hDomain hScope hRun
@@ -1606,9 +1614,9 @@ theorem ofBoundPrimitive_programBounded
               (globalCost := globalCost)
               FunctionsObserverStaticCost.expr
               hArgs hEligible hCost
-              (fun hExprFuel hExprEligible hExprLower hExprRel
+              (fun hExprFuel hExprCost hExprEligible hExprLower hExprRel
                   hExprDomain hExprScope hExprRun =>
-                hExpr (by omega) hExprEligible hExprLower hExprRel
+                hExpr (by omega) hExprCost hExprEligible hExprLower hExprRel
                   hExprDomain hExprScope hExprRun)
               hRel hDomain hScope hArgsRun
           have hRequired :
@@ -1680,6 +1688,7 @@ theorem ofPrimitive_programBounded
         {exprCtx : Functions.Source.Ctx}
         {value : Assembly.Word},
         exprFuel < fuel →
+          FunctionsObserverStaticCost.expr expr ≤ globalCost →
           Eligible expr →
           Expr.lower1Unchecked? exprBefore expr =
             some (exprPre, exprLower, exprAfter) →

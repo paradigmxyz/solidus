@@ -1668,6 +1668,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverFuel.targetBudgetFor_mono
 #print axioms EvmCompiler.Yul.FunctionsObserverFuel.executionBudgetFor_child_add_eight_le
 #print axioms EvmCompiler.Yul.FunctionsObserverFuel.executionBudgetFor_two_children_add_eight_le
+#print axioms EvmCompiler.Yul.FunctionsObserverFuel.targetBudgetFor_le_executionBudgetFor
 #print axioms EvmCompiler.Yul.FunctionsObserverFuel.executionBudget_le_executionBudgetFor
 #print axioms EvmCompiler.Yul.FunctionsObserverFuel.staticCost_le_executionBudget
 #print axioms EvmCompiler.Yul.FunctionsObserverFuel.three_children_add_eight_le_of_lt
@@ -1685,6 +1686,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.PreparedValue.ofReturnedCall_sourceBoundedOfCosts
 #print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedPreparedValue.ofFunctionCall_bounded
 #print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.RecursiveScopedValueForwardBounded.ofBody
+#print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.PreparedValue.ofReturnedCall_programBounded
+#print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedPreparedValue.ofFunctionCall_programBounded
+#print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.RecursiveScopedValueForwardProgramBounded.ofBody
 #print axioms EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveBodyForwardBounded.ofList
 #print axioms EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofLetNone_bounded
 #print axioms EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofBreak_bounded

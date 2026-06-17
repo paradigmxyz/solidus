@@ -84,7 +84,7 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
     to the program-indexed budget and retire the provisional one-level
     call-expanded runtime measure;
     - [x] argument preparation and primitive expression evaluation;
-    - [ ] internal function calls and recursive expression capability;
+    - [x] internal function calls and recursive expression capability;
     - [ ] statements, lists, and returned bodies;
   - [ ] prove every remaining compiler construct respects the program static
     measure;

@@ -96,6 +96,15 @@ theorem executionBudgetFor_ge_sixteen
   simp only [executionBudgetFor]
   nlinarith
 
+theorem targetBudgetFor_le_executionBudgetFor
+    (globalCost localCost sourceFuel : Nat) :
+    targetBudgetFor globalCost sourceFuel ≤
+      executionBudgetFor globalCost localCost sourceFuel := by
+  have hPositive :=
+    targetBudgetFor_ge_sixteen globalCost sourceFuel
+  simp only [executionBudgetFor]
+  nlinarith
+
 theorem localCost_le_executionBudgetFor
     (globalCost localCost sourceFuel : Nat) :
     localCost ≤ executionBudgetFor globalCost localCost sourceFuel := by
