@@ -30506,3 +30506,19 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   forbidden-marker scan, standalone resource-observer axiom smoke, and
   `git diff --check` passed. The generic constructor and all three statement
   theorems depend only on `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 20:55:09 PDT - proof/yul-terminal-block-if - Lifted lexical block
+  and conditional observable failures into the program-indexed terminal
+  statement family. The conditional proof handles both condition failure and a
+  terminal selected body using canonical Yul/Functions semantics, exact
+  open/scoped execution, and source-owned static costs.
+- 2026-06-16 21:00:00 PDT - consolidation/compaction-resume - Resumed from the
+  checked terminal block/conditional checkpoint; split compound terminal
+  composition into a pass-owned module before continuing with switch and loop
+  coverage.
+- 2026-06-16 21:02:10 PDT - validation/yul-terminal-block-if - Rebuilt the
+  split terminal-fuel and compound-control modules, the full 1,270-job
+  verification root, architecture dependency guard, changed-line forbidden
+  marker scan, standalone resource-observer axiom smoke, and `git diff
+  --check`. The block and conditional theorems depend only on `propext`,
+  `Classical.choice`, and `Quot.sound`; the terminal-fuel module is below the
+  5K-line architecture threshold.
