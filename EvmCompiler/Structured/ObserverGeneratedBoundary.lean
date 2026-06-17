@@ -384,7 +384,8 @@ theorem reject_extension
       ∃ hidden : EvmYul.Stack Word,
         TypedCfgPreservation.realizeStack
             [] ancestor.source.returns ancestorTokens = some hidden := by
-    unfold FrameMatches at hOwnerFrame
+    unfold FrameMatches
+      TypedCfgPreservation.ActivationFrameMatches at hOwnerFrame
     rw [hDepth] at hOwnerFrame
     exact ⟨hOwnerFrame.choose, hOwnerFrame.choose_spec.1⟩
   exact

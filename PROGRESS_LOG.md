@@ -30835,3 +30835,16 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   verification root, architecture and changed-file hole checks, open-effects
   axiom smoke, and `git diff --check` pass; axioms remain `propext`,
   `Classical.choice`, and `Quot.sound`.
+- 2026-06-17 05:32:28 PDT - compaction-resume - Resumed the horizontal
+  CALL/CREATE proof while migrating Structured control boundaries from
+  label-only stopping to pass-owned activation-aware frame matching; next is
+  the downstream observer compatibility fix and a full verification checkpoint.
+- 2026-06-17 05:34:11 PDT - theorem-boundary/structured-activation-aware -
+  Generalized the sole TypedCfg control kernel to state-sensitive boundary
+  policies and moved dynamic activation matching into the Structured-to-TypedCfg
+  pass. Structured open preservation now proves that nonhalting fragments
+  restore their source return stack and only stop at a label whose compiler
+  shape matches that activation, including recursive internal calls. Focused
+  modules, the full verification root, open-effects axiom smoke, architecture
+  and changed-file hole checks, and `git diff --check` pass; axioms remain
+  `propext`, `Classical.choice`, and `Quot.sound`.

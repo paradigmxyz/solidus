@@ -18,17 +18,42 @@ def IsJumpBoundary (ctx : TypedCfgCompiler.Context)
     ctx.continueLabel? = some label ∨
     ctx.leaveLabel? = some label
 
-def stopJump (ctx : TypedCfgCompiler.Context)
-    (regular label : Assembly.Label) : Bool :=
-  label == regular ||
-    ctx.breakLabel? == some label ||
-    ctx.continueLabel? == some label ||
-    ctx.leaveLabel? == some label
+def continuationMatches?
+    (returns : List ReturnDest) (tokens : List Word)
+    (expectedLabel : Option Assembly.Label)
+    (expectedShape : Option TypedCfg.Shape)
+    (label : Assembly.Label) (state : EVMState) : Bool :=
+  match expectedLabel, expectedShape with
+  | some expected, some shape =>
+      label == expected &&
+        TypedCfgPreservation.activationFrameMatches?
+          returns tokens shape state
+  | _, _ => false
+
+def stopJump (result : TypedCfgCompiler.Result)
+    (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
+    (returns : List ReturnDest) (tokens : List Word)
+    (label : Assembly.Label) (state : EVMState) : Bool :=
+  continuationMatches? returns tokens
+      (some regular) result.fallthrough? label state ||
+    continuationMatches? returns tokens
+      ctx.breakLabel? ctx.breakShape? label state ||
+    continuationMatches? returns tokens
+      ctx.continueLabel? ctx.continueShape? label state ||
+    continuationMatches? returns tokens
+      ctx.leaveLabel? ctx.leaveShape? label state
 
 @[simp] theorem stopJump_regular
-    (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label) :
-    stopJump ctx regular regular = true := by
-  simp [stopJump, IsJumpBoundary]
+    {result : TypedCfgCompiler.Result}
+    (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
+    (returns : List ReturnDest) (tokens : List Word)
+    (shape : TypedCfg.Shape) (state : EVMState)
+    (hShape : result.fallthrough? = some shape)
+    (hFrame :
+      TypedCfgPreservation.activationFrameMatches?
+        returns tokens shape state = true) :
+    stopJump result ctx regular returns tokens regular state = true := by
+  simp [stopJump, continuationMatches?, hShape, hFrame]
 
 /--
 Source-visible stack capacity at every Structured lexical continuation.
@@ -64,84 +89,181 @@ def FrameFits (result : TypedCfgCompiler.Result)
       True
 
 /--
+Every nonhalting fragment outcome returns to the dynamic activation from which
+the fragment started. A halt may retain nested internal-call frames because no
+return dispatch follows it.
+-/
+def ActivationRestored
+    (returns : List ReturnDest) (outcome : Structured.Outcome) : Prop :=
+  match outcome.mode with
+  | .halt _ => True
+  | .regular | .brk | .cont | .leave =>
+      outcome.state.returns = returns
+
+/--
 The existing outcome-indexed Structured-to-TypedCfg relation, strengthened
-with the source-frame shape needed by the next adjacent compiler fragment.
+with the source-frame shape and dynamic-activation invariant needed by the next
+adjacent compiler fragment.
 -/
 def Rel (result : TypedCfgCompiler.Result)
     (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
-    (tokens : List Word)
+    (returns : List ReturnDest) (tokens : List Word)
     (source : Structured.Outcome) (target : TypedCfg.Outcome) : Prop :=
   TypedCfgPreservation.OutcomeSimulation.Rel
       (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
         ctx regular)
       tokens source target ∧
-    FrameFits result ctx source
+    FrameFits result ctx source ∧
+      ActivationRestored returns source
 
 abbrev OutcomeDoneRel (result : TypedCfgCompiler.Result)
     (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
-    (tokens : List Word) :=
+    (returns : List ReturnDest) (tokens : List Word) :=
   Simulation.Interaction.ExceptRel
     (fun _sourceError _targetError : EVMException => True)
-    (Rel result ctx regular tokens)
+    (Rel result ctx regular returns tokens)
 
 def RunRel (result : TypedCfgCompiler.Result)
     (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
-    (tokens : List Word) (source : Structured.Outcome) :
+    (returns : List ReturnDest) (tokens : List Word)
+    (source : Structured.Outcome) :
     TypedCfg.Control.Program.RunResult → Prop
   | .exhausted _ _ => False
-  | .stopped target => Rel result ctx regular tokens source target
+  | .stopped target =>
+      Rel result ctx regular returns tokens source target
 
 abbrev DoneRel (result : TypedCfgCompiler.Result)
     (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
-    (tokens : List Word) :=
+    (returns : List ReturnDest) (tokens : List Word) :=
   Simulation.Interaction.ExceptRel
     (fun _sourceError _targetError : EVMException => True)
-    (RunRel result ctx regular tokens)
+    (RunRel result ctx regular returns tokens)
 
-def TargetStopped (ctx : TypedCfgCompiler.Context)
-    (regular : Assembly.Label) : TypedCfg.Outcome → Prop
-  | .jump label _ => stopJump ctx regular label = true
+def TargetStopped (result : TypedCfgCompiler.Result)
+    (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
+    (returns : List ReturnDest) (tokens : List Word) :
+    TypedCfg.Outcome → Prop
+  | .jump label state =>
+      stopJump result ctx regular returns tokens label state = true
   | .halt _ _ => True
   | .fallthrough _ | .returnDispatch _ | .invalid _ => False
 
 theorem targetStopped_of_rel
     {result : TypedCfgCompiler.Result}
     {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
-    {tokens : List Word} {source : Structured.Outcome}
+    {returns : List ReturnDest} {tokens : List Word}
+    {source : Structured.Outcome}
     {target : TypedCfg.Outcome}
-    (hRel : Rel result ctx regular tokens source target) :
-    TargetStopped ctx regular target := by
-  rcases hRel with ⟨hOutcome, _hFits⟩
+    (hRel : Rel result ctx regular returns tokens source target) :
+    TargetStopped result ctx regular returns tokens target := by
+  rcases hRel with ⟨hOutcome, hFits, hRestored⟩
   rcases source with ⟨sourceState, sourceMode⟩
-  cases sourceMode <;> cases target <;>
-    simp [
-      TargetStopped, stopJump,
-      TypedCfgPreservation.OutcomeSimulation.Rel,
-      Simulation.OutcomeRel,
-      TypedCfgPreservation.OutcomeSimulation.sourceView,
-      TypedCfgPreservation.OutcomeSimulation.targetView,
-      TypedCfgPreservation.OutcomeSimulation.targetMode,
-      TypedCfgPreservation.OutcomeSimulation.targetState,
-      TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext,
-      TypedCfgPreservation.OutcomeSimulation.contract] at hOutcome ⊢ <;>
-    aesop
+  cases sourceMode with
+  | regular =>
+      obtain ⟨targetState, rfl, hState⟩ :=
+        TypedCfgPreservation.OutcomeSimulation.Rel.regular_elim
+          hOutcome
+      rcases hFits with ⟨shape, hShape, hSourceFits⟩
+      have hFrame :=
+        TypedCfgPreservation.ActivationFrameMatches.check_of_stateRel
+          hState hSourceFits
+      have hReturns : sourceState.returns = returns := by
+        simpa [ActivationRestored] using hRestored
+      have hFrame' :
+          TypedCfgPreservation.activationFrameMatches?
+              returns tokens shape targetState = true := by
+        simpa [hReturns] using hFrame
+      exact
+        stopJump_regular ctx regular returns tokens
+          shape targetState hShape hFrame'
+  | brk =>
+      obtain ⟨label, targetState, hLabel, rfl, hState⟩ :=
+        TypedCfgPreservation.OutcomeSimulation.Rel.brk_elim
+          hOutcome
+      rcases hFits with ⟨shape, hShape, hSourceFits⟩
+      have hFrame :=
+        TypedCfgPreservation.ActivationFrameMatches.check_of_stateRel
+          hState hSourceFits
+      have hReturns : sourceState.returns = returns := by
+        simpa [ActivationRestored] using hRestored
+      have hBreakLabel : ctx.breakLabel? = some label := by
+        simpa [
+          TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext]
+          using hLabel
+      have hFrame' :
+          TypedCfgPreservation.activationFrameMatches?
+              returns tokens shape targetState = true := by
+        simpa [hReturns] using hFrame
+      simp [
+        TargetStopped, stopJump, continuationMatches?,
+        hBreakLabel, hShape, hFrame']
+  | cont =>
+      obtain ⟨label, targetState, hLabel, rfl, hState⟩ :=
+        TypedCfgPreservation.OutcomeSimulation.Rel.cont_elim
+          hOutcome
+      rcases hFits with ⟨shape, hShape, hSourceFits⟩
+      have hFrame :=
+        TypedCfgPreservation.ActivationFrameMatches.check_of_stateRel
+          hState hSourceFits
+      have hReturns : sourceState.returns = returns := by
+        simpa [ActivationRestored] using hRestored
+      have hContinueLabel : ctx.continueLabel? = some label := by
+        simpa [
+          TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext]
+          using hLabel
+      have hFrame' :
+          TypedCfgPreservation.activationFrameMatches?
+              returns tokens shape targetState = true := by
+        simpa [hReturns] using hFrame
+      simp [
+        TargetStopped, stopJump, continuationMatches?,
+        hContinueLabel, hShape, hFrame']
+  | leave =>
+      obtain ⟨label, targetState, hLabel, rfl, hState⟩ :=
+        TypedCfgPreservation.OutcomeSimulation.Rel.leave_elim
+          hOutcome
+      rcases hFits with ⟨shape, hShape, hSourceFits⟩
+      have hFrame :=
+        TypedCfgPreservation.ActivationFrameMatches.check_of_stateRel
+          hState hSourceFits
+      have hReturns : sourceState.returns = returns := by
+        simpa [ActivationRestored] using hRestored
+      have hLeaveLabel : ctx.leaveLabel? = some label := by
+        simpa [
+          TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext]
+          using hLabel
+      have hFrame' :
+          TypedCfgPreservation.activationFrameMatches?
+              returns tokens shape targetState = true := by
+        simpa [hReturns] using hFrame
+      simp [
+        TargetStopped, stopJump, continuationMatches?,
+        hLeaveLabel, hShape, hFrame']
+  | halt kind =>
+      obtain ⟨targetState, targetFinal, rfl, _hStep, _hState⟩ :=
+        TypedCfgPreservation.OutcomeSimulation.Rel.halt_elim
+          hOutcome
+      trivial
 
 theorem afterOpenStepResultWithStop_zero_rel
     {result : TypedCfgCompiler.Result}
     {cfg : TypedCfg.Program}
     {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
-    {tokens : List Word} {source : Structured.Outcome}
+    {returns : List ReturnDest} {tokens : List Word}
+    {source : Structured.Outcome}
     {target : TypedCfg.Outcome}
-    (hRel : Rel result ctx regular tokens source target) :
+    (hRel : Rel result ctx regular returns tokens source target) :
     Simulation.Interaction.Rel
-      (DoneRel result ctx regular tokens)
+      (DoneRel result ctx regular returns tokens)
       (Simulation.Interaction.pure source)
       (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
-        (stopJump ctx regular) cfg 0 target) := by
+        (stopJump result ctx regular returns tokens) cfg 0 target) := by
   have hStopped := targetStopped_of_rel hRel
   cases target with
   | jump label targetState =>
-      change stopJump ctx regular label = true at hStopped
+      change
+        stopJump result ctx regular returns tokens
+          label targetState = true at hStopped
       simp only [
         TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
         hStopped, if_true]
@@ -160,14 +282,14 @@ theorem afterOpenStepResultWithStop_zero_rel
 theorem target_allStopped
     {result : TypedCfgCompiler.Result}
     {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
-    {tokens : List Word}
+    {returns : List ReturnDest} {tokens : List Word}
     {sourceRun :
       Simulation.Interaction EVMException Structured.Outcome}
     {targetRun :
       TypedCfg.InteractionSemantics.Program.OpenRunResult}
     (hRel :
       Simulation.Interaction.Rel
-        (DoneRel result ctx regular tokens)
+        (DoneRel result ctx regular returns tokens)
         sourceRun targetRun) :
     Simulation.Interaction.AllDone
       TypedCfg.InteractionSemantics.Program.RunResultStopped
@@ -201,10 +323,10 @@ def Preserves (result : TypedCfgCompiler.Result)
     TypedCfgPreservation.StateRel source tokens target →
       ∃ targetFuel,
         Simulation.Interaction.Rel
-          (DoneRel result ctx regular tokens)
+          (DoneRel result ctx regular source.returns tokens)
           sourceRun
           (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
-            (stopJump ctx regular)
+            (stopJump result ctx regular source.returns tokens)
             cfg targetFuel entry target)
 
 end OpenOutcome
@@ -257,6 +379,9 @@ theorem openRun_code_of_compileStmtFuel?
   have hCode :=
     InteractionPreservation.Code.openRun_toCfg
       hType hFits hStateRel
+  have hCodeWithReturns :=
+    Simulation.Interaction.Rel.strengthen_left hCode
+      (InteractionSemantics.Code.openRun_returns code source)
   have hBlock :
       Simulation.Interaction.Rel
         (OpenOutcome.OutcomeDoneRel
@@ -264,7 +389,7 @@ theorem openRun_code_of_compileStmtFuel?
             next := supply + 1
             calls := []
             fallthrough? := some output }
-          ctx regular tokens)
+          ctx regular source.returns tokens)
         (Simulation.Interaction.bind
           (InteractionSemantics.Code.openRun code source)
           (fun final =>
@@ -274,47 +399,66 @@ theorem openRun_code_of_compileStmtFuel?
           generated target) := by
     unfold TypedCfg.InteractionSemantics.Block.openRun
     unfold TypedCfg.Control.Block.run
-    apply Simulation.Interaction.Rel.bind hCode
-    intro sourceFinal targetFinal hFinal
-    rcases targetFinal with ⟨targetState, targetShape⟩
-    rcases hFinal with
-      ⟨hTargetShape, hFinalStateRel, hFinalFits⟩
-    have hTargetShape' : targetShape = output := by
-      simpa using hTargetShape
-    subst targetShape
-    have hFinalFitsOutput :
-        TypedCfgCompiler.Shape.SourceFrameFits
-          output sourceFinal.evm.stack.length := by
-      exact hFinalFits
-    have hRelated :
-        OpenOutcome.Rel
-          { blocks := [generated]
-            next := supply + 1
-            calls := []
-            fallthrough? := some output }
-          ctx regular tokens
-          (Structured.Outcome.regular sourceFinal)
-          (.jump regular targetState) := by
-      constructor
-      · exact
-          TypedCfgPreservation.OutcomeSimulation.Rel.regular_iff.mpr
-            ⟨rfl, hFinalStateRel⟩
-      · exact ⟨output, rfl, hFinalFitsOutput⟩
-    have hDone :
-        Simulation.Interaction.Rel
-          (OpenOutcome.OutcomeDoneRel
-            { blocks := [generated]
-              next := supply + 1
-              calls := []
-              fallthrough? := some output }
-            ctx regular tokens)
-          (Simulation.Interaction.pure
-            (Structured.Outcome.regular sourceFinal))
-          (Simulation.Interaction.pure
-            (TypedCfg.Outcome.jump regular targetState)) :=
-      Simulation.Interaction.Rel.done
-        (Simulation.Interaction.ExceptRel.ok hRelated)
-    simpa [generated, TypedCfg.Block.runTerm] using hDone
+    apply Simulation.Interaction.Rel.bind_custom hCodeWithReturns
+    intro sourceDone targetDone hDone
+    rcases hDone with ⟨hOriginal, hReturns⟩
+    cases sourceDone with
+    | error sourceError =>
+        cases targetDone with
+        | error targetError =>
+            apply Simulation.Interaction.Rel.done
+            exact Simulation.Interaction.ExceptRel.error trivial
+        | ok targetFinal =>
+            cases hOriginal
+    | ok sourceFinal =>
+        cases targetDone with
+        | error targetError =>
+            cases hOriginal
+        | ok targetFinal =>
+            cases hOriginal with
+            | ok hFinal =>
+                rcases targetFinal with
+                  ⟨targetState, targetShape⟩
+                rcases hFinal with
+                  ⟨hTargetShape, hFinalStateRel, hFinalFits⟩
+                have hTargetShape' : targetShape = output := by
+                  simpa using hTargetShape
+                subst targetShape
+                have hFinalFitsOutput :
+                    TypedCfgCompiler.Shape.SourceFrameFits
+                      output sourceFinal.evm.stack.length := by
+                  exact hFinalFits
+                have hRelated :
+                    OpenOutcome.Rel
+                      { blocks := [generated]
+                        next := supply + 1
+                        calls := []
+                        fallthrough? := some output }
+                      ctx regular source.returns tokens
+                      (Structured.Outcome.regular sourceFinal)
+                      (.jump regular targetState) := by
+                  constructor
+                  · exact
+                      TypedCfgPreservation.OutcomeSimulation.Rel.regular_iff.mpr
+                        ⟨rfl, hFinalStateRel⟩
+                  · constructor
+                    · exact ⟨output, rfl, hFinalFitsOutput⟩
+                    · simpa [OpenOutcome.ActivationRestored] using hReturns
+                have hLeaf :
+                    Simulation.Interaction.Rel
+                      (OpenOutcome.OutcomeDoneRel
+                        { blocks := [generated]
+                          next := supply + 1
+                          calls := []
+                          fallthrough? := some output }
+                        ctx regular source.returns tokens)
+                      (Simulation.Interaction.pure
+                        (Structured.Outcome.regular sourceFinal))
+                      (Simulation.Interaction.pure
+                        (TypedCfg.Outcome.jump regular targetState)) :=
+                  Simulation.Interaction.Rel.done
+                    (Simulation.Interaction.ExceptRel.ok hRelated)
+                simpa [generated, TypedCfg.Block.runTerm] using hLeaf
   have hLifted :
       Simulation.Interaction.Rel
         (OpenOutcome.DoneRel
@@ -322,7 +466,7 @@ theorem openRun_code_of_compileStmtFuel?
             next := supply + 1
             calls := []
             fallthrough? := some output }
-          ctx regular tokens)
+          ctx regular source.returns tokens)
         (Simulation.Interaction.bind
           (Simulation.Interaction.bind
             (InteractionSemantics.Code.openRun code source)
@@ -334,7 +478,13 @@ theorem openRun_code_of_compileStmtFuel?
           (TypedCfg.InteractionSemantics.Block.openRun
             generated target)
           (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
-            (OpenOutcome.stopJump ctx regular) cfg 0)) := by
+            (OpenOutcome.stopJump
+              { blocks := [generated]
+                next := supply + 1
+                calls := []
+                fallthrough? := some output }
+              ctx regular source.returns tokens)
+            cfg 0)) := by
     apply Simulation.Interaction.Rel.bind hBlock
     intro sourceOutcome targetOutcome hOutcome
     exact
@@ -423,14 +573,18 @@ theorem openRun_nil_of_compileStmtListFuel?
           next := supply
           calls := []
           fallthrough? := some input }
-        ctx regular tokens
+        ctx regular source.returns tokens
         (Structured.Outcome.regular source)
         (.jump regular target) := by
     constructor
     · exact
         TypedCfgPreservation.OutcomeSimulation.Rel.regular_iff.mpr
           ⟨rfl, hStateRel⟩
-    · exact ⟨input, rfl, hFits⟩
+    · constructor
+      · exact ⟨input, rfl, hFits⟩
+      · rfl
+  have hStopped :=
+    OpenOutcome.targetStopped_of_rel hRelated
   have hDone :
       Simulation.Interaction.Rel
         (OpenOutcome.DoneRel
@@ -438,7 +592,7 @@ theorem openRun_nil_of_compileStmtListFuel?
             next := supply
             calls := []
             fallthrough? := some input }
-          ctx regular tokens)
+          ctx regular source.returns tokens)
         (Simulation.Interaction.pure
           (Structured.Outcome.regular source))
         (Simulation.Interaction.pure
@@ -447,12 +601,49 @@ theorem openRun_nil_of_compileStmtListFuel?
     Simulation.Interaction.Rel.done
       (Simulation.Interaction.ExceptRel.ok hRelated)
   rw [hTargetRun]
+  change
+    OpenOutcome.stopJump
+      { blocks := [generated]
+        next := supply
+        calls := []
+        fallthrough? := some input }
+      ctx regular source.returns tokens regular target = true
+    at hStopped
+  have hTargetContinuation :
+      Simulation.Interaction.bind
+          (Simulation.Interaction.pure
+            (TypedCfg.Outcome.jump regular target))
+          (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
+            (OpenOutcome.stopJump
+              { blocks := [generated]
+                next := supply
+                calls := []
+                fallthrough? := some input }
+              ctx regular source.returns tokens)
+            cfg 0) =
+        Simulation.Interaction.pure
+          (TypedCfg.Control.Program.RunResult.stopped
+            (TypedCfg.Outcome.jump regular target)) := by
+    change
+      TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
+          (OpenOutcome.stopJump
+            { blocks := [generated]
+              next := supply
+              calls := []
+              fallthrough? := some input }
+            ctx regular source.returns tokens)
+          cfg 0 (TypedCfg.Outcome.jump regular target) =
+        Simulation.Interaction.pure
+          (TypedCfg.Control.Program.RunResult.stopped
+            (TypedCfg.Outcome.jump regular target))
+    simp [
+      TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+      hStopped]
+    rfl
+  rw [hTargetContinuation]
   simpa [
     InteractionSemantics.Block.openRun,
     EffectSemantics.Control.Block.run,
-    TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
-    OpenOutcome.stopJump_regular,
-    Simulation.Interaction.monad_pure_bind,
     Simulation.Interaction.pure] using hDone
 
 end Block

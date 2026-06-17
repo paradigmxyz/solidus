@@ -68,7 +68,7 @@ inductive RunResult where
 def runNWithStopAs {M : Type → Type} {Result : Type}
     [Monad M] [MonadExceptOf EVMException M]
     (runState : TypedCfg.Instr → Shape → EVMState → M EVMState)
-    (stopJump : Label → Bool)
+    (stopJump : Label → EVMState → Bool)
     (exhausted : Label → EVMState → Result)
     (stopped : TypedCfg.Outcome → Result)
     (program : TypedCfg.Program) :
@@ -78,7 +78,7 @@ def runNWithStopAs {M : Type → Type} {Result : Type}
       let outcome ← step runState program label state
       match outcome with
       | .jump next state' =>
-          if stopJump next then
+          if stopJump next state' then
             pure (stopped (.jump next state'))
           else
             runNWithStopAs runState stopJump exhausted stopped
@@ -95,7 +95,7 @@ def runNWithStopAs {M : Type → Type} {Result : Type}
 abbrev runNWithStop {M : Type → Type}
     [Monad M] [MonadExceptOf EVMException M]
     (runState : TypedCfg.Instr → Shape → EVMState → M EVMState)
-    (stopJump : Label → Bool)
+    (stopJump : Label → EVMState → Bool)
     (program : TypedCfg.Program) :
     Nat → Label → EVMState → M TypedCfg.Outcome :=
   runNWithStopAs runState stopJump
@@ -104,7 +104,7 @@ abbrev runNWithStop {M : Type → Type}
 abbrev runNResultWithStop {M : Type → Type}
     [Monad M] [MonadExceptOf EVMException M]
     (runState : TypedCfg.Instr → Shape → EVMState → M EVMState)
-    (stopJump : Label → Bool)
+    (stopJump : Label → EVMState → Bool)
     (program : TypedCfg.Program) :
     Nat → Label → EVMState → M RunResult :=
   runNWithStopAs runState stopJump
@@ -115,12 +115,12 @@ abbrev runN {M : Type → Type}
     (runState : TypedCfg.Instr → Shape → EVMState → M EVMState)
     (program : TypedCfg.Program) :
     Nat → Label → EVMState → M TypedCfg.Outcome :=
-  runNWithStop runState (fun _ => false) program
+  runNWithStop runState (fun _ _ => false) program
 
 @[simp] theorem runNResultWithStop_zero {M : Type → Type}
     [Monad M] [MonadExceptOf EVMException M]
     (runState : TypedCfg.Instr → Shape → EVMState → M EVMState)
-    (stopJump : Label → Bool)
+    (stopJump : Label → EVMState → Bool)
     (program : TypedCfg.Program) (label : Label)
     (state : EVMState) :
     runNResultWithStop runState stopJump program 0 label state =
@@ -129,7 +129,7 @@ abbrev runN {M : Type → Type}
 theorem runNResultWithStop_succ {M : Type → Type}
     [Monad M] [MonadExceptOf EVMException M]
     (runState : TypedCfg.Instr → Shape → EVMState → M EVMState)
-    (stopJump : Label → Bool)
+    (stopJump : Label → EVMState → Bool)
     (program : TypedCfg.Program) (fuel : Nat) (label : Label)
     (state : EVMState) :
     runNResultWithStop runState stopJump
@@ -138,7 +138,7 @@ theorem runNResultWithStop_succ {M : Type → Type}
         let outcome ← step runState program label state
         match outcome with
         | .jump next state' =>
-            if stopJump next then
+            if stopJump next state' then
               pure (.stopped (.jump next state'))
             else
               runNResultWithStop runState stopJump
@@ -155,7 +155,7 @@ theorem runNResultWithStop_succ {M : Type → Type}
 @[simp] theorem runNWithStop_zero {M : Type → Type}
     [Monad M] [MonadExceptOf EVMException M]
     (runState : TypedCfg.Instr → Shape → EVMState → M EVMState)
-    (stopJump : Label → Bool)
+    (stopJump : Label → EVMState → Bool)
     (program : TypedCfg.Program) (label : Label)
     (state : EVMState) :
     runNWithStop runState stopJump program 0 label state =
@@ -164,7 +164,7 @@ theorem runNResultWithStop_succ {M : Type → Type}
 theorem runNWithStop_succ {M : Type → Type}
     [Monad M] [MonadExceptOf EVMException M]
     (runState : TypedCfg.Instr → Shape → EVMState → M EVMState)
-    (stopJump : Label → Bool)
+    (stopJump : Label → EVMState → Bool)
     (program : TypedCfg.Program) (fuel : Nat) (label : Label)
     (state : EVMState) :
     runNWithStop runState stopJump program (fuel + 1) label state =
@@ -172,7 +172,7 @@ theorem runNWithStop_succ {M : Type → Type}
         let outcome ← step runState program label state
         match outcome with
         | .jump next state' =>
-            if stopJump next then
+            if stopJump next state' then
               pure (.jump next state')
             else
               runNWithStop runState stopJump program fuel next state'

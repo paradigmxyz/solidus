@@ -53,6 +53,11 @@ require_single_owner \
   '^inductive Interaction \(Error' \
   'EvmCompiler/Simulation/Interaction.lean'
 
+require_single_owner \
+  'Structured activation matching must have exactly one adjacent-pass owner:' \
+  '^def ActivationFrameMatches$' \
+  'EvmCompiler/Structured/TypedCfgPreservation/Core.lean'
+
 external_opcodes=(
   call
   callcode
@@ -102,6 +107,15 @@ if ! rg -Fq \
     EvmCompiler/Verification.lean; then
   printf '%s\n\n' \
     'Verification root is missing Structured straight-line open preservation.' \
+    >&2
+  failed=1
+fi
+
+if ! rg -Fq \
+    '#check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches.of_stateRel' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing the pass-owned Structured activation-frame theorem.' \
     >&2
   failed=1
 fi

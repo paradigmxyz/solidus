@@ -276,6 +276,109 @@ theorem popCondition
 
 end StateRel
 
+/--
+A target continuation belongs to the expected dynamic Structured activation.
+
+Top-level caller shapes need no additional discriminator because emitted labels
+are globally unique. Procedure shapes expose the compiler-owned return-token
+depth; the realized hidden-frame length then distinguishes recursive
+activations at the same static label.
+-/
+def ActivationFrameMatches
+    (returns : List ReturnDest) (tokens : List Word)
+    (shape : TypedCfg.Shape) (target : EVMState) : Prop :=
+  match shape.returnTokenDepth? with
+  | none => True
+  | some depth =>
+      ∃ hidden : EvmYul.Stack Word,
+        realizeStack [] returns tokens = some hidden ∧
+          target.stack.length = depth + hidden.length
+
+def activationFrameMatches?
+    (returns : List ReturnDest) (tokens : List Word)
+    (shape : TypedCfg.Shape) (target : EVMState) : Bool :=
+  match shape.returnTokenDepth?, realizeStack [] returns tokens with
+  | none, _ => true
+  | some depth, some hidden =>
+      target.stack.length == depth + hidden.length
+  | some _, none => false
+
+theorem activationFrameMatches?_eq_true_iff
+    {returns : List ReturnDest} {tokens : List Word}
+    {shape : TypedCfg.Shape} {target : EVMState} :
+    activationFrameMatches? returns tokens shape target = true ↔
+      ActivationFrameMatches returns tokens shape target := by
+  unfold activationFrameMatches? ActivationFrameMatches
+  cases hDepth : shape.returnTokenDepth? with
+  | none =>
+      simp
+  | some depth =>
+      cases hHidden : realizeStack [] returns tokens with
+      | none =>
+          simp
+      | some hidden =>
+          simp
+
+namespace ActivationFrameMatches
+
+theorem congr_returns
+    {left right : List ReturnDest} {tokens : List Word}
+    {shape : TypedCfg.Shape} {target : EVMState}
+    (hReturns : left = right) :
+    ActivationFrameMatches left tokens shape target ↔
+      ActivationFrameMatches right tokens shape target := by
+  subst right
+  rfl
+
+theorem of_stateRel
+    {source : RunState} {tokens : List Word}
+    {shape : TypedCfg.Shape} {target : EVMState}
+    (hRel : StateRel source tokens target)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        shape source.evm.stack.length) :
+    ActivationFrameMatches source.returns tokens shape target := by
+  unfold ActivationFrameMatches
+  cases hDepth : shape.returnTokenDepth? with
+  | none =>
+      trivial
+  | some depth =>
+      rcases hRel with ⟨realized, hRealize, hSame⟩
+      have hAppend :=
+        realizeStack_append_prefix source.evm.stack []
+          source.returns tokens
+      cases hHidden : realizeStack [] source.returns tokens with
+      | none =>
+          simp [hHidden] at hAppend
+          rw [hAppend] at hRealize
+          cases hRealize
+      | some hidden =>
+          simp [hHidden] at hAppend
+          rw [hAppend] at hRealize
+          cases hRealize
+          refine ⟨hidden, rfl, ?_⟩
+          have hTargetStack :
+              target.stack = source.evm.stack ++ hidden := by
+            simpa using SameRuntimeData.stack_eq hSame
+          have hSourceLength :
+              source.evm.stack.length = depth :=
+            hFits.2 depth hDepth
+          rw [hTargetStack, List.length_append, hSourceLength]
+
+theorem check_of_stateRel
+    {source : RunState} {tokens : List Word}
+    {shape : TypedCfg.Shape} {target : EVMState}
+    (hRel : StateRel source tokens target)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        shape source.evm.stack.length) :
+    activationFrameMatches?
+        source.returns tokens shape target = true :=
+  activationFrameMatches?_eq_true_iff.mpr
+    (of_stateRel hRel hFits)
+
+end ActivationFrameMatches
+
 namespace BasicInstr
 
 theorem runAt_toCfg

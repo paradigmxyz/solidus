@@ -8,6 +8,11 @@ namespace InteractionSemantics
 abbrev Open (α : Type) :=
   Simulation.Interaction EVMException α
 
+def ReturnsEq (returns : List ReturnDest) :
+    Except EVMException RunState → Prop
+  | .error _ => True
+  | .ok final => final.returns = returns
+
 namespace BasicInstr
 
 /--
@@ -78,6 +83,21 @@ def openStep (instr : Structured.BasicInstr)
         (Assembly.InteractionSemantics.PrimOp.createStep
           .create2 state.evm) := rfl
 
+theorem openStep_returns (instr : Structured.BasicInstr)
+    (state : RunState) :
+    Simulation.Interaction.AllDone
+      (ReturnsEq state.returns)
+      (openStep instr state) := by
+  unfold openStep
+  apply Simulation.Interaction.AllDone.map
+    state.withEVM
+    (Simulation.Interaction.AllDone.trivial
+      (openStepEVM instr state.evm))
+  · intro err _h
+    trivial
+  · intro final _h
+    rfl
+
 end BasicInstr
 
 namespace Terminal
@@ -111,6 +131,28 @@ def openRunCondition (code : Structured.Code) (state : RunState) :
     Open (RunState × Bool) :=
   EffectSemantics.Control.Code.runCondition
     EffectSemantics.Ordinary.runStateModel handler code state
+
+theorem openRun_returns (code : Structured.Code) (state : RunState) :
+    Simulation.Interaction.AllDone
+      (ReturnsEq state.returns)
+      (openRun code state) := by
+  induction code generalizing state with
+  | nil =>
+      exact Simulation.Interaction.AllDone.done rfl
+  | cons instr rest ih =>
+      unfold openRun EffectSemantics.Control.Code.run
+      apply Simulation.Interaction.AllDone.bind
+        (BasicInstr.openStep_returns instr state)
+      · intro err _h
+        trivial
+      · intro middle hMiddle
+        apply Simulation.Interaction.AllDone.mono (ih middle)
+        intro outcome hOutcome
+        cases outcome with
+        | error err =>
+            trivial
+        | ok final =>
+            exact hOutcome.trans hMiddle
 
 end Code
 
