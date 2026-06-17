@@ -31357,3 +31357,10 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1,135-job Locals build, full verification root, architecture guard,
   touched-Lean hole scan, axiom audit, and `git diff --check`. New switch
   theorems depend only on `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 14:47:22 PDT - design/locals-loop-control-scope - audited the
+  canonical source/target loop recurrences and found the remaining interface
+  gap: the generic abrupt relation deliberately erases exact break/continue
+  frames, while loop exit handling must recover them. A trial enrichment made
+  generic scoped composition depend on transient source contexts, so it was
+  removed before checkpointing. The next layer is an independent stable
+  control-scope capability composed alongside, not inside, generic outcomes.
