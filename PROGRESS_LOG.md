@@ -30960,3 +30960,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   while rejecting every other fresh internal label. Child callbacks now expose
   compiler-owned fallthrough evidence, allowing the forthcoming mutual
   statement/block theorem to derive stop obligations locally.
+- 2026-06-17 07:26:27 PDT - architecture/structured-execution-indexed-forward -
+  Added `ExecPreservesUnder`, the successful-execution forward interface for
+  recursive Structured owners whose terminating paths do not share one finite
+  target budget. Proved conversion from the stronger structural relation,
+  exact transcript-preserving statement sequencing with source-derived target
+  fuel, result retargeting, and unreachable-tail elimination. This keeps one
+  canonical source and target interpreter while removing uniform fuel as a
+  prerequisite for loops and internal calls. The focused 1,129-job Structured
+  build passes.
