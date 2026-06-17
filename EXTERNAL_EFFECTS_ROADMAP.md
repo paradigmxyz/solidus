@@ -835,6 +835,9 @@ Exit: the shared core builds with no compiler layer changed.
       checked source-selection equation rather than an arbitrary block oracle.
     - [x] Lift terminals and complete outer loops through a checked source
       no-`break`/`continue` invariant, reusing their existing compiler proofs.
+    - [x] Define source-facing statement/block `OpenSupported` and a stable
+      bounded recursive capability; prove every straight-line leaf, terminal,
+      abrupt exit, empty block, and generic sequence constructor implements it.
     - [ ] Close the source-owned recursive whole-statement/block owner and
       remove recursive callback premises from the compiler-facing loop theorem.
   - [x] Canonical Expressions open semantics and transparent

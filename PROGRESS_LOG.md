@@ -31463,3 +31463,11 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   build, full verification root, architecture dependency check, touched-file
   hole scan, axiom audit, and `git diff --check` passed; theorem axioms remain
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 15:33:45 PDT - proof/locals-recursive-interface - added canonical
+  statement/block `OpenSupported`, stable `StmtForwardBound` and
+  `BlockForwardBound` capabilities, bounded constructors for every source leaf
+  and terminal, and generic bounded empty/cons block composition.
+- 2026-06-17 15:33:45 PDT - validation/locals-recursive-interface - focused
+  build, full verification root, architecture dependency check, touched-file
+  hole scan, axiom audit, and `git diff --check` passed; checked capability
+  constructors use only `[propext, Classical.choice, Quot.sound]`.

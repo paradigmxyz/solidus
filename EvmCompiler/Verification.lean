@@ -205,6 +205,8 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.ControlPolicy.loop
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.ControlPolicy.noLoop
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.ControlPolicy.ContextCompatible
+#check EvmCompiler.Locals.InteractionSemantics.Stmt.OpenSupported
+#check EvmCompiler.Locals.InteractionSemantics.Block.OpenSupported
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.ControlPolicy.loop_contextCompatible
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.ControlPolicy.noLoop_contextCompatible_withoutLoopControl
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.PolicyOpenResultRel
@@ -264,6 +266,18 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Block.policy_forward_cons
 #check EvmCompiler.Locals.InteractionPreservation.Block.policy_openRun_empty
 #check EvmCompiler.Locals.InteractionPreservation.Block.policy_forward_cons_bounded
+#check EvmCompiler.Locals.InteractionPreservation.Recursive.StmtForwardBound
+#check EvmCompiler.Locals.InteractionPreservation.Recursive.BlockForwardBound
+#check EvmCompiler.Locals.InteractionPreservation.Recursive.expr_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Recursive.let_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Recursive.assign_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Recursive.brk_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Recursive.cont_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Recursive.leave_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Recursive.terminal_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Recursive.terminalArgs_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Recursive.empty
+#check EvmCompiler.Locals.InteractionPreservation.Recursive.cons
 #check EvmCompiler.Locals.Stmt.compile_layout_extends_of_sourceOwned
 #check EvmCompiler.Locals.Stmt.compile_layout_eq_outEnv_of_sourceOwned
 #check EvmCompiler.Locals.Block.compileOpen_layout_extends_of_sourceOwned

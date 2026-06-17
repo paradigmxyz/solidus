@@ -178,6 +178,47 @@ mutual
           ExprSeq.OpenSupported tail
 end
 
+mutual
+  def Block.OpenSupported : Locals.Block → Prop
+    | ⟨stmts⟩ => StmtList.OpenSupported stmts
+
+  def Stmt.OpenSupported : Locals.Stmt → Prop
+    | .expr expr => Expr.OpenSupported expr
+    | .exprs exprs => ExprSeq.OpenSupported exprs
+    | .let_ _name value => Expr.OpenSupported value
+    | .assign _name value => Expr.OpenSupported value
+    | .assignTop _name
+    | .assignTopWithOffset _offset _name
+    | .promoteName _name
+    | .cleanupTo _targetLayout => True
+    | .block body => Block.OpenSupported body
+    | .if_ cond body =>
+        Expr.OpenSupported cond ∧ Block.OpenSupported body
+    | .switch scrutinee cases defaultBody =>
+        Expr.OpenSupported scrutinee ∧
+          CaseList.OpenSupported cases ∧
+          Default.OpenSupported defaultBody
+    | .for_ init cond post body =>
+        Block.OpenSupported init ∧ Expr.OpenSupported cond ∧
+          Block.OpenSupported post ∧ Block.OpenSupported body
+    | .brk | .cont | .leave | .call _name | .terminal _kind => True
+    | .terminalArgs _kind args => ExprSeq.OpenSupported args
+
+  def StmtList.OpenSupported : List Locals.Stmt → Prop
+    | [] => True
+    | stmt :: rest =>
+        Stmt.OpenSupported stmt ∧ StmtList.OpenSupported rest
+
+  def CaseList.OpenSupported : List (Word × Locals.Block) → Prop
+    | [] => True
+    | (_value, body) :: rest =>
+        Block.OpenSupported body ∧ CaseList.OpenSupported rest
+
+  def Default.OpenSupported : Option Locals.Block → Prop
+    | none => True
+    | some body => Block.OpenSupported body
+end
+
 def primitiveSemantics :
     Locals.Source.Effectful.Control.PrimitiveSemantics
       (Simulation.Interaction EVMException) State where

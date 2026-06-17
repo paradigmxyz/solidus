@@ -2166,6 +2166,299 @@ theorem policy_forward_cons_bounded
         omega
 
 end Block
+
+namespace Recursive
+
+def StmtForwardBound
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (stmt : Locals.Stmt)
+    (code : List Expressions.Stmt)
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (cost : Nat) : Prop :=
+  ∀ (sourceCtx : Locals.Source.Ctx)
+    (source : Locals.Source.State)
+    (target : Structured.RunState)
+    (sourceFuel targetFuel : Nat),
+    Stmt.ControlPolicy.ContextCompatible policy sourceCtx →
+    Frame.CtxRel sourceCtx targetCtx →
+    Frame.StateRel targetCtx.layout suffix returns source target →
+    sourceFuel + cost ≤ targetFuel →
+      Simulation.Interaction.ForwardRel
+        Block.FuelTruncated
+        (Stmt.PolicyOpenOutcomeRel policy finalCtx suffix returns)
+        (InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx sourceFuel stmt source)
+        (Expressions.InteractionSemantics.Block.openRun
+          targetProgram targetFuel { stmts := code } target)
+
+def BlockForwardBound
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (block : Locals.Block)
+    (code : List Expressions.Stmt)
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (cost : Nat) : Prop :=
+  ∀ (sourceCtx : Locals.Source.Ctx)
+    (source : Locals.Source.State)
+    (target : Structured.RunState)
+    (sourceFuel targetFuel : Nat),
+    Stmt.ControlPolicy.ContextCompatible policy sourceCtx →
+    Frame.CtxRel sourceCtx targetCtx →
+    Frame.StateRel targetCtx.layout suffix returns source target →
+    sourceFuel + cost ≤ targetFuel →
+      Simulation.Interaction.ForwardRel
+        Block.FuelTruncated
+        (Stmt.PolicyOpenOutcomeRel policy finalCtx suffix returns)
+        (InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx sourceFuel block source)
+        (Expressions.InteractionSemantics.Block.openRun
+          targetProgram targetFuel { stmts := code } target)
+
+theorem expr_of_compile
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (expr : Locals.Expr 0)
+    {code : List Expressions.Stmt}
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.expr expr) =
+        some (code, finalCtx))
+    (hScoped : Scope.ExprScoped targetCtx.layout expr)
+    (hSupported : InteractionSemantics.Expr.OpenSupported expr) :
+    StmtForwardBound policy sourceProgram targetProgram
+      targetCtx finalCtx (.expr expr) code suffix returns 2 := by
+  intro sourceCtx source target sourceFuel targetFuel
+    hPolicy hCtx hInitial hFuel
+  exact
+    Stmt.Forward.policy_expr_of_compile
+      policy sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      sourceFuel targetFuel expr (by omega) hCompile hCtx hPolicy
+      hScoped hSupported hInitial
+
+theorem let_of_compile
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    {name : Name} (value : Locals.Expr 1)
+    {code : List Expressions.Stmt}
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.let_ name value) =
+        some (code, finalCtx))
+    (hFresh : name ∉ targetCtx.layout)
+    (hScoped : Scope.ExprScoped targetCtx.layout value)
+    (hSupported : InteractionSemantics.Expr.OpenSupported value) :
+    StmtForwardBound policy sourceProgram targetProgram
+      targetCtx finalCtx (.let_ name value) code suffix returns 2 := by
+  intro sourceCtx source target sourceFuel targetFuel
+    hPolicy hCtx hInitial hFuel
+  exact
+    Stmt.Forward.policy_let_of_compile
+      policy sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      sourceFuel targetFuel value (by omega) hCompile hCtx hPolicy
+      hFresh hScoped hSupported hInitial
+
+theorem assign_of_compile
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    {name : Name} (value : Locals.Expr 1)
+    {code : List Expressions.Stmt}
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.assign name value) =
+        some (code, finalCtx))
+    (hNodup : targetCtx.layout.Nodup)
+    (hScoped : Scope.ExprScoped targetCtx.layout value)
+    (hSupported : InteractionSemantics.Expr.OpenSupported value) :
+    StmtForwardBound policy sourceProgram targetProgram
+      targetCtx finalCtx (.assign name value) code suffix returns 2 := by
+  intro sourceCtx source target sourceFuel targetFuel
+    hPolicy hCtx hInitial hFuel
+  exact
+    Stmt.Forward.policy_assign_of_compile
+      policy sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      sourceFuel targetFuel value (by omega) hCompile hCtx hPolicy
+      hNodup hScoped hSupported hInitial
+
+theorem brk_of_compile
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    {code : List Expressions.Stmt}
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (hCompile :
+      Locals.Stmt.compile targetCtx .brk = some (code, finalCtx)) :
+    StmtForwardBound policy sourceProgram targetProgram
+      targetCtx finalCtx .brk code suffix returns 3 := by
+  intro sourceCtx source target sourceFuel targetFuel
+    hPolicy hCtx hInitial hFuel
+  exact
+    Stmt.Forward.policy_brk_of_compile
+      policy sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      sourceFuel targetFuel (by omega) hCompile hCtx hPolicy hInitial
+
+theorem cont_of_compile
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    {code : List Expressions.Stmt}
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (hCompile :
+      Locals.Stmt.compile targetCtx .cont = some (code, finalCtx)) :
+    StmtForwardBound policy sourceProgram targetProgram
+      targetCtx finalCtx .cont code suffix returns 3 := by
+  intro sourceCtx source target sourceFuel targetFuel
+    hPolicy hCtx hInitial hFuel
+  exact
+    Stmt.Forward.policy_cont_of_compile
+      policy sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      sourceFuel targetFuel (by omega) hCompile hCtx hPolicy hInitial
+
+theorem leave_of_compile
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    {code : List Expressions.Stmt}
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (hReturns : returns ≠ [])
+    (hCompile :
+      Locals.Stmt.compile targetCtx .leave = some (code, finalCtx)) :
+    StmtForwardBound policy sourceProgram targetProgram
+      targetCtx finalCtx .leave code suffix returns 3 := by
+  intro sourceCtx source target sourceFuel targetFuel
+    hPolicy hCtx hInitial hFuel
+  exact
+    Stmt.Forward.policy_leave_of_compile
+      policy sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      sourceFuel targetFuel (by omega) hCompile hCtx hPolicy
+      hReturns hInitial
+
+theorem terminal_of_compile
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (kind : Assembly.HaltKind)
+    {code : List Expressions.Stmt}
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (hLeave : ∀ scope, policy.leave scope)
+    (hArgCount : kind.argCount = 0)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.terminal kind) =
+        some (code, finalCtx)) :
+    StmtForwardBound policy sourceProgram targetProgram
+      targetCtx finalCtx (.terminal kind) code suffix returns 3 := by
+  intro sourceCtx source target sourceFuel targetFuel
+    hPolicy hCtx hInitial hFuel
+  exact
+    Stmt.Forward.policy_terminal_of_compile
+      policy sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      sourceFuel targetFuel kind (by omega) hCompile hPolicy hLeave
+      hCtx hArgCount hInitial
+
+theorem terminalArgs_of_compile
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (kind : Assembly.HaltKind)
+    (args : Locals.ExprSeq kind.argCount)
+    {code : List Expressions.Stmt}
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (hLeave : ∀ scope, policy.leave scope)
+    (hScoped : Scope.ExprSeqScoped targetCtx.layout args)
+    (hSupported : InteractionSemantics.ExprSeq.OpenSupported args)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.terminalArgs kind args) =
+        some (code, finalCtx)) :
+    StmtForwardBound policy sourceProgram targetProgram
+      targetCtx finalCtx (.terminalArgs kind args)
+        code suffix returns 3 := by
+  intro sourceCtx source target sourceFuel targetFuel
+    hPolicy hCtx hInitial hFuel
+  exact
+    Stmt.Forward.policy_terminalArgs_of_compile
+      policy sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      sourceFuel targetFuel kind args (by omega) hCompile hPolicy
+      hLeave hCtx hScoped hSupported hInitial
+
+theorem empty
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx : Locals.Ctx)
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest) :
+    BlockForwardBound policy sourceProgram targetProgram
+      targetCtx targetCtx { stmts := [] } [] suffix returns 1 := by
+  intro sourceCtx source target sourceFuel targetFuel
+    hPolicy hCtx hInitial hFuel
+  exact
+    Block.policy_openRun_empty
+      policy sourceProgram targetProgram sourceCtx targetCtx
+      sourceFuel targetFuel (by omega) hPolicy hCtx hInitial
+
+theorem cons
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx middleCtx finalCtx : Locals.Ctx)
+    (stmt : Locals.Stmt) (rest : List Locals.Stmt)
+    (headCode tailCode : List Expressions.Stmt)
+    (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (headCost tailCost : Nat)
+    (hHead :
+      StmtForwardBound policy sourceProgram targetProgram
+        targetCtx middleCtx stmt headCode suffix returns headCost)
+    (hTail :
+      BlockForwardBound policy sourceProgram targetProgram
+        middleCtx finalCtx { stmts := rest } tailCode
+        suffix returns tailCost) :
+    BlockForwardBound policy sourceProgram targetProgram
+      targetCtx finalCtx { stmts := stmt :: rest }
+        (headCode ++ tailCode) suffix returns
+        (Nat.max headCost (headCode.length + tailCost) + 1) := by
+  intro sourceCtx source target sourceFuel targetFuel
+    hPolicy hCtx hInitial hFuel
+  apply Block.policy_forward_cons_bounded
+    policy sourceProgram targetProgram sourceCtx middleCtx finalCtx
+    stmt rest headCode tailCode headCost tailCost hPolicy
+  · intro sourceFuel targetFuel hBound
+    exact
+      hHead sourceCtx source target sourceFuel targetFuel
+        hPolicy hCtx hInitial hBound
+  · intro sourceMid targetMid sourceMidCtx
+      hMidPolicy hMidCtx hMidState sourceFuel targetFuel hBound
+    exact
+      hTail sourceMidCtx sourceMid targetMid sourceFuel targetFuel
+        hMidPolicy hMidCtx hMidState hBound
+  · exact hFuel
+
+end Recursive
 end InteractionPreservation
 end Locals
 end EvmCompiler
