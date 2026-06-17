@@ -155,6 +155,84 @@ deliberately excluded from this closed-world contract.
       False
   | _, _ => True
 
+/--
+A source memory window used by an open-world request or response.
+
+Zero-length windows are safe regardless of their offset: the executable EVM
+semantics reads, writes, and expands no bytes in that case. Nonempty windows
+must avoid compiler scratch storage and satisfy both EVM and host bounds.
+-/
+def WindowSafe (contract : MemoryContract.Contract)
+    (address size : Nat) : Prop :=
+  size = 0 ∨
+    (RegionAllowed contract address size ∧
+      Compiler.MemoryRelation.ExpansionNoWrap address size ∧
+      address + size < USize.size)
+
+@[simp] theorem windowSafe_zero
+    (contract : MemoryContract.Contract) (address : Nat) :
+    WindowSafe contract address 0 :=
+  Or.inl rfl
+
+/--
+Source-facing primitive safety for the open interaction semantics.
+
+CALL-family requests read calldata and may write returndata. CREATE-family
+requests read init code. The concrete gas operand is intentionally irrelevant
+to this memory contract. Every nonexternal operation keeps the established
+`PrimitiveMemorySafe` contract.
+-/
+def OpenPrimitiveMemorySafe (contract : MemoryContract.Contract)
+    (op : Structured.BasicOp) (machine : EvmYul.MachineState)
+    (values : List Word) : Prop :=
+  let stack := values.reverse
+  match op, stack with
+  | .call, [_gas, _address, _value,
+      inputOffset, inputSize, outputOffset, outputSize]
+  | .callcode, [_gas, _address, _value,
+      inputOffset, inputSize, outputOffset, outputSize] =>
+      MemoryConsistent machine ∧
+        WindowSafe contract inputOffset.toNat inputSize.toNat ∧
+        WindowSafe contract outputOffset.toNat outputSize.toNat
+  | .delegatecall, [_gas, _address,
+      inputOffset, inputSize, outputOffset, outputSize]
+  | .staticcall, [_gas, _address,
+      inputOffset, inputSize, outputOffset, outputSize] =>
+      MemoryConsistent machine ∧
+        WindowSafe contract inputOffset.toNat inputSize.toNat ∧
+        WindowSafe contract outputOffset.toNat outputSize.toNat
+  | .create, [_value, initOffset, initSize]
+  | .create2, [_value, initOffset, initSize, _salt] =>
+      MemoryConsistent machine ∧
+        WindowSafe contract initOffset.toNat initSize.toNat
+  | _, _ => PrimitiveMemorySafe contract op machine values
+
+@[simp] theorem openPrimitiveMemorySafe_call_zero_windows
+    (contract : MemoryContract.Contract) (machine : EvmYul.MachineState)
+    (gas address value inputOffset outputOffset : Word)
+    (hConsistent : MemoryConsistent machine) :
+    OpenPrimitiveMemorySafe contract .call machine
+      [EvmYul.UInt256.ofNat 0, outputOffset,
+        EvmYul.UInt256.ofNat 0, inputOffset, value, address, gas] := by
+  change
+    MemoryConsistent machine ∧
+      WindowSafe contract inputOffset.toNat 0 ∧
+      WindowSafe contract outputOffset.toNat 0
+  exact
+    ⟨hConsistent, windowSafe_zero contract inputOffset.toNat,
+      windowSafe_zero contract outputOffset.toNat⟩
+
+@[simp] theorem openPrimitiveMemorySafe_create_zero_window
+    (contract : MemoryContract.Contract) (machine : EvmYul.MachineState)
+    (value initOffset : Word)
+    (hConsistent : MemoryConsistent machine) :
+    OpenPrimitiveMemorySafe contract .create machine
+      [EvmYul.UInt256.ofNat 0, initOffset, value] := by
+  change
+    MemoryConsistent machine ∧
+      WindowSafe contract initOffset.toNat 0
+  exact ⟨hConsistent, windowSafe_zero contract initOffset.toNat⟩
+
 theorem noExternal_of_primitiveMemorySafe
     {contract : MemoryContract.Contract} {op : Structured.BasicOp}
     {machine : EvmYul.MachineState} {values : List Word}

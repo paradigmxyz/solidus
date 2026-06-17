@@ -851,7 +851,10 @@ Exit: the shared core builds with no compiler layer changed.
     specialization-owned recursion.
   - [x] Open-world state, primitive, argument, block, statement, function,
     and program semantics over the shared `Interaction` protocol.
-  - [ ] Pass-owned allocation/spill state and outcome relation.
+  - [x] Pass-owned transcript-free allocation/spill state and outcome relation,
+    with checked cursor-erasure bridges from the legacy observer relation.
+  - [x] Zero-length-aware source-facing memory-window safety for all
+    CALL/CREATE request and response windows.
   - [ ] Recursive allocation preservation for expressions, statements,
     internal calls, loops, terminals, and whole programs.
 - [ ] Yul.

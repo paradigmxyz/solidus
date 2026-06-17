@@ -19,6 +19,33 @@ def primitiveSemantics :
     Functions.Source.Canonical.PrimitiveSemantics Open State :=
   Locals.InteractionSemantics.primitiveSemantics
 
+namespace Expr
+
+def openEval {results : Nat} (expr : Functions.Expr results)
+    (state : State) : Open (State × List Word) :=
+  Locals.InteractionSemantics.Expr.openEval expr state
+
+def openEvalOne (expr : Functions.Expr 1)
+    (state : State) : Open (State × Word) :=
+  Locals.InteractionSemantics.Expr.openEvalOne expr state
+
+abbrev OpenSupported {results : Nat} (expr : Functions.Expr results) : Prop :=
+  Locals.InteractionSemantics.Expr.OpenSupported expr
+
+end Expr
+
+namespace ExprSeq
+
+def openEval {results : Nat} (exprs : Locals.ExprSeq results)
+    (state : State) : Open (State × List Word) :=
+  Locals.InteractionSemantics.ExprSeq.openEval exprs state
+
+abbrev OpenSupported {results : Nat}
+    (exprs : Locals.ExprSeq results) : Prop :=
+  Locals.InteractionSemantics.ExprSeq.OpenSupported exprs
+
+end ExprSeq
+
 namespace ArgList
 
 def openEval (args : List (Functions.Expr 1)) (state : State) :

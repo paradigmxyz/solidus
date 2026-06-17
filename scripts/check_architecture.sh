@@ -54,6 +54,16 @@ require_single_owner \
   'EvmCompiler/Simulation/Interaction.lean'
 
 require_single_owner \
+  'Open primitive memory safety must have exactly one shared Simulation owner:' \
+  '^def OpenPrimitiveMemorySafe \(contract : MemoryContract\.Contract\)$' \
+  'EvmCompiler/Simulation/MemorySafety.lean'
+
+require_single_owner \
+  'Zero-aware memory windows must have exactly one shared Simulation owner:' \
+  '^def WindowSafe \(contract : MemoryContract\.Contract\)$' \
+  'EvmCompiler/Simulation/MemorySafety.lean'
+
+require_single_owner \
   'Structured activation matching must have exactly one adjacent-pass owner:' \
   '^def ActivationFrameMatches$' \
   'EvmCompiler/Structured/TypedCfgPreservation/Core.lean'
@@ -250,6 +260,26 @@ report_matches \
   'Functions interaction/observer modules must not add another control kernel:' \
   '^[[:space:]]*(partial[[:space:]]+)?def[[:space:]]+(Block\.runOpen|Block\.runScoped|FunDef\.runBody|Stmt\.runForLoop|Stmt\.run|Program\.runState)([^A-Za-z0-9_]|$)' \
   EvmCompiler/Functions -g '*Interaction*.lean' -g '*Observer*.lean'
+
+report_matches \
+  'The canonical Functions allocation relation must not depend on observers:' \
+  '^import .*Observer' \
+  EvmCompiler/Functions/AllocationInteractionRelation.lean
+
+report_matches \
+  'The canonical Functions allocation relation must not define a compiler or evaluator:' \
+  '^[[:space:]]*(noncomputable[[:space:]]+)?def[[:space:]].*(compile|lower|emit|assemble|run|eval)[^:]*[:=]' \
+  EvmCompiler/Functions/AllocationInteractionRelation.lean
+
+report_matches \
+  'Canonical Functions allocation interaction proofs must not depend on observer modules:' \
+  '^import .*Observer' \
+  EvmCompiler/Functions/AllocationInteraction*.lean
+
+report_matches \
+  'Canonical Functions allocation interaction proofs must stop at the adjacent Expressions/Structured boundary:' \
+  '^import EvmCompiler\.(TypedCfg|Assembly\.(Preservation|ObserverPreservation)|Objects|Yul|Public)' \
+  EvmCompiler/Functions/AllocationInteraction*.lean
 
 for wrapper in \
     'Block.runOpen' \

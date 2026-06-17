@@ -31511,3 +31511,26 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-file hole scan, and `git diff --check` passed; axiom audit reports
   `[propext, Quot.sound]` for canonical `Program.runState` and
   `[propext, Classical.choice, Quot.sound]` for preserved `mainForward`.
+- 2026-06-17 16:40:53 PDT - architecture/functions-allocation-relation - added
+  the transcript-free, pass-owned `AllocationInteractionRelation` over
+  canonical Functions and Expressions states, including stack/scratch,
+  result, and outcome relations; legacy observer relations expose checked
+  cursor-erasure bridges without entering the new proof path.
+- 2026-06-17 16:40:53 PDT - proof/functions-allocation-expressions - proved
+  open preservation for literals and stack-allocated variable reads, plus a
+  compiler-facing literal theorem consuming the ordinary allocation lowerer
+  and Locals compiler.
+- 2026-06-17 16:40:53 PDT - theorem-boundary/open-memory-safety - replaced the
+  new proof path's blanket CALL/CREATE exclusion with shared
+  `OpenPrimitiveMemorySafe`; CALL-family input/output and CREATE-family init
+  windows are source-facing, scratch-disjoint, bounded, and explicitly safe
+  at zero length regardless of offset.
+- 2026-06-17 16:40:53 PDT - oracle - request
+  `resp_08998042afc6a5f1006a332fdf30f481989e07aa3020f34c98` for hostile review
+  of the open primitive invariant failed with API quota exhaustion; no advice
+  was used.
+- 2026-06-17 16:43:48 PDT - validation/functions-allocation-interface -
+  1153-job Functions build, 1304-job verification root, architecture guards,
+  touched-file hole scan, and `git diff --check` passed; new expression
+  theorems use `[propext, Classical.choice, Quot.sound]`, and the zero-window
+  CALL safety theorem uses `[propext]`.

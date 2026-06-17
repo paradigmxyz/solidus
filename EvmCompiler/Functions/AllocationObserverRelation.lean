@@ -1,4 +1,5 @@
 import EvmCompiler.Compiler.MemoryRelation
+import EvmCompiler.Functions.AllocationInteractionRelation
 import EvmCompiler.Functions.AllocationSupport
 import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Structured.ObserverSemantics
@@ -427,6 +428,25 @@ theorem shared
     SharedRel contract source.shared target.evm.toSharedState :=
   ⟨hRel.machine, hRel.world⟩
 
+/-- Forget observer bookkeeping and expose the canonical allocation relation. -/
+theorem toInteraction
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hRel :
+      CoreRel contract plan live stackOffset frameBase source target) :
+    AllocationInteractionRelation.StateRel
+      contract plan live stackOffset frameBase source target := by
+  refine ⟨hRel.machine, hRel.world, ?_⟩
+  intro name location hLive hLocation
+  have hStore := hRel.store name location hLive hLocation
+  cases location <;>
+    simpa [StoreRel, AllocationInteractionRelation.StoreRel,
+      currentStackOrder,
+      AllocationInteractionRelation.currentStackOrder,
+      scratchAddress,
+      AllocationInteractionRelation.scratchAddress] using hStore
+
 end CoreRel
 
 structure StateRel {transcript : Trace}
@@ -619,6 +639,17 @@ theorem transport_plan
 end StoreRel
 
 namespace StateRel
+
+/-- Observer state relation with its cursor erased. -/
+theorem toInteraction {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {source : SourceState transcript} {target : TargetState transcript}
+    (hRel :
+      StateRel contract plan live stackOffset frameBase source target) :
+    AllocationInteractionRelation.StateRel
+      contract plan live stackOffset frameBase source.source target.source :=
+  hRel.core.toInteraction
 
 /--
 Restricting the source store to exactly the live names already represented by
@@ -1399,6 +1430,32 @@ structure ScratchStateRel {transcript : Trace}
       name ∈ live →
       plan.location? name = some (.scratch slot) →
       slot < frameWords
+
+namespace ScratchStateRel
+
+/-- Observer scratch-frame relation with its cursor erased. -/
+theorem toInteraction {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState transcript} {target : TargetState transcript}
+    (hRel :
+      ScratchStateRel contract plan live stackOffset frameBase
+        frameDepth frameWords source target) :
+    AllocationInteractionRelation.ScratchStateRel
+      contract plan live stackOffset frameBase frameDepth frameWords
+      source.source target.source :=
+  { base := hRel.base.toInteraction
+    framePointer := hRel.framePointer
+    frameActive := hRel.frameActive
+    frameAllocated := hRel.frameAllocated
+    frameNoWrap := hRel.frameNoWrap
+    frameHostAddressable := hRel.frameHostAddressable
+    activeNoWrap := hRel.activeNoWrap
+    frameReserved := hRel.frameReserved
+    scratchBound := hRel.scratchBound }
+
+end ScratchStateRel
 
 /--
 Result relation for a compiled expression or expression sequence.
