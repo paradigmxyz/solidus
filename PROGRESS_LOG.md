@@ -30531,3 +30531,16 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   guard, changed-line forbidden-marker scan, standalone resource-observer
   axiom smoke, and `git diff --check` passed. The switch theorem depends only
   on `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 21:19:14 PDT - proof/yul-terminal-loop-program - Added a
+  loop-owned program-indexed terminal induction, its statement wrapper, the
+  complete bounded terminal statement dispatcher, recursive family packaging,
+  and `RecursiveTerminalProgramBoundedFamily.dispatcherForward`. The public
+  bound depends only on source fuel and source-program static cost; qualitative
+  outcome/relation correctness is reused through canonical target
+  determinism.
+- 2026-06-16 21:23:10 PDT - validation/yul-terminal-loop-program - Focused
+  loop/program builds, full 1,272-job verification root, architecture
+  dependency and size guard, changed-line forbidden-marker scan, standalone
+  resource-observer axiom smoke, and `git diff --check` passed. The loop,
+  recursive family, and bounded dispatcher theorems depend only on `propext`,
+  `Classical.choice`, and `Quot.sound`.

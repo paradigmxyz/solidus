@@ -109,12 +109,12 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
       assignments into the recursive program-indexed statement family;
     - [x] lift call-valued declaration, assignment, and expression statements
       into the recursive program-indexed statement family;
-    - [ ] lift compound terminal control through the recursive
+    - [x] lift compound terminal control through the recursive
       program-indexed family;
       - [x] lexical blocks, conditionals, and switches;
-      - [ ] loops;
+      - [x] loops;
   - [x] expose the bounded regular whole-program forward theorem;
-  - [ ] expose the bounded whole-program forward theorem.
+  - [x] expose the bounded whole-program terminal forward theorem.
 - [ ] Define an honest source-facing scratch execution/reservation-safety
   interface using that checked bound, without exposing compiler-generated
   evidence.

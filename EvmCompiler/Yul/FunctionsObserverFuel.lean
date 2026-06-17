@@ -140,6 +140,17 @@ theorem executionBudgetFor_local_mono
     Nat.mul_le_mul_right
       (targetBudgetFor globalCost sourceFuel) (by omega)
 
+theorem executionBudgetFor_le_global_at
+    (globalCost : Nat)
+    {localCost childFuel parentFuel : Nat}
+    (hCost : localCost ≤ globalCost)
+    (hFuel : childFuel ≤ parentFuel) :
+    executionBudgetFor globalCost localCost childFuel ≤
+      executionBudgetFor globalCost globalCost parentFuel := by
+  exact
+    (executionBudgetFor_mono globalCost localCost hFuel).trans
+      (executionBudgetFor_local_mono globalCost parentFuel hCost)
+
 theorem executionBudgetFor_add_local
     (globalCost left right sourceFuel : Nat) :
     executionBudgetFor globalCost left sourceFuel +
