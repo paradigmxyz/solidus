@@ -30476,3 +30476,21 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   `git diff --check` passed. The call constructors, selected-body theorem, and
   recursive expression dispatcher depend only on `propext`,
   `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 20:32:04 PDT - compaction-resume/scope - Resumed the narrowed
+  observer proof from the checked program-indexed terminal expression family.
+  The active frontier is terminal leaf statements followed by adjacent
+  block/conditional/switch/loop composition; generic backward adequacy remains
+  archived and is not a completion gate.
+- 2026-06-16 20:36:35 PDT - proof/yul-terminal-statement-leaves - Lifted four
+  terminal leaf-statement families into the program-indexed budget: ordinary
+  primitive expression statements, actual terminal primitives, initialized
+  single-value declarations, and initialized single-value assignments.
+  Terminal primitives preserve both recursively failing arguments and the
+  checked emitted terminal instruction without adding an observer-specific
+  compiler or interpreter.
+- 2026-06-16 20:40:31 PDT -
+  validation/yul-terminal-statement-leaves - Focused terminal-fuel build, full
+  1,269-job verification root, architecture dependency guard, changed-line
+  hole/axiom scan, standalone resource-observer axiom smoke, and
+  `git diff --check` passed. All four new leaf theorems depend only on
+  `propext`, `Classical.choice`, and `Quot.sound`.
