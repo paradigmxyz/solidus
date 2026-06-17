@@ -24,6 +24,10 @@ mutual
     | head :: tail => expr head + exprList tail + 1
 end
 
+def exprListBy (cost : AstExpr → Nat) : List AstExpr → Nat
+  | [] => 0
+  | head :: tail => cost head + exprListBy cost tail + 1
+
 mutual
   def stmt : AstStmt → Nat
     | .Block body => stmtList body + 2
@@ -57,6 +61,98 @@ def functionList : List (Name × AstFunctionDefinition) → Nat
   | (_name, fn) :: tail =>
       Nat.max (functionDefinition fn) (functionList tail)
 
+def calleeCost (sourceProgram : Yul.Program) (name : Name) : Nat :=
+  match sourceProgram.contract.functions.lookup name with
+  | none => 0
+  | some fn => functionDefinition fn
+
+mutual
+  def runtimeExpr (sourceProgram : Yul.Program) : AstExpr → Nat
+    | .Lit _ => 1
+    | .Var _ => 1
+    | .Call (.inl _) args =>
+        runtimeExprList sourceProgram args + 2
+    | .Call (.inr name) args =>
+        runtimeExprList sourceProgram args +
+          calleeCost sourceProgram name + 2
+
+  def runtimeExprList
+      (sourceProgram : Yul.Program) : List AstExpr → Nat
+    | [] => 0
+    | head :: tail =>
+        runtimeExpr sourceProgram head +
+          runtimeExprList sourceProgram tail + 1
+end
+
+mutual
+  def runtimeStmt (sourceProgram : Yul.Program) : AstStmt → Nat
+    | .Block body => runtimeStmtList sourceProgram body + 2
+    | .Let names none => names.length + 1
+    | .Let names (some value) =>
+        names.length + runtimeExpr sourceProgram value + 4
+    | .Assign names value =>
+        names.length + runtimeExpr sourceProgram value + 4
+    | .ExprStmtCall value =>
+        runtimeExpr sourceProgram value + 2
+    | .Switch scrutinee cases defaultBody =>
+        runtimeExpr sourceProgram scrutinee +
+          Nat.max
+            (runtimeCaseList sourceProgram cases)
+            (runtimeStmtList sourceProgram defaultBody) +
+          4
+    | .For cond post body =>
+        runtimeExpr sourceProgram cond +
+          Nat.max
+            (runtimeStmtList sourceProgram post)
+            (runtimeStmtList sourceProgram body) +
+          6
+    | .If cond body =>
+        runtimeExpr sourceProgram cond +
+          runtimeStmtList sourceProgram body + 4
+    | .Continue | .Break | .Leave => 2
+
+  def runtimeStmtList
+      (sourceProgram : Yul.Program) : List AstStmt → Nat
+    | [] => 1
+    | head :: tail =>
+        Nat.max
+          (runtimeStmt sourceProgram head)
+          (runtimeStmtList sourceProgram tail) +
+        1
+
+  def runtimeCaseList
+      (sourceProgram : Yul.Program) :
+      List (Word × List AstStmt) → Nat
+    | [] => 1
+    | (_value, body) :: tail =>
+        Nat.max
+          (runtimeStmtList sourceProgram body)
+          (runtimeCaseList sourceProgram tail) +
+        1
+end
+
+def runtimeFunctionDefinition
+    (sourceProgram : Yul.Program) : AstFunctionDefinition → Nat
+  | .Def params returns body =>
+      params.length + returns.length +
+        runtimeStmtList sourceProgram body + 4
+
+def runtimeFunctionList
+    (sourceProgram : Yul.Program) :
+    List (Name × AstFunctionDefinition) → Nat
+  | [] => 0
+  | (_name, fn) :: tail =>
+      Nat.max
+        (runtimeFunctionDefinition sourceProgram fn)
+        (runtimeFunctionList sourceProgram tail)
+
+noncomputable def runtimeProgram (sourceProgram : Yul.Program) : Nat :=
+  Nat.max
+      (runtimeStmt sourceProgram sourceProgram.contract.dispatcher)
+      (runtimeFunctionList sourceProgram
+        (Contract.functionEntries sourceProgram.contract)) +
+    8
+
 noncomputable def program (sourceProgram : Yul.Program) : Nat :=
   Nat.max
       (stmt sourceProgram.contract.dispatcher)
@@ -68,6 +164,50 @@ noncomputable def programBudget
     (sourceProgram : Yul.Program) (sourceFuel : Nat) : Nat :=
   FunctionsObserverFuel.executionBudget
     (program sourceProgram) sourceFuel
+
+noncomputable def runtimeProgramBudget
+    (sourceProgram : Yul.Program) (sourceFuel : Nat) : Nat :=
+  FunctionsObserverFuel.executionBudget
+    (runtimeProgram sourceProgram) sourceFuel
+
+theorem runtimeExprList_eq_exprListBy
+    (sourceProgram : Yul.Program) (values : List AstExpr) :
+    runtimeExprList sourceProgram values =
+      exprListBy (runtimeExpr sourceProgram) values := by
+  induction values with
+  | nil =>
+      rfl
+  | cons head tail ih =>
+      simp [runtimeExprList, exprListBy, ih]
+
+theorem exprList_eq_exprListBy (values : List AstExpr) :
+    exprList values = exprListBy expr values := by
+  induction values with
+  | nil =>
+      rfl
+  | cons head tail ih =>
+      simp [exprList, exprListBy, ih]
+
+theorem calleeCost_eq_functionDefinition_of_lookup
+    {sourceProgram : Yul.Program}
+    {name : Name} {fn : AstFunctionDefinition}
+    (hLookup :
+      sourceProgram.contract.functions.lookup name = some fn) :
+    calleeCost sourceProgram name = functionDefinition fn := by
+  simp [calleeCost, hLookup]
+
+theorem function_body_le_calleeCost_of_lookup
+    {sourceProgram : Yul.Program}
+    {name : Name}
+    {params returns : List EvmYul.Identifier}
+    {body : List AstStmt}
+    (hLookup :
+      sourceProgram.contract.functions.lookup name =
+        some (.Def params returns body)) :
+    stmtList body ≤ calleeCost sourceProgram name := by
+  rw [calleeCost_eq_functionDefinition_of_lookup hLookup]
+  simp only [functionDefinition]
+  omega
 
 theorem expr_le_exprList_of_mem
     {candidate : AstExpr} {values : List AstExpr}

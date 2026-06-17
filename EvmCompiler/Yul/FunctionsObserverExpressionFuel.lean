@@ -57,7 +57,7 @@ theorem direct_bounded
     {ctx : Functions.Source.Ctx}
     {restValues : List Assembly.Word}
     {value : Assembly.Word}
-    {restStatic sourceFuel : Nat}
+    {headStatic restStatic sourceFuel : Nat}
     (rest :
       FunctionsObserverExpression.PreparedArgs
         contract transcript codeRel program preRest lowerRest stateRest
@@ -80,7 +80,7 @@ theorem direct_bounded
       StateRelation.Replay.Rel codeRel sourceFinal
         rest.prepared.finalTarget) :
     FunctionsObserverFuel.PreparedArgs.Bounded
-      (FunctionsObserverStaticCost.expr expr + restStatic + 1)
+      (headStatic + restStatic + 1)
       sourceFuel
       (FunctionsObserverExpression.PreparedArgs.direct
         rest hLower hSafe hEval hRel) := by
@@ -96,7 +96,7 @@ theorem direct_bounded
         result.prepared rest.prepared (by simp)
   have hStatic :
       restStatic ≤
-        FunctionsObserverStaticCost.expr expr + restStatic + 1 := by
+        headStatic + restStatic + 1 := by
     omega
   exact
     hRequired.trans
@@ -202,6 +202,7 @@ theorem ofUncheckedLowering_bounded
     {ctx : Functions.Source.Ctx}
     {reversedValues : List Assembly.Word}
     {Eligible : AstExpr → Prop}
+    (cost : AstExpr → Nat)
     (hLowering :
       Expr.List.UncheckedBoundLowering
         initial args pre lowerArgs final)
@@ -238,7 +239,7 @@ theorem ofUncheckedLowering_bounded
                   exprPre lower after layout exprSource'
                   exprTarget exprCtx value //
               FunctionsObserverFuel.PreparedValue.Bounded
-                (FunctionsObserverStaticCost.expr expr)
+                (cost expr)
                 exprFuel result.prepared })
     (hRel :
       StateRelation.Replay.ScopedExactRel codeRel layout source target)
@@ -259,7 +260,7 @@ theorem ofUncheckedLowering_bounded
             contract transcript codeRel program pre lowerArgs final
             layout source' target ctx reversedValues.reverse //
         FunctionsObserverFuel.PreparedArgs.Bounded
-          (FunctionsObserverStaticCost.exprList args)
+          (FunctionsObserverStaticCost.exprListBy cost args)
           fuel result.prepared } := by
   induction hLowering generalizing fuel source source' target ctx reversedValues with
   | nil =>
@@ -282,7 +283,7 @@ theorem ofUncheckedLowering_bounded
             { prepared := prepared
               relation := hRel }
           refine ⟨⟨result, ?_⟩⟩
-          simpa [FunctionsObserverStaticCost.exprList, result, prepared] using
+          simpa [FunctionsObserverStaticCost.exprListBy, result, prepared] using
             PreparedArgs.empty_bounded
               (contract := contract) (program := program)
               (Nat.succ previous)
@@ -355,9 +356,10 @@ theorem ofUncheckedLowering_bounded
               (StateRelation.Replay.sourceStoreDomain_of_scopedExact
                 restPrepared.relation) }
       refine ⟨⟨result, ?_⟩⟩
-      simpa [FunctionsObserverStaticCost.exprList, result, prepared,
+      simpa [FunctionsObserverStaticCost.exprListBy, result, prepared,
         restPrepared] using
         PreparedArgs.direct_bounded
+          (headStatic := cost expr)
           restPrepared.prepared restBounded.2
           hHead hDirect.1 hTargetEval hFinalRel
   | @bound stateRest stateHead stateFresh expr rest preRest preHead
@@ -412,7 +414,7 @@ theorem ofUncheckedLowering_bounded
               (StateRelation.Replay.sourceStoreDomain_of_scopedExact
                 headPrepared.relation) }
       refine ⟨⟨result, ?_⟩⟩
-      simpa [FunctionsObserverStaticCost.exprList, result, prepared,
+      simpa [FunctionsObserverStaticCost.exprListBy, result, prepared,
         restPrepared, headPrepared] using
         PreparedArgs.bound_bounded
           restPrepared.prepared restBounded.2
@@ -726,7 +728,7 @@ theorem ofBoundPrimitive_bounded
       | succ primFuel =>
           obtain ⟨argsBounded⟩ :=
             ScopedPreparedArgs.ofUncheckedLowering_bounded
-              hArgs hEligible
+              FunctionsObserverStaticCost.expr hArgs hEligible
               (fun hExprFuel hExprEligible hExprLower hExprRel
                   hExprDomain hExprScope hExprRun =>
                 hExpr (by omega) hExprEligible hExprLower hExprRel
@@ -737,6 +739,14 @@ theorem ofBoundPrimitive_bounded
                 argsBounded.1.prepared.prepared.requiredFuel :=
             FunctionsObserverExpression.PreparedValue.requiredFuel_le_of_prepared_code_eq
               result.prepared argsBounded.1.prepared.prepared rfl
+          have hArgsBound :
+              argsBounded.1.prepared.prepared.requiredFuel ≤
+                FunctionsObserverFuel.executionBudget
+                  (FunctionsObserverStaticCost.exprList args)
+                  primFuel.succ := by
+            simpa [FunctionsObserverFuel.PreparedArgs.Bounded,
+              FunctionsObserverStaticCost.exprList_eq_exprListBy] using
+              argsBounded.2
           refine ⟨value, hValues, ⟨⟨result, ?_⟩⟩⟩
           dsimp [FunctionsObserverFuel.PreparedValue.Bounded]
           have hDynamic :=
@@ -753,7 +763,7 @@ theorem ofBoundPrimitive_bounded
               fuel
           exact
             hRequired.trans
-              (argsBounded.2.trans (hDynamic.trans hStatic))
+              (hArgsBound.trans (hDynamic.trans hStatic))
 
 theorem ofPrimitive_bounded
     {contract : MemoryContract.Contract}

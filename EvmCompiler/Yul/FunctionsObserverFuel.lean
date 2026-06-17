@@ -175,6 +175,20 @@ theorem executionBudget_static_children_add_eight_le_of_lt
   rw [← executionBudget_add_static leftStatic rightStatic parent]
   omega
 
+theorem executionBudget_static_two_children_add_eight_le_of_lt
+    (leftStatic rightStatic : Nat)
+    {left right parent : Nat}
+    (hLeft : left < parent) (hRight : right < parent) :
+    executionBudget leftStatic left +
+        executionBudget rightStatic right + 8 ≤
+      executionBudget (leftStatic + rightStatic + 1) parent := by
+  have hLeftBudget :=
+    executionBudget_child_add_eight_le_of_lt leftStatic hLeft
+  have hRightBudget :=
+    executionBudget_mono rightStatic (Nat.le_of_lt hRight)
+  rw [← executionBudget_add_static leftStatic rightStatic parent]
+  omega
+
 theorem executionBudget_two_children_add_eight_le_of_lt
     (staticCost : Nat) {left right parent : Nat}
     (hLeft : left < parent) (hRight : right < parent) :
