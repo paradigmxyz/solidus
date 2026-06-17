@@ -30522,3 +30522,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   --check`. The block and conditional theorems depend only on `propext`,
   `Classical.choice`, and `Quot.sound`; the terminal-fuel module is below the
   5K-line architecture threshold.
+- 2026-06-16 21:05:00 PDT - proof/yul-terminal-switch - Lifted observable
+  switch failures into the program-indexed terminal family using bounded
+  scrutinee preparation, compiler-owned case selection, and the bounded
+  terminal block theorem for the selected body.
+- 2026-06-16 21:10:03 PDT - validation/yul-terminal-switch - Focused compound
+  terminal build, full 1,270-job verification root, architecture dependency
+  guard, changed-line forbidden-marker scan, standalone resource-observer
+  axiom smoke, and `git diff --check` passed. The switch theorem depends only
+  on `propext`, `Classical.choice`, and `Quot.sound`.

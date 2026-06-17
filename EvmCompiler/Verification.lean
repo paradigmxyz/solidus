@@ -556,6 +556,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverTerminalFuel.RecursiveTerminalStmtForwardProgramBounded.functionCall
 #check EvmCompiler.Yul.FunctionsObserverTerminalFuel.RecursiveTerminalStmtForwardProgramBounded.block
 #check EvmCompiler.Yul.FunctionsObserverTerminalFuel.RecursiveTerminalStmtForwardProgramBounded.ifThen
+#check EvmCompiler.Yul.FunctionsObserverTerminalFuel.RecursiveTerminalStmtForwardProgramBounded.switch
 #check EvmCompiler.Yul.FunctionsObserverExpression.directAt
 #check EvmCompiler.Yul.FunctionsObserverExpression.DirectNoObservableFailureAt
 #check EvmCompiler.Yul.FunctionsObserverExpression.directNoObservableFailureAt

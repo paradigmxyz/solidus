@@ -111,8 +111,8 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
       into the recursive program-indexed statement family;
     - [ ] lift compound terminal control through the recursive
       program-indexed family;
-      - [x] lexical blocks and conditionals;
-      - [ ] switches and loops;
+      - [x] lexical blocks, conditionals, and switches;
+      - [ ] loops;
   - [x] expose the bounded regular whole-program forward theorem;
   - [ ] expose the bounded whole-program forward theorem.
 - [ ] Define an honest source-facing scratch execution/reservation-safety
