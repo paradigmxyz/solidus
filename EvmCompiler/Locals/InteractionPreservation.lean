@@ -4432,7 +4432,10 @@ theorem switch_generated
       ∀ {selected : Locals.Block}
         {selectedTarget : Expressions.Block}
         {bodyCode : List Expressions.Stmt}
-        {bodyCtx : Locals.Ctx},
+        {bodyCtx : Locals.Ctx}
+        (value : Word),
+        Locals.Source.Switch.select value cases defaultBody =
+            some selected →
         Locals.Block.compileOpen targetCtx selected =
             some (bodyCode, bodyCtx) →
           Locals.finishScoped targetCtx bodyCtx bodyCode =
@@ -4531,7 +4534,7 @@ theorem switch_generated
           | @some _ _ bodyCode bodyCtx hBodyCompile hFinish =>
               simp only
               obtain ⟨hSelectedFuel, hLayout, hBody⟩ :=
-                hSelected hBodyCompile hFinish
+                hSelected value hSourceSelect hBodyCompile hFinish
               obtain ⟨cleanup, hCleanup, hSelectedTarget⟩ :=
                 Locals.finishScoped_components hFinish
               subst selectedTarget
@@ -4767,7 +4770,10 @@ theorem switch_of_compile
       ∀ {selected : Locals.Block}
         {selectedTarget : Expressions.Block}
         {bodyCode : List Expressions.Stmt}
-        {bodyCtx : Locals.Ctx},
+        {bodyCtx : Locals.Ctx}
+        (value : Word),
+        Locals.Source.Switch.select value cases defaultBody =
+            some selected →
         Locals.Block.compileOpen targetCtx selected =
             some (bodyCode, bodyCtx) →
           Locals.finishScoped targetCtx bodyCtx bodyCode =

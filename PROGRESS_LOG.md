@@ -31445,3 +31445,13 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   hole scan, axiom audit, and `git diff --check` passed; the generic interaction
   law uses `[propext, Quot.sound]` and Locals theorems add only
   `Classical.choice`.
+- 2026-06-17 15:27:39 PDT - theorem-boundary/locals-switch-selection - replaced
+  the overbroad switch callback for an arbitrary compiled block with one
+  indexed by the checked `Source.Switch.select` equation.
+- 2026-06-17 15:27:39 PDT - proof/locals-policy-control - proved compiler-facing
+  policy-indexed lexical block, conditional, and switch preservation using the
+  shared scoped-child theorem; no control interpreter or compiler was added.
+- 2026-06-17 15:27:39 PDT - validation/locals-policy-control - focused build,
+  full verification root, architecture dependency check, touched-file hole
+  scan, axiom audit, and `git diff --check` passed; public control theorems use
+  only `[propext, Classical.choice, Quot.sound]`.

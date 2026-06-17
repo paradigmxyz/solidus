@@ -830,6 +830,9 @@ Exit: the shared core builds with no compiler layer changed.
     - [x] Prove source control-policy compatibility at every open execution
       leaf and use one shared forward-strengthening law to lift regular source
       leaves without duplicating their compiler proofs.
+    - [x] Lift lexical blocks, conditionals, and switches through the shared
+      policy-indexed scoped-child theorem; switch recursion is indexed by the
+      checked source-selection equation rather than an arbitrary block oracle.
     - [ ] Close the source-owned recursive whole-statement/block owner and
       remove recursive callback premises from the compiler-facing loop theorem.
   - [x] Canonical Expressions open semantics and transparent
