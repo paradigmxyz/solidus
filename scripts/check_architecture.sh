@@ -247,6 +247,26 @@ report_matches \
   EvmCompiler -g '*InteractionSemantics.lean'
 
 report_matches \
+  'Functions interaction/observer modules must not add another control kernel:' \
+  '^[[:space:]]*(partial[[:space:]]+)?def[[:space:]]+(Block\.runOpen|Block\.runScoped|FunDef\.runBody|Stmt\.runForLoop|Stmt\.run|Program\.runState)([^A-Za-z0-9_]|$)' \
+  EvmCompiler/Functions -g '*Interaction*.lean' -g '*Observer*.lean'
+
+for wrapper in \
+    'Block.runOpen' \
+    'Block.runScoped' \
+    'FunDef.runBody' \
+    'Stmt.runForLoop' \
+    'Stmt.run'; do
+  if ! rg -q \
+      "^abbrev ${wrapper//./\\.} " \
+      EvmCompiler/Functions/EffectSemantics.lean; then
+    printf 'Legacy Functions control API %s must remain a transparent abbreviation.\n\n' \
+      "$wrapper" >&2
+    failed=1
+  fi
+done
+
+report_matches \
   'The Locals interaction owner must consume only the adjacent Structured preservation interface:' \
   '^import EvmCompiler\.Assembly\..*Preservation' \
   EvmCompiler/Locals/InteractionPreservation.lean

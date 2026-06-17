@@ -292,7 +292,6 @@ theorem Expr.MemorySafeEval.of_safe_evalOne
         .ok (final, value)) :
     Expr.MemorySafeEval contract transcript expr source final [value] := by
   unfold Functions.Source.Effectful.Expr.evalOne at hEval
-  unfold Locals.Source.Effectful.Expr.evalOne at hEval
   unfold Locals.Source.Effectful.Expr.Control.evalOne at hEval
   cases hExpr :
       Locals.Source.Effectful.Expr.Control.eval
@@ -340,7 +339,6 @@ theorem Expr.MemorySafeEval.of_safe_evalCondition
       Expr.MemorySafeEval contract transcript expr source final [value] ∧
         (value != EvmYul.UInt256.ofNat 0) = conditionTrue := by
   unfold Functions.Source.Effectful.Expr.evalCondition at hEval
-  unfold Locals.Source.Effectful.Expr.evalCondition at hEval
   unfold Locals.Source.Effectful.Expr.Control.evalCondition at hEval
   cases hOne :
       Locals.Source.Effectful.Expr.Control.evalOne
@@ -389,7 +387,7 @@ theorem ArgList.MemorySafeEval.of_safe_eval
   | cons arg rest ih =>
       unfold Functions.Source.Effectful.ArgList.eval at hEval
       cases hArg :
-          Functions.Source.Effectful.Expr.evalOne
+          Locals.Source.Effectful.Expr.Control.evalOne
             (Functions.ObserverSemantics.stateModel transcript)
             (SafeSemantics.primitiveSemantics contract transcript)
             arg source with
@@ -397,9 +395,9 @@ theorem ArgList.MemorySafeEval.of_safe_eval
           simp [hArg] at hEval
       | ok argResult =>
           rcases argResult with ⟨afterArg, value⟩
-          simp only [hArg, Bind.bind, Except.bind] at hEval
+          simp [hArg] at hEval
           cases hRest :
-              Functions.Source.Effectful.ArgList.eval
+              Functions.Source.Effectful.ArgList.Control.eval
                 (Functions.ObserverSemantics.stateModel transcript)
                 (SafeSemantics.primitiveSemantics contract transcript)
                 rest afterArg with
@@ -414,8 +412,9 @@ theorem ArgList.MemorySafeEval.of_safe_eval
                 exact Except.ok.inj hEval
               cases hEq
               exact .cons
-                (Expr.MemorySafeEval.of_safe_evalOne hArg)
-                (ih hRest)
+                (Expr.MemorySafeEval.of_safe_evalOne (by simpa using hArg))
+                (ih (by simpa [Functions.Source.Effectful.ArgList.eval]
+                  using hRest))
 
 mutual
   theorem Expr.MemorySafeEval.eval_eq
@@ -426,7 +425,7 @@ mutual
       {values : List Word}
       (hEval :
         Expr.MemorySafeEval contract transcript expr source final values) :
-      Functions.Source.Effectful.Expr.eval
+      Locals.Source.Effectful.Expr.Control.eval
           (Functions.ObserverSemantics.stateModel transcript)
           (Functions.ObserverSemantics.primitiveSemantics transcript)
           expr source =
@@ -463,7 +462,7 @@ mutual
       {values : List Word}
       (hEval :
         ExprSeq.MemorySafeEval contract transcript exprs source final values) :
-      Locals.Source.Effectful.Expr.ExprSeq.eval
+      Locals.Source.Effectful.Expr.Control.ExprSeq.eval
           (Functions.ObserverSemantics.stateModel transcript)
           (Functions.ObserverSemantics.primitiveSemantics transcript)
           exprs source =
@@ -642,13 +641,11 @@ theorem Expr.MemorySafeEval.evalOne_eq
     {value : Word}
     (hEval :
       Expr.MemorySafeEval contract transcript expr source final [value]) :
-    Functions.Source.Effectful.Expr.evalOne
+    Locals.Source.Effectful.Expr.Control.evalOne
         (Functions.ObserverSemantics.stateModel transcript)
         (Functions.ObserverSemantics.primitiveSemantics transcript)
         expr source =
       .ok (final, value) := by
-  unfold Functions.Source.Effectful.Expr.evalOne
-  unfold Locals.Source.Effectful.Expr.evalOne
   unfold Locals.Source.Effectful.Expr.Control.evalOne
   have hEvalEq := hEval.eval_eq
   change
@@ -668,13 +665,11 @@ theorem Expr.MemorySafeEval.evalCondition_eq
     {value : Word}
     (hEval :
       Expr.MemorySafeEval contract transcript expr source final [value]) :
-    Functions.Source.Effectful.Expr.evalCondition
+    Locals.Source.Effectful.Expr.Control.evalCondition
         (Functions.ObserverSemantics.stateModel transcript)
         (Functions.ObserverSemantics.primitiveSemantics transcript)
         expr source =
       .ok (final, value != EvmYul.UInt256.ofNat 0) := by
-  unfold Functions.Source.Effectful.Expr.evalCondition
-  unfold Locals.Source.Effectful.Expr.evalCondition
   unfold Locals.Source.Effectful.Expr.Control.evalCondition
   have hEvalOne := hEval.evalOne_eq
   change
@@ -695,7 +690,7 @@ theorem ArgList.MemorySafeEval.eval_eq
     (hEval :
       ArgList.MemorySafeEval contract transcript args
         source final values) :
-    Functions.Source.Effectful.ArgList.eval
+    Functions.Source.Effectful.ArgList.Control.eval
         (Functions.ObserverSemantics.stateModel transcript)
         (Functions.ObserverSemantics.primitiveSemantics transcript)
         args source =
@@ -704,10 +699,11 @@ theorem ArgList.MemorySafeEval.eval_eq
   | nil =>
       rfl
   | cons hArg _hRest ih =>
-      unfold Functions.Source.Effectful.ArgList.eval
+      unfold Functions.Source.Effectful.ArgList.Control.eval
       rw [hArg.evalOne_eq]
       simp only [Bind.bind, Except.bind]
       rw [ih]
+      rfl
 
 namespace Stmt
 
@@ -847,15 +843,18 @@ theorem LeafMemorySafeRun.run_eq
       .ok (outcome, finalCtx) := by
   cases hRun with
   | expr hEval =>
-      simp only [Functions.Source.Effectful.Stmt.run]
+      simp only [Functions.Source.Effectful.Stmt.run,
+        Functions.Source.Effectful.Control.Stmt.run]
       rw [hEval.eval_eq]
       rfl
   | let_ hEval =>
-      simp only [Functions.Source.Effectful.Stmt.run]
+      simp only [Functions.Source.Effectful.Stmt.run,
+        Functions.Source.Effectful.Control.Stmt.run]
       rw [hEval.evalOne_eq]
       rfl
   | assign hContains hEval =>
-      simp only [Functions.Source.Effectful.Stmt.run]
+      simp only [Functions.Source.Effectful.Stmt.run,
+        Functions.Source.Effectful.Control.Stmt.run]
       rw [hContains]
       simp only [if_true]
       rw [hEval.evalOne_eq]
@@ -867,14 +866,16 @@ theorem LeafMemorySafeRun.run_eq
   | leave hScope =>
       simp [Functions.Source.Effectful.Stmt.run, hScope]
   | terminal _hMemory hTerminal =>
-      simp only [Functions.Source.Effectful.Stmt.run]
+      simp only [Functions.Source.Effectful.Stmt.run,
+        Functions.Source.Effectful.Control.Stmt.run]
       rw [hTerminal]
       rfl
   | terminalArgs hArgs _hMemory hTerminal =>
-      simp only [Functions.Source.Effectful.Stmt.run]
+      simp only [Functions.Source.Effectful.Stmt.run,
+        Functions.Source.Effectful.Control.Stmt.run]
       rw [hArgs.eval_eq]
       simp only [Bind.bind, Except.bind]
-      rw [hTerminal]
+      simp [hTerminal]
 
 end Stmt
 

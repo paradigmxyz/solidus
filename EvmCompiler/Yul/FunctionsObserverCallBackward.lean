@@ -786,7 +786,7 @@ private theorem returnedCallCoreBackwardBelow
                 argsExact.prepared.prepared.prepared.finalTarget)
               (sourceAfter := targetFinal)
               (by simpa using hCall)
-          simp [Functions.Source.Effectful.FunDef.runBody,
+          simp [Functions.Source.Effectful.Control.FunDef.runBody,
             Functions.Source.invalid, Structured.invalid] at hBodyZero
       | succ bodyFuel =>
           obtain
@@ -808,6 +808,15 @@ private theorem returnedCallCoreBackwardBelow
               (sourceAfter := targetFinal)
               (by simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
                 using hCall)
+          change
+            Functions.Source.Effectful.ArgList.Control.eval
+                (Functions.ObserverSemantics.stateModel transcript)
+                (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                  contract transcript)
+                lowerArgs argsExact.prepared.prepared.prepared.finalTarget =
+              .ok
+                (argsExact.prepared.prepared.prepared.finalTarget,
+                  argsExact.values) at hStableArgs
           rw [hStableArgs] at hTargetArgs
           have hArgsPair := Except.ok.inj hTargetArgs
           injection hArgsPair with hStateAfterArgs hArgValues
@@ -1528,7 +1537,7 @@ theorem boundFunctionBackwardBelow
               (args := lowerArgs) (source := expectedTargetCaller)
               (sourceAfter := preTarget)
               (by simpa using hCall')
-          simp [Functions.Source.Effectful.FunDef.runBody,
+          simp [Functions.Source.Effectful.Control.FunDef.runBody,
             Functions.Source.invalid, Structured.invalid] at hBodyZero
       | succ bodyFuel =>
           obtain
@@ -1548,6 +1557,13 @@ theorem boundFunctionBackwardBelow
               (sourceAfter := preTarget)
               (by simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
                 using hCall')
+          change
+            Functions.Source.Effectful.ArgList.Control.eval
+                (Functions.ObserverSemantics.stateModel transcript)
+                (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                  contract transcript)
+                lowerArgs expectedTargetCaller =
+              .ok (expectedTargetCaller, argsExact.values) at hStableArgs
           rw [hStableArgs] at hTargetArgs
           have hArgsPair := Except.ok.inj hTargetArgs
           injection hArgsPair with hStateAfterArgs hArgValues

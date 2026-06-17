@@ -512,7 +512,10 @@ theorem block_runBounded
           (Functions.Source.Effectful.Outcome.halt
             body.kind body.finalTarget,
             ctx) := by
-    unfold Functions.Source.Effectful.Stmt.run
+    change
+      Functions.Source.Effectful.Control.Block.runScoped
+          _ _ _ _ _ _ _ = _ at hBodyScoped
+    unfold Functions.Source.Effectful.Control.Stmt.run
     rw [hBodyScoped]
     rfl
   apply

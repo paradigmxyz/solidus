@@ -111,7 +111,7 @@ theorem run_at_requiredFuel_add_two
           (Functions.ObserverSemantics.stateModel transcript)
           (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
             contract transcript)
-          program hEvalOne
+          program (fuel := 1) hEvalOne
   have hEmpty :
       Functions.Source.Effectful.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
@@ -305,7 +305,7 @@ theorem run_at_requiredFuel_add_two
           (Functions.ObserverSemantics.stateModel transcript)
           (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
             contract transcript)
-          program hPreContains hEvalOne
+          program (fuel := 1) hPreContains hEvalOne
   have hEmpty :
       Functions.Source.Effectful.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
@@ -433,7 +433,17 @@ theorem run_at_length
   induction names generalizing target ctx with
   | nil =>
       refine ⟨target.source.vars, ctx, rfl, ?_, ?_⟩
-      · simpa [Stmt.initNames] using
+      · change
+          Functions.Source.Effectful.Control.Block.runOpen
+              (Functions.ObserverSemantics.stateModel transcript)
+              (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              program ctx 1 { stmts := [] } target =
+            .ok
+              (Functions.Source.Effectful.Outcome.regular
+                (target.withSource target.source), ctx)
+        rw [Simulation.ResourceReplay.State.withSource_self]
+        exact
           Functions.Source.Effectful.Block.runOpen_nil
             (Functions.ObserverSemantics.stateModel transcript)
             (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
@@ -460,7 +470,7 @@ theorem run_at_length
               (Functions.ObserverSemantics.stateModel transcript)
               (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
                 contract transcript)
-              program name Functions.Source.zero
+              program (fuel := 0) name Functions.Source.zero
       obtain ⟨finalVars, finalCtx,
           hInsert, hTail, hFinalCtx⟩ :=
         ih (target := targetHead) (ctx := ctxHead)
@@ -2596,7 +2606,7 @@ theorem of_leave
         (Functions.ObserverSemantics.stateModel transcript)
         (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript)
-        program hLeaveScope
+        program (fuel := 1) hLeaveScope
   have hWeakRel :
       StateRelation.Replay.ScopedRel codeRel leaveLayout source targetLeave := by
     simpa [targetLeave] using
@@ -2747,7 +2757,7 @@ theorem of_break
         (Functions.ObserverSemantics.stateModel transcript)
         (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript)
-        program hBreakScope
+        program (fuel := 1) hBreakScope
   have hWeakRel :
       StateRelation.Replay.ScopedRel codeRel breakLayout source targetBreak := by
     simpa [targetBreak] using
@@ -2899,7 +2909,7 @@ theorem of_continue
         (Functions.ObserverSemantics.stateModel transcript)
         (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript)
-        program hContinueScope
+        program (fuel := 1) hContinueScope
   have hWeakRel :
       StateRelation.Replay.ScopedRel codeRel continueLayout
         source targetContinue := by
@@ -3274,7 +3284,7 @@ theorem of_leave
         (Functions.ObserverSemantics.stateModel transcript)
         (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript)
-        targetProgram.toFunctions hLeaveScope
+        targetProgram.toFunctions (fuel := 1) hLeaveScope
   have hTargetRun :
       Functions.Source.Effectful.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)

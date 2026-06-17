@@ -7314,8 +7314,19 @@ theorem block_of_components
             ((Functions.ObserverSemantics.stateModel transcript).restrictTo
               afterLive sourceFinal),
             sourceCtx) := by
-    simp only [Functions.Source.Effectful.Stmt.run]
-    rw [hSourceScoped]
+    simp only [Functions.Source.Effectful.Stmt.run,
+      Functions.Source.Effectful.Control.Stmt.run]
+    have hSourceScopedControl :
+        Functions.Source.Effectful.Control.Block.runScoped
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            sourceProgram sourceCtx sourceBlock sourceFuel source =
+          .ok
+            (Functions.Source.Effectful.Outcome.regular
+              ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+                afterLive sourceFinal)) := by
+      simpa using hSourceScoped
+    rw [hSourceScopedControl]
     rfl
   exact
     ⟨targetFinal, sourceFuel, targetFuel, hSourceStmt, hTargetScoped,
@@ -7705,8 +7716,19 @@ theorem block_of_components
             ((Functions.ObserverSemantics.stateModel transcript).restrictTo
               afterLive sourceFinal),
             sourceCtx) := by
-    simp only [Functions.Source.Effectful.Stmt.run]
-    rw [hSourceScoped]
+    simp only [Functions.Source.Effectful.Stmt.run,
+      Functions.Source.Effectful.Control.Stmt.run]
+    have hSourceScopedControl :
+        Functions.Source.Effectful.Control.Block.runScoped
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            sourceProgram sourceCtx sourceBlock sourceFuel source =
+          .ok
+            (Functions.Source.Effectful.Outcome.regular
+              ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+                afterLive sourceFinal)) := by
+      simpa using hSourceScoped
+    rw [hSourceScopedControl]
     rfl
   exact
     ⟨targetFinal, sourceFuel, targetFuel, hSourceStmt, hTargetScoped,

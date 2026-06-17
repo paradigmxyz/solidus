@@ -3122,7 +3122,8 @@ theorem NonregularStmtRuntimeForward.block_of_runtime
           (Functions.ObserverSemantics.primitiveSemantics transcript)
           sourceProgram sourceCtx sourceFuel (.block sourceBlock) source =
         .ok (sourceOutcome, sourceCtx) := by
-    simp only [Functions.Source.Effectful.Stmt.run]
+    simp only [Functions.Source.Effectful.Stmt.run,
+      Functions.Source.Effectful.Control.Stmt.run]
     rw [hSourceScoped]
     rfl
   obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
@@ -3223,7 +3224,8 @@ theorem NonregularStmtResourceForward.block_of_resource
           (Functions.ObserverSemantics.primitiveSemantics transcript)
           sourceProgram sourceCtx sourceFuel (.block sourceBlock) source =
         .ok (sourceOutcome, sourceCtx) := by
-    simp only [Functions.Source.Effectful.Stmt.run]
+    simp only [Functions.Source.Effectful.Stmt.run,
+      Functions.Source.Effectful.Control.Stmt.run]
     rw [hSourceScoped]
     rfl
   obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=

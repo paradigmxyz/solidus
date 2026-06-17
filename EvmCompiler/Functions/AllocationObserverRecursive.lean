@@ -112,7 +112,7 @@ theorem controlledHeadResultStack
       AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := stmt :: rest } lowerState localsCtx)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -138,9 +138,9 @@ theorem controlledHeadResultStack
   cases stmt with
   | expr expr =>
       have hSourceCopy := hSource
-      simp only [Functions.Source.Effectful.Stmt.run] at hSourceCopy
+      simp only [Functions.Source.Effectful.Control.Stmt.run] at hSourceCopy
       cases hEval :
-          Functions.Source.Effectful.Expr.eval
+          Locals.Source.Effectful.Expr.Control.eval
             (Functions.ObserverSemantics.stateModel transcript)
             (AllocationObserverSafety.SafeSemantics.primitiveSemantics
               program.memoryContract transcript)
@@ -175,9 +175,9 @@ theorem controlledHeadResultStack
                   contradiction)⟩
   | let_ name valueExpr =>
       have hSourceCopy := hSource
-      simp only [Functions.Source.Effectful.Stmt.run] at hSourceCopy
+      simp only [Functions.Source.Effectful.Control.Stmt.run] at hSourceCopy
       cases hEval :
-          Functions.Source.Effectful.Expr.evalOne
+          Locals.Source.Effectful.Expr.Control.evalOne
             (Functions.ObserverSemantics.stateModel transcript)
             (AllocationObserverSafety.SafeSemantics.primitiveSemantics
               program.memoryContract transcript)
@@ -214,7 +214,7 @@ theorem controlledHeadResultStack
                   contradiction)⟩
   | assign name valueExpr =>
       have hSourceCopy := hSource
-      simp only [Functions.Source.Effectful.Stmt.run] at hSourceCopy
+      simp only [Functions.Source.Effectful.Control.Stmt.run] at hSourceCopy
       cases hContains :
           (Functions.ObserverSemantics.stateModel transcript).vars source
             |>.contains name with
@@ -224,7 +224,7 @@ theorem controlledHeadResultStack
       | true =>
           simp only [hContains, ↓reduceIte] at hSourceCopy
           cases hEval :
-              Functions.Source.Effectful.Expr.evalOne
+              Locals.Source.Effectful.Expr.Control.evalOne
                 (Functions.ObserverSemantics.stateModel transcript)
                 (AllocationObserverSafety.SafeSemantics.primitiveSemantics
                   program.memoryContract transcript)
@@ -277,7 +277,7 @@ theorem controlledHeadResultStack
   | if_ cond body =>
       cases sourceFuel with
       | zero =>
-          simp [Functions.Source.Effectful.Stmt.run,
+          simp [Functions.Source.Effectful.Control.Stmt.run,
             Functions.Source.invalid, Structured.invalid] at hSource
       | succ fuel =>
           have hFinalCtx : finalCtx = sourceCtx := by
@@ -308,7 +308,7 @@ theorem controlledHeadResultStack
   | switch scrutinee cases defaultBody =>
       cases sourceFuel with
       | zero =>
-          simp [Functions.Source.Effectful.Stmt.run,
+          simp [Functions.Source.Effectful.Control.Stmt.run,
             Functions.Source.invalid, Structured.invalid] at hSource
       | succ fuel =>
           have hFinalCtx : finalCtx = sourceCtx := by
@@ -341,7 +341,7 @@ theorem controlledHeadResultStack
   | for_ init cond post body =>
       cases sourceFuel with
       | zero =>
-          simp [Functions.Source.Effectful.Stmt.run,
+          simp [Functions.Source.Effectful.Control.Stmt.run,
             Functions.Source.invalid, Structured.invalid] at hSource
       | succ fuel =>
           let hLoopRecursive :
@@ -374,7 +374,7 @@ theorem controlledHeadResultStack
   | call targets functionName args =>
       cases sourceFuel with
       | zero =>
-          simp [Functions.Source.Effectful.Stmt.run,
+          simp [Functions.Source.Effectful.Control.Stmt.run,
             Functions.Source.invalid, Structured.invalid] at hSource
       | succ callFuel =>
           rcases
@@ -395,7 +395,7 @@ theorem controlledHeadResultStack
                     (AllocationObserverSafety.SafeSemantics.primitiveSemantics
                       program.memoryContract transcript)
                     program hSource
-                simp [Functions.Source.Effectful.FunDef.runBody,
+                simp [Functions.Source.Effectful.Control.FunDef.runBody,
                   Functions.Source.invalid, Structured.invalid] at hBody
             | succ fuel =>
                 obtain ⟨afterState, afterLocals, headCode, tail, hHead⟩ :=
@@ -493,7 +493,7 @@ theorem controlledHeadResultStack
                     (AllocationObserverSafety.SafeSemantics.primitiveSemantics
                       program.memoryContract transcript)
                     program hSource
-                simp [Functions.Source.Effectful.FunDef.runBody,
+                simp [Functions.Source.Effectful.Control.FunDef.runBody,
                   Functions.Source.invalid, Structured.invalid] at hBody
             | succ fuel =>
                 obtain ⟨afterState, afterLocals, headCode, tail, hHead⟩ :=
@@ -616,7 +616,7 @@ theorem stackRecursiveProgramForward
       cases sourceFuel with
       | zero =>
           cases sourceBlock
-          simp [Functions.Source.Effectful.Block.runOpen,
+          simp [Functions.Source.Effectful.Control.Block.runOpen,
             Functions.Source.invalid, Structured.invalid] at hSource
       | succ headFuel =>
           cases sourceBlock with
@@ -766,7 +766,7 @@ theorem controlledHeadResult
       AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := stmt :: rest } lowerState localsCtx)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -792,9 +792,9 @@ theorem controlledHeadResult
   cases stmt with
   | expr expr =>
       have hSourceCopy := hSource
-      simp only [Functions.Source.Effectful.Stmt.run] at hSourceCopy
+      simp only [Functions.Source.Effectful.Control.Stmt.run] at hSourceCopy
       cases hEval :
-          Functions.Source.Effectful.Expr.eval
+          Locals.Source.Effectful.Expr.Control.eval
             (Functions.ObserverSemantics.stateModel transcript)
             (AllocationObserverSafety.SafeSemantics.primitiveSemantics
               program.memoryContract transcript)
@@ -830,9 +830,9 @@ theorem controlledHeadResult
                   contradiction)⟩
   | let_ name valueExpr =>
       have hSourceCopy := hSource
-      simp only [Functions.Source.Effectful.Stmt.run] at hSourceCopy
+      simp only [Functions.Source.Effectful.Control.Stmt.run] at hSourceCopy
       cases hEval :
-          Functions.Source.Effectful.Expr.evalOne
+          Locals.Source.Effectful.Expr.Control.evalOne
             (Functions.ObserverSemantics.stateModel transcript)
             (AllocationObserverSafety.SafeSemantics.primitiveSemantics
               program.memoryContract transcript)
@@ -870,7 +870,7 @@ theorem controlledHeadResult
                   contradiction)⟩
   | assign name valueExpr =>
       have hSourceCopy := hSource
-      simp only [Functions.Source.Effectful.Stmt.run] at hSourceCopy
+      simp only [Functions.Source.Effectful.Control.Stmt.run] at hSourceCopy
       cases hContains :
           (Functions.ObserverSemantics.stateModel transcript).vars source
             |>.contains name with
@@ -880,7 +880,7 @@ theorem controlledHeadResult
       | true =>
           simp only [hContains, ↓reduceIte] at hSourceCopy
           cases hEval :
-              Functions.Source.Effectful.Expr.evalOne
+              Locals.Source.Effectful.Expr.Control.evalOne
                 (Functions.ObserverSemantics.stateModel transcript)
                 (AllocationObserverSafety.SafeSemantics.primitiveSemantics
                   program.memoryContract transcript)
@@ -934,7 +934,7 @@ theorem controlledHeadResult
   | if_ cond body =>
       cases sourceFuel with
       | zero =>
-          simp [Functions.Source.Effectful.Stmt.run,
+          simp [Functions.Source.Effectful.Control.Stmt.run,
             Functions.Source.invalid, Structured.invalid] at hSource
       | succ fuel =>
           have hFinalCtx : finalCtx = sourceCtx := by
@@ -965,7 +965,7 @@ theorem controlledHeadResult
   | switch scrutinee cases defaultBody =>
       cases sourceFuel with
       | zero =>
-          simp [Functions.Source.Effectful.Stmt.run,
+          simp [Functions.Source.Effectful.Control.Stmt.run,
             Functions.Source.invalid, Structured.invalid] at hSource
       | succ fuel =>
           have hFinalCtx : finalCtx = sourceCtx := by
@@ -998,7 +998,7 @@ theorem controlledHeadResult
   | for_ init cond post body =>
       cases sourceFuel with
       | zero =>
-          simp [Functions.Source.Effectful.Stmt.run,
+          simp [Functions.Source.Effectful.Control.Stmt.run,
             Functions.Source.invalid, Structured.invalid] at hSource
       | succ fuel =>
           let hLoopRecursive :
@@ -1112,7 +1112,7 @@ theorem controlledHeadResult
   | call targets functionName args =>
       cases sourceFuel with
       | zero =>
-          simp [Functions.Source.Effectful.Stmt.run,
+          simp [Functions.Source.Effectful.Control.Stmt.run,
             Functions.Source.invalid, Structured.invalid] at hSource
       | succ callFuel =>
           rcases
@@ -1133,7 +1133,7 @@ theorem controlledHeadResult
                     (AllocationObserverSafety.SafeSemantics.primitiveSemantics
                       program.memoryContract transcript)
                     program hSource
-                simp [Functions.Source.Effectful.FunDef.runBody,
+                simp [Functions.Source.Effectful.Control.FunDef.runBody,
                   Functions.Source.invalid, Structured.invalid] at hBody
             | succ fuel =>
                 obtain ⟨afterState, afterLocals, headCode, tail, hHead⟩ :=
@@ -1212,7 +1212,7 @@ theorem controlledHeadResult
                     (AllocationObserverSafety.SafeSemantics.primitiveSemantics
                       program.memoryContract transcript)
                     program hSource
-                simp [Functions.Source.Effectful.FunDef.runBody,
+                simp [Functions.Source.Effectful.Control.FunDef.runBody,
                   Functions.Source.invalid, Structured.invalid] at hBody
             | succ fuel =>
                 obtain ⟨afterState, afterLocals, headCode, tail, hHead⟩ :=
@@ -1368,7 +1368,7 @@ theorem recursiveProgramForward
       cases sourceFuel with
       | zero =>
           cases sourceBlock
-          simp [Functions.Source.Effectful.Block.runOpen,
+          simp [Functions.Source.Effectful.Control.Block.runOpen,
             Functions.Source.invalid, Structured.invalid] at hSource
       | succ headFuel =>
           cases sourceBlock with

@@ -755,7 +755,7 @@ Exit: the shared core builds with no compiler layer changed.
       owner.
   - [x] One fuel-founded whole-statement/block owner theorem and checked
     generated-main wrapper.
-- [ ] Locals/Expressions.
+- [x] Locals/Expressions.
   - [x] One monad-polymorphic Locals expression/control kernel with the legacy
     ordinary and resource-observer APIs as thin specializations.
   - [x] Stable owner-provided constructor equations, so adjacent proofs do not
@@ -767,7 +767,7 @@ Exit: the shared core builds with no compiler layer changed.
   - [x] Recursive Locals expression and expression-sequence preservation,
     including initialized named-local lookup, exact result arity, arbitrary
     target runtime control, and ordered open effects.
-  - [ ] Recursive source-owned Locals statement, scoped-block, loop,
+  - [x] Recursive source-owned Locals statement, scoped-block, loop,
     terminal, and program preservation. Internal `.call`, `.exprs`,
     `assignTop`, promotion, and explicit cleanup are lower stack-protocol
     constructs owned by the Functions allocation boundary, not by the
@@ -846,6 +846,14 @@ Exit: the shared core builds with no compiler layer changed.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
 - [ ] Functions.
+  - [x] One monad-polymorphic canonical control kernel shared by ordinary,
+    observer, and open-world semantics, with architecture guards against
+    specialization-owned recursion.
+  - [x] Open-world state, primitive, argument, block, statement, function,
+    and program semantics over the shared `Interaction` protocol.
+  - [ ] Pass-owned allocation/spill state and outcome relation.
+  - [ ] Recursive allocation preservation for expressions, statements,
+    internal calls, loops, terminals, and whole programs.
 - [ ] Yul.
 
 At each layer:
@@ -881,7 +889,7 @@ Exit: every layer exposes one canonical open computation.
       recursive procedure-body owner.
     - [x] Fuel-founded recursive owner instantiation and successful-generation
       whole-program wrapper.
-- [ ] Locals/Expressions -> Structured.
+- [x] Locals/Expressions -> Structured.
   - [x] Adjacent primitive leaf over the shared ordered interaction tree.
   - [x] Recursive compiler-owned Locals expression composition.
   - [x] Transparent whole-program Expressions-to-Structured open

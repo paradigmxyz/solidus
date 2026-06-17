@@ -1664,7 +1664,10 @@ theorem closeLexical
             program ctx bodyFuel (.block { stmts := lower }) target =
           .ok
             (Functions.Source.Effectful.Outcome.regular targetFinal, ctx) := by
-      unfold Functions.Source.Effectful.Stmt.run
+      change
+        Functions.Source.Effectful.Control.Block.runScoped
+            _ _ _ _ _ _ _ = _ at hBodyScoped
+      unfold Functions.Source.Effectful.Control.Stmt.run
       rw [hBodyScoped]
       rfl
     obtain ⟨targetFuel, hTargetRun⟩ :=
@@ -1752,7 +1755,10 @@ theorem closeLexical
               contract transcript)
             program ctx bodyFuel (.block { stmts := lower }) target =
           .ok (result.outcome, ctx) := by
-      unfold Functions.Source.Effectful.Stmt.run
+      change
+        Functions.Source.Effectful.Control.Block.runScoped
+            _ _ _ _ _ _ _ = _ at hBodyScoped
+      unfold Functions.Source.Effectful.Control.Stmt.run
       rw [hBodyScoped]
       rfl
     obtain ⟨targetFuel, hTargetRun⟩ :=
@@ -1875,7 +1881,10 @@ theorem singletonBlock_requiredFuel_parts
           program ctx body.requiredFuel
           (.block { stmts := lower }) target =
         .ok (scopedOutcome, ctx) := by
-    unfold Functions.Source.Effectful.Stmt.run
+    change
+      Functions.Source.Effectful.Control.Block.runScoped
+          _ _ _ _ _ _ _ = _ at hScoped
+    unfold Functions.Source.Effectful.Control.Stmt.run
     rw [hScoped]
     rfl
   have hSingleton :=

@@ -3,4 +3,5 @@ import EvmCompiler.Functions.LoweringCore
 import EvmCompiler.Functions.Compiler
 import EvmCompiler.Functions.SourceSemantics
 import EvmCompiler.Functions.EffectSemantics
+import EvmCompiler.Functions.InteractionSemantics
 import EvmCompiler.Functions.Semantics

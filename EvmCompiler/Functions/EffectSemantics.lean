@@ -441,15 +441,22 @@ inductive CallResult (σ : Type) where
   | returned (state : σ) (values : List Word)
   | halted (kind : Assembly.HaltKind) (state : σ)
 
+namespace Control
+
+abbrev PrimitiveSemantics (M : Type → Type) (σ : Type) :=
+  Locals.Source.Effectful.Control.PrimitiveSemantics M σ
+
 mutual
-  def Block.runOpen {σ : Type} (model : StateModel σ)
-      (prim : PrimitiveSemantics σ) (program : Functions.Program)
+  def Block.runOpen {M : Type → Type} [Monad M]
+      [MonadExceptOf EVMException M]
+      {σ : Type} (model : StateModel σ)
+      (prim : PrimitiveSemantics M σ) (program : Functions.Program)
       (ctx : Source.Ctx) : Nat → Functions.Block → σ →
-      Except EVMException (Outcome σ × Source.Ctx)
+      M (Outcome σ × Source.Ctx)
     | 0, _block, _state =>
-        Source.invalid
+        throw .InvalidInstruction
     | _fuel + 1, ⟨[]⟩, state =>
-        .ok (Outcome.regular state, ctx)
+        pure (Outcome.regular state, ctx)
     | fuel + 1, ⟨stmt :: rest⟩, state => do
         let (outcome, ctx') ←
           Stmt.run model prim program ctx fuel stmt state
@@ -458,39 +465,44 @@ mutual
             Block.runOpen model prim program ctx' fuel
               { stmts := rest } outcome.state
         | .brk | .cont | .leave | .halt _ =>
-            .ok (outcome, ctx)
+            pure (outcome, ctx)
   termination_by fuel block _state => (fuel, 0, sizeOf block)
   decreasing_by
     all_goals simp_wf
     all_goals omega
 
-  def Block.runScoped {σ : Type} (model : StateModel σ)
-      (prim : PrimitiveSemantics σ) (program : Functions.Program)
+  def Block.runScoped {M : Type → Type} [Monad M]
+      [MonadExceptOf EVMException M]
+      {σ : Type} (model : StateModel σ)
+      (prim : PrimitiveSemantics M σ) (program : Functions.Program)
       (ctx : Source.Ctx) (block : Functions.Block) (fuel : Nat)
-      (state : σ) : Except EVMException (Outcome σ) := do
+      (state : σ) : M (Outcome σ) := do
     let (outcome, _) ←
       Block.runOpen model prim program ctx fuel block state
     match outcome.mode with
     | .regular =>
-        .ok (Outcome.regular (model.restrictTo ctx.scope outcome.state))
+        pure (Outcome.regular (model.restrictTo ctx.scope outcome.state))
     | .brk | .cont | .leave | .halt _ =>
-        .ok outcome
+        pure outcome
   termination_by (fuel, 1, sizeOf block)
   decreasing_by
     simp_wf
     exact Prod.Lex.right fuel
       (Prod.Lex.left (sizeOf block) (sizeOf block) (by omega))
 
-  def FunDef.runBody {σ : Type} (model : StateModel σ)
-      (prim : PrimitiveSemantics σ) (program : Functions.Program)
+  def FunDef.runBody {M : Type → Type} [Monad M]
+      [MonadExceptOf EVMException M]
+      {σ : Type} (model : StateModel σ)
+      (prim : PrimitiveSemantics M σ) (program : Functions.Program)
       (fn : Functions.FunDef) (args : List Word) :
-      Nat → σ → Except EVMException (CallResult σ)
+      Nat → σ → M (CallResult σ)
     | 0, _state =>
-        Source.invalid
+        throw .InvalidInstruction
     | fuel + 1, state => do
         let paramStore ←
           (Source.Store.insertMany fn.params args
-            Locals.Source.Store.empty).elim Source.invalid pure
+            Locals.Source.Store.empty).elim
+              (throw .InvalidInstruction) pure
         let initialStore := Source.Store.initReturns fn.returns paramStore
         let callerSource := model.source state
         let initialSource : Locals.Source.State :=
@@ -505,123 +517,123 @@ mutual
         | .regular | .leave =>
             let values ←
               (Source.Store.lookupMany fn.returns
-                (model.vars bodyOutcome.state)).elim Source.invalid pure
-            .ok (.returned bodyOutcome.state values)
+                (model.vars bodyOutcome.state)).elim
+                  (throw .InvalidInstruction) pure
+            pure (.returned bodyOutcome.state values)
         | .brk | .cont =>
-            Source.invalid
+            throw .InvalidInstruction
         | .halt kind =>
-            .ok (.halted kind bodyOutcome.state)
+            pure (.halted kind bodyOutcome.state)
   termination_by fuel _state => (fuel, 2, sizeOf fn.body)
   decreasing_by
     all_goals simp_wf
     all_goals omega
 
-  def Stmt.runForLoop {σ : Type} (model : StateModel σ)
-      (prim : PrimitiveSemantics σ) (program : Functions.Program)
+  def Stmt.runForLoop {M : Type → Type} [Monad M]
+      [MonadExceptOf EVMException M]
+      {σ : Type} (model : StateModel σ)
+      (prim : PrimitiveSemantics M σ) (program : Functions.Program)
       (loopCtx : Source.Ctx) (cond : Functions.Expr 1)
       (postBase : Source.Ctx) (post : Functions.Block)
       (bodyBase : Source.Ctx) (body : Functions.Block) :
-      Nat → σ → Except EVMException (Outcome σ)
+      Nat → σ → M (Outcome σ)
     | 0, _state =>
-        Source.invalid
-    | fuel + 1, state =>
-        match Expr.evalCondition model prim cond state with
-        | .error err => .error err
-        | .ok (stateAfterCond, condTrue) =>
-            if condTrue then
-              match
-                  Block.runScoped model prim program bodyBase body fuel
-                    stateAfterCond
-              with
-              | .error err => .error err
-              | .ok bodyOutcome =>
-                  match bodyOutcome.mode with
-                  | .brk =>
-                      .ok (Outcome.regular bodyOutcome.state)
-                  | .regular | .cont =>
-                      match
-                          Block.runScoped model prim program postBase post fuel
-                            bodyOutcome.state
-                      with
-                      | .error err => .error err
-                      | .ok postOutcome =>
-                          match postOutcome.mode with
-                          | .regular =>
-                              Stmt.runForLoop model prim program loopCtx cond
-                                postBase post bodyBase body fuel
-                                postOutcome.state
-                          | .brk | .cont =>
-                              Source.invalid
-                          | .leave | .halt _ =>
-                              .ok postOutcome
-                  | .leave | .halt _ =>
-                      .ok bodyOutcome
-            else
-              .ok
-                (Outcome.regular
-                  (model.restrictTo loopCtx.scope stateAfterCond))
+        throw .InvalidInstruction
+    | fuel + 1, state => do
+        let (stateAfterCond, condTrue) ←
+          Locals.Source.Effectful.Expr.Control.evalCondition
+            model prim cond state
+        if condTrue then
+          let bodyOutcome ←
+            Block.runScoped model prim program bodyBase body fuel
+              stateAfterCond
+          match bodyOutcome.mode with
+          | .brk =>
+              pure (Outcome.regular bodyOutcome.state)
+          | .regular | .cont => do
+              let postOutcome ←
+                Block.runScoped model prim program postBase post fuel
+                  bodyOutcome.state
+              match postOutcome.mode with
+              | .regular =>
+                  Stmt.runForLoop model prim program loopCtx cond
+                    postBase post bodyBase body fuel postOutcome.state
+              | .brk | .cont =>
+                  throw .InvalidInstruction
+              | .leave | .halt _ =>
+                  pure postOutcome
+          | .leave | .halt _ =>
+              pure bodyOutcome
+        else
+          pure
+            (Outcome.regular
+              (model.restrictTo loopCtx.scope stateAfterCond))
   termination_by fuel _state => (fuel, 3, 0)
   decreasing_by
     all_goals simp_wf
     all_goals omega
 
-  def Stmt.run {σ : Type} (model : StateModel σ)
-      (prim : PrimitiveSemantics σ) (program : Functions.Program)
+  def Stmt.run {M : Type → Type} [Monad M]
+      [MonadExceptOf EVMException M]
+      {σ : Type} (model : StateModel σ)
+      (prim : PrimitiveSemantics M σ) (program : Functions.Program)
       (ctx : Source.Ctx) : Nat → Functions.Stmt → σ →
-      Except EVMException (Outcome σ × Source.Ctx)
+      M (Outcome σ × Source.Ctx)
     | _fuel, .expr expr, state => do
-        let (state', _values) ← Expr.eval model prim expr state
-        .ok (Outcome.regular state', ctx)
+        let (state', _values) ←
+          Locals.Source.Effectful.Expr.Control.eval model prim expr state
+        pure (Outcome.regular state', ctx)
     | _fuel, .let_ name value, state => do
         let (stateAfterValue, value') ←
-          Expr.evalOne model prim value state
-        .ok
-          (Outcome.regular
-            (model.insert stateAfterValue name value'),
+          Locals.Source.Effectful.Expr.Control.evalOne
+            model prim value state
+        pure
+          (Outcome.regular (model.insert stateAfterValue name value'),
             { ctx with scope := name :: ctx.scope })
     | _fuel, .assign name value, state => do
         if model.vars state |>.contains name then
           let (stateAfterValue, value') ←
-            Expr.evalOne model prim value state
-          .ok
+            Locals.Source.Effectful.Expr.Control.evalOne
+              model prim value state
+          pure
             (Outcome.regular
               (model.withVars stateAfterValue
                 (Locals.Source.Store.insert
                   (model.vars stateAfterValue) name value')),
               ctx)
         else
-          Source.invalid
+          throw .InvalidInstruction
     | fuel, .block body, state => do
         let outcome ←
           Block.runScoped model prim program ctx body fuel state
-        .ok (outcome, ctx)
+        pure (outcome, ctx)
     | 0, .if_ _cond _body, _state =>
-        Source.invalid
-    | fuel + 1, .if_ cond body, state =>
-        match Expr.evalCondition model prim cond state with
-        | .error err => .error err
-        | .ok (stateAfterCond, condTrue) =>
-            if condTrue then do
-              let outcome ←
-                Block.runScoped model prim program ctx body fuel
-                  stateAfterCond
-              .ok (outcome, ctx)
-            else
-              .ok (Outcome.regular stateAfterCond, ctx)
+        throw .InvalidInstruction
+    | fuel + 1, .if_ cond body, state => do
+        let (stateAfterCond, condTrue) ←
+          Locals.Source.Effectful.Expr.Control.evalCondition
+            model prim cond state
+        if condTrue then do
+          let outcome ←
+            Block.runScoped model prim program ctx body fuel stateAfterCond
+          pure (outcome, ctx)
+        else
+          pure (Outcome.regular stateAfterCond, ctx)
     | 0, .switch _scrutinee _cases _defaultBody, _state =>
-        Source.invalid
+        throw .InvalidInstruction
     | fuel + 1, .switch scrutinee cases defaultBody, state => do
         let (stateAfterScrutinee, value) ←
-          Expr.evalOne model prim scrutinee state
+          Locals.Source.Effectful.Expr.Control.evalOne
+            model prim scrutinee state
         match Source.Switch.select value cases defaultBody with
-        | none => .ok (Outcome.regular stateAfterScrutinee, ctx)
+        | none => pure (Outcome.regular stateAfterScrutinee, ctx)
         | some body =>
             let outcome ←
               Block.runScoped model prim program ctx body fuel
                 stateAfterScrutinee
-            .ok (outcome, ctx)
+            pure (outcome, ctx)
     | 0, .for_ _init _cond _post _body, _state =>
-        Source.invalid
+        throw .InvalidInstruction
     | fuel + 1, .for_ init cond post body, state => do
         let initBase := ctx.withoutLoopControl
         let (initOutcome, initCtx) ←
@@ -637,42 +649,42 @@ mutual
                 bodyBase body fuel initOutcome.state
             match loopOutcome.mode with
             | .regular =>
-                .ok
+                pure
                   (Outcome.regular
                     (model.restrictTo ctx.scope loopOutcome.state),
                     ctx)
             | .brk | .cont =>
-                Source.invalid
+                throw .InvalidInstruction
             | .leave | .halt _ =>
-                .ok (loopOutcome, ctx)
+                pure (loopOutcome, ctx)
         | .brk | .cont =>
-            Source.invalid
+            throw .InvalidInstruction
         | .leave | .halt _ =>
-            .ok (initOutcome, ctx)
+            pure (initOutcome, ctx)
     | _fuel, .brk, state =>
         match ctx.breakScope? with
-        | none => Source.invalid
+        | none => throw .InvalidInstruction
         | some scope =>
-            .ok (Outcome.brk (model.restrictTo scope state), ctx)
+            pure (Outcome.brk (model.restrictTo scope state), ctx)
     | _fuel, .cont, state =>
         match ctx.continueScope? with
-        | none => Source.invalid
+        | none => throw .InvalidInstruction
         | some scope =>
-            .ok (Outcome.cont (model.restrictTo scope state), ctx)
+            pure (Outcome.cont (model.restrictTo scope state), ctx)
     | _fuel, .leave, state =>
         match ctx.leaveScope? with
-        | none => Source.invalid
+        | none => throw .InvalidInstruction
         | some scope =>
-            .ok (Outcome.leave (model.restrictTo scope state), ctx)
+            pure (Outcome.leave (model.restrictTo scope state), ctx)
     | 0, .call _targets _functionName _args, _state =>
-        Source.invalid
+        throw .InvalidInstruction
     | fuel + 1, .call targets functionName args, state => do
         if targets.Nodup then
           let (stateAfterArgs, argValues) ←
-            ArgList.eval model prim args state
+            ArgList.Control.eval model prim args state
           let fn ←
             (Source.FunList.find? functionName program.functions).elim
-              Source.invalid pure
+              (throw .InvalidInstruction) pure
           let callResult ←
             FunDef.runBody model prim program fn argValues fuel
               stateAfterArgs
@@ -680,27 +692,28 @@ mutual
           | .returned stateAfterCall returnValues =>
               let returnStore ←
                 (Source.Store.assignMany targets returnValues
-                  (model.vars stateAfterArgs)).elim Source.invalid pure
+                  (model.vars stateAfterArgs)).elim
+                    (throw .InvalidInstruction) pure
               let returnedSource := model.source stateAfterCall
-              .ok
+              pure
                 (Outcome.regular
                   (model.withSource stateAfterCall
                     { shared := returnedSource.shared,
                       vars := returnStore }),
                   ctx)
           | .halted kind haltedState =>
-              .ok (Outcome.halt kind haltedState, ctx)
+              pure (Outcome.halt kind haltedState, ctx)
         else
-          Source.invalid
+          throw .InvalidInstruction
     | _fuel, .terminal kind, state => do
         let state' ← prim.terminal kind state []
-        .ok (Outcome.halt kind state', ctx)
+        pure (Outcome.halt kind state', ctx)
     | _fuel, .terminalArgs kind args, state => do
         let (stateAfterArgs, values) ←
-          Locals.Source.Effectful.Expr.ExprSeq.eval
+          Locals.Source.Effectful.Expr.Control.ExprSeq.eval
             model prim args state
         let state' ← prim.terminal kind stateAfterArgs values
-        .ok (Outcome.halt kind state', ctx)
+        pure (Outcome.halt kind state', ctx)
   termination_by fuel stmt _state => (fuel, 4, sizeOf stmt)
   decreasing_by
     all_goals simp_wf
@@ -710,6 +723,58 @@ mutual
       | exact Prod.Lex.right _
           (Prod.Lex.left _ _ (by omega))
 end
+
+namespace Program
+
+def runState {M : Type → Type} [Monad M]
+    [MonadExceptOf EVMException M]
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics M σ) (fuel : Nat)
+    (program : Functions.Program) (state : σ) : M (Outcome σ) :=
+  Block.runScoped model prim program Source.Ctx.initial
+    program.body fuel state
+
+end Program
+end Control
+
+attribute [simp]
+  Control.Block.runOpen Control.Stmt.run
+
+abbrev Block.runOpen {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ) (program : Functions.Program)
+    (ctx : Source.Ctx) (fuel : Nat) (block : Functions.Block) (state : σ) :
+    Except EVMException (Outcome σ × Source.Ctx) :=
+  Control.Block.runOpen model prim program ctx fuel block state
+
+abbrev Block.runScoped {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ) (program : Functions.Program)
+    (ctx : Source.Ctx) (block : Functions.Block) (fuel : Nat)
+    (state : σ) : Except EVMException (Outcome σ) :=
+  Control.Block.runScoped model prim program ctx block fuel state
+
+abbrev FunDef.runBody {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ) (program : Functions.Program)
+    (fn : Functions.FunDef) (args : List Word) (fuel : Nat) (state : σ) :
+    Except EVMException (CallResult σ) :=
+  Control.FunDef.runBody model prim program fn args fuel state
+
+abbrev Stmt.runForLoop {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ) (program : Functions.Program)
+    (loopCtx : Source.Ctx) (cond : Functions.Expr 1)
+    (postBase : Source.Ctx) (post : Functions.Block)
+    (bodyBase : Source.Ctx) (body : Functions.Block)
+    (fuel : Nat) (state : σ) : Except EVMException (Outcome σ) :=
+  Control.Stmt.runForLoop model prim program loopCtx cond
+    postBase post bodyBase body fuel state
+
+abbrev Stmt.run {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ) (program : Functions.Program)
+    (ctx : Source.Ctx) (fuel : Nat) (stmt : Functions.Stmt) (state : σ) :
+    Except EVMException (Outcome σ × Source.Ctx) :=
+  Control.Stmt.run model prim program ctx fuel stmt state
+
+attribute [simp]
+  Block.runOpen Block.runScoped FunDef.runBody Stmt.runForLoop Stmt.run
 
 /--
 Successful statement execution never removes names from the open lexical
@@ -723,12 +788,12 @@ theorem Stmt.run_scopeExtends
     {ctx finalCtx : Source.Ctx} {fuel : Nat}
     {stmt : Stmt} {source : σ} {outcome : Outcome σ}
     (hRun :
-      Stmt.run model prim program ctx fuel stmt source =
+      Control.Stmt.run model prim program ctx fuel stmt source =
         .ok (outcome, finalCtx)) :
     Source.Ctx.ScopeExtends ctx finalCtx := by
   cases stmt with
   | expr expr =>
-      unfold Stmt.run at hRun
+      unfold Control.Stmt.run at hRun
       cases hExpr : Expr.eval model prim expr source with
       | error err => simp [hExpr] at hRun
       | ok result =>
@@ -740,7 +805,7 @@ theorem Stmt.run_scopeExtends
           subst finalCtx
           exact Source.Ctx.ScopeExtends.refl ctx
   | let_ name value =>
-      unfold Stmt.run at hRun
+      unfold Control.Stmt.run at hRun
       cases hValue : Expr.evalOne model prim value source with
       | error err => simp [hValue] at hRun
       | ok result =>
@@ -754,7 +819,7 @@ theorem Stmt.run_scopeExtends
           subst finalCtx
           exact Source.Ctx.ScopeExtends.cons ctx name
   | assign name value =>
-      unfold Stmt.run at hRun
+      unfold Control.Stmt.run at hRun
       by_cases hContains : (model.vars source).contains name
       · simp only [hContains, Bool.true_eq, ↓reduceIte] at hRun
         cases hValue : Expr.evalOne model prim value source with
@@ -773,9 +838,9 @@ theorem Stmt.run_scopeExtends
             exact Source.Ctx.ScopeExtends.refl ctx
       · simp [hContains, Source.invalid, Structured.invalid] at hRun
   | block body =>
-      unfold Stmt.run at hRun
+      unfold Control.Stmt.run at hRun
       cases hBody :
-          Block.runScoped model prim program ctx body fuel source with
+          Control.Block.runScoped model prim program ctx body fuel source with
       | error err => simp [hBody] at hRun
       | ok bodyOutcome =>
           have hPair :
@@ -787,9 +852,9 @@ theorem Stmt.run_scopeExtends
   | if_ cond body =>
       cases fuel with
       | zero =>
-          simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+          simp [Control.Stmt.run, Source.invalid, Structured.invalid] at hRun
       | succ fuel =>
-          unfold Stmt.run at hRun
+          unfold Control.Stmt.run at hRun
           cases hCond : Expr.evalCondition model prim cond source with
           | error err => simp [hCond] at hRun
           | ok condResult =>
@@ -805,7 +870,7 @@ theorem Stmt.run_scopeExtends
                   exact Source.Ctx.ScopeExtends.refl ctx
               | true =>
                   cases hBody :
-                      Block.runScoped model prim program ctx body fuel
+                      Control.Block.runScoped model prim program ctx body fuel
                         afterCond with
                   | error err => simp [hCond, hBody] at hRun
                   | ok bodyOutcome =>
@@ -818,9 +883,9 @@ theorem Stmt.run_scopeExtends
   | switch scrutinee cases defaultBody =>
       cases fuel with
       | zero =>
-          simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+          simp [Control.Stmt.run, Source.invalid, Structured.invalid] at hRun
       | succ fuel =>
-          unfold Stmt.run at hRun
+          unfold Control.Stmt.run at hRun
           cases hScrutinee :
               Expr.evalOne model prim scrutinee source with
           | error err => simp [hScrutinee] at hRun
@@ -838,7 +903,7 @@ theorem Stmt.run_scopeExtends
                   exact Source.Ctx.ScopeExtends.refl ctx
               | some selected =>
                   cases hBody :
-                      Block.runScoped model prim program ctx selected fuel
+                      Control.Block.runScoped model prim program ctx selected fuel
                         afterScrutinee with
                   | error err =>
                       simp [hScrutinee, hSelected, hBody] at hRun
@@ -852,12 +917,12 @@ theorem Stmt.run_scopeExtends
   | for_ init cond post body =>
       cases fuel with
       | zero =>
-          simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+          simp [Control.Stmt.run, Source.invalid, Structured.invalid] at hRun
       | succ fuel =>
-          unfold Stmt.run at hRun
+          unfold Control.Stmt.run at hRun
           let initBase := ctx.withoutLoopControl
           cases hInit :
-              Block.runOpen model prim program initBase fuel init source with
+              Control.Block.runOpen model prim program initBase fuel init source with
           | error err => simp [initBase, hInit] at hRun
           | ok initResult =>
               rcases initResult with ⟨initOutcome, initCtx⟩
@@ -868,7 +933,7 @@ theorem Stmt.run_scopeExtends
                   let bodyBase :=
                     initCtx.withLoopControl initCtx.scope initCtx.scope
                   cases hLoop :
-                      Stmt.runForLoop model prim program loopCtx cond
+                      Control.Stmt.runForLoop model prim program loopCtx cond
                         postBase post bodyBase body fuel initOutcome.state with
                   | error err =>
                       simp [initBase, hInit, hInitMode, loopCtx,
@@ -932,7 +997,7 @@ theorem Stmt.run_scopeExtends
                   subst finalCtx
                   exact Source.Ctx.ScopeExtends.refl ctx
   | brk =>
-      unfold Stmt.run at hRun
+      unfold Control.Stmt.run at hRun
       cases hScope : ctx.breakScope? with
       | none => simp [hScope, Source.invalid, Structured.invalid] at hRun
       | some scope =>
@@ -944,7 +1009,7 @@ theorem Stmt.run_scopeExtends
           subst finalCtx
           exact Source.Ctx.ScopeExtends.refl ctx
   | cont =>
-      unfold Stmt.run at hRun
+      unfold Control.Stmt.run at hRun
       cases hScope : ctx.continueScope? with
       | none => simp [hScope, Source.invalid, Structured.invalid] at hRun
       | some scope =>
@@ -956,7 +1021,7 @@ theorem Stmt.run_scopeExtends
           subst finalCtx
           exact Source.Ctx.ScopeExtends.refl ctx
   | leave =>
-      unfold Stmt.run at hRun
+      unfold Control.Stmt.run at hRun
       cases hScope : ctx.leaveScope? with
       | none => simp [hScope, Source.invalid, Structured.invalid] at hRun
       | some scope =>
@@ -970,12 +1035,12 @@ theorem Stmt.run_scopeExtends
   | call targets functionName args =>
       cases fuel with
       | zero =>
-          simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+          simp [Control.Stmt.run, Source.invalid, Structured.invalid] at hRun
       | succ fuel =>
-          unfold Stmt.run at hRun
+          unfold Control.Stmt.run at hRun
           by_cases hTargets : targets.Nodup
           · simp only [hTargets, Bool.true_eq, ↓reduceIte] at hRun
-            cases hArgs : ArgList.eval model prim args source with
+            cases hArgs : ArgList.Control.eval model prim args source with
             | error err => simp [hArgs] at hRun
             | ok argResult =>
                 rcases argResult with ⟨afterArgs, argValues⟩
@@ -986,7 +1051,7 @@ theorem Stmt.run_scopeExtends
                       Structured.invalid] at hRun
                 | some fn =>
                     cases hBody :
-                        FunDef.runBody model prim program fn argValues fuel
+                        Control.FunDef.runBody model prim program fn argValues fuel
                           afterArgs with
                     | error err => simp [hArgs, hLookup, hBody] at hRun
                     | ok callResult =>
@@ -1022,7 +1087,7 @@ theorem Stmt.run_scopeExtends
                             exact Source.Ctx.ScopeExtends.refl ctx
           · simp [hTargets, Source.invalid, Structured.invalid] at hRun
   | terminal kind =>
-      unfold Stmt.run at hRun
+      unfold Control.Stmt.run at hRun
       cases hTerminal : prim.terminal kind source [] with
       | error err => simp [hTerminal] at hRun
       | ok final =>
@@ -1033,9 +1098,10 @@ theorem Stmt.run_scopeExtends
           subst finalCtx
           exact Source.Ctx.ScopeExtends.refl ctx
   | terminalArgs kind args =>
-      unfold Stmt.run at hRun
+      unfold Control.Stmt.run at hRun
       cases hArgs :
-          Locals.Source.Effectful.Expr.ExprSeq.eval model prim args source with
+          Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+            model prim args source with
       | error err => simp [hArgs] at hRun
       | ok argResult =>
           rcases argResult with ⟨afterArgs, values⟩
@@ -1063,48 +1129,48 @@ mutual
       (program : Program) :
       ∀ {fuel : Nat} {ctx : Source.Ctx} {block : Block}
         {state : σ} {outcome : Outcome σ} {runCtx : Source.Ctx},
-        Block.runOpen model sourcePrim program ctx fuel block state =
+        Control.Block.runOpen model sourcePrim program ctx fuel block state =
           .ok (outcome, runCtx) →
-        Block.runOpen model targetPrim program ctx fuel block state =
+        Control.Block.runOpen model targetPrim program ctx fuel block state =
           .ok (outcome, runCtx) := by
     intro fuel ctx block state outcome runCtx hRun
     cases fuel with
     | zero =>
         cases block
-        simp [Block.runOpen, Source.invalid, Structured.invalid] at hRun
+        simp [Control.Block.runOpen, Source.invalid, Structured.invalid] at hRun
     | succ fuel =>
         cases block with
         | mk stmts =>
             cases stmts with
             | nil =>
-                simpa [Block.runOpen] using hRun
+                simpa [Control.Block.runOpen] using hRun
             | cons stmt rest =>
                 cases hStmt :
-                    Stmt.run model sourcePrim program ctx fuel stmt state with
+                    Control.Stmt.run model sourcePrim program ctx fuel stmt state with
                 | error err =>
-                    simp [Block.runOpen, hStmt] at hRun
+                    simp [Control.Block.runOpen, hStmt] at hRun
                 | ok stmtResult =>
                     rcases stmtResult with ⟨stmtOutcome, stmtCtx⟩
                     have hStmt' :
-                        Stmt.run model targetPrim program ctx fuel stmt state =
+                        Control.Stmt.run model targetPrim program ctx fuel stmt state =
                           .ok (stmtOutcome, stmtCtx) :=
                       Stmt.run_of_successRefines
                         model hRefines program hStmt
                     cases hMode : stmtOutcome.mode with
                     | regular =>
-                        simp [Block.runOpen, hStmt, hStmt', hMode]
+                        simp [Control.Block.runOpen, hStmt, hStmt', hMode]
                           at hRun ⊢
                         exact
                           Block.runOpen_of_successRefines
                             model hRefines program hRun
                     | brk =>
-                        simpa [Block.runOpen, hStmt, hStmt', hMode] using hRun
+                        simpa [Control.Block.runOpen, hStmt, hStmt', hMode] using hRun
                     | cont =>
-                        simpa [Block.runOpen, hStmt, hStmt', hMode] using hRun
+                        simpa [Control.Block.runOpen, hStmt, hStmt', hMode] using hRun
                     | leave =>
-                        simpa [Block.runOpen, hStmt, hStmt', hMode] using hRun
+                        simpa [Control.Block.runOpen, hStmt, hStmt', hMode] using hRun
                     | halt kind =>
-                        simpa [Block.runOpen, hStmt, hStmt', hMode] using hRun
+                        simpa [Control.Block.runOpen, hStmt, hStmt', hMode] using hRun
   termination_by
     fuel _ctx block _state _outcome _runCtx _hRun =>
       (fuel, 0, sizeOf block)
@@ -1119,20 +1185,20 @@ mutual
       (program : Program) :
       ∀ {fuel : Nat} {ctx : Source.Ctx} {block : Block}
         {state : σ} {outcome : Outcome σ},
-        Block.runScoped model sourcePrim program ctx block fuel state =
+        Control.Block.runScoped model sourcePrim program ctx block fuel state =
           .ok outcome →
-        Block.runScoped model targetPrim program ctx block fuel state =
+        Control.Block.runScoped model targetPrim program ctx block fuel state =
           .ok outcome := by
     intro fuel ctx block state outcome hRun
-    unfold Block.runScoped at hRun ⊢
+    unfold Control.Block.runScoped at hRun ⊢
     cases hOpen :
-        Block.runOpen model sourcePrim program ctx fuel block state with
+        Control.Block.runOpen model sourcePrim program ctx fuel block state with
     | error err =>
         simp [hOpen] at hRun
     | ok openResult =>
         rcases openResult with ⟨openOutcome, finalCtx⟩
         have hOpen' :
-            Block.runOpen model targetPrim program ctx fuel block state =
+            Control.Block.runOpen model targetPrim program ctx fuel block state =
               .ok (openOutcome, finalCtx) :=
           Block.runOpen_of_successRefines model hRefines program hOpen
         cases hMode : openOutcome.mode with
@@ -1164,20 +1230,20 @@ mutual
       (program : Program) :
       ∀ {fuel : Nat} {fn : FunDef} {args : List Word}
         {state : σ} {result : CallResult σ},
-        FunDef.runBody model sourcePrim program fn args fuel state =
+        Control.FunDef.runBody model sourcePrim program fn args fuel state =
           .ok result →
-        FunDef.runBody model targetPrim program fn args fuel state =
+        Control.FunDef.runBody model targetPrim program fn args fuel state =
           .ok result := by
     intro fuel fn args state result hRun
     cases fuel with
     | zero =>
-        simp [FunDef.runBody, Source.invalid, Structured.invalid] at hRun
+        simp [Control.FunDef.runBody, Source.invalid, Structured.invalid] at hRun
     | succ fuel =>
         cases hParams :
             Source.Store.insertMany fn.params args
               Locals.Source.Store.empty with
         | none =>
-            simp [FunDef.runBody, hParams, Source.invalid,
+            simp [Control.FunDef.runBody, hParams, Source.invalid,
               Structured.invalid] at hRun
         | some paramStore =>
             let initialStore :=
@@ -1191,41 +1257,41 @@ mutual
               { Source.Ctx.initial.withLeaveScope functionScope with
                 scope := functionScope }
             cases hBody :
-                Block.runOpen model sourcePrim program bodyCtx fuel fn.body
+                Control.Block.runOpen model sourcePrim program bodyCtx fuel fn.body
                   initialState with
             | error err =>
-                simp [FunDef.runBody, hParams, initialStore,
+                simp [Control.FunDef.runBody, hParams, initialStore,
                   callerSource, initialSource, initialState,
                   functionScope, bodyCtx, hBody] at hRun
             | ok bodyResult =>
                 rcases bodyResult with ⟨bodyOutcome, bodyFinalCtx⟩
                 have hBody' :
-                    Block.runOpen model targetPrim program bodyCtx fuel fn.body
+                    Control.Block.runOpen model targetPrim program bodyCtx fuel fn.body
                         initialState =
                       .ok (bodyOutcome, bodyFinalCtx) :=
                   Block.runOpen_of_successRefines
                     model hRefines program hBody
                 cases hMode : bodyOutcome.mode with
                 | regular =>
-                    simpa [FunDef.runBody, hParams, initialStore,
+                    simpa [Control.FunDef.runBody, hParams, initialStore,
                       callerSource, initialSource, initialState,
                       functionScope, bodyCtx, hBody, hBody', hMode] using hRun
                 | brk =>
-                    simp [FunDef.runBody, hParams, initialStore,
+                    simp [Control.FunDef.runBody, hParams, initialStore,
                       callerSource, initialSource, initialState,
                       functionScope, bodyCtx, hBody, hBody', hMode,
                       Source.invalid, Structured.invalid] at hRun
                 | cont =>
-                    simp [FunDef.runBody, hParams, initialStore,
+                    simp [Control.FunDef.runBody, hParams, initialStore,
                       callerSource, initialSource, initialState,
                       functionScope, bodyCtx, hBody, hBody', hMode,
                       Source.invalid, Structured.invalid] at hRun
                 | leave =>
-                    simpa [FunDef.runBody, hParams, initialStore,
+                    simpa [Control.FunDef.runBody, hParams, initialStore,
                       callerSource, initialSource, initialState,
                       functionScope, bodyCtx, hBody, hBody', hMode] using hRun
                 | halt kind =>
-                    simpa [FunDef.runBody, hParams, initialStore,
+                    simpa [Control.FunDef.runBody, hParams, initialStore,
                       callerSource, initialSource, initialState,
                       functionScope, bodyCtx, hBody, hBody', hMode] using hRun
   termination_by
@@ -1244,16 +1310,16 @@ mutual
         {cond : Expr 1} {postBase : Source.Ctx} {post : Block}
         {bodyBase : Source.Ctx} {body : Block} {state : σ}
         {outcome : Outcome σ},
-        Stmt.runForLoop model sourcePrim program loopCtx cond postBase post
+        Control.Stmt.runForLoop model sourcePrim program loopCtx cond postBase post
           bodyBase body fuel state = .ok outcome →
-        Stmt.runForLoop model targetPrim program loopCtx cond postBase post
+        Control.Stmt.runForLoop model targetPrim program loopCtx cond postBase post
           bodyBase body fuel state = .ok outcome := by
     intro fuel loopCtx cond postBase post bodyBase body state outcome hRun
     cases fuel with
     | zero =>
-        simp [Stmt.runForLoop, Source.invalid, Structured.invalid] at hRun
+        simp [Control.Stmt.runForLoop, Source.invalid, Structured.invalid] at hRun
     | succ fuel =>
-        unfold Stmt.runForLoop at hRun ⊢
+        unfold Control.Stmt.runForLoop at hRun ⊢
         cases hCond :
             Expr.evalCondition model sourcePrim cond state with
         | error err =>
@@ -1272,13 +1338,13 @@ mutual
                 simp only [hCond, hCond', Bool.if_true_right]
                   at hRun ⊢
                 cases hBody :
-                    Block.runScoped model sourcePrim program bodyBase body fuel
+                    Control.Block.runScoped model sourcePrim program bodyBase body fuel
                       stateAfterCond with
                 | error err =>
                     simp [hBody] at hRun
                 | ok bodyOutcome =>
                     have hBody' :
-                        Block.runScoped model targetPrim program bodyBase body
+                        Control.Block.runScoped model targetPrim program bodyBase body
                             fuel stateAfterCond =
                           .ok bodyOutcome :=
                       Block.runScoped_of_successRefines
@@ -1287,22 +1353,22 @@ mutual
                     | brk =>
                         simpa [hBody, hBody', hBodyMode] using hRun
                     | regular =>
-                        simp only [hBody, hBody', hBodyMode] at hRun ⊢
+                        simp [hBody, hBody', hBodyMode] at hRun ⊢
                         cases hPost :
-                            Block.runScoped model sourcePrim program postBase
+                            Control.Block.runScoped model sourcePrim program postBase
                               post fuel bodyOutcome.state with
                         | error err =>
                             simp [hPost] at hRun
                         | ok postOutcome =>
                             have hPost' :
-                                Block.runScoped model targetPrim program
+                                Control.Block.runScoped model targetPrim program
                                     postBase post fuel bodyOutcome.state =
                                   .ok postOutcome :=
                               Block.runScoped_of_successRefines
                                 model hRefines program hPost
                             cases hPostMode : postOutcome.mode with
                             | regular =>
-                                simp only [hPost, hPost', hPostMode]
+                                simp [hPost, hPost', hPostMode]
                                   at hRun ⊢
                                 exact
                                   Stmt.runForLoop_of_successRefines
@@ -1318,22 +1384,22 @@ mutual
                             | halt kind =>
                                 simpa [hPost, hPost', hPostMode] using hRun
                     | cont =>
-                        simp only [hBody, hBody', hBodyMode] at hRun ⊢
+                        simp [hBody, hBody', hBodyMode] at hRun ⊢
                         cases hPost :
-                            Block.runScoped model sourcePrim program postBase
+                            Control.Block.runScoped model sourcePrim program postBase
                               post fuel bodyOutcome.state with
                         | error err =>
                             simp [hPost] at hRun
                         | ok postOutcome =>
                             have hPost' :
-                                Block.runScoped model targetPrim program
+                                Control.Block.runScoped model targetPrim program
                                     postBase post fuel bodyOutcome.state =
                                   .ok postOutcome :=
                               Block.runScoped_of_successRefines
                                 model hRefines program hPost
                             cases hPostMode : postOutcome.mode with
                             | regular =>
-                                simp only [hPost, hPost', hPostMode]
+                                simp [hPost, hPost', hPostMode]
                                   at hRun ⊢
                                 exact
                                   Stmt.runForLoop_of_successRefines
@@ -1366,14 +1432,14 @@ mutual
       (program : Program) :
       ∀ {fuel : Nat} {ctx : Source.Ctx} {stmt : Stmt} {state : σ}
         {outcome : Outcome σ} {runCtx : Source.Ctx},
-        Stmt.run model sourcePrim program ctx fuel stmt state =
+        Control.Stmt.run model sourcePrim program ctx fuel stmt state =
           .ok (outcome, runCtx) →
-        Stmt.run model targetPrim program ctx fuel stmt state =
+        Control.Stmt.run model targetPrim program ctx fuel stmt state =
           .ok (outcome, runCtx) := by
     intro fuel ctx stmt state outcome runCtx hRun
     cases stmt with
     | expr expr =>
-        unfold Stmt.run at hRun ⊢
+        unfold Control.Stmt.run at hRun ⊢
         cases hExpr : Expr.eval model sourcePrim expr state with
         | error err =>
             simp [hExpr] at hRun
@@ -1385,7 +1451,7 @@ mutual
                 model hRefines hExpr
             simpa [hExpr, hExpr'] using hRun
     | let_ name value =>
-        unfold Stmt.run at hRun ⊢
+        unfold Control.Stmt.run at hRun ⊢
         cases hValue : Expr.evalOne model sourcePrim value state with
         | error err =>
             simp [hValue] at hRun
@@ -1398,7 +1464,7 @@ mutual
                 model hRefines hValue
             simpa [hValue, hValue'] using hRun
     | assign name value =>
-        unfold Stmt.run at hRun ⊢
+        unfold Control.Stmt.run at hRun ⊢
         by_cases hContains : (model.vars state).contains name
         · simp only [hContains, Bool.true_eq, ↓reduceIte] at hRun ⊢
           cases hValue : Expr.evalOne model sourcePrim value state with
@@ -1414,23 +1480,23 @@ mutual
               simpa [hValue, hValue'] using hRun
         · simp [hContains, Source.invalid, Structured.invalid] at hRun
     | block body =>
-        unfold Stmt.run at hRun ⊢
+        unfold Control.Stmt.run at hRun ⊢
         cases hBody :
-            Block.runScoped model sourcePrim program ctx body fuel state with
+            Control.Block.runScoped model sourcePrim program ctx body fuel state with
         | error err =>
             simp [hBody] at hRun
         | ok bodyOutcome =>
             have hBody' :
-                Block.runScoped model targetPrim program ctx body fuel state =
+                Control.Block.runScoped model targetPrim program ctx body fuel state =
                   .ok bodyOutcome :=
               Block.runScoped_of_successRefines model hRefines program hBody
             simpa [hBody, hBody'] using hRun
     | if_ cond body =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+            simp [Control.Stmt.run, Source.invalid, Structured.invalid] at hRun
         | succ fuel =>
-            unfold Stmt.run at hRun ⊢
+            unfold Control.Stmt.run at hRun ⊢
             cases hCond :
                 Expr.evalCondition model sourcePrim cond state with
             | error err =>
@@ -1449,13 +1515,13 @@ mutual
                     simp only [hCond, hCond', Bool.if_true_right]
                       at hRun ⊢
                     cases hBody :
-                        Block.runScoped model sourcePrim program ctx body fuel
+                        Control.Block.runScoped model sourcePrim program ctx body fuel
                           stateAfterCond with
                     | error err =>
                         simp [hBody] at hRun
                     | ok bodyOutcome =>
                         have hBody' :
-                            Block.runScoped model targetPrim program ctx body
+                            Control.Block.runScoped model targetPrim program ctx body
                                 fuel stateAfterCond =
                               .ok bodyOutcome :=
                           Block.runScoped_of_successRefines
@@ -1464,9 +1530,9 @@ mutual
     | switch scrutinee cases defaultBody =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+            simp [Control.Stmt.run, Source.invalid, Structured.invalid] at hRun
         | succ fuel =>
-            unfold Stmt.run at hRun ⊢
+            unfold Control.Stmt.run at hRun ⊢
             cases hScrutinee :
                 Expr.evalOne model sourcePrim scrutinee state with
             | error err =>
@@ -1484,13 +1550,13 @@ mutual
                     simpa [hScrutinee, hScrutinee', hSelected] using hRun
                 | some selected =>
                     cases hBody :
-                        Block.runScoped model sourcePrim program ctx selected
+                        Control.Block.runScoped model sourcePrim program ctx selected
                           fuel stateAfterScrutinee with
                     | error err =>
                         simp [hScrutinee, hSelected, hBody] at hRun
                     | ok bodyOutcome =>
                         have hBody' :
-                            Block.runScoped model targetPrim program ctx
+                            Control.Block.runScoped model targetPrim program ctx
                                 selected fuel stateAfterScrutinee =
                               .ok bodyOutcome :=
                           Block.runScoped_of_successRefines
@@ -1500,19 +1566,19 @@ mutual
     | for_ init cond post body =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+            simp [Control.Stmt.run, Source.invalid, Structured.invalid] at hRun
         | succ fuel =>
-            unfold Stmt.run at hRun ⊢
+            unfold Control.Stmt.run at hRun ⊢
             let initBase := ctx.withoutLoopControl
             cases hInit :
-                Block.runOpen model sourcePrim program initBase fuel init state
+                Control.Block.runOpen model sourcePrim program initBase fuel init state
             with
             | error err =>
                 simp [initBase, hInit] at hRun
             | ok initResult =>
                 rcases initResult with ⟨initOutcome, initCtx⟩
                 have hInit' :
-                    Block.runOpen model targetPrim program initBase fuel init
+                    Control.Block.runOpen model targetPrim program initBase fuel init
                         state =
                       .ok (initOutcome, initCtx) :=
                   Block.runOpen_of_successRefines
@@ -1524,14 +1590,14 @@ mutual
                     let bodyBase :=
                       initCtx.withLoopControl initCtx.scope initCtx.scope
                     cases hLoop :
-                        Stmt.runForLoop model sourcePrim program loopCtx cond
+                        Control.Stmt.runForLoop model sourcePrim program loopCtx cond
                           postBase post bodyBase body fuel initOutcome.state with
                     | error err =>
                         simp [initBase, hInit, hInitMode, loopCtx,
                           postBase, bodyBase, hLoop] at hRun
                     | ok loopOutcome =>
                         have hLoop' :
-                            Stmt.runForLoop model targetPrim program loopCtx cond
+                            Control.Stmt.runForLoop model targetPrim program loopCtx cond
                                 postBase post bodyBase body fuel
                                 initOutcome.state =
                               .ok loopOutcome :=
@@ -1571,27 +1637,27 @@ mutual
                 | halt kind =>
                     simpa [initBase, hInit, hInit', hInitMode] using hRun
     | brk =>
-        simpa [Stmt.run] using hRun
+        simpa [Control.Stmt.run] using hRun
     | cont =>
-        simpa [Stmt.run] using hRun
+        simpa [Control.Stmt.run] using hRun
     | leave =>
-        simpa [Stmt.run] using hRun
+        simpa [Control.Stmt.run] using hRun
     | call targets functionName args =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+            simp [Control.Stmt.run, Source.invalid, Structured.invalid] at hRun
         | succ fuel =>
-            unfold Stmt.run at hRun ⊢
+            unfold Control.Stmt.run at hRun ⊢
             by_cases hTargets : targets.Nodup
             · simp only [hTargets, Bool.true_eq, ↓reduceIte] at hRun ⊢
               cases hArgs :
-                  ArgList.eval model sourcePrim args state with
+                  ArgList.Control.eval model sourcePrim args state with
               | error err =>
                   simp [hArgs] at hRun
               | ok argResult =>
                   rcases argResult with ⟨stateAfterArgs, argValues⟩
                   have hArgs' :
-                      ArgList.eval model targetPrim args state =
+                      ArgList.Control.eval model targetPrim args state =
                         .ok (stateAfterArgs, argValues) :=
                     ArgList.eval_of_successRefines model hRefines hArgs
                   cases hLookup :
@@ -1601,13 +1667,13 @@ mutual
                         Structured.invalid] at hRun
                   | some fn =>
                       cases hBody :
-                          FunDef.runBody model sourcePrim program fn argValues
+                          Control.FunDef.runBody model sourcePrim program fn argValues
                             fuel stateAfterArgs with
                       | error err =>
                           simp [hArgs, hArgs', hLookup, hBody] at hRun
                       | ok callResult =>
                           have hBody' :
-                              FunDef.runBody model targetPrim program fn
+                              Control.FunDef.runBody model targetPrim program fn
                                   argValues fuel stateAfterArgs =
                                 .ok callResult :=
                             FunDef.runBody_of_successRefines
@@ -1621,7 +1687,7 @@ mutual
                                 using hRun
             · simp [hTargets, Source.invalid, Structured.invalid] at hRun
     | terminal kind =>
-        unfold Stmt.run at hRun ⊢
+        unfold Control.Stmt.run at hRun ⊢
         cases hTerminal : sourcePrim.terminal kind state [] with
         | error err =>
             simp [hTerminal] at hRun
@@ -1631,16 +1697,16 @@ mutual
               hRefines.terminal hTerminal
             simpa [hTerminal, hTerminal'] using hRun
     | terminalArgs kind args =>
-        unfold Stmt.run at hRun ⊢
+        unfold Control.Stmt.run at hRun ⊢
         cases hArgs :
-            Locals.Source.Effectful.Expr.ExprSeq.eval
-              model sourcePrim args state with
+          Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+            model sourcePrim args state with
         | error err =>
             simp [hArgs] at hRun
         | ok argResult =>
             rcases argResult with ⟨afterArgs, values⟩
             have hArgs' :
-                Locals.Source.Effectful.Expr.ExprSeq.eval
+                Locals.Source.Effectful.Expr.Control.ExprSeq.eval
                     model targetPrim args state =
                   .ok (afterArgs, values) :=
               Locals.Source.Effectful.Expr.ExprSeq.eval_of_successRefines
@@ -1680,12 +1746,12 @@ theorem runBody_returned_parts {σ : Type}
     {fuel : Nat} {state returnedState : σ}
     {returnValues : List Word}
     (hRun :
-      FunDef.runBody model prim program fn args (fuel + 1) state =
+      Control.FunDef.runBody model prim program fn args (fuel + 1) state =
         .ok (CallResult.returned returnedState returnValues)) :
     ∃ paramStore bodyOutcome bodyCtx',
       Source.Store.insertMany fn.params args Locals.Source.Store.empty =
         some paramStore ∧
-      Block.runOpen model prim program (bodyCtx fn) fuel fn.body
+      Control.Block.runOpen model prim program (bodyCtx fn) fuel fn.body
           (model.withSource state
             { shared := (model.source state).shared,
               vars := Source.Store.initReturns fn.returns paramStore }) =
@@ -1694,7 +1760,7 @@ theorem runBody_returned_parts {σ : Type}
       Source.Store.lookupMany fn.returns (model.vars bodyOutcome.state) =
         some returnValues ∧
       bodyOutcome.state = returnedState := by
-  unfold FunDef.runBody at hRun
+  unfold Control.FunDef.runBody at hRun
   cases hParams :
       Source.Store.insertMany fn.params args Locals.Source.Store.empty with
   | none =>
@@ -1702,7 +1768,7 @@ theorem runBody_returned_parts {σ : Type}
   | some paramStore =>
       simp [hParams] at hRun
       cases hBody :
-          Block.runOpen model prim program
+          Control.Block.runOpen model prim program
             { Source.Ctx.withLeaveScope Source.Ctx.initial
                 (fn.returns ++ fn.params) with
               scope := fn.returns ++ fn.params }
@@ -1767,7 +1833,7 @@ theorem runBody_returned_of_parts {σ : Type}
       Source.Store.insertMany fn.params args Locals.Source.Store.empty =
         some paramStore)
     (hBody :
-      Block.runOpen model prim program (bodyCtx fn) fuel fn.body
+      Control.Block.runOpen model prim program (bodyCtx fn) fuel fn.body
           (model.withSource state
             { shared := (model.source state).shared,
               vars := Source.Store.initReturns fn.returns paramStore }) =
@@ -1777,10 +1843,10 @@ theorem runBody_returned_of_parts {σ : Type}
       Source.Store.lookupMany fn.returns (model.vars bodyOutcome.state) =
         some returnValues)
     (hState : bodyOutcome.state = returnedState) :
-    FunDef.runBody model prim program fn args (fuel + 1) state =
+    Control.FunDef.runBody model prim program fn args (fuel + 1) state =
       .ok (CallResult.returned returnedState returnValues) := by
   have hBody' :
-      Block.runOpen model prim program
+      Control.Block.runOpen model prim program
           { Source.Ctx.withLeaveScope Source.Ctx.initial
               (fn.returns ++ fn.params) with
             scope := fn.returns ++ fn.params }
@@ -1795,8 +1861,8 @@ theorem runBody_returned_of_parts {σ : Type}
         some returnValues := by
     simpa [← hState] using hReturns
   rcases hMode with hMode | hMode
-  · simp [FunDef.runBody, hParams, hBody', hMode, hReturns', hState]
-  · simp [FunDef.runBody, hParams, hBody', hMode, hReturns', hState]
+  · simp [Control.FunDef.runBody, hParams, hBody', hMode, hReturns', hState]
+  · simp [Control.FunDef.runBody, hParams, hBody', hMode, hReturns', hState]
 
 /--
 Construct a canonical halting function-body result from the actual parameter
@@ -1814,15 +1880,15 @@ theorem runBody_halted_of_parts {σ : Type}
       Source.Store.insertMany fn.params args Locals.Source.Store.empty =
         some paramStore)
     (hBody :
-      Block.runOpen model prim program (bodyCtx fn) fuel fn.body
+      Control.Block.runOpen model prim program (bodyCtx fn) fuel fn.body
           (model.withSource state
             { shared := (model.source state).shared,
               vars := Source.Store.initReturns fn.returns paramStore }) =
         .ok (Outcome.halt kind haltedState, bodyCtx')) :
-    FunDef.runBody model prim program fn args (fuel + 1) state =
+    Control.FunDef.runBody model prim program fn args (fuel + 1) state =
       .ok (CallResult.halted kind haltedState) := by
   have hBody' :
-      Block.runOpen model prim program
+      Control.Block.runOpen model prim program
           { Source.Ctx.withLeaveScope Source.Ctx.initial
               (fn.returns ++ fn.params) with
             scope := fn.returns ++ fn.params }
@@ -1832,7 +1898,7 @@ theorem runBody_halted_of_parts {σ : Type}
               vars := Source.Store.initReturns fn.returns paramStore }) =
         .ok (Outcome.halt kind haltedState, bodyCtx') := by
     simpa [bodyCtx] using hBody
-  simp [FunDef.runBody, hParams, hBody', Outcome.halt,
+  simp [Control.FunDef.runBody, hParams, hBody', Outcome.halt,
     Locals.Source.Effectful.Outcome.halt]
 
 theorem runBody_halted_parts {σ : Type}
@@ -1842,17 +1908,17 @@ theorem runBody_halted_parts {σ : Type}
     {fuel : Nat} {state haltedState : σ}
     {kind : Assembly.HaltKind}
     (hRun :
-      FunDef.runBody model prim program fn args (fuel + 1) state =
+      Control.FunDef.runBody model prim program fn args (fuel + 1) state =
         .ok (CallResult.halted kind haltedState)) :
     ∃ paramStore bodyCtx',
       Source.Store.insertMany fn.params args Locals.Source.Store.empty =
         some paramStore ∧
-      Block.runOpen model prim program (bodyCtx fn) fuel fn.body
+      Control.Block.runOpen model prim program (bodyCtx fn) fuel fn.body
           (model.withSource state
             { shared := (model.source state).shared,
               vars := Source.Store.initReturns fn.returns paramStore }) =
         .ok (Outcome.halt kind haltedState, bodyCtx') := by
-  unfold FunDef.runBody at hRun
+  unfold Control.FunDef.runBody at hRun
   cases hParams :
       Source.Store.insertMany fn.params args Locals.Source.Store.empty with
   | none =>
@@ -1860,7 +1926,7 @@ theorem runBody_halted_parts {σ : Type}
   | some paramStore =>
       simp [hParams] at hRun
       cases hBody :
-          Block.runOpen model prim program
+          Control.Block.runOpen model prim program
             { Source.Ctx.withLeaveScope Source.Ctx.initial
                 (fn.returns ++ fn.params) with
               scope := fn.returns ++ fn.params }
@@ -1914,13 +1980,13 @@ theorem runBody_args_length {σ : Type}
     {fn : Functions.FunDef} {args : List Word}
     {fuel : Nat} {state : σ} {result : CallResult σ}
     (hRun :
-      FunDef.runBody model prim program fn args fuel state = .ok result) :
+      Control.FunDef.runBody model prim program fn args fuel state = .ok result) :
     args.length = fn.params.length := by
   cases fuel with
   | zero =>
-      simp [FunDef.runBody, Source.invalid, Structured.invalid] at hRun
+      simp [Control.FunDef.runBody, Source.invalid, Structured.invalid] at hRun
   | succ fuel =>
-      unfold FunDef.runBody at hRun
+      unfold Control.FunDef.runBody at hRun
       cases hParams :
           Source.Store.insertMany fn.params args Locals.Source.Store.empty with
       | none =>
@@ -1934,12 +2000,12 @@ theorem runBody_returned_length {σ : Type}
     {fn : Functions.FunDef} {args values : List Word}
     {fuel : Nat} {state returnedState : σ}
     (hRun :
-      FunDef.runBody model prim program fn args fuel state =
+      Control.FunDef.runBody model prim program fn args fuel state =
         .ok (CallResult.returned returnedState values)) :
     values.length = fn.returns.length := by
   cases fuel with
   | zero =>
-      simp [FunDef.runBody, Source.invalid, Structured.invalid] at hRun
+      simp [Control.FunDef.runBody, Source.invalid, Structured.invalid] at hRun
   | succ fuel =>
       rcases runBody_returned_parts model prim program hRun with
         ⟨_paramStore, bodyOutcome, _bodyCtx, _hParams, _hBody, _hMode,
@@ -1958,11 +2024,11 @@ theorem run_let_lit {σ : Type}
     (program : Functions.Program)
     {ctx : Source.Ctx} {fuel : Nat} {state : σ}
     (name : Name) (value : Word) :
-    Stmt.run model prim program ctx fuel (.let_ name (.lit value)) state =
+    Control.Stmt.run model prim program ctx fuel (.let_ name (.lit value)) state =
       .ok
         (Outcome.regular (model.insert state name value),
           { ctx with scope := name :: ctx.scope }) := by
-  simp [Stmt.run, Expr.evalOne, Expr.eval,
+  simp [Control.Stmt.run, Expr.evalOne, Expr.eval,
     Locals.Source.Effectful.Expr.evalOne,
     Locals.Source.Effectful.Expr.Control.evalOne,
     Locals.Source.Effectful.Expr.eval,
@@ -1976,11 +2042,11 @@ theorem run_let_of_eval {σ : Type}
     (hEval :
       Expr.evalOne model prim value state =
         .ok (stateAfterValue, result)) :
-    Stmt.run model prim program ctx fuel (.let_ name value) state =
+    Control.Stmt.run model prim program ctx fuel (.let_ name value) state =
       .ok
         (Outcome.regular (model.insert stateAfterValue name result),
           { ctx with scope := name :: ctx.scope }) := by
-  simp [Stmt.run, hEval]
+  simp [Control.Stmt.run, hEval]
 
 theorem run_assign_of_eval {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
@@ -1991,14 +2057,14 @@ theorem run_assign_of_eval {σ : Type}
     (hEval :
       Expr.evalOne model prim value state =
         .ok (stateAfterValue, result)) :
-    Stmt.run model prim program ctx fuel (.assign name value) state =
+    Control.Stmt.run model prim program ctx fuel (.assign name value) state =
       .ok
         (Outcome.regular
           (model.withVars stateAfterValue
             (Locals.Source.Store.insert
               (model.vars stateAfterValue) name result)),
           ctx) := by
-  simp [Stmt.run, hContains, hEval]
+  simp [Control.Stmt.run, hContains, hEval]
 
 /--
 A successful `leave` statement has leave mode.
@@ -2009,10 +2075,10 @@ theorem run_leave_mode {σ : Type}
     {ctx finalCtx : Source.Ctx} {fuel : Nat}
     {source : σ} {outcome : Outcome σ}
     (hRun :
-      Stmt.run model prim program ctx fuel .leave source =
+      Control.Stmt.run model prim program ctx fuel .leave source =
         .ok (outcome, finalCtx)) :
     outcome.mode = .leave := by
-  unfold Stmt.run at hRun
+  unfold Control.Stmt.run at hRun
   cases hScope : ctx.leaveScope? with
   | none =>
       simp [hScope, Source.invalid, Structured.invalid] at hRun
@@ -2027,9 +2093,9 @@ theorem run_leave_of_scope {σ : Type}
     {ctx : Source.Ctx} {fuel : Nat} {state : σ}
     {scope : List Name}
     (hScope : ctx.leaveScope? = some scope) :
-    Stmt.run model prim program ctx fuel .leave state =
+    Control.Stmt.run model prim program ctx fuel .leave state =
       .ok (Outcome.leave (model.restrictTo scope state), ctx) := by
-  simp [Stmt.run, hScope]
+  simp [Control.Stmt.run, hScope]
 
 theorem run_brk_of_scope {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
@@ -2037,9 +2103,9 @@ theorem run_brk_of_scope {σ : Type}
     {ctx : Source.Ctx} {fuel : Nat} {state : σ}
     {scope : List Name}
     (hScope : ctx.breakScope? = some scope) :
-    Stmt.run model prim program ctx fuel .brk state =
+    Control.Stmt.run model prim program ctx fuel .brk state =
       .ok (Outcome.brk (model.restrictTo scope state), ctx) := by
-  simp [Stmt.run, hScope]
+  simp [Control.Stmt.run, hScope]
 
 theorem run_cont_of_scope {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
@@ -2047,9 +2113,9 @@ theorem run_cont_of_scope {σ : Type}
     {ctx : Source.Ctx} {fuel : Nat} {state : σ}
     {scope : List Name}
     (hScope : ctx.continueScope? = some scope) :
-    Stmt.run model prim program ctx fuel .cont state =
+    Control.Stmt.run model prim program ctx fuel .cont state =
       .ok (Outcome.cont (model.restrictTo scope state), ctx) := by
-  simp [Stmt.run, hScope]
+  simp [Control.Stmt.run, hScope]
 
 /--
 A successful plain terminal statement has the requested halt mode.
@@ -2061,10 +2127,10 @@ theorem run_terminal_mode {σ : Type}
     {kind : Assembly.HaltKind}
     {source : σ} {outcome : Outcome σ}
     (hRun :
-      Stmt.run model prim program ctx fuel (.terminal kind) source =
+      Control.Stmt.run model prim program ctx fuel (.terminal kind) source =
         .ok (outcome, finalCtx)) :
     outcome.mode = .halt kind := by
-  unfold Stmt.run at hRun
+  unfold Control.Stmt.run at hRun
   cases hTerminal : prim.terminal kind source [] with
   | error err =>
       simp [hTerminal] at hRun
@@ -2084,12 +2150,13 @@ theorem run_terminalArgs_mode {σ : Type}
     {args : Locals.ExprSeq kind.argCount}
     {source : σ} {outcome : Outcome σ}
     (hRun :
-      Stmt.run model prim program ctx fuel (.terminalArgs kind args) source =
+      Control.Stmt.run model prim program ctx fuel (.terminalArgs kind args) source =
         .ok (outcome, finalCtx)) :
     outcome.mode = .halt kind := by
-  unfold Stmt.run at hRun
+  unfold Control.Stmt.run at hRun
   cases hArgs :
-      Locals.Source.Effectful.Expr.ExprSeq.eval model prim args source with
+      Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+        model prim args source with
   | error err =>
       simp [hArgs] at hRun
   | ok result =>
@@ -2111,19 +2178,20 @@ theorem run_terminalArgs_ok_parts {σ : Type}
     {args : Locals.ExprSeq kind.argCount}
     {source : σ} {outcome : Outcome σ}
     (hRun :
-      Stmt.run model prim program ctx fuel
+      Control.Stmt.run model prim program ctx fuel
           (.terminalArgs kind args) source =
         .ok (outcome, finalCtx)) :
     ∃ stateAfterArgs values final,
-      Locals.Source.Effectful.Expr.ExprSeq.eval
+      Locals.Source.Effectful.Expr.Control.ExprSeq.eval
           model prim args source =
         .ok (stateAfterArgs, values) ∧
       prim.terminal kind stateAfterArgs values = .ok final ∧
       outcome = Outcome.halt kind final ∧
       finalCtx = ctx := by
-  unfold Stmt.run at hRun
+  unfold Control.Stmt.run at hRun
   cases hArgs :
-      Locals.Source.Effectful.Expr.ExprSeq.eval model prim args source with
+      Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+        model prim args source with
   | error err =>
       simp [hArgs] at hRun
   | ok result =>
@@ -2152,17 +2220,17 @@ theorem run_call_cases {σ : Type}
     {args : List (Functions.Expr 1)}
     {source : σ} {outcome : Outcome σ}
     (hRun :
-      Stmt.run model prim program ctx (fuel + 1)
+      Control.Stmt.run model prim program ctx (fuel + 1)
           (.call targets functionName args) source =
         .ok (outcome, finalCtx)) :
     (∃ sourceFinal,
         outcome = Outcome.regular sourceFinal ∧ finalCtx = ctx) ∨
       (∃ kind sourceFinal,
         outcome = Outcome.halt kind sourceFinal ∧ finalCtx = ctx) := by
-  unfold Stmt.run at hRun
+  unfold Control.Stmt.run at hRun
   by_cases hTargets : targets.Nodup
   · simp only [hTargets, ↓reduceIte] at hRun
-    cases hArgs : ArgList.eval model prim args source with
+    cases hArgs : ArgList.Control.eval model prim args source with
     | error err =>
         simp [hArgs] at hRun
     | ok argResult =>
@@ -2175,7 +2243,7 @@ theorem run_call_cases {σ : Type}
         | some fn =>
             simp [hFind] at hRun
             cases hBody :
-                FunDef.runBody model prim program fn argValues fuel
+                Control.FunDef.runBody model prim program fn argValues fuel
                   stateAfterArgs with
             | error err =>
                 simp [hBody] at hRun
@@ -2213,15 +2281,15 @@ theorem call_regular_parts {σ : Type}
     {args : List (Functions.Expr 1)}
     {source sourceAfter : σ}
     (hRun :
-      Stmt.run model prim program ctx (fuel + 1)
+      Control.Stmt.run model prim program ctx (fuel + 1)
           (.call targets functionName args) source =
         .ok (Outcome.regular sourceAfter, ctx)) :
     ∃ stateAfterArgs argValues fn stateAfterCall returnValues returnStore,
       targets.Nodup ∧
-      ArgList.eval model prim args source =
+      ArgList.Control.eval model prim args source =
         .ok (stateAfterArgs, argValues) ∧
       Source.FunList.find? functionName program.functions = some fn ∧
-      FunDef.runBody model prim program fn argValues fuel stateAfterArgs =
+      Control.FunDef.runBody model prim program fn argValues fuel stateAfterArgs =
         .ok (CallResult.returned stateAfterCall returnValues) ∧
       Source.Store.assignMany targets returnValues
           (model.vars stateAfterArgs) =
@@ -2230,10 +2298,10 @@ theorem call_regular_parts {σ : Type}
         model.withSource stateAfterCall
           { shared := (model.source stateAfterCall).shared,
             vars := returnStore } := by
-  unfold Stmt.run at hRun
+  unfold Control.Stmt.run at hRun
   by_cases hTargets : targets.Nodup
   · simp [hTargets] at hRun
-    cases hArgs : ArgList.eval model prim args source with
+    cases hArgs : ArgList.Control.eval model prim args source with
     | error err =>
         simp [hArgs] at hRun
     | ok argResult =>
@@ -2246,7 +2314,7 @@ theorem call_regular_parts {σ : Type}
         | some fn =>
             simp [hFind] at hRun
             cases hBody :
-                FunDef.runBody model prim program fn argValues fuel
+                Control.FunDef.runBody model prim program fn argValues fuel
                   stateAfterArgs with
             | error err =>
                 simp [hBody] at hRun
@@ -2284,12 +2352,12 @@ theorem call_regular_of_parts {σ : Type}
     {fn : Functions.FunDef} {returnStore : Source.Store}
     (hTargets : targets.Nodup)
     (hArgs :
-      ArgList.eval model prim args source =
+      ArgList.Control.eval model prim args source =
         .ok (stateAfterArgs, argValues))
     (hFind :
       Source.FunList.find? functionName program.functions = some fn)
     (hCall :
-      FunDef.runBody model prim program fn argValues fuel stateAfterArgs =
+      Control.FunDef.runBody model prim program fn argValues fuel stateAfterArgs =
         .ok (CallResult.returned stateAfterCall returnValues))
     (hAssign :
       Source.Store.assignMany targets returnValues
@@ -2300,11 +2368,11 @@ theorem call_regular_of_parts {σ : Type}
         model.withSource stateAfterCall
           { shared := (model.source stateAfterCall).shared,
             vars := returnStore }) :
-    Stmt.run model prim program ctx (fuel + 1)
+    Control.Stmt.run model prim program ctx (fuel + 1)
         (.call targets functionName args) source =
       .ok (Outcome.regular sourceAfter, ctx) := by
   subst sourceAfter
-  simp [Stmt.run, hTargets, hArgs, hFind, hCall, hAssign]
+  simp [Control.Stmt.run, hTargets, hArgs, hFind, hCall, hAssign]
 
 /--
 A regular call with two available fuel steps exposes the strictly smaller
@@ -2318,19 +2386,19 @@ theorem call_regular_body_parts {σ : Type}
     {args : List (Functions.Expr 1)}
     {source sourceAfter : σ}
     (hRun :
-      Stmt.run model prim program ctx (fuel + 2)
+      Control.Stmt.run model prim program ctx (fuel + 2)
           (.call targets functionName args) source =
         .ok (Outcome.regular sourceAfter, ctx)) :
     ∃ stateAfterArgs argValues fn stateAfterCall returnValues returnStore
         paramStore bodyOutcome bodyCtx',
       targets.Nodup ∧
-      ArgList.eval model prim args source =
+      ArgList.Control.eval model prim args source =
         .ok (stateAfterArgs, argValues) ∧
       Source.FunList.find? functionName program.functions = some fn ∧
       Source.Store.insertMany fn.params argValues
           Locals.Source.Store.empty =
         some paramStore ∧
-      Block.runOpen model prim program (FunDef.bodyCtx fn) fuel fn.body
+      Control.Block.runOpen model prim program (FunDef.bodyCtx fn) fuel fn.body
           (model.withSource stateAfterArgs
             { shared := (model.source stateAfterArgs).shared,
               vars := Source.Store.initReturns fn.returns paramStore }) =
@@ -2379,17 +2447,17 @@ theorem call_halted_of_parts {σ : Type}
     {kind : Assembly.HaltKind}
     (hTargets : targets.Nodup)
     (hArgs :
-      ArgList.eval model prim args source =
+      ArgList.Control.eval model prim args source =
         .ok (stateAfterArgs, argValues))
     (hFind :
       Source.FunList.find? functionName program.functions = some fn)
     (hBody :
-      FunDef.runBody model prim program fn argValues fuel stateAfterArgs =
+      Control.FunDef.runBody model prim program fn argValues fuel stateAfterArgs =
         .ok (CallResult.halted kind haltedState)) :
-    Stmt.run model prim program ctx (fuel + 1)
+    Control.Stmt.run model prim program ctx (fuel + 1)
         (.call targets functionName args) source =
       .ok (Outcome.halt kind haltedState, ctx) := by
-  simp [Stmt.run, hTargets, hArgs, hFind, hBody, Outcome.halt]
+  simp [Control.Stmt.run, hTargets, hArgs, hFind, hBody, Outcome.halt]
 
 theorem call_halted_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
@@ -2399,20 +2467,20 @@ theorem call_halted_parts {σ : Type}
     {args : List (Functions.Expr 1)}
     {source haltedState : σ} {kind : Assembly.HaltKind}
     (hRun :
-      Stmt.run model prim program ctx (fuel + 1)
+      Control.Stmt.run model prim program ctx (fuel + 1)
           (.call targets functionName args) source =
         .ok (Outcome.halt kind haltedState, ctx)) :
     ∃ stateAfterArgs argValues fn,
       targets.Nodup ∧
-      ArgList.eval model prim args source =
+      ArgList.Control.eval model prim args source =
         .ok (stateAfterArgs, argValues) ∧
       Source.FunList.find? functionName program.functions = some fn ∧
-      FunDef.runBody model prim program fn argValues fuel stateAfterArgs =
+      Control.FunDef.runBody model prim program fn argValues fuel stateAfterArgs =
         .ok (CallResult.halted kind haltedState) := by
-  unfold Stmt.run at hRun
+  unfold Control.Stmt.run at hRun
   by_cases hTargets : targets.Nodup
   · simp [hTargets] at hRun
-    cases hArgs : ArgList.eval model prim args source with
+    cases hArgs : ArgList.Control.eval model prim args source with
     | error err =>
         simp [hArgs] at hRun
     | ok argResult =>
@@ -2425,7 +2493,7 @@ theorem call_halted_parts {σ : Type}
         | some fn =>
             simp [hFind] at hRun
             cases hBody :
-                FunDef.runBody model prim program fn argValues fuel
+                Control.FunDef.runBody model prim program fn argValues fuel
                   stateAfterArgs with
             | error err =>
                 simp [hBody] at hRun
@@ -2466,18 +2534,18 @@ theorem call_halted_body_parts {σ : Type}
     {args : List (Functions.Expr 1)}
     {source haltedState : σ} {kind : Assembly.HaltKind}
     (hRun :
-      Stmt.run model prim program ctx (fuel + 2)
+      Control.Stmt.run model prim program ctx (fuel + 2)
           (.call targets functionName args) source =
         .ok (Outcome.halt kind haltedState, ctx)) :
     ∃ stateAfterArgs argValues fn paramStore bodyCtx',
       targets.Nodup ∧
-      ArgList.eval model prim args source =
+      ArgList.Control.eval model prim args source =
         .ok (stateAfterArgs, argValues) ∧
       Source.FunList.find? functionName program.functions = some fn ∧
       Source.Store.insertMany fn.params argValues
           Locals.Source.Store.empty =
         some paramStore ∧
-      Block.runOpen model prim program (FunDef.bodyCtx fn) fuel fn.body
+      Control.Block.runOpen model prim program (FunDef.bodyCtx fn) fuel fn.body
           (model.withSource stateAfterArgs
             { shared := (model.source stateAfterArgs).shared,
               vars := Source.Store.initReturns fn.returns paramStore }) =
@@ -2506,12 +2574,12 @@ theorem runForLoop_false_of_eval {σ : Type}
     (hCond :
       Expr.evalCondition model prim cond source =
         .ok (afterCond, false)) :
-    Stmt.runForLoop model prim program loopCtx cond postBase post
+    Control.Stmt.runForLoop model prim program loopCtx cond postBase post
         bodyBase body (fuel + 1) source =
       .ok
         (Outcome.regular
           (model.restrictTo loopCtx.scope afterCond)) := by
-  simp [Stmt.runForLoop, hCond, Outcome.regular,
+  simp [Control.Stmt.runForLoop, hCond, Outcome.regular,
     Locals.Source.Effectful.Outcome.regular]
 
 /--
@@ -2526,20 +2594,20 @@ theorem run_for_false_of_runs {σ : Type}
     {post body : Functions.Block}
     {source afterInit afterCond : σ}
     (hInit :
-      Block.runOpen model prim program ctx.withoutLoopControl
+      Control.Block.runOpen model prim program ctx.withoutLoopControl
           (fuel + 1) init source =
         .ok (Outcome.regular afterInit, initCtx))
     (hCond :
       Expr.evalCondition model prim cond afterInit =
         .ok (afterCond, false)) :
-    Stmt.run model prim program ctx (fuel + 2)
+    Control.Stmt.run model prim program ctx (fuel + 2)
         (.for_ init cond post body) source =
       .ok
         (Outcome.regular
           (model.restrictTo ctx.scope
             (model.restrictTo initCtx.scope afterCond)),
           ctx) := by
-  simp [Stmt.run, hInit, Stmt.runForLoop, hCond, Outcome.regular,
+  simp [Control.Stmt.run, hInit, Control.Stmt.runForLoop, hCond, Outcome.regular,
     Locals.Source.Effectful.Outcome.regular]
 
 /--
@@ -2557,12 +2625,12 @@ theorem runForLoop_body_brk_of_runs {σ : Type}
       Expr.evalCondition model prim cond source =
         .ok (afterCond, true))
     (hBody :
-      Block.runScoped model prim program bodyBase body fuel afterCond =
+      Control.Block.runScoped model prim program bodyBase body fuel afterCond =
       .ok (Outcome.brk afterBody)) :
-    Stmt.runForLoop model prim program loopCtx cond postBase post
+    Control.Stmt.runForLoop model prim program loopCtx cond postBase post
         bodyBase body (fuel + 1) source =
       .ok (Outcome.regular afterBody) := by
-  simp [Stmt.runForLoop, hCond, hBody, Outcome.brk,
+  simp [Control.Stmt.runForLoop, hCond, hBody, Outcome.brk,
     Locals.Source.Effectful.Outcome.brk]
 
 /--
@@ -2580,12 +2648,12 @@ theorem runForLoop_body_leave_of_runs {σ : Type}
       Expr.evalCondition model prim cond source =
         .ok (afterCond, true))
     (hBody :
-      Block.runScoped model prim program bodyBase body fuel afterCond =
+      Control.Block.runScoped model prim program bodyBase body fuel afterCond =
         .ok (Outcome.leave afterBody)) :
-    Stmt.runForLoop model prim program loopCtx cond postBase post
+    Control.Stmt.runForLoop model prim program loopCtx cond postBase post
         bodyBase body (fuel + 1) source =
       .ok (Outcome.leave afterBody) := by
-  simp [Stmt.runForLoop, hCond, hBody, Outcome.leave,
+  simp [Control.Stmt.runForLoop, hCond, hBody, Outcome.leave,
     Locals.Source.Effectful.Outcome.leave]
 
 /--
@@ -2604,12 +2672,12 @@ theorem runForLoop_body_halt_of_runs {σ : Type}
       Expr.evalCondition model prim cond source =
         .ok (afterCond, true))
     (hBody :
-      Block.runScoped model prim program bodyBase body fuel afterCond =
+      Control.Block.runScoped model prim program bodyBase body fuel afterCond =
         .ok (Outcome.halt kind afterBody)) :
-    Stmt.runForLoop model prim program loopCtx cond postBase post
+    Control.Stmt.runForLoop model prim program loopCtx cond postBase post
         bodyBase body (fuel + 1) source =
       .ok (Outcome.halt kind afterBody) := by
-  simp [Stmt.runForLoop, hCond, hBody, Outcome.halt,
+  simp [Control.Stmt.runForLoop, hCond, hBody, Outcome.halt,
     Locals.Source.Effectful.Outcome.halt]
 
 /--
@@ -2628,19 +2696,19 @@ theorem runForLoop_regular_post_regular_of_runs {σ : Type}
       Expr.evalCondition model prim cond source =
         .ok (afterCond, true))
     (hBody :
-      Block.runScoped model prim program bodyBase body fuel afterCond =
+      Control.Block.runScoped model prim program bodyBase body fuel afterCond =
         .ok (Outcome.regular afterBody))
     (hPost :
-      Block.runScoped model prim program postBase post fuel afterBody =
+      Control.Block.runScoped model prim program postBase post fuel afterBody =
         .ok (Outcome.regular afterPost))
     (hLoop :
-      Stmt.runForLoop model prim program loopCtx cond postBase post
+      Control.Stmt.runForLoop model prim program loopCtx cond postBase post
           bodyBase body fuel afterPost =
         .ok (Outcome.regular final)) :
-    Stmt.runForLoop model prim program loopCtx cond postBase post
+    Control.Stmt.runForLoop model prim program loopCtx cond postBase post
         bodyBase body (fuel + 1) source =
       .ok (Outcome.regular final) := by
-  simp [Stmt.runForLoop, hCond, hBody, hPost, hLoop, Outcome.regular,
+  simp [Control.Stmt.runForLoop, hCond, hBody, hPost, hLoop, Outcome.regular,
     Locals.Source.Effectful.Outcome.regular]
 
 /--
@@ -2659,19 +2727,19 @@ theorem runForLoop_cont_post_regular_of_runs {σ : Type}
       Expr.evalCondition model prim cond source =
         .ok (afterCond, true))
     (hBody :
-      Block.runScoped model prim program bodyBase body fuel afterCond =
+      Control.Block.runScoped model prim program bodyBase body fuel afterCond =
         .ok (Outcome.cont afterBody))
     (hPost :
-      Block.runScoped model prim program postBase post fuel afterBody =
+      Control.Block.runScoped model prim program postBase post fuel afterBody =
         .ok (Outcome.regular afterPost))
     (hLoop :
-      Stmt.runForLoop model prim program loopCtx cond postBase post
+      Control.Stmt.runForLoop model prim program loopCtx cond postBase post
           bodyBase body fuel afterPost =
         .ok (Outcome.regular final)) :
-    Stmt.runForLoop model prim program loopCtx cond postBase post
+    Control.Stmt.runForLoop model prim program loopCtx cond postBase post
         bodyBase body (fuel + 1) source =
       .ok (Outcome.regular final) := by
-  simp [Stmt.runForLoop, hCond, hBody, hPost, hLoop,
+  simp [Control.Stmt.runForLoop, hCond, hBody, hPost, hLoop,
     Outcome.regular, Locals.Source.Effectful.Outcome.regular,
     Outcome.cont, Locals.Source.Effectful.Outcome.cont]
 
@@ -2692,19 +2760,19 @@ theorem runForLoop_regular_post_recurse_of_runs {σ : Type}
       Expr.evalCondition model prim cond source =
         .ok (afterCond, true))
     (hBody :
-      Block.runScoped model prim program bodyBase body fuel afterCond =
+      Control.Block.runScoped model prim program bodyBase body fuel afterCond =
         .ok (Outcome.regular afterBody))
     (hPost :
-      Block.runScoped model prim program postBase post fuel afterBody =
+      Control.Block.runScoped model prim program postBase post fuel afterBody =
         .ok (Outcome.regular afterPost))
     (hLoop :
-      Stmt.runForLoop model prim program loopCtx cond postBase post
+      Control.Stmt.runForLoop model prim program loopCtx cond postBase post
           bodyBase body fuel afterPost =
         .ok outcome) :
-    Stmt.runForLoop model prim program loopCtx cond postBase post
+    Control.Stmt.runForLoop model prim program loopCtx cond postBase post
         bodyBase body (fuel + 1) source =
       .ok outcome := by
-  simp [Stmt.runForLoop, hCond, hBody, hPost, hLoop, Outcome.regular,
+  simp [Control.Stmt.runForLoop, hCond, hBody, hPost, hLoop, Outcome.regular,
     Locals.Source.Effectful.Outcome.regular]
 
 /--
@@ -2724,19 +2792,19 @@ theorem runForLoop_cont_post_recurse_of_runs {σ : Type}
       Expr.evalCondition model prim cond source =
         .ok (afterCond, true))
     (hBody :
-      Block.runScoped model prim program bodyBase body fuel afterCond =
+      Control.Block.runScoped model prim program bodyBase body fuel afterCond =
         .ok (Outcome.cont afterBody))
     (hPost :
-      Block.runScoped model prim program postBase post fuel afterBody =
+      Control.Block.runScoped model prim program postBase post fuel afterBody =
         .ok (Outcome.regular afterPost))
     (hLoop :
-      Stmt.runForLoop model prim program loopCtx cond postBase post
+      Control.Stmt.runForLoop model prim program loopCtx cond postBase post
           bodyBase body fuel afterPost =
         .ok outcome) :
-    Stmt.runForLoop model prim program loopCtx cond postBase post
+    Control.Stmt.runForLoop model prim program loopCtx cond postBase post
         bodyBase body (fuel + 1) source =
       .ok outcome := by
-  simp [Stmt.runForLoop, hCond, hBody, hPost, hLoop,
+  simp [Control.Stmt.runForLoop, hCond, hBody, hPost, hLoop,
     Outcome.regular, Locals.Source.Effectful.Outcome.regular,
     Outcome.cont, Locals.Source.Effectful.Outcome.cont]
 
@@ -2755,15 +2823,15 @@ theorem runForLoop_regular_post_leave_of_runs {σ : Type}
       Expr.evalCondition model prim cond source =
         .ok (afterCond, true))
     (hBody :
-      Block.runScoped model prim program bodyBase body fuel afterCond =
+      Control.Block.runScoped model prim program bodyBase body fuel afterCond =
         .ok (Outcome.regular afterBody))
     (hPost :
-      Block.runScoped model prim program postBase post fuel afterBody =
+      Control.Block.runScoped model prim program postBase post fuel afterBody =
         .ok (Outcome.leave afterPost)) :
-    Stmt.runForLoop model prim program loopCtx cond postBase post
+    Control.Stmt.runForLoop model prim program loopCtx cond postBase post
         bodyBase body (fuel + 1) source =
       .ok (Outcome.leave afterPost) := by
-  simp [Stmt.runForLoop, hCond, hBody, hPost, Outcome.regular,
+  simp [Control.Stmt.runForLoop, hCond, hBody, hPost, Outcome.regular,
     Locals.Source.Effectful.Outcome.regular, Outcome.leave,
     Locals.Source.Effectful.Outcome.leave]
 
@@ -2782,15 +2850,15 @@ theorem runForLoop_cont_post_leave_of_runs {σ : Type}
       Expr.evalCondition model prim cond source =
         .ok (afterCond, true))
     (hBody :
-      Block.runScoped model prim program bodyBase body fuel afterCond =
+      Control.Block.runScoped model prim program bodyBase body fuel afterCond =
         .ok (Outcome.cont afterBody))
     (hPost :
-      Block.runScoped model prim program postBase post fuel afterBody =
+      Control.Block.runScoped model prim program postBase post fuel afterBody =
         .ok (Outcome.leave afterPost)) :
-    Stmt.runForLoop model prim program loopCtx cond postBase post
+    Control.Stmt.runForLoop model prim program loopCtx cond postBase post
         bodyBase body (fuel + 1) source =
       .ok (Outcome.leave afterPost) := by
-  simp [Stmt.runForLoop, hCond, hBody, hPost, Outcome.cont,
+  simp [Control.Stmt.runForLoop, hCond, hBody, hPost, Outcome.cont,
     Locals.Source.Effectful.Outcome.cont, Outcome.leave,
     Locals.Source.Effectful.Outcome.leave]
 
@@ -2810,15 +2878,15 @@ theorem runForLoop_regular_post_halt_of_runs {σ : Type}
       Expr.evalCondition model prim cond source =
         .ok (afterCond, true))
     (hBody :
-      Block.runScoped model prim program bodyBase body fuel afterCond =
+      Control.Block.runScoped model prim program bodyBase body fuel afterCond =
         .ok (Outcome.regular afterBody))
     (hPost :
-      Block.runScoped model prim program postBase post fuel afterBody =
+      Control.Block.runScoped model prim program postBase post fuel afterBody =
         .ok (Outcome.halt kind afterPost)) :
-    Stmt.runForLoop model prim program loopCtx cond postBase post
+    Control.Stmt.runForLoop model prim program loopCtx cond postBase post
         bodyBase body (fuel + 1) source =
       .ok (Outcome.halt kind afterPost) := by
-  simp [Stmt.runForLoop, hCond, hBody, hPost, Outcome.regular,
+  simp [Control.Stmt.runForLoop, hCond, hBody, hPost, Outcome.regular,
     Locals.Source.Effectful.Outcome.regular, Outcome.halt,
     Locals.Source.Effectful.Outcome.halt]
 
@@ -2838,15 +2906,15 @@ theorem runForLoop_cont_post_halt_of_runs {σ : Type}
       Expr.evalCondition model prim cond source =
         .ok (afterCond, true))
     (hBody :
-      Block.runScoped model prim program bodyBase body fuel afterCond =
+      Control.Block.runScoped model prim program bodyBase body fuel afterCond =
         .ok (Outcome.cont afterBody))
     (hPost :
-      Block.runScoped model prim program postBase post fuel afterBody =
+      Control.Block.runScoped model prim program postBase post fuel afterBody =
         .ok (Outcome.halt kind afterPost)) :
-    Stmt.runForLoop model prim program loopCtx cond postBase post
+    Control.Stmt.runForLoop model prim program loopCtx cond postBase post
         bodyBase body (fuel + 1) source =
       .ok (Outcome.halt kind afterPost) := by
-  simp [Stmt.runForLoop, hCond, hBody, hPost, Outcome.cont,
+  simp [Control.Stmt.runForLoop, hCond, hBody, hPost, Outcome.cont,
     Locals.Source.Effectful.Outcome.cont, Outcome.halt,
     Locals.Source.Effectful.Outcome.halt]
 
@@ -2861,7 +2929,7 @@ theorem runForLoop_regular_or_exit {σ : Type}
     {postBase : Source.Ctx} {post : Functions.Block}
     {bodyBase : Source.Ctx} {body : Functions.Block} :
     ∀ {fuel : Nat} {source : σ} {outcome : Outcome σ},
-      Stmt.runForLoop model prim program loopCtx cond postBase post
+      Control.Stmt.runForLoop model prim program loopCtx cond postBase post
           bodyBase body fuel source =
         .ok outcome →
       outcome.mode = .regular ∨ outcome.IsExit := by
@@ -2869,10 +2937,10 @@ theorem runForLoop_regular_or_exit {σ : Type}
   induction fuel with
   | zero =>
       intro source outcome hRun
-      simp [Stmt.runForLoop, Source.invalid, Structured.invalid] at hRun
+      simp [Control.Stmt.runForLoop, Source.invalid, Structured.invalid] at hRun
   | succ fuel ih =>
       intro source outcome hRun
-      rw [Stmt.runForLoop] at hRun
+      rw [Control.Stmt.runForLoop] at hRun
       cases hCond : Expr.evalCondition model prim cond source with
       | error err =>
           simp [hCond] at hRun
@@ -2885,7 +2953,7 @@ theorem runForLoop_regular_or_exit {σ : Type}
               exact .inl rfl
           | true =>
               cases hBody :
-                  Block.runScoped model prim program bodyBase body fuel
+                  Control.Block.runScoped model prim program bodyBase body fuel
                     afterCond with
               | error err =>
                   simp [hCond, hBody] at hRun
@@ -2894,7 +2962,7 @@ theorem runForLoop_regular_or_exit {σ : Type}
                   cases bodyMode with
                   | regular =>
                       cases hPost :
-                          Block.runScoped model prim program postBase post
+                          Control.Block.runScoped model prim program postBase post
                             fuel afterBody with
                       | error err =>
                           simp [hCond, hBody, hPost] at hRun
@@ -2924,7 +2992,7 @@ theorem runForLoop_regular_or_exit {σ : Type}
                       exact .inl rfl
                   | cont =>
                       cases hPost :
-                          Block.runScoped model prim program postBase post
+                          Control.Block.runScoped model prim program postBase post
                             fuel afterBody with
                       | error err =>
                           simp [hCond, hBody, hPost] at hRun
@@ -2973,7 +3041,7 @@ theorem runForLoop_regular_cases {σ : Type}
     {bodyBase : Source.Ctx} {body : Functions.Block}
     {source final : σ}
     (hRun :
-      Stmt.runForLoop model prim program loopCtx cond postBase post
+      Control.Stmt.runForLoop model prim program loopCtx cond postBase post
           bodyBase body fuel source =
         .ok (Outcome.regular final)) :
     ∃ stepFuel, fuel = stepFuel + 1 ∧
@@ -2984,40 +3052,40 @@ theorem runForLoop_regular_cases {σ : Type}
         (∃ afterCond afterBody,
           Expr.evalCondition model prim cond source =
               .ok (afterCond, true) ∧
-            Block.runScoped model prim program bodyBase body stepFuel
+            Control.Block.runScoped model prim program bodyBase body stepFuel
                 afterCond =
               .ok (Outcome.brk afterBody) ∧
             final = afterBody) ∨
         (∃ afterCond afterBody afterPost,
           Expr.evalCondition model prim cond source =
               .ok (afterCond, true) ∧
-            Block.runScoped model prim program bodyBase body stepFuel
+            Control.Block.runScoped model prim program bodyBase body stepFuel
                 afterCond =
               .ok (Outcome.regular afterBody) ∧
-            Block.runScoped model prim program postBase post stepFuel
+            Control.Block.runScoped model prim program postBase post stepFuel
                 afterBody =
               .ok (Outcome.regular afterPost) ∧
-            Stmt.runForLoop model prim program loopCtx cond postBase post
+            Control.Stmt.runForLoop model prim program loopCtx cond postBase post
                 bodyBase body stepFuel afterPost =
               .ok (Outcome.regular final)) ∨
         (∃ afterCond afterBody afterPost,
           Expr.evalCondition model prim cond source =
               .ok (afterCond, true) ∧
-            Block.runScoped model prim program bodyBase body stepFuel
+            Control.Block.runScoped model prim program bodyBase body stepFuel
                 afterCond =
               .ok (Outcome.cont afterBody) ∧
-            Block.runScoped model prim program postBase post stepFuel
+            Control.Block.runScoped model prim program postBase post stepFuel
                 afterBody =
               .ok (Outcome.regular afterPost) ∧
-            Stmt.runForLoop model prim program loopCtx cond postBase post
+            Control.Stmt.runForLoop model prim program loopCtx cond postBase post
                 bodyBase body stepFuel afterPost =
               .ok (Outcome.regular final))) := by
   cases fuel with
   | zero =>
-      simp [Stmt.runForLoop, Source.invalid, Structured.invalid] at hRun
+      simp [Control.Stmt.runForLoop, Source.invalid, Structured.invalid] at hRun
   | succ stepFuel =>
       refine ⟨stepFuel, rfl, ?_⟩
-      rw [Stmt.runForLoop] at hRun
+      rw [Control.Stmt.runForLoop] at hRun
       cases hCond :
           Expr.evalCondition model prim cond source with
       | error err =>
@@ -3032,7 +3100,7 @@ theorem runForLoop_regular_cases {σ : Type}
                 Locals.Source.Effectful.Outcome.regular] using hRun.symm
           | true =>
               cases hBody :
-                  Block.runScoped model prim program bodyBase body stepFuel
+                  Control.Block.runScoped model prim program bodyBase body stepFuel
                     afterCond with
               | error err =>
                   simp [hCond, hBody] at hRun
@@ -3041,7 +3109,7 @@ theorem runForLoop_regular_cases {σ : Type}
                   cases bodyMode with
                   | regular =>
                       cases hPost :
-                          Block.runScoped model prim program postBase post
+                          Control.Block.runScoped model prim program postBase post
                             stepFuel afterBody with
                       | error err =>
                           simp [hCond, hBody, hPost] at hRun
@@ -3088,7 +3156,7 @@ theorem runForLoop_regular_cases {σ : Type}
                         Locals.Source.Effectful.Outcome.brk] using hRun.symm
                   | cont =>
                       cases hPost :
-                          Block.runScoped model prim program postBase post
+                          Control.Block.runScoped model prim program postBase post
                             stepFuel afterBody with
                       | error err =>
                           simp [hCond, hBody, hPost] at hRun
@@ -3155,64 +3223,64 @@ theorem runForLoop_exit_cases {σ : Type}
     {source : σ} {outcome : Outcome σ}
     (hExit : outcome.IsExit)
     (hRun :
-      Stmt.runForLoop model prim program loopCtx cond postBase post
+      Control.Stmt.runForLoop model prim program loopCtx cond postBase post
           bodyBase body fuel source =
         .ok outcome) :
     ∃ stepFuel, fuel = stepFuel + 1 ∧
       ((∃ afterCond,
           Expr.evalCondition model prim cond source =
               .ok (afterCond, true) ∧
-            Block.runScoped model prim program bodyBase body stepFuel
+            Control.Block.runScoped model prim program bodyBase body stepFuel
                 afterCond =
               .ok outcome) ∨
         (∃ afterCond afterBody,
           Expr.evalCondition model prim cond source =
               .ok (afterCond, true) ∧
-            Block.runScoped model prim program bodyBase body stepFuel
+            Control.Block.runScoped model prim program bodyBase body stepFuel
                 afterCond =
               .ok (Outcome.regular afterBody) ∧
-            Block.runScoped model prim program postBase post stepFuel
+            Control.Block.runScoped model prim program postBase post stepFuel
                 afterBody =
               .ok outcome) ∨
         (∃ afterCond afterBody,
           Expr.evalCondition model prim cond source =
               .ok (afterCond, true) ∧
-            Block.runScoped model prim program bodyBase body stepFuel
+            Control.Block.runScoped model prim program bodyBase body stepFuel
                 afterCond =
               .ok (Outcome.cont afterBody) ∧
-            Block.runScoped model prim program postBase post stepFuel
+            Control.Block.runScoped model prim program postBase post stepFuel
                 afterBody =
               .ok outcome) ∨
         (∃ afterCond afterBody afterPost,
           Expr.evalCondition model prim cond source =
               .ok (afterCond, true) ∧
-            Block.runScoped model prim program bodyBase body stepFuel
+            Control.Block.runScoped model prim program bodyBase body stepFuel
                 afterCond =
               .ok (Outcome.regular afterBody) ∧
-            Block.runScoped model prim program postBase post stepFuel
+            Control.Block.runScoped model prim program postBase post stepFuel
                 afterBody =
               .ok (Outcome.regular afterPost) ∧
-            Stmt.runForLoop model prim program loopCtx cond postBase post
+            Control.Stmt.runForLoop model prim program loopCtx cond postBase post
                 bodyBase body stepFuel afterPost =
               .ok outcome) ∨
         (∃ afterCond afterBody afterPost,
           Expr.evalCondition model prim cond source =
               .ok (afterCond, true) ∧
-            Block.runScoped model prim program bodyBase body stepFuel
+            Control.Block.runScoped model prim program bodyBase body stepFuel
                 afterCond =
               .ok (Outcome.cont afterBody) ∧
-            Block.runScoped model prim program postBase post stepFuel
+            Control.Block.runScoped model prim program postBase post stepFuel
                 afterBody =
               .ok (Outcome.regular afterPost) ∧
-            Stmt.runForLoop model prim program loopCtx cond postBase post
+            Control.Stmt.runForLoop model prim program loopCtx cond postBase post
                 bodyBase body stepFuel afterPost =
               .ok outcome)) := by
   cases fuel with
   | zero =>
-      simp [Stmt.runForLoop, Source.invalid, Structured.invalid] at hRun
+      simp [Control.Stmt.runForLoop, Source.invalid, Structured.invalid] at hRun
   | succ stepFuel =>
       refine ⟨stepFuel, rfl, ?_⟩
-      rw [Stmt.runForLoop] at hRun
+      rw [Control.Stmt.runForLoop] at hRun
       cases hCond :
           Expr.evalCondition model prim cond source with
       | error err =>
@@ -3227,7 +3295,7 @@ theorem runForLoop_exit_cases {σ : Type}
                 Locals.Source.Effectful.Outcome.regular] at hExit
           | true =>
               cases hBody :
-                  Block.runScoped model prim program bodyBase body stepFuel
+                  Control.Block.runScoped model prim program bodyBase body stepFuel
                     afterCond with
               | error err =>
                   simp [hCond, hBody] at hRun
@@ -3236,7 +3304,7 @@ theorem runForLoop_exit_cases {σ : Type}
                   cases bodyMode with
                   | regular =>
                       cases hPost :
-                          Block.runScoped model prim program postBase post
+                          Control.Block.runScoped model prim program postBase post
                             stepFuel afterBody with
                       | error err =>
                           simp [hCond, hBody, hPost] at hRun
@@ -3279,7 +3347,7 @@ theorem runForLoop_exit_cases {σ : Type}
                         Locals.Source.Effectful.Outcome.regular] at hExit
                   | cont =>
                       cases hPost :
-                          Block.runScoped model prim program postBase post
+                          Control.Block.runScoped model prim program postBase post
                             stepFuel afterBody with
                       | error err =>
                           simp [hCond, hBody, hPost] at hRun
@@ -3340,23 +3408,23 @@ theorem run_for_body_brk_of_runs {σ : Type}
     {post body : Functions.Block}
     {source afterInit afterCond afterBody : σ}
     (hInit :
-      Block.runOpen model prim program ctx.withoutLoopControl
+      Control.Block.runOpen model prim program ctx.withoutLoopControl
           (fuel + 1) init source =
         .ok (Outcome.regular afterInit, initCtx))
     (hCond :
       Expr.evalCondition model prim cond afterInit =
         .ok (afterCond, true))
     (hBody :
-      Block.runScoped model prim program
+      Control.Block.runScoped model prim program
           (initCtx.withLoopControl initCtx.scope initCtx.scope)
           body fuel afterCond =
         .ok (Outcome.brk afterBody)) :
-    Stmt.run model prim program ctx (fuel + 2)
+    Control.Stmt.run model prim program ctx (fuel + 2)
         (.for_ init cond post body) source =
       .ok
         (Outcome.regular (model.restrictTo ctx.scope afterBody),
           ctx) := by
-  simp [Stmt.run, hInit, Stmt.runForLoop, hCond, hBody,
+  simp [Control.Stmt.run, hInit, Control.Stmt.runForLoop, hCond, hBody,
     Outcome.regular, Locals.Source.Effectful.Outcome.regular,
     Outcome.brk, Locals.Source.Effectful.Outcome.brk]
 
@@ -3372,21 +3440,21 @@ theorem run_for_regular_of_runs {σ : Type}
     {post body : Functions.Block}
     {source afterInit final : σ}
     (hInit :
-      Block.runOpen model prim program ctx.withoutLoopControl
+      Control.Block.runOpen model prim program ctx.withoutLoopControl
           fuel init source =
         .ok (Outcome.regular afterInit, initCtx))
     (hLoop :
-      Stmt.runForLoop model prim program initCtx cond
+      Control.Stmt.runForLoop model prim program initCtx cond
           initCtx.withoutLoopControl post
           (initCtx.withLoopControl initCtx.scope initCtx.scope)
           body fuel afterInit =
         .ok (Outcome.regular final)) :
-    Stmt.run model prim program ctx (fuel + 1)
+    Control.Stmt.run model prim program ctx (fuel + 1)
         (.for_ init cond post body) source =
       .ok
         (Outcome.regular (model.restrictTo ctx.scope final),
           ctx) := by
-  simp [Stmt.run, hInit, hLoop, Outcome.regular,
+  simp [Control.Stmt.run, hInit, hLoop, Outcome.regular,
     Locals.Source.Effectful.Outcome.regular]
 
 /--
@@ -3401,19 +3469,19 @@ theorem run_for_leave_of_runs {σ : Type}
     {post body : Functions.Block}
     {source afterInit final : σ}
     (hInit :
-      Block.runOpen model prim program ctx.withoutLoopControl
+      Control.Block.runOpen model prim program ctx.withoutLoopControl
           fuel init source =
         .ok (Outcome.regular afterInit, initCtx))
     (hLoop :
-      Stmt.runForLoop model prim program initCtx cond
+      Control.Stmt.runForLoop model prim program initCtx cond
           initCtx.withoutLoopControl post
           (initCtx.withLoopControl initCtx.scope initCtx.scope)
           body fuel afterInit =
         .ok (Outcome.leave final)) :
-    Stmt.run model prim program ctx (fuel + 1)
+    Control.Stmt.run model prim program ctx (fuel + 1)
         (.for_ init cond post body) source =
       .ok (Outcome.leave final, ctx) := by
-  simp [Stmt.run, hInit, hLoop, Outcome.regular,
+  simp [Control.Stmt.run, hInit, hLoop, Outcome.regular,
     Locals.Source.Effectful.Outcome.regular, Outcome.leave,
     Locals.Source.Effectful.Outcome.leave]
 
@@ -3430,19 +3498,19 @@ theorem run_for_halt_of_runs {σ : Type}
     {source afterInit final : σ}
     {kind : Assembly.HaltKind}
     (hInit :
-      Block.runOpen model prim program ctx.withoutLoopControl
+      Control.Block.runOpen model prim program ctx.withoutLoopControl
           fuel init source =
         .ok (Outcome.regular afterInit, initCtx))
     (hLoop :
-      Stmt.runForLoop model prim program initCtx cond
+      Control.Stmt.runForLoop model prim program initCtx cond
           initCtx.withoutLoopControl post
           (initCtx.withLoopControl initCtx.scope initCtx.scope)
           body fuel afterInit =
         .ok (Outcome.halt kind final)) :
-    Stmt.run model prim program ctx (fuel + 1)
+    Control.Stmt.run model prim program ctx (fuel + 1)
         (.for_ init cond post body) source =
       .ok (Outcome.halt kind final, ctx) := by
-  simp [Stmt.run, hInit, hLoop, Outcome.regular,
+  simp [Control.Stmt.run, hInit, hLoop, Outcome.regular,
     Locals.Source.Effectful.Outcome.regular, Outcome.halt,
     Locals.Source.Effectful.Outcome.halt]
 
@@ -3459,16 +3527,16 @@ theorem run_for_exit_of_runs {σ : Type}
     {source afterInit : σ} {outcome : Outcome σ}
     (hExit : outcome.IsExit)
     (hInit :
-      Block.runOpen model prim program ctx.withoutLoopControl
+      Control.Block.runOpen model prim program ctx.withoutLoopControl
           fuel init source =
         .ok (Outcome.regular afterInit, initCtx))
     (hLoop :
-      Stmt.runForLoop model prim program initCtx cond
+      Control.Stmt.runForLoop model prim program initCtx cond
           initCtx.withoutLoopControl post
           (initCtx.withLoopControl initCtx.scope initCtx.scope)
           body fuel afterInit =
         .ok outcome) :
-    Stmt.run model prim program ctx (fuel + 1)
+    Control.Stmt.run model prim program ctx (fuel + 1)
         (.for_ init cond post body) source =
       .ok (outcome, ctx) := by
   rcases outcome with ⟨final, outcomeMode⟩
@@ -3499,10 +3567,10 @@ theorem run_for_init_exit_of_runOpen {σ : Type}
     {source : σ} {outcome : Outcome σ}
     (hExit : outcome.IsExit)
     (hInit :
-      Block.runOpen model prim program ctx.withoutLoopControl
+      Control.Block.runOpen model prim program ctx.withoutLoopControl
           fuel init source =
         .ok (outcome, initCtx)) :
-    Stmt.run model prim program ctx (fuel + 1)
+    Control.Stmt.run model prim program ctx (fuel + 1)
         (.for_ init cond post body) source =
       .ok (outcome, ctx) := by
   rcases outcome with ⟨final, outcomeMode⟩
@@ -3517,10 +3585,10 @@ theorem run_for_init_exit_of_runOpen {σ : Type}
       simp [Outcome.IsExit, Outcome.cont,
         Locals.Source.Effectful.Outcome.cont] at hExit
   | leave =>
-      rw [Stmt.run, hInit]
+      rw [Control.Stmt.run, hInit]
       rfl
   | halt kind =>
-      rw [Stmt.run, hInit]
+      rw [Control.Stmt.run, hInit]
       rfl
 
 /--
@@ -3535,10 +3603,10 @@ theorem run_if_false_of_eval {σ : Type}
     (hCond :
       Expr.evalCondition model prim cond source =
         .ok (afterCond, false)) :
-    Stmt.run model prim program ctx (fuel + 1)
+    Control.Stmt.run model prim program ctx (fuel + 1)
         (.if_ cond body) source =
       .ok (Outcome.regular afterCond, ctx) := by
-  simp [Stmt.run, hCond, Outcome.regular,
+  simp [Control.Stmt.run, hCond, Outcome.regular,
     Locals.Source.Effectful.Outcome.regular]
 
 /--
@@ -3554,12 +3622,12 @@ theorem run_if_true_of_eval {σ : Type}
       Expr.evalCondition model prim cond source =
         .ok (afterCond, true))
     (hBody :
-      Block.runScoped model prim program ctx body fuel afterCond =
+      Control.Block.runScoped model prim program ctx body fuel afterCond =
         .ok outcome) :
-    Stmt.run model prim program ctx (fuel + 1)
+    Control.Stmt.run model prim program ctx (fuel + 1)
         (.if_ cond body) source =
       .ok (outcome, ctx) := by
-  simp [Stmt.run, hCond, hBody]
+  simp [Control.Stmt.run, hCond, hBody]
 
 /--
 Invert a successful canonical source `if` at its exact smaller body fuel.
@@ -3571,7 +3639,7 @@ theorem run_if_cases {σ : Type}
     {cond : Functions.Expr 1} {body : Functions.Block}
     {source : σ} {outcome : Outcome σ}
     (hRun :
-      Stmt.run model prim program ctx (fuel + 1)
+      Control.Stmt.run model prim program ctx (fuel + 1)
           (.if_ cond body) source =
         .ok (outcome, finalCtx)) :
     (∃ afterCond,
@@ -3582,11 +3650,11 @@ theorem run_if_cases {σ : Type}
       (∃ afterCond bodyOutcome,
         Expr.evalCondition model prim cond source =
           .ok (afterCond, true) ∧
-        Block.runScoped model prim program ctx body fuel afterCond =
+        Control.Block.runScoped model prim program ctx body fuel afterCond =
           .ok bodyOutcome ∧
         outcome = bodyOutcome ∧
         finalCtx = ctx) := by
-  unfold Stmt.run at hRun
+  unfold Control.Stmt.run at hRun
   cases hCond : Expr.evalCondition model prim cond source with
   | error err =>
       simp [hCond] at hRun
@@ -3603,7 +3671,7 @@ theorem run_if_cases {σ : Type}
       | true =>
           simp only [hCond, ↓reduceIte] at hRun
           cases hBody :
-              Block.runScoped model prim program ctx body fuel afterCond with
+              Control.Block.runScoped model prim program ctx body fuel afterCond with
           | error err =>
               simp [hBody] at hRun
           | ok bodyOutcome =>
@@ -3630,10 +3698,10 @@ theorem run_switch_none_of_eval {σ : Type}
         .ok (afterScrutinee, value))
     (hSelect :
       Source.Switch.select value cases defaultBody = none) :
-    Stmt.run model prim program ctx (fuel + 1)
+    Control.Stmt.run model prim program ctx (fuel + 1)
         (.switch scrutinee cases defaultBody) source =
       .ok (Outcome.regular afterScrutinee, ctx) := by
-  simp [Stmt.run, hScrutinee, hSelect]
+  simp [Control.Stmt.run, hScrutinee, hSelect]
 
 /--
 Canonical source `switch` execution when a case or default body is selected.
@@ -3654,13 +3722,13 @@ theorem run_switch_some_of_eval {σ : Type}
     (hSelect :
       Source.Switch.select value cases defaultBody = some selected)
     (hBody :
-      Block.runScoped model prim program ctx selected fuel
+      Control.Block.runScoped model prim program ctx selected fuel
           afterScrutinee =
         .ok outcome) :
-    Stmt.run model prim program ctx (fuel + 1)
+    Control.Stmt.run model prim program ctx (fuel + 1)
         (.switch scrutinee cases defaultBody) source =
       .ok (outcome, ctx) := by
-  simp [Stmt.run, hScrutinee, hSelect, hBody]
+  simp [Control.Stmt.run, hScrutinee, hSelect, hBody]
 
 /--
 Invert a successful canonical source `switch` at the exact selected-body fuel.
@@ -3674,7 +3742,7 @@ theorem run_switch_cases {σ : Type}
     {defaultBody : Option Functions.Block}
     {source : σ} {outcome : Outcome σ}
     (hRun :
-      Stmt.run model prim program ctx (fuel + 1)
+      Control.Stmt.run model prim program ctx (fuel + 1)
           (.switch scrutinee cases defaultBody) source =
         .ok (outcome, finalCtx)) :
     (∃ afterScrutinee value,
@@ -3687,12 +3755,12 @@ theorem run_switch_cases {σ : Type}
         Expr.evalOne model prim scrutinee source =
           .ok (afterScrutinee, value) ∧
         Source.Switch.select value cases defaultBody = some selected ∧
-        Block.runScoped model prim program ctx selected fuel
+        Control.Block.runScoped model prim program ctx selected fuel
             afterScrutinee =
           .ok bodyOutcome ∧
         outcome = bodyOutcome ∧
         finalCtx = ctx) := by
-  unfold Stmt.run at hRun
+  unfold Control.Stmt.run at hRun
   cases hScrutinee : Expr.evalOne model prim scrutinee source with
   | error err =>
       simp [hScrutinee] at hRun
@@ -3710,7 +3778,7 @@ theorem run_switch_cases {σ : Type}
       | some selected =>
           simp only [hSelect] at hRun
           cases hBody :
-              Block.runScoped model prim program ctx selected fuel
+              Control.Block.runScoped model prim program ctx selected fuel
                 afterScrutinee with
           | error err =>
               simp [hBody] at hRun
@@ -3740,14 +3808,14 @@ theorem run_for_cases {σ : Type}
     {post body : Functions.Block}
     {source : σ} {outcome : Outcome σ}
     (hRun :
-      Stmt.run model prim program ctx (fuel + 1)
+      Control.Stmt.run model prim program ctx (fuel + 1)
           (.for_ init cond post body) source =
         .ok (outcome, finalCtx)) :
     (∃ afterInit initCtx loopFinal,
-        Block.runOpen model prim program ctx.withoutLoopControl
+        Control.Block.runOpen model prim program ctx.withoutLoopControl
             fuel init source =
           .ok (Outcome.regular afterInit, initCtx) ∧
-        Stmt.runForLoop model prim program initCtx cond
+        Control.Stmt.runForLoop model prim program initCtx cond
             initCtx.withoutLoopControl post
             (initCtx.withLoopControl initCtx.scope initCtx.scope)
             body fuel afterInit =
@@ -3756,10 +3824,10 @@ theorem run_for_cases {σ : Type}
           Outcome.regular (model.restrictTo ctx.scope loopFinal) ∧
         finalCtx = ctx) ∨
       (∃ afterInit initCtx,
-        Block.runOpen model prim program ctx.withoutLoopControl
+        Control.Block.runOpen model prim program ctx.withoutLoopControl
             fuel init source =
           .ok (Outcome.regular afterInit, initCtx) ∧
-        Stmt.runForLoop model prim program initCtx cond
+        Control.Stmt.runForLoop model prim program initCtx cond
             initCtx.withoutLoopControl post
             (initCtx.withLoopControl initCtx.scope initCtx.scope)
             body fuel afterInit =
@@ -3767,14 +3835,14 @@ theorem run_for_cases {σ : Type}
         outcome.IsExit ∧
         finalCtx = ctx) ∨
       (∃ initCtx,
-        Block.runOpen model prim program ctx.withoutLoopControl
+        Control.Block.runOpen model prim program ctx.withoutLoopControl
             fuel init source =
           .ok (outcome, initCtx) ∧
         outcome.IsExit ∧
         finalCtx = ctx) := by
-  unfold Stmt.run at hRun
+  unfold Control.Stmt.run at hRun
   cases hInit :
-      Block.runOpen model prim program ctx.withoutLoopControl
+      Control.Block.runOpen model prim program ctx.withoutLoopControl
         fuel init source with
   | error err =>
       simp [hInit] at hRun
@@ -3784,7 +3852,7 @@ theorem run_for_cases {σ : Type}
       cases initMode with
       | regular =>
           cases hLoop :
-              Stmt.runForLoop model prim program initCtx cond
+              Control.Stmt.runForLoop model prim program initCtx cond
                 initCtx.withoutLoopControl post
                 (initCtx.withLoopControl initCtx.scope initCtx.scope)
                 body fuel afterInit with
@@ -3912,15 +3980,15 @@ mutual
       ∀ {fuel fuel' : Nat} {ctx : Source.Ctx} {block : Block}
         {state : σ} {outcome : Outcome σ} {runCtx : Source.Ctx},
         fuel ≤ fuel' →
-        Block.runOpen model prim program ctx fuel block state =
+        Control.Block.runOpen model prim program ctx fuel block state =
           .ok (outcome, runCtx) →
-        Block.runOpen model prim program ctx fuel' block state =
+        Control.Block.runOpen model prim program ctx fuel' block state =
           .ok (outcome, runCtx) := by
     intro fuel fuel' ctx block state outcome runCtx hLe hRun
     cases fuel with
     | zero =>
         cases block
-        simp [Block.runOpen, Source.invalid, Structured.invalid] at hRun
+        simp [Control.Block.runOpen, Source.invalid, Structured.invalid] at hRun
     | succ fuel =>
         cases fuel' with
         | zero =>
@@ -3931,39 +3999,39 @@ mutual
             | mk stmts =>
                 cases stmts with
                 | nil =>
-                    simpa [Block.runOpen] using hRun
+                    simpa [Control.Block.runOpen] using hRun
                 | cons stmt rest =>
                     cases hStmt :
-                        Stmt.run model prim program ctx fuel stmt state with
+                        Control.Stmt.run model prim program ctx fuel stmt state with
                     | error err =>
-                        simp [Block.runOpen, hStmt] at hRun
+                        simp [Control.Block.runOpen, hStmt] at hRun
                     | ok stmtResult =>
                         rcases stmtResult with ⟨stmtOutcome, stmtCtx⟩
                         have hStmt' :
-                            Stmt.run model prim program ctx fuel' stmt state =
+                            Control.Stmt.run model prim program ctx fuel' stmt state =
                               .ok (stmtOutcome, stmtCtx) :=
                           Stmt.run_mono model prim program hFuelLe hStmt
                         cases hMode : stmtOutcome.mode with
                         | regular =>
-                            simp [Block.runOpen, hStmt, hStmt', hMode]
+                            simp [Control.Block.runOpen, hStmt, hStmt', hMode]
                               at hRun ⊢
                             exact
                               Block.runOpen_mono model prim program
                                 hFuelLe hRun
                         | brk =>
-                            simp [Block.runOpen, hStmt, hStmt', hMode]
+                            simp [Control.Block.runOpen, hStmt, hStmt', hMode]
                               at hRun ⊢
                             exact hRun
                         | cont =>
-                            simp [Block.runOpen, hStmt, hStmt', hMode]
+                            simp [Control.Block.runOpen, hStmt, hStmt', hMode]
                               at hRun ⊢
                             exact hRun
                         | leave =>
-                            simp [Block.runOpen, hStmt, hStmt', hMode]
+                            simp [Control.Block.runOpen, hStmt, hStmt', hMode]
                               at hRun ⊢
                             exact hRun
                         | halt kind =>
-                            simp [Block.runOpen, hStmt, hStmt', hMode]
+                            simp [Control.Block.runOpen, hStmt, hStmt', hMode]
                               at hRun ⊢
                             exact hRun
   termination_by
@@ -3979,20 +4047,20 @@ mutual
       ∀ {fuel fuel' : Nat} {ctx : Source.Ctx} {block : Block}
         {state : σ} {outcome : Outcome σ},
         fuel ≤ fuel' →
-        Block.runScoped model prim program ctx block fuel state =
+        Control.Block.runScoped model prim program ctx block fuel state =
           .ok outcome →
-        Block.runScoped model prim program ctx block fuel' state =
+        Control.Block.runScoped model prim program ctx block fuel' state =
           .ok outcome := by
     intro fuel fuel' ctx block state outcome hLe hRun
-    unfold Block.runScoped at hRun ⊢
+    unfold Control.Block.runScoped at hRun ⊢
     cases hOpen :
-        Block.runOpen model prim program ctx fuel block state with
+        Control.Block.runOpen model prim program ctx fuel block state with
     | error err =>
         simp [hOpen] at hRun
     | ok openResult =>
         rcases openResult with ⟨openOutcome, finalCtx⟩
         have hOpen' :
-            Block.runOpen model prim program ctx fuel' block state =
+            Control.Block.runOpen model prim program ctx fuel' block state =
               .ok (openOutcome, finalCtx) :=
           Block.runOpen_mono model prim program hLe hOpen
         cases hMode : openOutcome.mode with
@@ -4028,12 +4096,12 @@ mutual
       ∀ {fuel fuel' : Nat} {fn : FunDef} {args : List Word}
         {state : σ} {result : CallResult σ},
         fuel ≤ fuel' →
-        FunDef.runBody model prim program fn args fuel state = .ok result →
-        FunDef.runBody model prim program fn args fuel' state = .ok result := by
+        Control.FunDef.runBody model prim program fn args fuel state = .ok result →
+        Control.FunDef.runBody model prim program fn args fuel' state = .ok result := by
     intro fuel fuel' fn args state result hLe hRun
     cases fuel with
     | zero =>
-        simp [FunDef.runBody, Source.invalid, Structured.invalid] at hRun
+        simp [Control.FunDef.runBody, Source.invalid, Structured.invalid] at hRun
     | succ fuel =>
         cases fuel' with
         | zero =>
@@ -4044,7 +4112,7 @@ mutual
                 Source.Store.insertMany fn.params args
                   Locals.Source.Store.empty with
             | none =>
-                simp [FunDef.runBody, hParams, Source.invalid,
+                simp [Control.FunDef.runBody, hParams, Source.invalid,
                   Structured.invalid] at hRun
             | some paramStore =>
                 let initialStore :=
@@ -4058,44 +4126,44 @@ mutual
                   { Source.Ctx.initial.withLeaveScope functionScope with
                     scope := functionScope }
                 cases hBody :
-                    Block.runOpen model prim program bodyCtx fuel fn.body
+                    Control.Block.runOpen model prim program bodyCtx fuel fn.body
                       initialState with
                 | error err =>
-                    simp [FunDef.runBody, hParams, initialStore,
+                    simp [Control.FunDef.runBody, hParams, initialStore,
                       callerSource, initialSource, initialState,
                       functionScope, bodyCtx, hBody] at hRun
                 | ok bodyResult =>
                     rcases bodyResult with ⟨bodyOutcome, bodyFinalCtx⟩
                     have hBody' :
-                        Block.runOpen model prim program bodyCtx fuel' fn.body
+                        Control.Block.runOpen model prim program bodyCtx fuel' fn.body
                             initialState =
                           .ok (bodyOutcome, bodyFinalCtx) :=
                       Block.runOpen_mono model prim program hFuelLe hBody
                     cases hMode : bodyOutcome.mode with
                     | regular =>
-                        simp [FunDef.runBody, hParams, initialStore,
+                        simp [Control.FunDef.runBody, hParams, initialStore,
                           callerSource, initialSource, initialState,
                           functionScope, bodyCtx, hBody, hBody', hMode]
                           at hRun ⊢
                         exact hRun
                     | brk =>
-                        simp [FunDef.runBody, hParams, initialStore,
+                        simp [Control.FunDef.runBody, hParams, initialStore,
                           callerSource, initialSource, initialState,
                           functionScope, bodyCtx, hBody, hBody', hMode,
                           Source.invalid, Structured.invalid] at hRun
                     | cont =>
-                        simp [FunDef.runBody, hParams, initialStore,
+                        simp [Control.FunDef.runBody, hParams, initialStore,
                           callerSource, initialSource, initialState,
                           functionScope, bodyCtx, hBody, hBody', hMode,
                           Source.invalid, Structured.invalid] at hRun
                     | leave =>
-                        simp [FunDef.runBody, hParams, initialStore,
+                        simp [Control.FunDef.runBody, hParams, initialStore,
                           callerSource, initialSource, initialState,
                           functionScope, bodyCtx, hBody, hBody', hMode]
                           at hRun ⊢
                         exact hRun
                     | halt kind =>
-                        simp [FunDef.runBody, hParams, initialStore,
+                        simp [Control.FunDef.runBody, hParams, initialStore,
                           callerSource, initialSource, initialState,
                           functionScope, bodyCtx, hBody, hBody', hMode]
                           at hRun ⊢
@@ -4115,22 +4183,22 @@ mutual
         {bodyBase : Source.Ctx} {body : Block} {state : σ}
         {outcome : Outcome σ},
         fuel ≤ fuel' →
-        Stmt.runForLoop model prim program loopCtx cond postBase post
+        Control.Stmt.runForLoop model prim program loopCtx cond postBase post
           bodyBase body fuel state = .ok outcome →
-        Stmt.runForLoop model prim program loopCtx cond postBase post
+        Control.Stmt.runForLoop model prim program loopCtx cond postBase post
           bodyBase body fuel' state = .ok outcome := by
     intro fuel fuel' loopCtx cond postBase post bodyBase body state outcome
       hLe hRun
     cases fuel with
     | zero =>
-        simp [Stmt.runForLoop, Source.invalid, Structured.invalid] at hRun
+        simp [Control.Stmt.runForLoop, Source.invalid, Structured.invalid] at hRun
     | succ fuel =>
         cases fuel' with
         | zero =>
             omega
         | succ fuel' =>
             have hFuelLe : fuel ≤ fuel' := Nat.succ_le_succ_iff.mp hLe
-            unfold Stmt.runForLoop at hRun ⊢
+            unfold Control.Stmt.runForLoop at hRun ⊢
             cases hCond : Expr.evalCondition model prim cond state with
             | error err =>
                 simp [hCond] at hRun ⊢
@@ -4143,13 +4211,13 @@ mutual
                 | true =>
                     simp [hCond] at hRun ⊢
                     cases hBody :
-                        Block.runScoped model prim program bodyBase body fuel
+                        Control.Block.runScoped model prim program bodyBase body fuel
                           stateAfterCond with
                     | error err =>
                         simp [hBody] at hRun
                     | ok bodyOutcome =>
                         have hBody' :
-                            Block.runScoped model prim program bodyBase body
+                            Control.Block.runScoped model prim program bodyBase body
                               fuel' stateAfterCond = .ok bodyOutcome :=
                           Block.runScoped_mono model prim program
                             hFuelLe hBody
@@ -4160,13 +4228,13 @@ mutual
                         | regular =>
                             simp [hBody, hBody', hBodyMode] at hRun ⊢
                             cases hPost :
-                                Block.runScoped model prim program postBase
+                                Control.Block.runScoped model prim program postBase
                                   post fuel bodyOutcome.state with
                             | error err =>
                                 simp [hPost] at hRun
                             | ok postOutcome =>
                                 have hPost' :
-                                    Block.runScoped model prim program
+                                    Control.Block.runScoped model prim program
                                         postBase post fuel'
                                         bodyOutcome.state =
                                       .ok postOutcome :=
@@ -4180,10 +4248,8 @@ mutual
                                         hFuelLe hRun
                                 | brk =>
                                     simp [hPost, hPost', hPostMode] at hRun ⊢
-                                    exact hRun
                                 | cont =>
                                     simp [hPost, hPost', hPostMode] at hRun ⊢
-                                    exact hRun
                                 | leave =>
                                     simp [hPost, hPost', hPostMode] at hRun ⊢
                                     exact hRun
@@ -4193,13 +4259,13 @@ mutual
                         | cont =>
                             simp [hBody, hBody', hBodyMode] at hRun ⊢
                             cases hPost :
-                                Block.runScoped model prim program postBase
+                                Control.Block.runScoped model prim program postBase
                                   post fuel bodyOutcome.state with
                             | error err =>
                                 simp [hPost] at hRun
                             | ok postOutcome =>
                                 have hPost' :
-                                    Block.runScoped model prim program
+                                    Control.Block.runScoped model prim program
                                         postBase post fuel'
                                         bodyOutcome.state =
                                       .ok postOutcome :=
@@ -4213,10 +4279,8 @@ mutual
                                         hFuelLe hRun
                                 | brk =>
                                     simp [hPost, hPost', hPostMode] at hRun ⊢
-                                    exact hRun
                                 | cont =>
                                     simp [hPost, hPost', hPostMode] at hRun ⊢
-                                    exact hRun
                                 | leave =>
                                     simp [hPost, hPost', hPostMode] at hRun ⊢
                                     exact hRun
@@ -4242,27 +4306,27 @@ mutual
       ∀ {fuel fuel' : Nat} {ctx : Source.Ctx} {stmt : Stmt} {state : σ}
         {outcome : Outcome σ} {runCtx : Source.Ctx},
         fuel ≤ fuel' →
-        Stmt.run model prim program ctx fuel stmt state =
+        Control.Stmt.run model prim program ctx fuel stmt state =
           .ok (outcome, runCtx) →
-        Stmt.run model prim program ctx fuel' stmt state =
+        Control.Stmt.run model prim program ctx fuel' stmt state =
           .ok (outcome, runCtx) := by
     intro fuel fuel' ctx stmt state outcome runCtx hLe hRun
     cases stmt with
     | expr expr =>
-        simpa [Stmt.run] using hRun
+        simpa [Control.Stmt.run] using hRun
     | let_ name value =>
-        simpa [Stmt.run] using hRun
+        simpa [Control.Stmt.run] using hRun
     | assign name value =>
-        simpa [Stmt.run] using hRun
+        simpa [Control.Stmt.run] using hRun
     | block body =>
-        unfold Stmt.run at hRun ⊢
+        unfold Control.Stmt.run at hRun ⊢
         cases hBody :
-            Block.runScoped model prim program ctx body fuel state with
+            Control.Block.runScoped model prim program ctx body fuel state with
         | error err =>
             simp [hBody] at hRun
         | ok bodyOutcome =>
             have hBody' :
-                Block.runScoped model prim program ctx body fuel' state =
+                Control.Block.runScoped model prim program ctx body fuel' state =
                   .ok bodyOutcome :=
               Block.runScoped_mono model prim program hLe hBody
             simp [hBody, hBody'] at hRun ⊢
@@ -4270,14 +4334,14 @@ mutual
     | if_ cond body =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+            simp [Control.Stmt.run, Source.invalid, Structured.invalid] at hRun
         | succ fuel =>
             cases fuel' with
             | zero =>
                 omega
             | succ fuel' =>
                 have hFuelLe : fuel ≤ fuel' := Nat.succ_le_succ_iff.mp hLe
-                unfold Stmt.run at hRun ⊢
+                unfold Control.Stmt.run at hRun ⊢
                 cases hCond :
                     Expr.evalCondition model prim cond state with
                 | error err =>
@@ -4291,13 +4355,13 @@ mutual
                     | true =>
                         simp [hCond] at hRun ⊢
                         cases hBody :
-                            Block.runScoped model prim program ctx body fuel
+                            Control.Block.runScoped model prim program ctx body fuel
                               stateAfterCond with
                         | error err =>
                             simp [hBody] at hRun
                         | ok bodyOutcome =>
                             have hBody' :
-                                Block.runScoped model prim program ctx body
+                                Control.Block.runScoped model prim program ctx body
                                     fuel' stateAfterCond =
                                   .ok bodyOutcome :=
                               Block.runScoped_mono model prim program
@@ -4307,14 +4371,14 @@ mutual
     | switch scrutinee cases defaultBody =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+            simp [Control.Stmt.run, Source.invalid, Structured.invalid] at hRun
         | succ fuel =>
             cases fuel' with
             | zero =>
                 omega
             | succ fuel' =>
                 have hFuelLe : fuel ≤ fuel' := Nat.succ_le_succ_iff.mp hLe
-                unfold Stmt.run at hRun ⊢
+                unfold Control.Stmt.run at hRun ⊢
                 cases hScrutinee :
                     Expr.evalOne model prim scrutinee state with
                 | error err =>
@@ -4329,13 +4393,13 @@ mutual
                     | some selected =>
                         simp [hScrutinee, hSelected] at hRun ⊢
                         cases hBody :
-                            Block.runScoped model prim program ctx selected
+                            Control.Block.runScoped model prim program ctx selected
                               fuel stateAfterScrutinee with
                         | error err =>
                             simpa [hBody] using hRun
                         | ok bodyOutcome =>
                             have hBody' :
-                                Block.runScoped model prim program ctx selected
+                                Control.Block.runScoped model prim program ctx selected
                                     fuel' stateAfterScrutinee =
                                   .ok bodyOutcome :=
                               Block.runScoped_mono model prim program
@@ -4344,24 +4408,24 @@ mutual
     | for_ init cond post body =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+            simp [Control.Stmt.run, Source.invalid, Structured.invalid] at hRun
         | succ fuel =>
             cases fuel' with
             | zero =>
                 omega
             | succ fuel' =>
                 have hFuelLe : fuel ≤ fuel' := Nat.succ_le_succ_iff.mp hLe
-                unfold Stmt.run at hRun ⊢
+                unfold Control.Stmt.run at hRun ⊢
                 let initBase := ctx.withoutLoopControl
                 cases hInit :
-                    Block.runOpen model prim program initBase fuel init state
+                    Control.Block.runOpen model prim program initBase fuel init state
                 with
                 | error err =>
                     simp [initBase, hInit] at hRun
                 | ok initResult =>
                     rcases initResult with ⟨initOutcome, initCtx⟩
                     have hInit' :
-                        Block.runOpen model prim program initBase fuel' init
+                        Control.Block.runOpen model prim program initBase fuel' init
                             state =
                           .ok (initOutcome, initCtx) :=
                       Block.runOpen_mono model prim program hFuelLe hInit
@@ -4373,14 +4437,14 @@ mutual
                         let bodyBase :=
                           initCtx.withLoopControl initCtx.scope initCtx.scope
                         cases hLoop :
-                            Stmt.runForLoop model prim program loopCtx cond
+                            Control.Stmt.runForLoop model prim program loopCtx cond
                               postBase post bodyBase body fuel
                               initOutcome.state with
                         | error err =>
                             simp [loopCtx, postBase, bodyBase, hLoop] at hRun
                         | ok loopOutcome =>
                             have hLoop' :
-                                Stmt.runForLoop model prim program loopCtx cond
+                                Control.Stmt.runForLoop model prim program loopCtx cond
                                     postBase post bodyBase body fuel'
                                     initOutcome.state =
                                   .ok loopOutcome :=
@@ -4420,26 +4484,26 @@ mutual
                         simp [initBase, hInit, hInit', hInitMode] at hRun ⊢
                         exact hRun
     | brk =>
-        simpa [Stmt.run] using hRun
+        simpa [Control.Stmt.run] using hRun
     | cont =>
-        simpa [Stmt.run] using hRun
+        simpa [Control.Stmt.run] using hRun
     | leave =>
-        simpa [Stmt.run] using hRun
+        simpa [Control.Stmt.run] using hRun
     | call targets functionName args =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+            simp [Control.Stmt.run, Source.invalid, Structured.invalid] at hRun
         | succ fuel =>
             cases fuel' with
             | zero =>
                 omega
             | succ fuel' =>
                 have hFuelLe : fuel ≤ fuel' := Nat.succ_le_succ_iff.mp hLe
-                unfold Stmt.run at hRun ⊢
+                unfold Control.Stmt.run at hRun ⊢
                 by_cases hTargets : targets.Nodup
                 · simp [hTargets] at hRun ⊢
                   cases hArgs :
-                      ArgList.eval model prim args state with
+                      ArgList.Control.eval model prim args state with
                   | error err =>
                       simp [hArgs] at hRun ⊢
                   | ok argResult =>
@@ -4452,13 +4516,13 @@ mutual
                             Structured.invalid] at hRun
                       | some fn =>
                           cases hBody :
-                              FunDef.runBody model prim program fn argValues
+                              Control.FunDef.runBody model prim program fn argValues
                                 fuel stateAfterArgs with
                           | error err =>
                               simp [hArgs, hLookup, hBody] at hRun
                           | ok callResult =>
                               have hBody' :
-                                  FunDef.runBody model prim program fn
+                                  Control.FunDef.runBody model prim program fn
                                       argValues fuel' stateAfterArgs =
                                     .ok callResult :=
                                 FunDef.runBody_mono model prim program
@@ -4474,9 +4538,9 @@ mutual
                                   exact hRun
                 · simp [hTargets, Source.invalid, Structured.invalid] at hRun
     | terminal kind =>
-        simpa [Stmt.run] using hRun
+        simpa [Control.Stmt.run] using hRun
     | terminalArgs kind args =>
-        simpa [Stmt.run] using hRun
+        simpa [Control.Stmt.run] using hRun
   termination_by
     fuel _fuel' _ctx stmt _state _outcome _runCtx _hLe _hRun =>
       (fuel, 4, sizeOf stmt)
@@ -4501,19 +4565,19 @@ theorem Stmt.run_success_unique {σ : Type}
     {stmt : Stmt} {source : σ}
     {leftOutcome rightOutcome : Outcome σ}
     (hLeft :
-      Stmt.run model prim program ctx leftFuel stmt source =
+      Control.Stmt.run model prim program ctx leftFuel stmt source =
         .ok (leftOutcome, leftCtx))
     (hRight :
-      Stmt.run model prim program ctx rightFuel stmt source =
+      Control.Stmt.run model prim program ctx rightFuel stmt source =
         .ok (rightOutcome, rightCtx)) :
     (leftOutcome, leftCtx) = (rightOutcome, rightCtx) := by
   let commonFuel := Nat.max leftFuel rightFuel
   have hLeft' :
-      Stmt.run model prim program ctx commonFuel stmt source =
+      Control.Stmt.run model prim program ctx commonFuel stmt source =
         .ok (leftOutcome, leftCtx) :=
     Stmt.run_mono model prim program (Nat.le_max_left _ _) hLeft
   have hRight' :
-      Stmt.run model prim program ctx commonFuel stmt source =
+      Control.Stmt.run model prim program ctx commonFuel stmt source =
         .ok (rightOutcome, rightCtx) :=
     Stmt.run_mono model prim program (Nat.le_max_right _ _) hRight
   rw [hLeft'] at hRight'
@@ -4528,10 +4592,10 @@ state and context.
 theorem runOpen_nil {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
     (program : Program) (ctx : Source.Ctx) (fuel : Nat) (state : σ) :
-    Block.runOpen model prim program ctx (fuel + 1)
+    Control.Block.runOpen model prim program ctx (fuel + 1)
         { stmts := [] } state =
       .ok (Outcome.regular state, ctx) := by
-  simp [Block.runOpen, Outcome.regular,
+  simp [Control.Block.runOpen, Outcome.regular,
     Locals.Source.Effectful.Outcome.regular]
 
 /--
@@ -4544,16 +4608,16 @@ theorem runOpen_nil_ok {σ : Type}
     {ctx : Source.Ctx} {fuel : Nat} {state : σ}
     {outcome : Outcome σ} {runCtx : Source.Ctx}
     (hRun :
-      Block.runOpen model prim program ctx fuel { stmts := [] } state =
+      Control.Block.runOpen model prim program ctx fuel { stmts := [] } state =
         .ok (outcome, runCtx)) :
     outcome = Outcome.regular state ∧ runCtx = ctx := by
   cases fuel with
   | zero =>
-      simp [Block.runOpen, Source.invalid, Structured.invalid] at hRun
+      simp [Control.Block.runOpen, Source.invalid, Structured.invalid] at hRun
   | succ fuel =>
       have hPair :
           (Outcome.regular state, ctx) = (outcome, runCtx) := by
-        simpa [Block.runOpen] using hRun
+        simpa [Control.Block.runOpen] using hRun
       injection hPair with hOutcome hCtx
       exact ⟨hOutcome.symm, hCtx.symm⟩
 
@@ -4567,11 +4631,11 @@ theorem runScoped_regular_of_runOpen {σ : Type}
     {ctx finalCtx : Source.Ctx} {fuel : Nat}
     {block : Block} {source final : σ}
     (hOpen :
-      Block.runOpen model prim program ctx fuel block source =
+      Control.Block.runOpen model prim program ctx fuel block source =
         .ok (Outcome.regular final, finalCtx)) :
-    Block.runScoped model prim program ctx block fuel source =
+    Control.Block.runScoped model prim program ctx block fuel source =
       .ok (Outcome.regular (model.restrictTo ctx.scope final)) := by
-  simp [Block.runScoped, hOpen, Outcome.regular,
+  simp [Control.Block.runScoped, hOpen, Outcome.regular,
     Locals.Source.Effectful.Outcome.regular]
 
 /--
@@ -4586,10 +4650,10 @@ theorem runScoped_regular_of_runOpen_scope {σ : Type}
     {block : Block} {source final : σ}
     {scope : List Name}
     (hOpen :
-      Block.runOpen model prim program ctx fuel block source =
+      Control.Block.runOpen model prim program ctx fuel block source =
         .ok (Outcome.regular final, finalCtx))
     (hScope : ∀ name, name ∈ ctx.scope ↔ name ∈ scope) :
-    Block.runScoped model prim program ctx block fuel source =
+    Control.Block.runScoped model prim program ctx block fuel source =
       .ok (Outcome.regular (model.restrictTo scope final)) := by
   have hScoped :=
     runScoped_regular_of_runOpen model prim program hOpen
@@ -4606,22 +4670,22 @@ theorem runScoped_nonregular_of_runOpen {σ : Type}
     {ctx finalCtx : Source.Ctx} {fuel : Nat}
     {block : Block} {source : σ} {outcome : Outcome σ}
     (hOpen :
-      Block.runOpen model prim program ctx fuel block source =
+      Control.Block.runOpen model prim program ctx fuel block source =
         .ok (outcome, finalCtx))
     (hMode : outcome.mode ≠ .regular) :
-    Block.runScoped model prim program ctx block fuel source =
+    Control.Block.runScoped model prim program ctx block fuel source =
       .ok outcome := by
   cases hOutcome : outcome.mode with
   | regular =>
       exact False.elim (hMode hOutcome)
   | brk =>
-      simp [Block.runScoped, hOpen, hOutcome]
+      simp [Control.Block.runScoped, hOpen, hOutcome]
   | cont =>
-      simp [Block.runScoped, hOpen, hOutcome]
+      simp [Control.Block.runScoped, hOpen, hOutcome]
   | leave =>
-      simp [Block.runScoped, hOpen, hOutcome]
+      simp [Control.Block.runScoped, hOpen, hOutcome]
   | halt kind =>
-      simp [Block.runScoped, hOpen, hOutcome]
+      simp [Control.Block.runScoped, hOpen, hOutcome]
 
 /--
 Invert successful lexical execution into its exact open-block run.
@@ -4636,21 +4700,21 @@ theorem runScoped_cases {σ : Type}
     {ctx : Source.Ctx} {fuel : Nat}
     {block : Block} {source : σ} {outcome : Outcome σ}
     (hRun :
-      Block.runScoped model prim program ctx block fuel source =
+      Control.Block.runScoped model prim program ctx block fuel source =
         .ok outcome) :
     (∃ final finalCtx,
-        Block.runOpen model prim program ctx fuel block source =
+        Control.Block.runOpen model prim program ctx fuel block source =
           .ok (Outcome.regular final, finalCtx) ∧
         outcome =
           Outcome.regular (model.restrictTo ctx.scope final)) ∨
       (∃ openOutcome finalCtx,
-        Block.runOpen model prim program ctx fuel block source =
+        Control.Block.runOpen model prim program ctx fuel block source =
           .ok (openOutcome, finalCtx) ∧
         openOutcome.mode ≠ .regular ∧
         outcome = openOutcome) := by
-  unfold Block.runScoped at hRun
+  unfold Control.Block.runScoped at hRun
   cases hOpen :
-      Block.runOpen model prim program ctx fuel block source with
+      Control.Block.runOpen model prim program ctx fuel block source with
   | error err =>
       simp [hOpen] at hRun
   | ok openResult =>
@@ -4699,29 +4763,29 @@ theorem runOpen_cons_regular_exists {σ : Type}
     {stmt : Stmt} {rest : List Stmt}
     {source mid : σ} {outcome : Outcome σ}
     (hHead :
-      Stmt.run model prim program ctx headFuel stmt source =
+      Control.Stmt.run model prim program ctx headFuel stmt source =
         .ok (Outcome.regular mid, midCtx))
     (hTail :
-      Block.runOpen model prim program midCtx tailFuel
+      Control.Block.runOpen model prim program midCtx tailFuel
           { stmts := rest } mid =
         .ok (outcome, finalCtx)) :
     ∃ fuel,
-      Block.runOpen model prim program ctx fuel
+      Control.Block.runOpen model prim program ctx fuel
           { stmts := stmt :: rest } source =
         .ok (outcome, finalCtx) := by
   let commonFuel := Nat.max headFuel tailFuel
   have hHead' :
-      Stmt.run model prim program ctx commonFuel stmt source =
+      Control.Stmt.run model prim program ctx commonFuel stmt source =
         .ok (Outcome.regular mid, midCtx) :=
     Stmt.run_mono model prim program (Nat.le_max_left _ _) hHead
   have hTail' :
-      Block.runOpen model prim program midCtx commonFuel
+      Control.Block.runOpen model prim program midCtx commonFuel
           { stmts := rest } mid =
         .ok (outcome, finalCtx) :=
     Block.runOpen_mono model prim program (Nat.le_max_right _ _) hTail
   exact
     ⟨commonFuel + 1,
-      by simp [Block.runOpen, hHead', hTail',
+      by simp [Control.Block.runOpen, hHead', hTail',
         Outcome.regular, Locals.Source.Effectful.Outcome.regular]⟩
 
 /--
@@ -4735,28 +4799,28 @@ theorem runOpen_cons_regular_at_max {σ : Type}
     {stmt : Stmt} {rest : List Stmt}
     {source mid : σ} {outcome : Outcome σ}
     (hHead :
-      Stmt.run model prim program ctx headFuel stmt source =
+      Control.Stmt.run model prim program ctx headFuel stmt source =
         .ok (Outcome.regular mid, midCtx))
     (hTail :
-      Block.runOpen model prim program midCtx tailFuel
+      Control.Block.runOpen model prim program midCtx tailFuel
           { stmts := rest } mid =
         .ok (outcome, finalCtx)) :
-    Block.runOpen model prim program ctx
+    Control.Block.runOpen model prim program ctx
         (Nat.max headFuel tailFuel + 1)
         { stmts := stmt :: rest } source =
       .ok (outcome, finalCtx) := by
   let commonFuel := Nat.max headFuel tailFuel
   have hHead' :
-      Stmt.run model prim program ctx commonFuel stmt source =
+      Control.Stmt.run model prim program ctx commonFuel stmt source =
         .ok (Outcome.regular mid, midCtx) :=
     Stmt.run_mono model prim program (Nat.le_max_left _ _) hHead
   have hTail' :
-      Block.runOpen model prim program midCtx commonFuel
+      Control.Block.runOpen model prim program midCtx commonFuel
           { stmts := rest } mid =
         .ok (outcome, finalCtx) :=
     Block.runOpen_mono model prim program (Nat.le_max_right _ _) hTail
   dsimp [commonFuel] at hHead' hTail'
-  simp [Block.runOpen, hHead', hTail',
+  simp [Control.Block.runOpen, hHead', hTail',
     Outcome.regular, Locals.Source.Effectful.Outcome.regular]
 
 /--
@@ -4775,25 +4839,25 @@ theorem runOpen_cons_cases {σ : Type}
     {stmt : Stmt} {rest : List Stmt}
     {source : σ} {outcome : Outcome σ}
     (hRun :
-      Block.runOpen model prim program ctx (fuel + 1)
+      Control.Block.runOpen model prim program ctx (fuel + 1)
           { stmts := stmt :: rest } source =
         .ok (outcome, finalCtx)) :
     (∃ mid midCtx,
-        Stmt.run model prim program ctx fuel stmt source =
+        Control.Stmt.run model prim program ctx fuel stmt source =
           .ok (Outcome.regular mid, midCtx) ∧
-        Block.runOpen model prim program midCtx fuel
+        Control.Block.runOpen model prim program midCtx fuel
             { stmts := rest } mid =
           .ok (outcome, finalCtx)) ∨
       (∃ headOutcome headCtx,
-        Stmt.run model prim program ctx fuel stmt source =
+        Control.Stmt.run model prim program ctx fuel stmt source =
           .ok (headOutcome, headCtx) ∧
         headOutcome.mode ≠ .regular ∧
         outcome = headOutcome ∧
         finalCtx = ctx) := by
   cases hHead :
-      Stmt.run model prim program ctx fuel stmt source with
+      Control.Stmt.run model prim program ctx fuel stmt source with
   | error err =>
-      simp [Block.runOpen, hHead] at hRun
+      simp [Control.Block.runOpen, hHead] at hRun
   | ok headResult =>
       rcases headResult with ⟨headOutcome, headCtx⟩
       cases hMode : headOutcome.mode with
@@ -4802,27 +4866,27 @@ theorem runOpen_cons_cases {σ : Type}
           cases hMode
           left
           refine ⟨headState, headCtx, rfl, ?_⟩
-          · simpa [Block.runOpen, hHead] using hRun
+          · simpa [Control.Block.runOpen, hHead] using hRun
       | brk =>
           right
           refine ⟨headOutcome, headCtx, rfl, ?_, ?_⟩
           · simp [hMode]
-          · simpa [Block.runOpen, hHead, hMode] using hRun.symm
+          · simpa [Control.Block.runOpen, hHead, hMode] using hRun.symm
       | cont =>
           right
           refine ⟨headOutcome, headCtx, rfl, ?_, ?_⟩
           · simp [hMode]
-          · simpa [Block.runOpen, hHead, hMode] using hRun.symm
+          · simpa [Control.Block.runOpen, hHead, hMode] using hRun.symm
       | leave =>
           right
           refine ⟨headOutcome, headCtx, rfl, ?_, ?_⟩
           · simp [hMode]
-          · simpa [Block.runOpen, hHead, hMode] using hRun.symm
+          · simpa [Control.Block.runOpen, hHead, hMode] using hRun.symm
       | halt kind =>
           right
           refine ⟨headOutcome, headCtx, rfl, ?_, ?_⟩
           · simp [hMode]
-          · simpa [Block.runOpen, hHead, hMode] using hRun.symm
+          · simpa [Control.Block.runOpen, hHead, hMode] using hRun.symm
 
 /--
 Expose the scoped body execution represented by a successful singleton
@@ -4836,28 +4900,28 @@ theorem runScoped_of_runOpen_singleton_block {σ : Type}
     {outcome : Outcome σ} {finalCtx : Source.Ctx}
     (hRun :
       ∃ fuel,
-        Block.runOpen model prim program ctx fuel
+        Control.Block.runOpen model prim program ctx fuel
             { stmts := [.block body] } source =
           .ok (outcome, finalCtx)) :
     ∃ fuel,
-      Block.runScoped model prim program ctx body fuel source =
+      Control.Block.runScoped model prim program ctx body fuel source =
         .ok outcome ∧
       finalCtx = ctx := by
   obtain ⟨fuel, hRun⟩ := hRun
   cases fuel with
   | zero =>
-      simp [Block.runOpen, Source.invalid, Structured.invalid] at hRun
+      simp [Control.Block.runOpen, Source.invalid, Structured.invalid] at hRun
   | succ fuel =>
       rcases runOpen_cons_cases model prim program hRun with
         hRegular | hNonregular
       · obtain ⟨middle, middleCtx, hStmt, hTail⟩ := hRegular
         have hStmtParts :
-            Block.runScoped model prim program ctx body fuel source =
+            Control.Block.runScoped model prim program ctx body fuel source =
                 .ok (Outcome.regular middle) ∧
               middleCtx = ctx := by
-          unfold Stmt.run at hStmt
+          unfold Control.Stmt.run at hStmt
           cases hBody :
-              Block.runScoped model prim program ctx body fuel source with
+              Control.Block.runScoped model prim program ctx body fuel source with
           | error err =>
               simp [hBody] at hStmt
           | ok bodyOutcome =>
@@ -4878,11 +4942,11 @@ theorem runScoped_of_runOpen_singleton_block {σ : Type}
           ⟨headOutcome, headCtx, hStmt, _hMode,
             hOutcome, hCtx⟩ := hNonregular
         have hScoped :
-            Block.runScoped model prim program ctx body fuel source =
+            Control.Block.runScoped model prim program ctx body fuel source =
               .ok headOutcome := by
-          unfold Stmt.run at hStmt
+          unfold Control.Stmt.run at hStmt
           cases hBody :
-              Block.runScoped model prim program ctx body fuel source with
+              Control.Block.runScoped model prim program ctx body fuel source with
           | error err =>
               simp [hBody] at hStmt
           | ok bodyOutcome =>
@@ -4905,26 +4969,26 @@ theorem runScoped_at_of_runOpen_singleton_block {σ : Type}
     {fuel : Nat} {ctx : Source.Ctx} {body : Block} {source : σ}
     {outcome : Outcome σ} {finalCtx : Source.Ctx}
     (hRun :
-      Block.runOpen model prim program ctx fuel
+      Control.Block.runOpen model prim program ctx fuel
           { stmts := [.block body] } source =
         .ok (outcome, finalCtx)) :
-    Block.runScoped model prim program ctx body fuel source =
+    Control.Block.runScoped model prim program ctx body fuel source =
         .ok outcome ∧
       finalCtx = ctx := by
   cases fuel with
   | zero =>
-      simp [Block.runOpen, Source.invalid, Structured.invalid] at hRun
+      simp [Control.Block.runOpen, Source.invalid, Structured.invalid] at hRun
   | succ previous =>
       rcases runOpen_cons_cases model prim program hRun with
         hRegular | hNonregular
       · obtain ⟨middle, middleCtx, hStmt, hTail⟩ := hRegular
         have hStmtParts :
-            Block.runScoped model prim program ctx body previous source =
+            Control.Block.runScoped model prim program ctx body previous source =
                 .ok (Outcome.regular middle) ∧
               middleCtx = ctx := by
-          unfold Stmt.run at hStmt
+          unfold Control.Stmt.run at hStmt
           cases hBody :
-              Block.runScoped model prim program ctx body previous source with
+              Control.Block.runScoped model prim program ctx body previous source with
           | error err =>
               simp [hBody] at hStmt
           | ok bodyOutcome =>
@@ -4946,11 +5010,11 @@ theorem runScoped_at_of_runOpen_singleton_block {σ : Type}
           ⟨headOutcome, headCtx, hStmt, _hMode,
             hOutcome, hCtx⟩ := hNonregular
         have hScoped :
-            Block.runScoped model prim program ctx body previous source =
+            Control.Block.runScoped model prim program ctx body previous source =
               .ok headOutcome := by
-          unfold Stmt.run at hStmt
+          unfold Control.Stmt.run at hStmt
           cases hBody :
-              Block.runScoped model prim program ctx body previous source with
+              Control.Block.runScoped model prim program ctx body previous source with
           | error err =>
               simp [hBody] at hStmt
           | ok bodyOutcome =>
@@ -4975,14 +5039,14 @@ theorem runOpen_scopeExtends {σ : Type}
     (program : Program) :
     ∀ {fuel : Nat} {ctx finalCtx : Source.Ctx}
       {block : Block} {source : σ} {outcome : Outcome σ},
-      Block.runOpen model prim program ctx fuel block source =
+      Control.Block.runOpen model prim program ctx fuel block source =
           .ok (outcome, finalCtx) →
         Source.Ctx.ScopeExtends ctx finalCtx := by
   intro fuel
   induction fuel with
   | zero =>
       intro ctx finalCtx block source outcome hRun
-      simp [Block.runOpen, Source.invalid, Structured.invalid] at hRun
+      simp [Control.Block.runOpen, Source.invalid, Structured.invalid] at hRun
   | succ fuel ih =>
       intro ctx finalCtx block source outcome hRun
       rcases block with ⟨stmts⟩
@@ -5018,13 +5082,13 @@ theorem runOpen_append_regular_exists {σ : Type}
     ∀ (left right : List Stmt) (ctx midCtx : Source.Ctx)
       (source mid : σ) (outcome : Outcome σ) (runCtx : Source.Ctx),
       (∃ fuel,
-        Block.runOpen model prim program ctx fuel { stmts := left } source =
+        Control.Block.runOpen model prim program ctx fuel { stmts := left } source =
           .ok (Outcome.regular mid, midCtx)) →
       (∃ fuel,
-        Block.runOpen model prim program midCtx fuel { stmts := right } mid =
+        Control.Block.runOpen model prim program midCtx fuel { stmts := right } mid =
           .ok (outcome, runCtx)) →
       ∃ fuel,
-        Block.runOpen model prim program ctx fuel
+        Control.Block.runOpen model prim program ctx fuel
             { stmts := left ++ right } source =
           .ok (outcome, runCtx) := by
   intro left
@@ -5042,7 +5106,7 @@ theorem runOpen_append_regular_exists {σ : Type}
       rcases hLeft with ⟨fuel, hLeft⟩
       cases fuel with
       | zero =>
-          simp [Block.runOpen, Source.invalid, Structured.invalid] at hLeft
+          simp [Control.Block.runOpen, Source.invalid, Structured.invalid] at hLeft
       | succ fuel =>
           rcases
               runOpen_cons_cases model prim program
@@ -5073,13 +5137,13 @@ theorem runOpen_append_regular_at_add {σ : Type}
     ∀ (left right : List Stmt) (ctx midCtx : Source.Ctx)
       (source mid : σ) (outcome : Outcome σ) (runCtx : Source.Ctx)
       (leftFuel rightFuel : Nat),
-      Block.runOpen model prim program ctx leftFuel
+      Control.Block.runOpen model prim program ctx leftFuel
           { stmts := left } source =
         .ok (Outcome.regular mid, midCtx) →
-      Block.runOpen model prim program midCtx rightFuel
+      Control.Block.runOpen model prim program midCtx rightFuel
           { stmts := right } mid =
         .ok (outcome, runCtx) →
-      Block.runOpen model prim program ctx (leftFuel + rightFuel)
+      Control.Block.runOpen model prim program ctx (leftFuel + rightFuel)
           { stmts := left ++ right } source =
         .ok (outcome, runCtx) := by
   intro left
@@ -5099,7 +5163,7 @@ theorem runOpen_append_regular_at_add {σ : Type}
         leftFuel rightFuel hLeft hRight
       cases leftFuel with
       | zero =>
-          simp [Block.runOpen, Source.invalid,
+          simp [Control.Block.runOpen, Source.invalid,
             Structured.invalid] at hLeft
       | succ fuel =>
           rcases
@@ -5112,12 +5176,12 @@ theorem runOpen_append_regular_at_add {σ : Type}
               ih right stmtCtx midCtx afterStmt mid outcome runCtx
                 fuel rightFuel hRest hRight
             have hHead :
-                Stmt.run model prim program ctx (fuel + rightFuel)
+                Control.Stmt.run model prim program ctx (fuel + rightFuel)
                     stmt source =
                   .ok (Outcome.regular afterStmt, stmtCtx) :=
               Stmt.run_mono model prim program
                 (by omega : fuel ≤ fuel + rightFuel) hStmt
-            simpa [Block.runOpen, hHead, hTail, Nat.succ_add,
+            simpa [Control.Block.runOpen, hHead, hTail, Nat.succ_add,
               Outcome.regular,
               Locals.Source.Effectful.Outcome.regular]
           · rcases hNonregular with
@@ -5137,23 +5201,23 @@ theorem runOpen_cons_nonregular {σ : Type}
     {stmt : Stmt} {rest : List Stmt}
     {source : σ} {outcome : Outcome σ}
     (hHead :
-      Stmt.run model prim program ctx fuel stmt source =
+      Control.Stmt.run model prim program ctx fuel stmt source =
         .ok (outcome, stmtCtx))
     (hMode : outcome.mode ≠ .regular) :
-    Block.runOpen model prim program ctx (fuel + 1)
+    Control.Block.runOpen model prim program ctx (fuel + 1)
         { stmts := stmt :: rest } source =
       .ok (outcome, ctx) := by
   cases hOutcomeMode : outcome.mode with
   | regular =>
       exact False.elim (hMode hOutcomeMode)
   | brk =>
-      simp [Block.runOpen, hHead, hOutcomeMode]
+      simp [Control.Block.runOpen, hHead, hOutcomeMode]
   | cont =>
-      simp [Block.runOpen, hHead, hOutcomeMode]
+      simp [Control.Block.runOpen, hHead, hOutcomeMode]
   | leave =>
-      simp [Block.runOpen, hHead, hOutcomeMode]
+      simp [Control.Block.runOpen, hHead, hOutcomeMode]
   | halt kind =>
-      simp [Block.runOpen, hHead, hOutcomeMode]
+      simp [Control.Block.runOpen, hHead, hOutcomeMode]
 
 /--
 Lift one successful statement that restores its incoming context to a
@@ -5166,10 +5230,10 @@ theorem runOpen_singleton_of_run {σ : Type}
     {ctx : Source.Ctx} {stmtFuel : Nat}
     {stmt : Stmt} {source : σ} {outcome : Outcome σ}
     (hRun :
-      Stmt.run model prim program ctx stmtFuel stmt source =
+      Control.Stmt.run model prim program ctx stmtFuel stmt source =
         .ok (outcome, ctx)) :
     ∃ fuel,
-      Block.runOpen model prim program ctx fuel
+      Control.Block.runOpen model prim program ctx fuel
           { stmts := [stmt] } source =
         .ok (outcome, ctx) := by
   by_cases hRegular : outcome.mode = .regular
@@ -5177,12 +5241,12 @@ theorem runOpen_singleton_of_run {σ : Type}
         outcome = Outcome.regular outcome.state :=
       Outcome.eq_regular_of_mode hRegular
     have hStmt :
-        Stmt.run model prim program ctx stmtFuel stmt source =
+        Control.Stmt.run model prim program ctx stmtFuel stmt source =
           .ok (Outcome.regular outcome.state, ctx) := by
       rw [← hOutcomeEq]
       exact hRun
     have hEmpty :
-        Block.runOpen model prim program ctx 1
+        Control.Block.runOpen model prim program ctx 1
             { stmts := [] } outcome.state =
           .ok (Outcome.regular outcome.state, ctx) := by
       simpa using runOpen_nil model prim program ctx 0 outcome.state
@@ -5205,9 +5269,9 @@ theorem runOpen_singleton_of_run_at_add_two {σ : Type}
     {ctx : Source.Ctx} {stmtFuel : Nat}
     {stmt : Stmt} {source : σ} {outcome : Outcome σ}
     (hRun :
-      Stmt.run model prim program ctx stmtFuel stmt source =
+      Control.Stmt.run model prim program ctx stmtFuel stmt source =
         .ok (outcome, ctx)) :
-    Block.runOpen model prim program ctx (stmtFuel + 2)
+    Control.Block.runOpen model prim program ctx (stmtFuel + 2)
         { stmts := [stmt] } source =
       .ok (outcome, ctx) := by
   by_cases hRegular : outcome.mode = .regular
@@ -5215,20 +5279,20 @@ theorem runOpen_singleton_of_run_at_add_two {σ : Type}
         outcome = Outcome.regular outcome.state :=
       Outcome.eq_regular_of_mode hRegular
     have hStmt :
-        Stmt.run model prim program ctx (stmtFuel + 1) stmt source =
+        Control.Stmt.run model prim program ctx (stmtFuel + 1) stmt source =
           .ok (Outcome.regular outcome.state, ctx) := by
       rw [← hOutcomeEq]
       exact
         Stmt.run_mono model prim program
           (by omega : stmtFuel ≤ stmtFuel + 1) hRun
     have hEmpty :
-        Block.runOpen model prim program ctx (stmtFuel + 1)
+        Control.Block.runOpen model prim program ctx (stmtFuel + 1)
             { stmts := [] } outcome.state =
           .ok (Outcome.regular outcome.state, ctx) := by
       simpa using
         runOpen_nil model prim program ctx stmtFuel outcome.state
     rw [hOutcomeEq]
-    simpa [Block.runOpen, hStmt, hEmpty,
+    simpa [Control.Block.runOpen, hStmt, hEmpty,
       Outcome.regular,
       Locals.Source.Effectful.Outcome.regular]
   · exact
@@ -5248,22 +5312,22 @@ theorem runOpen_singleton_block_of_runOpen_nonregular {σ : Type}
     {body : Block} {source : σ} {outcome : Outcome σ}
     (hBody :
       ∃ fuel,
-        Block.runOpen model prim program ctx fuel body source =
+        Control.Block.runOpen model prim program ctx fuel body source =
           .ok (outcome, finalCtx))
     (hMode : outcome.mode ≠ .regular) :
     ∃ fuel,
-      Block.runOpen model prim program ctx fuel
+      Control.Block.runOpen model prim program ctx fuel
           { stmts := [.block body] } source =
         .ok (outcome, ctx) := by
   obtain ⟨bodyFuel, hBody⟩ := hBody
   have hScoped :
-      Block.runScoped model prim program ctx body bodyFuel source =
+      Control.Block.runScoped model prim program ctx body bodyFuel source =
         .ok outcome :=
     runScoped_nonregular_of_runOpen model prim program hBody hMode
   have hStmt :
-      Stmt.run model prim program ctx bodyFuel (.block body) source =
+      Control.Stmt.run model prim program ctx bodyFuel (.block body) source =
         .ok (outcome, ctx) := by
-    unfold Stmt.run
+    unfold Control.Stmt.run
     rw [hScoped]
     rfl
   exact
@@ -5275,12 +5339,12 @@ theorem runOpen_append_nonregular_exists {σ : Type}
     ∀ (left right : List Stmt) (ctx : Source.Ctx) (source : σ)
       (outcome : Outcome σ) (runCtx : Source.Ctx),
       (∃ fuel,
-        Block.runOpen model prim program ctx fuel
+        Control.Block.runOpen model prim program ctx fuel
             { stmts := left } source =
           .ok (outcome, runCtx)) →
       outcome.mode ≠ .regular →
       ∃ fuel,
-        Block.runOpen model prim program ctx fuel
+        Control.Block.runOpen model prim program ctx fuel
             { stmts := left ++ right } source =
           .ok (outcome, runCtx) := by
   intro left
@@ -5298,7 +5362,7 @@ theorem runOpen_append_nonregular_exists {σ : Type}
       rcases hLeft with ⟨fuel, hLeft⟩
       cases fuel with
       | zero =>
-          simp [Block.runOpen, Source.invalid,
+          simp [Control.Block.runOpen, Source.invalid,
             Structured.invalid] at hLeft
       | succ fuel =>
           rcases
@@ -5334,11 +5398,11 @@ theorem runOpen_append_nonregular_at_same {σ : Type}
     (program : Program) :
     ∀ (left right : List Stmt) (ctx : Source.Ctx) (source : σ)
       (outcome : Outcome σ) (runCtx : Source.Ctx) (fuel : Nat),
-      Block.runOpen model prim program ctx fuel
+      Control.Block.runOpen model prim program ctx fuel
           { stmts := left } source =
         .ok (outcome, runCtx) →
       outcome.mode ≠ .regular →
-      Block.runOpen model prim program ctx fuel
+      Control.Block.runOpen model prim program ctx fuel
           { stmts := left ++ right } source =
         .ok (outcome, runCtx) := by
   intro left
@@ -5354,7 +5418,7 @@ theorem runOpen_append_nonregular_at_same {σ : Type}
       intro right ctx source outcome runCtx runFuel hLeft hMode
       cases runFuel with
       | zero =>
-          simp [Block.runOpen, Source.invalid,
+          simp [Control.Block.runOpen, Source.invalid,
             Structured.invalid] at hLeft
       | succ fuel =>
           rcases
@@ -5366,7 +5430,7 @@ theorem runOpen_append_nonregular_at_same {σ : Type}
             have hTail :=
               ih right stmtCtx afterStmt outcome runCtx fuel
                 hRest hMode
-            simpa [Block.runOpen, hStmt, hTail,
+            simpa [Control.Block.runOpen, hStmt, hTail,
               Outcome.regular,
               Locals.Source.Effectful.Outcome.regular]
           · rcases hNonregular with
@@ -5392,7 +5456,7 @@ theorem runScoped_forGuard_break_exists {σ : Type}
     {value : Word} {breakScope : List Name}
     (hPre :
       ∃ fuel,
-        Block.runOpen model prim program bodyBase fuel
+        Control.Block.runOpen model prim program bodyBase fuel
             { stmts := pre } source =
           .ok (Outcome.regular afterPre, condCtx))
     (hEval :
@@ -5404,7 +5468,7 @@ theorem runScoped_forGuard_break_exists {σ : Type}
     (hZero : value = EvmYul.UInt256.ofNat 0)
     (hBreakScope : condCtx.breakScope? = some breakScope) :
     ∃ fuel,
-      Block.runScoped model prim program bodyBase
+      Control.Block.runScoped model prim program bodyBase
           { stmts :=
               pre ++
                 .if_
@@ -5420,19 +5484,19 @@ theorem runScoped_forGuard_break_exists {σ : Type}
     Expr.evalCondition_iszero_true_of_eval_singleton
       model prim hEval hIszero hZero
   have hBreakStmt :
-      Stmt.run model prim program condCtx 1 .brk afterEval =
+      Control.Stmt.run model prim program condCtx 1 .brk afterEval =
         .ok
           (Outcome.brk (model.restrictTo breakScope afterEval), condCtx) :=
     Stmt.run_brk_of_scope model prim program hBreakScope
   obtain ⟨breakOpenFuel, hBreakOpen⟩ :=
     runOpen_singleton_of_run model prim program hBreakStmt
   have hBreakScoped :
-      Block.runScoped model prim program condCtx
+      Control.Block.runScoped model prim program condCtx
           { stmts := [.brk] } breakOpenFuel afterEval =
         .ok (Outcome.brk (model.restrictTo breakScope afterEval)) :=
     runScoped_nonregular_of_runOpen model prim program hBreakOpen (by simp)
   have hIfStmt :
-      Stmt.run model prim program condCtx (breakOpenFuel + 1)
+      Control.Stmt.run model prim program condCtx (breakOpenFuel + 1)
           (.if_
             (.prim .iszero (Locals.ExprSeq.cons cond .nil))
             { stmts := [.brk] })
@@ -5441,7 +5505,7 @@ theorem runScoped_forGuard_break_exists {σ : Type}
           (Outcome.brk (model.restrictTo breakScope afterEval), condCtx) :=
     Stmt.run_if_true_of_eval model prim program hGuard hBreakScoped
   have hGuardTail :
-      Block.runOpen model prim program condCtx
+      Control.Block.runOpen model prim program condCtx
           (breakOpenFuel + 2)
           { stmts :=
               .if_
@@ -5478,7 +5542,7 @@ theorem runScoped_forGuard_break_at_add_five {σ : Type}
     {rest : List Stmt} {source afterPre afterEval : σ}
     {value : Word} {breakScope : List Name} {preFuel : Nat}
     (hPre :
-      Block.runOpen model prim program bodyBase preFuel
+      Control.Block.runOpen model prim program bodyBase preFuel
           { stmts := pre } source =
         .ok (Outcome.regular afterPre, condCtx))
     (hEval :
@@ -5489,7 +5553,7 @@ theorem runScoped_forGuard_break_at_add_five {σ : Type}
         .ok (afterEval, [EvmYul.UInt256.isZero value]))
     (hZero : value = EvmYul.UInt256.ofNat 0)
     (hBreakScope : condCtx.breakScope? = some breakScope) :
-    Block.runScoped model prim program bodyBase
+    Control.Block.runScoped model prim program bodyBase
         { stmts :=
             pre ++
               .if_
@@ -5505,24 +5569,24 @@ theorem runScoped_forGuard_break_at_add_five {σ : Type}
     Expr.evalCondition_iszero_true_of_eval_singleton
       model prim hEval hIszero hZero
   have hBreakStmt :
-      Stmt.run model prim program condCtx 1 .brk afterEval =
+      Control.Stmt.run model prim program condCtx 1 .brk afterEval =
         .ok
           (Outcome.brk (model.restrictTo breakScope afterEval), condCtx) :=
     Stmt.run_brk_of_scope model prim program hBreakScope
   have hBreakOpen :
-      Block.runOpen model prim program condCtx 3
+      Control.Block.runOpen model prim program condCtx 3
           { stmts := [.brk] } afterEval =
         .ok
           (Outcome.brk (model.restrictTo breakScope afterEval), condCtx) := by
     simpa using
       runOpen_singleton_of_run_at_add_two model prim program hBreakStmt
   have hBreakScoped :
-      Block.runScoped model prim program condCtx
+      Control.Block.runScoped model prim program condCtx
           { stmts := [.brk] } 3 afterEval =
         .ok (Outcome.brk (model.restrictTo breakScope afterEval)) :=
     runScoped_nonregular_of_runOpen model prim program hBreakOpen (by simp)
   have hIfStmt :
-      Stmt.run model prim program condCtx 4
+      Control.Stmt.run model prim program condCtx 4
           (.if_
             (.prim .iszero (Locals.ExprSeq.cons cond .nil))
             { stmts := [.brk] })
@@ -5531,7 +5595,7 @@ theorem runScoped_forGuard_break_at_add_five {σ : Type}
           (Outcome.brk (model.restrictTo breakScope afterEval), condCtx) :=
     Stmt.run_if_true_of_eval model prim program hGuard hBreakScoped
   have hGuardTail :
-      Block.runOpen model prim program condCtx 5
+      Control.Block.runOpen model prim program condCtx 5
           { stmts :=
               .if_
                   (.prim .iszero (Locals.ExprSeq.cons cond .nil))
@@ -5572,7 +5636,7 @@ theorem runOpen_forGuard_body_exists {σ : Type}
     {value : Word} {outcome : Outcome σ}
     (hPre :
       ∃ fuel,
-        Block.runOpen model prim program bodyBase fuel
+        Control.Block.runOpen model prim program bodyBase fuel
             { stmts := pre } source =
           .ok (Outcome.regular afterPre, condCtx))
     (hEval :
@@ -5584,11 +5648,11 @@ theorem runOpen_forGuard_body_exists {σ : Type}
     (hNonzero : value ≠ EvmYul.UInt256.ofNat 0)
     (hBody :
       ∃ fuel,
-        Block.runOpen model prim program condCtx fuel
+        Control.Block.runOpen model prim program condCtx fuel
             { stmts := rest } afterEval =
           .ok (outcome, finalCtx)) :
     ∃ fuel,
-      Block.runOpen model prim program bodyBase
+      Control.Block.runOpen model prim program bodyBase
           fuel
           { stmts :=
               pre ++
@@ -5605,7 +5669,7 @@ theorem runOpen_forGuard_body_exists {σ : Type}
     Expr.evalCondition_iszero_false_of_eval_singleton
       model prim hEval hIszero hNonzero
   have hIfStmt :
-      Stmt.run model prim program condCtx 1
+      Control.Stmt.run model prim program condCtx 1
           (.if_
             (.prim .iszero (Locals.ExprSeq.cons cond .nil))
             { stmts := [.brk] })
@@ -5645,7 +5709,7 @@ theorem runOpen_forGuard_body_at_add_three {σ : Type}
     {value : Word} {outcome : Outcome σ}
     {preFuel bodyFuel : Nat}
     (hPre :
-      Block.runOpen model prim program bodyBase preFuel
+      Control.Block.runOpen model prim program bodyBase preFuel
           { stmts := pre } source =
         .ok (Outcome.regular afterPre, condCtx))
     (hEval :
@@ -5656,10 +5720,10 @@ theorem runOpen_forGuard_body_at_add_three {σ : Type}
         .ok (afterEval, [EvmYul.UInt256.isZero value]))
     (hNonzero : value ≠ EvmYul.UInt256.ofNat 0)
     (hBody :
-      Block.runOpen model prim program condCtx bodyFuel
+      Control.Block.runOpen model prim program condCtx bodyFuel
           { stmts := rest } afterEval =
         .ok (outcome, finalCtx)) :
-    Block.runOpen model prim program bodyBase
+    Control.Block.runOpen model prim program bodyBase
         (preFuel + bodyFuel + 3)
         { stmts :=
             pre ++
@@ -5676,7 +5740,7 @@ theorem runOpen_forGuard_body_at_add_three {σ : Type}
     Expr.evalCondition_iszero_false_of_eval_singleton
       model prim hEval hIszero hNonzero
   have hIfStmt :
-      Stmt.run model prim program condCtx 1
+      Control.Stmt.run model prim program condCtx 1
           (.if_
             (.prim .iszero (Locals.ExprSeq.cons cond .nil))
             { stmts := [.brk] })
@@ -5684,7 +5748,7 @@ theorem runOpen_forGuard_body_at_add_three {σ : Type}
         .ok (Outcome.regular afterEval, condCtx) :=
     Stmt.run_if_false_of_eval model prim program hGuard
   have hIfOpen :
-      Block.runOpen model prim program condCtx 3
+      Control.Block.runOpen model prim program condCtx 3
           { stmts :=
               [(.if_
                 (.prim .iszero (Locals.ExprSeq.cons cond .nil))
@@ -5719,7 +5783,7 @@ def runState {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ) (fuel : Nat)
     (program : Functions.Program) (state : σ) :
     Except EVMException (Outcome σ) :=
-  Block.runScoped model prim program Source.Ctx.initial
+  Control.Block.runScoped model prim program Source.Ctx.initial
     program.body fuel state
 
 end Program
@@ -5737,16 +5801,68 @@ semantic authority for observer-aware boundaries.
 namespace Canonical
 
 abbrev StateModel := Effectful.StateModel
-abbrev PrimitiveSemantics := Effectful.PrimitiveSemantics
+abbrev PrimitiveSemantics := Effectful.Control.PrimitiveSemantics
 abbrev Outcome := Effectful.Outcome
+
+namespace ArgList
+
+abbrev eval {M : Type → Type} [Monad M]
+    [MonadExceptOf EVMException M]
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics M σ) :=
+  Effectful.ArgList.Control.eval model prim
+
+end ArgList
+
+namespace Block
+
+abbrev runOpen {M : Type → Type} [Monad M]
+    [MonadExceptOf EVMException M]
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics M σ) :=
+  Effectful.Control.Block.runOpen model prim
+
+abbrev runScoped {M : Type → Type} [Monad M]
+    [MonadExceptOf EVMException M]
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics M σ) :=
+  Effectful.Control.Block.runScoped model prim
+
+end Block
+
+namespace FunDef
+
+abbrev runBody {M : Type → Type} [Monad M]
+    [MonadExceptOf EVMException M]
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics M σ) :=
+  Effectful.Control.FunDef.runBody model prim
+
+end FunDef
+
+namespace Stmt
+
+abbrev runForLoop {M : Type → Type} [Monad M]
+    [MonadExceptOf EVMException M]
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics M σ) :=
+  Effectful.Control.Stmt.runForLoop model prim
+
+abbrev run {M : Type → Type} [Monad M]
+    [MonadExceptOf EVMException M]
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics M σ) :=
+  Effectful.Control.Stmt.run model prim
+
+end Stmt
 
 namespace Program
 
-abbrev runState {σ : Type} (model : StateModel σ)
-    (prim : PrimitiveSemantics σ) (fuel : Nat)
-    (program : Functions.Program) (state : σ) :
-    Except EVMException (Outcome σ) :=
-  Effectful.Program.runState model prim fuel program state
+abbrev runState {M : Type → Type} [Monad M]
+    [MonadExceptOf EVMException M]
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics M σ) :=
+  Effectful.Control.Program.runState model prim
 
 end Program
 

@@ -75,7 +75,7 @@ theorem argListEval_toSeq
                   rcases headResult with ⟨afterHead, value⟩
                   simp [hHead] at hRun
                   cases hRest :
-                      Functions.Source.Effectful.ArgList.eval
+                      Functions.Source.Effectful.ArgList.Control.eval
                         model prim rest afterHead with
                   | error err =>
                       simp [hRest] at hRun
@@ -203,6 +203,10 @@ theorem argListEval_of_toSeq
                                     .ok (afterHead, value) :=
                                 Functions.Source.Effectful.Expr.evalOne_of_eval_singleton
                                   model prim hHeadPublic
+                              change
+                                Functions.Source.Effectful.ArgList.Control.eval
+                                    model prim rest afterHead =
+                                  .ok (afterTail, tailValues) at hTailRun
                               rw [← hValues]
                               simp [Functions.Source.Effectful.ArgList.eval,
                                 hHeadOne, hTailRun]
@@ -242,9 +246,14 @@ theorem terminalArgs_run_of_argList
           model prim seq source =
         .ok (afterArgs, values) :=
     argListEval_toSeq model prim hSeq' hArgs
-  unfold Functions.Source.Effectful.Stmt.run
+  change
+    Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+        model prim seq source =
+      .ok (afterArgs, values) at hTargetArgs
+  unfold Functions.Source.Effectful.Control.Stmt.run
   simp only [hTargetArgs, Bind.bind, Except.bind]
   rw [hTerminal]
+  rfl
 
 theorem exprEval_cast
     {σ : Type}
@@ -579,6 +588,13 @@ theorem cons
         contract transcript)
       hHeadEval
   have hRestEval := hRest candidate hExtends
+  change
+    Functions.Source.Effectful.ArgList.Control.eval
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        rest candidate =
+      .ok (candidate, values) at hRestEval
   simp [Functions.Source.Effectful.ArgList.eval, hHeadOne, hRestEval]
 
 theorem append
@@ -1001,6 +1017,14 @@ theorem directAt
                                         refine
                                           ⟨targetFinal, ?_, hFinalRel,
                                             hRestStore.trans hHeadStore⟩
+                                        change
+                                          Functions.Source.Effectful.ArgList.Control.eval
+                                              (Functions.ObserverSemantics.stateModel
+                                                transcript)
+                                              (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                                                contract transcript)
+                                              lowerRest targetAfterHead =
+                                            .ok (targetFinal, restValues) at hTargetRest
                                         simp [Functions.Source.Effectful.ArgList.eval,
                                           hTargetHeadOne,
                                           hTargetRest]
@@ -1602,7 +1626,14 @@ theorem bindGenerated
     exact hDomain.insert hNotMem
   dsimp
   refine ⟨?_, hFinalRel, hFinalDomain, ?_⟩
-  · unfold Functions.Source.Effectful.Stmt.run
+  · change
+      Locals.Source.Effectful.Expr.Control.evalOne
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lower targetBefore =
+        .ok (targetAfter, value) at hEvalOne
+    unfold Functions.Source.Effectful.Control.Stmt.run
     rw [hEvalOne]
     rfl
   · intro name hMem

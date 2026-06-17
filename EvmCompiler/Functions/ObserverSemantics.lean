@@ -83,7 +83,6 @@ mutual
           Functions.Source.invalid, Structured.invalid] at hEval
     | prim op args =>
         unfold Functions.Source.Effectful.Expr.eval at hEval
-        unfold Locals.Source.Effectful.Expr.eval at hEval
         unfold Locals.Source.Effectful.Expr.Control.eval at hEval
         cases hArgs :
             Locals.Source.Effectful.Expr.Control.ExprSeq.eval
@@ -178,16 +177,16 @@ theorem argList_eval_vars_eq
   | cons head rest ih =>
       unfold Functions.Source.Effectful.ArgList.eval at hEval
       cases hHead :
-          Functions.Source.Effectful.Expr.evalOne
+          Locals.Source.Effectful.Expr.Control.evalOne
             (stateModel transcript) (primitiveSemantics transcript)
             head source with
       | error err =>
           simp [hHead] at hEval
       | ok headResult =>
           rcases headResult with ⟨afterHead, headValue⟩
-          simp only [hHead, Bind.bind, Except.bind] at hEval
+          simp [hHead] at hEval
           cases hRest :
-              Functions.Source.Effectful.ArgList.eval
+              Functions.Source.Effectful.ArgList.Control.eval
                 (stateModel transcript) (primitiveSemantics transcript)
                 rest afterHead with
           | error err =>
@@ -346,7 +345,6 @@ theorem expr_evalOne_gas
         (.prim .gas .nil : Functions.Expr 1) state =
       .ok (state', value) := by
   unfold Functions.Source.Effectful.Expr.evalOne
-  unfold Locals.Source.Effectful.Expr.evalOne
   unfold Locals.Source.Effectful.Expr.Control.evalOne
   have hEval :
       Locals.Source.Effectful.Expr.eval
@@ -374,7 +372,6 @@ theorem expr_evalOne_msize
         (.prim .msize .nil : Functions.Expr 1) state =
       .ok (state', value) := by
   unfold Functions.Source.Effectful.Expr.evalOne
-  unfold Locals.Source.Effectful.Expr.evalOne
   unfold Locals.Source.Effectful.Expr.Control.evalOne
   have hEval :
       Locals.Source.Effectful.Expr.eval
@@ -408,18 +405,14 @@ theorem stmt_run_let_gas
           (state'.withSource (state'.source.insert name value)),
           { ctx with scope := name :: ctx.scope }) := by
   unfold Functions.Source.Effectful.Stmt.run
-  change
-    (do
-      let (stateAfterValue, value') ←
-        Functions.Source.Effectful.Expr.evalOne
+  simp only [Functions.Source.Effectful.Control.Stmt.run]
+  have hEvalControl :
+      Locals.Source.Effectful.Expr.Control.evalOne
           (stateModel transcript) (primitiveSemantics transcript)
-          (.prim .gas .nil : Functions.Expr 1) state
-      .ok
-        (Functions.Source.Effectful.Outcome.regular
-          ((stateModel transcript).insert stateAfterValue name value'),
-          { ctx with scope := name :: ctx.scope })) =
-      _
-  rw [expr_evalOne_gas hConsume]
+          (.prim .gas .nil : Functions.Expr 1) state =
+        .ok (state', value) := by
+    simpa using expr_evalOne_gas hConsume
+  rw [hEvalControl]
   rfl
 
 theorem stmt_run_let_msize
@@ -439,18 +432,14 @@ theorem stmt_run_let_msize
           (state'.withSource (state'.source.insert name value)),
           { ctx with scope := name :: ctx.scope }) := by
   unfold Functions.Source.Effectful.Stmt.run
-  change
-    (do
-      let (stateAfterValue, value') ←
-        Functions.Source.Effectful.Expr.evalOne
+  simp only [Functions.Source.Effectful.Control.Stmt.run]
+  have hEvalControl :
+      Locals.Source.Effectful.Expr.Control.evalOne
           (stateModel transcript) (primitiveSemantics transcript)
-          (.prim .msize .nil : Functions.Expr 1) state
-      .ok
-        (Functions.Source.Effectful.Outcome.regular
-          ((stateModel transcript).insert stateAfterValue name value'),
-          { ctx with scope := name :: ctx.scope })) =
-      _
-  rw [expr_evalOne_msize hConsume]
+          (.prim .msize .nil : Functions.Expr 1) state =
+        .ok (state', value) := by
+    simpa using expr_evalOne_msize hConsume
+  rw [hEvalControl]
   rfl
 
 namespace Program
@@ -525,8 +514,11 @@ end Program
             cursor := 1 }
           []) := by
   simp [Functions.Source.Effectful.FunDef.runBody,
+    Functions.Source.Effectful.Control.FunDef.runBody,
     Functions.Source.Effectful.Block.runOpen,
+    Functions.Source.Effectful.Control.Block.runOpen,
     Functions.Source.Effectful.Stmt.run,
+    Functions.Source.Effectful.Control.Stmt.run,
     Functions.Source.Effectful.Expr.evalOne,
     Functions.Source.Effectful.Expr.eval,
     Locals.Source.Effectful.Expr.evalOne,
@@ -575,9 +567,13 @@ end Program
   cases source
   simp [Functions.Source.Effectful.Stmt.run,
     Functions.Source.Effectful.ArgList.eval,
+    Functions.Source.Effectful.ArgList.Control.eval,
     Functions.Source.FunList.find?,
     Functions.Source.Effectful.FunDef.runBody,
+    Functions.Source.Effectful.Control.FunDef.runBody,
     Functions.Source.Effectful.Block.runOpen,
+    Functions.Source.Effectful.Control.Block.runOpen,
+    Functions.Source.Effectful.Control.Stmt.run,
     Functions.Source.Effectful.Expr.evalOne,
     Functions.Source.Effectful.Expr.eval,
     Locals.Source.Effectful.Expr.evalOne,

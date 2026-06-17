@@ -70,7 +70,6 @@ theorem eval_singleton_of_evalOne {σ : Type}
     eval model prim expr state =
       .ok (final, [value]) := by
   unfold evalOne at hEval
-  unfold Locals.Source.Effectful.Expr.evalOne at hEval
   unfold Locals.Source.Effectful.Expr.Control.evalOne at hEval
   cases hExpr :
       Locals.Source.Effectful.Expr.Control.eval model prim expr state with
@@ -103,7 +102,6 @@ theorem evalCondition_ok_parts {σ : Type}
         .ok (final, [value]) ∧
       condition = (value != EvmYul.UInt256.ofNat 0) := by
   unfold evalCondition at hEval
-  unfold Locals.Source.Effectful.Expr.evalCondition at hEval
   unfold Locals.Source.Effectful.Expr.Control.evalCondition at hEval
   unfold Locals.Source.Effectful.Expr.Control.evalOne at hEval
   cases hExpr :
@@ -195,7 +193,6 @@ theorem eval_prim_ok_parts {σ : Type}
       prim.eval op afterArgs inputValues =
         .ok (final, values) := by
   unfold eval at hEval
-  unfold Locals.Source.Effectful.Expr.eval at hEval
   unfold Locals.Source.Effectful.Expr.Control.eval at hEval
   cases hArgs :
       Locals.Source.Effectful.Expr.Control.ExprSeq.eval
@@ -286,7 +283,7 @@ theorem eval_cons_ok_parts {σ : Type}
       simp [hHead] at hEval
   | ok result =>
       rcases result with ⟨afterHead, value⟩
-      cases hRest : eval model prim rest afterHead with
+      cases hRest : Control.eval model prim rest afterHead with
       | error err =>
           simp [hHead, hRest] at hEval
       | ok result =>
@@ -296,7 +293,7 @@ theorem eval_cons_ok_parts {σ : Type}
           exact
             ⟨afterHead, value, restValues,
               Expr.eval_singleton_of_evalOne model prim hHead,
-              hRest, rfl⟩
+              (by simpa [eval] using hRest), rfl⟩
 
 end ArgList
 
@@ -377,13 +374,13 @@ theorem run_assign_regular_parts {σ : Type}
         finalCtx = ctx := by
   unfold run at hRun
   by_cases hContains : (model.vars source).contains name = true
-  · simp only [hContains, ↓reduceIte] at hRun
+  · try simp only [hContains, ↓reduceIte] at hRun
     cases hEval : Expr.evalOne model prim value source with
     | error err =>
-        simp [hEval] at hRun
+        simp [hContains, hEval] at hRun
     | ok evaluated =>
         rcases evaluated with ⟨afterValue, result⟩
-        simp [hEval] at hRun
+        simp [hContains, hEval] at hRun
         rcases hRun with ⟨hFinal, hCtx⟩
         exact
           ⟨hContains, afterValue, result,

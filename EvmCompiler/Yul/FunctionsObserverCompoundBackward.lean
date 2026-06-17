@@ -600,7 +600,10 @@ theorem ifBackwardNonterminal
               .ok
                 (bodyOutcome,
                   conditionBackward.result.prepared.prepared.finalCtx) := by
-          unfold Functions.Source.Effectful.Stmt.run
+          change
+            Functions.Source.Effectful.Control.Block.runScoped
+                _ _ _ _ _ _ _ = _ at hBodyScopedPrepared
+          unfold Functions.Source.Effectful.Control.Stmt.run
           rw [hBodyScopedPrepared]
           rfl
         exact
@@ -1160,7 +1163,10 @@ theorem switchBackwardNonterminal
                   .ok
                     (bodyOutcome,
                       scrutineeBackward.result.prepared.prepared.finalCtx) := by
-              unfold Functions.Source.Effectful.Stmt.run
+              change
+                Functions.Source.Effectful.Control.Block.runScoped
+                    _ _ _ _ _ _ _ = _ at hBodyScopedPrepared
+              unfold Functions.Source.Effectful.Control.Stmt.run
               rw [hBodyScopedPrepared]
               rfl
             exact

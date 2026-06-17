@@ -392,7 +392,7 @@ theorem exprOfSafeRun
           program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -419,9 +419,9 @@ theorem exprOfSafeRun
           (sourceOutcome :=
             Functions.Source.Effectful.Outcome.regular sourceFinal) := by
   have hSourceCopy := hSource
-  simp only [Functions.Source.Effectful.Stmt.run] at hSourceCopy
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSourceCopy
   cases hEval :
-      Functions.Source.Effectful.Expr.eval
+      Locals.Source.Effectful.Expr.Control.eval
         (Functions.ObserverSemantics.stateModel transcript)
         (AllocationObserverSafety.SafeSemantics.primitiveSemantics
           program.memoryContract transcript)
@@ -485,7 +485,7 @@ theorem assignOfSafeRun
           program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -512,7 +512,7 @@ theorem assignOfSafeRun
           (sourceOutcome :=
             Functions.Source.Effectful.Outcome.regular sourceFinal) := by
   have hSourceCopy := hSource
-  simp only [Functions.Source.Effectful.Stmt.run] at hSourceCopy
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSourceCopy
   cases hContains :
       (Functions.ObserverSemantics.stateModel transcript).vars source
         |>.contains name with
@@ -521,7 +521,7 @@ theorem assignOfSafeRun
   | true =>
       simp only [hContains, ↓reduceIte] at hSourceCopy
       cases hEval :
-          Functions.Source.Effectful.Expr.evalOne
+          Locals.Source.Effectful.Expr.Control.evalOne
             (Functions.ObserverSemantics.stateModel transcript)
             (AllocationObserverSafety.SafeSemantics.primitiveSemantics
               program.memoryContract transcript)
@@ -594,7 +594,7 @@ theorem letOfSafeRun
           program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -621,9 +621,9 @@ theorem letOfSafeRun
           (sourceOutcome :=
             Functions.Source.Effectful.Outcome.regular sourceFinal) := by
   have hSourceCopy := hSource
-  simp only [Functions.Source.Effectful.Stmt.run] at hSourceCopy
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSourceCopy
   cases hEval :
-      Functions.Source.Effectful.Expr.evalOne
+      Locals.Source.Effectful.Expr.Control.evalOne
         (Functions.ObserverSemantics.stateModel transcript)
         (AllocationObserverSafety.SafeSemantics.primitiveSemantics
           program.memoryContract transcript)
@@ -947,7 +947,7 @@ theorem exprOfSafeRunStack
       AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .expr expr :: rest } beforeState beforeLocals)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -974,9 +974,9 @@ theorem exprOfSafeRunStack
           (sourceOutcome :=
             Functions.Source.Effectful.Outcome.regular sourceFinal) := by
   have hSourceCopy := hSource
-  simp only [Functions.Source.Effectful.Stmt.run] at hSourceCopy
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSourceCopy
   cases hEval :
-      Functions.Source.Effectful.Expr.eval
+      Locals.Source.Effectful.Expr.Control.eval
         (Functions.ObserverSemantics.stateModel transcript)
         (AllocationObserverSafety.SafeSemantics.primitiveSemantics
           program.memoryContract transcript)
@@ -1037,7 +1037,7 @@ theorem assignOfSafeRunStack
         { stmts := .assign name valueExpr :: rest }
         beforeState beforeLocals)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -1064,7 +1064,7 @@ theorem assignOfSafeRunStack
           (sourceOutcome :=
             Functions.Source.Effectful.Outcome.regular sourceFinal) := by
   have hSourceCopy := hSource
-  simp only [Functions.Source.Effectful.Stmt.run] at hSourceCopy
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSourceCopy
   cases hContains :
       (Functions.ObserverSemantics.stateModel transcript).vars source
         |>.contains name with
@@ -1074,7 +1074,7 @@ theorem assignOfSafeRunStack
   | true =>
       simp only [hContains, ↓reduceIte] at hSourceCopy
       cases hEval :
-          Functions.Source.Effectful.Expr.evalOne
+          Locals.Source.Effectful.Expr.Control.evalOne
             (Functions.ObserverSemantics.stateModel transcript)
             (AllocationObserverSafety.SafeSemantics.primitiveSemantics
               program.memoryContract transcript)
@@ -1143,7 +1143,7 @@ theorem letOfSafeRunStack
         { stmts := .let_ name valueExpr :: rest }
         beforeState beforeLocals)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -1170,9 +1170,9 @@ theorem letOfSafeRunStack
           (sourceOutcome :=
             Functions.Source.Effectful.Outcome.regular sourceFinal) := by
   have hSourceCopy := hSource
-  simp only [Functions.Source.Effectful.Stmt.run] at hSourceCopy
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSourceCopy
   cases hEval :
-      Functions.Source.Effectful.Expr.evalOne
+      Locals.Source.Effectful.Expr.Control.evalOne
         (Functions.ObserverSemantics.stateModel transcript)
         (AllocationObserverSafety.SafeSemantics.primitiveSemantics
           program.memoryContract transcript)
@@ -2118,7 +2118,7 @@ def ResourceRecursiveBlockForward
         (allocatorDepth := allocatorDepth) (frameBase := frameBase)
         (mode := mode) (sourceCtx := sourceCtx)
         (source := source) (target := target)) →
-    Functions.Source.Effectful.Block.runOpen
+    Functions.Source.Effectful.Control.Block.runOpen
         (Functions.ObserverSemantics.stateModel transcript)
         (AllocationObserverSafety.SafeSemantics.primitiveSemantics
           program.memoryContract transcript)
@@ -2167,7 +2167,7 @@ def RecursiveBlockForward
         (allocatorDepth := allocatorDepth) (frameBase := frameBase)
         (mode := mode) (sourceCtx := sourceCtx)
         (source := source) (target := target)) →
-    Functions.Source.Effectful.Block.runOpen
+    Functions.Source.Effectful.Control.Block.runOpen
         (Functions.ObserverSemantics.stateModel transcript)
         (AllocationObserverSafety.SafeSemantics.primitiveSemantics
           program.memoryContract transcript)
@@ -2480,7 +2480,7 @@ theorem regular
         (mode := mode) (sourceCtx := sourceCtx)
         (source := source) (target := target))
     (hSource :
-      Functions.Source.Effectful.Block.runOpen
+      Functions.Source.Effectful.Control.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -2553,7 +2553,7 @@ theorem nonregular
         (mode := mode) (sourceCtx := sourceCtx)
         (source := source) (target := target))
     (hSource :
-      Functions.Source.Effectful.Block.runOpen
+      Functions.Source.Effectful.Control.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -2621,7 +2621,7 @@ theorem scopedRegularInvariant
         (mode := mode) (sourceCtx := sourceCtx)
         (source := source) (target := target))
     (hSource :
-      Functions.Source.Effectful.Block.runScoped
+      Functions.Source.Effectful.Control.Block.runScoped
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -2735,7 +2735,7 @@ theorem scopedNonregularControlled
         (mode := mode) (sourceCtx := sourceCtx)
         (source := source) (target := target))
     (hSource :
-      Functions.Source.Effectful.Block.runScoped
+      Functions.Source.Effectful.Control.Block.runScoped
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -3044,7 +3044,7 @@ theorem recursiveRegular
         (mode := mode) (sourceCtx := sourceCtx)
         (source := source) (target := target))
     (hSource :
-      Functions.Source.Effectful.Block.runOpen
+      Functions.Source.Effectful.Control.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -3116,7 +3116,7 @@ theorem recursiveNonregular
         (mode := mode) (sourceCtx := sourceCtx)
         (source := source) (target := target))
     (hSource :
-      Functions.Source.Effectful.Block.runOpen
+      Functions.Source.Effectful.Control.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -3180,7 +3180,7 @@ theorem recursiveScopedRegular
         (mode := mode) (sourceCtx := sourceCtx)
         (source := source) (target := target))
     (hSource :
-      Functions.Source.Effectful.Block.runScoped
+      Functions.Source.Effectful.Control.Block.runScoped
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -3295,7 +3295,7 @@ theorem recursiveScopedNonregularControlled
         (mode := mode) (sourceCtx := sourceCtx)
         (source := source) (target := target))
     (hSource :
-      Functions.Source.Effectful.Block.runScoped
+      Functions.Source.Effectful.Control.Block.runScoped
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -3392,7 +3392,7 @@ theorem recursiveScopedNonregular
         (mode := mode) (sourceCtx := sourceCtx)
         (source := source) (target := target))
     (hSource :
-      Functions.Source.Effectful.Block.runScoped
+      Functions.Source.Effectful.Control.Block.runScoped
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -3546,7 +3546,7 @@ theorem recursiveForInitRegular
         (transcript := transcript))
     (hFuel : sourceFuel < fuelBound)
     (hSource :
-      Functions.Source.Effectful.Block.runOpen
+      Functions.Source.Effectful.Control.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -4498,7 +4498,7 @@ theorem forInitExitHeadResult
         (frameBase := frameBase) (fuelBound := sourceFuel + 1)
         (transcript := transcript))
     (hInitSource :
-      Functions.Source.Effectful.Block.runOpen
+      Functions.Source.Effectful.Control.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -4665,7 +4665,7 @@ theorem forRegularHeadResult
         (frameBase := frameBase) (fuelBound := sourceFuel + 1)
         (transcript := transcript))
     (hInitSource :
-      Functions.Source.Effectful.Block.runOpen
+      Functions.Source.Effectful.Control.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -4674,7 +4674,7 @@ theorem forRegularHeadResult
           (Functions.Source.Effectful.Outcome.regular sourceAfterInit,
             initCtx))
     (hLoopSource :
-      Functions.Source.Effectful.Stmt.runForLoop
+      Functions.Source.Effectful.Control.Stmt.runForLoop
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -5274,7 +5274,7 @@ theorem forExitHeadResult
         (frameBase := frameBase) (fuelBound := sourceFuel + 1)
         (transcript := transcript))
     (hInitSource :
-      Functions.Source.Effectful.Block.runOpen
+      Functions.Source.Effectful.Control.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -5283,7 +5283,7 @@ theorem forExitHeadResult
           (Functions.Source.Effectful.Outcome.regular sourceAfterInit,
             initCtx))
     (hLoopSource :
-      Functions.Source.Effectful.Stmt.runForLoop
+      Functions.Source.Effectful.Control.Stmt.runForLoop
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -5776,7 +5776,7 @@ theorem ifHeadResult
           program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -5797,7 +5797,7 @@ theorem ifHeadResult
           AllocationObserverForward.BodyCursor.CoreCursor root
             (.lexical scope cursor.planning.nextScope)
             live body lowerState localsCtx),
-        Functions.Source.Effectful.Block.runOpen
+        Functions.Source.Effectful.Control.Block.runOpen
             (Functions.ObserverSemantics.stateModel transcript)
             (AllocationObserverSafety.SafeSemantics.primitiveSemantics
               program.memoryContract transcript)
@@ -5880,7 +5880,7 @@ theorem ifControlledHeadResult
           program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -5902,7 +5902,7 @@ theorem ifControlledHeadResult
             (.lexical scope cursor.planning.nextScope)
             live body lowerState localsCtx)
         (hOpen :
-          Functions.Source.Effectful.Block.runOpen
+          Functions.Source.Effectful.Control.Block.runOpen
               (Functions.ObserverSemantics.stateModel transcript)
               (AllocationObserverSafety.SafeSemantics.primitiveSemantics
                 program.memoryContract transcript)
@@ -6157,7 +6157,7 @@ theorem switchHeadResult
           program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -6182,7 +6182,7 @@ theorem switchHeadResult
           AllocationObserverForward.BodyCursor.CoreCursor root
             (.lexical scope selectedPlanning.nextScope)
             live selected selectedStart localsCtx),
-        Functions.Source.Effectful.Block.runOpen
+        Functions.Source.Effectful.Control.Block.runOpen
             (Functions.ObserverSemantics.stateModel transcript)
             (AllocationObserverSafety.SafeSemantics.primitiveSemantics
               program.memoryContract transcript)
@@ -6267,7 +6267,7 @@ theorem switchControlledHeadResult
           program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -6296,7 +6296,7 @@ theorem switchControlledHeadResult
           AllocationLowering.StateExtends
             live lowerState selectedStart)
         (hOpen :
-          Functions.Source.Effectful.Block.runOpen
+          Functions.Source.Effectful.Control.Block.runOpen
               (Functions.ObserverSemantics.stateModel transcript)
               (AllocationObserverSafety.SafeSemantics.primitiveSemantics
                 program.memoryContract transcript)
@@ -6537,7 +6537,7 @@ theorem blockHeadResult
       AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .block body :: rest } lowerState localsCtx)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -6556,7 +6556,7 @@ theorem blockHeadResult
           AllocationObserverForward.BodyCursor.CoreCursor root
             (.lexical scope cursor.planning.nextScope)
             live body lowerState localsCtx),
-        Functions.Source.Effectful.Block.runOpen
+        Functions.Source.Effectful.Control.Block.runOpen
             (Functions.ObserverSemantics.stateModel transcript)
             (AllocationObserverSafety.SafeSemantics.primitiveSemantics
               program.memoryContract transcript)
@@ -6583,9 +6583,9 @@ theorem blockHeadResult
           (sourceCtx := sourceCtx) (finalCtx := finalCtx)
           (source := source) (target := target)
           (sourceOutcome := sourceOutcome) := by
-  simp only [Functions.Source.Effectful.Stmt.run] at hSource
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSource
   cases hScoped :
-      Functions.Source.Effectful.Block.runScoped
+      Functions.Source.Effectful.Control.Block.runScoped
         (Functions.ObserverSemantics.stateModel transcript)
         (AllocationObserverSafety.SafeSemantics.primitiveSemantics
           program.memoryContract transcript)
@@ -6687,7 +6687,7 @@ theorem blockControlledHeadResult
       AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .block body :: rest } lowerState localsCtx)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -6707,7 +6707,7 @@ theorem blockControlledHeadResult
             (.lexical scope cursor.planning.nextScope)
             live body lowerState localsCtx)
         (hOpen :
-          Functions.Source.Effectful.Block.runOpen
+          Functions.Source.Effectful.Control.Block.runOpen
               (Functions.ObserverSemantics.stateModel transcript)
               (AllocationObserverSafety.SafeSemantics.primitiveSemantics
                 program.memoryContract transcript)
@@ -6734,9 +6734,9 @@ theorem blockControlledHeadResult
           (sourceCtx := sourceCtx) (finalCtx := finalCtx)
           (source := source) (target := target)
           (sourceOutcome := sourceOutcome) := by
-  simp only [Functions.Source.Effectful.Stmt.run] at hSource
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSource
   cases hScoped :
-      Functions.Source.Effectful.Block.runScoped
+      Functions.Source.Effectful.Control.Block.runScoped
         (Functions.ObserverSemantics.stateModel transcript)
         (AllocationObserverSafety.SafeSemantics.primitiveSemantics
           program.memoryContract transcript)
@@ -6917,7 +6917,7 @@ theorem brkControlledHeadResult
       AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .brk :: rest } beforeState beforeLocals)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -6938,7 +6938,7 @@ theorem brkControlledHeadResult
           (sourceCtx := sourceCtx) (finalCtx := finalCtx)
           (source := source) (target := target)
           (sourceOutcome := sourceOutcome) := by
-  simp only [Functions.Source.Effectful.Stmt.run] at hSource
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSource
   cases hScope : sourceCtx.breakScope? with
   | none =>
       simp [hScope, Functions.Source.invalid, Structured.invalid] at hSource
@@ -7054,7 +7054,7 @@ theorem brkHeadResult
       AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .brk :: rest } beforeState beforeLocals)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -7108,7 +7108,7 @@ theorem contControlledHeadResult
       AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .cont :: rest } beforeState beforeLocals)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -7129,7 +7129,7 @@ theorem contControlledHeadResult
           (sourceCtx := sourceCtx) (finalCtx := finalCtx)
           (source := source) (target := target)
           (sourceOutcome := sourceOutcome) := by
-  simp only [Functions.Source.Effectful.Stmt.run] at hSource
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSource
   cases hScope : sourceCtx.continueScope? with
   | none =>
       simp [hScope, Functions.Source.invalid, Structured.invalid] at hSource
@@ -7245,7 +7245,7 @@ theorem contHeadResult
       AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .cont :: rest } beforeState beforeLocals)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -7304,7 +7304,7 @@ theorem leaveHeadResult
           program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -7324,7 +7324,7 @@ theorem leaveHeadResult
           (sourceCtx := sourceCtx) (finalCtx := finalCtx)
           (source := source) (target := target)
           (sourceOutcome := sourceOutcome) := by
-  simp only [Functions.Source.Effectful.Stmt.run] at hSource
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSource
   cases hScope : sourceCtx.leaveScope? with
   | none =>
       simp [hScope, Functions.Source.invalid, Structured.invalid] at hSource
@@ -7385,7 +7385,7 @@ theorem terminalHeadResult
       AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .terminal kind :: rest } beforeState beforeLocals)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -7405,7 +7405,7 @@ theorem terminalHeadResult
           (sourceCtx := sourceCtx) (finalCtx := finalCtx)
           (source := source) (target := target)
           (sourceOutcome := sourceOutcome) := by
-  simp only [Functions.Source.Effectful.Stmt.run] at hSource
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSource
   cases hTerminalEval :
       (AllocationObserverSafety.SafeSemantics.primitiveSemantics
         program.memoryContract transcript).terminal kind source [] with
@@ -7469,7 +7469,7 @@ theorem terminalArgsHeadResult
           program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -7489,9 +7489,9 @@ theorem terminalArgsHeadResult
           (sourceCtx := sourceCtx) (finalCtx := finalCtx)
           (source := source) (target := target)
           (sourceOutcome := sourceOutcome) := by
-  simp only [Functions.Source.Effectful.Stmt.run] at hSource
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSource
   cases hArgsEval :
-      Locals.Source.Effectful.Expr.ExprSeq.eval
+      Locals.Source.Effectful.Expr.Control.ExprSeq.eval
         (Functions.ObserverSemantics.stateModel transcript)
         (AllocationObserverSafety.SafeSemantics.primitiveSemantics
           program.memoryContract transcript)
@@ -7572,7 +7572,7 @@ theorem callRegularHeadResult
           program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -7601,7 +7601,7 @@ theorem callRegularHeadResult
         {bodyCtx' : Functions.Source.Ctx}
         {targetBodyStart : Structured.ObserverSemantics.State transcript}
         {calleeDepth calleeFrameBase : Nat},
-        Functions.Source.Effectful.Block.runOpen
+        Functions.Source.Effectful.Control.Block.runOpen
             (Functions.ObserverSemantics.stateModel transcript)
             (AllocationObserverSafety.SafeSemantics.primitiveSemantics
               program.memoryContract transcript)
@@ -7745,7 +7745,7 @@ theorem callHaltHeadResult
           program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -7774,7 +7774,7 @@ theorem callHaltHeadResult
         {bodyCtx' : Functions.Source.Ctx}
         {targetBodyStart : Structured.ObserverSemantics.State transcript}
         {calleeDepth calleeFrameBase : Nat},
-        Functions.Source.Effectful.Block.runOpen
+        Functions.Source.Effectful.Control.Block.runOpen
             (Functions.ObserverSemantics.stateModel transcript)
             (AllocationObserverSafety.SafeSemantics.primitiveSemantics
               program.memoryContract transcript)
@@ -8121,7 +8121,7 @@ theorem nilRuntimeResult
         (frameBase := frameBase) (mode := mode)
         (sourceCtx := sourceCtx) (source := source) (target := target))
     (hSource :
-      Functions.Source.Effectful.Block.runOpen
+      Functions.Source.Effectful.Control.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -8138,13 +8138,13 @@ theorem nilRuntimeResult
         target sourceOutcome targetOutcome finalCtx := by
   cases sourceFuel with
   | zero =>
-      simp [Functions.Source.Effectful.Block.runOpen,
+      simp [Functions.Source.Effectful.Control.Block.runOpen,
         Functions.Source.invalid, Structured.invalid] at hSource
   | succ fuel =>
       have hEq :
           (Functions.Source.Effectful.Outcome.regular source, sourceCtx) =
             (sourceOutcome, finalCtx) := by
-        simpa [Functions.Source.Effectful.Block.runOpen] using hSource
+        simpa [Functions.Source.Effectful.Control.Block.runOpen] using hSource
       cases hEq
       exact
         ⟨Structured.EffectSemantics.Outcome.regular target,
@@ -8183,7 +8183,7 @@ theorem nilBlockResult
         (frameBase := frameBase) (mode := mode)
         (sourceCtx := sourceCtx) (source := source) (target := target))
     (hSource :
-      Functions.Source.Effectful.Block.runOpen
+      Functions.Source.Effectful.Control.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -8196,13 +8196,13 @@ theorem nilBlockResult
       (sourceOutcome := sourceOutcome) := by
   cases sourceFuel with
   | zero =>
-      simp [Functions.Source.Effectful.Block.runOpen,
+      simp [Functions.Source.Effectful.Control.Block.runOpen,
         Functions.Source.invalid, Structured.invalid] at hSource
   | succ fuel =>
       have hEq :
           (Functions.Source.Effectful.Outcome.regular source, sourceCtx) =
             (sourceOutcome, finalCtx) := by
-        simpa [Functions.Source.Effectful.Block.runOpen] using hSource
+        simpa [Functions.Source.Effectful.Control.Block.runOpen] using hSource
       cases hEq
       exact
         { runtime :=
@@ -8563,7 +8563,7 @@ theorem forInitExitHeadResultStack
         (frameBase := frameBase) (fuelBound := sourceFuel + 1)
         (transcript := transcript))
     (hInitSource :
-      Functions.Source.Effectful.Block.runOpen
+      Functions.Source.Effectful.Control.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -8708,7 +8708,7 @@ theorem forRegularHeadResultStack
         (frameBase := frameBase) (fuelBound := sourceFuel + 1)
         (transcript := transcript))
     (hInitSource :
-      Functions.Source.Effectful.Block.runOpen
+      Functions.Source.Effectful.Control.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -8717,7 +8717,7 @@ theorem forRegularHeadResultStack
           (Functions.Source.Effectful.Outcome.regular sourceAfterInit,
             initCtx))
     (hLoopSource :
-      Functions.Source.Effectful.Stmt.runForLoop
+      Functions.Source.Effectful.Control.Stmt.runForLoop
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -9318,7 +9318,7 @@ theorem forExitHeadResultStack
         (frameBase := frameBase) (fuelBound := sourceFuel + 1)
         (transcript := transcript))
     (hInitSource :
-      Functions.Source.Effectful.Block.runOpen
+      Functions.Source.Effectful.Control.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -9327,7 +9327,7 @@ theorem forExitHeadResultStack
           (Functions.Source.Effectful.Outcome.regular sourceAfterInit,
             initCtx))
     (hLoopSource :
-      Functions.Source.Effectful.Stmt.runForLoop
+      Functions.Source.Effectful.Control.Stmt.runForLoop
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -9967,7 +9967,7 @@ theorem forControlledHeadResultStack
         { stmts := .for_ init cond post body :: rest }
         lowerState localsCtx)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -10086,7 +10086,7 @@ theorem blockControlledHeadResultStack
       AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .block body :: rest } lowerState localsCtx)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -10107,7 +10107,7 @@ theorem blockControlledHeadResultStack
             (.lexical scope cursor.planning.nextScope)
             live body lowerState localsCtx)
         (hOpen :
-          Functions.Source.Effectful.Block.runOpen
+          Functions.Source.Effectful.Control.Block.runOpen
               (Functions.ObserverSemantics.stateModel transcript)
               (AllocationObserverSafety.SafeSemantics.primitiveSemantics
                 program.memoryContract transcript)
@@ -10135,9 +10135,9 @@ theorem blockControlledHeadResultStack
           (sourceCtx := sourceCtx) (finalCtx := finalCtx)
           (source := source) (target := target)
           (sourceOutcome := sourceOutcome) := by
-  simp only [Functions.Source.Effectful.Stmt.run] at hSource
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSource
   cases hScoped :
-      Functions.Source.Effectful.Block.runScoped
+      Functions.Source.Effectful.Control.Block.runScoped
         (Functions.ObserverSemantics.stateModel transcript)
         (AllocationObserverSafety.SafeSemantics.primitiveSemantics
           program.memoryContract transcript)
@@ -10321,7 +10321,7 @@ theorem ifControlledHeadResultStack
       AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .if_ cond body :: rest } lowerState localsCtx)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -10344,7 +10344,7 @@ theorem ifControlledHeadResultStack
             (.lexical scope cursor.planning.nextScope)
             live body lowerState localsCtx)
         (hOpen :
-          Functions.Source.Effectful.Block.runOpen
+          Functions.Source.Effectful.Control.Block.runOpen
               (Functions.ObserverSemantics.stateModel transcript)
               (AllocationObserverSafety.SafeSemantics.primitiveSemantics
                 program.memoryContract transcript)
@@ -10587,7 +10587,7 @@ theorem switchControlledHeadResultStack
         { stmts := .switch scrutinee cases defaultBody :: rest }
         lowerState localsCtx)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -10617,7 +10617,7 @@ theorem switchControlledHeadResultStack
           AllocationLowering.StateExtends
             live lowerState selectedStart)
         (hOpen :
-          Functions.Source.Effectful.Block.runOpen
+          Functions.Source.Effectful.Control.Block.runOpen
               (Functions.ObserverSemantics.stateModel transcript)
               (AllocationObserverSafety.SafeSemantics.primitiveSemantics
                 program.memoryContract transcript)
@@ -10857,7 +10857,7 @@ theorem brkControlledHeadResultStack
       AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .brk :: rest } beforeState beforeLocals)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -10879,7 +10879,7 @@ theorem brkControlledHeadResultStack
           (sourceCtx := sourceCtx) (finalCtx := finalCtx)
           (source := source) (target := target)
           (sourceOutcome := sourceOutcome) := by
-  simp only [Functions.Source.Effectful.Stmt.run] at hSource
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSource
   cases hScope : sourceCtx.breakScope? with
   | none =>
       simp [hScope, Functions.Source.invalid, Structured.invalid] at hSource
@@ -10994,7 +10994,7 @@ theorem contControlledHeadResultStack
       AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .cont :: rest } beforeState beforeLocals)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -11016,7 +11016,7 @@ theorem contControlledHeadResultStack
           (sourceCtx := sourceCtx) (finalCtx := finalCtx)
           (source := source) (target := target)
           (sourceOutcome := sourceOutcome) := by
-  simp only [Functions.Source.Effectful.Stmt.run] at hSource
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSource
   cases hScope : sourceCtx.continueScope? with
   | none =>
       simp [hScope, Functions.Source.invalid, Structured.invalid] at hSource
@@ -11131,7 +11131,7 @@ theorem leaveControlledHeadResultStack
       AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .leave :: rest } beforeState beforeLocals)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -11153,7 +11153,7 @@ theorem leaveControlledHeadResultStack
           (sourceCtx := sourceCtx) (finalCtx := finalCtx)
           (source := source) (target := target)
           (sourceOutcome := sourceOutcome) := by
-  simp only [Functions.Source.Effectful.Stmt.run] at hSource
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSource
   cases hScope : sourceCtx.leaveScope? with
   | none =>
       simp [hScope, Functions.Source.invalid, Structured.invalid] at hSource
@@ -11231,7 +11231,7 @@ theorem terminalControlledHeadResultStack
       AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .terminal kind :: rest } beforeState beforeLocals)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -11253,7 +11253,7 @@ theorem terminalControlledHeadResultStack
           (sourceCtx := sourceCtx) (finalCtx := finalCtx)
           (source := source) (target := target)
           (sourceOutcome := sourceOutcome) := by
-  simp only [Functions.Source.Effectful.Stmt.run] at hSource
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSource
   cases hTerminalEval :
       (AllocationObserverSafety.SafeSemantics.primitiveSemantics
         program.memoryContract transcript).terminal kind source [] with
@@ -11330,7 +11330,7 @@ theorem terminalArgsControlledHeadResultStack
         { stmts := .terminalArgs kind args :: rest }
         beforeState beforeLocals)
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -11352,9 +11352,9 @@ theorem terminalArgsControlledHeadResultStack
           (sourceCtx := sourceCtx) (finalCtx := finalCtx)
           (source := source) (target := target)
           (sourceOutcome := sourceOutcome) := by
-  simp only [Functions.Source.Effectful.Stmt.run] at hSource
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSource
   cases hArgsEval :
-      Locals.Source.Effectful.Expr.ExprSeq.eval
+      Locals.Source.Effectful.Expr.Control.ExprSeq.eval
         (Functions.ObserverSemantics.stateModel transcript)
         (AllocationObserverSafety.SafeSemantics.primitiveSemantics
           program.memoryContract transcript)
@@ -11449,7 +11449,7 @@ theorem callRegularControlledHeadResultStack
           compilation.recipe compilation.stackSlots =
         [])
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -11478,7 +11478,7 @@ theorem callRegularControlledHeadResultStack
             (Functions.ObserverSemantics.State transcript)}
         {bodyCtx' : Functions.Source.Ctx}
         {targetBodyStart : Structured.ObserverSemantics.State transcript},
-        Functions.Source.Effectful.Block.runOpen
+        Functions.Source.Effectful.Control.Block.runOpen
             (Functions.ObserverSemantics.stateModel transcript)
             (AllocationObserverSafety.SafeSemantics.primitiveSemantics
               program.memoryContract transcript)
@@ -11604,7 +11604,7 @@ theorem callHaltControlledHeadResultStack
           compilation.recipe compilation.stackSlots =
         [])
     (hSource :
-      Functions.Source.Effectful.Stmt.run
+      Functions.Source.Effectful.Control.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -11630,7 +11630,7 @@ theorem callHaltControlledHeadResultStack
           Functions.ObserverSemantics.State transcript}
         {bodyCtx' : Functions.Source.Ctx}
         {targetBodyStart : Structured.ObserverSemantics.State transcript},
-        Functions.Source.Effectful.Block.runOpen
+        Functions.Source.Effectful.Control.Block.runOpen
             (Functions.ObserverSemantics.stateModel transcript)
             (AllocationObserverSafety.SafeSemantics.primitiveSemantics
               program.memoryContract transcript)
@@ -11946,7 +11946,7 @@ theorem nilBlockResult
         (mode := mode) (sourceCtx := sourceCtx)
         (source := source) (target := target))
     (hSource :
-      Functions.Source.Effectful.Block.runOpen
+      Functions.Source.Effectful.Control.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
           (AllocationObserverSafety.SafeSemantics.primitiveSemantics
             program.memoryContract transcript)
@@ -11960,13 +11960,13 @@ theorem nilBlockResult
       (sourceOutcome := sourceOutcome) := by
   cases sourceFuel with
   | zero =>
-      simp [Functions.Source.Effectful.Block.runOpen,
+      simp [Functions.Source.Effectful.Control.Block.runOpen,
         Functions.Source.invalid, Structured.invalid] at hSource
   | succ fuel =>
       have hEq :
           (Functions.Source.Effectful.Outcome.regular source, sourceCtx) =
             (sourceOutcome, finalCtx) := by
-        simpa [Functions.Source.Effectful.Block.runOpen] using hSource
+        simpa [Functions.Source.Effectful.Control.Block.runOpen] using hSource
       cases hEq
       exact
         { runtime :=

@@ -31493,3 +31493,21 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   Functions argument evaluation monad-polymorphic over the canonical Locals
   primitive interface; the ordinary `Except` API is now a transparent wrapper,
   and the complete existing Functions effect-semantics module still checks.
+- 2026-06-17 16:23:01 PDT - compaction-resume - resumed the open-world
+  CALL/CREATE goal at the green recursive Locals boundary; current work
+  canonicalizes Functions control semantics before proving its adjacent
+  allocation/interaction preservation theorem.
+- 2026-06-17 16:30:43 PDT - consolidation/functions-canonical-control -
+  replaced the recursive `Except`-specific Functions evaluator with one
+  monad-polymorphic `Functions.Source.Effectful.Control` kernel; legacy
+  Functions/observer APIs are transparent wrappers, and the new open-world
+  specialization reuses that kernel without defining control recursion.
+- 2026-06-17 16:30:43 PDT - architecture/functions-canonical-control - added
+  guards preventing Interaction/Observer modules from defining another
+  Functions control kernel and requiring legacy control APIs to remain
+  transparent abbreviations.
+- 2026-06-17 16:30:43 PDT - validation/functions-canonical-control - focused
+  1170-job Functions build, 1302-job verification root, architecture check,
+  touched-file hole scan, and `git diff --check` passed; axiom audit reports
+  `[propext, Quot.sound]` for canonical `Program.runState` and
+  `[propext, Classical.choice, Quot.sound]` for preserved `mainForward`.

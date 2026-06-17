@@ -28,6 +28,7 @@ import EvmCompiler.Functions.AllocationObserverRecursive
 import EvmCompiler.Functions.AllocationObserverProgram
 import EvmCompiler.Functions.AllocationObserverCall
 import EvmCompiler.Functions.EffectSemantics
+import EvmCompiler.Functions.InteractionSemantics
 import EvmCompiler.Functions.EffectSemanticsInversion
 import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Functions.ObserverSafety
@@ -141,6 +142,17 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.Source.Effectful.Expr.eval_prim_ok_parts
 #check EvmCompiler.Functions.Source.Effectful.ArgList.Control.eval
 #check EvmCompiler.Functions.Source.Effectful.ArgList.eval_cons_ok_parts
+#check EvmCompiler.Functions.Source.Canonical.PrimitiveSemantics
+#check EvmCompiler.Functions.Source.Canonical.Block.runOpen
+#check EvmCompiler.Functions.Source.Canonical.FunDef.runBody
+#check EvmCompiler.Functions.Source.Canonical.Program.runState
+#check EvmCompiler.Functions.InteractionSemantics.primitiveSemantics
+#check EvmCompiler.Functions.InteractionSemantics.ArgList.openEval
+#check EvmCompiler.Functions.InteractionSemantics.Block.openRun
+#check EvmCompiler.Functions.InteractionSemantics.FunDef.openRunBody
+#check EvmCompiler.Functions.InteractionSemantics.Stmt.openRun
+#check EvmCompiler.Functions.InteractionSemantics.Program.openRunState
+#check EvmCompiler.Functions.InteractionSemantics.Program.OpenSupported
 #check EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_nonObserver
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_outputs_length
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_of_safe
