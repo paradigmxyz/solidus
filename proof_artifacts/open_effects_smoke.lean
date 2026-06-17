@@ -4,6 +4,7 @@ import EvmCompiler.Structured.InteractionLeafPreservation
 import EvmCompiler.Structured.InteractionBranchPreservation
 import EvmCompiler.Structured.InteractionSwitchPreservation
 import EvmCompiler.Structured.InteractionLoopPreservation
+import EvmCompiler.Structured.InteractionCallPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 
 #check EvmCompiler.Simulation.OpenWorld
@@ -170,5 +171,10 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Structured.InteractionSwitchPreservation.Stmt.openRun_switch_within_stop_of_compileStmtFuel?
 #print axioms EvmCompiler.Structured.InteractionLoopPreservation.Loop.openRunForLoop_exec_under
 #print axioms EvmCompiler.Structured.InteractionLoopPreservation.Loop.Stmt.openRun_for_exec_under_of_compileStmtFuel?
+#print axioms EvmCompiler.TypedCfg.InteractionSemantics.Instr.openRunAt_eq_done_of_not_prim
+#print axioms EvmCompiler.TypedCfg.InteractionSemantics.Block.openRunBody_eq_done_of_forall_not_prim
+#print axioms EvmCompiler.Structured.InteractionCallPreservation.Call.openStep_entry_of_compileStmtFuel?
+#print axioms EvmCompiler.Structured.InteractionCallPreservation.Call.openRunNResult_procEntry
+#print axioms EvmCompiler.Structured.InteractionCallPreservation.Call.openStep_dispatch
 #print axioms EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes
 #print axioms EvmCompiler.Assembly.Bytecode.compile_openRunNResult_executes

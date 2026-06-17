@@ -744,6 +744,10 @@ Exit: the shared core builds with no compiler layer changed.
     initializer/body/post compiler artifacts, including break, continue,
     leave, halt, and exact transcript order.
   - [ ] Internal procedure calls and generated return dispatch.
+    - [x] Silent generated call-site entry, optional procedure-entry relabel,
+      and token-selected return dispatch.
+    - [ ] Recursive procedure-body execution and source call-outcome
+      composition.
   - [ ] One mutual whole-statement/block/program owner theorem.
 - [ ] Locals/Expressions.
 - [ ] Functions.
@@ -777,6 +781,8 @@ Exit: every layer exposes one canonical open computation.
     switches.
   - [x] Recursive `for` loops through the adjacent compiler decomposition.
   - [ ] Internal procedure calls and generated program wrapper.
+    - [x] Generated call-entry, procedure-entry, and return-dispatch routing.
+    - [ ] Recursive procedure-body preservation and whole-program wrapper.
 - [ ] Locals/Expressions -> Structured.
 - [ ] Functions -> allocated Locals/Expressions.
 - [ ] Yul -> Functions.

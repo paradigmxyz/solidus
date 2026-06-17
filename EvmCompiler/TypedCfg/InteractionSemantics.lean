@@ -34,6 +34,63 @@ def openRunAt (instr : TypedCfg.Instr) (shape : Shape)
     Simulation.Interaction EVMException (EVMState × Shape) :=
   Control.Instr.runAt openRunState instr shape state
 
+/--
+Non-primitive TypedCfg instructions embed their ordinary state transition
+directly in the interaction carrier.
+-/
+theorem openRunState_eq_done_of_not_prim
+    {instr : TypedCfg.Instr} {shape : Shape} {state : EVMState}
+    (hNonPrim : ∀ op, instr ≠ .prim op) :
+    openRunState instr shape state =
+      .done (TypedCfg.Instr.runState instr shape state) := by
+  cases instr with
+  | prim op =>
+      exact False.elim (hNonPrim op rfl)
+  | push value
+  | returnToken value
+  | pop
+  | dup depth
+  | swap depth
+  | bindLocals offset names
+  | bindScratch baseDepth name slot
+  | relabel targetShape
+  | unwind targetShape =>
+      rfl
+
+/--
+TypedCfg bookkeeping instructions embed the ordinary instruction semantics
+without producing an interaction node.
+-/
+theorem openRunAt_eq_done_of_not_prim
+    {instr : TypedCfg.Instr} {shape : Shape} {state : EVMState}
+    (hNonPrim : ∀ op, instr ≠ .prim op) :
+    openRunAt instr shape state =
+      .done (TypedCfg.Instr.runAt instr shape state) := by
+  unfold openRunAt Control.Instr.runAt TypedCfg.Instr.runAt
+  cases hType : instr.type? shape with
+  | none =>
+      change
+        Simulation.Interaction.bind
+            (Simulation.Interaction.error .InvalidInstruction)
+            (fun output =>
+              Simulation.Interaction.bind
+                (openRunState instr shape state)
+                (fun state' =>
+                  Simulation.Interaction.pure (state', output))) =
+          .done (.error .InvalidInstruction)
+      rfl
+  | some output =>
+      rw [openRunState_eq_done_of_not_prim hNonPrim]
+      cases hRun : TypedCfg.Instr.runState instr shape state with
+      | error err =>
+          simp [
+            hType, hRun, Simulation.Interaction.instMonad,
+            Simulation.Interaction.bind, Simulation.Interaction.pure]
+      | ok final =>
+          simp [
+            hType, hRun, Simulation.Interaction.instMonad,
+            Simulation.Interaction.bind, Simulation.Interaction.pure]
+
 @[simp] theorem openRunState_gas (shape : Shape) (state : EVMState) :
     openRunState (.prim .gas) shape state =
       Assembly.InteractionSemantics.PrimOp.resourceStep
@@ -87,6 +144,39 @@ def openRunBody (body : List TypedCfg.Instr) (shape : Shape)
     (state : EVMState) :
     Simulation.Interaction EVMException (EVMState × Shape) :=
   Control.Block.runBody Instr.openRunState body shape state
+
+/--
+A body containing only TypedCfg bookkeeping instructions is exactly the
+ordinary body evaluator embedded as one completed interaction.
+-/
+theorem openRunBody_eq_done_of_forall_not_prim
+    {body : List TypedCfg.Instr} {shape : Shape} {state : EVMState}
+    (hNonPrim : ∀ instr ∈ body, ∀ op, instr ≠ .prim op) :
+    openRunBody body shape state =
+      .done (TypedCfg.Block.runBody body shape state) := by
+  induction body generalizing shape state with
+  | nil =>
+      rfl
+  | cons instr rest ih =>
+      unfold openRunBody
+      change
+        Simulation.Interaction.bind
+            (Instr.openRunAt instr shape state)
+            (fun result =>
+              openRunBody rest result.2 result.1) =
+          .done (TypedCfg.Block.runBody (instr :: rest) shape state)
+      rw [Instr.openRunAt_eq_done_of_not_prim
+        (hNonPrim instr (by simp))]
+      cases hRun : TypedCfg.Instr.runAt instr shape state with
+      | error err =>
+          simp [TypedCfg.Block.runBody, hRun]
+      | ok result =>
+          rcases result with ⟨nextState, nextShape⟩
+          simp only [Simulation.Interaction.bind_done_ok]
+          simp only [TypedCfg.Block.runBody, hRun]
+          rw [ih (fun member hMember op =>
+            hNonPrim member (by simp [hMember]) op)]
+          rfl
 
 def openRun (block : TypedCfg.Block) (state : EVMState) :
     OpenOutcome :=

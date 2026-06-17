@@ -30989,3 +30989,19 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   root, architecture guard, changed-file hole scan, axiom audit, and
   `git diff --check` pass. Axioms remain `propext`, `Classical.choice`, and
   `Quot.sound`.
+- 2026-06-17 09:09:00 PDT - compaction-resume - Resumed the horizontal
+  CALL/CREATE proof from checked checkpoint `7c611cc9b`; the immediate frontier
+  is Structured internal procedure-call and generated return-dispatch
+  preservation, followed by the mutual whole-program owner theorem.
+- 2026-06-17 09:22:00 PDT - proof/structured-open-call-routing - Proved the
+  pass-owned silent routing pieces for Structured internal calls in the shared
+  interaction semantics: compiler-generated call-site entry installs the
+  return token and reaches the canonical procedure entry, an optional generated
+  relabel adapter reaches the compiled procedure body, and globally unique
+  return tokens select the exact generated return dispatch while restoring the
+  source caller state. Added generic TypedCfg compatibility lemmas showing
+  non-primitive bookkeeping bodies embed ordinary execution without observable
+  requests. The focused module, full 1,291-job verification root, architecture
+  guard, changed-file hole scan, open-effects axiom audit, and
+  `git diff --check` pass. Axioms remain `propext`, `Classical.choice`, and
+  `Quot.sound`. Recursive procedure-body preservation remains the call frontier.
