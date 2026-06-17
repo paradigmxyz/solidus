@@ -294,9 +294,15 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.InteractionCallPreservation.Call.openRun_call_exec_under
 #check EvmCompiler.Structured.InteractionCallPreservation.Call.openRun_call_exec_under_of_compileStmtFuel?
 #check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.FragmentContract
+#check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.StmtContract
 #check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.BlockOwnerAt
 #check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.Stmt.code_exec
 #check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.Stmt.if_exec
+#check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.Stmt.call_exec
+#check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.Stmt.exec_succ
+#check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.block_owner
+#check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.GeneratedProgram.main_exec
+#check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_exec
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_call
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_callcode

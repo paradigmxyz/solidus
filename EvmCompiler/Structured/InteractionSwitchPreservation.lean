@@ -669,6 +669,7 @@ theorem openRun_default_some_exec_under_of_compileDefaultFuel?
     {sourceProgram : Structured.Program}
     {source : RunState} {tokens : List Word}
     {stack : EvmYul.Stack Word} {value : Word}
+    {generatedCalls : List TypedCfgCompiler.DispatchSite}
     {policy :
       InteractionControlPreservation.OpenOutcome.StopPolicy}
     (hCompile :
@@ -677,6 +678,8 @@ theorem openRun_default_some_exec_under_of_compileDefaultFuel?
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hResultCalls :
+      TypedCfgPreservation.CallsInProgram result generatedCalls)
     (hPopType :
       TypedCfg.Instr.type? .pop valueShape = some bodyShape)
     (hPop :
@@ -696,6 +699,7 @@ theorem openRun_default_some_exec_under_of_compileDefaultFuel?
             bodyShape regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        TypedCfgPreservation.CallsInProgram bodyResult generatedCalls →
         bodyResult.requireFallthrough? bodyShape = some () →
         enclosingResult.fallthrough? = some bodyShape →
         InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
@@ -718,8 +722,15 @@ theorem openRun_default_some_exec_under_of_compileDefaultFuel?
     intro block hMem
     apply hBlocks block
     simp [hMem]
+  have hBodyCalls :
+      TypedCfgPreservation.CallsInProgram
+        bodyResult generatedCalls := by
+    intro site hMem
+    apply hResultCalls site
+    simp [hMem]
   have hBodyPreserves :=
-    hBody hBodyCompile hBodyBlocks hRequire hEnclosingFallthrough
+    hBody hBodyCompile hBodyBlocks hBodyCalls
+      hRequire hEnclosingFallthrough
   have hBodyLifted :
       InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
         enclosingResult cfg (.generated supply 2000) ctx regular
@@ -1069,14 +1080,18 @@ theorem openRun_cases_some_exec_under_of_compileCasesFuel?
     {sourceProgram : Structured.Program}
     {source : RunState} {tokens : List Word}
     {stack : EvmYul.Stack Word} {value : Word}
+    {generatedCalls : List TypedCfgCompiler.DispatchSite}
     {policy :
       InteractionControlPreservation.OpenOutcome.StopPolicy}
     (hCompile :
       TypedCfgCompiler.compileCasesFuel? compilerFuel cases ctx
           base supply idx valueShape bodyShape regular =
         some result)
+    (hSupply : base + 1 ≤ supply)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hResultCalls :
+      TypedCfgPreservation.CallsInProgram result generatedCalls)
     (hHead :
       valueShape.slots.head? = some slot)
     (hPopType :
@@ -1114,6 +1129,8 @@ theorem openRun_cases_some_exec_under_of_compileCasesFuel?
             bodyShape regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        TypedCfgPreservation.CallsInProgram bodyResult generatedCalls →
+        base + 1 ≤ caseSupply →
         bodyResult.requireFallthrough? bodyShape = some () →
         enclosingResult.fallthrough? = some bodyShape →
         InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
@@ -1170,18 +1187,30 @@ theorem openRun_cases_some_exec_under_of_compileCasesFuel?
             intro block hMem
             apply hBlocks block
             simp [hResult, hMem]
+          have hBodyCalls :
+              TypedCfgPreservation.CallsInProgram
+                bodyResult generatedCalls := by
+            intro site hMem
+            apply hResultCalls site
+            simp [hResult, hMem]
           have hTailBlocks :
               TypedCfgPreservation.BlocksInProgram tail cfg := by
             intro block hMem
             apply hBlocks block
+            simp [hResult, hMem]
+          have hTailCalls :
+              TypedCfgPreservation.CallsInProgram
+                tail generatedCalls := by
+            intro site hMem
+            apply hResultCalls site
             simp [hResult, hMem]
           by_cases hEq : caseValue = value
           · have hSelected : body = selected := by
               simpa [Structured.Switch.select, hEq] using hSelect
             subst selected
             have hBodyPreserves :=
-              hCase hBodyCompile hBodyBlocks
-                hRequire hEnclosingFallthrough
+              hCase hBodyCompile hBodyBlocks hBodyCalls
+                hSupply hRequire hEnclosingFallthrough
             have hBodyLifted :
                 InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
                   enclosingResult cfg
@@ -1285,7 +1314,12 @@ theorem openRun_cases_some_exec_under_of_compileCasesFuel?
                   some selected := by
               simpa [Structured.Switch.select, hEq] using hSelect
             have hTailPreserves :=
-              ih hTailCompile hTailBlocks hTailSelect hCase hDefault
+              ih hTailCompile
+                (Nat.le_trans hSupply
+                  (TypedCfgCompilerFacts.Supply.block_next_ge
+                    hBodyCompile))
+                hTailBlocks hTailCalls
+                hTailSelect hCase hDefault
             have hSkipped :
                 InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
                   enclosingResult cfg
@@ -2398,6 +2432,7 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
     {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
     {sourceProgram : Structured.Program}
     {source : RunState} {tokens : List Word}
+    {generatedCalls : List TypedCfgCompiler.DispatchSite}
     {policy :
       InteractionControlPreservation.OpenOutcome.StopPolicy}
     (hCompile :
@@ -2407,6 +2442,8 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hResultCalls :
+      TypedCfgPreservation.CallsInProgram result generatedCalls)
     (hFits :
       TypedCfgCompiler.Shape.SourceFrameFits
         input source.evm.stack.length)
@@ -2437,6 +2474,8 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
             bodySupply bodyEntry bodyInput regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        TypedCfgPreservation.CallsInProgram bodyResult generatedCalls →
+        supply + 1 ≤ bodySupply →
         afterPop.returns = source.returns →
         TypedCfgCompiler.Shape.SourceFrameFits
           bodyInput afterPop.evm.stack.length →
@@ -2494,10 +2533,22 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
         intro block hMem
         apply hBlocks block
         simp [hResult, hMem]
+      have hCaseCalls :
+          TypedCfgPreservation.CallsInProgram
+            caseResult generatedCalls := by
+        intro site hMem
+        apply hResultCalls site
+        simp [hResult, hMem]
       have hDefaultBlocks :
           TypedCfgPreservation.BlocksInProgram defaultResult cfg := by
         intro block hMem
         apply hBlocks block
+        simp [hResult, hMem]
+      have hDefaultCalls :
+          TypedCfgPreservation.CallsInProgram
+            defaultResult generatedCalls := by
+        intro site hMem
+        apply hResultCalls site
         simp [hResult, hMem]
       have hDefaultFallthrough :
           defaultResult.fallthrough? = some bodyShape :=
@@ -2798,6 +2849,9 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
                             some bodyResult →
                           TypedCfgPreservation.BlocksInProgram
                             bodyResult cfg →
+                          TypedCfgPreservation.CallsInProgram
+                            bodyResult generatedCalls →
+                          supply + 1 ≤ caseSupply →
                           bodyResult.requireFallthrough? bodyShape =
                             some () →
                           result.fallthrough? = some bodyShape →
@@ -2817,10 +2871,11 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
                                   stack := stack }))
                             policy := by
                       intro caseBodyCompilerFuel caseSupply caseIdx
-                        bodyResult hBodyCompile hBodyBlocks
-                        hBodyRequire hResultFallthrough
+                        bodyResult hBodyCompile hBodyBlocks hBodyCalls
+                        hBodySupply hBodyRequire hResultFallthrough
                       exact
-                        hBody hSelect hBodyCompile hBodyBlocks (by
+                        hBody hSelect hBodyCompile hBodyBlocks hBodyCalls
+                          hBodySupply (by
                             simpa [RunState.withEVM] using hReturnsEq)
                           hBodyFits
                           hBodyRequire hResultFallthrough
@@ -2848,7 +2903,8 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
                         Switch.openRun_default_some_exec_under_of_compileDefaultFuel?
                           (enclosingResult := result)
                           (policy := policy)
-                          hCompileSome hDefaultBlocks hPopType hPop
+                          hCompileSome hDefaultBlocks hDefaultCalls
+                          hPopType hPop
                           hFallthrough
                           (fun targetAfter hTargetRel => by
                             obtain
@@ -2885,9 +2941,11 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
                                   (Nat.le_refl caseResult.next))
                                 hBodyShape hBodyActivation
                                 hTargetRel hBodyFits)
-                          (fun hBodyCompile hBodyBlocks hBodyRequire
+                          (fun hBodyCompile hBodyBlocks hBodyCalls hBodyRequire
                               hResultFallthrough =>
-                            hBody hSelect hBodyCompile hBodyBlocks (by
+                            hBody hSelect hBodyCompile hBodyBlocks hBodyCalls
+                              (Nat.le_trans hCasesNext
+                                (Nat.le_succ caseResult.next)) (by
                                 simpa [RunState.withEVM] using
                                   hReturnsEq)
                               hBodyFits
@@ -2895,7 +2953,9 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
                     have hCasesSome :=
                       Switch.openRun_cases_some_exec_under_of_compileCasesFuel?
                         (enclosingResult := result)
-                        hCasesCompile hCaseBlocks hValue hPopType hPop
+                        hCasesCompile (Nat.le_refl (supply + 1))
+                        hCaseBlocks hCaseCalls
+                        hValue hPopType hPop
                         hSelect hFallthrough hRegular hAfterBoundary
                         hValueActivation hAfterFits
                         hBodyActivation hBodyFits

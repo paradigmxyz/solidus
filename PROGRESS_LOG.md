@@ -31090,3 +31090,22 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   architecture dependency/single-owner guard, open-effects axiom smoke,
   changed-file forbidden-marker scan, and `git diff --check`. New owner
   theorems depend only on `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-17 11:38:08 PDT - compaction-resume - Resumed the active horizontal
+  CALL/CREATE proof from checkpoint `60f227750`; switch and loop owner theorems
+  are focused-build green in the dirty Structured checkpoint, and the immediate
+  obligation is the fuel-founded internal-call owner before the block fixed
+  point and generated-main theorem.
+- 2026-06-17 12:00:44 PDT - proof/structured-whole-program-owner - Completed
+  the adjacent Structured-to-TypedCfg execution-indexed owner. The checked
+  fuel-founded fixed point composes every statement form, loops, switches, and
+  recursive internal calls through pass-owned compiler artifacts and dynamic
+  activation boundaries. Added the generated-main theorem and a public
+  successful-generation wrapper that constructs `GeneratedContext`
+  internally, so compiler-generated evidence is not a premise.
+- 2026-06-17 12:16:41 PDT - verification/structured-whole-program-owner - The
+  focused owner build and full 1,294-job proof-layer gate pass, including the
+  verification root, public/resource/memory/open-effects smokes, architecture
+  dependency and single-owner guards, changed-file forbidden-marker scan, and
+  `git diff --check`. New public owner theorems depend only on `propext`,
+  `Classical.choice`, and `Quot.sound`; the architecture report contains only
+  the pre-existing soft module-size debt.

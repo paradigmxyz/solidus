@@ -2170,6 +2170,8 @@ theorem sequence
     (hTail :
       ∀ middleSource,
         middleSource.returns = source.returns →
+          FrameFits headResult ctx
+            (Structured.Outcome.regular middleSource) →
           ExecPreservesUnder tailResult cfg middle ctx regular
             middleSource tokens (tailRun middleSource) policy) :
     ExecPreservesUnder (headResult.append tailResult)
@@ -2214,7 +2216,8 @@ theorem sequence
         obtain
             ⟨tailFuel, tailRemaining, targetFinal,
               hTargetTailExec, hTailRel⟩ :=
-          hTail middleSource hReturns targetMiddle hMiddleStateRel
+          hTail middleSource hReturns hHeadRel.2.1
+            targetMiddle hMiddleStateRel
             restTranscript sourceOutcome hRestExec
         have hTargetTailPadded :
             Simulation.Interaction.Executes
@@ -3907,6 +3910,7 @@ theorem openRun_cons_exec_under_of_compileStmtListFuel?
     {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
     {sourceProgram : Structured.Program}
     {source : RunState} {tokens : List Word}
+    {generatedCalls : List TypedCfgCompiler.DispatchSite}
     {policy : OpenOutcome.StopPolicy}
     (hCompile :
       TypedCfgCompiler.compileStmtListFuel? (compilerFuel + 1)
@@ -3914,6 +3918,8 @@ theorem openRun_cons_exec_under_of_compileStmtListFuel?
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hResultCalls :
+      TypedCfgPreservation.CallsInProgram result generatedCalls)
     (hMiddleNoStop :
       ∀ {headResult tailResult : TypedCfgCompiler.Result}
           {tailInput : TypedCfg.Shape}
@@ -3943,6 +3949,7 @@ theorem openRun_cons_exec_under_of_compileStmtListFuel?
             entry input (TypedCfgCompiler.restLabel supply) =
           some headResult →
         TypedCfgPreservation.BlocksInProgram headResult cfg →
+        TypedCfgPreservation.CallsInProgram headResult generatedCalls →
         headResult.fallthrough? = none →
         OpenOutcome.ExecPreservesUnder headResult cfg entry ctx
           (TypedCfgCompiler.restLabel supply) source tokens
@@ -3950,13 +3957,20 @@ theorem openRun_cons_exec_under_of_compileStmtListFuel?
             sourceProgram sourceFuel stmt source)
           policy)
     (hHeadWithTail :
-      ∀ {headResult : TypedCfgCompiler.Result}
+      ∀ {headResult tailResult : TypedCfgCompiler.Result}
         {tailInput : TypedCfg.Shape},
         TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
             entry input (TypedCfgCompiler.restLabel supply) =
           some headResult →
         TypedCfgPreservation.BlocksInProgram headResult cfg →
+        TypedCfgPreservation.CallsInProgram headResult generatedCalls →
         headResult.fallthrough? = some tailInput →
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
+            headResult.next (TypedCfgCompiler.restLabel supply)
+            tailInput regular =
+          some tailResult →
+        TypedCfgPreservation.BlocksInProgram tailResult cfg →
+        result = headResult.append tailResult →
         OpenOutcome.ExecPreservesUnder headResult cfg entry ctx
           (TypedCfgCompiler.restLabel supply) source tokens
           (InteractionSemantics.Stmt.openRun
@@ -3976,7 +3990,11 @@ theorem openRun_cons_exec_under_of_compileStmtListFuel?
             tailInput regular =
           some tailResult →
         TypedCfgPreservation.BlocksInProgram tailResult cfg →
+        TypedCfgPreservation.CallsInProgram tailResult generatedCalls →
         middleSource.returns = source.returns →
+        OpenOutcome.FrameFits headResult ctx
+          (Structured.Outcome.regular middleSource) →
+        result = headResult.append tailResult →
         OpenOutcome.ExecPreservesUnder tailResult cfg
           (TypedCfgCompiler.restLabel supply) ctx regular
           middleSource tokens
@@ -3995,7 +4013,7 @@ theorem openRun_cons_exec_under_of_compileStmtListFuel?
     ⟨headResult, hHeadCompile, hNoTail | hWithTail⟩
   · rcases hNoTail with ⟨hFallthrough, rfl⟩
     have hHead :=
-      hHeadNoTail hHeadCompile hBlocks hFallthrough
+      hHeadNoTail hHeadCompile hBlocks hResultCalls hFallthrough
     have hIgnored :=
       OpenOutcome.ExecPreservesUnder.ignore_tail_of_no_fallthrough
         (resultRegular := regular)
@@ -4013,17 +4031,22 @@ theorem openRun_cons_exec_under_of_compileStmtListFuel?
       TypedCfgPreservation.BlocksInProgram.left_of_append hBlocks
     have hTailBlocks :=
       TypedCfgPreservation.BlocksInProgram.right_of_append hBlocks
+    have hHeadCalls :=
+      TypedCfgPreservation.CallsInProgram.left_of_append hResultCalls
+    have hTailCalls :=
+      TypedCfgPreservation.CallsInProgram.right_of_append hResultCalls
     have hHead :=
-      hHeadWithTail hHeadCompile hHeadBlocks hFallthrough
+      hHeadWithTail hHeadCompile hHeadBlocks hHeadCalls hFallthrough
+        hTailCompile hTailBlocks rfl
     have hComposed :=
       OpenOutcome.ExecPreservesUnder.sequence hHead
         (fun hRel =>
           hMiddleNoStop hHeadCompile hFallthrough
             hTailCompile hTailBlocks hRel)
         (fun hMode hRel => hNonregularStops hMode hRel)
-        (fun middleSource hReturns =>
+        (fun middleSource hReturns hFits =>
           hTail hHeadCompile hFallthrough hTailCompile
-            hTailBlocks hReturns)
+            hTailBlocks hTailCalls hReturns hFits rfl)
     simpa [
       InteractionSemantics.Block.openRun,
       InteractionSemantics.Stmt.openRun,

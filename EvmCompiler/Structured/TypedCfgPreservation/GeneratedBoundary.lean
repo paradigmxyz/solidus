@@ -156,6 +156,21 @@ theorem procEntry
     refine ⟨adapter, ?_, hInput⟩
     simpa [hLabel] using hFind
 
+theorem programEnd
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (generated :
+      Program.GeneratedContext program entryShapes cfg) :
+    LabelShape cfg ProcLabel.programEnd
+      (generated.main.fallthrough?.getD TypedCfg.Shape.caller) :=
+  ⟨{ label := ProcLabel.programEnd
+     input := generated.main.fallthrough?.getD TypedCfg.Shape.caller
+     body := []
+     output := generated.main.fallthrough?.getD TypedCfg.Shape.caller
+     term := .invalid },
+    generated.programEndBlock, rfl⟩
+
 end LabelShape
 
 /--

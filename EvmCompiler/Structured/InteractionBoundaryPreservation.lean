@@ -586,6 +586,76 @@ theorem rebase_regular
     hBoundary.fresh scope tag target hScope
       (hOldBefore.generated_ne hScope) hStopped
 
+theorem rebase_current
+    {cfg : TypedCfg.Program}
+    {returns : List ReturnDest} {tokens : List Word}
+    {policy : StopPolicy}
+    {supply : LabelSupply} {oldRegular newRegular : Assembly.Label}
+    (hBoundary :
+      StopPolicy.RecursiveBoundary
+        cfg returns tokens policy supply oldRegular)
+    (hOld :
+      TypedCfgCompilerFacts.RegularAtSupply oldRegular supply)
+    (hNew :
+      newRegular = TypedCfgCompiler.restLabel supply) :
+    StopPolicy.RecursiveBoundary
+      cfg returns tokens policy supply newRegular := by
+  rcases hOld with hBefore | hCurrent
+  · exact hBoundary.rebase_regular hBefore
+  · have hEq : oldRegular = newRegular :=
+      hCurrent.trans hNew.symm
+    cases hEq
+    exact hBoundary
+
+theorem push_current
+    {cfg : TypedCfg.Program}
+    {returns : List ReturnDest} {tokens : List Word}
+    {outer : StopPolicy}
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context}
+    {boundaryRegular regular : Assembly.Label}
+    {supply : LabelSupply}
+    (hBoundary :
+      StopPolicy.RecursiveBoundary
+        cfg returns tokens outer supply boundaryRegular)
+    (hBoundaryRegular :
+      TypedCfgCompilerFacts.RegularAtSupply boundaryRegular supply)
+    (hBefore :
+      TypedCfgCompilerFacts.NonregularLabelsBeforeSupply ctx supply)
+    (hRegular :
+      regular = TypedCfgCompiler.restLabel supply)
+    (hShapes : BoundaryShapes cfg result ctx regular) :
+    StopPolicy.RecursiveBoundary cfg returns tokens
+      (InteractionControlPreservation.OpenOutcome.pushStopJump
+        result ctx regular returns tokens outer)
+      supply regular := by
+  refine
+    ⟨hBoundary.ownership.push hShapes, ?_⟩
+  intro scope tag target hScope hNe hStopped
+  simp only [
+    InteractionControlPreservation.OpenOutcome.pushStopJump,
+    Bool.or_eq_true_iff] at hStopped
+  rcases hStopped with hOuter | hLocal
+  · apply hBoundary.fresh scope tag target hScope
+    · rcases hBoundaryRegular with hOld | hCurrent
+      · exact hOld.generated_ne hScope
+      · rw [hCurrent, ← hRegular]
+        exact hNe
+    · exact hOuter
+  · have hFull :
+        TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
+          ctx (.named "") supply :=
+      hBefore.with_regular (by trivial)
+    have hLocalFalse :
+        InteractionControlPreservation.OpenOutcome.stopJump
+            result ctx regular returns tokens
+            (.generated scope tag) target =
+          false :=
+      InteractionControlPreservation.OpenOutcome.stopJump_generated_eq_false_of_regular_ne
+        hFull hNe hScope returns tokens target
+    rw [hLocalFalse] at hLocal
+    cases hLocal
+
 theorem push
     {cfg : TypedCfg.Program}
     {returns : List ReturnDest} {tokens : List Word}
@@ -627,7 +697,7 @@ theorem push_child
     (hShapes : BoundaryShapes cfg result ctx regular)
     (hBefore :
       TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
-        ctx boundaryRegular childSupply) :
+        ctx regular childSupply) :
     StopPolicy.RecursiveBoundary cfg childReturns childTokens
       (InteractionControlPreservation.OpenOutcome.pushStopJump
         result ctx regular childReturns childTokens outer)

@@ -735,7 +735,7 @@ Exit: the shared core builds with no compiler layer changed.
   - [x] Checked direct-terminator theorem for jumps, conditional jumps, halts,
     and invalid execution.
   - [x] Internal-label-aware `returnDispatch`, block, and program theorems.
-- [ ] Structured.
+- [x] Structured.
   - [x] One canonical parameterized control semantics shared by ordinary and
     open execution.
   - [x] Exact open preservation for straight-line code, lexical exits,
@@ -743,7 +743,7 @@ Exit: the shared core builds with no compiler layer changed.
   - [x] Execution-indexed recursive `for` preservation over the real
     initializer/body/post compiler artifacts, including break, continue,
     leave, halt, and exact transcript order.
-  - [ ] Internal procedure calls and generated return dispatch.
+  - [x] Internal procedure calls and generated return dispatch.
     - [x] Silent generated call-site entry, optional procedure-entry relabel,
       and token-selected return dispatch.
     - [x] Execution-indexed recursive procedure-body callback and source
@@ -751,9 +751,10 @@ Exit: the shared core builds with no compiler layer changed.
     - [x] Pass-owned dynamic activation ancestry, CFG label-shape ownership,
       and stop-policy protection for recursive/self-recursive calls; observer
       modules retain compatibility aliases only.
-    - [ ] Instantiate the call callback in the mutual whole-statement/block
+    - [x] Instantiate the call callback in the mutual whole-statement/block
       owner.
-  - [ ] One mutual whole-statement/block/program owner theorem.
+  - [x] One fuel-founded whole-statement/block owner theorem and checked
+    generated-main wrapper.
 - [ ] Locals/Expressions.
 - [ ] Functions.
 - [ ] Yul.
@@ -781,15 +782,16 @@ Exit: every layer exposes one canonical open computation.
   - [x] `returnDispatch`, blocks, and whole-program execution.
   - [x] Certified-artifact entry theorem deriving all compiler-selected
     lowering, acceptance, PC-fit, and typing evidence internally.
-- [ ] Structured -> TypedCfg.
+- [x] Structured -> TypedCfg.
   - [x] Straight-line code, lexical exits, terminals, lists, conditionals, and
     switches.
   - [x] Recursive `for` loops through the adjacent compiler decomposition.
-  - [ ] Internal procedure calls and generated program wrapper.
+  - [x] Internal procedure calls and generated program wrapper.
     - [x] Generated call-entry, procedure-entry, and return-dispatch routing.
     - [x] Adjacent execution-indexed call theorem parameterized by the
       recursive procedure-body owner.
-    - [ ] Mutual recursive owner instantiation and whole-program wrapper.
+    - [x] Fuel-founded recursive owner instantiation and successful-generation
+      whole-program wrapper.
 - [ ] Locals/Expressions -> Structured.
 - [ ] Functions -> allocated Locals/Expressions.
 - [ ] Yul -> Functions.

@@ -412,6 +412,7 @@ theorem openRunForLoop_exec_under
           policy loopLabel targetState = false)
     (hBody :
       ∀ {blockFuel : Nat} {bodySource : RunState},
+        blockFuel < sourceFuel →
         TypedCfgCompiler.Shape.SourceFrameFits
             { condOutput with slots := condOutput.slots.tail }
             bodySource.evm.stack.length →
@@ -429,6 +430,7 @@ theorem openRunForLoop_exec_under
             returns tokens policy))
     (hPost :
       ∀ {blockFuel : Nat} {postSource : RunState},
+        blockFuel < sourceFuel →
         TypedCfgCompiler.Shape.SourceFrameFits
             { condOutput with slots := condOutput.slots.tail }
             postSource.evm.stack.length →
@@ -594,6 +596,7 @@ theorem openRunForLoop_exec_under
                     · subst restTranscript
                       have hBodyPreserves :=
                         hBody (blockFuel := fuel)
+                          (Nat.lt_succ_self fuel)
                           hAfterCondFits hAfterCondReturns
                       obtain
                           ⟨bodyFuel, bodyRemaining, targetBodyOutcome,
@@ -751,6 +754,7 @@ theorem openRunForLoop_exec_under
                           · subst afterBodyTranscript
                             have hPostPreserves :=
                               hPost (blockFuel := fuel)
+                                (Nat.lt_succ_self fuel)
                                 hPostFits hBodyReturns
                             obtain
                                 ⟨postFuel, postRemaining,
@@ -776,7 +780,16 @@ theorem openRunForLoop_exec_under
                                   InteractionControlPreservation.OpenOutcome.Rel.regular_elim_of_required_fallthrough
                                     hPostRequire hPostRel
                                 have hLoopPreserves :=
-                                  ih hLoopFits hPostReturns
+                                  ih
+                                    hLoopFits hPostReturns
+                                    (fun {blockFuel} {bodySource} hFuel =>
+                                      hBody
+                                        (Nat.lt_trans hFuel
+                                          (Nat.lt_succ_self fuel)))
+                                    (fun {blockFuel} {postSource} hFuel =>
+                                      hPost
+                                        (Nat.lt_trans hFuel
+                                          (Nat.lt_succ_self fuel)))
                                 obtain
                                     ⟨loopFuel, loopRemaining,
                                       targetFinal, hTargetLoopExec,
@@ -1000,6 +1013,7 @@ theorem openRunForLoop_exec_under
                           · subst afterBodyTranscript
                             have hPostPreserves :=
                               hPost (blockFuel := fuel)
+                                (Nat.lt_succ_self fuel)
                                 hPostFits hBodyReturns
                             obtain
                                 ⟨postFuel, postRemaining,
@@ -1025,7 +1039,16 @@ theorem openRunForLoop_exec_under
                                   InteractionControlPreservation.OpenOutcome.Rel.regular_elim_of_required_fallthrough
                                     hPostRequire hPostRel
                                 have hLoopPreserves :=
-                                  ih hLoopFits hPostReturns
+                                  ih
+                                    hLoopFits hPostReturns
+                                    (fun {blockFuel} {bodySource} hFuel =>
+                                      hBody
+                                        (Nat.lt_trans hFuel
+                                          (Nat.lt_succ_self fuel)))
+                                    (fun {blockFuel} {postSource} hFuel =>
+                                      hPost
+                                        (Nat.lt_trans hFuel
+                                          (Nat.lt_succ_self fuel)))
                                 obtain
                                     ⟨loopFuel, loopRemaining,
                                       targetFinal, hTargetLoopExec,
@@ -1235,6 +1258,48 @@ theorem openRunForLoop_exec_under
 namespace Stmt
 
 /--
+Compiler-owned facts shared by the recursive body and post owners of one
+compiled loop.
+-/
+structure OwnerFacts
+    (cfg : TypedCfg.Program)
+    (generatedCalls : List TypedCfgCompiler.DispatchSite)
+    (tokens : List Word)
+    (supply : LabelSupply)
+    (result initResult bodyResult postResult :
+      TypedCfgCompiler.Result)
+    (loopInput condOutput : TypedCfg.Shape) : Prop where
+  bodyCalls :
+    TypedCfgPreservation.CallsInProgram bodyResult generatedCalls
+  postCalls :
+    TypedCfgPreservation.CallsInProgram postResult generatedCalls
+  loopShape :
+    TypedCfgPreservation.LabelShape cfg
+      (LabelSupply.label supply 0) loopInput
+  bodyShape :
+    TypedCfgPreservation.LabelShape cfg
+      (LabelSupply.label supply 1)
+      { condOutput with slots := condOutput.slots.tail }
+  postShape :
+    TypedCfgPreservation.LabelShape cfg
+      (LabelSupply.label supply 2)
+      { condOutput with slots := condOutput.slots.tail }
+  bodyActivation :
+    TypedCfgPreservation.ActivationInput tokens
+      { condOutput with slots := condOutput.slots.tail }
+  initSupply : supply + 1 ≤ initResult.next
+  bodySupply : supply + 1 ≤ bodyResult.next
+  bodyRequire :
+    bodyResult.requireFallthrough?
+        { condOutput with slots := condOutput.slots.tail } =
+      some ()
+  postRequire :
+    postResult.requireFallthrough? loopInput = some ()
+  enclosingFallthrough :
+    result.fallthrough? =
+      some { condOutput with slots := condOutput.slots.tail }
+
+/--
 Compiler-facing successful-execution preservation for `for`.
 
 The theorem decomposes the compiler artifact once, delegates only the three
@@ -1249,6 +1314,7 @@ theorem openRun_for_exec_under_of_compileStmtFuel?
     {entry regular : Assembly.Label} {input : TypedCfg.Shape}
     {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
     {source : RunState} {tokens : List Word}
+    {generatedCalls : List TypedCfgCompiler.DispatchSite}
     {policy :
       InteractionControlPreservation.OpenOutcome.StopPolicy}
     (hCompile :
@@ -1257,6 +1323,8 @@ theorem openRun_for_exec_under_of_compileStmtFuel?
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hResultCalls :
+      TypedCfgPreservation.CallsInProgram result generatedCalls)
     (hFits :
       TypedCfgCompiler.Shape.SourceFrameFits
         input source.evm.stack.length)
@@ -1282,6 +1350,9 @@ theorem openRun_for_exec_under_of_compileStmtFuel?
             (LabelSupply.label supply 0) =
           some initResult →
         TypedCfgPreservation.BlocksInProgram initResult cfg →
+        TypedCfgPreservation.CallsInProgram initResult generatedCalls →
+        TypedCfgPreservation.LabelShape cfg
+          (LabelSupply.label supply 0) loopInput →
         initResult.fallthrough? = some loopInput →
         InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
           initResult cfg entry (outerContext ctx)
@@ -1294,8 +1365,9 @@ theorem openRun_for_exec_under_of_compileStmtFuel?
     (hBody :
       ∀ {initResult bodyResult postResult :
             TypedCfgCompiler.Result}
-        {condOutput : TypedCfg.Shape}
+        {loopInput condOutput : TypedCfg.Shape}
         {blockFuel : Nat} {bodySource : RunState},
+        blockFuel < sourceFuel →
         TypedCfgCompiler.compileBlockFuel? compilerFuel body
             (bodyContext ctx regular (LabelSupply.label supply 2)
               { condOutput with slots := condOutput.slots.tail })
@@ -1311,6 +1383,8 @@ theorem openRun_for_exec_under_of_compileStmtFuel?
             (LabelSupply.label supply 0) =
           some postResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        OwnerFacts cfg generatedCalls tokens supply result
+          initResult bodyResult postResult loopInput condOutput →
         TypedCfgCompiler.Shape.SourceFrameFits
             { condOutput with slots := condOutput.slots.tail }
             bodySource.evm.stack.length →
@@ -1328,9 +1402,10 @@ theorem openRun_for_exec_under_of_compileStmtFuel?
             { condOutput with slots := condOutput.slots.tail }
             source.returns tokens policy))
     (hPost :
-      ∀ {bodyResult postResult : TypedCfgCompiler.Result}
-        {condOutput : TypedCfg.Shape}
+      ∀ {initResult bodyResult postResult : TypedCfgCompiler.Result}
+        {loopInput condOutput : TypedCfg.Shape}
         {blockFuel : Nat} {postSource : RunState},
+        blockFuel < sourceFuel →
         TypedCfgCompiler.compileBlockFuel? compilerFuel post
             (outerContext ctx) bodyResult.next
             (LabelSupply.label supply 2)
@@ -1338,6 +1413,8 @@ theorem openRun_for_exec_under_of_compileStmtFuel?
             (LabelSupply.label supply 0) =
           some postResult →
         TypedCfgPreservation.BlocksInProgram postResult cfg →
+        OwnerFacts cfg generatedCalls tokens supply result
+          initResult bodyResult postResult loopInput condOutput →
         TypedCfgCompiler.Shape.SourceFrameFits
             { condOutput with slots := condOutput.slots.tail }
             postSource.evm.stack.length →
@@ -1403,6 +1480,24 @@ theorem openRun_for_exec_under_of_compileStmtFuel?
     intro block hMem
     apply hBlocks block
     simp [hMem]
+  have hInitCalls :
+      TypedCfgPreservation.CallsInProgram
+        initResult generatedCalls := by
+    intro site hMem
+    apply hResultCalls site
+    simp [hMem]
+  have hBodyCalls :
+      TypedCfgPreservation.CallsInProgram
+        bodyResult generatedCalls := by
+    intro site hMem
+    apply hResultCalls site
+    simp [hMem]
+  have hPostCalls :
+      TypedCfgPreservation.CallsInProgram
+        postResult generatedCalls := by
+    intro site hMem
+    apply hResultCalls site
+    simp [hMem]
   have hConditionMem :
       conditionBlock
           (LabelSupply.label supply 0)
@@ -1456,6 +1551,39 @@ theorem openRun_for_exec_under_of_compileStmtFuel?
     (hLoopActivation.code hType).tail
       (TypedCfgCompilerFacts.Shape.requireSourceWords?_eq_some_iff.mp
         hSource)
+  have hInitSupply : supply + 1 ≤ initResult.next :=
+    TypedCfgCompilerFacts.Supply.block_next_ge hInitCompile
+  have hBodySupply : supply + 1 ≤ bodyResult.next :=
+    Nat.le_trans hInitSupply
+      (TypedCfgCompilerFacts.Supply.block_next_ge hBodyCompile)
+  have hOwnerFacts :
+      OwnerFacts cfg generatedCalls tokens supply
+        { blocks :=
+            initResult.blocks ++
+              [{ label := LabelSupply.label supply 0
+                 input := loopInput
+                 body := TypedCfgCompiler.Code.toCfg cond
+                 output := condOutput
+                 term :=
+                   .jumpi (LabelSupply.label supply 1) regular }] ++
+              bodyResult.blocks ++ postResult.blocks
+          next := postResult.next
+          calls :=
+            initResult.calls ++ bodyResult.calls ++ postResult.calls
+          fallthrough? :=
+            some { condOutput with slots := condOutput.slots.tail } }
+        initResult bodyResult postResult loopInput condOutput :=
+    { bodyCalls := hBodyCalls
+      postCalls := hPostCalls
+      loopShape := hLoopShape
+      bodyShape := hBodyShape
+      postShape := hPostShape
+      bodyActivation := hBodyActivation
+      initSupply := hInitSupply
+      bodySupply := hBodySupply
+      bodyRequire := hBodyRequire
+      postRequire := hPostRequire
+      enclosingFallthrough := rfl }
   have hLoopEntryNoStop :
       ∀ {loopSource : RunState} {targetState : EVMState},
         loopSource.returns = source.returns →
@@ -1501,7 +1629,8 @@ theorem openRun_for_exec_under_of_compileStmtFuel?
         (hRegular.current_generated_ne (by omega))
         hPostShape hBodyActivation hRel hPostFits
   have hInitPreserves :=
-    hInit hInitCompile hInitBlocks hInitFallthrough
+    hInit hInitCompile hInitBlocks hInitCalls
+      hLoopShape hInitFallthrough
   intro target hStateRel transcript sourceOutcome hSourceExec
   have hSourceExec' :
       Simulation.Interaction.Executes
@@ -1582,12 +1711,12 @@ theorem openRun_for_exec_under_of_compileStmtFuel?
             hBodyRequire hPostRequire hLoopFits hInitReturns
             hStops hBodyEntryNoStop hPostEntryNoStop
             hLoopEntryNoStop
-            (fun {blockFuel} {bodySource} hBodyFits hBodyReturns =>
-              hBody hBodyCompile hPostCompile hBodyBlocks
-                hBodyFits hBodyReturns)
-            (fun {blockFuel} {postSource} hPostFits hPostReturns =>
-              hPost hPostCompile hPostBlocks
-                hPostFits hPostReturns)
+            (fun {blockFuel} {bodySource} hFuel hBodyFits hBodyReturns =>
+              hBody hFuel hBodyCompile hPostCompile hBodyBlocks
+                hOwnerFacts hBodyFits hBodyReturns)
+            (fun {blockFuel} {postSource} hFuel hPostFits hPostReturns =>
+              hPost hFuel hPostCompile hPostBlocks
+                hOwnerFacts hPostFits hPostReturns)
         obtain
             ⟨loopFuel, loopRemaining, targetFinal,
               hTargetLoopExec, hLoopRel⟩ :=

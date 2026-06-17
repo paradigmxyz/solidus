@@ -99,9 +99,15 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #check EvmCompiler.Structured.InteractionLoopPreservation.Loop.openRunForLoop_exec_under
 #check EvmCompiler.Structured.InteractionLoopPreservation.Loop.Stmt.openRun_for_exec_under_of_compileStmtFuel?
 #check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.FragmentContract
+#check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.StmtContract
 #check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.BlockOwnerAt
 #check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.Stmt.code_exec
 #check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.Stmt.if_exec
+#check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.Stmt.call_exec
+#check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.Stmt.exec_succ
+#check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.block_owner
+#check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.GeneratedProgram.main_exec
+#check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_exec
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
 #check EvmCompiler.Assembly.Bytecode.InteractionSemantics.openRunNResult
 #check EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes
@@ -185,5 +191,10 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Structured.InteractionCallPreservation.Call.openRun_call_exec_under_of_compileStmtFuel?
 #print axioms EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.Stmt.code_exec
 #print axioms EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.Stmt.if_exec
+#print axioms EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.Stmt.call_exec
+#print axioms EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.Stmt.exec_succ
+#print axioms EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.block_owner
+#print axioms EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.GeneratedProgram.main_exec
+#print axioms EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_exec
 #print axioms EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes
 #print axioms EvmCompiler.Assembly.Bytecode.compile_openRunNResult_executes

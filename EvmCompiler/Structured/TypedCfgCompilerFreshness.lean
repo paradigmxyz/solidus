@@ -113,7 +113,56 @@ structure ContinuationLabelsBeforeSupply
     ∀ label, ctx.leaveLabel? = some label →
       LabelBeforeSupply label supply
 
+structure NonregularLabelsBeforeSupply
+    (ctx : TypedCfgCompiler.Context) (supply : LabelSupply) : Prop where
+  breakLabel :
+    ∀ label, ctx.breakLabel? = some label →
+      LabelBeforeSupply label supply
+  continueLabel :
+    ∀ label, ctx.continueLabel? = some label →
+      LabelBeforeSupply label supply
+  leaveLabel :
+    ∀ label, ctx.leaveLabel? = some label →
+      LabelBeforeSupply label supply
+
+namespace NonregularLabelsBeforeSupply
+
+theorem mono
+    {ctx : TypedCfgCompiler.Context} {supply next : LabelSupply}
+    (hBefore : NonregularLabelsBeforeSupply ctx supply)
+    (hSupply : supply ≤ next) :
+    NonregularLabelsBeforeSupply ctx next where
+  breakLabel label hLabel :=
+    (hBefore.breakLabel label hLabel).mono hSupply
+  continueLabel label hLabel :=
+    (hBefore.continueLabel label hLabel).mono hSupply
+  leaveLabel label hLabel :=
+    (hBefore.leaveLabel label hLabel).mono hSupply
+
+theorem with_regular
+    {ctx : TypedCfgCompiler.Context}
+    {regular : Assembly.Label} {supply : LabelSupply}
+    (hBefore : NonregularLabelsBeforeSupply ctx supply)
+    (hRegular : LabelBeforeSupply regular supply) :
+    ContinuationLabelsBeforeSupply ctx regular supply where
+  regular := hRegular
+  breakLabel := hBefore.breakLabel
+  continueLabel := hBefore.continueLabel
+  leaveLabel := hBefore.leaveLabel
+
+end NonregularLabelsBeforeSupply
+
 namespace ContinuationLabelsBeforeSupply
+
+theorem nonregular
+    {ctx : TypedCfgCompiler.Context}
+    {regular : Assembly.Label} {supply : LabelSupply}
+    (hBefore :
+      ContinuationLabelsBeforeSupply ctx regular supply) :
+    NonregularLabelsBeforeSupply ctx supply where
+  breakLabel := hBefore.breakLabel
+  continueLabel := hBefore.continueLabel
+  leaveLabel := hBefore.leaveLabel
 
 theorem mono
     {ctx : TypedCfgCompiler.Context}

@@ -135,6 +135,15 @@ if ! rg -Fq \
   failed=1
 fi
 
+if ! rg -Fq \
+    '#check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_exec' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing the checked Structured whole-program open preservation wrapper.' \
+    >&2
+  failed=1
+fi
+
 for theorem in \
     'OpenOutcome.target_allStopped' \
     'OpenOutcome.PreservesWithin.sequence' \
