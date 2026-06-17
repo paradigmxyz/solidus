@@ -547,6 +547,152 @@ theorem for_generated
       apply Simulation.Interaction.ExceptRel.ok
       exact OpenResultRel.halt hShared hReturns
 
+/--
+Compiler-facing `for` theorem. Every emitted block, cleanup, layout extension,
+and final context is recovered from the ordinary compiler; recursive premises
+remain adjacent block-preservation capabilities under explicit control policy.
+-/
+theorem for_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (sourceFuel slack : Nat)
+    (init : Locals.Block) (cond : Locals.Expr 1)
+    (post body : Locals.Block)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hOwnedInit : Locals.Source.Block.SourceOwned init)
+    (hOwnedPost : Locals.Source.Block.SourceOwned post)
+    (hOwnedBody : Locals.Source.Block.SourceOwned body)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.for_ init cond post body) =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hCondScoped :
+      ∀ {initCode : List Expressions.Stmt} {initCtx : Locals.Ctx},
+        Locals.Block.compileOpen targetCtx.withoutLoopControl init =
+            some (initCode, initCtx) →
+          Scope.ExprScoped initCtx.layout cond)
+    (hCondSupported : InteractionSemantics.Expr.OpenSupported cond)
+    (hInit :
+      ∀ {initCode : List Expressions.Stmt} {initCtx : Locals.Ctx},
+        Locals.Block.compileOpen targetCtx.withoutLoopControl init =
+            some (initCode, initCtx) →
+          initCode.length + 1 ≤ slack ∧
+          Simulation.Interaction.ForwardRel
+            Block.FuelTruncated
+            (PolicyOpenOutcomeRel ControlPolicy.noLoop
+              initCtx suffix returns)
+            (InteractionSemantics.Block.openRun
+              sourceProgram sourceCtx.withoutLoopControl
+                sourceFuel init source)
+            (Expressions.InteractionSemantics.Block.openRun
+              targetProgram (sourceFuel + slack)
+                { stmts := initCode } target))
+    (hPost :
+      ∀ {initCode : List Expressions.Stmt} {initCtx : Locals.Ctx}
+        {postCode : List Expressions.Stmt} {postCtx : Locals.Ctx},
+        Locals.Block.compileOpen targetCtx.withoutLoopControl init =
+            some (initCode, initCtx) →
+        Locals.Block.compileOpen initCtx.withoutLoopControl post =
+            some (postCode, postCtx) →
+          postCode.length + 2 ≤ slack ∧
+          (∀ {loopSourceCtx : Locals.Source.Ctx}
+            (fuel : Nat)
+            {sourceAfter : Locals.Source.State}
+            {targetAfter : Structured.RunState},
+            Frame.CtxRel loopSourceCtx initCtx →
+            Frame.StateRel initCtx.layout suffix returns
+                sourceAfter targetAfter →
+              Simulation.Interaction.ForwardRel
+                Block.FuelTruncated
+                (PolicyOpenOutcomeRel ControlPolicy.noLoop
+                  postCtx suffix returns)
+                (InteractionSemantics.Block.openRun
+                  sourceProgram loopSourceCtx.withoutLoopControl
+                    fuel post sourceAfter)
+                (Expressions.InteractionSemantics.Block.openRun
+                  targetProgram (fuel + slack)
+                    { stmts := postCode } targetAfter)))
+    (hBody :
+      ∀ {initCode : List Expressions.Stmt} {initCtx : Locals.Ctx}
+        {bodyCode : List Expressions.Stmt} {bodyCtx : Locals.Ctx},
+        Locals.Block.compileOpen targetCtx.withoutLoopControl init =
+            some (initCode, initCtx) →
+        Locals.Block.compileOpen
+            (initCtx.withLoopControl initCtx.layout.length) body =
+          some (bodyCode, bodyCtx) →
+          bodyCode.length + 2 ≤ slack ∧
+          (∀ {loopSourceCtx : Locals.Source.Ctx}
+            (fuel : Nat)
+            {sourceAfter : Locals.Source.State}
+            {targetAfter : Structured.RunState},
+            Frame.CtxRel loopSourceCtx initCtx →
+            Frame.StateRel initCtx.layout suffix returns
+                sourceAfter targetAfter →
+              Simulation.Interaction.ForwardRel
+                Block.FuelTruncated
+                (PolicyOpenOutcomeRel
+                  (ControlPolicy.loop loopSourceCtx.scope)
+                  bodyCtx suffix returns)
+                (InteractionSemantics.Block.openRun
+                  sourceProgram
+                    (loopSourceCtx.withLoopControl
+                      loopSourceCtx.scope loopSourceCtx.scope)
+                    fuel body sourceAfter)
+                (Expressions.InteractionSemantics.Block.openRun
+                  targetProgram (fuel + slack)
+                    { stmts := bodyCode } targetAfter))) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx (sourceFuel + 1)
+          (.for_ init cond post body) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram (sourceFuel + slack + 2)
+          { stmts := stmts } target) := by
+  obtain ⟨initCode, initCtx, condCode,
+    postCode, postCtx, compiledPost,
+    bodyCode, bodyCtx, compiledBody, outerCleanup,
+    hInitCompile, hCondCompile, hPostCompile, hFinishPost,
+    hBodyCompile, hFinishBody, hOuterCleanup, hCode, hFinal⟩ :=
+    Locals.Stmt.compile_for_components hCompile
+  obtain ⟨postCleanup, hPostCleanup, hCompiledPost⟩ :=
+    Locals.finishScoped_components hFinishPost
+  obtain ⟨bodyCleanup, hBodyCleanup, hCompiledBody⟩ :=
+    Locals.finishScoped_components hFinishBody
+  obtain ⟨hInitSlack, hInitForward⟩ := hInit hInitCompile
+  obtain ⟨hPostSlack, hPostForward⟩ :=
+    hPost hInitCompile hPostCompile
+  obtain ⟨hBodySlack, hBodyForward⟩ :=
+    hBody hInitCompile hBodyCompile
+  have hOuterLayout :=
+    Locals.Block.compileOpen_layout_extends_of_sourceOwned
+      hOwnedInit hInitCompile
+  have hPostLayout :=
+    Locals.Block.compileOpen_layout_extends_of_sourceOwned
+      hOwnedPost hPostCompile
+  have hBodyLayout :=
+    Locals.Block.compileOpen_layout_extends_of_sourceOwned
+      hOwnedBody hBodyCompile
+  subst finalCtx
+  subst stmts
+  subst compiledPost
+  subst compiledBody
+  exact
+    for_generated
+      sourceProgram targetProgram sourceCtx targetCtx initCtx postCtx bodyCtx
+      sourceFuel slack init cond post body initCode postCode bodyCode
+      condCode postCleanup bodyCleanup outerCleanup
+      hCtx hOuterLayout hOuterCleanup hPostLayout hBodyLayout
+      hPostCleanup hBodyCleanup hInitSlack hPostSlack hBodySlack
+      (hCondScoped hInitCompile) hCondSupported hCondCompile
+      hInitForward hPostForward hBodyForward
+
 end Stmt.Forward
 
 namespace Block

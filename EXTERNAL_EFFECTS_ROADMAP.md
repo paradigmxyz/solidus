@@ -816,6 +816,9 @@ Exit: the shared core builds with no compiler layer changed.
     - [x] Whole generated `for` composition through initializer execution,
       recursive loop outcomes, abrupt outer-cleanup bypass, and regular
       compiler-owned outer cleanup.
+    - [x] Compiler-facing `for` decomposition deriving initializer, condition,
+      post/body blocks, scoped cleanups, outer cleanup, layout extensions, and
+      final context from the ordinary pass.
     - [x] Split policy/control recursion into a dedicated adjacent Locals owner
       before adding the whole compiled `for` wrapper; the current proof module
       is again below the 5K-line architecture soft limit.

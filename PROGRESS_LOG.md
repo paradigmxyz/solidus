@@ -31406,3 +31406,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   focused control-owner build, full verification root, architecture dependency
   and size checks, touched-Lean hole scan, axiom audit, and `git diff --check`;
   the theorem depends only on `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 15:09:29 PDT - proof/locals-for-compile - proved
+  `Stmt.Forward.for_of_compile`. The wrapper decomposes only the ordinary
+  compiler result, derives source-owned layout extensions and all three
+  cleanups, and leaves adjacent policy-indexed recursive block capabilities
+  for the structural owner to instantiate.
+- 2026-06-17 15:09:29 PDT - validation/locals-for-compile - passed the focused
+  control-owner build, full verification root, architecture dependency/size
+  checks, touched-Lean hole scan, axiom audit, and `git diff --check`; the
+  theorem depends only on `[propext, Classical.choice, Quot.sound]`.
