@@ -30914,3 +30914,13 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   architecture and changed-Lean-file hole checks, open-effects axiom smoke,
   and `git diff --check` pass; axioms remain `propext`, `Classical.choice`,
   and `Quot.sound`.
+- 2026-06-17 06:38:31 PDT - proof/structured-open-switch-stop - Added generic
+  result-retargeting and closed-jump composition combinators, then proved the
+  complete pass-owned open switch theorem through its own stopping boundary.
+  The proof covers scrutinee effects, matching and skipped case tests,
+  default/no-default routing, one exact scrutinee pop, selected-body effects,
+  frame fit, activation restoration, and a uniform branch fuel bound. It also
+  exposed the next architectural obligation honestly: branch-dependent path
+  lengths cannot be padded across a resumable statement-list continuation, so
+  switch/if list composition needs a generic internal-boundary splice theorem
+  rather than branch-specific fuel evidence or a duplicate interpreter.

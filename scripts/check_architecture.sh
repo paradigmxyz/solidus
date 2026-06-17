@@ -135,6 +135,8 @@ for theorem in \
     'OpenOutcome.PreservesWithin.sequence' \
     'OpenOutcome.PreservesWithin.ignore_tail_of_no_fallthrough' \
     'OpenOutcome.PreservesWithin.pad_stop' \
+    'OpenOutcome.PreservesWithin.change_result_of_required_fallthrough' \
+    'OpenOutcome.PreservesWithin.prepend_closed_jump' \
     'OpenOutcome.PreservesWithin.of_openStep' \
     'Stmt.openStep_code_of_compileStmtFuel?' \
     'Stmt.openRun_code_within_stop_of_compileStmtFuel?' \
@@ -186,7 +188,12 @@ done
 
 for theorem in \
     'Switch.openStep_test' \
-    'Switch.openStep_pop_jump'; do
+    'Switch.openStep_pop_jump' \
+    'Switch.openRun_default_none_of_compileDefaultFuel?' \
+    'Switch.openRun_default_some_of_compileDefaultFuel?' \
+    'Switch.openRun_cases_some_of_compileCasesFuel?' \
+    'Switch.openRun_cases_none_of_compileCasesFuel?' \
+    'Stmt.openRun_switch_within_stop_of_compileStmtFuel?'; do
   if ! rg -Fq \
       "#check EvmCompiler.Structured.InteractionSwitchPreservation.${theorem}" \
       EvmCompiler/Verification.lean; then

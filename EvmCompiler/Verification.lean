@@ -204,6 +204,8 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.PreservesWithin.sequence
 #check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.PreservesWithin.ignore_tail_of_no_fallthrough
 #check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.PreservesWithin.pad_stop
+#check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.PreservesWithin.change_result_of_required_fallthrough
+#check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.PreservesWithin.prepend_closed_jump
 #check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.PreservesWithin.of_openStep
 #check EvmCompiler.Structured.InteractionControlPreservation.Stmt.openStep_code_of_compileStmtFuel?
 #check EvmCompiler.Structured.InteractionControlPreservation.Stmt.openRun_code_within_stop_of_compileStmtFuel?
@@ -226,6 +228,11 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.InteractionBranchPreservation.Stmt.openRun_if_within_stop_of_compileStmtFuel?
 #check EvmCompiler.Structured.InteractionSwitchPreservation.Switch.openStep_test
 #check EvmCompiler.Structured.InteractionSwitchPreservation.Switch.openStep_pop_jump
+#check EvmCompiler.Structured.InteractionSwitchPreservation.Switch.openRun_default_none_of_compileDefaultFuel?
+#check EvmCompiler.Structured.InteractionSwitchPreservation.Switch.openRun_default_some_of_compileDefaultFuel?
+#check EvmCompiler.Structured.InteractionSwitchPreservation.Switch.openRun_cases_some_of_compileCasesFuel?
+#check EvmCompiler.Structured.InteractionSwitchPreservation.Switch.openRun_cases_none_of_compileCasesFuel?
+#check EvmCompiler.Structured.InteractionSwitchPreservation.Stmt.openRun_switch_within_stop_of_compileStmtFuel?
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_call
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_callcode

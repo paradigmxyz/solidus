@@ -468,6 +468,57 @@ theorem SegmentDoneRel.append_right_stop
         Simulation.Interaction.ExceptRel.ok
           (SegmentRunRel.append_right_stop hRun)
 
+theorem SegmentRunRel.change_result_of_required_fallthrough
+    {left right : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
+    {returns : List ReturnDest} {tokens : List Word}
+    {source : Structured.Outcome}
+    {target : TypedCfg.Control.Program.RunResult}
+    {regularExit : RegularExit} {expected : TypedCfg.Shape}
+    (hRequire :
+      left.requireFallthrough? expected = some ())
+    (hRight :
+      right.fallthrough? = some expected)
+    (hRun :
+      SegmentRunRel left ctx regular returns tokens regularExit
+        source target) :
+    SegmentRunRel right ctx regular returns tokens regularExit
+      source target := by
+  rcases source with ⟨sourceState, sourceMode⟩
+  cases regularExit <;> cases sourceMode <;> cases target
+  all_goals
+    first
+    | exact False.elim hRun
+    | exact
+        Rel.change_result_of_required_fallthrough
+          hRequire hRight hRun
+
+theorem SegmentDoneRel.change_result_of_required_fallthrough
+    {left right : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
+    {returns : List ReturnDest} {tokens : List Word}
+    {source : Except EVMException Structured.Outcome}
+    {target :
+      Except EVMException TypedCfg.Control.Program.RunResult}
+    {regularExit : RegularExit} {expected : TypedCfg.Shape}
+    (hRequire :
+      left.requireFallthrough? expected = some ())
+    (hRight :
+      right.fallthrough? = some expected)
+    (hDone :
+      SegmentDoneRel left ctx regular returns tokens regularExit
+        source target) :
+    SegmentDoneRel right ctx regular returns tokens regularExit
+      source target := by
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ExceptRel.error hError
+  | ok hRun =>
+      exact
+        Simulation.Interaction.ExceptRel.ok
+          (SegmentRunRel.change_result_of_required_fallthrough
+            hRequire hRight hRun)
+
 /--
 Fixed-fuel preservation for a fragment executed under an enclosing fragment's
 boundary policy.
@@ -499,6 +550,40 @@ def PreservesWithin (fragmentResult boundaryResult :
           cfg targetFuel entry target)
 
 namespace PreservesWithin
+
+/--
+Retarget a preserved fragment to an enclosing compiler result that has the
+same required source fallthrough shape. This changes only the outcome-indexed
+relation; the target runner and enclosing stop policy remain unchanged.
+-/
+theorem change_result_of_required_fallthrough
+    {left right boundaryResult : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry fragmentRegular boundaryRegular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {regularExit : RegularExit} {targetFuel : Nat}
+    {expected : TypedCfg.Shape}
+    (hRequire :
+      left.requireFallthrough? expected = some ())
+    (hRight :
+      right.fallthrough? = some expected)
+    (hPreserves :
+      PreservesWithin left boundaryResult cfg entry ctx
+        fragmentRegular boundaryRegular regularExit source tokens
+        sourceRun targetFuel) :
+    PreservesWithin right boundaryResult cfg entry ctx
+      fragmentRegular boundaryRegular regularExit source tokens
+      sourceRun targetFuel := by
+  intro target hStateRel
+  apply Simulation.Interaction.Rel.mono
+    (hPreserves target hStateRel)
+  intro sourceDone targetDone hDone
+  exact
+    SegmentDoneRel.change_result_of_required_fallthrough
+      hRequire hRight hDone
 
 /--
 Compose two adjacent Structured fragments under one enclosing stop policy.
@@ -1012,6 +1097,58 @@ theorem pad_stop_to
       sourceRun largerFuel := by
   obtain ⟨extra, rfl⟩ := Nat.exists_eq_add_of_le hFuel
   exact pad_stop hPreserves extra
+
+/--
+Prepend one compiler-generated closed jump to an already-preserved fragment.
+The jump may update the source-visible state, but it must preserve the active
+return frame and must not itself satisfy the enclosing stop policy.
+-/
+theorem prepend_closed_jump
+    {fragmentResult boundaryResult : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry next fragmentRegular boundaryRegular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source nextSource : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {regularExit : RegularExit} {targetFuel : Nat}
+    (hStep :
+      ∀ target,
+        TypedCfgPreservation.StateRel source tokens target →
+          ∃ targetAfter,
+            TypedCfg.InteractionSemantics.Program.openStep
+                cfg entry target =
+              .done (.ok (.jump next targetAfter)) ∧
+            TypedCfgPreservation.StateRel
+              nextSource tokens targetAfter)
+    (hReturns :
+      nextSource.returns = source.returns)
+    (hNoStop :
+      ∀ targetAfter,
+        TypedCfgPreservation.StateRel
+            nextSource tokens targetAfter →
+          stopJump boundaryResult ctx boundaryRegular
+              source.returns tokens next targetAfter =
+            false)
+    (hTail :
+      PreservesWithin fragmentResult boundaryResult cfg next ctx
+        fragmentRegular boundaryRegular regularExit nextSource tokens
+        sourceRun targetFuel) :
+    PreservesWithin fragmentResult boundaryResult cfg entry ctx
+      fragmentRegular boundaryRegular regularExit source tokens
+      sourceRun (targetFuel + 1) := by
+  intro target hStateRel
+  obtain ⟨targetAfter, hTargetStep, hAfterRel⟩ :=
+    hStep target hStateRel
+  rw [
+    TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_succ_eq_bind,
+    hTargetStep]
+  simp only [Simulation.Interaction.bind_done_ok]
+  have hContinue := hNoStop targetAfter hAfterRel
+  simp only [
+    TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+    hContinue, if_false]
+  simpa [hReturns] using hTail targetAfter hAfterRel
 
 /--
 Lift one pass-owned TypedCfg step into the canonical boundary-aware runner.
