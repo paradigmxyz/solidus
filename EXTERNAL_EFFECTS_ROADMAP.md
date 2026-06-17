@@ -796,6 +796,8 @@ Exit: the shared core builds with no compiler layer changed.
       sequence kernel over compiler-produced head and tail blocks.
     - [x] Source-owned compiler layout-extension invariant and recursive
       lexical-block preservation through compiler-owned `finishScoped` cleanup.
+    - [x] Shared compiled-condition bridge proving Boolean agreement and exact
+      target-frame restoration after the condition pop.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
 - [ ] Functions.

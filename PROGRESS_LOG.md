@@ -31316,3 +31316,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   hole scan, axiom audit, and `git diff --check`; all new layout and lexical
   block theorems depend only on
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 14:29:26 PDT - proof/locals-condition-bridge - proved that one
+  compiled source condition yields the same Boolean under the shared open
+  interaction tree and that the target condition pop restores the exact
+  incoming local frame. This is the common condition interface for `if`,
+  `switch`, and `for` rather than constructor-specific stack reasoning.
+- 2026-06-17 14:30:02 PDT - validation/locals-condition-bridge - passed the
+  focused Locals build, full verification root, architecture checks,
+  touched-Lean hole scan, axiom audit, and `git diff --check`; the condition
+  bridge depends only on `[propext, Classical.choice, Quot.sound]`.

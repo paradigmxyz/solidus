@@ -176,6 +176,7 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Frame.CtxRel.leaveLayout
 #check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.expr
 #check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.ofExprResultZero
+#check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.ofExprResultOnePop
 #check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.ofExprResultOneInsert
 #check EvmCompiler.Locals.InteractionPreservation.Code.openRun_swap_pop
 #check EvmCompiler.Locals.InteractionPreservation.Code.openRun_replicate_pop
@@ -183,6 +184,7 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.restrictPrefix
 #check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.openRun_cleanupTo
 #check EvmCompiler.Locals.InteractionPreservation.Expr.openEvalOne_compileCode
+#check EvmCompiler.Locals.InteractionPreservation.Expr.openEvalCondition_compileCode
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openAssign_compileCode
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_assign_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code
