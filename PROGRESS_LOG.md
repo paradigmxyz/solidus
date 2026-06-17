@@ -31348,3 +31348,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1,135-job Locals build, full verification root, architecture guard,
   touched-Lean hole scan, axiom audit, and `git diff --check`. New conditional
   theorems depend only on `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 14:44:15 PDT - proof/locals-switch - proved one structural
+  relation between source and ordinary compiled switch selection, then used it
+  to check no-match and selected-branch preservation. Scrutinee evaluation
+  restores the exact incoming frame after the target pop; every selected body
+  reuses the shared scoped-child theorem.
+- 2026-06-17 14:44:15 PDT - validation/locals-switch - passed the focused
+  1,135-job Locals build, full verification root, architecture guard,
+  touched-Lean hole scan, axiom audit, and `git diff --check`. New switch
+  theorems depend only on `[propext, Classical.choice, Quot.sound]`.

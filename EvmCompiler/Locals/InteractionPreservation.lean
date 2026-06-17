@@ -2260,6 +2260,89 @@ theorem forward_scoped_withContext
   apply Simulation.Interaction.ExceptRel.ok
   exact hResult.withContext hCtx
 
+namespace SwitchCompile
+
+/-- Structural relation between source and compiled switch selection. -/
+inductive SelectedRel (ctx : Locals.Ctx) :
+    Option Locals.Block → Option Expressions.Block → Prop
+  | none : SelectedRel ctx none none
+  | some {source : Locals.Block} {target : Expressions.Block}
+      {bodyCode : List Expressions.Stmt} {bodyCtx : Locals.Ctx} :
+      Locals.Block.compileOpen ctx source = some (bodyCode, bodyCtx) →
+      Locals.finishScoped ctx bodyCtx bodyCode = some target →
+      SelectedRel ctx (some source) (some target)
+
+/--
+The ordinary case/default compiler preserves branch selection and records the
+adjacent open-body and cleanup artifacts for the selected branch.
+-/
+theorem selectedRel_of_compile
+    (ctx : Locals.Ctx) (value : Word)
+    {cases : List (Word × Locals.Block)}
+    {defaultBody : Option Locals.Block}
+    {compiledCases : List (Word × Expressions.Block)}
+    {compiledDefault : Option Expressions.Block}
+    (hCases :
+      Locals.CaseList.compile ctx cases = some compiledCases)
+    (hDefault :
+      Locals.Default.compile ctx defaultBody = some compiledDefault) :
+    SelectedRel ctx
+      (Locals.Source.Switch.select value cases defaultBody)
+      (Expressions.EffectSemantics.Switch.select
+        value compiledCases compiledDefault) := by
+  induction cases generalizing compiledCases with
+  | nil =>
+      simp [Locals.CaseList.compile] at hCases
+      subst compiledCases
+      cases defaultBody with
+      | none =>
+          simp [Locals.Default.compile] at hDefault
+          subst compiledDefault
+          exact SelectedRel.none
+      | some body =>
+          cases hBody : Locals.Block.compileOpen ctx body with
+          | none =>
+              simp [Locals.Default.compile, hBody] at hDefault
+          | some bodyResult =>
+              rcases bodyResult with ⟨bodyCode, bodyCtx⟩
+              cases hFinish :
+                  Locals.finishScoped ctx bodyCtx bodyCode with
+              | none =>
+                  simp [Locals.Default.compile, hBody, hFinish] at hDefault
+              | some compiledBody =>
+                  simp [Locals.Default.compile, hBody, hFinish] at hDefault
+                  subst compiledDefault
+                  exact SelectedRel.some hBody hFinish
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, body⟩
+      cases hBody : Locals.Block.compileOpen ctx body with
+      | none =>
+          simp [Locals.CaseList.compile, hBody] at hCases
+      | some bodyResult =>
+          rcases bodyResult with ⟨bodyCode, bodyCtx⟩
+          cases hFinish :
+              Locals.finishScoped ctx bodyCtx bodyCode with
+          | none =>
+              simp [Locals.CaseList.compile, hBody, hFinish] at hCases
+          | some compiledBody =>
+              cases hRest : Locals.CaseList.compile ctx rest with
+              | none =>
+                  simp [Locals.CaseList.compile, hBody, hFinish, hRest]
+                    at hCases
+              | some compiledRest =>
+                  simp [Locals.CaseList.compile, hBody, hFinish, hRest]
+                    at hCases
+                  subst compiledCases
+                  by_cases hMatch : caseValue = value
+                  · simp [Locals.Source.Switch.select,
+                      Expressions.EffectSemantics.Switch.select, hMatch]
+                    exact SelectedRel.some hBody hFinish
+                  · simpa [Locals.Source.Switch.select,
+                      Expressions.EffectSemantics.Switch.select, hMatch]
+                      using ih hRest
+
+end SwitchCompile
+
 theorem RegularResultRel.toOpen
     {finalCtx : Locals.Ctx}
     {suffix : List Word}
@@ -3775,6 +3858,161 @@ theorem if_generated
       exact forward_scoped_withContext hCtx hScoped
 
 /--
+Switch preservation through the compiler-owned selection relation. Scrutinee
+evaluation and its target stack pop are proved once; selected branches reuse
+the shared scoped-child theorem.
+-/
+theorem switch_generated
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    (scrutinee : Locals.Expr 1)
+    (cases : List (Word × Locals.Block))
+    (defaultBody : Option Locals.Block)
+    (scrutineeCode : Structured.Code)
+    (compiledCases : List (Word × Expressions.Block))
+    (compiledDefault : Option Expressions.Block)
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : 4 ≤ targetFuel)
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hScrutineeScoped : Scope.ExprScoped targetCtx.layout scrutinee)
+    (hScrutineeSupported :
+      InteractionSemantics.Expr.OpenSupported scrutinee)
+    (hScrutineeCompile :
+      Locals.Expr.compileCode targetCtx 0 scrutinee =
+        some scrutineeCode)
+    (hCases :
+      Locals.CaseList.compile targetCtx cases = some compiledCases)
+    (hDefault :
+      Locals.Default.compile targetCtx defaultBody =
+        some compiledDefault)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target)
+    (hSelected :
+      ∀ {selected : Locals.Block}
+        {selectedTarget : Expressions.Block}
+        {bodyCode : List Expressions.Stmt}
+        {bodyCtx : Locals.Ctx},
+        Locals.Block.compileOpen targetCtx selected =
+            some (bodyCode, bodyCtx) →
+          Locals.finishScoped targetCtx bodyCtx bodyCode =
+            some selectedTarget →
+          bodyCode.length + 4 ≤ targetFuel ∧
+            (∃ pre, bodyCtx.layout = pre ++ targetCtx.layout) ∧
+            ∀ {sourceAfter : Locals.Source.State}
+              {targetAfter : Structured.RunState},
+              Frame.StateRel targetCtx.layout suffix returns
+                  sourceAfter targetAfter →
+                Simulation.Interaction.ForwardRel
+                  Block.FuelTruncated
+                  (OpenOutcomeRel bodyCtx suffix returns)
+                  (InteractionSemantics.Block.openRun
+                    sourceProgram sourceCtx sourceFuel selected sourceAfter)
+                  (Expressions.InteractionSemantics.Block.openRun
+                    targetProgram (targetFuel - 2)
+                      { stmts := bodyCode } targetAfter)) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel targetCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx (sourceFuel + 1)
+          (.switch scrutinee cases defaultBody) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel
+          { stmts :=
+              [Expressions.Stmt.switch (.code scrutineeCode)
+                compiledCases compiledDefault] }
+          target) := by
+  rw [TargetBlock.openRun_single_stmt_of_fuel
+    targetProgram targetFuel _ target (by omega)]
+  have hTargetStmtFuel :
+      targetFuel - 1 = (targetFuel - 2) + 1 := by
+    omega
+  rw [hTargetStmtFuel]
+  unfold InteractionSemantics.Stmt.openRun
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+    Expressions.InteractionSemantics.Stmt.openRun
+  simp only [Locals.Source.Effectful.Control.Stmt.run,
+    Expressions.EffectSemantics.Control.Stmt.run]
+  have hScrutinee :=
+    Expr.openEvalOne_compileCode
+      scrutinee targetCtx 0 hScrutineeScoped hScrutineeSupported
+      hScrutineeCompile hInitial.expr
+  apply Simulation.Interaction.ForwardRel.bind
+    (Simulation.Interaction.ForwardRel.ofRel hScrutinee)
+  intro sourceResult targetAfterExpr hExpr
+  rcases sourceResult with ⟨sourceAfter, value⟩
+  let targetAfter :=
+    targetAfterExpr.withEVM
+      { targetAfterExpr.evm with stack := target.evm.stack }
+  have hTargetStack :
+      targetAfterExpr.evm.stack = value :: target.evm.stack := by
+    simpa using hExpr.stack
+  have hPop :
+      (Structured.EffectSemantics.Ordinary.runStateModel.evm
+          targetAfterExpr).stack.pop =
+        some (target.evm.stack, value) := by
+    rw [Structured.EffectSemantics.Ordinary.runStateModel_evm,
+      hTargetStack]
+    rfl
+  rw [hPop]
+  simp only [Structured.EffectSemantics.Ordinary.runStateModel_withEVM,
+    Structured.EffectSemantics.Ordinary.runStateModel_evm]
+  have hSelect :=
+    SwitchCompile.selectedRel_of_compile
+      targetCtx value hCases hDefault
+  cases hSourceSelect :
+      Locals.Source.Switch.select value cases defaultBody with
+  | none =>
+      cases hTargetSelect :
+          Expressions.EffectSemantics.Switch.select
+            value compiledCases compiledDefault with
+      | none =>
+          simp only
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          apply OpenResultRel.regular hCtx
+          simpa [targetAfter] using
+            Frame.StateRel.ofExprResultOnePop hInitial hExpr
+      | some selectedTarget =>
+          rw [hSourceSelect, hTargetSelect] at hSelect
+          cases hSelect
+  | some selected =>
+      cases hTargetSelect :
+          Expressions.EffectSemantics.Switch.select
+            value compiledCases compiledDefault with
+      | none =>
+          rw [hSourceSelect, hTargetSelect] at hSelect
+          cases hSelect
+      | some selectedTarget =>
+          rw [hSourceSelect, hTargetSelect] at hSelect
+          cases hSelect with
+          | @some _ _ bodyCode bodyCtx hBodyCompile hFinish =>
+              simp only
+              obtain ⟨hSelectedFuel, hLayout, hBody⟩ :=
+                hSelected hBodyCompile hFinish
+              obtain ⟨cleanup, hCleanup, hSelectedTarget⟩ :=
+                Locals.finishScoped_components hFinish
+              subst selectedTarget
+              have hCleanupFuel :
+                  2 ≤ (targetFuel - 2) - bodyCode.length := by
+                omega
+              have hScoped :=
+                scopedBlock_generated
+                  sourceProgram targetProgram sourceCtx targetCtx bodyCtx
+                  sourceFuel (targetFuel - 2) selected bodyCode cleanup
+                  hCtx hLayout hCleanup hCleanupFuel
+                  (hBody (by
+                    simpa [targetAfter] using
+                      Frame.StateRel.ofExprResultOnePop hInitial hExpr))
+              exact forward_scoped_withContext hCtx hScoped
+
+/--
 Lexical block preservation is a thin statement wrapper around the shared
 scoped-child theorem.
 -/
@@ -3963,6 +4201,75 @@ theorem if_of_compile
       sourceFuel targetFuel cond body condCode bodyCode cleanup
       hTargetFuel hCtx hCondScoped hCondSupported hCondCompile
       hLayout hCleanup hInitial hBodyForward
+
+/-- Compiler-facing switch theorem over the ordinary case/default compiler. -/
+theorem switch_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    (scrutinee : Locals.Expr 1)
+    (cases : List (Word × Locals.Block))
+    (defaultBody : Option Locals.Block)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : 4 ≤ targetFuel)
+    (hCompile :
+      Locals.Stmt.compile targetCtx
+          (.switch scrutinee cases defaultBody) =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hScrutineeScoped : Scope.ExprScoped targetCtx.layout scrutinee)
+    (hScrutineeSupported :
+      InteractionSemantics.Expr.OpenSupported scrutinee)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target)
+    (hSelected :
+      ∀ {selected : Locals.Block}
+        {selectedTarget : Expressions.Block}
+        {bodyCode : List Expressions.Stmt}
+        {bodyCtx : Locals.Ctx},
+        Locals.Block.compileOpen targetCtx selected =
+            some (bodyCode, bodyCtx) →
+          Locals.finishScoped targetCtx bodyCtx bodyCode =
+            some selectedTarget →
+          bodyCode.length + 4 ≤ targetFuel ∧
+            (∃ pre, bodyCtx.layout = pre ++ targetCtx.layout) ∧
+            ∀ {sourceAfter : Locals.Source.State}
+              {targetAfter : Structured.RunState},
+              Frame.StateRel targetCtx.layout suffix returns
+                  sourceAfter targetAfter →
+                Simulation.Interaction.ForwardRel
+                  Block.FuelTruncated
+                  (OpenOutcomeRel bodyCtx suffix returns)
+                  (InteractionSemantics.Block.openRun
+                    sourceProgram sourceCtx sourceFuel selected sourceAfter)
+                  (Expressions.InteractionSemantics.Block.openRun
+                    targetProgram (targetFuel - 2)
+                      { stmts := bodyCode } targetAfter)) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx (sourceFuel + 1)
+          (.switch scrutinee cases defaultBody) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := stmts } target) := by
+  obtain ⟨scrutineeCode, compiledCases, compiledDefault,
+    hScrutineeCompile, hCases, hDefault, hCode, hFinal⟩ :=
+    Locals.Stmt.compile_switch_components hCompile
+  subst finalCtx
+  subst stmts
+  exact
+    switch_generated
+      sourceProgram targetProgram sourceCtx targetCtx
+      sourceFuel targetFuel scrutinee cases defaultBody
+      scrutineeCode compiledCases compiledDefault
+      hTargetFuel hCtx hScrutineeScoped hScrutineeSupported
+      hScrutineeCompile hCases hDefault hInitial hSelected
 
 end Stmt.Forward
 

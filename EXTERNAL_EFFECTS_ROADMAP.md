@@ -804,6 +804,9 @@ Exit: the shared core builds with no compiler layer changed.
     - [x] Compiler-facing conditional preservation through the shared
       condition and scoped-child interfaces, including both false and every
       regular/abrupt/terminal true-branch outcome.
+    - [x] Compiler-facing switch preservation with one structural
+      source/compiled selection relation, exact scrutinee-pop frame recovery,
+      and shared scoped-child preservation for every selected branch.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
 - [ ] Functions.
@@ -870,6 +873,9 @@ Exit: every layer exposes one canonical open computation.
       blocks, conditionals, switches, and loops.
     - [x] Ordinary compiled `if` statements preserve ordered interactions and
       mode-indexed outcomes without constructor-specific cleanup reasoning.
+    - [x] Ordinary compiled switches preserve no-match and selected-branch
+      behavior without importing lower-pass preservation or duplicating a
+      switch interpreter.
 - [ ] Functions -> allocated Locals/Expressions.
   - [ ] Own the emitted internal-call and stack-protocol constructs rather
     than extending stack-free Locals with an operand stack.
