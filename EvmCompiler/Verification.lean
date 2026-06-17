@@ -162,6 +162,8 @@ or audit-alias corridor.
 #check EvmCompiler.Assembly.InteractionSemantics.Target.openRunNResult
 #check EvmCompiler.Assembly.InteractionPreservation.stepAt_emit_open_rel
 #check EvmCompiler.Assembly.InteractionPreservation.stepAt_emit_open_result_rel
+#check EvmCompiler.Assembly.InteractionPreservation.source_openRunNResult_rel_compiled
+#check EvmCompiler.Assembly.InteractionPreservation.compile_openRunNResult_block_rel
 #check EvmCompiler.Functions.AllocationObserverContext.ExprContext
 #check EvmCompiler.Functions.AllocationObserverContext.classify_var
 #check EvmCompiler.Functions.AllocationObserverContext.classify_let_transition

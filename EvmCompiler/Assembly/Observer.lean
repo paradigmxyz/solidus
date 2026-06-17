@@ -380,7 +380,8 @@ theorem runNResultWithObservers_sound
   | zero =>
       simp [runNResultWithObservers] at hRun
       rcases hRun with ⟨hResult, _hTrace⟩
-      simp [runNResult, Target.runNResultWith, hResult.symm]
+      simp [runNResult, Target.runNResultWith,
+        Control.runNResultWith, hResult.symm]
   | succ fuel ih =>
       unfold runNResultWithObservers at hRun
       cases hFetch : target.fetch state.pc.toNat with
@@ -410,12 +411,14 @@ theorem runNResultWithObservers_sound
                       rcases hRun with ⟨hResult, _hTrace⟩
                       cases hResult
                       simpa [runNResult, Target.runNResultWith,
+                        Control.runNResultWith,
                         Target.stepResult, Target.stepResultWith,
                         hFetch, hPlainStep]
                         using ih hTail
               | halted halt =>
                   cases hRun
                   simp [runNResult, Target.runNResultWith,
+                    Control.runNResultWith,
                     Target.stepResult, Target.stepResultWith,
                     hFetch, hPlainStep]
 
@@ -1012,7 +1015,7 @@ theorem stepResultWithOracle_of_stepResult_observer_none
         Program.instrAtPc program state.pc.toNat = some (pc, instr) →
           ResourceObserver.ofInstr? instr = none) :
     stepResultWithOracle program state trace = .ok (result, trace) := by
-  unfold stepResult at hStep
+  unfold stepResult Source.stepResultWith at hStep
   unfold stepResultWithOracle
   cases hAt : Program.instrAtPc program state.pc.toNat with
   | none =>
@@ -1316,7 +1319,7 @@ theorem stepResultWithObservers_sound
       stepResultWithObservers program state = .ok (result, trace)) :
     stepResult program state = .ok result := by
   unfold stepResultWithObservers at hRun
-  unfold Source.stepResult
+  unfold Source.stepResult Source.stepResultWith
   cases hAt : Program.instrAtPc program state.pc.toNat with
   | none =>
       simp [hAt] at hRun
@@ -1335,7 +1338,7 @@ theorem runNResultWithObservers_sound
   | zero =>
       simp [runNResultWithObservers] at hRun
       rcases hRun with ⟨hResult, _hTrace⟩
-      simp [runNResult, hResult.symm]
+      simp [runNResult, Control.runNResultWith, hResult.symm]
   | succ fuel ih =>
       unfold runNResultWithObservers at hRun
       cases hStep : stepResultWithObservers program state with
@@ -1348,7 +1351,7 @@ theorem runNResultWithObservers_sound
           have hPlainStep :
               stepResult program state = .ok stepResult' :=
             stepResultWithObservers_sound hStep
-          unfold runNResult
+          unfold runNResult Control.runNResultWith
           rw [hPlainStep]
           cases stepResult' with
           | running state' =>
@@ -1557,7 +1560,7 @@ theorem stepResultWithObservers_sound
     (hRun : stepResultWithObservers program state = .ok (result, trace)) :
     stepResult program state = .ok result := by
   unfold stepResultWithObservers at hRun
-  unfold Compiled.stepResult
+  unfold Compiled.stepResult Compiled.stepResultWith
   cases hEmit : emitCurrent? program state with
   | none =>
       simp [hEmit] at hRun
@@ -1575,7 +1578,7 @@ theorem runNResultWithObservers_sound
   | zero =>
       simp [runNResultWithObservers] at hRun
       rcases hRun with ⟨hResult, _hTrace⟩
-      simp [runNResult, hResult.symm]
+      simp [runNResult, Control.runNResultWith, hResult.symm]
   | succ fuel ih =>
       unfold runNResultWithObservers at hRun
       cases hStep : stepResultWithObservers program state with
@@ -1588,7 +1591,7 @@ theorem runNResultWithObservers_sound
           have hPlainStep :
               Compiled.stepResult program state = .ok stepResult' :=
             stepResultWithObservers_sound hStep
-          unfold runNResult
+          unfold runNResult Control.runNResultWith
           rw [hPlainStep]
           cases stepResult' with
           | running state' =>
@@ -3024,7 +3027,7 @@ theorem source_compiled_step_result_withObservers_sound
           Source.stepResult program state = .ok result :=
         Source.stepResultWithObservers_sound hStep
       unfold emitCurrent? at hEmit
-      unfold Source.stepResult at hPlain
+      unfold Source.stepResult Source.stepResultWith at hPlain
       cases hAt : Program.instrAtPc program state.pc.toNat with
       | none =>
           simp [hAt] at hPlain

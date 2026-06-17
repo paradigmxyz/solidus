@@ -15,7 +15,7 @@ theorem source_step_at_boundary
     Assembly.Source.step (pre ++ instr :: post) state =
       Assembly.Source.stepAt (pre ++ instr :: post)
         pre.byteLength instr state := by
-  unfold Assembly.Source.step
+  unfold Assembly.Source.step Assembly.Source.stepWith
   have hAt :
       Assembly.Program.instrAtPc (pre ++ instr :: post) state.pc.toNat =
         some (pre.byteLength, instr) := by
@@ -34,12 +34,13 @@ theorem source_runN_one_at_boundary
     Assembly.Source.runN (pre ++ instr :: post) 1 state =
       Assembly.Source.stepAt (pre ++ instr :: post)
         pre.byteLength instr state := by
-  unfold Assembly.Source.runN
+  unfold Assembly.Source.runN Assembly.Control.runNWith
   rw [source_step_at_boundary hFits hPc]
   cases hStep :
       Assembly.Source.stepAt (pre ++ instr :: post)
         pre.byteLength instr state <;>
-    simp only [Bind.bind, Except.bind, Assembly.Source.runN]
+    simp only [Bind.bind, Except.bind, Assembly.Source.runN,
+      Assembly.Control.runNWith, Assembly.pure_except]
 
 theorem source_stepResult_at_boundary
     {pre post : Assembly.Program} {instr : Assembly.Instr}
@@ -49,7 +50,7 @@ theorem source_stepResult_at_boundary
     Assembly.Source.stepResult (pre ++ instr :: post) state =
       Assembly.Source.stepAtResult (pre ++ instr :: post)
         pre.byteLength instr state := by
-  unfold Assembly.Source.stepResult
+  unfold Assembly.Source.stepResult Assembly.Source.stepResultWith
   have hAt :
       Assembly.Program.instrAtPc (pre ++ instr :: post) state.pc.toNat =
         some (pre.byteLength, instr) := by
@@ -68,7 +69,7 @@ theorem source_runNResult_one_at_boundary
     Assembly.Source.runNResult (pre ++ instr :: post) 1 state =
       Assembly.Source.stepAtResult (pre ++ instr :: post)
         pre.byteLength instr state := by
-  unfold Assembly.Source.runNResult
+  unfold Assembly.Source.runNResult Assembly.Control.runNResultWith
   rw [source_stepResult_at_boundary hFits hPc]
   cases hStep :
       Assembly.Source.stepAtResult (pre ++ instr :: post)
@@ -77,7 +78,8 @@ theorem source_runNResult_one_at_boundary
       simp only [Bind.bind, Except.bind]
   | ok result =>
       cases result <;>
-        simp only [Bind.bind, Except.bind, Assembly.Source.runNResult]
+        simp only [Bind.bind, Except.bind, Assembly.Source.runNResult,
+          Assembly.Control.runNResultWith, Assembly.pure_except]
 
 theorem source_runNResult_one_eq_map_running
     {pre post : Assembly.Program} {instr : Assembly.Instr}
@@ -414,7 +416,7 @@ theorem runPops_source_runN
                 (Assembly.Instr.prim Assembly.PrimOp.pop) ++ post))
             (count + 1) state =
           Instr.runPops (count + 1) state
-      unfold Assembly.Source.runN Instr.runPops
+      unfold Assembly.Source.runN Assembly.Control.runNWith Instr.runPops
       rw [source_step_at_boundary hFitsHere hPc]
       change
         (do
@@ -476,7 +478,8 @@ theorem runPops_source_runNResult
             (count + 1) state =
           (Instr.runPops (count + 1) state).map
             Assembly.StepResult.running
-      unfold Assembly.Source.runNResult Instr.runPops
+      unfold Assembly.Source.runNResult Assembly.Control.runNResultWith
+        Instr.runPops
       rw [source_stepResult_at_boundary hFitsHere hPc]
       cases hStep : Assembly.PrimOp.pop.step state with
       | error err =>
@@ -737,17 +740,20 @@ theorem lowerAt_source_runN
           simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
             at hLower
           rcases hLower with ⟨rfl, rfl⟩
-          simp [Assembly.Source.runN, TypedCfg.Instr.runState]
+          simp [Assembly.Source.runN, Assembly.Control.runNWith,
+            TypedCfg.Instr.runState]
       | bindScratch baseDepth name slot =>
           simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
             at hLower
           rcases hLower with ⟨rfl, rfl⟩
-          simp [Assembly.Source.runN, TypedCfg.Instr.runState]
+          simp [Assembly.Source.runN, Assembly.Control.runNWith,
+            TypedCfg.Instr.runState]
       | relabel target =>
           simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
             at hLower
           rcases hLower with ⟨rfl, rfl⟩
-          simp [Assembly.Source.runN, TypedCfg.Instr.runState]
+          simp [Assembly.Source.runN, Assembly.Control.runNWith,
+            TypedCfg.Instr.runState]
       | dup depth =>
           have hDepth : depth < 16 := by
             by_contra hNot
@@ -862,21 +868,24 @@ theorem lowerAt_source_runNResult
             at hLower
           rcases hLower with ⟨rfl, rfl⟩
           rw [runAt_map_running_fst hType]
-          simp [Assembly.Source.runNResult, TypedCfg.Instr.runState]
+          simp [Assembly.Source.runNResult, Assembly.Control.runNResultWith,
+            TypedCfg.Instr.runState]
           rfl
       | bindScratch baseDepth name slot =>
           simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
             at hLower
           rcases hLower with ⟨rfl, rfl⟩
           rw [runAt_map_running_fst hType]
-          simp [Assembly.Source.runNResult, TypedCfg.Instr.runState]
+          simp [Assembly.Source.runNResult, Assembly.Control.runNResultWith,
+            TypedCfg.Instr.runState]
           rfl
       | relabel target =>
           simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
             at hLower
           rcases hLower with ⟨rfl, rfl⟩
           rw [runAt_map_running_fst hType]
-          simp [Assembly.Source.runNResult, TypedCfg.Instr.runState]
+          simp [Assembly.Source.runNResult, Assembly.Control.runNResultWith,
+            TypedCfg.Instr.runState]
           rfl
       | dup depth =>
           have hDepth : depth < 16 := by

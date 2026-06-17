@@ -331,7 +331,7 @@ theorem dispatchTest_source_exists_withOracle {state : EVMState}
         Source.stepResult
             ((pre ++ conditionCode) ++ [Instr.jumpi label] ++ post) mid =
           .ok (.running final) := by
-      unfold Source.stepResult
+      unfold Source.stepResult Source.stepResultWith
       have hAt :
           Program.instrAtPc
               ((pre ++ conditionCode) ++ [Instr.jumpi label] ++ post)

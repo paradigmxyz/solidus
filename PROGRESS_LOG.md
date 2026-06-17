@@ -30756,3 +30756,11 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   including universal continuations for all CALL/CREATE-family answers and
   terminal halt outcomes. Whole-program source control composition and legacy
   resource-observer specialization remain open.
+- 2026-06-17 01:36:08 PDT - proof/assembly-open-whole-program - Moved target,
+  source, and emitted-block fuel recursion onto one `Assembly.Control` kernel.
+  Added canonical open source and compiled-block runners and checked exact
+  whole-program state/outcome preservation for every interaction continuation.
+  The compiler-artifact theorem derives acceptance and target-code emission
+  directly from `compile?`; it accepts no generated proof evidence. The
+  remaining Assembly boundary is the fetched resolved-target and encoded
+  bytecode instruction-count bridge, plus legacy observer specialization.

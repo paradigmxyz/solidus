@@ -15,6 +15,8 @@ import EvmCompiler.Assembly.InteractionPreservation
 #check EvmCompiler.Assembly.InteractionSemantics.Target.openRunNResult
 #check EvmCompiler.Assembly.InteractionPreservation.stepAt_emit_open_rel
 #check EvmCompiler.Assembly.InteractionPreservation.stepAt_emit_open_result_rel
+#check EvmCompiler.Assembly.InteractionPreservation.source_openRunNResult_rel_compiled
+#check EvmCompiler.Assembly.InteractionPreservation.compile_openRunNResult_block_rel
 
 #print axioms EvmCompiler.Simulation.OpenAccount.ofYul_toYul
 #print axioms EvmCompiler.Simulation.OpenAccount.ofEVM_toEVM
@@ -29,3 +31,4 @@ import EvmCompiler.Assembly.InteractionPreservation
 #print axioms EvmCompiler.Simulation.Interaction.Rel.interpret
 #print axioms EvmCompiler.Assembly.InteractionSemantics.Source.prim_openStep_rel
 #print axioms EvmCompiler.Assembly.InteractionPreservation.stepAt_emit_open_result_rel
+#print axioms EvmCompiler.Assembly.InteractionPreservation.compile_openRunNResult_block_rel

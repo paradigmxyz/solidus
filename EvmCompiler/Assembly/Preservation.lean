@@ -209,7 +209,7 @@ theorem source_step_current_emit_result_sound {program : Program}
     (hStep : Source.stepResult program state = .ok result) :
     Target.runListResult code state = .ok result := by
   unfold emitCurrent? at hEmit
-  unfold Source.stepResult at hStep
+  unfold Source.stepResult Source.stepResultWith at hStep
   cases hAt : Program.instrAtPc program state.pc.toNat with
   | none =>
       simp [hAt] at hEmit
@@ -231,7 +231,7 @@ theorem source_step_current_emit_sound {program : Program} {state sourceState : 
     (hStep : Source.step program state = .ok sourceState) :
         Target.runList code state = .ok sourceState := by
   unfold emitCurrent? at hEmit
-  unfold Source.step at hStep
+  unfold Source.step Source.stepWith at hStep
   cases hAt : Program.instrAtPc program state.pc.toNat with
   | none =>
       simp [hAt] at hEmit
@@ -338,7 +338,7 @@ theorem assemble_source_step_current_result_sound {program : Program}
         target.code = before ++ emitted ++ after ∧
         Target.runListResult (emitted.map LocatedTarget.instr) state =
           .ok result := by
-  unfold Source.stepResult at hStep
+  unfold Source.stepResult Source.stepResultWith at hStep
   cases hAt : Program.instrAtPc program state.pc.toNat with
   | none =>
       simp [hAt] at hStep
@@ -363,7 +363,7 @@ theorem assemble_source_step_current_projected_sound {program : Program}
         target.code = before ++ emitted ++ after ∧
         Target.runList (emitted.map LocatedTarget.instr) state = .ok targetState ∧
         eraseGas targetState = eraseGas sourceState := by
-  unfold Source.step at hStep
+  unfold Source.step Source.stepWith at hStep
   cases hAt : Program.instrAtPc program state.pc.toNat with
   | none =>
       simp [hAt] at hStep
@@ -388,7 +388,7 @@ theorem assemble_source_step_current_sound {program : Program}
         emitInstr? program pc instr = some emitted ∧
         target.code = before ++ emitted ++ after ∧
         Target.runList (emitted.map LocatedTarget.instr) state = .ok sourceState := by
-  unfold Source.step at hStep
+  unfold Source.step Source.stepWith at hStep
   cases hAt : Program.instrAtPc program state.pc.toNat with
   | none =>
       simp [hAt] at hStep
@@ -431,7 +431,7 @@ theorem source_compiled_step_sound {program : Program}
     {state sourceState : EVMState}
     (hStep : Source.step program state = .ok sourceState) :
     Compiled.step program state = .ok sourceState := by
-  unfold Source.step at hStep
+  unfold Source.step Source.stepWith at hStep
   cases hAt : Program.instrAtPc program state.pc.toNat with
   | none =>
       simp [hAt] at hStep
@@ -466,7 +466,7 @@ theorem source_compiled_step_sound {program : Program}
                   | some dest =>
                       simp [emitInstr?, hDest] at hEmitInstr
           | some emitted =>
-              unfold Compiled.step emitCurrent?
+              unfold Compiled.step Compiled.stepWith emitCurrent?
               simp [hAt, hEmitInstr]
               exact stepAt_emit_sound hEmitInstr hStep
 
@@ -474,7 +474,7 @@ theorem source_compiled_step_result_sound {program : Program}
     {state : EVMState} {result : StepResult}
     (hStep : Source.stepResult program state = .ok result) :
     Compiled.stepResult program state = .ok result := by
-  unfold Source.stepResult at hStep
+  unfold Source.stepResult Source.stepResultWith at hStep
   cases hAt : Program.instrAtPc program state.pc.toNat with
   | none =>
       simp [hAt] at hStep
@@ -512,7 +512,7 @@ theorem source_compiled_step_result_sound {program : Program}
                   | some dest =>
                       simp [emitInstr?, hDest] at hEmitInstr
           | some emitted =>
-              unfold Compiled.stepResult emitCurrent?
+              unfold Compiled.stepResult Compiled.stepResultWith emitCurrent?
               simp [hAt, hEmitInstr]
               exact stepAt_emit_result_sound hEmitInstr hStep
 
@@ -522,17 +522,17 @@ theorem source_compiled_runN_sound {program : Program}
     Compiled.runN program fuel state = .ok sourceState := by
   induction fuel generalizing state with
   | zero =>
-      simp [Source.runN] at hRun
-      simpa [Compiled.runN] using hRun
+      simp [Source.runN, Control.runNWith] at hRun
+      simpa [Compiled.runN, Control.runNWith] using hRun
   | succ fuel ih =>
-      unfold Source.runN at hRun
+      unfold Source.runN Control.runNWith at hRun
       cases hStep : Source.step program state with
       | error err =>
           rw [hStep] at hRun
           cases hRun
       | ok mid =>
           simp [hStep] at hRun
-          unfold Compiled.runN
+          unfold Compiled.runN Control.runNWith
           rw [source_compiled_step_sound hStep]
           exact ih hRun
 
@@ -542,17 +542,17 @@ theorem source_compiled_runN_result_sound {program : Program}
     Compiled.runNResult program fuel state = .ok result := by
   induction fuel generalizing state with
   | zero =>
-      simp [Source.runNResult] at hRun
-      simpa [Compiled.runNResult] using hRun
+      simp [Source.runNResult, Control.runNResultWith] at hRun
+      simpa [Compiled.runNResult, Control.runNResultWith] using hRun
   | succ fuel ih =>
-      unfold Source.runNResult at hRun
+      unfold Source.runNResult Control.runNResultWith at hRun
       cases hStep : Source.stepResult program state with
       | error err =>
           rw [hStep] at hRun
           cases hRun
       | ok stepResult =>
           rw [hStep] at hRun
-          unfold Compiled.runNResult
+          unfold Compiled.runNResult Control.runNResultWith
           rw [source_compiled_step_result_sound hStep]
           cases stepResult with
           | running mid =>
@@ -767,11 +767,11 @@ theorem assemble_runN_block_trace_sound {program : Program}
     BlockTrace program target fuel state sourceState := by
   induction fuel generalizing state with
   | zero =>
-      simp [Source.runN] at hRun
+      simp [Source.runN, Control.runNWith] at hRun
       subst sourceState
       exact BlockTrace.done state
   | succ fuel ih =>
-      unfold Source.runN at hRun
+      unfold Source.runN Control.runNWith at hRun
       cases hStep : Source.step program state with
       | error err =>
           rw [hStep] at hRun
@@ -793,11 +793,11 @@ theorem assemble_runN_result_block_trace_sound {program : Program}
     BlockTraceResult program target fuel state result := by
   induction fuel generalizing state with
   | zero =>
-      simp [Source.runNResult] at hRun
+      simp [Source.runNResult, Control.runNResultWith] at hRun
       subst result
       exact BlockTraceResult.done state
   | succ fuel ih =>
-      unfold Source.runNResult at hRun
+      unfold Source.runNResult Control.runNResultWith at hRun
       cases hStep : Source.stepResult program state with
       | error err =>
           rw [hStep] at hRun

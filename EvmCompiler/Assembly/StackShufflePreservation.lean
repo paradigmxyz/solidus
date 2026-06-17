@@ -36,7 +36,7 @@ theorem source_stepResult_local {instr : Instr}
     (hStep : Target.stepInstr (targetInstr instr) state = .ok final) :
     Source.stepResult (pre ++ [instr] ++ post) state =
       .ok (.running final) := by
-  unfold Source.stepResult
+  unfold Source.stepResult Source.stepResultWith
   have hAt :
       Program.instrAtPc (pre ++ [instr] ++ post) state.pc.toNat =
         some (pre.byteLength, instr) := by
@@ -332,7 +332,7 @@ theorem dispatchCondition_source_exists {state : EVMState}
         (by simpa [duplicate, List.append_assoc] using hFits.2.2.1)
         hAfterPushPc hEqStep)
   refine ⟨3, .ok (.running finalState), ?_, ?_⟩
-  · unfold Source.runNResult
+  · unfold Source.runNResult Control.runNResultWith
     rw [show
       pre ++ [dupInstr (front.length + 1), .push probe, .prim .eq] ++ post =
         pre ++ [duplicate] ++ ([.push probe, .prim .eq] ++ post) by
@@ -354,10 +354,10 @@ theorem dispatchCondition_source_exists {state : EVMState}
         .ok (.running finalState)
     rw [hDupSource]
     simp only [Bind.bind, Except.bind]
-    unfold Source.runNResult
+    unfold Control.runNResultWith
     rw [hPushSource]
     simp only [Bind.bind, Except.bind]
-    unfold Source.runNResult
+    unfold Control.runNResultWith
     rw [hEqSource]
     rfl
   · refine ⟨?_, ?_, ?_⟩
@@ -482,7 +482,7 @@ theorem dispatchTest_source_exists {state : EVMState}
         Source.stepResult
             ((pre ++ conditionCode) ++ [Instr.jumpi label] ++ post) mid =
           .ok (.running final) := by
-      unfold Source.stepResult
+      unfold Source.stepResult Source.stepResultWith
       have hAt :
           Program.instrAtPc
               ((pre ++ conditionCode) ++ [Instr.jumpi label] ++ post)
@@ -498,7 +498,7 @@ theorem dispatchTest_source_exists {state : EVMState}
         EvmYul.Stack.pop, uint256_eq_ne_zero, final,
         Instr.haltKind?, Source.invalid, List.append_assoc]
     refine ⟨1, .ok (.running final), ?_, ?_⟩
-    · unfold Source.runNResult
+    · unfold Source.runNResult Control.runNResultWith
       rw [show
         pre ++
             [dupInstr (front.length + 1), .push probe, .prim .eq,
@@ -631,7 +631,7 @@ theorem liftBuriedToTop_source_exists {state : EVMState}
               (pre ++ liftBuriedToTop front.length) ++ [swap] ++ post by
               rw [hCodeEq]
               simp [List.append_assoc]]
-          unfold Source.runNResult
+          unfold Source.runNResult Control.runNResultWith
           rw [source_stepResult_local
             (instr := swap)
             (pre := pre ++ liftBuriedToTop front.length)
@@ -757,7 +757,7 @@ theorem removeBuriedUnder_source_exists {state : EVMState}
         pre ++ removeBuriedUnder front.length ++ post =
           (pre ++ liftBuriedToTop front.length) ++ [.prim .pop] ++ post by
           simp [removeBuriedUnder, List.append_assoc]]
-      unfold Source.runNResult
+      unfold Source.runNResult Control.runNResultWith
       rw [source_stepResult_local
         (instr := .prim .pop)
         (pre := pre ++ liftBuriedToTop front.length)

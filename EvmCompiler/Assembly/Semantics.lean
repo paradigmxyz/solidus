@@ -91,6 +91,28 @@ def haltKind? : Instr → Option HaltKind
 
 end Instr
 
+namespace Control
+
+def runNWith {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (step : EVMState → M EVMState) : Nat → EVMState → M EVMState
+  | 0, state => pure state
+  | fuel + 1, state => do
+      let state' ← step state
+      runNWith step fuel state'
+
+def runNResultWith {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (step : EVMState → M StepResult) : Nat → EVMState → M StepResult
+  | 0, state => pure (.running state)
+  | fuel + 1, state => do
+      let result ← step state
+      match result with
+      | .running state' => runNResultWith step fuel state'
+      | .halted halt => pure (.halted halt)
+
+end Control
+
 namespace Target
 
 abbrev stepInstrWith {Result : Type}
@@ -205,25 +227,17 @@ def stepResultWith {M : Type → Type}
   | some instr => instrStep instr state
   | none => throw .InvalidInstruction
 
-def runNWith {M : Type → Type}
+abbrev runNWith {M : Type → Type}
     [Monad M] [MonadExceptOf EVMException M]
     (instrStep : TargetInstr → EVMState → M EVMState)
-    (target : TargetProgram) : Nat → EVMState → M EVMState
-  | 0, state => pure state
-  | fuel + 1, state => do
-      let state' ← stepWith instrStep target state
-      runNWith instrStep target fuel state'
+    (target : TargetProgram) (fuel : Nat) (state : EVMState) : M EVMState :=
+  Control.runNWith (stepWith instrStep target) fuel state
 
-def runNResultWith {M : Type → Type}
+abbrev runNResultWith {M : Type → Type}
     [Monad M] [MonadExceptOf EVMException M]
     (instrStep : TargetInstr → EVMState → M StepResult)
-    (target : TargetProgram) : Nat → EVMState → M StepResult
-  | 0, state => pure (.running state)
-  | fuel + 1, state => do
-      let result ← stepResultWith instrStep target state
-      match result with
-      | .running state' => runNResultWith instrStep target fuel state'
-      | .halted halt => pure (.halted halt)
+    (target : TargetProgram) (fuel : Nat) (state : EVMState) : M StepResult :=
+  Control.runNResultWith (stepResultWith instrStep target) fuel state
 
 abbrev runList (code : List TargetInstr) (state : EVMState) :
     Except EVMException EVMState :=
@@ -296,22 +310,33 @@ def stepAtResult (program : Program) (pc : Nat) (instr : Instr)
   | none =>
       .ok (.running state')
 
-def step (program : Program) (state : EVMState) : Except EVMException EVMState :=
+def stepWith {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (instrStep : Nat → Instr → EVMState → M EVMState)
+    (program : Program) (state : EVMState) : M EVMState :=
   match Program.instrAtPc program state.pc.toNat with
-  | some (pc, instr) => stepAt program pc instr state
-  | none => .error .InvalidInstruction
+  | some (pc, instr) => instrStep pc instr state
+  | none => throw .InvalidInstruction
 
-def stepResult (program : Program) (state : EVMState) :
+def stepResultWith {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (instrStep : Nat → Instr → EVMState → M StepResult)
+    (program : Program) (state : EVMState) : M StepResult :=
+  match Program.instrAtPc program state.pc.toNat with
+  | some (pc, instr) => instrStep pc instr state
+  | none => throw .InvalidInstruction
+
+abbrev step (program : Program) (state : EVMState) :
+    Except EVMException EVMState :=
+  stepWith (stepAt program) program state
+
+abbrev stepResult (program : Program) (state : EVMState) :
     Except EVMException StepResult :=
-  match Program.instrAtPc program state.pc.toNat with
-  | some (pc, instr) => stepAtResult program pc instr state
-  | none => .error .InvalidInstruction
+  stepResultWith (stepAtResult program) program state
 
-def runN (program : Program) : Nat → EVMState → Except EVMException EVMState
-  | 0, state => .ok state
-  | fuel + 1, state => do
-      let state' ← step program state
-      runN program fuel state'
+abbrev runN (program : Program) (fuel : Nat) (state : EVMState) :
+    Except EVMException EVMState :=
+  Control.runNWith (step program) fuel state
 
 theorem runN_add (program : Program) (first second : Nat)
     (state : EVMState) :
@@ -321,9 +346,10 @@ theorem runN_add (program : Program) (first second : Nat)
         runN program second state') := by
   induction first generalizing state with
   | zero =>
-      simp only [Nat.zero_add, runN.eq_1, Bind.bind, Except.bind]
+      simp [runN, Control.runNWith]
   | succ first ih =>
-      rw [Nat.succ_add, runN.eq_2, runN.eq_2]
+      rw [Nat.succ_add]
+      simp only [runN, Control.runNWith]
       cases hStep : step program state with
       | error err =>
           simp only [hStep, Bind.bind, Except.bind]
@@ -331,13 +357,9 @@ theorem runN_add (program : Program) (first second : Nat)
           simp only [hStep, Bind.bind, Except.bind]
           exact ih state'
 
-def runNResult (program : Program) : Nat → EVMState → Except EVMException StepResult
-  | 0, state => .ok (.running state)
-  | fuel + 1, state => do
-      let result ← stepResult program state
-      match result with
-      | .running state' => runNResult program fuel state'
-      | .halted halt => .ok (.halted halt)
+abbrev runNResult (program : Program) (fuel : Nat) (state : EVMState) :
+    Except EVMException StepResult :=
+  Control.runNResultWith (stepResult program) fuel state
 
 abbrev ExecutionOutcome := Except EVMException StepResult
 
@@ -364,9 +386,10 @@ theorem runNResult_add (program : Program) (first second : Nat)
         | .halted halt => .ok (.halted halt)) := by
   induction first generalizing state with
   | zero =>
-      simp only [Nat.zero_add, runNResult, Bind.bind, Except.bind]
+      simp [runNResult, Control.runNResultWith]
   | succ first ih =>
-      rw [Nat.succ_add, runNResult, runNResult]
+      rw [Nat.succ_add]
+      simp only [runNResult, Control.runNResultWith]
       cases hStep : stepResult program state with
       | error err =>
           simp only [hStep, Bind.bind, Except.bind]
@@ -395,7 +418,9 @@ theorem pure {program : Program} {state : EVMState}
     {post : ExecutionOutcome → Prop}
     (hPost : post (.ok (.running state))) :
     Eventually program state post := by
-  exact ⟨0, .ok (.running state), by simp [runNResult], hPost⟩
+  exact
+    ⟨0, .ok (.running state),
+      by simp [runNResult, Control.runNResultWith], hPost⟩
 
 theorem bind_running {program : Program} {state : EVMState}
     {middle : EVMState → Prop} {post : ExecutionOutcome → Prop}
@@ -443,30 +468,37 @@ def emitCurrent? (program : Program) (state : EVMState) : Option (List TargetIns
 
 namespace Compiled
 
-def step (program : Program) (state : EVMState) : Except EVMException EVMState :=
+def stepWith {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (runBlock : List TargetInstr → EVMState → M EVMState)
+    (program : Program) (state : EVMState) : M EVMState :=
   match emitCurrent? program state with
-  | some code => Target.runList code state
-  | none => .error .InvalidInstruction
+  | some code => runBlock code state
+  | none => throw .InvalidInstruction
 
-def stepResult (program : Program) (state : EVMState) :
+def stepResultWith {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (runBlock : List TargetInstr → EVMState → M StepResult)
+    (program : Program) (state : EVMState) : M StepResult :=
+  match emitCurrent? program state with
+  | some code => runBlock code state
+  | none => throw .InvalidInstruction
+
+abbrev step (program : Program) (state : EVMState) :
+    Except EVMException EVMState :=
+  stepWith Target.runList program state
+
+abbrev stepResult (program : Program) (state : EVMState) :
     Except EVMException StepResult :=
-  match emitCurrent? program state with
-  | some code => Target.runListResult code state
-  | none => .error .InvalidInstruction
+  stepResultWith Target.runListResult program state
 
-def runN (program : Program) : Nat → EVMState → Except EVMException EVMState
-  | 0, state => .ok state
-  | fuel + 1, state => do
-      let state' ← step program state
-      runN program fuel state'
+abbrev runN (program : Program) (fuel : Nat) (state : EVMState) :
+    Except EVMException EVMState :=
+  Control.runNWith (step program) fuel state
 
-def runNResult (program : Program) : Nat → EVMState → Except EVMException StepResult
-  | 0, state => .ok (.running state)
-  | fuel + 1, state => do
-      let result ← stepResult program state
-      match result with
-      | .running state' => runNResult program fuel state'
-      | .halted halt => .ok (.halted halt)
+abbrev runNResult (program : Program) (fuel : Nat) (state : EVMState) :
+    Except EVMException StepResult :=
+  Control.runNResultWith (stepResult program) fuel state
 
 end Compiled
 

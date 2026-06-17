@@ -718,7 +718,12 @@ Exit: the shared core builds with no compiler layer changed.
     bytecode semantics and the shared open interaction semantics.
   - [x] Exact state and outcome-indexed `Interaction.Rel` theorems for every
     emitted Assembly instruction block.
-  - [ ] Whole-program Assembly source control and bytecode-run composition.
+  - [x] One shared fuel-control kernel for target, source, and emitted-block
+    execution.
+  - [x] Whole-program Assembly source control and emitted target-block
+    composition, universally over all interaction answers.
+  - [ ] Connect emitted-block execution to fetched resolved-target and encoded
+    bytecode instruction-count execution.
   - [ ] Migrate the legacy resource-observer runners onto the common kernel.
 - [ ] TypedCfg.
 - [ ] Structured.
@@ -740,7 +745,8 @@ Exit: every layer exposes one canonical open computation.
 
 - [ ] Assembly -> bytecode.
   - [x] Per-instruction emitted-block state and outcome preservation.
-  - [ ] Whole-program open execution preservation.
+  - [x] Whole-program emitted-block open execution preservation.
+  - [ ] Fetched resolved-target and encoded-bytecode open execution bridge.
 - [ ] TypedCfg -> Assembly.
 - [ ] Structured -> TypedCfg.
 - [ ] Locals/Expressions -> Structured.

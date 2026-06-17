@@ -191,6 +191,21 @@ def openStepAtResult (program : Program) (pc : Nat) (instr : Instr)
   | none =>
       pure (.running state')
 
+def openStep (program : Program) (state : EVMState) : OpenStep :=
+  Assembly.Source.stepWith (openStepAt program) program state
+
+def openStepResult (program : Program) (state : EVMState) :
+    OpenStepResult :=
+  Assembly.Source.stepResultWith (openStepAtResult program) program state
+
+def openRunN (program : Program) (fuel : Nat) (state : EVMState) :
+    OpenStep :=
+  Assembly.Control.runNWith (openStep program) fuel state
+
+def openRunNResult (program : Program) (fuel : Nat)
+    (state : EVMState) : OpenStepResult :=
+  Assembly.Control.runNResultWith (openStepResult program) fuel state
+
 /--
 The primitive case of the Assembly-to-resolved-instruction boundary is exact:
 both sides expose the same query and use the same continuation for every
@@ -207,6 +222,25 @@ theorem prim_openStep_rel
   rfl
 
 end Source
+
+namespace Compiled
+
+def openStep (program : Program) (state : EVMState) : OpenStep :=
+  Assembly.Compiled.stepWith Target.openRunList program state
+
+def openStepResult (program : Program) (state : EVMState) :
+    OpenStepResult :=
+  Assembly.Compiled.stepResultWith Target.openRunListResult program state
+
+def openRunN (program : Program) (fuel : Nat) (state : EVMState) :
+    OpenStep :=
+  Assembly.Control.runNWith (openStep program) fuel state
+
+def openRunNResult (program : Program) (fuel : Nat)
+    (state : EVMState) : OpenStepResult :=
+  Assembly.Control.runNResultWith (openStepResult program) fuel state
+
+end Compiled
 
 end InteractionSemantics
 end Assembly
