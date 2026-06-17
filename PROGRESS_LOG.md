@@ -31373,3 +31373,17 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   focused Locals build, full verification root, architecture guard,
   touched-Lean hole scan, axiom audit, and `git diff --check`. New policy
   theorems depend only on `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 14:58:51 PDT - proof/locals-loop-kernel - generalized compiled
+  break/continue/leave leaves to policy-indexed preservation and proved the
+  fuel-aligned recursive `forLoop_generated` kernel. Source fuel `n` maps to
+  target fuel `n + slack`; body break becomes regular exit, body continue runs
+  post, post break/continue are impossible, and leave/halt pass through.
+- 2026-06-17 14:58:51 PDT - validation/locals-loop-kernel - passed the focused
+  Locals build, full verification root, touched-Lean hole scan, axiom audit,
+  and `git diff --check`; new theorems use only
+  `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 14:58:51 PDT - architecture-risk/locals-control-owner - the
+  architecture guard passes dependencies but reports
+  `Locals/InteractionPreservation.lean` at 5,313 lines, newly above the 5K soft
+  limit. Split policy/control recursion into a dedicated adjacent owner before
+  extending the whole-statement proof.

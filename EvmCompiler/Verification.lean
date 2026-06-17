@@ -182,6 +182,7 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Code.openRun_replicate_pop
 #check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.ofExprResultOneAssign
 #check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.restrictPrefix
+#check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.restrictSelf
 #check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.openRun_cleanupTo
 #check EvmCompiler.Locals.InteractionPreservation.Expr.openEvalOne_compileCode
 #check EvmCompiler.Locals.InteractionPreservation.Expr.openEvalCondition_compileCode
@@ -201,6 +202,10 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.ScopedResultRel
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.ControlPolicy
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.ControlPolicy.loop
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.ControlPolicy.noLoop
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.ControlPolicy.ContextCompatible
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.ControlPolicy.loop_contextCompatible
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.ControlPolicy.noLoop_contextCompatible_withoutLoopControl
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.PolicyOpenResultRel
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.PolicyOpenResultRel.forget
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.PolicyScopedResultRel
@@ -216,8 +221,11 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_let_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_assign_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_brk_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.policy_openRun_brk_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_cont_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.policy_openRun_cont_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_leave_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.policy_openRun_leave_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_terminal_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_terminalArgs_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Block.FuelTruncated
@@ -228,8 +236,11 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.let_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.assign_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.brk_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.policy_brk_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.cont_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.policy_cont_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.leave_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.policy_leave_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.terminal_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.terminalArgs_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Block.forward_cons
@@ -239,6 +250,7 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.scopedBlock_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.policyScopedBlock_generated
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.forLoop_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.if_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.if_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.switch_generated

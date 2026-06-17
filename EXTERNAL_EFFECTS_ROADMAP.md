@@ -810,6 +810,12 @@ Exit: the shared core builds with no compiler layer changed.
     - [x] Independent control-policy refinement for exact break/continue
       frames, with policy-indexed scoped-child and sequence composition; the
       generic outcome interface remains lightweight.
+    - [x] Fuel-aligned recursive loop kernel covering false conditions,
+      regular body/post recursion, break, continue, leave, halt, and impossible
+      post exits with one fixed compiler slack.
+    - [ ] Split policy/control recursion into a dedicated adjacent Locals owner
+      before adding the whole compiled `for` wrapper; the current proof module
+      crossed the 5K-line architecture soft limit.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
 - [ ] Functions.
