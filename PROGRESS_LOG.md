@@ -30428,3 +30428,13 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   changed-file proof-marker scan, standalone axiom smoke, and
   `git diff --check` passed. The recursive terminal list/body theorems depend
   only on `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 20:02:21 PDT - proof/yul-terminal-primitive-fuel - Added the
+  program-indexed terminal expression capability and checked
+  `statementAfterArgs_programBounded`. A regular bounded argument prelude now
+  composes with the emitted `terminalArgs` statement at an exact two-unit
+  wrapper cost, with the source parent-fuel step absorbing the child execution.
+- 2026-06-16 20:02:21 PDT - validation/yul-terminal-primitive-fuel - Focused
+  terminal-fuel build, full 1,269-job verification root, architecture guard,
+  changed-file proof-marker scan, standalone axiom smoke, and
+  `git diff --check` passed. The terminal primitive quantitative theorem
+  depends only on `propext`, `Classical.choice`, and `Quot.sound`.

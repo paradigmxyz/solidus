@@ -96,6 +96,8 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
       unreachable suffixes, lexical blocks, and loop wrappers;
     - [x] lift recursive terminal statement-list sequencing and function-body
       packaging to the program-indexed budget;
+    - [x] bound the emitted terminal primitive after a regular, bounded
+      argument prelude;
     - [ ] lift terminal expressions, calls, and compound control through the
       recursive program-indexed family;
   - [x] expose the bounded regular whole-program forward theorem;

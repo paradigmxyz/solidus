@@ -205,6 +205,53 @@ def RecursiveTerminalBodyForwardProgramBounded
               (FunctionsObserverStaticCost.stmtList body)
               sourceFuel }
 
+def RecursiveTerminalExpressionForwardProgramBounded
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (codeRel : StateRelation.CodeRel)
+    (sourceProgram : Yul.Program)
+    (targetProgram : Objects.Program)
+    (profile : SolcValidation.DialectProfile)
+    (bound : Nat) : Prop :=
+  ∀ {exprFuel : Nat} {before after : Fresh.State}
+    {layout : List Name}
+    {expr : AstExpr} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    {source :
+      ObserverSemantics.SourceReplay.State transcript}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx},
+    exprFuel < bound →
+      FunctionsObserverStaticCost.expr expr ≤
+        FunctionsObserverStaticCost.program sourceProgram →
+      SolcValidation.ExprOk? profile sourceProgram.contract layout 1 expr =
+        true →
+      Expr.lower1Unchecked? before expr = some (pre, lower, after) →
+      StateRelation.Replay.ScopedExactRel codeRel layout source target →
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars →
+      StateRelation.Vars.NamesWithin before.used ctx.scope →
+      Yul.Source.Effectful.eval
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          exprFuel expr (some sourceProgram.contract) source =
+        .error failure →
+      Yul.Source.Effectful.Exception.Observable failure.exception →
+      Nonempty
+        { result :
+            FunctionsObserverTerminal.StatementResult
+              contract codeRel targetProgram.toFunctions pre
+              failure target ctx //
+          result.requiredFuel ≤
+            FunctionsObserverFuel.executionBudgetFor
+              (FunctionsObserverStaticCost.program sourceProgram)
+              (FunctionsObserverStaticCost.expr expr)
+              exprFuel }
+
 namespace StatementResult
 
 def RunBounded
@@ -779,6 +826,231 @@ theorem ofForLoop_runBounded
   exact hOpen
 
 end StatementResult
+
+/--
+Program-indexed terminal primitive preservation after regular argument
+evaluation. The generated argument prelude uses the ordinary bounded expression
+lowering; the terminal statement itself costs two open-block fuel units.
+-/
+theorem statementAfterArgs_programBounded
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {argsFuel parentFuel globalCost parentLocal : Nat}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {prim : EvmYul.Operation .Yul}
+    {args : List AstExpr}
+    {kind : Assembly.HaltKind}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {seq : Locals.ExprSeq kind.argCount}
+    {source sourceAfterArgs :
+      ObserverSemantics.SourceReplay.State transcript}
+    {reversedValues : List Assembly.Word}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {Eligible : AstExpr → Prop}
+    (hTerminal : Prim.terminal? prim = some kind)
+    (hLowerArgs :
+      Expr.List.lowerBound1Unchecked? before args =
+        some (preArgs, lowerArgs, after))
+    (hSeq :
+      Expr.List.toStackSeq? lowerArgs kind.argCount = some seq)
+    (hEligible : ∀ expr, expr ∈ args → Eligible expr)
+    (hArgsCost :
+      FunctionsObserverStaticCost.exprList args ≤ globalCost)
+    (hExpr :
+      ∀ {exprFuel : Nat} {exprBefore exprAfter : Fresh.State}
+        {expr : AstExpr} {exprPre : List Functions.Stmt}
+        {exprLower : Locals.Expr 1}
+        {exprSource exprSource' :
+          ObserverSemantics.SourceReplay.State transcript}
+        {exprTarget : Functions.ObserverSemantics.State transcript}
+        {exprCtx : Functions.Source.Ctx} {value : Assembly.Word},
+        exprFuel < argsFuel →
+          FunctionsObserverStaticCost.expr expr ≤ globalCost →
+          Eligible expr →
+          Expr.lower1Unchecked? exprBefore expr =
+            some (exprPre, exprLower, exprAfter) →
+          StateRelation.Replay.ScopedExactRel codeRel layout
+            exprSource exprTarget →
+          StateRelation.Vars.TargetDomainWithin
+              exprBefore.used exprTarget.source.vars →
+          StateRelation.Vars.NamesWithin
+              exprBefore.used exprCtx.scope →
+          Yul.Source.Effectful.eval
+              (ObserverSemantics.SourceReplay.stateModel transcript)
+              (ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              exprFuel expr codeOverride exprSource =
+            .ok (exprSource', value) →
+          Nonempty
+            { result :
+                FunctionsObserverExpression.ScopedPreparedValue
+                  contract transcript codeRel program exprPre exprLower
+                  exprAfter layout exprSource' exprTarget exprCtx value //
+              FunctionsObserverFuel.PreparedValue.ProgramBounded
+                globalCost (FunctionsObserverStaticCost.expr expr)
+                exprFuel result.prepared })
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hArgsFuel : argsFuel < parentFuel)
+    (hArgsRun :
+      Yul.Source.Effectful.evalArgs
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          argsFuel args.reverse codeOverride source =
+        .ok (sourceAfterArgs, reversedValues))
+    (hPrimRun :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval argsFuel sourceAfterArgs prim
+          reversedValues.reverse =
+        .error failure)
+    (hObservable :
+      Yul.Source.Effectful.Exception.Observable failure.exception) :
+    Nonempty
+      { result :
+          FunctionsObserverTerminal.StatementResult
+            contract codeRel program
+            (preArgs ++ [Functions.Stmt.terminalArgs kind seq])
+            failure target ctx //
+        StatementResult.ProgramBounded
+          globalCost parentLocal parentFuel result } := by
+  obtain ⟨argsBounded⟩ :=
+    FunctionsObserverExpressionFuel.ScopedPreparedArgs.ofUncheckedLowering_programBounded
+      (globalCost := globalCost)
+      FunctionsObserverStaticCost.expr
+      (Expr.List.uncheckedBoundLowering_of_lowerBound1Unchecked?
+        hLowerArgs)
+      hEligible
+      (fun expr hMem =>
+        (FunctionsObserverStaticCost.expr_le_exprList_of_mem
+          hMem).trans hArgsCost)
+      hExpr hRel hDomain hScope hArgsRun
+  let argsPrepared := argsBounded.1
+  let targetAfterArgs :=
+    argsPrepared.prepared.prepared.finalTarget
+  have hStackArgs :=
+    argsPrepared.prepared.stackStable targetAfterArgs
+      (StateRelation.Vars.TargetExtends.refl _)
+  have hTargetArgList :
+      Functions.Source.Effectful.ArgList.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lowerArgs.reverse targetAfterArgs =
+        .ok (targetAfterArgs, reversedValues) := by
+    simpa [targetAfterArgs] using hStackArgs
+  obtain ⟨targetFinal, hTargetTerminal, hTerminalRel⟩ :=
+    FunctionsObserverTerminal.primitiveForward
+      hTerminal hObservable argsPrepared.relation hPrimRun
+  have hTargetTerminal' :
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).terminal kind targetAfterArgs
+          reversedValues =
+        .ok targetFinal := by
+    simpa [targetAfterArgs] using hTargetTerminal
+  have hTerminalStmt :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program argsPrepared.prepared.prepared.finalCtx 0
+          (.terminalArgs kind seq) targetAfterArgs =
+        .ok
+          (Functions.Source.Effectful.Outcome.halt kind targetFinal,
+            argsPrepared.prepared.prepared.finalCtx) :=
+    FunctionsObserverExpression.terminalArgs_run_of_argList
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hSeq hTargetArgList hTargetTerminal'
+  have hTerminalBlock :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program argsPrepared.prepared.prepared.finalCtx 2
+          { stmts := [Functions.Stmt.terminalArgs kind seq] }
+          targetAfterArgs =
+        .ok
+          (Functions.Source.Effectful.Outcome.halt kind targetFinal,
+            argsPrepared.prepared.prepared.finalCtx) :=
+    Functions.Source.Effectful.Block.runOpen_singleton_of_run_at_add_two
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hTerminalStmt
+  have hFullRun :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx
+          (argsPrepared.prepared.prepared.requiredFuel + 2)
+          { stmts :=
+              preArgs ++ [Functions.Stmt.terminalArgs kind seq] }
+          target =
+        .ok
+          (Functions.Source.Effectful.Outcome.halt kind targetFinal,
+            argsPrepared.prepared.prepared.finalCtx) :=
+    Functions.Source.Effectful.Block.runOpen_append_regular_at_add
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program preArgs [Functions.Stmt.terminalArgs kind seq]
+      ctx argsPrepared.prepared.prepared.finalCtx target targetAfterArgs
+      (Functions.Source.Effectful.Outcome.halt kind targetFinal)
+      argsPrepared.prepared.prepared.finalCtx
+      argsPrepared.prepared.prepared.requiredFuel 2
+      (FunctionsObserverExpression.Prepared.run_requiredFuel
+        argsPrepared.prepared.prepared)
+      hTerminalBlock
+  let result :
+      FunctionsObserverTerminal.StatementResult
+        contract codeRel program
+        (preArgs ++ [Functions.Stmt.terminalArgs kind seq])
+        failure target ctx :=
+    { kind := kind
+      finalTarget := targetFinal
+      finalCtx := argsPrepared.prepared.prepared.finalCtx
+      run :=
+        ⟨argsPrepared.prepared.prepared.requiredFuel + 2, hFullRun⟩
+      relation := hTerminalRel }
+  refine ⟨⟨result, ?_⟩⟩
+  have hRequired :
+      result.requiredFuel ≤
+        argsPrepared.prepared.prepared.requiredFuel + 2 :=
+    FunctionsObserverTerminal.StatementResult.requiredFuel_le_of_run
+      result hFullRun
+  have hArgsBound :
+      argsPrepared.prepared.prepared.requiredFuel ≤
+        FunctionsObserverFuel.executionBudgetFor
+          globalCost (FunctionsObserverStaticCost.exprList args)
+          argsFuel := by
+    simpa [FunctionsObserverStaticCost.exprList_eq_exprListBy,
+      argsPrepared] using argsBounded.2
+  have hChild :=
+    FunctionsObserverFuel.executionBudgetFor_add_eight_le_target_of_lt
+      globalCost (FunctionsObserverStaticCost.exprList args)
+      hArgsCost hArgsFuel
+  have hParent :=
+    FunctionsObserverFuel.targetBudgetFor_le_executionBudgetFor
+      globalCost parentLocal parentFuel
+  dsimp [StatementResult.ProgramBounded, StatementResult.RunBounded]
+  omega
 
 namespace RecursiveTerminalListForwardProgramBounded
 
