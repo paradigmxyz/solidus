@@ -107,7 +107,7 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
     - [x] lift nonterminal primitive-expression statements, terminal
       primitive statements, and initialized single-value declarations and
       assignments into the recursive program-indexed statement family;
-    - [ ] lift call-valued declaration, assignment, and expression statements
+    - [x] lift call-valued declaration, assignment, and expression statements
       into the recursive program-indexed statement family;
     - [ ] lift block, conditional, switch, and loop terminal control through
       the recursive program-indexed family;

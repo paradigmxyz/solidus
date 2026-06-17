@@ -30494,3 +30494,15 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   hole/axiom scan, standalone resource-observer axiom smoke, and
   `git diff --check` passed. All four new leaf theorems depend only on
   `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 20:47:50 PDT - proof/yul-terminal-call-statements - Added one
+  generic program-bounded terminal call constructor over compiler-selected
+  argument lowering and target names, then derived call-valued declaration,
+  assignment, and bare expression-statement preservation. The bare statement
+  proof retains its canonical one-less callee-fuel semantics instead of
+  coercing it through expression evaluation.
+- 2026-06-16 20:51:48 PDT -
+  validation/yul-terminal-call-statements - Focused terminal-fuel build, full
+  1,269-job verification root, architecture dependency guard, changed-line
+  forbidden-marker scan, standalone resource-observer axiom smoke, and
+  `git diff --check` passed. The generic constructor and all three statement
+  theorems depend only on `propext`, `Classical.choice`, and `Quot.sound`.
