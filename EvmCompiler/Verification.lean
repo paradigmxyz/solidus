@@ -190,6 +190,9 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.InteractionPreservation.BasicInstr.openRunAt_toCfg
 #check EvmCompiler.Structured.InteractionPreservation.Code.openRun_toCfg
 #check EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNWithStop_one
+#check EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_add
+#check EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_add_eq_of_allStopped
+#check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.target_allStopped
 #check EvmCompiler.Structured.InteractionControlPreservation.Stmt.openRun_code_of_compileStmtFuel?
 #check EvmCompiler.Structured.InteractionControlPreservation.Block.openRun_nil_of_compileStmtListFuel?
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg

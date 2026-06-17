@@ -77,12 +77,112 @@ def Rel (result : TypedCfgCompiler.Result)
       tokens source target ∧
     FrameFits result ctx source
 
-abbrev DoneRel (result : TypedCfgCompiler.Result)
+abbrev OutcomeDoneRel (result : TypedCfgCompiler.Result)
     (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
     (tokens : List Word) :=
   Simulation.Interaction.ExceptRel
     (fun _sourceError _targetError : EVMException => True)
     (Rel result ctx regular tokens)
+
+def RunRel (result : TypedCfgCompiler.Result)
+    (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
+    (tokens : List Word) (source : Structured.Outcome) :
+    TypedCfg.Control.Program.RunResult → Prop
+  | .exhausted _ _ => False
+  | .stopped target => Rel result ctx regular tokens source target
+
+abbrev DoneRel (result : TypedCfgCompiler.Result)
+    (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
+    (tokens : List Word) :=
+  Simulation.Interaction.ExceptRel
+    (fun _sourceError _targetError : EVMException => True)
+    (RunRel result ctx regular tokens)
+
+def TargetStopped (ctx : TypedCfgCompiler.Context)
+    (regular : Assembly.Label) : TypedCfg.Outcome → Prop
+  | .jump label _ => stopJump ctx regular label = true
+  | .halt _ _ => True
+  | .fallthrough _ | .returnDispatch _ | .invalid _ => False
+
+theorem targetStopped_of_rel
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
+    {tokens : List Word} {source : Structured.Outcome}
+    {target : TypedCfg.Outcome}
+    (hRel : Rel result ctx regular tokens source target) :
+    TargetStopped ctx regular target := by
+  rcases hRel with ⟨hOutcome, _hFits⟩
+  rcases source with ⟨sourceState, sourceMode⟩
+  cases sourceMode <;> cases target <;>
+    simp [
+      TargetStopped, stopJump,
+      TypedCfgPreservation.OutcomeSimulation.Rel,
+      Simulation.OutcomeRel,
+      TypedCfgPreservation.OutcomeSimulation.sourceView,
+      TypedCfgPreservation.OutcomeSimulation.targetView,
+      TypedCfgPreservation.OutcomeSimulation.targetMode,
+      TypedCfgPreservation.OutcomeSimulation.targetState,
+      TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext,
+      TypedCfgPreservation.OutcomeSimulation.contract] at hOutcome ⊢ <;>
+    aesop
+
+theorem afterOpenStepResultWithStop_zero_rel
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
+    {tokens : List Word} {source : Structured.Outcome}
+    {target : TypedCfg.Outcome}
+    (hRel : Rel result ctx regular tokens source target) :
+    Simulation.Interaction.Rel
+      (DoneRel result ctx regular tokens)
+      (Simulation.Interaction.pure source)
+      (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
+        (stopJump ctx regular) cfg 0 target) := by
+  have hStopped := targetStopped_of_rel hRel
+  cases target with
+  | jump label targetState =>
+      change stopJump ctx regular label = true at hStopped
+      simp only [
+        TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+        hStopped, if_true]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact hRel
+  | halt kind targetState =>
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact hRel
+  | fallthrough targetState
+  | returnDispatch targetState
+  | invalid targetState =>
+      exact False.elim hStopped
+
+theorem target_allStopped
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
+    {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {targetRun :
+      TypedCfg.InteractionSemantics.Program.OpenRunResult}
+    (hRel :
+      Simulation.Interaction.Rel
+        (DoneRel result ctx regular tokens)
+        sourceRun targetRun) :
+    Simulation.Interaction.AllDone
+      TypedCfg.InteractionSemantics.Program.RunResultStopped
+      targetRun := by
+  apply Simulation.Interaction.Rel.allDone_right hRel
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error _ =>
+      trivial
+  | @ok sourceResult targetResult hRun =>
+      cases targetResult with
+      | exhausted label state =>
+          exact False.elim hRun
+      | stopped outcome =>
+          trivial
 
 /--
 Open preservation for one compiled Structured fragment in an ambient CFG.
@@ -103,7 +203,7 @@ def Preserves (result : TypedCfgCompiler.Result)
         Simulation.Interaction.Rel
           (DoneRel result ctx regular tokens)
           sourceRun
-          (TypedCfg.InteractionSemantics.Program.openRunNWithStop
+          (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
             (stopJump ctx regular)
             cfg targetFuel entry target)
 
@@ -149,7 +249,8 @@ theorem openRun_code_of_compileStmtFuel?
     exact hBlocks generated (by simp [generated])
   intro target hStateRel
   refine ⟨1, ?_⟩
-  rw [TypedCfg.InteractionSemantics.Program.openRunNWithStop_one]
+  rw [show 1 = 0 + 1 by rfl,
+    TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_succ_eq_bind]
   simp only [
     TypedCfg.InteractionSemantics.Program.openStep,
     TypedCfg.Control.Program.step, hFind]
@@ -158,7 +259,7 @@ theorem openRun_code_of_compileStmtFuel?
       hType hFits hStateRel
   have hBlock :
       Simulation.Interaction.Rel
-        (OpenOutcome.DoneRel
+        (OpenOutcome.OutcomeDoneRel
           { blocks := [generated]
             next := supply + 1
             calls := []
@@ -201,7 +302,7 @@ theorem openRun_code_of_compileStmtFuel?
       · exact ⟨output, rfl, hFinalFitsOutput⟩
     have hDone :
         Simulation.Interaction.Rel
-          (OpenOutcome.DoneRel
+          (OpenOutcome.OutcomeDoneRel
             { blocks := [generated]
               next := supply + 1
               calls := []
@@ -214,10 +315,37 @@ theorem openRun_code_of_compileStmtFuel?
       Simulation.Interaction.Rel.done
         (Simulation.Interaction.ExceptRel.ok hRelated)
     simpa [generated, TypedCfg.Block.runTerm] using hDone
+  have hLifted :
+      Simulation.Interaction.Rel
+        (OpenOutcome.DoneRel
+          { blocks := [generated]
+            next := supply + 1
+            calls := []
+            fallthrough? := some output }
+          ctx regular tokens)
+        (Simulation.Interaction.bind
+          (Simulation.Interaction.bind
+            (InteractionSemantics.Code.openRun code source)
+            (fun final =>
+              Simulation.Interaction.pure
+                (Structured.Outcome.regular final)))
+          Simulation.Interaction.pure)
+        (Simulation.Interaction.bind
+          (TypedCfg.InteractionSemantics.Block.openRun
+            generated target)
+          (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
+            (OpenOutcome.stopJump ctx regular) cfg 0)) := by
+    apply Simulation.Interaction.Rel.bind hBlock
+    intro sourceOutcome targetOutcome hOutcome
+    exact
+      OpenOutcome.afterOpenStepResultWithStop_zero_rel
+        (cfg := cfg) hOutcome
   simpa [
     InteractionSemantics.Stmt.openRun,
     EffectSemantics.Control.Stmt.run,
-    generated, TypedCfg.Block.runTerm] using hBlock
+    TypedCfg.InteractionSemantics.Block.openRun,
+    Simulation.Interaction.bind_pure,
+    generated, TypedCfg.Block.runTerm] using hLifted
 
 end Stmt
 
@@ -261,7 +389,8 @@ theorem openRun_nil_of_compileStmtListFuel?
     exact hBlocks generated (by simp [generated])
   intro target hStateRel
   refine ⟨1, ?_⟩
-  rw [TypedCfg.InteractionSemantics.Program.openRunNWithStop_one]
+  rw [show 1 = 0 + 1 by rfl,
+    TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_succ_eq_bind]
   simp only [
     TypedCfg.InteractionSemantics.Program.openStep,
     TypedCfg.Control.Program.step, hFind]
@@ -313,13 +442,17 @@ theorem openRun_nil_of_compileStmtListFuel?
         (Simulation.Interaction.pure
           (Structured.Outcome.regular source))
         (Simulation.Interaction.pure
-          (TypedCfg.Outcome.jump regular target)) :=
+          (TypedCfg.Control.Program.RunResult.stopped
+            (TypedCfg.Outcome.jump regular target))) :=
     Simulation.Interaction.Rel.done
       (Simulation.Interaction.ExceptRel.ok hRelated)
   rw [hTargetRun]
   simpa [
     InteractionSemantics.Block.openRun,
     EffectSemantics.Control.Block.run,
+    TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+    OpenOutcome.stopJump_regular,
+    Simulation.Interaction.monad_pure_bind,
     Simulation.Interaction.pure] using hDone
 
 end Block

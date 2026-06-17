@@ -61,25 +61,54 @@ def step {M : Type → Type}
   | none => pure (.invalid state)
   | some block => Block.run runState block state
 
-def runNWithStop {M : Type → Type}
+inductive RunResult where
+  | exhausted (label : Label) (state : EVMState)
+  | stopped (outcome : TypedCfg.Outcome)
+
+def runNWithStopAs {M : Type → Type} {Result : Type}
     [Monad M] [MonadExceptOf EVMException M]
     (runState : TypedCfg.Instr → Shape → EVMState → M EVMState)
     (stopJump : Label → Bool)
+    (exhausted : Label → EVMState → Result)
+    (stopped : TypedCfg.Outcome → Result)
     (program : TypedCfg.Program) :
-    Nat → Label → EVMState → M TypedCfg.Outcome
-  | 0, label, state => pure (.jump label state)
+    Nat → Label → EVMState → M Result
+  | 0, label, state => pure (exhausted label state)
   | fuel + 1, label, state => do
       let outcome ← step runState program label state
       match outcome with
       | .jump next state' =>
           if stopJump next then
-            pure (.jump next state')
+            pure (stopped (.jump next state'))
           else
-            runNWithStop runState stopJump program fuel next state'
-      | .fallthrough state' => pure (.fallthrough state')
-      | .returnDispatch state' => pure (.returnDispatch state')
-      | .halt kind state' => pure (.halt kind state')
-      | .invalid state' => pure (.invalid state')
+            runNWithStopAs runState stopJump exhausted stopped
+              program fuel next state'
+      | .fallthrough state' =>
+          pure (stopped (.fallthrough state'))
+      | .returnDispatch state' =>
+          pure (stopped (.returnDispatch state'))
+      | .halt kind state' =>
+          pure (stopped (.halt kind state'))
+      | .invalid state' =>
+          pure (stopped (.invalid state'))
+
+abbrev runNWithStop {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (runState : TypedCfg.Instr → Shape → EVMState → M EVMState)
+    (stopJump : Label → Bool)
+    (program : TypedCfg.Program) :
+    Nat → Label → EVMState → M TypedCfg.Outcome :=
+  runNWithStopAs runState stopJump
+    (fun label state => .jump label state) id program
+
+abbrev runNResultWithStop {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (runState : TypedCfg.Instr → Shape → EVMState → M EVMState)
+    (stopJump : Label → Bool)
+    (program : TypedCfg.Program) :
+    Nat → Label → EVMState → M RunResult :=
+  runNWithStopAs runState stopJump
+    RunResult.exhausted RunResult.stopped program
 
 abbrev runN {M : Type → Type}
     [Monad M] [MonadExceptOf EVMException M]
@@ -87,6 +116,41 @@ abbrev runN {M : Type → Type}
     (program : TypedCfg.Program) :
     Nat → Label → EVMState → M TypedCfg.Outcome :=
   runNWithStop runState (fun _ => false) program
+
+@[simp] theorem runNResultWithStop_zero {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (runState : TypedCfg.Instr → Shape → EVMState → M EVMState)
+    (stopJump : Label → Bool)
+    (program : TypedCfg.Program) (label : Label)
+    (state : EVMState) :
+    runNResultWithStop runState stopJump program 0 label state =
+      pure (.exhausted label state) := rfl
+
+theorem runNResultWithStop_succ {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (runState : TypedCfg.Instr → Shape → EVMState → M EVMState)
+    (stopJump : Label → Bool)
+    (program : TypedCfg.Program) (fuel : Nat) (label : Label)
+    (state : EVMState) :
+    runNResultWithStop runState stopJump
+        program (fuel + 1) label state =
+      (do
+        let outcome ← step runState program label state
+        match outcome with
+        | .jump next state' =>
+            if stopJump next then
+              pure (.stopped (.jump next state'))
+            else
+              runNResultWithStop runState stopJump
+                program fuel next state'
+        | .fallthrough state' =>
+            pure (.stopped (.fallthrough state'))
+        | .returnDispatch state' =>
+            pure (.stopped (.returnDispatch state'))
+        | .halt kind state' =>
+            pure (.stopped (.halt kind state'))
+        | .invalid state' =>
+            pure (.stopped (.invalid state'))) := rfl
 
 @[simp] theorem runNWithStop_zero {M : Type → Type}
     [Monad M] [MonadExceptOf EVMException M]

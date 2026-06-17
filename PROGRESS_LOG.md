@@ -30823,3 +30823,15 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   interpreter. Focused and full verification builds, architecture and hole
   checks, open-effects axiom smoke, and `git diff --check` pass; axioms remain
   `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-17 05:17:46 PDT - compaction-resume - Resumed the active full
+  CALL/CREATE proof goal from checkpoint `1235d6982`; current work tags target
+  control exhaustion separately from semantic boundaries so Structured
+  statement-list preservation can compose without a second interpreter.
+- 2026-06-17 05:22:28 PDT - proof/structured-tagged-control - Refactored the
+  sole TypedCfg control kernel to expose tagged fuel exhaustion versus reached
+  semantic boundaries. Proved exact fuel addition, stability under extra fuel
+  after every open branch has stopped, and the Structured projection from
+  outcome preservation to that all-stopped invariant. Focused builds, the full
+  verification root, architecture and changed-file hole checks, open-effects
+  axiom smoke, and `git diff --check` pass; axioms remain `propext`,
+  `Classical.choice`, and `Quot.sound`.

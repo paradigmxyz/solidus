@@ -107,12 +107,25 @@ if ! rg -Fq \
 fi
 
 for theorem in \
+    'OpenOutcome.target_allStopped' \
     'Stmt.openRun_code_of_compileStmtFuel?' \
     'Block.openRun_nil_of_compileStmtListFuel?'; do
   if ! rg -Fq \
       "#check EvmCompiler.Structured.InteractionControlPreservation.${theorem}" \
       EvmCompiler/Verification.lean; then
     printf 'Verification root is missing Structured open control theorem %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
+for theorem in \
+    'openRunNResultWithStop_add' \
+    'openRunNResultWithStop_add_eq_of_allStopped'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.TypedCfg.InteractionSemantics.Program.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing canonical tagged control theorem %s.\n\n' \
       "$theorem" >&2
     failed=1
   fi

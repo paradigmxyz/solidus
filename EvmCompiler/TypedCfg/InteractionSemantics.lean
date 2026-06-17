@@ -219,6 +219,32 @@ def openRunNWithStop (stopJump : Label → Bool)
   Control.Program.runNWithStop
     Instr.openRunState stopJump program fuel label state
 
+abbrev OpenRunResult :=
+  Simulation.Interaction EVMException Control.Program.RunResult
+
+def openRunNResultWithStop (stopJump : Label → Bool)
+    (program : TypedCfg.Program) (fuel : Nat)
+    (label : Label) (state : EVMState) : OpenRunResult :=
+  Control.Program.runNResultWithStop
+    Instr.openRunState stopJump program fuel label state
+
+def afterOpenStepResultWithStop
+    (stopJump : Label → Bool) (program : TypedCfg.Program)
+    (fuel : Nat) : TypedCfg.Outcome → OpenRunResult
+  | .jump next state =>
+      if stopJump next then
+        pure (.stopped (.jump next state))
+      else
+        openRunNResultWithStop stopJump program fuel next state
+  | .fallthrough state =>
+      pure (.stopped (.fallthrough state))
+  | .returnDispatch state =>
+      pure (.stopped (.returnDispatch state))
+  | .halt kind state =>
+      pure (.stopped (.halt kind state))
+  | .invalid state =>
+      pure (.stopped (.invalid state))
+
 def openRunN (program : TypedCfg.Program) (fuel : Nat)
     (label : Label) (state : EVMState) : OpenOutcome :=
   openRunNWithStop (fun _ => false)
@@ -247,6 +273,45 @@ theorem openRunNWithStop_succ
         | .returnDispatch state' => pure (.returnDispatch state')
         | .halt kind state' => pure (.halt kind state')
         | .invalid state' => pure (.invalid state')) := rfl
+
+@[simp] theorem openRunNResultWithStop_zero
+    (stopJump : Label → Bool) (program : TypedCfg.Program)
+    (label : Label) (state : EVMState) :
+    openRunNResultWithStop stopJump program 0 label state =
+      .done (.ok (.exhausted label state)) := rfl
+
+theorem openRunNResultWithStop_succ
+    (stopJump : Label → Bool) (program : TypedCfg.Program)
+    (fuel : Nat) (label : Label) (state : EVMState) :
+    openRunNResultWithStop stopJump
+        program (fuel + 1) label state =
+      (do
+        let outcome ← openStep program label state
+        match outcome with
+        | .jump next state' =>
+            if stopJump next then
+              pure (.stopped (.jump next state'))
+            else
+              openRunNResultWithStop stopJump
+                program fuel next state'
+        | .fallthrough state' =>
+            pure (.stopped (.fallthrough state'))
+        | .returnDispatch state' =>
+            pure (.stopped (.returnDispatch state'))
+        | .halt kind state' =>
+            pure (.stopped (.halt kind state'))
+        | .invalid state' =>
+            pure (.stopped (.invalid state'))) := rfl
+
+theorem openRunNResultWithStop_succ_eq_bind
+    (stopJump : Label → Bool) (program : TypedCfg.Program)
+    (fuel : Nat) (label : Label) (state : EVMState) :
+    openRunNResultWithStop stopJump
+        program (fuel + 1) label state =
+      Simulation.Interaction.bind
+        (openStep program label state)
+        (afterOpenStepResultWithStop
+          stopJump program fuel) := rfl
 
 @[simp] theorem openRunN_zero (program : TypedCfg.Program)
     (label : Label) (state : EVMState) :
@@ -313,6 +378,150 @@ theorem openRunNWithStop_one
       openStep program label state
   rw [hContinuation]
   exact Simulation.Interaction.bind_pure _
+
+def continueOpenRunNResultWithStop
+    (stopJump : Label → Bool) (program : TypedCfg.Program)
+    (fuel : Nat) :
+    Control.Program.RunResult → OpenRunResult
+  | .exhausted label state =>
+      openRunNResultWithStop stopJump program fuel label state
+  | .stopped outcome =>
+      pure (.stopped outcome)
+
+/--
+Tagged boundary execution composes exactly: exhausted fuel starts the next
+segment, while an already reached semantic boundary remains stopped.
+-/
+theorem openRunNResultWithStop_add
+    (stopJump : Label → Bool) (program : TypedCfg.Program)
+    (firstFuel restFuel : Nat) (label : Label) (state : EVMState) :
+    openRunNResultWithStop stopJump
+        program (firstFuel + restFuel) label state =
+      Simulation.Interaction.bind
+        (openRunNResultWithStop stopJump
+          program firstFuel label state)
+        (continueOpenRunNResultWithStop
+          stopJump program restFuel) := by
+  induction firstFuel generalizing label state with
+  | zero =>
+      simp [continueOpenRunNResultWithStop]
+  | succ firstFuel ih =>
+      rw [show
+        Nat.succ firstFuel + restFuel =
+          (firstFuel + restFuel) + 1 by omega]
+      rw [openRunNResultWithStop_succ,
+        openRunNResultWithStop_succ]
+      change
+        Simulation.Interaction.bind
+            (openStep program label state)
+            (fun outcome =>
+              match outcome with
+              | .jump next state' =>
+                  if stopJump next then
+                    pure (.stopped (.jump next state'))
+                  else
+                    openRunNResultWithStop stopJump
+                      program (firstFuel + restFuel) next state'
+              | .fallthrough state' =>
+                  pure (.stopped (.fallthrough state'))
+              | .returnDispatch state' =>
+                  pure (.stopped (.returnDispatch state'))
+              | .halt kind state' =>
+                  pure (.stopped (.halt kind state'))
+              | .invalid state' =>
+                  pure (.stopped (.invalid state'))) =
+          Simulation.Interaction.bind
+            (Simulation.Interaction.bind
+              (openStep program label state)
+              (fun outcome =>
+                match outcome with
+                | .jump next state' =>
+                    if stopJump next then
+                      pure (.stopped (.jump next state'))
+                    else
+                      openRunNResultWithStop stopJump
+                        program firstFuel next state'
+                | .fallthrough state' =>
+                    pure (.stopped (.fallthrough state'))
+                | .returnDispatch state' =>
+                    pure (.stopped (.returnDispatch state'))
+                | .halt kind state' =>
+                    pure (.stopped (.halt kind state'))
+                | .invalid state' =>
+                    pure (.stopped (.invalid state'))))
+            (continueOpenRunNResultWithStop
+              stopJump program restFuel)
+      rw [Simulation.Interaction.bind_assoc]
+      apply congrArg (Simulation.Interaction.bind
+        (openStep program label state))
+      funext outcome
+      cases outcome with
+      | jump next state' =>
+          by_cases hStop : stopJump next = true
+          · simp [hStop, continueOpenRunNResultWithStop]
+            rfl
+          · simp [hStop, continueOpenRunNResultWithStop]
+            exact ih next state'
+      | fallthrough state'
+      | returnDispatch state'
+      | halt kind state'
+      | invalid state' =>
+          rfl
+
+def RunResultStopped :
+    Except EVMException Control.Program.RunResult → Prop
+  | .error _ => True
+  | .ok (.exhausted _ _) => False
+  | .ok (.stopped _) => True
+
+theorem continueOpenRunNResultWithStop_eq_pure
+    (stopJump : Label → Bool) (program : TypedCfg.Program)
+    (fuel : Nat) (result : Control.Program.RunResult)
+    (hStopped : RunResultStopped (.ok result)) :
+    continueOpenRunNResultWithStop
+        stopJump program fuel result =
+      Simulation.Interaction.pure result := by
+  cases result with
+  | exhausted label state =>
+      exact False.elim hStopped
+  | stopped outcome =>
+      rfl
+
+/--
+Once every interaction branch has reached a tagged boundary, granting more
+fuel cannot change the open result tree.
+-/
+theorem openRunNResultWithStop_add_eq_of_allStopped
+    (stopJump : Label → Bool) (program : TypedCfg.Program)
+    (fuel extra : Nat) (label : Label) (state : EVMState)
+    (hStopped :
+      Simulation.Interaction.AllDone RunResultStopped
+        (openRunNResultWithStop stopJump
+          program fuel label state)) :
+    openRunNResultWithStop stopJump
+        program (fuel + extra) label state =
+      openRunNResultWithStop stopJump
+        program fuel label state := by
+  rw [openRunNResultWithStop_add]
+  calc
+    Simulation.Interaction.bind
+        (openRunNResultWithStop stopJump
+          program fuel label state)
+        (continueOpenRunNResultWithStop
+          stopJump program extra) =
+      Simulation.Interaction.bind
+        (openRunNResultWithStop stopJump
+          program fuel label state)
+        Simulation.Interaction.pure := by
+          apply Simulation.Interaction.AllDone.bind_congr hStopped
+          intro result hResult
+          exact
+            continueOpenRunNResultWithStop_eq_pure
+              stopJump program extra result hResult
+    _ =
+      openRunNResultWithStop stopJump
+        program fuel label state :=
+      Simulation.Interaction.bind_pure _
 
 def continueOpenRunN (program : TypedCfg.Program) (fuel : Nat) :
     TypedCfg.Outcome → OpenOutcome

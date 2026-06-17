@@ -1158,6 +1158,26 @@ theorem strengthen_left
           exact .request fun answer =>
             ih answer (hProperty answer)
 
+theorem allDone_right
+    {Error₁ : Type u1} {Result₁ : Type v1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    {doneRel :
+      Except Error₁ Result₁ → Except Error₂ Result₂ → Prop}
+    {property : Except Error₂ Result₂ → Prop}
+    {left : Interaction Error₁ Result₁}
+    {right : Interaction Error₂ Result₂}
+    (hRel : Rel doneRel left right)
+    (hDone :
+      ∀ leftDone rightDone,
+        doneRel leftDone rightDone →
+          property rightDone) :
+    AllDone property right := by
+  induction hRel with
+  | done hRelated =>
+      exact .done (hDone _ _ hRelated)
+  | request hResume ih =>
+      exact .request ih
+
 theorem symm
     {Error₁ : Type u1} {Result₁ : Type v1}
     {Error₂ : Type u2} {Result₂ : Type v2}
