@@ -1,4 +1,5 @@
 import EvmCompiler.Structured.InteractionLeafPreservation
+import EvmCompiler.Structured.InteractionBoundaryPreservation
 
 namespace EvmCompiler
 namespace Structured
@@ -373,6 +374,13 @@ theorem openRun_if_under_of_compileStmtFuel?
     (hFits :
       TypedCfgCompiler.Shape.SourceFrameFits
         input source.evm.stack.length)
+    (hRegular :
+      TypedCfgCompilerFacts.RegularAtSupply regular supply)
+    (hActivation :
+      TypedCfgPreservation.ActivationInput tokens input)
+    (hBoundary :
+      InteractionBoundaryPreservation.OpenOutcome.StopPolicy.RecursiveBoundary
+        cfg source.returns tokens policy supply regular)
     (hStops :
       ∀ {sourceOutcome targetOutcome},
         InteractionControlPreservation.OpenOutcome.Rel
@@ -380,9 +388,6 @@ theorem openRun_if_under_of_compileStmtFuel?
             sourceOutcome targetOutcome →
           InteractionControlPreservation.OpenOutcome.TargetStoppedBy
             policy targetOutcome)
-    (hBodyEntryNoStop :
-      ∀ targetState,
-        policy (LabelSupply.label supply 0) targetState = false)
     (hBody :
       ∀ {output : TypedCfg.Shape}
         {bodyResult : TypedCfgCompiler.Result}
@@ -532,8 +537,27 @@ theorem openRun_if_under_of_compileStmtFuel?
                   hBodyRequire hFallthrough hBodyPreserves
               have hBodyRel :=
                 hBodyLifted targetAfterCond hAfterCondRel
-              have hNoStop :=
-                hBodyEntryNoStop targetAfterCond
+              have hBodyShape :
+                  TypedCfgPreservation.LabelShape
+                    cfg (LabelSupply.label supply 0) bodyInput :=
+                TypedCfgPreservation.LabelShape.of_compileBlockFuel?
+                  hBodyCompile hBodyBlocks
+              have hBodyActivation :
+                  TypedCfgPreservation.ActivationInput
+                    tokens bodyInput :=
+                (hActivation.code hType).tail
+                  (TypedCfgCompilerFacts.Shape.requireSourceWords?_eq_some_iff.mp
+                    hSource)
+              have hNoStop :
+                  policy (LabelSupply.label supply 0)
+                      targetAfterCond =
+                    false :=
+                (hBoundary.congr_returns hReturnsEq.symm).eq_false_of_stateRel
+                  (scope := supply) (tag := 0)
+                  (Nat.le_refl supply)
+                  (hRegular.current_generated_ne (by omega))
+                  hBodyShape hBodyActivation
+                  hAfterCondRel hAfterCondFits
               simp only [
                 TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
                 hNoStop, if_false]
@@ -565,6 +589,13 @@ theorem openRun_if_exec_under_of_compileStmtFuel?
     (hFits :
       TypedCfgCompiler.Shape.SourceFrameFits
         input source.evm.stack.length)
+    (hRegular :
+      TypedCfgCompilerFacts.RegularAtSupply regular supply)
+    (hActivation :
+      TypedCfgPreservation.ActivationInput tokens input)
+    (hBoundary :
+      InteractionBoundaryPreservation.OpenOutcome.StopPolicy.RecursiveBoundary
+        cfg source.returns tokens policy supply regular)
     (hStops :
       ∀ {sourceOutcome targetOutcome},
         InteractionControlPreservation.OpenOutcome.Rel
@@ -572,9 +603,6 @@ theorem openRun_if_exec_under_of_compileStmtFuel?
             sourceOutcome targetOutcome →
           InteractionControlPreservation.OpenOutcome.TargetStoppedBy
             policy targetOutcome)
-    (hBodyEntryNoStop :
-      ∀ targetState,
-        policy (LabelSupply.label supply 0) targetState = false)
     (hBody :
       ∀ {output : TypedCfg.Shape}
         {bodyResult : TypedCfgCompiler.Result}
@@ -743,8 +771,27 @@ theorem openRun_if_exec_under_of_compileStmtFuel?
                       hTargetBodyExec, hBodyRel⟩ :=
                   hBodyPreserves targetAfterCond hAfterCondRel
                     restTranscript sourceOutcome hRestExec
-                have hNoStop :=
-                  hBodyEntryNoStop targetAfterCond
+                have hBodyShape :
+                    TypedCfgPreservation.LabelShape
+                      cfg (LabelSupply.label supply 0) bodyInput :=
+                  TypedCfgPreservation.LabelShape.of_compileBlockFuel?
+                    hBodyCompile hBodyBlocks
+                have hBodyActivation :
+                    TypedCfgPreservation.ActivationInput
+                      tokens bodyInput :=
+                  (hActivation.code hType).tail
+                    (TypedCfgCompilerFacts.Shape.requireSourceWords?_eq_some_iff.mp
+                      hSource)
+                have hNoStop :
+                    policy (LabelSupply.label supply 0)
+                        targetAfterCond =
+                      false :=
+                  (hBoundary.congr_returns hReturnsEq.symm).eq_false_of_stateRel
+                    (scope := supply) (tag := 0)
+                    (Nat.le_refl supply)
+                    (hRegular.current_generated_ne (by omega))
+                    hBodyShape hBodyActivation
+                    hAfterCondRel hAfterCondFits
                 have hContinuationExec :
                     Simulation.Interaction.Executes
                       (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop

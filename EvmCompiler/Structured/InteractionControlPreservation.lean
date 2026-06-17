@@ -1866,6 +1866,43 @@ theorem close_refined
   simpa using hCombined
 
 /--
+Forget a fragment-local stop refinement once every related source outcome is a
+genuine boundary of the enclosing policy.
+-/
+theorem close_refined_under
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {outer inner : StopPolicy}
+    (hPreserves :
+      ExecPreservesUnder result cfg entry ctx regular
+        source tokens sourceRun inner)
+    (hRefines :
+      ∀ label state,
+        outer label state = true →
+          inner label state = true)
+    (hStops :
+      ∀ {sourceOutcome targetOutcome},
+        Rel result ctx regular source.returns tokens
+            sourceOutcome targetOutcome →
+          TargetStoppedBy outer targetOutcome) :
+    ExecPreservesUnder result cfg entry ctx regular
+      source tokens sourceRun outer := by
+  intro target hStateRel transcript sourceOutcome hSourceExec
+  obtain
+      ⟨targetFuel, targetRemaining, targetOutcome,
+        hTargetExec, hOutcomeRel⟩ :=
+    hPreserves target hStateRel transcript sourceOutcome hSourceExec
+  exact
+    ⟨targetFuel, targetRemaining, targetOutcome,
+      close_refined hRefines hTargetExec (hStops hOutcomeRel),
+      hOutcomeRel⟩
+
+/--
 Resume a refined execution at an internal jump and splice in a successful run
 under the enclosing stop policy. Residual fuel from the first segment remains
 available after the tail stops.

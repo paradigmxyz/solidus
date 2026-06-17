@@ -31052,3 +31052,25 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   passes the full 1,293-job verification root, architecture guard, changed-file
   hole scan, `git diff --check`, and axiom audit; new public lemmas use only
   `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-17 11:00:00 PDT - compaction-resume - Resumed the active horizontal
+  CALL/CREATE proof from checkpoint `a057f7eb9`. The immediate correction is
+  replacing static generated-label freshness with activation-sensitive
+  recursive-boundary freshness: self-recursion may reuse the same CFG label,
+  while dynamic return tokens and frame shapes must keep child and ancestor
+  activations distinct. The checked `ExecPreservesUnder.close_refined_under`
+  helper is the only uncommitted change.
+- 2026-06-17 11:42:00 PDT - architecture/recursive-boundary - Canonicalized
+  `ActivationInput` in the Structured-to-TypedCfg generated-boundary owner and
+  added the pass-owned `ActivationProtected + ActivationFreshExcept`
+  `RecursiveBoundary` interface. Reworked execution-indexed conditional,
+  switch, no-case/default, and loop preservation to reject generated entries
+  only for the concrete related current activation. Static CFG labels may now
+  be reused by recursive ancestors without requiring the false global
+  `FreshAt` premise. Focused boundary, branch, switch, and loop builds pass;
+  the mutual whole-statement/block owner is the next proof obligation.
+- 2026-06-17 11:48:00 PDT - verification - The activation-sensitive recursive
+  boundary checkpoint passes the full 1,293-job verification root,
+  architecture dependency and single-owner guards, changed-file hole scan,
+  `git diff --check`, and focused axiom audit. New boundary/control theorems
+  depend only on `propext`, `Classical.choice`, and `Quot.sound`; the existing
+  >5K-line architecture debt list is unchanged.

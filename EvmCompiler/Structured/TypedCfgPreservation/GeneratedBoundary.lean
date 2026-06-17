@@ -1,3 +1,4 @@
+import EvmCompiler.Structured.TypedCfgCompilerActive
 import EvmCompiler.Structured.TypedCfgCompilerEntry
 
 namespace EvmCompiler
@@ -156,6 +157,88 @@ theorem procEntry
     simpa [hLabel] using hFind
 
 end LabelShape
+
+/--
+Entry classification for one dynamic Structured activation.
+
+The top activation has no realized return tokens. Every procedure activation
+instead carries a compiler-owned return token in its TypedCfg input shape.
+-/
+def ActivationInput
+    (tokens : List Word) (input : TypedCfg.Shape) : Prop :=
+  tokens = [] ∨ TypedCfgCompilerFacts.ReturnTokenActive input
+
+namespace ActivationInput
+
+theorem top (input : TypedCfg.Shape) :
+    ActivationInput [] input :=
+  Or.inl rfl
+
+theorem active
+    {tokens : List Word} {input : TypedCfg.Shape}
+    (hActive : TypedCfgCompilerFacts.ReturnTokenActive input) :
+    ActivationInput tokens input :=
+  Or.inr hActive
+
+theorem code
+    {tokens : List Word} {code : Structured.Code}
+    {input output : TypedCfg.Shape}
+    (hActivation : ActivationInput tokens input)
+    (hType : TypedCfgCompiler.Code.type? code input = some output) :
+    ActivationInput tokens output := by
+  rcases hActivation with hTop | hActive
+  · exact Or.inl hTop
+  · exact Or.inr (hActive.code hType)
+
+theorem tail
+    {tokens : List Word} {shape : TypedCfg.Shape}
+    (hActivation : ActivationInput tokens shape)
+    (hSource : 1 ≤ TypedCfgCompiler.Shape.sourceLength shape) :
+    ActivationInput tokens
+      { shape with slots := shape.slots.tail } := by
+  rcases hActivation with hTop | hActive
+  · exact Or.inl hTop
+  · exact Or.inr (hActive.tail hSource)
+
+theorem stmtFallthrough
+    {tokens : List Word} {fuel : Nat}
+    {stmt : Structured.Stmt}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input output : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    (hActivation : ActivationInput tokens input)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? fuel stmt ctx
+          supply entry input regular = some result)
+    (hFallthrough : result.fallthrough? = some output) :
+    ActivationInput tokens output := by
+  rcases hActivation with hTop | hActive
+  · exact Or.inl hTop
+  · exact
+      Or.inr
+        ((TypedCfgCompilerFacts.activeResult_of_compileStmtFuel?
+          hActive hCompile).fallthrough output hFallthrough)
+
+theorem blockFallthrough
+    {tokens : List Word} {fuel : Nat}
+    {block : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input output : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    (hActivation : ActivationInput tokens input)
+    (hCompile :
+      TypedCfgCompiler.compileBlockFuel? fuel block ctx
+          supply entry input regular = some result)
+    (hFallthrough : result.fallthrough? = some output) :
+    ActivationInput tokens output := by
+  rcases hActivation with hTop | hActive
+  · exact Or.inl hTop
+  · exact
+      Or.inr
+        ((TypedCfgCompilerFacts.activeResult_of_compileBlockFuel?
+          hActive hCompile).fallthrough output hFallthrough)
+
+end ActivationInput
 
 end TypedCfgPreservation
 end Structured

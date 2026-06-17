@@ -59,6 +59,11 @@ require_single_owner \
   'EvmCompiler/Structured/TypedCfgPreservation/Core.lean'
 
 require_single_owner \
+  'Structured activation input classification must have exactly one adjacent-pass owner:' \
+  '^def ActivationInput$' \
+  'EvmCompiler/Structured/TypedCfgPreservation/GeneratedBoundary.lean'
+
+require_single_owner \
   'Structured compiler label freshness must have exactly one pass owner:' \
   '^def LabelBeforeSupply$' \
   'EvmCompiler/Structured/TypedCfgCompilerFreshness.lean'

@@ -77,6 +77,27 @@ theorem congr_returns
   subst right
   exact hProtected
 
+theorem extend
+    {cfg : TypedCfg.Program}
+    {ancestorReturns childReturns : List ReturnDest}
+    {ancestorTokens childTokens : List Word}
+    {policy : StopPolicy}
+    (hProtected :
+      StopPolicy.ActivationProtected
+        cfg ancestorReturns ancestorTokens policy)
+    (hExtension :
+      TypedCfgPreservation.ActivationExtension
+        ancestorReturns ancestorTokens childReturns childTokens) :
+    StopPolicy.ActivationProtected
+      cfg childReturns childTokens policy := by
+  intro label target hStopped
+  rcases hProtected label target hStopped with
+    ⟨ownerReturns, ownerTokens, block,
+      hFind, hFrame, hOwner⟩
+  exact
+    ⟨ownerReturns, ownerTokens, block,
+      hFind, hFrame, hOwner.push hExtension⟩
+
 theorem reject_extension
     {cfg : TypedCfg.Program}
     {ancestorReturns childReturns : List ReturnDest}
@@ -248,6 +269,374 @@ theorem push
     simpa [hInput] using hFrame
 
 end StopPolicy.ActivationProtected
+
+/--
+Activation-aware freshness for recursive procedure execution.
+
+A generated label at or after `supply`, other than the current regular
+continuation, may be stopped only when that stop belongs to a strict dynamic
+ancestor. Recursive calls may therefore reuse static CFG labels without
+mistaking an ancestor continuation for a boundary of the current activation.
+-/
+def StopPolicy.ActivationFreshExcept
+    (cfg : TypedCfg.Program)
+    (returns : List ReturnDest) (tokens : List Word)
+    (policy : StopPolicy)
+    (supply : LabelSupply) (regular : Assembly.Label) : Prop :=
+  ∀ scope tag target,
+    supply ≤ scope →
+      .generated scope tag ≠ regular →
+      policy (.generated scope tag) target = true →
+        ∃ ownerReturns ownerTokens block,
+          cfg.findBlock? (.generated scope tag) = some block ∧
+            TypedCfgPreservation.ActivationFrameMatches
+              ownerReturns ownerTokens block.input target ∧
+            TypedCfgPreservation.ActivationExtension
+              ownerReturns ownerTokens returns tokens
+
+namespace StopPolicy.ActivationFreshExcept
+
+theorem of_static
+    {cfg : TypedCfg.Program}
+    {returns : List ReturnDest} {tokens : List Word}
+    {policy : StopPolicy}
+    {supply : LabelSupply} {regular : Assembly.Label}
+    (hFresh :
+      InteractionControlPreservation.OpenOutcome.StopPolicy.FreshExceptAt
+        policy regular supply) :
+    StopPolicy.ActivationFreshExcept
+      cfg returns tokens policy supply regular := by
+  intro scope tag target hScope hNe hStopped
+  rw [hFresh scope tag target hScope hNe] at hStopped
+  cases hStopped
+
+theorem mono
+    {cfg : TypedCfg.Program}
+    {returns : List ReturnDest} {tokens : List Word}
+    {policy : StopPolicy}
+    {supply next : LabelSupply} {regular : Assembly.Label}
+    (hFresh :
+      StopPolicy.ActivationFreshExcept
+        cfg returns tokens policy supply regular)
+    (hSupply : supply ≤ next) :
+    StopPolicy.ActivationFreshExcept
+      cfg returns tokens policy next regular := by
+  intro scope tag target hScope hNe hStopped
+  exact
+    hFresh scope tag target
+      (Nat.le_trans hSupply hScope) hNe hStopped
+
+theorem congr_returns
+    {cfg : TypedCfg.Program}
+    {left right : List ReturnDest} {tokens : List Word}
+    {policy : StopPolicy}
+    {supply : LabelSupply} {regular : Assembly.Label}
+    (hFresh :
+      StopPolicy.ActivationFreshExcept
+        cfg left tokens policy supply regular)
+    (hReturns : left = right) :
+    StopPolicy.ActivationFreshExcept
+      cfg right tokens policy supply regular := by
+  subst right
+  exact hFresh
+
+theorem reject
+    {cfg : TypedCfg.Program}
+    {returns : List ReturnDest} {tokens : List Word}
+    {policy : StopPolicy}
+    {supply scope tag : LabelSupply} {regular : Assembly.Label}
+    {shape : TypedCfg.Shape} {target : EVMState}
+    (hFresh :
+      StopPolicy.ActivationFreshExcept
+        cfg returns tokens policy supply regular)
+    (hScope : supply ≤ scope)
+    (hNe : .generated scope tag ≠ regular)
+    (hStopped : policy (.generated scope tag) target = true)
+    (hShape :
+      TypedCfgPreservation.LabelShape
+        cfg (.generated scope tag) shape)
+    (hActivation :
+      TypedCfgPreservation.ActivationInput tokens shape)
+    (hCurrent :
+      TypedCfgPreservation.ActivationFrameMatches
+        returns tokens shape target) :
+    False := by
+  rcases hFresh scope tag target hScope hNe hStopped with
+    ⟨ownerReturns, ownerTokens, ownerBlock,
+      hOwnerFind, hOwnerFrame, hExtension⟩
+  rcases hShape with ⟨shapeBlock, hShapeFind, hInput⟩
+  have hBlockEq : ownerBlock = shapeBlock :=
+    Option.some.inj (hOwnerFind.symm.trans hShapeFind)
+  subst ownerBlock
+  subst shape
+  rcases hActivation with hTop | hActive
+  · exact hExtension.childTokens_ne_nil hTop
+  · rcases hActive with ⟨depth, hDepth⟩
+    have hOwnerHidden :
+        ∃ hidden : EvmYul.Stack Word,
+          TypedCfgPreservation.realizeStack
+              [] ownerReturns ownerTokens = some hidden := by
+      unfold TypedCfgPreservation.ActivationFrameMatches at hOwnerFrame
+      rw [hDepth] at hOwnerFrame
+      exact ⟨hOwnerFrame.choose, hOwnerFrame.choose_spec.1⟩
+    exact
+      (TypedCfgPreservation.ActivationFrameMatches.not_of_extension
+        hDepth hExtension hOwnerHidden hCurrent) hOwnerFrame
+
+theorem eq_false
+    {cfg : TypedCfg.Program}
+    {returns : List ReturnDest} {tokens : List Word}
+    {policy : StopPolicy}
+    {supply scope tag : LabelSupply} {regular : Assembly.Label}
+    {shape : TypedCfg.Shape} {target : EVMState}
+    (hFresh :
+      StopPolicy.ActivationFreshExcept
+        cfg returns tokens policy supply regular)
+    (hScope : supply ≤ scope)
+    (hNe : .generated scope tag ≠ regular)
+    (hShape :
+      TypedCfgPreservation.LabelShape
+        cfg (.generated scope tag) shape)
+    (hActivation :
+      TypedCfgPreservation.ActivationInput tokens shape)
+    (hCurrent :
+      TypedCfgPreservation.ActivationFrameMatches
+        returns tokens shape target) :
+    policy (.generated scope tag) target = false := by
+  cases hStopped : policy (.generated scope tag) target with
+  | false =>
+      rfl
+  | true =>
+      exact False.elim
+        (hFresh.reject hScope hNe hStopped
+          hShape hActivation hCurrent)
+
+theorem eq_false_of_stateRel
+    {cfg : TypedCfg.Program}
+    {source : RunState} {tokens : List Word}
+    {policy : StopPolicy}
+    {supply scope tag : LabelSupply} {regular : Assembly.Label}
+    {shape : TypedCfg.Shape} {target : EVMState}
+    (hFresh :
+      StopPolicy.ActivationFreshExcept
+        cfg source.returns tokens policy supply regular)
+    (hScope : supply ≤ scope)
+    (hNe : .generated scope tag ≠ regular)
+    (hShape :
+      TypedCfgPreservation.LabelShape
+        cfg (.generated scope tag) shape)
+    (hActivation :
+      TypedCfgPreservation.ActivationInput tokens shape)
+    (hRel : TypedCfgPreservation.StateRel source tokens target)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        shape source.evm.stack.length) :
+    policy (.generated scope tag) target = false :=
+  hFresh.eq_false hScope hNe hShape hActivation
+    (TypedCfgPreservation.ActivationFrameMatches.of_stateRel
+      hRel hFits)
+
+theorem push
+    {cfg : TypedCfg.Program}
+    {returns : List ReturnDest} {tokens : List Word}
+    {outer : StopPolicy}
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context}
+    {boundaryRegular regular : Assembly.Label}
+    {supply : LabelSupply}
+    (hFresh :
+      StopPolicy.ActivationFreshExcept
+        cfg returns tokens outer supply boundaryRegular)
+    (hBefore :
+      TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
+        ctx boundaryRegular supply) :
+    StopPolicy.ActivationFreshExcept cfg returns tokens
+      (InteractionControlPreservation.OpenOutcome.pushStopJump
+        result ctx regular returns tokens outer)
+      supply regular := by
+  intro scope tag target hScope hNe hStopped
+  simp only [
+    InteractionControlPreservation.OpenOutcome.pushStopJump,
+    Bool.or_eq_true_iff] at hStopped
+  rcases hStopped with hOuter | hLocal
+  · exact
+      hFresh scope tag target hScope
+        (hBefore.regular.generated_ne hScope) hOuter
+  · have hLocalFalse :
+        InteractionControlPreservation.OpenOutcome.stopJump
+            result ctx regular returns tokens
+            (.generated scope tag) target =
+          false :=
+      InteractionControlPreservation.OpenOutcome.stopJump_generated_eq_false_of_regular_ne
+        hBefore hNe hScope returns tokens target
+    rw [hLocalFalse] at hLocal
+    cases hLocal
+
+theorem push_child
+    {cfg : TypedCfg.Program}
+    {ancestorReturns childReturns : List ReturnDest}
+    {ancestorTokens childTokens : List Word}
+    {outer : StopPolicy}
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context}
+    {boundaryRegular regular : Assembly.Label}
+    {supply : LabelSupply}
+    (hProtected :
+      StopPolicy.ActivationProtected
+        cfg ancestorReturns ancestorTokens outer)
+    (hExtension :
+      TypedCfgPreservation.ActivationExtension
+        ancestorReturns ancestorTokens childReturns childTokens)
+    (hBefore :
+      TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
+        ctx boundaryRegular supply) :
+    StopPolicy.ActivationFreshExcept cfg childReturns childTokens
+      (InteractionControlPreservation.OpenOutcome.pushStopJump
+        result ctx regular childReturns childTokens outer)
+      supply regular := by
+  intro scope tag target hScope hNe hStopped
+  simp only [
+    InteractionControlPreservation.OpenOutcome.pushStopJump,
+    Bool.or_eq_true_iff] at hStopped
+  rcases hStopped with hOuter | hLocal
+  · rcases hProtected _ _ hOuter with
+      ⟨ownerReturns, ownerTokens, block,
+        hFind, hFrame, hOwner⟩
+    exact
+      ⟨ownerReturns, ownerTokens, block,
+        hFind, hFrame, hOwner.extension_after hExtension⟩
+  · have hLocalFalse :
+        InteractionControlPreservation.OpenOutcome.stopJump
+            result ctx regular childReturns childTokens
+            (.generated scope tag) target =
+          false :=
+      InteractionControlPreservation.OpenOutcome.stopJump_generated_eq_false_of_regular_ne
+        hBefore hNe hScope childReturns childTokens target
+    rw [hLocalFalse] at hLocal
+    cases hLocal
+
+end StopPolicy.ActivationFreshExcept
+
+/--
+The recursive target-boundary contract for one Structured compiler fragment.
+
+`ownership` tracks which dynamic activation owns each stopped jump. `fresh`
+permits newly generated labels to stop only for strict dynamic ancestors.
+-/
+structure StopPolicy.RecursiveBoundary
+    (cfg : TypedCfg.Program)
+    (returns : List ReturnDest) (tokens : List Word)
+    (policy : StopPolicy)
+    (supply : LabelSupply) (regular : Assembly.Label) : Prop where
+  ownership :
+    StopPolicy.ActivationProtected cfg returns tokens policy
+  fresh :
+    StopPolicy.ActivationFreshExcept
+      cfg returns tokens policy supply regular
+
+namespace StopPolicy.RecursiveBoundary
+
+theorem congr_returns
+    {cfg : TypedCfg.Program}
+    {left right : List ReturnDest} {tokens : List Word}
+    {policy : StopPolicy}
+    {supply : LabelSupply} {regular : Assembly.Label}
+    (hBoundary :
+      StopPolicy.RecursiveBoundary
+        cfg left tokens policy supply regular)
+    (hReturns : left = right) :
+    StopPolicy.RecursiveBoundary
+      cfg right tokens policy supply regular :=
+  ⟨hBoundary.ownership.congr_returns hReturns,
+    hBoundary.fresh.congr_returns hReturns⟩
+
+theorem mono
+    {cfg : TypedCfg.Program}
+    {returns : List ReturnDest} {tokens : List Word}
+    {policy : StopPolicy}
+    {supply next : LabelSupply} {regular : Assembly.Label}
+    (hBoundary :
+      StopPolicy.RecursiveBoundary
+        cfg returns tokens policy supply regular)
+    (hSupply : supply ≤ next) :
+    StopPolicy.RecursiveBoundary
+      cfg returns tokens policy next regular :=
+  ⟨hBoundary.ownership, hBoundary.fresh.mono hSupply⟩
+
+theorem push
+    {cfg : TypedCfg.Program}
+    {returns : List ReturnDest} {tokens : List Word}
+    {outer : StopPolicy}
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context}
+    {boundaryRegular regular : Assembly.Label}
+    {supply : LabelSupply}
+    (hBoundary :
+      StopPolicy.RecursiveBoundary
+        cfg returns tokens outer supply boundaryRegular)
+    (hShapes : BoundaryShapes cfg result ctx regular)
+    (hBefore :
+      TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
+        ctx boundaryRegular supply) :
+    StopPolicy.RecursiveBoundary cfg returns tokens
+      (InteractionControlPreservation.OpenOutcome.pushStopJump
+        result ctx regular returns tokens outer)
+      supply regular :=
+  ⟨hBoundary.ownership.push hShapes,
+    hBoundary.fresh.push hBefore⟩
+
+theorem push_child
+    {cfg : TypedCfg.Program}
+    {ancestorReturns childReturns : List ReturnDest}
+    {ancestorTokens childTokens : List Word}
+    {outer : StopPolicy}
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context}
+    {boundaryRegular regular : Assembly.Label}
+    {supply : LabelSupply}
+    (hBoundary :
+      StopPolicy.RecursiveBoundary
+        cfg ancestorReturns ancestorTokens outer supply boundaryRegular)
+    (hExtension :
+      TypedCfgPreservation.ActivationExtension
+        ancestorReturns ancestorTokens childReturns childTokens)
+    (hShapes : BoundaryShapes cfg result ctx regular)
+    (hBefore :
+      TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
+        ctx boundaryRegular supply) :
+    StopPolicy.RecursiveBoundary cfg childReturns childTokens
+      (InteractionControlPreservation.OpenOutcome.pushStopJump
+        result ctx regular childReturns childTokens outer)
+      supply regular :=
+  ⟨(hBoundary.ownership.extend hExtension).push hShapes,
+    StopPolicy.ActivationFreshExcept.push_child
+      hBoundary.ownership hExtension hBefore⟩
+
+theorem eq_false_of_stateRel
+    {cfg : TypedCfg.Program}
+    {source : RunState} {tokens : List Word}
+    {policy : StopPolicy}
+    {supply scope tag : LabelSupply} {regular : Assembly.Label}
+    {shape : TypedCfg.Shape} {target : EVMState}
+    (hBoundary :
+      StopPolicy.RecursiveBoundary
+        cfg source.returns tokens policy supply regular)
+    (hScope : supply ≤ scope)
+    (hNe : .generated scope tag ≠ regular)
+    (hShape :
+      TypedCfgPreservation.LabelShape
+        cfg (.generated scope tag) shape)
+    (hActivation :
+      TypedCfgPreservation.ActivationInput tokens shape)
+    (hRel : TypedCfgPreservation.StateRel source tokens target)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        shape source.evm.stack.length) :
+    policy (.generated scope tag) target = false :=
+  hBoundary.fresh.eq_false_of_stateRel
+    hScope hNe hShape hActivation hRel hFits
+
+end StopPolicy.RecursiveBoundary
 
 end OpenOutcome
 

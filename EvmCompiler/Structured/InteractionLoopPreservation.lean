@@ -388,11 +388,28 @@ theorem openRunForLoop_exec_under
           InteractionControlPreservation.OpenOutcome.TargetStoppedBy
             policy targetOutcome)
     (hBodyEntryNoStop :
-      ∀ targetState, policy bodyLabel targetState = false)
+      ∀ {bodySource : RunState} {targetState : EVMState},
+        bodySource.returns = returns →
+        TypedCfgPreservation.StateRel bodySource tokens targetState →
+        TypedCfgCompiler.Shape.SourceFrameFits
+            { condOutput with slots := condOutput.slots.tail }
+            bodySource.evm.stack.length →
+          policy bodyLabel targetState = false)
     (hPostEntryNoStop :
-      ∀ targetState, policy postLabel targetState = false)
+      ∀ {postSource : RunState} {targetState : EVMState},
+        postSource.returns = returns →
+        TypedCfgPreservation.StateRel postSource tokens targetState →
+        TypedCfgCompiler.Shape.SourceFrameFits
+            { condOutput with slots := condOutput.slots.tail }
+            postSource.evm.stack.length →
+          policy postLabel targetState = false)
     (hLoopEntryNoStop :
-      ∀ targetState, policy loopLabel targetState = false)
+      ∀ {loopSource : RunState} {targetState : EVMState},
+        loopSource.returns = returns →
+        TypedCfgPreservation.StateRel loopSource tokens targetState →
+        TypedCfgCompiler.Shape.SourceFrameFits
+            loopInput loopSource.evm.stack.length →
+          policy loopLabel targetState = false)
     (hBody :
       ∀ {blockFuel : Nat} {bodySource : RunState},
         TypedCfgCompiler.Shape.SourceFrameFits
@@ -625,7 +642,9 @@ theorem openRunForLoop_exec_under
                           have hTargetExec :=
                             InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.prepend_step_jump
                               hTargetConditionExec
-                              (hBodyEntryNoStop targetAfterCond)
+                              (hBodyEntryNoStop
+                                hAfterCondReturns hAfterCondRel
+                                hAfterCondFits)
                               hTargetBodyOuter
                           exact
                             ⟨bodyFuel + 1, bodyRemaining,
@@ -663,7 +682,9 @@ theorem openRunForLoop_exec_under
                           have hTargetExec :=
                             InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.prepend_step_jump
                               hTargetConditionExec
-                              (hBodyEntryNoStop targetAfterCond)
+                              (hBodyEntryNoStop
+                                hAfterCondReturns hAfterCondRel
+                                hAfterCondFits)
                               hTargetBodyOuter
                           exact
                             ⟨bodyFuel + 1, bodyRemaining,
@@ -701,7 +722,9 @@ theorem openRunForLoop_exec_under
                           have hTargetExec :=
                             InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.prepend_step_jump
                               hTargetConditionExec
-                              (hBodyEntryNoStop targetAfterCond)
+                              (hBodyEntryNoStop
+                                hAfterCondReturns hAfterCondRel
+                                hAfterCondFits)
                               hTargetBodyOuter
                           exact
                             ⟨bodyFuel + 1, bodyRemaining,
@@ -774,7 +797,8 @@ theorem openRunForLoop_exec_under
                                         InteractionControlPreservation.OpenOutcome.pushStopJump,
                                         hStop])
                                     hTargetPostExec
-                                    (hLoopEntryNoStop targetLoopEntry)
+                                    (hLoopEntryNoStop
+                                      hPostReturns hLoopStateRel hLoopFits)
                                     hTargetLoopExec
                                 have hBodyTail :=
                                   InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.splice_refined_jump
@@ -792,12 +816,15 @@ theorem openRunForLoop_exec_under
                                         InteractionControlPreservation.OpenOutcome.pushStopJump,
                                         hStop])
                                     hTargetBodyExec
-                                    (hPostEntryNoStop targetPostEntry)
+                                    (hPostEntryNoStop
+                                      hBodyReturns hPostStateRel hPostFits)
                                     hPostAndLoop
                                 have hTargetExec :=
                                   InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.prepend_step_jump
                                     hTargetConditionExec
-                                    (hBodyEntryNoStop targetAfterCond)
+                                    (hBodyEntryNoStop
+                                      hAfterCondReturns hAfterCondRel
+                                      hAfterCondFits)
                                     hBodyTail
                                 exact
                                   ⟨bodyFuel + (postFuel + loopFuel) + 1,
@@ -872,12 +899,15 @@ theorem openRunForLoop_exec_under
                                         InteractionControlPreservation.OpenOutcome.pushStopJump,
                                         hStop])
                                     hTargetBodyExec
-                                    (hPostEntryNoStop targetPostEntry)
+                                    (hPostEntryNoStop
+                                      hBodyReturns hPostStateRel hPostFits)
                                     hTargetPostOuter
                                 have hTargetExec :=
                                   InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.prepend_step_jump
                                     hTargetConditionExec
-                                    (hBodyEntryNoStop targetAfterCond)
+                                    (hBodyEntryNoStop
+                                      hAfterCondReturns hAfterCondRel
+                                      hAfterCondFits)
                                     hBodyTail
                                 exact
                                   ⟨bodyFuel + postFuel + 1,
@@ -932,12 +962,15 @@ theorem openRunForLoop_exec_under
                                         InteractionControlPreservation.OpenOutcome.pushStopJump,
                                         hStop])
                                     hTargetBodyExec
-                                    (hPostEntryNoStop targetPostEntry)
+                                    (hPostEntryNoStop
+                                      hBodyReturns hPostStateRel hPostFits)
                                     hTargetPostOuter
                                 have hTargetExec :=
                                   InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.prepend_step_jump
                                     hTargetConditionExec
-                                    (hBodyEntryNoStop targetAfterCond)
+                                    (hBodyEntryNoStop
+                                      hAfterCondReturns hAfterCondRel
+                                      hAfterCondFits)
                                     hBodyTail
                                 exact
                                   ⟨bodyFuel + postFuel + 1,
@@ -1013,7 +1046,8 @@ theorem openRunForLoop_exec_under
                                         InteractionControlPreservation.OpenOutcome.pushStopJump,
                                         hStop])
                                     hTargetPostExec
-                                    (hLoopEntryNoStop targetLoopEntry)
+                                    (hLoopEntryNoStop
+                                      hPostReturns hLoopStateRel hLoopFits)
                                     hTargetLoopExec
                                 have hBodyTail :=
                                   InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.splice_refined_jump
@@ -1031,12 +1065,15 @@ theorem openRunForLoop_exec_under
                                         InteractionControlPreservation.OpenOutcome.pushStopJump,
                                         hStop])
                                     hTargetBodyExec
-                                    (hPostEntryNoStop targetPostEntry)
+                                    (hPostEntryNoStop
+                                      hBodyReturns hPostStateRel hPostFits)
                                     hPostAndLoop
                                 have hTargetExec :=
                                   InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.prepend_step_jump
                                     hTargetConditionExec
-                                    (hBodyEntryNoStop targetAfterCond)
+                                    (hBodyEntryNoStop
+                                      hAfterCondReturns hAfterCondRel
+                                      hAfterCondFits)
                                     hBodyTail
                                 exact
                                   ⟨bodyFuel + (postFuel + loopFuel) + 1,
@@ -1111,12 +1148,15 @@ theorem openRunForLoop_exec_under
                                         InteractionControlPreservation.OpenOutcome.pushStopJump,
                                         hStop])
                                     hTargetBodyExec
-                                    (hPostEntryNoStop targetPostEntry)
+                                    (hPostEntryNoStop
+                                      hBodyReturns hPostStateRel hPostFits)
                                     hTargetPostOuter
                                 have hTargetExec :=
                                   InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.prepend_step_jump
                                     hTargetConditionExec
-                                    (hBodyEntryNoStop targetAfterCond)
+                                    (hBodyEntryNoStop
+                                      hAfterCondReturns hAfterCondRel
+                                      hAfterCondFits)
                                     hBodyTail
                                 exact
                                   ⟨bodyFuel + postFuel + 1,
@@ -1171,12 +1211,15 @@ theorem openRunForLoop_exec_under
                                         InteractionControlPreservation.OpenOutcome.pushStopJump,
                                         hStop])
                                     hTargetBodyExec
-                                    (hPostEntryNoStop targetPostEntry)
+                                    (hPostEntryNoStop
+                                      hBodyReturns hPostStateRel hPostFits)
                                     hTargetPostOuter
                                 have hTargetExec :=
                                   InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.prepend_step_jump
                                     hTargetConditionExec
-                                    (hBodyEntryNoStop targetAfterCond)
+                                    (hBodyEntryNoStop
+                                      hAfterCondReturns hAfterCondRel
+                                      hAfterCondFits)
                                     hBodyTail
                                 exact
                                   ⟨bodyFuel + postFuel + 1,
@@ -1217,11 +1260,13 @@ theorem openRun_for_exec_under_of_compileStmtFuel?
     (hFits :
       TypedCfgCompiler.Shape.SourceFrameFits
         input source.evm.stack.length)
-    (hFresh :
-      InteractionControlPreservation.OpenOutcome.StopPolicy.FreshExceptAt
-        policy regular supply)
     (hRegular :
       TypedCfgCompilerFacts.RegularAtSupply regular supply)
+    (hActivation :
+      TypedCfgPreservation.ActivationInput tokens input)
+    (hBoundary :
+      InteractionBoundaryPreservation.OpenOutcome.StopPolicy.RecursiveBoundary
+        cfg source.returns tokens policy supply regular)
     (hStops :
       ∀ {sourceOutcome targetOutcome},
         InteractionControlPreservation.OpenOutcome.Rel
@@ -1380,27 +1425,81 @@ theorem openRun_for_exec_under_of_compileStmtFuel?
                slots := condOutput.slots.tail } } :
           TypedCfgCompiler.Result).blocks := by
     simp [conditionBlock]
+  have hLoopShape :
+      TypedCfgPreservation.LabelShape cfg
+        (LabelSupply.label supply 0) loopInput := by
+    refine
+      ⟨conditionBlock
+          (LabelSupply.label supply 0)
+          (LabelSupply.label supply 1)
+          regular loopInput condOutput cond,
+        hBlocks _ hConditionMem, rfl⟩
+  have hBodyShape :
+      TypedCfgPreservation.LabelShape cfg
+        (LabelSupply.label supply 1)
+        { condOutput with slots := condOutput.slots.tail } :=
+    TypedCfgPreservation.LabelShape.of_compileBlockFuel?
+      hBodyCompile hBodyBlocks
+  have hPostShape :
+      TypedCfgPreservation.LabelShape cfg
+        (LabelSupply.label supply 2)
+        { condOutput with slots := condOutput.slots.tail } :=
+    TypedCfgPreservation.LabelShape.of_compileBlockFuel?
+      hPostCompile hPostBlocks
+  have hLoopActivation :
+      TypedCfgPreservation.ActivationInput tokens loopInput :=
+    hActivation.blockFallthrough
+      hInitCompile hInitFallthrough
+  have hBodyActivation :
+      TypedCfgPreservation.ActivationInput tokens
+        { condOutput with slots := condOutput.slots.tail } :=
+    (hLoopActivation.code hType).tail
+      (TypedCfgCompilerFacts.Shape.requireSourceWords?_eq_some_iff.mp
+        hSource)
   have hLoopEntryNoStop :
-      ∀ targetState,
-        policy (LabelSupply.label supply 0) targetState = false := by
-    intro targetState
+      ∀ {loopSource : RunState} {targetState : EVMState},
+        loopSource.returns = source.returns →
+        TypedCfgPreservation.StateRel loopSource tokens targetState →
+        TypedCfgCompiler.Shape.SourceFrameFits
+            loopInput loopSource.evm.stack.length →
+          policy (LabelSupply.label supply 0) targetState = false := by
+    intro loopSource targetState hReturns hRel hLoopFits
     simpa [LabelSupply.label] using
-      hFresh supply 0 targetState (Nat.le_refl supply)
+      (hBoundary.congr_returns hReturns.symm).eq_false_of_stateRel
+        (scope := supply) (tag := 0)
+        (Nat.le_refl supply)
         (hRegular.current_generated_ne (by omega))
+        hLoopShape hLoopActivation hRel hLoopFits
   have hBodyEntryNoStop :
-      ∀ targetState,
-        policy (LabelSupply.label supply 1) targetState = false := by
-    intro targetState
+      ∀ {bodySource : RunState} {targetState : EVMState},
+        bodySource.returns = source.returns →
+        TypedCfgPreservation.StateRel bodySource tokens targetState →
+        TypedCfgCompiler.Shape.SourceFrameFits
+            { condOutput with slots := condOutput.slots.tail }
+            bodySource.evm.stack.length →
+          policy (LabelSupply.label supply 1) targetState = false := by
+    intro bodySource targetState hReturns hRel hBodyFits
     simpa [LabelSupply.label] using
-      hFresh supply 1 targetState (Nat.le_refl supply)
+      (hBoundary.congr_returns hReturns.symm).eq_false_of_stateRel
+        (scope := supply) (tag := 1)
+        (Nat.le_refl supply)
         (hRegular.current_generated_ne (by omega))
+        hBodyShape hBodyActivation hRel hBodyFits
   have hPostEntryNoStop :
-      ∀ targetState,
-        policy (LabelSupply.label supply 2) targetState = false := by
-    intro targetState
+      ∀ {postSource : RunState} {targetState : EVMState},
+        postSource.returns = source.returns →
+        TypedCfgPreservation.StateRel postSource tokens targetState →
+        TypedCfgCompiler.Shape.SourceFrameFits
+            { condOutput with slots := condOutput.slots.tail }
+            postSource.evm.stack.length →
+          policy (LabelSupply.label supply 2) targetState = false := by
+    intro postSource targetState hReturns hRel hPostFits
     simpa [LabelSupply.label] using
-      hFresh supply 2 targetState (Nat.le_refl supply)
+      (hBoundary.congr_returns hReturns.symm).eq_false_of_stateRel
+        (scope := supply) (tag := 2)
+        (Nat.le_refl supply)
         (hRegular.current_generated_ne (by omega))
+        hPostShape hBodyActivation hRel hPostFits
   have hInitPreserves :=
     hInit hInitCompile hInitBlocks hInitFallthrough
   intro target hStateRel transcript sourceOutcome hSourceExec
@@ -1508,7 +1607,8 @@ theorem openRun_for_exec_under_of_compileStmtFuel?
                 InteractionControlPreservation.OpenOutcome.pushStopJump,
                 hStop])
             hTargetInitExec
-            (hLoopEntryNoStop targetLoopEntry)
+            (hLoopEntryNoStop
+              hInitReturns hLoopStateRel hLoopFits)
             hTargetLoopExec
         exact
           ⟨initFuel + loopFuel,

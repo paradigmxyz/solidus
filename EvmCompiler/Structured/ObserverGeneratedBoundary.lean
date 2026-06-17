@@ -113,47 +113,36 @@ theorem procEntry
 
 end LabelShape
 
-/--
-Entry classification used by generated-context adequacy.
-
-The top activation has no realized return tokens. Every procedure activation
-instead carries a compiler-owned return token in its TypedCfg input shape.
--/
-def ActivationInput
-    (tokens : List Word) (input : TypedCfg.Shape) : Prop :=
-  tokens = [] ∨ TypedCfgCompilerFacts.ReturnTokenActive input
+abbrev ActivationInput :=
+  TypedCfgPreservation.ActivationInput
 
 namespace ActivationInput
 
 theorem top (input : TypedCfg.Shape) :
     ActivationInput [] input :=
-  Or.inl rfl
+  TypedCfgPreservation.ActivationInput.top input
 
 theorem active
     {tokens : List Word} {input : TypedCfg.Shape}
     (hActive : TypedCfgCompilerFacts.ReturnTokenActive input) :
     ActivationInput tokens input :=
-  Or.inr hActive
+  TypedCfgPreservation.ActivationInput.active hActive
 
 theorem code
     {tokens : List Word} {code : Structured.Code}
     {input output : TypedCfg.Shape}
     (hActivation : ActivationInput tokens input)
     (hType : TypedCfgCompiler.Code.type? code input = some output) :
-    ActivationInput tokens output := by
-  rcases hActivation with hTop | hActive
-  · exact Or.inl hTop
-  · exact Or.inr (hActive.code hType)
+    ActivationInput tokens output :=
+  TypedCfgPreservation.ActivationInput.code hActivation hType
 
 theorem tail
     {tokens : List Word} {shape : TypedCfg.Shape}
     (hActivation : ActivationInput tokens shape)
     (hSource : 1 ≤ TypedCfgCompiler.Shape.sourceLength shape) :
     ActivationInput tokens
-      { shape with slots := shape.slots.tail } := by
-  rcases hActivation with hTop | hActive
-  · exact Or.inl hTop
-  · exact Or.inr (hActive.tail hSource)
+      { shape with slots := shape.slots.tail } :=
+  TypedCfgPreservation.ActivationInput.tail hActivation hSource
 
 theorem stmtFallthrough
     {tokens : List Word} {fuel : Nat}
@@ -166,13 +155,9 @@ theorem stmtFallthrough
       TypedCfgCompiler.compileStmtFuel? fuel stmt ctx
           supply entry input regular = some result)
     (hFallthrough : result.fallthrough? = some output) :
-    ActivationInput tokens output := by
-  rcases hActivation with hTop | hActive
-  · exact Or.inl hTop
-  · exact
-      Or.inr
-        ((TypedCfgCompilerFacts.activeResult_of_compileStmtFuel?
-          hActive hCompile).fallthrough output hFallthrough)
+    ActivationInput tokens output :=
+  TypedCfgPreservation.ActivationInput.stmtFallthrough
+    hActivation hCompile hFallthrough
 
 theorem blockFallthrough
     {tokens : List Word} {fuel : Nat}
@@ -185,13 +170,9 @@ theorem blockFallthrough
       TypedCfgCompiler.compileBlockFuel? fuel block ctx
           supply entry input regular = some result)
     (hFallthrough : result.fallthrough? = some output) :
-    ActivationInput tokens output := by
-  rcases hActivation with hTop | hActive
-  · exact Or.inl hTop
-  · exact
-      Or.inr
-        ((TypedCfgCompilerFacts.activeResult_of_compileBlockFuel?
-          hActive hCompile).fallthrough output hFallthrough)
+    ActivationInput tokens output :=
+  TypedCfgPreservation.ActivationInput.blockFallthrough
+    hActivation hCompile hFallthrough
 
 end ActivationInput
 
