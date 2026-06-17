@@ -30450,3 +30450,15 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   standalone resource-observer axiom audit, and `git diff --check` passed.
   The bounded terminal-argument theorem depends only on `propext`,
   `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 20:18:08 PDT - proof/yul-terminal-primitive-expression-fuel -
+  Checked program-indexed observable-failure preservation for compiler-selected
+  primitive expressions and added it to the recursive terminal expression
+  family. The only constructive failure route is spill-bound argument
+  evaluation; direct arguments and the selected primitive remain covered by
+  the existing no-observable-failure theorems.
+- 2026-06-16 20:23:17 PDT -
+  validation/yul-terminal-primitive-expression-fuel - Focused terminal-fuel
+  build, full 1,269-job verification root, architecture dependency guard,
+  public/resource/memory proof smokes, changed-file hole/axiom scan, and
+  `git diff --check` passed. Both new primitive-expression theorems depend only
+  on `propext`, `Classical.choice`, and `Quot.sound`.

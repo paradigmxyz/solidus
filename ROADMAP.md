@@ -100,6 +100,8 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
       spill-bound unchecked lowering;
     - [x] bound the emitted terminal primitive after a regular, bounded
       argument prelude;
+    - [x] lift compiler-selected primitive expression failure into the
+      recursive program-indexed terminal family;
     - [ ] lift terminal expressions, calls, and compound control through the
       recursive program-indexed family;
   - [x] expose the bounded regular whole-program forward theorem;
