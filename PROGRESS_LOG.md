@@ -30811,3 +30811,15 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   consumes that contract while preserving hidden target stack data and the
   source-frame invariant. The full verification root, open-effects axiom
   smoke, architecture and hole checks, and `git diff --check` pass.
+- 2026-06-17 04:55:53 PDT - compaction-resume - Resumed from checkpoint
+  `587bccb2e`; next is the pass-owned Structured control/outcome composition
+  interface and checked block-to-TypedCfg open preservation theorem.
+- 2026-06-17 05:09:56 PDT - proof/structured-open-control-base - Generalized
+  the canonical TypedCfg control kernel with a jump-stop policy and defined
+  Structured fragment boundaries at regular/break/continue/leave labels.
+  Added the frame-indexed open outcome interface plus checked straight-line
+  statement and empty-block preservation theorems. This avoids branch-specific
+  target fuel across arbitrary CALL/CREATE answers without adding another
+  interpreter. Focused and full verification builds, architecture and hole
+  checks, open-effects axiom smoke, and `git diff --check` pass; axioms remain
+  `propext`, `Classical.choice`, and `Quot.sound`.

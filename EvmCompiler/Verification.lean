@@ -40,6 +40,7 @@ import EvmCompiler.Structured.TypedCfgPreservation
 import EvmCompiler.Structured.EffectSemantics
 import EvmCompiler.Structured.InteractionSemantics
 import EvmCompiler.Structured.InteractionPreservation
+import EvmCompiler.Structured.InteractionControlPreservation
 import EvmCompiler.Structured.ObserverSemantics
 import EvmCompiler.Structured.ObserverPreservation
 import EvmCompiler.Structured.ObserverActivationBoundary
@@ -188,6 +189,9 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.InteractionSemantics.BasicInstr.openStep_create2
 #check EvmCompiler.Structured.InteractionPreservation.BasicInstr.openRunAt_toCfg
 #check EvmCompiler.Structured.InteractionPreservation.Code.openRun_toCfg
+#check EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNWithStop_one
+#check EvmCompiler.Structured.InteractionControlPreservation.Stmt.openRun_code_of_compileStmtFuel?
+#check EvmCompiler.Structured.InteractionControlPreservation.Block.openRun_nil_of_compileStmtListFuel?
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_call
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_callcode

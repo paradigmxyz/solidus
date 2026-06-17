@@ -106,6 +106,18 @@ if ! rg -Fq \
   failed=1
 fi
 
+for theorem in \
+    'Stmt.openRun_code_of_compileStmtFuel?' \
+    'Block.openRun_nil_of_compileStmtListFuel?'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.Structured.InteractionControlPreservation.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing Structured open control theorem %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
 report_matches \
   'Open-effect proofs must not restore context bisimulation or per-pass equivalence wrappers:' \
   'ExternalContext\.Rel|OpenEffectEquiv' \
@@ -855,6 +867,7 @@ report_matches \
   EvmCompiler/Assembly/InteractionBytecode.lean \
   EvmCompiler/Structured/InteractionSemantics.lean \
   EvmCompiler/Structured/InteractionPreservation.lean \
+  EvmCompiler/Structured/InteractionControlPreservation.lean \
   EvmCompiler/Locals/Allocation.lean \
   EvmCompiler/Locals/EffectSemantics.lean \
   EvmCompiler/Functions/AllocationObserverRelation.lean \

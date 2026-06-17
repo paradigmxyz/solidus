@@ -1,5 +1,5 @@
 import EvmCompiler.Assembly.InteractionBytecode
-import EvmCompiler.Structured.InteractionPreservation
+import EvmCompiler.Structured.InteractionControlPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 
 #check EvmCompiler.Simulation.OpenWorld
@@ -34,6 +34,9 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #check EvmCompiler.TypedCfg.InteractionPreservation.Program.compileCertified?_entry_openRunN_rel
 #check EvmCompiler.Structured.InteractionPreservation.BasicInstr.openRunAt_toCfg
 #check EvmCompiler.Structured.InteractionPreservation.Code.openRun_toCfg
+#check EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNWithStop_one
+#check EvmCompiler.Structured.InteractionControlPreservation.Stmt.openRun_code_of_compileStmtFuel?
+#check EvmCompiler.Structured.InteractionControlPreservation.Block.openRun_nil_of_compileStmtListFuel?
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
 #check EvmCompiler.Assembly.Bytecode.InteractionSemantics.openRunNResult
 #check EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes
@@ -63,5 +66,8 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.TypedCfg.InteractionPreservation.Program.compileCertified?_entry_openRunN_rel
 #print axioms EvmCompiler.Structured.InteractionPreservation.BasicInstr.openRunAt_toCfg
 #print axioms EvmCompiler.Structured.InteractionPreservation.Code.openRun_toCfg
+#print axioms EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNWithStop_one
+#print axioms EvmCompiler.Structured.InteractionControlPreservation.Stmt.openRun_code_of_compileStmtFuel?
+#print axioms EvmCompiler.Structured.InteractionControlPreservation.Block.openRun_nil_of_compileStmtListFuel?
 #print axioms EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes
 #print axioms EvmCompiler.Assembly.Bytecode.compile_openRunNResult_executes

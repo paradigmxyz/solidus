@@ -213,10 +213,40 @@ def openStep (program : TypedCfg.Program) (label : Label)
     (state : EVMState) : OpenOutcome :=
   Control.Program.step Instr.openRunState program label state
 
+def openRunNWithStop (stopJump : Label → Bool)
+    (program : TypedCfg.Program) (fuel : Nat)
+    (label : Label) (state : EVMState) : OpenOutcome :=
+  Control.Program.runNWithStop
+    Instr.openRunState stopJump program fuel label state
+
 def openRunN (program : TypedCfg.Program) (fuel : Nat)
     (label : Label) (state : EVMState) : OpenOutcome :=
-  Control.Program.runN
-    Instr.openRunState program fuel label state
+  openRunNWithStop (fun _ => false)
+    program fuel label state
+
+@[simp] theorem openRunNWithStop_zero
+    (stopJump : Label → Bool) (program : TypedCfg.Program)
+    (label : Label) (state : EVMState) :
+    openRunNWithStop stopJump program 0 label state =
+      .done (.ok (.jump label state)) := rfl
+
+theorem openRunNWithStop_succ
+    (stopJump : Label → Bool) (program : TypedCfg.Program)
+    (fuel : Nat) (label : Label) (state : EVMState) :
+    openRunNWithStop stopJump program (fuel + 1) label state =
+      (do
+        let outcome ← openStep program label state
+        match outcome with
+        | .jump next state' =>
+            if stopJump next then
+              pure (.jump next state')
+            else
+              openRunNWithStop stopJump
+                program fuel next state'
+        | .fallthrough state' => pure (.fallthrough state')
+        | .returnDispatch state' => pure (.returnDispatch state')
+        | .halt kind state' => pure (.halt kind state')
+        | .invalid state' => pure (.invalid state')) := rfl
 
 @[simp] theorem openRunN_zero (program : TypedCfg.Program)
     (label : Label) (state : EVMState) :
@@ -235,6 +265,125 @@ theorem openRunN_succ (program : TypedCfg.Program)
         | .returnDispatch state' => pure (.returnDispatch state')
         | .halt kind state' => pure (.halt kind state')
         | .invalid state' => pure (.invalid state')) := rfl
+
+theorem openRunNWithStop_one
+    (stopJump : Label → Bool) (program : TypedCfg.Program)
+    (label : Label) (state : EVMState) :
+    openRunNWithStop stopJump program 1 label state =
+      openStep program label state := by
+  rw [show 1 = 0 + 1 by rfl,
+    openRunNWithStop_succ]
+  have hContinuation :
+      (fun outcome : TypedCfg.Outcome =>
+        match outcome with
+        | .jump next state' =>
+            if stopJump next then
+              pure (.jump next state')
+            else
+              openRunNWithStop stopJump
+                program 0 next state'
+        | .fallthrough state' => pure (.fallthrough state')
+        | .returnDispatch state' => pure (.returnDispatch state')
+        | .halt kind state' => pure (.halt kind state')
+        | .invalid state' => pure (.invalid state')) =
+        Simulation.Interaction.pure := by
+    funext outcome
+    cases outcome with
+    | jump next state' =>
+        change
+          (if stopJump next = true then
+            (Simulation.Interaction.pure
+              (.jump next state') : OpenOutcome)
+          else
+            openRunNWithStop stopJump
+              program 0 next state') =
+            Simulation.Interaction.pure (.jump next state')
+        by_cases hStop : stopJump next = true
+        · simp [hStop]
+        · simp [hStop]
+          rfl
+    | fallthrough state'
+    | returnDispatch state'
+    | halt kind state'
+    | invalid state' =>
+        rfl
+  change
+    Simulation.Interaction.bind
+        (openStep program label state) _ =
+      openStep program label state
+  rw [hContinuation]
+  exact Simulation.Interaction.bind_pure _
+
+def continueOpenRunN (program : TypedCfg.Program) (fuel : Nat) :
+    TypedCfg.Outcome → OpenOutcome
+  | .jump next state =>
+      openRunN program fuel next state
+  | .fallthrough state =>
+      pure (.fallthrough state)
+  | .returnDispatch state =>
+      pure (.returnDispatch state)
+  | .halt kind state =>
+      pure (.halt kind state)
+  | .invalid state =>
+      pure (.invalid state)
+
+theorem openRunN_one (program : TypedCfg.Program)
+    (label : Label) (state : EVMState) :
+    openRunN program 1 label state =
+      openStep program label state := by
+  rw [show 1 = 0 + 1 by rfl, openRunN_succ]
+  change
+    Simulation.Interaction.bind
+        (openStep program label state)
+        (continueOpenRunN program 0) =
+      openStep program label state
+  have hContinuation :
+      continueOpenRunN program 0 =
+        Simulation.Interaction.pure := by
+    funext outcome
+    cases outcome <;> rfl
+  rw [hContinuation]
+  exact Simulation.Interaction.bind_pure _
+
+/--
+Fuel-bounded open execution composes at a residual jump. Non-jump outcomes
+remain terminal for the TypedCfg control kernel.
+-/
+theorem openRunN_add (program : TypedCfg.Program)
+    (firstFuel restFuel : Nat) (label : Label) (state : EVMState) :
+    openRunN program (firstFuel + restFuel) label state =
+      Simulation.Interaction.bind
+        (openRunN program firstFuel label state)
+        (continueOpenRunN program restFuel) := by
+  induction firstFuel generalizing label state with
+  | zero =>
+      simp [continueOpenRunN]
+  | succ firstFuel ih =>
+      rw [show
+        Nat.succ firstFuel + restFuel =
+          (firstFuel + restFuel) + 1 by omega]
+      rw [openRunN_succ, openRunN_succ]
+      change
+        Simulation.Interaction.bind
+            (openStep program label state)
+            (continueOpenRunN program (firstFuel + restFuel)) =
+          Simulation.Interaction.bind
+            (Simulation.Interaction.bind
+              (openStep program label state)
+              (continueOpenRunN program firstFuel))
+            (continueOpenRunN program restFuel)
+      rw [Simulation.Interaction.bind_assoc]
+      apply congrArg (Simulation.Interaction.bind
+        (openStep program label state))
+      funext outcome
+      cases outcome with
+      | jump next state' =>
+          exact ih next state'
+      | fallthrough state'
+      | returnDispatch state'
+      | halt kind state'
+      | invalid state' =>
+          rfl
 
 end Program
 
