@@ -697,6 +697,53 @@ end Stmt.Forward
 
 namespace Block
 
+theorem policy_openRun_empty
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : 1 ≤ targetFuel)
+    (hPolicy :
+      Stmt.ControlPolicy.ContextCompatible policy sourceCtx)
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.ForwardRel
+      FuelTruncated
+      (Stmt.PolicyOpenOutcomeRel policy targetCtx suffix returns)
+      (InteractionSemantics.Block.openRun
+        sourceProgram sourceCtx sourceFuel { stmts := [] } source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := [] } target) := by
+  cases sourceFuel with
+  | zero =>
+      unfold InteractionSemantics.Block.openRun
+        InteractionSemantics.stateModel
+        Locals.Source.Effectful.Ordinary.stateModel
+      simp only [Locals.Source.Effectful.Control.Block.runOpen]
+      apply Simulation.Interaction.ForwardRel.truncated
+      rfl
+  | succ sourceFuel =>
+      cases targetFuel with
+      | zero => omega
+      | succ targetFuel =>
+          unfold InteractionSemantics.Block.openRun
+            Expressions.InteractionSemantics.Block.openRun
+            InteractionSemantics.stateModel
+            Locals.Source.Effectful.Ordinary.stateModel
+          simp only [Locals.Source.Effectful.Control.Block.runOpen,
+            Expressions.EffectSemantics.Control.Block.run]
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact
+            Stmt.PolicyOpenResultRel.regular
+              hPolicy hCtx hInitial
+
 /-- Policy-indexed sequence composition for exact abrupt frames. -/
 theorem policy_forward_cons
     (policy : Stmt.ControlPolicy)
@@ -776,6 +823,93 @@ theorem policy_forward_cons
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
       exact Stmt.PolicyOpenResultRel.halt hEntryPolicy hShared hReturns
+
+/-- Additive-cost wrapper around policy-indexed sequence composition. -/
+theorem policy_forward_cons_bounded
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx)
+    (middleCtx finalCtx : Locals.Ctx)
+    (stmt : Locals.Stmt) (rest : List Locals.Stmt)
+    (headCode tailCode : List Expressions.Stmt)
+    (headCost tailCost : Nat)
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hEntryPolicy :
+      Stmt.ControlPolicy.ContextCompatible policy sourceCtx)
+    (hHead :
+      ∀ (sourceFuel targetFuel : Nat),
+        sourceFuel + headCost ≤ targetFuel →
+          Simulation.Interaction.ForwardRel
+            FuelTruncated
+            (Stmt.PolicyOpenOutcomeRel policy middleCtx suffix returns)
+            (InteractionSemantics.Stmt.openRun
+              sourceProgram sourceCtx sourceFuel stmt source)
+            (Expressions.InteractionSemantics.Block.openRun
+              targetProgram targetFuel { stmts := headCode } target))
+    (hTail :
+      ∀ {sourceMid : Locals.Source.State}
+        {targetMid : Structured.RunState}
+        {sourceMidCtx : Locals.Source.Ctx},
+        Stmt.ControlPolicy.ContextCompatible policy sourceMidCtx →
+        Frame.CtxRel sourceMidCtx middleCtx →
+        Frame.StateRel middleCtx.layout suffix returns
+            sourceMid targetMid →
+        ∀ (sourceFuel targetFuel : Nat),
+          sourceFuel + tailCost ≤ targetFuel →
+            Simulation.Interaction.ForwardRel
+              FuelTruncated
+              (Stmt.PolicyOpenOutcomeRel policy finalCtx suffix returns)
+              (InteractionSemantics.Block.openRun
+                sourceProgram sourceMidCtx sourceFuel
+                  { stmts := rest } sourceMid)
+              (Expressions.InteractionSemantics.Block.openRun
+                targetProgram targetFuel
+                  { stmts := tailCode } targetMid)) :
+    ∀ (sourceFuel targetFuel : Nat),
+      sourceFuel +
+          (Nat.max headCost (headCode.length + tailCost) + 1) ≤
+        targetFuel →
+        Simulation.Interaction.ForwardRel
+          FuelTruncated
+          (Stmt.PolicyOpenOutcomeRel policy finalCtx suffix returns)
+          (InteractionSemantics.Block.openRun
+            sourceProgram sourceCtx sourceFuel
+              { stmts := stmt :: rest } source)
+          (Expressions.InteractionSemantics.Block.openRun
+            targetProgram targetFuel
+              { stmts := headCode ++ tailCode } target) := by
+  intro sourceFuel targetFuel hFuel
+  cases sourceFuel with
+  | zero =>
+      unfold InteractionSemantics.Block.openRun
+        InteractionSemantics.stateModel
+        Locals.Source.Effectful.Ordinary.stateModel
+      simp only [Locals.Source.Effectful.Control.Block.runOpen]
+      apply Simulation.Interaction.ForwardRel.truncated
+      rfl
+  | succ sourceFuel =>
+      have hHeadCost :
+          headCost ≤ Nat.max headCost (headCode.length + tailCost) :=
+        Nat.le_max_left _ _
+      have hTailCost :
+          headCode.length + tailCost ≤
+            Nat.max headCost (headCode.length + tailCost) :=
+        Nat.le_max_right _ _
+      apply policy_forward_cons
+        policy sourceProgram targetProgram sourceCtx middleCtx finalCtx
+        sourceFuel targetFuel stmt rest headCode tailCode
+        hEntryPolicy
+      · apply hHead sourceFuel targetFuel
+        omega
+      · intro sourceMid targetMid sourceMidCtx
+          hPolicy hCtx hState
+        apply hTail hPolicy hCtx hState
+          sourceFuel (targetFuel - headCode.length)
+        omega
 
 end Block
 end InteractionPreservation

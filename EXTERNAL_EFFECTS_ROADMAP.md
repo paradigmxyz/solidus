@@ -825,6 +825,10 @@ Exit: the shared core builds with no compiler layer changed.
     - [x] Split policy/control recursion into a dedicated adjacent Locals owner
       before adding the whole compiled `for` wrapper; the current proof module
       is again below the 5K-line architecture soft limit.
+    - [x] Add policy-indexed empty-block and bounded sequence composition with
+      one additive static target-fuel cost, ready for structural recursion.
+    - [ ] Close the source-owned recursive whole-statement/block owner and
+      remove recursive callback premises from the compiler-facing loop theorem.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
 - [ ] Functions.

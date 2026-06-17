@@ -31424,3 +31424,15 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   compiler/control-owner builds, the full verification root, architecture
   checks, touched-Lean hole scan, axiom audit, and `git diff --check`; both
   theorems use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 15:15:35 PDT - compaction-resume - resumed the horizontal
+  CALL/CREATE proof at the checked Locals control boundary; finish and audit
+  bounded sequence composition before the recursive whole-statement owner.
+- 2026-06-17 15:15:35 PDT - proof/locals-bounded-sequence - added
+  `Block.policy_openRun_empty` and `Block.policy_forward_cons_bounded`; the
+  reusable policy-indexed block API now composes recursive source fuel with an
+  additive static target-fuel cost instead of requiring a story-specific
+  statement-list theorem.
+- 2026-06-17 15:18:00 PDT - validation/locals-bounded-sequence - focused
+  Locals control build, full verification root, architecture dependency check,
+  touched-file hole scan, axiom audit, and `git diff --check` passed; both new
+  theorems use only `[propext, Classical.choice, Quot.sound]`.
