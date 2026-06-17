@@ -540,6 +540,13 @@ inductive Interaction (Error : Type u1) (Result : Type v1) :
 
 namespace Interaction
 
+/-- One exact query/answer exchange along a concrete interaction branch. -/
+structure Exchange where
+  query : Query
+  answer : Answer query
+
+abbrev Transcript := List Exchange
+
 def pure {Error : Type u1} {Result : Type v1}
     (value : Result) : Interaction Error Result :=
   .done (.ok value)
@@ -614,6 +621,23 @@ theorem bind_request
       funext answer
       exact ih answer
 
+theorem bind_assoc
+    {Error : Type u1} {First : Type v1}
+    {Second : Type w1} {Third : Type u2}
+    (result : Interaction Error First)
+    (next : First → Interaction Error Second)
+    (finish : Second → Interaction Error Third) :
+    bind (bind result next) finish =
+      bind result fun value => bind (next value) finish := by
+  induction result with
+  | done outcome =>
+      cases outcome <;> rfl
+  | request query resume ih =>
+      simp only [bind_request]
+      congr
+      funext answer
+      exact ih answer
+
 @[simp] theorem monad_pure_bind
     {Error : Type u1} {Source Target : Type v1}
     (value : Source) (next : Source → Interaction Error Target) :
@@ -638,6 +662,118 @@ theorem bind_request
       pure value) =
       result := by
   exact bind_pure result
+
+/--
+A concrete branch through an open interaction tree.
+
+The transcript records the exact ordered query and answer at every suspension.
+It is external-world behavior, not compiler-generated evidence.
+-/
+inductive Executes
+    {Error : Type u1} {Result : Type v1} :
+    Interaction Error Result →
+    Transcript →
+    Except Error Result →
+    Prop where
+  | done (outcome : Except Error Result) :
+      Executes (.done outcome) [] outcome
+  | request {query : Query}
+      {resume : Answer query → Interaction Error Result}
+      (answer : Answer query)
+      {transcript : Transcript}
+      {outcome : Except Error Result}
+      (tail : Executes (resume answer) transcript outcome) :
+      Executes (.request query resume)
+        ({ query := query, answer := answer } :: transcript) outcome
+
+namespace Executes
+
+theorem bind_ok
+    {Error : Type u1} {Source : Type v1} {Target : Type w1}
+    {first : Interaction Error Source}
+    {next : Source → Interaction Error Target}
+    {firstTranscript restTranscript : Transcript}
+    {value : Source} {outcome : Except Error Target}
+    (hFirst : Executes first firstTranscript (.ok value))
+    (hRest : Executes (next value) restTranscript outcome) :
+    Executes (bind first next)
+      (firstTranscript ++ restTranscript) outcome := by
+  generalize hOutcome : (.ok value : Except Error Source) = firstOutcome
+    at hFirst
+  induction hFirst generalizing value restTranscript outcome with
+  | done firstOutcome =>
+      cases hOutcome
+      simpa using hRest
+  | request answer tail ih =>
+      simpa [bind_request] using
+        Executes.request answer (ih hRest hOutcome)
+
+theorem bind_error
+    {Error : Type u1} {Source : Type v1} {Target : Type w1}
+    {first : Interaction Error Source}
+    {next : Source → Interaction Error Target}
+    {transcript : Transcript} {err : Error}
+    (hFirst : Executes first transcript (.error err)) :
+    Executes (bind first next) transcript (.error err) := by
+  generalize hOutcome : (.error err : Except Error Source) = firstOutcome
+    at hFirst
+  induction hFirst generalizing err with
+  | done firstOutcome =>
+      cases hOutcome
+      exact Executes.done (.error err)
+  | request answer tail ih =>
+      simpa [bind_request] using
+        Executes.request answer (ih hOutcome)
+
+theorem bind_cases
+    {Error : Type u1} {Source : Type v1} {Target : Type w1}
+    {first : Interaction Error Source}
+    {next : Source → Interaction Error Target}
+    {transcript : Transcript} {outcome : Except Error Target}
+    (hExec : Executes (bind first next) transcript outcome) :
+    (∃ err,
+        outcome = .error err ∧
+          Executes first transcript (.error err)) ∨
+      ∃ value firstTranscript restTranscript,
+        transcript = firstTranscript ++ restTranscript ∧
+          Executes first firstTranscript (.ok value) ∧
+            Executes (next value) restTranscript outcome := by
+  induction first generalizing transcript outcome with
+  | done firstOutcome =>
+      cases firstOutcome with
+      | error err =>
+          change Executes (.done (.error err)) transcript outcome at hExec
+          cases hExec
+          exact .inl ⟨err, rfl, Executes.done _⟩
+      | ok value =>
+          exact
+            .inr
+              ⟨value, [], transcript, by simp, Executes.done _, hExec⟩
+  | request query resume ih =>
+      change
+        Executes
+          (.request query fun answer => bind (resume answer) next)
+          transcript outcome at hExec
+      cases hExec with
+      | request answer tail =>
+          rcases ih answer tail with hError | hOk
+          · rcases hError with ⟨err, hOutcome, hFirst⟩
+            exact
+              .inl
+                ⟨err, hOutcome, Executes.request answer hFirst⟩
+          · rcases hOk with
+              ⟨value, firstTranscript, restTranscript,
+                hTranscript, hFirst, hRest⟩
+            exact
+              .inr
+                ⟨value,
+                  { query := query, answer := answer } :: firstTranscript,
+                  restTranscript,
+                  by simp [hTranscript],
+                  Executes.request answer hFirst,
+                  hRest⟩
+
+end Executes
 
 inductive ExceptRel
     {Error₁ : Type u1} {Result₁ : Type v1}
@@ -790,6 +926,37 @@ theorem request_left
   cases hRel with
   | request hResume =>
       exact ⟨_, rfl, hResume⟩
+
+/--
+Structural open equivalence transports every concrete external-world branch
+with the exact same ordered transcript.
+-/
+theorem executes
+    {Error₁ : Type u1} {Result₁ : Type v1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    {doneRel :
+      Except Error₁ Result₁ → Except Error₂ Result₂ → Prop}
+    {left : Interaction Error₁ Result₁}
+    {right : Interaction Error₂ Result₂}
+    {transcript : Transcript}
+    {leftOutcome : Except Error₁ Result₁}
+    (hRel : Rel doneRel left right)
+    (hExec : Executes left transcript leftOutcome) :
+    ∃ rightOutcome,
+      Executes right transcript rightOutcome ∧
+        doneRel leftOutcome rightOutcome := by
+  induction hExec generalizing right with
+  | done outcome =>
+      cases hRel with
+      | done hDone =>
+          exact ⟨_, Executes.done _, hDone⟩
+  | request answer tail ih =>
+      cases hRel with
+      | request hResume =>
+          obtain ⟨rightOutcome, hRight, hDone⟩ :=
+            ih (hResume answer)
+          exact
+            ⟨rightOutcome, Executes.request answer hRight, hDone⟩
 
 end Rel
 

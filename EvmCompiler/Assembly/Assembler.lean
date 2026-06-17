@@ -33,6 +33,52 @@ def arg : TargetInstr → Option (Word × Nat)
   | .push32 value => some (value, 32)
   | .jump | .jumpi | .jumpdest | .prim _ => none
 
+/-- Decode the exact instruction forms emitted by the verified assembler. -/
+def ofDecoded? (op : EVMOp) (arg : Option (Word × Nat)) :
+    Option TargetInstr :=
+  match op, arg with
+  | .PUSH32, some (value, 32) => some (.push32 value)
+  | .JUMP, none => some .jump
+  | .JUMPI, none => some .jumpi
+  | .JUMPDEST, none => some .jumpdest
+  | op, none => (PrimOp.ofEVM? op).map .prim
+  | _, _ => none
+
+@[simp] theorem ofDecoded?_op_arg (instr : TargetInstr) :
+    ofDecoded? instr.op instr.arg = some instr := by
+  cases instr with
+  | push32 value =>
+      rfl
+  | jump =>
+      rfl
+  | jumpi =>
+      rfl
+  | jumpdest =>
+      rfl
+  | prim op =>
+      cases op <;> rfl
+
+@[simp] theorem ofDecoded?_call :
+    ofDecoded? EvmYul.Operation.CALL none = some (.prim .call) := rfl
+
+@[simp] theorem ofDecoded?_callcode :
+    ofDecoded? EvmYul.Operation.CALLCODE none =
+      some (.prim .callcode) := rfl
+
+@[simp] theorem ofDecoded?_delegatecall :
+    ofDecoded? EvmYul.Operation.DELEGATECALL none =
+      some (.prim .delegatecall) := rfl
+
+@[simp] theorem ofDecoded?_staticcall :
+    ofDecoded? EvmYul.Operation.STATICCALL none =
+      some (.prim .staticcall) := rfl
+
+@[simp] theorem ofDecoded?_create :
+    ofDecoded? EvmYul.Operation.CREATE none = some (.prim .create) := rfl
+
+@[simp] theorem ofDecoded?_create2 :
+    ofDecoded? EvmYul.Operation.CREATE2 none = some (.prim .create2) := rfl
+
 end TargetInstr
 
 namespace Program
@@ -534,6 +580,28 @@ theorem fetch_append_of_fetch_left {left right : List LocatedTarget}
         exact hFetch
       · simp [hEq] at hFetch ⊢
         simpa [fetch] using ih hFetch
+
+theorem exists_located_of_fetch {target : TargetProgram}
+    {pc : Nat} {instr : TargetInstr}
+    (hFetch : fetch target pc = some instr) :
+    ∃ located,
+      located ∈ target.code ∧
+        located.pc = pc ∧
+          located.instr = instr := by
+  unfold fetch at hFetch
+  cases hFind :
+      target.code.find? (fun located => located.pc == pc) with
+  | none =>
+      simp [hFind] at hFetch
+  | some located =>
+      have hMem : located ∈ target.code :=
+        List.mem_of_find?_eq_some hFind
+      have hPc : located.pc = pc := by
+        have hFound := List.find?_some hFind
+        simpa using hFound
+      simp [hFind] at hFetch
+      subst instr
+      exact ⟨located, hMem, hPc, rfl⟩
 
 end TargetProgram
 

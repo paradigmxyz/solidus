@@ -7,6 +7,7 @@ import EvmCompiler.Compiler.MemoryRelation
 import EvmCompiler.Core.MemoryContract
 import EvmCompiler.Assembly.InteractionSemantics
 import EvmCompiler.Assembly.InteractionPreservation
+import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Expressions.ObserverPreservation
 import EvmCompiler.Functions.AllocationLowering
 import EvmCompiler.Functions.AllocationObserverRelation
@@ -164,6 +165,17 @@ or audit-alias corridor.
 #check EvmCompiler.Assembly.InteractionPreservation.stepAt_emit_open_result_rel
 #check EvmCompiler.Assembly.InteractionPreservation.source_openRunNResult_rel_compiled
 #check EvmCompiler.Assembly.InteractionPreservation.compile_openRunNResult_block_rel
+#check EvmCompiler.Assembly.InteractionPreservation.compile_openRunNResult_target_executes
+#check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
+#check EvmCompiler.Assembly.TargetInstr.ofDecoded?_call
+#check EvmCompiler.Assembly.TargetInstr.ofDecoded?_callcode
+#check EvmCompiler.Assembly.TargetInstr.ofDecoded?_delegatecall
+#check EvmCompiler.Assembly.TargetInstr.ofDecoded?_staticcall
+#check EvmCompiler.Assembly.TargetInstr.ofDecoded?_create
+#check EvmCompiler.Assembly.TargetInstr.ofDecoded?_create2
+#check EvmCompiler.Assembly.Bytecode.InteractionSemantics.openRunNResult
+#check EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes
+#check EvmCompiler.Assembly.Bytecode.compile_openRunNResult_executes
 #check EvmCompiler.Functions.AllocationObserverContext.ExprContext
 #check EvmCompiler.Functions.AllocationObserverContext.classify_var
 #check EvmCompiler.Functions.AllocationObserverContext.classify_let_transition

@@ -1742,34 +1742,6 @@ theorem run_push_jumpi_result_withOracle
   | nil => rfl
   | cons _ _ => rfl
 
-theorem replaceStackAndIncrPC_pc_toNat_of_no_overflow
-    {state : EVMState} {stack : EvmYul.Stack Word} {pcΔ : Nat}
-    (hNoOverflow : state.pc.toNat + pcΔ < EvmYul.UInt256.size) :
-    (state.replaceStackAndIncrPC stack (pcΔ := pcΔ)).pc.toNat =
-      state.pc.toNat + pcΔ := by
-  cases state with
-  | mk shared pc oldStack execLength =>
-      cases pc with
-      | mk pcVal =>
-          have hNoOverflow' : pcVal.val + pcΔ < EvmYul.UInt256.size := by
-            simpa [EvmYul.UInt256.toNat] using hNoOverflow
-          have hDeltaLt : pcΔ < EvmYul.UInt256.size :=
-            Nat.lt_of_le_of_lt (Nat.le_add_left pcΔ pcVal.val)
-              hNoOverflow'
-          have hDeltaVal :
-              (EvmYul.UInt256.ofNat pcΔ).val.val = pcΔ := by
-            simpa [EvmYul.UInt256.toNat] using
-              EvmYul.UInt256.toNat_ofNat_of_lt hDeltaLt
-          unfold EvmYul.EVM.State.replaceStackAndIncrPC
-            EvmYul.EVM.State.incrPC
-          change
-            (EvmYul.UInt256.add { val := pcVal }
-                (EvmYul.UInt256.ofNat pcΔ)).toNat =
-              pcVal.val + pcΔ
-          unfold EvmYul.UInt256.add EvmYul.UInt256.toNat
-          simpa [Fin.val_add, hDeltaVal,
-            Nat.mod_eq_of_lt hNoOverflow']
-
 theorem add_ofNat_toNat_of_no_overflow
     {value : Word} {delta : Nat}
     (hNoOverflow : value.toNat + delta < EvmYul.UInt256.size) :
@@ -1926,51 +1898,6 @@ theorem target_runNResultWithOracle_push_jumpi_of_fetch
     Target.stepInstr, TargetInstr.haltKind?,
     ResourceObserver.ofTargetInstr?, Bind.bind, Except.bind,
     Target.runListResultWithOracle, Source.jumpiFallthroughPc]
-
-def TargetBlockPcSafe (instr : Instr) (state : EVMState) : Prop :=
-  match instr with
-  | .jump _ | .jumpi _ =>
-      state.pc.toNat + Instr.push32Size < EvmYul.UInt256.size
-  | .label _ | .prim _ | .push _ => True
-
-theorem targetBlockPcSafe_of_instrAtPc_of_byteLength_lt
-    {program : Program} {state : EVMState} {pc : Nat} {instr : Instr}
-    (hAt : Program.instrAtPc program state.pc.toNat = some (pc, instr))
-    (hLen : Program.byteLength program < EvmYul.UInt256.size) :
-    TargetBlockPcSafe instr state := by
-  cases instr with
-  | label name =>
-      simp [TargetBlockPcSafe]
-  | prim op =>
-      simp [TargetBlockPcSafe]
-  | push value =>
-      simp [TargetBlockPcSafe]
-  | jump targetLabel =>
-      have hPcEq : pc = state.pc.toNat :=
-        Program.instrAtPc_pc_eq hAt
-      have hEnd :
-          pc + (Instr.jump targetLabel).byteSize ≤
-            Program.byteLength program :=
-        Program.instrAtPc_end_le_byteLength hAt
-      have hEnd' :
-          pc + (Instr.push32Size + 1) ≤
-            Program.byteLength program := by
-        simpa [Instr.byteSize, Instr.jumpSize] using hEnd
-      simp [TargetBlockPcSafe]
-      omega
-  | jumpi targetLabel =>
-      have hPcEq : pc = state.pc.toNat :=
-        Program.instrAtPc_pc_eq hAt
-      have hEnd :
-          pc + (Instr.jumpi targetLabel).byteSize ≤
-            Program.byteLength program :=
-        Program.instrAtPc_end_le_byteLength hAt
-      have hEnd' :
-          pc + (Instr.push32Size + 1) ≤
-            Program.byteLength program := by
-        simpa [Instr.byteSize, Instr.jumpSize] using hEnd
-      simp [TargetBlockPcSafe]
-      omega
 
 theorem target_runNResultWithOracle_eq_runList_of_emitInstr?
     {program : Program} {target : TargetProgram}

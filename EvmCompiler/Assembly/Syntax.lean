@@ -77,7 +77,7 @@ Primitive operations admitted directly into the first assembly layer.
 
 Control transfer, labels, and pushes are represented by dedicated assembly
 instructions. Raw `JUMP`/`JUMPI`/`JUMPDEST` are represented by labeled
-control-flow instructions. The source/compiler tower does not admit `GAS` as
+control-flow instructions. The source/compiler tower does not accept `GAS` as
 an ordinary continuing source primitive; gas accounting remains only in the
 final gas-aware runner. `GAS` is still present in assembly syntax so executable
 unchecked object images can emit the real opcode for Solidity/Forge
@@ -264,6 +264,131 @@ def toEVM : PrimOp → EVMOp
   | .revert => EvmYul.Operation.REVERT
   | .invalid => EvmYul.Operation.INVALID
   | .selfdestruct => EvmYul.Operation.SELFDESTRUCT
+
+/--
+Partial inverse of `toEVM` for the primitive opcode subset admitted by this
+assembly layer. Control-transfer and push opcodes are decoded by
+`TargetInstr.ofDecoded?`.
+-/
+def ofEVM? : EVMOp → Option PrimOp
+  | .STOP => some .stop
+  | .ADD => some .add
+  | .MUL => some .mul
+  | .SUB => some .sub
+  | .DIV => some .div
+  | .SDIV => some .sdiv
+  | .MOD => some .mod
+  | .SMOD => some .smod
+  | .ADDMOD => some .addmod
+  | .MULMOD => some .mulmod
+  | .EXP => some .exp
+  | .SIGNEXTEND => some .signextend
+  | .LT => some .lt
+  | .GT => some .gt
+  | .SLT => some .slt
+  | .SGT => some .sgt
+  | .EQ => some .eq
+  | .ISZERO => some .iszero
+  | .AND => some .and
+  | .OR => some .or
+  | .XOR => some .xor
+  | .NOT => some .not
+  | .BYTE => some .byte
+  | .SHL => some .shl
+  | .SHR => some .shr
+  | .SAR => some .sar
+  | .ADDRESS => some .address
+  | .BALANCE => some .balance
+  | .ORIGIN => some .origin
+  | .CALLER => some .caller
+  | .CALLVALUE => some .callvalue
+  | .CALLDATALOAD => some .calldataload
+  | .CALLDATASIZE => some .calldatasize
+  | .CALLDATACOPY => some .calldatacopy
+  | .CODESIZE => some .codesize
+  | .CODECOPY => some .codecopy
+  | .GASPRICE => some .gasprice
+  | .EXTCODESIZE => some .extcodesize
+  | .EXTCODECOPY => some .extcodecopy
+  | .RETURNDATASIZE => some .returndatasize
+  | .RETURNDATACOPY => some .returndatacopy
+  | .EXTCODEHASH => some .extcodehash
+  | .BLOCKHASH => some .blockhash
+  | .COINBASE => some .coinbase
+  | .TIMESTAMP => some .timestamp
+  | .NUMBER => some .number
+  | .PREVRANDAO => some .prevrandao
+  | .GASLIMIT => some .gaslimit
+  | .CHAINID => some .chainid
+  | .SELFBALANCE => some .selfbalance
+  | .BASEFEE => some .basefee
+  | .BLOBHASH => some .blobhash
+  | .BLOBBASEFEE => some .blobbasefee
+  | .POP => some .pop
+  | .MLOAD => some .mload
+  | .MSTORE => some .mstore
+  | .SLOAD => some .sload
+  | .SSTORE => some .sstore
+  | .MSTORE8 => some .mstore8
+  | .PC => some .pc
+  | .MSIZE => some .msize
+  | .GAS => some .gas
+  | .TLOAD => some .tload
+  | .TSTORE => some .tstore
+  | .MCOPY => some .mcopy
+  | .KECCAK256 => some .keccak256
+  | .DUP1 => some .dup1
+  | .DUP2 => some .dup2
+  | .DUP3 => some .dup3
+  | .DUP4 => some .dup4
+  | .DUP5 => some .dup5
+  | .DUP6 => some .dup6
+  | .DUP7 => some .dup7
+  | .DUP8 => some .dup8
+  | .DUP9 => some .dup9
+  | .DUP10 => some .dup10
+  | .DUP11 => some .dup11
+  | .DUP12 => some .dup12
+  | .DUP13 => some .dup13
+  | .DUP14 => some .dup14
+  | .DUP15 => some .dup15
+  | .DUP16 => some .dup16
+  | .SWAP1 => some .swap1
+  | .SWAP2 => some .swap2
+  | .SWAP3 => some .swap3
+  | .SWAP4 => some .swap4
+  | .SWAP5 => some .swap5
+  | .SWAP6 => some .swap6
+  | .SWAP7 => some .swap7
+  | .SWAP8 => some .swap8
+  | .SWAP9 => some .swap9
+  | .SWAP10 => some .swap10
+  | .SWAP11 => some .swap11
+  | .SWAP12 => some .swap12
+  | .SWAP13 => some .swap13
+  | .SWAP14 => some .swap14
+  | .SWAP15 => some .swap15
+  | .SWAP16 => some .swap16
+  | .LOG0 => some .log0
+  | .LOG1 => some .log1
+  | .LOG2 => some .log2
+  | .LOG3 => some .log3
+  | .LOG4 => some .log4
+  | .CREATE => some .create
+  | .CALL => some .call
+  | .CALLCODE => some .callcode
+  | .RETURN => some .return
+  | .DELEGATECALL => some .delegatecall
+  | .CREATE2 => some .create2
+  | .STATICCALL => some .staticcall
+  | .REVERT => some .revert
+  | .INVALID => some .invalid
+  | .SELFDESTRUCT => some .selfdestruct
+  | _ => none
+
+@[simp] theorem ofEVM?_toEVM (op : PrimOp) :
+    ofEVM? op.toEVM = some op := by
+  cases op <;> rfl
 
 end PrimOp
 

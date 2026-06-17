@@ -53,6 +53,31 @@ require_single_owner \
   '^inductive Interaction \(Error' \
   'EvmCompiler/Simulation/Interaction.lean'
 
+external_opcodes=(
+  call
+  callcode
+  delegatecall
+  staticcall
+  create
+  create2
+)
+for opcode in "${external_opcodes[@]}"; do
+  if ! rg -q \
+      "^#check EvmCompiler\\.Assembly\\.InteractionSemantics\\.PrimOp\\.openStep_${opcode}$" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing Assembly open semantics for %s.\n\n' \
+      "$opcode" >&2
+    failed=1
+  fi
+  if ! rg -q \
+      "^#check EvmCompiler\\.Assembly\\.TargetInstr\\.ofDecoded\\?_${opcode}$" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing bytecode decoding for %s.\n\n' \
+      "$opcode" >&2
+    failed=1
+  fi
+done
+
 report_matches \
   'Open-effect proofs must not restore context bisimulation or per-pass equivalence wrappers:' \
   'ExternalContext\.Rel|OpenEffectEquiv' \
@@ -773,6 +798,11 @@ report_matches \
   EvmCompiler/Compiler \
   EvmCompiler/Public.lean \
   EvmCompiler/Simulation \
+  EvmCompiler/Assembly/Syntax.lean \
+  EvmCompiler/Assembly/Assembler.lean \
+  EvmCompiler/Assembly/InteractionSemantics.lean \
+  EvmCompiler/Assembly/InteractionPreservation.lean \
+  EvmCompiler/Assembly/InteractionBytecode.lean \
   EvmCompiler/Locals/Allocation.lean \
   EvmCompiler/Locals/EffectSemantics.lean \
   EvmCompiler/Functions/AllocationObserverRelation.lean \

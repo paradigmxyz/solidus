@@ -722,7 +722,7 @@ Exit: the shared core builds with no compiler layer changed.
     execution.
   - [x] Whole-program Assembly source control and emitted target-block
     composition, universally over all interaction answers.
-  - [ ] Connect emitted-block execution to fetched resolved-target and encoded
+  - [x] Connect emitted-block execution to fetched resolved-target and encoded
     bytecode instruction-count execution.
   - [ ] Migrate the legacy resource-observer runners onto the common kernel.
 - [ ] TypedCfg.
@@ -743,10 +743,10 @@ Exit: every layer exposes one canonical open computation.
 
 ### Phase 5: Prove Adjacent Boundaries Bottom-Up
 
-- [ ] Assembly -> bytecode.
+- [x] Assembly -> bytecode.
   - [x] Per-instruction emitted-block state and outcome preservation.
   - [x] Whole-program emitted-block open execution preservation.
-  - [ ] Fetched resolved-target and encoded-bytecode open execution bridge.
+  - [x] Fetched resolved-target and encoded-bytecode open execution bridge.
 - [ ] TypedCfg -> Assembly.
 - [ ] Structured -> TypedCfg.
 - [ ] Locals/Expressions -> Structured.

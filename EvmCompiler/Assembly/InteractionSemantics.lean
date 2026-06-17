@@ -11,6 +11,73 @@ abbrev OpenStep :=
 abbrev OpenStepResult :=
   Simulation.Interaction EVMException StepResult
 
+namespace Control
+
+theorem openRunNResultWith_add
+    (step : EVMState → OpenStepResult)
+    (first second : Nat) (state : EVMState) :
+    Assembly.Control.runNResultWith step (first + second) state =
+      (do
+        let result ←
+          Assembly.Control.runNResultWith step first state
+        match result with
+        | .running mid =>
+            Assembly.Control.runNResultWith step second mid
+        | .halted halt =>
+            pure (.halted halt)) := by
+  induction first generalizing state with
+  | zero =>
+      rw [Nat.zero_add]
+      simp only [Assembly.Control.runNResultWith]
+      change
+        Assembly.Control.runNResultWith step second state =
+          Simulation.Interaction.bind
+            (Simulation.Interaction.pure
+              (Error := EVMException) (StepResult.running state))
+            (fun result =>
+              match result with
+              | StepResult.running mid =>
+                  Assembly.Control.runNResultWith step second mid
+              | StepResult.halted halt =>
+                  Simulation.Interaction.pure (StepResult.halted halt))
+      rfl
+  | succ first ih =>
+      rw [Nat.succ_add]
+      simp only [Assembly.Control.runNResultWith]
+      change
+        Simulation.Interaction.bind (step state)
+            (fun result =>
+              match result with
+              | .running state' =>
+                  Assembly.Control.runNResultWith
+                    step (first + second) state'
+              | .halted halt =>
+                  Simulation.Interaction.pure (.halted halt)) =
+          Simulation.Interaction.bind
+            (Simulation.Interaction.bind (step state)
+              (fun result =>
+                match result with
+                | .running state' =>
+                    Assembly.Control.runNResultWith step first state'
+                | .halted halt =>
+                    Simulation.Interaction.pure (.halted halt)))
+            (fun result =>
+              match result with
+              | .running mid =>
+                  Assembly.Control.runNResultWith step second mid
+              | .halted halt =>
+                  Simulation.Interaction.pure (.halted halt))
+      rw [Simulation.Interaction.bind_assoc]
+      congr
+      funext result
+      cases result with
+      | running mid =>
+          exact ih mid
+      | halted halt =>
+          rfl
+
+end Control
+
 namespace EVMState
 
 def installWorld (state : EVMState) (world : Simulation.OpenWorld) :
@@ -171,6 +238,22 @@ def openRunN (target : TargetProgram) (fuel : Nat) (state : EVMState) :
 def openRunNResult (target : TargetProgram) (fuel : Nat)
     (state : EVMState) : OpenStepResult :=
   Assembly.Target.runNResultWith openStepInstrResult target fuel state
+
+theorem openRunNResult_add
+    (target : TargetProgram) (first second : Nat)
+    (state : EVMState) :
+    openRunNResult target (first + second) state =
+      (do
+        let result ← openRunNResult target first state
+        match result with
+        | .running mid =>
+            openRunNResult target second mid
+        | .halted halt =>
+            pure (.halted halt)) := by
+  exact
+    Control.openRunNResultWith_add
+      (Assembly.Target.stepResultWith openStepInstrResult target)
+      first second state
 
 end Target
 
