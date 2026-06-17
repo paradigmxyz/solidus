@@ -196,6 +196,8 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.Ctx.cleanupToPreserving?_zero
 #check EvmCompiler.Locals.InteractionPreservation.Primitive.openTerminal_frame
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.OpenResultRel
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.ScopedResultRel
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.ScopedResultRel.withContext
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.open_of_regular
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_terminal
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_expr_of_compile
@@ -222,6 +224,7 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.Stmt.compile_layout_extends_of_sourceOwned
 #check EvmCompiler.Locals.Block.compileOpen_layout_extends_of_sourceOwned
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.scopedBlock_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.block_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.block_of_compile
 #check EvmCompiler.Simulation.ExternalKind.classifies_call

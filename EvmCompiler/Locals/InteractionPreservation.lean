@@ -2113,6 +2113,69 @@ abbrev OpenOutcomeRel (finalCtx : Locals.Ctx)
     (fun _sourceError _targetError => True)
     (OpenResultRel finalCtx suffix returns)
 
+/--
+Outcome relation after leaving a lexical scope. Regular completion has already
+restored the outer compiler frame; abrupt completion retains the checked frame
+at which it arose. This is the common result interface for blocks and all
+control statements that execute scoped child blocks.
+-/
+inductive ScopedResultRel (outerCtx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest) :
+    Locals.Source.Effectful.Outcome Locals.Source.State →
+      Structured.Outcome → Prop
+  | regular {source target} :
+      Frame.StateRel outerCtx.layout suffix returns source target →
+      ScopedResultRel outerCtx suffix returns
+        (Locals.Source.Effectful.Outcome.regular source)
+        (Structured.Outcome.regular target)
+  | brk {source target scope} :
+      Frame.StateRel scope suffix returns source target →
+      ScopedResultRel outerCtx suffix returns
+        (Locals.Source.Effectful.Outcome.brk source)
+        (Structured.Outcome.brk target)
+  | cont {source target scope} :
+      Frame.StateRel scope suffix returns source target →
+      ScopedResultRel outerCtx suffix returns
+        (Locals.Source.Effectful.Outcome.cont source)
+        (Structured.Outcome.cont target)
+  | leave {source target scope} :
+      Frame.StateRel scope suffix returns source target →
+      ScopedResultRel outerCtx suffix returns
+        (Locals.Source.Effectful.Outcome.leave source)
+        (Structured.Outcome.leave target)
+  | halt {kind source target} :
+      source.shared = target.evm.toSharedState →
+      target.returns = returns →
+      ScopedResultRel outerCtx suffix returns
+        (Locals.Source.Effectful.Outcome.halt kind source)
+        (Structured.Outcome.halt kind target)
+
+abbrev ScopedOutcomeRel (outerCtx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest) :
+    Except EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State) →
+      Except EVMException Structured.Outcome → Prop :=
+  Simulation.Interaction.ExceptRel
+    (fun _sourceError _targetError => True)
+    (ScopedResultRel outerCtx suffix returns)
+
+theorem ScopedResultRel.withContext
+    {outerCtx : Locals.Ctx}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.Effectful.Outcome Locals.Source.State}
+    {target : Structured.Outcome}
+    {sourceCtx : Locals.Source.Ctx}
+    (hCtx : Frame.CtxRel sourceCtx outerCtx)
+    (hRel : ScopedResultRel outerCtx suffix returns source target) :
+    OpenResultRel outerCtx suffix returns (source, sourceCtx) target := by
+  cases hRel with
+  | regular hState => exact OpenResultRel.regular hCtx hState
+  | brk hState => exact OpenResultRel.brk hState
+  | cont hState => exact OpenResultRel.cont hState
+  | leave hState => exact OpenResultRel.leave hState
+  | halt hShared hReturns => exact OpenResultRel.halt hShared hReturns
+
 theorem RegularResultRel.toOpen
     {finalCtx : Locals.Ctx}
     {suffix : List Word}
@@ -3441,10 +3504,101 @@ theorem terminalArgs_of_compile
   exact Simulation.Interaction.ForwardRel.ofRel hRel
 
 /--
-Lexical block preservation from an already-related open body and the
-compiler-owned scoped cleanup. This helper is artifact-explicit only inside the
-Locals owner; `block_of_compile` below derives those artifacts from the ordinary
-compiler result.
+Scoped block preservation from an already-related open body and the
+compiler-owned cleanup. This is the shared child-block interface used by
+lexical blocks, conditionals, switches, and loops.
+-/
+theorem scopedBlock_generated
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx)
+    (targetCtx bodyCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat) (body : Locals.Block)
+    (bodyCode : List Expressions.Stmt) (cleanup : Structured.Code)
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hLayout : ∃ pre, bodyCtx.layout = pre ++ targetCtx.layout)
+    (hCleanup :
+      bodyCtx.cleanupTo? targetCtx.layout.length = some cleanup)
+    (hCleanupFuel : 2 ≤ targetFuel - bodyCode.length)
+    (hBody :
+      Simulation.Interaction.ForwardRel
+        Block.FuelTruncated
+        (OpenOutcomeRel bodyCtx suffix returns)
+        (InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx sourceFuel body source)
+        (Expressions.InteractionSemantics.Block.openRun
+          targetProgram targetFuel { stmts := bodyCode } target)) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (ScopedOutcomeRel targetCtx suffix returns)
+      (InteractionSemantics.Block.openRunScoped
+        sourceProgram sourceCtx body sourceFuel source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel
+          { stmts := bodyCode ++ Locals.codeStmt cleanup } target) := by
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  unfold InteractionSemantics.Block.openRunScoped
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+  unfold Locals.Source.Effectful.Control.Block.runScoped
+  change
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (ScopedOutcomeRel targetCtx suffix returns)
+      (Simulation.Interaction.bind
+        (InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx sourceFuel body source)
+        _)
+      _
+  apply Simulation.Interaction.ForwardRel.bind hBody
+  intro sourceResult targetResult hResult
+  cases hResult with
+  | @regular sourceAfter sourceAfterCtx targetAfter hInnerCtx hState =>
+      obtain ⟨pre, hLayout⟩ := hLayout
+      obtain ⟨afterCleanup, hCleanupRun, hFinal⟩ :=
+        hState.openRun_cleanupTo hLayout hCleanup
+      have hTargetCleanup :=
+        TargetBlock.openRun_single_code_done
+          targetProgram (targetFuel - bodyCode.length)
+          cleanup targetAfter afterCleanup
+          hCleanupFuel hCleanupRun
+      simp only [Structured.Outcome.regular_mode,
+        Structured.Outcome.regular_state,
+        Locals.Source.Effectful.Outcome.regular,
+        Locals.codeStmt]
+      rw [hTargetCleanup]
+      apply Simulation.Interaction.ForwardRel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      apply ScopedResultRel.regular
+      simpa [hCtx.layout] using hFinal
+  | brk hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact ScopedResultRel.brk hState
+  | cont hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact ScopedResultRel.cont hState
+  | leave hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact ScopedResultRel.leave hState
+  | halt hShared hReturns =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact ScopedResultRel.halt hShared hReturns
+
+/--
+Lexical block preservation is a thin statement wrapper around the shared
+scoped-child theorem.
 -/
 theorem block_generated
     (sourceProgram : Locals.Program)
@@ -3478,65 +3632,24 @@ theorem block_generated
       (Expressions.InteractionSemantics.Block.openRun
         targetProgram targetFuel
           { stmts := bodyCode ++ Locals.codeStmt cleanup } target) := by
-  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  have hScoped :=
+    scopedBlock_generated
+      sourceProgram targetProgram sourceCtx targetCtx bodyCtx
+      sourceFuel targetFuel body bodyCode cleanup
+      hCtx hLayout hCleanup hCleanupFuel hBody
   unfold InteractionSemantics.Stmt.openRun
     InteractionSemantics.stateModel
     Locals.Source.Effectful.Ordinary.stateModel
   simp only [Locals.Source.Effectful.Control.Stmt.run]
-  unfold Locals.Source.Effectful.Control.Block.runScoped
-  change
-    Simulation.Interaction.ForwardRel
-      Block.FuelTruncated
-      (OpenOutcomeRel targetCtx suffix returns)
-      (Simulation.Interaction.bind
-        (Simulation.Interaction.bind
-          (InteractionSemantics.Block.openRun
-            sourceProgram sourceCtx sourceFuel body source)
-          _)
-        _)
-      _
-  rw [Simulation.Interaction.bind_assoc]
-  apply Simulation.Interaction.ForwardRel.bind hBody
+  rw [← Simulation.Interaction.bind_pure
+    (Expressions.InteractionSemantics.Block.openRun
+      targetProgram targetFuel
+        { stmts := bodyCode ++ Locals.codeStmt cleanup } target)]
+  apply Simulation.Interaction.ForwardRel.bind hScoped
   intro sourceResult targetResult hResult
-  cases hResult with
-  | @regular sourceAfter sourceAfterCtx targetAfter hInnerCtx hState =>
-      obtain ⟨pre, hLayout⟩ := hLayout
-      obtain ⟨afterCleanup, hCleanupRun, hFinal⟩ :=
-        hState.openRun_cleanupTo hLayout hCleanup
-      have hTargetCleanup :=
-        TargetBlock.openRun_single_code_done
-          targetProgram (targetFuel - bodyCode.length)
-          cleanup targetAfter afterCleanup
-          hCleanupFuel hCleanupRun
-      simp only [Structured.Outcome.regular_mode,
-        Structured.Outcome.regular_state,
-        Locals.Source.Effectful.Outcome.regular,
-        Locals.codeStmt]
-      rw [hTargetCleanup]
-      apply Simulation.Interaction.ForwardRel.done
-      apply Simulation.Interaction.ExceptRel.ok
-      apply OpenResultRel.regular hCtx
-      simpa [hCtx.layout] using hFinal
-  | brk hState =>
-      apply Simulation.Interaction.ForwardRel.ofRel
-      apply Simulation.Interaction.Rel.done
-      apply Simulation.Interaction.ExceptRel.ok
-      exact OpenResultRel.brk hState
-  | cont hState =>
-      apply Simulation.Interaction.ForwardRel.ofRel
-      apply Simulation.Interaction.Rel.done
-      apply Simulation.Interaction.ExceptRel.ok
-      exact OpenResultRel.cont hState
-  | leave hState =>
-      apply Simulation.Interaction.ForwardRel.ofRel
-      apply Simulation.Interaction.Rel.done
-      apply Simulation.Interaction.ExceptRel.ok
-      exact OpenResultRel.leave hState
-  | halt hShared hReturns =>
-      apply Simulation.Interaction.ForwardRel.ofRel
-      apply Simulation.Interaction.Rel.done
-      apply Simulation.Interaction.ExceptRel.ok
-      exact OpenResultRel.halt hShared hReturns
+  apply Simulation.Interaction.ForwardRel.done
+  apply Simulation.Interaction.ExceptRel.ok
+  exact hResult.withContext hCtx
 
 /--
 Compiler-facing lexical block theorem. All body code, final layout, cleanup,

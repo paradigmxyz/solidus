@@ -31325,3 +31325,17 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   focused Locals build, full verification root, architecture checks,
   touched-Lean hole scan, axiom audit, and `git diff --check`; the condition
   bridge depends only on `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 14:31:29 PDT - compaction-resume - resumed from the clean
+  condition-bridge checkpoint; next factoring the shared scoped-outcome
+  interface used by lexical blocks, conditionals, switches, and loops before
+  proving the compiler-facing `if` case.
+- 2026-06-17 14:34:51 PDT - proof/locals-scoped-child - added the stable
+  `ScopedResultRel` interface and factored lexical cleanup into one shared
+  scoped-child theorem. The lexical-block theorem is now only a context
+  rewrapping step, so `if`, `switch`, and loops can reuse cleanup and abrupt
+  bypass without duplicating recursive compiler reasoning.
+- 2026-06-17 14:34:51 PDT - validation/locals-scoped-child - passed the
+  focused 1,135-job Locals build, full verification root, architecture guard,
+  touched-Lean hole scan, axiom audit, and `git diff --check`. New theorems
+  depend only on `[propext, Classical.choice, Quot.sound]`; architecture debt
+  remains limited to the pre-existing oversized legacy modules.
