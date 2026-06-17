@@ -34,6 +34,7 @@ import EvmCompiler.Functions.ObserverSafety
 import EvmCompiler.Locals.EffectSemantics
 import EvmCompiler.Locals.InteractionSemantics
 import EvmCompiler.Locals.InteractionPreservation
+import EvmCompiler.Locals.InteractionControlPreservation
 import EvmCompiler.Locals.ObserverSemantics
 import EvmCompiler.Locals.PrimitivePreservation
 import EvmCompiler.Simulation.Interaction

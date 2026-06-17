@@ -31387,3 +31387,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   `Locals/InteractionPreservation.lean` at 5,313 lines, newly above the 5K soft
   limit. Split policy/control recursion into a dedicated adjacent owner before
   extending the whole-statement proof.
+- 2026-06-17 15:01:35 PDT - consolidation/locals-control-owner - moved only
+  policy-indexed scoped cleanup, loop recursion, and policy sequence
+  composition into `Locals/InteractionControlPreservation.lean`. The base
+  adjacent module is now 4,897 lines and the new control owner is 418 lines;
+  theorem names and dependencies remain horizontal and unchanged.
+- 2026-06-17 15:01:35 PDT - validation/locals-control-owner - passed focused
+  builds for both Locals owners, the full verification root, architecture
+  dependency and size checks, touched-Lean hole scan, axiom audit, and
+  `git diff --check`; the newly introduced Locals size warning is resolved.
