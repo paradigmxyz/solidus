@@ -44,6 +44,95 @@ def openRun (program : Expressions.Program) (fuel : Nat)
     Structured.InteractionSemantics.handler
     program fuel block state
 
+/--
+Executing an appended block factors through the left block. A regular left
+outcome continues with the exact residual list fuel; abrupt outcomes skip the
+right block. This is the interaction-owner sequence law used by adjacent
+compiler passes.
+-/
+theorem openRun_append
+    (program : Expressions.Program) :
+    ∀ (left right : List Expressions.Stmt) (fuel : Nat)
+      (state : RunState),
+      openRun program fuel { stmts := left ++ right } state =
+        Simulation.Interaction.bind
+          (openRun program fuel { stmts := left } state)
+          (fun outcome =>
+            match outcome.mode with
+            | .regular =>
+                openRun program (fuel - left.length)
+                  { stmts := right } outcome.state
+            | .brk | .cont | .leave | .halt _ =>
+                Simulation.Interaction.pure outcome) := by
+  intro left
+  induction left with
+  | nil =>
+      intro right fuel state
+      cases fuel <;> rfl
+  | cons stmt rest ih =>
+      intro right fuel state
+      cases fuel with
+      | zero =>
+          rfl
+      | succ fuel =>
+          unfold openRun
+          simp only [EffectSemantics.Control.Block.run,
+            List.length_cons, Nat.succ_sub_succ_eq_sub]
+          change
+            Simulation.Interaction.bind
+                (EffectSemantics.Control.Stmt.run
+                  Structured.EffectSemantics.Ordinary.runStateModel
+                  Structured.InteractionSemantics.handler
+                  program fuel stmt state)
+                _ =
+              Simulation.Interaction.bind
+                (Simulation.Interaction.bind
+                  (EffectSemantics.Control.Stmt.run
+                    Structured.EffectSemantics.Ordinary.runStateModel
+                    Structured.InteractionSemantics.handler
+                    program fuel stmt state)
+                  _)
+                _
+          rw [Simulation.Interaction.bind_assoc]
+          congr 1
+          funext outcome
+          cases hMode : outcome.mode with
+          | regular =>
+              simpa [hMode] using
+                ih right fuel outcome.state
+          | brk =>
+              change
+                Simulation.Interaction.pure outcome =
+                  Simulation.Interaction.bind
+                    (Simulation.Interaction.pure outcome) _
+              unfold Simulation.Interaction.pure
+              rw [Simulation.Interaction.bind_done_ok]
+              simp [hMode]
+          | cont =>
+              change
+                Simulation.Interaction.pure outcome =
+                  Simulation.Interaction.bind
+                    (Simulation.Interaction.pure outcome) _
+              unfold Simulation.Interaction.pure
+              rw [Simulation.Interaction.bind_done_ok]
+              simp [hMode]
+          | leave =>
+              change
+                Simulation.Interaction.pure outcome =
+                  Simulation.Interaction.bind
+                    (Simulation.Interaction.pure outcome) _
+              unfold Simulation.Interaction.pure
+              rw [Simulation.Interaction.bind_done_ok]
+              simp [hMode]
+          | halt kind =>
+              change
+                Simulation.Interaction.pure outcome =
+                  Simulation.Interaction.bind
+                    (Simulation.Interaction.pure outcome) _
+              unfold Simulation.Interaction.pure
+              rw [Simulation.Interaction.bind_done_ok]
+              simp [hMode]
+
 end Block
 
 namespace Stmt

@@ -790,6 +790,10 @@ Exit: the shared core builds with no compiler layer changed.
       restricted to zero-argument halt kinds.
     - [x] Fuel-truncated forward interface and checked empty-block base case
       for recursive source-owned block composition.
+    - [x] Fuel-lower-bound adapters for every checked straight-line, lexical
+      exit, and terminal leaf.
+    - [x] Context-stable abrupt outcome relation plus generic regular/abrupt
+      sequence kernel over compiler-produced head and tail blocks.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
 - [ ] Functions.
@@ -847,6 +851,8 @@ Exit: every layer exposes one canonical open computation.
       outcome relation, with arbitrary caller stack suffixes protected.
     - [x] Recursive `ForwardRel` base case distinguishes source fuel
       truncation from checked terminal outcomes.
+    - [x] Expressions-owned append execution law, Locals-owned nonempty
+      compiler decomposition, and generic adjacent sequence composition.
 - [ ] Functions -> allocated Locals/Expressions.
   - [ ] Own the emitted internal-call and stack-protocol constructs rather
     than extending stack-free Locals with an operand stack.

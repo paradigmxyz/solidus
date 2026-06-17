@@ -206,6 +206,17 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_terminalArgs_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Block.FuelTruncated
 #check EvmCompiler.Locals.InteractionPreservation.Block.openRun_empty
+#check EvmCompiler.Expressions.InteractionSemantics.Block.openRun_append
+#check EvmCompiler.Locals.Block.compileOpen_cons_components
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.expr_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.let_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.assign_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.brk_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.cont_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.leave_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.terminal_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.terminalArgs_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Block.forward_cons
 #check EvmCompiler.Simulation.ExternalKind.classifies_call
 #check EvmCompiler.Simulation.ExternalKind.classifies_callcode
 #check EvmCompiler.Simulation.ExternalKind.classifies_delegatecall

@@ -850,6 +850,36 @@ end Stmt
 namespace Block
 
 /--
+Successful compilation of a nonempty open block exposes the ordinary head
+statement compilation and recursively compiled tail at the compiler-produced
+middle context.
+-/
+theorem compileOpen_cons_components
+    {ctx final : Ctx} {stmt : Stmt} {rest : List Stmt}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Block.compileOpen ctx { stmts := stmt :: rest } =
+        some (code, final)) :
+    ∃ headCode middle tailCode,
+      Stmt.compile ctx stmt = some (headCode, middle) ∧
+        Block.compileOpen middle { stmts := rest } =
+          some (tailCode, final) ∧
+        code = headCode ++ tailCode := by
+  cases hHead : Stmt.compile ctx stmt with
+  | none =>
+      simp [Block.compileOpen, hHead] at hCompile
+  | some headResult =>
+      rcases headResult with ⟨headCode, middle⟩
+      cases hTail : Block.compileOpen middle { stmts := rest } with
+      | none =>
+          simp [Block.compileOpen, hHead, hTail] at hCompile
+      | some tailResult =>
+          rcases tailResult with ⟨tailCode, tailFinal⟩
+          simp [Block.compileOpen, hHead, hTail] at hCompile
+          rcases hCompile with ⟨rfl, rfl⟩
+          exact ⟨headCode, middle, tailCode, rfl, hTail, rfl⟩
+
+/--
 Open-block compilation preserves the enclosing loop and leave destinations
 through every statement in the sequence.
 -/

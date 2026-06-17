@@ -1934,12 +1934,12 @@ abbrev RegularOutcomeRel (targetCtx : Locals.Ctx)
 
 /--
 Mode-indexed adjacent outcome relation for the Locals pass. Normal completion
-uses the compiler's final context. Abrupt lexical exits retain the entry
-context and expose exactly the selected source scope. Terminal outcomes discard
-the local-frame representation and retain only shared state and return-stack
-agreement.
+uses the compiler's final context. Abrupt lexical exits retain only their
+already-checked cleaned frame, making the result stable under regular prefixes
+and unreachable suffixes. Terminal outcomes discard the local-frame
+representation and retain only shared state and return-stack agreement.
 -/
-inductive OpenResultRel (entryCtx finalCtx : Locals.Ctx)
+inductive OpenResultRel (finalCtx : Locals.Ctx)
     (suffix : List Word) (returns : List Structured.ReturnDest) :
     (Locals.Source.Effectful.Outcome Locals.Source.State ×
       Locals.Source.Ctx) →
@@ -1947,39 +1947,32 @@ inductive OpenResultRel (entryCtx finalCtx : Locals.Ctx)
   | regular {source sourceCtx target} :
       Frame.CtxRel sourceCtx finalCtx →
       Frame.StateRel finalCtx.layout suffix returns source target →
-      OpenResultRel entryCtx finalCtx suffix returns
+      OpenResultRel finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.regular source, sourceCtx)
         (Structured.Outcome.regular target)
   | brk {source sourceCtx target scope} :
-      Frame.CtxRel sourceCtx entryCtx →
-      sourceCtx.breakScope? = some scope →
       Frame.StateRel scope suffix returns source target →
-      OpenResultRel entryCtx finalCtx suffix returns
+      OpenResultRel finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.brk source, sourceCtx)
         (Structured.Outcome.brk target)
   | cont {source sourceCtx target scope} :
-      Frame.CtxRel sourceCtx entryCtx →
-      sourceCtx.continueScope? = some scope →
       Frame.StateRel scope suffix returns source target →
-      OpenResultRel entryCtx finalCtx suffix returns
+      OpenResultRel finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.cont source, sourceCtx)
         (Structured.Outcome.cont target)
   | leave {source sourceCtx target scope} :
-      Frame.CtxRel sourceCtx entryCtx →
-      sourceCtx.leaveScope? = some scope →
       Frame.StateRel scope suffix returns source target →
-      OpenResultRel entryCtx finalCtx suffix returns
+      OpenResultRel finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.leave source, sourceCtx)
         (Structured.Outcome.leave target)
   | halt {kind source sourceCtx target} :
-      Frame.CtxRel sourceCtx entryCtx →
       source.shared = target.evm.toSharedState →
       target.returns = returns →
-      OpenResultRel entryCtx finalCtx suffix returns
+      OpenResultRel finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.halt kind source, sourceCtx)
         (Structured.Outcome.halt kind target)
 
-abbrev OpenOutcomeRel (entryCtx finalCtx : Locals.Ctx)
+abbrev OpenOutcomeRel (finalCtx : Locals.Ctx)
     (suffix : List Word) (returns : List Structured.ReturnDest) :
     Except EVMException
         (Locals.Source.Effectful.Outcome Locals.Source.State ×
@@ -1987,10 +1980,10 @@ abbrev OpenOutcomeRel (entryCtx finalCtx : Locals.Ctx)
       Except EVMException Structured.Outcome → Prop :=
   Simulation.Interaction.ExceptRel
     (fun _sourceError _targetError => True)
-    (OpenResultRel entryCtx finalCtx suffix returns)
+    (OpenResultRel finalCtx suffix returns)
 
 theorem RegularResultRel.toOpen
-    {entryCtx finalCtx : Locals.Ctx}
+    {finalCtx : Locals.Ctx}
     {suffix : List Word}
     {returns : List Structured.ReturnDest}
     {source :
@@ -1999,7 +1992,7 @@ theorem RegularResultRel.toOpen
     {target : Structured.Outcome}
     (hRel :
       RegularResultRel finalCtx suffix returns source target) :
-    OpenResultRel entryCtx finalCtx suffix returns source target := by
+    OpenResultRel finalCtx suffix returns source target := by
   rcases source with ⟨sourceOutcome, sourceCtx⟩
   rcases sourceOutcome with ⟨sourceState, sourceMode⟩
   rcases target with ⟨targetState, targetMode⟩
@@ -2008,7 +2001,7 @@ theorem RegularResultRel.toOpen
   exact OpenResultRel.regular hRel.context hRel.state
 
 theorem open_of_regular
-    {entryCtx finalCtx : Locals.Ctx}
+    {finalCtx : Locals.Ctx}
     {suffix : List Word}
     {returns : List Structured.ReturnDest}
     {sourceRun :
@@ -2022,7 +2015,7 @@ theorem open_of_regular
         (RegularOutcomeRel finalCtx suffix returns)
         sourceRun targetRun) :
     Simulation.Interaction.Rel
-      (OpenOutcomeRel entryCtx finalCtx suffix returns)
+      (OpenOutcomeRel finalCtx suffix returns)
       sourceRun targetRun := by
   apply Simulation.Interaction.Rel.mono hRel
   intro sourceDone targetDone hDone
@@ -2486,7 +2479,7 @@ theorem openRun_brk_of_compile
     (hInitial :
       Frame.StateRel targetCtx.layout suffix returns source target) :
     Simulation.Interaction.Rel
-      (OpenOutcomeRel targetCtx finalCtx suffix returns)
+      (OpenOutcomeRel finalCtx suffix returns)
       (InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx fuel .brk source)
       (Expressions.InteractionSemantics.Block.openRun
@@ -2526,7 +2519,7 @@ theorem openRun_brk_of_compile
           simpa [Locals.codeStmt] using hTargetRun]
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
-      exact OpenResultRel.brk hCtx hScope hFinal
+      exact OpenResultRel.brk hFinal
 
 /--
 Compiler-facing `continue` preservation, using the compiler-owned loop-scope
@@ -2549,7 +2542,7 @@ theorem openRun_cont_of_compile
     (hInitial :
       Frame.StateRel targetCtx.layout suffix returns source target) :
     Simulation.Interaction.Rel
-      (OpenOutcomeRel targetCtx finalCtx suffix returns)
+      (OpenOutcomeRel finalCtx suffix returns)
       (InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx fuel .cont source)
       (Expressions.InteractionSemantics.Block.openRun
@@ -2589,7 +2582,7 @@ theorem openRun_cont_of_compile
           simpa [Locals.codeStmt] using hTargetRun]
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
-      exact OpenResultRel.cont hCtx hScope hFinal
+      exact OpenResultRel.cont hFinal
 
 /--
 Compiler-facing `leave` preservation. At this boundary `leaveRetc = 0`, so the
@@ -2615,7 +2608,7 @@ theorem openRun_leave_of_compile
     (hInitial :
       Frame.StateRel targetCtx.layout suffix returns source target) :
     Simulation.Interaction.Rel
-      (OpenOutcomeRel targetCtx finalCtx suffix returns)
+      (OpenOutcomeRel finalCtx suffix returns)
       (InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx fuel .leave source)
       (Expressions.InteractionSemantics.Block.openRun
@@ -2668,7 +2661,7 @@ theorem openRun_leave_of_compile
           simpa [Locals.codeStmt] using hTargetRun]
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
-      exact OpenResultRel.leave hCtx hScope hFinal
+      exact OpenResultRel.leave hFinal
 
 /--
 Compiler-facing terminal-with-arguments preservation. Argument evaluation may
@@ -2696,7 +2689,7 @@ theorem openRun_terminalArgs_of_compile
     (hInitial :
       Frame.StateRel targetCtx.layout suffix returns source target) :
     Simulation.Interaction.Rel
-      (OpenOutcomeRel targetCtx finalCtx suffix returns)
+      (OpenOutcomeRel finalCtx suffix returns)
       (InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx fuel
           (.terminalArgs kind args) source)
@@ -2709,7 +2702,7 @@ theorem openRun_terminalArgs_of_compile
       hScoped hSupported hArgsCode hInitial.expr
   have hCore :
       Simulation.Interaction.Rel
-        (OpenOutcomeRel finalCtx finalCtx suffix returns)
+        (OpenOutcomeRel finalCtx suffix returns)
         (Simulation.Interaction.bind
           (InteractionSemantics.ExprSeq.openEval args source)
           (fun result =>
@@ -2740,7 +2733,7 @@ theorem openRun_terminalArgs_of_compile
     intro sourceFinal targetFinal hTerminalResult
     apply Simulation.Interaction.Rel.done
     apply Simulation.Interaction.ExceptRel.ok
-    apply OpenResultRel.halt hCtx hTerminalResult.1
+    apply OpenResultRel.halt hTerminalResult.1
     exact
       hTerminalResult.2.trans
         (hArgsResult.returns.trans hInitial.returns)
@@ -2793,7 +2786,7 @@ theorem openRun_terminal_of_compile
     (hInitial :
       Frame.StateRel targetCtx.layout suffix returns source target) :
     Simulation.Interaction.Rel
-      (OpenOutcomeRel targetCtx finalCtx suffix returns)
+      (OpenOutcomeRel finalCtx suffix returns)
       (InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx fuel (.terminal kind) source)
       (Expressions.InteractionSemantics.Block.openRun
@@ -2826,7 +2819,7 @@ theorem openRun_terminal_of_compile
       hLength hCleanupShared hCleanupStack
   have hWrapped :
       Simulation.Interaction.Rel
-        (OpenOutcomeRel finalCtx finalCtx suffix returns)
+        (OpenOutcomeRel finalCtx suffix returns)
         (Simulation.Interaction.bind
           (InteractionSemantics.Primitive.openTerminal
             kind source [])
@@ -2844,7 +2837,7 @@ theorem openRun_terminal_of_compile
     intro sourceFinal targetFinal hTerminalResult
     apply Simulation.Interaction.Rel.done
     apply Simulation.Interaction.ExceptRel.ok
-    apply OpenResultRel.halt hCtx hTerminalResult.1
+    apply OpenResultRel.halt hTerminalResult.1
     exact
       hTerminalResult.2.trans hCleanupFrame.returns
   unfold InteractionSemantics.Stmt.openRun
@@ -2901,7 +2894,7 @@ theorem openRun_empty
       Frame.StateRel targetCtx.layout suffix returns source target) :
     Simulation.Interaction.ForwardRel
       FuelTruncated
-      (Stmt.OpenOutcomeRel targetCtx targetCtx suffix returns)
+      (Stmt.OpenOutcomeRel targetCtx suffix returns)
       (InteractionSemantics.Block.openRun
         sourceProgram sourceCtx sourceFuel { stmts := [] } source)
       (Expressions.InteractionSemantics.Block.openRun
@@ -2928,6 +2921,479 @@ theorem openRun_empty
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
           exact Stmt.OpenResultRel.regular hCtx hInitial
+
+end Block
+
+namespace Stmt.Forward
+
+/--
+Fuel-lower-bound adapter for compiler-facing zero-result expression
+statements. Expression statement semantics is fuel-insensitive; only the
+enclosing target singleton block requires two units of control fuel.
+-/
+theorem expr_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat) (expr : Locals.Expr 0)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : 2 ≤ targetFuel)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.expr expr) =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hScoped : Scope.ExprScoped targetCtx.layout expr)
+    (hSupported :
+      InteractionSemantics.Expr.OpenSupported expr)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel (.expr expr) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := stmts } target) := by
+  let extra := targetFuel - 2
+  have hFuelEq : targetFuel = extra + 2 := by
+    omega
+  have hRel :=
+    openRun_expr_of_compile
+      sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      extra expr hCompile hCtx hScoped hSupported hInitial
+  have hSourceEq :
+      InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx sourceFuel (.expr expr) source =
+        InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx (extra + 1) (.expr expr) source := by
+    unfold InteractionSemantics.Stmt.openRun
+      InteractionSemantics.stateModel
+      Locals.Source.Effectful.Ordinary.stateModel
+    simp only [Locals.Source.Effectful.Control.Stmt.run]
+  rw [hSourceEq, hFuelEq]
+  exact
+    Simulation.Interaction.ForwardRel.ofRel
+      (open_of_regular hRel)
+
+theorem let_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    {name : Name} (valueExpr : Locals.Expr 1)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : 2 ≤ targetFuel)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.let_ name valueExpr) =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hFresh : name ∉ targetCtx.layout)
+    (hScoped : Scope.ExprScoped targetCtx.layout valueExpr)
+    (hSupported :
+      InteractionSemantics.Expr.OpenSupported valueExpr)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel
+          (.let_ name valueExpr) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := stmts } target) := by
+  let extra := targetFuel - 2
+  have hFuelEq : targetFuel = extra + 2 := by
+    omega
+  have hRel :=
+    openRun_let_of_compile
+      sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      extra valueExpr hCompile hCtx hFresh hScoped hSupported hInitial
+  have hSourceEq :
+      InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx sourceFuel
+            (.let_ name valueExpr) source =
+        InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx (extra + 1)
+            (.let_ name valueExpr) source := by
+    unfold InteractionSemantics.Stmt.openRun
+      InteractionSemantics.stateModel
+      Locals.Source.Effectful.Ordinary.stateModel
+    simp only [Locals.Source.Effectful.Control.Stmt.run]
+  rw [hSourceEq, hFuelEq]
+  exact
+    Simulation.Interaction.ForwardRel.ofRel
+      (open_of_regular hRel)
+
+theorem assign_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    {name : Name} (valueExpr : Locals.Expr 1)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : 2 ≤ targetFuel)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.assign name valueExpr) =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hNodup : targetCtx.layout.Nodup)
+    (hScoped : Scope.ExprScoped targetCtx.layout valueExpr)
+    (hSupported :
+      InteractionSemantics.Expr.OpenSupported valueExpr)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel
+          (.assign name valueExpr) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := stmts } target) := by
+  let extra := targetFuel - 2
+  have hFuelEq : targetFuel = extra + 2 := by
+    omega
+  have hRel :=
+    openRun_assign_of_compile
+      sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      extra valueExpr hCompile hCtx hNodup hScoped hSupported hInitial
+  have hSourceEq :
+      InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx sourceFuel
+            (.assign name valueExpr) source =
+        InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx (extra + 1)
+            (.assign name valueExpr) source := by
+    unfold InteractionSemantics.Stmt.openRun
+      InteractionSemantics.stateModel
+      Locals.Source.Effectful.Ordinary.stateModel
+    simp only [Locals.Source.Effectful.Control.Stmt.run]
+  rw [hSourceEq, hFuelEq]
+  exact
+    Simulation.Interaction.ForwardRel.ofRel
+      (open_of_regular hRel)
+
+theorem brk_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : 3 ≤ targetFuel)
+    (hCompile :
+      Locals.Stmt.compile targetCtx .brk =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel .brk source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := stmts } target) := by
+  let extra := targetFuel - 3
+  have hFuelEq : targetFuel = extra + 3 := by
+    omega
+  have hRel :=
+    openRun_brk_of_compile
+      sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      extra hCompile hCtx hInitial
+  have hSourceEq :
+      InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx sourceFuel .brk source =
+        InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx extra .brk source := by
+    unfold InteractionSemantics.Stmt.openRun
+      InteractionSemantics.stateModel
+      Locals.Source.Effectful.Ordinary.stateModel
+    simp only [Locals.Source.Effectful.Control.Stmt.run]
+  rw [hSourceEq, hFuelEq]
+  exact Simulation.Interaction.ForwardRel.ofRel hRel
+
+theorem cont_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : 3 ≤ targetFuel)
+    (hCompile :
+      Locals.Stmt.compile targetCtx .cont =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel .cont source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := stmts } target) := by
+  let extra := targetFuel - 3
+  have hFuelEq : targetFuel = extra + 3 := by
+    omega
+  have hRel :=
+    openRun_cont_of_compile
+      sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      extra hCompile hCtx hInitial
+  have hSourceEq :
+      InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx sourceFuel .cont source =
+        InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx extra .cont source := by
+    unfold InteractionSemantics.Stmt.openRun
+      InteractionSemantics.stateModel
+      Locals.Source.Effectful.Ordinary.stateModel
+    simp only [Locals.Source.Effectful.Control.Stmt.run]
+  rw [hSourceEq, hFuelEq]
+  exact Simulation.Interaction.ForwardRel.ofRel hRel
+
+theorem leave_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : 3 ≤ targetFuel)
+    (hCompile :
+      Locals.Stmt.compile targetCtx .leave =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hReturns : returns ≠ [])
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel .leave source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := stmts } target) := by
+  let extra := targetFuel - 3
+  have hFuelEq : targetFuel = extra + 3 := by
+    omega
+  have hRel :=
+    openRun_leave_of_compile
+      sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      extra hCompile hCtx hReturns hInitial
+  have hSourceEq :
+      InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx sourceFuel .leave source =
+        InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx extra .leave source := by
+    unfold InteractionSemantics.Stmt.openRun
+      InteractionSemantics.stateModel
+      Locals.Source.Effectful.Ordinary.stateModel
+    simp only [Locals.Source.Effectful.Control.Stmt.run]
+  rw [hSourceEq, hFuelEq]
+  exact Simulation.Interaction.ForwardRel.ofRel hRel
+
+theorem terminal_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat) (kind : Assembly.HaltKind)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : 3 ≤ targetFuel)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.terminal kind) =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hArgCount : kind.argCount = 0)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel (.terminal kind) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := stmts } target) := by
+  let extra := targetFuel - 3
+  have hFuelEq : targetFuel = extra + 3 := by
+    omega
+  have hRel :=
+    openRun_terminal_of_compile
+      sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      extra kind hCompile hCtx hArgCount hInitial
+  have hSourceEq :
+      InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx sourceFuel (.terminal kind) source =
+        InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx extra (.terminal kind) source := by
+    unfold InteractionSemantics.Stmt.openRun
+      InteractionSemantics.stateModel
+      Locals.Source.Effectful.Ordinary.stateModel
+    simp only [Locals.Source.Effectful.Control.Stmt.run]
+  rw [hSourceEq, hFuelEq]
+  exact Simulation.Interaction.ForwardRel.ofRel hRel
+
+theorem terminalArgs_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat) (kind : Assembly.HaltKind)
+    (args : Locals.ExprSeq kind.argCount)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : 3 ≤ targetFuel)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.terminalArgs kind args) =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hScoped : Scope.ExprSeqScoped targetCtx.layout args)
+    (hSupported :
+      InteractionSemantics.ExprSeq.OpenSupported args)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel
+          (.terminalArgs kind args) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := stmts } target) := by
+  let extra := targetFuel - 3
+  have hFuelEq : targetFuel = extra + 3 := by
+    omega
+  have hRel :=
+    openRun_terminalArgs_of_compile
+      sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      extra kind args hCompile hCtx hScoped hSupported hInitial
+  have hSourceEq :
+      InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx sourceFuel
+            (.terminalArgs kind args) source =
+        InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx extra
+            (.terminalArgs kind args) source := by
+    unfold InteractionSemantics.Stmt.openRun
+      InteractionSemantics.stateModel
+      Locals.Source.Effectful.Ordinary.stateModel
+    simp only [Locals.Source.Effectful.Control.Stmt.run]
+  rw [hSourceEq, hFuelEq]
+  exact Simulation.Interaction.ForwardRel.ofRel hRel
+
+end Stmt.Forward
+
+namespace Block
+
+/--
+Generic sequence kernel for the Locals pass. The head theorem owns one source
+statement and its complete emitted Expressions prefix. Regular outcomes invoke
+the tail theorem at the exact residual target list fuel; abrupt outcomes are
+lifted unchanged and never inspect unreachable compiler output.
+-/
+theorem forward_cons
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx)
+    (middleCtx finalCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    (stmt : Locals.Stmt) (rest : List Locals.Stmt)
+    (headCode tailCode : List Expressions.Stmt)
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hHead :
+      Simulation.Interaction.ForwardRel
+        FuelTruncated
+        (Stmt.OpenOutcomeRel middleCtx suffix returns)
+        (InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx sourceFuel stmt source)
+        (Expressions.InteractionSemantics.Block.openRun
+          targetProgram targetFuel { stmts := headCode } target))
+    (hTail :
+      ∀ {sourceMid : Locals.Source.State}
+        {targetMid : Structured.RunState}
+        {sourceMidCtx : Locals.Source.Ctx},
+        Frame.CtxRel sourceMidCtx middleCtx →
+        Frame.StateRel middleCtx.layout suffix returns
+          sourceMid targetMid →
+        Simulation.Interaction.ForwardRel
+          FuelTruncated
+          (Stmt.OpenOutcomeRel finalCtx suffix returns)
+          (InteractionSemantics.Block.openRun
+            sourceProgram sourceMidCtx sourceFuel
+              { stmts := rest } sourceMid)
+          (Expressions.InteractionSemantics.Block.openRun
+            targetProgram (targetFuel - headCode.length)
+              { stmts := tailCode } targetMid)) :
+    Simulation.Interaction.ForwardRel
+      FuelTruncated
+      (Stmt.OpenOutcomeRel finalCtx suffix returns)
+      (InteractionSemantics.Block.openRun
+        sourceProgram sourceCtx (sourceFuel + 1)
+          { stmts := stmt :: rest } source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel
+          { stmts := headCode ++ tailCode } target) := by
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  unfold InteractionSemantics.Block.openRun
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+  simp only [Locals.Source.Effectful.Control.Block.runOpen]
+  apply Simulation.Interaction.ForwardRel.bind hHead
+  intro sourceResult targetResult hResult
+  cases hResult with
+  | regular hCtx hState =>
+      exact hTail hCtx hState
+  | brk hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact Stmt.OpenResultRel.brk hState
+  | cont hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact Stmt.OpenResultRel.cont hState
+  | leave hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact Stmt.OpenResultRel.leave hState
+  | halt hShared hReturns =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact Stmt.OpenResultRel.halt hShared hReturns
 
 end Block
 

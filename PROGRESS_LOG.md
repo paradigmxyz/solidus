@@ -31289,3 +31289,19 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-Lean hole scan, axiom audit, and `git diff --check`;
   `Block.openRun_empty` depends only on
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 14:17:17 PDT - theorem-boundary/locals-outcomes - removed the
+  transient entry compiler context and source scope lookup from abrupt
+  `OpenResultRel` constructors. Exit leaves still prove the exact selected
+  cleanup frame, while sequence composition can now preserve that checked
+  result across regular prefixes and unreachable suffixes without generated
+  context evidence.
+- 2026-06-17 14:17:17 PDT - proof/locals-sequence-kernel - added the
+  Expressions-owned `Block.openRun_append` law, pass-owned nonempty compiler
+  decomposition, uniform lower-bound fuel adapters for all checked leaves,
+  and generic `Block.forward_cons` composition for regular and every abrupt
+  outcome mode.
+- 2026-06-17 14:18:04 PDT - validation/locals-sequence-kernel - passed focused
+  Expressions/Locals builds, the full verification root, architecture checks,
+  touched-Lean hole scan, axiom audit, and `git diff --check`; every new
+  sequence theorem depends only on
+  `[propext, Classical.choice, Quot.sound]`.
