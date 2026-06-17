@@ -237,9 +237,13 @@ theorem generateWithProcEntryShapes?_terminal_backward
         Generated.adequateWithinFuel_block
           generated hWF hContext hWF.2.2.2.2
           (OutcomeSimulation.ActivationInput.top _)
-          (by simp [OutcomeSimulation.LabelBeforeSupply,
+          (by simp [
+            OutcomeSimulation.LabelBeforeSupply,
+            TypedCfgCompilerFacts.LabelBeforeSupply,
             TypedCfgCompiler.entryLabel])
-          (by simp [OutcomeSimulation.LabelBeforeSupply,
+          (by simp [
+            OutcomeSimulation.LabelBeforeSupply,
+            TypedCfgCompilerFacts.LabelBeforeSupply,
             ProcLabel.programEnd])
           hBoundary hEntryRejected hMainCompile
           generated.mainBlocks generated.mainCalls

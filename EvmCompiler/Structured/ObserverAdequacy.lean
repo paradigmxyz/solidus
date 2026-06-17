@@ -2959,7 +2959,9 @@ theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
                     (Nat.lt_trans hBodyLt (Nat.lt_succ_self dispatchFuel))
                     hBodyCompile hBodyBlocks hBodyCalls
                     (by
-                      simp [OutcomeSimulation.LabelBeforeSupply,
+                      simp [
+                        OutcomeSimulation.LabelBeforeSupply,
+                        TypedCfgCompilerFacts.LabelBeforeSupply,
                         TypedCfgCompiler.switchBodyLabel]
                       omega)
                     (hCaseBodyEntryNotAccepted caseIdx
@@ -3059,7 +3061,9 @@ theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
                               (Nat.lt_succ_self dispatchFuel)))
                           hBodyCompile hBodyBlocks hBodyCalls
                           (by
-                            simp [OutcomeSimulation.LabelBeforeSupply])
+                            simp [
+                              OutcomeSimulation.LabelBeforeSupply,
+                              TypedCfgCompilerFacts.LabelBeforeSupply])
                           (hDefaultBodyEntryNotAccepted caseResult.next
                             (Nat.le_trans (Nat.le_succ supply)
                               (TypedCfgCompilerFacts.Supply.cases_next_ge

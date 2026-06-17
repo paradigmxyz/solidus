@@ -58,6 +58,16 @@ require_single_owner \
   '^def ActivationFrameMatches$' \
   'EvmCompiler/Structured/TypedCfgPreservation/Core.lean'
 
+require_single_owner \
+  'Structured compiler label freshness must have exactly one pass owner:' \
+  '^def LabelBeforeSupply$' \
+  'EvmCompiler/Structured/TypedCfgCompilerFreshness.lean'
+
+require_single_owner \
+  'Structured regular-label freshness must have exactly one pass owner:' \
+  '^def RegularAtSupply$' \
+  'EvmCompiler/Structured/TypedCfgCompilerFreshness.lean'
+
 external_opcodes=(
   call
   callcode
@@ -122,6 +132,7 @@ fi
 
 for theorem in \
     'OpenOutcome.target_allStopped' \
+    'OpenOutcome.PreservesWithin.sequence' \
     'Stmt.openRun_code_of_compileStmtFuel?' \
     'Block.openRun_nil_of_compileStmtListFuel?'; do
   if ! rg -Fq \

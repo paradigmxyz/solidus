@@ -3,6 +3,135 @@ import EvmCompiler.Structured.TypedCfgCompilerFacts
 namespace EvmCompiler
 namespace Structured
 namespace TypedCfgCompilerFacts
+
+/--
+The label was allocated before `supply`, or is a stable named label.
+
+This is a compiler-allocation fact, independent of any observer or execution
+semantics.
+-/
+def LabelBeforeSupply
+    (label : Assembly.Label) (supply : LabelSupply) : Prop :=
+  match label with
+  | .named _ => True
+  | .generated scope _ => scope < supply
+
+namespace LabelBeforeSupply
+
+theorem mono
+    {label : Assembly.Label} {supply next : LabelSupply}
+    (hBefore : LabelBeforeSupply label supply)
+    (hSupply : supply ≤ next) :
+    LabelBeforeSupply label next := by
+  cases label with
+  | named name =>
+      trivial
+  | generated scope tag =>
+      simp only [LabelBeforeSupply] at hBefore ⊢
+      exact Nat.lt_of_lt_of_le hBefore hSupply
+
+theorem generated_ne
+    {label : Assembly.Label} {supply scope tag : Nat}
+    (hBefore : LabelBeforeSupply label supply)
+    (hScope : supply ≤ scope) :
+    .generated scope tag ≠ label := by
+  cases label with
+  | named name =>
+      simp
+  | generated prior priorTag =>
+      simp only [LabelBeforeSupply] at hBefore
+      intro hEq
+      cases hEq
+      omega
+
+theorem restLabel_ne
+    {label : Assembly.Label} {supply : LabelSupply}
+    (hBefore : LabelBeforeSupply label supply) :
+    TypedCfgCompiler.restLabel supply ≠ label := by
+  simpa [TypedCfgCompiler.restLabel] using
+    hBefore.generated_ne (Nat.le_refl supply)
+
+end LabelBeforeSupply
+
+/--
+At a statement boundary the regular continuation is either inherited from an
+older compiler generation or is the current statement-list tail label.
+-/
+def RegularAtSupply
+    (regular : Assembly.Label) (supply : LabelSupply) : Prop :=
+  LabelBeforeSupply regular supply ∨
+    regular = TypedCfgCompiler.restLabel supply
+
+namespace RegularAtSupply
+
+theorem before_succ
+    {regular : Assembly.Label} {supply : LabelSupply}
+    (hRegular : RegularAtSupply regular supply) :
+    LabelBeforeSupply regular (supply + 1) := by
+  rcases hRegular with hBefore | rfl
+  · cases regular with
+    | named name =>
+        trivial
+    | generated scope tag =>
+        simp only [LabelBeforeSupply] at hBefore ⊢
+        omega
+  · simp [LabelBeforeSupply, TypedCfgCompiler.restLabel]
+
+theorem current_generated_ne
+    {regular : Assembly.Label} {supply tag : Nat}
+    (hRegular : RegularAtSupply regular supply)
+    (hTag : tag ≠ 100) :
+    .generated supply tag ≠ regular := by
+  rcases hRegular with hBefore | rfl
+  · exact hBefore.generated_ne (Nat.le_refl supply)
+  · simpa [TypedCfgCompiler.restLabel] using hTag
+
+theorem advance
+    {regular : Assembly.Label} {supply next : LabelSupply}
+    (hRegular : RegularAtSupply regular supply)
+    (hNext : supply + 1 ≤ next) :
+    RegularAtSupply regular next :=
+  Or.inl (hRegular.before_succ.mono hNext)
+
+end RegularAtSupply
+
+/--
+Every externally visible continuation predates the labels allocated by the
+current compiler fragment.
+-/
+structure ContinuationLabelsBeforeSupply
+    (ctx : TypedCfgCompiler.Context)
+    (regular : Assembly.Label) (supply : LabelSupply) : Prop where
+  regular : LabelBeforeSupply regular supply
+  breakLabel :
+    ∀ label, ctx.breakLabel? = some label →
+      LabelBeforeSupply label supply
+  continueLabel :
+    ∀ label, ctx.continueLabel? = some label →
+      LabelBeforeSupply label supply
+  leaveLabel :
+    ∀ label, ctx.leaveLabel? = some label →
+      LabelBeforeSupply label supply
+
+namespace ContinuationLabelsBeforeSupply
+
+theorem mono
+    {ctx : TypedCfgCompiler.Context}
+    {regular : Assembly.Label} {supply next : LabelSupply}
+    (hBefore :
+      ContinuationLabelsBeforeSupply ctx regular supply)
+    (hSupply : supply ≤ next) :
+    ContinuationLabelsBeforeSupply ctx regular next where
+  regular := hBefore.regular.mono hSupply
+  breakLabel label hLabel :=
+    (hBefore.breakLabel label hLabel).mono hSupply
+  continueLabel label hLabel :=
+    (hBefore.continueLabel label hLabel).mono hSupply
+  leaveLabel label hLabel :=
+    (hBefore.leaveLabel label hLabel).mono hSupply
+
+end ContinuationLabelsBeforeSupply
+
 namespace Supply
 
 mutual

@@ -1,6 +1,7 @@
 import EvmCompiler.Structured.ObserverActivationBoundary
 import EvmCompiler.Structured.TypedCfgCompilerActive
 import EvmCompiler.Structured.TypedCfgCompilerEntry
+import EvmCompiler.Structured.TypedCfgCompilerFreshness
 
 namespace EvmCompiler
 namespace Structured
@@ -686,11 +687,8 @@ def GeneratedFreshExcept
 /--
 The label was allocated before `supply`, or is a stable named label.
 -/
-def LabelBeforeSupply
-    (label : Assembly.Label) (supply : LabelSupply) : Prop :=
-  match label with
-  | .named _ => True
-  | .generated scope _ => scope < supply
+abbrev LabelBeforeSupply :=
+  TypedCfgCompilerFacts.LabelBeforeSupply
 
 namespace LabelBeforeSupply
 
@@ -698,27 +696,15 @@ theorem mono
     {label : Assembly.Label} {supply next : LabelSupply}
     (hBefore : LabelBeforeSupply label supply)
     (hSupply : supply ≤ next) :
-    LabelBeforeSupply label next := by
-  cases label with
-  | named name =>
-      trivial
-  | generated scope tag =>
-      simp only [LabelBeforeSupply] at hBefore ⊢
-      exact Nat.lt_of_lt_of_le hBefore hSupply
+    LabelBeforeSupply label next :=
+  TypedCfgCompilerFacts.LabelBeforeSupply.mono hBefore hSupply
 
 theorem generated_ne
     {label : Assembly.Label} {supply scope tag : Nat}
     (hBefore : LabelBeforeSupply label supply)
     (hScope : supply ≤ scope) :
-    .generated scope tag ≠ label := by
-  cases label with
-  | named name =>
-      simp
-  | generated prior priorTag =>
-      simp only [LabelBeforeSupply] at hBefore
-      intro hEq
-      cases hEq
-      omega
+    .generated scope tag ≠ label :=
+  TypedCfgCompilerFacts.LabelBeforeSupply.generated_ne hBefore hScope
 
 end LabelBeforeSupply
 
@@ -745,41 +731,31 @@ structure ContinuationsBeforeSupply
 At a statement boundary the regular continuation is either inherited from an
 older compiler generation or is the current statement-list tail label.
 -/
-def RegularAtSupply
-    (regular : Assembly.Label) (supply : LabelSupply) : Prop :=
-  LabelBeforeSupply regular supply ∨
-    regular = TypedCfgCompiler.restLabel supply
+abbrev RegularAtSupply :=
+  TypedCfgCompilerFacts.RegularAtSupply
 
 namespace RegularAtSupply
 
 theorem before_succ
     {regular : Assembly.Label} {supply : LabelSupply}
     (hRegular : RegularAtSupply regular supply) :
-    LabelBeforeSupply regular (supply + 1) := by
-  rcases hRegular with hBefore | rfl
-  · cases regular with
-    | named name =>
-        trivial
-    | generated scope tag =>
-        simp only [LabelBeforeSupply] at hBefore ⊢
-        omega
-  · simp [LabelBeforeSupply, TypedCfgCompiler.restLabel]
+    LabelBeforeSupply regular (supply + 1) :=
+  TypedCfgCompilerFacts.RegularAtSupply.before_succ hRegular
 
 theorem current_generated_ne
     {regular : Assembly.Label} {supply tag : Nat}
     (hRegular : RegularAtSupply regular supply)
     (hTag : tag ≠ 100) :
-    .generated supply tag ≠ regular := by
-  rcases hRegular with hBefore | rfl
-  · exact hBefore.generated_ne (Nat.le_refl supply)
-  · simpa [TypedCfgCompiler.restLabel] using hTag
+    .generated supply tag ≠ regular :=
+  TypedCfgCompilerFacts.RegularAtSupply.current_generated_ne
+    hRegular hTag
 
 theorem advance
     {regular : Assembly.Label} {supply next : LabelSupply}
     (hRegular : RegularAtSupply regular supply)
     (hNext : supply + 1 ≤ next) :
     RegularAtSupply regular next :=
-  Or.inl (hRegular.before_succ.mono hNext)
+  TypedCfgCompilerFacts.RegularAtSupply.advance hRegular hNext
 
 end RegularAtSupply
 

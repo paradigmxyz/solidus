@@ -30848,3 +30848,15 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   modules, the full verification root, open-effects axiom smoke, architecture
   and changed-file hole checks, and `git diff --check` pass; axioms remain
   `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-17 05:45:55 PDT - proof/structured-open-sequencing-interface -
+  Moved generic label-age and regular-continuation freshness facts from the
+  observer boundary into `TypedCfgCompilerFreshness`, retaining observer
+  compatibility aliases. Added a fixed-fuel Structured segment relation that
+  distinguishes externally stopped regular exits from internal tagged
+  exhaustion, and proved `OpenOutcome.PreservesWithin.sequence` by the
+  canonical TypedCfg fuel-add theorem. This gives one outer stop policy across
+  adjacent statements and avoids branch-dependent fuel witnesses, replay
+  evidence, or a second interpreter. Focused and full verification builds,
+  open-effects axiom smoke, architecture and changed-file hole checks, and
+  `git diff --check` pass; axioms remain `propext`, `Classical.choice`, and
+  `Quot.sound`.

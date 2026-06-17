@@ -37,10 +37,13 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches.of_stateRel
 #check EvmCompiler.Structured.InteractionSemantics.Code.openRun_returns
+#check EvmCompiler.Structured.TypedCfgCompilerFacts.LabelBeforeSupply
+#check EvmCompiler.Structured.TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
 #check EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNWithStop_one
 #check EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_add
 #check EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_add_eq_of_allStopped
 #check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.target_allStopped
+#check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.PreservesWithin.sequence
 #check EvmCompiler.Structured.InteractionControlPreservation.Stmt.openRun_code_of_compileStmtFuel?
 #check EvmCompiler.Structured.InteractionControlPreservation.Block.openRun_nil_of_compileStmtListFuel?
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
@@ -78,6 +81,7 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_add
 #print axioms EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_add_eq_of_allStopped
 #print axioms EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.target_allStopped
+#print axioms EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.PreservesWithin.sequence
 #print axioms EvmCompiler.Structured.InteractionControlPreservation.Stmt.openRun_code_of_compileStmtFuel?
 #print axioms EvmCompiler.Structured.InteractionControlPreservation.Block.openRun_nil_of_compileStmtListFuel?
 #print axioms EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes

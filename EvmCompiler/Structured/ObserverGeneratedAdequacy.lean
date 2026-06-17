@@ -819,7 +819,9 @@ theorem adequateWithinFuel_for
       (hBlockAdequate hContext.withoutLoop hInitWF hActivation
         (hEntryBefore.mono (Nat.le_succ supply))
         (by
-          simp [OutcomeSimulation.LabelBeforeSupply,
+          simp [
+            OutcomeSimulation.LabelBeforeSupply,
+            TypedCfgCompilerFacts.LabelBeforeSupply,
             LabelSupply.label])
         ((hBoundary.congr_returns hReturns.symm).jumpAt_current
           hRegular hLoopShape)
@@ -832,13 +834,17 @@ theorem adequateWithinFuel_for
     have hBodySupplyBefore :
         OutcomeSimulation.LabelBeforeSupply
           (LabelSupply.label supply 1) initResult.next := by
-      simpa [OutcomeSimulation.LabelBeforeSupply,
+      simpa [
+        OutcomeSimulation.LabelBeforeSupply,
+        TypedCfgCompilerFacts.LabelBeforeSupply,
         LabelSupply.label] using
         (Nat.lt_of_lt_of_le (Nat.lt_succ_self supply) hInitNext)
     have hPostBefore :
         OutcomeSimulation.LabelBeforeSupply
           (LabelSupply.label supply 2) initResult.next := by
-      simpa [OutcomeSimulation.LabelBeforeSupply,
+      simpa [
+        OutcomeSimulation.LabelBeforeSupply,
+        TypedCfgCompilerFacts.LabelBeforeSupply,
         LabelSupply.label] using
         (Nat.lt_of_lt_of_le (Nat.lt_succ_self supply) hInitNext)
     exact
@@ -861,13 +867,17 @@ theorem adequateWithinFuel_for
     have hPostSupplyBefore :
         OutcomeSimulation.LabelBeforeSupply
           (LabelSupply.label supply 2) bodyResult.next := by
-      simpa [OutcomeSimulation.LabelBeforeSupply,
+      simpa [
+        OutcomeSimulation.LabelBeforeSupply,
+        TypedCfgCompilerFacts.LabelBeforeSupply,
         LabelSupply.label] using
         (Nat.lt_of_lt_of_le (Nat.lt_succ_self supply) hBodySupply)
     have hLoopBefore :
         OutcomeSimulation.LabelBeforeSupply
           (LabelSupply.label supply 0) bodyResult.next := by
-      simpa [OutcomeSimulation.LabelBeforeSupply,
+      simpa [
+        OutcomeSimulation.LabelBeforeSupply,
+        TypedCfgCompilerFacts.LabelBeforeSupply,
         LabelSupply.label] using
         (Nat.lt_of_lt_of_le (Nat.lt_succ_self supply) hBodySupply)
     exact
@@ -1316,7 +1326,9 @@ theorem adequateWithinFuel_block
                         OutcomeSimulation.LabelBeforeSupply
                           (TypedCfgCompiler.restLabel supply)
                           headResult.next := by
-                      simpa [OutcomeSimulation.LabelBeforeSupply,
+                      simpa [
+                        OutcomeSimulation.LabelBeforeSupply,
+                        TypedCfgCompilerFacts.LabelBeforeSupply,
                         TypedCfgCompiler.restLabel] using
                         TypedCfgCompilerFacts.Supply.stmt_next_ge_succ
                           hHeadCompile
@@ -1425,7 +1437,9 @@ theorem adequateWithinFuel_stmt
             adequateWithinFuel_block generated hProgramWF
               hContext hBodyWF hBodyActivation
               (by
-                simp [OutcomeSimulation.LabelBeforeSupply,
+                simp [
+                  OutcomeSimulation.LabelBeforeSupply,
+                  TypedCfgCompilerFacts.LabelBeforeSupply,
                   LabelSupply.label])
               hRegular.before_succ hBodyBoundary hBodyEntryRejected
               hBodyCompile hBodyBlocks hBodyCalls

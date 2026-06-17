@@ -192,10 +192,13 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches.of_stateRel
 #check EvmCompiler.Structured.InteractionSemantics.Code.openRun_returns
+#check EvmCompiler.Structured.TypedCfgCompilerFacts.LabelBeforeSupply
+#check EvmCompiler.Structured.TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
 #check EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNWithStop_one
 #check EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_add
 #check EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_add_eq_of_allStopped
 #check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.target_allStopped
+#check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.PreservesWithin.sequence
 #check EvmCompiler.Structured.InteractionControlPreservation.Stmt.openRun_code_of_compileStmtFuel?
 #check EvmCompiler.Structured.InteractionControlPreservation.Block.openRun_nil_of_compileStmtListFuel?
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
