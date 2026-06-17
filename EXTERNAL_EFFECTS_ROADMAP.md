@@ -777,6 +777,9 @@ Exit: the shared core builds with no compiler layer changed.
     - [x] Checked source assignment preservation through the ordinary emitted
       expression code, `SWAP; POP`, and `bindLocals`, including arbitrary
       ordered open effects in the assigned expression.
+    - [x] Compiler-facing zero-result expression, fresh-local, and assignment
+      theorems deriving emitted code, stack depth, SWAP selection, and final
+      context directly from successful `Stmt.compile`.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
 - [ ] Functions.
@@ -824,6 +827,8 @@ Exit: every layer exposes one canonical open computation.
     composition.
     - [x] Source assignment constructor through the ordinary compiler stack
       protocol and canonical Expressions statement semantics.
+    - [x] Straight-line source constructors lifted to actual compiled
+      singleton target blocks with an explicit adjacent fuel translation.
 - [ ] Functions -> allocated Locals/Expressions.
   - [ ] Own the emitted internal-call and stack-protocol constructs rather
     than extending stack-free Locals with an operand stack.

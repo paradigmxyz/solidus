@@ -31223,3 +31223,14 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   scans, and `git diff --check`. Axiom audits for all new assignment theorems
   report only `[propext, Classical.choice, Quot.sound]`; architecture debt
   remains limited to the pre-existing oversized legacy observer modules.
+- 2026-06-17 13:40:44 PDT - proof/locals-straight-line-compiler - added checked
+  source-owned `expr`, fresh `let`, and assignment theorems that start from
+  successful `Locals.Stmt.compile` results and execute the actual emitted
+  Expressions block. The compiler-facing wrappers derive code, layout, stack
+  depth, SWAP opcode, and final context internally, with a pass-owned
+  singleton-block fuel translation.
+- 2026-06-17 13:41:39 PDT - validation/locals-straight-line-compiler - passed
+  the focused Locals build, full verification root, architecture checks,
+  touched-Lean hole scan, axiom audit, and `git diff --check`. The new
+  compiler-facing theorems depend only on
+  `[propext, Classical.choice, Quot.sound]`.

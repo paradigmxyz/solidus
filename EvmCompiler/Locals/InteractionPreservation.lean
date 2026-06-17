@@ -1292,6 +1292,50 @@ end Expr
 
 namespace Stmt
 
+namespace TargetBlock
+
+theorem openRun_single_code
+    (program : Expressions.Program) (fuel : Nat)
+    (code : Structured.Code) (state : Structured.RunState) :
+    Expressions.InteractionSemantics.Block.openRun
+        program (fuel + 2) { stmts := [.code code] } state =
+      Expressions.InteractionSemantics.Stmt.openRun
+        program (fuel + 1) (.code code) state := by
+  unfold Expressions.InteractionSemantics.Block.openRun
+    Expressions.InteractionSemantics.Stmt.openRun
+  simp only [Expressions.EffectSemantics.Control.Block.run,
+    Expressions.EffectSemantics.Control.Stmt.run]
+  change
+    Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Structured.EffectSemantics.Control.Code.run
+            Structured.InteractionSemantics.handler code state)
+          (fun final =>
+            Simulation.Interaction.pure
+              (Structured.Outcome.regular final)))
+        (fun outcome =>
+          match outcome.mode with
+          | .regular =>
+              Simulation.Interaction.pure
+                (Structured.Outcome.regular outcome.state)
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure outcome) =
+      Simulation.Interaction.bind
+        (Structured.EffectSemantics.Control.Code.run
+          Structured.InteractionSemantics.handler code state)
+        (fun final =>
+          Simulation.Interaction.pure
+            (Structured.Outcome.regular final))
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Structured.EffectSemantics.Control.Code.run
+        Structured.InteractionSemantics.handler code state))
+  intro final _
+  rfl
+
+end TargetBlock
+
 abbrev StateOutcomeRel (layout : Layout) (suffix : List Word)
     (returns : List Structured.ReturnDest) :
     Except EVMException Locals.Source.State →
@@ -1408,6 +1452,176 @@ abbrev RegularOutcomeRel (targetCtx : Locals.Ctx)
     (RegularResultRel targetCtx suffix returns)
 
 /--
+A source-owned zero-result expression statement preserves the current frame
+and context through its ordinary compiled code statement.
+-/
+theorem openRun_expr_generated
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
+    (fuel : Nat) (expr : Locals.Expr 0)
+    {code : Structured.Code}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hScoped : Scope.ExprScoped targetCtx.layout expr)
+    (hSupported :
+      InteractionSemantics.Expr.OpenSupported expr)
+    (hCompile :
+      Locals.Expr.compileCode targetCtx 0 expr = some code)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (RegularOutcomeRel targetCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx fuel (.expr expr) source)
+      (Expressions.InteractionSemantics.Stmt.openRun
+        targetProgram fuel (.code code) target) := by
+  have hExpr :=
+    Expr.openEval_compileCode expr targetCtx 0
+      hScoped hSupported hCompile hInitial.expr
+  have hWrapped :
+      Simulation.Interaction.Rel
+        (RegularOutcomeRel targetCtx suffix returns)
+        (Simulation.Interaction.bind
+          (InteractionSemantics.Expr.openEval expr source)
+          (fun result =>
+            Simulation.Interaction.pure
+              (Locals.Source.Effectful.Outcome.regular result.1,
+                sourceCtx)))
+        (Simulation.Interaction.bind
+          (Structured.InteractionSemantics.Code.openRun code target)
+          (fun final =>
+            Simulation.Interaction.pure
+              (Structured.Outcome.regular final))) := by
+    apply Simulation.Interaction.Rel.bind hExpr
+    intro sourceFinal targetFinal hFinal
+    apply Simulation.Interaction.Rel.done
+    apply Simulation.Interaction.ExceptRel.ok
+    exact
+      { sourceMode := rfl
+        targetMode := rfl
+        context := hCtx
+        state :=
+          Frame.StateRel.ofExprResultZero hInitial hFinal }
+  unfold InteractionSemantics.Expr.openEval
+    Structured.InteractionSemantics.Code.openRun at hWrapped
+  unfold InteractionSemantics.Stmt.openRun
+    Expressions.InteractionSemantics.Stmt.openRun
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+  simp only [Locals.Source.Effectful.Control.Stmt.run,
+    Expressions.EffectSemantics.Control.Stmt.run]
+  exact hWrapped
+
+/--
+A fresh source local is preserved by expression evaluation followed by the
+ordinary silent `bindLocals` marker.
+-/
+theorem openRun_let_generated
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
+    (fuel : Nat) {name : Name} (valueExpr : Locals.Expr 1)
+    {valueCode : Structured.Code}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hFresh : name ∉ targetCtx.layout)
+    (hValueScoped :
+      Scope.ExprScoped targetCtx.layout valueExpr)
+    (hValueSupported :
+      InteractionSemantics.Expr.OpenSupported valueExpr)
+    (hValueCompile :
+      Locals.Expr.compileCode targetCtx 0 valueExpr = some valueCode)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (RegularOutcomeRel
+        (targetCtx.withLayout (name :: targetCtx.layout))
+        suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx fuel (.let_ name valueExpr) source)
+      (Expressions.InteractionSemantics.Stmt.openRun
+        targetProgram fuel
+        (.code
+          (valueCode ++
+            Locals.bindLocals 0 (name :: targetCtx.layout)))
+        target) := by
+  have hValue :=
+    Expr.openEvalOne_compileCode valueExpr targetCtx 0
+      hValueScoped hValueSupported hValueCompile hInitial.expr
+  have hCore :
+      Simulation.Interaction.Rel
+        (RegularOutcomeRel
+          (targetCtx.withLayout (name :: targetCtx.layout))
+          suffix returns)
+        (Simulation.Interaction.bind
+          (InteractionSemantics.Expr.openEvalOne valueExpr source)
+          (fun result =>
+            Simulation.Interaction.pure
+              (Locals.Source.Effectful.Outcome.regular
+                (result.1.insert name result.2),
+                { sourceCtx with
+                  scope := name :: sourceCtx.scope })))
+        (Simulation.Interaction.bind
+          (Structured.InteractionSemantics.Code.openRun valueCode target)
+          (fun targetAfterValue =>
+            Simulation.Interaction.bind
+              (Structured.InteractionSemantics.Code.openRun
+                (Locals.bindLocals 0 (name :: targetCtx.layout))
+                targetAfterValue)
+              (fun final =>
+                Simulation.Interaction.pure
+                  (Structured.Outcome.regular final)))) := by
+    apply Simulation.Interaction.Rel.bind hValue
+    intro sourceAfterValue targetAfterValue hValueResult
+    rcases sourceAfterValue with ⟨sourceFinal, value⟩
+    rw [show
+        Locals.bindLocals 0 (name :: targetCtx.layout) =
+          [.bindLocals 0 (name :: targetCtx.layout)] by rfl,
+      Code.openRun_bindLocals]
+    apply Simulation.Interaction.Rel.done
+    apply Simulation.Interaction.ExceptRel.ok
+    exact
+      { sourceMode := rfl
+        targetMode := rfl
+        context := hCtx.prependScope name
+        state :=
+          Frame.StateRel.ofExprResultOneInsert
+            hFresh hInitial hValueResult }
+  unfold InteractionSemantics.Expr.openEvalOne
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel at hCore
+  unfold InteractionSemantics.Stmt.openRun
+    Expressions.InteractionSemantics.Stmt.openRun
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+  simp only [Locals.Source.Effectful.Control.Stmt.run,
+    Locals.Source.Effectful.StateModel.insert,
+    Expressions.EffectSemantics.Control.Stmt.run]
+  change
+    Simulation.Interaction.Rel
+      (RegularOutcomeRel
+        (targetCtx.withLayout (name :: targetCtx.layout))
+        suffix returns)
+      _
+      (Simulation.Interaction.bind
+        (Structured.InteractionSemantics.Code.openRun
+          (valueCode ++
+            Locals.bindLocals 0 (name :: targetCtx.layout))
+          target)
+        (fun final =>
+          Simulation.Interaction.pure
+            (Structured.Outcome.regular final)))
+  rw [Structured.InteractionSemantics.Code.openRun_append]
+  simpa [Simulation.Interaction.bind_assoc] using hCore
+
+/--
 Checked source-statement form of assignment preservation. This theorem uses the
 ordinary source statement semantics and the ordinary emitted Expressions code
 statement; the external-effect tree is inherited solely from the assigned
@@ -1509,6 +1723,163 @@ theorem openRun_assign_generated
     if_true,
     Locals.Source.State.withVars]
   simpa [Simulation.Interaction.bind_assoc] using hWrapped
+
+/--
+Compiler-facing zero-result expression theorem. All emitted code and final
+context evidence are derived from the existing `Stmt.compile`.
+-/
+theorem openRun_expr_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (fuel : Nat) (expr : Locals.Expr 0)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.expr expr) =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hScoped : Scope.ExprScoped targetCtx.layout expr)
+    (hSupported :
+      InteractionSemantics.Expr.OpenSupported expr)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (RegularOutcomeRel finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx (fuel + 1) (.expr expr) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram (fuel + 2) { stmts := stmts } target) := by
+  cases hCode :
+      Locals.Expr.compileCode targetCtx 0 expr with
+  | none =>
+      simp [Locals.Stmt.compile, hCode] at hCompile
+  | some code =>
+      simp [Locals.Stmt.compile, hCode] at hCompile
+      rcases hCompile with ⟨rfl, rfl⟩
+      simp only [Locals.codeStmt]
+      rw [TargetBlock.openRun_single_code]
+      exact
+        openRun_expr_generated
+          sourceProgram targetProgram sourceCtx targetCtx
+          (fuel + 1) expr hCtx hScoped hSupported hCode hInitial
+
+/--
+Compiler-facing fresh-local theorem, deriving the emitted layout marker and
+final context from the ordinary compiler result.
+-/
+theorem openRun_let_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (fuel : Nat) {name : Name} (valueExpr : Locals.Expr 1)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.let_ name valueExpr) =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hFresh : name ∉ targetCtx.layout)
+    (hValueScoped :
+      Scope.ExprScoped targetCtx.layout valueExpr)
+    (hValueSupported :
+      InteractionSemantics.Expr.OpenSupported valueExpr)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (RegularOutcomeRel finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx (fuel + 1)
+          (.let_ name valueExpr) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram (fuel + 2) { stmts := stmts } target) := by
+  cases hCode :
+      Locals.Expr.compileCode targetCtx 0 valueExpr with
+  | none =>
+      simp [Locals.Stmt.compile, hCode] at hCompile
+  | some valueCode =>
+      simp [Locals.Stmt.compile, hCode] at hCompile
+      rcases hCompile with ⟨rfl, rfl⟩
+      simp only [Locals.codeStmt]
+      rw [TargetBlock.openRun_single_code]
+      exact
+        openRun_let_generated
+          sourceProgram targetProgram sourceCtx targetCtx
+          (fuel + 1) valueExpr hCtx hFresh
+          hValueScoped hValueSupported
+          hCode hInitial
+
+/--
+Compiler-facing assignment theorem. The stack depth, expression code, SWAP
+opcode, emitted statement, and final context all come from the ordinary
+compiler result.
+-/
+theorem openRun_assign_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (fuel : Nat) {name : Name} (valueExpr : Locals.Expr 1)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.assign name valueExpr) =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hNodup : targetCtx.layout.Nodup)
+    (hValueScoped :
+      Scope.ExprScoped targetCtx.layout valueExpr)
+    (hValueSupported :
+      InteractionSemantics.Expr.OpenSupported valueExpr)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (RegularOutcomeRel finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx (fuel + 1)
+          (.assign name valueExpr) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram (fuel + 2) { stmts := stmts } target) := by
+  cases hDepth :
+      Layout.lookupDepth? name targetCtx.layout with
+  | none =>
+      simp [Locals.Stmt.compile, hDepth] at hCompile
+  | some rawDepth =>
+      cases rawDepth with
+      | zero =>
+          simp [Locals.Stmt.compile, hDepth, StackOp.swap?]
+            at hCompile
+      | succ depth =>
+          cases hCode :
+              Locals.Expr.compileCode targetCtx 0 valueExpr with
+          | none =>
+              simp [Locals.Stmt.compile, hDepth, hCode]
+                at hCompile
+          | some valueCode =>
+              cases hSwap :
+                  StackOp.swap? (depth + 1) with
+              | none =>
+                  simp [Locals.Stmt.compile, hDepth, hCode, hSwap]
+                    at hCompile
+              | some swapOp =>
+                  simp [Locals.Stmt.compile, hDepth, hCode, hSwap]
+                    at hCompile
+                  rcases hCompile with ⟨rfl, rfl⟩
+                  simp only [Locals.codeStmt]
+                  rw [TargetBlock.openRun_single_code]
+                  simpa [List.append_assoc] using
+                    openRun_assign_generated
+                      sourceProgram targetProgram sourceCtx targetCtx
+                      (fuel + 1) valueExpr hCtx hNodup hDepth hValueScoped
+                      hValueSupported hCode hSwap hInitial
 
 end Stmt
 

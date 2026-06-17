@@ -179,6 +179,10 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Expr.openEvalOne_compileCode
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openAssign_compileCode
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_assign_generated
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_expr_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_let_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_assign_of_compile
 #check EvmCompiler.Simulation.ExternalKind.classifies_call
 #check EvmCompiler.Simulation.ExternalKind.classifies_callcode
 #check EvmCompiler.Simulation.ExternalKind.classifies_delegatecall
