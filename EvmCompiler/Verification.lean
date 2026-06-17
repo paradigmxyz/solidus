@@ -336,8 +336,6 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverStaticCost.program
 #check EvmCompiler.Yul.FunctionsObserverStaticCost.programBudget
 #check EvmCompiler.Yul.FunctionsObserverStaticCost.runtimeExpr
-#check EvmCompiler.Yul.FunctionsObserverStaticCost.runtimeProgram
-#check EvmCompiler.Yul.FunctionsObserverStaticCost.runtimeProgramBudget
 #check EvmCompiler.Yul.FunctionsObserverStaticCost.runtimeExprList_eq_exprListBy
 #check EvmCompiler.Yul.FunctionsObserverStaticCost.function_body_le_calleeCost_of_lookup
 #check EvmCompiler.Yul.FunctionsObserverStaticCost.dispatcherList_le_program
@@ -827,12 +825,18 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverPreservation.compileDispatcherForward
 #check EvmCompiler.Yul.FunctionsObserverPreservation.compileDispatcherForwardProgramBounded
 #check EvmCompiler.Yul.FunctionsObserverPreservation.compileDispatcherTerminalForward
+#check EvmCompiler.Yul.FunctionsObserverPreservation.compileDispatcherTerminalForwardProgramBounded
 #check EvmCompiler.Yul.FunctionsObserverPreservation.compileProgramRegularForward
 #check EvmCompiler.Yul.FunctionsObserverPreservation.compileProgramRegularForwardProgramBounded
+#check EvmCompiler.Yul.FunctionsObserverPreservation.compileProgramForwardProgramBounded
 #check EvmCompiler.Yul.FunctionsObserverPreservation.compileProgramForward
 #check EvmCompiler.Functions.Source.Effectful.Program.runState_success_unique
 #check EvmCompiler.Yul.FunctionsObserverTraceAdequacy.SourceExecutionSafe
 #check EvmCompiler.Yul.FunctionsObserverTraceAdequacy.compileProgramTraceAdequate
+#check EvmCompiler.Yul.FunctionsObserverResourceSafety.SourceReservationSafe
+#check EvmCompiler.Yul.FunctionsObserverResourceSafety.SourceExecutionResourceSafe
+#check EvmCompiler.Yul.FunctionsObserverResourceSafety.SourceExecutionResourceSafe.executionSafe
+#check EvmCompiler.Yul.FunctionsObserverResourceSafety.SourceReservationSafe.selectedFuelSafe
 #check EvmCompiler.Public.ObserverComposition.InitialConditions
 #check EvmCompiler.Public.ObserverComposition.TerminalOutcomeRel
 #check EvmCompiler.Public.ObserverComposition.terminalWithResourceSafety

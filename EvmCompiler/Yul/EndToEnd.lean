@@ -1,5 +1,5 @@
 import EvmCompiler.Public.ObserverComposition
-import EvmCompiler.Yul.FunctionsObserverTraceAdequacy
+import EvmCompiler.Yul.FunctionsObserverResourceSafety
 
 namespace EvmCompiler
 namespace Yul
@@ -16,8 +16,8 @@ current generated CFG represents program end with an invalid terminator.
 
 abbrev Trace := Assembly.ResourceTrace
 abbrev SourceResult := ObserverSemantics.SourceReplay.Result
-abbrev SourceExecutionSafe :=
-  FunctionsObserverTraceAdequacy.SourceExecutionSafe
+abbrev SourceExecutionResourceSafe :=
+  FunctionsObserverResourceSafety.SourceExecutionResourceSafe
 
 namespace State
 
@@ -239,12 +239,6 @@ structure ClosedArtifact (policy : Public.BackendPolicy)
       .resourceObservers (.yul program) = some artifact
   noExternalEffects :
     Public.Observer.NoExternalEffects artifact
-  stackOnly :
-    ∀ targetProgram,
-      Program.toObjectsWithObservers? program = some targetProgram →
-        Functions.AllocationObserverProgram.selectedResourceMode
-            artifact.metadata.allocation targetProgram.toFunctions =
-          .stackOnly
 
 theorem ClosedArtifact.valid
     {policy : Public.BackendPolicy} {program : Yul.Program}
@@ -286,7 +280,7 @@ def ClosedResourceCorrect : Prop :=
     ClosedArtifact policy program artifact →
     SolcValidation.ProgramOkWith? profile program = true →
     State.InitialRel codeRel program source initial →
-    SourceExecutionSafe program source transcript →
+    SourceExecutionResourceSafe program source transcript →
     Public.Observer.TerminalRun artifact fuel
       initial target transcript →
     ∃ sourceResult : SourceResult transcript,
@@ -295,12 +289,12 @@ def ClosedResourceCorrect : Prop :=
       Result.Rel program.memoryContract codeRel sourceResult target
 
 /--
-Checked stack-only end-to-end observer replay.
+Checked compiler-selected end-to-end observer replay.
 
-The proof is intentionally only a composition of the adjacent public
-interfaces: Yul-to-Functions forward preservation and trace adequacy, followed
-by the ordinary allocation/Structured/TypedCfg/Assembly/bytecode terminal
-composition theorem.
+The proof is intentionally only a composition of adjacent public interfaces:
+bounded Yul-to-Functions forward preservation, source-facing reservation
+safety, trace adequacy, and the ordinary
+allocation/Structured/TypedCfg/Assembly/bytecode terminal composition theorem.
 -/
 theorem closedResourceCorrect : ClosedResourceCorrect := by
   intro policy program artifact codeRel profile source initial fuel
@@ -336,26 +330,40 @@ theorem closedResourceCorrect : ClosedResourceCorrect := by
       .intro rfl sourceShared sourceVars ?_ ?_ rfl
     · simpa using hInstalled
     · simpa [functionsInitial] using hInitialShared
-  have hSafeCopy := hSafe
+  have hTraceSafe :
+    FunctionsObserverTraceAdequacy.SourceExecutionSafe
+        program source transcript :=
+    FunctionsObserverResourceSafety.SourceExecutionResourceSafe.executionSafe
+      hSafe
   rcases hSafe with
-    ⟨safeResult, sourceFuel, hSourceRun, _hSourceBound⟩
+    ⟨safeResult, sourceFuel, hSourceRun, _hSourceBound,
+      hReservationSafe⟩
   obtain
       ⟨functionsFuel, functionsOutcome,
-        hFunctionsRun, _hForwardOutcome⟩ :=
-    FunctionsObserverPreservation.compileProgramForward
+        hFunctionsRun, _hForwardOutcome, hFunctionsFuel⟩ :=
+    FunctionsObserverPreservation.compileProgramForwardProgramBounded
       hObjects hProgramOk hInput hSourceRun
+  have hFuelSafe :
+      (Functions.AllocationObserverProgram.selectedResourceMode
+          artifact.metadata.allocation
+          targetProgram.toFunctions).FuelSafe
+        (Functions.AllocationObserverProgram.selectedMainSetupDepth
+            artifact.metadata.allocation targetProgram.toFunctions +
+          (functionsFuel + 1)) :=
+    FunctionsObserverResourceSafety.SourceReservationSafe.selectedFuelSafe
+      hObjects hReservationSafe hFunctionsFuel
   obtain
       ⟨halt, hTargetEq, hExhausted, hTerminal⟩ :=
-    Public.ObserverComposition.terminalStackOnly
+    Public.ObserverComposition.terminalWithResourceSafety
       hAccepted hValid.2 hArtifact.noExternalEffects
-      (hArtifact.stackOnly targetProgram hObjects)
+      hFuelSafe
       hInitial.target
       (by simpa [functionsInitial, hContract] using hFunctionsRun)
       hTarget
   obtain
       ⟨sourceResult, hExact, hSourceFunctions⟩ :=
     FunctionsObserverTraceAdequacy.compileProgramTraceAdequate
-      hObjects hProgramOk hInput hSafeCopy
+      hObjects hProgramOk hInput hTraceSafe
       (by simpa [functionsInitial] using hFunctionsRun)
       hExhausted
   refine ⟨sourceResult, hExact, ?_⟩

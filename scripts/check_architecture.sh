@@ -210,7 +210,8 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean \
-  EvmCompiler/Yul/FunctionsObserverTraceAdequacy.lean
+  EvmCompiler/Yul/FunctionsObserverTraceAdequacy.lean \
+  EvmCompiler/Yul/FunctionsObserverResourceSafety.lean
 
 report_matches \
   'The Yul-to-Functions observer proof must not reason directly about lower pass semantics:' \
@@ -233,7 +234,8 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean \
-  EvmCompiler/Yul/FunctionsObserverTraceAdequacy.lean
+  EvmCompiler/Yul/FunctionsObserverTraceAdequacy.lean \
+  EvmCompiler/Yul/FunctionsObserverResourceSafety.lean
 
 report_matches \
   'The Yul observer boundary must not implement a parallel compiler:' \
@@ -257,7 +259,8 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean \
-  EvmCompiler/Yul/FunctionsObserverTraceAdequacy.lean
+  EvmCompiler/Yul/FunctionsObserverTraceAdequacy.lean \
+  EvmCompiler/Yul/FunctionsObserverResourceSafety.lean
 
 trace_adequacy_signature="$(
   sed -n '/^theorem compileProgramTraceAdequate/,/ := by$/p' \
@@ -372,9 +375,9 @@ closed_resource_signature="$(
 )"
 if [[ -z "$closed_resource_signature" ]] ||
     ! printf '%s\n' "$closed_resource_signature" |
-      rg -q 'SourceExecutionSafe'; then
+      rg -q 'SourceExecutionResourceSafe'; then
   printf '%s\n\n' \
-    'ClosedResourceCorrect must expose source-facing execution safety explicitly.' \
+    'ClosedResourceCorrect must expose source-facing execution and reservation safety explicitly.' \
     >&2
   failed=1
 fi
@@ -399,11 +402,25 @@ closed_artifact_signature="$(
     EvmCompiler/Yul/EndToEnd.lean |
     sed '$d'
 )"
-if [[ -z "$closed_artifact_signature" ]] ||
-    ! printf '%s\n' "$closed_artifact_signature" |
-      rg -q 'stackOnly'; then
+if [[ -z "$closed_artifact_signature" ]]; then
   printf '%s\n\n' \
-    'The first checked public observer theorem must state its stack-only restriction.' \
+    'Missing ClosedArtifact public boundary.' \
+    >&2
+  failed=1
+fi
+if printf '%s\n' "$closed_artifact_signature" |
+    rg -q 'stackOnly'; then
+  printf '%s\n%s\n\n' \
+    'ClosedArtifact must not retain the obsolete stack-only restriction:' \
+    "$closed_artifact_signature" >&2
+  failed=1
+fi
+if ! rg -q 'Public\.ObserverComposition\.terminalWithResourceSafety' \
+    EvmCompiler/Yul/EndToEnd.lean ||
+    rg -q 'Public\.ObserverComposition\.terminalStackOnly' \
+      EvmCompiler/Yul/EndToEnd.lean; then
+  printf '%s\n\n' \
+    'EndToEnd must compose compiler-selected resource safety, not the stack-only specialization.' \
     >&2
   failed=1
 fi
@@ -743,7 +760,9 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverForward.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive \
+  EvmCompiler/Yul/FunctionsObserverPreservation.lean \
   EvmCompiler/Yul/FunctionsObserverTraceAdequacy.lean \
+  EvmCompiler/Yul/FunctionsObserverResourceSafety.lean \
   EvmCompiler/Yul/EndToEnd.lean \
   EvmCompiler/Public/ObserverComposition.lean \
   EvmCompiler/TypedCfg \

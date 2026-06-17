@@ -734,6 +734,34 @@ theorem selectedResourceMode_fuelSafe_of_recipe_capacity
           AllocationObserverRelation.Frame.ResourceMode.FuelSafe,
           AllocationObserverRelation.Frame.ResourceMode.Budget]
 
+theorem selectedResourceMode_fuelSafe_of_no_scratch
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {fuel : Nat}
+    (hNoScratch : program.memoryContract.scratch? = none) :
+    (selectedResourceMode allocation program).FuelSafe fuel := by
+  cases hValidate :
+      AllocationLowering.validatePlan? allocation program with
+  | none =>
+      simp [selectedResourceMode, hValidate,
+        AllocationObserverRelation.Frame.ResourceMode.FuelSafe,
+        AllocationObserverRelation.Frame.ResourceMode.Budget]
+  | some validated =>
+      rcases validated with ⟨recipe, stackSlots⟩
+      by_cases hNeeds :
+          AllocationLowering.mainNeedsAllocator recipe stackSlots = true
+      · simp [selectedResourceMode, hValidate, hNeeds,
+          AllocationSupport.scratchFrameConfig?, hNoScratch,
+          AllocationObserverRelation.Frame.ResourceMode.FuelSafe,
+          AllocationObserverRelation.Frame.ResourceMode.Budget]
+      · have hNoNeeds :
+            AllocationLowering.mainNeedsAllocator recipe stackSlots =
+              false :=
+          Bool.eq_false_of_not_eq_true hNeeds
+        simp [selectedResourceMode, hValidate, hNoNeeds,
+          AllocationObserverRelation.Frame.ResourceMode.FuelSafe,
+          AllocationObserverRelation.Frame.ResourceMode.Budget]
+
 def MainArtifact.resourceMode
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}

@@ -30544,3 +30544,22 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   resource-observer axiom smoke, and `git diff --check` passed. The loop,
   recursive family, and bounded dispatcher theorems depend only on `propext`,
   `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 21:24:23 PDT - compaction-resume - Resuming the narrowed exact
+  observer-replay proof after completing bounded regular and terminal
+  whole-program Yul-to-Functions preservation; the remaining checkpoint is the
+  source-facing scratch reservation interface and short end-to-end composition.
+- 2026-06-16 21:38:52 PDT - proof/resource-safe-yul-functions - Added the
+  all-outcome `compileProgramForwardProgramBounded` theorem and the
+  source-program-only `SourceExecutionResourceSafe` interface. Its reservation
+  bound derives compiler-selected `FuelSafe` for both unrestricted stack mode
+  and reserved scratch frames without public allocation evidence.
+- 2026-06-16 21:38:52 PDT - theorem-boundary/end-to-end-resource - Removed
+  `ClosedArtifact.stackOnly` and proved `Yul.EndToEnd.closedResourceCorrect`
+  through `terminalWithResourceSafety`; the public proposition accepts source
+  validation, related initial states, source execution/reservation safety, and
+  the concrete terminal target observer run.
+- 2026-06-16 21:38:52 PDT - validation/end-to-end-resource - Full 1,273-job
+  verification root, architecture guards, changed-line forbidden-marker scan,
+  standalone axiom smoke, and `git diff --check` passed. New public theorems
+  depend only on `propext`, `Classical.choice`, and `Quot.sound`; the obsolete
+  one-level `runtimeProgram` budget was removed.

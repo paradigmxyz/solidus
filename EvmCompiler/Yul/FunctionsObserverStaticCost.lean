@@ -131,28 +131,6 @@ mutual
         1
 end
 
-def runtimeFunctionDefinition
-    (sourceProgram : Yul.Program) : AstFunctionDefinition → Nat
-  | .Def params returns body =>
-      params.length + returns.length +
-        runtimeStmtList sourceProgram body + 4
-
-def runtimeFunctionList
-    (sourceProgram : Yul.Program) :
-    List (Name × AstFunctionDefinition) → Nat
-  | [] => 0
-  | (_name, fn) :: tail =>
-      Nat.max
-        (runtimeFunctionDefinition sourceProgram fn)
-        (runtimeFunctionList sourceProgram tail)
-
-noncomputable def runtimeProgram (sourceProgram : Yul.Program) : Nat :=
-  Nat.max
-      (runtimeStmt sourceProgram sourceProgram.contract.dispatcher)
-      (runtimeFunctionList sourceProgram
-        (Contract.functionEntries sourceProgram.contract)) +
-    8
-
 noncomputable def program (sourceProgram : Yul.Program) : Nat :=
   Nat.max
       (stmt sourceProgram.contract.dispatcher)
@@ -164,11 +142,6 @@ noncomputable def programBudget
     (sourceProgram : Yul.Program) (sourceFuel : Nat) : Nat :=
   FunctionsObserverFuel.executionBudget
     (program sourceProgram) sourceFuel
-
-noncomputable def runtimeProgramBudget
-    (sourceProgram : Yul.Program) (sourceFuel : Nat) : Nat :=
-  FunctionsObserverFuel.executionBudget
-    (runtimeProgram sourceProgram) sourceFuel
 
 theorem runtimeExprList_eq_exprListBy
     (sourceProgram : Yul.Program) (values : List AstExpr) :

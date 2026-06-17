@@ -34,7 +34,8 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
   bound.
 - [x] Narrow target-to-source transcript bridge through
   `FunctionsObserverTraceAdequacy.compileProgramTraceAdequate`.
-- [x] Honest stack-only public theorem with explicit source execution safety.
+- [x] Compiler-selected stack/scratch public theorem with explicit source
+  execution and reservation safety.
 
 ## Active Proof Work
 
@@ -44,10 +45,9 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
   - [x] `(fuel + 1) * frameWords` source reservation capacity implies
     scratch `FuelSafe fuel`;
   - [x] compiler-selected main setup depth is at most one frame.
-- [ ] Strengthen Yul -> Functions whole-program forward preservation with a
+- [x] Strengthen Yul -> Functions whole-program forward preservation with a
   checked source-derived upper bound on the existential Functions execution
-  fuel, or an equivalent source-owned execution-depth bound. The current
-  theorem proves existence but no numeric relation to the Yul run fuel.
+  fuel.
   - [x] canonical Functions open-block composition exposes explicit additive,
     `max + 1`, singleton-wrapper, and unreachable-suffix fuel bounds;
   - [x] Yul expression preparation and scoped open results expose least
@@ -88,8 +88,8 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
     - [x] leaf statements;
     - [x] compound statements and loops;
     - [x] recursive-family fixed point and dispatcher packaging;
-  - [ ] retire the provisional one-level call-expanded runtime measure;
-  - [ ] cover terminal outcomes with the same program-indexed budget;
+  - [x] retire the provisional one-level call-expanded runtime measure;
+  - [x] cover terminal outcomes with the same program-indexed budget;
     - [x] expose least sufficient fuel for terminal statement, function-body,
       and loop results;
     - [x] prove exact quantitative composition for regular prefixes,
@@ -115,17 +115,17 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
       - [x] loops;
   - [x] expose the bounded regular whole-program forward theorem;
   - [x] expose the bounded whole-program terminal forward theorem.
-- [ ] Define an honest source-facing scratch execution/reservation-safety
+- [x] Define an honest source-facing scratch execution/reservation-safety
   interface using that checked bound, without exposing compiler-generated
   evidence.
-- [ ] Generalize `Yul.EndToEnd.ClosedResourceCorrect`:
-  - [ ] remove the stack-only field from `ClosedArtifact`;
-  - [ ] derive the compiler-selected `FuelSafe` fact from the source-facing
+- [x] Generalize `Yul.EndToEnd.ClosedResourceCorrect`:
+  - [x] remove the stack-only field from `ClosedArtifact`;
+  - [x] derive the compiler-selected `FuelSafe` fact from the source-facing
     safety premise;
-  - [ ] compose through
+  - [x] compose through
     `Public.ObserverComposition.terminalWithResourceSafety`;
-  - [ ] retain exact transcript consumption and terminal outcome relation.
-- [ ] Audit the public theorem for generated artifact evidence, replay
+  - [x] retain exact transcript consumption and terminal outcome relation.
+- [x] Audit the public theorem for generated artifact evidence, replay
   certificates, call oracles, and cross-pass proof reasoning.
 
 ## Retained Local Inversions
@@ -142,7 +142,7 @@ completion gates unless the narrow transcript bridge actually needs them.
 - [x] nonterminal `switch`.
 - [x] terminal primitive replay.
 - [x] terminal primitive-expression suffix replay after regular arguments.
-- [ ] No general terminal call/list/control backward campaign is planned.
+- [x] No general terminal call/list/control backward campaign is required.
 
 ## Completion Gates
 
@@ -150,9 +150,9 @@ completion gates unless the narrow transcript bridge actually needs them.
   preservation owned by that compiler pass.
 - [x] Concrete target transcript exhaustion yields an exact source replay
   without reconstructing arbitrary intermediate target executions.
-- [ ] Public theorem accepts only source validation, related initial states,
+- [x] Public theorem accepts only source validation, related initial states,
   source-facing execution/resource safety, and a concrete terminal target run.
-- [ ] No observer-specific compiler, duplicate control interpreter, replay
+- [x] No observer-specific compiler, duplicate control interpreter, replay
   certificate, call oracle, or vertical Yul-to-bytecode proof corridor.
-- [ ] Focused Lean builds, full verification root, architecture checks, hole
+- [x] Focused Lean builds, full verification root, architecture checks, hole
   scan, axiom audit, proof aggregate, and `git diff --check` pass.
