@@ -30938,3 +30938,15 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   schedulers. Focused Structured builds and the full 1,289-job verification
   root pass; architecture, changed-file hole, open-effects axiom, and diff
   checks pass. Axioms remain `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-17 07:18:00 PDT - architecture/structured-policy-stack - Audited
+  nested Structured control after the refined-stop checkpoint. A fixed
+  fragment/enclosing pair does not scale to nested conditionals, switches, and
+  statement-list joins: retargeting a result can accidentally change the
+  active target stop predicate. Replaced that implicit two-level corridor with
+  a policy-parametric `PreservesUnder` interface. Compiler-owned boundaries are
+  now pushed onto one stop policy while the outcome-indexed result relation
+  remains owned by the current adjacent fragment. Added policy freshness,
+  nonregular-stop inheritance, generic code/empty-list/nonempty-list
+  preservation, and a policy-parametric conditional theorem. The attempted
+  external oracle architecture review could not run because the configured API
+  account reported `insufficient_quota`; no oracle output was used.

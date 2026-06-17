@@ -347,6 +347,193 @@ end Condition
 namespace Stmt
 
 /--
+A compiled conditional preserves the open interaction tree under any active
+stop policy that accepts related final outcomes and rejects the generated body
+entry. The recursively compiled body keeps its own result relation while using
+the exact same policy.
+-/
+theorem openRun_if_under_of_compileStmtFuel?
+    {compilerFuel sourceFuel bodyTargetFuel : Nat}
+    {cond : Structured.Code} {body : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {sourceProgram : Structured.Program}
+    {source : RunState} {tokens : List Word}
+    {regularExit :
+      InteractionControlPreservation.OpenOutcome.RegularExit}
+    {policy :
+      InteractionControlPreservation.OpenOutcome.StopPolicy}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.if_ cond body) ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        input source.evm.stack.length)
+    (hStops :
+      ∀ {sourceOutcome targetOutcome},
+        InteractionControlPreservation.OpenOutcome.Rel
+            result ctx regular source.returns tokens
+            sourceOutcome targetOutcome →
+          InteractionControlPreservation.OpenOutcome.TargetStoppedBy
+            policy targetOutcome)
+    (hBodyEntryNoStop :
+      ∀ targetState,
+        policy (LabelSupply.label supply 0) targetState = false)
+    (hBody :
+      ∀ {output : TypedCfg.Shape}
+        {bodyResult : TypedCfgCompiler.Result}
+        {afterCond : RunState},
+        TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+            (supply + 1) (LabelSupply.label supply 0)
+            { output with slots := output.slots.tail } regular =
+          some bodyResult →
+        TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        afterCond.returns = source.returns →
+        InteractionControlPreservation.OpenOutcome.PreservesUnder
+          bodyResult cfg (LabelSupply.label supply 0) ctx
+          regular regularExit afterCond tokens
+          (InteractionSemantics.Block.openRun
+            sourceProgram sourceFuel body afterCond)
+          bodyTargetFuel policy) :
+    InteractionControlPreservation.OpenOutcome.PreservesUnder
+      result cfg entry ctx regular regularExit source tokens
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram (sourceFuel + 1) (.if_ cond body) source)
+      (1 + bodyTargetFuel) policy := by
+  intro target hStateRel
+  obtain
+      ⟨output, _condition, bodyResult,
+        hType, hSource, _hHead, hBodyCompile,
+        hBodyRequire, hResult⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_if
+      hCompile
+  let bodyInput : TypedCfg.Shape :=
+    { output with slots := output.slots.tail }
+  have hFallthrough :
+      result.fallthrough? = some bodyInput := by
+    simp [bodyInput, hResult]
+  have hBodyBlocks :
+      TypedCfgPreservation.BlocksInProgram bodyResult cfg := by
+    intro block hMem
+    apply hBlocks block
+    simp [hResult, hMem]
+  let generated : TypedCfg.Block :=
+    { label := entry
+      input := input
+      body := TypedCfgCompiler.Code.toCfg cond
+      output := output
+      term := .jumpi (LabelSupply.label supply 0) regular }
+  have hFind :
+      cfg.findBlock? entry = some generated := by
+    exact hBlocks generated (by simp [generated, hResult])
+  have hHeadRel :
+      Simulation.Interaction.Rel
+        (Condition.DoneRel
+          (LabelSupply.label supply 0) regular tokens bodyInput)
+        (InteractionSemantics.Code.openRunCondition cond source)
+        (TypedCfg.InteractionSemantics.Program.openStep
+          cfg entry target) := by
+    simp only [
+      TypedCfg.InteractionSemantics.Program.openStep,
+      TypedCfg.Control.Program.step, hFind]
+    simpa [generated, bodyInput] using
+      (Condition.openRunCondition_jumpi_toCfg
+        (entry := entry)
+        (trueLabel := LabelSupply.label supply 0)
+        (falseLabel := regular)
+        hType hSource hFits hStateRel)
+  have hHeadWithReturns :=
+    Simulation.Interaction.Rel.strengthen_left hHeadRel
+      (InteractionSemantics.Code.openRunCondition_returns cond source)
+  rw [show 1 + bodyTargetFuel = bodyTargetFuel + 1 by omega,
+    TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_succ_eq_bind]
+  apply Simulation.Interaction.Rel.bind_custom hHeadWithReturns
+  intro sourceDone targetDone hDone
+  cases sourceDone with
+  | error sourceError =>
+      cases targetDone with
+      | error targetError =>
+          exact
+            Simulation.Interaction.Rel.done
+              (Simulation.Interaction.ExceptRel.error trivial)
+      | ok targetOutcome =>
+          rcases hDone with ⟨hCondition, _hReturns⟩
+          cases hCondition
+  | ok conditionResult =>
+      cases targetDone with
+      | error targetError =>
+          rcases hDone with ⟨hCondition, _hReturns⟩
+          cases hCondition
+      | ok targetOutcome =>
+          rcases conditionResult with ⟨afterCond, condTrue⟩
+          rcases hDone with
+            ⟨hCondition, hReturns⟩
+          cases hCondition with
+          | ok hCondition =>
+          rcases hCondition with
+            ⟨targetAfterCond, hTargetOutcome,
+              hAfterCondRel, hAfterCondFits⟩
+          cases condTrue with
+          | false =>
+              simp only [if_false] at hTargetOutcome
+              subst targetOutcome
+              have hReturnsEq :
+                  afterCond.returns = source.returns := by
+                simpa [
+                  InteractionSemantics.Code.ConditionReturnsEq]
+                  using hReturns
+              have hWholeRel :
+                  InteractionControlPreservation.OpenOutcome.Rel
+                    result ctx regular source.returns tokens
+                    (Structured.Outcome.regular afterCond)
+                    (.jump regular targetAfterCond) := by
+                refine ⟨?_, ?_, ?_⟩
+                · exact
+                    TypedCfgPreservation.OutcomeSimulation.Rel.regular_iff.mpr
+                      ⟨rfl, hAfterCondRel⟩
+                · exact
+                    ⟨bodyInput,
+                      hFallthrough, hAfterCondFits⟩
+                · simpa [
+                    InteractionControlPreservation.OpenOutcome.ActivationRestored]
+                    using hReturnsEq
+              exact
+                InteractionControlPreservation.OpenOutcome.afterOpenStepResultWithPolicy_of_targetStopped
+                  (cfg := cfg)
+                  (regularExit := regularExit)
+                  (fuel := bodyTargetFuel)
+                  hWholeRel (hStops hWholeRel)
+          | true =>
+              simp only [if_true] at hTargetOutcome
+              subst targetOutcome
+              have hReturnsEq :
+                  afterCond.returns = source.returns := by
+                simpa [
+                  InteractionSemantics.Code.ConditionReturnsEq]
+                  using hReturns
+              have hBodyPreserves :=
+                hBody
+                  (output := output)
+                  (bodyResult := bodyResult)
+                  (afterCond := afterCond)
+                  hBodyCompile hBodyBlocks hReturnsEq
+              have hBodyLifted :=
+                InteractionControlPreservation.OpenOutcome.PreservesUnder.change_result_of_required_fallthrough
+                  hBodyRequire hFallthrough hBodyPreserves
+              have hBodyRel :=
+                hBodyLifted targetAfterCond hAfterCondRel
+              have hNoStop :=
+                hBodyEntryNoStop targetAfterCond
+              simp only [
+                TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+                hNoStop, if_false]
+              simpa [hReturnsEq] using hBodyRel
+
+/--
 A compiled conditional preserves the open interaction tree until its own
 regular boundary. The false branch stops after the generated head and remains
 inert under the body budget; the true branch delegates only to the recursively

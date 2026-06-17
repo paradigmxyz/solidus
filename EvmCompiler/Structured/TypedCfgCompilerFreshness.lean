@@ -130,6 +130,24 @@ theorem mono
   leaveLabel label hLabel :=
     (hBefore.leaveLabel label hLabel).mono hSupply
 
+theorem rest_succ
+    {ctx : TypedCfgCompiler.Context}
+    {regular : Assembly.Label} {supply : LabelSupply}
+    (hBefore :
+      ContinuationLabelsBeforeSupply ctx regular supply) :
+    ContinuationLabelsBeforeSupply
+      ctx (TypedCfgCompiler.restLabel supply) (supply + 1) where
+  regular := by
+    simp [
+      LabelBeforeSupply,
+      TypedCfgCompiler.restLabel]
+  breakLabel label hLabel :=
+    (hBefore.breakLabel label hLabel).mono (by simp)
+  continueLabel label hLabel :=
+    (hBefore.continueLabel label hLabel).mono (by simp)
+  leaveLabel label hLabel :=
+    (hBefore.leaveLabel label hLabel).mono (by simp)
+
 end ContinuationLabelsBeforeSupply
 
 namespace Supply
