@@ -610,6 +610,16 @@ inductive AllDone
 
 namespace AllDone
 
+theorem trivial
+    {Error : Type u1} {Result : Type v1}
+    (interaction : Interaction Error Result) :
+    AllDone (fun _ => True) interaction := by
+  induction interaction with
+  | done outcome =>
+      exact .done True.intro
+  | request query resume ih =>
+      exact .request ih
+
 theorem mono
     {Error : Type u1} {Result : Type v1}
     {left right : Except Error Result → Prop}
@@ -937,6 +947,49 @@ theorem refl
   | request query resume ih =>
       exact .request ih
 
+theorem mono
+    {Error₁ : Type u1} {Result₁ : Type v1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    {doneRel₁ doneRel₂ :
+      Except Error₁ Result₁ → Except Error₂ Result₂ → Prop}
+    {left : Interaction Error₁ Result₁}
+    {right : Interaction Error₂ Result₂}
+    (hRel : Rel doneRel₁ left right)
+    (hDone :
+      ∀ leftDone rightDone,
+        doneRel₁ leftDone rightDone →
+          doneRel₂ leftDone rightDone) :
+    Rel doneRel₂ left right := by
+  induction hRel with
+  | done hResult =>
+      exact .done (hDone _ _ hResult)
+  | request hResume ih =>
+      exact .request ih
+
+theorem strengthen_left
+    {Error₁ : Type u1} {Result₁ : Type v1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    {doneRel :
+      Except Error₁ Result₁ → Except Error₂ Result₂ → Prop}
+    {property : Except Error₁ Result₁ → Prop}
+    {left : Interaction Error₁ Result₁}
+    {right : Interaction Error₂ Result₂}
+    (hRel : Rel doneRel left right)
+    (hAll : AllDone property left) :
+    Rel (fun leftDone rightDone =>
+      doneRel leftDone rightDone ∧ property leftDone)
+      left right := by
+  induction hRel with
+  | done hDone =>
+      cases hAll with
+      | done hProperty =>
+          exact .done ⟨hDone, hProperty⟩
+  | request hResume ih =>
+      cases hAll with
+      | request hProperty =>
+          exact .request fun answer =>
+            ih answer (hProperty answer)
+
 theorem symm
     {Error₁ : Type u1} {Result₁ : Type v1}
     {Error₂ : Type u2} {Result₂ : Type v2}
@@ -1010,6 +1063,39 @@ theorem bind
           exact .done (.error hError)
       | ok hValue =>
           exact hNext _ _ hValue
+  | request hResume ih =>
+      exact .request fun answer => ih answer
+
+theorem bind_custom
+    {Error₁ : Type u1} {Source₁ : Type v1} {Target₁ : Type w1}
+    {Error₂ : Type u2} {Source₂ : Type v2} {Target₂ : Type w2}
+    {sourceDoneRel :
+      Except Error₁ Source₁ → Except Error₂ Source₂ → Prop}
+    {targetDoneRel :
+      Except Error₁ Target₁ → Except Error₂ Target₂ → Prop}
+    {left : Interaction Error₁ Source₁}
+    {right : Interaction Error₂ Source₂}
+    {leftNext : Source₁ → Interaction Error₁ Target₁}
+    {rightNext : Source₂ → Interaction Error₂ Target₂}
+    (hResult : Rel sourceDoneRel left right)
+    (hNext :
+      ∀ leftDone rightDone,
+        sourceDoneRel leftDone rightDone →
+          Rel targetDoneRel
+            (match leftDone with
+            | .error error => .done (.error error)
+            | .ok value => leftNext value)
+            (match rightDone with
+            | .error error => .done (.error error)
+            | .ok value => rightNext value)) :
+    Rel targetDoneRel
+      (Interaction.bind left leftNext)
+      (Interaction.bind right rightNext) := by
+  induction hResult with
+  | @done leftDone rightDone hDone =>
+      cases leftDone <;> cases rightDone <;>
+        simpa [Interaction.bind] using
+          hNext _ _ hDone
   | request hResume ih =>
       exact .request fun answer => ih answer
 

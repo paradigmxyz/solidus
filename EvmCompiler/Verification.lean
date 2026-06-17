@@ -176,6 +176,8 @@ or audit-alias corridor.
 #check EvmCompiler.TypedCfg.InteractionPreservation.Instr.create2_lowerAt_openRunNResult_eq
 #check EvmCompiler.TypedCfg.InteractionPreservation.Terminator.lowerAt?_openRunUntilTransfer_rel_of_direct
 #check EvmCompiler.TypedCfg.InteractionPreservation.Block.lowerBodyFrom?_source_openRunNResult
+#check EvmCompiler.TypedCfg.InteractionPreservation.Program.lower?_openRunN_rel
+#check EvmCompiler.TypedCfg.InteractionPreservation.Program.compileCertified?_entry_openRunN_rel
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_call
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_callcode

@@ -85,6 +85,18 @@ for opcode in "${external_opcodes[@]}"; do
   fi
 done
 
+for theorem in \
+    lower?_openRunN_rel \
+    compileCertified?_entry_openRunN_rel; do
+  if ! rg -Fq \
+      "#check EvmCompiler.TypedCfg.InteractionPreservation.Program.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing TypedCfg whole-program open preservation theorem %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
 report_matches \
   'Open-effect proofs must not restore context bisimulation or per-pass equivalence wrappers:' \
   'ExternalContext\.Rel|OpenEffectEquiv' \

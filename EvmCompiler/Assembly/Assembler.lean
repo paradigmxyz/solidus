@@ -332,6 +332,29 @@ theorem instrAtPc_of_labelPc
     instrAtPc program pc = some (pc, .label target) := by
   exact instrAtPcFrom_of_labelPcFrom hLabel
 
+theorem labelPc_lt_byteLength
+    {program : Program} {pc : Nat} {target : Label}
+    (hLabel : labelPc program target = some pc) :
+    pc < program.byteLength := by
+  have hAt := instrAtPc_of_labelPc hLabel
+  have hEnd := instrAtPc_end_le_byteLength hAt
+  have hPositive := Instr.byteSize_pos (.label target)
+  omega
+
+theorem toNat_ofNat_labelPc
+    {program : Program} {pc : Nat} {target : Label}
+    (hFits : program.PCFits)
+    (hLabel : labelPc program target = some pc) :
+    (EvmYul.UInt256.ofNat pc).toNat = pc := by
+  have hProgramLt : program.byteLength < EvmYul.UInt256.size := by
+    have hWordLt : program.pcAfter.toNat < EvmYul.UInt256.size :=
+      program.pcAfter.val.isLt
+    rw [hFits] at hWordLt
+    exact hWordLt
+  exact
+    EvmYul.UInt256.toNat_ofNat_of_lt
+      (Nat.lt_trans (labelPc_lt_byteLength hLabel) hProgramLt)
+
 theorem instrAtPcFrom_append_boundary
     (pre suffix : Program) (base : Nat) :
     instrAtPcFrom (pre ++ suffix) base (base + byteLength pre) =

@@ -725,7 +725,7 @@ Exit: the shared core builds with no compiler layer changed.
   - [x] Connect emitted-block execution to fetched resolved-target and encoded
     bytecode instruction-count execution.
   - [ ] Migrate the legacy resource-observer runners onto the common kernel.
-- [ ] TypedCfg.
+- [x] TypedCfg.
   - [x] One parameterized control kernel shared by ordinary, resource-observer,
     and open interaction semantics.
   - [x] Exact open preservation for every instruction and recursively composed
@@ -734,7 +734,7 @@ Exit: the shared core builds with no compiler layer changed.
     Assembly execution.
   - [x] Checked direct-terminator theorem for jumps, conditional jumps, halts,
     and invalid execution.
-  - [ ] Internal-label-aware `returnDispatch`, block, and program theorems.
+  - [x] Internal-label-aware `returnDispatch`, block, and program theorems.
 - [ ] Structured.
 - [ ] Locals/Expressions.
 - [ ] Functions.
@@ -756,11 +756,13 @@ Exit: every layer exposes one canonical open computation.
   - [x] Per-instruction emitted-block state and outcome preservation.
   - [x] Whole-program emitted-block open execution preservation.
   - [x] Fetched resolved-target and encoded-bytecode open execution bridge.
-- [ ] TypedCfg -> Assembly.
+- [x] TypedCfg -> Assembly.
   - [x] Every lowered instruction, including all six external opcodes.
   - [x] Arbitrary lowered instruction-list bodies.
   - [x] Direct terminators through the Assembly-owned transfer runner.
-  - [ ] `returnDispatch`, blocks, and whole-program execution.
+  - [x] `returnDispatch`, blocks, and whole-program execution.
+  - [x] Certified-artifact entry theorem deriving all compiler-selected
+    lowering, acceptance, PC-fit, and typing evidence internally.
 - [ ] Structured -> TypedCfg.
 - [ ] Locals/Expressions -> Structured.
 - [ ] Functions -> allocated Locals/Expressions.

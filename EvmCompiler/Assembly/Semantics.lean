@@ -103,27 +103,46 @@ def haltKind? : Instr → Option HaltKind
 
 /--
 Classify whether a successful Assembly instruction remains in the current
-basic block or transfers control out of it.
+control region or transfers control out of it.
 
 An untaken conditional jump falls through to the next Assembly instruction.
-A taken conditional jump and every unconditional jump end the current block.
-Halts end it independently of the instruction form.
+For a taken jump, `continueTransfer` decides whether the edge is internal to
+the caller-owned control region. Halts always leave the region.
 -/
-def classifyFlow (instr : Instr) (before : EVMState) :
+def classifyFlowWith (continueTransfer : Instr → Bool)
+    (instr : Instr) (before : EVMState) :
     StepResult → FlowStep
   | .halted halt => .exit (.halted halt)
   | .running after =>
       match instr with
-      | .jump _ => .exit (.running after)
+      | .jump _ =>
+          if continueTransfer instr then
+            .next after
+          else
+            .exit (.running after)
       | .jumpi _ =>
           match before.stack.pop with
           | none => .exit (.running after)
           | some (_, cond) =>
               if cond = EvmYul.UInt256.ofNat 0 then
                 .next after
+              else if continueTransfer instr then
+                .next after
               else
                 .exit (.running after)
       | _ => .next after
+
+/--
+The basic-block policy: every taken jump leaves the current region.
+-/
+def classifyFlow (instr : Instr) (before : EVMState) :
+    StepResult → FlowStep :=
+  classifyFlowWith (fun _ => false) instr before
+
+theorem classifyFlowWith_false
+    (instr : Instr) (before : EVMState) (result : StepResult) :
+    classifyFlowWith (fun _ => false) instr before result =
+      classifyFlow instr before result := rfl
 
 end Instr
 
@@ -375,23 +394,39 @@ def stepResultWith {M : Type → Type}
   | some (pc, instr) => instrStep pc instr state
   | none => throw .InvalidInstruction
 
-def flowStepWith {M : Type → Type}
+def flowStepWithPolicy {M : Type → Type}
     [Monad M] [MonadExceptOf EVMException M]
+    (continueTransfer : Instr → Bool)
     (step : EVMState → M StepResult)
     (program : Program) (state : EVMState) : M FlowStep :=
   match Program.instrAtPc program state.pc.toNat with
   | some (_, instr) => do
       let result ← step state
-      pure (instr.classifyFlow state result)
+      pure (instr.classifyFlowWith continueTransfer state result)
   | none => throw .InvalidInstruction
 
-def runUntilTransferWith {M : Type → Type}
+abbrev flowStepWith {M : Type → Type}
     [Monad M] [MonadExceptOf EVMException M]
+    (step : EVMState → M StepResult)
+    (program : Program) (state : EVMState) : M FlowStep :=
+  flowStepWithPolicy (fun _ => false) step program state
+
+def runUntilTransferWithPolicy {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (continueTransfer : Instr → Bool)
     (step : EVMState → M StepResult)
     (program : Program) (fuel : Nat)
     (state : EVMState) : M StepResult :=
   Control.runUntilTransferWith
-    (flowStepWith step program) fuel state
+    (flowStepWithPolicy continueTransfer step program) fuel state
+
+abbrev runUntilTransferWith {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (step : EVMState → M StepResult)
+    (program : Program) (fuel : Nat)
+    (state : EVMState) : M StepResult :=
+  runUntilTransferWithPolicy (fun _ => false)
+    step program fuel state
 
 abbrev step (program : Program) (state : EVMState) :
     Except EVMException EVMState :=

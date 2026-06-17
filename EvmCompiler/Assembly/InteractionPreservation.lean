@@ -31,9 +31,56 @@ namespace EVMState
     InteractionSemantics.EVMState.installWorld,
     EvmYul.EVM.State.incrPC]
 
+theorem finishCall_sameRuntimeData
+    {target source : EVMState}
+    (rest : EvmYul.Stack Word)
+    (callLocal : Simulation.CallLocal)
+    (response : Simulation.CallResponse)
+    (hRel : SameRuntimeData target source) :
+    SameRuntimeData
+      (InteractionSemantics.EVMState.finishCall
+        target rest callLocal response)
+      (InteractionSemantics.EVMState.finishCall
+        source rest callLocal response) := by
+  have hShared : target.toSharedState = source.toSharedState :=
+    SameRuntimeData.shared_eq hRel
+  cases target
+  cases source
+  simp_all [SameRuntimeData, eraseRuntimeControl,
+    InteractionSemantics.EVMState.finishCall,
+    InteractionSemantics.EVMState.installWorld,
+    EvmYul.EVM.State.incrPC]
+
+theorem finishCreate_sameRuntimeData
+    {target source : EVMState}
+    (rest : EvmYul.Stack Word)
+    (createLocal : Simulation.CreateLocal)
+    (response : Simulation.CreateResponse)
+    (hRel : SameRuntimeData target source) :
+    SameRuntimeData
+      (InteractionSemantics.EVMState.finishCreate
+        target rest createLocal response)
+      (InteractionSemantics.EVMState.finishCreate
+        source rest createLocal response) := by
+  have hShared : target.toSharedState = source.toSharedState :=
+    SameRuntimeData.shared_eq hRel
+  cases target
+  cases source
+  simp_all [SameRuntimeData, eraseRuntimeControl,
+    InteractionSemantics.EVMState.finishCreate,
+    InteractionSemantics.EVMState.installWorld,
+    EvmYul.EVM.State.incrPC]
+
 end EVMState
 
 namespace PrimOp
+
+abbrev RuntimeStateRel :
+    Except EVMException EVMState →
+      Except EVMException EVMState → Prop :=
+  Simulation.Interaction.ExceptRel
+    (fun left right : EVMException => left = right)
+    Assembly.SameRuntimeData
 
 def AdvancesPC (state : EVMState) :
     Except EVMException EVMState → Prop
@@ -86,6 +133,186 @@ theorem createStep_advancesPC
         intro response
         exact .done (EVMState.finishCreate_pc _ _ _ _)
       · exact .done trivial
+
+theorem resourceStep_runtimeRel
+    (kind : Simulation.ResourceQuery)
+    {target source : EVMState}
+    (hRel : SameRuntimeData target source) :
+    Simulation.Interaction.Rel RuntimeStateRel
+      (InteractionSemantics.PrimOp.resourceStep kind target)
+      (InteractionSemantics.PrimOp.resourceStep kind source) := by
+  apply Simulation.Interaction.Rel.request
+  intro value
+  apply Simulation.Interaction.Rel.done
+  apply Simulation.Interaction.ExceptRel.ok
+  exact
+    SameRuntimeData.replaceStackAndIncrPC hRel
+      (congrArg (fun stack => stack.push value)
+        (SameRuntimeData.stack_eq hRel))
+
+theorem callStep_runtimeRel
+    (kind : Simulation.CallKind)
+    {target source : EVMState}
+    (hRel : SameRuntimeData target source) :
+    Simulation.Interaction.Rel RuntimeStateRel
+      (InteractionSemantics.PrimOp.callStep kind target)
+      (InteractionSemantics.PrimOp.callStep kind source) := by
+  have hStack : target.stack = source.stack :=
+    SameRuntimeData.stack_eq hRel
+  have hShared : target.toSharedState = source.toSharedState :=
+    SameRuntimeData.shared_eq hRel
+  unfold InteractionSemantics.PrimOp.callStep
+  rw [hStack, hShared]
+  cases hOperands : kind.evmOperands? source.stack with
+  | none =>
+      exact
+        .done
+          (Simulation.Interaction.ExceptRel.error rfl)
+  | some result =>
+      rcases result with ⟨rest, operands⟩
+      simp only [hOperands]
+      split
+      · apply Simulation.Interaction.Rel.request
+        intro response
+        exact
+          .done
+            (Simulation.Interaction.ExceptRel.ok
+              (EVMState.finishCall_sameRuntimeData
+                rest operands.callLocal response hRel))
+      · exact
+          .done
+            (Simulation.Interaction.ExceptRel.error rfl)
+
+theorem createStep_runtimeRel
+    (kind : Simulation.CreateKind)
+    {target source : EVMState}
+    (hRel : SameRuntimeData target source) :
+    Simulation.Interaction.Rel RuntimeStateRel
+      (InteractionSemantics.PrimOp.createStep kind target)
+      (InteractionSemantics.PrimOp.createStep kind source) := by
+  have hStack : target.stack = source.stack :=
+    SameRuntimeData.stack_eq hRel
+  have hShared : target.toSharedState = source.toSharedState :=
+    SameRuntimeData.shared_eq hRel
+  unfold InteractionSemantics.PrimOp.createStep
+  rw [hStack, hShared]
+  cases hOperands : kind.evmOperands? source.stack with
+  | none =>
+      exact
+        .done
+          (Simulation.Interaction.ExceptRel.error rfl)
+  | some result =>
+      rcases result with ⟨rest, operands⟩
+      simp only [hOperands]
+      split
+      · apply Simulation.Interaction.Rel.request
+        intro response
+        exact
+          .done
+            (Simulation.Interaction.ExceptRel.ok
+              (EVMState.finishCreate_sameRuntimeData
+                rest operands.createLocal response hRel))
+      · exact
+          .done
+            (Simulation.Interaction.ExceptRel.error rfl)
+
+theorem noExternalCallCreate_of_unclassified
+    {op : Assembly.PrimOp}
+    (hExternal :
+      Simulation.ExternalKind.ofEVMOperation? op.toEVM = none) :
+    op.isExternalCallCreate = false := by
+  cases op <;>
+    simp [Assembly.PrimOp.toEVM,
+      Simulation.ExternalKind.ofEVMOperation?,
+      Simulation.CallKind.ofEVMOperation?,
+      Simulation.CreateKind.ofEVMOperation?,
+      Assembly.PrimOp.isExternalCallCreate] at hExternal ⊢
+
+theorem closedStep_runtimeRel
+    {op : Assembly.PrimOp} {target source : EVMState}
+    (hArity : ∃ arity, op.stackArity? = some arity)
+    (hNoPc : op ≠ .pc)
+    (hExternal :
+      Simulation.ExternalKind.ofEVMOperation? op.toEVM = none)
+    (hGas : op ≠ .gas) (hMsize : op ≠ .msize)
+    (hRel : SameRuntimeData target source) :
+    Simulation.Interaction.Rel RuntimeStateRel
+      (InteractionSemantics.PrimOp.openStep op target)
+      (InteractionSemantics.PrimOp.openStep op source) := by
+  rw [InteractionSemantics.PrimOp.openStep_closed
+      hExternal hGas hMsize,
+    InteractionSemantics.PrimOp.openStep_closed
+      hExternal hGas hMsize]
+  apply Simulation.Interaction.Rel.done
+  have hRun :=
+    Assembly.PrimOp.step_map_eraseRuntimeControl
+      hArity hNoPc
+        (noExternalCallCreate_of_unclassified hExternal) hRel
+  cases hTarget : op.step target with
+  | error targetError =>
+      cases hSource : op.step source with
+      | error sourceError =>
+          simp [hTarget, hSource, Except.map] at hRun
+          exact
+            Simulation.Interaction.ExceptRel.error hRun
+      | ok sourceFinal =>
+          simp [hTarget, hSource, Except.map] at hRun
+  | ok targetFinal =>
+      cases hSource : op.step source with
+      | error sourceError =>
+          simp [hTarget, hSource, Except.map] at hRun
+      | ok sourceFinal =>
+          simp [hTarget, hSource, Except.map] at hRun
+          exact
+            Simulation.Interaction.ExceptRel.ok hRun
+
+/--
+Open primitive execution is insensitive to compiler-owned PC and execution
+counters. External calls and creates remain in scope: related states issue the
+same request and remain related for every shared response.
+-/
+theorem openStep_runtimeRel
+    {op : Assembly.PrimOp} {target source : EVMState}
+    (hArity : ∃ arity, op.stackArity? = some arity)
+    (hNoPc : op ≠ .pc)
+    (hRel : SameRuntimeData target source) :
+    Simulation.Interaction.Rel RuntimeStateRel
+      (InteractionSemantics.PrimOp.openStep op target)
+      (InteractionSemantics.PrimOp.openStep op source) := by
+  cases hExternal :
+      Simulation.ExternalKind.ofEVMOperation? op.toEVM with
+  | some external =>
+      cases external with
+      | call kind =>
+          rw [show
+            InteractionSemantics.PrimOp.openStep op target =
+              InteractionSemantics.PrimOp.callStep kind target by
+                simp [InteractionSemantics.PrimOp.openStep, hExternal]]
+          rw [show
+            InteractionSemantics.PrimOp.openStep op source =
+              InteractionSemantics.PrimOp.callStep kind source by
+                simp [InteractionSemantics.PrimOp.openStep, hExternal]]
+          exact callStep_runtimeRel kind hRel
+      | create kind =>
+          rw [show
+            InteractionSemantics.PrimOp.openStep op target =
+              InteractionSemantics.PrimOp.createStep kind target by
+                simp [InteractionSemantics.PrimOp.openStep, hExternal]]
+          rw [show
+            InteractionSemantics.PrimOp.openStep op source =
+              InteractionSemantics.PrimOp.createStep kind source by
+                simp [InteractionSemantics.PrimOp.openStep, hExternal]]
+          exact createStep_runtimeRel kind hRel
+  | none =>
+      by_cases hGas : op = .gas
+      · subst op
+        exact resourceStep_runtimeRel .gas hRel
+      · by_cases hMsize : op = .msize
+        · subst op
+          exact resourceStep_runtimeRel .msize hRel
+        · exact
+            closedStep_runtimeRel
+              hArity hNoPc hExternal hGas hMsize hRel
 
 /--
 Every successful branch of an open, well-typed Assembly primitive advances
@@ -1201,6 +1428,64 @@ theorem source_openRunNResult_one_at_boundary
   rw [hContinuation]
   exact Simulation.Interaction.bind_pure _
 
+theorem source_openRunUntilTransferWithPolicy_one_at_boundary
+    (continueTransfer : Instr → Bool)
+    {pre post : Program} {instr : Instr} {state : EVMState}
+    (hFits : pre.PCFits)
+    (hPc : state.pc = pre.pcAfter) :
+    InteractionSemantics.Source.openRunUntilTransferWithPolicy
+        continueTransfer (pre ++ instr :: post) 1 state =
+      (do
+        let result ←
+          InteractionSemantics.Source.openStepAtResult
+            (pre ++ instr :: post) pre.byteLength instr state
+        pure
+          (instr.classifyFlowWith
+            continueTransfer state result).result) := by
+  unfold
+    InteractionSemantics.Source.openRunUntilTransferWithPolicy
+    Source.runUntilTransferWithPolicy
+    Control.runUntilTransferWith
+    Source.flowStepWithPolicy
+  have hAt :
+      Program.instrAtPc (pre ++ instr :: post) state.pc.toNat =
+        some (pre.byteLength, instr) := by
+    unfold Program.instrAtPc
+    rw [hPc, hFits]
+    simpa using
+      Program.instrAtPcFrom_append_boundary_cons pre post instr 0
+  rw [hAt]
+  unfold InteractionSemantics.Source.openStepResult
+    Source.stepResultWith
+  rw [hAt]
+  change
+    Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (InteractionSemantics.Source.openStepAtResult
+            (pre ++ instr :: post) pre.byteLength instr state)
+          (fun result =>
+            Simulation.Interaction.pure
+              (instr.classifyFlowWith
+                continueTransfer state result)))
+        (fun flow =>
+          match flow with
+          | .next state' =>
+              Simulation.Interaction.pure
+                (StepResult.running state')
+          | .exit result =>
+              Simulation.Interaction.pure result) =
+      Simulation.Interaction.bind
+        (InteractionSemantics.Source.openStepAtResult
+          (pre ++ instr :: post) pre.byteLength instr state)
+        (fun result =>
+          Simulation.Interaction.pure
+            (instr.classifyFlowWith
+              continueTransfer state result).result)
+  rw [Simulation.Interaction.bind_assoc]
+  congr 1
+  funext result
+  cases instr.classifyFlowWith continueTransfer state result <;> rfl
+
 theorem source_openRunUntilTransfer_one_at_boundary
     {pre post : Program} {instr : Instr} {state : EVMState}
     (hFits : pre.PCFits)
@@ -1214,9 +1499,10 @@ theorem source_openRunUntilTransfer_one_at_boundary
         pure (instr.classifyFlow state result).result) := by
   unfold
     InteractionSemantics.Source.openRunUntilTransfer
-    Source.runUntilTransferWith
+    InteractionSemantics.Source.openRunUntilTransferWithPolicy
+    Source.runUntilTransferWithPolicy
     Control.runUntilTransferWith
-    Source.flowStepWith
+    Source.flowStepWithPolicy
   have hAt :
       Program.instrAtPc (pre ++ instr :: post) state.pc.toNat =
         some (pre.byteLength, instr) := by
@@ -1253,6 +1539,162 @@ theorem source_openRunUntilTransfer_one_at_boundary
   congr 1
   funext result
   cases instr.classifyFlow state result <;> rfl
+
+theorem source_openRunUntilTransferWithPolicy_succ_at_boundary
+    (continueTransfer : Instr → Bool)
+    {pre post : Program} {instr : Instr} {state : EVMState}
+    (fuel : Nat)
+    (hFits : pre.PCFits)
+    (hPc : state.pc = pre.pcAfter) :
+    InteractionSemantics.Source.openRunUntilTransferWithPolicy
+        continueTransfer (pre ++ instr :: post) (fuel + 1) state =
+      (do
+        let result ←
+          InteractionSemantics.Source.openStepAtResult
+            (pre ++ instr :: post) pre.byteLength instr state
+        match instr.classifyFlowWith
+            continueTransfer state result with
+        | .next state' =>
+            InteractionSemantics.Source.openRunUntilTransferWithPolicy
+              continueTransfer (pre ++ instr :: post) fuel state'
+        | .exit result =>
+            pure result) := by
+  change
+    (do
+      let flow ←
+        Source.flowStepWithPolicy continueTransfer
+          (InteractionSemantics.Source.openStepResult
+            (pre ++ instr :: post))
+          (pre ++ instr :: post) state
+      match flow with
+      | .next state' =>
+          InteractionSemantics.Source.openRunUntilTransferWithPolicy
+            continueTransfer (pre ++ instr :: post) fuel state'
+      | .exit result =>
+          Simulation.Interaction.pure result) =
+      _
+  have hAt :
+      Program.instrAtPc (pre ++ instr :: post) state.pc.toNat =
+        some (pre.byteLength, instr) := by
+    unfold Program.instrAtPc
+    rw [hPc, hFits]
+    simpa using
+      Program.instrAtPcFrom_append_boundary_cons pre post instr 0
+  unfold Source.flowStepWithPolicy
+  rw [hAt]
+  unfold InteractionSemantics.Source.openStepResult
+    Source.stepResultWith
+  rw [hAt]
+  change
+    Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (InteractionSemantics.Source.openStepAtResult
+            (pre ++ instr :: post) pre.byteLength instr state)
+          (fun result =>
+            Simulation.Interaction.pure
+              (instr.classifyFlowWith
+                continueTransfer state result)))
+        (fun flow =>
+          match flow with
+          | .next state' =>
+              InteractionSemantics.Source.openRunUntilTransferWithPolicy
+                continueTransfer (pre ++ instr :: post) fuel state'
+          | .exit result =>
+              Simulation.Interaction.pure result) =
+      Simulation.Interaction.bind
+        (InteractionSemantics.Source.openStepAtResult
+          (pre ++ instr :: post) pre.byteLength instr state)
+        (fun result =>
+          match instr.classifyFlowWith
+              continueTransfer state result with
+          | .next state' =>
+              InteractionSemantics.Source.openRunUntilTransferWithPolicy
+                continueTransfer (pre ++ instr :: post) fuel state'
+          | .exit result =>
+              Simulation.Interaction.pure result)
+  rw [Simulation.Interaction.bind_assoc]
+  congr 1
+
+theorem source_openRunUntilTransferWithPolicy_succ_of_step_running
+    (continueTransfer : Instr → Bool)
+    {pre post : Program} {instr : Instr}
+    {state final : EVMState} (fuel : Nat)
+    (hFits : pre.PCFits)
+    (hPc : state.pc = pre.pcAfter)
+    (hStep :
+      InteractionSemantics.Source.openStepAtResult
+          (pre ++ instr :: post) pre.byteLength instr state =
+        .done (.ok (.running final)))
+    (hFlow :
+      instr.classifyFlowWith continueTransfer state (.running final) =
+        .next final) :
+    InteractionSemantics.Source.openRunUntilTransferWithPolicy
+        continueTransfer (pre ++ instr :: post) (fuel + 1) state =
+      InteractionSemantics.Source.openRunUntilTransferWithPolicy
+        continueTransfer (pre ++ instr :: post) fuel final := by
+  rw [source_openRunUntilTransferWithPolicy_succ_at_boundary
+    continueTransfer fuel hFits hPc]
+  rw [hStep]
+  change
+    (match instr.classifyFlowWith
+        continueTransfer state (.running final) with
+    | .next state' =>
+        InteractionSemantics.Source.openRunUntilTransferWithPolicy
+          continueTransfer (pre ++ instr :: post) fuel state'
+    | .exit result =>
+        Simulation.Interaction.pure result) =
+      InteractionSemantics.Source.openRunUntilTransferWithPolicy
+        continueTransfer (pre ++ instr :: post) fuel final
+  rw [hFlow]
+
+theorem source_openRunUntilTransferWithPolicy_succ_of_step_exit
+    (continueTransfer : Instr → Bool)
+    {pre post : Program} {instr : Instr}
+    {state : EVMState} {result : StepResult} (fuel : Nat)
+    (hFits : pre.PCFits)
+    (hPc : state.pc = pre.pcAfter)
+    (hStep :
+      InteractionSemantics.Source.openStepAtResult
+          (pre ++ instr :: post) pre.byteLength instr state =
+        .done (.ok result))
+    (hFlow :
+      instr.classifyFlowWith continueTransfer state result =
+        .exit result) :
+    InteractionSemantics.Source.openRunUntilTransferWithPolicy
+        continueTransfer (pre ++ instr :: post) (fuel + 1) state =
+      .done (.ok result) := by
+  rw [source_openRunUntilTransferWithPolicy_succ_at_boundary
+    continueTransfer fuel hFits hPc]
+  rw [hStep]
+  change
+    (match instr.classifyFlowWith
+        continueTransfer state result with
+    | .next state' =>
+        InteractionSemantics.Source.openRunUntilTransferWithPolicy
+          continueTransfer (pre ++ instr :: post) fuel state'
+    | .exit result =>
+        Simulation.Interaction.pure result) =
+      .done (.ok result)
+  rw [hFlow]
+  rfl
+
+theorem source_openRunUntilTransferWithPolicy_succ_of_step_error
+    (continueTransfer : Instr → Bool)
+    {pre post : Program} {instr : Instr}
+    {state : EVMState} {err : EVMException} (fuel : Nat)
+    (hFits : pre.PCFits)
+    (hPc : state.pc = pre.pcAfter)
+    (hStep :
+      InteractionSemantics.Source.openStepAtResult
+          (pre ++ instr :: post) pre.byteLength instr state =
+        .done (.error err)) :
+    InteractionSemantics.Source.openRunUntilTransferWithPolicy
+        continueTransfer (pre ++ instr :: post) (fuel + 1) state =
+      .done (.error err) := by
+  rw [source_openRunUntilTransferWithPolicy_succ_at_boundary
+    continueTransfer fuel hFits hPc]
+  rw [hStep]
+  rfl
 
 theorem source_openRunUntilTransfer_succ_at_boundary
     {pre post : Program} {instr : Instr} {state : EVMState}
@@ -1292,7 +1734,7 @@ theorem source_openRunUntilTransfer_succ_at_boundary
     rw [hPc, hFits]
     simpa using
       Program.instrAtPcFrom_append_boundary_cons pre post instr 0
-  unfold Source.flowStepWith
+  unfold Source.flowStepWith Source.flowStepWithPolicy
   rw [hAt]
   unfold InteractionSemantics.Source.openStepResult
     Source.stepResultWith
@@ -1409,6 +1851,7 @@ theorem source_openRunUntilTransfer_one_prim_closed
           Instr.haltKind?,
           TargetInstr.haltKind?,
           Instr.classifyFlow,
+          Instr.classifyFlowWith,
           FlowStep.result,
           hStep, hHalt] <;>
         rfl
@@ -1421,12 +1864,46 @@ theorem source_openRunUntilTransfer_eq_compiled
         program fuel state := by
   unfold InteractionSemantics.Source.openRunUntilTransfer
     InteractionSemantics.Compiled.openRunUntilTransfer
+    InteractionSemantics.Source.openRunUntilTransferWithPolicy
+    InteractionSemantics.Compiled.openRunUntilTransferWithPolicy
+    Source.runUntilTransferWithPolicy
   have hStep :
       InteractionSemantics.Source.openStepResult program =
         InteractionSemantics.Compiled.openStepResult program := by
     funext current
     exact source_openStepResult_eq_compiled program current
   rw [hStep]
+
+theorem source_openRunUntilTransferWithPolicy_eq_compiled
+    (continueTransfer : Instr → Bool)
+    (program : Program) (fuel : Nat) (state : EVMState) :
+    InteractionSemantics.Source.openRunUntilTransferWithPolicy
+        continueTransfer program fuel state =
+      InteractionSemantics.Compiled.openRunUntilTransferWithPolicy
+        continueTransfer program fuel state := by
+  unfold
+    InteractionSemantics.Source.openRunUntilTransferWithPolicy
+    InteractionSemantics.Compiled.openRunUntilTransferWithPolicy
+    Source.runUntilTransferWithPolicy
+  have hStep :
+      InteractionSemantics.Source.openStepResult program =
+        InteractionSemantics.Compiled.openStepResult program := by
+    funext current
+    exact source_openStepResult_eq_compiled program current
+  rw [hStep]
+
+theorem source_openRunUntilTransferWithPolicy_rel_compiled
+    (continueTransfer : Instr → Bool)
+    (program : Program) (fuel : Nat) (state : EVMState) :
+    Simulation.Interaction.Rel Eq
+      (InteractionSemantics.Source.openRunUntilTransferWithPolicy
+        continueTransfer program fuel state)
+      (InteractionSemantics.Compiled.openRunUntilTransferWithPolicy
+        continueTransfer program fuel state) := by
+  rw [source_openRunUntilTransferWithPolicy_eq_compiled]
+  apply Simulation.Interaction.Rel.refl
+  intro result
+  rfl
 
 theorem source_openRunUntilTransfer_rel_compiled
     (program : Program) (fuel : Nat) (state : EVMState) :

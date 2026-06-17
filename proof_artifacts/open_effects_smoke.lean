@@ -29,6 +29,8 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #check EvmCompiler.TypedCfg.InteractionPreservation.Instr.create2_lowerAt_openRunNResult_eq
 #check EvmCompiler.TypedCfg.InteractionPreservation.Block.lowerBodyFrom?_source_openRunNResult
 #check EvmCompiler.TypedCfg.InteractionPreservation.Terminator.lowerAt?_openRunUntilTransfer_rel_of_direct
+#check EvmCompiler.TypedCfg.InteractionPreservation.Program.lower?_openRunN_rel
+#check EvmCompiler.TypedCfg.InteractionPreservation.Program.compileCertified?_entry_openRunN_rel
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
 #check EvmCompiler.Assembly.Bytecode.InteractionSemantics.openRunNResult
 #check EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes
@@ -54,5 +56,7 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.TypedCfg.InteractionPreservation.Instr.openRunAt_atLoweredEnd
 #print axioms EvmCompiler.TypedCfg.InteractionPreservation.Block.lowerBodyFrom?_source_openRunNResult
 #print axioms EvmCompiler.TypedCfg.InteractionPreservation.Terminator.lowerAt?_openRunUntilTransfer_rel_of_direct
+#print axioms EvmCompiler.TypedCfg.InteractionPreservation.Program.lower?_openRunN_rel
+#print axioms EvmCompiler.TypedCfg.InteractionPreservation.Program.compileCertified?_entry_openRunN_rel
 #print axioms EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes
 #print axioms EvmCompiler.Assembly.Bytecode.compile_openRunNResult_executes

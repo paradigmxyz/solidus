@@ -30764,3 +30764,19 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   directly from `compile?`; it accepts no generated proof evidence. The
   remaining Assembly boundary is the fetched resolved-target and encoded
   bytecode instruction-count bridge, plus legacy observer specialization.
+- 2026-06-17 03:13:51 PDT - compaction-resume - Resumed the horizontal
+  CALL/CREATE proof at TypedCfg return dispatch: the Assembly policy runner and
+  exact stack-shuffle interaction lemmas are checked; next is the adjacent
+  return-dispatch, block, and whole-program preservation composition.
+- 2026-06-17 03:54:33 PDT - compaction-resume - Resumed after checking the
+  concrete target-PC-driven `TypedCfg → Assembly` open-effects theorem. Next:
+  expose it through certified compiler artifacts, run all proof and
+  architecture gates, commit the boundary, then begin `Structured → TypedCfg`.
+- 2026-06-17 04:03:08 PDT - proof/typedcfg-open-whole-program - Completed the
+  horizontal `TypedCfg → Assembly` open-effects boundary. The checked
+  whole-program theorem relates symbolic source-label execution to concrete
+  target-PC dispatch for every continuation of gas, msize, CALL, CALLCODE,
+  DELEGATECALL, STATICCALL, CREATE, and CREATE2. Its certified entry wrapper
+  derives lowering, typing, acceptance, and PC-fit evidence internally. The
+  full verification root, open-effects smoke and axiom output, architecture
+  and hole checks, and `git diff --check` all pass.
