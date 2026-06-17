@@ -780,6 +780,8 @@ Exit: the shared core builds with no compiler layer changed.
     - [x] Compiler-facing zero-result expression, fresh-local, and assignment
       theorems deriving emitted code, stack depth, SWAP selection, and final
       context directly from successful `Stmt.compile`.
+    - [x] Exact control-scope suffix invariants plus pass-owned POP cleanup and
+      frame-restriction theorems for lexical exits.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
 - [ ] Functions.
@@ -829,6 +831,8 @@ Exit: every layer exposes one canonical open computation.
       protocol and canonical Expressions statement semantics.
     - [x] Straight-line source constructors lifted to actual compiled
       singleton target blocks with an explicit adjacent fuel translation.
+    - [x] Cleanup compilation packaged as an adjacent frame theorem, ready for
+      break/continue/leave and scoped-block composition.
 - [ ] Functions -> allocated Locals/Expressions.
   - [ ] Own the emitted internal-call and stack-protocol constructs rather
     than extending stack-free Locals with an operand stack.

@@ -280,6 +280,61 @@ theorem openRun_pop
   rw [pop_openStep, hRun]
   rfl
 
+theorem openRun_replicate_pop
+    (count : Nat) {target : Structured.RunState}
+    (hBound : count ≤ target.evm.stack.length) :
+    ∃ final,
+      Structured.InteractionSemantics.Code.openRun
+          (List.replicate count (.op .pop)) target =
+        .done (.ok final) ∧
+      final.evm.stack = target.evm.stack.drop count ∧
+      final.evm.toSharedState = target.evm.toSharedState ∧
+      final.returns = target.returns := by
+  induction count generalizing target with
+  | zero =>
+      exact ⟨target, rfl, by simp, rfl, rfl⟩
+  | succ count ih =>
+      cases hStack : target.evm.stack with
+      | nil =>
+          simp [hStack] at hBound
+      | cons value rest =>
+          let middle :=
+            target.withEVM
+              (target.evm.replaceStackAndIncrPC rest)
+          have hMiddleStack :
+              middle.evm.stack = rest := by
+            simp [middle,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC]
+          have hTailBound :
+              count ≤ middle.evm.stack.length := by
+            rw [hMiddleStack]
+            simpa [hStack] using hBound
+          obtain ⟨final, hTailRun, hFinalStack,
+              hFinalShared, hFinalReturns⟩ :=
+            ih hTailBound
+          refine ⟨final, ?_, ?_, ?_, ?_⟩
+          · change
+              Structured.InteractionSemantics.Code.openRun
+                  ([.op .pop] ++
+                    List.replicate count (.op .pop)) target =
+                .done (.ok final)
+            rw [Structured.InteractionSemantics.Code.openRun_append,
+              openRun_pop (target := target) (value := value)
+                (rest := rest) hStack]
+            change
+              Structured.InteractionSemantics.Code.openRun
+                  (List.replicate count (.op .pop)) middle =
+                .done (.ok final)
+            exact hTailRun
+          · rw [hFinalStack, hMiddleStack]
+            simp
+          · exact hFinalShared.trans (by
+              simp [middle,
+                EvmYul.EVM.State.replaceStackAndIncrPC,
+                EvmYul.EVM.State.incrPC])
+          · exact hFinalReturns.trans (by simp [middle])
+
 theorem openRun_swap
     {target : Structured.RunState}
     {depth : Nat} {value old : Word} {rest : List Word}
@@ -545,12 +600,35 @@ structure CtxRel (source : Locals.Source.Ctx)
     target.leaveDepth? = source.leaveScope?.map List.length
   leaveRetc :
     target.leaveRetc = 0
+  breakSuffix :
+    ∀ {scope : List Name},
+      source.breakScope? = some scope →
+        ∃ pre, source.scope = pre ++ scope
+  continueSuffix :
+    ∀ {scope : List Name},
+      source.continueScope? = some scope →
+        ∃ pre, source.scope = pre ++ scope
+  leaveSuffix :
+    ∀ {scope : List Name},
+      source.leaveScope? = some scope →
+        ∃ pre, source.scope = pre ++ scope
 
 namespace CtxRel
 
 theorem initial :
     CtxRel Locals.Source.Ctx.initial Locals.Ctx.initial := by
-  constructor <;> rfl
+  constructor
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+  · intro scope hScope
+    simp [Locals.Source.Ctx.initial] at hScope
+  · intro scope hScope
+    simp [Locals.Source.Ctx.initial] at hScope
+  · intro scope hScope
+    simp [Locals.Source.Ctx.initial] at hScope
 
 theorem prependScope
     {source : Locals.Source.Ctx} {target : Locals.Ctx}
@@ -564,6 +642,15 @@ theorem prependScope
   · simpa [Locals.Ctx.withLayout] using hRel.continueDepth
   · simpa [Locals.Ctx.withLayout] using hRel.leaveDepth
   · simpa [Locals.Ctx.withLayout] using hRel.leaveRetc
+  · intro scope hScope
+    obtain ⟨pre, hPrefix⟩ := hRel.breakSuffix hScope
+    exact ⟨name :: pre, by simp [hPrefix]⟩
+  · intro scope hScope
+    obtain ⟨pre, hPrefix⟩ := hRel.continueSuffix hScope
+    exact ⟨name :: pre, by simp [hPrefix]⟩
+  · intro scope hScope
+    obtain ⟨pre, hPrefix⟩ := hRel.leaveSuffix hScope
+    exact ⟨name :: pre, by simp [hPrefix]⟩
 
 theorem withoutLoopControl
     {source : Locals.Source.Ctx} {target : Locals.Ctx}
@@ -578,6 +665,12 @@ theorem withoutLoopControl
       Locals.Ctx.withoutLoopControl] using hRel.leaveDepth
   · simpa [Locals.Source.Ctx.withoutLoopControl,
       Locals.Ctx.withoutLoopControl] using hRel.leaveRetc
+  · intro scope hScope
+    simp [Locals.Source.Ctx.withoutLoopControl] at hScope
+  · intro scope hScope
+    simp [Locals.Source.Ctx.withoutLoopControl] at hScope
+  · intro scope hScope
+    exact hRel.leaveSuffix hScope
 
 theorem withLoopControl
     {source : Locals.Source.Ctx} {target : Locals.Ctx}
@@ -596,6 +689,62 @@ theorem withLoopControl
       Locals.Ctx.withLoopControl] using hRel.leaveDepth
   · simpa [Locals.Source.Ctx.withLoopControl,
       Locals.Ctx.withLoopControl] using hRel.leaveRetc
+  · intro scope hScope
+    simp [Locals.Source.Ctx.withLoopControl] at hScope
+    subst scope
+    exact
+      ⟨[], by
+        simp [Locals.Source.Ctx.withLoopControl]⟩
+  · intro scope hScope
+    simp [Locals.Source.Ctx.withLoopControl] at hScope
+    subst scope
+    exact
+      ⟨[], by
+        simp [Locals.Source.Ctx.withLoopControl]⟩
+  · intro scope hScope
+    exact hRel.leaveSuffix hScope
+
+theorem breakLayout
+    {source : Locals.Source.Ctx} {target : Locals.Ctx}
+    (hRel : CtxRel source target)
+    {scope : List Name}
+    (hScope : source.breakScope? = some scope) :
+    ∃ pre,
+      target.layout = pre ++ scope ∧
+        target.breakDepth? = some scope.length := by
+  obtain ⟨pre, hLayout⟩ := hRel.breakSuffix hScope
+  refine ⟨pre, ?_, ?_⟩
+  · exact hRel.layout.trans hLayout
+  · rw [hRel.breakDepth, hScope]
+    rfl
+
+theorem continueLayout
+    {source : Locals.Source.Ctx} {target : Locals.Ctx}
+    (hRel : CtxRel source target)
+    {scope : List Name}
+    (hScope : source.continueScope? = some scope) :
+    ∃ pre,
+      target.layout = pre ++ scope ∧
+        target.continueDepth? = some scope.length := by
+  obtain ⟨pre, hLayout⟩ := hRel.continueSuffix hScope
+  refine ⟨pre, ?_, ?_⟩
+  · exact hRel.layout.trans hLayout
+  · rw [hRel.continueDepth, hScope]
+    rfl
+
+theorem leaveLayout
+    {source : Locals.Source.Ctx} {target : Locals.Ctx}
+    (hRel : CtxRel source target)
+    {scope : List Name}
+    (hScope : source.leaveScope? = some scope) :
+    ∃ pre,
+      target.layout = pre ++ scope ∧
+        target.leaveDepth? = some scope.length := by
+  obtain ⟨pre, hLayout⟩ := hRel.leaveSuffix hScope
+  refine ⟨pre, ?_, ?_⟩
+  · exact hRel.layout.trans hLayout
+  · rw [hRel.leaveDepth, hScope]
+    rfl
 
 end CtxRel
 
@@ -876,6 +1025,109 @@ theorem ofExprResultOneAssign
         Locals.Source.Store.insert, hName]]
     rw [hResult.vars]
     exact hInitial.storeScoped hNotMem
+
+/--
+Dropping an exact layout prefix realizes source lexical restriction to the
+remaining suffix layout.
+-/
+theorem restrictPrefix
+    {pre kept : Layout} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {initialTarget finalTarget : Structured.RunState}
+    (hInitial :
+      Frame.StateRel (pre ++ kept) suffix returns source initialTarget)
+    (hFinalStack :
+      finalTarget.evm.stack =
+        initialTarget.evm.stack.drop pre.length)
+    (hFinalShared :
+      finalTarget.evm.toSharedState =
+        initialTarget.evm.toSharedState)
+    (hFinalReturns :
+      finalTarget.returns = initialTarget.returns) :
+    Frame.StateRel kept suffix returns
+      (source.restrictTo kept) finalTarget := by
+  constructor
+  · rw [hFinalShared]
+    simpa [Locals.Source.State.restrictTo] using hInitial.shared
+  · exact hFinalReturns.trans hInitial.returns
+  · rw [hFinalStack, List.length_drop, hInitial.stackLength]
+    simp only [List.length_append]
+    omega
+  · rw [hFinalStack, List.drop_drop]
+    simpa [List.length_append, Nat.add_assoc] using hInitial.suffix
+  · intro index name hAt
+    have hOriginalAt :
+        (pre ++ kept)[pre.length + index]? = some name := by
+      rw [List.getElem?_append_right
+        (Nat.le_add_right pre.length index)]
+      simpa using hAt
+    rw [hFinalStack, List.getElem?_drop]
+    rw [show pre.length + index = pre.length + index by rfl]
+    rw [show
+      (source.restrictTo kept).vars name =
+        source.vars name by
+      simp [Locals.Source.State.restrictTo,
+        Locals.Source.Store.restrictTo_mem
+          (List.mem_of_getElem? hAt)]]
+    exact hInitial.slot hOriginalAt
+  · intro name hMem
+    obtain ⟨value, hValue⟩ :=
+      hInitial.defined
+        (List.mem_append_right pre hMem)
+    exact
+      ⟨value, by
+        simpa [Locals.Source.State.restrictTo,
+          Locals.Source.Store.restrictTo_mem hMem] using hValue⟩
+  · intro name hNotMem
+    simp [Locals.Source.State.restrictTo,
+      Locals.Source.Store.restrictTo_not_mem hNotMem]
+
+/--
+Successful ordinary cleanup compilation drops exactly the discarded lexical
+prefix and realizes source restriction to the kept suffix.
+-/
+theorem openRun_cleanupTo
+    {ctx : Locals.Ctx} {pre kept : Layout}
+    {code : Structured.Code} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hLayout : ctx.layout = pre ++ kept)
+    (hCode : ctx.cleanupTo? kept.length = some code)
+    (hInitial :
+      Frame.StateRel ctx.layout suffix returns source target) :
+    ∃ final,
+      Structured.InteractionSemantics.Code.openRun code target =
+        .done (.ok final) ∧
+      Frame.StateRel kept suffix returns
+        (source.restrictTo kept) final := by
+  have hTargetDepth :
+      kept.length ≤ ctx.layout.length := by
+    rw [hLayout, List.length_append]
+    omega
+  unfold Locals.Ctx.cleanupTo? at hCode
+  rw [if_pos hTargetDepth] at hCode
+  have hCount :
+      ctx.layout.length - kept.length = pre.length := by
+    rw [hLayout, List.length_append]
+    omega
+  cases hCode
+  rw [hCount]
+  have hInitial' :
+      Frame.StateRel (pre ++ kept) suffix returns source target := by
+    simpa [hLayout] using hInitial
+  have hBound :
+      pre.length ≤ target.evm.stack.length := by
+    rw [hInitial'.stackLength, List.length_append]
+    omega
+  obtain ⟨final, hRun, hFinalStack,
+      hFinalShared, hFinalReturns⟩ :=
+    Code.openRun_replicate_pop pre.length hBound
+  exact
+    ⟨final, hRun,
+      restrictPrefix hInitial'
+        hFinalStack hFinalShared hFinalReturns⟩
 
 end Frame.StateRel
 

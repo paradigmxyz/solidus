@@ -31234,3 +31234,18 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-Lean hole scan, axiom audit, and `git diff --check`. The new
   compiler-facing theorems depend only on
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 13:45:56 PDT - proof/locals-control-scope-cleanup - strengthened
+  `Frame.CtxRel` so every break/continue/leave scope is an exact suffix of the
+  active lexical scope, proved canonical repeated-POP open execution, proved
+  frame restriction after dropping a layout prefix, and packaged successful
+  `Ctx.cleanupTo?` as a direct adjacent frame theorem. This closes the missing
+  structural invariant needed for lexical exits without importing allocation
+  or observer modules.
+- 2026-06-17 13:46:53 PDT - compaction-resume - resumed the CALL/CREATE
+  horizontal proof at the green Locals control-scope cleanup checkpoint; next
+  preserve that checkpoint, then prove mode-indexed abrupt-exit outcomes.
+- 2026-06-17 13:47:18 PDT - validation/locals-control-scope-cleanup - passed
+  the focused Locals build, full verification root, architecture checks,
+  touched-Lean hole scan, axiom audit, and `git diff --check`. Scope-layout
+  lemmas are axiom-free; execution/frame lemmas depend only on
+  `[propext, Classical.choice, Quot.sound]`.

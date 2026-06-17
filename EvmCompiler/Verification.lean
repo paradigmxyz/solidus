@@ -171,11 +171,17 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Frame.CtxRel.prependScope
 #check EvmCompiler.Locals.InteractionPreservation.Frame.CtxRel.withoutLoopControl
 #check EvmCompiler.Locals.InteractionPreservation.Frame.CtxRel.withLoopControl
+#check EvmCompiler.Locals.InteractionPreservation.Frame.CtxRel.breakLayout
+#check EvmCompiler.Locals.InteractionPreservation.Frame.CtxRel.continueLayout
+#check EvmCompiler.Locals.InteractionPreservation.Frame.CtxRel.leaveLayout
 #check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.expr
 #check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.ofExprResultZero
 #check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.ofExprResultOneInsert
 #check EvmCompiler.Locals.InteractionPreservation.Code.openRun_swap_pop
+#check EvmCompiler.Locals.InteractionPreservation.Code.openRun_replicate_pop
 #check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.ofExprResultOneAssign
+#check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.restrictPrefix
+#check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.openRun_cleanupTo
 #check EvmCompiler.Locals.InteractionPreservation.Expr.openEvalOne_compileCode
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openAssign_compileCode
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_assign_generated
