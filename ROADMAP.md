@@ -94,8 +94,10 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
       and loop results;
     - [x] prove exact quantitative composition for regular prefixes,
       unreachable suffixes, lexical blocks, and loop wrappers;
-    - [ ] lift terminal expressions, calls, lists, bodies, and compound
-      control through the recursive program-indexed family;
+    - [x] lift recursive terminal statement-list sequencing and function-body
+      packaging to the program-indexed budget;
+    - [ ] lift terminal expressions, calls, and compound control through the
+      recursive program-indexed family;
   - [x] expose the bounded regular whole-program forward theorem;
   - [ ] expose the bounded whole-program forward theorem.
 - [ ] Define an honest source-facing scratch execution/reservation-safety

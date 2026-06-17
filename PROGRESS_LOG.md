@@ -30416,3 +30416,15 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   dependency guard, changed-file proof-marker scan, standalone observer axiom
   smoke, and `git diff --check` passed. The new quantitative interfaces depend
   only on `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 19:54:53 PDT - proof/yul-terminal-list-body-fuel - Added
+  program-indexed terminal statement, list, and body capability interfaces.
+  Proved recursive terminal list sequencing for both head-terminal and
+  regular-head/terminal-tail cases, then lifted the result through canonical
+  function-body packaging. The proof reuses the ordinary forward statement
+  family and existing terminal relations; no new interpreter or compiler path
+  was introduced.
+- 2026-06-16 19:54:53 PDT - validation/yul-terminal-list-body-fuel - Focused
+  terminal-fuel build, full 1,269-job verification root, architecture guard,
+  changed-file proof-marker scan, standalone axiom smoke, and
+  `git diff --check` passed. The recursive terminal list/body theorems depend
+  only on `propext`, `Classical.choice`, and `Quot.sound`.
