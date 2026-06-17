@@ -827,6 +827,478 @@ theorem ofForLoop_runBounded
 
 end StatementResult
 
+theorem terminalArgsOfUncheckedLowering_programBounded
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {initial final : Fresh.State}
+    {layout : List Name}
+    {args : List AstExpr}
+    {pre : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {fuel globalCost : Nat}
+    {source :
+      ObserverSemantics.SourceReplay.State transcript}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {Eligible : AstExpr → Prop}
+    (hLowering :
+      Expr.List.UncheckedBoundLowering
+        initial args pre lowerArgs final)
+    (hEligible : ∀ expr, expr ∈ args → Eligible expr)
+    (hCost :
+      ∀ expr, expr ∈ args →
+        FunctionsObserverStaticCost.expr expr ≤ globalCost)
+    (hRegularExpr :
+      ∀ {exprFuel : Nat} {before after : Fresh.State}
+        {expr : AstExpr} {exprPre : List Functions.Stmt}
+        {lower : Locals.Expr 1}
+        {exprSource exprSource' :
+          ObserverSemantics.SourceReplay.State transcript}
+        {exprTarget : Functions.ObserverSemantics.State transcript}
+        {exprCtx : Functions.Source.Ctx} {value : Assembly.Word},
+        exprFuel < fuel →
+          FunctionsObserverStaticCost.expr expr ≤ globalCost →
+          Eligible expr →
+          Expr.lower1Unchecked? before expr =
+            some (exprPre, lower, after) →
+          StateRelation.Replay.ScopedExactRel codeRel layout
+            exprSource exprTarget →
+          StateRelation.Vars.TargetDomainWithin
+            before.used exprTarget.source.vars →
+          StateRelation.Vars.NamesWithin before.used exprCtx.scope →
+          Yul.Source.Effectful.eval
+              (ObserverSemantics.SourceReplay.stateModel transcript)
+              (ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              exprFuel expr codeOverride exprSource =
+            .ok (exprSource', value) →
+          Nonempty
+            { result :
+                FunctionsObserverExpression.ScopedPreparedValue
+                  contract transcript codeRel program exprPre lower after
+                  layout exprSource' exprTarget exprCtx value //
+              FunctionsObserverFuel.PreparedValue.ProgramBounded
+                globalCost (FunctionsObserverStaticCost.expr expr)
+                exprFuel result.prepared })
+    (hTerminalExpr :
+      ∀ {exprFuel : Nat} {before after : Fresh.State}
+        {expr : AstExpr} {exprPre : List Functions.Stmt}
+        {lower : Locals.Expr 1}
+        {exprSource :
+          ObserverSemantics.SourceReplay.State transcript}
+        {exprFailure :
+          Yul.Source.Effectful.Failure
+            (ObserverSemantics.SourceReplay.State transcript)}
+        {exprTarget : Functions.ObserverSemantics.State transcript}
+        {exprCtx : Functions.Source.Ctx},
+        exprFuel < fuel →
+          FunctionsObserverStaticCost.expr expr ≤ globalCost →
+          Eligible expr →
+          Expr.lower1Unchecked? before expr =
+            some (exprPre, lower, after) →
+          StateRelation.Replay.ScopedExactRel codeRel layout
+            exprSource exprTarget →
+          StateRelation.Vars.TargetDomainWithin
+            before.used exprTarget.source.vars →
+          StateRelation.Vars.NamesWithin before.used exprCtx.scope →
+          Yul.Source.Effectful.eval
+              (ObserverSemantics.SourceReplay.stateModel transcript)
+              (ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              exprFuel expr codeOverride exprSource =
+            .error exprFailure →
+          Yul.Source.Effectful.Exception.Observable
+              exprFailure.exception →
+          Nonempty
+            { result :
+                FunctionsObserverTerminal.StatementResult
+                  contract codeRel program exprPre exprFailure
+                  exprTarget exprCtx //
+              StatementResult.ProgramBounded
+                globalCost (FunctionsObserverStaticCost.expr expr)
+                exprFuel result })
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        initial.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin initial.used ctx.scope)
+    (hRun :
+      Yul.Source.Effectful.evalArgs
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel args.reverse codeOverride source =
+        .error failure)
+    (hObservable :
+      Yul.Source.Effectful.Exception.Observable failure.exception) :
+    Nonempty
+      { result :
+          FunctionsObserverTerminal.StatementResult
+            contract codeRel program pre failure target ctx //
+        StatementResult.ProgramBounded
+          globalCost (FunctionsObserverStaticCost.exprList args)
+          fuel result } := by
+  induction hLowering generalizing fuel source failure target ctx with
+  | nil =>
+      cases fuel with
+      | zero =>
+          simp [Yul.Source.Effectful.evalArgs,
+            Yul.Source.Effectful.fail] at hRun
+          rw [← hRun] at hObservable
+          simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+      | succ previous =>
+          simp [Yul.Source.Effectful.evalArgs] at hRun
+  | @direct stateRest stateHead expr rest preRest preHead lowerRest
+      lowerHead hRest hHead hDirect ih =>
+      rw [List.reverse_cons] at hRun
+      rcases
+          Yul.Source.Effectful.evalArgs_append_error_parts
+            (ObserverSemantics.SourceReplay.stateModel transcript)
+            (ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            hRun with hRestFailure | hHeadFailure
+      · obtain ⟨restBounded⟩ :=
+          ih
+            (fun candidate hMem =>
+              hEligible candidate (List.mem_cons_of_mem expr hMem))
+            (fun candidate hMem =>
+              hCost candidate (List.mem_cons_of_mem expr hMem))
+            hRegularExpr hTerminalExpr hRel hDomain hScope
+            hRestFailure hObservable
+        let restResult := restBounded.1
+        let result :=
+          FunctionsObserverTerminal.StatementResult.appendUnreachable
+            restResult preHead
+        refine ⟨⟨result, ?_⟩⟩
+        have hCompose :=
+          StatementResult.appendUnreachable_runBounded
+            restResult preHead
+        have hRestBound :
+            restResult.requiredFuel ≤
+              FunctionsObserverFuel.executionBudgetFor
+                globalCost
+                (FunctionsObserverStaticCost.exprList rest)
+                fuel := by
+          simpa [restResult] using restBounded.2
+        dsimp [StatementResult.ProgramBounded,
+          StatementResult.RunBounded, result] at hCompose ⊢
+        exact
+          hCompose.trans
+            (hRestBound.trans
+              (FunctionsObserverFuel.executionBudgetFor_local_mono
+                globalCost fuel
+                (by
+                  simp [FunctionsObserverStaticCost.exprList]
+                  omega)))
+      · rcases hHeadFailure with
+          ⟨middle, restValues, headFuel,
+            hFuel, hRestRun, hHeadRun⟩
+        obtain ⟨exprFuel, hExprFuel, hExprRun⟩ :=
+          Yul.Source.Effectful.evalArgs_singleton_observable_error_parts
+            (ObserverSemantics.SourceReplay.stateModel transcript)
+            (ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            hHeadRun hObservable
+        obtain ⟨restBounded⟩ :=
+          FunctionsObserverExpressionFuel.ScopedPreparedArgs.ofUncheckedLowering_programBounded
+            (globalCost := globalCost)
+            FunctionsObserverStaticCost.expr hRest
+            (fun candidate hMem =>
+              hEligible candidate (List.mem_cons_of_mem expr hMem))
+            (fun candidate hMem =>
+              hCost candidate (List.mem_cons_of_mem expr hMem))
+            (fun hArgFuel hArgCost hArgOk hArgLower hArgRel hArgDomain
+                hArgScope hArgRun =>
+              hRegularExpr (by omega) hArgCost hArgOk hArgLower hArgRel
+                hArgDomain hArgScope hArgRun)
+            hRel hDomain hScope hRestRun
+        obtain ⟨headBounded⟩ :=
+          hTerminalExpr (by omega)
+            (hCost expr (by simp))
+            (hEligible expr (by simp)) hHead
+            restBounded.1.relation
+            restBounded.1.prepared.prepared.domain
+            restBounded.1.prepared.prepared.scope
+            hExprRun hObservable
+        let restPrepared := restBounded.1
+        let headResult := headBounded.1
+        let result :=
+          FunctionsObserverTerminal.StatementResult.prependPrepared
+            restPrepared.prepared.prepared headResult
+        refine ⟨⟨result, ?_⟩⟩
+        have hCompose :=
+          StatementResult.prependPrepared_runBounded
+            restPrepared.prepared.prepared headResult
+        have hRestBound :
+            restPrepared.prepared.prepared.requiredFuel ≤
+              FunctionsObserverFuel.executionBudgetFor
+                globalCost
+                (FunctionsObserverStaticCost.exprList rest)
+                fuel := by
+          simpa [FunctionsObserverStaticCost.exprList_eq_exprListBy,
+            restPrepared] using restBounded.2
+        have hHeadBound :
+            headResult.requiredFuel ≤
+              FunctionsObserverFuel.executionBudgetFor
+                globalCost (FunctionsObserverStaticCost.expr expr)
+                exprFuel := by
+          simpa [headResult] using headBounded.2
+        have hHeadDynamic :=
+          FunctionsObserverFuel.executionBudgetFor_mono
+            globalCost (FunctionsObserverStaticCost.expr expr)
+            (show exprFuel ≤ fuel by omega)
+        have hAdd :=
+          FunctionsObserverFuel.executionBudgetFor_add_local
+            globalCost
+            (FunctionsObserverStaticCost.exprList rest)
+            (FunctionsObserverStaticCost.expr expr)
+            fuel
+        dsimp [StatementResult.ProgramBounded,
+          StatementResult.RunBounded, result] at hCompose ⊢
+        calc
+          _ ≤ restPrepared.prepared.prepared.requiredFuel +
+                headResult.requiredFuel := hCompose
+          _ ≤
+              FunctionsObserverFuel.executionBudgetFor
+                  globalCost
+                  (FunctionsObserverStaticCost.exprList rest)
+                  fuel +
+                FunctionsObserverFuel.executionBudgetFor
+                  globalCost
+                  (FunctionsObserverStaticCost.expr expr)
+                  fuel :=
+            Nat.add_le_add hRestBound (hHeadBound.trans hHeadDynamic)
+          _ =
+              FunctionsObserverFuel.executionBudgetFor
+                globalCost
+                (FunctionsObserverStaticCost.exprList
+                  (expr :: rest))
+                fuel := by
+            simpa [FunctionsObserverStaticCost.exprList,
+              Nat.add_comm, Nat.add_left_comm, Nat.add_assoc] using hAdd
+  | @bound stateRest stateHead stateFresh expr rest preRest preHead
+      lowerRest lowerHead tmp hRest hHead hDirect hFresh ih =>
+      rw [List.reverse_cons] at hRun
+      rcases
+          Yul.Source.Effectful.evalArgs_append_error_parts
+            (ObserverSemantics.SourceReplay.stateModel transcript)
+            (ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            hRun with hRestFailure | hHeadFailure
+      · obtain ⟨restBounded⟩ :=
+          ih
+            (fun candidate hMem =>
+              hEligible candidate (List.mem_cons_of_mem expr hMem))
+            (fun candidate hMem =>
+              hCost candidate (List.mem_cons_of_mem expr hMem))
+            hRegularExpr hTerminalExpr hRel hDomain hScope
+            hRestFailure hObservable
+        let restResult := restBounded.1
+        have hExtendedRun :
+            Functions.Source.Effectful.Block.runOpen
+                (Functions.ObserverSemantics.stateModel transcript)
+                (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                  contract transcript)
+                program ctx restResult.requiredFuel
+                { stmts :=
+                    preRest ++ preHead ++
+                      [Functions.Stmt.let_ tmp lowerHead] }
+                target =
+              .ok
+                (Functions.Source.Effectful.Outcome.halt
+                  restResult.kind restResult.finalTarget,
+                  restResult.finalCtx) := by
+          simpa only [List.append_assoc] using
+            Functions.Source.Effectful.Block.runOpen_append_nonregular_at_same
+              (Functions.ObserverSemantics.stateModel transcript)
+              (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              program preRest
+              (preHead ++ [Functions.Stmt.let_ tmp lowerHead])
+              ctx target
+              (Functions.Source.Effectful.Outcome.halt
+                restResult.kind restResult.finalTarget)
+              restResult.finalCtx restResult.requiredFuel
+              (FunctionsObserverTerminal.StatementResult.run_requiredFuel
+                restResult)
+              (by simp)
+        let result :
+            FunctionsObserverTerminal.StatementResult
+              contract codeRel program
+              (preRest ++ preHead ++ [Functions.Stmt.let_ tmp lowerHead])
+              failure target ctx :=
+          { kind := restResult.kind
+            finalTarget := restResult.finalTarget
+            finalCtx := restResult.finalCtx
+            run := ⟨restResult.requiredFuel, hExtendedRun⟩
+            relation := restResult.relation }
+        refine ⟨⟨result, ?_⟩⟩
+        have hRestBound :
+            restResult.requiredFuel ≤
+              FunctionsObserverFuel.executionBudgetFor
+                globalCost
+                (FunctionsObserverStaticCost.exprList rest)
+                fuel := by
+          simpa [restResult] using restBounded.2
+        have hResultRequired :
+            result.requiredFuel ≤ restResult.requiredFuel := by
+          exact
+            FunctionsObserverTerminal.StatementResult.requiredFuel_le_of_run
+              result hExtendedRun
+        exact
+          hResultRequired.trans
+            (hRestBound.trans
+              (FunctionsObserverFuel.executionBudgetFor_local_mono
+                globalCost fuel
+                (by
+                  simp [FunctionsObserverStaticCost.exprList]
+                  omega)))
+      · rcases hHeadFailure with
+          ⟨middle, restValues, headFuel,
+            hFuel, hRestRun, hHeadRun⟩
+        obtain ⟨exprFuel, hExprFuel, hExprRun⟩ :=
+          Yul.Source.Effectful.evalArgs_singleton_observable_error_parts
+            (ObserverSemantics.SourceReplay.stateModel transcript)
+            (ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            hHeadRun hObservable
+        obtain ⟨restBounded⟩ :=
+          FunctionsObserverExpressionFuel.ScopedPreparedArgs.ofUncheckedLowering_programBounded
+            (globalCost := globalCost)
+            FunctionsObserverStaticCost.expr hRest
+            (fun candidate hMem =>
+              hEligible candidate (List.mem_cons_of_mem expr hMem))
+            (fun candidate hMem =>
+              hCost candidate (List.mem_cons_of_mem expr hMem))
+            (fun hArgFuel hArgCost hArgOk hArgLower hArgRel hArgDomain
+                hArgScope hArgRun =>
+              hRegularExpr (by omega) hArgCost hArgOk hArgLower hArgRel
+                hArgDomain hArgScope hArgRun)
+            hRel hDomain hScope hRestRun
+        obtain ⟨headBounded⟩ :=
+          hTerminalExpr (by omega)
+            (hCost expr (by simp))
+            (hEligible expr (by simp)) hHead
+            restBounded.1.relation
+            restBounded.1.prepared.prepared.domain
+            restBounded.1.prepared.prepared.scope
+            hExprRun hObservable
+        let restPrepared := restBounded.1
+        let headResult := headBounded.1
+        let combined :=
+          FunctionsObserverTerminal.StatementResult.prependPrepared
+            restPrepared.prepared.prepared headResult
+        have hExtendedRun :
+            Functions.Source.Effectful.Block.runOpen
+                (Functions.ObserverSemantics.stateModel transcript)
+                (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                  contract transcript)
+                program ctx combined.requiredFuel
+                { stmts :=
+                    preRest ++ preHead ++
+                      [Functions.Stmt.let_ tmp lowerHead] }
+                target =
+              .ok
+                (Functions.Source.Effectful.Outcome.halt
+                  combined.kind combined.finalTarget,
+                  combined.finalCtx) := by
+          simpa only [List.append_assoc] using
+            Functions.Source.Effectful.Block.runOpen_append_nonregular_at_same
+              (Functions.ObserverSemantics.stateModel transcript)
+              (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              program (preRest ++ preHead)
+              [Functions.Stmt.let_ tmp lowerHead]
+              ctx target
+              (Functions.Source.Effectful.Outcome.halt
+                combined.kind combined.finalTarget)
+              combined.finalCtx combined.requiredFuel
+              (FunctionsObserverTerminal.StatementResult.run_requiredFuel
+                combined)
+              (by simp)
+        let result :
+            FunctionsObserverTerminal.StatementResult
+              contract codeRel program
+              (preRest ++ preHead ++ [Functions.Stmt.let_ tmp lowerHead])
+              failure target ctx :=
+          { kind := combined.kind
+            finalTarget := combined.finalTarget
+            finalCtx := combined.finalCtx
+            run := ⟨combined.requiredFuel, hExtendedRun⟩
+            relation := combined.relation }
+        refine ⟨⟨result, ?_⟩⟩
+        have hCombined :=
+          StatementResult.prependPrepared_runBounded
+            restPrepared.prepared.prepared headResult
+        have hRestBound :
+            restPrepared.prepared.prepared.requiredFuel ≤
+              FunctionsObserverFuel.executionBudgetFor
+                globalCost
+                (FunctionsObserverStaticCost.exprList rest)
+                fuel := by
+          simpa [FunctionsObserverStaticCost.exprList_eq_exprListBy,
+            restPrepared] using restBounded.2
+        have hHeadBound :
+            headResult.requiredFuel ≤
+              FunctionsObserverFuel.executionBudgetFor
+                globalCost (FunctionsObserverStaticCost.expr expr)
+                exprFuel := by
+          simpa [headResult] using headBounded.2
+        have hHeadDynamic :=
+          FunctionsObserverFuel.executionBudgetFor_mono
+            globalCost (FunctionsObserverStaticCost.expr expr)
+            (show exprFuel ≤ fuel by omega)
+        have hAdd :=
+          FunctionsObserverFuel.executionBudgetFor_add_local
+            globalCost
+            (FunctionsObserverStaticCost.exprList rest)
+            (FunctionsObserverStaticCost.expr expr)
+            fuel
+        have hResultRequired :
+            result.requiredFuel ≤
+              restPrepared.prepared.prepared.requiredFuel +
+                headResult.requiredFuel := by
+          have hResult :
+              result.requiredFuel ≤ combined.requiredFuel :=
+            FunctionsObserverTerminal.StatementResult.requiredFuel_le_of_run
+              result hExtendedRun
+          have hCombined' :
+              combined.requiredFuel ≤
+                restPrepared.prepared.prepared.requiredFuel +
+                  headResult.requiredFuel := by
+            simpa [StatementResult.RunBounded, combined] using hCombined
+          exact hResult.trans hCombined'
+        calc
+          result.requiredFuel ≤
+              restPrepared.prepared.prepared.requiredFuel +
+                headResult.requiredFuel := hResultRequired
+          _ ≤
+              FunctionsObserverFuel.executionBudgetFor
+                  globalCost
+                  (FunctionsObserverStaticCost.exprList rest)
+                  fuel +
+                FunctionsObserverFuel.executionBudgetFor
+                  globalCost
+                  (FunctionsObserverStaticCost.expr expr)
+                  fuel :=
+            Nat.add_le_add hRestBound (hHeadBound.trans hHeadDynamic)
+          _ =
+              FunctionsObserverFuel.executionBudgetFor
+                globalCost
+                (FunctionsObserverStaticCost.exprList
+                  (expr :: rest))
+                fuel := by
+            simpa [FunctionsObserverStaticCost.exprList,
+              Nat.add_comm, Nat.add_left_comm, Nat.add_assoc] using hAdd
+
 /--
 Program-indexed terminal primitive preservation after regular argument
 evaluation. The generated argument prelude uses the ordinary bounded expression
