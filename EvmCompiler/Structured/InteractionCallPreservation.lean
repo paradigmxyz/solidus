@@ -827,8 +827,16 @@ theorem openRun_call_exec_under
       ∀ targetState,
         policy fragment.entry targetState = false)
     (hProcExitNoStop :
-      ∀ targetState,
-        policy (ProcLabel.exit proc.name) targetState = false)
+      ∀ {args callerStack : EvmYul.Stack Word}
+          {bodyState : RunState} {targetState : EVMState},
+        Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
+            some (args, callerStack) →
+          TypedCfgPreservation.StateRel bodyState
+            (Structured.Stmt.callToken supply :: tokens) targetState →
+          bodyState.returns =
+            (((source.withEVM { source.evm with stack := args }).pushReturn
+              callerStack proc.retc).returns) →
+          policy (ProcLabel.exit proc.name) targetState = false)
     (hBody :
       ∀ {args callerStack : EvmYul.Stack Word},
         Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
@@ -1007,7 +1015,9 @@ theorem openRun_call_exec_under
                 bodyStopPolicy,
                 InteractionControlPreservation.OpenOutcome.pushStopJump,
                 hStop])
-            hTargetBodyExec (hProcExitNoStop targetAtExit)
+            hTargetBodyExec
+            (hProcExitNoStop hSplit hBodyStateRel
+              (by simpa [callSource] using hBodyReturns))
             hDispatchExec
         obtain ⟨targetFuel, hTargetExec⟩ :=
           prepend_call_route (fragment := fragment) generated hCallStep'
@@ -1117,7 +1127,9 @@ theorem openRun_call_exec_under
                   bodyStopPolicy,
                   InteractionControlPreservation.OpenOutcome.pushStopJump,
                   hStop])
-              hTargetBodyExec (hProcExitNoStop targetAtExit)
+              hTargetBodyExec
+              (hProcExitNoStop hSplit hBodyStateRel
+                (by simpa [callSource] using hBodyReturns))
               hDispatchExec
           obtain ⟨targetFuel, hTargetExec⟩ :=
             prepend_call_route (fragment := fragment) generated hCallStep'
@@ -1230,8 +1242,16 @@ theorem openRun_call_exec_under_of_compileStmtFuel?
       ∀ targetState,
         policy (ProcLabel.entry proc.name) targetState = false)
     (hProcExitNoStop :
-      ∀ targetState,
-        policy (ProcLabel.exit proc.name) targetState = false)
+      ∀ {args callerStack : EvmYul.Stack Word}
+          {bodyState : RunState} {targetState : EVMState},
+        Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
+            some (args, callerStack) →
+          TypedCfgPreservation.StateRel bodyState
+            (Structured.Stmt.callToken supply :: tokens) targetState →
+          bodyState.returns =
+            (((source.withEVM { source.evm with stack := args }).pushReturn
+              callerStack proc.retc).returns) →
+          policy (ProcLabel.exit proc.name) targetState = false)
     (hFragmentEntryNoStop :
       ∀ (fragment :
           TypedCfgPreservation.Program.ProcFragment

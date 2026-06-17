@@ -196,6 +196,9 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.InteractionPreservation.Code.openRun_toCfg
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches.of_stateRel
+#check EvmCompiler.Structured.TypedCfgPreservation.ActivationExtension
+#check EvmCompiler.Structured.TypedCfgPreservation.ActivationExtension.realize_length_lt
+#check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches.not_of_extension
 #check EvmCompiler.Structured.InteractionSemantics.Code.openRun_returns
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.LabelBeforeSupply
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply

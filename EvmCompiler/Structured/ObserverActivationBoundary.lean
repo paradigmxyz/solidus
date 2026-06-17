@@ -5,27 +5,17 @@ namespace Structured
 namespace ObserverAdequacy
 namespace OutcomeSimulation
 
-/--
-One or more compiler-managed call frames extending an ancestor activation.
--/
-inductive ActivationExtension :
-    List Structured.ReturnDest → List Word →
-      List Structured.ReturnDest → List Word → Prop where
-  | one (returns : List Structured.ReturnDest) (tokens : List Word)
-      (frame : Structured.ReturnDest) (token : Word) :
-      ActivationExtension returns tokens
-        (frame :: returns) (token :: tokens)
-  | push
-      {returns : List Structured.ReturnDest} {tokens : List Word}
-      {currentReturns : List Structured.ReturnDest}
-      {currentTokens : List Word}
-      (frame : Structured.ReturnDest) (token : Word)
-      (hExtension :
-        ActivationExtension returns tokens currentReturns currentTokens) :
-      ActivationExtension returns tokens
-        (frame :: currentReturns) (token :: currentTokens)
+abbrev ActivationExtension :=
+  TypedCfgPreservation.ActivationExtension
 
 namespace ActivationExtension
+
+theorem one (returns : List Structured.ReturnDest) (tokens : List Word)
+    (frame : Structured.ReturnDest) (token : Word) :
+    ActivationExtension returns tokens
+      (frame :: returns) (token :: tokens) :=
+  TypedCfgPreservation.ActivationExtension.one
+    returns tokens frame token
 
 theorem trans
     {ancestorReturns : List Structured.ReturnDest}
@@ -41,12 +31,8 @@ theorem trans
       ActivationExtension middleReturns middleTokens
         childReturns childTokens) :
     ActivationExtension ancestorReturns ancestorTokens
-      childReturns childTokens := by
-  induction hSecond with
-  | one frame token =>
-      exact .push frame token hFirst
-  | push frame token hExtension ih =>
-      exact .push frame token ih
+      childReturns childTokens :=
+  TypedCfgPreservation.ActivationExtension.trans hFirst hSecond
 
 theorem childTokens_ne_nil
     {ancestorReturns childReturns : List Structured.ReturnDest}
@@ -54,8 +40,8 @@ theorem childTokens_ne_nil
     (hExtension :
       ActivationExtension ancestorReturns ancestorTokens
         childReturns childTokens) :
-    childTokens ≠ [] := by
-  cases hExtension <;> simp
+    childTokens ≠ [] :=
+  TypedCfgPreservation.ActivationExtension.childTokens_ne_nil hExtension
 
 theorem realize_length_lt
     {ancestorReturns childReturns : List Structured.ReturnDest}
@@ -70,70 +56,9 @@ theorem realize_length_lt
     (hChild :
       TypedCfgPreservation.realizeStack
           [] childReturns childTokens = some childHidden) :
-    ancestorHidden.length < childHidden.length := by
-  induction hExtension generalizing childHidden with
-  | one frame token =>
-      have hAppend :=
-        TypedCfgPreservation.realizeStack_append_prefix
-          ([token] ++ frame.callerStack) []
-          ancestorReturns ancestorTokens
-      rw [hAncestor] at hAppend
-      have hExpected :
-          TypedCfgPreservation.realizeStack
-              [] (frame :: ancestorReturns)
-                (token :: ancestorTokens) =
-            some ([token] ++ frame.callerStack ++ ancestorHidden) := by
-        simp only [TypedCfgPreservation.realizeStack]
-        simpa [List.append_assoc] using hAppend
-      have hChildEq :
-          childHidden =
-            [token] ++ frame.callerStack ++ ancestorHidden :=
-        Option.some.inj (hChild.symm.trans hExpected)
-      subst childHidden
-      simp only [List.length_append, List.length_cons, List.length_nil]
-      omega
-  | @push currentReturns currentTokens frame token hCurrent ih =>
-      cases hMiddle :
-          TypedCfgPreservation.realizeStack
-            [] currentReturns currentTokens with
-      | none =>
-          have hAppend :=
-            TypedCfgPreservation.realizeStack_append_prefix
-              ([token] ++ frame.callerStack) []
-              currentReturns currentTokens
-          rw [hMiddle] at hAppend
-          have hImpossible :
-              TypedCfgPreservation.realizeStack
-                  [] (frame :: currentReturns)
-                    (token :: currentTokens) = none := by
-            simp only [TypedCfgPreservation.realizeStack]
-            simpa [List.append_assoc] using hAppend
-          rw [hImpossible] at hChild
-          cases hChild
-      | some middleHidden =>
-          have hAppend :=
-            TypedCfgPreservation.realizeStack_append_prefix
-              ([token] ++ frame.callerStack) []
-              currentReturns currentTokens
-          rw [hMiddle] at hAppend
-          have hExpected :
-              TypedCfgPreservation.realizeStack
-                  [] (frame :: currentReturns)
-                    (token :: currentTokens) =
-                some
-                  ([token] ++ frame.callerStack ++ middleHidden) := by
-            simp only [TypedCfgPreservation.realizeStack]
-            simpa [List.append_assoc] using hAppend
-          have hChildEq :
-              childHidden =
-                [token] ++ frame.callerStack ++ middleHidden :=
-            Option.some.inj (hChild.symm.trans hExpected)
-          subst childHidden
-          have hAncestorLt :=
-            ih hMiddle
-          simp only [List.length_append, List.length_cons,
-            List.length_nil]
-          omega
+    ancestorHidden.length < childHidden.length :=
+  TypedCfgPreservation.ActivationExtension.realize_length_lt
+    hExtension hAncestor hChild
 
 end ActivationExtension
 
@@ -222,35 +147,17 @@ theorem not_of_pushed_return
     (hChild :
       FrameMatches child (token :: tokens) shape target) :
     ¬ FrameMatches caller tokens shape target := by
-  rcases hCallerHidden with ⟨callerHidden, hCallerHidden⟩
-  unfold FrameMatches
-    TypedCfgPreservation.ActivationFrameMatches at hChild ⊢
-  rw [hDepth] at hChild ⊢
-  rcases hChild with ⟨childHidden, hChildHidden, hChildLength⟩
-  intro hCaller
-  rcases hCaller with
-    ⟨callerHidden', hCallerHidden', hCallerLength⟩
-  have hCallerHiddenEq : callerHidden' = callerHidden := by
-    exact Option.some.inj (hCallerHidden'.symm.trans hCallerHidden)
-  subst callerHidden'
-  have hExpected :
-      TypedCfgPreservation.realizeStack
-          [] child.source.returns (token :: tokens) =
-        some ([token] ++ frame.callerStack ++ callerHidden) := by
+  have hExtension :
+      TypedCfgPreservation.ActivationExtension
+        caller.source.returns tokens child.source.returns
+          (token :: tokens) := by
     rw [hReturns]
-    simp only [TypedCfgPreservation.realizeStack]
-    have hAppend :=
-      TypedCfgPreservation.realizeStack_append_prefix
-        ([token] ++ frame.callerStack) []
-        caller.source.returns tokens
-    rw [hCallerHidden] at hAppend
-    simpa [List.append_assoc] using hAppend
-  have hChildHiddenEq :
-      childHidden = [token] ++ frame.callerStack ++ callerHidden := by
-    exact Option.some.inj (hChildHidden.symm.trans hExpected)
-  subst childHidden
-  simp only [List.length_append, List.length_cons, List.length_nil] at hChildLength
-  omega
+    exact
+      TypedCfgPreservation.ActivationExtension.one
+        caller.source.returns tokens frame token
+  exact
+    TypedCfgPreservation.ActivationFrameMatches.not_of_extension
+      hDepth hExtension hCallerHidden hChild
 
 theorem not_of_extension
     {transcript : Trace} {shape : TypedCfg.Shape}
@@ -268,23 +175,9 @@ theorem not_of_extension
             [] ancestor.source.returns ancestorTokens = some hidden)
     (hChild :
       FrameMatches child childTokens shape target) :
-    ¬ FrameMatches ancestor ancestorTokens shape target := by
-  rcases hAncestorHidden with
-    ⟨ancestorHidden, hAncestorHidden⟩
-  unfold FrameMatches
-    TypedCfgPreservation.ActivationFrameMatches at hChild ⊢
-  rw [hDepth] at hChild ⊢
-  rcases hChild with ⟨childHidden, hChildHidden, hChildLength⟩
-  intro hAncestor
-  rcases hAncestor with
-    ⟨ancestorHidden', hAncestorHidden', hAncestorLength⟩
-  have hAncestorEq : ancestorHidden' = ancestorHidden :=
-    Option.some.inj (hAncestorHidden'.symm.trans hAncestorHidden)
-  subst ancestorHidden'
-  have hLengthLt :=
-    ActivationExtension.realize_length_lt
-      hExtension hAncestorHidden hChildHidden
-  omega
+    ¬ FrameMatches ancestor ancestorTokens shape target :=
+  TypedCfgPreservation.ActivationFrameMatches.not_of_extension
+    hDepth hExtension hAncestorHidden hChild
 
 end FrameMatches
 

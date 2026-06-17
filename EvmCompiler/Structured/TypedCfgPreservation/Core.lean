@@ -277,6 +277,133 @@ theorem popCondition
 end StateRel
 
 /--
+One or more compiler-managed call frames extending an ancestor activation.
+
+This is a Structured-to-TypedCfg representation invariant, independent of any
+particular observer or execution direction.
+-/
+inductive ActivationExtension :
+    List ReturnDest → List Word → List ReturnDest → List Word → Prop where
+  | one (returns : List ReturnDest) (tokens : List Word)
+      (frame : ReturnDest) (token : Word) :
+      ActivationExtension returns tokens
+        (frame :: returns) (token :: tokens)
+  | push
+      {returns : List ReturnDest} {tokens : List Word}
+      {currentReturns : List ReturnDest}
+      {currentTokens : List Word}
+      (frame : ReturnDest) (token : Word)
+      (hExtension :
+        ActivationExtension returns tokens currentReturns currentTokens) :
+      ActivationExtension returns tokens
+        (frame :: currentReturns) (token :: currentTokens)
+
+namespace ActivationExtension
+
+theorem trans
+    {ancestorReturns : List ReturnDest}
+    {ancestorTokens : List Word}
+    {middleReturns : List ReturnDest}
+    {middleTokens : List Word}
+    {childReturns : List ReturnDest}
+    {childTokens : List Word}
+    (hFirst :
+      ActivationExtension ancestorReturns ancestorTokens
+        middleReturns middleTokens)
+    (hSecond :
+      ActivationExtension middleReturns middleTokens
+        childReturns childTokens) :
+    ActivationExtension ancestorReturns ancestorTokens
+      childReturns childTokens := by
+  induction hSecond with
+  | one frame token =>
+      exact .push frame token hFirst
+  | push frame token hExtension ih =>
+      exact .push frame token ih
+
+theorem childTokens_ne_nil
+    {ancestorReturns childReturns : List ReturnDest}
+    {ancestorTokens childTokens : List Word}
+    (hExtension :
+      ActivationExtension ancestorReturns ancestorTokens
+        childReturns childTokens) :
+    childTokens ≠ [] := by
+  cases hExtension <;> simp
+
+theorem realize_length_lt
+    {ancestorReturns childReturns : List ReturnDest}
+    {ancestorTokens childTokens : List Word}
+    {ancestorHidden childHidden : EvmYul.Stack Word}
+    (hExtension :
+      ActivationExtension ancestorReturns ancestorTokens
+        childReturns childTokens)
+    (hAncestor :
+      realizeStack [] ancestorReturns ancestorTokens = some ancestorHidden)
+    (hChild :
+      realizeStack [] childReturns childTokens = some childHidden) :
+    ancestorHidden.length < childHidden.length := by
+  induction hExtension generalizing childHidden with
+  | one frame token =>
+      have hAppend :=
+        realizeStack_append_prefix
+          ([token] ++ frame.callerStack) []
+          ancestorReturns ancestorTokens
+      rw [hAncestor] at hAppend
+      have hExpected :
+          realizeStack [] (frame :: ancestorReturns)
+              (token :: ancestorTokens) =
+            some ([token] ++ frame.callerStack ++ ancestorHidden) := by
+        simp only [realizeStack]
+        simpa [List.append_assoc] using hAppend
+      have hChildEq :
+          childHidden =
+            [token] ++ frame.callerStack ++ ancestorHidden :=
+        Option.some.inj (hChild.symm.trans hExpected)
+      subst childHidden
+      simp only [List.length_append, List.length_cons, List.length_nil]
+      omega
+  | @push currentReturns currentTokens frame token hCurrent ih =>
+      cases hMiddle :
+          realizeStack [] currentReturns currentTokens with
+      | none =>
+          have hAppend :=
+            realizeStack_append_prefix
+              ([token] ++ frame.callerStack) []
+              currentReturns currentTokens
+          rw [hMiddle] at hAppend
+          have hImpossible :
+              realizeStack [] (frame :: currentReturns)
+                  (token :: currentTokens) = none := by
+            simp only [realizeStack]
+            simpa [List.append_assoc] using hAppend
+          rw [hImpossible] at hChild
+          cases hChild
+      | some middleHidden =>
+          have hAppend :=
+            realizeStack_append_prefix
+              ([token] ++ frame.callerStack) []
+              currentReturns currentTokens
+          rw [hMiddle] at hAppend
+          have hExpected :
+              realizeStack [] (frame :: currentReturns)
+                  (token :: currentTokens) =
+                some
+                  ([token] ++ frame.callerStack ++ middleHidden) := by
+            simp only [realizeStack]
+            simpa [List.append_assoc] using hAppend
+          have hChildEq :
+              childHidden =
+                [token] ++ frame.callerStack ++ middleHidden :=
+            Option.some.inj (hChild.symm.trans hExpected)
+          subst childHidden
+          have hAncestorLt := ih hMiddle
+          simp only [List.length_append, List.length_cons,
+            List.length_nil]
+          omega
+
+end ActivationExtension
+
+/--
 A target continuation belongs to the expected dynamic Structured activation.
 
 Top-level caller shapes need no additional discriminator because emitted labels
@@ -376,6 +503,37 @@ theorem check_of_stateRel
         source.returns tokens shape target = true :=
   activationFrameMatches?_eq_true_iff.mpr
     (of_stateRel hRel hFits)
+
+theorem not_of_extension
+    {shape : TypedCfg.Shape}
+    {ancestorReturns childReturns : List ReturnDest}
+    {ancestorTokens childTokens : List Word}
+    {target : EVMState} {depth : Nat}
+    (hDepth : shape.returnTokenDepth? = some depth)
+    (hExtension :
+      ActivationExtension ancestorReturns ancestorTokens
+        childReturns childTokens)
+    (hAncestorHidden :
+      ∃ hidden : EvmYul.Stack Word,
+        realizeStack [] ancestorReturns ancestorTokens = some hidden)
+    (hChild :
+      ActivationFrameMatches childReturns childTokens shape target) :
+    ¬ ActivationFrameMatches ancestorReturns ancestorTokens shape target := by
+  rcases hAncestorHidden with
+    ⟨ancestorHidden, hAncestorHidden⟩
+  unfold ActivationFrameMatches at hChild ⊢
+  rw [hDepth] at hChild ⊢
+  rcases hChild with ⟨childHidden, hChildHidden, hChildLength⟩
+  intro hAncestor
+  rcases hAncestor with
+    ⟨ancestorHidden', hAncestorHidden', hAncestorLength⟩
+  have hAncestorEq : ancestorHidden' = ancestorHidden :=
+    Option.some.inj (hAncestorHidden'.symm.trans hAncestorHidden)
+  subst ancestorHidden'
+  have hLengthLt :=
+    ActivationExtension.realize_length_lt
+      hExtension hAncestorHidden hChildHidden
+  omega
 
 end ActivationFrameMatches
 

@@ -31020,3 +31020,17 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   `git diff --check` pass. Axioms remain `propext`, `Classical.choice`, and
   `Quot.sound`. The remaining Structured gap is instantiating this callback in
   the mutual whole-statement/block owner and generated main wrapper.
+- 2026-06-17 10:35:32 PDT - proof - compaction resume: continue the active
+  horizontal CALL/CREATE goal from `e1615dded`; first refine procedure-exit
+  stopping to use activation-sensitive state relations before constructing the
+  mutual Structured statement/block owner.
+- 2026-06-17 10:40:53 PDT - theorem-boundary - moved the generic
+  `ActivationExtension` and recursive-activation separation theorem into
+  `Structured.TypedCfgPreservation`, reduced `ObserverActivationBoundary` to
+  compatibility aliases, and refined call exit routing to require only that
+  the outer policy remain open for the concretely related callee activation.
+  This removes the false unconditional no-stop requirement for recursive calls.
+  The focused modules, full 1,291-job verification root, architecture guard,
+  changed-file hole scan, `git diff --check`, and axiom audit pass; canonical
+  activation lemmas use only `propext`/`Quot.sound`, and the call theorem adds
+  only `Classical.choice`.
