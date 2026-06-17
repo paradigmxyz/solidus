@@ -30969,3 +30969,10 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   canonical source and target interpreter while removing uniform fuel as a
   prerequisite for loops and internal calls. The focused 1,129-job Structured
   build passes.
+- 2026-06-17 07:33:38 PDT - proof/structured-execution-owned-branches - Added
+  execution-indexed compiler owners for empty/nonempty blocks, `if`, and
+  `switch`. The proofs preserve exact source transcripts, derive target fuel
+  from the selected successful branch, and reuse the canonical condition,
+  switch-test, pop, stop-policy, and state-relation lemmas. Generated routing
+  remains closed and pass-private; only the selected source block contributes
+  open effects. Focused Structured builds pass.

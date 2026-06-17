@@ -656,6 +656,87 @@ theorem openRun_default_some_under_of_compileDefaultFuel?
     exact hBodyEntryNoStop targetAfter
   · exact hBodyLifted
 
+theorem openRun_default_some_exec_under_of_compileDefaultFuel?
+    {compilerFuel sourceFuel : Nat}
+    {body : Structured.Block}
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape}
+    {result enclosingResult : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {sourceProgram : Structured.Program}
+    {source : RunState} {tokens : List Word}
+    {stack : EvmYul.Stack Word} {value : Word}
+    {policy :
+      InteractionControlPreservation.OpenOutcome.StopPolicy}
+    (hCompile :
+      TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
+          (some body) ctx supply entry valueShape bodyShape regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hPopType :
+      TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hPop :
+      source.evm.stack.pop = some (stack, value))
+    (hEnclosingFallthrough :
+      enclosingResult.fallthrough? = some bodyShape)
+    (hBodyEntryNoStop :
+      ∀ targetAfter,
+        policy (.generated supply 2000) targetAfter = false)
+    (hBody :
+      ∀ {bodyResult : TypedCfgCompiler.Result},
+        TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+            (supply + 1) (.generated supply 2000)
+            bodyShape regular =
+          some bodyResult →
+        TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        bodyResult.requireFallthrough? bodyShape = some () →
+        enclosingResult.fallthrough? = some bodyShape →
+        InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
+          bodyResult cfg (.generated supply 2000) ctx regular
+          (source.withEVM { source.evm with stack := stack }) tokens
+          (InteractionSemantics.Block.openRun sourceProgram sourceFuel body
+            (source.withEVM { source.evm with stack := stack }))
+          policy) :
+    InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
+      enclosingResult cfg entry ctx regular source tokens
+      (InteractionSemantics.Block.openRun sourceProgram sourceFuel body
+        (source.withEVM { source.evm with stack := stack }))
+      policy := by
+  obtain ⟨bodyResult, hBodyCompile, hRequire, hResult⟩ :=
+    TypedCfgCompilerFacts.Switch.components_of_compileDefaultFuel?_some
+      hPopType hCompile
+  subst result
+  have hBodyBlocks :
+      TypedCfgPreservation.BlocksInProgram bodyResult cfg := by
+    intro block hMem
+    apply hBlocks block
+    simp [hMem]
+  have hBodyPreserves :=
+    hBody hBodyCompile hBodyBlocks hRequire hEnclosingFallthrough
+  have hBodyLifted :
+      InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
+        enclosingResult cfg (.generated supply 2000) ctx regular
+        (source.withEVM { source.evm with stack := stack }) tokens
+        (InteractionSemantics.Block.openRun sourceProgram sourceFuel body
+          (source.withEVM { source.evm with stack := stack }))
+        policy :=
+    InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.change_result_of_required_fallthrough
+      hRequire hEnclosingFallthrough hBodyPreserves
+  apply
+    InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.prepend_closed_jump
+  · intro target hStateRel
+    exact
+      openStep_pop_jump
+        (entry := entry) (label := .generated supply 2000)
+        (input := valueShape) (output := bodyShape)
+        hBlocks (by simp) hPopType hStateRel hPop
+  · rfl
+  · intro targetAfter _hAfterRel
+    exact hBodyEntryNoStop targetAfter
+  · exact hBodyLifted
+
 /--
 Every generated case-chain entry is internal to the switch and therefore
 cannot satisfy an enclosing continuation stop policy.
@@ -936,6 +1017,243 @@ theorem openRun_cases_some_under_of_compileCasesFuel?
                   ((bodyTargetFuel + rest.length + 1) + 1) policy := by
               apply
                 InteractionControlPreservation.OpenOutcome.PreservesUnder.prepend_closed_jump
+              · intro target hStateRel
+                rcases
+                    openStep_test
+                      (testLabel :=
+                        TypedCfgCompiler.switchTestLabel base idx)
+                      (caseLabel :=
+                        TypedCfgCompiler.switchCaseLabel base idx)
+                      (nextTest :=
+                        TypedCfgCompilerFacts.Switch.nextTestLabel
+                          base idx rest)
+                      (caseValue := caseValue) (value := value)
+                      hBlocks (by simp [hResult]) hHead hStateRel hPop with
+                  ⟨targetAfter, hTargetRun, hAfterRel⟩
+                refine ⟨targetAfter, ?_, hAfterRel⟩
+                simpa [hEq] using hTargetRun
+              · rfl
+              · intro targetAfter _hAfterRel
+                simpa [
+                  TypedCfgCompilerFacts.Switch.nextTestLabel] using
+                  stopPolicy_casesEntryLabel_eq_false
+                    hFresh hRegular targetAfter rest (idx := idx + 1)
+              · simpa [
+                  TypedCfgCompilerFacts.Switch.nextTestLabel] using
+                  hTailPreserves
+            simpa [
+              TypedCfgCompilerFacts.Switch.casesEntryLabel] using
+              hSkipped
+
+/--
+Execution-indexed selected-case routing.
+
+Generated tests and entry pops are closed target steps. Only the selected
+source body contributes interaction events or a source-derived target budget.
+-/
+theorem openRun_cases_some_exec_under_of_compileCasesFuel?
+    {compilerFuel sourceFuel : Nat}
+    {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block}
+    {selected : Structured.Block}
+    {ctx : TypedCfgCompiler.Context}
+    {base supply idx : Nat}
+    {regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {result enclosingResult : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {sourceProgram : Structured.Program}
+    {source : RunState} {tokens : List Word}
+    {stack : EvmYul.Stack Word} {value : Word}
+    {policy :
+      InteractionControlPreservation.OpenOutcome.StopPolicy}
+    (hCompile :
+      TypedCfgCompiler.compileCasesFuel? compilerFuel cases ctx
+          base supply idx valueShape bodyShape regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hHead :
+      valueShape.slots.head? = some slot)
+    (hPopType :
+      TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hPop :
+      source.evm.stack.pop = some (stack, value))
+    (hSelect :
+      Structured.Switch.select value cases defaultBody =
+        some selected)
+    (hEnclosingFallthrough :
+      enclosingResult.fallthrough? = some bodyShape)
+    (hFresh :
+      InteractionControlPreservation.OpenOutcome.StopPolicy.FreshExceptAt
+        policy regular base)
+    (hRegular :
+      TypedCfgCompilerFacts.RegularAtSupply regular base)
+    (hCase :
+      ∀ {bodyCompilerFuel caseSupply caseIdx : Nat}
+        {bodyResult : TypedCfgCompiler.Result},
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
+            caseSupply (TypedCfgCompiler.switchBodyLabel base caseIdx)
+            bodyShape regular =
+          some bodyResult →
+        TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        bodyResult.requireFallthrough? bodyShape = some () →
+        enclosingResult.fallthrough? = some bodyShape →
+        InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
+          bodyResult cfg
+          (TypedCfgCompiler.switchBodyLabel base caseIdx) ctx regular
+          (source.withEVM { source.evm with stack := stack }) tokens
+          (InteractionSemantics.Block.openRun
+            sourceProgram sourceFuel selected
+            (source.withEVM { source.evm with stack := stack }))
+          policy)
+    (hDefault :
+      defaultBody = some selected →
+        InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
+          enclosingResult cfg (LabelSupply.label base 1) ctx regular
+          source tokens
+          (InteractionSemantics.Block.openRun
+            sourceProgram sourceFuel selected
+            (source.withEVM { source.evm with stack := stack }))
+          policy) :
+    InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
+      enclosingResult cfg
+      (TypedCfgCompilerFacts.Switch.casesEntryLabel base idx cases) ctx
+      regular source tokens
+      (InteractionSemantics.Block.openRun
+        sourceProgram sourceFuel selected
+        (source.withEVM { source.evm with stack := stack }))
+      policy := by
+  induction cases generalizing compilerFuel supply idx result selected with
+  | nil =>
+      cases compilerFuel with
+      | zero =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+      | succ compilerFuel =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+          cases hCompile
+          have hDefaultSelected : defaultBody = some selected := by
+            simpa [Structured.Switch.select] using hSelect
+          simpa [
+            TypedCfgCompilerFacts.Switch.casesEntryLabel] using
+            hDefault hDefaultSelected
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, body⟩
+      cases compilerFuel with
+      | zero =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+      | succ bodyCompilerFuel =>
+          obtain
+              ⟨bodyResult, tail, hBodyCompile, hRequire,
+                hTailCompile, hResult⟩ :=
+            TypedCfgCompilerFacts.Switch.components_of_compileCasesFuel?_cons
+              hHead hPopType hCompile
+          have hBodyBlocks :
+              TypedCfgPreservation.BlocksInProgram bodyResult cfg := by
+            intro block hMem
+            apply hBlocks block
+            simp [hResult, hMem]
+          have hTailBlocks :
+              TypedCfgPreservation.BlocksInProgram tail cfg := by
+            intro block hMem
+            apply hBlocks block
+            simp [hResult, hMem]
+          by_cases hEq : caseValue = value
+          · have hSelected : body = selected := by
+              simpa [Structured.Switch.select, hEq] using hSelect
+            subst selected
+            have hBodyPreserves :=
+              hCase hBodyCompile hBodyBlocks
+                hRequire hEnclosingFallthrough
+            have hBodyLifted :
+                InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
+                  enclosingResult cfg
+                  (TypedCfgCompiler.switchBodyLabel base idx) ctx regular
+                  (source.withEVM { source.evm with stack := stack }) tokens
+                  (InteractionSemantics.Block.openRun
+                    sourceProgram sourceFuel body
+                    (source.withEVM { source.evm with stack := stack }))
+                  policy :=
+              InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.change_result_of_required_fallthrough
+                hRequire hEnclosingFallthrough hBodyPreserves
+            have hFromCase :
+                InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
+                  enclosingResult cfg
+                  (TypedCfgCompiler.switchCaseLabel base idx) ctx regular
+                  source tokens
+                  (InteractionSemantics.Block.openRun
+                    sourceProgram sourceFuel body
+                    (source.withEVM { source.evm with stack := stack }))
+                  policy := by
+              apply
+                InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.prepend_closed_jump
+              · intro target hStateRel
+                exact
+                  openStep_pop_jump
+                    (entry := TypedCfgCompiler.switchCaseLabel base idx)
+                    (label := TypedCfgCompiler.switchBodyLabel base idx)
+                    (input := valueShape) (output := bodyShape)
+                    hBlocks (by simp [hResult]) hPopType hStateRel hPop
+              · rfl
+              · intro targetAfter _hAfterRel
+                simpa [TypedCfgCompiler.switchBodyLabel] using
+                  hFresh base (6 * idx + 1005) targetAfter
+                    (Nat.le_refl base)
+                    (hRegular.current_generated_ne (by omega))
+              · exact hBodyLifted
+            have hFromTest :
+                InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
+                  enclosingResult cfg
+                  (TypedCfgCompiler.switchTestLabel base idx) ctx regular
+                  source tokens
+                  (InteractionSemantics.Block.openRun
+                    sourceProgram sourceFuel body
+                    (source.withEVM { source.evm with stack := stack }))
+                  policy := by
+              apply
+                InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.prepend_closed_jump
+              · intro target hStateRel
+                rcases
+                    openStep_test
+                      (testLabel :=
+                        TypedCfgCompiler.switchTestLabel base idx)
+                      (caseLabel :=
+                        TypedCfgCompiler.switchCaseLabel base idx)
+                      (nextTest :=
+                        TypedCfgCompilerFacts.Switch.nextTestLabel
+                          base idx rest)
+                      (caseValue := caseValue) (value := value)
+                      hBlocks (by simp [hResult]) hHead hStateRel hPop with
+                  ⟨targetAfter, hTargetRun, hAfterRel⟩
+                refine ⟨targetAfter, ?_, hAfterRel⟩
+                simpa [hEq] using hTargetRun
+              · rfl
+              · intro targetAfter _hAfterRel
+                simpa [TypedCfgCompiler.switchCaseLabel] using
+                  hFresh base (6 * idx + 1003) targetAfter
+                    (Nat.le_refl base)
+                    (hRegular.current_generated_ne (by omega))
+              · exact hFromCase
+            simpa [
+              TypedCfgCompilerFacts.Switch.casesEntryLabel] using
+              hFromTest
+          · have hTailSelect :
+                Structured.Switch.select value rest defaultBody =
+                  some selected := by
+              simpa [Structured.Switch.select, hEq] using hSelect
+            have hTailPreserves :=
+              ih hTailCompile hTailBlocks hTailSelect hCase hDefault
+            have hSkipped :
+                InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
+                  enclosingResult cfg
+                  (TypedCfgCompiler.switchTestLabel base idx) ctx regular
+                  source tokens
+                  (InteractionSemantics.Block.openRun
+                    sourceProgram sourceFuel selected
+                    (source.withEVM { source.evm with stack := stack }))
+                  policy := by
+              apply
+                InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.prepend_closed_jump
               · intro target hStateRel
                 rcases
                     openStep_test
@@ -1836,6 +2154,454 @@ theorem openRun_switch_under_of_compileStmtFuel?
                         hCasesSome targetAfterScrutinee hAfterRel
                       simpa [hReturnsEq, hPop, hSelect, firstTest] using
                         hRouteRel
+
+/--
+Successful-execution preservation for a compiled switch.
+
+The scrutinee preserves its exact interaction prefix. Generated routing is
+closed, and only the selected source body supplies an execution-indexed
+recursive proof and target budget.
+-/
+theorem openRun_switch_exec_under_of_compileStmtFuel?
+    {compilerFuel sourceFuel : Nat}
+    {scrutinee : Structured.Code}
+    {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {sourceProgram : Structured.Program}
+    {source : RunState} {tokens : List Word}
+    {policy :
+      InteractionControlPreservation.OpenOutcome.StopPolicy}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.switch scrutinee cases defaultBody) ctx
+          supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        input source.evm.stack.length)
+    (hFresh :
+      InteractionControlPreservation.OpenOutcome.StopPolicy.FreshExceptAt
+        policy regular supply)
+    (hRegular :
+      TypedCfgCompilerFacts.RegularAtSupply regular supply)
+    (hStops :
+      ∀ {sourceOutcome targetOutcome},
+        InteractionControlPreservation.OpenOutcome.Rel
+            result ctx regular source.returns tokens
+            sourceOutcome targetOutcome →
+          InteractionControlPreservation.OpenOutcome.TargetStoppedBy
+            policy targetOutcome)
+    (hBody :
+      ∀ {bodyCompilerFuel bodySupply : Nat}
+        {bodyEntry : Assembly.Label}
+        {bodyInput : TypedCfg.Shape}
+        {body : Structured.Block}
+        {bodyResult : TypedCfgCompiler.Result}
+        {afterPop : RunState},
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel body ctx
+            bodySupply bodyEntry bodyInput regular =
+          some bodyResult →
+        TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        afterPop.returns = source.returns →
+        bodyResult.requireFallthrough? bodyInput = some () →
+        result.fallthrough? = some bodyInput →
+        InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
+          bodyResult cfg bodyEntry ctx regular afterPop tokens
+          (InteractionSemantics.Block.openRun
+            sourceProgram sourceFuel body afterPop)
+          policy) :
+    InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
+      result cfg entry ctx regular source tokens
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram (sourceFuel + 1)
+        (.switch scrutinee cases defaultBody) source)
+      policy := by
+  intro target hStateRel transcript sourceOutcome hSourceExec
+  obtain
+      ⟨valueShape, valueSlot, caseResult, defaultResult,
+        hType, hSource, hValue, hCasesCompileRaw,
+        hDefaultCompileRaw, hResult⟩ :=
+    TypedCfgCompilerFacts.Switch.components_of_compileStmtFuel?_switch
+      hCompile
+  let bodyShape : TypedCfg.Shape :=
+    { valueShape with slots := valueShape.slots.tail }
+  have hPopType :
+      TypedCfg.Instr.type? .pop valueShape = some bodyShape := by
+    cases valueShape with
+    | mk slots tail =>
+        cases slots with
+        | nil =>
+            simp at hValue
+        | cons slot rest =>
+            simp [bodyShape, TypedCfg.Instr.type?]
+  have hCasesCompile :
+      TypedCfgCompiler.compileCasesFuel? compilerFuel cases ctx
+          supply (supply + 1) 0 valueShape bodyShape regular =
+        some caseResult := by
+    simpa [bodyShape] using hCasesCompileRaw
+  have hDefaultCompile :
+      TypedCfgCompiler.compileDefaultFuel? compilerFuel defaultBody ctx
+          caseResult.next (LabelSupply.label supply 1)
+          valueShape bodyShape regular =
+        some defaultResult := by
+    simpa [bodyShape] using hDefaultCompileRaw
+  cases compilerFuel with
+  | zero =>
+      simp [TypedCfgCompiler.compileCasesFuel?] at hCasesCompile
+  | succ bodyCompilerFuel =>
+      have hFallthrough :
+          result.fallthrough? = some bodyShape := by
+        simp [bodyShape, hResult]
+      have hCaseBlocks :
+          TypedCfgPreservation.BlocksInProgram caseResult cfg := by
+        intro block hMem
+        apply hBlocks block
+        simp [hResult, hMem]
+      have hDefaultBlocks :
+          TypedCfgPreservation.BlocksInProgram defaultResult cfg := by
+        intro block hMem
+        apply hBlocks block
+        simp [hResult, hMem]
+      have hDefaultFallthrough :
+          defaultResult.fallthrough? = some bodyShape :=
+        TypedCfgCompilerFacts.Switch.fallthrough_of_compileDefaultFuel?
+          hPopType hDefaultCompile
+      have hDefaultRequire :
+          defaultResult.requireFallthrough? bodyShape = some () :=
+        TypedCfgCompilerFacts.Result.requireFallthrough?_eq_some_iff.mpr
+          (Or.inr hDefaultFallthrough)
+      have hCasesNext :
+          supply + 1 ≤ caseResult.next :=
+        TypedCfgCompilerFacts.Supply.cases_next_ge
+          hValue hPopType hCasesCompile
+      have hFreshDefault :
+          InteractionControlPreservation.OpenOutcome.StopPolicy.FreshAt
+            policy caseResult.next :=
+        (hFresh.mono
+            (Nat.le_trans (Nat.le_succ supply) hCasesNext)).toFreshAt
+          (hRegular.before_succ.mono hCasesNext)
+      let firstTest :=
+        TypedCfgCompilerFacts.Switch.casesEntryLabel supply 0 cases
+      let generated : TypedCfg.Block :=
+        { label := entry
+          input := input
+          body := TypedCfgCompiler.Code.toCfg scrutinee
+          output := valueShape
+          term := .jump firstTest }
+      have hFind :
+          cfg.findBlock? entry = some generated := by
+        exact hBlocks generated (by simp [generated, firstTest, hResult])
+      have hHeadRel :
+          Simulation.Interaction.Rel
+            (InteractionBranchPreservation.Code.JumpDoneRel
+              firstTest tokens valueShape)
+            (InteractionSemantics.Code.openRun scrutinee source)
+            (TypedCfg.InteractionSemantics.Program.openStep
+              cfg entry target) := by
+        simp only [
+          TypedCfg.InteractionSemantics.Program.openStep,
+          TypedCfg.Control.Program.step, hFind]
+        simpa [generated] using
+          (InteractionBranchPreservation.Code.openRun_jump_toCfg
+            (entry := entry) (label := firstTest)
+            hType hFits hStateRel)
+      have hHeadWithReturns :=
+        Simulation.Interaction.Rel.strengthen_left hHeadRel
+          (InteractionSemantics.Code.openRun_returns scrutinee source)
+      have hSourceExec' :
+          Simulation.Interaction.Executes
+            (Simulation.Interaction.bind
+              (InteractionSemantics.Code.openRun scrutinee source)
+              (fun afterScrutinee =>
+                match afterScrutinee.evm.stack.pop with
+                | none =>
+                    Simulation.Interaction.error .StackUnderflow
+                | some ⟨stack, value⟩ =>
+                    let afterPop :=
+                      afterScrutinee.withEVM
+                        { afterScrutinee.evm with stack := stack }
+                    match
+                        Structured.Switch.select
+                          value cases defaultBody
+                    with
+                    | some selected =>
+                        InteractionSemantics.Block.openRun
+                          sourceProgram sourceFuel selected afterPop
+                    | none =>
+                        Simulation.Interaction.pure
+                          (Structured.Outcome.regular afterPop)))
+            transcript (.ok sourceOutcome) := by
+        simpa [
+          InteractionSemantics.Stmt.openRun,
+          EffectSemantics.Control.Stmt.run,
+          EffectSemantics.Ordinary.runStateModel_evm,
+          EffectSemantics.Ordinary.runStateModel_withEVM] using hSourceExec
+      rcases
+          Simulation.Interaction.Executes.bind_cases hSourceExec' with
+        hSourceError |
+          ⟨afterScrutinee, headTranscript, restTranscript,
+            hTranscript, hScrutineeExec, hRestExec⟩
+      · rcases hSourceError with
+          ⟨err, hOutcome, _hScrutineeError⟩
+        cases hOutcome
+      · subst transcript
+        obtain ⟨targetDone, hTargetHeadExec, hDone⟩ :=
+          Simulation.Interaction.Rel.executes
+            hHeadWithReturns hScrutineeExec
+        cases targetDone with
+        | error targetError =>
+            cases hDone.1
+        | ok targetOutcome =>
+            rcases hDone with ⟨hHead, hReturns⟩
+            cases hHead with
+            | ok hJump =>
+                rcases hJump with
+                  ⟨targetAfterScrutinee, hTargetOutcome,
+                    hAfterRel, hAfterFits⟩
+                subst targetOutcome
+                have hReturnsEq :
+                    afterScrutinee.returns = source.returns := by
+                  simpa using hReturns
+                have hSourceOne :
+                    1 ≤
+                      TypedCfgCompiler.Shape.sourceLength valueShape :=
+                  TypedCfgCompilerFacts.Shape.requireSourceWords?_eq_some_iff.mp
+                    hSource
+                have hStackOne :
+                    1 ≤ afterScrutinee.evm.stack.length :=
+                  Nat.le_trans hSourceOne hAfterFits.1
+                obtain ⟨stack, value, hPop⟩ :=
+                  Assembly.PrimStep.Stack.exists_pop_of_one_le hStackOne
+                have hPopLength :
+                    afterScrutinee.evm.stack.length =
+                      stack.length + 1 := by
+                  cases hStack : afterScrutinee.evm.stack with
+                  | nil =>
+                      simp [hStack, EvmYul.Stack.pop] at hPop
+                  | cons head tail =>
+                      simp [hStack, EvmYul.Stack.pop] at hPop
+                      rcases hPop with ⟨rfl, rfl⟩
+                      simp [hStack]
+                have hBodyFits :
+                    TypedCfgCompiler.Shape.SourceFrameFits
+                      bodyShape stack.length := by
+                  have hTailFits :=
+                    TypedCfgCompilerFacts.Shape.sourceFrameFits_tail
+                      hSourceOne
+                      (show
+                        TypedCfgCompiler.Shape.SourceFrameFits valueShape
+                          (stack.length + 1) by
+                        simpa [hPopLength] using hAfterFits)
+                  simpa [bodyShape] using hTailFits
+                have hNoStop :
+                    policy firstTest targetAfterScrutinee = false := by
+                  simpa [firstTest] using
+                    Switch.stopPolicy_casesEntryLabel_eq_false
+                      hFresh hRegular targetAfterScrutinee cases (idx := 0)
+                cases hSelect :
+                    Structured.Switch.select value cases defaultBody with
+                | none =>
+                    have hDefaultRoute
+                        (hDefaultNone : defaultBody = none) :
+                        InteractionControlPreservation.OpenOutcome.PreservesUnder
+                          result cfg (LabelSupply.label supply 1) ctx
+                          regular .stop afterScrutinee tokens
+                          (Simulation.Interaction.pure
+                            (Structured.Outcome.regular
+                              (afterScrutinee.withEVM
+                                { afterScrutinee.evm with
+                                  stack := stack })))
+                          1 policy := by
+                      have hCompileNone :
+                          TypedCfgCompiler.compileDefaultFuel?
+                              (bodyCompilerFuel + 1) none ctx
+                              caseResult.next
+                              (LabelSupply.label supply 1)
+                              valueShape bodyShape regular =
+                            some defaultResult := by
+                        simpa [hDefaultNone] using hDefaultCompile
+                      have hBase :=
+                        Switch.openRun_default_none_under_of_compileDefaultFuel?
+                          (result := defaultResult)
+                          (regularExit := .stop)
+                          (source := afterScrutinee)
+                          (tokens := tokens)
+                          (policy := policy)
+                          hCompileNone hDefaultBlocks hPopType hPop
+                          hBodyFits
+                          (fun {sourceOutcome} {targetOutcome} hRel => by
+                            have hWholeRel :=
+                              InteractionControlPreservation.OpenOutcome.Rel.change_result_of_required_fallthrough
+                                hDefaultRequire hFallthrough hRel
+                            exact hStops (by
+                              simpa [hReturnsEq] using hWholeRel))
+                      exact
+                        InteractionControlPreservation.OpenOutcome.PreservesUnder.change_result_of_required_fallthrough
+                          hDefaultRequire hFallthrough hBase
+                    have hCasesNone :=
+                      Switch.openRun_cases_none_under_of_compileCasesFuel?
+                        (enclosingResult := result)
+                        hCasesCompile hCaseBlocks hValue hPopType hPop
+                        hSelect hFresh hRegular hDefaultRoute
+                    have hRouteExec :=
+                      InteractionControlPreservation.OpenOutcome.PreservesUnder.exec
+                        hCasesNone
+                    obtain
+                        ⟨routeFuel, remaining, targetFinal,
+                          hTargetRouteExec, hRouteRel⟩ :=
+                      hRouteExec targetAfterScrutinee hAfterRel
+                        restTranscript sourceOutcome
+                        (by simpa [hPop, hSelect] using hRestExec)
+                    have hContinuationExec :
+                        Simulation.Interaction.Executes
+                          (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
+                            policy cfg routeFuel
+                            (.jump firstTest targetAfterScrutinee))
+                          restTranscript
+                          (.ok
+                            (TypedCfg.Control.Program.RunResult.stopped
+                              remaining targetFinal)) := by
+                      simpa [
+                        TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+                        hNoStop] using hTargetRouteExec
+                    have hCombined :=
+                      Simulation.Interaction.Executes.bind_ok
+                        hTargetHeadExec hContinuationExec
+                    have hTargetExec :
+                        Simulation.Interaction.Executes
+                          (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+                            policy cfg (routeFuel + 1) entry target)
+                          (headTranscript ++ restTranscript)
+                          (.ok
+                            (TypedCfg.Control.Program.RunResult.stopped
+                              remaining targetFinal)) := by
+                      rw [
+                        TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_succ_eq_bind]
+                      exact hCombined
+                    exact
+                      ⟨routeFuel + 1, remaining, targetFinal,
+                        hTargetExec,
+                        by simpa [hReturnsEq] using hRouteRel⟩
+                | some selected =>
+                    have hCaseRoute :
+                        ∀ {caseBodyCompilerFuel caseSupply caseIdx : Nat}
+                          {bodyResult : TypedCfgCompiler.Result},
+                          TypedCfgCompiler.compileBlockFuel?
+                              caseBodyCompilerFuel selected ctx
+                              caseSupply
+                              (TypedCfgCompiler.switchBodyLabel
+                                supply caseIdx)
+                              bodyShape regular =
+                            some bodyResult →
+                          TypedCfgPreservation.BlocksInProgram
+                            bodyResult cfg →
+                          bodyResult.requireFallthrough? bodyShape =
+                            some () →
+                          result.fallthrough? = some bodyShape →
+                          InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
+                            bodyResult cfg
+                            (TypedCfgCompiler.switchBodyLabel
+                              supply caseIdx)
+                            ctx regular
+                            (afterScrutinee.withEVM
+                              { afterScrutinee.evm with
+                                stack := stack })
+                            tokens
+                            (InteractionSemantics.Block.openRun
+                              sourceProgram sourceFuel selected
+                              (afterScrutinee.withEVM
+                                { afterScrutinee.evm with
+                                  stack := stack }))
+                            policy := by
+                      intro caseBodyCompilerFuel caseSupply caseIdx
+                        bodyResult hBodyCompile hBodyBlocks
+                        hBodyRequire hResultFallthrough
+                      exact
+                        hBody hBodyCompile hBodyBlocks (by
+                            simpa [RunState.withEVM] using hReturnsEq)
+                          hBodyRequire hResultFallthrough
+                    have hDefaultRoute
+                        (hDefaultSelected :
+                          defaultBody = some selected) :
+                        InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
+                          result cfg (LabelSupply.label supply 1) ctx
+                          regular afterScrutinee tokens
+                          (InteractionSemantics.Block.openRun
+                            sourceProgram sourceFuel selected
+                            (afterScrutinee.withEVM
+                              { afterScrutinee.evm with
+                                stack := stack }))
+                          policy := by
+                      have hCompileSome :
+                          TypedCfgCompiler.compileDefaultFuel?
+                              (bodyCompilerFuel + 1) (some selected) ctx
+                              caseResult.next
+                              (LabelSupply.label supply 1)
+                              valueShape bodyShape regular =
+                            some defaultResult := by
+                        simpa [hDefaultSelected] using hDefaultCompile
+                      exact
+                        Switch.openRun_default_some_exec_under_of_compileDefaultFuel?
+                          (enclosingResult := result)
+                          (policy := policy)
+                          hCompileSome hDefaultBlocks hPopType hPop
+                          hFallthrough
+                          (fun targetAfter =>
+                            hFreshDefault caseResult.next 2000
+                              targetAfter (Nat.le_refl caseResult.next))
+                          (fun hBodyCompile hBodyBlocks hBodyRequire
+                              hResultFallthrough =>
+                            hBody hBodyCompile hBodyBlocks (by
+                                simpa [RunState.withEVM] using
+                                  hReturnsEq)
+                              hBodyRequire hResultFallthrough)
+                    have hCasesSome :=
+                      Switch.openRun_cases_some_exec_under_of_compileCasesFuel?
+                        (enclosingResult := result)
+                        hCasesCompile hCaseBlocks hValue hPopType hPop
+                        hSelect hFallthrough hFresh hRegular
+                        hCaseRoute hDefaultRoute
+                    obtain
+                        ⟨routeFuel, remaining, targetFinal,
+                          hTargetRouteExec, hRouteRel⟩ :=
+                      hCasesSome targetAfterScrutinee hAfterRel
+                        restTranscript sourceOutcome
+                        (by simpa [hPop, hSelect] using hRestExec)
+                    have hContinuationExec :
+                        Simulation.Interaction.Executes
+                          (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
+                            policy cfg routeFuel
+                            (.jump firstTest targetAfterScrutinee))
+                          restTranscript
+                          (.ok
+                            (TypedCfg.Control.Program.RunResult.stopped
+                              remaining targetFinal)) := by
+                      simpa [
+                        TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+                        hNoStop] using hTargetRouteExec
+                    have hCombined :=
+                      Simulation.Interaction.Executes.bind_ok
+                        hTargetHeadExec hContinuationExec
+                    have hTargetExec :
+                        Simulation.Interaction.Executes
+                          (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+                            policy cfg (routeFuel + 1) entry target)
+                          (headTranscript ++ restTranscript)
+                          (.ok
+                            (TypedCfg.Control.Program.RunResult.stopped
+                              remaining targetFinal)) := by
+                      rw [
+                        TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_succ_eq_bind]
+                      exact hCombined
+                    exact
+                      ⟨routeFuel + 1, remaining, targetFinal,
+                        hTargetExec,
+                        by simpa [hReturnsEq] using hRouteRel⟩
 
 /--
 A compiled switch preserves its complete open interaction tree until its own
