@@ -30325,3 +30325,19 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   forbidden-marker scan, standalone axiom smoke, and `git diff --check`
   passed. New public audit entries depend only on `propext`,
   `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 16:58:39 PDT - compaction-resume/scope - Reconfirmed the narrowed
+  observer-replay objective: generic pass-by-pass backward adequacy is not a
+  completion gate. Active work is the source-derived forward fuel bound needed
+  for honest scratch reservation safety; the checked exact-transcript bridge
+  remains the only required reverse-facing argument.
+- 2026-06-16 17:00:51 PDT - proof/yul-prepared-statement-fuel - Added
+  `ScopedStmtResult.ofLetOnePrepared_bounded` and
+  `ScopedStmtResult.ofAssignOnePrepared_bounded`. Each reuses the ordinary
+  pass-owned forward constructor, exact prepared-value execution, and canonical
+  Functions run uniqueness to prove the generated statement adds at most two
+  target-fuel units.
+- 2026-06-16 17:00:51 PDT - validation/yul-prepared-statement-fuel - Focused
+  forward-fuel build, full 1,267-job verification root, architecture guard,
+  changed-file hole/axiom-marker scan, standalone axiom audit, and
+  `git diff --check` passed. Both new bounded forward lemmas depend only on
+  `propext`, `Classical.choice`, and `Quot.sound`.

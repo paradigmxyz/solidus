@@ -69,6 +69,8 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
     the dispatcher and every function body reached through canonical lookup;
   - [x] expose exact fuel composition for initialized values, visible
     assignments, and `break`/`continue`/`leave`;
+  - [x] lift prepared single-value declarations and assignments into the
+    source-static/dynamic bounded forward interface;
   - [ ] prove every remaining compiler construct respects the program static
     measure;
   - [ ] cover remaining leaf/compound statements, loops, and terminal outcomes;

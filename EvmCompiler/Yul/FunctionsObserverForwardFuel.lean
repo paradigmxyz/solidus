@@ -187,6 +187,262 @@ theorem ofLetNone_bounded
         (FunctionsObserverFuel.staticCost_le_executionBudget
           staticCost sourceFuel))
 
+/--
+A prepared single-value declaration adds exactly two target-fuel units around
+the prepared expression run.
+-/
+theorem ofLetOnePrepared_bounded
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {name : EvmYul.Identifier}
+    {expr : AstExpr}
+    {lowerStmts pre : List Functions.Stmt}
+    {lowerValue : Locals.Expr 1}
+    {sourceAfterValue sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {value : Assembly.Word}
+    {valueFuel sourceFuel staticCost : Nat}
+    {canBreak canContinue canLeave : Bool}
+    (hLower :
+      lowerStmts =
+        pre ++ [Functions.Stmt.let_ (identName name) lowerValue])
+    (hFreshExtends : Fresh.Extends before after)
+    (hNameFresh : identName name ∉ layout)
+    (hNameUsed : identName name ∈ before.used)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hControl :
+      FunctionsObserverOutcome.ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx)
+    (hValue :
+      FunctionsObserverExpression.ScopedPreparedValue
+        contract transcript codeRel program pre lowerValue after layout
+        sourceAfterValue target ctx value)
+    (hValueBound :
+      FunctionsObserverFuel.PreparedValue.Bounded
+        staticCost valueFuel hValue.prepared)
+    (hValueFuel : valueFuel < sourceFuel)
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterValue.withSource
+          (sourceAfterValue.source.multifill [name] [value])) :
+    Nonempty
+      { result :
+          ScopedStmtResult contract codeRel program
+            (.Let [name] (some expr)) lowerStmts before after layout
+            sourceFinal target ctx canBreak canContinue canLeave
+            (sourceControl := sourceControl) //
+        FunctionsObserverFuel.ScopedOpenResult.Bounded
+          staticCost sourceFuel result.openResult } := by
+  obtain ⟨openResult⟩ :=
+    FunctionsObserverStatement.OpenResult.of_let_one_prepared
+      (sourceControl := sourceControl) (expr := expr)
+      hLower hFreshExtends hNameFresh hNameUsed hLayout hControl.scope
+      hValue hSourceFinal
+  obtain
+      ⟨targetFinal, finalCtx, hTargetRun,
+        _hDeclaredRel, _hTargetFinal, _hFinalCtx⟩ :=
+    FunctionsObserverStatement.InitializedValue.run_at_requiredFuel_add_two
+      hValue.prepared hValue.relation hNameFresh
+  have hTargetRun' :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx (hValue.prepared.requiredFuel + 2)
+          { stmts := lowerStmts } target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular targetFinal,
+            finalCtx) := by
+    simpa [hLower] using hTargetRun
+  have hRegular :
+      openResult.openResult.outcome.mode = .regular := by
+    obtain
+        ⟨sourceShared, sourceVars, hSourceAfterValue,
+          _hShared, _hScoped, _hDomain⟩ :=
+      hValue.relation.2
+    have hMode := openResult.openResult.relation.mode
+    have hSourceFinalOk :
+        ∃ finalVars,
+          sourceFinal.source = .Ok sourceShared finalVars := by
+      rw [hSourceFinal]
+      change
+        ∃ finalVars,
+          sourceAfterValue.source.multifill [name] [value] =
+            .Ok sourceShared finalVars
+      rw [hSourceAfterValue]
+      exact ⟨sourceVars.insert name value, rfl⟩
+    obtain ⟨finalVars, hFinalSource⟩ := hSourceFinalOk
+    rw [hFinalSource] at hMode
+    exact
+      FunctionsObserverOutcome.ModeRel.source_ok_target_regular hMode
+  have hResultRun :=
+    FunctionsObserverOutcome.ScopedOpenResult.run_requiredFuel
+      openResult.openResult
+  have hOutcomeEq :
+      openResult.openResult.outcome =
+        Functions.Source.Effectful.Outcome.regular
+          openResult.openResult.outcome.state :=
+    Functions.Source.Effectful.Outcome.eq_regular_of_mode hRegular
+  rw [hOutcomeEq] at hResultRun
+  obtain ⟨hTargetFinal, hTargetCtx⟩ :=
+    Functions.Source.Effectful.Block.runOpen_regular_unique
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hTargetRun' hResultRun
+  rw [hTargetFinal, hTargetCtx] at hTargetRun'
+  rw [← hOutcomeEq] at hTargetRun'
+  have hRequired :
+      openResult.openResult.requiredFuel ≤
+        hValue.prepared.requiredFuel + 2 :=
+    FunctionsObserverOutcome.ScopedOpenResult.requiredFuel_le_of_run
+      openResult.openResult hTargetRun'
+  let result :=
+    ScopedStmtResult.ofStatement openResult hControl
+  refine ⟨⟨result, ?_⟩⟩
+  have hBudget :=
+    FunctionsObserverFuel.executionBudget_child_add_eight_le_of_lt
+      staticCost hValueFuel
+  dsimp [FunctionsObserverFuel.PreparedValue.Bounded] at hValueBound
+  dsimp [FunctionsObserverFuel.ScopedOpenResult.Bounded, result,
+    ScopedStmtResult.ofStatement]
+  omega
+
+/--
+A prepared visible assignment has the same two-unit wrapper bound as a
+single-value declaration.
+-/
+theorem ofAssignOnePrepared_bounded
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {name : EvmYul.Identifier}
+    {expr : AstExpr}
+    {lowerStmts pre : List Functions.Stmt}
+    {lowerValue : Locals.Expr 1}
+    {sourceAfterValue sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {value : Assembly.Word}
+    {valueFuel sourceFuel staticCost : Nat}
+    {canBreak canContinue canLeave : Bool}
+    (hLower :
+      lowerStmts =
+        pre ++ [Functions.Stmt.assign (identName name) lowerValue])
+    (hFreshExtends : Fresh.Extends before after)
+    (hNameDeclared : identName name ∈ layout)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hControl :
+      FunctionsObserverOutcome.ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx)
+    (hValue :
+      FunctionsObserverExpression.ScopedPreparedValue
+        contract transcript codeRel program pre lowerValue after layout
+        sourceAfterValue target ctx value)
+    (hValueBound :
+      FunctionsObserverFuel.PreparedValue.Bounded
+        staticCost valueFuel hValue.prepared)
+    (hValueFuel : valueFuel < sourceFuel)
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterValue.withSource
+          (sourceAfterValue.source.multifill [name] [value])) :
+    Nonempty
+      { result :
+          ScopedStmtResult contract codeRel program
+            (.Assign [name] expr) lowerStmts before after layout
+            sourceFinal target ctx canBreak canContinue canLeave
+            (sourceControl := sourceControl) //
+        FunctionsObserverFuel.ScopedOpenResult.Bounded
+          staticCost sourceFuel result.openResult } := by
+  obtain ⟨openResult⟩ :=
+    FunctionsObserverStatement.OpenResult.of_assign_one_prepared
+      (sourceControl := sourceControl) (expr := expr)
+      hLower hFreshExtends hNameDeclared hLayout hControl.scope
+      hValue hSourceFinal
+  obtain
+      ⟨targetFinal, hTargetRun, _hAssignedRel, _hTargetFinal⟩ :=
+    FunctionsObserverStatement.AssignedValue.run_at_requiredFuel_add_two
+      hValue.prepared hValue.relation hNameDeclared
+  have hTargetRun' :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx (hValue.prepared.requiredFuel + 2)
+          { stmts := lowerStmts } target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular targetFinal,
+            hValue.prepared.finalCtx) := by
+    simpa [hLower] using hTargetRun
+  have hRegular :
+      openResult.openResult.outcome.mode = .regular := by
+    obtain
+        ⟨sourceShared, sourceVars, hSourceAfterValue,
+          _hShared, _hScoped, _hDomain⟩ :=
+      hValue.relation.2
+    have hMode := openResult.openResult.relation.mode
+    have hSourceFinalOk :
+        ∃ finalVars,
+          sourceFinal.source = .Ok sourceShared finalVars := by
+      rw [hSourceFinal]
+      change
+        ∃ finalVars,
+          sourceAfterValue.source.multifill [name] [value] =
+            .Ok sourceShared finalVars
+      rw [hSourceAfterValue]
+      exact ⟨sourceVars.insert name value, rfl⟩
+    obtain ⟨finalVars, hFinalSource⟩ := hSourceFinalOk
+    rw [hFinalSource] at hMode
+    exact
+      FunctionsObserverOutcome.ModeRel.source_ok_target_regular hMode
+  have hResultRun :=
+    FunctionsObserverOutcome.ScopedOpenResult.run_requiredFuel
+      openResult.openResult
+  have hOutcomeEq :
+      openResult.openResult.outcome =
+        Functions.Source.Effectful.Outcome.regular
+          openResult.openResult.outcome.state :=
+    Functions.Source.Effectful.Outcome.eq_regular_of_mode hRegular
+  rw [hOutcomeEq] at hResultRun
+  obtain ⟨hTargetFinal, hTargetCtx⟩ :=
+    Functions.Source.Effectful.Block.runOpen_regular_unique
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hTargetRun' hResultRun
+  rw [hTargetFinal, hTargetCtx] at hTargetRun'
+  rw [← hOutcomeEq] at hTargetRun'
+  have hRequired :
+      openResult.openResult.requiredFuel ≤
+        hValue.prepared.requiredFuel + 2 :=
+    FunctionsObserverOutcome.ScopedOpenResult.requiredFuel_le_of_run
+      openResult.openResult hTargetRun'
+  let result :=
+    ScopedStmtResult.ofStatement openResult hControl
+  refine ⟨⟨result, ?_⟩⟩
+  have hBudget :=
+    FunctionsObserverFuel.executionBudget_child_add_eight_le_of_lt
+      staticCost hValueFuel
+  dsimp [FunctionsObserverFuel.PreparedValue.Bounded] at hValueBound
+  dsimp [FunctionsObserverFuel.ScopedOpenResult.Bounded, result,
+    ScopedStmtResult.ofStatement]
+  omega
+
 end ScopedStmtResult
 
 namespace RecursiveOpenListForwardBounded

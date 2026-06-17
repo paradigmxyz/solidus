@@ -328,6 +328,8 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenStmtForwardBounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenListForwardBounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofLetNone_bounded
+#check EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofLetOnePrepared_bounded
+#check EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofAssignOnePrepared_bounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenListForwardBounded.ofStmt
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_block
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.AlignedStmtBackward
