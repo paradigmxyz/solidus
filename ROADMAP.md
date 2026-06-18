@@ -208,10 +208,12 @@ boundaries remain active work.
       - [x] World-write transitions through reusable `WorldWriteSpec`: SSTORE
         and TSTORE, including refunds, warm storage, exact account updates,
         and matching static-mode failure.
-      - [ ] Copy families.
+      - [x] Copy families.
         - [x] Deterministic shared-state copies through reusable `SharedSpec`:
           CALLDATACOPY and CODECOPY over related calldata/code byte images.
-        - [ ] RETURNDATACOPY bounds failure and EXTCODECOPY warming.
+        - [x] RETURNDATACOPY success and exact bounds failure.
+        - [x] EXTCODECOPY over code-erased account bytes with identical account
+          warming and machine updates.
       - [ ] Log and invalid families;
         assemble the concrete `ClosedSelected` theorem.
     - [x] Define the code-erased outcome-indexed relation and source-owned

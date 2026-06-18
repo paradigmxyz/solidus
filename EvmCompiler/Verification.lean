@@ -1405,6 +1405,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionRelation.StateRel.withSharedState
 #check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.SharedSpec.forward
 #check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.SharedTernaryCopy.forward
+#check EvmCompiler.Yul.FunctionsInteractionRelation.SharedRel.extCodeCopy
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.SharedExtCodeCopy.forward
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineReturnDataCopy.forward
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.one_cons
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.succ_succ_cons
 #check EvmCompiler.Yul.FunctionsInteractionExpression.directAt

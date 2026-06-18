@@ -655,6 +655,59 @@ theorem withMachine
       blocks := hRel.blocks
       genesisBlockHeader := hRel.genesisBlockHeader }
 
+theorem extCodeCopy
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel source target)
+    (account destination readStart size : EvmYul.UInt256) :
+    SharedRel
+      (EvmYul.SharedState.extCodeCopy'
+        source account destination readStart size)
+      (EvmYul.SharedState.extCodeCopy'
+        target account destination readStart size) := by
+  let address := EvmYul.AccountAddress.ofUInt256 account
+  have hCode :
+      (source.lookupAccount address).option ByteArray.empty
+          EvmYul.State.accountCodeImage =
+        (target.lookupAccount address).option ByteArray.empty
+          EvmYul.State.accountCodeImage := by
+    simpa [EvmYul.State.lookupAccount,
+      Simulation.OpenAccount.ofYul,
+      Simulation.OpenAccount.ofEVM,
+      EvmYul.State.accountCodeImage] using
+      hRel.world.accountValueEq address ByteArray.empty
+        Simulation.OpenAccount.codeBytes
+  have hWorld := hRel.world.addAccessedAccount address
+  exact
+    { openWorld := by
+        simpa [EvmYul.SharedState.extCodeCopy',
+          EvmYul.State.addAccessedAccount, address] using hWorld.openWorld
+      machine := by
+        simp [EvmYul.SharedState.extCodeCopy', address,
+          hRel.machine, hCode]
+      initialAccounts := by
+        simpa [EvmYul.SharedState.extCodeCopy',
+          EvmYul.State.addAccessedAccount, address] using
+          hWorld.initialAccounts
+      totalGasUsedInBlock := by
+        simpa [EvmYul.SharedState.extCodeCopy',
+          EvmYul.State.addAccessedAccount, address] using
+          hWorld.totalGasUsedInBlock
+      transactionReceipts := by
+        simpa [EvmYul.SharedState.extCodeCopy',
+          EvmYul.State.addAccessedAccount, address] using
+          hWorld.transactionReceipts
+      executionEnv := by
+        simpa [EvmYul.SharedState.extCodeCopy',
+          EvmYul.State.addAccessedAccount, address] using hWorld.executionEnv
+      blocks := by
+        simpa [EvmYul.SharedState.extCodeCopy',
+          EvmYul.State.addAccessedAccount, address] using hWorld.blocks
+      genesisBlockHeader := by
+        simpa [EvmYul.SharedState.extCodeCopy',
+          EvmYul.State.addAccessedAccount, address] using
+          hWorld.genesisBlockHeader }
+
 theorem externalFrame_eq
     {source : EvmYul.SharedState .Yul}
     {target : EvmYul.SharedState .EVM}

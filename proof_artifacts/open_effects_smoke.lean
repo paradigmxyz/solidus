@@ -418,3 +418,6 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 #print axioms EvmCompiler.Yul.FunctionsInteractionRelation.StateRel.withSharedState
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.SharedSpec.forward
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.SharedTernaryCopy.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.SharedRel.extCodeCopy
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.SharedExtCodeCopy.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineReturnDataCopy.forward

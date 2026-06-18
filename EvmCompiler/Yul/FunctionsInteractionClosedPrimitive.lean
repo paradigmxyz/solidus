@@ -2890,6 +2890,261 @@ theorem forward
 
 end SharedTernaryCopy
 
+namespace SharedExtCodeCopy
+
+def spec : SharedSpec (.Env .EXTCODECOPY) .extcodecopy where
+  sourceResult shared values :=
+    match values with
+    | [account, destination, readStart, size] =>
+        (EvmYul.SharedState.extCodeCopy'
+          shared account destination readStart size, [])
+    | _ => (shared, [])
+  targetResult shared values :=
+    match values with
+    | [account, destination, readStart, size] =>
+        (EvmYul.SharedState.extCodeCopy'
+          shared account destination readStart size, [])
+    | _ => (shared, [])
+  resultLength := by
+    intro shared values hLength
+    cases values with
+    | nil => rfl
+    | cons first rest =>
+        cases rest with
+        | nil => rfl
+        | cons second rest =>
+            cases rest with
+            | nil => rfl
+            | cons third rest =>
+                cases rest with
+                | nil => rfl
+                | cons fourth extra => cases extra <;> rfl
+  related := by
+    intro source target values hRel
+    cases values with
+    | nil => exact ⟨hRel, rfl⟩
+    | cons account rest =>
+        cases rest with
+        | nil => exact ⟨hRel, rfl⟩
+        | cons destination rest =>
+            cases rest with
+            | nil => exact ⟨hRel, rfl⟩
+            | cons readStart rest =>
+                cases rest with
+                | nil => exact ⟨hRel, rfl⟩
+                | cons size extra =>
+                    cases extra with
+                    | nil =>
+                        exact
+                          ⟨hRel.extCodeCopy account destination readStart size,
+                            rfl⟩
+                    | cons next tail => exact ⟨hRel, rfl⟩
+  sourceZero := by
+    intro source values
+    simp [Yul.InteractionSemantics.Primitive.openEval,
+      Yul.InteractionSemantics.Primitive.closedEval,
+      Yul.InteractionSemantics.Primitive.fail,
+      Yul.InteractionSemantics.State.afterException,
+      Simulation.ExternalKind.ofYulOperation?,
+      Simulation.CallKind.ofYulOperation?,
+      Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+  sourceSucc := by
+    intro fuel sourceShared sourceVars values hLength
+    obtain ⟨account, destination, readStart, size, rfl⟩ :=
+      List.length_eq_four.mp hLength
+    simp [Yul.InteractionSemantics.Primitive.openEval,
+      Yul.InteractionSemantics.Primitive.closedEval,
+      Simulation.ExternalKind.ofYulOperation?,
+      Simulation.CallKind.ofYulOperation?,
+      Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall,
+      EvmYul.Yul.quaternaryCopyOp,
+      EvmYul.Yul.State.setSharedState]
+    unfold EvmYul.step
+    rfl
+  target := by
+    intro state values hLength
+    obtain ⟨account, destination, readStart, size, rfl⟩ :=
+      List.length_eq_four.mp hLength
+    rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+      (by rfl) (by rfl) (by rfl) (by decide) (by decide)]
+    simp [Assembly.PrimStep.run, EvmYul.EVM.quaternaryCopyOp,
+      Locals.InteractionSemantics.Primitive.finish,
+      Locals.InteractionSemantics.Primitive.isolated,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, EvmYul.Stack.pop4,
+      Locals.Source.State.withShared, Simulation.Interaction.map,
+      Simulation.Interaction.bind, Simulation.Interaction.pure] <;> rfl
+
+theorem forward
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {sourceValues : List Word}
+    (hLength : sourceValues.length = 4)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source .extcodecopy)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source (.Env .EXTCODECOPY) sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        .extcodecopy target sourceValues.reverse) :=
+  spec.forward hLength hRel
+
+end SharedExtCodeCopy
+
+namespace MachineReturnDataCopy
+
+theorem forward
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {sourceValues : List Word}
+    (hLength : sourceValues.length = 3)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source .returndatacopy)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source (.Env .RETURNDATACOPY) sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        .returndatacopy target sourceValues.reverse) := by
+  cases fuel with
+  | zero =>
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Yul.InteractionSemantics.Primitive.fail,
+        Yul.InteractionSemantics.State.afterException,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+      exact
+        Simulation.Interaction.ForwardRel.truncated
+          (doneRel := PrimitiveDoneRel source .returndatacopy)
+          (right := Locals.InteractionSemantics.Primitive.openEval
+            .returndatacopy target sourceValues.reverse)
+          (by trivial)
+  | succ previous =>
+      rcases hRel with
+        ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+      subst source
+      obtain ⟨destination, readStart, size, rfl⟩ :=
+        List.length_eq_three.mp hLength
+      by_cases hInvalid :
+          sourceShared.returnData.size < readStart.toNat + size.toNat
+      · have hTargetInvalid :
+            target.shared.returnData.size < readStart.toNat + size.toNat := by
+          simpa [hShared.machine] using hInvalid
+        have hSourceEval :
+            Yul.InteractionSemantics.Primitive.openEval (previous + 2)
+                (EvmYul.Yul.State.Ok sourceShared sourceVars)
+                (.Env .RETURNDATACOPY)
+                [destination, readStart, size] =
+              .done
+                (.error
+                  ({ exception := .InvalidMemoryAccess,
+                      state := EvmYul.Yul.State.Ok sourceShared sourceVars } :
+                    Yul.InteractionSemantics.Failure)) := by
+          simp [Yul.InteractionSemantics.Primitive.openEval,
+            Yul.InteractionSemantics.Primitive.closedEval,
+            Simulation.ExternalKind.ofYulOperation?,
+            Simulation.CallKind.ofYulOperation?,
+            Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+          unfold EvmYul.step
+          simp [Id.run, EvmYul.Yul.State.toSharedState, hInvalid,
+            Yul.InteractionSemantics.Primitive.fail,
+            Yul.InteractionSemantics.State.afterException]
+        have hTargetEval :
+            Locals.InteractionSemantics.Primitive.openEval .returndatacopy
+                target [size, readStart, destination] =
+              .done (.error .InvalidMemoryAccess) := by
+          rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+            (by rfl) (by rfl) (by rfl) (by decide) (by decide)]
+          simp [Assembly.PrimStep.run,
+            Locals.InteractionSemantics.Primitive.isolated,
+            Simulation.Interaction.map, hTargetInvalid, EvmYul.Stack.pop3,
+            Id.run]
+        rw [show previous.succ + 1 = previous + 2 by omega,
+          hSourceEval,
+          show [destination, readStart, size].reverse =
+              [size, readStart, destination] by rfl,
+          hTargetEval]
+        exact Simulation.Interaction.ForwardRel.done
+          (Simulation.Interaction.ExceptRel.error trivial)
+      · have hTargetValid :
+            ¬ target.shared.returnData.size <
+              readStart.toNat + size.toNat := by
+          simpa [hShared.machine] using hInvalid
+        let sourceMachine :=
+          sourceShared.toMachineState.returndatacopy
+            destination readStart size
+        let targetMachine :=
+          target.shared.toMachineState.returndatacopy
+            destination readStart size
+        have hMachine : sourceMachine = targetMachine := by
+          simp [sourceMachine, targetMachine, hShared.machine]
+        have hStateRel :
+            FunctionsInteractionRelation.StateRel
+              (EvmYul.Yul.State.Ok sourceShared sourceVars) target :=
+          ⟨sourceShared, sourceVars, rfl, hShared, hVars⟩
+        have hFinalRel :=
+          FunctionsInteractionRelation.StateRel.withMachine hStateRel
+            sourceMachine targetMachine hMachine
+        have hSourceEval :
+            Yul.InteractionSemantics.Primitive.openEval (previous + 2)
+                (EvmYul.Yul.State.Ok sourceShared sourceVars)
+                (.Env .RETURNDATACOPY)
+                [destination, readStart, size] =
+              .done
+                (.ok
+                  ((EvmYul.Yul.State.Ok sourceShared sourceVars).setMachineState
+                    sourceMachine,
+                    [])) := by
+          simp [Yul.InteractionSemantics.Primitive.openEval,
+            Yul.InteractionSemantics.Primitive.closedEval,
+            Simulation.ExternalKind.ofYulOperation?,
+            Simulation.CallKind.ofYulOperation?,
+            Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+          unfold EvmYul.step
+          simp [Id.run, EvmYul.Yul.State.toSharedState, hInvalid,
+            EvmYul.Yul.State.setMachineState, sourceMachine]
+        have hTargetEval :
+            Locals.InteractionSemantics.Primitive.openEval .returndatacopy
+                target [size, readStart, destination] =
+              .done
+                (.ok
+                  (target.withShared
+                    { target.shared with toMachineState := targetMachine },
+                    [])) := by
+          rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+            (by rfl) (by rfl) (by rfl) (by decide) (by decide)]
+          simp [Assembly.PrimStep.run,
+            Locals.InteractionSemantics.Primitive.finish,
+            Locals.InteractionSemantics.Primitive.isolated,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC, EvmYul.Stack.pop3,
+            Locals.Source.State.withShared, Simulation.Interaction.map,
+            Simulation.Interaction.bind, Simulation.Interaction.pure,
+            hTargetValid, targetMachine, Id.run] <;> rfl
+        have hDone :
+            PrimitiveDoneRel (EvmYul.Yul.State.Ok sourceShared sourceVars)
+              .returndatacopy
+              (.ok
+                ((EvmYul.Yul.State.Ok sourceShared sourceVars).setMachineState
+                  sourceMachine,
+                  []))
+              (.ok
+                (target.withShared
+                  { target.shared with toMachineState := targetMachine },
+                  [])) :=
+          .ok ⟨⟨hFinalRel, rfl⟩, rfl, rfl⟩
+        rw [show previous.succ + 1 = previous + 2 by omega,
+          hSourceEval,
+          show [destination, readStart, size].reverse =
+              [size, readStart, destination] by rfl,
+          hTargetEval]
+        exact Simulation.Interaction.ForwardRel.done hDone
+
+end MachineReturnDataCopy
+
 end FunctionsInteractionClosedPrimitive
 end Yul
 end EvmCompiler
