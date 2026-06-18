@@ -1,4 +1,5 @@
 import EvmCompiler.Functions.AllocationInteractionExpressionRecursive
+import EvmCompiler.Locals.InteractionStatePreservation
 
 namespace EvmCompiler
 namespace Functions
@@ -6,9 +7,61 @@ namespace AllocationInteractionStatement
 
 open AllocationInteractionRelation
 
+/--
+Statement outcomes retain the full compiler/runtime invariant on regular
+continuation and the activation-owned relation on abrupt or terminal exits.
+-/
+inductive BoundaryOutcomeRel
+    (contract : MemoryContract.Contract)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerState : AllocationLowering.State)
+    (localsCtx : Locals.Ctx)
+    (plan : Plan) (live : List Locals.Name)
+    (frameBase : Nat) (mode : ActivationMode) :
+    Functions.InteractionSemantics.Outcome →
+      Expressions.InteractionSemantics.Outcome → Prop where
+  | regular {source : SourceState} {target : TargetState}
+      (invariant :
+        AllocationContext.ActivationInvariant contract lowerCtx lowerState
+          localsCtx plan live frameBase mode source target) :
+      BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan live
+        frameBase mode
+        (Functions.Source.Effectful.Outcome.regular source)
+        (Structured.EffectSemantics.Outcome.regular target)
+  | brk {source : SourceState} {target : TargetState}
+      (state :
+        ActivationStateRel contract plan live 0 frameBase mode source target) :
+      BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan live
+        frameBase mode
+        (Functions.Source.Effectful.Outcome.brk source)
+        (Structured.EffectSemantics.Outcome.brk target)
+  | cont {source : SourceState} {target : TargetState}
+      (state :
+        ActivationStateRel contract plan live 0 frameBase mode source target) :
+      BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan live
+        frameBase mode
+        (Functions.Source.Effectful.Outcome.cont source)
+        (Structured.EffectSemantics.Outcome.cont target)
+  | leave {source : SourceState} {target : TargetState}
+      (state : LeaveStateRel contract live source target) :
+      BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan live
+        frameBase mode
+        (Functions.Source.Effectful.Outcome.leave source)
+        (Structured.EffectSemantics.Outcome.leave target)
+  | halt (kind : Assembly.HaltKind)
+      {source : SourceState} {target : TargetState}
+      (state : HaltStateRel contract plan source target) :
+      BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan live
+        frameBase mode
+        (Functions.Source.Effectful.Outcome.halt kind source)
+        (Structured.EffectSemantics.Outcome.halt kind target)
+
 /-- Result relation for one allocated Functions statement. -/
 def StmtResultRel
-    (contract : MemoryContract.Contract) (plan : Plan)
+    (contract : MemoryContract.Contract)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerState : AllocationLowering.State)
+    (localsCtx : Locals.Ctx) (plan : Plan)
     (live : List Locals.Name) (frameBase : Nat)
     (mode : ActivationMode)
     (expectedCtx : Functions.Source.Ctx) :
@@ -16,17 +69,21 @@ def StmtResultRel
       Expressions.InteractionSemantics.Outcome → Prop
   | (sourceOutcome, sourceCtx), targetOutcome =>
       sourceCtx = expectedCtx ∧
-        ActivationOutcomeRel contract plan live 0 frameBase mode
-          sourceOutcome targetOutcome
+        BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan live
+          frameBase mode sourceOutcome targetOutcome
 
 abbrev OpenStmtResultRel
-    (contract : MemoryContract.Contract) (plan : Plan)
+    (contract : MemoryContract.Contract)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerState : AllocationLowering.State)
+    (localsCtx : Locals.Ctx) (plan : Plan)
     (live : List Locals.Name) (frameBase : Nat)
     (mode : ActivationMode)
     (expectedCtx : Functions.Source.Ctx) :=
   Simulation.Interaction.ExceptRel
     (fun left right : EVMException => left = right)
-    (StmtResultRel contract plan live frameBase mode expectedCtx)
+    (StmtResultRel contract lowerCtx lowerState localsCtx plan live
+      frameBase mode expectedCtx)
 
 /--
 An expression statement is preserved by the ordinary allocation lowerer and
@@ -50,9 +107,6 @@ theorem expr_of_lower_compile
     {source : AllocationInteractionRelation.SourceState}
     {target : AllocationInteractionRelation.TargetState}
     (hSafe : AllocationInteractionSafety.ExprSafe contract expr source)
-    (hCtx :
-      AllocationContext.ActivationExprContext
-        lowerCtx lowerState localsCtx plan live mode)
     (hScoped : Functions.Scope.ExprScoped live expr)
     (hLower :
       AllocationLowering.lowerStmt lowerCtx returns lowerState (.expr expr) =
@@ -60,10 +114,12 @@ theorem expr_of_lower_compile
     (hCompile :
       Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
         some (compiledStmts, localsFinal))
-    (hRel :
-      ActivationStateRel contract plan live 0 frameBase mode source target) :
+    (hInvariant :
+      AllocationContext.ActivationInvariant contract lowerCtx lowerState
+        localsCtx plan live frameBase mode source target) :
     Simulation.Interaction.Rel
-      (OpenStmtResultRel contract plan live frameBase mode sourceCtx)
+      (OpenStmtResultRel contract lowerCtx lowerFinal localsFinal plan live
+        frameBase mode sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx 0 (.expr expr) source)
       (Expressions.InteractionSemantics.Block.openRun
@@ -85,7 +141,12 @@ theorem expr_of_lower_compile
           rcases hCompile with ⟨rfl, rfl⟩
           have hExpr :=
             AllocationInteractionExpressionRecursive.forwardExpr
-              hSafe hCtx hScoped hLowerExpr hCode hRel
+              hSafe hInvariant.compiler hScoped hLowerExpr hCode
+              hInvariant.state
+          have hVars :=
+            Locals.InteractionStatePreservation.expr_openEval_vars expr source
+          have hExprStrong :=
+            Simulation.Interaction.Rel.strengthen_left hExpr hVars
           simp only [Locals.codeStmt]
           rw [Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code]
           unfold Functions.InteractionSemantics.Stmt.openRun
@@ -93,12 +154,26 @@ theorem expr_of_lower_compile
             Expressions.InteractionSemantics.Stmt.openRun
           simp only [Functions.Source.Effectful.Control.Stmt.run,
             Expressions.EffectSemantics.Control.Stmt.run]
-          apply Simulation.Interaction.Rel.bind hExpr
-          intro sourceResult targetFinal hResult
-          apply Simulation.Interaction.Rel.done
-          apply Simulation.Interaction.ExceptRel.ok
-          refine ⟨rfl, .regular ?_⟩
-          simpa using hResult.state
+          apply Simulation.Interaction.Rel.bind_custom hExprStrong
+          intro sourceDone targetDone hDone
+          rcases hDone with ⟨hRelated, hVarsDone⟩
+          cases hRelated with
+          | error hError =>
+              exact .done (.error hError)
+          | @ok sourceResult targetFinal hResult =>
+              apply Simulation.Interaction.Rel.done
+              apply Simulation.Interaction.ExceptRel.ok
+              refine ⟨rfl, .regular ?_⟩
+              exact
+                { compiler := hInvariant.compiler
+                  planWF := hInvariant.planWF
+                  defined := hInvariant.defined.congr_vars hVarsDone
+                  state := by simpa using hResult.state
+                  stackLength := by
+                    have hValues : sourceResult.2 = [] :=
+                      List.eq_nil_of_length_eq_zero hResult.valuesLength
+                    rw [hResult.stack, hValues]
+                    simpa using hInvariant.stackLength }
 
 end AllocationInteractionStatement
 end Functions

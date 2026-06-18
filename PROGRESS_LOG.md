@@ -31747,3 +31747,15 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   focused 1157-job module, 1310-job verification root, architecture guard,
   touched-file hole scan, axiom audit, and `git diff --check` passed; the new
   public theorems use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 21:41:12 PDT - proof/locals-open-state - proved branch-universal
+  named-store preservation for canonical open primitives, expressions,
+  expression sequences, single-result evaluation, and conditions in the
+  Locals owner.
+- 2026-06-17 21:41:12 PDT - consolidation/functions-statement-result -
+  strengthened the expression-statement theorem so every regular result
+  carries the complete final allocation invariant, including exact stack
+  length and live-variable definedness, rather than only a runtime relation.
+- 2026-06-17 21:41:12 PDT - validation/functions-statement-result - the
+  focused 1158-job build, 1311-job verification root, architecture guard,
+  touched-file hole scan, axiom audit, and `git diff --check` passed; checked
+  axioms remain `[propext, Classical.choice, Quot.sound]`.

@@ -1075,6 +1075,7 @@ report_matches \
   EvmCompiler/Locals/Allocation.lean \
   EvmCompiler/Locals/EffectSemantics.lean \
   EvmCompiler/Locals/InteractionSemantics.lean \
+  EvmCompiler/Locals/InteractionStatePreservation.lean \
   EvmCompiler/Locals/InteractionPreservation.lean \
   EvmCompiler/Functions/AllocationInteraction*.lean \
   EvmCompiler/Functions/AllocationObserverRelation.lean \

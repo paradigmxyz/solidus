@@ -42,6 +42,7 @@ import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Functions.ObserverSafety
 import EvmCompiler.Locals.EffectSemantics
 import EvmCompiler.Locals.InteractionSemantics
+import EvmCompiler.Locals.InteractionStatePreservation
 import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.Locals.InteractionControlPreservation
 import EvmCompiler.Locals.ObserverSemantics
@@ -198,6 +199,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardExprSeq
 #check EvmCompiler.Functions.AllocationInteractionStatement.StmtResultRel
 #check EvmCompiler.Functions.AllocationInteractionStatement.expr_of_lower_compile
+#check EvmCompiler.Locals.InteractionStatePreservation.primitive_openEval_vars
+#check EvmCompiler.Locals.InteractionStatePreservation.expr_openEval_vars
+#check EvmCompiler.Locals.InteractionStatePreservation.exprSeq_openEval_vars
+#check EvmCompiler.Locals.InteractionStatePreservation.expr_openEvalOne_vars
+#check EvmCompiler.Locals.InteractionStatePreservation.expr_openEvalCondition_vars
 #check EvmCompiler.Functions.AllocationInteractionSafety.ExprSafe
 #check EvmCompiler.Functions.AllocationInteractionSafety.ExprSeqSafe
 #check EvmCompiler.Functions.AllocationInteractionPrimitive.call_open
