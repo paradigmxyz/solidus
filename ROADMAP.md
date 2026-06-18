@@ -102,8 +102,11 @@ boundaries remain active work.
     split/return-frame entry, and recursive-body entry relation;
   - [x] orthogonal allocator-cell readiness/depth and suspended-prefix effect
     interfaces plus exact canonical scratch-frame acquire execution;
-  - [ ] acquire resource preservation, selected scratch-callee entry, and
-    checked scratch-frame release for nested calls;
+  - [x] canonical scratch-frame acquire resource preservation, including
+    machine relation, allocator depth, frame materialization, and protected
+    suspended prefixes;
+  - [ ] selected scratch-callee entry and checked scratch-frame release for
+    nested calls;
   - [ ] caller argument, selected-callee, return-writeback, scratch-release,
     and exact-tail interaction composition;
   - [ ] recursive compiler-cursor statement-list theorem.

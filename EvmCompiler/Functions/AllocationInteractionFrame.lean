@@ -250,6 +250,35 @@ theorem budget_mono {config : Config} {smaller larger : Nat}
     (Nat.add_le_add_right (baseAt_mono config hDepth) (bytes config))
     hBudget
 
+theorem noWrap_of_budget_of_scratchFrameConfig?
+    {contract : MemoryContract.Contract} {frameWords depth : Nat}
+    {config : Config}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hBudget : Budget config depth) :
+    baseAt config depth + bytes config < EvmYul.UInt256.size := by
+  obtain
+    ⟨_reservation, _hReservation, _hAllocator, _hFirst, hLimit,
+      _hWords, hWF, _hHost, _hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  exact lt_of_le_of_lt (by simpa [Budget, hLimit] using hBudget) hWF.2
+
+theorem hostAddressable_of_budget_of_scratchFrameConfig?
+    {contract : MemoryContract.Contract} {frameWords depth : Nat}
+    {config : Config}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hBudget : Budget config depth) :
+    baseAt config depth + bytes config < USize.size := by
+  obtain
+    ⟨_reservation, _hReservation, _hAllocator, _hFirst, hLimit,
+      _hWords, _hWF, hHost, _hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  exact lt_of_le_of_lt
+    (by simpa [Budget, hLimit] using hBudget) hHost
+
 end AllocationInteractionFrame
 end Functions
 end EvmCompiler
