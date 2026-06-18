@@ -196,6 +196,12 @@ boundaries remain active work.
       - [x] Environment families through one reusable `EnvironmentSpec`
         theorem: active-frame reads and BLOBHASH are related over the shared
         code-erased execution-environment relation.
+      - [x] Code-erased world-read interface and immutable reads: COINBASE,
+        TIMESTAMP, NUMBER, GASLIMIT, CHAINID, SELFBALANCE, CALLDATALOAD, and
+        BLOCKHASH.
+      - [x] Repair canonical Yul EXTCODEHASH semantics to decide external
+        account emptiness from the executable byte image rather than a
+        compatibility Yul AST; prove exact agreement with EVM semantics.
       - [ ] World, copy, log, and invalid families;
         assemble the concrete `ClosedSelected` theorem.
     - [x] Define the code-erased outcome-indexed relation and source-owned

@@ -27,6 +27,25 @@ structure ExecutionEnvRel
   codeImage : source.codeBytes = target.code
   codeBytes : source.codeBytes = target.codeBytes
 
+/-- The code-erased part of a Yul/EVM world relation. This is the owner-facing
+interface for closed world operations; active machine state and source locals
+remain at the enclosing `SharedRel`/`StateRel` layers. -/
+structure WorldRel
+    (source : EvmYul.State .Yul)
+    (target : EvmYul.State .EVM) : Prop where
+  openWorld :
+    Simulation.OpenWorld.ofYulState source =
+      Simulation.OpenWorld.ofEVMState target
+  initialAccounts : source.σ₀ = target.σ₀
+  totalGasUsedInBlock :
+    source.totalGasUsedInBlock = target.totalGasUsedInBlock
+  transactionReceipts :
+    source.transactionReceipts = target.transactionReceipts
+  executionEnv : ExecutionEnvRel source.executionEnv target.executionEnv
+  blocks : source.blocks = target.blocks
+  genesisBlockHeader :
+    source.genesisBlockHeader = target.genesisBlockHeader
+
 /-- Code-erased shared-state relation for the adjacent Yul-to-Functions pass. -/
 structure SharedRel
     (source : EvmYul.SharedState .Yul)
@@ -78,7 +97,61 @@ theorem externalFrame_eq
 
 end ExecutionEnvRel
 
+namespace WorldRel
+
+theorem accountViews
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : WorldRel source target)
+    (address : EvmYul.AccountAddress) :
+    (source.accountMap.find? address).map Simulation.OpenAccount.ofYul =
+      (target.accountMap.find? address).map Simulation.OpenAccount.ofEVM := by
+  have hAccounts :=
+    congrArg Simulation.OpenWorld.accounts hRel.openWorld
+  have hLookup := congrArg (fun accounts => accounts.find? address) hAccounts
+  simpa [Simulation.OpenWorld.ofYulState,
+    Simulation.OpenWorld.ofEVMState,
+    Simulation.OpenWorld.find?_mapVal_const] using hLookup
+
+end WorldRel
+
 namespace SharedRel
+
+theorem world
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel source target) :
+    WorldRel source.toState target.toState := by
+  exact
+    { openWorld := hRel.openWorld
+      initialAccounts := hRel.initialAccounts
+      totalGasUsedInBlock := hRel.totalGasUsedInBlock
+      transactionReceipts := hRel.transactionReceipts
+      executionEnv := hRel.executionEnv
+      blocks := hRel.blocks
+      genesisBlockHeader := hRel.genesisBlockHeader }
+
+/-- Replace only the code-erased world component while retaining the active
+machine relation. -/
+theorem withWorldState
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel source target)
+    (sourceWorld : EvmYul.State .Yul)
+    (targetWorld : EvmYul.State .EVM)
+    (hWorld : WorldRel sourceWorld targetWorld) :
+    SharedRel
+      { source with toState := sourceWorld }
+      { target with toState := targetWorld } := by
+  exact
+    { openWorld := hWorld.openWorld
+      machine := hRel.machine
+      initialAccounts := hWorld.initialAccounts
+      totalGasUsedInBlock := hWorld.totalGasUsedInBlock
+      transactionReceipts := hWorld.transactionReceipts
+      executionEnv := hWorld.executionEnv
+      blocks := hWorld.blocks
+      genesisBlockHeader := hWorld.genesisBlockHeader }
 
 theorem externalFrame_eq
     {source : EvmYul.SharedState .Yul}
@@ -232,6 +305,26 @@ theorem withMachine
         blocks := hShared.blocks
         genesisBlockHeader := hShared.genesisBlockHeader }
   · simpa [targetFinal, Locals.Source.State.withShared] using hVars
+
+/-- A closed world operation may replace the state component on both sides
+while preserving the active machine and source-visible locals. -/
+theorem withWorldState
+    {source : SourceState} {target : TargetState}
+    (hRel : StateRel source target)
+    (sourceWorld : EvmYul.State .Yul)
+    (targetWorld : EvmYul.State .EVM)
+    (hWorld : WorldRel sourceWorld targetWorld) :
+    StateRel
+      (source.setState sourceWorld)
+      (target.withShared { target.shared with toState := targetWorld }) := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  refine
+    ⟨{ sourceShared with toState := sourceWorld }, sourceVars,
+      ?_, hShared.withWorldState sourceWorld targetWorld hWorld, ?_⟩
+  · simp [EvmYul.Yul.State.setState]
+  · simpa [Locals.Source.State.withShared] using hVars
 
 theorem multifill_single
     {source : SourceState} {target : TargetState}

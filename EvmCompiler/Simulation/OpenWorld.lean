@@ -1,4 +1,5 @@
 import EvmYul.SharedState
+import EvmYul.StateOps
 
 namespace EvmCompiler
 namespace Simulation
@@ -71,6 +72,51 @@ def toEVM (account : OpenAccount) : EvmYul.Account .EVM where
 
 end OpenAccount
 
+namespace CodeErasedState
+
+/-- Account emptiness observable through the open-world boundary. Unlike the
+legacy Yul predicate, this inspects the executable byte image, not a retained
+compatibility AST. -/
+def emptyAccount {τ : EvmYul.OperationType}
+    (account : EvmYul.Account τ) : Bool :=
+  (EvmYul.State.accountCodeImage account).isEmpty &&
+    (decide (account.nonce = ⟨0⟩) &&
+      decide (account.balance = ⟨0⟩))
+
+def dead {τ : EvmYul.OperationType}
+    (accounts : EvmYul.AccountMap τ)
+    (address : EvmYul.AccountAddress) : Bool :=
+  (accounts.find? address).option true emptyAccount
+
+/-- `EXTCODEHASH` over the code-erased account view shared by Yul and EVM. -/
+def extCodeHash {τ : EvmYul.OperationType}
+    (state : EvmYul.State τ) (value : EvmYul.UInt256) :
+    EvmYul.State τ × EvmYul.UInt256 :=
+  let address := EvmYul.AccountAddress.ofUInt256 value
+  let next := state.addAccessedAccount address
+  if dead state.accountMap address then
+    (next, ⟨0⟩)
+  else
+    let result :=
+      state.lookupAccount address |>.option ⟨0⟩
+        (fun account =>
+          .ofNat <| EvmYul.fromByteArrayBigEndian
+            (ffi.KEC (EvmYul.State.accountCodeImage account)))
+    (next, result)
+
+theorem extCodeHash_evm (state : EvmYul.State .EVM) (value : EvmYul.UInt256) :
+    extCodeHash state value = EvmYul.State.extCodeHash state value := by
+  have hEmpty :
+      (fun account : EvmYul.Account .EVM => emptyAccount account) =
+        EvmYul.Account.emptyAccount := by
+    funext account
+    simp [emptyAccount, EvmYul.Account.emptyAccount,
+      EvmYul.State.accountCodeImage]
+  simp [extCodeHash, dead, EvmYul.State.extCodeHash,
+    EvmYul.State.dead, hEmpty]
+
+end CodeErasedState
+
 /--
 The mutable, code-erased world shared exactly by source and target semantics.
 
@@ -84,6 +130,28 @@ structure OpenWorld where
   deriving Inhabited
 
 namespace OpenWorld
+
+theorem find?_mapVal_const
+    {α β γ : Type} {cmp : α → α → Ordering}
+    (map : Batteries.RBMap α β cmp) (f : β → γ) (key : α) :
+    (map.mapVal fun _ value => f value).find? key =
+      (map.find? key).map f := by
+  rcases map with ⟨tree, hTree⟩
+  change
+    Option.map Prod.snd
+        (Batteries.RBNode.find? (fun entry => cmp key entry.1)
+          (tree.map (Batteries.RBMap.Imp.mapSnd fun _ value => f value))) =
+      Option.map f
+        (Option.map Prod.snd
+          (Batteries.RBNode.find? (fun entry => cmp key entry.1) tree))
+  clear hTree
+  induction tree with
+  | nil => rfl
+  | node color left entry right leftIH rightIH =>
+      cases hCompare : cmp key entry.1 <;>
+        simp [Batteries.RBNode.map, Batteries.RBNode.find?,
+          Batteries.RBMap.Imp.mapSnd, hCompare, leftIH, rightIH,
+          Function.comp_def]
 
 private theorem mapVal_leftInverse
     {α β γ : Type} {cmp : α → α → Ordering}

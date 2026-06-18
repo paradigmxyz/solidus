@@ -44,10 +44,16 @@ def fail {α : Type} (state : State)
 
 def closedEval (fuel : Nat) (state : State)
     (op : EvmYul.Operation .Yul) (args : List Word) : Open (State × List Word) :=
-  match EvmYul.Yul.primCall fuel state op args with
-  | .ok result => .done (.ok result)
-  | .error exception =>
-      fail (state.afterException exception) exception
+  let result : Except EvmYul.Yul.Exception (State × List Word) :=
+    match op, fuel with
+    | .Env .EXTCODEHASH, 0 => Except.error .OutOfFuel
+    | .Env .EXTCODEHASH, _ + 1 =>
+        EvmYul.Yul.unaryStateOp Simulation.CodeErasedState.extCodeHash
+          state args |>.map fun result => (result.1, result.2.toList)
+    | _, _ => EvmYul.Yul.primCall fuel state op args
+  match result with
+  | .ok value => .done (.ok value)
+  | .error exception => fail (state.afterException exception) exception
 
 def resourceEval (kind : Simulation.ResourceQuery) (state : State) :
     Open (State × List Word) :=

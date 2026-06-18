@@ -392,3 +392,9 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.EnvironmentSpec.forward
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.EnvironmentNullary.forward
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.EnvironmentUnary.forward
+#print axioms EvmCompiler.Simulation.CodeErasedState.extCodeHash_evm
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.WorldRel.accountViews
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.StateRel.withWorldState
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldReadSpec.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldNullary.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldUnaryRead.forward

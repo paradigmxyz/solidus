@@ -1379,6 +1379,12 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.EnvironmentSpec.forward
 #check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.EnvironmentNullary.forward
 #check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.EnvironmentUnary.forward
+#check EvmCompiler.Simulation.CodeErasedState.extCodeHash_evm
+#check EvmCompiler.Yul.FunctionsInteractionRelation.WorldRel.accountViews
+#check EvmCompiler.Yul.FunctionsInteractionRelation.StateRel.withWorldState
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldReadSpec.forward
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldNullary.forward
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldUnaryRead.forward
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.one_cons
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.succ_succ_cons
 #check EvmCompiler.Yul.FunctionsInteractionExpression.directAt

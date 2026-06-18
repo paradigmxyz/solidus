@@ -617,6 +617,408 @@ theorem forward
 
 end EnvironmentUnary
 
+/-- Shared proof interface for world reads that do not mutate the code-erased
+world. -/
+structure WorldReadSpec (prim : EvmYul.Operation .Yul)
+    (op : Structured.BasicOp) where
+  sourceResult : EvmYul.State .Yul → List Word → List Word
+  targetResult : EvmYul.State .EVM → List Word → List Word
+  resultLength :
+    ∀ world values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        (sourceResult world values).length =
+          Expressions.Structured.BasicOp.outputs op
+  resultEq :
+    ∀ sourceWorld targetWorld values,
+      FunctionsInteractionRelation.WorldRel sourceWorld targetWorld →
+        sourceResult sourceWorld values = targetResult targetWorld values
+  sourceZero :
+    ∀ source values,
+      Yul.InteractionSemantics.Primitive.openEval 1 source prim values =
+        .done
+          (.error
+            ({ exception := .OutOfFuel, state := source } :
+              Yul.InteractionSemantics.Failure))
+  sourceSucc :
+    ∀ fuel sourceShared sourceVars values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        Yul.InteractionSemantics.Primitive.openEval (fuel + 2)
+            (EvmYul.Yul.State.Ok sourceShared sourceVars) prim values =
+          .done
+            (.ok
+              (EvmYul.Yul.State.Ok sourceShared sourceVars,
+                sourceResult sourceShared.toState values))
+  target :
+    ∀ state values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        Locals.InteractionSemantics.Primitive.openEval
+            op state values.reverse =
+          .done (.ok (state, targetResult state.shared.toState values))
+
+namespace WorldReadSpec
+
+theorem forward
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    (spec : WorldReadSpec prim op)
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {sourceValues : List Word}
+    (hLength :
+      sourceValues.length = Expressions.Structured.BasicOp.inputs op)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source op)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source prim sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        op target sourceValues.reverse) := by
+  cases fuel with
+  | zero =>
+      rw [spec.sourceZero]
+      exact
+        Simulation.Interaction.ForwardRel.truncated
+          (doneRel := PrimitiveDoneRel source op)
+          (right := Locals.InteractionSemantics.Primitive.openEval
+            op target sourceValues.reverse)
+          (by trivial)
+  | succ previous =>
+      rcases hRel with
+        ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+      subst source
+      have hStateRel :
+          FunctionsInteractionRelation.StateRel
+            (EvmYul.Yul.State.Ok sourceShared sourceVars) target :=
+        ⟨sourceShared, sourceVars, rfl, hShared, hVars⟩
+      have hResult :=
+        spec.resultEq sourceShared.toState target.shared.toState sourceValues
+          hShared.world
+      have hDone :
+          PrimitiveDoneRel (EvmYul.Yul.State.Ok sourceShared sourceVars) op
+            (.ok
+              (EvmYul.Yul.State.Ok sourceShared sourceVars,
+                spec.sourceResult sourceShared.toState sourceValues))
+            (.ok
+              (target,
+                spec.sourceResult sourceShared.toState sourceValues)) :=
+        .ok
+          ⟨FunctionsInteractionPrimitive.ResultRel.refl_values hStateRel _,
+            spec.resultLength sourceShared.toState sourceValues hLength,
+            rfl⟩
+      have hTarget := spec.target target sourceValues hLength
+      rw [← hResult] at hTarget
+      rw [show previous.succ + 1 = previous + 2 by omega,
+        spec.sourceSucc previous sourceShared sourceVars sourceValues hLength,
+        hTarget]
+      exact Simulation.Interaction.ForwardRel.done hDone
+
+end WorldReadSpec
+
+inductive WorldNullary :
+    EvmYul.Operation .Yul → Structured.BasicOp →
+      (EvmYul.State .Yul → Word) →
+      (EvmYul.State .EVM → Word) → Prop where
+  | coinbase :
+      WorldNullary (.Block .COINBASE) .coinbase
+        (EvmYul.UInt256.ofNat ∘ Fin.val ∘ EvmYul.State.coinBase)
+        (EvmYul.UInt256.ofNat ∘ Fin.val ∘ EvmYul.State.coinBase)
+  | timestamp :
+      WorldNullary (.Block .TIMESTAMP) .timestamp
+        EvmYul.State.timeStamp EvmYul.State.timeStamp
+  | number :
+      WorldNullary (.Block .NUMBER) .number
+        EvmYul.State.number EvmYul.State.number
+  | gaslimit :
+      WorldNullary (.Block .GASLIMIT) .gaslimit
+        EvmYul.State.gasLimit EvmYul.State.gasLimit
+  | chainid :
+      WorldNullary (.Block .CHAINID) .chainid
+        EvmYul.State.chainId EvmYul.State.chainId
+  | selfbalance :
+      WorldNullary (.Block .SELFBALANCE) .selfbalance
+        EvmYul.State.selfbalance EvmYul.State.selfbalance
+
+namespace WorldNullary
+
+private theorem selfbalanceEq
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : FunctionsInteractionRelation.WorldRel source target) :
+    EvmYul.State.selfbalance source =
+      EvmYul.State.selfbalance target := by
+  unfold EvmYul.State.selfbalance
+  rw [← hRel.executionEnv.codeOwner]
+  let owner := source.executionEnv.codeOwner
+  have hLookup := hRel.accountViews owner
+  cases hSource : source.accountMap.find? owner with
+  | none =>
+      rw [hSource] at hLookup
+      cases hTarget : target.accountMap.find? owner with
+      | none => simp [hSource, hTarget]
+      | some targetAccount => simp [hTarget] at hLookup
+  | some sourceAccount =>
+      rw [hSource] at hLookup
+      cases hTarget : target.accountMap.find? owner with
+      | none => simp [hTarget] at hLookup
+      | some targetAccount =>
+          rw [hTarget] at hLookup
+          have hAccount :
+              Simulation.OpenAccount.ofYul sourceAccount =
+                Simulation.OpenAccount.ofEVM targetAccount := by
+            simpa using Option.some.inj hLookup
+          simpa [hSource, hTarget] using
+            congrArg Simulation.OpenAccount.balance hAccount
+
+theorem inputs
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word}
+    {targetResult : EvmYul.State .EVM → Word}
+    (hFamily : WorldNullary prim op sourceResult targetResult) :
+    Expressions.Structured.BasicOp.inputs op = 0 := by
+  cases hFamily <;> rfl
+
+theorem outputs
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word}
+    {targetResult : EvmYul.State .EVM → Word}
+    (hFamily : WorldNullary prim op sourceResult targetResult) :
+    Expressions.Structured.BasicOp.outputs op = 1 := by
+  cases hFamily <;> rfl
+
+theorem resultEq
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word}
+    {targetResult : EvmYul.State .EVM → Word}
+    (hFamily : WorldNullary prim op sourceResult targetResult)
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : FunctionsInteractionRelation.WorldRel source target) :
+    sourceResult source = targetResult target := by
+  cases hFamily with
+  | coinbase =>
+      simpa [Function.comp_def, EvmYul.State.coinBase] using
+        congrArg
+          (fun header => EvmYul.UInt256.ofNat header.beneficiary.val)
+          hRel.executionEnv.header
+  | timestamp =>
+      simpa [EvmYul.State.timeStamp] using
+        congrArg
+          (fun header => EvmYul.UInt256.ofNat header.timestamp)
+          hRel.executionEnv.header
+  | number =>
+      simpa [EvmYul.State.number] using
+        congrArg
+          (fun header => EvmYul.UInt256.ofNat header.number)
+          hRel.executionEnv.header
+  | gaslimit =>
+      simpa [EvmYul.State.gasLimit] using
+        congrArg
+          (fun header => EvmYul.UInt256.ofNat header.gasLimit)
+          hRel.executionEnv.header
+  | chainid => rfl
+  | selfbalance => exact selfbalanceEq hRel
+
+def spec
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word}
+    {targetResult : EvmYul.State .EVM → Word}
+    (hFamily : WorldNullary prim op sourceResult targetResult) :
+    WorldReadSpec prim op where
+  sourceResult world values := if values = [] then [sourceResult world] else []
+  targetResult world values := if values = [] then [targetResult world] else []
+  resultLength := by
+    intro world values hLength
+    have hValues : values = [] := by
+      apply List.eq_nil_of_length_eq_zero
+      simpa [hFamily.inputs] using hLength
+    subst values
+    simp [hFamily.outputs]
+  resultEq := by
+    intro source target values hRel
+    by_cases hValues : values = []
+    · simp [hValues, hFamily.resultEq hRel]
+    · simp [hValues]
+  sourceZero := by
+    intro source values
+    cases hFamily <;>
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Yul.InteractionSemantics.Primitive.fail,
+        Yul.InteractionSemantics.State.afterException,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+  sourceSucc := by
+    intro fuel sourceShared sourceVars values hLength
+    have hValues : values = [] := by
+      apply List.eq_nil_of_length_eq_zero
+      simpa [hFamily.inputs] using hLength
+    subst values
+    cases hFamily <;>
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall,
+        EvmYul.Yul.stateOp] <;>
+      unfold EvmYul.step <;> rfl
+  target := by
+    intro state values hLength
+    have hValues : values = [] := by
+      apply List.eq_nil_of_length_eq_zero
+      simpa [hFamily.inputs] using hLength
+    subst values
+    have hSupports :
+        Locals.InteractionSemantics.Primitive.supportsOpen op = true := by
+      cases hFamily <;> rfl
+    have hStep :
+        Locals.Source.PrimitiveSemantics.sourceContinuingStep? op =
+          some (.state targetResult) := by
+      cases hFamily <;> rfl
+    change
+      Locals.InteractionSemantics.Primitive.openEval op state [] =
+        .done (.ok (state, [targetResult state.shared.toState]))
+    rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+      (by simpa [hFamily.inputs]) hSupports hStep
+      (by cases hFamily <;> decide) (by cases hFamily <;> decide)]
+    rfl
+
+theorem forward
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word}
+    {targetResult : EvmYul.State .EVM → Word}
+    {sourceValues : List Word}
+    (hFamily : WorldNullary prim op sourceResult targetResult)
+    (hLength :
+      sourceValues.length = Expressions.Structured.BasicOp.inputs op)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source op)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source prim sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        op target sourceValues.reverse) :=
+  (spec hFamily).forward hLength hRel
+
+end WorldNullary
+
+inductive WorldUnaryRead :
+    EvmYul.Operation .Yul → Structured.BasicOp →
+      (EvmYul.State .Yul → Word → Word) →
+      (EvmYul.State .EVM → Word → Word) → Prop where
+  | calldataload :
+      WorldUnaryRead (.Env .CALLDATALOAD) .calldataload
+        EvmYul.State.calldataload EvmYul.State.calldataload
+  | blockhash :
+      WorldUnaryRead (.Block .BLOCKHASH) .blockhash
+        EvmYul.State.blockHash EvmYul.State.blockHash
+
+namespace WorldUnaryRead
+
+def spec
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word → Word}
+    {targetResult : EvmYul.State .EVM → Word → Word}
+    (hFamily : WorldUnaryRead prim op sourceResult targetResult) :
+    WorldReadSpec prim op where
+  sourceResult world values :=
+    match values with
+    | [value] => [sourceResult world value]
+    | _ => []
+  targetResult world values :=
+    match values with
+    | [value] => [targetResult world value]
+    | _ => []
+  resultLength := by
+    intro world values hLength
+    have hLengthOne : values.length = 1 := by
+      cases hFamily <;> simpa using hLength
+    obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLengthOne
+    cases hFamily <;> rfl
+  resultEq := by
+    intro source target values hRel
+    cases values with
+    | nil => rfl
+    | cons value rest =>
+        cases rest with
+        | cons next tail => rfl
+        | nil =>
+            cases hFamily with
+            | calldataload =>
+                simp [EvmYul.State.calldataload,
+                  hRel.executionEnv.calldata]
+            | blockhash =>
+                simp [EvmYul.State.blockHash, EvmYul.State.blockHashes,
+                  hRel.executionEnv.header, hRel.blocks]
+  sourceZero := by
+    intro source values
+    cases hFamily <;>
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Yul.InteractionSemantics.Primitive.fail,
+        Yul.InteractionSemantics.State.afterException,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+  sourceSucc := by
+    intro fuel sourceShared sourceVars values hLength
+    have hLengthOne : values.length = 1 := by
+      cases hFamily <;> simpa using hLength
+    obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLengthOne
+    cases hFamily <;>
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall,
+        EvmYul.Yul.unaryStateOp] <;>
+      unfold EvmYul.step <;> rfl
+  target := by
+    intro state values hLength
+    have hLengthOne : values.length = 1 := by
+      cases hFamily <;> simpa using hLength
+    obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLengthOne
+    have hSupports :
+        Locals.InteractionSemantics.Primitive.supportsOpen op = true := by
+      cases hFamily <;> rfl
+    have hStep :
+        Locals.Source.PrimitiveSemantics.sourceContinuingStep? op =
+          some (.unaryState
+            (fun world value => (world, targetResult world value))) := by
+      cases hFamily <;> rfl
+    change
+      Locals.InteractionSemantics.Primitive.openEval op state [value] =
+        .done (.ok (state, [targetResult state.shared.toState value]))
+    rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+      (by cases hFamily <;> rfl) hSupports hStep
+      (by cases hFamily <;> decide) (by cases hFamily <;> decide)]
+    rfl
+
+theorem forward
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word → Word}
+    {targetResult : EvmYul.State .EVM → Word → Word}
+    {sourceValues : List Word}
+    (hFamily : WorldUnaryRead prim op sourceResult targetResult)
+    (hLength :
+      sourceValues.length = Expressions.Structured.BasicOp.inputs op)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source op)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source prim sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        op target sourceValues.reverse) :=
+  (spec hFamily).forward hLength hRel
+
+end WorldUnaryRead
+
 /-- Pure two-input operations whose Yul and Functions meanings are the same
 word function and leave shared state unchanged. -/
 inductive PureBinary :
