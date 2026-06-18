@@ -691,6 +691,19 @@ theorem activation_of_not_halt
   | activation effect => exact effect
   | halt kind _ => exact False.elim (hNotHalt kind rfl)
 
+theorem exists_boundedEffect
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState} {outcomeMode : Locals.Source.Mode}
+    (hEffect : OutcomeEffect config depth mode before after outcomeMode) :
+    ∃ finalDepth,
+      BoundedEffect config finalDepth
+        (activationProtectedBound depth mode) before after := by
+  cases hEffect with
+  | activation effect =>
+      cases mode <;> exact ⟨depth, effect.to_boundedEffect⟩
+  | halt _ effect =>
+      exact ⟨_, effect⟩
+
 theorem mode_of_sameFrame
     {config : Config} {depth : Nat}
     {beforeMode afterMode : ActivationMode}

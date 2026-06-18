@@ -125,6 +125,9 @@ boundaries remain active work.
   - [x] restore outcome-indexed allocator effects across statements, scoped
     blocks, loops, and selected callees, so a halting scratch-backed nested call
     protects caller frames without falsely requiring unreachable frame release;
+  - [x] construct identical continuation-ready stack/scratch selected-callee
+    invocations from canonical arguments, including suspended caller prefixes,
+    exact recursive calls, return writeback, and optional scratch release;
   - [ ] orthogonal recursive allocator companion over the same Interaction
     tree (shared intersection/`cons`, empty cursor, expression statement, and
     assignment/declaration, `break`/`continue`, and lexical blocks checked;

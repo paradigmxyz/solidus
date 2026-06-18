@@ -66,6 +66,89 @@ theorem caller_state_of_result
   exact hEffect.ready.of_machine_eq (by
     simp [callerState, Structured.RunState.withEVM])
 
+/-- Scratch arguments additionally remove the compiler-emitted frame pointer
+when restoring the suspended caller. -/
+theorem caller_state_of_scratch_result
+    {contract : MemoryContract.Contract}
+    {config : Config} {depth : Nat}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {sourceAfterArgs : SourceState}
+    {targetInitial targetAfterAcquire targetAfterArgs : TargetState}
+    {args : List Word} {sourceMachine : EvmYul.MachineState}
+    (hAcquire :
+      ScratchFrameAcquireCorrect contract config depth sourceMachine
+        targetInitial targetAfterAcquire)
+    (hArgs :
+      AllocationInteractionCallArgumentResources.ResultRel
+        contract config (depth + 1) plan live 1 frameBase args.length
+        mode targetAfterAcquire (sourceAfterArgs, args) targetAfterArgs) :
+    ActivationStateRel contract plan live 0 frameBase mode sourceAfterArgs
+        (callerState targetAfterArgs targetInitial) ∧
+      AllocatorReady config (depth + 1)
+        (callerState targetAfterArgs targetInitial) ∧
+      (callerState targetAfterArgs targetInitial).evm.stack =
+        targetInitial.evm.stack ∧
+      BoundedEffect config (depth + 1) (depth + 1)
+        targetInitial (callerState targetAfterArgs targetInitial) := by
+  rcases hArgs with ⟨hSemantic, hArgsEffect⟩
+  let frameWord := EvmYul.UInt256.ofNat (baseAt config depth)
+  have hState :
+      ActivationStateRel contract plan live
+        ((args.reverse ++ [frameWord]).length) frameBase mode sourceAfterArgs
+        targetAfterArgs := by
+    simpa [frameWord, hSemantic.valuesLength, Nat.add_comm,
+      Nat.add_left_comm, Nat.add_assoc] using hSemantic.state
+  have hOldStack :
+      targetAfterArgs.evm.stack =
+        (args.reverse ++ [frameWord]) ++ targetInitial.evm.stack := by
+    rw [hSemantic.stack, hAcquire.stack]
+    simp [frameWord, List.append_assoc]
+  have hMachine :
+      (callerState targetAfterArgs targetInitial).evm.toMachineState =
+        targetAfterArgs.evm.toMachineState := by
+    simp [callerState, Structured.RunState.withEVM]
+  have hShared :
+      SharedRel contract sourceAfterArgs.shared
+        (callerState targetAfterArgs targetInitial).evm.toSharedState := by
+    simpa [callerState, Structured.RunState.withEVM] using hState.shared
+  have hState' :
+      ActivationStateRel contract plan live
+        (0 + (args.reverse ++ [frameWord]).length) frameBase mode
+        sourceAfterArgs targetAfterArgs := by
+    simpa using hState
+  have hRebased :=
+    hState'.rebase_prefix
+      (sourceFinal := sourceAfterArgs)
+      (targetFinal := callerState targetAfterArgs targetInitial)
+      (oldPrefix := args.reverse ++ [frameWord]) (newPrefix := [])
+      (baseStack := targetInitial.evm.stack)
+      hShared hOldStack
+      (by simp [callerState, Structured.RunState.withEVM])
+      (by
+        intro name slot hLive hLocation
+        rw [hMachine])
+      rfl
+      (by simp [hMachine])
+      (by simp [hMachine])
+      (by simpa [hMachine] using hState.activeNoWrap)
+  have hReady :
+      AllocatorReady config (depth + 1)
+        (callerState targetAfterArgs targetInitial) :=
+    hArgsEffect.ready.of_machine_eq hMachine
+  have hArgsBounded :
+      BoundedEffect config (depth + 1) (depth + 1)
+        targetAfterAcquire targetAfterArgs :=
+    BoundedEffect.weaken (by omega)
+      (BoundedEffect.of_allocatorEffect hArgsEffect)
+  have hStructural :
+      BoundedEffect config (depth + 1) (depth + 1)
+        targetAfterArgs (callerState targetAfterArgs targetInitial) :=
+    BoundedEffect.of_machine_eq hArgsEffect.ready hMachine
+  exact
+    ⟨by simpa using hRebased, hReady, rfl,
+      (hAcquire.effect.trans hArgsBounded).trans hStructural⟩
+
 /-- Canonical stack-only argument preparation with allocator preservation. -/
 theorem stack
     {contract : MemoryContract.Contract}

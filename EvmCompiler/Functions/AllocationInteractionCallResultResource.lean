@@ -115,6 +115,41 @@ abbrev OpenCallResultRel
     (CallResultRel contract config allocatorDepth entryMode
       targetCaller targetEntry callerStack)
 
+namespace CallResultRel
+
+/-- A halting callee skips caller writeback and frame release, but still
+protects every caller-owned frame through the exact argument/call prefix. -/
+theorem halt_to_caller
+    {contract : MemoryContract.Contract}
+    {config : Config} {callerDepth calleeDepth : Nat}
+    {callerMode calleeMode : ActivationMode}
+    {targetInitial targetCaller targetEntry targetFinal : TargetState}
+    {callerStack : List Word}
+    {source : SourceState} {kind : Assembly.HaltKind}
+    (hPrefix :
+      BoundedEffect config calleeDepth (callerDepth + 1)
+        targetInitial targetEntry)
+    (hCallerBound :
+      activationProtectedBound callerDepth callerMode ≤ callerDepth + 1)
+    (hCalleeBound :
+      activationProtectedBound calleeDepth calleeMode = callerDepth + 1)
+    (hCall :
+      CallResultRel contract config calleeDepth calleeMode
+        targetCaller targetEntry callerStack (.halted kind source)
+        (Structured.EffectSemantics.Outcome.halt kind targetFinal)) :
+    OutcomeEffect config callerDepth callerMode targetInitial targetFinal
+      (.halt kind) := by
+  cases hCall with
+  | halted _ _ hEffect =>
+      obtain ⟨finalDepth, hCalleeEffect⟩ :=
+        hEffect.exists_boundedEffect
+      rw [hCalleeBound] at hCalleeEffect
+      exact OutcomeEffect.halt_of_bounded
+        (BoundedEffect.weaken hCallerBound
+          (hPrefix.trans hCalleeEffect))
+
+end CallResultRel
+
 namespace CallAttachment
 
 /--

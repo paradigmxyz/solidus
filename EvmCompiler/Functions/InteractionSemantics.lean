@@ -202,6 +202,26 @@ end FunDef
 
 namespace Stmt
 
+/-- Canonical caller continuation after one internal function body returns. -/
+def finishCall (targets : List Functions.Name)
+    (ctx : Functions.Source.Ctx) (stateAfterArgs : State)
+    (callResult : Functions.InteractionSemantics.CallResult) :
+    Open (Outcome × Functions.Source.Ctx) :=
+  match callResult with
+  | .returned stateAfterCall returnValues => do
+      let returnStore ←
+        (Functions.Source.Store.assignMany targets returnValues
+          (stateModel.vars stateAfterArgs)).elim
+            (throw .InvalidInstruction) pure
+      let returnedSource := stateModel.source stateAfterCall
+      pure
+        (Functions.Source.Effectful.Outcome.regular
+          (stateModel.withSource stateAfterCall
+            { shared := returnedSource.shared, vars := returnStore }),
+          ctx)
+  | .halted kind haltedState =>
+      pure (Functions.Source.Effectful.Outcome.halt kind haltedState, ctx)
+
 def openRunForLoop (program : Functions.Program)
     (loopCtx : Functions.Source.Ctx) (cond : Functions.Expr 1)
     (postBase : Functions.Source.Ctx) (post : Functions.Block)
@@ -326,21 +346,7 @@ theorem openRun_call
             Functions.Source.Effectful.Control.FunDef.runBody
               stateModel primitiveSemantics program fn argValues fuel
                 stateAfterArgs
-          match callResult with
-          | .returned stateAfterCall returnValues =>
-              let returnStore ←
-                (Functions.Source.Store.assignMany targets returnValues
-                  (stateModel.vars stateAfterArgs)).elim
-                    (throw .InvalidInstruction) pure
-              let returnedSource := stateModel.source stateAfterCall
-              pure
-                (Functions.Source.Effectful.Outcome.regular
-                  (stateModel.withSource stateAfterCall
-                    { shared := returnedSource.shared, vars := returnStore }),
-                  ctx)
-          | .halted kind haltedState =>
-              pure
-                (Functions.Source.Effectful.Outcome.halt kind haltedState, ctx)
+          finishCall targets ctx stateAfterArgs callResult
         else
           throw .InvalidInstruction) := by
   unfold openRun Functions.Source.Canonical.Stmt.run
@@ -385,15 +391,13 @@ theorem openRun_call
             cases hAssign : Functions.Source.Store.assignMany
                 targets returnValues (stateModel.vars stateAfterArgs) with
             | none =>
-                simp [hAssign, Simulation.Interaction.error,
+                simp [finishCall, hAssign, Simulation.Interaction.error,
                   Simulation.Interaction.pure, Simulation.Interaction.bind]
             | some returnStore =>
-                simp [hAssign, Simulation.Interaction.error,
+                simp [finishCall, hAssign, Simulation.Interaction.error,
                   Simulation.Interaction.pure, Simulation.Interaction.bind]
         | halted kind haltedState =>
-            change Simulation.Interaction.pure _ =
-              Simulation.Interaction.pure _
-            rfl
+            simp [finishCall]
   · simp only [if_neg hTargets]
 
 /-- Successful canonical call execution exposes the real source function and
