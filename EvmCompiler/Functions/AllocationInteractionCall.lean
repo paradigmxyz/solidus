@@ -1030,6 +1030,88 @@ theorem Artifact.bodyScoped
         simp [artifact.slotsMatch.2.1, artifact.slotsMatch.2.2])
       (Functions.FunDef.bodyScoped hFnScoped)
 
+/-- Package a compiler-selected function body as an ordinary recursive root. -/
+def Prepared.rootArtifact
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : Artifact compilation name fn}
+    (prepared : Prepared artifact)
+    (hProgramScoped : program.Scoped) :
+    RootArtifact compilation :=
+  { functionRoot? := some fn.name
+    rootScope := .function fn.name
+    slots := artifact.slots
+    returns := fn.returns
+    sourceBlock := fn.body
+    startState := artifact.bodyStart
+    startLocals := prepared.returnCtx
+    planning :=
+      { allocation := artifact.bodyStart.allocation
+        nextScope := 0
+        scopes := [] }
+    planningAllocation := rfl
+    rootScopeOwner := rfl
+    plan := prepared.plan
+    planWF := prepared.planWF
+    finalState := prepared.bodyFinal
+    finalLocals := prepared.bodyCtx
+    planEq := by
+      rw [prepared.planEq, artifact.planEntryScope, prepared.bodyPlan]
+    finalFrameFresh := by
+      rw [← prepared.bodyPlan]
+      exact artifact.frameName_not_mem_planEntry_env
+    lexicalFrameFresh := by
+      intro entry hEntry
+      exact artifact.frameName_not_mem_lexical_entry_env hEntry
+    scopeStackEntries := by
+      intro scope state added hRoot hEnv
+      exact
+        MixedAllocation.AllocationRecipe.stackEntriesForScope_of_functionRoot_env_extension
+          hRoot artifact.slotsLookup hEnv
+    plannedFinal := by
+      calc
+        (AllocationSupport.planBlockOpen (.function fn.name)
+            { allocation := artifact.bodyStart.allocation
+              nextScope := 0
+              scopes := [] }
+            fn.body).allocation =
+            artifact.planEntry.state := by
+          simpa [Artifact.bodyStart] using artifact.planEntryState.symm
+        _ = prepared.bodyFinal.allocation := prepared.bodyPlan
+    plannedScopes := by
+      simpa [Artifact.bodyStart] using artifact.bodyScopesMem
+    lowered := prepared.body
+    compiled := prepared.bodyCode
+    lowerCtx := artifact.lowerCtx
+    lowerCtxShared := artifact.lowerCtxShared
+    lower := prepared.lowerBody
+    compile := prepared.compileBody
+    sourceScoped := artifact.bodyScoped hProgramScoped
+    activeEnv := by
+      refine ⟨[], ?_, ?_⟩
+      · simp [Artifact.bodyStart]
+      · simp }
+
+/-- The selected callee body enters the shared recursive cursor interface. -/
+def Prepared.rootCursor
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : Artifact compilation name fn}
+    (prepared : Prepared artifact)
+    (hProgramScoped : program.Scoped) :
+    CoreCursor (prepared.rootArtifact hProgramScoped)
+      (.function fn.name)
+      ((artifact.slots.returns.map Prod.fst).reverse ++
+        (artifact.slots.params.map Prod.fst).reverse)
+      fn.body artifact.bodyStart prepared.returnCtx :=
+  (prepared.rootArtifact hProgramScoped).cursor
+
 end SelectedCallee
 
 end AllocationInteractionCall

@@ -57,6 +57,8 @@ boundaries remain active work.
     from canonical lookup and whole-program lowering;
   - [x] compiler-selected callee prelude, stack/scratch body mode, and canonical
     body compiler context constructed without observer proof machinery;
+  - [x] compiler-selected callee body packaged as an ordinary pass-owned root
+    and recursive cursor;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

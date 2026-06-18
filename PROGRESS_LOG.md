@@ -31971,3 +31971,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1168-job build, full verification root, architecture guard, touched-Lean hole
   scan, axiom audit, and `git diff --check` passed; new constructors use only
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 23:35:00 PDT - proof/functions-callee-root - constructed the
+  compiler-selected function-body `RootArtifact` and canonical `CoreCursor`
+  from whole-program compilation, source lookup, allocation planning, and
+  source scoping. Recursive calls now enter the same pass-owned cursor API as
+  ordinary blocks, with no observer call context or generated evidence.
+- 2026-06-17 23:37:00 PDT - validation/functions-callee-root - focused
+  1168-job build, full verification root, architecture guard, touched-Lean hole
+  scan, axiom audit, and `git diff --check` passed; the root and cursor
+  constructors use only `[propext, Classical.choice, Quot.sound]`.
