@@ -31940,3 +31940,13 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   the 1323-job verification root, architecture guard, touched-Lean hole scan,
   axiom audit, and `git diff --check` passed. Generalized leaves and cursor
   heads use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 23:38:00 PDT - proof/functions-abrupt-terminal-heads - generalized
+  `break`, `continue`, `leave`, and plain/argument-bearing terminal
+  preservation over arbitrary source fuel and target slack, then derived each
+  head theorem and exact unreachable tail directly from the canonical cursor.
+  Internal calls are now the only non-compound statement missing this
+  interface.
+- 2026-06-17 23:39:00 PDT - validation/functions-abrupt-terminal-heads -
+  focused builds, the 1323-job verification root, architecture guard,
+  touched-Lean hole scan, axiom audit, and `git diff --check` passed. New head
+  theorems use only `[propext, Classical.choice, Quot.sound]`.

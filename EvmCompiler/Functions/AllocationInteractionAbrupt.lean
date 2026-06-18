@@ -20,7 +20,7 @@ theorem brk_of_lower_compile
     {lowerState lowerFinal : AllocationLowering.State}
     {localsCtx localsFinal : Locals.Ctx}
     {plan : Plan} {beforeLive afterLive : List Locals.Name}
-    {targetDepth frameBase : Nat}
+    {sourceFuel targetExtra targetDepth frameBase : Nat}
     {beforeMode afterMode : ActivationMode}
     {loweredStmts : List Locals.Stmt}
     {compiledStmts : List Expressions.Stmt}
@@ -41,21 +41,21 @@ theorem brk_of_lower_compile
         localsCtx plan beforeLive frameBase beforeMode source target) :
     Simulation.Interaction.Rel
       (OpenControlResultRel contract lowerCtx lowerFinal localsFinal plan
-        returns afterLive frameBase sourceCtx sourceCtx)
+        returns beforeLive frameBase sourceCtx sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
-        sourceProgram sourceCtx 0 .brk source)
+        sourceProgram sourceCtx sourceFuel .brk source)
       (Expressions.InteractionSemantics.Block.openRun
-        targetProgram 3 { stmts := compiledStmts } target) := by
+        targetProgram (targetExtra + 3) { stmts := compiledStmts } target) := by
   obtain ⟨cleanup, hCleanup, rfl, rfl, rfl, rfl⟩ :=
     BreakLeaf.compiler_shape hTargetDepth hLower hCompile
   obtain ⟨targetFinal, hCleanupRun, hFinalRel, _hStackLength⟩ :=
     Plain.forward_exact hInvariant hTransition hCleanup
   have hTarget :=
     Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_brk
-      targetProgram 0 cleanup target targetFinal hCleanupRun
+      targetProgram targetExtra cleanup target targetFinal hCleanupRun
   have hSource :
       Functions.InteractionSemantics.Stmt.openRun
-          sourceProgram sourceCtx 0 .brk source =
+          sourceProgram sourceCtx sourceFuel .brk source =
         .done
           (.ok
             (Functions.Source.Effectful.Outcome.brk
@@ -90,7 +90,7 @@ theorem cont_of_lower_compile
     {lowerState lowerFinal : AllocationLowering.State}
     {localsCtx localsFinal : Locals.Ctx}
     {plan : Plan} {beforeLive afterLive : List Locals.Name}
-    {targetDepth frameBase : Nat}
+    {sourceFuel targetExtra targetDepth frameBase : Nat}
     {beforeMode afterMode : ActivationMode}
     {loweredStmts : List Locals.Stmt}
     {compiledStmts : List Expressions.Stmt}
@@ -111,21 +111,21 @@ theorem cont_of_lower_compile
         localsCtx plan beforeLive frameBase beforeMode source target) :
     Simulation.Interaction.Rel
       (OpenControlResultRel contract lowerCtx lowerFinal localsFinal plan
-        returns afterLive frameBase sourceCtx sourceCtx)
+        returns beforeLive frameBase sourceCtx sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
-        sourceProgram sourceCtx 0 .cont source)
+        sourceProgram sourceCtx sourceFuel .cont source)
       (Expressions.InteractionSemantics.Block.openRun
-        targetProgram 3 { stmts := compiledStmts } target) := by
+        targetProgram (targetExtra + 3) { stmts := compiledStmts } target) := by
   obtain ⟨cleanup, hCleanup, rfl, rfl, rfl, rfl⟩ :=
     ContinueLeaf.compiler_shape hTargetDepth hLower hCompile
   obtain ⟨targetFinal, hCleanupRun, hFinalRel, _hStackLength⟩ :=
     Plain.forward_exact hInvariant hTransition hCleanup
   have hTarget :=
     Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_cont
-      targetProgram 0 cleanup target targetFinal hCleanupRun
+      targetProgram targetExtra cleanup target targetFinal hCleanupRun
   have hSource :
       Functions.InteractionSemantics.Stmt.openRun
-          sourceProgram sourceCtx 0 .cont source =
+          sourceProgram sourceCtx sourceFuel .cont source =
         .done
           (.ok
             (Functions.Source.Effectful.Outcome.cont

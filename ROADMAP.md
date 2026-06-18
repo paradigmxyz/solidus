@@ -52,6 +52,7 @@ boundaries remain active work.
   - [x] recursive interaction base case and generic exact-tail sequencing;
   - [x] arbitrary-fuel expression/assignment/declaration heads and preserved
     compiler-frame capacity;
+  - [x] arbitrary-fuel `break`/`continue`/`leave` and terminal cursor heads;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

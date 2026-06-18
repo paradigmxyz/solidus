@@ -1,6 +1,9 @@
 import EvmCompiler.Functions.AllocationInteractionCursor
 import EvmCompiler.Functions.AllocationInteractionComposition
 import EvmCompiler.Functions.AllocationInteractionLeaf
+import EvmCompiler.Functions.AllocationInteractionAbrupt
+import EvmCompiler.Functions.AllocationInteractionLeave
+import EvmCompiler.Functions.AllocationInteractionTerminal
 
 namespace EvmCompiler
 namespace Functions
@@ -394,6 +397,311 @@ theorem CoreCursor.let_head
                     (fun slot hLocation =>
                       hScratchBound rfl hLocation)
                     hLower hCompile hInvariant
+  exact
+    ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
+      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+
+/-- Derive a `break` head theorem from its loop-destination transition. -/
+theorem CoreCursor.brk_head
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live afterLive : List Functions.Name}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {sourceFuel targetExtra targetDepth frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live { stmts := .brk :: rest }
+        beforeState beforeLocals)
+    (hSourceScope : sourceCtx.breakScope? = some afterLive)
+    (hTargetDepth : beforeLocals.breakDepth? = some targetDepth)
+    (hTransition :
+      AllocationInteractionCleanup.Transition cursor.plan live afterLive
+        targetDepth beforeMode afterMode)
+    (hInvariant :
+      AllocationContext.ActivationInvariant contract root.lowerCtx
+        beforeState beforeLocals cursor.plan live frameBase beforeMode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        CoreCursor root scope live { stmts := rest }
+          afterState afterLocals,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          Simulation.Interaction.Rel
+            (OpenControlResultRel contract root.lowerCtx afterState
+              afterLocals cursor.plan root.returns live frameBase
+              sourceCtx sourceCtx)
+            (Functions.InteractionSemantics.Stmt.openRun
+              program sourceCtx sourceFuel .brk source)
+            (Expressions.InteractionSemantics.Block.openRun
+              expressions (targetExtra + 3)
+                { stmts := headCode } target) ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, hPlan, hFinalState, hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, _hScoped⟩ :=
+    cursor.cons
+  have hHead :=
+    AllocationInteractionAbrupt.brk_of_lower_compile
+      (sourceProgram := program) (sourceCtx := sourceCtx)
+      (targetProgram := expressions)
+      (sourceFuel := sourceFuel) (targetExtra := targetExtra)
+      hSourceScope hTargetDepth hTransition hLower hCompile hInvariant
+  exact
+    ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
+      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+
+/-- Derive a `continue` head theorem from its loop-destination transition. -/
+theorem CoreCursor.cont_head
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live afterLive : List Functions.Name}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {sourceFuel targetExtra targetDepth frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live { stmts := .cont :: rest }
+        beforeState beforeLocals)
+    (hSourceScope : sourceCtx.continueScope? = some afterLive)
+    (hTargetDepth : beforeLocals.continueDepth? = some targetDepth)
+    (hTransition :
+      AllocationInteractionCleanup.Transition cursor.plan live afterLive
+        targetDepth beforeMode afterMode)
+    (hInvariant :
+      AllocationContext.ActivationInvariant contract root.lowerCtx
+        beforeState beforeLocals cursor.plan live frameBase beforeMode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        CoreCursor root scope live { stmts := rest }
+          afterState afterLocals,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          Simulation.Interaction.Rel
+            (OpenControlResultRel contract root.lowerCtx afterState
+              afterLocals cursor.plan root.returns live frameBase
+              sourceCtx sourceCtx)
+            (Functions.InteractionSemantics.Stmt.openRun
+              program sourceCtx sourceFuel .cont source)
+            (Expressions.InteractionSemantics.Block.openRun
+              expressions (targetExtra + 3)
+                { stmts := headCode } target) ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, hPlan, hFinalState, hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, _hScoped⟩ :=
+    cursor.cons
+  have hHead :=
+    AllocationInteractionAbrupt.cont_of_lower_compile
+      (sourceProgram := program) (sourceCtx := sourceCtx)
+      (targetProgram := expressions)
+      (sourceFuel := sourceFuel) (targetExtra := targetExtra)
+      hSourceScope hTargetDepth hTransition hLower hCompile hInvariant
+  exact
+    ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
+      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+
+/-- Derive a `leave` head theorem and exact unreachable tail. -/
+theorem CoreCursor.leave_head
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live functionScope : List Functions.Name}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {sourceFuel targetExtra frameBase : Nat}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live { stmts := .leave :: rest }
+        beforeState beforeLocals)
+    (hSourceScope : sourceCtx.leaveScope? = some functionScope)
+    (hReturnsLive : ∀ name, name ∈ root.returns → name ∈ live)
+    (hReturnsScope : ∀ name, name ∈ root.returns → name ∈ functionScope)
+    (hTargetDepth : beforeLocals.leaveDepth? = some 0)
+    (hRetc : beforeLocals.leaveRetc = root.returns.length)
+    (hReturnFrame : target.returns ≠ [])
+    (hInvariant :
+      AllocationContext.ActivationInvariant contract root.lowerCtx
+        beforeState beforeLocals cursor.plan live frameBase mode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        CoreCursor root scope live { stmts := rest }
+          afterState afterLocals,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          Simulation.Interaction.Rel
+            (OpenControlResultRel contract root.lowerCtx afterState
+              afterLocals cursor.plan root.returns live frameBase
+              sourceCtx sourceCtx)
+            (Functions.InteractionSemantics.Stmt.openRun
+              program sourceCtx sourceFuel .leave source)
+            (Expressions.InteractionSemantics.Block.openRun
+              expressions (targetExtra + 4)
+                { stmts := headCode } target) ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, hPlan, hFinalState, hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, _hScoped⟩ :=
+    cursor.cons
+  have hHead :=
+    AllocationInteractionLeave.leave_of_lower_compile
+      (sourceProgram := program) (sourceCtx := sourceCtx)
+      (targetProgram := expressions)
+      (sourceFuel := sourceFuel) (targetExtra := targetExtra)
+      hSourceScope hReturnsLive hReturnsScope hTargetDepth hRetc
+      hReturnFrame hLower hCompile hInvariant
+  exact
+    ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
+      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+
+/-- Derive a plain terminal head theorem and exact unreachable tail. -/
+theorem CoreCursor.terminal_head
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {kind : Assembly.HaltKind} {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {sourceFuel targetExtra frameBase : Nat}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live { stmts := .terminal kind :: rest }
+        beforeState beforeLocals)
+    (hMemory :
+      Simulation.MemorySafety.TerminalMemorySafe contract kind [])
+    (hInvariant :
+      AllocationContext.ActivationInvariant contract root.lowerCtx
+        beforeState beforeLocals cursor.plan live frameBase mode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        CoreCursor root scope live { stmts := rest }
+          afterState afterLocals,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          Simulation.Interaction.Rel
+            (OpenControlResultRel contract root.lowerCtx afterState
+              afterLocals cursor.plan root.returns live frameBase
+              sourceCtx sourceCtx)
+            (Functions.InteractionSemantics.Stmt.openRun
+              program sourceCtx sourceFuel (.terminal kind) source)
+            (Expressions.InteractionSemantics.Block.openRun
+              expressions (targetExtra + 3)
+                { stmts := headCode } target) ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, hPlan, hFinalState, hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, _hScoped⟩ :=
+    cursor.cons
+  have hHead :=
+    AllocationInteractionTerminal.terminal_of_lower_compile
+      (sourceProgram := program) (sourceCtx := sourceCtx)
+      (targetProgram := expressions)
+      (sourceFuel := sourceFuel) (targetExtra := targetExtra)
+      hMemory hLower hCompile hInvariant
+  exact
+    ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
+      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+
+/-- Derive an argument-bearing terminal head and exact unreachable tail. -/
+theorem CoreCursor.terminalArgs_head
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {kind : Assembly.HaltKind}
+    {args : Locals.ExprSeq kind.argCount}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {sourceFuel targetExtra frameBase : Nat}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .terminalArgs kind args :: rest }
+        beforeState beforeLocals)
+    (hArgsSafe :
+      AllocationInteractionSafety.ExprSeqSafe contract args source)
+    (hTerminalSafe :
+      Simulation.Interaction.AllDone
+        (fun outcome =>
+          match outcome with
+          | .error _ => True
+          | .ok result =>
+              Simulation.MemorySafety.TerminalMemorySafe
+                contract kind result.2)
+        (Functions.InteractionSemantics.ExprSeq.openEval args source))
+    (hInvariant :
+      AllocationContext.ActivationInvariant contract root.lowerCtx
+        beforeState beforeLocals cursor.plan live frameBase mode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        CoreCursor root scope live { stmts := rest }
+          afterState afterLocals,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          Simulation.Interaction.Rel
+            (OpenControlResultRel contract root.lowerCtx afterState
+              afterLocals cursor.plan root.returns live frameBase
+              sourceCtx sourceCtx)
+            (Functions.InteractionSemantics.Stmt.openRun
+              program sourceCtx sourceFuel (.terminalArgs kind args) source)
+            (Expressions.InteractionSemantics.Block.openRun
+              expressions (targetExtra + 3)
+                { stmts := headCode } target) ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, hPlan, hFinalState, hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, hScoped⟩ :=
+    cursor.cons
+  have hArgsScoped : Functions.Scope.ExprSeqScoped live args := by
+    simpa [Functions.Scope.Stmt.Scoped] using hScoped
+  have hHead :=
+    AllocationInteractionTerminal.terminalArgs_of_lower_compile
+      (sourceProgram := program) (sourceCtx := sourceCtx)
+      (targetProgram := expressions)
+      (sourceFuel := sourceFuel) (targetExtra := targetExtra)
+      hArgsSafe hTerminalSafe hArgsScoped hLower hCompile hInvariant
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
       ⟨hPlan, hFinalState, hFinalLocals⟩⟩

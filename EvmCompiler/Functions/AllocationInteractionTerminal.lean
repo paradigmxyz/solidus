@@ -653,7 +653,8 @@ theorem terminalArgs_of_lower_compile
     {returns live : List Functions.Name}
     {lowerState lowerFinal : AllocationLowering.State}
     {localsCtx localsFinal : Locals.Ctx}
-    {plan : Plan} {frameBase : Nat} {mode : ActivationMode}
+    {plan : Plan} {sourceFuel targetExtra frameBase : Nat}
+    {mode : ActivationMode}
     {kind : Assembly.HaltKind}
     {args : Locals.ExprSeq kind.argCount}
     {loweredStmts : List Locals.Stmt}
@@ -684,9 +685,9 @@ theorem terminalArgs_of_lower_compile
       (OpenControlResultRel contract lowerCtx lowerFinal localsFinal plan
         returns live frameBase sourceCtx sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
-        sourceProgram sourceCtx 0 (.terminalArgs kind args) source)
+        sourceProgram sourceCtx sourceFuel (.terminalArgs kind args) source)
       (Expressions.InteractionSemantics.Block.openRun
-        targetProgram 3 { stmts := compiledStmts } target) := by
+        targetProgram (targetExtra + 3) { stmts := compiledStmts } target) := by
   obtain ⟨lowered, code, hLowerArgs, hCompileCode,
       rfl, rfl, rfl, rfl⟩ :=
     TerminalLeaf.args_compiler_shape hLower hCompile
@@ -768,7 +769,8 @@ theorem terminal_of_lower_compile
     {returns live : List Functions.Name}
     {lowerState lowerFinal : AllocationLowering.State}
     {localsCtx localsFinal : Locals.Ctx}
-    {plan : Plan} {frameBase : Nat} {mode : ActivationMode}
+    {plan : Plan} {sourceFuel targetExtra frameBase : Nat}
+    {mode : ActivationMode}
     {kind : Assembly.HaltKind}
     {loweredStmts : List Locals.Stmt}
     {compiledStmts : List Expressions.Stmt}
@@ -789,9 +791,9 @@ theorem terminal_of_lower_compile
       (OpenControlResultRel contract lowerCtx lowerFinal localsFinal plan
         returns live frameBase sourceCtx sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
-        sourceProgram sourceCtx 0 (.terminal kind) source)
+        sourceProgram sourceCtx sourceFuel (.terminal kind) source)
       (Expressions.InteractionSemantics.Block.openRun
-        targetProgram 3 { stmts := compiledStmts } target) := by
+        targetProgram (targetExtra + 3) { stmts := compiledStmts } target) := by
   obtain ⟨rfl, rfl, rfl, rfl⟩ :=
     TerminalLeaf.compiler_shape hLower hCompile
   obtain
@@ -834,7 +836,7 @@ theorem terminal_of_lower_compile
       hAfterShared hAfterNoWrap hSourceEval (by simpa using hAfterStack)
   have hSource :
       Functions.InteractionSemantics.Stmt.openRun
-          sourceProgram sourceCtx 0 (.terminal kind) source =
+          sourceProgram sourceCtx sourceFuel (.terminal kind) source =
         .done
           (.ok
             (Functions.Source.Effectful.Outcome.halt kind sourceFinal,
@@ -859,7 +861,7 @@ theorem terminal_of_lower_compile
     rfl
   have hTarget :
       Expressions.InteractionSemantics.Block.openRun
-          targetProgram 3
+          targetProgram (targetExtra + 3)
           { stmts := [.code localsFinal.cleanupAll, .terminal kind] }
           target =
         .done
@@ -879,7 +881,7 @@ theorem terminal_of_lower_compile
     rfl
   have hTargetCompiled :
       Expressions.InteractionSemantics.Block.openRun
-          targetProgram 3
+          targetProgram (targetExtra + 3)
           { stmts :=
               Locals.codeStmt localsFinal.cleanupAll ++ [.terminal kind] }
           target =

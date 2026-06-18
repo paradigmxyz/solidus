@@ -151,7 +151,8 @@ theorem leave_of_lower_compile
     {returns functionScope live : List Functions.Name}
     {lowerState lowerFinal : AllocationLowering.State}
     {localsCtx localsFinal : Locals.Ctx}
-    {plan : Plan} {frameBase : Nat} {mode : ActivationMode}
+    {plan : Plan} {sourceFuel targetExtra frameBase : Nat}
+    {mode : ActivationMode}
     {loweredStmts : List Locals.Stmt}
     {compiledStmts : List Expressions.Stmt}
     {source : SourceState} {target : TargetState}
@@ -174,9 +175,9 @@ theorem leave_of_lower_compile
       (OpenControlResultRel contract lowerCtx lowerFinal localsFinal plan
         returns live frameBase sourceCtx sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
-        sourceProgram sourceCtx 0 .leave source)
+        sourceProgram sourceCtx sourceFuel .leave source)
       (Expressions.InteractionSemantics.Block.openRun
-        targetProgram 4 { stmts := compiledStmts } target) := by
+        targetProgram (targetExtra + 4) { stmts := compiledStmts } target) := by
   obtain ⟨values, hLookup⟩ :=
     lookupMany_of_liveDefined hInvariant.defined hReturnsLive
   have hSafe :=
@@ -234,7 +235,7 @@ theorem leave_of_lower_compile
               hReturnsScope hLookup
       have hSource :
           Functions.InteractionSemantics.Stmt.openRun
-              sourceProgram sourceCtx 0 .leave source =
+              sourceProgram sourceCtx sourceFuel .leave source =
             .done
               (.ok
                 (Functions.Source.Effectful.Outcome.leave
@@ -252,7 +253,7 @@ theorem leave_of_lower_compile
         rfl
       have hTarget :
           Expressions.InteractionSemantics.Block.openRun
-              targetProgram 4
+              targetProgram (targetExtra + 4)
               { stmts :=
                   [.code returnCode, .code cleanup, .leave] }
               target =
@@ -265,13 +266,14 @@ theorem leave_of_lower_compile
         rw [hReturnRun]
         change
           Expressions.InteractionSemantics.Block.openRun
-              targetProgram 3 { stmts := [.code cleanup, .leave] }
+              targetProgram (targetExtra + 3)
+              { stmts := [.code cleanup, .leave] }
               targetAfterReturns =
             .done
               (.ok (Structured.EffectSemantics.Outcome.leave targetFinal))
         exact
           Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_leave
-            targetProgram 0 cleanup targetAfterReturns targetFinal
+            targetProgram targetExtra cleanup targetAfterReturns targetFinal
               hCleanupRun hFinalFrame
       rw [hSource, hTarget]
       apply Simulation.Interaction.Rel.done
