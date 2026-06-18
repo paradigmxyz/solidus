@@ -1,5 +1,6 @@
 import EvmCompiler.Functions.AllocationInteractionControl
 import EvmCompiler.Functions.AllocationInteractionCleanupResource
+import EvmCompiler.Functions.AllocationInteractionExpressionResource
 import EvmCompiler.Functions.AllocationInteractionResourceComposition
 
 namespace EvmCompiler
@@ -7,6 +8,7 @@ namespace Functions
 namespace AllocationInteractionControlResource
 
 open AllocationInteractionRelation
+open AllocationInteractionComposition
 open AllocationInteractionFrame
 open AllocationInteractionResource
 open AllocationInteractionResourceComposition
@@ -129,6 +131,104 @@ theorem block_of_components
                   (Simulation.Interaction.pure (_, sourceCtx))
                   (Simulation.Interaction.pure _)
               exact .done (.ok hActivation)
+
+/-- Preserve condition resources and compose the selected true branch. -/
+theorem if_of_components
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {contract : MemoryContract.Contract}
+    {config : Config} {allocatorDepth : Nat}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx} {plan : Plan}
+    {returns live : List Functions.Name}
+    {frameBase sourceBodyFuel targetBodyFuel : Nat}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {cond : Functions.Expr 1} {body : Functions.Block}
+    {targetCond : Expressions.Expr 1}
+    {targetBody : Expressions.Block}
+    {source : SourceState} {target : TargetState}
+    (hInitial :
+      AllocationContext.ActivationInvariant contract lowerCtx lowerState
+        localsCtx plan live frameBase mode source target)
+    (hCond :
+      Simulation.Interaction.Rel
+        (AllocationInteractionExpressionResource.ConditionOutcomeRel contract
+          config allocatorDepth plan live frameBase mode target)
+        (Functions.InteractionSemantics.Expr.openEvalCondition cond source)
+        (Expressions.InteractionSemantics.Expr.openRunCondition
+          targetCond target))
+    (hVars :
+      Simulation.Interaction.AllDone
+        (Locals.InteractionStatePreservation.ResultVars
+          (α := Bool) source)
+        (Functions.InteractionSemantics.Expr.openEvalCondition cond source))
+    (hTrue :
+      ∀ {sourceAfter targetAfter},
+        AllocationContext.ActivationInvariant contract lowerCtx lowerState
+            localsCtx plan live frameBase mode sourceAfter targetAfter →
+          AllocatorReady config allocatorDepth targetAfter →
+          Simulation.Interaction.Rel
+            (RuntimeResultRel contract lowerCtx lowerState localsCtx plan
+              returns live frameBase mode sourceCtx sourceCtx config
+              allocatorDepth targetAfter)
+            (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+              sourceBodyFuel (.block body) sourceAfter)
+            (Expressions.InteractionSemantics.Block.openRun expressions
+              targetBodyFuel targetBody targetAfter)) :
+    Simulation.Interaction.Rel
+      (RuntimeResultRel contract lowerCtx lowerState localsCtx plan returns live
+        frameBase mode sourceCtx sourceCtx config allocatorDepth target)
+      (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+        (sourceBodyFuel + 1) (.if_ cond body) source)
+      (Expressions.InteractionSemantics.Block.openRun expressions
+        (targetBodyFuel + 2)
+        { stmts := [.if_ targetCond targetBody] } target) := by
+  rw [Functions.InteractionSemantics.Stmt.openRun_if,
+    Expressions.InteractionSemantics.Block.openRun_single_if]
+  have hCondStrong :=
+    Simulation.Interaction.Rel.strengthen_left hCond hVars
+  apply Simulation.Interaction.Rel.bind_custom hCondStrong
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hRelated, hVarsDone⟩
+  cases hRelated with
+  | error hError => exact .done ⟨.error hError, .error hError⟩
+  | @ok sourceResult targetResult hResult =>
+      rcases sourceResult with ⟨sourceAfter, sourceCondition⟩
+      rcases targetResult with ⟨targetAfter, targetCondition⟩
+      cases hResult.1.condition
+      have hDefined : LiveDefined live sourceAfter :=
+        hInitial.defined.congr_vars hVarsDone
+      have hAfter :
+          AllocationContext.ActivationInvariant contract lowerCtx lowerState
+            localsCtx plan live frameBase mode sourceAfter targetAfter :=
+        { compiler := hInitial.compiler
+          planWF := hInitial.planWF
+          defined := hDefined
+          state := hResult.1.state
+          stackLength :=
+            (congrArg List.length hResult.1.stack).trans
+              hInitial.stackLength }
+      cases sourceCondition with
+      | false =>
+          apply Simulation.Interaction.Rel.done
+          refine ⟨Simulation.Interaction.ExceptRel.ok ?_,
+            Simulation.Interaction.ExceptRel.ok ?_⟩
+          · exact ControlResultRel.regular hAfter (SameFrame.refl mode)
+              (Functions.Source.Ctx.SameControl.refl sourceCtx)
+          · exact ActivationEffect.of_allocatorEffect hResult.2
+      | true =>
+          apply Simulation.Interaction.Rel.mono
+            (hTrue hAfter hResult.2.ready)
+          intro sourceFinal targetFinal hFinal
+          rcases hFinal with ⟨hSemantic, hBodyEffect⟩
+          cases hBodyEffect with
+          | error hError => exact ⟨hSemantic, .error hError⟩
+          | ok hEffect =>
+              exact ⟨hSemantic, .ok
+                (ActivationEffect.trans
+                  (ActivationEffect.of_allocatorEffect hResult.2) hEffect)⟩
 
 end AllocationInteractionControlResource
 end Functions

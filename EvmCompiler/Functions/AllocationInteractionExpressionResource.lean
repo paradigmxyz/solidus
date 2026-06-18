@@ -761,6 +761,258 @@ theorem forwardExpr
   forwardExprFuel primitiveOwner (exprHeight expr) hConfig hSafe
     (Nat.le_refl _) hCtx hScoped hLower hCompile hRel hReady
 
+abbrev ValueResultRel
+    (contract : MemoryContract.Contract) (config : Config)
+    (allocatorDepth : Nat) (plan : Plan) (live : List Locals.Name)
+    (frameBase : Nat) (mode : ActivationMode)
+    (targetInitial : TargetState)
+    (source : SourceState × Word) (targetFinal : TargetState × Word) : Prop :=
+  ActivationValueResultRel contract plan live frameBase mode targetInitial
+      source targetFinal ∧
+    AllocatorEffect config allocatorDepth targetInitial targetFinal.1
+
+abbrev ValueOutcomeRel
+    (contract : MemoryContract.Contract) (config : Config)
+    (allocatorDepth : Nat) (plan : Plan) (live : List Locals.Name)
+    (frameBase : Nat) (mode : ActivationMode)
+    (targetInitial : TargetState) :=
+  Simulation.Interaction.ExceptRel
+    (fun left right : EVMException => left = right)
+    (ValueResultRel contract config allocatorDepth plan live frameBase mode
+      targetInitial)
+
+/-- One compiled value restores the incoming stack and allocator depth. -/
+theorem forwardOne
+    {contract : MemoryContract.Contract}
+    (primitiveOwner :
+      ∀ op,
+        Locals.InteractionSemantics.Primitive.supportsOpen op = true →
+          PrimitiveForward contract op)
+    {globalFrameWords allocatorDepth : Nat} {config : Config}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State} {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {expr : Functions.Expr 1}
+    {lowered : Locals.Expr 1} {code : Structured.Code}
+    {source : SourceState} {target : TargetState}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hSafe : AllocationInteractionSafety.ExprSafe contract expr source)
+    (hCtx :
+      AllocationContext.ActivationExprContext lowerCtx lowerState localsCtx
+        plan live mode)
+    (hScoped : Functions.Scope.ExprScoped live expr)
+    (hLower :
+      AllocationLowering.lowerExpr lowerCtx lowerState expr = some lowered)
+    (hCompile :
+      Locals.Expr.compileCode localsCtx 0 lowered = some code)
+    (hRel :
+      ActivationStateRel contract plan live 0 frameBase mode source target)
+    (hReady : AllocatorReady config allocatorDepth target) :
+    Simulation.Interaction.Rel
+      (ValueOutcomeRel contract config allocatorDepth plan live frameBase mode
+        target)
+      (Functions.InteractionSemantics.Expr.openEvalOne expr source)
+      (Expressions.InteractionSemantics.Expr.openRunOne (.code code) target) := by
+  have hEval := forwardExpr primitiveOwner hConfig hSafe hCtx hScoped
+    hLower hCompile hRel hReady
+  unfold Functions.InteractionSemantics.Expr.openEvalOne
+    Locals.InteractionSemantics.Expr.openEvalOne
+    Locals.Source.Effectful.Expr.Control.evalOne
+  unfold Expressions.InteractionSemantics.Expr.openRunOne
+    Expressions.InteractionSemantics.Expr.openRun
+    Expressions.EffectSemantics.Control.Expr.run
+  apply Simulation.Interaction.Rel.bind hEval
+  intro sourceResult targetAfterExpr hResult
+  rcases sourceResult with ⟨sourceFinal, values⟩
+  cases values with
+  | nil =>
+      have hLength := hResult.1.valuesLength
+      simp at hLength
+  | cons value rest =>
+    cases rest with
+    | cons next tail =>
+        have hLength := hResult.1.valuesLength
+        simp at hLength
+    | nil =>
+      let targetFinal :=
+        targetAfterExpr.withEVM
+          { targetAfterExpr.evm with stack := target.evm.stack }
+      have hTargetStack :
+          targetAfterExpr.evm.stack = value :: target.evm.stack := by
+        simpa using hResult.1.stack
+      have hPop :
+          targetAfterExpr.evm.stack.pop =
+            some (target.evm.stack, value) := by
+        rw [hTargetStack]
+        rfl
+      have hFinalState :
+          ActivationStateRel contract plan live 0 frameBase mode
+            sourceFinal targetFinal := by
+        apply hResult.1.state.rebase_prefix
+          (stackOffset := 0) (oldPrefix := [value]) (newPrefix := [])
+          (baseStack := target.evm.stack)
+        · simpa [targetFinal] using hResult.1.state.shared
+        · simpa using hTargetStack
+        · simp [targetFinal]
+        · intro name slot hLive hLocation
+          rfl
+        · rfl
+        · simp [targetFinal]
+        · simp [targetFinal]
+        · simpa [targetFinal] using hResult.1.state.activeNoWrap
+      have hMachine :
+          targetFinal.evm.toMachineState =
+            targetAfterExpr.evm.toMachineState := by
+        rfl
+      rw [hPop]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      refine ⟨{ value := rfl, state := hFinalState, stack := rfl }, ?_⟩
+      exact hResult.2.trans
+        (AllocatorEffect.of_machine_eq hResult.2.ready hMachine)
+
+abbrev ConditionResultRel
+    (contract : MemoryContract.Contract) (config : Config)
+    (allocatorDepth : Nat) (plan : Plan) (live : List Locals.Name)
+    (frameBase : Nat) (mode : ActivationMode)
+    (targetInitial : TargetState)
+    (source : SourceState × Bool) (targetFinal : TargetState × Bool) : Prop :=
+  ActivationConditionResultRel contract plan live frameBase mode targetInitial
+      source targetFinal ∧
+    AllocatorEffect config allocatorDepth targetInitial targetFinal.1
+
+abbrev ConditionOutcomeRel
+    (contract : MemoryContract.Contract) (config : Config)
+    (allocatorDepth : Nat) (plan : Plan) (live : List Locals.Name)
+    (frameBase : Nat) (mode : ActivationMode)
+    (targetInitial : TargetState) :=
+  Simulation.Interaction.ExceptRel
+    (fun left right : EVMException => left = right)
+    (ConditionResultRel contract config allocatorDepth plan live frameBase mode
+      targetInitial)
+
+/-- A compiled condition preserves truth, stack shape, and allocator depth. -/
+theorem forwardCondition
+    {contract : MemoryContract.Contract}
+    (primitiveOwner :
+      ∀ op,
+        Locals.InteractionSemantics.Primitive.supportsOpen op = true →
+          PrimitiveForward contract op)
+    {globalFrameWords allocatorDepth : Nat} {config : Config}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State} {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {expr : Functions.Expr 1}
+    {lowered : Locals.Expr 1} {code : Structured.Code}
+    {source : SourceState} {target : TargetState}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hSafe : AllocationInteractionSafety.ExprSafe contract expr source)
+    (hCtx :
+      AllocationContext.ActivationExprContext lowerCtx lowerState localsCtx
+        plan live mode)
+    (hScoped : Functions.Scope.ExprScoped live expr)
+    (hLower :
+      AllocationLowering.lowerExpr lowerCtx lowerState expr = some lowered)
+    (hCompile :
+      Locals.Expr.compileCode localsCtx 0 lowered = some code)
+    (hRel :
+      ActivationStateRel contract plan live 0 frameBase mode source target)
+    (hReady : AllocatorReady config allocatorDepth target) :
+    Simulation.Interaction.Rel
+      (ConditionOutcomeRel contract config allocatorDepth plan live frameBase
+        mode target)
+      (Functions.InteractionSemantics.Expr.openEvalCondition expr source)
+      (Expressions.InteractionSemantics.Expr.openRunCondition
+        (.code code) target) := by
+  have hEval := forwardExpr primitiveOwner hConfig hSafe hCtx hScoped
+    hLower hCompile hRel hReady
+  have hOne :
+      Simulation.Interaction.Rel
+        (Simulation.Interaction.ExceptRel
+          (fun left right : EVMException => left = right)
+          (fun sourceResult targetFinal =>
+            ActivationExprResultRel contract plan live 0 frameBase 1 mode
+                sourceResult.1 target targetFinal [sourceResult.2] ∧
+              AllocatorEffect config allocatorDepth target targetFinal))
+        (Functions.InteractionSemantics.Expr.openEvalOne expr source)
+        (Structured.InteractionSemantics.Code.openRun code target) := by
+    unfold Functions.InteractionSemantics.Expr.openEvalOne
+      Locals.InteractionSemantics.Expr.openEvalOne
+      Locals.Source.Effectful.Expr.Control.evalOne
+    rw [← Simulation.Interaction.bind_pure
+      (Structured.InteractionSemantics.Code.openRun code target)]
+    apply Simulation.Interaction.Rel.bind hEval
+    intro sourceResult targetFinal hResult
+    rcases sourceResult with ⟨sourceFinal, values⟩
+    cases values with
+    | nil =>
+        have hLength := hResult.1.valuesLength
+        simp at hLength
+    | cons value rest =>
+        cases rest with
+        | nil =>
+            apply Simulation.Interaction.Rel.done
+            apply Simulation.Interaction.ExceptRel.ok
+            exact hResult
+        | cons next tail =>
+            have hLength := hResult.1.valuesLength
+            simp at hLength
+  unfold Functions.InteractionSemantics.Expr.openEvalCondition
+    Locals.InteractionSemantics.Expr.openEvalCondition
+    Locals.Source.Effectful.Expr.Control.evalCondition
+  unfold Expressions.InteractionSemantics.Expr.openRunCondition
+    Expressions.EffectSemantics.Control.Expr.runCondition
+    Expressions.EffectSemantics.Control.Expr.run
+  apply Simulation.Interaction.Rel.bind hOne
+  intro sourceResult targetAfterExpr hResult
+  rcases sourceResult with ⟨sourceFinal, value⟩
+  let targetFinal :=
+    targetAfterExpr.withEVM
+      { targetAfterExpr.evm with stack := target.evm.stack }
+  have hTargetStack :
+      targetAfterExpr.evm.stack = value :: target.evm.stack := by
+    simpa using hResult.1.stack
+  have hPop :
+      Structured.EffectSemantics.Control.Code.popCondition
+          (M := Simulation.Interaction EVMException)
+          Structured.EffectSemantics.Ordinary.runStateModel targetAfterExpr =
+        Simulation.Interaction.pure
+          (targetFinal, value != EvmYul.UInt256.ofNat 0) := by
+    unfold Structured.EffectSemantics.Control.Code.popCondition
+    rw [Structured.EffectSemantics.Ordinary.runStateModel_evm,
+      hTargetStack]
+    rfl
+  have hFinalState :
+      ActivationStateRel contract plan live 0 frameBase mode
+        sourceFinal targetFinal := by
+    apply hResult.1.state.rebase_prefix
+      (stackOffset := 0) (oldPrefix := [value]) (newPrefix := [])
+      (baseStack := target.evm.stack)
+    · simpa [targetFinal] using hResult.1.state.shared
+    · simpa using hTargetStack
+    · simp [targetFinal]
+    · intro name slot hLive hLocation
+      rfl
+    · rfl
+    · simp [targetFinal]
+    · simp [targetFinal]
+    · simpa [targetFinal] using hResult.1.state.activeNoWrap
+  have hMachine :
+      targetFinal.evm.toMachineState = targetAfterExpr.evm.toMachineState := by
+    rfl
+  rw [hPop]
+  apply Simulation.Interaction.Rel.done
+  apply Simulation.Interaction.ExceptRel.ok
+  refine ⟨{ condition := rfl, state := hFinalState, stack := rfl }, ?_⟩
+  exact hResult.2.trans
+    (AllocatorEffect.of_machine_eq hResult.2.ready hMachine)
+
 theorem forwardExprSeq
     {contract : MemoryContract.Contract}
     (primitiveOwner :
