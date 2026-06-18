@@ -361,6 +361,11 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.switch
 #print axioms EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.for_
 #print axioms EvmCompiler.Functions.AllocationInteractionStackRuntime.complete
+#print axioms EvmCompiler.Functions.InteractionSemantics.Block.openRunScoped_append
+#print axioms EvmCompiler.Functions.AllocationInteractionPrelude.forward
 #print axioms EvmCompiler.Functions.AllocationInteractionProgram.StackSetupResult.body
+#print axioms EvmCompiler.Functions.AllocationInteractionProgram.StackSetupResult.closedBody
+#print axioms EvmCompiler.Functions.AllocationInteractionProgram.ScratchSetupResult.closedBody
 #print axioms EvmCompiler.Functions.AllocationInteractionProgram.regularCleanup
 #print axioms EvmCompiler.Functions.AllocationInteractionProgram.closeBody
+#print axioms EvmCompiler.Functions.AllocationInteractionProgram.mainForward

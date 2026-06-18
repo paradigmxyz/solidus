@@ -277,6 +277,75 @@ theorem openRun_append
               rw [Simulation.Interaction.bind_done_ok]
               simp [hMode]
 
+/-- Flat compiler-generated code prefixes are insensitive to the exact block
+meta-fuel once every statement has fuel to execute.  This is intentionally
+restricted to `.code`; recursive target control keeps its ordinary fuel
+semantics. -/
+theorem openRun_codeOnly_fuel_eq
+    (program : Expressions.Program) :
+    ∀ (stmts : List Expressions.Stmt)
+      (hCodeOnly :
+        ∀ stmt, stmt ∈ stmts → ∃ code, stmt = .code code)
+      (leftFuel rightFuel : Nat) (state : RunState),
+      stmts.length < leftFuel →
+      stmts.length < rightFuel →
+      openRun program leftFuel { stmts := stmts } state =
+        openRun program rightFuel { stmts := stmts } state := by
+  intro stmts hCodeOnly
+  induction stmts with
+  | nil =>
+      intro leftFuel rightFuel state hLeft hRight
+      obtain ⟨leftExtra, hLeftEq⟩ :=
+        Nat.exists_eq_add_of_le (show 1 ≤ leftFuel by omega)
+      obtain ⟨rightExtra, hRightEq⟩ :=
+        Nat.exists_eq_add_of_le (show 1 ≤ rightFuel by omega)
+      rw [hLeftEq, hRightEq]
+      simp only [Nat.add_comm 1 leftExtra, Nat.add_comm 1 rightExtra]
+      rw [openRun_nil, openRun_nil]
+  | cons stmt rest ih =>
+      intro leftFuel rightFuel state hLeft hRight
+      obtain ⟨code, rfl⟩ := hCodeOnly stmt (by simp)
+      obtain ⟨leftRestFuel, hLeftEq⟩ :=
+        Nat.exists_eq_add_of_le (show 1 ≤ leftFuel by omega)
+      obtain ⟨rightRestFuel, hRightEq⟩ :=
+        Nat.exists_eq_add_of_le (show 1 ≤ rightFuel by omega)
+      simp only [List.length_cons] at hLeft hRight
+      rw [hLeftEq] at hLeft
+      rw [hRightEq] at hRight
+      have hRestOnly :
+          ∀ tailStmt, tailStmt ∈ rest →
+            ∃ tailCode, tailStmt = .code tailCode := by
+        intro tailStmt hTail
+        exact hCodeOnly tailStmt (by simp [hTail])
+      have hLeftRest : rest.length < leftRestFuel := by omega
+      have hRightRest : rest.length < rightRestFuel := by omega
+      rw [hLeftEq, hRightEq]
+      simp only [Nat.add_comm 1 leftRestFuel,
+        Nat.add_comm 1 rightRestFuel]
+      rw [openRun_cons, openRun_cons]
+      simp only [EffectSemantics.Control.Stmt.run]
+      change
+        Simulation.Interaction.bind
+            (Simulation.Interaction.bind
+              (Structured.InteractionSemantics.Code.openRun code state)
+              (fun targetAfter =>
+                Simulation.Interaction.pure
+                  (Structured.Outcome.regular targetAfter))) _ =
+          Simulation.Interaction.bind
+            (Simulation.Interaction.bind
+              (Structured.InteractionSemantics.Code.openRun code state)
+              (fun targetAfter =>
+                Simulation.Interaction.pure
+                  (Structured.Outcome.regular targetAfter))) _
+      rw [Simulation.Interaction.bind_assoc,
+        Simulation.Interaction.bind_assoc]
+      apply Simulation.Interaction.AllDone.bind_congr
+        (Simulation.Interaction.AllDone.trivial
+          (Structured.InteractionSemantics.Code.openRun code state))
+      intro targetAfter _
+      exact ih hRestOnly leftRestFuel rightRestFuel targetAfter
+        hLeftRest hRightRest
+
 end Block
 
 namespace Stmt

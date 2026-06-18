@@ -187,6 +187,140 @@ theorem openRun_nil
   rw [Nat.add_one]
   simp only [Functions.Source.Effectful.Control.Block.runOpen]
 
+/-- Executing an appended canonical Functions block factors through the left
+block.  Regular completion continues with its resulting lexical context and
+exact residual list fuel; abrupt completion restores the outer context and
+skips the suffix. -/
+theorem openRun_append (program : Functions.Program) :
+    ∀ (left right : List Functions.Stmt) (ctx : Functions.Source.Ctx)
+      (fuel : Nat) (state : State),
+      openRun program ctx fuel { stmts := left ++ right } state =
+        Simulation.Interaction.bind
+          (openRun program ctx fuel { stmts := left } state)
+          (fun result =>
+            match result.1.mode with
+            | .regular =>
+                openRun program result.2 (fuel - left.length)
+                  { stmts := right } result.1.state
+            | .brk | .cont | .leave | .halt _ =>
+                Simulation.Interaction.pure result) := by
+  intro left
+  induction left with
+  | nil =>
+      intro right ctx fuel state
+      cases fuel with
+      | zero =>
+          unfold openRun Functions.Source.Canonical.Block.runOpen
+          simp only [Functions.Source.Effectful.Control.Block.runOpen]
+          rfl
+      | succ fuel =>
+          simp only [List.nil_append, List.length_nil, Nat.sub_zero]
+          rw [openRun_nil]
+          rfl
+  | cons stmt rest ih =>
+      intro right ctx fuel state
+      cases fuel with
+      | zero =>
+          unfold openRun Functions.Source.Canonical.Block.runOpen
+          simp only [Functions.Source.Effectful.Control.Block.runOpen]
+          rfl
+      | succ fuel =>
+          rw [show stmt :: rest ++ right =
+              stmt :: (rest ++ right) by rfl,
+            openRun_cons, openRun_cons]
+          simp only [List.length_cons, Nat.succ_sub_succ_eq_sub]
+          rw [Simulation.Interaction.bind_assoc]
+          apply Simulation.Interaction.AllDone.bind_congr
+            (Simulation.Interaction.AllDone.trivial
+              (Functions.Source.Effectful.Control.Stmt.run
+                stateModel primitiveSemantics program ctx fuel stmt state))
+          intro outcome _
+          cases hMode : outcome.1.mode with
+          | regular =>
+              simpa [hMode] using
+                ih right outcome.2 fuel outcome.1.state
+          | brk =>
+              change
+                Simulation.Interaction.pure (outcome.1, ctx) =
+                  Simulation.Interaction.bind
+                    (Simulation.Interaction.pure (outcome.1, ctx)) _
+              unfold Simulation.Interaction.pure
+              rw [Simulation.Interaction.bind_done_ok]
+              simp [hMode]
+          | cont =>
+              change
+                Simulation.Interaction.pure (outcome.1, ctx) =
+                  Simulation.Interaction.bind
+                    (Simulation.Interaction.pure (outcome.1, ctx)) _
+              unfold Simulation.Interaction.pure
+              rw [Simulation.Interaction.bind_done_ok]
+              simp [hMode]
+          | leave =>
+              change
+                Simulation.Interaction.pure (outcome.1, ctx) =
+                  Simulation.Interaction.bind
+                    (Simulation.Interaction.pure (outcome.1, ctx)) _
+              unfold Simulation.Interaction.pure
+              rw [Simulation.Interaction.bind_done_ok]
+              simp [hMode]
+          | halt kind =>
+              change
+                Simulation.Interaction.pure (outcome.1, ctx) =
+                  Simulation.Interaction.bind
+                    (Simulation.Interaction.pure (outcome.1, ctx)) _
+              unfold Simulation.Interaction.pure
+              rw [Simulation.Interaction.bind_done_ok]
+              simp [hMode]
+
+/-- Scoped execution of an appended canonical Functions block factors through
+the left block while retaining the outer lexical restriction. -/
+theorem openRunScoped_append (program : Functions.Program)
+    (left right : List Functions.Stmt) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (state : State) :
+    openRunScoped program ctx { stmts := left ++ right } fuel state =
+      Simulation.Interaction.bind
+        (openRun program ctx fuel { stmts := left } state)
+        (fun result =>
+          match result.1.mode with
+          | .regular =>
+              Simulation.Interaction.bind
+                (openRun program result.2 (fuel - left.length)
+                  { stmts := right } result.1.state)
+                (fun tail =>
+                  match tail.1.mode with
+                  | .regular =>
+                      Simulation.Interaction.pure
+                        (Functions.Source.Effectful.Outcome.regular
+                          (tail.1.state.restrictTo ctx.scope))
+                  | .brk | .cont | .leave | .halt _ =>
+                      Simulation.Interaction.pure tail.1)
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure result.1) := by
+  unfold openRunScoped Functions.Source.Canonical.Block.runScoped
+    Functions.Source.Effectful.Control.Block.runScoped
+  change
+    Simulation.Interaction.bind
+        (openRun program ctx fuel { stmts := left ++ right } state)
+        (fun result =>
+          match result.1.mode with
+          | .regular =>
+              Simulation.Interaction.pure
+                (Functions.Source.Effectful.Outcome.regular
+                  (result.1.state.restrictTo ctx.scope))
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure result.1) = _
+  rw [openRun_append, Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (openRun program ctx fuel { stmts := left } state))
+  intro result _hResult
+  cases hMode : result.1.mode with
+  | regular => simp [hMode]
+  | brk | cont | leave | halt =>
+      unfold Simulation.Interaction.pure
+      rw [Simulation.Interaction.bind_done_ok]
+      simp [hMode]
+
 end Block
 
 namespace FunDef
@@ -683,6 +817,21 @@ def openRunState (fuel : Nat) (program : Functions.Program)
     (state : State) : Open Outcome :=
   Functions.Source.Canonical.Program.runState
     stateModel primitiveSemantics fuel program state
+
+/-- Successful whole-program execution exposes a successful canonical open
+main block before top-level lexical restriction. -/
+theorem successful_openRunState_open
+    {fuel : Nat} {program : Functions.Program} {state : State}
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (openRunState fuel program state)) :
+    Simulation.Interaction.Successful
+      (Block.openRun program Functions.Source.Ctx.initial fuel
+        program.body state) := by
+  unfold openRunState Functions.Source.Canonical.Program.runState
+    Functions.Source.Effectful.Control.Program.runState at hSuccess
+  unfold Functions.Source.Effectful.Control.Block.runScoped at hSuccess
+  exact Simulation.Interaction.Successful.bind_left hSuccess
 
 def OpenSupported (program : Functions.Program) : Prop :=
   (∀ fn, fn ∈ program.functions → Block.OpenSupported fn.body) ∧

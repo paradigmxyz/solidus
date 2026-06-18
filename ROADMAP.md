@@ -28,7 +28,7 @@ boundaries remain active work.
 - [x] Functions allocation relation, primitive families, recursive
   expressions, stack/scratch declaration preservation, and assignment
   preservation in both activation modes.
-- [ ] Complete Functions statement and program preservation: statement-list
+- [x] Complete Functions statement and program preservation: statement-list
   composition, scoped control, loops, terminal outcomes,
   internal calls, activation setup/cleanup, and whole program.
   - [x] outcome-indexed regular/abrupt result relation and generic real-block
@@ -151,7 +151,7 @@ boundaries remain active work.
       fixed point.
   - [x] construct the compiler-selected main artifact and check exact scratch
     allocator/frame setup plus recursive main-body preservation.
-  - [ ] thread the existing resource-mode interface through stack-only
+  - [x] thread the existing resource-mode interface through stack-only
     recursion, then compose source prelude, main body, and cleanup into the
     public adjacent theorem without an allocator premise for stack-only code.
     - [x] exact empty main setup, stack runtime boundary, and target-fuel
@@ -169,6 +169,12 @@ boundaries remain active work.
       preservation, with no public all-stack certificate.
     - [x] outcome-indexed top-level cleanup for regular, abrupt, and terminal
       results, with allocation representation erased only after program exit.
+    - [x] canonical source append/scoped-append laws, compiler-owned no-variable
+      prelude preservation, and flat target setup fuel transport.
+    - [x] selected stack/scratch setup, recursive body, and cleanup composition
+      with allocator/frame evidence kept internal.
+    - [x] public compiler-selected `AllocationInteractionProgram.mainForward`
+      from ordinary lowering and source-facing safety/resource premises only.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
   source-facing reservation/resource assumptions.

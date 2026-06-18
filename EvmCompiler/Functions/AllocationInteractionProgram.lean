@@ -1,6 +1,7 @@
 import EvmCompiler.Functions.AllocationInteractionProgramArtifact
 import EvmCompiler.Functions.AllocationInteractionFramePreservation
 import EvmCompiler.Functions.AllocationInteractionStackRuntime
+import EvmCompiler.Functions.AllocationInteractionPrelude
 
 namespace EvmCompiler
 namespace Functions
@@ -13,6 +14,35 @@ open AllocationInteractionFrameExecution
 open AllocationInteractionFramePreservation
 open AllocationInteractionRelation
 open AllocationInteractionProgramArtifact
+
+/-- Source/compiler-input-facing scratch capacity for the selected allocation.
+It quantifies only over the deterministic validation and memory-contract
+configuration computed from the source program; stack-only compilations make
+the premise vacuous. -/
+def ResourceSafe
+    (allocation : Locals.Allocation.ProgramPlan)
+    (program : Functions.Program) (sourceFuel : Nat) : Prop :=
+  ∀ recipe stackSlots config,
+    AllocationLowering.validatePlan? allocation program =
+        some (recipe, stackSlots) →
+    AllocationSupport.scratchFrameConfig?
+        program.memoryContract recipe.frameWords = some config →
+    Budget config
+      ((if AllocationLowering.mainNeedsFrame recipe stackSlots then 1 else 0) +
+        sourceFuel)
+
+theorem ResourceSafe.compilation
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {config : Config} {sourceFuel : Nat}
+    (hSafe : ResourceSafe allocation program sourceFuel)
+    (hConfig : compilation.frameConfig? = some config) :
+    Budget config (mainSetupDepth compilation + sourceFuel) := by
+  apply hSafe compilation.recipe compilation.stackSlots config
+    compilation.validate
+  simpa [Compilation.frameConfig?] using hConfig
 
 /-- Source-facing initial relation for the adjacent allocation pass. -/
 structure InitialRel
@@ -313,6 +343,9 @@ structure ScratchSetupResult
     Expressions.InteractionSemantics.Block.openRun expressions targetFuel
         { stmts := prepared.allocatorCode ++ prepared.frameCode } target =
       .done (.ok (Structured.Outcome.regular targetFinal))
+  codeOnly :
+    ∀ stmt, stmt ∈ prepared.allocatorCode ++ prepared.frameCode →
+      ∃ code, stmt = .code code
   invariant :
     AllocationContext.ActivationInvariant program.memoryContract
       artifact.lowerCtx artifact.start prepared.bodyCtx artifact.plan []
@@ -339,11 +372,44 @@ structure StackSetupResult
     Expressions.InteractionSemantics.Block.openRun expressions targetFuel
         { stmts := prepared.allocatorCode ++ prepared.frameCode } target =
       .done (.ok (Structured.Outcome.regular target))
+  codeOnly :
+    ∀ stmt, stmt ∈ prepared.allocatorCode ++ prepared.frameCode →
+      ∃ code, stmt = .code code
   invariant :
     AllocationContext.ActivationInvariant program.memoryContract
       artifact.lowerCtx artifact.start prepared.bodyCtx artifact.plan []
       0 .stack source target
   returns : target.returns = target.returns
+
+/-- Re-run a checked flat setup prefix at the larger fuel retained by whole
+program composition. -/
+private theorem setupExecutionAt
+    {program : Expressions.Program}
+    {code : List Expressions.Stmt}
+    {source final : Expressions.InteractionSemantics.RunState}
+    {storedFuel targetFuel : Nat}
+    (hStoredFuel : storedFuel = code.length + 1)
+    (hCodeOnly :
+      ∀ stmt, stmt ∈ code → ∃ rawCode, stmt = .code rawCode)
+    (hExecution :
+      Expressions.InteractionSemantics.Block.openRun program storedFuel
+          { stmts := code } source =
+        .done (.ok (Structured.Outcome.regular final)))
+    (hTargetFuel : code.length < targetFuel) :
+    Expressions.InteractionSemantics.Block.openRun program targetFuel
+        { stmts := code } source =
+      .done (.ok (Structured.Outcome.regular final)) := by
+  have hStoredBound : code.length < storedFuel := by
+    omega
+  calc
+    Expressions.InteractionSemantics.Block.openRun program targetFuel
+        { stmts := code } source =
+        Expressions.InteractionSemantics.Block.openRun program storedFuel
+          { stmts := code } source :=
+      Expressions.InteractionSemantics.Block.openRun_codeOnly_fuel_eq
+        program code hCodeOnly targetFuel storedFuel source hTargetFuel
+          hStoredBound
+    _ = .done (.ok (Structured.Outcome.regular final)) := hExecution
 
 namespace MainPrepared
 
@@ -405,6 +471,7 @@ theorem stackSetup
   refine
     { targetFuel_eq := by simp [hAllocatorCode, hFrameCode]
       execution := ?_
+      codeOnly := by simp [hAllocatorCode, hFrameCode]
       invariant := hActivation
       returns := rfl }
   simpa [hAllocatorCode, hFrameCode] using
@@ -679,12 +746,14 @@ theorem scratchSetup
       ⟨baseAt config 0, .scratch 0 config.frameWords, targetAfterFrame, 4,
       { targetFuel_eq := ?_
         execution := ?_
+        codeOnly := ?_
         invariant := hActivation
         ready := ?_
         owned := ?_
         returns := ?_ }⟩
     · simp [hAllocatorCode, hFrameCode]
     · simpa [hAllocatorCode, hFrameCode] using hTargetRun
+    · simp [hAllocatorCode, hFrameCode]
     · simpa [mainSetupDepth, hNeedsFrame, targetAfterFrame] using
         hAcquire.effect.ready
     · simpa [mainSetupDepth, hNeedsFrame] using
@@ -741,12 +810,14 @@ theorem scratchSetup
       ⟨0, .stack, targetAfterInit, 2,
       { targetFuel_eq := ?_
         execution := ?_
+        codeOnly := ?_
         invariant := hActivation
         ready := ?_
         owned := ?_
         returns := hInitReturns }⟩
     · simp [hAllocatorCode, hFrameCode]
     · simpa [hAllocatorCode, hFrameCode] using hTargetRun
+    · simp [hAllocatorCode, hFrameCode]
     · simpa [mainSetupDepth, hNoFrame] using hInitReady
     · simpa [mainSetupDepth, hNoFrame] using
         (ActivationOwned.stack (config := config)
@@ -865,6 +936,82 @@ theorem body
     AllocationInteractionStackRuntime.RecursiveOpenRuntime.at_targetFuel
       hRecursive mainRoot.root.cursor (by omega) hTargetCapacity
       (hSetup.boundary mainRoot) hSuccess
+
+/-- Compose empty stack setup, the recursively preserved main body, and exact
+top-level cleanup at one retained target fuel. -/
+theorem closedBody
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {artifact : MainArtifact compilation}
+    {prepared : MainPrepared artifact}
+    {source : Functions.InteractionSemantics.State}
+    {target : Expressions.InteractionSemantics.RunState}
+    {setupFuel sourceFuel bodyTargetFuel : Nat}
+    (mainRoot : MainRoot prepared)
+    (hSetup : StackSetupResult prepared source target setupFuel)
+    (hNoAllocator :
+      AllocationLowering.mainNeedsAllocator
+          compilation.recipe compilation.stackSlots = false)
+    (hProgramScoped : program.Scoped)
+    (hSafety :
+      AllocationInteractionSafety.SourceSafety program.memoryContract)
+    (hTargetCapacity :
+      AllocationInteractionRecursive.targetBudget mainRoot.root.cursor
+          sourceFuel
+          (AllocationInteractionTargetFuel.stmtListNestedSize
+            mainRoot.root.cursor.compiled) ≤
+        bodyTargetFuel)
+    (hCleanupFuel :
+      2 ≤ bodyTargetFuel - mainRoot.root.cursor.compiled.length)
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program
+          Functions.Source.Ctx.initial sourceFuel
+          mainRoot.root.sourceBlock source)) :
+    Simulation.Interaction.Rel (OpenOutcomeRel program.memoryContract)
+      (Functions.InteractionSemantics.Block.openRunScoped program
+        Functions.Source.Ctx.initial mainRoot.root.sourceBlock sourceFuel
+        source)
+      (Expressions.InteractionSemantics.Block.openRun expressions
+        ((prepared.allocatorCode ++ prepared.frameCode).length +
+          bodyTargetFuel)
+        { stmts :=
+            (prepared.allocatorCode ++ prepared.frameCode) ++
+              mainRoot.root.cursor.compiled ++
+                Locals.codeStmt prepared.cleanup }
+        target) := by
+  have hBody :=
+    hSetup.body mainRoot hNoAllocator hProgramScoped hSafety hTargetCapacity
+      hSuccess
+  have hClosed :=
+    closeBody
+      (hCleanup := by
+        simpa [AllocationInteractionCursor.RootArtifact.cursor,
+          mainRoot.finalLocals] using prepared.cleanupCode)
+      hCleanupFuel hBody
+  have hSetupRun :=
+    setupExecutionAt hSetup.targetFuel_eq hSetup.codeOnly hSetup.execution
+      (show
+        (prepared.allocatorCode ++ prepared.frameCode).length <
+          (prepared.allocatorCode ++ prepared.frameCode).length +
+            bodyTargetFuel by
+        have : 0 < bodyTargetFuel := by omega
+        omega)
+  rw [List.append_assoc]
+  rw [Expressions.InteractionSemantics.Block.openRun_append expressions
+    (prepared.allocatorCode ++ prepared.frameCode)
+    (mainRoot.root.cursor.compiled ++ Locals.codeStmt prepared.cleanup)
+    ((prepared.allocatorCode ++ prepared.frameCode).length + bodyTargetFuel)
+    target, hSetupRun]
+  simp only [Simulation.Interaction.bind_done_ok]
+  have hFuel :
+      (prepared.allocatorCode ++ prepared.frameCode).length +
+            bodyTargetFuel -
+          (prepared.allocatorCode ++ prepared.frameCode).length =
+        bodyTargetFuel := by omega
+  simpa [hFuel, List.append_assoc] using hClosed
 
 end StackSetupResult
 
@@ -1011,7 +1158,293 @@ theorem body
       hRecursive mainRoot.root.cursor (by omega) hTargetCapacity
       hBoundary hFuelBudget hSuccess
 
+/-- Compose scratch allocator/frame setup, the recursively preserved main body,
+and exact top-level cleanup while keeping allocator evidence internal. -/
+theorem closedBody
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {artifact : MainArtifact compilation}
+    {prepared : MainPrepared artifact}
+    {config : Config}
+    {source : Functions.InteractionSemantics.State}
+    {target targetFinal : Expressions.InteractionSemantics.RunState}
+    {frameBase setupFuel sourceFuel bodyTargetFuel : Nat}
+    {mode : ActivationMode}
+    (mainRoot : MainRoot prepared)
+    (hSetup :
+      ScratchSetupResult prepared config source target frameBase mode
+        targetFinal setupFuel)
+    (hProgramScoped : program.Scoped)
+    (hSafety :
+      AllocationInteractionSafety.SourceSafety program.memoryContract)
+    (hFrameConfig : compilation.frameConfig? = some config)
+    (hFuelBudget :
+      Budget config (mainSetupDepth compilation + sourceFuel))
+    (hTargetCapacity :
+      AllocationInteractionRecursive.targetBudget mainRoot.root.cursor
+          sourceFuel
+          (AllocationInteractionTargetFuel.stmtListNestedSize
+            mainRoot.root.cursor.compiled) ≤
+        bodyTargetFuel)
+    (hCleanupFuel :
+      2 ≤ bodyTargetFuel - mainRoot.root.cursor.compiled.length)
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program
+          Functions.Source.Ctx.initial sourceFuel
+          mainRoot.root.sourceBlock source)) :
+    Simulation.Interaction.Rel (OpenOutcomeRel program.memoryContract)
+      (Functions.InteractionSemantics.Block.openRunScoped program
+        Functions.Source.Ctx.initial mainRoot.root.sourceBlock sourceFuel
+        source)
+      (Expressions.InteractionSemantics.Block.openRun expressions
+        ((prepared.allocatorCode ++ prepared.frameCode).length +
+          bodyTargetFuel)
+        { stmts :=
+            (prepared.allocatorCode ++ prepared.frameCode) ++
+              mainRoot.root.cursor.compiled ++
+                Locals.codeStmt prepared.cleanup }
+        target) := by
+  have hBodyRaw :=
+    hSetup.body mainRoot hProgramScoped hSafety hFrameConfig hFuelBudget
+      hTargetCapacity hSuccess
+  have hBody :=
+    Simulation.Interaction.Rel.mono hBodyRaw
+      (fun _left _right hDone => hDone.1)
+  have hClosed :=
+    closeBody
+      (hCleanup := by
+        simpa [AllocationInteractionCursor.RootArtifact.cursor,
+          mainRoot.finalLocals] using prepared.cleanupCode)
+      hCleanupFuel hBody
+  have hSetupRun :=
+    setupExecutionAt hSetup.targetFuel_eq hSetup.codeOnly hSetup.execution
+      (show
+        (prepared.allocatorCode ++ prepared.frameCode).length <
+          (prepared.allocatorCode ++ prepared.frameCode).length +
+            bodyTargetFuel by
+        have : 0 < bodyTargetFuel := by omega
+        omega)
+  rw [List.append_assoc]
+  rw [Expressions.InteractionSemantics.Block.openRun_append expressions
+    (prepared.allocatorCode ++ prepared.frameCode)
+    (mainRoot.root.cursor.compiled ++ Locals.codeStmt prepared.cleanup)
+    ((prepared.allocatorCode ++ prepared.frameCode).length + bodyTargetFuel)
+    target, hSetupRun]
+  simp only [Simulation.Interaction.bind_done_ok]
+  have hFuel :
+      (prepared.allocatorCode ++ prepared.frameCode).length +
+            bodyTargetFuel -
+          (prepared.allocatorCode ++ prepared.frameCode).length =
+        bodyTargetFuel := by omega
+  simpa [hFuel, List.append_assoc] using hClosed
+
 end ScratchSetupResult
+
+/-- Compiler-selected whole-main open-interaction preservation. Every
+allocation, lowering, setup, recursive-root, and cleanup artifact is
+constructed internally. -/
+theorem mainForward
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    (hLower :
+      AllocationLowering.lowerExpressionsFromAllocation? allocation program =
+        some expressions)
+    {sourceFuel : Nat}
+    {source : Functions.InteractionSemantics.State}
+    {target : Expressions.InteractionSemantics.RunState}
+    (hProgramScoped : program.Scoped)
+    (hSafety :
+      AllocationInteractionSafety.SourceSafety program.memoryContract)
+    (hResourceSafe : ResourceSafe allocation program sourceFuel)
+    (hInitial : InitialRel program.memoryContract source target)
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Program.openRunState
+          sourceFuel program source)) :
+    ∃ targetFuel,
+      Simulation.Interaction.Rel (OpenOutcomeRel program.memoryContract)
+        (Functions.InteractionSemantics.Program.openRunState
+          sourceFuel program source)
+        (Expressions.InteractionSemantics.Block.openRun expressions
+          targetFuel expressions.body target) := by
+  obtain ⟨compilation⟩ := Compilation.of_lowering hLower
+  obtain ⟨artifact⟩ := MainArtifact.ofCompilation compilation
+  obtain ⟨prepared⟩ := MainPrepared.ofArtifact artifact
+  obtain ⟨mainRoot⟩ := prepared.rootArtifact hProgramScoped
+  obtain ⟨sourcePrefix, hSourceBody, hPrelude⟩ :=
+    AllocationLowering.splitPrelude_components artifact.components.split
+  have hProgramBody :
+      program.body =
+        { stmts := sourcePrefix ++ artifact.components.rest } :=
+    block_eq_of_stmts_eq hSourceBody
+  obtain ⟨hSourceCtx, hSourceLength, hSourceCodeOnly⟩ :=
+    AllocationInteractionPrelude.compile_shape hPrelude prepared.compileSource
+  have hWholeScoped := hProgramScoped.2
+  rw [hProgramBody] at hWholeScoped
+  have hPrefixScoped : Functions.Scope.StmtList.Scoped [] sourcePrefix :=
+    AllocationInteractionPrelude.scopedPrefix hPrelude hWholeScoped
+  let tailSourceFuel := sourceFuel - sourcePrefix.length
+  let bodyTargetFuel :=
+    AllocationInteractionRecursive.targetBudget mainRoot.root.cursor
+        tailSourceFuel
+        (AllocationInteractionTargetFuel.stmtListNestedSize
+          mainRoot.root.cursor.compiled) + 2
+  let setupCode := prepared.allocatorCode ++ prepared.frameCode
+  let targetFuel := sourcePrefix.length + setupCode.length + bodyTargetFuel
+  have hOpenSuccess :=
+    Functions.InteractionSemantics.Program.successful_openRunState_open hSuccess
+  rw [hProgramBody,
+    Functions.InteractionSemantics.Block.openRun_append] at hOpenSuccess
+  have hPrefixSuccess :=
+    Simulation.Interaction.Successful.bind_left hOpenSuccess
+  have hContinuationSuccess :=
+    Simulation.Interaction.Successful.bind_inv hOpenSuccess
+  have hPrefix :=
+    AllocationInteractionPrelude.forward (targetProgram := expressions)
+      hPrelude prepared.compileSource
+      hPrefixScoped hSafety (InitialRel.invariant artifact hInitial)
+      (targetFuel := targetFuel) (by
+        dsimp [targetFuel, setupCode, bodyTargetFuel]
+        omega) hPrefixSuccess
+  have hPrefixStrong :=
+    Simulation.Interaction.Rel.strengthen_right
+      (Simulation.Interaction.Rel.strengthen_left hPrefix
+        hContinuationSuccess)
+      (Expressions.InteractionReturns.Block.openRun_returns expressions
+        targetFuel { stmts := prepared.sourceCode } target)
+  refine ⟨targetFuel, ?_⟩
+  change
+    Simulation.Interaction.Rel (OpenOutcomeRel program.memoryContract)
+      (Functions.InteractionSemantics.Block.openRunScoped program
+        Functions.Source.Ctx.initial program.body sourceFuel source)
+      (Expressions.InteractionSemantics.Block.openRun expressions targetFuel
+        expressions.body target)
+  rw [hProgramBody,
+    Functions.InteractionSemantics.Block.openRunScoped_append]
+  rw [prepared.output]
+  rw [show prepared.sourceCode ++ prepared.allocatorCode ++
+          prepared.frameCode ++ prepared.bodyCode ++
+          Locals.codeStmt prepared.cleanup =
+        prepared.sourceCode ++
+          (setupCode ++ mainRoot.root.cursor.compiled ++
+            Locals.codeStmt prepared.cleanup) by
+      simp [setupCode, AllocationInteractionCursor.RootArtifact.cursor,
+        mainRoot.compiled, List.append_assoc]]
+  rw [Expressions.InteractionSemantics.Block.openRun_append expressions
+    prepared.sourceCode
+    (setupCode ++ mainRoot.root.cursor.compiled ++
+      Locals.codeStmt prepared.cleanup)
+    targetFuel target]
+  apply Simulation.Interaction.Rel.bind_custom hPrefixStrong
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨⟨hRelated, hTailSuccess⟩, hTargetReturns⟩
+  cases hRelated with
+  | error hError => exact False.elim hTailSuccess
+  | @ok sourceResult targetOutcome hResult =>
+      cases hResult with
+      | @regular sourceAfter targetAfter mode hInvariant hSameFrame hControl =>
+          cases hSameFrame
+          cases hState : hInvariant.state with
+          | stack hLiveStackOnly hActiveNoWrap hStateRel =>
+              have hAfterInitial :
+                  InitialRel program.memoryContract sourceAfter targetAfter :=
+                { shared := ⟨hStateRel.machine, hStateRel.world⟩
+                  stack :=
+                    List.eq_nil_of_length_eq_zero (by
+                      rw [hInvariant.stackLength]
+                      rfl)
+                  returns := by
+                    have hReturns : targetAfter.returns = target.returns := by
+                      simpa [Structured.InteractionReturns.OutcomeReturnsEq]
+                        using hTargetReturns
+                    exact hReturns.trans hInitial.returns
+                  activeNoWrap := hActiveNoWrap }
+              have hTailSuccess' :
+                  Simulation.Interaction.Successful
+                    (Functions.InteractionSemantics.Block.openRun program
+                      Functions.Source.Ctx.initial tailSourceFuel
+                      mainRoot.root.sourceBlock sourceAfter) := by
+                simpa [tailSourceFuel, mainRoot.sourceBlock] using hTailSuccess
+              have hCapacity :
+                  AllocationInteractionRecursive.targetBudget
+                      mainRoot.root.cursor tailSourceFuel
+                      (AllocationInteractionTargetFuel.stmtListNestedSize
+                        mainRoot.root.cursor.compiled) ≤
+                    bodyTargetFuel := by
+                dsimp [bodyTargetFuel]
+                omega
+              have hCleanupFuel :
+                  2 ≤ bodyTargetFuel - mainRoot.root.cursor.compiled.length := by
+                dsimp [bodyTargetFuel,
+                  AllocationInteractionRecursive.targetBudget]
+                omega
+              cases artifact.components.runtimeSelection with
+              | stackOnly hNoAllocator hNoFrame hFrameFunctions
+                  hAllocatorPrelude hFramePrelude =>
+                  have hSetup :=
+                    AllocationInteractionProgram.MainPrepared.stackSetup
+                      prepared hSourceCtx hNoAllocator hNoFrame hAfterInitial
+                  have hClosed :=
+                    StackSetupResult.closedBody mainRoot hSetup hNoAllocator
+                      hProgramScoped hSafety hCapacity hCleanupFuel
+                      hTailSuccess'
+                  have hTargetTailFuel :
+                      targetFuel - prepared.sourceCode.length =
+                        setupCode.length + bodyTargetFuel := by
+                    dsimp [targetFuel]
+                    rw [hSourceLength]
+                    omega
+                  simpa [setupCode, hTargetTailFuel, tailSourceFuel,
+                    mainRoot.sourceBlock,
+                    Functions.InteractionSemantics.Block.openRunScoped,
+                    Functions.Source.Canonical.Block.runScoped,
+                    Functions.Source.Effectful.Control.Block.runScoped]
+                    using hClosed
+              | scratch config hFrameConfig hNeedsAllocator =>
+                  obtain ⟨frameBase, mode, targetAfterSetup, setupFuel,
+                      hSetup⟩ :=
+                    AllocationInteractionProgram.MainPrepared.scratchSetup
+                      prepared hSourceCtx hFrameConfig hNeedsAllocator
+                        hAfterInitial
+                  have hBudget :
+                      Budget config
+                        (mainSetupDepth compilation + tailSourceFuel) :=
+                    Budget.mono (by
+                      dsimp [tailSourceFuel]
+                      omega)
+                      (hResourceSafe.compilation hFrameConfig)
+                  have hClosed :=
+                    ScratchSetupResult.closedBody mainRoot hSetup
+                      hProgramScoped hSafety hFrameConfig hBudget hCapacity
+                      hCleanupFuel hTailSuccess'
+                  have hTargetTailFuel :
+                      targetFuel - prepared.sourceCode.length =
+                        setupCode.length + bodyTargetFuel := by
+                    dsimp [targetFuel]
+                    rw [hSourceLength]
+                    omega
+                  simpa [setupCode, hTargetTailFuel, tailSourceFuel,
+                    mainRoot.sourceBlock,
+                    Functions.InteractionSemantics.Block.openRunScoped,
+                    Functions.Source.Canonical.Block.runScoped,
+                    Functions.Source.Effectful.Control.Block.runScoped]
+                    using hClosed
+      | @nonregular sourceOutcome targetOutcome finalCtx mode hNonregular
+          hSameFrame hControl hState =>
+          have hOutcome :=
+            OutcomeRel.of_nonregular_activation hState hNonregular
+          cases hState with
+          | regular state => exact False.elim (hNonregular rfl)
+          | brk defined stackLength modeMatches state =>
+              exact .done (.ok hOutcome)
+          | cont defined stackLength modeMatches state =>
+              exact .done (.ok hOutcome)
+          | leave state => exact .done (.ok hOutcome)
+          | halt kind state => exact .done (.ok hOutcome)
 
 end AllocationInteractionProgram
 end Functions

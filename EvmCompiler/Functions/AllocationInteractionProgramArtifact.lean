@@ -6,7 +6,7 @@ namespace AllocationInteractionProgramArtifact
 
 open AllocationInteractionCursor
 
-private theorem block_eq_of_stmts_eq
+theorem block_eq_of_stmts_eq
     {left right : Functions.Block}
     (hStmts : left.stmts = right.stmts) :
     left = right := by

@@ -326,6 +326,11 @@ for theorem in \
     '#check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin.withLoopControl' \
     '#check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin.scopeUpdate' \
     '#check EvmCompiler.Functions.AllocationContext.ActivationInvariant.transport_locals' \
+    '#check EvmCompiler.Functions.InteractionSemantics.Block.openRunScoped_append' \
+    '#check EvmCompiler.Functions.AllocationInteractionPrelude.forward' \
+    '#check EvmCompiler.Functions.AllocationInteractionProgram.StackSetupResult.closedBody' \
+    '#check EvmCompiler.Functions.AllocationInteractionProgram.ScratchSetupResult.closedBody' \
+    '#check EvmCompiler.Functions.AllocationInteractionProgram.mainForward' \
     '#check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardOne'; do
   if ! rg -Fq "$theorem" EvmCompiler/Verification.lean; then
     printf 'Verification root is missing horizontal lexical-control theorem: %s\n\n' \

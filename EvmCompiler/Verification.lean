@@ -449,11 +449,17 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.switch
 #check EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.for_
 #check EvmCompiler.Functions.AllocationInteractionStackRuntime.complete
+#check EvmCompiler.Functions.InteractionSemantics.Block.openRunScoped_append
+#check EvmCompiler.Functions.AllocationInteractionPrelude.forward
+#check EvmCompiler.Functions.AllocationInteractionProgram.ResourceSafe
 #check EvmCompiler.Functions.AllocationInteractionProgram.StackSetupResult.body
+#check EvmCompiler.Functions.AllocationInteractionProgram.StackSetupResult.closedBody
+#check EvmCompiler.Functions.AllocationInteractionProgram.ScratchSetupResult.closedBody
 #check EvmCompiler.Functions.AllocationInteractionProgram.FinalStateRel
 #check EvmCompiler.Functions.AllocationInteractionProgram.OutcomeRel
 #check EvmCompiler.Functions.AllocationInteractionProgram.regularCleanup
 #check EvmCompiler.Functions.AllocationInteractionProgram.closeBody
+#check EvmCompiler.Functions.AllocationInteractionProgram.mainForward
 #check EvmCompiler.Functions.AllocationInteractionLoop.forward
 #check EvmCompiler.Functions.AllocationInteractionFor.forward
 #check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin.withoutLoopControl
