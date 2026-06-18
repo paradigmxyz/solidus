@@ -2029,6 +2029,333 @@ theorem CoreCursor.ifCursors
   rw [hBodyCode, hBodyLocals]
   exact hFinish
 
+/-- Decompose a `switch` through the real lowerer and Locals compiler. -/
+theorem CoreCursor.switchCursors
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {scrutinee : Functions.Expr 1}
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .switch scrutinee cases defaultBody :: rest }
+        lowerState localsCtx) :
+    ∃ afterState headLower headCode,
+      ∃ tail :
+        CoreCursor root scope live
+          { stmts := rest } afterState localsCtx,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationLowering.lowerStmt root.lowerCtx root.returns
+              lowerState (.switch scrutinee cases defaultBody) =
+            some (headLower, afterState) ∧
+          Locals.Block.compileOpen localsCtx { stmts := headLower } =
+            some (headCode, localsCtx) ∧
+          afterState.allocation.env = lowerState.allocation.env ∧
+          afterState.layout = lowerState.layout ∧
+          Functions.Scope.ExprScoped live scrutinee ∧
+          Functions.Scope.CaseList.Scoped live cases ∧
+          Functions.Scope.Default.Scoped live defaultBody ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, hPlan, hFinalState, hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, hScopedStmt⟩ :=
+    cursor.cons
+  obtain
+      ⟨_loweredScrutinee, _loweredCases, afterCases, _loweredDefault,
+        _hLowerScrutinee, hLowerCases, hLowerDefault, hHeadLower⟩ :=
+    AllocationLowering.lowerStmt_switch_components hLower
+  have hHeadCompile := hCompile
+  rw [hHeadLower] at hCompile
+  obtain
+      ⟨_scrutineeCode, _compiledCases, _compiledDefault,
+        _hCompileScrutinee, _hCompileCases, _hCompileDefault,
+        _hHeadCode, hAfterLocals⟩ :=
+    Locals.Block.compileOpen_single_switch_components hCompile
+  have hScoped :
+      Functions.Scope.ExprScoped live scrutinee ∧
+        Functions.Scope.CaseList.Scoped live cases ∧
+        Functions.Scope.Default.Scoped live defaultBody := by
+    simpa [Functions.Scope.Stmt.Scoped] using hScopedStmt
+  have hCasesShape :=
+    AllocationLowering.lowerCases_state_shape hLowerCases
+  have hDefaultShape :=
+    AllocationLowering.lowerDefault_state_shape hLowerDefault
+  cases hAfterLocals
+  exact
+    ⟨afterState, headLower, headCode, tail, hCompiled, hLower,
+      hHeadCompile, hDefaultShape.1.trans hCasesShape.1,
+      hDefaultShape.2.trans hCasesShape.2,
+      hScoped.1, hScoped.2.1, hScoped.2.2,
+      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+
+/-- Lift an already-selected switch planner entry into a lexical cursor. -/
+theorem CoreCursor.switchSelectedCursorOfComponents
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {scrutinee : Functions.Expr 1}
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block}
+    {selected : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState selectedStart bodyFinal : AllocationLowering.State}
+    {localsCtx bodyLocals : Locals.Ctx}
+    {selectedPlanning : AllocationSupport.PlanningState}
+    {selectedLowered : Locals.Block}
+    {selectedCode : List Expressions.Stmt}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .switch scrutinee cases defaultBody :: rest }
+        lowerState localsCtx)
+    (hSelectedPlanning :
+      selectedPlanning.allocation = selectedStart.allocation)
+    (hSelectedEnv :
+      selectedStart.allocation.env = lowerState.allocation.env)
+    (hSelectedEntry :
+      ({ scope := .lexical scope selectedPlanning.nextScope
+         state :=
+           (AllocationSupport.planBlockOpen
+             (.lexical scope selectedPlanning.nextScope)
+             { selectedPlanning with
+               nextScope := selectedPlanning.nextScope + 1 }
+             selected).allocation } :
+        AllocationSupport.ScopedAllocation) ∈
+        (AllocationSupport.planDefault scope
+          (AllocationSupport.planCases scope cursor.planning cases)
+          defaultBody).scopes)
+    (hSelectedInner :
+      ∀ entry,
+        entry ∈
+            (AllocationSupport.planBlockOpen
+              (.lexical scope selectedPlanning.nextScope)
+              { selectedPlanning with
+                nextScope := selectedPlanning.nextScope + 1 }
+              selected).scopes →
+          entry ∈
+            (AllocationSupport.planDefault scope
+              (AllocationSupport.planCases scope cursor.planning cases)
+              defaultBody).scopes)
+    (hLowerBody :
+      AllocationLowering.lowerBlockOpen root.lowerCtx root.returns
+          selectedStart selected =
+        some (selectedLowered, bodyFinal))
+    (hCompileSelected :
+      Locals.Block.compileOpen localsCtx selectedLowered =
+        some (selectedCode, bodyLocals))
+    (hSelectedScoped :
+      Functions.Scope.Block.Scoped live selected) :
+    ∃ bodyCursor :
+        CoreCursor root
+          (.lexical scope selectedPlanning.nextScope)
+          live selected selectedStart localsCtx,
+      bodyCursor.lowered = selectedLowered ∧
+        bodyCursor.finalState = bodyFinal ∧
+        bodyCursor.compiled = selectedCode ∧
+        bodyCursor.finalLocals = bodyLocals := by
+  let lexicalScope : Locals.Allocation.ScopeId :=
+    .lexical scope selectedPlanning.nextScope
+  let entered : AllocationSupport.PlanningState :=
+    { selectedPlanning with
+      nextScope := selectedPlanning.nextScope + 1 }
+  let scopeEntry : AllocationSupport.ScopedAllocation :=
+    { scope := lexicalScope
+      state :=
+        (AllocationSupport.planBlockOpen
+          lexicalScope entered selected).allocation }
+  have hEntryHead :
+      scopeEntry ∈
+        (AllocationSupport.planStmt scope cursor.planning
+          (.switch scrutinee cases defaultBody)).scopes := by
+    simpa [AllocationSupport.planStmt, scopeEntry, lexicalScope,
+      entered] using hSelectedEntry
+  have hEntryFinal :
+      scopeEntry ∈
+        (AllocationSupport.planBlockOpen scope cursor.planning
+          { stmts :=
+              .switch scrutinee cases defaultBody :: rest }).scopes := by
+    simp only [AllocationSupport.planBlockOpen,
+      AllocationSupport.planStmtList]
+    exact
+      AllocationSupport.mem_planStmtList_scopes_of_mem
+        rest scope
+        (AllocationSupport.planStmt scope cursor.planning
+          (.switch scrutinee cases defaultBody))
+        hEntryHead
+  have hEntryRecipe :
+      scopeEntry ∈ compilation.recipe.lexicalScopes :=
+    cursor.plannedScopes scopeEntry hEntryFinal
+  have hInnerScopes :
+      ∀ entry,
+        entry ∈
+            (AllocationSupport.planBlockOpen
+              lexicalScope entered selected).scopes →
+          entry ∈ compilation.recipe.lexicalScopes := by
+    intro entry hEntry
+    have hSwitchEntry :
+        entry ∈
+          (AllocationSupport.planStmt scope cursor.planning
+            (.switch scrutinee cases defaultBody)).scopes := by
+      simpa [AllocationSupport.planStmt, lexicalScope, entered] using
+        hSelectedInner entry hEntry
+    apply cursor.plannedScopes entry
+    simp only [AllocationSupport.planBlockOpen,
+      AllocationSupport.planStmtList]
+    exact
+      AllocationSupport.mem_planStmtList_scopes_of_mem
+        rest scope
+        (AllocationSupport.planStmt scope cursor.planning
+          (.switch scrutinee cases defaultBody))
+        hSwitchEntry
+  have hSelectedActive :
+      ActiveEnv root.slots selectedPlanning.allocation.env live := by
+    rcases cursor.activeEnv with ⟨locals, hEnv, hLive⟩
+    refine ⟨locals, ?_, hLive⟩
+    calc
+      selectedPlanning.allocation.env =
+          selectedStart.allocation.env :=
+        congrArg AllocationSupport.CompileState.env hSelectedPlanning
+      _ = lowerState.allocation.env := hSelectedEnv
+      _ = cursor.planning.allocation.env :=
+        (congrArg AllocationSupport.CompileState.env
+          cursor.planningAllocation).symm
+      _ =
+          locals ++ AllocationSupport.functionEnv root.slots := hEnv
+  exact
+    cursor.lexical lexicalScope entered
+      (by simpa [entered] using hSelectedPlanning)
+      (by
+        simpa [lexicalScope,
+          MixedAllocation.AllocationRecipe.functionRoot?] using
+          cursor.scopeRoot)
+      (by simpa [scopeEntry] using hEntryRecipe)
+      hInnerScopes hLowerBody hCompileSelected hSelectedScoped
+      (by simpa [entered] using hSelectedActive)
+
+/-- Decompose a semantically selected switch branch and preserve its tail. -/
+theorem CoreCursor.switchSelectedCursors
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {scrutinee : Functions.Expr 1}
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block}
+    {selected : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {value : Word}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .switch scrutinee cases defaultBody :: rest }
+        lowerState localsCtx)
+    (hSelect :
+      Functions.Source.Switch.select value cases defaultBody =
+        some selected) :
+    ∃ afterState headLower headCode,
+      ∃ tail :
+        CoreCursor root scope live
+          { stmts := rest } afterState localsCtx,
+      ∃ selectedStart,
+      ∃ selectedPlanning : AllocationSupport.PlanningState,
+      ∃ selectedTarget : Expressions.Block,
+      ∃ bodyCursor :
+        CoreCursor root
+          (.lexical scope selectedPlanning.nextScope)
+          live selected selectedStart localsCtx,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationLowering.lowerStmt root.lowerCtx root.returns
+              lowerState (.switch scrutinee cases defaultBody) =
+            some (headLower, afterState) ∧
+          Locals.Block.compileOpen localsCtx { stmts := headLower } =
+            some (headCode, localsCtx) ∧
+          Locals.finishScoped localsCtx bodyCursor.finalLocals
+              bodyCursor.compiled =
+            some selectedTarget ∧
+          selectedStart.allocation.env = lowerState.allocation.env ∧
+          afterState.allocation.env = lowerState.allocation.env ∧
+          afterState.layout = lowerState.layout ∧
+          Functions.Scope.ExprScoped live scrutinee ∧
+          Functions.Scope.Block.Scoped live selected ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hTailPlanning, hTailPlan, hTailFinalState, hTailFinalLocals,
+        hLower, hCompile, _hLowered, hCompiled, hScopedStmt⟩ :=
+    cursor.cons
+  obtain
+      ⟨loweredScrutinee, loweredCases, afterCases, loweredDefault,
+        _hLowerScrutinee, hLowerCases, hLowerDefault, hHeadLower⟩ :=
+    AllocationLowering.lowerStmt_switch_components hLower
+  obtain
+      ⟨selectedLowered, selectedStart, selectedScopedFinal,
+        selectedPlanning, hLoweredSelect, hLowerSelected,
+        hSelectedPlanning, hSelectedEnv, _hSelectedLayout,
+        hSelectedEntry, hSelectedInner⟩ :=
+    AllocationLowering.lowerSwitch_select_some_planning
+      cursor.planningAllocation hLowerCases hLowerDefault hSelect
+  obtain
+      ⟨openFinal, hLowerBody, _hScopedEnv, _hScopedNext,
+        _hScopedLayout⟩ :=
+    AllocationLowering.lowerBlockScoped_components hLowerSelected
+  have hHeadCompile := hCompile
+  rw [hHeadLower] at hCompile
+  obtain
+      ⟨_scrutineeCode, compiledCases, compiledDefault,
+        _hCompileScrutinee, hCompileCases, hCompileDefault,
+        _hHeadCode, hAfterLocals⟩ :=
+    Locals.Block.compileOpen_single_switch_components hCompile
+  obtain
+      ⟨selectedTarget, selectedCode, selectedLocals,
+        _hTargetSelect, hCompileSelected, hFinishSelected⟩ :=
+    Locals.Switch.select_some_of_compile
+      hCompileCases hCompileDefault hLoweredSelect
+  have hScoped :
+      Functions.Scope.ExprScoped live scrutinee ∧
+        Functions.Scope.CaseList.Scoped live cases ∧
+        Functions.Scope.Default.Scoped live defaultBody := by
+    simpa [Functions.Scope.Stmt.Scoped] using hScopedStmt
+  have hSelectedScoped :
+      Functions.Scope.Block.Scoped live selected :=
+    Functions.Source.Switch.scoped_of_select_some
+      hScoped.2.1 hScoped.2.2 hSelect
+  obtain
+      ⟨bodyCursor, _hBodyLowered, _hBodyFinal, hBodyCode,
+        hBodyLocals⟩ :=
+    cursor.switchSelectedCursorOfComponents
+      hSelectedPlanning hSelectedEnv hSelectedEntry hSelectedInner
+      hLowerBody hCompileSelected hSelectedScoped
+  have hCasesShape :=
+    AllocationLowering.lowerCases_state_shape hLowerCases
+  have hDefaultShape :=
+    AllocationLowering.lowerDefault_state_shape hLowerDefault
+  cases hAfterLocals
+  refine
+    ⟨afterState, headLower, headCode, tail, selectedStart,
+      selectedPlanning, selectedTarget, bodyCursor, hCompiled, hLower,
+      hHeadCompile, ?_, hSelectedEnv,
+      hDefaultShape.1.trans hCasesShape.1,
+      hDefaultShape.2.trans hCasesShape.2, hScoped.1,
+      hSelectedScoped, ⟨hTailPlan, hTailFinalState, hTailFinalLocals⟩⟩
+  rw [hBodyCode, hBodyLocals]
+  exact hFinishSelected
+
 end AllocationInteractionCursor
 end Functions
 end EvmCompiler

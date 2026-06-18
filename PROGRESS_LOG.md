@@ -31903,3 +31903,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   check, the 1322-job verification root, architecture guard, touched-Lean hole
   scan, axiom audit, and `git diff --check` passed; lexical cursor theorems use
   only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 23:09:00 PDT - proof/functions-switch-cursors - derived common
+  and selected-arm switch cursors from the planner, allocation lowerer, and
+  Locals compiler. The selected theorem strengthens the old interface by
+  retaining the exact outer tail plan and endpoints needed by generic block
+  composition.
+- 2026-06-17 23:10:00 PDT - validation/functions-switch-cursors - focused
+  check, the 1322-job verification root, architecture guard, touched-Lean hole
+  scan, axiom audit, and `git diff --check` passed; switch cursor theorems use
+  only `[propext, Classical.choice, Quot.sound]`.

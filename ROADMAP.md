@@ -45,6 +45,8 @@ boundaries remain active work.
     stack and scratch placement;
   - [x] shared lexical cursor construction and exact lexical-block/`if`
     decomposition;
+  - [x] common and selected-branch `switch` cursor decomposition with exact
+    outer-tail retention;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
