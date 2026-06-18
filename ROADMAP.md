@@ -114,7 +114,8 @@ boundaries remain active work.
     stack/scratch target code, including deeper-callee bounded effects;
   - [ ] orthogonal recursive allocator companion over the same Interaction
     tree (shared intersection/`cons`, empty cursor, expression statement, and
-    assignment/declaration checked; control, loop, and call owners remain);
+    assignment/declaration plus `break`/`continue` checked; lexical control,
+    terminals, loops, and call owners remain);
   - [ ] compose caller arguments, selected-callee recursion, return writeback,
     scratch release, and the exact tail;
   - [ ] recursive compiler-cursor statement-list theorem.
