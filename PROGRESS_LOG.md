@@ -31767,3 +31767,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1311-job verification root, architecture guard, touched-file hole scan,
   axiom audit, and `git diff --check` passed; the declaration theorem uses
   only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 21:48:38 PDT - proof/functions-stack-let - proved
+  `stack_let_of_lower_compile`: successful ordinary allocation lowering and
+  Locals compilation derive the exact initializer plus silent `bindLocals`
+  block, preserve every ordered open interaction, and return the complete
+  final stack-allocation invariant.
+- 2026-06-17 21:48:38 PDT - validation/functions-stack-let - the focused
+  1158-job module, 1311-job verification root, architecture guard,
+  touched-file hole scan, axiom audit, and `git diff --check` passed; checked
+  axioms remain `[propext, Classical.choice, Quot.sound]`.

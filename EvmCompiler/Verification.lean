@@ -203,6 +203,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardExprSeq
 #check EvmCompiler.Functions.AllocationInteractionStatement.StmtResultRel
 #check EvmCompiler.Functions.AllocationInteractionStatement.expr_of_lower_compile
+#check EvmCompiler.Functions.AllocationInteractionStatement.stack_let_compiler_shape
+#check EvmCompiler.Functions.AllocationInteractionStatement.stack_let_of_lower_compile
 #check EvmCompiler.Locals.InteractionStatePreservation.primitive_openEval_vars
 #check EvmCompiler.Locals.InteractionStatePreservation.expr_openEval_vars
 #check EvmCompiler.Locals.InteractionStatePreservation.exprSeq_openEval_vars
