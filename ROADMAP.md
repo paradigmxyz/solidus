@@ -86,6 +86,8 @@ boundaries remain active work.
     recursive `if` preservation;
   - [x] expose canonical source/target switch equations and prove exact
     one-value scrutinee preservation with incoming-stack restoration;
+  - [x] prove pass-owned exact switch selection and recursive selected-branch
+    preservation with lexical cleanup and exact tail composition;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

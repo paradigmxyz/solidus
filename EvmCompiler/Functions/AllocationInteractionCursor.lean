@@ -2029,6 +2029,75 @@ theorem CoreCursor.ifCursors
   rw [hBodyCode, hBodyLocals]
   exact hFinish
 
+/-- Compiler-owned adjacent components of one source `switch`. -/
+structure CoreCursor.SwitchComponents
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {scrutinee : Functions.Expr 1}
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .switch scrutinee cases defaultBody :: rest }
+        lowerState localsCtx)
+    (afterState : AllocationLowering.State)
+    (headLower : List Locals.Stmt)
+    (headCode : List Expressions.Stmt)
+    (tail :
+      CoreCursor root scope live { stmts := rest } afterState localsCtx)
+    (loweredScrutinee : Locals.Expr 1)
+    (loweredCases : List (Word × Locals.Block))
+    (afterCases : AllocationLowering.State)
+    (loweredDefault : Option Locals.Block)
+    (scrutineeCode : Structured.Code)
+    (compiledCases : List (Word × Expressions.Block))
+    (compiledDefault : Option Expressions.Block) : Prop where
+  compiled : cursor.compiled = headCode ++ tail.compiled
+  lower :
+    AllocationLowering.lowerStmt root.lowerCtx root.returns lowerState
+        (.switch scrutinee cases defaultBody) =
+      some (headLower, afterState)
+  compile :
+    Locals.Block.compileOpen localsCtx { stmts := headLower } =
+      some (headCode, localsCtx)
+  lowerHead :
+    headLower =
+      [.switch loweredScrutinee loweredCases loweredDefault]
+  lowerScrutinee :
+    AllocationLowering.lowerExpr root.lowerCtx lowerState scrutinee =
+      some loweredScrutinee
+  lowerCases :
+    AllocationLowering.lowerCases root.lowerCtx root.returns lowerState cases =
+      some (loweredCases, afterCases)
+  lowerDefault :
+    AllocationLowering.lowerDefault root.lowerCtx root.returns afterCases
+        defaultBody =
+      some (loweredDefault, afterState)
+  codeHead :
+    headCode =
+      [.switch (.code scrutineeCode) compiledCases compiledDefault]
+  compileScrutinee :
+    Locals.Expr.compileCode localsCtx 0 loweredScrutinee =
+      some scrutineeCode
+  compileCases :
+    Locals.CaseList.compile localsCtx loweredCases = some compiledCases
+  compileDefault :
+    Locals.Default.compile localsCtx loweredDefault = some compiledDefault
+  afterEnv : afterState.allocation.env = lowerState.allocation.env
+  afterLayout : afterState.layout = lowerState.layout
+  scrutineeScoped : Functions.Scope.ExprScoped live scrutinee
+  casesScoped : Functions.Scope.CaseList.Scoped live cases
+  defaultScoped : Functions.Scope.Default.Scoped live defaultBody
+  exactTail : ExactTail cursor tail
+
 /-- Decompose a `switch` through the real lowerer and Locals compiler. -/
 theorem CoreCursor.switchCursors
     {allocation : Locals.Allocation.ProgramPlan}
@@ -2049,36 +2118,28 @@ theorem CoreCursor.switchCursors
         { stmts := .switch scrutinee cases defaultBody :: rest }
         lowerState localsCtx) :
     ∃ afterState headLower headCode,
-      ∃ tail :
-        CoreCursor root scope live
-          { stmts := rest } afterState localsCtx,
-        cursor.compiled = headCode ++ tail.compiled ∧
-          AllocationLowering.lowerStmt root.lowerCtx root.returns
-              lowerState (.switch scrutinee cases defaultBody) =
-            some (headLower, afterState) ∧
-          Locals.Block.compileOpen localsCtx { stmts := headLower } =
-            some (headCode, localsCtx) ∧
-          afterState.allocation.env = lowerState.allocation.env ∧
-          afterState.layout = lowerState.layout ∧
-          Functions.Scope.ExprScoped live scrutinee ∧
-          Functions.Scope.CaseList.Scoped live cases ∧
-          Functions.Scope.Default.Scoped live defaultBody ∧
-          ExactTail cursor tail := by
+    ∃ tail :
+      CoreCursor root scope live { stmts := rest } afterState localsCtx,
+    ∃ loweredScrutinee loweredCases afterCases loweredDefault,
+    ∃ scrutineeCode compiledCases compiledDefault,
+      SwitchComponents cursor afterState headLower headCode tail
+        loweredScrutinee loweredCases afterCases loweredDefault
+        scrutineeCode compiledCases compiledDefault := by
   obtain
       ⟨afterState, afterLocals, headLower, headCode, tail,
         _hPlanning, hPlan, hFinalState, hFinalLocals, hLower, hCompile,
         _hLowered, hCompiled, hScopedStmt⟩ :=
     cursor.cons
   obtain
-      ⟨_loweredScrutinee, _loweredCases, afterCases, _loweredDefault,
-        _hLowerScrutinee, hLowerCases, hLowerDefault, hHeadLower⟩ :=
+      ⟨loweredScrutinee, loweredCases, afterCases, loweredDefault,
+        hLowerScrutinee, hLowerCases, hLowerDefault, hHeadLower⟩ :=
     AllocationLowering.lowerStmt_switch_components hLower
   have hHeadCompile := hCompile
   rw [hHeadLower] at hCompile
   obtain
-      ⟨_scrutineeCode, _compiledCases, _compiledDefault,
-        _hCompileScrutinee, _hCompileCases, _hCompileDefault,
-        _hHeadCode, hAfterLocals⟩ :=
+      ⟨scrutineeCode, compiledCases, compiledDefault,
+        hCompileScrutinee, hCompileCases, hCompileDefault,
+        hHeadCode, hAfterLocals⟩ :=
     Locals.Block.compileOpen_single_switch_components hCompile
   have hScoped :
       Functions.Scope.ExprScoped live scrutinee ∧
@@ -2091,11 +2152,26 @@ theorem CoreCursor.switchCursors
     AllocationLowering.lowerDefault_state_shape hLowerDefault
   cases hAfterLocals
   exact
-    ⟨afterState, headLower, headCode, tail, hCompiled, hLower,
-      hHeadCompile, hDefaultShape.1.trans hCasesShape.1,
-      hDefaultShape.2.trans hCasesShape.2,
-      hScoped.1, hScoped.2.1, hScoped.2.2,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+    ⟨afterState, headLower, headCode, tail, loweredScrutinee,
+      loweredCases, afterCases, loweredDefault, scrutineeCode,
+      compiledCases, compiledDefault,
+    { compiled := hCompiled
+      lower := hLower
+      compile := hHeadCompile
+      lowerHead := hHeadLower
+      lowerScrutinee := hLowerScrutinee
+      lowerCases := hLowerCases
+      lowerDefault := hLowerDefault
+      codeHead := hHeadCode
+      compileScrutinee := hCompileScrutinee
+      compileCases := hCompileCases
+      compileDefault := hCompileDefault
+      afterEnv := hDefaultShape.1.trans hCasesShape.1
+      afterLayout := hDefaultShape.2.trans hCasesShape.2
+      scrutineeScoped := hScoped.1
+      casesScoped := hScoped.2.1
+      defaultScoped := hScoped.2.2
+      exactTail := ⟨hPlan, hFinalState, hFinalLocals⟩ }⟩
 
 /-- Lift an already-selected switch planner entry into a lexical cursor. -/
 theorem CoreCursor.switchSelectedCursorOfComponents
@@ -2272,6 +2348,7 @@ theorem CoreCursor.switchSelectedCursors
       ∃ tail :
         CoreCursor root scope live
           { stmts := rest } afterState localsCtx,
+      ∃ scrutineeCode compiledCases compiledDefault,
       ∃ selectedStart,
       ∃ selectedPlanning : AllocationSupport.PlanningState,
       ∃ selectedTarget : Expressions.Block,
@@ -2285,10 +2362,16 @@ theorem CoreCursor.switchSelectedCursors
             some (headLower, afterState) ∧
           Locals.Block.compileOpen localsCtx { stmts := headLower } =
             some (headCode, localsCtx) ∧
+          headCode =
+            [.switch (.code scrutineeCode) compiledCases compiledDefault] ∧
+          Expressions.EffectSemantics.Switch.select value compiledCases
+              compiledDefault =
+            some selectedTarget ∧
           Locals.finishScoped localsCtx bodyCursor.finalLocals
               bodyCursor.compiled =
             some selectedTarget ∧
           selectedStart.allocation.env = lowerState.allocation.env ∧
+          selectedStart.layout = lowerState.layout ∧
           afterState.allocation.env = lowerState.allocation.env ∧
           afterState.layout = lowerState.layout ∧
           Functions.Scope.ExprScoped live scrutinee ∧
@@ -2306,7 +2389,7 @@ theorem CoreCursor.switchSelectedCursors
   obtain
       ⟨selectedLowered, selectedStart, selectedScopedFinal,
         selectedPlanning, hLoweredSelect, hLowerSelected,
-        hSelectedPlanning, hSelectedEnv, _hSelectedLayout,
+        hSelectedPlanning, hSelectedEnv, hSelectedLayout,
         hSelectedEntry, hSelectedInner⟩ :=
     AllocationLowering.lowerSwitch_select_some_planning
       cursor.planningAllocation hLowerCases hLowerDefault hSelect
@@ -2317,15 +2400,18 @@ theorem CoreCursor.switchSelectedCursors
   have hHeadCompile := hCompile
   rw [hHeadLower] at hCompile
   obtain
-      ⟨_scrutineeCode, compiledCases, compiledDefault,
+      ⟨scrutineeCode, compiledCases, compiledDefault,
         _hCompileScrutinee, hCompileCases, hCompileDefault,
-        _hHeadCode, hAfterLocals⟩ :=
+        hHeadCode, hAfterLocals⟩ :=
     Locals.Block.compileOpen_single_switch_components hCompile
+  have hSelectedRel :=
+    Locals.InteractionPreservation.Stmt.SwitchCompile.selectedRel_of_compile
+      localsCtx value hCompileCases hCompileDefault
+  rw [hLoweredSelect] at hSelectedRel
   obtain
-      ⟨selectedTarget, selectedCode, selectedLocals,
-        _hTargetSelect, hCompileSelected, hFinishSelected⟩ :=
-    Locals.Switch.select_some_of_compile
-      hCompileCases hCompileDefault hLoweredSelect
+      ⟨selectedTarget, selectedCode, selectedLocals, hTargetSelect,
+        hCompileSelected, hFinishSelected⟩ :=
+    hSelectedRel.some_parts
   have hScoped :
       Functions.Scope.ExprScoped live scrutinee ∧
         Functions.Scope.CaseList.Scoped live cases ∧
@@ -2347,9 +2433,11 @@ theorem CoreCursor.switchSelectedCursors
     AllocationLowering.lowerDefault_state_shape hLowerDefault
   cases hAfterLocals
   refine
-    ⟨afterState, headLower, headCode, tail, selectedStart,
-      selectedPlanning, selectedTarget, bodyCursor, hCompiled, hLower,
-      hHeadCompile, ?_, hSelectedEnv,
+    ⟨afterState, headLower, headCode, tail, scrutineeCode,
+      compiledCases, compiledDefault, selectedStart, selectedPlanning,
+      selectedTarget, bodyCursor, hCompiled, hLower,
+      hHeadCompile, hHeadCode, hTargetSelect, ?_, hSelectedEnv,
+      hSelectedLayout,
       hDefaultShape.1.trans hCasesShape.1,
       hDefaultShape.2.trans hCasesShape.2, hScoped.1,
       hSelectedScoped, ⟨hTailPlan, hTailFinalState, hTailFinalLocals⟩⟩

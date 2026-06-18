@@ -2625,6 +2625,26 @@ inductive SelectedRel (ctx : Locals.Ctx) :
       Locals.finishScoped ctx bodyCtx bodyCode = some target →
       SelectedRel ctx (some source) (some target)
 
+theorem SelectedRel.some_parts
+    {ctx : Locals.Ctx} {source : Locals.Block}
+    {target : Option Expressions.Block}
+    (hRel : SelectedRel ctx (Option.some source) target) :
+    ∃ targetBody bodyCode bodyCtx,
+      target = Option.some targetBody ∧
+        Locals.Block.compileOpen ctx source =
+          Option.some (bodyCode, bodyCtx) ∧
+        Locals.finishScoped ctx bodyCtx bodyCode =
+          Option.some targetBody := by
+  cases hRel with
+  | some hCompile hFinish =>
+      exact ⟨_, _, _, rfl, hCompile, hFinish⟩
+
+theorem SelectedRel.none_target
+    {ctx : Locals.Ctx} {target : Option Expressions.Block}
+    (hRel : SelectedRel ctx Option.none target) : target = Option.none := by
+  cases hRel
+  rfl
+
 /--
 The ordinary case/default compiler preserves branch selection and records the
 adjacent open-body and cleanup artifacts for the selected branch.

@@ -304,6 +304,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.let_
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.block
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.if_
+#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.switch
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.brk
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.cont
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.terminal
@@ -320,10 +321,14 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin
 #check EvmCompiler.Functions.AllocationInteractionControl.block_of_components
 #check EvmCompiler.Functions.AllocationInteractionControl.if_of_components
+#check EvmCompiler.Functions.AllocationInteractionControl.switch_of_components
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.SwitchComponents
 #check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardOne
 #check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardCondition
 #check EvmCompiler.Functions.InteractionSemantics.Stmt.openRun_switch
 #check EvmCompiler.Expressions.InteractionSemantics.Block.openRun_single_switch
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.SwitchCompile.SelectedRel.some_parts
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.SwitchCompile.SelectedRel.none_target
 #check EvmCompiler.Functions.AllocationContext.ActivationExprContext.transport_plan
 #check EvmCompiler.Functions.AllocationContext.ActivationInvariant.transport_plan
 #check EvmCompiler.Functions.AllocationContext.ActivationInvariant.transport_state

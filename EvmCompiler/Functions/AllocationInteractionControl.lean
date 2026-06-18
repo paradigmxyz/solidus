@@ -267,6 +267,134 @@ theorem if_of_components
             (Functions.Source.Ctx.SameControl.refl sourceCtx)
       | true => exact hTrue hAfter
 
+/-- Exact source/target branch selected by one compiled switch. -/
+inductive SwitchSelection
+    (sourceCases : List (Word × Functions.Block))
+    (sourceDefault : Option Functions.Block)
+    (targetCases : List (Word × Expressions.Block))
+    (targetDefault : Option Expressions.Block)
+    (value : Word) : Prop where
+  | none
+      (source :
+        Functions.Source.Switch.select value sourceCases sourceDefault = none)
+      (target :
+        Expressions.EffectSemantics.Switch.select value targetCases
+          targetDefault = none) :
+      SwitchSelection sourceCases sourceDefault targetCases targetDefault value
+  | some
+      (sourceBody : Functions.Block) (targetBody : Expressions.Block)
+      (source :
+        Functions.Source.Switch.select value sourceCases sourceDefault =
+          some sourceBody)
+      (target :
+        Expressions.EffectSemantics.Switch.select value targetCases
+          targetDefault = some targetBody) :
+      SwitchSelection sourceCases sourceDefault targetCases targetDefault value
+
+/-- Preserve a switch from one-value evaluation and exact branch selection. -/
+theorem switch_of_components
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx} {plan : Plan}
+    {returns live : List Functions.Name}
+    {frameBase sourceBodyFuel targetBodyFuel : Nat}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {scrutinee : Functions.Expr 1}
+    {sourceCases : List (Word × Functions.Block)}
+    {sourceDefault : Option Functions.Block}
+    {targetScrutinee : Expressions.Expr 1}
+    {targetCases : List (Word × Expressions.Block)}
+    {targetDefault : Option Expressions.Block}
+    {source : SourceState} {target : TargetState}
+    (hInitial :
+      AllocationContext.ActivationInvariant contract lowerCtx lowerState
+        localsCtx plan live frameBase mode source target)
+    (hScrutinee :
+      Simulation.Interaction.Rel
+        (Simulation.Interaction.ExceptRel
+          (fun left right : EVMException => left = right)
+          (ActivationValueResultRel contract plan live frameBase mode target))
+        (Functions.InteractionSemantics.Expr.openEvalOne scrutinee source)
+        (Expressions.InteractionSemantics.Expr.openRunOne
+          targetScrutinee target))
+    (hVars :
+      Simulation.Interaction.AllDone
+        (Locals.InteractionStatePreservation.ResultVars
+          (α := Word) source)
+        (Functions.InteractionSemantics.Expr.openEvalOne scrutinee source))
+    (hSelection :
+      ∀ value,
+        SwitchSelection sourceCases sourceDefault targetCases targetDefault
+          value)
+    (hSelected :
+      ∀ {value sourceBody targetBody sourceAfter targetAfter},
+        Functions.Source.Switch.select value sourceCases sourceDefault =
+            some sourceBody →
+        Expressions.EffectSemantics.Switch.select value targetCases
+            targetDefault =
+          some targetBody →
+        AllocationContext.ActivationInvariant contract lowerCtx lowerState
+            localsCtx plan live frameBase mode sourceAfter targetAfter →
+          Simulation.Interaction.Rel
+            (OpenControlResultRel contract lowerCtx lowerState localsCtx plan
+              returns live frameBase mode sourceCtx sourceCtx)
+            (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+              sourceBodyFuel (.block sourceBody) sourceAfter)
+            (Expressions.InteractionSemantics.Block.openRun expressions
+              targetBodyFuel targetBody targetAfter)) :
+    Simulation.Interaction.Rel
+      (OpenControlResultRel contract lowerCtx lowerState localsCtx plan
+        returns live frameBase mode sourceCtx sourceCtx)
+      (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+        (sourceBodyFuel + 1)
+        (.switch scrutinee sourceCases sourceDefault) source)
+      (Expressions.InteractionSemantics.Block.openRun expressions
+        (targetBodyFuel + 2)
+        { stmts :=
+            [.switch targetScrutinee targetCases targetDefault] }
+        target) := by
+  rw [Functions.InteractionSemantics.Stmt.openRun_switch,
+    Expressions.InteractionSemantics.Block.openRun_single_switch]
+  have hScrutineeStrong :=
+    Simulation.Interaction.Rel.strengthen_left hScrutinee hVars
+  apply Simulation.Interaction.Rel.bind_custom hScrutineeStrong
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hRelated, hVarsDone⟩
+  cases hRelated with
+  | error hError => exact .done (.error hError)
+  | @ok sourceResult targetResult hResult =>
+      rcases sourceResult with ⟨sourceAfter, sourceValue⟩
+      rcases targetResult with ⟨targetAfter, targetValue⟩
+      cases hResult.value
+      have hDefined : LiveDefined live sourceAfter :=
+        hInitial.defined.congr_vars hVarsDone
+      have hAfter :
+          AllocationContext.ActivationInvariant contract lowerCtx lowerState
+            localsCtx plan live frameBase mode sourceAfter targetAfter :=
+        { compiler := hInitial.compiler
+          planWF := hInitial.planWF
+          defined := hDefined
+          state := hResult.state
+          stackLength :=
+            (congrArg List.length hResult.stack).trans
+              hInitial.stackLength }
+      cases hSelection sourceValue with
+      | none hSource hTarget =>
+          simp only
+          rw [hSource, hTarget]
+          apply Simulation.Interaction.Rel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact ControlResultRel.regular hAfter (SameFrame.refl mode)
+            (Functions.Source.Ctx.SameControl.refl sourceCtx)
+      | some sourceBody targetBody hSource hTarget =>
+          simp only
+          rw [hSource, hTarget]
+          exact hSelected hSource hTarget hAfter
+
 end AllocationInteractionControl
 end Functions
 end EvmCompiler
