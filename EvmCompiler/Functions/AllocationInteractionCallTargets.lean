@@ -78,15 +78,8 @@ private theorem PreservesBoundedEffect.of_scratch_store
       (.scratch frameDepth frameWords) before after := by
   intro globalFrameWords config callerDepth readyDepth
     hConfig hOwned _hDepth hReady
-  have hEndLt := hRel.scratchAddress_end_lt_size hLive hLocation
-  have hAddressLt :
-      scratchAddress frameBase slot < EvmYul.UInt256.size := by omega
-  exact
-    BoundedEffect.of_mstore_above hReady hMachine
-      (EvmYul.UInt256.toNat_ofNat_of_lt hAddressLt)
-      (hRel.scratchAddress_end_lt_hostSize hLive hLocation)
-      (Or.inl (hOwned.allocatorCell_disjoint_scratchAddress hConfig))
-      (fun hProtected => hOwned.baseAt_le_scratchAddress_of_lt hProtected)
+  exact hOwned.boundedEffect_of_scratchStore hConfig hRel hLive hLocation
+    hReady hMachine
 
 private theorem set_append_offset
     {α : Type} (above suffix : List α) (depth : Nat) (value : α) :

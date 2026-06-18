@@ -338,6 +338,67 @@ theorem CoreCursor.expr_runtime_head
       Simulation.Interaction.Rel.inter hSemantic hResource,
       ⟨hPlan, hFinalState, hFinalLocals⟩⟩
 
+/-- One compiler decomposition supplies both assignment-head capabilities. -/
+theorem CoreCursor.assign_runtime_head
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {name : Functions.Name} {value : Functions.Expr 1}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth sourceFuel targetExtra frameBase : Nat}
+    {config : Config} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live { stmts := .assign name value :: rest }
+        beforeState beforeLocals)
+    (hSafe : AllocationInteractionSafety.ExprSafe contract value source)
+    (hBoundary :
+      Boundary cursor contract globalFrameWords config allocatorDepth frameBase
+        mode sourceCtx source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        CoreCursor root scope live { stmts := rest }
+          afterState afterLocals,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          Simulation.Interaction.Rel
+            (RuntimeResultRel contract root.lowerCtx afterState afterLocals
+              cursor.plan root.returns live frameBase mode sourceCtx sourceCtx
+              config allocatorDepth target)
+            (Functions.InteractionSemantics.Stmt.openRun
+              program sourceCtx sourceFuel (.assign name value) source)
+            (Expressions.InteractionSemantics.Block.openRun
+              expressions (targetExtra + 2) { stmts := headCode } target) ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, hPlan, hFinalState, hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, hScoped⟩ := cursor.cons
+  have hSemantic :=
+    AllocationInteractionLeaf.assign_of_lower_compile
+      (sourceProgram := program) (sourceCtx := sourceCtx)
+      (targetProgram := expressions)
+      (sourceFuel := sourceFuel) (targetExtra := targetExtra)
+      hSafe hScoped.2 hScoped.1 hLower hCompile hBoundary.semantic.invariant
+  have hResource :=
+    AllocationInteractionStatementResource.assign_of_lower_compile
+      (sourceProgram := program) (sourceCtx := sourceCtx)
+      (targetProgram := expressions)
+      (sourceFuel := sourceFuel) (targetExtra := targetExtra)
+      hBoundary.configEq hSafe hScoped.2 hScoped.1 hLower hCompile
+      hBoundary.semantic.invariant hBoundary.ready hBoundary.owned
+  exact
+    ⟨afterState, afterLocals, headCode, tail, hCompiled,
+      Simulation.Interaction.Rel.inter hSemantic hResource,
+      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+
 namespace CursorRuntimeAt
 
 /-- Recursive expression statement with semantic and allocator preservation. -/
@@ -408,6 +469,102 @@ theorem expr
       sourceCtx =
         { sourceCtx with
           scope := Functions.Scope.Stmt.outEnv live (.expr expr) } := by
+    have hCtx : { sourceCtx with scope := live } = sourceCtx := by
+      cases sourceCtx
+      have hScope := hBoundary.semantic.sourceScope
+      simp only at hScope
+      cases hScope
+      rfl
+    simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
+  have hResult :=
+    cons_of_parts cursor tail hExact hCompiled hMidCtx
+      (by simpa [childFuel, hFuel, totalFuel,
+        Functions.Scope.Stmt.outEnv] using hHead')
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame =>
+        hTailForward tail hExact
+          { semantic :=
+              { invariant := hInvariant
+                sourceScope := hBoundary.semantic.sourceScope
+                control := hBoundary.semantic.control
+                capacity := by
+                  cases hSame <;> exact hBoundary.semantic.capacity }
+            configEq := hBoundary.configEq
+            ready := hReady
+            owned := hBoundary.owned.sameFrame hSame
+            budget := hBoundary.budget })
+  have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
+  rw [hFuel'] at hResult
+  exact hResult
+
+/-- Recursive assignment with semantic and allocator preservation. -/
+theorem assign
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {name : Functions.Name} {value : Functions.Expr 1}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase sourceFuel targetExtra : Nat}
+    {config : Config} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live { stmts := .assign name value :: rest }
+        beforeState beforeLocals)
+    (hSourceFuel : 0 < sourceFuel)
+    (hSafe : AllocationInteractionSafety.ExprSafe contract value source)
+    (hBoundary :
+      Boundary cursor contract globalFrameWords config allocatorDepth frameBase
+        mode sourceCtx source target)
+    (hTailForward :
+      ∀ {afterState : AllocationLowering.State}
+        {afterLocals : Locals.Ctx}
+        (tail : CoreCursor root scope live { stmts := rest }
+          afterState afterLocals),
+        ExactTail cursor tail →
+        ∀ {sourceMid targetMid tailMode},
+          Boundary tail contract globalFrameWords config allocatorDepth frameBase
+              tailMode sourceCtx sourceMid targetMid →
+            CursorRuntimeAt tail contract config allocatorDepth frameBase
+              (sourceFuel - 1) (targetExtra + 8) tailMode sourceCtx
+              sourceMid targetMid) :
+    CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
+      targetExtra mode sourceCtx source target := by
+  let childFuel := sourceFuel - 1
+  let totalFuel := targetBudget cursor sourceFuel targetExtra
+  let headExtra := totalFuel - 2
+  have hFuel : childFuel + 1 = sourceFuel := by
+    simp [childFuel]
+    omega
+  have hHeadFuel : headExtra + 2 = totalFuel := by
+    simp [headExtra, totalFuel, targetBudget]
+    omega
+  obtain
+      ⟨afterState, afterLocals, headCode, tail,
+        hCompiled, hHead, hExact⟩ :=
+    AllocationInteractionRecursiveResource.CoreCursor.assign_runtime_head
+      cursor (sourceFuel := childFuel) (targetExtra := headExtra)
+      hSafe hBoundary
+  have hHead' :
+      Simulation.Interaction.Rel
+        (RuntimeResultRel contract root.lowerCtx afterState afterLocals
+          cursor.plan root.returns live frameBase mode sourceCtx sourceCtx
+          config allocatorDepth target)
+        (Functions.InteractionSemantics.Stmt.openRun
+          program sourceCtx childFuel (.assign name value) source)
+        (Expressions.InteractionSemantics.Block.openRun expressions totalFuel
+          { stmts := headCode } target) := by
+    simpa [hHeadFuel] using hHead
+  have hMidCtx :
+      sourceCtx =
+        { sourceCtx with
+          scope := Functions.Scope.Stmt.outEnv live (.assign name value) } := by
     have hCtx : { sourceCtx with scope := live } = sourceCtx := by
       cases sourceCtx
       have hScope := hBoundary.semantic.sourceScope

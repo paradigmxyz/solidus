@@ -113,8 +113,8 @@ boundaries remain active work.
   - [x] pass-owned caller return writeback through the exact emitted
     stack/scratch target code, including deeper-callee bounded effects;
   - [ ] orthogonal recursive allocator companion over the same Interaction
-    tree (shared intersection/`cons`, empty cursor, and expression statement
-    checked; assignment, declaration, control, loop, and call owners remain);
+    tree (shared intersection/`cons`, empty cursor, expression statement, and
+    assignment checked; declaration, control, loop, and call owners remain);
   - [ ] compose caller arguments, selected-callee recursion, return writeback,
     scratch release, and the exact tail;
   - [ ] recursive compiler-cursor statement-list theorem.

@@ -832,6 +832,46 @@ theorem baseAt_le_scratchAddress_of_lt
           (Nat.le_add_right (baseAt config previousDepth)
             (MemoryContract.wordBytes * slot))
 
+/--
+One compiler-owned scratch write preserves every strictly older frame while
+retaining the allocator depth selected by the caller.
+-/
+theorem boundedEffect_of_scratchStore
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth readyDepth : Nat}
+    {config : Config} {plan : Plan} {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords slot : Nat}
+    {source : SourceState} {before after : TargetState}
+    {name : Locals.Name} {value : Word}
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch frameDepth frameWords))
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hRel :
+      ScratchStateRel contract plan live stackOffset frameBase
+        frameDepth frameWords source before)
+    (hLive : name ∈ live)
+    (hLocation : plan.location? name = some (.scratch slot))
+    (hReady : AllocatorReady config readyDepth before)
+    (hMachine :
+      after.evm.toMachineState =
+        before.evm.toMachineState.mstore
+          (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)) value) :
+    BoundedEffect config readyDepth allocatorDepth before after := by
+  have hEndLt := hRel.scratchAddress_end_lt_size hLive hLocation
+  have hAddressLt :
+      scratchAddress frameBase slot < EvmYul.UInt256.size := by
+    omega
+  exact
+    BoundedEffect.of_mstore_above hReady hMachine
+      (EvmYul.UInt256.toNat_ofNat_of_lt hAddressLt)
+      (hRel.scratchAddress_end_lt_hostSize hLive hLocation)
+      (Or.inl (hOwned.allocatorCell_disjoint_scratchAddress hConfig))
+      (fun hProtected =>
+        hOwned.baseAt_le_scratchAddress_of_lt hProtected)
+
 end ActivationOwned
 
 theorem budget_mono {config : Config} {smaller larger : Nat}
