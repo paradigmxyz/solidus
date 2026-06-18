@@ -33,6 +33,7 @@ boundaries remain active work.
   internal calls, activation setup/cleanup, and whole program.
   - [x] outcome-indexed regular/abrupt result relation and generic real-block
     `nil`/`cons` composition laws;
+  - [x] expression, assignment, and stack/scratch declaration leaf adapters;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

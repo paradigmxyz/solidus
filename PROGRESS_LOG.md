@@ -31824,3 +31824,11 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1315-job verification root, architecture guard, touched-file hole scan,
   axiom audit, and `git diff --check` passed; the composition boundary uses
   only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 22:42:00 PDT - proof/functions-leaf-adapters - lifted expression,
+  assignment, stack declaration, and scratch-capable declaration preservation
+  into the common outcome-indexed `ControlResultRel` consumed by recursive
+  block composition.
+- 2026-06-17 22:43:00 PDT - validation/functions-leaf-adapters - focused build,
+  1316-job verification root, architecture guard, touched-file hole scan,
+  axiom audit, and `git diff --check` passed; adapters use only
+  `[propext, Classical.choice, Quot.sound]`.
