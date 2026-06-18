@@ -8,6 +8,7 @@ import EvmCompiler.Structured.InteractionCallPreservation
 import EvmCompiler.Structured.InteractionOwnerPreservation
 import EvmCompiler.Expressions.InteractionPreservation
 import EvmCompiler.Functions.AllocationInteractionSelectedCallEntry
+import EvmCompiler.Functions.AllocationInteractionFrameExecution
 import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 
@@ -241,3 +242,6 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Functions.AllocationInteractionCall.CalleeEntry.splitArgs_of_arguments
 #print axioms EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Prepared.stack_entry_of_arguments
 #print axioms EvmCompiler.Functions.AllocationInteractionCall.CoreCursor.callComponents
+#print axioms EvmCompiler.Functions.AllocationInteractionFrameExecution.allocatorAdvance_openRun
+#print axioms EvmCompiler.Functions.AllocationInteractionFrameExecution.framePrealloc_openRun
+#print axioms EvmCompiler.Functions.AllocationInteractionFrameExecution.scratchFrameAcquire_openRun

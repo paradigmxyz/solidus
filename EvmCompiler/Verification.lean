@@ -49,6 +49,7 @@ import EvmCompiler.Functions.AllocationInteractionStatement
 import EvmCompiler.Functions.AllocationInteractionPrimitive
 import EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive
 import EvmCompiler.Functions.AllocationInteractionSafety
+import EvmCompiler.Functions.AllocationInteractionFrameExecution
 import EvmCompiler.Functions.AllocationContext
 import EvmCompiler.Functions.EffectSemanticsInversion
 import EvmCompiler.Functions.ObserverSemantics
@@ -298,6 +299,16 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionForward.CoreCursor.terminal_head
 #check EvmCompiler.Functions.AllocationInteractionForward.CoreCursor.terminalArgs_head
 #check EvmCompiler.Functions.AllocationInteractionSafety.ArgListSafe
+#check EvmCompiler.Functions.AllocationInteractionFrame.AllocatorReady
+#check EvmCompiler.Functions.AllocationInteractionFrame.ProtectedPrefix
+#check EvmCompiler.Functions.AllocationInteractionFrame.BoundedEffect
+#check EvmCompiler.Functions.AllocationInteractionFrame.ActivationOwned
+#check EvmCompiler.Functions.AllocationInteractionFrameExecution.Code.openRun_push
+#check EvmCompiler.Functions.AllocationInteractionFrameExecution.Code.openRun_mload
+#check EvmCompiler.Functions.AllocationInteractionFrameExecution.Code.openRun_mstore
+#check EvmCompiler.Functions.AllocationInteractionFrameExecution.allocatorAdvance_openRun
+#check EvmCompiler.Functions.AllocationInteractionFrameExecution.framePrealloc_openRun
+#check EvmCompiler.Functions.AllocationInteractionFrameExecution.scratchFrameAcquire_openRun
 #check EvmCompiler.Functions.AllocationInteractionRelation.LiveDefined.of_lookupMany
 #check EvmCompiler.Functions.AllocationInteractionRelation.LiveDefined.append
 #check EvmCompiler.Functions.AllocationInteractionCall.ArgList.forwardArg

@@ -100,8 +100,10 @@ boundaries remain active work.
     stack/scratch argument preservation;
   - [x] compiler-selected all-stack callee source initialization, exact target
     split/return-frame entry, and recursive-body entry relation;
-  - [ ] orthogonal allocator-cell readiness/depth capability and checked
-    scratch-frame acquire/release transitions for nested scratch calls;
+  - [x] orthogonal allocator-cell readiness/depth and suspended-prefix effect
+    interfaces plus exact canonical scratch-frame acquire execution;
+  - [ ] acquire resource preservation, selected scratch-callee entry, and
+    checked scratch-frame release for nested calls;
   - [ ] caller argument, selected-callee, return-writeback, scratch-release,
     and exact-tail interaction composition;
   - [ ] recursive compiler-cursor statement-list theorem.
