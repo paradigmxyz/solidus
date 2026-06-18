@@ -351,3 +351,10 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Functions.AllocationInteractionCallStatement.finish
 #print axioms EvmCompiler.Functions.AllocationInteractionStackRuntime.CoreCursor.call_runtime_head
 #print axioms EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.call
+#print axioms EvmCompiler.Functions.AllocationInteractionControl.if_of_components_successful
+#print axioms EvmCompiler.Functions.AllocationInteractionControl.switch_of_components_successful
+#print axioms EvmCompiler.Functions.AllocationInteractionRecursive.ForFuelCapacity.of_reserve
+#print axioms EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.let_
+#print axioms EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.block
+#print axioms EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.if_
+#print axioms EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.switch

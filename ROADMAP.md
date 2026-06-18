@@ -160,7 +160,11 @@ boundaries remain active work.
       resource-free function-return epilogue;
     - [x] resource-free internal-call attachment, caller writeback, exact
       successful-tail composition, and compiler-selected all-stack CALL head;
-    - [ ] recursive all-stack fixed point for every statement constructor.
+    - [x] successful stack recursion for expression, assignment, declaration,
+      abrupt control, terminal, lexical block, conditional, switch, and call
+      constructors;
+    - [ ] stack-only `for` init/body/post recursion and the thirteen-constructor
+      source-fuel fixed point.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
   source-facing reservation/resource assumptions.

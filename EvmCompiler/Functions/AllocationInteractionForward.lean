@@ -327,12 +327,15 @@ theorem CoreCursor.let_head
             (Expressions.InteractionSemantics.Block.openRun
               expressions (targetExtra + 2)
                 { stmts := headCode } target) ∧
+          DeclarationPlacement root.lowerCtx beforeState cursor.plan live
+            name ∧
           ExactTail cursor tail := by
   obtain
       ⟨afterState, afterLocals, headLower, headCode, tail,
         hPlanning, hPlan, hFinalState, hFinalLocals, hLower, hCompile,
         _hLowered, hCompiled, hScoped⟩ :=
     cursor.cons
+  have hPlacement := cursor.declarationPlacement tail hPlanning hPlan
   obtain ⟨afterMode, hAfter, hTransition⟩ :=
     cursor.letContext tail hPlanning hPlan hInvariant.compiler
       hLower hCompile
@@ -402,7 +405,7 @@ theorem CoreCursor.let_head
                       hScratchBound rfl hLocation)
                     hLower hCompile hInvariant
   exact
-    ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
+    ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead, hPlacement,
       ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
 
 /-- Derive a `break` head theorem from its loop-destination transition. -/

@@ -796,7 +796,7 @@ theorem let_
     omega
   obtain
       ⟨afterState, afterLocals, headCode, tail,
-        hCompiled, hHead, hExact⟩ :=
+        hCompiled, hHead, _hPlacement, hExact⟩ :=
     AllocationInteractionForward.CoreCursor.let_head
       (sourceFuel := childFuel) (targetExtra := headExtra)
       cursor hSafe hBoundary.capacity hBoundary.invariant
@@ -2419,6 +2419,231 @@ theorem body_of_cursor
         (by simpa [CursorForwardAt, bodyFuel] using hBody')
 
 end SelectedCallee
+
+theorem ForFuelCapacity.of_reserve
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {init : Functions.Block} {cond : Functions.Expr 1}
+    {post body : Functions.Block} {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {sourceFuel targetExtra : Nat}
+    (cursor : CoreCursor root scope live
+      { stmts := .for_ init cond post body :: rest }
+      lowerState localsCtx)
+    (hSourceFuel : 2 < sourceFuel)
+    (hReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra) :
+    ForFuelCapacity cursor.forArtifact (sourceFuel - 2)
+      ((targetBudget cursor sourceFuel targetExtra - 2) -
+        (sourceFuel - 2)) := by
+  classical
+  let components := cursor.forArtifact
+  let loopFuel := sourceFuel - 2
+  let nestedFuel := targetBudget cursor sourceFuel targetExtra - 2
+  let slack := nestedFuel - loopFuel
+  change ForFuelCapacity components loopFuel slack
+  obtain ⟨postCleanup, _hPostCleanup, hPostShape⟩ :=
+    AllocationInteractionCleanup.Plain.finishScoped_shape
+      components.finishPost
+  obtain ⟨bodyCleanup, _hBodyCleanup, hBodyShape⟩ :=
+    AllocationInteractionCleanup.Plain.finishScoped_shape
+      components.finishBody
+  have hParentShape :
+      AllocationInteractionTargetFuel.stmtListNestedSize
+          cursor.compiled =
+        AllocationInteractionTargetFuel.stmtListSize
+            components.initCursor.compiled +
+          AllocationInteractionTargetFuel.blockSize components.compiledPost +
+          AllocationInteractionTargetFuel.blockSize components.compiledBody +
+          AllocationInteractionTargetFuel.stmtListNestedSize
+            components.tail.compiled := by
+    rw [components.compiled,
+      AllocationInteractionTargetFuel.stmtListNestedSize_append,
+      components.headCode_eq,
+      AllocationInteractionTargetFuel.stmtListNestedSize_append]
+    simp [AllocationInteractionTargetFuel.stmtListNestedSize,
+      AllocationInteractionTargetFuel.stmtNestedSize,
+      AllocationInteractionTargetFuel.blockSize, Locals.codeStmt]
+  have hPostBlockSize :
+      AllocationInteractionTargetFuel.blockSize components.compiledPost =
+        AllocationInteractionTargetFuel.stmtListSize
+          components.compiledPost.stmts := by
+    cases components.compiledPost
+    rfl
+  have hBodyBlockSize :
+      AllocationInteractionTargetFuel.blockSize components.compiledBody =
+        AllocationInteractionTargetFuel.stmtListSize
+          components.compiledBody.stmts := by
+    cases components.compiledBody
+    rfl
+  have hPostWithin :
+      AllocationInteractionTargetFuel.stmtListSize
+          components.postCursor.compiled ≤
+        AllocationInteractionTargetFuel.stmtListNestedSize
+          cursor.compiled := by
+    rw [hParentShape, hPostBlockSize, hPostShape,
+      AllocationInteractionTargetFuel.stmtListSize_append]
+    omega
+  have hBodyWithin :
+      AllocationInteractionTargetFuel.stmtListSize
+          components.bodyCursor.compiled ≤
+        AllocationInteractionTargetFuel.stmtListNestedSize
+          cursor.compiled := by
+    rw [hParentShape, hBodyBlockSize, hBodyShape,
+      AllocationInteractionTargetFuel.stmtListSize_append]
+    omega
+  have hInitWithin :
+      AllocationInteractionTargetFuel.stmtListSize
+          components.initCursor.compiled ≤
+        AllocationInteractionTargetFuel.stmtListNestedSize
+          cursor.compiled := by
+    rw [hParentShape]
+    omega
+  unfold AllocationInteractionTargetFuel.Reserve at hReserve
+  have hInitExtra := hInitWithin.trans hReserve
+  have hPostExtra := hPostWithin.trans hReserve
+  have hBodyExtra := hBodyWithin.trans hReserve
+  have hNestedGe : loopFuel ≤ nestedFuel := by
+    have hEnough :
+        loopFuel + 2 ≤ targetBudget cursor sourceFuel targetExtra := by
+      unfold loopFuel targetBudget
+      have hStride : 1 ≤ callStride expressions :=
+        le_trans (by omega) (eight_le_callStride expressions)
+      have hMul :
+          sourceFuel ≤ callStride expressions * sourceFuel := by
+        simpa [Nat.mul_comm] using Nat.mul_le_mul_right sourceFuel hStride
+      rw [Nat.mul_succ]
+      omega
+    unfold nestedFuel
+    omega
+  have hTotalEnough :
+      loopFuel + 2 ≤ targetBudget cursor sourceFuel targetExtra := by
+    unfold loopFuel targetBudget
+    have hStride : 1 ≤ callStride expressions :=
+      le_trans (by omega) (eight_le_callStride expressions)
+    have hMul :
+        sourceFuel ≤ callStride expressions * sourceFuel := by
+      simpa [Nat.mul_comm] using Nat.mul_le_mul_right sourceFuel hStride
+    rw [Nat.mul_succ]
+    omega
+  have hTargetTwo :
+      2 ≤ targetBudget cursor sourceFuel targetExtra := by omega
+  have hNestedExact :
+      nestedFuel + 2 = targetBudget cursor sourceFuel targetExtra := by
+    unfold nestedFuel
+    exact Nat.sub_add_cancel hTargetTwo
+  have hSlackEq : loopFuel + slack = nestedFuel := by
+    unfold slack
+    exact Nat.add_sub_of_le hNestedGe
+  have hInitSizeEq :=
+    AllocationInteractionTargetFuel.stmtListSize_eq
+      components.initCursor.compiled
+  have hPostSizeEq :=
+    AllocationInteractionTargetFuel.stmtListSize_eq
+      components.postCursor.compiled
+  have hBodySizeEq :=
+    AllocationInteractionTargetFuel.stmtListSize_eq
+      components.bodyCursor.compiled
+  have hInitCost :
+      AllocationInteractionTargetFuel.stmtListNestedSize
+            components.initCursor.compiled +
+          components.initCursor.compiled.length ≤ targetExtra := by
+    omega
+  have hPostCost :
+      AllocationInteractionTargetFuel.stmtListNestedSize
+            components.postCursor.compiled +
+          components.postCursor.compiled.length ≤ targetExtra := by
+    omega
+  have hBodyCost :
+      AllocationInteractionTargetFuel.stmtListNestedSize
+            components.bodyCursor.compiled +
+          components.bodyCursor.compiled.length ≤ targetExtra := by
+    omega
+  refine { init := ?_, post := ?_, body := ?_ }
+  · rw [hSlackEq]
+    have hFuelGap :
+        sourceFuel + 1 = (sourceFuel - 2 + 1) + 2 := by omega
+    have hMulGap :
+        callStride expressions * (sourceFuel + 1) =
+          callStride expressions * (sourceFuel - 2 + 1) +
+            callStride expressions * 2 := by
+      rw [hFuelGap, Nat.mul_add]
+    have hBound :
+        targetBudget components.initCursor loopFuel
+              (AllocationInteractionTargetFuel.stmtListNestedSize
+                components.initCursor.compiled) + 2 ≤
+          targetBudget cursor sourceFuel targetExtra := by
+      unfold loopFuel targetBudget
+      have hStride := eight_le_callStride expressions
+      have hStrideOne : 1 ≤ callStride expressions := by omega
+      have hScaleTwo : 2 ≤ callStride expressions * 2 := by
+        simpa using Nat.mul_le_mul_right 2 hStrideOne
+      omega
+    omega
+  · intro fuel hFuelLt
+    have hFuelLe : fuel ≤ loopFuel := Nat.le_of_lt hFuelLt
+    have hFuelGap :
+        sourceFuel + 1 =
+          (fuel + 1) + ((loopFuel - fuel) + 2) := by
+      unfold loopFuel
+      omega
+    have hMulGap :
+        callStride expressions * (sourceFuel + 1) =
+          callStride expressions * (fuel + 1) +
+            callStride expressions * ((loopFuel - fuel) + 2) := by
+      rw [hFuelGap, Nat.mul_add]
+    have hBound :
+        targetBudget components.postCursor fuel
+              (AllocationInteractionTargetFuel.stmtListNestedSize
+                components.postCursor.compiled) +
+              (loopFuel - fuel) + 2 ≤
+          targetBudget cursor sourceFuel targetExtra := by
+      unfold targetBudget
+      have hStride := eight_le_callStride expressions
+      have hStrideOne : 1 ≤ callStride expressions := by omega
+      have hScaleGap :
+          loopFuel - fuel + 2 ≤
+            callStride expressions * (loopFuel - fuel + 2) := by
+        simpa using Nat.mul_le_mul_right (loopFuel - fuel + 2) hStrideOne
+      omega
+    have hFuelDecomp : fuel + (loopFuel - fuel) = loopFuel :=
+      Nat.add_sub_of_le hFuelLe
+    omega
+  · intro fuel hFuelLt
+    have hFuelLe : fuel ≤ loopFuel := Nat.le_of_lt hFuelLt
+    have hFuelGap :
+        sourceFuel + 1 =
+          (fuel + 1) + ((loopFuel - fuel) + 2) := by
+      unfold loopFuel
+      omega
+    have hMulGap :
+        callStride expressions * (sourceFuel + 1) =
+          callStride expressions * (fuel + 1) +
+            callStride expressions * ((loopFuel - fuel) + 2) := by
+      rw [hFuelGap, Nat.mul_add]
+    have hBound :
+        targetBudget components.bodyCursor fuel
+              (AllocationInteractionTargetFuel.stmtListNestedSize
+                components.bodyCursor.compiled) +
+              (loopFuel - fuel) + 2 ≤
+          targetBudget cursor sourceFuel targetExtra := by
+      unfold targetBudget
+      have hStride := eight_le_callStride expressions
+      have hStrideOne : 1 ≤ callStride expressions := by omega
+      have hScaleGap :
+          loopFuel - fuel + 2 ≤
+            callStride expressions * (loopFuel - fuel + 2) := by
+        simpa using Nat.mul_le_mul_right (loopFuel - fuel + 2) hStrideOne
+      omega
+    have hFuelDecomp : fuel + (loopFuel - fuel) = loopFuel :=
+      Nat.add_sub_of_le hFuelLe
+    omega
 
 end AllocationInteractionRecursive
 end Functions
