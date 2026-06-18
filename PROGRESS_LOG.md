@@ -31885,3 +31885,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   source check, the 1322-job verification root, architecture guard,
   touched-Lean hole scan, axiom audit, and `git diff --check` passed. New
   cursor facts use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 22:58:00 PDT - proof/functions-declaration-context - moved the
+  generic frame-bottom layout and stack/scratch activation constructors from
+  observer-owned proof code into canonical `AllocationContext`; added a
+  canonical declaration mode transition and proved `CoreCursor.letContext`
+  from the actual allocation lowering and Locals compilation equations.
+- 2026-06-17 22:59:00 PDT - validation/functions-declaration-context - focused
+  builds, the 1322-job verification root, architecture guard, touched-Lean
+  hole scan, axiom audit, and `git diff --check` passed. New context and cursor
+  theorems use only `[propext, Classical.choice, Quot.sound]`.

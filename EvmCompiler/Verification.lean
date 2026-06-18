@@ -177,6 +177,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.InteractionSemantics.Program.OpenSupported
 #check EvmCompiler.Functions.AllocationInteractionRelation.StateRel
 #check EvmCompiler.Functions.AllocationContext.ActivationExprContext
+#check EvmCompiler.Functions.AllocationContext.ExprContext.bodyLayout
+#check EvmCompiler.Functions.AllocationContext.ActivationExprContext.stack_of_layout
+#check EvmCompiler.Functions.AllocationContext.ActivationExprContext.scratch_of_layout
+#check EvmCompiler.Functions.AllocationContext.DeclarationModeTransition
 #check EvmCompiler.Functions.AllocationContext.classify_activation_var
 #check EvmCompiler.Functions.AllocationInteractionRelation.SharedRel.openWorld_eq
 #check EvmCompiler.Functions.AllocationInteractionRelation.SharedRel.callRequest_eq
@@ -257,6 +261,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.location_scratch_of_lookup
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.planAgreesOn
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.scratch_bound_of_location
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.declarationPlacement
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.letContext
 #check EvmCompiler.Functions.AllocationInteractionComposition.ControlResultRel
 #check EvmCompiler.Functions.AllocationInteractionComposition.lift_fixed
 #check EvmCompiler.Functions.AllocationInteractionComposition.cons

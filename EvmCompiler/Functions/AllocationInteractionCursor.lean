@@ -466,6 +466,34 @@ def CoreCursor.finished
           Functions.Scope.StmtList.Scoped]
       activeEnv := hFinalActive }
 
+/-- Static placement selected for one declaration by the validated plan. -/
+inductive DeclarationPlacement
+    (lowerCtx : AllocationLowering.Ctx)
+    (beforeState : AllocationLowering.State)
+    (plan : Locals.Allocation.Plan)
+    (beforeLive : List Functions.Name)
+    (name : Functions.Name) : Prop where
+  | stack
+      (slot planDepth : Nat)
+      (hSlot : slot = beforeState.allocation.nextSlot)
+      (hStack :
+        AllocationLowering.isStackSlot lowerCtx slot = true)
+      (hLocation : plan.location? name = some (.stack planDepth))
+      (hOrder :
+        currentStackOrder plan (name :: beforeLive) =
+          name :: currentStackOrder plan beforeLive) :
+      DeclarationPlacement lowerCtx beforeState plan beforeLive name
+  | scratch
+      (slot : Nat)
+      (hSlot : slot = beforeState.allocation.nextSlot)
+      (hStack :
+        AllocationLowering.isStackSlot lowerCtx slot = false)
+      (hLocation : plan.location? name = some (.scratch slot))
+      (hOrder :
+        currentStackOrder plan (name :: beforeLive) =
+          currentStackOrder plan beforeLive) :
+      DeclarationPlacement lowerCtx beforeState plan beforeLive name
+
 theorem CoreCursor.headScoped
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
@@ -1046,6 +1074,454 @@ theorem CoreCursor.scratch_bound_of_location
   exact
     MixedAllocation.allocationOfState_scratch_bound_of_wellFormed
       hWF hLocation
+
+/-- Classify a declaration from its adjacent canonical cursor positions. -/
+theorem CoreCursor.declarationPlacement
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {name : Functions.Name} {value : Functions.Expr 1}
+    {rest : List Functions.Stmt}
+    {lowerState afterState : AllocationLowering.State}
+    {localsCtx afterLocals : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .let_ name value :: rest } lowerState localsCtx)
+    (tail :
+      CoreCursor root scope (name :: live)
+        { stmts := rest } afterState afterLocals)
+    (hPlanning :
+      tail.planning =
+        AllocationSupport.planStmt scope cursor.planning
+          (.let_ name value))
+    (hPlan : tail.plan = cursor.plan) :
+    DeclarationPlacement root.lowerCtx lowerState cursor.plan
+      live name := by
+  rcases cursor.currentStackOrder with
+    ⟨locals, hCurrentEnv, hCurrentLive, hCurrentOrder⟩
+  have hNext :
+      cursor.planning.allocation.nextSlot =
+        lowerState.allocation.nextSlot :=
+    congrArg AllocationSupport.CompileState.nextSlot
+      cursor.planningAllocation
+  have hTailEnv :
+      tail.planning.allocation.env =
+      ((name, cursor.planning.allocation.nextSlot) :: locals) ++
+        AllocationSupport.functionEnv root.slots := by
+    calc
+      tail.planning.allocation.env =
+          (AllocationSupport.planStmt scope cursor.planning
+            (.let_ name value)).allocation.env := by rw [hPlanning]
+      _ =
+          (name, cursor.planning.allocation.nextSlot) ::
+            cursor.planning.allocation.env := by
+              rw [AllocationSupport.planStmt_allocation_env]
+      _ =
+          ((name, cursor.planning.allocation.nextSlot) :: locals) ++
+            AllocationSupport.functionEnv root.slots := by
+              simp [hCurrentEnv]
+  have hTailLive :
+      name :: live =
+        (((name, cursor.planning.allocation.nextSlot) :: locals).map
+            Prod.fst) ++
+          (root.slots.returns.map Prod.fst).reverse ++
+          (root.slots.params.map Prod.fst).reverse := by
+    calc
+      name :: live =
+          name ::
+            (locals.map Prod.fst ++
+              (root.slots.returns.map Prod.fst).reverse ++
+              (root.slots.params.map Prod.fst).reverse) :=
+        congrArg (List.cons name) hCurrentLive
+      _ =
+          (((name, cursor.planning.allocation.nextSlot) :: locals).map
+              Prod.fst) ++
+            (root.slots.returns.map Prod.fst).reverse ++
+            (root.slots.params.map Prod.fst).reverse := rfl
+  have hTailOrder :=
+    tail.currentStackOrder_of_active
+      ((name, cursor.planning.allocation.nextSlot) :: locals)
+      hTailEnv hTailLive
+  rw [hPlan] at hTailOrder
+  have hLookupPlanning :
+      AllocationSupport.lookupSlot? name
+          tail.planning.allocation.env =
+        some cursor.planning.allocation.nextSlot := by
+    rw [hPlanning, AllocationSupport.planStmt_allocation_env]
+    simp [AllocationSupport.lookupSlot?]
+  have hLookupAfter :
+      AllocationSupport.lookupSlot? name afterState.allocation.env =
+        some lowerState.allocation.nextSlot := by
+    rw [← tail.planningAllocation, ← hNext]
+    exact hLookupPlanning
+  cases hStack :
+      AllocationLowering.isStackSlot root.lowerCtx
+        lowerState.allocation.nextSlot with
+  | true =>
+      obtain ⟨planDepth, hLocation⟩ :=
+        tail.location_stack_of_lookup_aux hLookupAfter hStack
+      rw [hPlan] at hLocation
+      have hSlotMem :
+          lowerState.allocation.nextSlot ∈ compilation.stackSlots := by
+        simpa [root.lowerCtxShared.stackSlots] using
+          (AllocationLowering.isStackSlot_eq_true_iff
+            root.lowerCtx lowerState.allocation.nextSlot).mp hStack
+      have hConsOrder :
+          MixedAllocation.stackOrder compilation.stackSlots
+              ((name, lowerState.allocation.nextSlot) :: locals) =
+            name ::
+              MixedAllocation.stackOrder compilation.stackSlots locals := by
+        simp [MixedAllocation.stackOrder, MixedAllocation.stackEntries,
+          hSlotMem]
+      refine .stack lowerState.allocation.nextSlot planDepth rfl hStack
+        hLocation ?_
+      calc
+        AllocationInteractionRelation.currentStackOrder
+            cursor.plan (name :: live) =
+            MixedAllocation.stackOrder compilation.stackSlots
+                ((name, cursor.planning.allocation.nextSlot) :: locals) ++
+              MixedAllocation.stackOrder compilation.stackSlots
+                  root.slots.returns.reverse ++
+              MixedAllocation.stackOrder compilation.stackSlots
+                  root.slots.params.reverse := hTailOrder
+        _ =
+            MixedAllocation.stackOrder compilation.stackSlots
+                ((name, lowerState.allocation.nextSlot) :: locals) ++
+              MixedAllocation.stackOrder compilation.stackSlots
+                  root.slots.returns.reverse ++
+              MixedAllocation.stackOrder compilation.stackSlots
+                  root.slots.params.reverse := by rw [hNext]
+        _ =
+            name ::
+              (MixedAllocation.stackOrder compilation.stackSlots locals ++
+                MixedAllocation.stackOrder compilation.stackSlots
+                    root.slots.returns.reverse ++
+                MixedAllocation.stackOrder compilation.stackSlots
+                    root.slots.params.reverse) := by
+          rw [hConsOrder]
+          simp [List.append_assoc]
+        _ = name ::
+            AllocationInteractionRelation.currentStackOrder
+              cursor.plan live := by
+          rw [hCurrentOrder]
+  | false =>
+      have hLocation :=
+        tail.location_scratch_of_lookup_aux hLookupAfter hStack
+      rw [hPlan] at hLocation
+      have hSlotNotMem :
+          lowerState.allocation.nextSlot ∉ compilation.stackSlots := by
+        simpa [root.lowerCtxShared.stackSlots] using
+          (AllocationLowering.isStackSlot_eq_false_iff
+            root.lowerCtx lowerState.allocation.nextSlot).mp hStack
+      have hConsOrder :
+          MixedAllocation.stackOrder compilation.stackSlots
+              ((name, lowerState.allocation.nextSlot) :: locals) =
+            MixedAllocation.stackOrder compilation.stackSlots locals := by
+        simp [MixedAllocation.stackOrder, MixedAllocation.stackEntries,
+          hSlotNotMem]
+      refine .scratch lowerState.allocation.nextSlot rfl hStack
+        hLocation ?_
+      calc
+        AllocationInteractionRelation.currentStackOrder
+            cursor.plan (name :: live) =
+            MixedAllocation.stackOrder compilation.stackSlots
+                ((name, cursor.planning.allocation.nextSlot) :: locals) ++
+              MixedAllocation.stackOrder compilation.stackSlots
+                  root.slots.returns.reverse ++
+              MixedAllocation.stackOrder compilation.stackSlots
+                  root.slots.params.reverse := hTailOrder
+        _ =
+            MixedAllocation.stackOrder compilation.stackSlots
+                ((name, lowerState.allocation.nextSlot) :: locals) ++
+              MixedAllocation.stackOrder compilation.stackSlots
+                  root.slots.returns.reverse ++
+              MixedAllocation.stackOrder compilation.stackSlots
+                  root.slots.params.reverse := by rw [hNext]
+        _ =
+            MixedAllocation.stackOrder compilation.stackSlots locals ++
+              MixedAllocation.stackOrder compilation.stackSlots
+                  root.slots.returns.reverse ++
+              MixedAllocation.stackOrder compilation.stackSlots
+                  root.slots.params.reverse := by rw [hConsOrder]
+        _ = AllocationInteractionRelation.currentStackOrder
+            cursor.plan live := hCurrentOrder.symm
+
+/-- Construct the exact post-declaration context selected by the real pass. -/
+theorem CoreCursor.letContext
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {name : Functions.Name} {value : Functions.Expr 1}
+    {rest : List Functions.Stmt}
+    {beforeState afterState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx}
+    {beforeMode : ActivationMode}
+    {lowered : List Locals.Stmt}
+    {compiled : List Expressions.Stmt}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .let_ name value :: rest }
+        beforeState beforeLocals)
+    (tail :
+      CoreCursor root scope (name :: live)
+        { stmts := rest } afterState afterLocals)
+    (hPlanning :
+      tail.planning =
+        AllocationSupport.planStmt scope cursor.planning
+          (.let_ name value))
+    (hPlan : tail.plan = cursor.plan)
+    (hBefore :
+      AllocationContext.ActivationExprContext
+        root.lowerCtx beforeState beforeLocals cursor.plan
+        live beforeMode)
+    (hLower :
+      AllocationLowering.lowerStmt root.lowerCtx root.returns
+          beforeState (.let_ name value) =
+        some (lowered, afterState))
+    (hCompile :
+      Locals.Block.compileOpen beforeLocals { stmts := lowered } =
+        some (compiled, afterLocals)) :
+    ∃ afterMode,
+      AllocationContext.ActivationExprContext
+          root.lowerCtx afterState afterLocals cursor.plan
+          (name :: live) afterMode ∧
+        AllocationContext.DeclarationModeTransition
+          cursor.plan name beforeMode afterMode := by
+  have hPlacement := cursor.declarationPlacement tail hPlanning hPlan
+  have hNameFrame : name ≠ root.lowerCtx.frameName := by
+    intro hEq
+    apply tail.frameName_not_mem_live
+    simp [hEq, root.lowerCtxShared.frameName]
+  have hAfterSlot :
+      ∀ localName, localName ∈ name :: live →
+        ∃ slot,
+          AllocationSupport.lookupSlot?
+              localName afterState.allocation.env =
+            some slot :=
+    fun localName hLive => tail.lookupSlot_of_live hLive
+  have hAfterStackLocation :
+      ∀ localName slot,
+        localName ∈ name :: live →
+        AllocationSupport.lookupSlot?
+            localName afterState.allocation.env =
+          some slot →
+        AllocationLowering.isStackSlot root.lowerCtx slot = true →
+        ∃ planDepth,
+          cursor.plan.location? localName =
+            some (.stack planDepth) := by
+    intro localName slot _hLive hLookup hStack
+    have hLocation := tail.location_stack_of_lookup hLookup hStack
+    rw [hPlan] at hLocation
+    exact hLocation
+  have hAfterScratchLocation :
+      ∀ localName slot,
+        localName ∈ name :: live →
+        AllocationSupport.lookupSlot?
+            localName afterState.allocation.env =
+          some slot →
+        AllocationLowering.isStackSlot root.lowerCtx slot = false →
+        cursor.plan.location? localName = some (.scratch slot) := by
+    intro localName slot _hLive hLookup hScratch
+    have hLocation := tail.location_scratch_of_lookup hLookup hScratch
+    rw [hPlan] at hLocation
+    exact hLocation
+  cases hPlacement with
+  | stack slot planDepth hSlot hStack hLocation hOrder =>
+      subst slot
+      cases hLowerValue :
+          AllocationLowering.lowerExpr root.lowerCtx beforeState value with
+      | none =>
+          simp [AllocationLowering.lowerStmt, hLowerValue] at hLower
+      | some loweredValue =>
+          simp [AllocationLowering.lowerStmt, hLowerValue,
+            AllocationSupport.allocateName, hStack] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          cases hValueCode :
+              Locals.Expr.compileCode beforeLocals 0 loweredValue with
+          | none =>
+              simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                hValueCode] at hCompile
+          | some valueCode =>
+              simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                Locals.codeStmt, hValueCode] at hCompile
+              rcases hCompile with ⟨rfl, rfl⟩
+              cases hBefore with
+              | stack hBeforeStack =>
+                  have hAfterOnly :
+                      LiveStackOnly cursor.plan (name :: live) := by
+                    intro localName scratchSlot hLive hScratchLocation
+                    rcases List.mem_cons.mp hLive with hHead | hTail
+                    · subst localName
+                      rw [hLocation] at hScratchLocation
+                      simp at hScratchLocation
+                    · exact
+                        hBeforeStack.liveStackOnly
+                          localName scratchSlot hTail hScratchLocation
+                  have hAfterLocation :
+                      ∀ localName, localName ∈ name :: live →
+                        ∃ planDepth,
+                          cursor.plan.location? localName =
+                            some (.stack planDepth) := by
+                    intro localName hLive
+                    obtain ⟨localSlot, hLookup⟩ :=
+                      hAfterSlot localName hLive
+                    by_cases hLocalStack :
+                        AllocationLowering.isStackSlot
+                          root.lowerCtx localSlot = true
+                    · exact
+                        hAfterStackLocation localName localSlot hLive
+                          hLookup hLocalStack
+                    · have hLocalScratch :
+                          AllocationLowering.isStackSlot
+                              root.lowerCtx localSlot =
+                            false :=
+                        Bool.eq_false_of_not_eq_true hLocalStack
+                      have hScratchLocation :=
+                        hAfterScratchLocation localName localSlot hLive
+                          hLookup hLocalScratch
+                      exact
+                        False.elim
+                          (hAfterOnly localName localSlot hLive
+                            hScratchLocation)
+                  refine ⟨.stack, ?_, .stack planDepth hLocation⟩
+                  apply
+                    AllocationContext.ActivationExprContext.stack_of_layout
+                      cursor.planWF
+                  · simp [Locals.Ctx.withLayout, hBeforeStack.layout]
+                  · simpa [hBeforeStack.stackOrder] using hOrder
+                  · simp [Ne.symm hNameFrame, hBeforeStack.frameAbsent]
+                  · exact hAfterOnly
+                  · exact hAfterLocation
+                  · exact hAfterSlot
+              | @scratch frameDepth frameWords hBeforeScratch =>
+                  refine
+                    ⟨.scratch (frameDepth + 1) frameWords, ?_,
+                      .stack planDepth hLocation⟩
+                  apply
+                    AllocationContext.ActivationExprContext.scratch_of_layout
+                      cursor.planWF
+                  · simp [Locals.Ctx.withLayout, hBeforeScratch.layout]
+                  · rw [hBeforeScratch.bodyLayout]
+                    simp [hOrder]
+                  · rw [hOrder]
+                    simp [hBeforeScratch.currentStackOrder_length]
+                  · have hFrame :=
+                      tail.frameName_not_mem_currentStackOrder
+                    rw [hPlan] at hFrame
+                    simpa [root.lowerCtxShared.frameName] using hFrame
+                  · exact hAfterSlot
+                  · exact hAfterStackLocation
+                  · exact hAfterScratchLocation
+  | scratch slot hSlot hStack hLocation hOrder =>
+      subst slot
+      cases hBefore with
+      | stack hBeforeStack =>
+          cases hLowerValue :
+              AllocationLowering.lowerExpr
+                root.lowerCtx beforeState value with
+          | none =>
+              simp [AllocationLowering.lowerStmt, hLowerValue] at hLower
+          | some loweredValue =>
+              simp [AllocationLowering.lowerStmt, hLowerValue,
+                AllocationSupport.allocateName, hStack,
+                hBeforeStack.frameAbsent] at hLower
+      | @scratch frameDepth frameWords hBeforeScratch =>
+          cases hLowerValue :
+              AllocationLowering.lowerExpr
+                root.lowerCtx beforeState value with
+          | none =>
+              simp [AllocationLowering.lowerStmt, hLowerValue] at hLower
+          | some loweredValue =>
+              have hFrameMember :
+                  root.lowerCtx.frameName ∈ beforeState.layout :=
+                Locals.Layout.mem_of_lookupDepth?_eq_some
+                  hBeforeScratch.frame
+              simp [AllocationLowering.lowerStmt, hLowerValue,
+                AllocationSupport.allocateName, hStack,
+                hFrameMember] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              cases hValueCode :
+                  Locals.Expr.compileCode beforeLocals 0 loweredValue with
+              | none =>
+                  have hFrameLocals :
+                      Locals.Layout.lookupDepth?
+                          root.lowerCtx.frameName beforeLocals.layout =
+                        some (frameDepth + 1) := by
+                    rw [hBeforeScratch.layout]
+                    exact hBeforeScratch.frame
+                  simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                    AllocationLowering.scratchStoreExpr,
+                    AllocationLowering.scratchAddressExpr,
+                    AllocationLowering.exprSeqTwo,
+                    Locals.Expr.compileCode, Locals.ExprSeq.compileCode,
+                    hValueCode, hFrameLocals] at hCompile
+              | some valueCode =>
+                  have hFrameLocals :
+                      Locals.Layout.lookupDepth?
+                          root.lowerCtx.frameName beforeLocals.layout =
+                        some (frameDepth + 1) := by
+                    rw [hBeforeScratch.layout]
+                    exact hBeforeScratch.frame
+                  cases hDup :
+                      Locals.StackOp.dup? (frameDepth + 2) with
+                  | none =>
+                      have hDup' :
+                          Locals.StackOp.dup?
+                              (1 + (frameDepth + 1)) = none := by
+                        simpa [Nat.add_assoc, Nat.add_comm,
+                          Nat.add_left_comm] using hDup
+                      simp [Locals.Block.compileOpen,
+                        Locals.Stmt.compile,
+                        AllocationLowering.scratchStoreExpr,
+                        AllocationLowering.scratchAddressExpr,
+                        AllocationLowering.exprSeqTwo,
+                        Locals.Expr.compileCode,
+                        Locals.ExprSeq.compileCode,
+                        hValueCode, hFrameLocals, hDup'] at hCompile
+                  | some op =>
+                      have hDup' :
+                          Locals.StackOp.dup?
+                              (1 + (frameDepth + 1)) = some op := by
+                        simpa [Nat.add_assoc, Nat.add_comm,
+                          Nat.add_left_comm] using hDup
+                      have hStoreCode :=
+                        AllocationLowering.scratchStoreExpr_compileCode
+                          (frameName := root.lowerCtx.frameName)
+                          (slot := beforeState.allocation.nextSlot)
+                          (offset := 0) hValueCode hFrameLocals hDup'
+                      simp only [Locals.Block.compileOpen,
+                        Locals.Stmt.compile] at hCompile
+                      rw [hStoreCode] at hCompile
+                      simp [Locals.codeStmt] at hCompile
+                      rcases hCompile with ⟨rfl, rfl⟩
+                      refine
+                        ⟨.scratch frameDepth frameWords, ?_,
+                          .scratch frameDepth frameWords
+                            beforeState.allocation.nextSlot hLocation⟩
+                      apply
+                        AllocationContext.ActivationExprContext.scratch_of_layout
+                          cursor.planWF
+                      · exact hBeforeScratch.layout
+                      · rw [hOrder]
+                        exact hBeforeScratch.bodyLayout
+                      · rw [hOrder]
+                        exact
+                          hBeforeScratch.currentStackOrder_length.symm
+                      · have hFrame :=
+                          tail.frameName_not_mem_currentStackOrder
+                        rw [hPlan] at hFrame
+                        simpa [root.lowerCtxShared.frameName] using hFrame
+                      · exact hAfterSlot
+                      · exact hAfterStackLocation
+                      · exact hAfterScratchLocation
 
 end AllocationInteractionCursor
 end Functions
