@@ -437,5 +437,13 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 #print axioms EvmCompiler.Yul.InteractionSemantics.Exec.switch_succ
 #print axioms EvmCompiler.Yul.InteractionSemantics.Exec.for_succ
 #print axioms EvmCompiler.Yul.FunctionsInteractionRelation.ScopedOutcomeRel.of_regular_target
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedResultRel.regular_state
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.of_fixed
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.nil
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.singleton
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.cons
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_brk
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_cont
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_leave
 #print axioms EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.MemoryFamily.LogFamily.closedSpec
 #print axioms EvmCompiler.Functions.AllocationInteractionPrimitiveResource.log_resourceForward
