@@ -41,6 +41,7 @@ import EvmCompiler.Functions.AllocationInteractionLeave
 import EvmCompiler.Functions.AllocationInteractionTerminal
 import EvmCompiler.Functions.AllocationInteractionCursor
 import EvmCompiler.Functions.AllocationInteractionForward
+import EvmCompiler.Functions.AllocationInteractionCall
 import EvmCompiler.Functions.AllocationInteractionComposition
 import EvmCompiler.Functions.AllocationInteractionLeaf
 import EvmCompiler.Functions.AllocationInteractionStatement
@@ -288,6 +289,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionForward.CoreCursor.leave_head
 #check EvmCompiler.Functions.AllocationInteractionForward.CoreCursor.terminal_head
 #check EvmCompiler.Functions.AllocationInteractionForward.CoreCursor.terminalArgs_head
+#check EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Artifact.of_find
+#check EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Artifact.lowerCtxShared
+#check EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Artifact.bodyScoped
 #check EvmCompiler.Functions.AllocationInteractionComposition.ControlResultRel
 #check EvmCompiler.Functions.AllocationInteractionComposition.lift_fixed
 #check EvmCompiler.Functions.AllocationInteractionComposition.cons

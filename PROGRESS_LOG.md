@@ -31950,3 +31950,13 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   focused builds, the 1323-job verification root, architecture guard,
   touched-Lean hole scan, axiom audit, and `git diff --check` passed. New head
   theorems use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 23:45:00 PDT - architecture/functions-selected-callee - extracted
+  `AllocationInteractionCall.SelectedCallee.Artifact` from the old observer
+  call module. The artifact is parameterized by canonical `Compilation` and is
+  checked from source function lookup plus real whole-program lowering, with
+  no observer semantics, generated public evidence, or duplicated validator
+  equation.
+- 2026-06-17 23:46:00 PDT - validation/functions-selected-callee - focused
+  build, the 1324-job verification root, architecture guard, touched-Lean hole
+  scan, axiom audit, and `git diff --check` passed; selected-callee constructors
+  use only `[propext, Classical.choice, Quot.sound]`.
