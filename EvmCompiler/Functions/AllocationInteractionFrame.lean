@@ -206,6 +206,72 @@ theorem of_machine_eq {config : Config} {depth : Nat}
     (by simpa [hMachine]) (by simpa [hMachine])
     (by simpa [hMachine] using hReady.activeNoWrap)
 
+/-- A compiler spill disjoint from the allocator cell preserves readiness. -/
+theorem of_mstore_disjoint
+    {config : Config} {depth address : Nat} {value : Word}
+    {before after : TargetState}
+    (hReady : AllocatorReady config depth before)
+    (hMachine :
+      after.evm.toMachineState =
+        before.evm.toMachineState.mstore
+          (EvmYul.UInt256.ofNat address) value)
+    (hAddress : (EvmYul.UInt256.ofNat address).toNat = address)
+    (hHost : address + MemoryContract.wordBytes < USize.size)
+    (hDisjoint :
+      config.allocatorCell + MemoryContract.wordBytes ≤ address ∨
+        address + MemoryContract.wordBytes ≤ config.allocatorCell) :
+    AllocatorReady config depth after := by
+  have hCellLt : config.allocatorCell < EvmYul.UInt256.size :=
+    lt_of_le_of_lt
+      (Nat.le_add_right config.allocatorCell MemoryContract.wordBytes)
+      (hReady.cellActive.trans_lt hReady.activeNoWrap)
+  have hCell :
+      (EvmYul.UInt256.ofNat config.allocatorCell).toNat =
+        config.allocatorCell :=
+    EvmYul.UInt256.toNat_ofNat_of_lt hCellLt
+  have hLookup :
+      after.evm.toMachineState.lookupMemory
+            (EvmYul.UInt256.ofNat config.allocatorCell) =
+        before.evm.toMachineState.lookupMemory
+            (EvmYul.UInt256.ofNat config.allocatorCell) := by
+    rw [hMachine]
+    exact
+      Compiler.MemoryRelation.lookupMemory_mstore_disjoint_growing
+        before.evm.toMachineState address config.allocatorCell value
+        hAddress hCell
+        (by simpa [MemoryContract.wordBytes] using hHost)
+        (by simpa [MemoryContract.wordBytes] using hReady.cellAllocated)
+        (by simpa [MemoryContract.wordBytes] using hReady.cellActive)
+        (by simpa [MemoryContract.wordBytes] using hReady.activeNoWrap)
+        (by simpa [MemoryContract.wordBytes] using hDisjoint)
+  have hAddressEnd :
+      address + MemoryContract.wordBytes < EvmYul.UInt256.size :=
+    lt_trans hHost Compiler.MemoryRelation.usize_size_lt_uint256_size
+  have hActive :
+      before.evm.activeWords.toNat ≤ after.evm.activeWords.toNat := by
+    rw [hMachine]
+    exact
+      Compiler.MemoryRelation.activeWords_toNat_le_mstore
+        before.evm.toMachineState address value hAddressEnd
+  have hMemory :
+      before.evm.toMachineState.memory.size ≤
+        after.evm.toMachineState.memory.size := by
+    rw [hMachine]
+    simpa [EvmYul.MachineState.mstore] using
+      (Compiler.MemoryRelation.writeWord_memory_size_ge
+        before.evm.toMachineState address value hAddress
+        (by simpa [MemoryContract.wordBytes] using hHost))
+  have hNoWrap :
+      after.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size := by
+    rw [hMachine]
+    simpa [MemoryContract.wordBytes] using
+      (Compiler.MemoryRelation.mstore_activeBytes_lt_size_of_activeBytes_lt_size
+        before.evm.toMachineState address value
+        (by simpa [MemoryContract.wordBytes] using hReady.activeNoWrap)
+        (by simpa [MemoryContract.wordBytes] using hHost))
+  exact hReady.of_lookup_growth hLookup hActive hMemory hNoWrap
+
 end AllocatorReady
 
 /-- Ordinary execution at a fixed allocator depth protects that depth too. -/
@@ -393,6 +459,67 @@ theorem of_suspendedEffect {config : Config} {depth : Nat}
     growth := hEffect.growth
     prefixStable := hEffect.prefixStable }
 
+/--
+One target `MSTORE` above an independently chosen protected prefix preserves
+a bounded allocator effect, even when a deeper callee frame remains ready.
+-/
+theorem of_mstore_above
+    {config : Config} {finalDepth protectedBound address : Nat}
+    {value : Word} {before after : TargetState}
+    (hReady : AllocatorReady config finalDepth before)
+    (hMachine :
+      after.evm.toMachineState =
+        before.evm.toMachineState.mstore
+          (EvmYul.UInt256.ofNat address) value)
+    (hAddress : (EvmYul.UInt256.ofNat address).toNat = address)
+    (hHost : address + MemoryContract.wordBytes < USize.size)
+    (hAllocatorDisjoint :
+      config.allocatorCell + MemoryContract.wordBytes ≤ address ∨
+        address + MemoryContract.wordBytes ≤ config.allocatorCell)
+    (hAbove :
+      ∀ {protectedDepth : Nat},
+        protectedDepth < protectedBound →
+        baseAt config protectedDepth ≤ address) :
+    BoundedEffect config finalDepth protectedBound before after := by
+  have hFinalReady :=
+    hReady.of_mstore_disjoint hMachine hAddress hHost hAllocatorDisjoint
+  have hAddressEnd :
+      address + MemoryContract.wordBytes < EvmYul.UInt256.size :=
+    lt_trans hHost Compiler.MemoryRelation.usize_size_lt_uint256_size
+  have hGrowth : TargetGrowth before after := by
+    refine ⟨?_, ?_⟩
+    · rw [hMachine]
+      exact
+        Compiler.MemoryRelation.activeWords_toNat_le_mstore
+          before.evm.toMachineState address value hAddressEnd
+    · rw [hMachine]
+      simpa [EvmYul.MachineState.mstore] using
+        (Compiler.MemoryRelation.writeWord_memory_size_ge
+          before.evm.toMachineState address value hAddress
+          (by simpa [MemoryContract.wordBytes] using hHost))
+  refine
+    { ready := hFinalReady
+      growth := hGrowth
+      prefixStable := ?_ }
+  intro protectedDepth hDepth _hBudget
+  refine { growth := hGrowth, lookup := ?_ }
+  intro query _hStart hEnd hReadMemory hReadActive
+  have hQueryLt : query < EvmYul.UInt256.size :=
+    lt_of_le_of_lt
+      (Nat.le_add_right query MemoryContract.wordBytes)
+      (hReadActive.trans_lt hReady.activeNoWrap)
+  have hQuery : (EvmYul.UInt256.ofNat query).toNat = query :=
+    EvmYul.UInt256.toNat_ofNat_of_lt hQueryLt
+  rw [hMachine]
+  exact
+    Compiler.MemoryRelation.lookupMemory_mstore_disjoint_growing
+      before.evm.toMachineState address query value hAddress hQuery
+      (by simpa [MemoryContract.wordBytes] using hHost)
+      (by simpa [MemoryContract.wordBytes] using hReadMemory)
+      (by simpa [MemoryContract.wordBytes] using hReadActive)
+      (by simpa [MemoryContract.wordBytes] using hReady.activeNoWrap)
+      (Or.inl (hEnd.trans (hAbove hDepth)))
+
 end BoundedEffect
 
 /-- Stack-only programs need no allocator; scratch programs use one config. -/
@@ -568,6 +695,27 @@ theorem baseAt_mono (config : Config) : Monotone (baseAt config) := by
   unfold baseAt
   exact Nat.add_le_add_left
     (Nat.mul_le_mul_right (bytes config) hLe) config.firstFrame
+
+namespace ActivationOwned
+
+/-- A current-frame spill starts above every strictly suspended prefix. -/
+theorem baseAt_le_scratchAddress_of_lt
+    {config : Config}
+    {allocatorDepth protectedDepth frameBase frameDepth frameWords slot : Nat}
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch frameDepth frameWords))
+    (hDepth : protectedDepth < allocatorDepth) :
+    baseAt config protectedDepth ≤ scratchAddress frameBase slot := by
+  cases hOwned with
+  | @scratch previousDepth _ _ _ hBase _hWords =>
+      rw [hBase]
+      exact
+        (baseAt_mono config (by omega)).trans
+          (Nat.le_add_right (baseAt config previousDepth)
+            (MemoryContract.wordBytes * slot))
+
+end ActivationOwned
 
 theorem budget_mono {config : Config} {smaller larger : Nat}
     (hDepth : smaller ≤ larger) (hBudget : Budget config larger) :

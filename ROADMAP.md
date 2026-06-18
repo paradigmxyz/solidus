@@ -108,10 +108,12 @@ boundaries remain active work.
   - [x] compiler-selected scratch-callee entry from exact acquire, canonical
     arguments, allocation artifacts, and an orthogonal argument-resource
     effect;
-  - [ ] derive the argument-resource effect and check scratch-frame release
-    for nested calls;
-  - [ ] caller argument, selected-callee, return-writeback, scratch-release,
-    and exact-tail interaction composition;
+  - [x] derive the canonical argument-resource effect and check exact
+    scratch-frame release for nested calls;
+  - [x] pass-owned caller return writeback through the exact emitted
+    stack/scratch target code, including deeper-callee bounded effects;
+  - [ ] compose caller arguments, selected-callee recursion, return writeback,
+    scratch release, and the exact tail;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

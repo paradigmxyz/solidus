@@ -12,10 +12,13 @@ import EvmCompiler.Functions.AllocationInteractionFrameExecution
 import EvmCompiler.Functions.AllocationInteractionFramePreservation
 import EvmCompiler.Functions.AllocationInteractionPrimitiveResource
 import EvmCompiler.Functions.AllocationInteractionPreparedCallResources
+import EvmCompiler.Functions.AllocationInteractionCallTargets
 import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 
 #check EvmCompiler.Simulation.OpenWorld
+#check EvmCompiler.Functions.AllocationInteractionCall.CallTargets.forward
+#check EvmCompiler.Functions.AllocationInteractionCall.CallTargets.forward_bounded
 #check EvmCompiler.Simulation.OpenWorld.installYulShared
 #check EvmCompiler.Simulation.OpenWorld.installEVMShared
 #check EvmCompiler.Simulation.Interaction.bind
@@ -261,3 +264,7 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Functions.AllocationInteractionFramePreservation.scratchFrameAcquire_activation_correct
 #print axioms EvmCompiler.Functions.AllocationInteractionFramePreservation.scratchFrameRelease_activation_correct
 #print axioms EvmCompiler.Functions.AllocationInteractionCall.PreparedArguments.scratch
+#print axioms EvmCompiler.Functions.AllocationInteractionRelation.ActivationStateRel.assign_stack_live_at
+#print axioms EvmCompiler.Functions.AllocationInteractionFrame.BoundedEffect.of_mstore_above
+#print axioms EvmCompiler.Functions.AllocationInteractionCall.CallTargets.forward
+#print axioms EvmCompiler.Functions.AllocationInteractionCall.CallTargets.forward_bounded
