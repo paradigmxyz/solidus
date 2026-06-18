@@ -1,5 +1,6 @@
 import EvmCompiler.Functions.AllocationInteractionRelation
 import EvmCompiler.Functions.AllocationInteractionPrimitive
+import EvmCompiler.Functions.AllocationContext
 import EvmCompiler.Functions.AllocationLowering
 import EvmCompiler.Locals.InteractionPreservation
 
@@ -76,6 +77,28 @@ theorem literal_of_lower_compile
   subst code
   exact literal_open value hRel
 
+theorem literal_activation_open
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode} {source : SourceState} {target : TargetState}
+    (value : Word)
+    (hRel :
+      ActivationStateRel contract plan live stackOffset frameBase mode
+        source target) :
+    Simulation.Interaction.Rel
+      (AllocationInteractionPrimitive.ActivationExprOutcomeRel
+        contract plan live stackOffset frameBase 1 mode target)
+      (Functions.InteractionSemantics.Expr.openEval (.lit value) source)
+      (Structured.InteractionSemantics.Code.openRun [.push value] target) := by
+  rw [Locals.InteractionPreservation.Code.openRun_push]
+  change
+    Simulation.Interaction.Rel _
+      (.done (.ok (source, [value])))
+      (.done (.ok (StateRel.pushTargetBy 33 value target)))
+  apply Simulation.Interaction.Rel.done
+  apply Simulation.Interaction.ExceptRel.ok
+  exact ActivationExprResultRel.literal value hRel
+
 /-- A live stack-allocated local is read by the exact compiler-selected DUP. -/
 theorem stack_var_open
     {contract : MemoryContract.Contract} {plan : Plan}
@@ -124,6 +147,269 @@ theorem stack_var_open
   simp [StateRel.pushTargetBy,
     EvmYul.EVM.State.replaceStackAndIncrPC,
     EvmYul.EVM.State.incrPC]
+
+theorem stack_var_activation_open
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase planDepth depth : Nat}
+    {mode : ActivationMode}
+    {name : Locals.Name} {value : Word} {op : Structured.BasicOp}
+    {source : SourceState} {target : TargetState}
+    (hRel :
+      ActivationStateRel contract plan live stackOffset frameBase mode
+        source target)
+    (hLive : name ∈ live)
+    (hLocation : plan.location? name = some (.stack planDepth))
+    (hDepth :
+      Locals.Layout.lookupDepth?
+          name (AllocationInteractionRelation.currentStackOrder plan live) =
+        some (depth + 1))
+    (hSource : source.vars name = some value)
+    (hDup : Locals.StackOp.dup? (stackOffset + depth + 1) = some op) :
+    Simulation.Interaction.Rel
+      (AllocationInteractionPrimitive.ActivationExprOutcomeRel
+        contract plan live stackOffset frameBase 1 mode target)
+      (Functions.InteractionSemantics.Expr.openEval (.var name) source)
+      (Structured.InteractionSemantics.Code.openRun [.op op] target) := by
+  obtain ⟨actualDepth, hActualDepth, hTargetValue⟩ :=
+    hRel.state.store name (.stack planDepth) hLive hLocation
+  rw [hDepth] at hActualDepth
+  cases hActualDepth
+  have hTarget :
+      target.evm.stack[stackOffset + depth]? = some value := by
+    rw [hTargetValue, hSource]
+  rw [Locals.InteractionPreservation.Code.openRun_dup hDup hTarget]
+  unfold Functions.InteractionSemantics.Expr.openEval
+    Locals.InteractionSemantics.Expr.openEval
+    Locals.Source.Effectful.Expr.Control.eval
+  simp only [Locals.InteractionSemantics.stateModel,
+    Locals.Source.Effectful.Ordinary.stateModel,
+    Locals.Source.Effectful.StateModel.vars, id_eq, hSource]
+  change
+    Simulation.Interaction.Rel _
+      (.done (.ok (source, [value])))
+      (.done (.ok (StateRel.pushTargetBy 1 value target)))
+  apply Simulation.Interaction.Rel.done
+  apply Simulation.Interaction.ExceptRel.ok
+  refine ⟨hRel.push_target_by 1 value, rfl, ?_⟩
+  simp [StateRel.pushTargetBy,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC]
+
+private theorem openRun_add
+    {target : TargetState} {right left : Word} {rest : List Word}
+    (hStack : target.evm.stack = right :: left :: rest) :
+    Structured.InteractionSemantics.Code.openRun [.op .add] target =
+      .done
+        (.ok
+          (StateRel.contractTargetBy 1
+            (EvmYul.UInt256.add right left) rest target)) := by
+  rw [Structured.InteractionSemantics.Code.openRun_single]
+  unfold Structured.InteractionSemantics.BasicInstr.openStep
+    Structured.InteractionSemantics.BasicInstr.openStepEVM
+  simp only [Structured.BasicOp.toPrimOp]
+  rw [Assembly.InteractionSemantics.PrimOp.openStep_closed
+    (by rfl) (by decide) (by decide)]
+  rw [Assembly.PrimOp.step_eq_continuingStep_run
+    (by rfl : Assembly.PrimOp.add.continuingStep? =
+      some (.bin EvmYul.UInt256.add))]
+  unfold Assembly.PrimStep.run EvmYul.EVM.execBinOp
+  rw [hStack]
+  simp [Simulation.Interaction.map,
+    Simulation.Interaction.pure, EvmYul.Stack.pop2, EvmYul.Stack.push,
+    Id.run, StateRel.contractTargetBy,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC]
+
+private theorem openRun_mload
+    {target : TargetState} {address value : Word} {rest : List Word}
+    (hStack : target.evm.stack = address :: rest)
+    (hLoad :
+      target.evm.toMachineState.mload address =
+        (value, target.evm.toMachineState)) :
+    Structured.InteractionSemantics.Code.openRun [.op .mload] target =
+      .done (.ok (StateRel.contractTargetBy 1 value rest target)) := by
+  rw [Structured.InteractionSemantics.Code.openRun_single]
+  unfold Structured.InteractionSemantics.BasicInstr.openStep
+    Structured.InteractionSemantics.BasicInstr.openStepEVM
+  simp only [Structured.BasicOp.toPrimOp]
+  rw [Assembly.InteractionSemantics.PrimOp.openStep_closed
+    (by rfl) (by decide) (by decide)]
+  rw [Assembly.PrimOp.step_eq_continuingStep_run
+    (by rfl : Assembly.PrimOp.mload.continuingStep? = some .mload)]
+  unfold Assembly.PrimStep.run
+  rw [hStack]
+  simp only [EvmYul.Stack.pop]
+  rw [hLoad]
+  simp [Simulation.Interaction.map,
+    Simulation.Interaction.pure, StateRel.contractTargetBy,
+    EvmYul.Stack.push, EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC]
+
+/-- A scratch-allocated local is read through the exact emitted frame load. -/
+theorem scratch_var_activation_open
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords slot : Nat}
+    {name : Locals.Name} {value : Word} {op : Structured.BasicOp}
+    {source : SourceState} {target : TargetState}
+    (hRel :
+      ScratchStateRel contract plan live stackOffset frameBase
+        frameDepth frameWords source target)
+    (hLive : name ∈ live)
+    (hLocation : plan.location? name = some (.scratch slot))
+    (hSource : source.vars name = some value)
+    (hDup : Locals.StackOp.dup? (stackOffset + frameDepth + 1) = some op) :
+    Simulation.Interaction.Rel
+      (AllocationInteractionPrimitive.ActivationExprOutcomeRel
+        contract plan live stackOffset frameBase 1
+        (.scratch frameDepth frameWords) target)
+      (Functions.InteractionSemantics.Expr.openEval (.var name) source)
+      (Structured.InteractionSemantics.Code.openRun
+        [.op op, .push (AllocationSupport.slotOffset slot),
+          .op .add, .op .mload]
+        target) := by
+  let frameWord := EvmYul.UInt256.ofNat frameBase
+  let offsetWord := AllocationSupport.slotOffset slot
+  let address := EvmYul.UInt256.add offsetWord frameWord
+  let afterDup := StateRel.pushTarget frameWord target
+  let afterPush := StateRel.pushTargetBy 33 offsetWord afterDup
+  let afterAdd :=
+    StateRel.contractTargetBy 1 address target.evm.stack afterPush
+  let targetFinal :=
+    StateRel.contractTargetBy 1 value target.evm.stack afterAdd
+  have hAddress :
+      address = EvmYul.UInt256.ofNat (scratchAddress frameBase slot) := by
+    change
+      EvmYul.UInt256.ofNat (32 * slot) + EvmYul.UInt256.ofNat frameBase =
+        EvmYul.UInt256.ofNat
+          (frameBase + MemoryContract.wordBytes * slot)
+    rw [Assembly.UInt256_ofNat_add]
+    simp [MemoryContract.wordBytes, Nat.add_comm]
+  have hAfterDupRel :
+      ScratchStateRel contract plan live (stackOffset + 1) frameBase
+        frameDepth frameWords source afterDup :=
+    hRel.push_target_by 1 frameWord
+  have hAfterPushRel :
+      ScratchStateRel contract plan live (stackOffset + 2) frameBase
+        frameDepth frameWords source afterPush :=
+    hAfterDupRel.push_target_by 33 offsetWord
+  have hAfterPushStack :
+      afterPush.evm.stack = offsetWord :: frameWord :: target.evm.stack := by
+    rfl
+  have hAfterAddRel :
+      ScratchStateRel contract plan live (stackOffset + 1) frameBase
+        frameDepth frameWords source afterAdd :=
+    hAfterPushRel.contract_target_by hAfterPushStack 1
+  have hAfterAddStack :
+      afterAdd.evm.stack = address :: target.evm.stack := by
+    rfl
+  have hLoad :
+      afterAdd.evm.toMachineState.mload address =
+        (value, afterAdd.evm.toMachineState) := by
+    have hMachine := hAfterAddRel.mload_machine_eq hLive hLocation
+    have hStored :=
+      hAfterAddRel.base.store name (.scratch slot) hLive hLocation
+    rw [hSource] at hStored
+    simp only [Option.getD_some] at hStored
+    simpa [hAddress, hStored] using hMachine
+  have hFinalRel :
+      ScratchStateRel contract plan live (stackOffset + 1) frameBase
+        frameDepth frameWords source targetFinal :=
+    hAfterAddRel.replace_top_by hAfterAddStack 1
+  have hTargetRun :
+      Structured.InteractionSemantics.Code.openRun
+          [.op op, .push offsetWord, .op .add, .op .mload] target =
+        .done (.ok targetFinal) := by
+    calc
+      Structured.InteractionSemantics.Code.openRun
+          [.op op, .push offsetWord, .op .add, .op .mload] target =
+          Simulation.Interaction.bind
+            (Structured.InteractionSemantics.Code.openRun [.op op] target)
+            (Structured.InteractionSemantics.Code.openRun
+              [.push offsetWord, .op .add, .op .mload]) := by
+                simpa using
+                  Structured.InteractionSemantics.Code.openRun_append
+                    [.op op] [.push offsetWord, .op .add, .op .mload] target
+      _ = Structured.InteractionSemantics.Code.openRun
+            [.push offsetWord, .op .add, .op .mload] afterDup := by
+              rw [Locals.InteractionPreservation.Code.openRun_dup
+                hDup hRel.framePointer]
+              rfl
+      _ = Simulation.Interaction.bind
+            (Structured.InteractionSemantics.Code.openRun
+              [.push offsetWord] afterDup)
+            (Structured.InteractionSemantics.Code.openRun
+              [.op .add, .op .mload]) := by
+                simpa using
+                  Structured.InteractionSemantics.Code.openRun_append
+                    [.push offsetWord] [.op .add, .op .mload] afterDup
+      _ = Structured.InteractionSemantics.Code.openRun
+            [.op .add, .op .mload] afterPush := by
+              rw [Locals.InteractionPreservation.Code.openRun_push]
+              rfl
+      _ = Simulation.Interaction.bind
+            (Structured.InteractionSemantics.Code.openRun [.op .add] afterPush)
+            (Structured.InteractionSemantics.Code.openRun [.op .mload]) := by
+                simpa using
+                  Structured.InteractionSemantics.Code.openRun_append
+                    [.op .add] [.op .mload] afterPush
+      _ = Structured.InteractionSemantics.Code.openRun [.op .mload] afterAdd := by
+              rw [openRun_add hAfterPushStack]
+              rfl
+      _ = .done (.ok targetFinal) := openRun_mload hAfterAddStack hLoad
+  unfold Functions.InteractionSemantics.Expr.openEval
+    Locals.InteractionSemantics.Expr.openEval
+    Locals.Source.Effectful.Expr.Control.eval
+  simp only [Locals.InteractionSemantics.stateModel,
+    Locals.Source.Effectful.Ordinary.stateModel,
+    Locals.Source.Effectful.StateModel.vars, id_eq, hSource]
+  rw [hTargetRun]
+  apply Simulation.Interaction.Rel.done
+  apply Simulation.Interaction.ExceptRel.ok
+  refine ⟨ActivationStateRel.scratch hFinalRel, rfl, ?_⟩
+  rfl
+
+/--
+Compiler-facing variable preservation. The ordinary allocation artifact and
+compiler decide between a stack `DUP` and the scratch-frame load sequence.
+-/
+theorem var_of_lower_compile
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {name : Locals.Name} {value : Word}
+    {lowered : Locals.Expr 1} {code : Structured.Code}
+    {source : SourceState} {target : TargetState}
+    (hCtx :
+      AllocationContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan live mode)
+    (hLive : name ∈ live)
+    (hLower :
+      AllocationLowering.lowerExpr lowerCtx lowerState (.var name) =
+        some lowered)
+    (hCompile :
+      Locals.Expr.compileCode localsCtx stackOffset lowered = some code)
+    (hRel :
+      ActivationStateRel contract plan live stackOffset frameBase mode
+        source target)
+    (hSource : source.vars name = some value) :
+    Simulation.Interaction.Rel
+      (AllocationInteractionPrimitive.ActivationExprOutcomeRel
+        contract plan live stackOffset frameBase 1 mode target)
+      (Functions.InteractionSemantics.Expr.openEval (.var name) source)
+      (Structured.InteractionSemantics.Code.openRun code target) := by
+  cases AllocationContext.classify_activation_var
+      hCtx hLive hLower hCompile with
+  | @stack _ planDepth depth op hLocation hDepth _hDepthValid hDup =>
+      exact stack_var_activation_open hRel hLive hLocation hDepth hSource hDup
+  | scratch frameDepth frameWords slot op hLocation hDup =>
+      cases hRel with
+      | scratch state =>
+          exact scratch_var_activation_open
+            state hLive hLocation hSource hDup
 
 /-- Compose recursively checked arguments with one primitive capability. -/
 theorem prim_of_args

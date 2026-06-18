@@ -355,6 +355,12 @@ def pushTargetBy (pcDelta : Nat) (value : Word)
 def pushTarget (value : Word) (target : TargetState) : TargetState :=
   pushTargetBy 1 value target
 
+def contractTargetBy (pcDelta : Nat) (value : Word) (rest : List Word)
+    (target : TargetState) : TargetState :=
+  target.withEVM
+    (target.evm.replaceStackAndIncrPC
+      (value :: rest) (pcΔ := pcDelta))
+
 theorem shared
     {contract : MemoryContract.Contract} {plan : Plan}
     {live : List Locals.Name} {stackOffset frameBase : Nat}
@@ -402,6 +408,77 @@ theorem push_target
     StateRel contract plan live (stackOffset + 1) frameBase source
       (pushTarget value target) :=
   push_target_by 1 value hRel
+
+theorem contract_target_by
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {source : SourceState} {target : TargetState}
+    {right left value : Word} {rest : List Word}
+    (hRel :
+      StateRel contract plan live (stackOffset + 2) frameBase source target)
+    (hStack : target.evm.stack = right :: left :: rest)
+    (pcDelta : Nat) :
+    StateRel contract plan live (stackOffset + 1) frameBase source
+      (contractTargetBy pcDelta value rest target) := by
+  refine ⟨?_, ?_, ?_⟩
+  · simpa [contractTargetBy, EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.machine
+  · simpa [contractTargetBy, EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.world
+  · intro name location hLive hLocation
+    have hStored := hRel.store name location hLive hLocation
+    cases location with
+    | stack planDepth =>
+        rcases hStored with ⟨depth, hDepth, hValue⟩
+        refine ⟨depth, hDepth, ?_⟩
+        change
+          (value :: rest)[stackOffset + 1 + depth]? = source.vars name
+        change
+          target.evm.stack[stackOffset + 2 + depth]? = source.vars name
+          at hValue
+        rw [hStack] at hValue
+        have hRest : rest[stackOffset + depth]? = source.vars name := by
+          simpa [show stackOffset + 2 + depth =
+              (stackOffset + depth) + 2 by omega] using hValue
+        simpa [show stackOffset + 1 + depth =
+            (stackOffset + depth) + 1 by omega] using hRest
+    | scratch slot =>
+        simpa [contractTargetBy, EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC] using hStored
+
+theorem replace_top_by
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {source : SourceState} {target : TargetState}
+    {old value : Word} {rest : List Word}
+    (hRel :
+      StateRel contract plan live (stackOffset + 1) frameBase source target)
+    (hStack : target.evm.stack = old :: rest)
+    (pcDelta : Nat) :
+    StateRel contract plan live (stackOffset + 1) frameBase source
+      (contractTargetBy pcDelta value rest target) := by
+  refine ⟨?_, ?_, ?_⟩
+  · simpa [contractTargetBy, EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.machine
+  · simpa [contractTargetBy, EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.world
+  · intro name location hLive hLocation
+    have hStored := hRel.store name location hLive hLocation
+    cases location with
+    | stack planDepth =>
+        rcases hStored with ⟨depth, hDepth, hValue⟩
+        refine ⟨depth, hDepth, ?_⟩
+        change
+          (value :: rest)[stackOffset + 1 + depth]? = source.vars name
+        change
+          target.evm.stack[stackOffset + 1 + depth]? = source.vars name
+          at hValue
+        rw [hStack] at hValue
+        simpa [show stackOffset + 1 + depth =
+            (stackOffset + depth) + 1 by omega] using hValue
+    | scratch slot =>
+        simpa [contractTargetBy, EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC] using hStored
 
 end StateRel
 
@@ -567,6 +644,38 @@ theorem scratchAddress_end_le_memory
         (Nat.mul_le_mul_left MemoryContract.wordBytes hSucc) frameBase
     _ ≤ target.evm.toMachineState.memory.size := hRel.frameAllocated
 
+theorem mload_machine_eq
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState} {target : TargetState}
+    {name : Locals.Name} {slot : Nat}
+    (hRel :
+      ScratchStateRel contract plan live stackOffset frameBase
+        frameDepth frameWords source target)
+    (hLive : name ∈ live)
+    (hLocation : plan.location? name = some (.scratch slot)) :
+    target.evm.toMachineState.mload
+        (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)) =
+      (target.evm.toMachineState.lookupMemory
+          (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)),
+        target.evm.toMachineState) := by
+  have hEndActive := hRel.scratchAddress_end_le_active hLive hLocation
+  have hEndLt := hRel.scratchAddress_end_lt_size hLive hLocation
+  have hAddressLt : scratchAddress frameBase slot < EvmYul.UInt256.size :=
+    lt_of_lt_of_le
+      (Nat.lt_add_of_pos_right
+        (by decide : 0 < MemoryContract.wordBytes))
+      (Nat.le_of_lt hEndLt)
+  have hAddressToNat :
+      (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)).toNat =
+        scratchAddress frameBase slot :=
+    EvmYul.UInt256.toNat_ofNat_of_lt hAddressLt
+  exact
+    Compiler.MemoryRelation.mload_eq_lookup_of_end_le
+      target.evm.toMachineState (scratchAddress frameBase slot)
+      hAddressToNat (by simpa [MemoryContract.wordBytes] using hEndActive)
+
 /-- Rebase a live scratch activation across a growing target computation. -/
 theorem rebase_prefix_mono
     {contract : MemoryContract.Contract} {plan : Plan}
@@ -622,6 +731,111 @@ theorem rebase_prefix_mono
   · exact hRel.frameActive.trans
       (Nat.mul_le_mul_right MemoryContract.wordBytes hActive)
   · exact hRel.frameAllocated.trans hMemory
+
+theorem push_target_by
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState} {target : TargetState}
+    (pcDelta : Nat) (value : Word)
+    (hRel :
+      ScratchStateRel contract plan live stackOffset frameBase
+        frameDepth frameWords source target) :
+    ScratchStateRel contract plan live (stackOffset + 1) frameBase
+      frameDepth frameWords source (StateRel.pushTargetBy pcDelta value target) := by
+  refine ⟨hRel.base.push_target_by pcDelta value, ?_, ?_, ?_,
+    hRel.frameNoWrap, hRel.frameHostAddressable, ?_, hRel.frameReserved,
+    hRel.scratchBound⟩
+  · change
+      (value :: target.evm.stack)[stackOffset + 1 + frameDepth]? =
+        some (EvmYul.UInt256.ofNat frameBase)
+    rw [show stackOffset + 1 + frameDepth =
+        (stackOffset + frameDepth) + 1 by omega]
+    simpa using hRel.framePointer
+  · simpa [StateRel.pushTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.frameActive
+  · simpa [StateRel.pushTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.frameAllocated
+  · simpa [StateRel.pushTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.activeNoWrap
+
+theorem contract_target_by
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState} {target : TargetState}
+    {right left value : Word} {rest : List Word}
+    (hRel :
+      ScratchStateRel contract plan live (stackOffset + 2) frameBase
+        frameDepth frameWords source target)
+    (hStack : target.evm.stack = right :: left :: rest)
+    (pcDelta : Nat) :
+    ScratchStateRel contract plan live (stackOffset + 1) frameBase
+      frameDepth frameWords source
+      (StateRel.contractTargetBy pcDelta value rest target) := by
+  refine
+    ⟨hRel.base.contract_target_by hStack pcDelta, ?_, ?_, ?_,
+      hRel.frameNoWrap, hRel.frameHostAddressable, ?_,
+      hRel.frameReserved, hRel.scratchBound⟩
+  · change
+      (value :: rest)[stackOffset + 1 + frameDepth]? =
+        some (EvmYul.UInt256.ofNat frameBase)
+    have hPointer := hRel.framePointer
+    rw [hStack] at hPointer
+    have hRest :
+        rest[stackOffset + frameDepth]? =
+          some (EvmYul.UInt256.ofNat frameBase) := by
+      simpa [show stackOffset + 2 + frameDepth =
+          (stackOffset + frameDepth) + 2 by omega] using hPointer
+    simpa [show stackOffset + 1 + frameDepth =
+        (stackOffset + frameDepth) + 1 by omega] using hRest
+  · simpa [StateRel.contractTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.frameActive
+  · simpa [StateRel.contractTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.frameAllocated
+  · simpa [StateRel.contractTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.activeNoWrap
+
+theorem replace_top_by
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState} {target : TargetState}
+    {old value : Word} {rest : List Word}
+    (hRel :
+      ScratchStateRel contract plan live (stackOffset + 1) frameBase
+        frameDepth frameWords source target)
+    (hStack : target.evm.stack = old :: rest)
+    (pcDelta : Nat) :
+    ScratchStateRel contract plan live (stackOffset + 1) frameBase
+      frameDepth frameWords source
+      (StateRel.contractTargetBy pcDelta value rest target) := by
+  refine
+    ⟨hRel.base.replace_top_by hStack pcDelta, ?_, ?_, ?_,
+      hRel.frameNoWrap, hRel.frameHostAddressable, ?_,
+      hRel.frameReserved, hRel.scratchBound⟩
+  · change
+      (value :: rest)[stackOffset + 1 + frameDepth]? =
+        some (EvmYul.UInt256.ofNat frameBase)
+    have hPointer := hRel.framePointer
+    rw [hStack] at hPointer
+    simpa [show stackOffset + 1 + frameDepth =
+        (stackOffset + frameDepth) + 1 by omega] using hPointer
+  · simpa [StateRel.contractTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.frameActive
+  · simpa [StateRel.contractTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.frameAllocated
+  · simpa [StateRel.contractTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.activeNoWrap
 
 /--
 Preserve an allocated scratch frame across a response installation whose
@@ -871,6 +1085,38 @@ theorem activeNoWrap
   | stack _ activeNoWrap _ => exact activeNoWrap
   | scratch state => exact state.activeNoWrap
 
+theorem state
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode} {source : SourceState} {target : TargetState}
+    (hRel :
+      ActivationStateRel contract plan live stackOffset frameBase mode
+        source target) :
+    StateRel contract plan live stackOffset frameBase source target := by
+  cases hRel with
+  | stack _ _ state => exact state
+  | scratch state => exact state.base
+
+theorem push_target_by
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode} {source : SourceState} {target : TargetState}
+    (pcDelta : Nat) (value : Word)
+    (hRel :
+      ActivationStateRel contract plan live stackOffset frameBase mode
+        source target) :
+    ActivationStateRel contract plan live (stackOffset + 1) frameBase mode
+      source (StateRel.pushTargetBy pcDelta value target) := by
+  cases hRel with
+  | stack liveStackOnly activeNoWrap state =>
+      exact .stack liveStackOnly
+        (by simpa [StateRel.pushTargetBy,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC] using activeNoWrap)
+        (state.push_target_by pcDelta value)
+  | scratch state =>
+      exact .scratch (state.push_target_by pcDelta value)
+
 /-- Preserve either allocation representation across one response update. -/
 theorem finishExternal
     {contract : MemoryContract.Contract} {plan : Plan}
@@ -1090,6 +1336,25 @@ structure ActivationExprResultRel
   valuesLength : values.length = resultCount
   stack :
     targetFinal.evm.stack = values.reverse ++ targetInitial.evm.stack
+
+namespace ActivationExprResultRel
+
+theorem literal
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode} {source : SourceState} {target : TargetState}
+    (value : Word)
+    (hRel :
+      ActivationStateRel contract plan live stackOffset frameBase mode
+        source target) :
+    ActivationExprResultRel contract plan live stackOffset frameBase 1 mode
+      source target (StateRel.pushTargetBy 33 value target) [value] := by
+  refine ⟨hRel.push_target_by 33 value, rfl, ?_⟩
+  simp [StateRel.pushTargetBy,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC]
+
+end ActivationExprResultRel
 
 inductive ModeRel : Locals.Source.Mode → Structured.Mode → Prop where
   | regular : ModeRel .regular .regular

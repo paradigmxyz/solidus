@@ -31621,3 +31621,14 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1156-job Functions build, 1306-job verification root, architecture guards,
   touched-file hole scan, and `git diff --check` passed;
   `classify_activation_var` uses only `[propext, Quot.sound]`.
+- 2026-06-17 17:26:32 PDT - compaction-resume - resumed the checked
+  Functions allocation boundary at `2e11639b4`; next obligation is the
+  canonical scratch-variable read theorem and compiler-facing variable case.
+- 2026-06-17 17:39:00 PDT - proof/functions-allocation-variable - added
+  canonical stack contraction, scratch-frame `mload`, and exact emitted
+  spill-load preservation; `var_of_lower_compile` now uses the ordinary
+  allocation classifier to cover stack-only and scratch-backed activations.
+- 2026-06-17 17:39:00 PDT - validation/functions-allocation-variable - the
+  1156-job Functions build, 1306-job verification root, architecture guard,
+  touched-file hole scan, and `git diff --check` passed; the three new public
+  theorems use only `[propext, Classical.choice, Quot.sound]`.

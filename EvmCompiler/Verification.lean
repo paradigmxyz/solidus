@@ -179,6 +179,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionExpression.literal_open
 #check EvmCompiler.Functions.AllocationInteractionExpression.literal_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionExpression.stack_var_open
+#check EvmCompiler.Functions.AllocationInteractionExpression.stack_var_activation_open
+#check EvmCompiler.Functions.AllocationInteractionExpression.scratch_var_activation_open
+#check EvmCompiler.Functions.AllocationInteractionExpression.var_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionExpression.prim_of_args
 #check EvmCompiler.Functions.AllocationInteractionExpression.prim_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionExpression.call_prim_of_args

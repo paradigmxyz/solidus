@@ -869,6 +869,8 @@ Exit: the shared core builds with no compiler layer changed.
     lowerer/compiler decomposition consumes its recursive argument theorem.
   - [x] Move exact stack/scratch variable lowering classification into an
     observer-free allocation-owned compiler context.
+  - [x] Prove the compiler-facing variable base case for both stack-only and
+    scratch-backed activations, including the exact emitted spill-load code.
   - [ ] Compose argument-expression preservation with external primitive
     preservation through the ordinary allocation lowerer and Locals compiler.
   - [ ] Recursive allocation preservation for expressions, statements,
