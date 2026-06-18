@@ -76,6 +76,8 @@ boundaries remain active work.
     through pass-owned extensional cursor and invariant transport;
   - [x] prove canonical non-halting return-stack preservation and complete a
     compiler-selected callee through emitted return values and cleanup;
+  - [x] attach the completed callee through the canonical source and target
+    call wrappers, including exact return-frame pop and value attachment;
   - [x] define the uniform recursive target budget and checked empty,
     head/tail-composition, expression, assignment, and stack/scratch
     declaration cursor constructors;

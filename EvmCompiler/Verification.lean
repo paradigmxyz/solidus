@@ -189,6 +189,8 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.InteractionReturns.Block.openRun_returns
 #check EvmCompiler.Expressions.InteractionReturns.Block.openRun_returns
 #check EvmCompiler.Functions.AllocationInteractionCallResultResource.SelectedCallee.complete_body
+#check EvmCompiler.Functions.AllocationInteractionCallResultResource.CallAttachment.of_body
+#check EvmCompiler.Functions.AllocationInteractionCallResultResource.SelectedCallee.complete_call
 #check EvmCompiler.Functions.InteractionSemantics.FunDef.openRunBody
 #check EvmCompiler.Functions.InteractionSemantics.Stmt.openRun
 #check EvmCompiler.Functions.InteractionSemantics.Program.openRunState

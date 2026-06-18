@@ -76,6 +76,359 @@ abbrev OpenBodyResultRel
     (BodyResultRel contract returns config allocatorDepth entryMode
       targetInitial)
 
+/-- Canonical function-call result after the target return frame is attached. -/
+inductive CallResultRel
+    (contract : MemoryContract.Contract)
+    (config : Config) (allocatorDepth : Nat) (entryMode : ActivationMode)
+    (targetCaller targetEntry : TargetState) (callerStack : List Word) :
+    Functions.InteractionSemantics.CallResult ->
+      Expressions.InteractionSemantics.Outcome -> Prop where
+  | returned {source : SourceState} {values : List Word}
+      {target : TargetState}
+      (shared : SharedRel contract source.shared target.evm.toSharedState)
+      (stack : target.evm.stack = values.reverse ++ callerStack)
+      (returnStack : target.returns = targetCaller.returns)
+      (effect :
+        ActivationEffect config allocatorDepth entryMode targetEntry target) :
+      CallResultRel contract config allocatorDepth entryMode
+        targetCaller targetEntry callerStack
+        (.returned source values)
+        (Structured.EffectSemantics.Outcome.regular target)
+  | halted (kind : Assembly.HaltKind)
+      {source : SourceState} {target : TargetState}
+      (shared : SharedRel contract source.shared target.evm.toSharedState)
+      (effect :
+        ActivationEffect config allocatorDepth entryMode targetEntry target) :
+      CallResultRel contract config allocatorDepth entryMode
+        targetCaller targetEntry callerStack
+        (.halted kind source)
+        (Structured.EffectSemantics.Outcome.halt kind target)
+
+abbrev OpenCallResultRel
+    (contract : MemoryContract.Contract)
+    (config : Config) (allocatorDepth : Nat) (entryMode : ActivationMode)
+    (targetCaller targetEntry : TargetState) (callerStack : List Word) :=
+  Simulation.Interaction.ExceptRel
+    (fun left right : EVMException => left = right)
+    (CallResultRel contract config allocatorDepth entryMode
+      targetCaller targetEntry callerStack)
+
+namespace CallAttachment
+
+/--
+Attach one related completed procedure body through the canonical source and
+target call wrappers. Argument realization and caller writeback remain owned
+by their adjacent call phases.
+-/
+theorem of_body
+    {program : Functions.Program} {expressions : Expressions.Program}
+    {fn : Functions.FunDef} {name : Functions.Name}
+    {proc : Expressions.Proc}
+    {contract : MemoryContract.Contract}
+    {config : Config} {allocatorDepth sourceFuel targetFuel : Nat}
+    {entryMode : ActivationMode}
+    {args callArgs callerStack : List Word}
+    {paramStore : Locals.Source.Store}
+    {sourceAfterArgs : SourceState} {targetCaller : TargetState}
+    (hInsert :
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty =
+        some paramStore)
+    (hLookup :
+      Structured.ProcList.lookup? name expressions.toStructured.procs =
+        some proc.toStructured)
+    (hRetc : proc.retc = fn.returns.length)
+    (hSplit :
+      Structured.StackFrame.splitArgs? proc.argc targetCaller.evm.stack =
+        some (callArgs, callerStack))
+    (hBody :
+      Simulation.Interaction.Rel
+        (OpenBodyResultRel contract fn.returns config allocatorDepth
+          entryMode
+          (AllocationInteractionCall.CalleeEntry.structuredState
+            targetCaller callArgs callerStack fn.returns.length))
+        (Functions.InteractionSemantics.Block.openRun program
+          (Functions.Source.Effectful.FunDef.bodyCtx fn) sourceFuel fn.body
+          (AllocationInteractionCall.CalleeEntry.sourceState
+            sourceAfterArgs fn.returns paramStore))
+        (Expressions.InteractionSemantics.Block.openRun expressions targetFuel
+          proc.body
+          (AllocationInteractionCall.CalleeEntry.structuredState
+            targetCaller callArgs callerStack fn.returns.length))) :
+    Simulation.Interaction.Rel
+      (OpenCallResultRel contract config allocatorDepth entryMode
+        targetCaller
+        (AllocationInteractionCall.CalleeEntry.structuredState
+          targetCaller callArgs callerStack fn.returns.length)
+        callerStack)
+      (Functions.InteractionSemantics.FunDef.openRunBody program fn args
+        (sourceFuel + 1) sourceAfterArgs)
+      (Expressions.InteractionSemantics.Stmt.openRun expressions
+        (targetFuel + 1) (.call name) targetCaller) := by
+  let sourceEntry :=
+    AllocationInteractionCall.CalleeEntry.sourceState
+      sourceAfterArgs fn.returns paramStore
+  let targetEntry :=
+    AllocationInteractionCall.CalleeEntry.structuredState
+      targetCaller callArgs callerStack fn.returns.length
+  let sourceNext :
+      (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx) ->
+        Simulation.Interaction EVMException
+          Functions.InteractionSemantics.CallResult := fun result =>
+    match result.1.mode with
+    | .regular | .leave =>
+        do
+          let values <-
+            (Functions.Source.Store.lookupMany fn.returns
+                (Functions.InteractionSemantics.stateModel.vars
+                  result.1.state)).elim
+              (throw EvmYul.EVM.ExecutionException.InvalidInstruction) pure
+          pure
+            (Functions.Source.Effectful.CallResult.returned
+              result.1.state values)
+    | .brk | .cont =>
+        throw EvmYul.EVM.ExecutionException.InvalidInstruction
+    | .halt kind =>
+        pure
+          (Functions.Source.Effectful.CallResult.halted kind result.1.state)
+  let targetNext :
+      Expressions.InteractionSemantics.Outcome ->
+        Simulation.Interaction EVMException
+          Expressions.InteractionSemantics.Outcome := fun outcome =>
+    let model := Structured.EffectSemantics.Ordinary.runStateModel
+    match outcome.mode with
+    | .regular | .leave =>
+        match model.popReturn? outcome.state with
+        | none => throw EvmYul.EVM.ExecutionException.InvalidInstruction
+        | some (frame, returned) =>
+            match Structured.StackFrame.attachReturns?
+                frame (model.evm outcome.state).stack with
+            | none => throw EvmYul.EVM.ExecutionException.InvalidInstruction
+            | some stack =>
+                let evm := { model.evm outcome.state with stack := stack }
+                pure
+                  (Structured.EffectSemantics.Outcome.regular
+                    (model.withEVM returned evm))
+    | .brk | .cont =>
+        throw EvmYul.EVM.ExecutionException.InvalidInstruction
+    | .halt kind =>
+        pure
+          (Structured.EffectSemantics.Outcome.halt kind outcome.state)
+  have hBodyStructured :
+      Simulation.Interaction.Rel
+        (OpenBodyResultRel contract fn.returns config allocatorDepth
+          entryMode targetEntry)
+        (Functions.InteractionSemantics.Block.openRun program
+          (Functions.Source.Effectful.FunDef.bodyCtx fn) sourceFuel fn.body
+          sourceEntry)
+        (Structured.InteractionSemantics.Block.openRun
+          expressions.toStructured targetFuel proc.body.toStructured
+          targetEntry) := by
+    rw [← Expressions.InteractionPreservation.Block.openRun_toStructured]
+    simpa [sourceEntry, targetEntry] using hBody
+  have hWrapped :=
+    Simulation.Interaction.Rel.bind_custom hBodyStructured
+      (targetDoneRel :=
+        OpenCallResultRel contract config allocatorDepth entryMode
+          targetCaller targetEntry callerStack)
+      (leftNext := sourceNext)
+      (rightNext := targetNext)
+      (fun sourceDone targetDone hDone => by
+        cases hDone with
+        | error hError =>
+            exact Simulation.Interaction.Rel.done
+              (Simulation.Interaction.ExceptRel.error hError)
+        | ok hResult =>
+            cases hResult with
+            | @regular source sourceCtx target hLeave hReturns hEffect =>
+                simp [Functions.Source.Effectful.Outcome.regular,
+                  Locals.Source.Effectful.Outcome.regular,
+                  Structured.OutcomeT.regular, sourceNext, targetNext,
+                  Functions.InteractionSemantics.stateModel,
+                  Locals.InteractionSemantics.stateModel,
+                  Locals.Source.Effectful.Ordinary.stateModel,
+                  Locals.Source.Effectful.StateModel.vars]
+                obtain ⟨values, hValues, hStack⟩ := hLeave.values
+                have hPop :
+                    target.popReturn? =
+                      some
+                        ({ callerStack := callerStack,
+                           retc := fn.returns.length },
+                         { target with returns := targetCaller.returns }) := by
+                  unfold Structured.RunState.popReturn?
+                  simp only [targetEntry,
+                    AllocationInteractionCall.CalleeEntry.structuredState,
+                    Structured.RunState.pushReturn_returns] at hReturns
+                  rw [hReturns]
+                  rfl
+                have hLength : values.reverse.length = fn.returns.length := by
+                  simpa using Functions.Source.Store.lookupMany_length hValues
+                have hAttach :
+                    Structured.StackFrame.attachReturns?
+                        { callerStack := callerStack,
+                          retc := fn.returns.length }
+                        target.evm.stack =
+                      some (values.reverse ++ callerStack) := by
+                  rw [hStack]
+                  exact Structured.StackFrame.attachReturns?_eq_some hLength
+                let attached : TargetState :=
+                  ({ target with returns := targetCaller.returns }).withEVM
+                    { target.evm with stack := values.reverse ++ callerStack }
+                have hStructural :
+                    ActivationEffect config allocatorDepth entryMode
+                      target attached := by
+                  apply ActivationEffect.of_boundedEffect
+                  apply BoundedEffect.of_machine_eq hEffect.ready
+                  rfl
+                simp only [hValues, Option.elim_some,
+                  Simulation.Interaction.monad_pure_bind]
+                rw [hPop]
+                simp only [Structured.OutcomeT.state]
+                rw [hAttach]
+                exact Simulation.Interaction.Rel.done
+                  (Simulation.Interaction.ExceptRel.ok
+                    (CallResultRel.returned
+                      (by simpa [attached] using hLeave.shared)
+                      (by simp [attached])
+                      (by simp [attached])
+                      (hEffect.trans hStructural)))
+            | @leave source sourceCtx target hLeave hReturns hEffect =>
+                simp [Functions.Source.Effectful.Outcome.leave,
+                  Locals.Source.Effectful.Outcome.leave,
+                  Structured.OutcomeT.leave, sourceNext, targetNext,
+                  Functions.InteractionSemantics.stateModel,
+                  Locals.InteractionSemantics.stateModel,
+                  Locals.Source.Effectful.Ordinary.stateModel,
+                  Locals.Source.Effectful.StateModel.vars]
+                obtain ⟨values, hValues, hStack⟩ := hLeave.values
+                have hPop :
+                    target.popReturn? =
+                      some
+                        ({ callerStack := callerStack,
+                           retc := fn.returns.length },
+                         { target with returns := targetCaller.returns }) := by
+                  unfold Structured.RunState.popReturn?
+                  simp only [targetEntry,
+                    AllocationInteractionCall.CalleeEntry.structuredState,
+                    Structured.RunState.pushReturn_returns] at hReturns
+                  rw [hReturns]
+                  rfl
+                have hLength : values.reverse.length = fn.returns.length := by
+                  simpa using Functions.Source.Store.lookupMany_length hValues
+                have hAttach :
+                    Structured.StackFrame.attachReturns?
+                        { callerStack := callerStack,
+                          retc := fn.returns.length }
+                        target.evm.stack =
+                      some (values.reverse ++ callerStack) := by
+                  rw [hStack]
+                  exact Structured.StackFrame.attachReturns?_eq_some hLength
+                let attached : TargetState :=
+                  ({ target with returns := targetCaller.returns }).withEVM
+                    { target.evm with stack := values.reverse ++ callerStack }
+                have hStructural :
+                    ActivationEffect config allocatorDepth entryMode
+                      target attached := by
+                  apply ActivationEffect.of_boundedEffect
+                  apply BoundedEffect.of_machine_eq hEffect.ready
+                  rfl
+                simp only [hValues, Option.elim_some,
+                  Simulation.Interaction.monad_pure_bind]
+                rw [hPop]
+                simp only [Structured.OutcomeT.state]
+                rw [hAttach]
+                exact Simulation.Interaction.Rel.done
+                  (Simulation.Interaction.ExceptRel.ok
+                    (CallResultRel.returned
+                      (by simpa [attached] using hLeave.shared)
+                      (by simp [attached])
+                      (by simp [attached])
+                      (hEffect.trans hStructural)))
+            | brk hReturns hEffect =>
+                simp [Functions.Source.Effectful.Outcome.brk,
+                  Locals.Source.Effectful.Outcome.brk,
+                  Structured.OutcomeT.brk, sourceNext, targetNext]
+                exact Simulation.Interaction.Rel.done
+                  (Simulation.Interaction.ExceptRel.error rfl)
+            | cont hReturns hEffect =>
+                simp [Functions.Source.Effectful.Outcome.cont,
+                  Locals.Source.Effectful.Outcome.cont,
+                  Structured.OutcomeT.cont, sourceNext, targetNext]
+                exact Simulation.Interaction.Rel.done
+                  (Simulation.Interaction.ExceptRel.error rfl)
+            | halt kind hShared hEffect =>
+                simp [Functions.Source.Effectful.Outcome.halt,
+                  Locals.Source.Effectful.Outcome.halt,
+                  Structured.OutcomeT.halt, sourceNext, targetNext]
+                exact Simulation.Interaction.Rel.done
+                  (Simulation.Interaction.ExceptRel.ok
+                    (CallResultRel.halted kind hShared hEffect)))
+  have hSourceEq :
+      Functions.InteractionSemantics.FunDef.openRunBody program fn args
+          (sourceFuel + 1) sourceAfterArgs =
+        Simulation.Interaction.bind
+          (Functions.InteractionSemantics.Block.openRun program
+            (Functions.Source.Effectful.FunDef.bodyCtx fn) sourceFuel fn.body
+            sourceEntry)
+          sourceNext := by
+    unfold Functions.InteractionSemantics.FunDef.openRunBody
+      Functions.Source.Canonical.FunDef.runBody
+      Functions.Source.Effectful.Control.FunDef.runBody
+    rw [hInsert]
+    simp only [Option.elim_some]
+    change
+      Simulation.Interaction.bind
+          (Functions.InteractionSemantics.Block.openRun program
+            (Functions.Source.Effectful.FunDef.bodyCtx fn) sourceFuel fn.body
+            sourceEntry)
+          _ =
+        Simulation.Interaction.bind
+          (Functions.InteractionSemantics.Block.openRun program
+            (Functions.Source.Effectful.FunDef.bodyCtx fn) sourceFuel fn.body
+            sourceEntry)
+          sourceNext
+    congr 1
+  have hTargetEq :
+      Expressions.InteractionSemantics.Stmt.openRun expressions
+          (targetFuel + 1) (.call name) targetCaller =
+        Simulation.Interaction.bind
+          (Structured.InteractionSemantics.Block.openRun
+            expressions.toStructured targetFuel proc.body.toStructured
+            targetEntry)
+          targetNext := by
+    rw [Expressions.InteractionPreservation.Stmt.openRun_toStructured]
+    change
+      Structured.EffectSemantics.Control.Stmt.run
+          Structured.EffectSemantics.Ordinary.runStateModel
+          Structured.InteractionSemantics.handler expressions.toStructured
+          (targetFuel + 1) (.call name) targetCaller = _
+    rw [show targetFuel + 1 = Nat.succ targetFuel by omega]
+    simp only [Structured.EffectSemantics.Control.Stmt.run, hLookup,
+      Expressions.Proc.toStructured,
+      Structured.EffectSemantics.Ordinary.runStateModel_evm,
+      Structured.EffectSemantics.Ordinary.runStateModel_withEVM,
+      Structured.EffectSemantics.Ordinary.runStateModel_pushReturn,
+      Structured.EffectSemantics.Ordinary.runStateModel_popReturn?]
+    rw [hSplit, hRetc]
+    dsimp [targetEntry, targetNext,
+      AllocationInteractionCall.CalleeEntry.structuredState]
+    congr 1
+    funext outcome
+    rcases outcome with ⟨state, mode⟩
+    cases mode with
+    | regular | leave =>
+        cases hPop : state.popReturn? with
+        | none => rfl
+        | some popped =>
+            rcases popped with ⟨frame, returned⟩
+            cases hAttach : Structured.StackFrame.attachReturns?
+                frame state.evm.stack <;> rfl
+    | brk | cont | halt => rfl
+  rw [hSourceEq, hTargetEq]
+  exact hWrapped
+
+end CallAttachment
+
 private theorem code_pair_openRun
     (program : Expressions.Program)
     {first second : Structured.Code}
@@ -367,6 +720,97 @@ theorem complete_body
     exact Functions.Scope.Block.mem_outEnv (by simp [hName])
   refine ⟨targetFuel, hTargetFuel, ?_⟩
   exact complete_body_of_rel prepared hConfig hReturnsLive hEpilogueFuel hBody
+
+/--
+Run a compiler-selected callee through the canonical internal-call wrappers.
+The caller-side argument phase supplies the exact split and initialized entry;
+this theorem owns only callee execution and return attachment.
+-/
+theorem complete_call
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : AllocationInteractionCursor.Compilation
+      allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : AllocationInteractionCall.SelectedCallee.Artifact
+      compilation name fn}
+    (prepared : AllocationInteractionCall.SelectedCallee.Prepared artifact)
+    (hProgramScoped : program.Scoped)
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase sourceFuel fuelBound : Nat}
+    {config : Config}
+    {args callArgs callerStack : List Word}
+    {paramStore : Locals.Source.Store}
+    {sourceAfterArgs : SourceState} {targetCaller : TargetState}
+    {reservation : MemoryContract.ScratchReservation}
+    (hInsert :
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty =
+        some paramStore)
+    (hSplit :
+      Structured.StackFrame.splitArgs? artifact.lowerProc.argc
+          targetCaller.evm.stack =
+        some (callArgs, callerStack))
+    (hEntry :
+      ActivationCalleeEntryRel contract prepared.plan []
+        artifact.slots.params frameBase artifact.mode
+        (AllocationInteractionCall.CalleeEntry.sourceState
+          sourceAfterArgs fn.returns paramStore)
+        (AllocationInteractionCall.CalleeEntry.structuredState
+          targetCaller callArgs callerStack fn.returns.length))
+    (hZero :
+      forall localName,
+        localName ∈ artifact.slots.returns.map Prod.fst ->
+        (AllocationInteractionCall.CalleeEntry.sourceState
+          sourceAfterArgs fn.returns paramStore).vars localName =
+            some AllocationSupport.zeroWord)
+    (hStackLength :
+      (AllocationInteractionCall.CalleeEntry.structuredState
+        targetCaller callArgs callerStack fn.returns.length).evm.stack.length =
+        artifact.entryCtx.layout.length)
+    (hReservation : contract.scratch? = some reservation)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hReady :
+      AllocatorReady config allocatorDepth
+        (AllocationInteractionCall.CalleeEntry.structuredState
+          targetCaller callArgs callerStack fn.returns.length))
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase artifact.mode)
+    (hBudget : AllocationInteractionFrame.Budget config allocatorDepth)
+    (hSourceFuel : sourceFuel < fuelBound)
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program
+          (Functions.Source.Effectful.FunDef.bodyCtx fn)
+          sourceFuel fn.body
+          (AllocationInteractionCall.CalleeEntry.sourceState
+            sourceAfterArgs fn.returns paramStore)))
+    (hRecursive :
+      AllocationInteractionRecursiveResource.RecursiveOpenRuntime
+        (root := prepared.rootArtifact hProgramScoped)
+        contract globalFrameWords fuelBound) :
+    exists targetFuel,
+      0 < targetFuel ∧
+      Simulation.Interaction.Rel
+        (OpenCallResultRel contract config allocatorDepth artifact.mode
+          targetCaller
+          (AllocationInteractionCall.CalleeEntry.structuredState
+            targetCaller callArgs callerStack fn.returns.length)
+          callerStack)
+        (Functions.InteractionSemantics.FunDef.openRunBody
+          program fn args (sourceFuel + 1) sourceAfterArgs)
+        (Expressions.InteractionSemantics.Stmt.openRun
+          expressions (targetFuel + 1) (.call name) targetCaller) := by
+  obtain ⟨targetFuel, hTargetFuel, hBody⟩ :=
+    complete_body prepared hProgramScoped hEntry hZero hStackLength
+      hReservation hConfig hReady hOwned hBudget hSourceFuel hSuccess
+      hRecursive
+  refine ⟨targetFuel, hTargetFuel, ?_⟩
+  exact CallAttachment.of_body hInsert artifact.targetLookup
+    prepared.procRetc hSplit hBody
 
 end SelectedCallee
 
