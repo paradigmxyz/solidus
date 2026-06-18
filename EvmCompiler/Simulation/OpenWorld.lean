@@ -23,6 +23,19 @@ structure OpenAccount where
 
 namespace OpenAccount
 
+def ofAccount {τ : EvmYul.OperationType}
+    (account : EvmYul.Account τ) : OpenAccount where
+  nonce := account.nonce
+  balance := account.balance
+  storage := account.storage
+  transientStorage := account.tstorage
+  codeBytes := EvmYul.State.accountCodeImage account
+
+def empty (account : OpenAccount) : Bool :=
+  account.codeBytes.isEmpty &&
+    (decide (account.nonce = ⟨0⟩) &&
+      decide (account.balance = ⟨0⟩))
+
 def ofYul (account : EvmYul.Account .Yul) : OpenAccount where
   nonce := account.nonce
   balance := account.balance
@@ -36,6 +49,12 @@ def ofEVM (account : EvmYul.Account .EVM) : OpenAccount where
   storage := account.storage
   transientStorage := account.tstorage
   codeBytes := account.code
+
+@[simp] theorem ofAccount_yul (account : EvmYul.Account .Yul) :
+    ofAccount account = ofYul account := rfl
+
+@[simp] theorem ofAccount_evm (account : EvmYul.Account .EVM) :
+    ofAccount account = ofEVM account := rfl
 
 /--
 Install code-erased account data into a legacy Yul account while retaining an
@@ -79,9 +98,7 @@ legacy Yul predicate, this inspects the executable byte image, not a retained
 compatibility AST. -/
 def emptyAccount {τ : EvmYul.OperationType}
     (account : EvmYul.Account τ) : Bool :=
-  (EvmYul.State.accountCodeImage account).isEmpty &&
-    (decide (account.nonce = ⟨0⟩) &&
-      decide (account.balance = ⟨0⟩))
+  (OpenAccount.ofAccount account).empty
 
 def dead {τ : EvmYul.OperationType}
     (accounts : EvmYul.AccountMap τ)
@@ -111,7 +128,8 @@ theorem extCodeHash_evm (state : EvmYul.State .EVM) (value : EvmYul.UInt256) :
         EvmYul.Account.emptyAccount := by
     funext account
     simp [emptyAccount, EvmYul.Account.emptyAccount,
-      EvmYul.State.accountCodeImage]
+      EvmYul.State.accountCodeImage, OpenAccount.empty,
+      OpenAccount.ofEVM]
   simp [extCodeHash, dead, EvmYul.State.extCodeHash,
     EvmYul.State.dead, hEmpty]
 
@@ -130,6 +148,16 @@ structure OpenWorld where
   deriving Inhabited
 
 namespace OpenWorld
+
+theorem ext_of_fields
+    {left right : OpenWorld}
+    (hAccounts : left.accounts = right.accounts)
+    (hSubstate : left.substate = right.substate)
+    (hCreated : left.createdAccounts = right.createdAccounts) :
+    left = right := by
+  cases left
+  cases right
+  simp_all
 
 theorem find?_mapVal_const
     {α β γ : Type} {cmp : α → α → Ordering}

@@ -202,6 +202,9 @@ boundaries remain active work.
       - [x] Repair canonical Yul EXTCODEHASH semantics to decide external
         account emptiness from the executable byte image rather than a
         compatibility Yul AST; prove exact agreement with EVM semantics.
+      - [x] World-access transitions through reusable `WorldSpec`: BALANCE,
+        EXTCODESIZE, EXTCODEHASH, SLOAD, and TLOAD, including exact account and
+        storage warming in the shared open-world substate.
       - [ ] World, copy, log, and invalid families;
         assemble the concrete `ClosedSelected` theorem.
     - [x] Define the code-erased outcome-indexed relation and source-owned

@@ -99,6 +99,28 @@ end ExecutionEnvRel
 
 namespace WorldRel
 
+theorem accounts
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : WorldRel source target) :
+    (Simulation.OpenWorld.ofYulState source).accounts =
+      (Simulation.OpenWorld.ofEVMState target).accounts :=
+  congrArg Simulation.OpenWorld.accounts hRel.openWorld
+
+theorem substate
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : WorldRel source target) :
+    source.substate = target.substate := by
+  exact congrArg Simulation.OpenWorld.substate hRel.openWorld
+
+theorem createdAccounts
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : WorldRel source target) :
+    source.createdAccounts = target.createdAccounts := by
+  exact congrArg Simulation.OpenWorld.createdAccounts hRel.openWorld
+
 theorem accountViews
     {source : EvmYul.State .Yul}
     {target : EvmYul.State .EVM}
@@ -112,6 +134,192 @@ theorem accountViews
   simpa [Simulation.OpenWorld.ofYulState,
     Simulation.OpenWorld.ofEVMState,
     Simulation.OpenWorld.find?_mapVal_const] using hLookup
+
+theorem accountValueEq
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : WorldRel source target)
+    (address : EvmYul.AccountAddress)
+    {α : Type} (defaultValue : α)
+    (value : Simulation.OpenAccount → α) :
+    (source.accountMap.find? address).option defaultValue
+        (fun account => value (Simulation.OpenAccount.ofYul account)) =
+      (target.accountMap.find? address).option defaultValue
+        (fun account => value (Simulation.OpenAccount.ofEVM account)) := by
+  have hViews := hRel.accountViews address
+  cases hSource : source.accountMap.find? address with
+  | none =>
+      rw [hSource] at hViews
+      cases hTarget : target.accountMap.find? address with
+      | none => rfl
+      | some targetAccount => simp [hTarget] at hViews
+  | some sourceAccount =>
+      rw [hSource] at hViews
+      cases hTarget : target.accountMap.find? address with
+      | none => simp [hTarget] at hViews
+      | some targetAccount =>
+          rw [hTarget] at hViews
+          have hAccount :
+              Simulation.OpenAccount.ofYul sourceAccount =
+                Simulation.OpenAccount.ofEVM targetAccount := by
+            simpa using Option.some.inj hViews
+          simpa [hSource, hTarget] using congrArg value hAccount
+
+theorem accountElimValueEq
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : WorldRel source target)
+    (address : EvmYul.AccountAddress)
+    {α : Type} (defaultValue : α)
+    (value : Simulation.OpenAccount → α) :
+    (source.accountMap.find? address).elim defaultValue
+        (fun account => value (Simulation.OpenAccount.ofYul account)) =
+      (target.accountMap.find? address).elim defaultValue
+        (fun account => value (Simulation.OpenAccount.ofEVM account)) := by
+  have hViews := hRel.accountViews address
+  cases hSource : source.accountMap.find? address with
+  | none =>
+      rw [hSource] at hViews
+      cases hTarget : target.accountMap.find? address with
+      | none => rfl
+      | some targetAccount => simp [hTarget] at hViews
+  | some sourceAccount =>
+      rw [hSource] at hViews
+      cases hTarget : target.accountMap.find? address with
+      | none => simp [hTarget] at hViews
+      | some targetAccount =>
+          rw [hTarget] at hViews
+          have hAccount :
+              Simulation.OpenAccount.ofYul sourceAccount =
+                Simulation.OpenAccount.ofEVM targetAccount := by
+            simpa using Option.some.inj hViews
+          simpa [hSource, hTarget] using congrArg value hAccount
+
+theorem addAccessedAccount
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : WorldRel source target)
+    (address : EvmYul.AccountAddress) :
+    WorldRel
+      (source.addAccessedAccount address)
+      (target.addAccessedAccount address) := by
+  exact
+    { openWorld := by
+        apply Simulation.OpenWorld.ext_of_fields
+        · simpa [Simulation.OpenWorld.ofYulState,
+            Simulation.OpenWorld.ofEVMState,
+            EvmYul.State.addAccessedAccount] using hRel.accounts
+        · simp [Simulation.OpenWorld.ofYulState,
+            Simulation.OpenWorld.ofEVMState,
+            EvmYul.State.addAccessedAccount, hRel.substate]
+        · simpa [Simulation.OpenWorld.ofYulState,
+            Simulation.OpenWorld.ofEVMState,
+            EvmYul.State.addAccessedAccount] using hRel.createdAccounts
+      initialAccounts := by
+        simpa [EvmYul.State.addAccessedAccount] using hRel.initialAccounts
+      totalGasUsedInBlock := by
+        simpa [EvmYul.State.addAccessedAccount] using
+          hRel.totalGasUsedInBlock
+      transactionReceipts := by
+        simpa [EvmYul.State.addAccessedAccount] using
+          hRel.transactionReceipts
+      executionEnv := by
+        simpa [EvmYul.State.addAccessedAccount] using hRel.executionEnv
+      blocks := by
+        simpa [EvmYul.State.addAccessedAccount] using hRel.blocks
+      genesisBlockHeader := by
+        simpa [EvmYul.State.addAccessedAccount] using
+          hRel.genesisBlockHeader }
+
+theorem addAccessedStorageKey
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : WorldRel source target)
+    (storageKey : EvmYul.AccountAddress × EvmYul.UInt256) :
+    WorldRel
+      (source.addAccessedStorageKey storageKey)
+      (target.addAccessedStorageKey storageKey) := by
+  exact
+    { openWorld := by
+        apply Simulation.OpenWorld.ext_of_fields
+        · simpa [Simulation.OpenWorld.ofYulState,
+            Simulation.OpenWorld.ofEVMState,
+            EvmYul.State.addAccessedStorageKey] using hRel.accounts
+        · simp [Simulation.OpenWorld.ofYulState,
+            Simulation.OpenWorld.ofEVMState,
+            EvmYul.State.addAccessedStorageKey, hRel.substate]
+        · simpa [Simulation.OpenWorld.ofYulState,
+            Simulation.OpenWorld.ofEVMState,
+            EvmYul.State.addAccessedStorageKey] using hRel.createdAccounts
+      initialAccounts := by
+        simpa [EvmYul.State.addAccessedStorageKey] using
+          hRel.initialAccounts
+      totalGasUsedInBlock := by
+        simpa [EvmYul.State.addAccessedStorageKey] using
+          hRel.totalGasUsedInBlock
+      transactionReceipts := by
+        simpa [EvmYul.State.addAccessedStorageKey] using
+          hRel.transactionReceipts
+      executionEnv := by
+        simpa [EvmYul.State.addAccessedStorageKey] using
+          hRel.executionEnv
+      blocks := by
+        simpa [EvmYul.State.addAccessedStorageKey] using hRel.blocks
+      genesisBlockHeader := by
+        simpa [EvmYul.State.addAccessedStorageKey] using
+          hRel.genesisBlockHeader }
+
+theorem codeErasedExtCodeHash
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : WorldRel source target) (value : EvmYul.UInt256) :
+    WorldRel
+        (Simulation.CodeErasedState.extCodeHash source value).1
+        (Simulation.CodeErasedState.extCodeHash target value).1 ∧
+      (Simulation.CodeErasedState.extCodeHash source value).2 =
+        (Simulation.CodeErasedState.extCodeHash target value).2 := by
+  let address := EvmYul.AccountAddress.ofUInt256 value
+  have hDead :
+      Simulation.CodeErasedState.dead source.accountMap address =
+        Simulation.CodeErasedState.dead target.accountMap address := by
+    simpa [Simulation.CodeErasedState.dead,
+      Simulation.CodeErasedState.emptyAccount,
+      Simulation.OpenAccount.ofAccount_yul,
+      Simulation.OpenAccount.ofAccount_evm] using
+      hRel.accountValueEq address true Simulation.OpenAccount.empty
+  have hHash :
+      (source.lookupAccount address).option ⟨0⟩
+          (fun account =>
+            EvmYul.UInt256.ofNat <|
+              EvmYul.fromByteArrayBigEndian
+                (ffi.KEC (EvmYul.State.accountCodeImage account))) =
+        (target.lookupAccount address).option ⟨0⟩
+          (fun account =>
+            EvmYul.UInt256.ofNat <|
+              EvmYul.fromByteArrayBigEndian
+                (ffi.KEC (EvmYul.State.accountCodeImage account))) := by
+    simpa [EvmYul.State.lookupAccount,
+      Simulation.OpenAccount.ofYul,
+      Simulation.OpenAccount.ofEVM,
+      EvmYul.State.accountCodeImage] using
+      hRel.accountValueEq address (⟨0⟩ : EvmYul.UInt256)
+        (fun account =>
+          EvmYul.UInt256.ofNat <|
+            EvmYul.fromByteArrayBigEndian (ffi.KEC account.codeBytes))
+  cases hTargetDead :
+      Simulation.CodeErasedState.dead target.accountMap address with
+  | false =>
+      constructor
+      · simpa [Simulation.CodeErasedState.extCodeHash, address,
+          hDead, hTargetDead] using hRel.addAccessedAccount address
+      · simpa [Simulation.CodeErasedState.extCodeHash, address,
+          hDead, hTargetDead] using hHash
+  | true =>
+      constructor
+      · simpa [Simulation.CodeErasedState.extCodeHash, address,
+          hDead, hTargetDead] using hRel.addAccessedAccount address
+      · simp [Simulation.CodeErasedState.extCodeHash, address,
+          hDead, hTargetDead]
 
 end WorldRel
 

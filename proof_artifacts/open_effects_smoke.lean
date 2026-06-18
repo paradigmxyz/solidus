@@ -398,3 +398,8 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldReadSpec.forward
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldNullary.forward
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldUnaryRead.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.WorldRel.addAccessedAccount
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.WorldRel.addAccessedStorageKey
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.WorldRel.codeErasedExtCodeHash
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldSpec.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldUnaryAccess.forward
