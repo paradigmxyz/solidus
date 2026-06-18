@@ -1789,6 +1789,12 @@ def StackDepthValid : ActivationMode → Nat → Prop
   | .stack, _depth => True
   | .scratch frameDepth _frameWords, depth => depth < frameDepth
 
+/-- Re-index an activation at the stack depth of its frame pointer. -/
+def atStackDepth (mode : ActivationMode) (depth : Nat) : ActivationMode :=
+  match mode with
+  | .stack => .stack
+  | .scratch _frameDepth frameWords => .scratch depth frameWords
+
 end ActivationMode
 
 /-- One representation-neutral allocation relation for recursive proofs. -/

@@ -31960,3 +31960,14 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   build, the 1324-job verification root, architecture guard, touched-Lean hole
   scan, axiom audit, and `git diff --check` passed; selected-callee constructors
   use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 23:21:40 PDT - compaction-resume/functions-callee-body-context -
+  resumed at canonical `Prepared.bodyCompiler`; finish the pass-owned callee
+  root and internal-call proof without observer imports or public call oracles.
+- 2026-06-17 23:26:00 PDT - proof/functions-callee-body-context - added the
+  canonical activation depth operation and constructed the compiler-selected
+  callee prelude and body context for both stack-only and scratch-backed
+  allocation; no observer contexts or call oracle enter the interface.
+- 2026-06-17 23:27:00 PDT - validation/functions-callee-body-context - focused
+  1168-job build, full verification root, architecture guard, touched-Lean hole
+  scan, axiom audit, and `git diff --check` passed; new constructors use only
+  `[propext, Classical.choice, Quot.sound]`.
