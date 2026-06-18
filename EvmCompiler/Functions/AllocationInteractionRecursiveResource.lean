@@ -1371,6 +1371,272 @@ theorem if_
   rw [hFuel'] at hResult
   exact hResult
 
+/-- Recursive switch with exact selected-branch allocator preservation. -/
+theorem switch
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {scrutinee : Functions.Expr 1}
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase sourceFuel targetExtra : Nat}
+    {config : Config} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .switch scrutinee cases defaultBody :: rest }
+        beforeState beforeLocals)
+    (hSourceFuel : 2 < sourceFuel)
+    (hScrutineeSafe :
+      AllocationInteractionSafety.ExprSafe contract scrutinee source)
+    (hBoundary :
+      Boundary cursor contract globalFrameWords config allocatorDepth frameBase
+        mode sourceCtx source target)
+    (hBodyForward :
+      ∀ {value} {selected : Functions.Block}
+        {selectedStart : AllocationLowering.State}
+        {selectedPlanning : AllocationSupport.PlanningState}
+        (hSelect :
+          Functions.Source.Switch.select value cases defaultBody =
+            some selected)
+        (bodyCursor :
+          CoreCursor root (.lexical scope selectedPlanning.nextScope)
+            live selected selectedStart beforeLocals)
+        {sourceAfter targetAfter},
+        Boundary bodyCursor contract globalFrameWords config allocatorDepth
+            frameBase mode sourceCtx sourceAfter targetAfter →
+          2 ≤
+              (targetBudget cursor sourceFuel targetExtra - 2) -
+                bodyCursor.compiled.length ∧
+            Simulation.Interaction.Rel
+              (RuntimeResultRel contract root.lowerCtx
+                bodyCursor.finalState bodyCursor.finalLocals bodyCursor.plan
+                root.returns (Functions.Scope.Block.outEnv live selected)
+                frameBase mode sourceCtx
+                { sourceCtx with
+                  scope := Functions.Scope.Block.outEnv live selected }
+                config allocatorDepth targetAfter)
+              (Functions.InteractionSemantics.Block.openRun program sourceCtx
+                (sourceFuel - 2) selected sourceAfter)
+              (Expressions.InteractionSemantics.Block.openRun expressions
+                (targetBudget cursor sourceFuel targetExtra - 2)
+                { stmts := bodyCursor.compiled } targetAfter))
+    (hTailForward :
+      ∀ {afterState : AllocationLowering.State}
+        (tail : CoreCursor root scope live { stmts := rest }
+          afterState beforeLocals),
+        ExactTail cursor tail →
+        ∀ {sourceMid targetMid tailMode},
+          Boundary tail contract globalFrameWords config allocatorDepth frameBase
+              tailMode sourceCtx sourceMid targetMid →
+            CursorRuntimeAt tail contract config allocatorDepth frameBase
+              (sourceFuel - 1) (targetExtra + 8) tailMode sourceCtx
+              sourceMid targetMid) :
+    CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
+      targetExtra mode sourceCtx source target := by
+  let childFuel := sourceFuel - 1
+  let bodyFuel := sourceFuel - 2
+  let totalFuel := targetBudget cursor sourceFuel targetExtra
+  let targetBodyFuel := totalFuel - 2
+  have hFuel : childFuel + 1 = sourceFuel := by
+    simp [childFuel]
+    omega
+  have hBodyFuel : bodyFuel + 1 = childFuel := by
+    simp [bodyFuel, childFuel]
+    omega
+  have hTargetFuel : targetBodyFuel + 2 = totalFuel := by
+    simp [targetBodyFuel, totalFuel, targetBudget]
+    omega
+  obtain
+      ⟨afterState, headLower, headCode, tail, loweredScrutinee,
+        loweredCases, afterCases, loweredDefault, scrutineeCode,
+        compiledCases, compiledDefault, components⟩ :=
+    cursor.switchCursors
+  have hAfterInvariant :=
+    hBoundary.semantic.invariant.transport_state
+      components.afterEnv components.afterLayout
+  have hScrutinee :=
+    AllocationInteractionExpressionResource.forwardOne
+      (AllocationInteractionPrimitiveResource.canonicalPrimitiveForward
+        contract)
+      hBoundary.configEq hScrutineeSafe
+      hBoundary.semantic.invariant.compiler components.scrutineeScoped
+      components.lowerScrutinee components.compileScrutinee
+      hBoundary.semantic.invariant.state hBoundary.ready
+  have hVars :=
+    Locals.InteractionStatePreservation.expr_openEvalOne_vars
+      scrutinee source
+  have hSelection :
+      ∀ value,
+        AllocationInteractionControl.SwitchSelection cases defaultBody
+          compiledCases compiledDefault value := by
+    intro value
+    have hCompiledSelection :=
+      Locals.InteractionPreservation.Stmt.SwitchCompile.selectedRel_of_compile
+        beforeLocals value components.compileCases components.compileDefault
+    cases hSourceSelect :
+        Functions.Source.Switch.select value cases defaultBody with
+    | none =>
+        have hLowerSelect :=
+          AllocationLowering.lowerSwitch_select_none components.lowerCases
+            components.lowerDefault hSourceSelect
+        rw [hLowerSelect] at hCompiledSelection
+        exact .none hSourceSelect hCompiledSelection.none_target
+    | some selected =>
+        obtain
+            ⟨selectedLowered, selectedStart, selectedFinal,
+              hLowerSelect, _hLowerBody, _hSelectedEnv,
+              _hSelectedLayout⟩ :=
+          AllocationLowering.lowerSwitch_select_some
+            components.lowerCases components.lowerDefault hSourceSelect
+        rw [hLowerSelect] at hCompiledSelection
+        obtain
+            ⟨selectedTarget, _selectedCode, _selectedLocals,
+              hTargetSelect, _hCompileSelected, _hFinishSelected⟩ :=
+          hCompiledSelection.some_parts
+        exact .some selected selectedTarget hSourceSelect hTargetSelect
+  have hSelected :
+      ∀ {value selected selectedTarget sourceAfter targetAfter},
+        Functions.Source.Switch.select value cases defaultBody =
+            some selected →
+        Expressions.EffectSemantics.Switch.select value compiledCases
+            compiledDefault = some selectedTarget →
+        AllocationContext.ActivationInvariant contract root.lowerCtx
+            afterState beforeLocals cursor.plan live frameBase mode
+            sourceAfter targetAfter →
+        AllocatorReady config allocatorDepth targetAfter →
+          Simulation.Interaction.Rel
+            (RuntimeResultRel contract root.lowerCtx afterState beforeLocals
+              cursor.plan root.returns live frameBase mode sourceCtx sourceCtx
+              config allocatorDepth targetAfter)
+            (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+              bodyFuel (.block selected) sourceAfter)
+            (Expressions.InteractionSemantics.Block.openRun expressions
+              targetBodyFuel selectedTarget targetAfter) := by
+    intro value selected selectedTarget sourceAfter targetAfter
+      hSourceSelect hTargetSelect hAfter hReadyAfter
+    obtain
+        ⟨selectedAfter, selectedHeadLower, selectedHeadCode, selectedTail,
+          selectedScrutineeCode, selectedCases, selectedDefault,
+          selectedStart, selectedPlanning, actualTarget, bodyCursor,
+          _hSelectedCompiled, hSelectedLower, hSelectedCompile,
+          hSelectedHeadCode, hActualTargetSelect, hFinish,
+          hSelectedEnv, hSelectedLayout, _hSelectedAfterEnv,
+          _hSelectedAfterLayout, _hSelectedScrutineeScoped,
+          _hSelectedScoped, _hSelectedExact⟩ :=
+      cursor.switchSelectedCursors hSourceSelect
+    rw [components.lower] at hSelectedLower
+    cases hSelectedLower
+    rw [components.compile] at hSelectedCompile
+    cases hSelectedCompile
+    rw [components.codeHead] at hSelectedHeadCode
+    cases hSelectedHeadCode
+    rw [hTargetSelect] at hActualTargetSelect
+    cases hActualTargetSelect
+    have hBefore :=
+      hAfter.transport_state components.afterEnv.symm
+        components.afterLayout.symm
+    have hSelectedInvariant :=
+      hBefore.transport_state hSelectedEnv hSelectedLayout
+    have hBodyAgree : PlanAgreesOn bodyCursor.plan cursor.plan live :=
+      bodyCursor.planAgreesOn cursor hSelectedEnv
+    have hNestedInvariant :=
+      hSelectedInvariant.transport_plan hBodyAgree.symm bodyCursor.planWF
+    have hNestedBoundary :
+        Boundary bodyCursor contract globalFrameWords config allocatorDepth
+          frameBase mode sourceCtx sourceAfter targetAfter :=
+      { semantic :=
+          { invariant := hNestedInvariant
+            sourceScope := hBoundary.semantic.sourceScope
+            control := hBoundary.semantic.control
+            capacity := hBoundary.semantic.capacity }
+        configEq := hBoundary.configEq
+        ready := hReadyAfter
+        owned := hBoundary.owned
+        budget := hBoundary.budget }
+    have hExtendsSelected :
+        AllocationLowering.StateExtends live selectedStart
+          bodyCursor.finalState :=
+      AllocationLowering.lowerBlockOpen_stateExtends
+        bodyCursor.sourceScoped bodyCursor.lower
+    have hExtendsAfter :
+        AllocationLowering.StateExtends live afterState
+          bodyCursor.finalState := by
+      rcases hExtendsSelected with ⟨dropped, hLayout, hFresh, hSlots⟩
+      refine ⟨dropped, ?_, hFresh, ?_⟩
+      · rw [hLayout, hSelectedLayout, components.afterLayout]
+      · intro name hLive
+        exact (hSlots name hLive).trans
+          (congrArg (AllocationSupport.lookupSlot? name)
+            (hSelectedEnv.trans components.afterEnv.symm))
+    obtain ⟨hCleanupFuel, hBody⟩ :=
+      hBodyForward hSourceSelect bodyCursor hNestedBoundary
+    have hSemantic :=
+      AllocationInteractionControl.block_of_components
+        (bodyLive := Functions.Scope.Block.outEnv live selected)
+        hBoundary.semantic.sourceScope rfl rfl hBoundary.semantic.control
+        hAfter hExtendsAfter hBodyAgree hFinish hCleanupFuel
+        (Simulation.Interaction.Rel.mono hBody
+          (fun _ _ hDone => hDone.1))
+    have hResource :=
+      AllocationInteractionControlResource.block_of_components
+        hBoundary.semantic.sourceScope hFinish hCleanupFuel hBody
+    exact Simulation.Interaction.Rel.inter hSemantic hResource
+  have hHead :=
+    AllocationInteractionControlResource.switch_of_components
+      (sourceBodyFuel := bodyFuel) (targetBodyFuel := targetBodyFuel)
+      hAfterInvariant hScrutinee hVars hSelection hSelected
+  have hHead' :
+      Simulation.Interaction.Rel
+        (RuntimeResultRel contract root.lowerCtx afterState beforeLocals
+          cursor.plan root.returns live frameBase mode sourceCtx sourceCtx
+          config allocatorDepth target)
+        (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+          childFuel (.switch scrutinee cases defaultBody) source)
+        (Expressions.InteractionSemantics.Block.openRun expressions totalFuel
+          { stmts := headCode } target) := by
+    simpa [hBodyFuel, hTargetFuel, components.codeHead] using hHead
+  have hMidCtx :
+      sourceCtx =
+        { sourceCtx with
+          scope := Functions.Scope.Stmt.outEnv live
+            (.switch scrutinee cases defaultBody) } := by
+    have hCtx : { sourceCtx with scope := live } = sourceCtx := by
+      cases sourceCtx
+      have hScope := hBoundary.semantic.sourceScope
+      simp only at hScope
+      cases hScope
+      rfl
+    simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
+  have hResult :=
+    cons_of_parts cursor tail components.exactTail components.compiled hMidCtx
+      (by simpa [childFuel, hFuel, totalFuel,
+        Functions.Scope.Stmt.outEnv] using hHead')
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame =>
+        hTailForward tail components.exactTail
+          { semantic :=
+              { invariant := hInvariant
+                sourceScope := hBoundary.semantic.sourceScope
+                control := hBoundary.semantic.control
+                capacity := by
+                  cases hSame <;> exact hBoundary.semantic.capacity }
+            configEq := hBoundary.configEq
+            ready := hReady
+            owned := hBoundary.owned.sameFrame hSame
+            budget := hBoundary.budget })
+  have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
+  rw [hFuel'] at hResult
+  exact hResult
+
 /-- Recursive `break` with semantic and allocator preservation. -/
 theorem brk
     {allocation : Locals.Allocation.ProgramPlan}

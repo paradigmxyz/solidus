@@ -28,6 +28,7 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #check EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.cont
 #check EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.block
 #check EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.if_
+#check EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.switch
 #check EvmCompiler.Simulation.OpenWorld.installYulShared
 #check EvmCompiler.Simulation.OpenWorld.installEVMShared
 #check EvmCompiler.Simulation.Interaction.bind
@@ -299,3 +300,5 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Functions.AllocationInteractionExpressionResource.forwardCondition
 #print axioms EvmCompiler.Functions.AllocationInteractionControlResource.if_of_components
 #print axioms EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.if_
+#print axioms EvmCompiler.Functions.AllocationInteractionControlResource.switch_of_components
+#print axioms EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.switch
