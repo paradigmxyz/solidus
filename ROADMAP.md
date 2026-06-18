@@ -116,9 +116,9 @@ boundaries remain active work.
     tree (shared intersection/`cons`, empty cursor, expression statement, and
     assignment/declaration, `break`/`continue`, and lexical blocks checked;
     `if`/`switch`, loops, function `leave`, all terminal forms, scratch-mode
-    parameter setup, callee return emission, caller writeback, and scratch
-    release checked; all-stack/return prelude and selected-body call
-    composition remain);
+    and all-stack parameter/return setup, callee return emission, caller
+    writeback, and scratch release checked; selected-body call composition
+    remains);
   - [ ] compose caller arguments, selected-callee recursion, return writeback,
     scratch release, and the exact tail;
   - [ ] recursive compiler-cursor statement-list theorem.
