@@ -315,6 +315,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionFramePreservation.framePreallocTarget_machineRel
 #check EvmCompiler.Functions.AllocationInteractionFramePreservation.framePreallocTarget_boundedEffect
 #check EvmCompiler.Functions.AllocationInteractionFramePreservation.scratchFrameAcquire_correct
+#check EvmCompiler.Functions.AllocationInteractionCall.CalleeEntry.scratch_of_arguments
+#check EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Prepared.scratch_entry_of_arguments
 #check EvmCompiler.Functions.AllocationInteractionRelation.LiveDefined.of_lookupMany
 #check EvmCompiler.Functions.AllocationInteractionRelation.LiveDefined.append
 #check EvmCompiler.Functions.AllocationInteractionCall.ArgList.forwardArg

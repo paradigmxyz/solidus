@@ -279,6 +279,30 @@ theorem hostAddressable_of_budget_of_scratchFrameConfig?
   exact lt_of_le_of_lt
     (by simpa [Budget, hLimit] using hBudget) hHost
 
+theorem reserved_of_budget_of_scratchFrameConfig?
+    {contract : MemoryContract.Contract} {frameWords depth : Nat}
+    {config : Config}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hBudget : Budget config depth) :
+    ∃ reservation,
+      contract.scratch? = some reservation ∧
+        reservation.containsRegion
+          (baseAt config depth) config.frameWords := by
+  obtain
+    ⟨reservation, hReservation, _hAllocator, hFirst, hLimit,
+      _hWords, _hWF, _hHost, _hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  refine ⟨reservation, hReservation, ?_⟩
+  constructor
+  · unfold baseAt
+    rw [hFirst]
+    unfold MemoryContract.ScratchReservation.frameBase
+    omega
+  · rw [← hLimit]
+    simpa [Budget, bytes] using hBudget
+
 end AllocationInteractionFrame
 end Functions
 end EvmCompiler

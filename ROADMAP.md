@@ -105,8 +105,11 @@ boundaries remain active work.
   - [x] canonical scratch-frame acquire resource preservation, including
     machine relation, allocator depth, frame materialization, and protected
     suspended prefixes;
-  - [ ] selected scratch-callee entry and checked scratch-frame release for
-    nested calls;
+  - [x] compiler-selected scratch-callee entry from exact acquire, canonical
+    arguments, allocation artifacts, and an orthogonal argument-resource
+    effect;
+  - [ ] derive the argument-resource effect and check scratch-frame release
+    for nested calls;
   - [ ] caller argument, selected-callee, return-writeback, scratch-release,
     and exact-tail interaction composition;
   - [ ] recursive compiler-cursor statement-list theorem.
