@@ -30,6 +30,7 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #check EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.if_
 #check EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.switch
 #check EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.leave
+#check EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.terminal
 #check EvmCompiler.Simulation.OpenWorld.installYulShared
 #check EvmCompiler.Simulation.OpenWorld.installEVMShared
 #check EvmCompiler.Simulation.Interaction.bind
@@ -306,3 +307,6 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Functions.AllocationInteractionCleanupResource.Preserving.forward_zero_allocator
 #print axioms EvmCompiler.Functions.AllocationInteractionLeaveResource.leave_of_lower_compile
 #print axioms EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.leave
+#print axioms EvmCompiler.Functions.AllocationInteractionTerminalResource.Invocation.forward_shared_allocator
+#print axioms EvmCompiler.Functions.AllocationInteractionTerminalResource.terminal_of_lower_compile
+#print axioms EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.terminal

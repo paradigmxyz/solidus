@@ -4,6 +4,7 @@ import EvmCompiler.Functions.AllocationInteractionStatementResource
 import EvmCompiler.Functions.AllocationInteractionAbruptResource
 import EvmCompiler.Functions.AllocationInteractionControlResource
 import EvmCompiler.Functions.AllocationInteractionLeaveResource
+import EvmCompiler.Functions.AllocationInteractionTerminalResource
 
 namespace EvmCompiler
 namespace Functions
@@ -761,6 +762,65 @@ theorem CoreCursor.leave_runtime_head
       hBoundary.configEq hSourceScope hReturnsLive hReturnsScope hTargetDepth
       hRetc hReturnFrame hLower hCompile hBoundary.semantic.invariant
       hBoundary.ready
+  exact
+    ⟨afterState, afterLocals, headCode, tail, hCompiled,
+      Simulation.Interaction.Rel.inter hSemantic hResource,
+      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+
+/-- One cursor decomposition supplies both plain-terminal capabilities. -/
+theorem CoreCursor.terminal_runtime_head
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {kind : Assembly.HaltKind} {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth sourceFuel targetExtra frameBase : Nat}
+    {config : Config} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live { stmts := .terminal kind :: rest }
+        beforeState beforeLocals)
+    (hMemory : Simulation.MemorySafety.TerminalMemorySafe contract kind [])
+    (hBoundary :
+      Boundary cursor contract globalFrameWords config allocatorDepth frameBase
+        mode sourceCtx source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        CoreCursor root scope live { stmts := rest }
+          afterState afterLocals,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          Simulation.Interaction.Rel
+            (RuntimeResultRel contract root.lowerCtx afterState afterLocals
+              cursor.plan root.returns live frameBase mode sourceCtx sourceCtx
+              config allocatorDepth target)
+            (Functions.InteractionSemantics.Stmt.openRun
+              program sourceCtx sourceFuel (.terminal kind) source)
+            (Expressions.InteractionSemantics.Block.openRun
+              expressions (targetExtra + 3) { stmts := headCode } target) ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, hPlan, hFinalState, hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, _hScoped⟩ := cursor.cons
+  have hSemantic :=
+    AllocationInteractionTerminal.terminal_of_lower_compile
+      (sourceProgram := program) (sourceCtx := sourceCtx)
+      (targetProgram := expressions)
+      (sourceFuel := sourceFuel) (targetExtra := targetExtra)
+      hMemory hLower hCompile hBoundary.semantic.invariant
+  have hResource :=
+    AllocationInteractionTerminalResource.terminal_of_lower_compile
+      (sourceProgram := program) (sourceCtx := sourceCtx)
+      (targetProgram := expressions)
+      (sourceFuel := sourceFuel) (targetExtra := targetExtra)
+      hMemory hLower hCompile hBoundary.semantic.invariant hBoundary.ready
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled,
       Simulation.Interaction.Rel.inter hSemantic hResource,
@@ -1970,6 +2030,99 @@ theorem leave
   have hMidCtx :
       sourceCtx =
         { sourceCtx with scope := Functions.Scope.Stmt.outEnv live .leave } := by
+    have hCtx : { sourceCtx with scope := live } = sourceCtx := by
+      cases sourceCtx
+      have hScope := hBoundary.semantic.sourceScope
+      simp only at hScope
+      cases hScope
+      rfl
+    simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
+  have hResult :=
+    cons_of_parts cursor tail hExact hCompiled hMidCtx
+      (by simpa [childFuel, hFuel, totalFuel,
+        Functions.Scope.Stmt.outEnv] using hHead')
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame =>
+        hTailForward tail hExact
+          { semantic :=
+              { invariant := hInvariant
+                sourceScope := hBoundary.semantic.sourceScope
+                control := hBoundary.semantic.control
+                capacity := by
+                  cases hSame <;> exact hBoundary.semantic.capacity }
+            configEq := hBoundary.configEq
+            ready := hReady
+            owned := hBoundary.owned.sameFrame hSame
+            budget := hBoundary.budget })
+  have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
+  rw [hFuel'] at hResult
+  exact hResult
+
+/-- Recursive plain terminal with allocator-safe terminal growth. -/
+theorem terminal
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {kind : Assembly.HaltKind} {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase sourceFuel targetExtra : Nat}
+    {config : Config} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live { stmts := .terminal kind :: rest }
+        beforeState beforeLocals)
+    (hSourceFuel : 0 < sourceFuel)
+    (hMemory : Simulation.MemorySafety.TerminalMemorySafe contract kind [])
+    (hBoundary :
+      Boundary cursor contract globalFrameWords config allocatorDepth frameBase
+        mode sourceCtx source target)
+    (hTailForward :
+      ∀ {afterState : AllocationLowering.State}
+        {afterLocals : Locals.Ctx}
+        (tail : CoreCursor root scope live { stmts := rest }
+          afterState afterLocals),
+        ExactTail cursor tail →
+        ∀ {sourceMid targetMid tailMode},
+          Boundary tail contract globalFrameWords config allocatorDepth frameBase
+              tailMode sourceCtx sourceMid targetMid →
+            CursorRuntimeAt tail contract config allocatorDepth frameBase
+              (sourceFuel - 1) (targetExtra + 8) tailMode sourceCtx
+              sourceMid targetMid) :
+    CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
+      targetExtra mode sourceCtx source target := by
+  let childFuel := sourceFuel - 1
+  let totalFuel := targetBudget cursor sourceFuel targetExtra
+  let headExtra := totalFuel - 3
+  have hFuel : childFuel + 1 = sourceFuel := by simp [childFuel]; omega
+  have hHeadFuel : headExtra + 3 = totalFuel := by
+    simp [headExtra, totalFuel, targetBudget]
+    omega
+  obtain
+      ⟨afterState, afterLocals, headCode, tail,
+        hCompiled, hHead, hExact⟩ :=
+    AllocationInteractionRecursiveResource.CoreCursor.terminal_runtime_head
+      cursor (sourceFuel := childFuel) (targetExtra := headExtra)
+      hMemory hBoundary
+  have hHead' :
+      Simulation.Interaction.Rel
+        (RuntimeResultRel contract root.lowerCtx afterState afterLocals
+          cursor.plan root.returns live frameBase mode sourceCtx sourceCtx
+          config allocatorDepth target)
+        (Functions.InteractionSemantics.Stmt.openRun
+          program sourceCtx childFuel (.terminal kind) source)
+        (Expressions.InteractionSemantics.Block.openRun expressions totalFuel
+          { stmts := headCode } target) := by
+    simpa [hHeadFuel] using hHead
+  have hMidCtx :
+      sourceCtx =
+        { sourceCtx with
+          scope := Functions.Scope.Stmt.outEnv live (.terminal kind) } := by
     have hCtx : { sourceCtx with scope := live } = sourceCtx := by
       cases sourceCtx
       have hScope := hBoundary.semantic.sourceScope

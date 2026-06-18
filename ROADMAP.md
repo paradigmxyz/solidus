@@ -115,7 +115,7 @@ boundaries remain active work.
   - [ ] orthogonal recursive allocator companion over the same Interaction
     tree (shared intersection/`cons`, empty cursor, expression statement, and
     assignment/declaration, `break`/`continue`, and lexical blocks checked;
-    `if`/`switch` and function `leave` checked; plain terminals,
+    `if`/`switch`, function `leave`, and plain terminals checked;
     argument terminals, loops, and call owners remain);
   - [ ] compose caller arguments, selected-callee recursion, return writeback,
     scratch release, and the exact tail;
