@@ -31645,3 +31645,14 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1157-job Functions root, 1306-job verification root, architecture guard,
   touched-file hole scan, and `git diff --check` passed; public theorem axioms
   are exactly `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 20:56:07 PDT - proof/functions-closed-primitive-spec - factored
+  `ClosedSpec` and `TargetEffect` as the shared ordinary-primitive capability:
+  related final state, exact reserved-word stability, memory/active growth, and
+  no-wrap feed one generic activation-indexed `OpenForward` theorem.
+- 2026-06-17 20:56:07 PDT - proof/functions-mload-open - instantiated the
+  generic capability for `mload`; related machines load the same word and live
+  spill slots remain exact even when the read expands active memory.
+- 2026-06-17 20:56:07 PDT - validation/functions-mload-open - the 1157-job
+  Functions root, 1306-job verification root, architecture guard, touched-file
+  hole scan, and `git diff --check` passed; `ClosedSpec.openForward` and
+  `mload_openForward` use only `[propext, Classical.choice, Quot.sound]`.

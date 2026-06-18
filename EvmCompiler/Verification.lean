@@ -194,6 +194,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionPrimitive.create_openForward
 #check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.SharedFamily
 #check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.SharedFamily.openForward
+#check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.ClosedSpec
+#check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.ClosedSpec.openForward
+#check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.MemoryFamily.mload_openForward
 #check EvmCompiler.Functions.AllocationObserverRelation.StateRel.toInteraction
 #check EvmCompiler.Functions.AllocationObserverRelation.ScratchStateRel.toInteraction
 #check EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_nonObserver

@@ -873,6 +873,8 @@ Exit: the shared core builds with no compiler layer changed.
     scratch-backed activations, including the exact emitted spill-load code.
   - [x] Implement the ordinary memory-neutral primitive family as the same
     activation-indexed `OpenForward` capability used by external primitives.
+  - [x] Define the generic closed-primitive effect contract and instantiate
+    `mload`, including exact live spill-word stability across memory growth.
   - [ ] Compose argument-expression preservation with external primitive
     preservation through the ordinary allocation lowerer and Locals compiler.
   - [ ] Recursive allocation preservation for expressions, statements,
