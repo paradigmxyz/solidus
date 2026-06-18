@@ -46,6 +46,7 @@ import EvmCompiler.Functions.AllocationInteractionRecursive
 import EvmCompiler.Functions.AllocationInteractionRecursiveResource
 import EvmCompiler.Functions.AllocationInteractionCallResultResource
 import EvmCompiler.Functions.AllocationInteractionCallStatementResource
+import EvmCompiler.Functions.AllocationInteractionRecursiveCallResource
 import EvmCompiler.Functions.AllocationInteractionComposition
 import EvmCompiler.Functions.AllocationInteractionLeaf
 import EvmCompiler.Functions.AllocationInteractionStatement
@@ -145,6 +146,8 @@ import EvmCompiler.Yul.PrimitiveFuel
 import EvmCompiler.Yul.PrimitiveOwner
 import EvmCompiler.Yul.StateRelation
 
+#check EvmCompiler.Functions.AllocationInteractionRecursiveCallResource.CoreCursor.call_runtime_head
+#check EvmCompiler.Functions.AllocationInteractionRecursiveCallResource.CursorRuntimeAt.call
 #check EvmCompiler.Simulation.Interaction.Successful
 #check EvmCompiler.Simulation.Interaction.AllDone.bind_inv
 #check EvmCompiler.Simulation.Interaction.Successful.bind_inv

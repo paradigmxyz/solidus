@@ -795,7 +795,7 @@ theorem stack_after_arguments
             sourceAfterArgs fn.returns paramStore)))
     (hRecursive :
       AllocationInteractionRecursiveResource.RecursiveOpenRuntime
-        (root := prepared.rootArtifact hProgramScoped)
+        (compilation := compilation)
         contract compilation.recipe.frameWords fuelBound) :
     ∃ callerBase targetEntry targetFuel,
       ActivationStateRel contract callerPlan callerLive 0 callerFrameBase
@@ -933,7 +933,7 @@ theorem scratch_after_arguments
             sourceAfterArgs fn.returns paramStore)))
     (hRecursive :
       AllocationInteractionRecursiveResource.RecursiveOpenRuntime
-        (root := prepared.rootArtifact hProgramScoped)
+        (compilation := compilation)
         contract compilation.recipe.frameWords fuelBound) :
     ∃ callerBase targetEntry targetFuel,
       ActivationStateRel contract callerPlan callerLive 0 callerFrameBase

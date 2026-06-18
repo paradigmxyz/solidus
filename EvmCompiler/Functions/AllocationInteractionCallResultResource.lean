@@ -747,7 +747,7 @@ theorem complete_body
           sourceFuel fn.body source))
     (hRecursive :
       AllocationInteractionRecursiveResource.RecursiveOpenRuntime
-        (root := prepared.rootArtifact hProgramScoped)
+        (compilation := compilation)
         contract globalFrameWords fuelBound) :
     exists targetFuel,
       0 < targetFuel ∧
@@ -855,7 +855,7 @@ theorem complete_call
             sourceAfterArgs fn.returns paramStore)))
     (hRecursive :
       AllocationInteractionRecursiveResource.RecursiveOpenRuntime
-        (root := prepared.rootArtifact hProgramScoped)
+        (compilation := compilation)
         contract globalFrameWords fuelBound) :
     exists targetFuel,
       0 < targetFuel ∧

@@ -297,10 +297,10 @@ def RecursiveOpenRuntime
     {program : Functions.Program}
     {expressions : Expressions.Program}
     {compilation : Compilation allocation program expressions}
-    {root : RootArtifact compilation}
     (contract : MemoryContract.Contract)
     (globalFrameWords fuelBound : Nat) : Prop :=
-  ∀ {scope : Locals.Allocation.ScopeId}
+  ∀ {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {sourceBlock : Functions.Block}
     {lowerState : AllocationLowering.State}
@@ -334,7 +334,8 @@ theorem at_targetFuel
     {contract : MemoryContract.Contract}
     {globalFrameWords fuelBound : Nat}
     (hRecursive :
-      RecursiveOpenRuntime (root := root) contract globalFrameWords fuelBound)
+      RecursiveOpenRuntime (compilation := compilation)
+        contract globalFrameWords fuelBound)
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {sourceBlock : Functions.Block}
@@ -445,8 +446,7 @@ theorem body_of_cursor
         (Functions.InteractionSemantics.Block.openRun program sourceCtx
           sourceFuel fn.body source))
     (hRecursive :
-      RecursiveOpenRuntime
-        (root := prepared.rootArtifact hProgramScoped)
+      RecursiveOpenRuntime (compilation := compilation)
         contract globalFrameWords fuelBound) :
     ∃ targetFuel,
       0 < targetFuel ∧
@@ -729,8 +729,7 @@ theorem body_of_function_context
           (Functions.Source.Effectful.FunDef.bodyCtx fn)
           sourceFuel fn.body source))
     (hRecursive :
-      RecursiveOpenRuntime
-        (root := prepared.rootArtifact hProgramScoped)
+      RecursiveOpenRuntime (compilation := compilation)
         contract globalFrameWords fuelBound) :
     ∃ targetFuel,
       0 < targetFuel ∧
@@ -2394,7 +2393,8 @@ theorem for_
         (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
           (sourceFuel - 1) (.for_ init cond post body) source))
     (hRecursive :
-      RecursiveOpenRuntime (root := root) contract globalFrameWords sourceFuel)
+      RecursiveOpenRuntime (compilation := compilation)
+        contract globalFrameWords sourceFuel)
     (hCapacity :
       ForFuelCapacity cursor.forArtifact (sourceFuel - 2)
         ((targetBudget cursor sourceFuel targetExtra - 2) -
