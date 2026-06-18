@@ -173,7 +173,7 @@ theorem expr_of_lower_compile
     {lowerState lowerFinal : AllocationLowering.State}
     {localsCtx localsFinal : Locals.Ctx}
     {plan : Plan} {live : List Locals.Name}
-    {frameBase : Nat} {mode : ActivationMode}
+    {sourceFuel targetExtra frameBase : Nat} {mode : ActivationMode}
     {expr : Functions.Expr 0}
     {loweredStmts : List Locals.Stmt}
     {compiledStmts : List Expressions.Stmt}
@@ -194,9 +194,9 @@ theorem expr_of_lower_compile
       (OpenStmtResultRel contract lowerCtx lowerFinal localsFinal plan returns
         live frameBase mode sourceCtx sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
-        sourceProgram sourceCtx 0 (.expr expr) source)
+        sourceProgram sourceCtx sourceFuel (.expr expr) source)
       (Expressions.InteractionSemantics.Block.openRun
-        targetProgram 2 { stmts := compiledStmts } target) := by
+        targetProgram (targetExtra + 2) { stmts := compiledStmts } target) := by
   cases hLowerExpr :
       AllocationLowering.lowerExpr lowerCtx lowerState expr with
   | none =>
@@ -341,7 +341,7 @@ theorem stack_let_of_lower_compile
     {beforeState afterState : AllocationLowering.State}
     {beforeLocals afterLocals : Locals.Ctx}
     {plan : Plan} {live : List Locals.Name}
-    {frameBase : Nat}
+    {sourceFuel targetExtra frameBase : Nat}
     {name : Locals.Name} {valueExpr : Functions.Expr 1}
     {loweredStmts : List Locals.Stmt}
     {compiledStmts : List Expressions.Stmt}
@@ -366,9 +366,9 @@ theorem stack_let_of_lower_compile
         (name :: live) frameBase .stack sourceCtx
         { sourceCtx with scope := name :: sourceCtx.scope })
       (Functions.InteractionSemantics.Stmt.openRun
-        sourceProgram sourceCtx 0 (.let_ name valueExpr) source)
+        sourceProgram sourceCtx sourceFuel (.let_ name valueExpr) source)
       (Expressions.InteractionSemantics.Block.openRun
-        targetProgram 2 { stmts := compiledStmts } target) := by
+        targetProgram (targetExtra + 2) { stmts := compiledStmts } target) := by
   cases hInvariant.compiler with
   | stack hBefore =>
       obtain

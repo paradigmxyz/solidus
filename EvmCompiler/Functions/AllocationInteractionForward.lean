@@ -1,5 +1,6 @@
 import EvmCompiler.Functions.AllocationInteractionCursor
 import EvmCompiler.Functions.AllocationInteractionComposition
+import EvmCompiler.Functions.AllocationInteractionLeaf
 
 namespace EvmCompiler
 namespace Functions
@@ -8,6 +9,55 @@ namespace AllocationInteractionForward
 open AllocationInteractionRelation
 open AllocationInteractionCursor
 open AllocationInteractionComposition
+
+/-- A runtime activation has at least the scratch capacity selected by the pass. -/
+def FrameCapacity
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    (compilation : Compilation allocation program expressions) :
+    ActivationMode → Prop
+  | .stack => True
+  | .scratch _ frameWords => compilation.recipe.frameWords ≤ frameWords
+
+namespace FrameCapacity
+
+theorem declaration
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {plan : Locals.Allocation.Plan} {name : Locals.Name}
+    {before after : ActivationMode}
+    (hBefore : FrameCapacity compilation before)
+    (hTransition :
+      AllocationContext.DeclarationModeTransition
+        plan name before after) :
+    FrameCapacity compilation after := by
+  cases hTransition with
+  | @stack before planDepth hLocation =>
+      cases before <;> exact hBefore
+  | scratch frameDepth frameWords slot hLocation =>
+      exact hBefore
+
+theorem cleanup
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {finalStackDepth targetDepth : Nat}
+    {before after : ActivationMode}
+    (hBefore : FrameCapacity compilation before)
+    (hTransition :
+      AllocationInteractionCleanup.ModeTransition
+        finalStackDepth targetDepth before after) :
+    FrameCapacity compilation after := by
+  cases hTransition with
+  | stack target => exact hBefore
+  | scratch beforeDepth afterDepth frameWords afterDepthEq target =>
+      exact hBefore
+
+end FrameCapacity
 
 /-- The empty canonical cursor preserves its complete activation invariant. -/
 theorem CoreCursor.nil
@@ -116,6 +166,237 @@ theorem CoreCursor.cons_of_parts
   rw [hPlan, hFinalState, hFinalLocals] at hTailForward
   rw [hCompiled]
   exact AllocationInteractionComposition.block_cons hHead hTailForward
+
+/-- Derive an expression head theorem and exact tail from its cursor. -/
+theorem CoreCursor.expr_head
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {expr : Functions.Expr 0} {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {sourceFuel targetExtra frameBase : Nat}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live { stmts := .expr expr :: rest }
+        beforeState beforeLocals)
+    (hSafe : AllocationInteractionSafety.ExprSafe contract expr source)
+    (hInvariant :
+      AllocationContext.ActivationInvariant contract root.lowerCtx
+        beforeState beforeLocals cursor.plan live frameBase mode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        CoreCursor root scope live { stmts := rest }
+          afterState afterLocals,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          Simulation.Interaction.Rel
+            (OpenControlResultRel contract root.lowerCtx afterState
+              afterLocals cursor.plan root.returns live frameBase
+              sourceCtx sourceCtx)
+            (Functions.InteractionSemantics.Stmt.openRun
+              program sourceCtx sourceFuel (.expr expr) source)
+            (Expressions.InteractionSemantics.Block.openRun
+              expressions (targetExtra + 2)
+                { stmts := headCode } target) ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, hPlan, hFinalState, hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, hScoped⟩ :=
+    cursor.cons
+  have hExprScoped : Functions.Scope.ExprScoped live expr := by
+    simpa [Functions.Scope.Stmt.Scoped] using hScoped
+  have hHead :=
+    AllocationInteractionLeaf.expr_of_lower_compile
+      (sourceProgram := program) (sourceCtx := sourceCtx)
+      (targetProgram := expressions)
+      (sourceFuel := sourceFuel) (targetExtra := targetExtra)
+      hSafe hExprScoped hLower hCompile hInvariant
+  exact
+    ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
+      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+
+/-- Derive an assignment head theorem and exact tail from its cursor. -/
+theorem CoreCursor.assign_head
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {name : Functions.Name} {value : Functions.Expr 1}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {sourceFuel targetExtra frameBase : Nat}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live { stmts := .assign name value :: rest }
+        beforeState beforeLocals)
+    (hSafe : AllocationInteractionSafety.ExprSafe contract value source)
+    (hInvariant :
+      AllocationContext.ActivationInvariant contract root.lowerCtx
+        beforeState beforeLocals cursor.plan live frameBase mode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        CoreCursor root scope live { stmts := rest }
+          afterState afterLocals,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          Simulation.Interaction.Rel
+            (OpenControlResultRel contract root.lowerCtx afterState
+              afterLocals cursor.plan root.returns live frameBase
+              sourceCtx sourceCtx)
+            (Functions.InteractionSemantics.Stmt.openRun
+              program sourceCtx sourceFuel (.assign name value) source)
+            (Expressions.InteractionSemantics.Block.openRun
+              expressions (targetExtra + 2)
+                { stmts := headCode } target) ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, hPlan, hFinalState, hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, hScoped⟩ :=
+    cursor.cons
+  have hHead :=
+    AllocationInteractionLeaf.assign_of_lower_compile
+      (sourceProgram := program) (sourceCtx := sourceCtx)
+      (targetProgram := expressions)
+      (sourceFuel := sourceFuel) (targetExtra := targetExtra)
+      hSafe hScoped.2 hScoped.1 hLower hCompile hInvariant
+  exact
+    ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
+      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+
+/-- Derive a declaration head theorem in stack or scratch representation. -/
+theorem CoreCursor.let_head
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {name : Functions.Name} {value : Functions.Expr 1}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {sourceFuel targetExtra frameBase : Nat}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live { stmts := .let_ name value :: rest }
+        beforeState beforeLocals)
+    (hSafe : AllocationInteractionSafety.ExprSafe contract value source)
+    (hCapacity : FrameCapacity compilation mode)
+    (hInvariant :
+      AllocationContext.ActivationInvariant contract root.lowerCtx
+        beforeState beforeLocals cursor.plan live frameBase mode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        CoreCursor root scope (name :: live) { stmts := rest }
+          afterState afterLocals,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          Simulation.Interaction.Rel
+            (OpenControlResultRel contract root.lowerCtx afterState
+              afterLocals cursor.plan root.returns (name :: live) frameBase
+              sourceCtx { sourceCtx with scope := name :: sourceCtx.scope })
+            (Functions.InteractionSemantics.Stmt.openRun
+              program sourceCtx sourceFuel (.let_ name value) source)
+            (Expressions.InteractionSemantics.Block.openRun
+              expressions (targetExtra + 2)
+                { stmts := headCode } target) ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        hPlanning, hPlan, hFinalState, hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, hScoped⟩ :=
+    cursor.cons
+  obtain ⟨afterMode, hAfter, hTransition⟩ :=
+    cursor.letContext tail hPlanning hPlan hInvariant.compiler
+      hLower hCompile
+  have hNameFrame : name ≠ root.lowerCtx.frameName := by
+    intro hEq
+    apply tail.frameName_not_mem_live
+    change compilation.frameName ∈ name :: live
+    have hNameCompilation : name = compilation.frameName :=
+      hEq.trans root.lowerCtxShared.frameName
+    simp [hNameCompilation]
+  have hScratchBound :
+      ∀ {frameDepth frameWords slot},
+        mode = .scratch frameDepth frameWords →
+        cursor.plan.location? name = some (.scratch slot) →
+        slot < frameWords := by
+    intro frameDepth frameWords slot hMode hLocation
+    rw [hMode] at hCapacity
+    exact
+      lt_of_lt_of_le
+        (cursor.scratch_bound_of_location hLocation) hCapacity
+  have hHead :
+      Simulation.Interaction.Rel
+        (OpenControlResultRel contract root.lowerCtx afterState
+          afterLocals cursor.plan root.returns (name :: live) frameBase
+          sourceCtx { sourceCtx with scope := name :: sourceCtx.scope })
+        (Functions.InteractionSemantics.Stmt.openRun
+          program sourceCtx sourceFuel (.let_ name value) source)
+        (Expressions.InteractionSemantics.Block.openRun
+          expressions (targetExtra + 2) { stmts := headCode } target) := by
+    cases mode with
+    | stack =>
+        cases hTransition with
+        | stack planDepth hLocation =>
+            cases hAfter with
+            | stack hAfterStack =>
+                exact
+                  AllocationInteractionLeaf.stack_let_of_lower_compile
+                    (sourceProgram := program) (sourceCtx := sourceCtx)
+                    (targetProgram := expressions)
+                    (sourceFuel := sourceFuel) (targetExtra := targetExtra)
+                    hSafe hAfterStack hScoped.2 hLower hCompile hInvariant
+    | scratch frameDepth frameWords =>
+        cases hTransition with
+        | stack planDepth hLocation =>
+            cases hAfter with
+            | scratch hAfterScratch =>
+                exact
+                  AllocationInteractionLeaf.scratch_let_of_lower_compile
+                    (sourceProgram := program) (sourceCtx := sourceCtx)
+                    (targetProgram := expressions)
+                    (sourceFuel := sourceFuel) (targetExtra := targetExtra)
+                    hSafe hAfterScratch hScoped.2 rfl hNameFrame
+                    (fun slot hLocation =>
+                      hScratchBound rfl hLocation)
+                    hLower hCompile hInvariant
+        | scratch frameDepth frameWords slot hLocation =>
+            cases hAfter with
+            | scratch hAfterScratch =>
+                exact
+                  AllocationInteractionLeaf.scratch_let_of_lower_compile
+                    (sourceProgram := program) (sourceCtx := sourceCtx)
+                    (targetProgram := expressions)
+                    (sourceFuel := sourceFuel) (targetExtra := targetExtra)
+                    hSafe hAfterScratch hScoped.2 rfl hNameFrame
+                    (fun slot hLocation =>
+                      hScratchBound rfl hLocation)
+                    hLower hCompile hInvariant
+  exact
+    ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
+      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
 
 end AllocationInteractionForward
 end Functions

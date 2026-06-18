@@ -274,7 +274,7 @@ theorem scratch_of_lower_compile
     {lowerState lowerFinal : AllocationLowering.State}
     {localsCtx localsFinal : Locals.Ctx}
     {plan : Plan} {live : List Locals.Name}
-    {frameDepth frameBase frameWords : Nat}
+    {sourceFuel targetExtra frameDepth frameBase frameWords : Nat}
     {name : Locals.Name} {valueExpr : Functions.Expr 1}
     {loweredStmts : List Locals.Stmt}
     {compiledStmts : List Expressions.Stmt}
@@ -298,9 +298,9 @@ theorem scratch_of_lower_compile
         lowerFinal localsFinal plan returns live frameBase
           (.scratch frameDepth frameWords) sourceCtx sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
-        sourceProgram sourceCtx 0 (.assign name valueExpr) source)
+        sourceProgram sourceCtx sourceFuel (.assign name valueExpr) source)
       (Expressions.InteractionSemantics.Block.openRun
-        targetProgram 2 { stmts := compiledStmts } target) := by
+        targetProgram (targetExtra + 2) { stmts := compiledStmts } target) := by
   cases hInvariant.compiler with
   | @scratch _ _ hCtx =>
       obtain ⟨hShape, hLowerFinal, hLocalsFinal⟩ :=
@@ -697,7 +697,8 @@ theorem stack_of_lower_compile
     {returns : List Functions.Name}
     {lowerState lowerFinal : AllocationLowering.State}
     {localsCtx localsFinal : Locals.Ctx}
-    {plan : Plan} {live : List Locals.Name} {frameBase : Nat}
+    {plan : Plan} {live : List Locals.Name}
+    {sourceFuel targetExtra frameBase : Nat}
     {name : Locals.Name} {valueExpr : Functions.Expr 1}
     {loweredStmts : List Locals.Stmt}
     {compiledStmts : List Expressions.Stmt}
@@ -720,9 +721,9 @@ theorem stack_of_lower_compile
         lowerFinal localsFinal plan returns live frameBase .stack sourceCtx
         sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
-        sourceProgram sourceCtx 0 (.assign name valueExpr) source)
+        sourceProgram sourceCtx sourceFuel (.assign name valueExpr) source)
       (Expressions.InteractionSemantics.Block.openRun
-        targetProgram 2 { stmts := compiledStmts } target) := by
+        targetProgram (targetExtra + 2) { stmts := compiledStmts } target) := by
   cases hInvariant.compiler with
   | stack hCtx =>
       obtain
@@ -948,7 +949,7 @@ theorem of_lower_compile
     {lowerState lowerFinal : AllocationLowering.State}
     {localsCtx localsFinal : Locals.Ctx}
     {plan : Plan} {live : List Locals.Name}
-    {frameBase : Nat} {mode : ActivationMode}
+    {sourceFuel targetExtra frameBase : Nat} {mode : ActivationMode}
     {name : Locals.Name} {valueExpr : Functions.Expr 1}
     {loweredStmts : List Locals.Stmt}
     {compiledStmts : List Expressions.Stmt}
@@ -971,9 +972,9 @@ theorem of_lower_compile
         lowerFinal localsFinal plan returns live frameBase mode sourceCtx
         sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
-        sourceProgram sourceCtx 0 (.assign name valueExpr) source)
+        sourceProgram sourceCtx sourceFuel (.assign name valueExpr) source)
       (Expressions.InteractionSemantics.Block.openRun
-        targetProgram 2 { stmts := compiledStmts } target) := by
+        targetProgram (targetExtra + 2) { stmts := compiledStmts } target) := by
   cases mode with
   | stack =>
       exact stack_of_lower_compile hSafe hScoped hLive hLower hCompile

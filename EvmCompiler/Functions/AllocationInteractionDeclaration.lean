@@ -231,7 +231,8 @@ theorem of_lower_compile
     {beforeState afterState : AllocationLowering.State}
     {beforeLocals afterLocals : Locals.Ctx}
     {plan : Plan} {beforeLive afterLive : List Locals.Name}
-    {beforeFrameDepth afterFrameDepth frameBase frameWords : Nat}
+    {sourceFuel targetExtra beforeFrameDepth afterFrameDepth frameBase
+      frameWords : Nat}
     {name : Locals.Name} {valueExpr : Functions.Expr 1}
     {loweredStmts : List Locals.Stmt}
     {compiledStmts : List Expressions.Stmt}
@@ -263,9 +264,9 @@ theorem of_lower_compile
           (.scratch afterFrameDepth frameWords) sourceCtx
         { sourceCtx with scope := name :: sourceCtx.scope })
       (Functions.InteractionSemantics.Stmt.openRun
-        sourceProgram sourceCtx 0 (.let_ name valueExpr) source)
+        sourceProgram sourceCtx sourceFuel (.let_ name valueExpr) source)
       (Expressions.InteractionSemantics.Block.openRun
-        targetProgram 2 { stmts := compiledStmts } target) := by
+        targetProgram (targetExtra + 2) { stmts := compiledStmts } target) := by
   cases hInvariant.compiler with
   | @scratch _ _ hBefore =>
       have hNameAfter : name ∈ afterLive := by

@@ -31930,3 +31930,13 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-Lean hole scan, axiom audit, and `git diff --check` passed; both
   semantic composition theorems use only
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 23:30:00 PDT - theorem-boundary/functions-leaf-fuel - generalized
+  the owning expression, assignment, declaration, and recursive leaf theorems
+  from hard-coded source/target fuel to arbitrary source fuel and arbitrary
+  target slack. Added canonical cursor head theorems for expression,
+  assignment, and declaration plus `FrameCapacity` preservation across
+  declaration and cleanup transitions.
+- 2026-06-17 23:31:00 PDT - validation/functions-leaf-fuel - focused builds,
+  the 1323-job verification root, architecture guard, touched-Lean hole scan,
+  axiom audit, and `git diff --check` passed. Generalized leaves and cursor
+  heads use only `[propext, Classical.choice, Quot.sound]`.

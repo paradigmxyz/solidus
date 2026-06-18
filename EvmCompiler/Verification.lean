@@ -277,6 +277,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.forCursors
 #check EvmCompiler.Functions.AllocationInteractionForward.CoreCursor.nil
 #check EvmCompiler.Functions.AllocationInteractionForward.CoreCursor.cons_of_parts
+#check EvmCompiler.Functions.AllocationInteractionForward.FrameCapacity
+#check EvmCompiler.Functions.AllocationInteractionForward.FrameCapacity.declaration
+#check EvmCompiler.Functions.AllocationInteractionForward.FrameCapacity.cleanup
+#check EvmCompiler.Functions.AllocationInteractionForward.CoreCursor.expr_head
+#check EvmCompiler.Functions.AllocationInteractionForward.CoreCursor.assign_head
+#check EvmCompiler.Functions.AllocationInteractionForward.CoreCursor.let_head
 #check EvmCompiler.Functions.AllocationInteractionComposition.ControlResultRel
 #check EvmCompiler.Functions.AllocationInteractionComposition.lift_fixed
 #check EvmCompiler.Functions.AllocationInteractionComposition.cons
