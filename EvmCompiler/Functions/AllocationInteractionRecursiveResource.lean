@@ -375,6 +375,274 @@ theorem at_targetFuel
 
 end RecursiveOpenRuntime
 
+namespace SelectedCallee
+
+/--
+Compose compiler-selected callee setup with the shared recursive runtime for
+its canonical body root. The recursive capability is fuel-bounded proof state,
+not a public call oracle or alternate compiler.
+-/
+theorem body_of_cursor
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : AllocationInteractionCall.SelectedCallee.Artifact
+      compilation name fn}
+    (prepared :
+      AllocationInteractionCall.SelectedCallee.Prepared artifact)
+    (hProgramScoped : program.Scoped)
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase sourceFuel fuelBound : Nat}
+    {config : Config}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.InteractionSemantics.State}
+    {target : Structured.RunState}
+    {reservation : MemoryContract.ScratchReservation}
+    (hEntry :
+      ActivationCalleeEntryRel contract prepared.plan []
+        artifact.slots.params frameBase artifact.mode source target)
+    (hZero :
+      ∀ localName,
+        localName ∈ artifact.slots.returns.map Prod.fst →
+        source.vars localName = some AllocationSupport.zeroWord)
+    (hStackLength :
+      target.evm.stack.length = artifact.entryCtx.layout.length)
+    (hReservation : contract.scratch? = some reservation)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hReady : AllocatorReady config allocatorDepth target)
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase artifact.mode)
+    (hBudget : AllocationInteractionFrame.Budget config allocatorDepth)
+    (hSourceFuel : sourceFuel < fuelBound)
+    (hSourceScope :
+      sourceCtx.scope =
+        (artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+    (hControl :
+      AllocationInteractionStatement.ControlScopesWithin fn.returns
+        ((artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+        sourceCtx)
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel fn.body source))
+    (hRecursive :
+      RecursiveOpenRuntime
+        (root := prepared.rootArtifact hProgramScoped)
+        contract globalFrameWords fuelBound) :
+    ∃ targetFuel,
+      0 < targetFuel ∧
+      Simulation.Interaction.Rel
+        (RuntimeResultRel contract artifact.lowerCtx prepared.bodyFinal
+          prepared.bodyCtx prepared.plan fn.returns
+          (Functions.Scope.Block.outEnv
+            ((artifact.slots.returns.map Prod.fst).reverse ++
+              (artifact.slots.params.map Prod.fst).reverse)
+            fn.body)
+          frameBase artifact.mode sourceCtx
+          { sourceCtx with
+            scope :=
+              Functions.Scope.Block.outEnv
+                ((artifact.slots.returns.map Prod.fst).reverse ++
+                  (artifact.slots.params.map Prod.fst).reverse)
+                fn.body }
+          config allocatorDepth target)
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel fn.body source)
+        (Expressions.InteractionSemantics.Block.openRun expressions targetFuel
+          { stmts :=
+              prepared.markerCode ++ prepared.paramCode ++
+                prepared.returnCode ++ prepared.bodyCode }
+          target) := by
+  let live :=
+    (artifact.slots.returns.map Prod.fst).reverse ++
+      (artifact.slots.params.map Prod.fst).reverse
+  have hSetupFrame : SameFrame artifact.mode prepared.bodyMode := by
+    exact SameFrame.atStackDepth artifact.mode
+      (currentStackOrder prepared.plan live).length
+  by_cases hNeedsFrame : artifact.needsFrame = true
+  · have hScratchEntry :
+        ActivationCalleeEntryRel contract prepared.plan []
+          artifact.slots.params frameBase
+          (.scratch 0 compilation.recipe.frameWords) source target := by
+      simpa [AllocationInteractionCall.SelectedCallee.Artifact.mode,
+        hNeedsFrame] using hEntry
+    have hScratchOwned :
+        ActivationOwned config allocatorDepth frameBase
+          (.scratch 0 compilation.recipe.frameWords) := by
+      simpa [AllocationInteractionCall.SelectedCallee.Artifact.mode,
+        hNeedsFrame] using hOwned
+    have hCapacity :
+        AllocationInteractionForward.FrameCapacity compilation
+          prepared.bodyMode := by
+      rw [show prepared.bodyMode =
+          .scratch
+            (currentStackOrder prepared.plan live).length
+            compilation.recipe.frameWords by
+        simp [AllocationInteractionCall.SelectedCallee.Prepared.bodyMode,
+          AllocationInteractionCall.SelectedCallee.Artifact.mode,
+          ActivationMode.atStackDepth, hNeedsFrame, live]]
+      exact Nat.le_refl _
+    obtain
+        ⟨_afterParams, bodyTarget, _paramFuel, _returnFuel, _preludeFuel,
+          _hParamFuel, _hReturnFuel, _hMarkers, _hParams, _hReturns,
+          _hPreludeFuel, _hPreludeLength, _hPrelude, hPreludeAt,
+          hInvariant, hSetupEffect⟩ :=
+      AllocationInteractionCallPreludeResource.Prepared.body_entry_resource_scratch
+        prepared hConfig hNeedsFrame hScratchEntry hZero hStackLength
+        hReservation hReady hScratchOwned
+    have hSetupEffect' :
+        ActivationEffect config allocatorDepth artifact.mode target
+          bodyTarget := by
+      simpa [AllocationInteractionCall.SelectedCallee.Artifact.mode,
+        hNeedsFrame] using hSetupEffect
+    have hBodyBoundary :
+        Boundary (prepared.rootCursor hProgramScoped) contract
+          globalFrameWords config allocatorDepth frameBase prepared.bodyMode
+          sourceCtx source bodyTarget :=
+      { semantic :=
+          { invariant := hInvariant
+            sourceScope := hSourceScope
+            control := hControl
+            capacity := hCapacity }
+        configEq := hConfig
+        ready := hSetupEffect.ready
+        owned := hOwned.sameFrame hSetupFrame
+        budget := hBudget }
+    have hBodyRaw :=
+      hRecursive (prepared.rootCursor hProgramScoped) hSourceFuel
+        hBodyBoundary hSuccess (targetExtra := 0)
+    let bodyFuel :=
+      targetBudget (prepared.rootCursor hProgramScoped) sourceFuel 0
+    have hBodyFuel : 0 < bodyFuel := by
+      simp [bodyFuel, targetBudget]
+    have hBody :
+        Simulation.Interaction.Rel
+          (RuntimeResultRel contract artifact.lowerCtx prepared.bodyFinal
+            prepared.bodyCtx prepared.plan fn.returns
+            (Functions.Scope.Block.outEnv live fn.body)
+            frameBase prepared.bodyMode sourceCtx
+            { sourceCtx with
+              scope := Functions.Scope.Block.outEnv live fn.body }
+            config allocatorDepth bodyTarget)
+          (Functions.InteractionSemantics.Block.openRun program sourceCtx
+            sourceFuel fn.body source)
+          (Expressions.InteractionSemantics.Block.openRun expressions bodyFuel
+            { stmts := prepared.bodyCode } bodyTarget) := by
+      simpa [CursorRuntimeAt, bodyFuel, live] using hBodyRaw
+    have hBodyFromEntry :
+        Simulation.Interaction.Rel
+          (RuntimeResultRel contract artifact.lowerCtx prepared.bodyFinal
+            prepared.bodyCtx prepared.plan fn.returns
+            (Functions.Scope.Block.outEnv live fn.body)
+            frameBase artifact.mode sourceCtx
+            { sourceCtx with
+              scope := Functions.Scope.Block.outEnv live fn.body }
+            config allocatorDepth target)
+          (Functions.InteractionSemantics.Block.openRun program sourceCtx
+            sourceFuel fn.body source)
+          (Expressions.InteractionSemantics.Block.openRun expressions bodyFuel
+            { stmts := prepared.bodyCode } bodyTarget) := by
+      apply Simulation.Interaction.Rel.mono hBody
+      intro sourceDone targetDone hDone
+      exact RuntimeResultRel.prepend_frame hSetupFrame hSetupEffect' hDone
+    let totalFuel :=
+      prepared.markerCode.length + prepared.paramCode.length +
+        prepared.returnCode.length + bodyFuel
+    refine ⟨totalFuel, by simp [totalFuel]; omega, ?_⟩
+    simpa [totalFuel, live] using
+      prepared.prelude_then_body hBodyFuel hPreludeAt hBodyFromEntry
+  · have hNeedsFrameFalse : artifact.needsFrame = false :=
+      Bool.eq_false_of_not_eq_true hNeedsFrame
+    have hStackEntry :
+        ActivationCalleeEntryRel contract prepared.plan []
+          artifact.slots.params frameBase .stack source target := by
+      simpa [AllocationInteractionCall.SelectedCallee.Artifact.mode,
+        hNeedsFrameFalse] using hEntry
+    have hCapacity :
+        AllocationInteractionForward.FrameCapacity compilation
+          prepared.bodyMode := by
+      rw [show prepared.bodyMode = .stack by
+        simp [AllocationInteractionCall.SelectedCallee.Prepared.bodyMode,
+          AllocationInteractionCall.SelectedCallee.Artifact.mode,
+          ActivationMode.atStackDepth, hNeedsFrameFalse]]
+      trivial
+    obtain
+        ⟨_afterParams, bodyTarget, _paramFuel, _returnFuel, _preludeFuel,
+          _hParamFuel, _hReturnFuel, _hMarkers, _hParams, _hReturns,
+          _hPreludeFuel, _hPreludeLength, _hPrelude, hPreludeAt,
+          hInvariant, hSetupEffect⟩ :=
+      AllocationInteractionCallPreludeResource.Prepared.body_entry_resource_stack
+        prepared hNeedsFrameFalse hStackEntry hZero hStackLength hReady
+    have hSetupEffect' :
+        ActivationEffect config allocatorDepth artifact.mode target
+          bodyTarget := by
+      simpa [AllocationInteractionCall.SelectedCallee.Artifact.mode,
+        hNeedsFrameFalse] using hSetupEffect
+    have hBodyBoundary :
+        Boundary (prepared.rootCursor hProgramScoped) contract
+          globalFrameWords config allocatorDepth frameBase prepared.bodyMode
+          sourceCtx source bodyTarget :=
+      { semantic :=
+          { invariant := hInvariant
+            sourceScope := hSourceScope
+            control := hControl
+            capacity := hCapacity }
+        configEq := hConfig
+        ready := hSetupEffect.ready
+        owned := hOwned.sameFrame hSetupFrame
+        budget := hBudget }
+    have hBodyRaw :=
+      hRecursive (prepared.rootCursor hProgramScoped) hSourceFuel
+        hBodyBoundary hSuccess (targetExtra := 0)
+    let bodyFuel :=
+      targetBudget (prepared.rootCursor hProgramScoped) sourceFuel 0
+    have hBodyFuel : 0 < bodyFuel := by
+      simp [bodyFuel, targetBudget]
+    have hBody :
+        Simulation.Interaction.Rel
+          (RuntimeResultRel contract artifact.lowerCtx prepared.bodyFinal
+            prepared.bodyCtx prepared.plan fn.returns
+            (Functions.Scope.Block.outEnv live fn.body)
+            frameBase prepared.bodyMode sourceCtx
+            { sourceCtx with
+              scope := Functions.Scope.Block.outEnv live fn.body }
+            config allocatorDepth bodyTarget)
+          (Functions.InteractionSemantics.Block.openRun program sourceCtx
+            sourceFuel fn.body source)
+          (Expressions.InteractionSemantics.Block.openRun expressions bodyFuel
+            { stmts := prepared.bodyCode } bodyTarget) := by
+      simpa [CursorRuntimeAt, bodyFuel, live] using hBodyRaw
+    have hBodyFromEntry :
+        Simulation.Interaction.Rel
+          (RuntimeResultRel contract artifact.lowerCtx prepared.bodyFinal
+            prepared.bodyCtx prepared.plan fn.returns
+            (Functions.Scope.Block.outEnv live fn.body)
+            frameBase artifact.mode sourceCtx
+            { sourceCtx with
+              scope := Functions.Scope.Block.outEnv live fn.body }
+            config allocatorDepth target)
+          (Functions.InteractionSemantics.Block.openRun program sourceCtx
+            sourceFuel fn.body source)
+          (Expressions.InteractionSemantics.Block.openRun expressions bodyFuel
+            { stmts := prepared.bodyCode } bodyTarget) := by
+      apply Simulation.Interaction.Rel.mono hBody
+      intro sourceDone targetDone hDone
+      exact RuntimeResultRel.prepend_frame hSetupFrame hSetupEffect' hDone
+    let totalFuel :=
+      prepared.markerCode.length + prepared.paramCode.length +
+        prepared.returnCode.length + bodyFuel
+    refine ⟨totalFuel, by simp [totalFuel]; omega, ?_⟩
+    simpa [totalFuel, live] using
+      prepared.prelude_then_body hBodyFuel hPreludeAt hBodyFromEntry
+
+end SelectedCallee
+
 /-- One compiler decomposition supplies both expression-head capabilities. -/
 theorem CoreCursor.expr_runtime_head
     {allocation : Locals.Allocation.ProgramPlan}

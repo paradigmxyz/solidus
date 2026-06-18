@@ -1146,6 +1146,253 @@ theorem Prepared.returns_resource_stack
       by simpa using hEvalAt 0, hEvalAt, hFinalRel, hFinalStackLength,
       hEffect⟩
 
+/-- Scratch-backed compiler-selected setup reaches the body resource boundary. -/
+theorem Prepared.body_entry_resource_scratch
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : Artifact compilation name fn}
+    (prepared : Prepared artifact)
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase : Nat} {config : Config}
+    {source : Functions.InteractionSemantics.State}
+    {target : Structured.RunState}
+    {reservation : MemoryContract.ScratchReservation}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hNeedsFrame : artifact.needsFrame = true)
+    (hRel :
+      ActivationCalleeEntryRel contract prepared.plan []
+        artifact.slots.params frameBase
+        (.scratch 0 compilation.recipe.frameWords) source target)
+    (hZero :
+      ∀ localName,
+        localName ∈ artifact.slots.returns.map Prod.fst →
+        source.vars localName = some AllocationSupport.zeroWord)
+    (hStackLength :
+      target.evm.stack.length = artifact.entryCtx.layout.length)
+    (hReservation : contract.scratch? = some reservation)
+    (hReady : AllocatorReady config allocatorDepth target)
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch 0 compilation.recipe.frameWords)) :
+    ∃ afterParams finalTarget paramFuel returnFuel preludeFuel,
+      0 < paramFuel ∧
+      0 < returnFuel ∧
+      Expressions.InteractionSemantics.Block.openRun expressions 4
+          { stmts := prepared.markerCode } target =
+        .done (.ok (Structured.Outcome.regular target)) ∧
+      Expressions.InteractionSemantics.Block.openRun expressions paramFuel
+          { stmts := prepared.paramCode } target =
+        .done (.ok (Structured.Outcome.regular afterParams)) ∧
+      Expressions.InteractionSemantics.Block.openRun expressions returnFuel
+          { stmts := prepared.returnCode } afterParams =
+        .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      0 < preludeFuel ∧
+      preludeFuel =
+        prepared.markerCode.length + prepared.paramCode.length +
+          returnFuel ∧
+      Expressions.InteractionSemantics.Block.openRun expressions preludeFuel
+          { stmts :=
+              prepared.markerCode ++
+                (prepared.paramCode ++ prepared.returnCode) }
+          target =
+        .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      (∀ suffixFuel, 0 < suffixFuel →
+        Expressions.InteractionSemantics.Block.openRun expressions
+            (prepared.markerCode.length + prepared.paramCode.length +
+              prepared.returnCode.length + suffixFuel)
+            { stmts :=
+                prepared.markerCode ++
+                  (prepared.paramCode ++ prepared.returnCode) }
+            target =
+          .done (.ok (Structured.Outcome.regular finalTarget))) ∧
+      AllocationContext.ActivationInvariant contract artifact.lowerCtx
+        artifact.bodyStart prepared.returnCtx prepared.plan
+        ((artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+        frameBase prepared.bodyMode source finalTarget ∧
+      ActivationEffect config allocatorDepth
+        (.scratch 0 compilation.recipe.frameWords) target finalTarget := by
+  obtain
+      ⟨afterParams, paramFrameDepth, paramFuel, hParamFuel,
+        hParamFuelLength, _hParamLayout, hParamRun, hParamRunAt, hParamRel,
+        hParamDepth, hParamStackLength, hParamEffect⟩ :=
+    _root_.EvmCompiler.Functions.AllocationInteractionCallPreludeResource.Prepared.parameters_resource_scratch
+      prepared hConfig hRel hStackLength hReservation hReady hOwned
+  have hParamSame :
+      SameFrame (.scratch 0 compilation.recipe.frameWords)
+        (.scratch paramFrameDepth compilation.recipe.frameWords) :=
+    .scratch 0 paramFrameDepth compilation.recipe.frameWords
+  have hReturnOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch
+          (currentStackOrder prepared.plan
+            (artifact.slots.params.map Prod.fst).reverse).length
+          compilation.recipe.frameWords) := by
+    simpa [hParamDepth] using hOwned.sameFrame hParamSame
+  obtain
+      ⟨finalTarget, finalFrameDepth, returnFuel, hReturnFuel,
+        hReturnFuelLength, _hReturnLayout, hReturnRun, hReturnRunAt,
+        hReturnRel, hReturnDepth, hReturnStackLength, hReturnEffect⟩ :=
+    _root_.EvmCompiler.Functions.AllocationInteractionCallPreludeResource.Prepared.returns_resource_scratch
+      prepared hConfig
+      (by simpa [hParamDepth] using hParamRel) hZero hParamStackLength
+      hReservation hParamEffect.ready hReturnOwned
+  obtain ⟨preludeFuel, hPreludeFuel, hPreludeLength, hPreludeRun⟩ :=
+    prepared.prelude_forward hParamFuel hReturnFuel hParamFuelLength
+      hParamRunAt hReturnRun
+  have hState :
+      ActivationStateRel contract prepared.plan
+        ((artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+        0 frameBase prepared.bodyMode source finalTarget := by
+    have hScratchState :
+        ActivationStateRel contract prepared.plan
+          ((artifact.slots.returns.map Prod.fst).reverse ++
+            (artifact.slots.params.map Prod.fst).reverse)
+          0 frameBase
+          (.scratch finalFrameDepth compilation.recipe.frameWords)
+          source finalTarget :=
+      .scratch hReturnRel
+    simpa [Prepared.bodyMode, Artifact.mode, hNeedsFrame,
+      ActivationMode.atStackDepth, hReturnDepth] using hScratchState
+  have hInvariant :
+      AllocationContext.ActivationInvariant contract artifact.lowerCtx
+        artifact.bodyStart prepared.returnCtx prepared.plan
+        ((artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+        frameBase prepared.bodyMode source finalTarget :=
+    { compiler := prepared.bodyCompiler
+      planWF := prepared.planWF
+      defined := prepared.bodyLiveDefined hRel hZero
+      state := hState
+      stackLength := hReturnStackLength }
+  have hEffect :
+      ActivationEffect config allocatorDepth
+        (.scratch 0 compilation.recipe.frameWords) target finalTarget :=
+    hParamEffect.trans
+      (hReturnEffect.sameFrame
+        (.scratch
+          (currentStackOrder prepared.plan
+            (artifact.slots.params.map Prod.fst).reverse).length
+          0 compilation.recipe.frameWords))
+  exact
+    ⟨afterParams, finalTarget, paramFuel, returnFuel, preludeFuel,
+      hParamFuel, hReturnFuel, prepared.markers_forward target,
+      hParamRun, hReturnRun, hPreludeFuel, hPreludeLength, hPreludeRun,
+      (fun suffixFuel hSuffixFuel =>
+        prepared.prelude_forward_at hParamFuelLength hReturnFuelLength
+          hParamRunAt hReturnRunAt suffixFuel hSuffixFuel),
+      hInvariant, hEffect⟩
+
+/-- All-stack compiler-selected setup reaches the body resource boundary. -/
+theorem Prepared.body_entry_resource_stack
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : Artifact compilation name fn}
+    (prepared : Prepared artifact)
+    {contract : MemoryContract.Contract}
+    {config : Config} {allocatorDepth frameBase : Nat}
+    {source : Functions.InteractionSemantics.State}
+    {target : Structured.RunState}
+    (hNeedsFrame : artifact.needsFrame = false)
+    (hRel :
+      ActivationCalleeEntryRel contract prepared.plan []
+        artifact.slots.params frameBase .stack source target)
+    (hZero :
+      ∀ localName,
+        localName ∈ artifact.slots.returns.map Prod.fst →
+        source.vars localName = some AllocationSupport.zeroWord)
+    (hStackLength :
+      target.evm.stack.length = artifact.entryCtx.layout.length)
+    (hReady : AllocatorReady config allocatorDepth target) :
+    ∃ afterParams finalTarget paramFuel returnFuel preludeFuel,
+      0 < paramFuel ∧
+      0 < returnFuel ∧
+      Expressions.InteractionSemantics.Block.openRun expressions 4
+          { stmts := prepared.markerCode } target =
+        .done (.ok (Structured.Outcome.regular target)) ∧
+      Expressions.InteractionSemantics.Block.openRun expressions paramFuel
+          { stmts := prepared.paramCode } target =
+        .done (.ok (Structured.Outcome.regular afterParams)) ∧
+      Expressions.InteractionSemantics.Block.openRun expressions returnFuel
+          { stmts := prepared.returnCode } afterParams =
+        .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      0 < preludeFuel ∧
+      preludeFuel =
+        prepared.markerCode.length + prepared.paramCode.length +
+          returnFuel ∧
+      Expressions.InteractionSemantics.Block.openRun expressions preludeFuel
+          { stmts :=
+              prepared.markerCode ++
+                (prepared.paramCode ++ prepared.returnCode) }
+          target =
+        .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      (∀ suffixFuel, 0 < suffixFuel →
+        Expressions.InteractionSemantics.Block.openRun expressions
+            (prepared.markerCode.length + prepared.paramCode.length +
+              prepared.returnCode.length + suffixFuel)
+            { stmts :=
+                prepared.markerCode ++
+                  (prepared.paramCode ++ prepared.returnCode) }
+            target =
+          .done (.ok (Structured.Outcome.regular finalTarget))) ∧
+      AllocationContext.ActivationInvariant contract artifact.lowerCtx
+        artifact.bodyStart prepared.returnCtx prepared.plan
+        ((artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+        frameBase prepared.bodyMode source finalTarget ∧
+      ActivationEffect config allocatorDepth .stack target finalTarget := by
+  obtain
+      ⟨afterParams, paramFuel, hParamFuel, hParamFuelLength,
+        _hParamLayout, hParamRun, hParamRunAt, hParamRel,
+        hParamStackLength, hParamEffect⟩ :=
+    _root_.EvmCompiler.Functions.AllocationInteractionCallPreludeResource.Prepared.parameters_resource_stack
+      prepared hNeedsFrame hRel hStackLength hReady
+  obtain
+      ⟨finalTarget, returnFuel, hReturnFuel, hReturnFuelLength,
+        _hReturnLayout, hReturnRun, hReturnRunAt, hReturnRel,
+        hReturnStackLength, hReturnEffect⟩ :=
+    _root_.EvmCompiler.Functions.AllocationInteractionCallPreludeResource.Prepared.returns_resource_stack
+      prepared hNeedsFrame hParamRel hZero hParamStackLength
+      hParamEffect.ready
+  obtain ⟨preludeFuel, hPreludeFuel, hPreludeLength, hPreludeRun⟩ :=
+    prepared.prelude_forward hParamFuel hReturnFuel hParamFuelLength
+      hParamRunAt hReturnRun
+  have hState :
+      ActivationStateRel contract prepared.plan
+        ((artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+        0 frameBase prepared.bodyMode source finalTarget := by
+    simpa [Prepared.bodyMode, Artifact.mode, hNeedsFrame,
+      ActivationMode.atStackDepth] using hReturnRel
+  have hInvariant :
+      AllocationContext.ActivationInvariant contract artifact.lowerCtx
+        artifact.bodyStart prepared.returnCtx prepared.plan
+        ((artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+        frameBase prepared.bodyMode source finalTarget :=
+    { compiler := prepared.bodyCompiler
+      planWF := prepared.planWF
+      defined := prepared.bodyLiveDefined hRel hZero
+      state := hState
+      stackLength := hReturnStackLength }
+  exact
+    ⟨afterParams, finalTarget, paramFuel, returnFuel, preludeFuel,
+      hParamFuel, hReturnFuel, prepared.markers_forward target,
+      hParamRun, hReturnRun, hPreludeFuel, hPreludeLength, hPreludeRun,
+      (fun suffixFuel hSuffixFuel =>
+        prepared.prelude_forward_at hParamFuelLength hReturnFuelLength
+          hParamRunAt hReturnRunAt suffixFuel hSuffixFuel),
+      hInvariant, hParamEffect.trans hReturnEffect⟩
+
 end AllocationInteractionCallPreludeResource
 end Functions
 end EvmCompiler

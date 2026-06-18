@@ -117,8 +117,8 @@ boundaries remain active work.
     assignment/declaration, `break`/`continue`, and lexical blocks checked;
     `if`/`switch`, loops, function `leave`, all terminal forms, scratch-mode
     and all-stack parameter/return setup, callee return emission, caller
-    writeback, and scratch release checked; selected-body call composition
-    remains);
+    writeback, scratch release, and selected-callee recursive body checked;
+    full caller call/tail composition remains);
   - [ ] compose caller arguments, selected-callee recursion, return writeback,
     scratch release, and the exact tail;
   - [ ] recursive compiler-cursor statement-list theorem.

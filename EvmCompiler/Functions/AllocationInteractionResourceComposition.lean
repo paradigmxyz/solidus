@@ -30,6 +30,50 @@ abbrev RuntimeResultRel
     OpenResultRel config allocatorDepth entryMode targetInitial
       sourceDone targetDone
 
+namespace RuntimeResultRel
+
+/-- Prefix one same-frame control/resource result with an activation effect. -/
+theorem prepend_frame
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx} {plan : Plan}
+    {returns regularLive : List Locals.Name} {frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {controlCtx regularCtx : Functions.Source.Ctx}
+    {config : Config} {allocatorDepth : Nat}
+    {targetInitial targetMiddle : TargetState}
+    {sourceDone :
+      Except EVMException
+        (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx)}
+    {targetDone :
+      Except EVMException Expressions.InteractionSemantics.Outcome}
+    (hSame : SameFrame beforeMode afterMode)
+    (hPrefix :
+      ActivationEffect config allocatorDepth beforeMode
+        targetInitial targetMiddle)
+    (hDone :
+      RuntimeResultRel contract lowerCtx lowerState localsCtx plan returns
+        regularLive frameBase afterMode controlCtx regularCtx config
+        allocatorDepth targetMiddle sourceDone targetDone) :
+    RuntimeResultRel contract lowerCtx lowerState localsCtx plan returns
+      regularLive frameBase beforeMode controlCtx regularCtx config
+      allocatorDepth targetInitial sourceDone targetDone := by
+  rcases hDone with ⟨hSemantic, hResource⟩
+  cases hSemantic with
+  | error hError =>
+      cases hResource with
+      | error hResourceError =>
+          exact ⟨.error hError, .error hResourceError⟩
+  | ok hControl =>
+      cases hResource with
+      | ok hEffect =>
+          exact
+            ⟨.ok (ControlResultRel.prepend_frame hSame hControl),
+              .ok (hPrefix.trans (hEffect.sameFrame hSame.symm))⟩
+
+end RuntimeResultRel
+
 /--
 Compose one semantic/resource control result with its tail. Regular execution
 passes allocator readiness to the tail; abrupt execution preserves the head
