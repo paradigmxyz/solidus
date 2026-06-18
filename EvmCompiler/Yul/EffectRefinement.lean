@@ -5,6 +5,8 @@ namespace Yul
 namespace Source
 namespace Effectful
 
+attribute [local simp] Bind.bind Except.bind
+
 namespace Exception
 
 /--
@@ -230,7 +232,8 @@ theorem evalTail_succ_refines
           have hArgsObservable :
               Result.Observable
                 (.error failure : Result σ (σ × List Word)) := by
-            simpa only [evalTail, hSourceArgs] using hObservable
+            simpa only [evalTail, hSourceArgs, Bind.bind, Except.bind]
+              using hObservable
           have hSourceArgsObservable :
               Result.Observable
                 (evalArgs model sourcePrim fuel args codeOverride state) := by
@@ -238,7 +241,8 @@ theorem evalTail_succ_refines
             exact hArgsObservable
           have hTargetArgs := hArgs state hSourceArgsObservable
           rw [hSourceArgs] at hTargetArgs
-          simpa only [evalTail, hSourceArgs, hTargetArgs]
+          simpa only [evalTail, hSourceArgs, hTargetArgs, Bind.bind,
+            Except.bind]
       | ok result =>
           rcases result with ⟨final, values⟩
           have hSourceArgsObservable :
@@ -248,7 +252,8 @@ theorem evalTail_succ_refines
             simp [Result.Observable]
           have hTargetArgs := hArgs state hSourceArgsObservable
           rw [hSourceArgs] at hTargetArgs
-          simpa only [evalTail, hSourceArgs, hTargetArgs]
+          simpa only [evalTail, hSourceArgs, hTargetArgs, Bind.bind,
+            Except.bind]
 
 theorem evalArgs_zero_refines
     {σ : Type} (model : StateModel σ)
@@ -319,7 +324,8 @@ theorem evalValues_primitive_succ_refines
       have hArgsObservable :
           Result.Observable
             (.error failure : Result σ (σ × List Word)) := by
-        simpa only [evalValues, hSourceArgs] using hObservable
+        simpa only [evalValues, hSourceArgs, Bind.bind, Except.bind]
+          using hObservable
       have hSourceArgsObservable :
           Result.Observable
             (evalArgs model sourcePrim fuel args.reverse
@@ -328,7 +334,8 @@ theorem evalValues_primitive_succ_refines
         exact hArgsObservable
       have hTargetArgs := hArgs hSourceArgsObservable
       rw [hSourceArgs] at hTargetArgs
-      simpa only [evalValues, hSourceArgs, hTargetArgs]
+      simpa only [evalValues, hSourceArgs, hTargetArgs, Bind.bind,
+        Except.bind]
   | ok result =>
       rcases result with ⟨stateAfterArgs, values⟩
       have hSourceArgsObservable :
@@ -342,7 +349,8 @@ theorem evalValues_primitive_succ_refines
       have hPrimitiveObservable :
           Result.Observable
             (sourcePrim.eval fuel stateAfterArgs op values.reverse) := by
-        simpa only [evalValues, hSourceArgs] using hObservable
+        simpa only [evalValues, hSourceArgs, Bind.bind, Except.bind]
+          using hObservable
       have hPrimitive :=
         hPrim.result fuel stateAfterArgs op values.reverse
           hPrimitiveObservable
@@ -387,7 +395,8 @@ theorem evalValues_function_succ_refines
         exact hArgsObservable
       have hTargetArgs := hArgs hSourceArgsObservable
       rw [hSourceArgs] at hTargetArgs
-      simpa only [evalValues, hSourceArgs, hTargetArgs]
+      simpa only [evalValues, hSourceArgs, hTargetArgs, Bind.bind,
+        Except.bind]
   | ok result =>
       rcases result with ⟨stateAfterArgs, values⟩
       have hSourceArgsObservable :
@@ -402,7 +411,8 @@ theorem evalValues_function_succ_refines
           Result.Observable
             (Effectful.call model sourcePrim fuel values.reverse
               (some functionName) codeOverride stateAfterArgs) := by
-        simpa only [evalValues, hSourceArgs] using hObservable
+        simpa only [evalValues, hSourceArgs, Bind.bind, Except.bind]
+          using hObservable
       have hCallResult :=
         hCall values.reverse stateAfterArgs hCallObservable
       simpa only [evalValues, hSourceArgs, hTargetArgs] using hCallResult

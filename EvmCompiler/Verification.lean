@@ -120,6 +120,7 @@ import EvmCompiler.Yul.EffectSemanticsOwner
 import EvmCompiler.Yul.EffectSemanticsOwnerPreservation
 import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.EffectRefinement.Failure
+import EvmCompiler.Yul.InteractionSemantics
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.CompilerCallDecomposition
 import EvmCompiler.Yul.CompilerExpressionDecomposition
@@ -1347,6 +1348,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Source.Effectful.call_succ_ok_parts
 #check EvmCompiler.Yul.Source.Effectful.resolveActiveCode?_some
 #check EvmCompiler.Yul.Source.Effectful.call_succ_of_explicit_parts
+#check EvmCompiler.Yul.Source.Canonical.Program.run
+#check EvmCompiler.Yul.InteractionSemantics.primitiveSemantics
+#check EvmCompiler.Yul.InteractionSemantics.Program.openRun
 #check EvmCompiler.Yul.StateRelation.Vars.rel_of_scopedExact
 #check EvmCompiler.Yul.StateRelation.Regular.rel_of_scopedExact
 #check EvmCompiler.Yul.StateRelation.Replay.rel_of_scopedExact

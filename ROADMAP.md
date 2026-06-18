@@ -173,8 +173,11 @@ boundaries remain active work.
       prelude preservation, and flat target setup fuel transport.
     - [x] selected stack/scratch setup, recursive body, and cleanup composition
       with allocator/frame evidence kept internal.
-    - [x] public compiler-selected `AllocationInteractionProgram.mainForward`
+  - [x] public compiler-selected `AllocationInteractionProgram.mainForward`
       from ordinary lowering and source-facing safety/resource premises only.
+- [x] Canonical Yul control is one monad-polymorphic evaluator with an explicit
+  immutable active contract and a shared open-`Interaction` specialization for
+  resources and all CALL/CREATE families.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
   source-facing reservation/resource assumptions.

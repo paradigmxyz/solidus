@@ -149,7 +149,8 @@ theorem exec_if_succ_refines
       have hCondObservable :
           Result.Observable
             (.error failure : Result σ (σ × Word)) := by
-        simpa only [exec, hSourceCond] using hObservable
+        simpa only [exec, hSourceCond, Bind.bind, Except.bind,
+          Pure.pure, Except.pure] using hObservable
       have hSourceCondObservable :
           Result.Observable
             (eval model sourcePrim fuel cond codeOverride state) := by
@@ -157,7 +158,8 @@ theorem exec_if_succ_refines
         exact hCondObservable
       have hTargetCond := hCond hSourceCondObservable
       rw [hSourceCond] at hTargetCond
-      simpa only [exec, hSourceCond, hTargetCond]
+      simpa only [exec, hSourceCond, hTargetCond, Bind.bind, Except.bind,
+        Pure.pure, Except.pure]
   | ok result =>
       rcases result with ⟨stateAfterCond, condValue⟩
       have hSourceCondObservable :
@@ -172,12 +174,15 @@ theorem exec_if_succ_refines
             Result.Observable
               (exec model sourcePrim fuel (.Block body)
                 codeOverride stateAfterCond) := by
-          simpa only [exec, hSourceCond, if_pos hTrue]
+          simpa only [exec, hSourceCond, if_pos hTrue, Bind.bind,
+            Except.bind, Pure.pure, Except.pure]
             using hObservable
         have hTargetBody := hBody stateAfterCond hBodyObservable
-        simpa only [exec, hSourceCond, hTargetCond, if_pos hTrue]
+        simpa only [exec, hSourceCond, hTargetCond, if_pos hTrue,
+          Bind.bind, Except.bind, Pure.pure, Except.pure]
           using hTargetBody
-      · simpa only [exec, hSourceCond, hTargetCond, if_neg hTrue]
+      · simpa only [exec, hSourceCond, hTargetCond, if_neg hTrue,
+          Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 theorem exec_exprPrimitive_succ_refines
     {σ : Type} (model : StateModel σ)
@@ -203,7 +208,8 @@ theorem exec_exprPrimitive_succ_refines
       have hArgsObservable :
           Result.Observable
             (.error failure : Result σ (σ × List Word)) := by
-        simpa only [exec, hSourceArgs] using hObservable
+        simpa only [exec, hSourceArgs, Bind.bind, Except.bind,
+          Pure.pure, Except.pure] using hObservable
       have hSourceArgsObservable :
           Result.Observable
             (evalArgs model sourcePrim fuel args.reverse
@@ -212,7 +218,8 @@ theorem exec_exprPrimitive_succ_refines
         exact hArgsObservable
       have hTargetArgs := hArgs hSourceArgsObservable
       rw [hSourceArgs] at hTargetArgs
-      simpa only [exec, hSourceArgs, hTargetArgs]
+      simpa only [exec, hSourceArgs, hTargetArgs, Bind.bind, Except.bind,
+        Pure.pure, Except.pure, Control.multifill]
   | ok result =>
       rcases result with ⟨stateAfterArgs, values⟩
       have hSourceArgsObservable :
@@ -230,9 +237,11 @@ theorem exec_exprPrimitive_succ_refines
           Result.Observable
             (multifill model []
               (sourcePrim.eval fuel stateAfterArgs op values.reverse)) := by
-        simpa only [exec, hSourceArgs] using hObservable
+        simpa only [exec, hSourceArgs, Bind.bind, Except.bind,
+          Pure.pure, Except.pure] using hObservable
       have hTargetFilled := hFilled hFilledObservable
-      simpa only [exec, hSourceArgs, hTargetArgs]
+      simpa only [exec, hSourceArgs, hTargetArgs, Bind.bind, Except.bind,
+        Pure.pure, Except.pure, Control.multifill]
         using hTargetFilled
 
 theorem exec_exprFunction_one_refines
@@ -288,7 +297,8 @@ theorem exec_exprFunction_succ_succ_refines
       have hArgsObservable :
           Result.Observable
             (.error failure : Result σ (σ × List Word)) := by
-        simpa only [exec, hSourceArgs] using hObservable
+        simpa only [exec, hSourceArgs, Bind.bind, Except.bind,
+          Pure.pure, Except.pure] using hObservable
       have hSourceArgsObservable :
           Result.Observable
             (evalArgs model sourcePrim fuel.succ args.reverse
@@ -297,7 +307,8 @@ theorem exec_exprFunction_succ_succ_refines
         exact hArgsObservable
       have hTargetArgs := hArgs hSourceArgsObservable
       rw [hSourceArgs] at hTargetArgs
-      simpa only [exec, hSourceArgs, hTargetArgs]
+      simpa only [exec, hSourceArgs, hTargetArgs, Bind.bind, Except.bind,
+        Pure.pure, Except.pure, Control.multifill]
   | ok result =>
       rcases result with ⟨stateAfterArgs, values⟩
       have hSourceArgsObservable :
@@ -316,9 +327,11 @@ theorem exec_exprFunction_succ_succ_refines
             (multifill model []
               (call model sourcePrim fuel values.reverse
                 (some functionName) codeOverride stateAfterArgs)) := by
-        simpa only [exec, hSourceArgs] using hObservable
+        simpa only [exec, hSourceArgs, Bind.bind, Except.bind,
+          Pure.pure, Except.pure] using hObservable
       have hTargetFilled := hFilled hFilledObservable
-      simpa only [exec, hSourceArgs, hTargetArgs]
+      simpa only [exec, hSourceArgs, hTargetArgs, Bind.bind, Except.bind,
+        Pure.pure, Except.pure, Control.multifill]
         using hTargetFilled
 
 theorem exec_exprInvalid_succ_refines
@@ -384,7 +397,8 @@ theorem exec_switch_succ_refines
       have hCondObservable :
           Result.Observable
             (.error failure : Result σ (σ × Word)) := by
-        simpa only [exec, hSourceCond] using hObservable
+        simpa only [exec, hSourceCond, Bind.bind, Except.bind,
+          Pure.pure, Except.pure] using hObservable
       have hSourceCondObservable :
           Result.Observable
             (eval model sourcePrim fuel cond codeOverride state) := by
@@ -392,7 +406,8 @@ theorem exec_switch_succ_refines
         exact hCondObservable
       have hTargetCond := hCond hSourceCondObservable
       rw [hSourceCond] at hTargetCond
-      simpa only [exec, hSourceCond, hTargetCond]
+      simpa only [exec, hSourceCond, hTargetCond, Bind.bind, Except.bind,
+        Pure.pure, Except.pure]
   | ok result =>
       rcases result with ⟨stateAfterCond, condValue⟩
       have hSourceCondObservable :
@@ -409,11 +424,13 @@ theorem exec_switch_succ_refines
                 (EvmYul.Yul.selectSwitchCase
                   condValue default cases))
               codeOverride stateAfterCond) := by
-        simpa only [exec, hSourceCond, hTargetCond]
+        simpa only [exec, hSourceCond, hTargetCond, Bind.bind, Except.bind,
+          Pure.pure, Except.pure]
           using hObservable
       have hTargetBody :=
         hBody condValue stateAfterCond hBodyObservable
-      simpa only [exec, hSourceCond, hTargetCond] using hTargetBody
+      simpa only [exec, hSourceCond, hTargetCond, Bind.bind, Except.bind,
+        Pure.pure, Except.pure] using hTargetBody
 
 theorem exec_for_succ_refines
     {σ : Type} (model : StateModel σ)

@@ -984,7 +984,8 @@ theorem directAt
                                         rcases restResult with
                                           ⟨sourceFinal, restValues⟩
                                         simp only [Yul.Source.Effectful.evalTail,
-                                          hRestRun] at hRun
+                                          hRestRun, Bind.bind, Except.bind,
+                                          Pure.pure, Except.pure] at hRun
                                         injection hRun with hPair
                                         injection hPair with hState hValues
                                         subst source'

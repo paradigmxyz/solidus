@@ -5,6 +5,8 @@ namespace Yul
 namespace Source
 namespace Effectful
 
+attribute [local simp] Bind.bind Except.bind
+
 /-!
 Observable-failure inversions for the canonical parameterized Yul semantics.
 
@@ -848,7 +850,8 @@ theorem loop_observable_error_parts
                         ⟨afterCond, condValue, hCond,
                           .body hZero hBody⟩⟩
                 | ok afterBody =>
-                    simp only [loop, hCond, if_neg hNonzeroLit, hBody] at hRun
+                    simp only [loop, hCond, if_neg hNonzeroLit, hBody,
+                      Bind.bind, Except.bind] at hRun
                     cases hBodySource : model.source afterBody with
                     | OutOfFuel =>
                         rw [hBodySource] at hRun

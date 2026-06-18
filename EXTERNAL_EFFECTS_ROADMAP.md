@@ -664,18 +664,18 @@ recursive compiler reasoning.
 - [x] Ban new `ExternalContext.Rel`, context-bisimulation, and
   `OpenEffectEquiv` definitions.
 - [ ] Ban public response or replay oracles.
-- [ ] Ban duplicate recursive evaluators.
+- [x] Ban duplicate recursive evaluators.
 - [x] Add one-definition guards for `OpenWorld`, `Query`, `Answer`, and
   `Interaction`.
-- [ ] Add a guard preventing canonical Yul semantics from reading account AST
+- [x] Add a guard preventing canonical Yul semantics from reading account AST
   code.
 
 Exit: architecture checks enforce the intended shape before proof work begins.
 
 ### Phase 1: Remove Active Yul Code From Mutable State
 
-- [ ] Make the active Yul program an explicit canonical evaluator parameter.
-- [ ] Resolve internal calls and dispatcher entry from that program.
+- [x] Make the active Yul program an explicit canonical evaluator parameter.
+- [x] Resolve internal calls and dispatcher entry from that program.
 - [ ] Make active `CODESIZE`/`CODECOPY` read a protected code-image parameter.
 - [ ] Make external code observations and empty-account tests use code bytes.
 - [ ] Stop requiring top-level contract installation for compiler semantics.
@@ -898,7 +898,17 @@ Exit: the shared core builds with no compiler layer changed.
   - [x] Close the recursive internal-call case and whole statement/program
     dispatcher, deriving nested fuel and frame capacity from the checked
     compiler artifact rather than exposing them publicly.
-- [ ] Yul.
+- [x] Yul.
+  - [x] Make the existing recursive control kernel monad-polymorphic and expose
+    it as the canonical parameterized semantics.
+  - [x] Specialize that kernel to the shared ordered `Interaction` for
+    `gas`, `msize`, all four CALL-family operations, and both CREATE-family
+    operations.
+  - [x] Keep ordinary primitives, including storage, logs, and terminal
+    outcomes, on the imported Yul primitive semantics rather than duplicating
+    their interpreter.
+  - [x] Run the immutable active contract through the explicit-code canonical
+    program entrypoint.
 
 At each layer:
 

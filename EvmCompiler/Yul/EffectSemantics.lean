@@ -29,11 +29,6 @@ def fail {σ α : Type} (state : σ) (exception : EvmYul.Yul.Exception) :
     Result σ α :=
   .error { exception := exception, state := state }
 
-structure PrimitiveSemantics (σ : Type) where
-  eval :
-    Nat → σ → EvmYul.Operation .Yul → List Word →
-      Result σ (σ × List Word)
-
 namespace StateModel
 
 def multifill {σ : Type} (model : StateModel σ)
@@ -42,11 +37,33 @@ def multifill {σ : Type} (model : StateModel σ)
 
 end StateModel
 
-def multifill {σ : Type} (model : StateModel σ)
+namespace Control
+
+structure PrimitiveSemantics (M : Type → Type) (σ : Type) where
+  eval :
+    Nat → σ → EvmYul.Operation .Yul → List Word →
+      M (σ × List Word)
+
+def fail {M : Type → Type} [Monad M] {σ α : Type}
+    [MonadExceptOf (Failure σ) M]
+    (state : σ) (exception : EvmYul.Yul.Exception) : M α :=
+  throw { exception := exception, state := state }
+
+def multifill {M : Type → Type} [Monad M]
+    {σ : Type} (model : StateModel σ)
+    (vars : List EvmYul.Identifier) (result : M (σ × List Word)) : M σ := do
+  let (state, values) ← result
+  pure (model.multifill vars state values)
+
+end Control
+
+abbrev PrimitiveSemantics (σ : Type) :=
+  Control.PrimitiveSemantics (Result σ) σ
+
+abbrev multifill {σ : Type} (model : StateModel σ)
     (vars : List EvmYul.Identifier) :
-    Result σ (σ × List Word) → Result σ σ
-  | .ok (state, values) => .ok (model.multifill vars state values)
-  | .error failure => .error failure
+    Result σ (σ × List Word) → Result σ σ :=
+  Control.multifill model vars
 
 /-- Resolve the immutable active source program. Canonical compiler semantics
 always supplies `some code`; account-map lookup remains only for legacy
@@ -67,91 +84,94 @@ def resolveActiveCode? (source : EvmYul.Yul.State)
 
 mutual
 
-  def evalTail {σ : Type} (model : StateModel σ)
-      (prim : PrimitiveSemantics σ) (fuel : Nat)
+  def evalTail {M : Type → Type} [Monad M]
+      {σ : Type} [MonadExceptOf (Failure σ) M]
+      (model : StateModel σ)
+      (prim : Control.PrimitiveSemantics M σ) (fuel : Nat)
       (args : List EvmYul.Yul.Ast.Expr)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
-      (result : Result σ (σ × Word)) :
-      Result σ (σ × List Word) :=
-    match result with
-    | .ok (state, arg) =>
-        match fuel with
-        | 0 => fail state .OutOfFuel
-        | fuel' + 1 =>
-            match evalArgs model prim fuel' args codeOverride state with
-            | .ok (state', args') => .ok (state', arg :: args')
-            | .error failure => .error failure
-    | .error failure => .error failure
+      (result : M (σ × Word)) : M (σ × List Word) := do
+    let (state, arg) ← result
+    match fuel with
+    | 0 => Control.fail state .OutOfFuel
+    | fuel' + 1 =>
+        let (state', args') ←
+          evalArgs model prim fuel' args codeOverride state
+        pure (state', arg :: args')
   termination_by (fuel, 0, sizeOf args)
 
-  def evalArgs {σ : Type} (model : StateModel σ)
-      (prim : PrimitiveSemantics σ) (fuel : Nat)
+  def evalArgs {M : Type → Type} [Monad M]
+      {σ : Type} [MonadExceptOf (Failure σ) M]
+      (model : StateModel σ)
+      (prim : Control.PrimitiveSemantics M σ) (fuel : Nat)
       (args : List EvmYul.Yul.Ast.Expr)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
-      (state : σ) :
-      Result σ (σ × List Word) :=
+      (state : σ) : M (σ × List Word) :=
     match fuel with
-    | 0 => fail state .OutOfFuel
+    | 0 => Control.fail state .OutOfFuel
     | fuel' + 1 =>
         match args with
-        | [] => .ok (state, [])
+        | [] => pure (state, [])
         | arg :: args =>
             evalTail model prim fuel' args codeOverride
               (eval model prim fuel' arg codeOverride state)
   termination_by (fuel, 1, sizeOf args)
 
-  def evalValues {σ : Type} (model : StateModel σ)
-      (prim : PrimitiveSemantics σ) (fuel : Nat)
+  def evalValues {M : Type → Type} [Monad M]
+      {σ : Type} [MonadExceptOf (Failure σ) M]
+      (model : StateModel σ)
+      (prim : Control.PrimitiveSemantics M σ) (fuel : Nat)
       (expr : EvmYul.Yul.Ast.Expr)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
-      (state : σ) :
-      Result σ (σ × List Word) :=
+      (state : σ) : M (σ × List Word) :=
     match fuel with
-    | 0 => fail state .OutOfFuel
+    | 0 => Control.fail state .OutOfFuel
     | fuel' + 1 =>
         match expr with
-        | .Call (.inl op) args =>
-            match evalArgs model prim fuel' args.reverse codeOverride state with
-            | .ok (stateAfterArgs, values) =>
-                prim.eval fuel' stateAfterArgs op values.reverse
-            | .error failure => .error failure
-        | .Call (.inr functionName) args =>
-            match evalArgs model prim fuel' args.reverse codeOverride state with
-            | .ok (stateAfterArgs, values) =>
-                call model prim fuel' values.reverse (some functionName)
-                  codeOverride stateAfterArgs
-            | .error failure => .error failure
+        | .Call (.inl op) args => do
+            let (stateAfterArgs, values) ←
+              evalArgs model prim fuel' args.reverse codeOverride state
+            prim.eval fuel' stateAfterArgs op values.reverse
+        | .Call (.inr functionName) args => do
+            let (stateAfterArgs, values) ←
+              evalArgs model prim fuel' args.reverse codeOverride state
+            call model prim fuel' values.reverse (some functionName)
+              codeOverride stateAfterArgs
         | .Var id =>
             match (model.source state).lookup? id with
-            | some value => .ok (state, [value])
-            | none => fail state (.UnknownIdentifier id)
-        | .Lit value => .ok (state, [value])
+            | some value => pure (state, [value])
+            | none => Control.fail state (.UnknownIdentifier id)
+        | .Lit value => pure (state, [value])
   termination_by (fuel, 2, sizeOf expr)
 
-  def eval {σ : Type} (model : StateModel σ)
-      (prim : PrimitiveSemantics σ) (fuel : Nat)
+  def eval {M : Type → Type} [Monad M]
+      {σ : Type} [MonadExceptOf (Failure σ) M]
+      (model : StateModel σ)
+      (prim : Control.PrimitiveSemantics M σ) (fuel : Nat)
       (expr : EvmYul.Yul.Ast.Expr)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
-      (state : σ) :
-      Result σ (σ × Word) :=
-    match evalValues model prim fuel expr codeOverride state with
-    | .ok (state', values) => .ok (state', values.head!)
-    | .error failure => .error failure
+      (state : σ) : M (σ × Word) := do
+    let (state', values) ←
+      evalValues model prim fuel expr codeOverride state
+    pure (state', values.head!)
   termination_by (fuel, 3, sizeOf expr)
 
-  def call {σ : Type} (model : StateModel σ)
-      (prim : PrimitiveSemantics σ) (fuel : Nat) (args : List Word)
+  def call {M : Type → Type} [Monad M]
+      {σ : Type} [MonadExceptOf (Failure σ) M]
+      (model : StateModel σ)
+      (prim : Control.PrimitiveSemantics M σ) (fuel : Nat)
+      (args : List Word)
       (functionName? : Option EvmYul.Yul.Ast.YulFunctionName)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
-      (state : σ) :
-      Result σ (σ × List Word) :=
+      (state : σ) : M (σ × List Word) :=
     match fuel with
-    | 0 => fail state .OutOfFuel
+    | 0 => Control.fail state .OutOfFuel
     | fuel' + 1 =>
         let source := model.source state
         match resolveActiveCode? source codeOverride with
         | none =>
-            fail state (.MissingContract (s!"{source.executionEnv.codeOwner}"))
+            Control.fail state
+              (.MissingContract (s!"{source.executionEnv.codeOwner}"))
         | some code =>
             let function? : Option EvmYul.Yul.Ast.FunctionDefinition :=
               match functionName? with
@@ -163,241 +183,213 @@ mutual
                   code.functions.lookup functionName
             match function? with
             | none =>
-                fail state
+                Control.fail state
                   (.MissingContractFunction (functionName?.getD ".none"))
             | some function =>
                 match function with
-                | EvmYul.Yul.Ast.FunctionDefinition.Def params rets body =>
+                | EvmYul.Yul.Ast.FunctionDefinition.Def params rets body => do
                     let sourceAtEntry :=
                       EvmYul.Yul.State.mkOk
                         (source.initcall params rets args)
-                    match exec model prim fuel' (.Block body) codeOverride
-                        (model.withSource state sourceAtEntry) with
-                    | .error failure => .error failure
-                    | .ok stateAfterBody =>
-                        let bodySource := model.source stateAfterBody
-                        let sourceAfterCall :=
-                          (bodySource.reviveJump.overwrite? source).setStore
-                            source
-                        .ok
-                          (model.withSource stateAfterBody sourceAfterCall,
-                            List.map bodySource.lookup! rets)
+                    let stateAfterBody ←
+                      exec model prim fuel' (.Block body) codeOverride
+                        (model.withSource state sourceAtEntry)
+                    let bodySource := model.source stateAfterBody
+                    let sourceAfterCall :=
+                      (bodySource.reviveJump.overwrite? source).setStore source
+                    pure
+                      (model.withSource stateAfterBody sourceAfterCall,
+                        List.map bodySource.lookup! rets)
   termination_by (fuel, 4, sizeOf args)
 
-  def callDispatcher {σ : Type} (model : StateModel σ)
-      (prim : PrimitiveSemantics σ) (fuel : Nat)
+  def callDispatcher {M : Type → Type} [Monad M]
+      {σ : Type} [MonadExceptOf (Failure σ) M]
+      (model : StateModel σ)
+      (prim : Control.PrimitiveSemantics M σ) (fuel : Nat)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
-      (state : σ) :
-      Result σ (σ × List Word) :=
+      (state : σ) : M (σ × List Word) :=
     match fuel with
-    | 0 => fail state .OutOfFuel
+    | 0 => Control.fail state .OutOfFuel
     | fuel' + 1 =>
         let source := model.source state
         let function :=
           EvmYul.Yul.Ast.FunctionDefinition.Def [] []
             [source.executionEnv.code.dispatcher]
         match function with
-        | EvmYul.Yul.Ast.FunctionDefinition.Def params rets body =>
+        | EvmYul.Yul.Ast.FunctionDefinition.Def params rets body => do
             let sourceAtEntry :=
               EvmYul.Yul.State.mkOk (source.initcall params rets [])
-            match exec model prim fuel' (.Block body) codeOverride
-                (model.withSource state sourceAtEntry) with
-            | .error failure => .error failure
-            | .ok stateAfterBody =>
-                let bodySource := model.source stateAfterBody
-                let sourceAfterCall :=
-                  (bodySource.reviveJump.overwrite? source).setStore source
-                .ok
-                  (model.withSource stateAfterBody sourceAfterCall,
-                    List.map bodySource.lookup! rets)
-  def execSeq {σ : Type} (model : StateModel σ)
-      (prim : PrimitiveSemantics σ) (fuel : Nat)
+            let stateAfterBody ←
+              exec model prim fuel' (.Block body) codeOverride
+                (model.withSource state sourceAtEntry)
+            let bodySource := model.source stateAfterBody
+            let sourceAfterCall :=
+              (bodySource.reviveJump.overwrite? source).setStore source
+            pure
+              (model.withSource stateAfterBody sourceAfterCall,
+                List.map bodySource.lookup! rets)
+  def execSeq {M : Type → Type} [Monad M]
+      {σ : Type} [MonadExceptOf (Failure σ) M]
+      (model : StateModel σ)
+      (prim : Control.PrimitiveSemantics M σ) (fuel : Nat)
       (stmts : List EvmYul.Yul.Ast.Stmt)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
-      (state : σ) :
-      Result σ σ :=
+      (state : σ) : M σ :=
     match fuel with
-    | 0 => fail state .OutOfFuel
+    | 0 => Control.fail state .OutOfFuel
     | fuel' + 1 =>
         match stmts with
-        | [] => .ok state
-        | stmt :: stmts =>
-            match exec model prim fuel' stmt codeOverride state with
-            | .error failure => .error failure
-            | .ok stateAfterStmt =>
-                match model.source stateAfterStmt with
-                | .Ok _ _ =>
-                    execSeq model prim fuel' stmts codeOverride stateAfterStmt
-                | .OutOfFuel => .ok stateAfterStmt
-                | .Checkpoint _ => .ok stateAfterStmt
+        | [] => pure state
+        | stmt :: stmts => do
+            let stateAfterStmt ←
+              exec model prim fuel' stmt codeOverride state
+            match model.source stateAfterStmt with
+            | .Ok _ _ =>
+                execSeq model prim fuel' stmts codeOverride stateAfterStmt
+            | .OutOfFuel => pure stateAfterStmt
+            | .Checkpoint _ => pure stateAfterStmt
   termination_by (fuel, 6, sizeOf stmts)
 
-  def exec {σ : Type} (model : StateModel σ)
-      (prim : PrimitiveSemantics σ) (fuel : Nat)
+  def exec {M : Type → Type} [Monad M]
+      {σ : Type} [MonadExceptOf (Failure σ) M]
+      (model : StateModel σ)
+      (prim : Control.PrimitiveSemantics M σ) (fuel : Nat)
       (stmt : EvmYul.Yul.Ast.Stmt)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
-      (state : σ) :
-      Result σ σ :=
+      (state : σ) : M σ :=
     match fuel with
-    | 0 => fail state .OutOfFuel
+    | 0 => Control.fail state .OutOfFuel
     | fuel' + 1 =>
         let source := model.source state
         match stmt with
-        | .Block stmts =>
-            match execSeq model prim fuel' stmts codeOverride state with
-            | .error failure => .error failure
-            | .ok stateAfterBody =>
-                .ok
-                  (model.withSource stateAfterBody
-                    ((model.source stateAfterBody).restrictStoreTo source.store))
+        | .Block stmts => do
+            let stateAfterBody ←
+              execSeq model prim fuel' stmts codeOverride state
+            pure
+              (model.withSource stateAfterBody
+                ((model.source stateAfterBody).restrictStoreTo source.store))
         | .Let vars expr? =>
             match EvmYul.Yul.checkDeclaration source vars with
-            | .error err => fail state err
+            | .error err => Control.fail state err
             | .ok () =>
                 match expr? with
                 | none =>
-                    .ok (model.withSource state (source.zeroFill vars))
+                    pure (model.withSource state (source.zeroFill vars))
                 | some expr =>
-                    multifill model vars
+                    Control.multifill model vars
                       (evalValues model prim fuel' expr codeOverride state)
         | .Assign vars expr =>
             match EvmYul.Yul.checkAssignment source vars with
-            | .error err => fail state err
+            | .error err => Control.fail state err
             | .ok () =>
-                multifill model vars
+                Control.multifill model vars
                   (evalValues model prim fuel' expr codeOverride state)
-        | .If cond body =>
-            match eval model prim fuel' cond codeOverride state with
-            | .error failure => .error failure
-            | .ok (stateAfterCond, condValue) =>
-                if condValue ≠ ⟨0⟩ then
-                  exec model prim fuel' (.Block body) codeOverride
-                    stateAfterCond
-                else
-                  .ok stateAfterCond
+        | .If cond body => do
+            let (stateAfterCond, condValue) ←
+              eval model prim fuel' cond codeOverride state
+            if condValue ≠ ⟨0⟩ then
+              exec model prim fuel' (.Block body) codeOverride
+                stateAfterCond
+            else
+              pure stateAfterCond
         | .ExprStmtCall expr =>
             match expr with
-            | .Call (.inl op) args =>
-                match
-                    evalArgs model prim fuel' args.reverse codeOverride state
-                with
-                | .ok (stateAfterArgs, values) =>
-                    multifill model []
-                      (prim.eval fuel' stateAfterArgs op values.reverse)
-                | .error failure => .error failure
-            | .Call (.inr functionName) args =>
-                match
-                    evalArgs model prim fuel' args.reverse codeOverride state
-                with
-                | .ok (stateAfterArgs, values) =>
-                    match fuel' with
-                    | 0 => fail stateAfterArgs .OutOfFuel
-                    | fuel'' + 1 =>
-                        multifill model []
-                          (call model prim fuel'' values.reverse
-                            (some functionName) codeOverride stateAfterArgs)
-                | .error failure => .error failure
-            | _ => fail state .InvalidExpression
-        | .Switch cond cases default =>
-            match eval model prim fuel' cond codeOverride state with
-            | .error failure => .error failure
-            | .ok (stateAfterCond, condValue) =>
-                exec model prim fuel'
-                  (.Block
-                    (EvmYul.Yul.selectSwitchCase condValue default cases))
-                  codeOverride stateAfterCond
+            | .Call (.inl op) args => do
+                let (stateAfterArgs, values) ←
+                  evalArgs model prim fuel' args.reverse codeOverride state
+                Control.multifill model []
+                  (prim.eval fuel' stateAfterArgs op values.reverse)
+            | .Call (.inr functionName) args => do
+                let (stateAfterArgs, values) ←
+                  evalArgs model prim fuel' args.reverse codeOverride state
+                match fuel' with
+                | 0 => Control.fail stateAfterArgs .OutOfFuel
+                | fuel'' + 1 =>
+                    Control.multifill model []
+                      (call model prim fuel'' values.reverse
+                        (some functionName) codeOverride stateAfterArgs)
+            | _ => Control.fail state .InvalidExpression
+        | .Switch cond cases default => do
+            let (stateAfterCond, condValue) ←
+              eval model prim fuel' cond codeOverride state
+            exec model prim fuel'
+              (.Block
+                (EvmYul.Yul.selectSwitchCase condValue default cases))
+              codeOverride stateAfterCond
         | .For cond post body =>
             loop model prim fuel' cond post body codeOverride state
         | .Continue =>
-            .ok
+            pure
               (model.withSource state
                 (EvmYul.Yul.State.setContinue source))
         | .Break =>
-            .ok
+            pure
               (model.withSource state
                 (EvmYul.Yul.State.setBreak source))
         | .Leave =>
-            .ok
+            pure
               (model.withSource state
                 (EvmYul.Yul.State.setLeave source))
   termination_by (fuel, 7, sizeOf stmt)
 
-  def loop {σ : Type} (model : StateModel σ)
-      (prim : PrimitiveSemantics σ) (fuel : Nat)
+  def loop {M : Type → Type} [Monad M]
+      {σ : Type} [MonadExceptOf (Failure σ) M]
+      (model : StateModel σ)
+      (prim : Control.PrimitiveSemantics M σ) (fuel : Nat)
       (cond : EvmYul.Yul.Ast.Expr)
       (post body : List EvmYul.Yul.Ast.Stmt)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
-      (state : σ) :
-      Result σ σ :=
+      (state : σ) : M σ :=
     match fuel with
-    | 0 => fail state .OutOfFuel
-    | 1 => fail state .OutOfFuel
-    | fuel' + 1 + 1 =>
+    | 0 => Control.fail state .OutOfFuel
+    | 1 => Control.fail state .OutOfFuel
+    | fuel' + 1 + 1 => do
         let source := model.source state
-        match
-            eval model prim fuel' cond codeOverride
-              (model.withSource state (EvmYul.Yul.State.mkOk source))
-        with
-        | .error failure => .error failure
-        | .ok (stateAfterCond, condValue) =>
-            if condValue = ⟨0⟩ then
-              .ok
-                (model.withSource stateAfterCond
-                  ((model.source stateAfterCond).overwrite? source))
-            else
-              match
-                  exec model prim fuel' (.Block body) codeOverride
-                    stateAfterCond
-              with
-              | .error failure => .error failure
-              | .ok stateAfterBody =>
-                  let bodySource := model.source stateAfterBody
-                  match bodySource with
-                  | .OutOfFuel =>
-                      .ok
-                        (model.withSource stateAfterBody
-                          (bodySource.overwrite? source))
-                  | .Checkpoint (.Break _ _) =>
-                      .ok
-                        (model.withSource stateAfterBody
-                          (bodySource.reviveJump.overwrite? source))
-                  | .Checkpoint (.Leave _ _) =>
-                      .ok
-                        (model.withSource stateAfterBody
-                          (bodySource.overwrite? source))
-                  | .Checkpoint (.Continue _ _)
-                  | _ =>
-                      match
-                          exec model prim fuel' (.Block post) codeOverride
-                            (model.withSource stateAfterBody
-                              bodySource.reviveJump)
-                      with
-                      | .error failure => .error failure
-                      | .ok stateAfterPost =>
-                          let postSource := model.source stateAfterPost
-                          let sourceAfterPost := postSource.overwrite? source
-                          match postSource with
-                          | .OutOfFuel =>
-                              .ok
-                                (model.withSource stateAfterPost
-                                  sourceAfterPost)
-                          | .Checkpoint (.Leave _ _) =>
-                              .ok
-                                (model.withSource stateAfterPost
-                                  sourceAfterPost)
-                          | _ =>
-                              match
-                                  exec model prim fuel'
-                                    (.For cond post body) codeOverride
-                                    (model.withSource stateAfterPost
-                                      sourceAfterPost)
-                              with
-                              | .error failure => .error failure
-                              | .ok stateAfterLoop =>
-                                  .ok
-                                    (model.withSource stateAfterLoop
-                                      ((model.source stateAfterLoop).overwrite?
-                                        source))
+        let (stateAfterCond, condValue) ←
+          eval model prim fuel' cond codeOverride
+            (model.withSource state (EvmYul.Yul.State.mkOk source))
+        if condValue = ⟨0⟩ then
+          pure
+            (model.withSource stateAfterCond
+              ((model.source stateAfterCond).overwrite? source))
+        else
+          let stateAfterBody ←
+            exec model prim fuel' (.Block body) codeOverride stateAfterCond
+          let bodySource := model.source stateAfterBody
+          match bodySource with
+          | .OutOfFuel =>
+              pure
+                (model.withSource stateAfterBody
+                  (bodySource.overwrite? source))
+          | .Checkpoint (.Break _ _) =>
+              pure
+                (model.withSource stateAfterBody
+                  (bodySource.reviveJump.overwrite? source))
+          | .Checkpoint (.Leave _ _) =>
+              pure
+                (model.withSource stateAfterBody
+                  (bodySource.overwrite? source))
+          | .Checkpoint (.Continue _ _)
+          | _ => do
+              let stateAfterPost ←
+                exec model prim fuel' (.Block post) codeOverride
+                  (model.withSource stateAfterBody bodySource.reviveJump)
+              let postSource := model.source stateAfterPost
+              let sourceAfterPost := postSource.overwrite? source
+              match postSource with
+              | .OutOfFuel =>
+                  pure
+                    (model.withSource stateAfterPost sourceAfterPost)
+              | .Checkpoint (.Leave _ _) =>
+                  pure
+                    (model.withSource stateAfterPost sourceAfterPost)
+              | _ => do
+                  let stateAfterLoop ←
+                    exec model prim fuel' (.For cond post body) codeOverride
+                      (model.withSource stateAfterPost sourceAfterPost)
+                  pure
+                    (model.withSource stateAfterLoop
+                      ((model.source stateAfterLoop).overwrite? source))
   termination_by (fuel, 8, sizeOf cond + sizeOf post + sizeOf body)
 
   decreasing_by
@@ -407,6 +399,55 @@ mutual
       | omega
 
 end
+
+@[simp] theorem result_pure {σ α : Type} (value : α) :
+    (pure value : Result σ α) = .ok value := rfl
+
+@[simp] theorem result_bind_ok {σ α β : Type}
+    (value : α) (next : α → Result σ β) :
+    ((.ok value : Result σ α) >>= next) = next value := rfl
+
+@[simp] theorem result_bind_error {σ α β : Type}
+    (failure : Failure σ) (next : α → Result σ β) :
+    ((.error failure : Result σ α) >>= next) = .error failure := rfl
+
+@[simp] theorem result_map_ok {σ α β : Type}
+    (value : α) (f : α → β) :
+    f <$> (.ok value : Result σ α) = .ok (f value) := rfl
+
+@[simp] theorem result_map_error {σ α β : Type}
+    (failure : Failure σ) (f : α → β) :
+    f <$> (.error failure : Result σ α) = .error failure := rfl
+
+@[simp] theorem control_fail_result {σ α : Type}
+    (state : σ) (exception : EvmYul.Yul.Exception) :
+    (Control.fail state exception : Result σ α) =
+      .error { exception := exception, state := state } := rfl
+
+@[simp] theorem control_multifill_result_ok {σ : Type}
+    (model : StateModel σ) (vars : List EvmYul.Identifier)
+    (state : σ) (values : List Word) :
+    Control.multifill model vars
+        (.ok (state, values) : Result σ (σ × List Word)) =
+      .ok (model.multifill vars state values) := by
+  simp [Control.multifill, Bind.bind, Except.bind]
+
+@[simp] theorem control_multifill_result_error {σ : Type}
+    (model : StateModel σ) (vars : List EvmYul.Identifier)
+    (failure : Failure σ) :
+    Control.multifill model vars
+        (.error failure : Result σ (σ × List Word)) =
+      .error failure := by
+  simp [Control.multifill, Bind.bind, Except.bind]
+
+@[simp] theorem control_multifill_result_ok_pair {σ : Type}
+    (model : StateModel σ) (vars : List EvmYul.Identifier)
+    (result : σ × List Word) :
+    Control.multifill model vars
+        (.ok result : Result σ (σ × List Word)) =
+      .ok (model.multifill vars result.1 result.2) := by
+  rcases result with ⟨state, values⟩
+  simp
 
 theorem evalValues_lit_ok_parts
     {σ : Type} (model : StateModel σ)
@@ -956,7 +997,7 @@ theorem exec_if_ok_parts
           simp [exec, hCond] at hRun
       | ok condResult =>
           rcases condResult with ⟨stateAfterCond, condValue⟩
-          simp only [exec, hCond] at hRun
+          simp only [exec, hCond, Bind.bind, Except.bind] at hRun
           split at hRun
           · rename_i hTrue
             exact
@@ -984,7 +1025,7 @@ theorem exec_if_false_of_eval
       .ok stateAfterCond := by
   have hZero' : condValue = (⟨0⟩ : Word) := by
     simpa [EvmYul.UInt256.ofNat] using hZero
-  simp [exec, hEval, hZero']
+  simp [exec, hEval, hZero', Bind.bind, Except.bind]
 
 theorem exec_if_true_of_eval
     {σ : Type} (model : StateModel σ)
@@ -1004,7 +1045,7 @@ theorem exec_if_true_of_eval
       .ok final := by
   have hNonzero' : condValue ≠ (⟨0⟩ : Word) := by
     simpa [EvmYul.UInt256.ofNat] using hNonzero
-  simp [exec, hEval, hNonzero', hBody]
+  simp [exec, hEval, hNonzero', hBody, Bind.bind, Except.bind]
 
 theorem exec_switch_ok_parts
     {σ : Type} (model : StateModel σ)
@@ -1034,10 +1075,10 @@ theorem exec_switch_ok_parts
       cases hScrutinee :
           eval model prim previous scrutinee codeOverride state with
       | error failure =>
-          simp [exec, hScrutinee] at hRun
+          simp [exec, hScrutinee, Bind.bind, Except.bind] at hRun
       | ok result =>
           rcases result with ⟨stateAfterScrutinee, value⟩
-          simp [exec, hScrutinee] at hRun
+          simp [exec, hScrutinee, Bind.bind, Except.bind] at hRun
           exact
             ⟨previous, stateAfterScrutinee, value,
               rfl, hScrutinee, hRun⟩
@@ -1062,7 +1103,7 @@ theorem exec_switch_of_eval
     exec model prim (fuel + 1)
         (.Switch scrutinee cases defaultBody) codeOverride state =
       .ok final := by
-  simp [exec, hEval, hBody]
+  simp [exec, hEval, hBody, Bind.bind, Except.bind]
 
 theorem exec_for_ok_parts
     {σ : Type} (model : StateModel σ)
@@ -1253,7 +1294,7 @@ theorem loop_ok_parts
               simp [loop, hCond] at hRun
           | ok condResult =>
               rcases condResult with ⟨afterCond, condValue⟩
-              simp only [loop, hCond] at hRun
+              simp only [loop, hCond, Bind.bind, Except.bind] at hRun
               by_cases hZero :
                   condValue = EvmYul.UInt256.ofNat 0
               · have hZeroLit : condValue = ⟨0⟩ := by
@@ -2036,6 +2077,7 @@ theorem exec_expr_primitive_error_parts
               exact Or.inr
                 ⟨stateAfterArgs, reversedValues, rfl, hPrim⟩
           | ok result =>
+              rcases result with ⟨stateAfterPrim, values⟩
               simp [exec, hArgs, hPrim, multifill] at hRun
 
 theorem exec_block_error_parts
@@ -2546,6 +2588,73 @@ theorem evalArgs_singleton_ok_parts {σ : Type}
                     ⟨emptyFuel.succ.succ, value, by omega, hEval, rfl⟩
 
 end Effectful
+
+/-!
+Canonical Yul semantics.
+
+Compiler-facing proofs and effect specializations use this monad-polymorphic
+surface. The `Effectful` namespace retains the pure compatibility theorems,
+but both names reduce to the same recursive evaluator above.
+-/
+namespace Canonical
+
+abbrev StateModel := Effectful.StateModel
+abbrev Failure := Effectful.Failure
+abbrev PrimitiveSemantics := Effectful.Control.PrimitiveSemantics
+
+abbrev evalTail {M : Type → Type} [Monad M]
+    {σ : Type} [MonadExceptOf (Failure σ) M]
+    (model : StateModel σ) (prim : PrimitiveSemantics M σ) :=
+  Effectful.evalTail model prim
+
+abbrev evalArgs {M : Type → Type} [Monad M]
+    {σ : Type} [MonadExceptOf (Failure σ) M]
+    (model : StateModel σ) (prim : PrimitiveSemantics M σ) :=
+  Effectful.evalArgs model prim
+
+abbrev evalValues {M : Type → Type} [Monad M]
+    {σ : Type} [MonadExceptOf (Failure σ) M]
+    (model : StateModel σ) (prim : PrimitiveSemantics M σ) :=
+  Effectful.evalValues model prim
+
+abbrev eval {M : Type → Type} [Monad M]
+    {σ : Type} [MonadExceptOf (Failure σ) M]
+    (model : StateModel σ) (prim : PrimitiveSemantics M σ) :=
+  Effectful.eval model prim
+
+abbrev call {M : Type → Type} [Monad M]
+    {σ : Type} [MonadExceptOf (Failure σ) M]
+    (model : StateModel σ) (prim : PrimitiveSemantics M σ) :=
+  Effectful.call model prim
+
+abbrev execSeq {M : Type → Type} [Monad M]
+    {σ : Type} [MonadExceptOf (Failure σ) M]
+    (model : StateModel σ) (prim : PrimitiveSemantics M σ) :=
+  Effectful.execSeq model prim
+
+abbrev exec {M : Type → Type} [Monad M]
+    {σ : Type} [MonadExceptOf (Failure σ) M]
+    (model : StateModel σ) (prim : PrimitiveSemantics M σ) :=
+  Effectful.exec model prim
+
+abbrev loop {M : Type → Type} [Monad M]
+    {σ : Type} [MonadExceptOf (Failure σ) M]
+    (model : StateModel σ) (prim : PrimitiveSemantics M σ) :=
+  Effectful.loop model prim
+
+namespace Program
+
+/-- Run the immutable active contract's dispatcher through the canonical Yul
+control kernel. No account-map code lookup participates in this entry point. -/
+def run {M : Type → Type} [Monad M]
+    {σ : Type} [MonadExceptOf (Failure σ) M]
+    (model : StateModel σ) (prim : PrimitiveSemantics M σ)
+    (fuel : Nat) (code : EvmYul.Yul.Ast.YulContract) (state : σ) :
+    M (σ × List Word) :=
+  Effectful.call model prim fuel [] none (some code) state
+
+end Program
+end Canonical
 end Source
 end Yul
 end EvmCompiler

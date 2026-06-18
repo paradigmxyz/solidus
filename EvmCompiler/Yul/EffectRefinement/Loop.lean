@@ -46,26 +46,22 @@ private theorem loopRecurResult_refines
           codeOverride
           (model.withSource stateAfterPost sourceAfterPost))) :
     Result.Refines
-      (match
-        exec model sourcePrim fuel (.For cond post body)
+      (do
+        let stateAfterLoop ←
+          exec model sourcePrim fuel (.For cond post body)
           codeOverride
           (model.withSource stateAfterPost sourceAfterPost)
-      with
-      | .error failure => .error failure
-      | .ok stateAfterLoop =>
-          .ok
-            (model.withSource stateAfterLoop
-              ((model.source stateAfterLoop).overwrite? outerSource)))
-      (match
-        exec model targetPrim fuel (.For cond post body)
+        pure
+          (model.withSource stateAfterLoop
+            ((model.source stateAfterLoop).overwrite? outerSource)))
+      (do
+        let stateAfterLoop ←
+          exec model targetPrim fuel (.For cond post body)
           codeOverride
           (model.withSource stateAfterPost sourceAfterPost)
-      with
-      | .error failure => .error failure
-      | .ok stateAfterLoop =>
-          .ok
-            (model.withSource stateAfterLoop
-              ((model.source stateAfterLoop).overwrite? outerSource))) := by
+        pure
+          (model.withSource stateAfterLoop
+            ((model.source stateAfterLoop).overwrite? outerSource))) := by
   intro hObservable
   generalize hSourceRecur :
     exec model sourcePrim fuel (.For cond post body)
@@ -75,7 +71,8 @@ private theorem loopRecurResult_refines
   | error failure =>
       have hRecurObservable :
           Result.Observable (.error failure : Result σ σ) := by
-        simpa only [hSourceRecur] using hObservable
+        simpa only [hSourceRecur, Bind.bind, Except.bind, Pure.pure,
+          Except.pure] using hObservable
       have hSourceRecurObservable :
           Result.Observable
             (exec model sourcePrim fuel (.For cond post body)
@@ -85,7 +82,8 @@ private theorem loopRecurResult_refines
         exact hRecurObservable
       have hTargetRecur := hRecur hSourceRecurObservable
       rw [hSourceRecur] at hTargetRecur
-      simpa only [hSourceRecur, hTargetRecur]
+      simpa only [hSourceRecur, hTargetRecur, Bind.bind, Except.bind,
+        Pure.pure, Except.pure]
   | ok stateAfterLoop =>
       have hSourceRecurObservable :
           Result.Observable
@@ -96,7 +94,8 @@ private theorem loopRecurResult_refines
         simp [Result.Observable]
       have hTargetRecur := hRecur hSourceRecurObservable
       rw [hSourceRecur] at hTargetRecur
-      simpa only [hSourceRecur, hTargetRecur]
+      simpa only [hSourceRecur, hTargetRecur, Bind.bind, Except.bind,
+        Pure.pure, Except.pure]
 
 private theorem loopPostResult_refines
     {σ : Type} (model : StateModel σ)
@@ -123,62 +122,46 @@ private theorem loopPostResult_refines
             codeOverride
             (model.withSource stateAfterPost sourceAfterPost))) :
     Result.Refines
-      (match
-        exec model sourcePrim fuel (.Block post) codeOverride
+      (do
+        let stateAfterPost ←
+          exec model sourcePrim fuel (.Block post) codeOverride
           (model.withSource stateAfterBody
             (model.source stateAfterBody).reviveJump)
-      with
-      | .error failure => .error failure
-      | .ok stateAfterPost =>
-          let postSource := model.source stateAfterPost
-          let sourceAfterPost := postSource.overwrite? outerSource
-          match postSource with
-          | .OutOfFuel =>
-              .ok
+        let postSource := model.source stateAfterPost
+        let sourceAfterPost := postSource.overwrite? outerSource
+        match postSource with
+        | .OutOfFuel =>
+            pure (model.withSource stateAfterPost sourceAfterPost)
+        | .Checkpoint (.Leave _ _) =>
+            pure (model.withSource stateAfterPost sourceAfterPost)
+        | _ => do
+            let stateAfterLoop ←
+              exec model sourcePrim fuel (.For cond post body)
+                codeOverride
                 (model.withSource stateAfterPost sourceAfterPost)
-          | .Checkpoint (.Leave _ _) =>
-              .ok
-                (model.withSource stateAfterPost sourceAfterPost)
-          | _ =>
-              match
-                exec model sourcePrim fuel (.For cond post body)
-                  codeOverride
-                  (model.withSource stateAfterPost sourceAfterPost)
-              with
-              | .error failure => .error failure
-              | .ok stateAfterLoop =>
-                  .ok
-                    (model.withSource stateAfterLoop
-                      ((model.source stateAfterLoop).overwrite?
-                        outerSource)))
-      (match
-        exec model targetPrim fuel (.Block post) codeOverride
+            pure
+              (model.withSource stateAfterLoop
+                ((model.source stateAfterLoop).overwrite? outerSource)))
+      (do
+        let stateAfterPost ←
+          exec model targetPrim fuel (.Block post) codeOverride
           (model.withSource stateAfterBody
             (model.source stateAfterBody).reviveJump)
-      with
-      | .error failure => .error failure
-      | .ok stateAfterPost =>
-          let postSource := model.source stateAfterPost
-          let sourceAfterPost := postSource.overwrite? outerSource
-          match postSource with
-          | .OutOfFuel =>
-              .ok
+        let postSource := model.source stateAfterPost
+        let sourceAfterPost := postSource.overwrite? outerSource
+        match postSource with
+        | .OutOfFuel =>
+            pure (model.withSource stateAfterPost sourceAfterPost)
+        | .Checkpoint (.Leave _ _) =>
+            pure (model.withSource stateAfterPost sourceAfterPost)
+        | _ => do
+            let stateAfterLoop ←
+              exec model targetPrim fuel (.For cond post body)
+                codeOverride
                 (model.withSource stateAfterPost sourceAfterPost)
-          | .Checkpoint (.Leave _ _) =>
-              .ok
-                (model.withSource stateAfterPost sourceAfterPost)
-          | _ =>
-              match
-                exec model targetPrim fuel (.For cond post body)
-                  codeOverride
-                  (model.withSource stateAfterPost sourceAfterPost)
-              with
-              | .error failure => .error failure
-              | .ok stateAfterLoop =>
-                  .ok
-                    (model.withSource stateAfterLoop
-                      ((model.source stateAfterLoop).overwrite?
-                        outerSource))) := by
+            pure
+              (model.withSource stateAfterLoop
+                ((model.source stateAfterLoop).overwrite? outerSource))) := by
   intro hObservable
   generalize hSourcePost :
     exec model sourcePrim fuel (.Block post) codeOverride
@@ -188,7 +171,8 @@ private theorem loopPostResult_refines
   | error failure =>
       have hPostObservable :
           Result.Observable (.error failure : Result σ σ) := by
-        simpa only [hSourcePost] using hObservable
+        simpa only [hSourcePost, Bind.bind, Except.bind, Pure.pure,
+          Except.pure] using hObservable
       have hSourcePostObservable :
           Result.Observable
             (exec model sourcePrim fuel (.Block post) codeOverride
@@ -198,7 +182,8 @@ private theorem loopPostResult_refines
         exact hPostObservable
       have hTargetPost := hPost hSourcePostObservable
       rw [hSourcePost] at hTargetPost
-      simpa only [hSourcePost, hTargetPost]
+      simpa only [hSourcePost, hTargetPost, Bind.bind, Except.bind,
+        Pure.pure, Except.pure]
   | ok stateAfterPost =>
       have hSourcePostObservable :
           Result.Observable
@@ -214,7 +199,8 @@ private theorem loopPostResult_refines
       cases hPostSource : postSource with
       | OutOfFuel =>
           simpa only [hSourcePost, hTargetPost, postSource,
-            sourceAfterPost, hPostSource]
+            sourceAfterPost, hPostSource, Bind.bind, Except.bind,
+            Pure.pure, Except.pure]
       | Ok shared store =>
           have hRecurResult :=
             loopRecurResult_refines model sourcePrim targetPrim
@@ -223,14 +209,17 @@ private theorem loopPostResult_refines
               (hRecur stateAfterPost sourceAfterPost)
           have hTargetRecurResult := hRecurResult (by
             simpa only [hSourcePost, postSource,
-              sourceAfterPost, hPostSource] using hObservable)
+              sourceAfterPost, hPostSource, Bind.bind, Except.bind,
+              Pure.pure, Except.pure] using hObservable)
           simpa only [hSourcePost, hTargetPost, postSource,
-            sourceAfterPost, hPostSource] using hTargetRecurResult
+            sourceAfterPost, hPostSource, Bind.bind, Except.bind,
+            Pure.pure, Except.pure] using hTargetRecurResult
       | Checkpoint jump =>
           cases jump with
           | Leave shared store =>
               simpa only [hSourcePost, hTargetPost, postSource,
-                sourceAfterPost, hPostSource]
+                sourceAfterPost, hPostSource, Bind.bind, Except.bind,
+                Pure.pure, Except.pure]
           | Continue shared store =>
               have hRecurResult :=
                 loopRecurResult_refines model sourcePrim targetPrim
@@ -239,9 +228,11 @@ private theorem loopPostResult_refines
                   (hRecur stateAfterPost sourceAfterPost)
               have hTargetRecurResult := hRecurResult (by
                 simpa only [hSourcePost, postSource,
-                  sourceAfterPost, hPostSource] using hObservable)
+                  sourceAfterPost, hPostSource, Bind.bind, Except.bind,
+                  Pure.pure, Except.pure] using hObservable)
               simpa only [hSourcePost, hTargetPost, postSource,
-                sourceAfterPost, hPostSource] using hTargetRecurResult
+                sourceAfterPost, hPostSource, Bind.bind, Except.bind,
+                Pure.pure, Except.pure] using hTargetRecurResult
           | Break shared store =>
               have hRecurResult :=
                 loopRecurResult_refines model sourcePrim targetPrim
@@ -250,9 +241,11 @@ private theorem loopPostResult_refines
                   (hRecur stateAfterPost sourceAfterPost)
               have hTargetRecurResult := hRecurResult (by
                 simpa only [hSourcePost, postSource,
-                  sourceAfterPost, hPostSource] using hObservable)
+                  sourceAfterPost, hPostSource, Bind.bind, Except.bind,
+                  Pure.pure, Except.pure] using hObservable)
               simpa only [hSourcePost, hTargetPost, postSource,
-                sourceAfterPost, hPostSource] using hTargetRecurResult
+                sourceAfterPost, hPostSource, Bind.bind, Except.bind,
+                Pure.pure, Except.pure] using hTargetRecurResult
 
 theorem loop_succ_succ_refines
     {σ : Type} (model : StateModel σ)
@@ -309,7 +302,8 @@ theorem loop_succ_succ_refines
       have hCondObservable :
           Result.Observable
             (.error failure : Result σ (σ × Word)) := by
-        simpa only [loop, outerSource, condState, hSourceCond]
+        simpa only [loop, outerSource, condState, hSourceCond, Bind.bind,
+          Except.bind, Pure.pure, Except.pure]
           using hObservable
       have hSourceCondObservable :
           Result.Observable
@@ -323,7 +317,7 @@ theorem loop_succ_succ_refines
           condState from rfl] at hTargetCond
       rw [hSourceCond] at hTargetCond
       simpa only [loop, outerSource, condState, hSourceCond,
-        hTargetCond]
+        hTargetCond, Bind.bind, Except.bind, Pure.pure, Except.pure]
   | ok result =>
       rcases result with ⟨stateAfterCond, condValue⟩
       have hSourceCondObservable :
@@ -339,7 +333,8 @@ theorem loop_succ_succ_refines
       rw [hSourceCond] at hTargetCond
       by_cases hZero : condValue = ⟨0⟩
       · simpa only [loop, outerSource, condState, hSourceCond,
-          hTargetCond, if_pos hZero]
+          hTargetCond, if_pos hZero, Bind.bind, Except.bind,
+          Pure.pure, Except.pure]
       · generalize hSourceBody :
           exec model sourcePrim fuel (.Block body)
             codeOverride stateAfterCond = sourceBody
@@ -348,7 +343,8 @@ theorem loop_succ_succ_refines
             have hBodyObservable :
                 Result.Observable (.error failure : Result σ σ) := by
               simpa only [loop, outerSource, condState, hSourceCond,
-                hTargetCond, if_neg hZero, hSourceBody]
+                hTargetCond, if_neg hZero, hSourceBody, Bind.bind,
+                Except.bind, Pure.pure, Except.pure]
                 using hObservable
             have hSourceBodyObservable :
                 Result.Observable
@@ -360,7 +356,8 @@ theorem loop_succ_succ_refines
               hBody stateAfterCond hSourceBodyObservable
             rw [hSourceBody] at hTargetBody
             simpa only [loop, outerSource, condState, hSourceCond,
-              hTargetCond, if_neg hZero, hSourceBody, hTargetBody]
+              hTargetCond, if_neg hZero, hSourceBody, hTargetBody,
+              Bind.bind, Except.bind, Pure.pure, Except.pure]
         | ok stateAfterBody =>
             have hSourceBodyObservable :
                 Result.Observable
@@ -376,7 +373,8 @@ theorem loop_succ_succ_refines
             | OutOfFuel =>
                 simpa only [loop, outerSource, condState, hSourceCond,
                   hTargetCond, if_neg hZero, hSourceBody, hTargetBody,
-                  bodySource, hBodySource]
+                  bodySource, hBodySource, Bind.bind, Except.bind,
+                  Pure.pure, Except.pure]
             | Ok shared store =>
                 have hPostResult :=
                   loopPostResult_refines model sourcePrim targetPrim
@@ -385,21 +383,25 @@ theorem loop_succ_succ_refines
                 have hTargetPostResult := hPostResult (by
                   simpa only [loop, outerSource, condState,
                     hSourceCond, hTargetCond, if_neg hZero,
-                    hSourceBody, bodySource, hBodySource]
+                    hSourceBody, bodySource, hBodySource, Bind.bind,
+                    Except.bind, Pure.pure, Except.pure]
                     using hObservable)
                 simpa only [loop, outerSource, condState, hSourceCond,
                   hTargetCond, if_neg hZero, hSourceBody, hTargetBody,
-                  bodySource, hBodySource] using hTargetPostResult
+                  bodySource, hBodySource, Bind.bind, Except.bind,
+                  Pure.pure, Except.pure] using hTargetPostResult
             | Checkpoint jump =>
                 cases jump with
                 | Break shared store =>
                     simpa only [loop, outerSource, condState,
                       hSourceCond, hTargetCond, if_neg hZero,
-                      hSourceBody, hTargetBody, bodySource, hBodySource]
+                      hSourceBody, hTargetBody, bodySource, hBodySource,
+                      Bind.bind, Except.bind, Pure.pure, Except.pure]
                 | Leave shared store =>
                     simpa only [loop, outerSource, condState,
                       hSourceCond, hTargetCond, if_neg hZero,
-                      hSourceBody, hTargetBody, bodySource, hBodySource]
+                      hSourceBody, hTargetBody, bodySource, hBodySource,
+                      Bind.bind, Except.bind, Pure.pure, Except.pure]
                 | Continue shared store =>
                     have hPostResult :=
                       loopPostResult_refines model sourcePrim targetPrim
@@ -408,11 +410,13 @@ theorem loop_succ_succ_refines
                     have hTargetPostResult := hPostResult (by
                       simpa only [loop, outerSource, condState,
                         hSourceCond, hTargetCond, if_neg hZero,
-                        hSourceBody, bodySource, hBodySource]
+                        hSourceBody, bodySource, hBodySource, Bind.bind,
+                        Except.bind, Pure.pure, Except.pure]
                         using hObservable)
                     simpa only [loop, outerSource, condState,
                       hSourceCond, hTargetCond, if_neg hZero,
-                      hSourceBody, hTargetBody, bodySource, hBodySource]
+                      hSourceBody, hTargetBody, bodySource, hBodySource,
+                      Bind.bind, Except.bind, Pure.pure, Except.pure]
                       using hTargetPostResult
 
 end Effectful

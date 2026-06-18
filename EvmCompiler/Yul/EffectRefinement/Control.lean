@@ -5,6 +5,8 @@ namespace Yul
 namespace Source
 namespace Effectful
 
+attribute [local simp] Bind.bind Except.bind
+
 theorem call_zero_refines
     {σ : Type} (model : StateModel σ)
     (sourcePrim targetPrim : PrimitiveSemantics σ)
@@ -36,36 +38,32 @@ private theorem callBody_refines
             (EvmYul.Yul.State.mkOk
               ((model.source state).initcall params rets args))))) :
     Result.Refines
-      (match
-        exec model sourcePrim fuel (.Block body) codeOverride
+      (do
+        let stateAfterBody ←
+          exec model sourcePrim fuel (.Block body) codeOverride
+            (model.withSource state
+              (EvmYul.Yul.State.mkOk
+                ((model.source state).initcall params rets args)))
+        let bodySource := model.source stateAfterBody
+        let sourceAfterCall :=
+          (bodySource.reviveJump.overwrite?
+            (model.source state)).setStore (model.source state)
+        pure
+          (model.withSource stateAfterBody sourceAfterCall,
+            List.map bodySource.lookup! rets))
+      (do
+        let stateAfterBody ←
+          exec model targetPrim fuel (.Block body) codeOverride
           (model.withSource state
             (EvmYul.Yul.State.mkOk
               ((model.source state).initcall params rets args)))
-      with
-      | .error failure => .error failure
-      | .ok stateAfterBody =>
-          let bodySource := model.source stateAfterBody
-          let sourceAfterCall :=
-            (bodySource.reviveJump.overwrite?
-              (model.source state)).setStore (model.source state)
-          .ok
-            (model.withSource stateAfterBody sourceAfterCall,
-              List.map bodySource.lookup! rets))
-      (match
-        exec model targetPrim fuel (.Block body) codeOverride
-          (model.withSource state
-            (EvmYul.Yul.State.mkOk
-              ((model.source state).initcall params rets args)))
-      with
-      | .error failure => .error failure
-      | .ok stateAfterBody =>
-          let bodySource := model.source stateAfterBody
-          let sourceAfterCall :=
-            (bodySource.reviveJump.overwrite?
-              (model.source state)).setStore (model.source state)
-          .ok
-            (model.withSource stateAfterBody sourceAfterCall,
-              List.map bodySource.lookup! rets)) := by
+        let bodySource := model.source stateAfterBody
+        let sourceAfterCall :=
+          (bodySource.reviveJump.overwrite?
+            (model.source state)).setStore (model.source state)
+        pure
+          (model.withSource stateAfterBody sourceAfterCall,
+            List.map bodySource.lookup! rets)) := by
   intro hObservable
   generalize hSourceExec :
     exec model sourcePrim fuel (.Block body) codeOverride
@@ -131,7 +129,8 @@ theorem call_succ_refines
   | some code =>
       cases functionName? with
       | none =>
-          simpa only [call, source, hCode] using
+          simpa only [call, source, hCode, Bind.bind, Except.bind,
+            Pure.pure, Except.pure, Result.Refines, Result.Observable] using
             (callBody_refines model sourcePrim targetPrim fuel args
               [] []
               [code.dispatcher]
@@ -146,7 +145,9 @@ theorem call_succ_refines
             code.functions.lookup functionName = function?
           cases function? with
           | none =>
-              simpa only [call, source, hCode, hLookup] using
+              simpa only [call, source, hCode, hLookup, Bind.bind,
+                Except.bind, Pure.pure, Except.pure, Result.Refines,
+                Result.Observable] using
                 (Result.Refines.refl
                   (fail state
                     (.MissingContractFunction functionName) :
@@ -296,7 +297,8 @@ theorem execSeq_cons_succ_refines
   | error failure =>
       have hHeadObservable :
           Result.Observable (.error failure : Result σ σ) := by
-        simpa only [execSeq, hSourceHead] using hObservable
+        simpa only [execSeq, hSourceHead, Bind.bind, Except.bind]
+          using hObservable
       have hSourceHeadObservable :
           Result.Observable
             (exec model sourcePrim fuel stmt codeOverride state) := by
@@ -304,7 +306,7 @@ theorem execSeq_cons_succ_refines
         exact hHeadObservable
       have hTargetHead := hHead hSourceHeadObservable
       rw [hSourceHead] at hTargetHead
-      simpa only [execSeq, hSourceHead, hTargetHead]
+      simpa only [execSeq, hSourceHead, hTargetHead, Bind.bind, Except.bind]
   | ok stateAfterStmt =>
       have hSourceHeadObservable :
           Result.Observable
@@ -319,15 +321,18 @@ theorem execSeq_cons_succ_refines
               Result.Observable
                 (execSeq model sourcePrim fuel stmts
                   codeOverride stateAfterStmt) := by
-            simpa only [execSeq, hSourceHead, hSourceState]
+            simpa only [execSeq, hSourceHead, hSourceState, Bind.bind,
+              Except.bind]
               using hObservable
           have hTargetTail := hTail stateAfterStmt hTailObservable
           simpa only [execSeq, hSourceHead, hTargetHead,
-            hSourceState] using hTargetTail
+            hSourceState, Bind.bind, Except.bind] using hTargetTail
       | OutOfFuel =>
-          simpa only [execSeq, hSourceHead, hTargetHead, hSourceState]
+          simpa only [execSeq, hSourceHead, hTargetHead, hSourceState,
+            Bind.bind, Except.bind]
       | Checkpoint jump =>
-          simpa only [execSeq, hSourceHead, hTargetHead, hSourceState]
+          simpa only [execSeq, hSourceHead, hTargetHead, hSourceState,
+            Bind.bind, Except.bind]
 
 end Effectful
 end Source

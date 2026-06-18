@@ -251,6 +251,28 @@ for theorem in \
   fi
 done
 
+canonical_yul_surface="$(
+  sed -n '/^namespace Canonical$/,/^end Canonical$/p' \
+    EvmCompiler/Yul/EffectSemantics.lean
+)"
+canonical_yul_code_reads="$(
+  printf '%s\n' "$canonical_yul_surface" |
+    rg -n 'resolveActiveCode\?|executionEnv\.code' 2>/dev/null || true
+)"
+if [[ -n "$canonical_yul_code_reads" ]]; then
+  printf '%s\n%s\n\n' \
+    'Canonical Yul semantics must not read active AST code from mutable account state:' \
+    "$canonical_yul_code_reads" >&2
+  failed=1
+fi
+if ! printf '%s\n' "$canonical_yul_surface" |
+    rg -Uq 'def run[\s\S]*Effectful\.call model prim fuel \[\] none \(some code\) state'; then
+  printf '%s\n\n' \
+    'Canonical Yul Program.run must pass its immutable active contract explicitly.' \
+    >&2
+  failed=1
+fi
+
 report_matches \
   'Open-effect proofs must not restore context bisimulation or per-pass equivalence wrappers:' \
   'ExternalContext\.Rel|OpenEffectEquiv' \
@@ -274,9 +296,12 @@ report_matches \
 
 for theorem in \
     '#check EvmCompiler.Yul.Source.Effectful.resolveActiveCode?_some' \
-    '#check EvmCompiler.Yul.Source.Effectful.call_succ_of_explicit_parts'; do
+    '#check EvmCompiler.Yul.Source.Effectful.call_succ_of_explicit_parts' \
+    '#check EvmCompiler.Yul.Source.Canonical.Program.run' \
+    '#check EvmCompiler.Yul.InteractionSemantics.primitiveSemantics' \
+    '#check EvmCompiler.Yul.InteractionSemantics.Program.openRun'; do
   if ! rg -Fq "$theorem" EvmCompiler/Verification.lean; then
-    printf 'Verification root is missing the explicit active-Yul-code interface: %s\n\n' \
+    printf 'Verification root is missing the canonical open-Yul interface: %s\n\n' \
       "$theorem" >&2
     failed=1
   fi

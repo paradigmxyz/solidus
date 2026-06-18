@@ -5,6 +5,8 @@ namespace Yul
 namespace Source
 namespace Effectful
 
+attribute [local simp] Bind.bind Except.bind
+
 /-!
 Successful canonical Yul executions are monotone in fuel whenever the selected
 primitive semantics is itself success-monotone. The primitive condition is
@@ -533,7 +535,8 @@ mutual
                       have hBody' :=
                         exec_mono model prim hPrim hFuelLe hBody
                       simpa [exec, source, hCond', hTrue] using hBody'
-                    · simpa [exec, source, hCond, hCond', hTrue] using hRun
+                    · simpa [exec, source, hCond, hCond', hTrue,
+                        Bind.bind, Except.bind] using hRun
             | ExprStmtCall expr =>
                 cases expr with
                 | Call callee args =>
@@ -760,7 +763,7 @@ mutual
                                           simp [bodySource, hBodySource]
                                             at hPost hPost'
                                           have hTail :
-                                              ((match
+                                              (match
                                                   model.source stateAfterPost
                                                 with
                                                 | .OutOfFuel =>
@@ -780,7 +783,13 @@ mutual
                                                             stateAfterPost)
                                                           source))
                                                 | _ =>
-                                                    match
+                                                    (fun stateAfterLoop =>
+                                                      model.withSource
+                                                        stateAfterLoop
+                                                        (EvmYul.Yul.State.overwrite?
+                                                          (model.source
+                                                            stateAfterLoop)
+                                                          source)) <$>
                                                       exec model prim fuel
                                                         (.For cond post body)
                                                         codeOverride
@@ -790,28 +799,19 @@ mutual
                                                             (model.source
                                                               stateAfterPost)
                                                             source))
-                                                    with
-                                                    | .error failure =>
-                                                        Except.error failure
-                                                    | .ok stateAfterLoop =>
-                                                        Except.ok
-                                                          (model.withSource
-                                                            stateAfterLoop
-                                                            (EvmYul.Yul.State.overwrite?
-                                                              (model.source
-                                                                stateAfterLoop)
-                                                              source)))
                                                 : Result σ σ) =
                                                 Except.ok final := by
                                             simpa [loop, source, stateAtCond,
                                               hCond, hZero, hBody, bodySource,
-                                              hBodySource, hPost] using hRun
+                                              hBodySource, hPost, Bind.bind,
+                                              Except.bind, Except.map] using hRun
                                           have hTail' :=
                                             loop_post_mono_finish
                                               model prim hPrim hFuelLe hTail
                                           simpa [loop, source, stateAtCond,
                                             hCond', hZero, hBody', bodySource,
-                                            hBodySource, hPost'] using hTail'
+                                            hBodySource, hPost', Bind.bind,
+                                            Except.bind, Except.map] using hTail'
                               | Ok shared vars =>
                                   cases hPost :
                                       exec model prim fuel (.Block post)
@@ -835,7 +835,7 @@ mutual
                                       simp [bodySource, hBodySource]
                                         at hPost hPost'
                                       have hTail :
-                                          ((match model.source stateAfterPost with
+                                          (match model.source stateAfterPost with
                                           | .OutOfFuel =>
                                               Except.ok
                                                 (model.withSource stateAfterPost
@@ -851,7 +851,13 @@ mutual
                                                       stateAfterPost)
                                                     source))
                                           | _ =>
-                                              match
+                                              (fun stateAfterLoop =>
+                                                model.withSource
+                                                  stateAfterLoop
+                                                  (EvmYul.Yul.State.overwrite?
+                                                    (model.source
+                                                      stateAfterLoop)
+                                                    source)) <$>
                                                 exec model prim fuel
                                                   (.For cond post body)
                                                   codeOverride
@@ -861,28 +867,19 @@ mutual
                                                       (model.source
                                                         stateAfterPost)
                                                       source))
-                                              with
-                                              | .error failure =>
-                                                  Except.error failure
-                                              | .ok stateAfterLoop =>
-                                                  Except.ok
-                                                    (model.withSource
-                                                      stateAfterLoop
-                                                      (EvmYul.Yul.State.overwrite?
-                                                        (model.source
-                                                          stateAfterLoop)
-                                                        source)))
                                           : Result σ σ) =
                                             Except.ok final := by
                                         simpa [loop, source, stateAtCond,
                                           hCond, hZero, hBody, bodySource,
-                                          hBodySource, hPost] using hRun
+                                          hBodySource, hPost, Bind.bind,
+                                          Except.bind, Except.map] using hRun
                                       have hTail' :=
                                         loop_post_mono_finish
                                           model prim hPrim hFuelLe hTail
                                       simpa [loop, source, stateAtCond,
                                         hCond', hZero, hBody', bodySource,
-                                        hBodySource, hPost'] using hTail'
+                                        hBodySource, hPost', Bind.bind,
+                                        Except.bind, Except.map] using hTail'
   termination_by
     fuel _fuel' cond post body _codeOverride _state _final _hLe _hRun =>
       (fuel, 9, sizeOf cond + sizeOf post + sizeOf body)
@@ -898,7 +895,7 @@ mutual
         {codeOverride : Option EvmYul.Yul.Ast.YulContract}
         {stateAfterPost : σ} {source : EvmYul.Yul.State} {final : σ},
         fuel ≤ fuel' →
-        ((match model.source stateAfterPost with
+        (match model.source stateAfterPost with
         | .OutOfFuel =>
             Except.ok
               (model.withSource stateAfterPost
@@ -908,19 +905,15 @@ mutual
               (model.withSource stateAfterPost
                 ((model.source stateAfterPost).overwrite? source))
         | _ =>
-            match
+            (fun stateAfterLoop =>
+              model.withSource stateAfterLoop
+                ((model.source stateAfterLoop).overwrite? source)) <$>
               exec model prim fuel (.For cond post body) codeOverride
                 (model.withSource stateAfterPost
                   ((model.source stateAfterPost).overwrite? source))
-            with
-            | .error failure => Except.error failure
-            | .ok stateAfterLoop =>
-                Except.ok
-                  (model.withSource stateAfterLoop
-                    ((model.source stateAfterLoop).overwrite? source)))
           : Result σ σ) =
           Except.ok final →
-        ((match model.source stateAfterPost with
+        (match model.source stateAfterPost with
         | .OutOfFuel =>
             Except.ok
               (model.withSource stateAfterPost
@@ -930,16 +923,12 @@ mutual
               (model.withSource stateAfterPost
                 ((model.source stateAfterPost).overwrite? source))
         | _ =>
-            match
+            (fun stateAfterLoop =>
+              model.withSource stateAfterLoop
+                ((model.source stateAfterLoop).overwrite? source)) <$>
               exec model prim fuel' (.For cond post body) codeOverride
                 (model.withSource stateAfterPost
                   ((model.source stateAfterPost).overwrite? source))
-            with
-            | .error failure => Except.error failure
-            | .ok stateAfterLoop =>
-                Except.ok
-                  (model.withSource stateAfterLoop
-                    ((model.source stateAfterLoop).overwrite? source)))
           : Result σ σ) =
           Except.ok final := by
     intro fuel fuel' cond post body codeOverride stateAfterPost source final
