@@ -31,6 +31,9 @@ boundaries remain active work.
 - [ ] Complete Functions statement and program preservation: statement-list
   composition, scoped control, loops, terminal outcomes,
   internal calls, activation setup/cleanup, and whole program.
+  - [x] outcome-indexed regular/abrupt result relation and generic real-block
+    `nil`/`cons` composition laws;
+  - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
   source-facing reservation/resource assumptions.

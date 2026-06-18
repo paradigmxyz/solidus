@@ -44,6 +44,32 @@ def openRun (program : Expressions.Program) (fuel : Nat)
     Structured.InteractionSemantics.handler
     program fuel block state
 
+/-- One target statement followed by its exact residual block. -/
+theorem openRun_cons
+    (program : Expressions.Program) (fuel : Nat)
+    (stmt : Expressions.Stmt) (rest : List Expressions.Stmt)
+    (state : RunState) :
+    openRun program (fuel + 1) { stmts := stmt :: rest } state =
+      Simulation.Interaction.bind
+        (EffectSemantics.Control.Stmt.run
+          Structured.EffectSemantics.Ordinary.runStateModel
+          Structured.InteractionSemantics.handler
+          program fuel stmt state)
+        (fun outcome =>
+          match outcome.mode with
+          | .regular =>
+              openRun program fuel { stmts := rest } outcome.state
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure outcome) := by
+  cases fuel <;> rfl
+
+/-- A nonzero-fuel empty target block is the regular identity. -/
+theorem openRun_nil
+    (program : Expressions.Program) (fuel : Nat) (state : RunState) :
+    openRun program (fuel + 1) { stmts := [] } state =
+      Simulation.Interaction.pure (Structured.Outcome.regular state) := by
+  cases fuel <;> rfl
+
 /--
 Executing an appended block factors through the left block. A regular left
 outcome continues with the exact residual list fuel; abrupt outcomes skip the

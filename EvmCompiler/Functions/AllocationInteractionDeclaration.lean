@@ -259,8 +259,8 @@ theorem of_lower_compile
           (.scratch beforeFrameDepth frameWords) source target) :
     Simulation.Interaction.Rel
       (AllocationInteractionStatement.OpenStmtResultRel contract lowerCtx
-        afterState afterLocals plan afterLive frameBase
-          (.scratch afterFrameDepth frameWords)
+        afterState afterLocals plan returns afterLive frameBase
+          (.scratch afterFrameDepth frameWords) sourceCtx
         { sourceCtx with scope := name :: sourceCtx.scope })
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx 0 (.let_ name valueExpr) source)
@@ -300,8 +300,8 @@ theorem of_lower_compile
                     layout := name :: beforeState.layout }
                   (beforeLocals.withLayout
                     (name :: beforeLocals.layout))
-                  plan (name :: beforeLive) frameBase
-                    (.scratch (beforeFrameDepth + 1) frameWords)
+                  plan returns (name :: beforeLive) frameBase
+                    (.scratch (beforeFrameDepth + 1) frameWords) sourceCtx
                   { sourceCtx with scope := name :: sourceCtx.scope })
                 (Simulation.Interaction.bind
                   (Functions.InteractionSemantics.Expr.openEval
@@ -382,8 +382,8 @@ theorem of_lower_compile
                     layout := name :: beforeState.layout }
                   (beforeLocals.withLayout
                     (name :: beforeLocals.layout))
-                  plan (name :: beforeLive) frameBase
-                    (.scratch (beforeFrameDepth + 1) frameWords)
+                  plan returns (name :: beforeLive) frameBase
+                    (.scratch (beforeFrameDepth + 1) frameWords) sourceCtx
                   { sourceCtx with scope := name :: sourceCtx.scope })
                 (Simulation.Interaction.bind
                   (Simulation.Interaction.bind
@@ -467,8 +467,8 @@ theorem of_lower_compile
                     allocation :=
                       (AllocationSupport.allocateName
                         name beforeState.allocation).2 }
-                  beforeLocals plan (name :: beforeLive) frameBase
-                    (.scratch beforeFrameDepth frameWords)
+                  beforeLocals plan returns (name :: beforeLive) frameBase
+                    (.scratch beforeFrameDepth frameWords) sourceCtx
                   { sourceCtx with scope := name :: sourceCtx.scope })
                 (Simulation.Interaction.bind
                   (Functions.InteractionSemantics.Expr.openEval
@@ -564,8 +564,8 @@ theorem of_lower_compile
                     allocation :=
                       (AllocationSupport.allocateName
                         name beforeState.allocation).2 }
-                  beforeLocals plan (name :: beforeLive) frameBase
-                    (.scratch beforeFrameDepth frameWords)
+                  beforeLocals plan returns (name :: beforeLive) frameBase
+                    (.scratch beforeFrameDepth frameWords) sourceCtx
                   { sourceCtx with scope := name :: sourceCtx.scope })
                 (Simulation.Interaction.bind
                   (Simulation.Interaction.bind

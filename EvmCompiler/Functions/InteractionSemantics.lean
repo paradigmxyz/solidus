@@ -73,6 +73,57 @@ def openRunScoped (program : Functions.Program)
   Functions.Source.Canonical.Block.runScoped
     stateModel primitiveSemantics program ctx block fuel state
 
+/-- One source statement followed by its exact residual block. -/
+theorem openRun_cons
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (stmt : Functions.Stmt) (rest : List Functions.Stmt)
+    (state : State) :
+    openRun program ctx (fuel + 1) { stmts := stmt :: rest } state =
+      Simulation.Interaction.bind
+        (Functions.Source.Effectful.Control.Stmt.run
+          stateModel primitiveSemantics program ctx fuel stmt state)
+        (fun result =>
+        match result.1.mode with
+        | .regular =>
+            Functions.Source.Effectful.Control.Block.runOpen
+              stateModel primitiveSemantics program result.2 fuel
+              { stmts := rest } result.1.state
+        | .brk | .cont | .leave | .halt _ =>
+            Simulation.Interaction.pure (result.1, ctx)) := by
+  change
+    Functions.Source.Effectful.Control.Block.runOpen
+        stateModel primitiveSemantics program ctx (fuel + 1)
+        { stmts := stmt :: rest } state = _
+  rw [Nat.add_one]
+  simp only [Functions.Source.Effectful.Control.Block.runOpen]
+  change
+    Simulation.Interaction.bind
+        (Functions.Source.Effectful.Control.Stmt.run
+          stateModel primitiveSemantics program ctx fuel stmt state)
+        (fun result =>
+          match result.1.mode with
+          | .regular =>
+              Functions.Source.Effectful.Control.Block.runOpen
+                stateModel primitiveSemantics program result.2 fuel
+                { stmts := rest } result.1.state
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure (result.1, ctx)) = _
+  rfl
+
+/-- A nonzero-fuel empty source block is the regular identity. -/
+theorem openRun_nil
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (state : State) :
+    openRun program ctx (fuel + 1) { stmts := [] } state =
+      (pure (Functions.Source.Effectful.Outcome.regular state, ctx) :
+        Open (Outcome × Functions.Source.Ctx)) := by
+  change
+    Functions.Source.Effectful.Control.Block.runOpen
+        stateModel primitiveSemantics program ctx (fuel + 1)
+        { stmts := [] } state = _
+  rw [Nat.add_one]
+  simp only [Functions.Source.Effectful.Control.Block.runOpen]
+
 end Block
 
 namespace FunDef

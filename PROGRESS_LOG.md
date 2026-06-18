@@ -31812,3 +31812,15 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1314-job verification root, architecture guard, touched-file hole scan,
   axiom audit, and `git diff --check` passed; assignment preservation uses only
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 22:36:00 PDT - theorem-boundary/functions-control - replaced the
+  fixed-live statement result boundary with canonical outcome indexing:
+  regular results retain the outgoing compiler invariant, break/continue use
+  destination scopes, leave uses returns, and halt erases local realization.
+- 2026-06-17 22:36:00 PDT - proof/functions-composition - proved source and
+  target `openRun_cons`/`openRun_nil`, generic `ControlResultRel`, `lift_fixed`,
+  `cons`, `block_cons`, and `block_nil`; abrupt execution now crosses only
+  statically unreachable tails while regular execution composes recursively.
+- 2026-06-17 22:39:00 PDT - validation/functions-composition - focused builds,
+  1315-job verification root, architecture guard, touched-file hole scan,
+  axiom audit, and `git diff --check` passed; the composition boundary uses
+  only `[propext, Classical.choice, Quot.sound]`.

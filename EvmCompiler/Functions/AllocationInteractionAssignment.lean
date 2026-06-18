@@ -295,8 +295,8 @@ theorem scratch_of_lower_compile
         source target) :
     Simulation.Interaction.Rel
       (AllocationInteractionStatement.OpenStmtResultRel contract lowerCtx
-        lowerFinal localsFinal plan live frameBase
-          (.scratch frameDepth frameWords) sourceCtx)
+        lowerFinal localsFinal plan returns live frameBase
+          (.scratch frameDepth frameWords) sourceCtx sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx 0 (.assign name valueExpr) source)
       (Expressions.InteractionSemantics.Block.openRun
@@ -328,8 +328,8 @@ theorem scratch_of_lower_compile
           have hCore :
               Simulation.Interaction.Rel
                 (AllocationInteractionStatement.OpenStmtResultRel contract
-                  lowerCtx lowerState localsCtx plan live frameBase
-                    (.scratch frameDepth frameWords) sourceCtx)
+                  lowerCtx lowerState localsCtx plan returns live frameBase
+                    (.scratch frameDepth frameWords) sourceCtx sourceCtx)
                 (Simulation.Interaction.bind
                   (Functions.InteractionSemantics.Expr.openEval
                     valueExpr source)
@@ -453,8 +453,8 @@ theorem scratch_of_lower_compile
           have hCoreNested :
               Simulation.Interaction.Rel
                 (AllocationInteractionStatement.OpenStmtResultRel contract
-                  lowerCtx lowerState localsCtx plan live frameBase
-                    (.scratch frameDepth frameWords) sourceCtx)
+                  lowerCtx lowerState localsCtx plan returns live frameBase
+                    (.scratch frameDepth frameWords) sourceCtx sourceCtx)
                 (Simulation.Interaction.bind
                   (Simulation.Interaction.bind
                     (Functions.InteractionSemantics.Expr.openEval
@@ -529,8 +529,8 @@ theorem scratch_of_lower_compile
           have hCore :
               Simulation.Interaction.Rel
                 (AllocationInteractionStatement.OpenStmtResultRel contract
-                  lowerCtx lowerState localsCtx plan live frameBase
-                    (.scratch frameDepth frameWords) sourceCtx)
+                  lowerCtx lowerState localsCtx plan returns live frameBase
+                    (.scratch frameDepth frameWords) sourceCtx sourceCtx)
                 (Simulation.Interaction.bind
                   (Functions.InteractionSemantics.Expr.openEval
                     valueExpr source)
@@ -620,8 +620,8 @@ theorem scratch_of_lower_compile
           have hCoreNested :
               Simulation.Interaction.Rel
                 (AllocationInteractionStatement.OpenStmtResultRel contract
-                  lowerCtx lowerState localsCtx plan live frameBase
-                    (.scratch frameDepth frameWords) sourceCtx)
+                  lowerCtx lowerState localsCtx plan returns live frameBase
+                    (.scratch frameDepth frameWords) sourceCtx sourceCtx)
                 (Simulation.Interaction.bind
                   (Simulation.Interaction.bind
                     (Functions.InteractionSemantics.Expr.openEval
@@ -717,7 +717,8 @@ theorem stack_of_lower_compile
         localsCtx plan live frameBase .stack source target) :
     Simulation.Interaction.Rel
       (AllocationInteractionStatement.OpenStmtResultRel contract lowerCtx
-        lowerFinal localsFinal plan live frameBase .stack sourceCtx)
+        lowerFinal localsFinal plan returns live frameBase .stack sourceCtx
+        sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx 0 (.assign name valueExpr) source)
       (Expressions.InteractionSemantics.Block.openRun
@@ -746,8 +747,8 @@ theorem stack_of_lower_compile
       have hCore :
           Simulation.Interaction.Rel
             (AllocationInteractionStatement.OpenStmtResultRel contract
-              lowerCtx lowerState localsCtx plan live frameBase .stack
-              sourceCtx)
+              lowerCtx lowerState localsCtx plan returns live frameBase .stack
+              sourceCtx sourceCtx)
             (Simulation.Interaction.bind
               (Functions.InteractionSemantics.Expr.openEval valueExpr source)
               (fun result =>
@@ -873,8 +874,8 @@ theorem stack_of_lower_compile
       have hCoreNested :
           Simulation.Interaction.Rel
             (AllocationInteractionStatement.OpenStmtResultRel contract
-              lowerCtx lowerState localsCtx plan live frameBase .stack
-              sourceCtx)
+              lowerCtx lowerState localsCtx plan returns live frameBase .stack
+              sourceCtx sourceCtx)
             (Simulation.Interaction.bind
               (Simulation.Interaction.bind
                 (Functions.InteractionSemantics.Expr.openEval
@@ -967,7 +968,8 @@ theorem of_lower_compile
         localsCtx plan live frameBase mode source target) :
     Simulation.Interaction.Rel
       (AllocationInteractionStatement.OpenStmtResultRel contract lowerCtx
-        lowerFinal localsFinal plan live frameBase mode sourceCtx)
+        lowerFinal localsFinal plan returns live frameBase mode sourceCtx
+        sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx 0 (.assign name valueExpr) source)
       (Expressions.InteractionSemantics.Block.openRun

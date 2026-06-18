@@ -7,6 +7,17 @@ namespace AllocationInteractionStatement
 
 open AllocationInteractionRelation
 
+/-- Source-visible live names selected by a statement outcome. -/
+def outcomeLive
+    (returns regularLive : List Functions.Name)
+    (ctx : Functions.Source.Ctx) :
+    Locals.Source.Mode → List Functions.Name
+  | .regular => regularLive
+  | .brk => ctx.breakScope?.getD []
+  | .cont => ctx.continueScope?.getD []
+  | .leave => returns
+  | .halt _ => regularLive
+
 /--
 Statement outcomes retain the full compiler/runtime invariant on regular
 continuation and the activation-owned relation on abrupt or terminal exits.
@@ -16,43 +27,46 @@ inductive BoundaryOutcomeRel
     (lowerCtx : AllocationLowering.Ctx)
     (lowerState : AllocationLowering.State)
     (localsCtx : Locals.Ctx)
-    (plan : Plan) (live : List Locals.Name)
-    (frameBase : Nat) (mode : ActivationMode) :
+    (plan : Plan) (returns regularLive : List Locals.Name)
+    (frameBase : Nat) (mode : ActivationMode)
+    (controlCtx : Functions.Source.Ctx) :
     Functions.InteractionSemantics.Outcome →
       Expressions.InteractionSemantics.Outcome → Prop where
   | regular {source : SourceState} {target : TargetState}
       (invariant :
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
-          localsCtx plan live frameBase mode source target) :
-      BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan live
-        frameBase mode
+          localsCtx plan regularLive frameBase mode source target) :
+      BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan returns
+        regularLive frameBase mode controlCtx
         (Functions.Source.Effectful.Outcome.regular source)
         (Structured.EffectSemantics.Outcome.regular target)
   | brk {source : SourceState} {target : TargetState}
       (state :
-        ActivationStateRel contract plan live 0 frameBase mode source target) :
-      BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan live
-        frameBase mode
+        ActivationStateRel contract plan (controlCtx.breakScope?.getD []) 0
+          frameBase mode source target) :
+      BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan returns
+        regularLive frameBase mode controlCtx
         (Functions.Source.Effectful.Outcome.brk source)
         (Structured.EffectSemantics.Outcome.brk target)
   | cont {source : SourceState} {target : TargetState}
       (state :
-        ActivationStateRel contract plan live 0 frameBase mode source target) :
-      BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan live
-        frameBase mode
+        ActivationStateRel contract plan (controlCtx.continueScope?.getD []) 0
+          frameBase mode source target) :
+      BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan returns
+        regularLive frameBase mode controlCtx
         (Functions.Source.Effectful.Outcome.cont source)
         (Structured.EffectSemantics.Outcome.cont target)
   | leave {source : SourceState} {target : TargetState}
-      (state : LeaveStateRel contract live source target) :
-      BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan live
-        frameBase mode
+      (state : LeaveStateRel contract returns source target) :
+      BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan returns
+        regularLive frameBase mode controlCtx
         (Functions.Source.Effectful.Outcome.leave source)
         (Structured.EffectSemantics.Outcome.leave target)
   | halt (kind : Assembly.HaltKind)
       {source : SourceState} {target : TargetState}
       (state : HaltStateRel contract plan source target) :
-      BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan live
-        frameBase mode
+      BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan returns
+        regularLive frameBase mode controlCtx
         (Functions.Source.Effectful.Outcome.halt kind source)
         (Structured.EffectSemantics.Outcome.halt kind target)
 
@@ -62,28 +76,87 @@ def StmtResultRel
     (lowerCtx : AllocationLowering.Ctx)
     (lowerState : AllocationLowering.State)
     (localsCtx : Locals.Ctx) (plan : Plan)
-    (live : List Locals.Name) (frameBase : Nat)
+    (returns regularLive : List Locals.Name) (frameBase : Nat)
     (mode : ActivationMode)
+    (controlCtx : Functions.Source.Ctx)
     (expectedCtx : Functions.Source.Ctx) :
     (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx) →
       Expressions.InteractionSemantics.Outcome → Prop
   | (sourceOutcome, sourceCtx), targetOutcome =>
       sourceCtx = expectedCtx ∧
-        BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan live
-          frameBase mode sourceOutcome targetOutcome
+        BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan returns
+          regularLive frameBase mode controlCtx sourceOutcome targetOutcome
 
 abbrev OpenStmtResultRel
     (contract : MemoryContract.Contract)
     (lowerCtx : AllocationLowering.Ctx)
     (lowerState : AllocationLowering.State)
     (localsCtx : Locals.Ctx) (plan : Plan)
-    (live : List Locals.Name) (frameBase : Nat)
+    (returns regularLive : List Locals.Name) (frameBase : Nat)
     (mode : ActivationMode)
+    (controlCtx : Functions.Source.Ctx)
     (expectedCtx : Functions.Source.Ctx) :=
   Simulation.Interaction.ExceptRel
     (fun left right : EVMException => left = right)
-    (StmtResultRel contract lowerCtx lowerState localsCtx plan live
-      frameBase mode expectedCtx)
+    (StmtResultRel contract lowerCtx lowerState localsCtx plan returns
+      regularLive frameBase mode controlCtx expectedCtx)
+
+namespace BoundaryOutcomeRel
+
+/-- Forget regular compiler context while retaining the outcome-indexed state. -/
+theorem toActivationOutcomeRel
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx} {plan : Plan}
+    {returns regularLive : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {controlCtx : Functions.Source.Ctx}
+    {sourceOutcome : Functions.InteractionSemantics.Outcome}
+    {targetOutcome : Expressions.InteractionSemantics.Outcome}
+    (hRel :
+      BoundaryOutcomeRel contract lowerCtx lowerState localsCtx plan returns
+        regularLive frameBase mode controlCtx sourceOutcome targetOutcome) :
+    ActivationOutcomeRel contract plan
+      (outcomeLive returns regularLive controlCtx sourceOutcome.mode)
+      0 frameBase mode sourceOutcome targetOutcome := by
+  cases hRel with
+  | regular invariant => exact .regular invariant.state
+  | brk state => exact .brk state
+  | cont state => exact .cont state
+  | leave state => exact .leave state
+  | halt kind state => exact .halt kind state
+
+/--
+An abrupt result may cross compiler contexts belonging to a dynamically
+unreachable tail. Its destination live set is selected by the outcome itself.
+-/
+theorem reindex_nonregular
+    {contract : MemoryContract.Contract}
+    {beforeLowerCtx afterLowerCtx : AllocationLowering.Ctx}
+    {beforeLowerState afterLowerState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx} {plan : Plan}
+    {returns beforeRegularLive afterRegularLive : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {controlCtx : Functions.Source.Ctx}
+    {sourceOutcome : Functions.InteractionSemantics.Outcome}
+    {targetOutcome : Expressions.InteractionSemantics.Outcome}
+    (hRel :
+      BoundaryOutcomeRel contract beforeLowerCtx beforeLowerState
+        beforeLocals plan returns beforeRegularLive frameBase mode controlCtx
+        sourceOutcome targetOutcome)
+    (hNonregular : sourceOutcome.mode ≠ .regular) :
+    BoundaryOutcomeRel contract afterLowerCtx afterLowerState afterLocals plan
+      returns afterRegularLive frameBase mode controlCtx sourceOutcome
+      targetOutcome := by
+  cases hRel with
+  | regular invariant => exact False.elim (hNonregular rfl)
+  | brk state => exact .brk state
+  | cont state => exact .cont state
+  | leave state => exact .leave state
+  | halt kind state => exact .halt kind state
+
+end BoundaryOutcomeRel
 
 /--
 An expression statement is preserved by the ordinary allocation lowerer and
@@ -118,8 +191,8 @@ theorem expr_of_lower_compile
       AllocationContext.ActivationInvariant contract lowerCtx lowerState
         localsCtx plan live frameBase mode source target) :
     Simulation.Interaction.Rel
-      (OpenStmtResultRel contract lowerCtx lowerFinal localsFinal plan live
-        frameBase mode sourceCtx)
+      (OpenStmtResultRel contract lowerCtx lowerFinal localsFinal plan returns
+        live frameBase mode sourceCtx sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx 0 (.expr expr) source)
       (Expressions.InteractionSemantics.Block.openRun
@@ -289,8 +362,8 @@ theorem stack_let_of_lower_compile
       AllocationContext.ActivationInvariant contract lowerCtx beforeState
         beforeLocals plan live frameBase .stack source target) :
     Simulation.Interaction.Rel
-      (OpenStmtResultRel contract lowerCtx afterState afterLocals plan
-        (name :: live) frameBase .stack
+      (OpenStmtResultRel contract lowerCtx afterState afterLocals plan returns
+        (name :: live) frameBase .stack sourceCtx
         { sourceCtx with scope := name :: sourceCtx.scope })
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx 0 (.let_ name valueExpr) source)
@@ -327,7 +400,7 @@ theorem stack_let_of_lower_compile
                     layout := name :: beforeState.layout }
                   (beforeLocals.withLayout
                     (name :: beforeLocals.layout))
-                  plan (name :: live) frameBase .stack
+                  plan returns (name :: live) frameBase .stack sourceCtx
                   { sourceCtx with scope := name :: sourceCtx.scope })
                 (Simulation.Interaction.bind
                   (Functions.InteractionSemantics.Expr.openEval
@@ -408,7 +481,7 @@ theorem stack_let_of_lower_compile
                     layout := name :: beforeState.layout }
                   (beforeLocals.withLayout
                     (name :: beforeLocals.layout))
-                  plan (name :: live) frameBase .stack
+                  plan returns (name :: live) frameBase .stack sourceCtx
                   { sourceCtx with scope := name :: sourceCtx.scope })
                 (Simulation.Interaction.bind
                   (Simulation.Interaction.bind
