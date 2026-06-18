@@ -31792,3 +31792,13 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
 - 2026-06-17 21:58:00 PDT - validation/functions-scratch-store - corrected
   axiom audit passed; both new theorems use only
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 21:58:51 PDT - proof/functions-declaration - moved the ordinary
+  stack/scratch declaration transition classifier into canonical
+  `AllocationContext`, then proved
+  `AllocationInteractionDeclaration.of_lower_compile` for both allocator
+  placements inside a scratch-capable activation using the shared interaction
+  semantics and ordinary compiler passes.
+- 2026-06-17 22:04:00 PDT - validation/functions-declaration - focused build,
+  1313-job verification root, architecture guard, touched-file hole scan,
+  axiom audit, and `git diff --check` passed; the new preservation theorem uses
+  only `[propext, Classical.choice, Quot.sound]`.

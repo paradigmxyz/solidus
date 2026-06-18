@@ -342,6 +342,121 @@ theorem classify_activation_var
       | scratch slot op hLocation hDup =>
           exact .scratch frameDepth frameWords slot op hLocation hDup
 
+/--
+Runtime-representation transition induced by one allocated declaration.
+This compiler-owned classification is independent of any observation model.
+-/
+inductive LetTransition
+    (lowerCtx : AllocationLowering.Ctx)
+    (beforeState : AllocationLowering.State)
+    (plan : Plan) (beforeLive afterLive : List Locals.Name)
+    (name : Locals.Name) (beforeFrameDepth afterFrameDepth : Nat) : Prop where
+  | stack
+      (slot planDepth : Nat)
+      (hSlot : slot = beforeState.allocation.nextSlot)
+      (hStack : AllocationLowering.isStackSlot lowerCtx slot = true)
+      (hLocation : plan.location? name = some (.stack planDepth))
+      (hStackOrder :
+        currentStackOrder plan afterLive =
+          name :: currentStackOrder plan beforeLive)
+      (hFrameDepth : afterFrameDepth = beforeFrameDepth + 1) :
+      LetTransition lowerCtx beforeState plan beforeLive afterLive name
+        beforeFrameDepth afterFrameDepth
+  | scratch
+      (slot : Nat)
+      (hSlot : slot = beforeState.allocation.nextSlot)
+      (hStack : AllocationLowering.isStackSlot lowerCtx slot = false)
+      (hLocation : plan.location? name = some (.scratch slot))
+      (hStackOrder :
+        currentStackOrder plan afterLive =
+          currentStackOrder plan beforeLive)
+      (hFrameDepth : afterFrameDepth = beforeFrameDepth) :
+      LetTransition lowerCtx beforeState plan beforeLive afterLive name
+        beforeFrameDepth afterFrameDepth
+
+/-- Classify the exact stack/scratch transition selected by `lowerStmt`. -/
+theorem classify_let_transition
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {beforeState afterState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx}
+    {plan : Plan} {beforeLive afterLive : List Locals.Name}
+    {beforeFrameDepth afterFrameDepth : Nat}
+    {name : Locals.Name} {value : Functions.Expr 1}
+    {lowered : List Locals.Stmt}
+    (hBefore :
+      ExprContext lowerCtx beforeState beforeLocals plan beforeLive
+        beforeFrameDepth)
+    (hAfter :
+      ExprContext lowerCtx afterState afterLocals plan afterLive
+        afterFrameDepth)
+    (hNameAfter : name ∈ afterLive)
+    (hNameFrame : name ≠ lowerCtx.frameName)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns beforeState
+          (.let_ name value) =
+        some (lowered, afterState)) :
+    LetTransition lowerCtx beforeState plan beforeLive afterLive name
+      beforeFrameDepth afterFrameDepth := by
+  cases hLowerValue :
+      AllocationLowering.lowerExpr lowerCtx beforeState value with
+  | none =>
+      simp [AllocationLowering.lowerStmt, hLowerValue] at hLower
+  | some loweredValue =>
+      let slot := beforeState.allocation.nextSlot
+      have hLookup :
+          AllocationSupport.lookupSlot? name
+              (AllocationSupport.allocateName
+                name beforeState.allocation).2.env =
+            some slot := by
+        simp [slot, AllocationSupport.allocateName,
+          AllocationSupport.lookupSlot?]
+      cases hStack : AllocationLowering.isStackSlot lowerCtx slot with
+      | false =>
+          by_cases hFrame : lowerCtx.frameName ∈ beforeState.layout
+          · simp [AllocationLowering.lowerStmt, hLowerValue, slot,
+              AllocationSupport.allocateName, hStack, hFrame] at hLower
+            rcases hLower with ⟨rfl, rfl⟩
+            obtain ⟨hLocation, _hFrame⟩ :=
+              hAfter.scratch name slot hNameAfter hLookup hStack
+            have hFrameDepth : afterFrameDepth = beforeFrameDepth := by
+              have hBeforeFrame := hBefore.frame
+              have hAfterFrame := hAfter.frame
+              rw [hBeforeFrame] at hAfterFrame
+              cases hAfterFrame
+              omega
+            have hStackOrder :
+                currentStackOrder plan afterLive =
+                  currentStackOrder plan beforeLive := by
+              rw [hAfter.stackPrefix, hBefore.stackPrefix, hFrameDepth]
+            exact
+              .scratch slot rfl hStack hLocation hStackOrder hFrameDepth
+          · simp [AllocationLowering.lowerStmt, hLowerValue, slot,
+              AllocationSupport.allocateName, hStack, hFrame] at hLower
+      | true =>
+          simp [AllocationLowering.lowerStmt, hLowerValue, slot,
+            AllocationSupport.allocateName, hStack] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          obtain
+            ⟨planDepth, depth, hLocation, _hCurrentDepth, _hLayoutDepth⟩ :=
+            hAfter.stack name slot hNameAfter hLookup hStack
+          have hShift :=
+            Locals.Layout.lookupDepth?_cons_of_ne hNameFrame hBefore.frame
+          have hFrameDepth :
+              afterFrameDepth = beforeFrameDepth + 1 := by
+            have hAfterFrame := hAfter.frame
+            rw [hAfterFrame] at hShift
+            cases hShift
+            omega
+          have hStackOrder :
+              currentStackOrder plan afterLive =
+                name :: currentStackOrder plan beforeLive := by
+            rw [hAfter.stackPrefix, hBefore.stackPrefix, hFrameDepth]
+            simp [Nat.add_comm]
+          exact
+            .stack slot planDepth rfl hStack hLocation hStackOrder
+              hFrameDepth
+
 end AllocationContext
 end Functions
 end EvmCompiler

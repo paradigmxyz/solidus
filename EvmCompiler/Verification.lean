@@ -33,6 +33,7 @@ import EvmCompiler.Functions.AllocationInteractionRelation
 import EvmCompiler.Functions.AllocationInteractionExpression
 import EvmCompiler.Functions.AllocationInteractionExpressionRecursive
 import EvmCompiler.Functions.AllocationInteractionScratchStore
+import EvmCompiler.Functions.AllocationInteractionDeclaration
 import EvmCompiler.Functions.AllocationInteractionStatement
 import EvmCompiler.Functions.AllocationInteractionPrimitive
 import EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive
@@ -204,6 +205,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardExpr
 #check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardExprSeq
 #check EvmCompiler.Functions.AllocationInteractionScratchStore.assignTop
+#check EvmCompiler.Functions.AllocationInteractionDeclaration.compiler_shape
+#check EvmCompiler.Functions.AllocationInteractionDeclaration.of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionStatement.StmtResultRel
 #check EvmCompiler.Functions.AllocationInteractionStatement.expr_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionStatement.stack_let_compiler_shape

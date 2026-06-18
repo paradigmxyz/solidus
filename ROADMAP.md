@@ -19,6 +19,23 @@ preservation are checked. The fetched/encoded-bytecode execution bridge,
 legacy observer specialization, and all higher adjacent preservation
 boundaries remain active work.
 
+## Open-Effects Migration Status
+
+- [x] Shared ordered `Interaction` semantics and code-erased `OpenWorld`.
+- [x] Assembly/bytecode and lower control-pass preservation for all shared
+  effects, including CALL-family, CREATE-family, logs, storage, `gas()`, and
+  `msize()`.
+- [x] Functions allocation relation, primitive families, recursive
+  expressions, and stack/scratch declaration preservation.
+- [ ] Complete Functions statement and program preservation: assignments,
+  statement-list composition, scoped control, loops, terminal outcomes,
+  internal calls, activation setup/cleanup, and whole program.
+- [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
+- [ ] Compose the short public Yul end-to-end theorem and reconnect the
+  source-facing reservation/resource assumptions.
+- [ ] Run representative interleaving/reentrancy/static/zero-window tests and
+  all completion gates.
+
 ## Relation To External Effects
 
 The checked theorem in this file is intentionally asymmetric because EVM
