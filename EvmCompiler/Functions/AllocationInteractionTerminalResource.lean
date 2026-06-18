@@ -1,4 +1,5 @@
 import EvmCompiler.Functions.AllocationInteractionCleanupResource
+import EvmCompiler.Functions.AllocationInteractionPrimitiveResource
 import EvmCompiler.Functions.AllocationInteractionResource
 import EvmCompiler.Functions.AllocationInteractionTerminal
 
@@ -253,6 +254,133 @@ theorem terminal_of_lower_compile
   apply Simulation.Interaction.ExceptRel.ok
   exact ActivationEffect.of_allocatorEffect
     (hCleanupEffect.trans hTerminalEffect)
+
+/-- Argument evaluation and terminal growth preserve activation resources. -/
+theorem terminalArgs_of_lower_compile
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth : Nat} {config : Config}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Expressions.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns live : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Plan} {sourceFuel targetExtra frameBase : Nat}
+    {mode : ActivationMode} {kind : Assembly.HaltKind}
+    {args : Locals.ExprSeq kind.argCount}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source : SourceState} {target : TargetState}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hArgsSafe : AllocationInteractionSafety.ExprSeqSafe contract args source)
+    (hTerminalSafe :
+      Simulation.Interaction.AllDone
+        (fun outcome =>
+          match outcome with
+          | .error _ => True
+          | .ok result =>
+              Simulation.MemorySafety.TerminalMemorySafe
+                contract kind result.2)
+        (Functions.InteractionSemantics.ExprSeq.openEval args source))
+    (hScoped : Functions.Scope.ExprSeqScoped live args)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState
+          (.terminalArgs kind args) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal))
+    (hInvariant :
+      AllocationContext.ActivationInvariant contract lowerCtx lowerState
+        localsCtx plan live frameBase mode source target)
+    (hReady : AllocatorReady config allocatorDepth target) :
+    Simulation.Interaction.Rel
+      (OpenResultRel config allocatorDepth mode target)
+      (Functions.InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel (.terminalArgs kind args) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram (targetExtra + 3) { stmts := compiledStmts } target) := by
+  obtain ⟨lowered, code, hLowerArgs, hCompileCode,
+      rfl, rfl, rfl, rfl⟩ :=
+    AllocationInteractionTerminal.TerminalLeaf.args_compiler_shape
+      hLower hCompile
+  have hArgs :=
+    AllocationInteractionExpressionResource.forwardExprSeq
+      (AllocationInteractionPrimitiveResource.canonicalPrimitiveForward
+        contract)
+      hConfig hArgsSafe hInvariant.compiler hScoped hLowerArgs hCompileCode
+      hInvariant.state hReady
+  have hArgsStrong :=
+    Simulation.Interaction.Rel.strengthen_left hArgs hTerminalSafe
+  rw [Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_terminal]
+  unfold Functions.InteractionSemantics.Stmt.openRun
+    Functions.Source.Canonical.Stmt.run
+  simp only [Functions.Source.Effectful.Control.Stmt.run]
+  change
+    Simulation.Interaction.Rel _
+      (Simulation.Interaction.bind
+        (Functions.InteractionSemantics.ExprSeq.openEval args source)
+        (fun result =>
+          Simulation.Interaction.bind
+            (Locals.InteractionSemantics.Primitive.openTerminal
+              kind result.1 result.2)
+            (fun final =>
+              Simulation.Interaction.pure
+                (Functions.Source.Effectful.Outcome.halt kind final,
+                  sourceCtx))))
+      (Simulation.Interaction.bind
+        (Structured.InteractionSemantics.Code.openRun code target)
+        (fun afterArgs =>
+          Simulation.Interaction.bind
+            (Structured.InteractionSemantics.Terminal.openStep kind afterArgs)
+            (fun final =>
+              Simulation.Interaction.pure
+                (Structured.EffectSemantics.Outcome.halt kind final))))
+  apply Simulation.Interaction.Rel.bind_custom hArgsStrong
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hRelated, hSafeDone⟩
+  cases hRelated with
+  | error hError => exact .done (.error hError)
+  | @ok sourceResult targetAfterArgs hArgsResult =>
+      rcases sourceResult with ⟨sourceAfterArgs, values⟩
+      have invocation :=
+        AllocationInteractionTerminal.Invocation.of_memorySafe hSafeDone
+      obtain ⟨sourceSharedFinal, hSourceEval⟩ :=
+        invocation.eval_exists sourceAfterArgs.shared
+      obtain
+          ⟨sourceFinal, targetFinal,
+            hSourceTerminal, hTargetTerminal, hTerminalMemory,
+            hTerminalActive, hTerminalNoWrap⟩ :=
+        Invocation.forward_shared_allocator invocation
+          hArgsResult.1.state.shared hArgsResult.1.state.activeNoWrap
+          hSourceEval hArgsResult.1.stack
+      have hTerminalEffect :
+          AllocatorEffect config allocatorDepth targetAfterArgs targetFinal :=
+        AllocatorEffect.of_memory_eq_active_growth hArgsResult.2.ready
+          hTerminalMemory hTerminalActive hTerminalNoWrap
+      change
+        Simulation.Interaction.Rel _
+          (Simulation.Interaction.bind
+            (Locals.InteractionSemantics.Primitive.openTerminal
+              kind sourceAfterArgs values)
+            (fun final =>
+              Simulation.Interaction.pure
+                (Functions.Source.Effectful.Outcome.halt kind final,
+                  sourceCtx)))
+          (Simulation.Interaction.bind
+            (Structured.InteractionSemantics.Terminal.openStep
+              kind targetAfterArgs)
+            (fun final =>
+              Simulation.Interaction.pure
+                (Structured.EffectSemantics.Outcome.halt kind final)))
+      rw [hSourceTerminal, hTargetTerminal]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact ActivationEffect.of_allocatorEffect
+        (hArgsResult.2.trans hTerminalEffect)
 
 end AllocationInteractionTerminalResource
 end Functions
