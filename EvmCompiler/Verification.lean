@@ -282,6 +282,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.switchSelectedCursorOfComponents
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.switchSelectedCursors
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.forCursors
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.ForComponents
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.forComponents
 #check EvmCompiler.Functions.AllocationInteractionForward.CoreCursor.nil
 #check EvmCompiler.Functions.AllocationInteractionForward.CoreCursor.cons_of_parts
 #check EvmCompiler.Functions.AllocationInteractionForward.FrameCapacity
@@ -312,6 +314,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.block
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.if_
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.switch
+#check EvmCompiler.Functions.AllocationInteractionRecursive.ForFuelCapacity
+#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.for_
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.brk
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.cont
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.terminal
@@ -336,6 +340,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionFor.forward
 #check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin.withoutLoopControl
 #check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin.withLoopControl
+#check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin.scopeUpdate
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.SwitchComponents
 #check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardOne
 #check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardCondition
@@ -344,7 +349,9 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.SwitchCompile.SelectedRel.some_parts
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.SwitchCompile.SelectedRel.none_target
 #check EvmCompiler.Functions.AllocationContext.ActivationExprContext.transport_plan
+#check EvmCompiler.Functions.AllocationContext.ActivationExprContext.transport_locals
 #check EvmCompiler.Functions.AllocationContext.ActivationInvariant.transport_plan
+#check EvmCompiler.Functions.AllocationContext.ActivationInvariant.transport_locals
 #check EvmCompiler.Functions.AllocationContext.ActivationInvariant.transport_state
 #check EvmCompiler.Functions.AllocationContext.ActivationInvariant.ofOutcomeState
 #check EvmCompiler.Functions.AllocationInteractionLeaf.expr_of_lower_compile

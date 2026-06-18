@@ -2800,6 +2800,217 @@ theorem CoreCursor.forCursors
     exact hFinishBody
   · rw [hInitCode, hHeadCode]
 
+/-- Stable compiler-owned decomposition consumed by adjacent `for` proofs. -/
+structure CoreCursor.ForComponents
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {init : Functions.Block}
+    {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .for_ init cond post body :: rest }
+        lowerState localsCtx) where
+  afterState : AllocationLowering.State
+  headLower : List Locals.Stmt
+  headCode : List Expressions.Stmt
+  tail : CoreCursor root scope live { stmts := rest } afterState localsCtx
+  loopState : AllocationLowering.State
+  afterPost : AllocationLowering.State
+  afterBody : AllocationLowering.State
+  initLocals : Locals.Ctx
+  postLocals : Locals.Ctx
+  bodyLocals : Locals.Ctx
+  loweredCond : Locals.Expr 1
+  condCode : Structured.Code
+  compiledPost : Expressions.Block
+  compiledBody : Expressions.Block
+  cleanup : Structured.Code
+  initScope : Locals.Allocation.ScopeId
+  postScope : Locals.Allocation.ScopeId
+  bodyScope : Locals.Allocation.ScopeId
+  loopLive : List Functions.Name
+  loopLive_eq : loopLive = Functions.Scope.Block.outEnv live init
+  initCursor :
+    CoreCursor root initScope live init lowerState
+      localsCtx.withoutLoopControl
+  postCursor :
+    CoreCursor root postScope loopLive post loopState
+      initLocals.withoutLoopControl
+  bodyCursor :
+    CoreCursor root bodyScope loopLive body afterPost
+      (initLocals.withLoopControl initLocals.layout.length)
+  postPlanAgree : PlanAgreesOn postCursor.plan initCursor.plan loopLive
+  bodyPlanAgree : PlanAgreesOn bodyCursor.plan initCursor.plan loopLive
+  compiled : cursor.compiled = headCode ++ tail.compiled
+  lower :
+    AllocationLowering.lowerStmt root.lowerCtx root.returns lowerState
+      (.for_ init cond post body) = some (headLower, afterState)
+  compile :
+    Locals.Block.compileOpen localsCtx { stmts := headLower } =
+      some (headCode, localsCtx)
+  initFinalState : initCursor.finalState = loopState
+  initFinalLocals : initCursor.finalLocals = initLocals
+  lowerCond :
+    AllocationLowering.lowerExpr root.lowerCtx loopState cond =
+      some loweredCond
+  compileCond :
+    Locals.Expr.compileCode initLocals 0 loweredCond = some condCode
+  lowerPost :
+    AllocationLowering.lowerBlockScoped root.lowerCtx root.returns
+      loopState post = some (postCursor.lowered, afterPost)
+  finishPost :
+    Locals.finishScoped initLocals.withoutLoopControl
+      postCursor.finalLocals postCursor.compiled = some compiledPost
+  lowerBody :
+    AllocationLowering.lowerBlockScoped root.lowerCtx root.returns
+      afterPost body = some (bodyCursor.lowered, afterBody)
+  finishBody :
+    Locals.finishScoped
+      (initLocals.withLoopControl initLocals.layout.length)
+      bodyCursor.finalLocals bodyCursor.compiled = some compiledBody
+  cleanupTo :
+    initLocals.cleanupTo? localsCtx.layout.length = some cleanup
+  headCode_eq :
+    headCode =
+      [Expressions.Stmt.for_
+        { stmts := initCursor.compiled }
+        (.code condCode) compiledPost compiledBody] ++
+        Locals.codeStmt cleanup
+  afterState_eq :
+    afterState =
+      { allocation :=
+          { env := lowerState.allocation.env
+            nextSlot := afterBody.allocation.nextSlot }
+        layout := lowerState.layout }
+  condScoped : Functions.Scope.ExprScoped loopLive cond
+  postScoped : Functions.Scope.Block.Scoped loopLive post
+  bodyScoped : Functions.Scope.Block.Scoped loopLive body
+  step :
+    StepTransport lowerState afterState localsCtx localsCtx live
+      (.for_ init cond post body)
+  exactTail : ExactTail cursor tail
+
+/-- Construct the stable `for` artifact solely from the ordinary compiler. -/
+theorem CoreCursor.forComponents
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {init : Functions.Block}
+    {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .for_ init cond post body :: rest }
+        lowerState localsCtx) :
+    Nonempty cursor.ForComponents := by
+  obtain
+      ⟨afterState, headLower, headCode, tail,
+        loopState, afterPost, afterBody,
+        initLocals, postLocals, bodyLocals,
+        loweredCond, condCode, compiledPost, compiledBody, cleanup,
+        initCursor, postCursor, bodyCursor,
+        hCompiled, hLower, hCompile,
+        hInitFinalState, hInitFinalLocals,
+        hLowerCond, hCompileCond, hLowerPost, hFinishPost,
+        hLowerBody, hFinishBody, hCleanup, hHeadCode, hAfterState,
+        hCondScoped, hPostScoped, hBodyScoped, hStep, hExact⟩ :=
+    cursor.forCursors
+  let loopLive := Functions.Scope.Block.outEnv live init
+  have hPostShape :=
+    AllocationLowering.lowerBlockScoped_state_shape hLowerPost
+  have hPostPlanAgree :
+      PlanAgreesOn postCursor.plan initCursor.plan loopLive := by
+    apply postCursor.planAgreesOn initCursor.finished
+    rw [hInitFinalState]
+  have hBodyPlanAgree :
+      PlanAgreesOn bodyCursor.plan initCursor.plan loopLive := by
+    apply bodyCursor.planAgreesOn initCursor.finished
+    rw [hInitFinalState]
+    exact hPostShape.1
+  exact ⟨{
+    afterState := afterState
+    headLower := headLower
+    headCode := headCode
+    tail := tail
+    loopState := loopState
+    afterPost := afterPost
+    afterBody := afterBody
+    initLocals := initLocals
+    postLocals := postLocals
+    bodyLocals := bodyLocals
+    loweredCond := loweredCond
+    condCode := condCode
+    compiledPost := compiledPost
+    compiledBody := compiledBody
+    cleanup := cleanup
+    initScope := _
+    postScope := _
+    bodyScope := _
+    loopLive := loopLive
+    loopLive_eq := rfl
+    initCursor := initCursor
+    postCursor := postCursor
+    bodyCursor := bodyCursor
+    postPlanAgree := hPostPlanAgree
+    bodyPlanAgree := hBodyPlanAgree
+    compiled := hCompiled
+    lower := hLower
+    compile := hCompile
+    initFinalState := hInitFinalState
+    initFinalLocals := hInitFinalLocals
+    lowerCond := hLowerCond
+    compileCond := hCompileCond
+    lowerPost := hLowerPost
+    finishPost := hFinishPost
+    lowerBody := hLowerBody
+    finishBody := hFinishBody
+    cleanupTo := hCleanup
+    headCode_eq := hHeadCode
+    afterState_eq := hAfterState
+    condScoped := hCondScoped
+    postScoped := hPostScoped
+    bodyScoped := hBodyScoped
+    step := hStep
+    exactTail := hExact }⟩
+
+/-- Canonical internal `for` artifact selected from checked decomposition. -/
+noncomputable def CoreCursor.forArtifact
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {init : Functions.Block}
+    {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .for_ init cond post body :: rest }
+        lowerState localsCtx) :
+    cursor.ForComponents :=
+  Classical.choice cursor.forComponents
+
 end AllocationInteractionCursor
 end Functions
 end EvmCompiler

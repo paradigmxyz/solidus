@@ -316,10 +316,16 @@ for theorem in \
     '#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.switch' \
     '#check EvmCompiler.Functions.AllocationInteractionLoop.forward' \
     '#check EvmCompiler.Functions.AllocationInteractionFor.forward' \
+    '#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.ForComponents' \
+    '#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.forComponents' \
+    '#check EvmCompiler.Functions.AllocationInteractionRecursive.ForFuelCapacity' \
+    '#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.for_' \
     '#check EvmCompiler.Functions.AllocationInteractionRecursive.RecursiveOpenForward' \
     '#check EvmCompiler.Functions.AllocationInteractionRecursive.RecursiveOpenForward.at_targetFuel' \
     '#check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin.withoutLoopControl' \
     '#check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin.withLoopControl' \
+    '#check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin.scopeUpdate' \
+    '#check EvmCompiler.Functions.AllocationContext.ActivationInvariant.transport_locals' \
     '#check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardOne'; do
   if ! rg -Fq "$theorem" EvmCompiler/Verification.lean; then
     printf 'Verification root is missing horizontal lexical-control theorem: %s\n\n' \

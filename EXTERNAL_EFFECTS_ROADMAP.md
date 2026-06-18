@@ -889,8 +889,15 @@ Exit: the shared core builds with no compiler layer changed.
     complete primitive classifier through the ordinary lowerer and compiler.
   - [x] Recursive allocation preservation for expressions and expression
     sequences.
-  - [ ] Recursive allocation preservation for statements, internal calls,
-    loops, terminals, and whole programs.
+  - [x] Recursive allocation preservation for every non-call statement
+    constructor: leaves, lexical blocks, conditionals, switches, terminals,
+    `break`, `continue`, `leave`, and full `for` loops.
+  - [x] Compiler-owned `for` artifacts compose initializer, condition, body,
+    post, exact cleanup, caught exits, ordered interactions, and tail
+    execution without observer evidence or lower-pass imports.
+  - [ ] Close the recursive internal-call case and whole statement/program
+    dispatcher, deriving nested fuel and frame capacity from the checked
+    compiler artifact rather than exposing them publicly.
 - [ ] Yul.
 
 At each layer:
@@ -960,8 +967,11 @@ Exit: every layer exposes one canonical open computation.
     - [x] Exact loop-control frames are an orthogonal proof capability rather
       than a stronger global outcome relation or a loop-specific interpreter.
 - [ ] Functions -> allocated Locals/Expressions.
-  - [ ] Own the emitted internal-call and stack-protocol constructs rather
-    than extending stack-free Locals with an operand stack.
+  - [x] Own emitted stack protocol, spill state, lexical cleanup, compound
+    control, and loop constructs without extending stack-free Locals with an
+    operand stack.
+  - [ ] Compose selected internal callees and publish the whole-program
+    adjacent theorem.
 - [ ] Yul -> Functions.
 
 Every boundary proves exact query equality and universal continuation

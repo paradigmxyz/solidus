@@ -84,6 +84,18 @@ theorem withLoopControl
       simpa [Functions.Source.Ctx.withLoopControl] using
         hControl.leaveScope }
 
+/-- Updating only the current lexical scope preserves control containment. -/
+theorem scopeUpdate
+    {returns live : List Functions.Name}
+    {ctx : Functions.Source.Ctx}
+    (hControl : ControlScopesWithin returns live ctx)
+    (scope : List Functions.Name) :
+    ControlScopesWithin returns live { ctx with scope := scope } :=
+  { breakScope := hControl.breakScope
+    continueScope := hControl.continueScope
+    returnsLive := hControl.returnsLive
+    leaveScope := hControl.leaveScope }
+
 theorem outcomeLive_subset
     {returns live : List Functions.Name}
     {ctx : Functions.Source.Ctx}

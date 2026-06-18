@@ -160,6 +160,22 @@ inductive ActivationExprContext
 
 namespace ActivationExprContext
 
+/-- Loop-control fields may change while the activation layout stays fixed. -/
+theorem transport_locals
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {leftLocals rightLocals : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name} {mode : ActivationMode}
+    (hCtx :
+      ActivationExprContext lowerCtx lowerState leftLocals plan live mode)
+    (hLayout : rightLocals.layout = leftLocals.layout) :
+    ActivationExprContext lowerCtx lowerState rightLocals plan live mode := by
+  cases hCtx with
+  | stack ctx =>
+      exact .stack { ctx with layout := hLayout.trans ctx.layout }
+  | @scratch frameDepth frameWords ctx =>
+      exact .scratch { ctx with layout := hLayout.trans ctx.layout }
+
 theorem layout_length
     {lowerCtx : AllocationLowering.Ctx}
     {lowerState : AllocationLowering.State}
@@ -567,6 +583,29 @@ structure ActivationInvariant
   stackLength : target.evm.stack.length = localsCtx.layout.length
 
 namespace ActivationInvariant
+
+/-- Transport a complete invariant across control-only Locals context edits. -/
+theorem transport_locals
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {leftLocals rightLocals : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {source : AllocationInteractionRelation.SourceState}
+    {target : AllocationInteractionRelation.TargetState}
+    (hInvariant :
+      ActivationInvariant contract lowerCtx lowerState leftLocals plan live
+        frameBase mode source target)
+    (hLayout : rightLocals.layout = leftLocals.layout) :
+    ActivationInvariant contract lowerCtx lowerState rightLocals plan live
+      frameBase mode source target :=
+  { compiler := hInvariant.compiler.transport_locals hLayout
+    planWF := hInvariant.planWF
+    defined := hInvariant.defined
+    state := hInvariant.state
+    stackLength :=
+      hInvariant.stackLength.trans (congrArg List.length hLayout.symm) }
 
 theorem ofOutcomeState
     {contract : MemoryContract.Contract}

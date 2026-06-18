@@ -68,7 +68,7 @@ theorem forward
     {lowerCtx : AllocationLowering.Ctx}
     {lowerState : AllocationLowering.State}
     {localsCtx : Locals.Ctx} {plan : Plan}
-    {returns live : List Functions.Name} {frameBase slack : Nat}
+    {returns live : List Functions.Name} {frameBase slack fuelBound : Nat}
     {loopCtx postCtx bodyCtx : Functions.Source.Ctx}
     {cond : Functions.Expr 1} {post body : Functions.Block}
     {targetCond : Expressions.Expr 1}
@@ -90,6 +90,7 @@ theorem forward
               targetCond target))
     (hBody :
       ∀ (fuel : Nat) {mode source target},
+        fuel < fuelBound →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -104,6 +105,7 @@ theorem forward
               (fuel + slack) targetBody target))
     (hPost :
       ∀ (fuel : Nat) {mode source target},
+        fuel < fuelBound →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -117,6 +119,7 @@ theorem forward
             (Expressions.InteractionSemantics.Block.openRun expressions
               (fuel + slack) targetPost target)) :
     ∀ (fuel : Nat) {mode source target},
+      fuel ≤ fuelBound →
       AllocationContext.ActivationInvariant contract lowerCtx lowerState
           localsCtx plan live frameBase mode source target →
       Simulation.Interaction.Successful
@@ -132,14 +135,14 @@ theorem forward
   intro fuel
   induction fuel with
   | zero =>
-      intro mode source target hInitial hSuccess
+      intro mode source target hFuelBound hInitial hSuccess
       unfold Functions.InteractionSemantics.Stmt.openRunForLoop at hSuccess
       simp only [Functions.Source.Effectful.Control.Stmt.runForLoop] at hSuccess
       exact False.elim
         (Simulation.Interaction.Successful.error_false
           (.InvalidInstruction : EVMException) hSuccess)
   | succ fuel ih =>
-      intro mode source target hInitial hSuccess
+      intro mode source target hFuelBound hInitial hSuccess
       have hTargetFuel : fuel + 1 + slack = (fuel + slack) + 1 := by
         omega
       rw [hTargetFuel]
@@ -202,7 +205,8 @@ theorem forward
                 cases outcome with
                 | error err => exact hOutcome
                 | ok value => trivial
-              have hBodyRel := hBody fuel hAfterCond hBodyRunSuccess
+              have hBodyRel :=
+                hBody fuel (by omega) hAfterCond hBodyRunSuccess
               have hBodyStrong :=
                 Simulation.Interaction.Rel.strengthen_left hBodyRel
                   hBodySuccess
@@ -281,7 +285,7 @@ theorem forward
                       | error err => exact hOutcome
                       | ok value => trivial
                     have hPostRel :=
-                      hPost fuel hBodyInvariant hPostRunSuccess
+                      hPost fuel (by omega) hBodyInvariant hPostRunSuccess
                     have hPostStrong :=
                       Simulation.Interaction.Rel.strengthen_left hPostRel
                         hPostSuccess
@@ -295,7 +299,7 @@ theorem forward
                         cases hPostResult with
                         | regular hPostInvariant postFrame postControl =>
                             have hRecursive :=
-                              ih hPostInvariant hAfterPostSuccess
+                              ih (by omega) hPostInvariant hAfterPostSuccess
                             apply Simulation.Interaction.Rel.mono hRecursive
                             intro sourceDone targetDone hDone
                             cases hDone with
