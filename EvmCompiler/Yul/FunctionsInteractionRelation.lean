@@ -872,6 +872,256 @@ theorem evmRevert
       blocks := hRel.blocks
       genesisBlockHeader := hRel.genesisBlockHeader }
 
+theorem accounts_selfdestructAccountMap
+    {τ : EvmYul.OperationType} (accounts : EvmYul.AccountMap τ)
+    (source target : EvmYul.AccountAddress) (created : Bool) :
+    (EvmYul.selfdestructAccountMap accounts source target created).mapVal
+        (fun _ account => Simulation.OpenAccount.ofAccount account) =
+      Simulation.OpenWorld.selfdestructAccounts
+        (accounts.mapVal fun _ account =>
+          Simulation.OpenAccount.ofAccount account)
+        source target created := by
+  unfold EvmYul.selfdestructAccountMap
+    Simulation.OpenWorld.selfdestructAccounts
+  rw [Simulation.OpenWorld.find?_mapVal_const]
+  cases hSource : accounts.find? source with
+  | none => simp [hSource, dbgTrace]
+  | some sourceAccount =>
+      simp only [hSource, Option.map_some]
+      rw [Simulation.OpenWorld.find?_mapVal_const]
+      cases hTarget : accounts.find? target with
+      | none =>
+          simp only [hTarget, Option.map_none]
+          by_cases hZero :
+              (sourceAccount.balance == (⟨0⟩ : EvmYul.UInt256)) = true
+          ·
+            have hZeroErased :
+                ((Simulation.OpenAccount.ofAccount sourceAccount).balance ==
+                    (EvmYul.UInt256.ofNat 0)) = true := by
+              simpa [EvmYul.UInt256.ofNat] using hZero
+            rw [if_pos hZero, if_pos hZeroErased]
+          ·
+            have hZeroErased :
+                ¬(((Simulation.OpenAccount.ofAccount sourceAccount).balance ==
+                    (EvmYul.UInt256.ofNat 0)) = true) := by
+              simpa [EvmYul.UInt256.ofNat] using hZero
+            rw [if_neg hZero, if_neg hZeroErased,
+              Simulation.OpenWorld.mapVal_insert,
+              Simulation.OpenWorld.mapVal_insert]
+            simp [EvmYul.UInt256.ofNat, Id.run]
+      | some targetAccount =>
+          simp only [hTarget, Option.map_some]
+          by_cases hDistinct : target ≠ source
+          · rw [if_pos hDistinct, if_pos hDistinct,
+              Simulation.OpenWorld.mapVal_insert,
+              Simulation.OpenWorld.mapVal_insert]
+            simp [EvmYul.UInt256.ofNat, Id.run]
+          · rw [if_neg hDistinct, if_neg hDistinct]
+            cases created <;>
+              simp [Simulation.OpenWorld.mapVal_insert,
+                EvmYul.UInt256.ofNat, Id.run]
+
+theorem selfdestruct
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel source target)
+    (vars : EvmYul.Yul.VarStore) (recipient : Word) :
+    TerminalSharedRel
+      (EvmYul.Yul.selfdestructState
+        (.Ok source vars) recipient).sharedState
+      (EvmYul.EVM.selfdestructState
+        { toSharedState := target
+          pc := EvmYul.UInt256.ofNat 0
+          stack := [recipient]
+          execLength := 0 }
+        recipient []).toSharedState := by
+  let sourceOwner := source.executionEnv.codeOwner
+  let targetOwner := target.executionEnv.codeOwner
+  let recipientAddress := EvmYul.AccountAddress.ofUInt256 recipient
+  have hOwner : sourceOwner = targetOwner :=
+    hRel.executionEnv.codeOwner
+  have hOwnerDirect :
+      source.executionEnv.codeOwner = target.executionEnv.codeOwner :=
+    hRel.executionEnv.codeOwner
+  have hAccounts :
+      (source.accountMap.mapVal fun _ account =>
+          Simulation.OpenAccount.ofAccount account) =
+        (target.accountMap.mapVal fun _ account =>
+          Simulation.OpenAccount.ofAccount account) := by
+    simpa [Simulation.OpenWorld.ofYulShared,
+      Simulation.OpenWorld.ofEVMShared,
+      Simulation.OpenWorld.ofYulState,
+      Simulation.OpenWorld.ofEVMState] using
+        congrArg Simulation.OpenWorld.accounts hRel.openWorld
+  have hSubstate : source.substate = target.substate := by
+    simpa [Simulation.OpenWorld.ofYulShared,
+      Simulation.OpenWorld.ofEVMShared,
+      Simulation.OpenWorld.ofYulState,
+      Simulation.OpenWorld.ofEVMState] using
+        congrArg Simulation.OpenWorld.substate hRel.openWorld
+  have hCreated : source.createdAccounts = target.createdAccounts := by
+    simpa [Simulation.OpenWorld.ofYulShared,
+      Simulation.OpenWorld.ofEVMShared,
+      Simulation.OpenWorld.ofYulState,
+      Simulation.OpenWorld.ofEVMState] using
+        congrArg Simulation.OpenWorld.createdAccounts hRel.openWorld
+  have hCreatedContains :
+      source.createdAccounts.contains sourceOwner =
+        target.createdAccounts.contains targetOwner := by
+    rw [hOwner, hCreated]
+  exact
+    { openWorld := by
+        apply Simulation.OpenWorld.ext_of_fields
+        · simp only [Simulation.OpenWorld.ofYulShared,
+            Simulation.OpenWorld.ofEVMShared,
+            Simulation.OpenWorld.ofYulState,
+            Simulation.OpenWorld.ofEVMState,
+            EvmYul.Yul.selfdestructState,
+            EvmYul.EVM.selfdestructState,
+            EvmYul.Yul.State.executionEnv,
+            EvmYul.Yul.State.toState,
+            EvmYul.Yul.State.setState,
+            EvmYul.Yul.State.setMachineState,
+            EvmYul.Yul.State.sharedState,
+            EvmYul.Yul.State.toMachineState,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC,
+            sourceOwner, targetOwner, recipientAddress]
+          change
+            (EvmYul.selfdestructAccountMap source.accountMap
+                source.executionEnv.codeOwner
+                (EvmYul.AccountAddress.ofUInt256 recipient)
+                (source.createdAccounts.contains
+                  source.executionEnv.codeOwner)).mapVal
+                  (fun _ account =>
+                    Simulation.OpenAccount.ofAccount account) =
+              (EvmYul.selfdestructAccountMap target.accountMap
+                target.executionEnv.codeOwner
+                (EvmYul.AccountAddress.ofUInt256 recipient)
+                (target.createdAccounts.contains
+                  target.executionEnv.codeOwner)).mapVal
+                  (fun _ account =>
+                    Simulation.OpenAccount.ofAccount account)
+          rw [accounts_selfdestructAccountMap,
+            accounts_selfdestructAccountMap, hOwnerDirect,
+            hCreated, hAccounts]
+        · simp [Simulation.OpenWorld.ofYulShared,
+            Simulation.OpenWorld.ofEVMShared,
+            Simulation.OpenWorld.ofYulState,
+            Simulation.OpenWorld.ofEVMState,
+            EvmYul.Yul.selfdestructState,
+            EvmYul.EVM.selfdestructState,
+            EvmYul.Yul.State.executionEnv,
+            EvmYul.Yul.State.toState,
+            EvmYul.Yul.State.setState,
+            EvmYul.Yul.State.setMachineState,
+            EvmYul.Yul.State.sharedState,
+            EvmYul.Yul.State.toMachineState,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC,
+            sourceOwner, targetOwner, recipientAddress,
+            hOwner, hCreated, hCreatedContains, hSubstate]
+        · simpa [Simulation.OpenWorld.ofYulShared,
+            Simulation.OpenWorld.ofEVMShared,
+            Simulation.OpenWorld.ofYulState,
+            Simulation.OpenWorld.ofEVMState,
+            EvmYul.Yul.selfdestructState,
+            EvmYul.EVM.selfdestructState,
+            EvmYul.Yul.State.executionEnv,
+            EvmYul.Yul.State.toState,
+            EvmYul.Yul.State.setState,
+            EvmYul.Yul.State.setMachineState,
+            EvmYul.Yul.State.sharedState,
+            EvmYul.Yul.State.toMachineState,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC] using hCreated
+      machine :=
+        { gasAvailable := by
+            simpa [EvmYul.Yul.selfdestructState,
+              EvmYul.EVM.selfdestructState,
+              EvmYul.Yul.State.setState,
+              EvmYul.Yul.State.setMachineState,
+              EvmYul.Yul.State.sharedState,
+              EvmYul.Yul.State.toMachineState,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC,
+              EvmYul.MachineState.setHReturn] using
+                congrArg (·.gasAvailable) hRel.machine
+          activeWords := by
+            simpa [EvmYul.Yul.selfdestructState,
+              EvmYul.EVM.selfdestructState,
+              EvmYul.Yul.State.setState,
+              EvmYul.Yul.State.setMachineState,
+              EvmYul.Yul.State.sharedState,
+              EvmYul.Yul.State.toMachineState,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC,
+              EvmYul.MachineState.setHReturn] using
+                congrArg (·.activeWords) hRel.machine
+          memory := by
+            simpa [EvmYul.Yul.selfdestructState,
+              EvmYul.EVM.selfdestructState,
+              EvmYul.Yul.State.setState,
+              EvmYul.Yul.State.setMachineState,
+              EvmYul.Yul.State.sharedState,
+              EvmYul.Yul.State.toMachineState,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC,
+              EvmYul.MachineState.setHReturn] using
+                congrArg (·.memory) hRel.machine
+          output := by
+            simp [EvmYul.Yul.selfdestructState,
+              EvmYul.EVM.selfdestructState,
+              EvmYul.Yul.State.setState,
+              EvmYul.Yul.State.setMachineState,
+              EvmYul.Yul.State.sharedState,
+              EvmYul.Yul.State.toMachineState,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC,
+              EvmYul.MachineState.setHReturn] }
+      initialAccounts := by
+        simpa [EvmYul.Yul.selfdestructState,
+          EvmYul.EVM.selfdestructState,
+          EvmYul.Yul.State.setState, EvmYul.Yul.State.setMachineState,
+          EvmYul.Yul.State.sharedState,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC] using hRel.initialAccounts
+      totalGasUsedInBlock := by
+        simpa [EvmYul.Yul.selfdestructState,
+          EvmYul.EVM.selfdestructState,
+          EvmYul.Yul.State.setState, EvmYul.Yul.State.setMachineState,
+          EvmYul.Yul.State.sharedState,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC] using hRel.totalGasUsedInBlock
+      transactionReceipts := by
+        simpa [EvmYul.Yul.selfdestructState,
+          EvmYul.EVM.selfdestructState,
+          EvmYul.Yul.State.setState, EvmYul.Yul.State.setMachineState,
+          EvmYul.Yul.State.sharedState,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC] using hRel.transactionReceipts
+      executionEnv := by
+        simpa [EvmYul.Yul.selfdestructState,
+          EvmYul.EVM.selfdestructState,
+          EvmYul.Yul.State.setState, EvmYul.Yul.State.setMachineState,
+          EvmYul.Yul.State.sharedState,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC] using hRel.executionEnv
+      blocks := by
+        simpa [EvmYul.Yul.selfdestructState,
+          EvmYul.EVM.selfdestructState,
+          EvmYul.Yul.State.setState, EvmYul.Yul.State.setMachineState,
+          EvmYul.Yul.State.sharedState,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC] using hRel.blocks
+      genesisBlockHeader := by
+        simpa [EvmYul.Yul.selfdestructState,
+          EvmYul.EVM.selfdestructState,
+          EvmYul.Yul.State.setState, EvmYul.Yul.State.setMachineState,
+          EvmYul.Yul.State.sharedState,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC] using hRel.genesisBlockHeader }
+
 end TerminalSharedRel
 
 namespace SharedRel

@@ -90,10 +90,34 @@ private theorem sourcePrimCall_revert
     rfl
   simp [EvmYul.Yul.primCall, hStep]
 
+private theorem sourcePrimCall_selfdestruct
+    (fuel : Nat) (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore) (recipient : Word)
+    (hPerm : shared.executionEnv.perm = true) :
+    EvmYul.Yul.primCall (fuel + 1) (.Ok shared vars)
+        (.System .SELFDESTRUCT) [recipient] =
+      .error
+        (.YulHalt
+          (EvmYul.Yul.selfdestructState
+            (.Ok shared vars) recipient)
+          (EvmYul.UInt256.ofNat 0)) := by
+  have hStep :
+      (EvmYul.step (τ := .Yul) (.System .SELFDESTRUCT) (arg := none))
+          (.Ok shared vars) [recipient] =
+        .error
+          (.YulHalt
+            (EvmYul.Yul.selfdestructState
+              (.Ok shared vars) recipient)
+            (EvmYul.UInt256.ofNat 0)) := by
+    rfl
+  simp [EvmYul.Yul.primCall, EvmYul.Yul.State.executionEnv,
+    hPerm, hStep]
+
 theorem stop
     (fuel : Nat)
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
+    (hPerm : source.sharedState.executionEnv.perm = true)
     (hRel : FunctionsInteractionRelation.StateRel source target) :
     Simulation.Interaction.ForwardRel Truncated
       (PrimitiveDoneRel .stop)
@@ -256,6 +280,107 @@ theorem revert
       FunctionsInteractionRelation.TerminalSharedRel.evmRevert
         hShared address size,
       by simpa [targetFinal, Locals.Source.State.withShared] using hVars⟩
+
+theorem selfdestruct
+    (fuel : Nat) (recipient : Word)
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hPerm : source.sharedState.executionEnv.perm = true)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel .selfdestruct)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 2) source (.System .SELFDESTRUCT) [recipient])
+      (Functions.InteractionSemantics.primitiveSemantics.terminal
+        .selfdestruct target [recipient]) := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, rfl, hShared, hVars⟩
+  by_cases hSourcePerm : sourceShared.executionEnv.perm = true
+  · have hTargetPerm : target.shared.executionEnv.perm = true := by
+      rw [← hShared.executionEnv.permission]
+      exact hSourcePerm
+    let sourceFinal :=
+      EvmYul.Yul.selfdestructState
+        (.Ok sourceShared sourceVars) recipient
+    let targetShared :=
+      (EvmYul.EVM.selfdestructState
+        { toSharedState := target.shared
+          pc := EvmYul.UInt256.ofNat 0
+          stack := [recipient]
+          execLength := 0 }
+        recipient []).toSharedState
+    let targetFinal : Functions.InteractionSemantics.State :=
+      target.withShared targetShared
+    have hSource :
+        Yul.InteractionSemantics.Primitive.openEval
+            (fuel + 2) (.Ok sourceShared sourceVars)
+              (.System .SELFDESTRUCT) [recipient] =
+          .done
+            (.error
+              { exception := .YulHalt sourceFinal
+                  (EvmYul.UInt256.ofNat 0)
+                state := sourceFinal }) := by
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Yul.InteractionSemantics.Primitive.fail,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?,
+        sourcePrimCall_selfdestruct, hSourcePerm, sourceFinal,
+        Yul.InteractionSemantics.State.afterException]
+    have hTarget :
+        Functions.InteractionSemantics.primitiveSemantics.terminal
+            .selfdestruct target [recipient] =
+          .done (.ok targetFinal) := by
+      have hStep :
+          Assembly.HaltKind.selfdestruct.toPrimOp.step
+              { toSharedState := target.shared
+                pc := EvmYul.UInt256.ofNat 0
+                stack := [recipient]
+                execLength := 0 } =
+            .ok
+              (EvmYul.EVM.selfdestructState
+                { toSharedState := target.shared
+                  pc := EvmYul.UInt256.ofNat 0
+                  stack := [recipient]
+                  execLength := 0 }
+                recipient []) := by
+        change EvmYul.step (τ := .EVM) .SELFDESTRUCT none
+            { toSharedState := target.shared
+              pc := EvmYul.UInt256.ofNat 0
+              stack := [recipient]
+              execLength := 0 } =
+          .ok
+            (EvmYul.EVM.selfdestructState
+              { toSharedState := target.shared
+                pc := EvmYul.UInt256.ofNat 0
+                stack := [recipient]
+                execLength := 0 }
+              recipient [])
+        exact EvmYul.EVM.step_selfdestruct_of_stack _ recipient [] rfl
+      simp only [Functions.InteractionSemantics.primitiveSemantics,
+        Locals.InteractionSemantics.primitiveSemantics,
+        Locals.InteractionSemantics.Primitive.openTerminal,
+        Locals.InteractionSemantics.Primitive.isolated,
+        Structured.Terminal.step, Assembly.Target.stepInstr_prim]
+      simp only [List.reverse_singleton]
+      rw [hStep]
+      rfl
+    rw [hSource, hTarget]
+    apply Simulation.Interaction.ForwardRel.done
+    apply PrimitiveDoneRel.terminal
+    apply FunctionsInteractionRelation.TerminalFailureRel.selfdestruct
+    exact
+      ⟨sourceFinal.sharedState, sourceVars, by
+          simp [sourceFinal, EvmYul.Yul.selfdestructState,
+            EvmYul.Yul.State.setState,
+            EvmYul.Yul.State.setMachineState,
+            EvmYul.Yul.State.sharedState],
+        FunctionsInteractionRelation.TerminalSharedRel.selfdestruct
+          hShared sourceVars recipient,
+        by simpa [targetFinal, targetShared,
+          Locals.Source.State.withShared] using hVars⟩
+  · exact (hSourcePerm (by simpa using hPerm)).elim
 
 end FunctionsInteractionTerminal
 end Yul

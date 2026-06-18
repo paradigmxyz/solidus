@@ -446,9 +446,12 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TerminalSharedRel.stop
 #print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TerminalSharedRel.evmReturn
 #print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TerminalSharedRel.evmRevert
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TerminalSharedRel.accounts_selfdestructAccountMap
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TerminalSharedRel.selfdestruct
 #print axioms EvmCompiler.Yul.FunctionsInteractionTerminal.stop
 #print axioms EvmCompiler.Yul.FunctionsInteractionTerminal.return_
 #print axioms EvmCompiler.Yul.FunctionsInteractionTerminal.revert
+#print axioms EvmCompiler.Yul.FunctionsInteractionTerminal.selfdestruct
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.terminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.of_fixed
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.nil

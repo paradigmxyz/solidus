@@ -56,6 +56,26 @@ def ofEVM (account : EvmYul.Account .EVM) : OpenAccount where
 @[simp] theorem ofAccount_evm (account : EvmYul.Account .EVM) :
     ofAccount account = ofEVM account := rfl
 
+@[simp] theorem ofAccount_default {τ : EvmYul.OperationType} :
+    ofAccount (default : EvmYul.Account τ) = (default : OpenAccount) := by
+  cases τ <;> rfl
+
+@[simp] theorem ofAccount_balance {τ : EvmYul.OperationType}
+    (account : EvmYul.Account τ) :
+    (ofAccount account).balance = account.balance := rfl
+
+@[simp] theorem ofAccount_withBalance {τ : EvmYul.OperationType}
+    (account : EvmYul.Account τ) (balance : OpenWord) :
+    ofAccount { account with balance := balance } =
+      { ofAccount account with balance := balance } := by
+  cases τ <;> rfl
+
+@[simp] theorem ofAccount_defaultWithBalance
+    {τ : EvmYul.OperationType} (balance : OpenWord) :
+    ofAccount ({ (default : EvmYul.Account τ) with balance := balance }) =
+      { (default : OpenAccount) with balance := balance } := by
+  cases τ <;> rfl
+
 theorem ofAccount_updateStorage {τ : EvmYul.OperationType}
     (account : EvmYul.Account τ) (key value : EvmYul.UInt256) :
     ofAccount (account.updateStorage key value) =
@@ -398,6 +418,38 @@ theorem mapVal_insert
       (map.mapVal f).insert key (f key value) := by
   apply Subtype.ext
   exact mapSnd_insert f key value map.1
+
+def selfdestructAccounts (accounts : EvmYul.AddrMap OpenAccount)
+    (source target : OpenAddress) (created : Bool) :
+    EvmYul.AddrMap OpenAccount :=
+  match accounts.find? source with
+  | none => accounts
+  | some sourceAccount =>
+      match accounts.find? target with
+      | none =>
+          if sourceAccount.balance == (EvmYul.UInt256.ofNat 0) then
+            accounts
+          else
+            accounts.insert target
+                { (default : OpenAccount) with
+                  balance := sourceAccount.balance }
+              |>.insert source
+                { sourceAccount with
+                  balance := EvmYul.UInt256.ofNat 0 }
+      | some targetAccount =>
+          if target ≠ source then
+            accounts.insert target
+                { targetAccount with
+                  balance := targetAccount.balance + sourceAccount.balance }
+              |>.insert source
+                { sourceAccount with
+                  balance := EvmYul.UInt256.ofNat 0 }
+          else if created then
+            accounts.insert target
+                { targetAccount with balance := EvmYul.UInt256.ofNat 0 }
+              |>.insert source
+                { sourceAccount with balance := EvmYul.UInt256.ofNat 0 }
+          else accounts
 
 private theorem mapVal_leftInverse
     {α β γ : Type} {cmp : α → α → Ordering}

@@ -1434,9 +1434,12 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionRelation.TerminalSharedRel.stop
 #check EvmCompiler.Yul.FunctionsInteractionRelation.TerminalSharedRel.evmReturn
 #check EvmCompiler.Yul.FunctionsInteractionRelation.TerminalSharedRel.evmRevert
+#check EvmCompiler.Yul.FunctionsInteractionRelation.TerminalSharedRel.accounts_selfdestructAccountMap
+#check EvmCompiler.Yul.FunctionsInteractionRelation.TerminalSharedRel.selfdestruct
 #check EvmCompiler.Yul.FunctionsInteractionTerminal.stop
 #check EvmCompiler.Yul.FunctionsInteractionTerminal.return_
 #check EvmCompiler.Yul.FunctionsInteractionTerminal.revert
+#check EvmCompiler.Yul.FunctionsInteractionTerminal.selfdestruct
 #check EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.terminal
 #check EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.of_fixed
 #check EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.nil
