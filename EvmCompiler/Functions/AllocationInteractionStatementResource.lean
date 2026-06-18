@@ -89,6 +89,515 @@ theorem expr_of_lower_compile
               apply Simulation.Interaction.ExceptRel.ok
               exact ActivationEffect.of_allocatorEffect hResult.2
 
+/-- Resource preservation for a declaration in a stack-only activation. -/
+theorem stack_let_of_lower_compile
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth : Nat} {config : Config}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Expressions.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {beforeState afterState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {sourceFuel targetExtra frameBase : Nat}
+    {name : Locals.Name} {valueExpr : Functions.Expr 1}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source : SourceState} {target : TargetState}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hSafe : AllocationInteractionSafety.ExprSafe contract valueExpr source)
+    (hAfter :
+      AllocationContext.StackExprContext lowerCtx afterState afterLocals
+        plan (name :: live))
+    (hScoped : Functions.Scope.ExprScoped live valueExpr)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns beforeState
+          (.let_ name valueExpr) =
+        some (loweredStmts, afterState))
+    (hCompile :
+      Locals.Block.compileOpen beforeLocals { stmts := loweredStmts } =
+        some (compiledStmts, afterLocals))
+    (hInvariant :
+      AllocationContext.ActivationInvariant contract lowerCtx beforeState
+        beforeLocals plan live frameBase .stack source target)
+    (hReady : AllocatorReady config allocatorDepth target) :
+    Simulation.Interaction.Rel
+      (OpenResultRel config allocatorDepth .stack target)
+      (Functions.InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel (.let_ name valueExpr) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram (targetExtra + 2) { stmts := compiledStmts } target) := by
+  cases hInvariant.compiler with
+  | stack hBefore =>
+      obtain
+          ⟨loweredValue, valueCode, hLowerValue, hCompileValue,
+            _hStackOrder, rfl, rfl, rfl, rfl⟩ :=
+        AllocationInteractionStatement.stack_let_compiler_shape
+          hBefore hAfter hLower hCompile
+      have hExpr :=
+        AllocationInteractionExpressionResource.forwardExpr
+          (AllocationInteractionPrimitiveResource.canonicalPrimitiveForward
+            contract)
+          hConfig hSafe (.stack hBefore) hScoped hLowerValue hCompileValue
+          hInvariant.state hReady
+      have hCore :
+          Simulation.Interaction.Rel
+            (OpenResultRel config allocatorDepth .stack target)
+            (Simulation.Interaction.bind
+              (Functions.InteractionSemantics.Expr.openEval valueExpr source)
+              (fun result =>
+                Simulation.Interaction.bind
+                  (match result.2 with
+                  | [value] =>
+                      Simulation.Interaction.pure (result.1, value)
+                  | _ =>
+                      Simulation.Interaction.error .InvalidInstruction)
+                  (fun valueResult =>
+                    Simulation.Interaction.pure
+                      (Functions.Source.Effectful.Outcome.regular
+                        (valueResult.1.insert name valueResult.2),
+                        { sourceCtx with
+                          scope := name :: sourceCtx.scope }))))
+            (Simulation.Interaction.bind
+              (Structured.InteractionSemantics.Code.openRun valueCode target)
+              (fun targetAfterValue =>
+                Simulation.Interaction.pure
+                  (Structured.Outcome.regular targetAfterValue))) := by
+        apply Simulation.Interaction.Rel.bind_custom hExpr
+        intro sourceDone targetDone hDone
+        cases hDone with
+        | error hError => exact .done (.error hError)
+        | @ok sourceResult targetAfterValue hResult =>
+            rcases sourceResult with ⟨sourceAfterValue, values⟩
+            cases values with
+            | nil =>
+                have hLength := hResult.1.valuesLength
+                simp at hLength
+            | cons value tail =>
+                cases tail with
+                | cons other rest =>
+                    have hLength := hResult.1.valuesLength
+                    simp at hLength
+                | nil =>
+                    apply Simulation.Interaction.Rel.done
+                    apply Simulation.Interaction.ExceptRel.ok
+                    exact hResult.2
+      have hCoreNested :
+          Simulation.Interaction.Rel
+            (OpenResultRel config allocatorDepth .stack target)
+            (Simulation.Interaction.bind
+              (Simulation.Interaction.bind
+                (Functions.InteractionSemantics.Expr.openEval
+                  valueExpr source)
+                (fun result =>
+                  match result.2 with
+                  | [value] =>
+                      Simulation.Interaction.pure (result.1, value)
+                  | _ =>
+                      Simulation.Interaction.error .InvalidInstruction))
+              (fun valueResult =>
+                Simulation.Interaction.pure
+                  (Functions.Source.Effectful.Outcome.regular
+                    (valueResult.1.insert name valueResult.2),
+                    { sourceCtx with
+                      scope := name :: sourceCtx.scope })))
+            (Simulation.Interaction.bind
+              (Structured.InteractionSemantics.Code.openRun valueCode target)
+              (fun targetAfterValue =>
+                Simulation.Interaction.pure
+                  (Structured.Outcome.regular targetAfterValue))) := by
+        rw [Simulation.Interaction.bind_assoc]
+        exact hCore
+      rw [Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code]
+      unfold Functions.InteractionSemantics.Stmt.openRun
+        Functions.Source.Canonical.Stmt.run
+        Expressions.InteractionSemantics.Stmt.openRun
+      simp only [Functions.Source.Effectful.Control.Stmt.run,
+        Expressions.EffectSemantics.Control.Stmt.run]
+      unfold Locals.Source.Effectful.Expr.Control.evalOne
+      change
+        Simulation.Interaction.Rel _ _
+          (Simulation.Interaction.bind
+            (Structured.InteractionSemantics.Code.openRun
+              (valueCode ++
+                Locals.bindLocals 0 (name :: beforeLocals.layout)) target)
+            (fun final => Simulation.Interaction.pure
+              (Structured.Outcome.regular final)))
+      rw [Structured.InteractionSemantics.Code.openRun_append,
+        show Locals.bindLocals 0 (name :: beforeLocals.layout) =
+          [.bindLocals 0 (name :: beforeLocals.layout)] by rfl]
+      have hBindRun :
+          Structured.InteractionSemantics.Code.openRun
+              [.bindLocals 0 (name :: beforeLocals.layout)] =
+            fun state => Simulation.Interaction.pure state := by
+        funext state
+        exact Locals.InteractionPreservation.Code.openRun_bindLocals
+          0 (name :: beforeLocals.layout) state
+      rw [hBindRun]
+      simpa [Simulation.Interaction.bind,
+        Functions.InteractionSemantics.Expr.openEval,
+        Locals.InteractionSemantics.Expr.openEval,
+        Functions.InteractionSemantics.primitiveSemantics,
+        Functions.InteractionSemantics.stateModel,
+        Locals.InteractionSemantics.stateModel,
+        Locals.Source.Effectful.Ordinary.stateModel,
+        Locals.Source.Effectful.StateModel.insert] using hCoreNested
+
+/-- Resource preservation for a declaration in a scratch-backed activation. -/
+theorem scratch_let_of_lower_compile
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth : Nat} {config : Config}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Expressions.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {beforeState afterState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx}
+    {plan : Plan} {beforeLive afterLive : List Locals.Name}
+    {sourceFuel targetExtra beforeFrameDepth afterFrameDepth frameBase
+      frameWords : Nat}
+    {name : Locals.Name} {valueExpr : Functions.Expr 1}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source : SourceState} {target : TargetState}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hSafe : AllocationInteractionSafety.ExprSafe contract valueExpr source)
+    (hAfter :
+      AllocationContext.ExprContext lowerCtx afterState afterLocals plan
+        afterLive afterFrameDepth)
+    (hScoped : Functions.Scope.ExprScoped beforeLive valueExpr)
+    (hAfterLive : afterLive = name :: beforeLive)
+    (hNameFrame : name ≠ lowerCtx.frameName)
+    (hScratchBound :
+      ∀ slot, plan.location? name = some (.scratch slot) →
+        slot < frameWords)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns beforeState
+          (.let_ name valueExpr) =
+        some (loweredStmts, afterState))
+    (hCompile :
+      Locals.Block.compileOpen beforeLocals { stmts := loweredStmts } =
+        some (compiledStmts, afterLocals))
+    (hInvariant :
+      AllocationContext.ActivationInvariant contract lowerCtx beforeState
+        beforeLocals plan beforeLive frameBase
+          (.scratch beforeFrameDepth frameWords) source target)
+    (hReady : AllocatorReady config allocatorDepth target)
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch beforeFrameDepth frameWords)) :
+    Simulation.Interaction.Rel
+      (OpenResultRel config allocatorDepth
+        (.scratch beforeFrameDepth frameWords) target)
+      (Functions.InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel (.let_ name valueExpr) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram (targetExtra + 2) { stmts := compiledStmts } target) := by
+  cases hInvariant.compiler with
+  | @scratch _ _ hBefore =>
+      have hNameAfter : name ∈ afterLive := by
+        simp [hAfterLive]
+      have hShape :=
+        AllocationInteractionDeclaration.compiler_shape
+          hBefore hAfter hNameAfter hNameFrame hLower hCompile
+      cases hShape with
+      | stack slot planDepth loweredValue valueCode
+          hLowerValue hCompileValue hLocation hStackOrder hFrameDepth
+          hLowered hAfterState hCompiled hAfterLocals =>
+          subst loweredStmts
+          subst afterState
+          subst compiledStmts
+          subst afterLocals
+          subst afterLive
+          subst afterFrameDepth
+          have hExpr :=
+            AllocationInteractionExpressionResource.forwardExpr
+              (AllocationInteractionPrimitiveResource.canonicalPrimitiveForward
+                contract)
+              hConfig hSafe (.scratch hBefore) hScoped hLowerValue
+              hCompileValue hInvariant.state hReady
+          have hCore :
+              Simulation.Interaction.Rel
+                (OpenResultRel config allocatorDepth
+                  (.scratch beforeFrameDepth frameWords) target)
+                (Simulation.Interaction.bind
+                  (Functions.InteractionSemantics.Expr.openEval
+                    valueExpr source)
+                  (fun result =>
+                    Simulation.Interaction.bind
+                      (match result.2 with
+                      | [value] =>
+                          Simulation.Interaction.pure (result.1, value)
+                      | _ =>
+                          Simulation.Interaction.error .InvalidInstruction)
+                      (fun valueResult =>
+                        Simulation.Interaction.pure
+                          (Functions.Source.Effectful.Outcome.regular
+                            (valueResult.1.insert name valueResult.2),
+                            { sourceCtx with
+                              scope := name :: sourceCtx.scope }))))
+                (Simulation.Interaction.bind
+                  (Structured.InteractionSemantics.Code.openRun
+                    valueCode target)
+                  (fun targetAfterValue =>
+                    Simulation.Interaction.pure
+                      (Structured.Outcome.regular targetAfterValue))) := by
+            apply Simulation.Interaction.Rel.bind_custom hExpr
+            intro sourceDone targetDone hDone
+            cases hDone with
+            | error hError => exact .done (.error hError)
+            | @ok sourceResult targetAfterValue hResult =>
+                rcases sourceResult with ⟨sourceAfterValue, values⟩
+                cases values with
+                | nil =>
+                    have hLength := hResult.1.valuesLength
+                    simp at hLength
+                | cons value tail =>
+                    cases tail with
+                    | cons other rest =>
+                        have hLength := hResult.1.valuesLength
+                        simp at hLength
+                    | nil =>
+                        apply Simulation.Interaction.Rel.done
+                        apply Simulation.Interaction.ExceptRel.ok
+                        exact ActivationEffect.of_allocatorEffect hResult.2
+          have hCoreNested :
+              Simulation.Interaction.Rel
+                (OpenResultRel config allocatorDepth
+                  (.scratch beforeFrameDepth frameWords) target)
+                (Simulation.Interaction.bind
+                  (Simulation.Interaction.bind
+                    (Functions.InteractionSemantics.Expr.openEval
+                      valueExpr source)
+                    (fun result =>
+                      match result.2 with
+                      | [value] =>
+                          Simulation.Interaction.pure (result.1, value)
+                      | _ =>
+                          Simulation.Interaction.error .InvalidInstruction))
+                  (fun valueResult =>
+                    Simulation.Interaction.pure
+                      (Functions.Source.Effectful.Outcome.regular
+                        (valueResult.1.insert name valueResult.2),
+                        { sourceCtx with
+                          scope := name :: sourceCtx.scope })))
+                (Simulation.Interaction.bind
+                  (Structured.InteractionSemantics.Code.openRun
+                    valueCode target)
+                  (fun targetAfterValue =>
+                    Simulation.Interaction.pure
+                      (Structured.Outcome.regular targetAfterValue))) := by
+            rw [Simulation.Interaction.bind_assoc]
+            exact hCore
+          rw [Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code]
+          unfold Functions.InteractionSemantics.Stmt.openRun
+            Functions.Source.Canonical.Stmt.run
+            Expressions.InteractionSemantics.Stmt.openRun
+          simp only [Functions.Source.Effectful.Control.Stmt.run,
+            Expressions.EffectSemantics.Control.Stmt.run]
+          unfold Locals.Source.Effectful.Expr.Control.evalOne
+          change
+            Simulation.Interaction.Rel _ _
+              (Simulation.Interaction.bind
+                (Structured.InteractionSemantics.Code.openRun
+                  (valueCode ++
+                    Locals.bindLocals 0 (name :: beforeLocals.layout))
+                  target)
+                (fun final => Simulation.Interaction.pure
+                  (Structured.Outcome.regular final)))
+          rw [Structured.InteractionSemantics.Code.openRun_append,
+            show Locals.bindLocals 0 (name :: beforeLocals.layout) =
+              [.bindLocals 0 (name :: beforeLocals.layout)] by rfl]
+          have hBindRun :
+              Structured.InteractionSemantics.Code.openRun
+                  [.bindLocals 0 (name :: beforeLocals.layout)] =
+                fun state => Simulation.Interaction.pure state := by
+            funext state
+            exact Locals.InteractionPreservation.Code.openRun_bindLocals
+              0 (name :: beforeLocals.layout) state
+          rw [hBindRun]
+          simpa [Simulation.Interaction.bind,
+            Functions.InteractionSemantics.Expr.openEval,
+            Locals.InteractionSemantics.Expr.openEval,
+            Functions.InteractionSemantics.primitiveSemantics,
+            Functions.InteractionSemantics.stateModel,
+            Locals.InteractionSemantics.stateModel,
+            Locals.Source.Effectful.Ordinary.stateModel,
+            Locals.Source.Effectful.StateModel.insert] using hCoreNested
+      | scratch slot loweredValue valueCode op
+          hLowerValue hCompileValue hLocation hDup hStackOrder hFrameDepth
+          hLowered hAfterState hCompiled hAfterLocals =>
+          subst loweredStmts
+          subst afterState
+          subst compiledStmts
+          subst afterLocals
+          subst afterLive
+          subst afterFrameDepth
+          have hExpr :=
+            AllocationInteractionExpressionResource.forwardExpr
+              (AllocationInteractionPrimitiveResource.canonicalPrimitiveForward
+                contract)
+              hConfig hSafe (.scratch hBefore) hScoped hLowerValue
+              hCompileValue hInvariant.state hReady
+          have hCore :
+              Simulation.Interaction.Rel
+                (OpenResultRel config allocatorDepth
+                  (.scratch beforeFrameDepth frameWords) target)
+                (Simulation.Interaction.bind
+                  (Functions.InteractionSemantics.Expr.openEval
+                    valueExpr source)
+                  (fun result =>
+                    Simulation.Interaction.bind
+                      (match result.2 with
+                      | [value] =>
+                          Simulation.Interaction.pure (result.1, value)
+                      | _ =>
+                          Simulation.Interaction.error .InvalidInstruction)
+                      (fun valueResult =>
+                        Simulation.Interaction.pure
+                          (Functions.Source.Effectful.Outcome.regular
+                            (valueResult.1.insert name valueResult.2),
+                            { sourceCtx with
+                              scope := name :: sourceCtx.scope }))))
+                (Simulation.Interaction.bind
+                  (Structured.InteractionSemantics.Code.openRun
+                    valueCode target)
+                  (fun targetAfterValue =>
+                    Simulation.Interaction.bind
+                      (Structured.InteractionSemantics.Code.openRun
+                        [ .op op,
+                          .push (AllocationSupport.slotOffset slot),
+                          .op .add,
+                          .op .mstore ] targetAfterValue)
+                      (fun targetFinal =>
+                        Simulation.Interaction.pure
+                          (Structured.Outcome.regular targetFinal)))) := by
+            apply Simulation.Interaction.Rel.bind_custom hExpr
+            intro sourceDone targetDone hDone
+            cases hDone with
+            | error hError => exact .done (.error hError)
+            | @ok sourceResult targetAfterValue hResult =>
+                rcases sourceResult with ⟨sourceAfterValue, values⟩
+                cases values with
+                | nil =>
+                    have hLength := hResult.1.valuesLength
+                    simp at hLength
+                | cons value tail =>
+                    cases tail with
+                    | cons other rest =>
+                        have hLength := hResult.1.valuesLength
+                        simp at hLength
+                    | nil =>
+                        have hValueStack :
+                            targetAfterValue.evm.stack =
+                              value :: target.evm.stack := by
+                          simpa using hResult.1.stack
+                        cases hResult.1.state with
+                        | scratch hValueScratch =>
+                            have hBound := hScratchBound slot hLocation
+                            obtain
+                                ⟨reservation, hReservation, _hFrameRegion⟩ :=
+                              hValueScratch.frameReserved
+                            have hRegion :=
+                              hValueScratch.scratchAddress_reserved_of_bound
+                                hBound hReservation
+                            obtain
+                                ⟨targetFinal, hStoreRun, _hFinalRel,
+                                  _hFinalStack, hFinalMachine⟩ :=
+                              AllocationInteractionScratchStore.assignTop
+                                hValueScratch hValueStack hInvariant.planWF
+                                (by
+                                  intro other hOther
+                                  simpa using hOther)
+                                hStackOrder hLocation hBound hReservation
+                                hRegion
+                                (by simpa [Nat.add_assoc] using hDup)
+                            have hStoreBounded :=
+                              hOwned.boundedEffect_of_scratchStoreSlot
+                                hConfig hValueScratch hBound hResult.2.ready
+                                hFinalMachine
+                            have hStoreEffect :
+                                ActivationEffect config allocatorDepth
+                                  (.scratch beforeFrameDepth frameWords)
+                                  targetAfterValue targetFinal :=
+                              ActivationEffect.of_boundedEffect hStoreBounded
+                            simp only [Simulation.Interaction.bind, hStoreRun]
+                            apply Simulation.Interaction.Rel.done
+                            apply Simulation.Interaction.ExceptRel.ok
+                            exact ActivationEffect.trans
+                              (ActivationEffect.of_allocatorEffect hResult.2)
+                              hStoreEffect
+          have hCoreNested :
+              Simulation.Interaction.Rel
+                (OpenResultRel config allocatorDepth
+                  (.scratch beforeFrameDepth frameWords) target)
+                (Simulation.Interaction.bind
+                  (Simulation.Interaction.bind
+                    (Functions.InteractionSemantics.Expr.openEval
+                      valueExpr source)
+                    (fun result =>
+                      match result.2 with
+                      | [value] =>
+                          Simulation.Interaction.pure (result.1, value)
+                      | _ =>
+                          Simulation.Interaction.error .InvalidInstruction))
+                  (fun valueResult =>
+                    Simulation.Interaction.pure
+                      (Functions.Source.Effectful.Outcome.regular
+                        (valueResult.1.insert name valueResult.2),
+                        { sourceCtx with
+                          scope := name :: sourceCtx.scope })))
+                (Simulation.Interaction.bind
+                  (Structured.InteractionSemantics.Code.openRun
+                    valueCode target)
+                  (fun targetAfterValue =>
+                    Simulation.Interaction.bind
+                      (Structured.InteractionSemantics.Code.openRun
+                        [ .op op,
+                          .push (AllocationSupport.slotOffset slot),
+                          .op .add,
+                          .op .mstore ] targetAfterValue)
+                      (fun targetFinal =>
+                        Simulation.Interaction.pure
+                          (Structured.Outcome.regular targetFinal)))) := by
+            rw [Simulation.Interaction.bind_assoc]
+            exact hCore
+          rw [Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code]
+          unfold Functions.InteractionSemantics.Stmt.openRun
+            Functions.Source.Canonical.Stmt.run
+            Expressions.InteractionSemantics.Stmt.openRun
+          simp only [Functions.Source.Effectful.Control.Stmt.run,
+            Expressions.EffectSemantics.Control.Stmt.run]
+          unfold Locals.Source.Effectful.Expr.Control.evalOne
+          change
+            Simulation.Interaction.Rel _ _
+              (Simulation.Interaction.bind
+                (Structured.InteractionSemantics.Code.openRun
+                  (valueCode ++
+                    [ .op op,
+                      .push (AllocationSupport.slotOffset slot),
+                      .op .add,
+                      .op .mstore ]) target)
+                (fun final => Simulation.Interaction.pure
+                  (Structured.Outcome.regular final)))
+          rw [Structured.InteractionSemantics.Code.openRun_append,
+            Simulation.Interaction.bind_assoc]
+          simpa [Simulation.Interaction.bind,
+            Functions.InteractionSemantics.Expr.openEval,
+            Locals.InteractionSemantics.Expr.openEval,
+            Functions.InteractionSemantics.primitiveSemantics,
+            Functions.InteractionSemantics.stateModel,
+            Locals.InteractionSemantics.stateModel,
+            Locals.Source.Effectful.Ordinary.stateModel,
+            Locals.Source.Effectful.StateModel.insert] using hCoreNested
+
 /-- Assignment resource preservation while an owned scratch frame is live. -/
 theorem scratch_assign_of_lower_compile
     {contract : MemoryContract.Contract}
