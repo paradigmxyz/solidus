@@ -18,6 +18,16 @@ def openRun {results : Nat} (expr : Expressions.Expr results)
   EffectSemantics.Control.Expr.run
     Structured.InteractionSemantics.handler expr state
 
+def openRunOne (expr : Expressions.Expr 1)
+    (state : RunState) : Open (RunState × Word) := do
+  let stateAfterExpr ← openRun expr state
+  match stateAfterExpr.evm.stack.pop with
+  | none => throw .StackUnderflow
+  | some ⟨stack, value⟩ =>
+      pure
+        (stateAfterExpr.withEVM
+          { stateAfterExpr.evm with stack := stack }, value)
+
 def openRunCondition (cond : Expressions.Expr 1)
     (state : RunState) : Open (RunState × Bool) :=
   EffectSemantics.Control.Expr.runCondition
@@ -125,6 +135,58 @@ theorem openRun_single_if
   unfold Expr.openRunCondition EffectSemantics.Control.Expr.runCondition
   simp only [EffectSemantics.Control.Stmt.run]
   rfl
+
+/-- A singleton switch exposes one stack-restoring scrutinee and its branch. -/
+theorem openRun_single_switch
+    (program : Expressions.Program) (fuel : Nat)
+    (scrutinee : Expressions.Expr 1)
+    (cases : List (Word × Expressions.Block))
+    (defaultBody : Option Expressions.Block)
+    (state : RunState) :
+    openRun program (fuel + 2)
+        { stmts := [.switch scrutinee cases defaultBody] } state =
+      Simulation.Interaction.bind
+        (Expr.openRunOne scrutinee state)
+        (fun result =>
+          match EffectSemantics.Switch.select
+              result.2 cases defaultBody with
+          | some body => openRun program fuel body result.1
+          | none =>
+              Simulation.Interaction.pure
+                (Structured.Outcome.regular result.1)) := by
+  rw [openRun_single_stmt]
+  unfold Expr.openRunOne Expr.openRun
+  simp only [EffectSemantics.Control.Stmt.run]
+  change _ =
+    Simulation.Interaction.bind
+      (Simulation.Interaction.bind
+        (EffectSemantics.Control.Expr.run
+          Structured.InteractionSemantics.handler scrutinee state)
+        (fun stateAfterExpr =>
+          match stateAfterExpr.evm.stack.pop with
+          | none => .done (.error .StackUnderflow)
+          | some ⟨stack, value⟩ =>
+              Simulation.Interaction.pure
+                (stateAfterExpr.withEVM
+                  { stateAfterExpr.evm with stack := stack }, value)))
+      _
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (EffectSemantics.Control.Expr.run
+        Structured.InteractionSemantics.handler scrutinee state))
+  intro stateAfterScrutinee _
+  simp only [
+    Structured.EffectSemantics.Ordinary.runStateModel_evm,
+    Structured.EffectSemantics.Ordinary.runStateModel_withEVM]
+  cases hPop : stateAfterScrutinee.evm.stack.pop with
+  | none => rfl
+  | some popped =>
+      rcases popped with ⟨stack, value⟩
+      simp only
+      unfold Simulation.Interaction.pure
+      rw [Simulation.Interaction.bind_done_ok]
+      rfl
 
 /--
 Executing an appended block factors through the left block. A regular left

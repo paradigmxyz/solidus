@@ -320,7 +320,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin
 #check EvmCompiler.Functions.AllocationInteractionControl.block_of_components
 #check EvmCompiler.Functions.AllocationInteractionControl.if_of_components
+#check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardOne
 #check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardCondition
+#check EvmCompiler.Functions.InteractionSemantics.Stmt.openRun_switch
+#check EvmCompiler.Expressions.InteractionSemantics.Block.openRun_single_switch
 #check EvmCompiler.Functions.AllocationContext.ActivationExprContext.transport_plan
 #check EvmCompiler.Functions.AllocationContext.ActivationInvariant.transport_plan
 #check EvmCompiler.Functions.AllocationContext.ActivationInvariant.transport_state

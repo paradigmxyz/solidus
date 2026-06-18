@@ -217,6 +217,35 @@ theorem openRun_if
     Locals.InteractionSemantics.Expr.openEvalCondition
   rfl
 
+/-- A positive-fuel switch exposes one scrutinee and its selected branch. -/
+theorem openRun_switch
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (scrutinee : Functions.Expr 1)
+    (cases : List (Word × Functions.Block))
+    (defaultBody : Option Functions.Block) (state : State) :
+    openRun program ctx (fuel + 1)
+        (.switch scrutinee cases defaultBody) state =
+      Simulation.Interaction.bind
+        (Expr.openEvalOne scrutinee state)
+        (fun result =>
+          match Functions.Source.Switch.select
+              result.2 cases defaultBody with
+          | some body => openRun program ctx fuel (.block body) result.1
+          | none =>
+              Simulation.Interaction.pure
+                (Functions.Source.Effectful.Outcome.regular result.1, ctx)) := by
+  unfold openRun Functions.Source.Canonical.Stmt.run
+  simp only [Functions.Source.Effectful.Control.Stmt.run]
+  unfold Expr.openEvalOne
+    Locals.InteractionSemantics.Expr.openEvalOne stateModel primitiveSemantics
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Locals.Source.Effectful.Expr.Control.evalOne
+        Locals.InteractionSemantics.stateModel
+        Locals.InteractionSemantics.primitiveSemantics scrutinee state))
+  intro result _
+  cases Functions.Source.Switch.select result.2 cases defaultBody <;> rfl
+
 end Stmt
 
 mutual

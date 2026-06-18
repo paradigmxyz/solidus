@@ -221,6 +221,87 @@ theorem forwardExpr
   forwardExprFuel (exprHeight expr) hSafe (Nat.le_refl _) hCtx hScoped
     hLower hCompile hRel
 
+/-- One compiled value is equal and restores the incoming stack. -/
+theorem forwardOne
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {expr : Functions.Expr 1}
+    {lowered : Locals.Expr 1} {code : Structured.Code}
+    {source : SourceState} {target : TargetState}
+    (hSafe : AllocationInteractionSafety.ExprSafe contract expr source)
+    (hCtx :
+      AllocationContext.ActivationExprContext lowerCtx lowerState localsCtx
+        plan live mode)
+    (hScoped : Functions.Scope.ExprScoped live expr)
+    (hLower :
+      AllocationLowering.lowerExpr lowerCtx lowerState expr = some lowered)
+    (hCompile :
+      Locals.Expr.compileCode localsCtx 0 lowered = some code)
+    (hRel :
+      ActivationStateRel contract plan live 0 frameBase mode source target) :
+    Simulation.Interaction.Rel
+      (Simulation.Interaction.ExceptRel
+        (fun left right : EVMException => left = right)
+        (ActivationValueResultRel contract plan live frameBase mode
+          target))
+      (Functions.InteractionSemantics.Expr.openEvalOne expr source)
+      (Expressions.InteractionSemantics.Expr.openRunOne
+        (.code code) target) := by
+  have hEval := forwardExpr hSafe hCtx hScoped hLower hCompile hRel
+  unfold Functions.InteractionSemantics.Expr.openEvalOne
+    Locals.InteractionSemantics.Expr.openEvalOne
+    Locals.Source.Effectful.Expr.Control.evalOne
+  unfold Expressions.InteractionSemantics.Expr.openRunOne
+    Expressions.InteractionSemantics.Expr.openRun
+    Expressions.EffectSemantics.Control.Expr.run
+  apply Simulation.Interaction.Rel.bind hEval
+  intro sourceResult targetAfterExpr hResult
+  rcases sourceResult with ⟨sourceFinal, values⟩
+  cases values with
+  | nil =>
+      have hLength := hResult.valuesLength
+      simp at hLength
+  | cons value rest =>
+    cases rest with
+    | cons next tail =>
+        have hLength := hResult.valuesLength
+        simp at hLength
+    | nil =>
+      let targetFinal :=
+        targetAfterExpr.withEVM
+          { targetAfterExpr.evm with stack := target.evm.stack }
+      have hTargetStack :
+          targetAfterExpr.evm.stack = value :: target.evm.stack := by
+        simpa using hResult.stack
+      have hPop :
+          targetAfterExpr.evm.stack.pop =
+            some (target.evm.stack, value) := by
+        rw [hTargetStack]
+        rfl
+      have hFinalState :
+          ActivationStateRel contract plan live 0 frameBase mode
+            sourceFinal targetFinal := by
+        apply hResult.state.rebase_prefix
+          (stackOffset := 0) (oldPrefix := [value]) (newPrefix := [])
+          (baseStack := target.evm.stack)
+        · simpa [targetFinal] using hResult.state.shared
+        · simpa using hTargetStack
+        · simp [targetFinal]
+        · intro name slot hLive hLocation
+          rfl
+        · rfl
+        · simp [targetFinal]
+        · simp [targetFinal]
+        · simpa [targetFinal] using hResult.state.activeNoWrap
+      rw [hPop]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact { value := rfl, state := hFinalState, stack := rfl }
+
 /-- One compiled condition preserves truth and restores the incoming stack. -/
 theorem forwardCondition
     {contract : MemoryContract.Contract}
