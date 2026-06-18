@@ -1376,6 +1376,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineKeccak256.forward
 #check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineReturnDataSize.forward
 #check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachinePop.forward
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.EnvironmentSpec.forward
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.EnvironmentNullary.forward
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.EnvironmentUnary.forward
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.one_cons
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.succ_succ_cons
 #check EvmCompiler.Yul.FunctionsInteractionExpression.directAt

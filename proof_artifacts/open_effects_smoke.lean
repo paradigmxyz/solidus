@@ -389,3 +389,6 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineKeccak256.forward
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineReturnDataSize.forward
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachinePop.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.EnvironmentSpec.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.EnvironmentNullary.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.EnvironmentUnary.forward

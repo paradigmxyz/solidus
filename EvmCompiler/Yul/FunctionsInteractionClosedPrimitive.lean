@@ -200,6 +200,423 @@ theorem forward
 
 end MachineSpec
 
+/-- Shared proof interface for read-only execution-environment primitives.
+Source and target environment types differ only at their code representation,
+so each family supplies one result-equality theorem over `ExecutionEnvRel`. -/
+structure EnvironmentSpec (prim : EvmYul.Operation .Yul)
+    (op : Structured.BasicOp) where
+  sourceResult : EvmYul.ExecutionEnv .Yul → List Word → List Word
+  targetResult : EvmYul.ExecutionEnv .EVM → List Word → List Word
+  resultLength :
+    ∀ env values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        (sourceResult env values).length =
+          Expressions.Structured.BasicOp.outputs op
+  resultEq :
+    ∀ sourceEnv targetEnv values,
+      FunctionsInteractionRelation.ExecutionEnvRel sourceEnv targetEnv →
+        sourceResult sourceEnv values = targetResult targetEnv values
+  sourceZero :
+    ∀ source values,
+      Yul.InteractionSemantics.Primitive.openEval 1 source prim values =
+        .done
+          (.error
+            ({ exception := .OutOfFuel, state := source } :
+              Yul.InteractionSemantics.Failure))
+  sourceSucc :
+    ∀ fuel sourceShared sourceVars values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        Yul.InteractionSemantics.Primitive.openEval (fuel + 2)
+            (EvmYul.Yul.State.Ok sourceShared sourceVars) prim values =
+          .done
+            (.ok
+              (EvmYul.Yul.State.Ok sourceShared sourceVars,
+                sourceResult sourceShared.executionEnv values))
+  target :
+    ∀ state values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        Locals.InteractionSemantics.Primitive.openEval
+            op state values.reverse =
+          .done
+            (.ok
+              (state, targetResult state.shared.executionEnv values))
+
+namespace EnvironmentSpec
+
+theorem forward
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    (spec : EnvironmentSpec prim op)
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {sourceValues : List Word}
+    (hLength :
+      sourceValues.length = Expressions.Structured.BasicOp.inputs op)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source op)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source prim sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        op target sourceValues.reverse) := by
+  cases fuel with
+  | zero =>
+      rw [spec.sourceZero]
+      exact
+        Simulation.Interaction.ForwardRel.truncated
+          (doneRel := PrimitiveDoneRel source op)
+          (right := Locals.InteractionSemantics.Primitive.openEval
+            op target sourceValues.reverse)
+          (by trivial)
+  | succ previous =>
+      rcases hRel with
+        ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+      subst source
+      have hStateRel :
+          FunctionsInteractionRelation.StateRel
+            (EvmYul.Yul.State.Ok sourceShared sourceVars) target :=
+        ⟨sourceShared, sourceVars, rfl, hShared, hVars⟩
+      have hResult :=
+        spec.resultEq sourceShared.executionEnv target.shared.executionEnv
+          sourceValues hShared.executionEnv
+      have hDone :
+          PrimitiveDoneRel (EvmYul.Yul.State.Ok sourceShared sourceVars) op
+            (.ok
+              (EvmYul.Yul.State.Ok sourceShared sourceVars,
+                spec.sourceResult sourceShared.executionEnv sourceValues))
+            (.ok
+              (target,
+                spec.sourceResult sourceShared.executionEnv sourceValues)) :=
+        .ok
+          ⟨FunctionsInteractionPrimitive.ResultRel.refl_values hStateRel _,
+            spec.resultLength sourceShared.executionEnv sourceValues hLength,
+            rfl⟩
+      have hTarget := spec.target target sourceValues hLength
+      rw [← hResult] at hTarget
+      rw [show previous.succ + 1 = previous + 2 by omega,
+        spec.sourceSucc previous sourceShared sourceVars sourceValues hLength,
+        hTarget]
+      exact Simulation.Interaction.ForwardRel.done hDone
+
+end EnvironmentSpec
+
+/-- Read-only nullary operations whose result is selected from the execution
+environment. -/
+inductive EnvironmentNullary :
+    EvmYul.Operation .Yul → Structured.BasicOp →
+      (EvmYul.ExecutionEnv .Yul → Word) →
+      (EvmYul.ExecutionEnv .EVM → Word) → Prop where
+  | address :
+      EnvironmentNullary (.Env .ADDRESS) .address
+        (EvmYul.UInt256.ofNat ∘ Fin.val ∘
+          EvmYul.ExecutionEnv.codeOwner)
+        (EvmYul.UInt256.ofNat ∘ Fin.val ∘
+          EvmYul.ExecutionEnv.codeOwner)
+  | origin :
+      EnvironmentNullary (.Env .ORIGIN) .origin
+        (EvmYul.UInt256.ofNat ∘ Fin.val ∘
+          EvmYul.ExecutionEnv.sender)
+        (EvmYul.UInt256.ofNat ∘ Fin.val ∘
+          EvmYul.ExecutionEnv.sender)
+  | caller :
+      EnvironmentNullary (.Env .CALLER) .caller
+        (EvmYul.UInt256.ofNat ∘ Fin.val ∘
+          EvmYul.ExecutionEnv.source)
+        (EvmYul.UInt256.ofNat ∘ Fin.val ∘
+          EvmYul.ExecutionEnv.source)
+  | callvalue :
+      EnvironmentNullary (.Env .CALLVALUE) .callvalue
+        EvmYul.ExecutionEnv.weiValue
+        EvmYul.ExecutionEnv.weiValue
+  | calldatasize :
+      EnvironmentNullary (.Env .CALLDATASIZE) .calldatasize
+        (EvmYul.UInt256.ofNat ∘ ByteArray.size ∘
+          EvmYul.ExecutionEnv.calldata)
+        (EvmYul.UInt256.ofNat ∘ ByteArray.size ∘
+          EvmYul.ExecutionEnv.calldata)
+  | codesize :
+      EnvironmentNullary (.Env .CODESIZE) .codesize
+        (EvmYul.UInt256.ofNat ∘ ByteArray.size ∘
+          EvmYul.ExecutionEnv.codeBytes)
+        (EvmYul.UInt256.ofNat ∘ ByteArray.size ∘
+          EvmYul.ExecutionEnv.code)
+  | gasprice :
+      EnvironmentNullary (.Env .GASPRICE) .gasprice
+        (EvmYul.UInt256.ofNat ∘ EvmYul.ExecutionEnv.gasPrice)
+        (EvmYul.UInt256.ofNat ∘ EvmYul.ExecutionEnv.gasPrice)
+  | prevrandao :
+      EnvironmentNullary (.Block .PREVRANDAO) .prevrandao
+        EvmYul.prevRandao EvmYul.prevRandao
+  | basefee :
+      EnvironmentNullary (.Block .BASEFEE) .basefee
+        EvmYul.basefee EvmYul.basefee
+  | blobbasefee :
+      EnvironmentNullary (.Block .BLOBBASEFEE) .blobbasefee
+        EvmYul.ExecutionEnv.getBlobGasprice
+        EvmYul.ExecutionEnv.getBlobGasprice
+
+namespace EnvironmentNullary
+
+theorem inputs
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.ExecutionEnv .Yul → Word}
+    {targetResult : EvmYul.ExecutionEnv .EVM → Word}
+    (hFamily : EnvironmentNullary prim op sourceResult targetResult) :
+    Expressions.Structured.BasicOp.inputs op = 0 := by
+  cases hFamily <;> rfl
+
+theorem outputs
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.ExecutionEnv .Yul → Word}
+    {targetResult : EvmYul.ExecutionEnv .EVM → Word}
+    (hFamily : EnvironmentNullary prim op sourceResult targetResult) :
+    Expressions.Structured.BasicOp.outputs op = 1 := by
+  cases hFamily <;> rfl
+
+theorem resultEq
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.ExecutionEnv .Yul → Word}
+    {targetResult : EvmYul.ExecutionEnv .EVM → Word}
+    (hFamily : EnvironmentNullary prim op sourceResult targetResult)
+    {source : EvmYul.ExecutionEnv .Yul}
+    {target : EvmYul.ExecutionEnv .EVM}
+    (hRel : FunctionsInteractionRelation.ExecutionEnvRel source target) :
+    sourceResult source = targetResult target := by
+  cases hFamily with
+  | address =>
+      simpa [Function.comp_def] using
+        congrArg (fun address => EvmYul.UInt256.ofNat address.val)
+          hRel.codeOwner
+  | origin =>
+      simpa [Function.comp_def] using
+        congrArg (fun address => EvmYul.UInt256.ofNat address.val)
+          hRel.sender
+  | caller =>
+      simpa [Function.comp_def] using
+        congrArg (fun address => EvmYul.UInt256.ofNat address.val)
+          hRel.sourceAddress
+  | callvalue => exact hRel.weiValue
+  | calldatasize =>
+      simpa [Function.comp_def] using
+        congrArg (fun bytes => EvmYul.UInt256.ofNat bytes.size)
+          hRel.calldata
+  | codesize =>
+      simpa [Function.comp_def] using
+        congrArg (fun bytes => EvmYul.UInt256.ofNat bytes.size)
+          hRel.codeImage
+  | gasprice =>
+      simpa [Function.comp_def] using
+        congrArg EvmYul.UInt256.ofNat hRel.gasPrice
+  | prevrandao =>
+      simpa [EvmYul.prevRandao] using
+        congrArg EvmYul.BlockHeader.prevRandao hRel.header
+  | basefee =>
+      simpa [EvmYul.basefee] using
+        congrArg
+          (fun header => EvmYul.UInt256.ofNat header.baseFeePerGas)
+          hRel.header
+  | blobbasefee =>
+      simpa [EvmYul.ExecutionEnv.getBlobGasprice] using
+        congrArg
+          (fun header => EvmYul.UInt256.ofNat header.getBlobGasprice)
+          hRel.header
+
+def spec
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.ExecutionEnv .Yul → Word}
+    {targetResult : EvmYul.ExecutionEnv .EVM → Word}
+    (hFamily : EnvironmentNullary prim op sourceResult targetResult) :
+    EnvironmentSpec prim op where
+  sourceResult env values := if values = [] then [sourceResult env] else []
+  targetResult env values := if values = [] then [targetResult env] else []
+  resultLength := by
+    intro env values hLength
+    have hValues : values = [] := by
+      apply List.eq_nil_of_length_eq_zero
+      simpa [hFamily.inputs] using hLength
+    subst values
+    simp [hFamily.outputs]
+  resultEq := by
+    intro source target values hRel
+    by_cases hValues : values = []
+    · simp [hValues, hFamily.resultEq hRel]
+    · simp [hValues]
+  sourceZero := by
+    intro source values
+    cases hFamily <;>
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Yul.InteractionSemantics.Primitive.fail,
+        Yul.InteractionSemantics.State.afterException,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+  sourceSucc := by
+    intro fuel sourceShared sourceVars values hLength
+    have hValues : values = [] := by
+      apply List.eq_nil_of_length_eq_zero
+      simpa [hFamily.inputs] using hLength
+    subst values
+    cases hFamily <;>
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall,
+        EvmYul.Yul.executionEnvOp] <;>
+      unfold EvmYul.step <;> rfl
+  target := by
+    intro state values hLength
+    have hValues : values = [] := by
+      apply List.eq_nil_of_length_eq_zero
+      simpa [hFamily.inputs] using hLength
+    subst values
+    have hSupports :
+        Locals.InteractionSemantics.Primitive.supportsOpen op = true := by
+      cases hFamily <;> rfl
+    have hStep :
+        Locals.Source.PrimitiveSemantics.sourceContinuingStep? op =
+          some (.executionEnv targetResult) := by
+      cases hFamily <;> rfl
+    have hGas : op.toPrimOp ≠ .gas := by
+      cases hFamily <;> decide
+    have hMsize : op.toPrimOp ≠ .msize := by
+      cases hFamily <;> decide
+    change
+      Locals.InteractionSemantics.Primitive.openEval op state [] =
+        .done (.ok (state, [targetResult state.shared.executionEnv]))
+    rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+      (by simpa [hFamily.inputs]) hSupports hStep hGas hMsize]
+    rfl
+
+theorem forward
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.ExecutionEnv .Yul → Word}
+    {targetResult : EvmYul.ExecutionEnv .EVM → Word}
+    {sourceValues : List Word}
+    (hFamily : EnvironmentNullary prim op sourceResult targetResult)
+    (hLength :
+      sourceValues.length = Expressions.Structured.BasicOp.inputs op)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source op)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source prim sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        op target sourceValues.reverse) :=
+  (spec hFamily).forward hLength hRel
+
+end EnvironmentNullary
+
+/-- Read-only unary execution-environment operations. -/
+inductive EnvironmentUnary :
+    EvmYul.Operation .Yul → Structured.BasicOp →
+      (EvmYul.ExecutionEnv .Yul → Word → Word) →
+      (EvmYul.ExecutionEnv .EVM → Word → Word) → Prop where
+  | blobhash :
+      EnvironmentUnary (.Block .BLOBHASH) .blobhash
+        EvmYul.blobhash EvmYul.blobhash
+
+namespace EnvironmentUnary
+
+def spec
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.ExecutionEnv .Yul → Word → Word}
+    {targetResult : EvmYul.ExecutionEnv .EVM → Word → Word}
+    (hFamily : EnvironmentUnary prim op sourceResult targetResult) :
+    EnvironmentSpec prim op where
+  sourceResult env values :=
+    match values with
+    | [value] => [sourceResult env value]
+    | _ => []
+  targetResult env values :=
+    match values with
+    | [value] => [targetResult env value]
+    | _ => []
+  resultLength := by
+    intro env values hLength
+    have hLengthOne : values.length = 1 := by
+      cases hFamily
+      simpa using hLength
+    obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLengthOne
+    cases hFamily
+    rfl
+  resultEq := by
+    intro source target values hRel
+    cases hFamily
+    cases values with
+    | nil => rfl
+    | cons value rest =>
+        cases rest with
+        | nil => simp [EvmYul.blobhash, hRel.blobVersionedHashes]
+        | cons next tail => rfl
+  sourceZero := by
+    intro source values
+    cases hFamily
+    simp [Yul.InteractionSemantics.Primitive.openEval,
+      Yul.InteractionSemantics.Primitive.closedEval,
+      Yul.InteractionSemantics.Primitive.fail,
+      Yul.InteractionSemantics.State.afterException,
+      Simulation.ExternalKind.ofYulOperation?,
+      Simulation.CallKind.ofYulOperation?,
+      Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+  sourceSucc := by
+    intro fuel sourceShared sourceVars values hLength
+    have hLengthOne : values.length = 1 := by
+      cases hFamily
+      simpa using hLength
+    obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLengthOne
+    cases hFamily
+    simp [Yul.InteractionSemantics.Primitive.openEval,
+      Yul.InteractionSemantics.Primitive.closedEval,
+      Simulation.ExternalKind.ofYulOperation?,
+      Simulation.CallKind.ofYulOperation?,
+      Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall,
+      EvmYul.Yul.unaryExecutionEnvOp]
+    unfold EvmYul.step
+    rfl
+  target := by
+    intro state values hLength
+    have hLengthOne : values.length = 1 := by
+      cases hFamily
+      simpa using hLength
+    obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLengthOne
+    cases hFamily
+    change
+      Locals.InteractionSemantics.Primitive.openEval
+          .blobhash state [value] =
+        .done
+          (.ok
+            (state, [EvmYul.blobhash state.shared.executionEnv value]))
+    rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+      (by rfl) (by rfl) (by rfl) (by decide) (by decide)]
+    rfl
+
+theorem forward
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.ExecutionEnv .Yul → Word → Word}
+    {targetResult : EvmYul.ExecutionEnv .EVM → Word → Word}
+    {sourceValues : List Word}
+    (hFamily : EnvironmentUnary prim op sourceResult targetResult)
+    (hLength :
+      sourceValues.length = Expressions.Structured.BasicOp.inputs op)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source op)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source prim sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        op target sourceValues.reverse) :=
+  (spec hFamily).forward hLength hRel
+
+end EnvironmentUnary
+
 /-- Pure two-input operations whose Yul and Functions meanings are the same
 word function and leave shared state unchanged. -/
 inductive PureBinary :
