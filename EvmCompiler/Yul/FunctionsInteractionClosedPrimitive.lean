@@ -27,7 +27,7 @@ structure PureSpec (prim : EvmYul.Operation .Yul)
     ∀ fuel sourceShared sourceVars values,
       values.length = Expressions.Structured.BasicOp.inputs op →
         Yul.InteractionSemantics.Primitive.openEval (fuel + 2)
-            (.Ok sourceShared sourceVars) prim values =
+            (EvmYul.Yul.State.Ok sourceShared sourceVars) prim values =
           .done (.ok (.Ok sourceShared sourceVars, result values))
   target :
     ∀ state values,
@@ -88,6 +88,117 @@ theorem forward
       exact Simulation.Interaction.ForwardRel.done hDone
 
 end PureSpec
+
+/-- Shared proof interface for closed primitives whose only shared-state effect
+is a deterministic active-machine update. -/
+structure MachineSpec (prim : EvmYul.Operation .Yul)
+    (op : Structured.BasicOp) where
+  result : EvmYul.MachineState → List Word → EvmYul.MachineState × List Word
+  resultLength :
+    ∀ machine values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        (result machine values).2.length =
+          Expressions.Structured.BasicOp.outputs op
+  sourceZero :
+    ∀ source values,
+      Yul.InteractionSemantics.Primitive.openEval 1 source prim values =
+        .done
+          (.error
+            ({ exception := .OutOfFuel, state := source } :
+              Yul.InteractionSemantics.Failure))
+  sourceSucc :
+    ∀ fuel sourceShared sourceVars values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        Yul.InteractionSemantics.Primitive.openEval (fuel + 2)
+            (.Ok sourceShared sourceVars) prim values =
+          .done
+            (.ok
+              ((EvmYul.Yul.State.Ok sourceShared sourceVars).setMachineState
+                  (result sourceShared.toMachineState values).1,
+                (result sourceShared.toMachineState values).2))
+  target :
+    ∀ state values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        Locals.InteractionSemantics.Primitive.openEval
+            op state values.reverse =
+          .done
+            (.ok
+              (state.withShared
+                  { state.shared with
+                    toMachineState :=
+                      (result state.shared.toMachineState values).1 },
+                (result state.shared.toMachineState values).2))
+
+namespace MachineSpec
+
+theorem forward
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    (spec : MachineSpec prim op)
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {sourceValues : List Word}
+    (hLength :
+      sourceValues.length = Expressions.Structured.BasicOp.inputs op)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source op)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source prim sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        op target sourceValues.reverse) := by
+  cases fuel with
+  | zero =>
+      rw [spec.sourceZero]
+      exact
+        Simulation.Interaction.ForwardRel.truncated
+          (doneRel := PrimitiveDoneRel source op)
+          (right := Locals.InteractionSemantics.Primitive.openEval
+            op target sourceValues.reverse)
+          (by trivial)
+  | succ previous =>
+      rcases hRel with
+        ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+      subst source
+      let sourceResult :=
+        spec.result sourceShared.toMachineState sourceValues
+      let targetResult :=
+        spec.result target.shared.toMachineState sourceValues
+      have hResult : sourceResult = targetResult := by
+        simp [sourceResult, targetResult, hShared.machine]
+      have hTargetResult :
+          spec.result target.shared.toMachineState sourceValues =
+            sourceResult := by
+        simpa [targetResult] using hResult.symm
+      have hStateRel :
+          FunctionsInteractionRelation.StateRel
+            (EvmYul.Yul.State.Ok sourceShared sourceVars) target :=
+        ⟨sourceShared, sourceVars, rfl, hShared, hVars⟩
+      have hFinalRel :=
+        FunctionsInteractionRelation.StateRel.withMachine hStateRel
+          sourceResult.1 sourceResult.1 rfl
+      have hDone :
+          PrimitiveDoneRel (EvmYul.Yul.State.Ok sourceShared sourceVars) op
+            (.ok
+              ((EvmYul.Yul.State.Ok sourceShared sourceVars).setMachineState
+                  sourceResult.1,
+                sourceResult.2))
+            (.ok
+              (target.withShared
+                  { target.shared with toMachineState := sourceResult.1 },
+                sourceResult.2)) :=
+        .ok
+          ⟨⟨hFinalRel, rfl⟩,
+            spec.resultLength sourceShared.toMachineState sourceValues hLength,
+            rfl⟩
+      have hTarget := spec.target target sourceValues hLength
+      rw [hTargetResult] at hTarget
+      rw [show previous.succ + 1 = previous + 2 by omega,
+        spec.sourceSucc previous sourceShared sourceVars sourceValues hLength,
+        hTarget]
+      exact Simulation.Interaction.ForwardRel.done hDone
+
+end MachineSpec
 
 /-- Pure two-input operations whose Yul and Functions meanings are the same
 word function and leave shared state unchanged. -/
@@ -422,6 +533,125 @@ theorem forward
   (spec hFamily).forward hLength hRel
 
 end PureTernary
+
+inductive MachineBinaryZero :
+    EvmYul.Operation .Yul → Structured.BasicOp →
+      (EvmYul.MachineState → Word → Word → EvmYul.MachineState) → Prop where
+  | mstore :
+      MachineBinaryZero (.StackMemFlow .MSTORE) .mstore
+        EvmYul.MachineState.mstore
+  | mstore8 :
+      MachineBinaryZero (.StackMemFlow .MSTORE8) .mstore8
+        EvmYul.MachineState.mstore8
+
+namespace MachineBinaryZero
+
+theorem inputs
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {f : EvmYul.MachineState → Word → Word → EvmYul.MachineState}
+    (hFamily : MachineBinaryZero prim op f) :
+    Expressions.Structured.BasicOp.inputs op = 2 := by
+  cases hFamily <;> rfl
+
+theorem outputs
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {f : EvmYul.MachineState → Word → Word → EvmYul.MachineState}
+    (hFamily : MachineBinaryZero prim op f) :
+    Expressions.Structured.BasicOp.outputs op = 0 := by
+  cases hFamily <;> rfl
+
+def spec
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {f : EvmYul.MachineState → Word → Word → EvmYul.MachineState}
+    (hFamily : MachineBinaryZero prim op f) : MachineSpec prim op where
+  result machine values :=
+    match values with
+    | [left, right] => (f machine left right, [])
+    | _ => (machine, [])
+  resultLength := by
+    intro machine values hLength
+    rw [hFamily.outputs]
+    cases values with
+    | nil => rfl
+    | cons first rest =>
+        cases rest with
+        | nil => rfl
+        | cons second extra =>
+            cases extra <;> rfl
+  sourceZero := by
+    intro source values
+    cases hFamily <;>
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Yul.InteractionSemantics.Primitive.fail,
+        Yul.InteractionSemantics.State.afterException,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+  sourceSucc := by
+    intro fuel sourceShared sourceVars values hLength
+    have hLengthTwo : values.length = 2 := by
+      simpa [hFamily.inputs] using hLength
+    obtain ⟨left, right, rfl⟩ := List.length_eq_two.mp hLengthTwo
+    cases hFamily <;>
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall,
+        EvmYul.Yul.binaryMachineStateOp,
+        EvmYul.Yul.State.setMachineState,
+        EvmYul.Yul.State.setSharedState] <;>
+      unfold EvmYul.step <;> rfl
+  target := by
+    intro state values hLength
+    have hLengthTwo : values.length = 2 := by
+      simpa [hFamily.inputs] using hLength
+    obtain ⟨left, right, rfl⟩ := List.length_eq_two.mp hLengthTwo
+    have hSupports :
+        Locals.InteractionSemantics.Primitive.supportsOpen op = true := by
+      cases hFamily <;> rfl
+    have hStep :
+        Locals.Source.PrimitiveSemantics.sourceContinuingStep? op =
+          some (.binaryMachineState f) := by
+      cases hFamily <;> rfl
+    have hGas : op.toPrimOp ≠ .gas := by
+      cases hFamily <;> decide
+    have hMsize : op.toPrimOp ≠ .msize := by
+      cases hFamily <;> decide
+    change
+      Locals.InteractionSemantics.Primitive.openEval
+          op state [right, left] =
+        .done
+          (.ok
+            (state.withShared
+              { state.shared with
+                toMachineState :=
+                  f state.shared.toMachineState left right }, []))
+    rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+      (by simpa [hFamily.inputs]) hSupports hStep hGas hMsize]
+    rfl
+
+theorem forward
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {f : EvmYul.MachineState → Word → Word → EvmYul.MachineState}
+    {sourceValues : List Word}
+    (hFamily : MachineBinaryZero prim op f)
+    (hLength :
+      sourceValues.length = Expressions.Structured.BasicOp.inputs op)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source op)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source prim sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        op target sourceValues.reverse) :=
+  (spec hFamily).forward hLength hRel
+
+end MachineBinaryZero
 
 end FunctionsInteractionClosedPrimitive
 end Yul

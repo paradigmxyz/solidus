@@ -381,3 +381,6 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.PureBinary.forward
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.PureUnary.forward
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.PureTernary.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.StateRel.withMachine
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineSpec.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineBinaryZero.forward

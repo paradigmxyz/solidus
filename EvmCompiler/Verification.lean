@@ -1369,6 +1369,8 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.PureBinary.forward
 #check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.PureUnary.forward
 #check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.PureTernary.forward
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineSpec.forward
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineBinaryZero.forward
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.one_cons
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.succ_succ_cons
 #check EvmCompiler.Yul.FunctionsInteractionExpression.directAt
@@ -1377,6 +1379,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.declarationCheck
 #check EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.assignmentCheck
 #check EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.targetContains
+#check EvmCompiler.Yul.FunctionsInteractionRelation.StateRel.withMachine
 #check EvmCompiler.Yul.FunctionsInteractionRelation.OutcomeRel.regular
 #check EvmCompiler.Yul.FunctionsInteractionRelation.OutcomeRel.brk
 #check EvmCompiler.Yul.FunctionsInteractionRelation.OutcomeRel.cont

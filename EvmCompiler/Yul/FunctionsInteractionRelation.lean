@@ -201,6 +201,38 @@ theorem withWorldAndMachine
   refine ⟨_, sourceVars, rfl, ?_, hVars⟩
   exact hShared.withWorldAndMachine world sourceMachine targetMachine hMachine
 
+/-- A closed primitive may update only the active machine while retaining the
+exact current world. -/
+theorem withMachine
+    {source : SourceState} {target : TargetState}
+    (hRel : StateRel source target)
+    (sourceMachine targetMachine : EvmYul.MachineState)
+    (hMachine : sourceMachine = targetMachine) :
+    StateRel
+      (source.setMachineState sourceMachine)
+      (target.withShared
+        { target.shared with toMachineState := targetMachine }) := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  let sourceFinal : EvmYul.SharedState .Yul :=
+    { sourceShared with toMachineState := sourceMachine }
+  let targetFinal : EvmYul.SharedState .EVM :=
+    { target.shared with toMachineState := targetMachine }
+  refine ⟨sourceFinal, sourceVars, ?_, ?_, ?_⟩
+  · simp [sourceFinal, EvmYul.Yul.State.setMachineState,
+      EvmYul.Yul.State.setSharedState]
+  · exact
+      { openWorld := by simpa using hShared.openWorld
+        machine := hMachine
+        initialAccounts := hShared.initialAccounts
+        totalGasUsedInBlock := hShared.totalGasUsedInBlock
+        transactionReceipts := hShared.transactionReceipts
+        executionEnv := by simpa using hShared.executionEnv
+        blocks := hShared.blocks
+        genesisBlockHeader := hShared.genesisBlockHeader }
+  · simpa [targetFinal, Locals.Source.State.withShared] using hVars
+
 theorem multifill_single
     {source : SourceState} {target : TargetState}
     (hRel : StateRel source target)
