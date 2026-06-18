@@ -187,7 +187,7 @@ boundaries remain active work.
     - [x] Compose independent CALL/CREATE and GAS/MSIZE providers with a
       closed-ordinary-primitive capability; no opcode dispatch occurs inside
       expression recursion.
-    - [ ] Discharge the closed ordinary primitive capability over canonical
+    - [x] Discharge the closed ordinary primitive capability over canonical
       code-erased state.
       - [x] Pure binary, unary, and ternary arithmetic/comparison/bitwise
         families through one reusable `PureSpec` forward theorem.
@@ -217,7 +217,8 @@ boundaries remain active work.
       - [x] LOG0-LOG4 through reusable `SharedWriteSpec`, including exact
         address/topic/data ordering, active-memory growth, and matching
         static-mode failure.
-      - [ ] Invalid family; assemble the concrete `ClosedSelected` theorem.
+      - [x] Invalid family and concrete `ClosedSelected` theorem; compose the
+        complete `CompilerSelected` capability with CALL/CREATE and GAS/MSIZE.
     - [x] Define the code-erased outcome-indexed relation and source-owned
       exact lexical-domain invariant; check direct expression, one-name
       declaration, and one-name assignment statements plus `break`,

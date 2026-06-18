@@ -425,5 +425,8 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 #print axioms EvmCompiler.Yul.FunctionsInteractionRelation.SharedRel.logOp
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.SharedWriteSpec.forward
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.LogFamily.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.Invalid.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.closedSelected
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.compilerSelected
 #print axioms EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.MemoryFamily.LogFamily.closedSpec
 #print axioms EvmCompiler.Functions.AllocationInteractionPrimitiveResource.log_resourceForward

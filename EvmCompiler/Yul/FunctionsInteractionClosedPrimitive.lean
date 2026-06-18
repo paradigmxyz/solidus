@@ -3454,6 +3454,78 @@ theorem forward
 
 end LogFamily
 
+namespace Invalid
+
+theorem forward
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {sourceValues : List Word}
+    (hLength :
+      sourceValues.length = Expressions.Structured.BasicOp.inputs .invalid)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source .invalid)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source (.System .INVALID) sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        .invalid target sourceValues.reverse) := by
+  have hValues : sourceValues = [] := by
+    apply List.eq_nil_of_length_eq_zero
+    change sourceValues.length = 0 at hLength
+    exact hLength
+  subst sourceValues
+  cases fuel with
+  | zero =>
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Yul.InteractionSemantics.Primitive.fail,
+        Yul.InteractionSemantics.State.afterException,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+      exact
+        Simulation.Interaction.ForwardRel.truncated
+          (doneRel := PrimitiveDoneRel source .invalid)
+          (right := Locals.InteractionSemantics.Primitive.openEval
+            .invalid target [])
+          (by trivial)
+  | succ previous =>
+      rcases hRel with
+        ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+      subst source
+      have hSourceEval :
+          Yul.InteractionSemantics.Primitive.openEval (previous + 2)
+              (.Ok sourceShared sourceVars) (.System .INVALID) [] =
+            .done
+              (.error
+                ({ exception := .InvalidInstruction,
+                    state := .Ok sourceShared sourceVars } :
+                  Yul.InteractionSemantics.Failure)) := by
+        simp [Yul.InteractionSemantics.Primitive.openEval,
+          Yul.InteractionSemantics.Primitive.closedEval,
+          Simulation.ExternalKind.ofYulOperation?,
+          Simulation.CallKind.ofYulOperation?,
+          Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall,
+          Yul.InteractionSemantics.Primitive.fail,
+          Yul.InteractionSemantics.State.afterException]
+        unfold EvmYul.step
+        rfl
+      have hTargetEval :
+          Locals.InteractionSemantics.Primitive.openEval
+              .invalid target [] =
+            .done (.error .InvalidInstruction) := by
+        simp [Locals.InteractionSemantics.Primitive.openEval,
+          Locals.InteractionSemantics.Primitive.supportsOpen, hLength]
+        rfl
+      simp only [List.reverse_nil]
+      rw [show previous.succ + 1 = previous + 2 by omega,
+        hSourceEval, hTargetEval]
+      exact Simulation.Interaction.ForwardRel.done
+        (Simulation.Interaction.ExceptRel.error trivial)
+
+end Invalid
+
 namespace MachineReturnDataCopy
 
 theorem forward
@@ -3606,6 +3678,340 @@ theorem forward
         exact Simulation.Interaction.ForwardRel.done hDone
 
 end MachineReturnDataCopy
+
+/-- Every compiler-selected closed primitive is discharged by its adjacent
+semantic-family theorem. External CALL/CREATE and resource queries are composed
+separately by `compilerSelected_of_closed`. -/
+theorem closedSelected : ClosedSelected := by
+  intro fuel source target prim op sourceValues hExternal hGas hMsize hOp
+    hLength hRel
+  cases prim with
+  | StopArith primitive =>
+      cases primitive with
+      | STOP => simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+      | ADD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .add hLength hRel
+      | MUL =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .mul hLength hRel
+      | SUB =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .sub hLength hRel
+      | DIV =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .div hLength hRel
+      | SDIV =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .sdiv hLength hRel
+      | MOD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .mod hLength hRel
+      | SMOD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .smod hLength hRel
+      | ADDMOD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureTernary.forward .addmod hLength hRel
+      | MULMOD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureTernary.forward .mulmod hLength hRel
+      | EXP =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .exp hLength hRel
+      | SIGNEXTEND =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .signextend hLength hRel
+  | CompBit primitive =>
+      cases primitive with
+      | LT =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .lt hLength hRel
+      | GT =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .gt hLength hRel
+      | SLT =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .slt hLength hRel
+      | SGT =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .sgt hLength hRel
+      | EQ =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .eq hLength hRel
+      | ISZERO =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureUnary.forward .iszero hLength hRel
+      | AND =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .and hLength hRel
+      | OR =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .or hLength hRel
+      | XOR =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .xor hLength hRel
+      | NOT =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureUnary.forward .not hLength hRel
+      | BYTE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .byte hLength hRel
+      | SHL =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .shl hLength hRel
+      | SHR =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .shr hLength hRel
+      | SAR =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureBinary.forward .sar hLength hRel
+  | Keccak primitive =>
+      cases primitive with
+      | KECCAK256 =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact MachineKeccak256.forward (by simpa using hLength) hRel
+  | Env primitive =>
+      cases primitive with
+      | ADDRESS =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact EnvironmentNullary.forward .address hLength hRel
+      | BALANCE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact WorldUnaryAccess.forward .balance hLength hRel
+      | ORIGIN =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact EnvironmentNullary.forward .origin hLength hRel
+      | CALLER =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact EnvironmentNullary.forward .caller hLength hRel
+      | CALLVALUE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact EnvironmentNullary.forward .callvalue hLength hRel
+      | CALLDATALOAD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact WorldUnaryRead.forward .calldataload hLength hRel
+      | CALLDATASIZE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact EnvironmentNullary.forward .calldatasize hLength hRel
+      | CALLDATACOPY =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact SharedTernaryCopy.forward .calldatacopy hLength hRel
+      | GASPRICE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact EnvironmentNullary.forward .gasprice hLength hRel
+      | CODESIZE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact EnvironmentNullary.forward .codesize hLength hRel
+      | CODECOPY =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact SharedTernaryCopy.forward .codecopy hLength hRel
+      | EXTCODESIZE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact WorldUnaryAccess.forward .extcodesize hLength hRel
+      | EXTCODECOPY =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact SharedExtCodeCopy.forward (by simpa using hLength) hRel
+      | RETURNDATASIZE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          change sourceValues.length = 0 at hLength
+          exact MachineReturnDataSize.forward hLength hRel
+      | RETURNDATACOPY =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact MachineReturnDataCopy.forward (by simpa using hLength) hRel
+      | EXTCODEHASH =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact WorldUnaryAccess.forward .extcodehash hLength hRel
+  | Block primitive =>
+      cases primitive with
+      | BLOCKHASH =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact WorldUnaryRead.forward .blockhash hLength hRel
+      | COINBASE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact WorldNullary.forward .coinbase hLength hRel
+      | TIMESTAMP =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact WorldNullary.forward .timestamp hLength hRel
+      | NUMBER =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact WorldNullary.forward .number hLength hRel
+      | PREVRANDAO =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact EnvironmentNullary.forward .prevrandao hLength hRel
+      | GASLIMIT =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact WorldNullary.forward .gaslimit hLength hRel
+      | CHAINID =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact WorldNullary.forward .chainid hLength hRel
+      | SELFBALANCE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact WorldNullary.forward .selfbalance hLength hRel
+      | BASEFEE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact EnvironmentNullary.forward .basefee hLength hRel
+      | BLOBHASH =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact EnvironmentUnary.forward .blobhash hLength hRel
+      | BLOBBASEFEE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact EnvironmentNullary.forward .blobbasefee hLength hRel
+  | StackMemFlow primitive =>
+      cases primitive with
+      | POP =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact MachinePop.forward (by simpa using hLength) hRel
+      | MLOAD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact MachineMLoad.forward (by simpa using hLength) hRel
+      | MSTORE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact MachineBinaryZero.forward .mstore hLength hRel
+      | SLOAD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact WorldUnaryAccess.forward .sload hLength hRel
+      | SSTORE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact WorldBinaryWrite.forward .sstore hLength hRel
+      | MSTORE8 =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact MachineBinaryZero.forward .mstore8 hLength hRel
+      | MSIZE => exact (hMsize rfl).elim
+      | GAS => exact (hGas rfl).elim
+      | TLOAD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact WorldUnaryAccess.forward .tload hLength hRel
+      | TSTORE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact WorldBinaryWrite.forward .tstore hLength hRel
+      | MCOPY =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact MachineMCopy.forward (by simpa using hLength) hRel
+  | Log primitive =>
+      cases primitive with
+      | LOG0 =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact LogFamily.forward .log0 (by simpa using hLength) hRel
+      | LOG1 =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact LogFamily.forward .log1 (by simpa using hLength) hRel
+      | LOG2 =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact LogFamily.forward .log2 (by simpa using hLength) hRel
+      | LOG3 =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact LogFamily.forward .log3 (by simpa using hLength) hRel
+      | LOG4 =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact LogFamily.forward .log4 (by simpa using hLength) hRel
+  | System primitive =>
+      cases primitive with
+      | CREATE =>
+          simp [Simulation.ExternalKind.ofYulOperation?,
+            Simulation.CallKind.ofYulOperation?,
+            Simulation.CreateKind.ofYulOperation?] at hExternal
+      | CALL =>
+          simp [Simulation.ExternalKind.ofYulOperation?,
+            Simulation.CallKind.ofYulOperation?,
+            Simulation.CreateKind.ofYulOperation?] at hExternal
+      | CALLCODE =>
+          simp [Simulation.ExternalKind.ofYulOperation?,
+            Simulation.CallKind.ofYulOperation?,
+            Simulation.CreateKind.ofYulOperation?] at hExternal
+      | RETURN => simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+      | DELEGATECALL =>
+          simp [Simulation.ExternalKind.ofYulOperation?,
+            Simulation.CallKind.ofYulOperation?,
+            Simulation.CreateKind.ofYulOperation?] at hExternal
+      | CREATE2 =>
+          simp [Simulation.ExternalKind.ofYulOperation?,
+            Simulation.CallKind.ofYulOperation?,
+            Simulation.CreateKind.ofYulOperation?] at hExternal
+      | STATICCALL =>
+          simp [Simulation.ExternalKind.ofYulOperation?,
+            Simulation.CallKind.ofYulOperation?,
+            Simulation.CreateKind.ofYulOperation?] at hExternal
+      | REVERT => simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+      | INVALID =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact Invalid.forward hLength hRel
+      | SELFDESTRUCT =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+
+/-- Complete primitive capability: closed families above, plus the open
+CALL/CREATE and GAS/MSIZE families owned by `FunctionsInteractionPrimitive`. -/
+theorem compilerSelected : CompilerSelected :=
+  FunctionsInteractionPrimitive.Primitive.compilerSelected_of_closed
+    closedSelected
 
 end FunctionsInteractionClosedPrimitive
 end Yul
