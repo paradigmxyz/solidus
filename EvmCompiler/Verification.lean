@@ -304,6 +304,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionFrame.ProtectedPrefix
 #check EvmCompiler.Functions.AllocationInteractionFrame.BoundedEffect
 #check EvmCompiler.Functions.AllocationInteractionFrame.ActivationOwned
+#check EvmCompiler.Functions.AllocationInteractionFrame.ProtectedPrefix.of_machine_eq
+#check EvmCompiler.Functions.AllocationInteractionFrame.AllocatorReady.of_lookup_growth
+#check EvmCompiler.Functions.AllocationInteractionFrame.AllocatorEffect.trans
+#check EvmCompiler.Functions.AllocationInteractionFrame.SuspendedEffect.trans
+#check EvmCompiler.Functions.AllocationInteractionFrame.BoundedEffect.weaken
 #check EvmCompiler.Functions.AllocationInteractionFrameExecution.Code.openRun_push
 #check EvmCompiler.Functions.AllocationInteractionFrameExecution.Code.openRun_mload
 #check EvmCompiler.Functions.AllocationInteractionFrameExecution.Code.openRun_mstore

@@ -96,7 +96,117 @@ theorem trans {config : Config} {depth : Nat}
           hFirst.growth.active))).trans
       (hFirst.lookup hStart hEnd hMemory hActive)
 
+theorem of_machine_eq {config : Config} {depth : Nat}
+    {before after : TargetState}
+    (hMachine :
+      after.evm.toMachineState = before.evm.toMachineState) :
+    ProtectedPrefix config depth before after := by
+  exact
+    { growth :=
+        { active := by simpa [hMachine]
+          memory := by simpa [hMachine] }
+      lookup := by
+        intro address _hStart _hEnd _hMemory _hActive
+        change
+          after.evm.toMachineState.lookupMemory
+              (EvmYul.UInt256.ofNat address) =
+            before.evm.toMachineState.lookupMemory
+              (EvmYul.UInt256.ofNat address)
+        rw [hMachine] }
+
+theorem of_memory_eq_active_growth {config : Config} {depth : Nat}
+    {before after : TargetState}
+    (hMemory :
+      after.evm.toMachineState.memory = before.evm.toMachineState.memory)
+    (hActive :
+      before.evm.activeWords.toNat ≤ after.evm.activeWords.toNat)
+    (hBeforeNoWrap :
+      before.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (hAfterNoWrap :
+      after.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size) :
+    ProtectedPrefix config depth before after := by
+  refine
+    { growth :=
+        { active := hActive
+          memory := by simpa [hMemory] }
+      lookup := ?_ }
+  intro address _hStart _hEnd hReadMemory hReadActive
+  have hAddressLt : address < EvmYul.UInt256.size :=
+    lt_of_le_of_lt
+      (Nat.le_add_right address MemoryContract.wordBytes)
+      (hReadActive.trans_lt hBeforeNoWrap)
+  exact
+    Compiler.MemoryRelation.MachineRel.lookupMemory_eq_of_memory_eq_active_growth
+      address (EvmYul.UInt256.toNat_ofNat_of_lt hAddressLt)
+      hMemory hActive hBeforeNoWrap hAfterNoWrap hReadMemory hReadActive
+
 end ProtectedPrefix
+
+namespace AllocatorReady
+
+theorem of_lookup_growth {config : Config} {depth : Nat}
+    {before after : TargetState}
+    (hReady : AllocatorReady config depth before)
+    (hLookup :
+      after.evm.toMachineState.lookupMemory
+          (EvmYul.UInt256.ofNat config.allocatorCell) =
+        before.evm.toMachineState.lookupMemory
+          (EvmYul.UInt256.ofNat config.allocatorCell))
+    (hActive :
+      before.evm.activeWords.toNat ≤ after.evm.activeWords.toNat)
+    (hMemory :
+      before.evm.toMachineState.memory.size ≤
+        after.evm.toMachineState.memory.size)
+    (hNoWrap :
+      after.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size) :
+    AllocatorReady config depth after := by
+  exact
+    { allocatorAt := hLookup.trans hReady.allocatorAt
+      cellActive := hReady.cellActive.trans
+        (Nat.mul_le_mul_right MemoryContract.wordBytes hActive)
+      cellAllocated := hReady.cellAllocated.trans hMemory
+      activeNoWrap := hNoWrap }
+
+theorem of_memory_eq_active_growth {config : Config} {depth : Nat}
+    {before after : TargetState}
+    (hReady : AllocatorReady config depth before)
+    (hMemory :
+      after.evm.toMachineState.memory = before.evm.toMachineState.memory)
+    (hActive :
+      before.evm.activeWords.toNat ≤ after.evm.activeWords.toNat)
+    (hNoWrap :
+      after.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size) :
+    AllocatorReady config depth after := by
+  have hCellLt : config.allocatorCell < EvmYul.UInt256.size :=
+    lt_of_le_of_lt
+      (Nat.le_add_right config.allocatorCell MemoryContract.wordBytes)
+      (hReady.cellActive.trans_lt hReady.activeNoWrap)
+  have hCellWord :
+      (EvmYul.UInt256.ofNat config.allocatorCell).toNat =
+        config.allocatorCell :=
+    EvmYul.UInt256.toNat_ofNat_of_lt hCellLt
+  have hLookup :=
+    Compiler.MemoryRelation.MachineRel.lookupMemory_eq_of_memory_eq_active_growth
+      config.allocatorCell hCellWord hMemory hActive
+      hReady.activeNoWrap hNoWrap hReady.cellAllocated hReady.cellActive
+  exact hReady.of_lookup_growth hLookup hActive
+    (by simpa [hMemory]) hNoWrap
+
+theorem of_machine_eq {config : Config} {depth : Nat}
+    {before after : TargetState}
+    (hReady : AllocatorReady config depth before)
+    (hMachine :
+      after.evm.toMachineState = before.evm.toMachineState) :
+    AllocatorReady config depth after := by
+  exact hReady.of_memory_eq_active_growth
+    (by simpa [hMachine]) (by simpa [hMachine])
+    (by simpa [hMachine] using hReady.activeNoWrap)
+
+end AllocatorReady
 
 /-- Ordinary execution at a fixed allocator depth protects that depth too. -/
 structure AllocatorEffect (config : Config) (depth : Nat)
@@ -109,6 +219,62 @@ structure AllocatorEffect (config : Config) (depth : Nat)
       Budget config protectedDepth →
       ProtectedPrefix config protectedDepth before after
 
+namespace AllocatorEffect
+
+theorem refl {config : Config} {depth : Nat} {target : TargetState}
+    (hReady : AllocatorReady config depth target) :
+    AllocatorEffect config depth target target :=
+  { ready := hReady
+    growth := TargetGrowth.refl target
+    prefixStable := fun _hDepth _hBudget =>
+      ProtectedPrefix.refl config _ target }
+
+theorem trans {config : Config} {depth : Nat}
+    {first second third : TargetState}
+    (hFirst : AllocatorEffect config depth first second)
+    (hSecond : AllocatorEffect config depth second third) :
+    AllocatorEffect config depth first third :=
+  { ready := hSecond.ready
+    growth := hFirst.growth.trans hSecond.growth
+    prefixStable := fun hDepth hBudget =>
+      (hFirst.prefixStable hDepth hBudget).trans
+        (hSecond.prefixStable hDepth hBudget) }
+
+theorem of_machine_eq {config : Config} {depth : Nat}
+    {before after : TargetState}
+    (hReady : AllocatorReady config depth before)
+    (hMachine :
+      after.evm.toMachineState = before.evm.toMachineState) :
+    AllocatorEffect config depth before after :=
+  { ready := hReady.of_machine_eq hMachine
+    growth :=
+      { active := by simpa [hMachine]
+        memory := by simpa [hMachine] }
+    prefixStable := fun _hDepth _hBudget =>
+      ProtectedPrefix.of_machine_eq hMachine }
+
+theorem of_memory_eq_active_growth {config : Config} {depth : Nat}
+    {before after : TargetState}
+    (hReady : AllocatorReady config depth before)
+    (hMemory :
+      after.evm.toMachineState.memory = before.evm.toMachineState.memory)
+    (hActive :
+      before.evm.activeWords.toNat ≤ after.evm.activeWords.toNat)
+    (hAfterNoWrap :
+      after.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size) :
+    AllocatorEffect config depth before after :=
+  { ready := hReady.of_memory_eq_active_growth
+      hMemory hActive hAfterNoWrap
+    growth :=
+      { active := hActive
+        memory := by simpa [hMemory] }
+    prefixStable := fun _hDepth _hBudget =>
+      ProtectedPrefix.of_memory_eq_active_growth
+        hMemory hActive hReady.activeNoWrap hAfterNoWrap }
+
+end AllocatorEffect
+
 /-- Statement execution may mutate its own frame, but protects older frames. -/
 structure SuspendedEffect (config : Config) (depth : Nat)
     (before after : TargetState) : Prop where
@@ -119,6 +285,35 @@ structure SuspendedEffect (config : Config) (depth : Nat)
       protectedDepth < depth →
       Budget config protectedDepth →
       ProtectedPrefix config protectedDepth before after
+
+namespace SuspendedEffect
+
+theorem of_allocatorEffect {config : Config} {depth : Nat}
+    {before after : TargetState}
+    (hEffect : AllocatorEffect config depth before after) :
+    SuspendedEffect config depth before after :=
+  { ready := hEffect.ready
+    growth := hEffect.growth
+    prefixStable := fun hDepth hBudget =>
+      hEffect.prefixStable (Nat.le_of_lt hDepth) hBudget }
+
+theorem refl {config : Config} {depth : Nat} {target : TargetState}
+    (hReady : AllocatorReady config depth target) :
+    SuspendedEffect config depth target target :=
+  of_allocatorEffect (AllocatorEffect.refl hReady)
+
+theorem trans {config : Config} {depth : Nat}
+    {first second third : TargetState}
+    (hFirst : SuspendedEffect config depth first second)
+    (hSecond : SuspendedEffect config depth second third) :
+    SuspendedEffect config depth first third :=
+  { ready := hSecond.ready
+    growth := hFirst.growth.trans hSecond.growth
+    prefixStable := fun hDepth hBudget =>
+      (hFirst.prefixStable hDepth hBudget).trans
+        (hSecond.prefixStable hDepth hBudget) }
+
+end SuspendedEffect
 
 /-- Call phases may change depth while preserving one independent prefix. -/
 structure BoundedEffect (config : Config)
@@ -142,6 +337,19 @@ theorem refl {config : Config} {finalDepth protectedBound : Nat}
     growth := TargetGrowth.refl target
     prefixStable := fun _ _ => ProtectedPrefix.refl config _ target }
 
+theorem of_machine_eq {config : Config}
+    {finalDepth protectedBound : Nat} {before after : TargetState}
+    (hReady : AllocatorReady config finalDepth before)
+    (hMachine :
+      after.evm.toMachineState = before.evm.toMachineState) :
+    BoundedEffect config finalDepth protectedBound before after :=
+  { ready := hReady.of_machine_eq hMachine
+    growth :=
+      { active := by simpa [hMachine]
+        memory := by simpa [hMachine] }
+    prefixStable := fun _hDepth _hBudget =>
+      ProtectedPrefix.of_machine_eq hMachine }
+
 theorem trans {config : Config}
     {firstDepth finalDepth protectedBound : Nat}
     {first second third : TargetState}
@@ -155,6 +363,18 @@ theorem trans {config : Config}
     prefixStable := fun hDepth hBudget =>
       (hFirst.prefixStable hDepth hBudget).trans
         (hSecond.prefixStable hDepth hBudget) }
+
+theorem weaken {config : Config}
+    {finalDepth smallerBound largerBound : Nat}
+    {before after : TargetState}
+    (hBound : smallerBound ≤ largerBound)
+    (hEffect :
+      BoundedEffect config finalDepth largerBound before after) :
+    BoundedEffect config finalDepth smallerBound before after :=
+  { ready := hEffect.ready
+    growth := hEffect.growth
+    prefixStable := fun hDepth hBudget =>
+      hEffect.prefixStable (hDepth.trans_le hBound) hBudget }
 
 theorem of_allocatorEffect {config : Config} {depth : Nat}
     {before after : TargetState}
