@@ -49,6 +49,41 @@ theorem mono
       hSubset name (hControl.returnsLive name hName)
     leaveScope := hControl.leaveScope }
 
+/-- Removing loop destinations preserves containment of every remaining exit. -/
+theorem withoutLoopControl
+    {returns live : List Functions.Name}
+    {ctx : Functions.Source.Ctx}
+    (hControl : ControlScopesWithin returns live ctx) :
+    ControlScopesWithin returns live ctx.withoutLoopControl :=
+  { breakScope := by simp [Functions.Source.Ctx.withoutLoopControl]
+    continueScope := by simp [Functions.Source.Ctx.withoutLoopControl]
+    returnsLive := hControl.returnsLive
+    leaveScope := by
+      simpa [Functions.Source.Ctx.withoutLoopControl] using
+        hControl.leaveScope }
+
+/-- Installing the current live scope as both loop destinations is contained. -/
+theorem withLoopControl
+    {returns live : List Functions.Name}
+    {ctx : Functions.Source.Ctx}
+    (hControl : ControlScopesWithin returns live ctx) :
+    ControlScopesWithin returns live
+      (ctx.withLoopControl live live) :=
+  { breakScope := by
+      intro scope hScope name hName
+      simp [Functions.Source.Ctx.withLoopControl] at hScope
+      cases hScope
+      exact hName
+    continueScope := by
+      intro scope hScope name hName
+      simp [Functions.Source.Ctx.withLoopControl] at hScope
+      cases hScope
+      exact hName
+    returnsLive := hControl.returnsLive
+    leaveScope := by
+      simpa [Functions.Source.Ctx.withLoopControl] using
+        hControl.leaveScope }
+
 theorem outcomeLive_subset
     {returns live : List Functions.Name}
     {ctx : Functions.Source.Ctx}

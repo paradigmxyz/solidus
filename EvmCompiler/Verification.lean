@@ -332,6 +332,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionControl.switch_of_components
 #check EvmCompiler.Functions.AllocationInteractionLoop.forward
 #check EvmCompiler.Functions.AllocationInteractionFor.forward
+#check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin.withoutLoopControl
+#check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin.withLoopControl
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.SwitchComponents
 #check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardOne
 #check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardCondition
