@@ -31980,3 +31980,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1168-job build, full verification root, architecture guard, touched-Lean hole
   scan, axiom audit, and `git diff --check` passed; the root and cursor
   constructors use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 23:52:00 PDT - proof/functions-callee-entry - decomposed the real
+  call compiler into argument, Structured call, return-store, and optional
+  frame-release phases. Added the canonical activation-entry relation and
+  checked stack/scratch constructors, initialized stack-parameter activation,
+  and scratch spill-store/pop transitions without observer state.
+- 2026-06-17 23:54:00 PDT - validation/functions-callee-entry - focused
+  1168-job build, full verification root, architecture guard, touched-Lean hole
+  scan, axiom audit, and `git diff --check` passed; new call decomposition and
+  entry theorems use only `[propext, Classical.choice, Quot.sound]`.

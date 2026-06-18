@@ -7,6 +7,113 @@ namespace AllocationInteractionCall
 open AllocationInteractionCursor
 open AllocationInteractionRelation
 
+namespace CallCompiler
+
+/-- Decompose the existing call compiler into its adjacent runtime phases. -/
+theorem components
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {targets : List Functions.Name}
+    {functionName : Functions.Name}
+    {args : List (Functions.Expr 1)}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState
+          (.call targets functionName args) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ fn loweredArgs callArgs stores release argsCode releaseCode,
+      AllocationSupport.lookupFun? functionName lowerCtx.functions = some fn ∧
+        args.length = fn.params.length ∧
+        targets.length = fn.returns.length ∧
+        targets.Nodup ∧
+        AllocationLowering.lowerExprList lowerCtx lowerState args =
+          some loweredArgs ∧
+        (if functionName ∈ lowerCtx.frameFunctions then do
+            let frameConfig ← lowerCtx.frameConfig?
+            some (AllocationLowering.frameExpr frameConfig :: loweredArgs)
+          else
+            some loweredArgs) =
+          some callArgs ∧
+        AllocationLowering.lowerCallTargetsCode?
+            lowerCtx lowerState targets.reverse targets.length =
+          some stores ∧
+        (if functionName ∈ lowerCtx.frameFunctions then do
+            let frameConfig ← lowerCtx.frameConfig?
+            some
+              [.expr
+                (Locals.Expr.code (results := 0)
+                  (AllocationSupport.scratchFrameReleaseCode frameConfig))]
+          else
+            some []) =
+          some release ∧
+        Locals.ExprSeq.compileCode localsCtx 0
+            (AllocationLowering.exprSeqOfList callArgs) =
+          some argsCode ∧
+        Locals.Block.compileOpen localsCtx { stmts := release } =
+          some (releaseCode, localsCtx) ∧
+        compiledStmts =
+          Locals.codeStmt argsCode ++
+            [.call functionName] ++
+            Locals.codeStmt stores ++ releaseCode ∧
+        lowerFinal = lowerState ∧
+        localsFinal = localsCtx := by
+  obtain
+      ⟨fn, loweredArgs, callArgs, stores, release,
+        hLookup, hArgsLength, hTargetsLength, hTargets,
+        hLowerArgs, hCallArgs, hStores, hRelease, rfl, rfl⟩ :=
+    AllocationLowering.lowerStmt_call_components hLower
+  cases hArgsCode :
+      Locals.ExprSeq.compileCode localsCtx 0
+        (AllocationLowering.exprSeqOfList callArgs) with
+  | none =>
+      simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+        Locals.Expr.compileCode, hArgsCode] at hCompile
+  | some argsCode =>
+      obtain ⟨releaseCode, hReleaseCode⟩ :
+          ∃ releaseCode,
+            Locals.Block.compileOpen localsCtx { stmts := release } =
+              some (releaseCode, localsCtx) := by
+        by_cases hFrame : functionName ∈ lowerCtx.frameFunctions
+        · cases hConfig : lowerCtx.frameConfig? with
+          | none =>
+              simp [hFrame, hConfig] at hRelease
+          | some frameConfig =>
+              have hReleaseEq :
+                  release =
+                    [.expr
+                      (Locals.Expr.code (results := 0)
+                        (AllocationSupport.scratchFrameReleaseCode
+                          frameConfig))] := by
+                simpa [hFrame, hConfig] using hRelease.symm
+              subst release
+              exact
+                ⟨Locals.codeStmt
+                    (AllocationSupport.scratchFrameReleaseCode frameConfig),
+                  by
+                    simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                      Locals.Expr.compileCode]⟩
+        · have hReleaseEq : release = [] := by
+            simpa [hFrame] using hRelease.symm
+          subst release
+          exact ⟨[], by simp [Locals.Block.compileOpen]⟩
+      simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+        Locals.Expr.compileCode, Locals.codeStmt,
+        hArgsCode, hReleaseCode] at hCompile
+      rcases hCompile with ⟨rfl, rfl⟩
+      exact
+        ⟨fn, loweredArgs, callArgs, stores, release,
+          argsCode, releaseCode, hLookup, hArgsLength,
+          hTargetsLength, hTargets, hLowerArgs, hCallArgs,
+          hStores, hRelease, hArgsCode, hReleaseCode, rfl, rfl, rfl⟩
+
+end CallCompiler
+
 namespace SelectedCallee
 
 /-- Compiler-owned artifact for the source function selected by one call. -/

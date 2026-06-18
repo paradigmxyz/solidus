@@ -59,6 +59,8 @@ boundaries remain active work.
     body compiler context constructed without observer proof machinery;
   - [x] compiler-selected callee body packaged as an ordinary pass-owned root
     and recursive cursor;
+  - [x] real call-code decomposition and canonical stack/scratch callee-entry
+    realization, including parameter spill-store transitions;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

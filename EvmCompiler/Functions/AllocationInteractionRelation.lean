@@ -2147,6 +2147,440 @@ theorem finishCreate
 
 end ActivationStateRel
 
+namespace StateRel
+
+/-- Activate an initialized stack local below a pending-value prefix. -/
+theorem declare_stack_live_existing_at
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {stackOffset frameBase planDepth : Nat}
+    {source : SourceState} {target : TargetState}
+    {name : Locals.Name} {value : Word}
+    (hRel :
+      StateRel contract plan beforeLive (stackOffset + 1) frameBase
+        source target)
+    (hAfter :
+      ∀ other, other ∈ afterLive →
+        other = name ∨ other ∈ beforeLive)
+    (hFresh : name ∉ beforeLive)
+    (hNameAfter : name ∈ afterLive)
+    (hLocation : plan.location? name = some (.stack planDepth))
+    (hStackOrder :
+      currentStackOrder plan afterLive =
+        name :: currentStackOrder plan beforeLive)
+    (hTargetValue : target.evm.stack[stackOffset]? = some value)
+    (hValue : source.vars name = some value) :
+    StateRel contract plan afterLive stackOffset frameBase source target := by
+  refine
+    { machine := hRel.machine
+      world := hRel.world
+      store := ?_ }
+  intro other location hOtherAfter hOtherLocation
+  rcases hAfter other hOtherAfter with hName | hBefore
+  · subst other
+    rw [hLocation] at hOtherLocation
+    cases hOtherLocation
+    refine ⟨0, ?_, ?_⟩
+    · simpa [hStackOrder, Locals.Layout.lookupDepth?,
+        Locals.Layout.lookupDepthFrom]
+    · simpa [hValue] using hTargetValue
+  · have hPrevious := hRel.store other location hBefore hOtherLocation
+    have hOtherNe : other ≠ name := by
+      intro hEq
+      subst other
+      exact hFresh hBefore
+    cases location with
+    | stack otherPlanDepth =>
+        rcases hPrevious with ⟨depth, hDepth, hStored⟩
+        refine ⟨depth + 1, ?_, ?_⟩
+        · rw [hStackOrder]
+          simpa [Nat.add_assoc] using
+            Locals.Layout.lookupDepth?_cons_of_ne hOtherNe.symm hDepth
+        · change
+            target.evm.stack[stackOffset + (depth + 1)]? =
+              source.vars other
+          change
+            target.evm.stack[(stackOffset + 1) + depth]? =
+              source.vars other at hStored
+          rw [show
+              stackOffset + (depth + 1) =
+                (stackOffset + 1) + depth by omega]
+          exact hStored
+    | scratch slot =>
+        exact hPrevious
+
+end StateRel
+
+namespace ScratchStateRel
+
+/-- Rebase a scratch activation across a target-only stack-prefix change. -/
+theorem rebase_prefix_same_source
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState} {target targetFinal : TargetState}
+    {oldPrefix newPrefix baseStack : List Word}
+    (hRel :
+      ScratchStateRel contract plan live
+        (stackOffset + oldPrefix.length) frameBase
+        frameDepth frameWords source target)
+    (hShared : targetFinal.evm.toSharedState = target.evm.toSharedState)
+    (hOldStack : target.evm.stack = oldPrefix ++ baseStack)
+    (hNewStack : targetFinal.evm.stack = newPrefix ++ baseStack) :
+    ScratchStateRel contract plan live
+      (stackOffset + newPrefix.length) frameBase
+      frameDepth frameWords source targetFinal := by
+  have hMachine :
+      targetFinal.evm.toMachineState = target.evm.toMachineState :=
+    congrArg EvmYul.SharedState.toMachineState hShared
+  have hBase :
+      StateRel contract plan live
+        (stackOffset + newPrefix.length) frameBase source targetFinal :=
+    { machine := by simpa [hMachine] using hRel.base.machine
+      world := by simpa [hShared] using hRel.base.world
+      store :=
+        hRel.base.store.rebase_prefix_of_lookup hOldStack hNewStack
+          (by
+            intro name slot hLive hLocation
+            rw [hMachine])
+          rfl }
+  apply hRel.rebase_prefix_mono hBase hOldStack hNewStack
+  · rw [hMachine]
+  · simpa [hMachine]
+  · simpa [hMachine] using hRel.activeNoWrap
+
+/-- Activate an initialized stack local while retaining a scratch frame. -/
+theorem declare_stack_live_existing_at
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords planDepth : Nat}
+    {source : SourceState} {target : TargetState}
+    {name : Locals.Name} {value : Word}
+    (hRel :
+      ScratchStateRel contract plan beforeLive (stackOffset + 1) frameBase
+        frameDepth frameWords source target)
+    (hAfter :
+      ∀ other, other ∈ afterLive →
+        other = name ∨ other ∈ beforeLive)
+    (hFresh : name ∉ beforeLive)
+    (hNameAfter : name ∈ afterLive)
+    (hLocation : plan.location? name = some (.stack planDepth))
+    (hStackOrder :
+      currentStackOrder plan afterLive =
+        name :: currentStackOrder plan beforeLive)
+    (hTargetValue : target.evm.stack[stackOffset]? = some value)
+    (hValue : source.vars name = some value) :
+    ScratchStateRel contract plan afterLive stackOffset frameBase
+      (frameDepth + 1) frameWords source target := by
+  refine
+    { base :=
+        StateRel.declare_stack_live_existing_at hRel.base hAfter hFresh
+          hNameAfter hLocation hStackOrder hTargetValue hValue
+      framePointer := ?_
+      frameActive := hRel.frameActive
+      frameAllocated := hRel.frameAllocated
+      frameNoWrap := hRel.frameNoWrap
+      frameHostAddressable := hRel.frameHostAddressable
+      activeNoWrap := hRel.activeNoWrap
+      frameReserved := hRel.frameReserved
+      scratchBound := ?_ }
+  · rw [show
+      stackOffset + (frameDepth + 1) =
+        (stackOffset + 1) + frameDepth by omega]
+    exact hRel.framePointer
+  · intro other slot hOtherAfter hOtherLocation
+    rcases hAfter other hOtherAfter with hName | hBefore
+    · subst other
+      rw [hLocation] at hOtherLocation
+      simp at hOtherLocation
+    · exact hRel.scratchBound other slot hBefore hOtherLocation
+
+end ScratchStateRel
+
+namespace ActivationStateRel
+
+/-- Activate an initialized stack local in either allocation mode. -/
+theorem declare_stack_live_existing_at
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {stackOffset frameBase planDepth : Nat} {mode : ActivationMode}
+    {source : SourceState} {target : TargetState}
+    {name : Locals.Name} {value : Word}
+    (hRel :
+      ActivationStateRel contract plan beforeLive (stackOffset + 1)
+        frameBase mode source target)
+    (hAfter :
+      ∀ other, other ∈ afterLive →
+        other = name ∨ other ∈ beforeLive)
+    (hFresh : name ∉ beforeLive)
+    (hNameAfter : name ∈ afterLive)
+    (hLocation : plan.location? name = some (.stack planDepth))
+    (hStackOrder :
+      currentStackOrder plan afterLive =
+        name :: currentStackOrder plan beforeLive)
+    (hTargetValue : target.evm.stack[stackOffset]? = some value)
+    (hValue : source.vars name = some value) :
+    ActivationStateRel contract plan afterLive stackOffset frameBase
+      mode.afterStackDeclaration source target := by
+  cases hRel with
+  | stack hOnly hActive hState =>
+      have hAfterOnly : LiveStackOnly plan afterLive := by
+        intro other slot hOtherAfter hOtherLocation
+        rcases hAfter other hOtherAfter with hName | hBefore
+        · subst other
+          rw [hLocation] at hOtherLocation
+          simp at hOtherLocation
+        · exact hOnly other slot hBefore hOtherLocation
+      exact .stack hAfterOnly hActive
+        (StateRel.declare_stack_live_existing_at hState hAfter hFresh
+          hNameAfter hLocation hStackOrder hTargetValue hValue)
+  | scratch hScratch =>
+      exact .scratch
+        (ScratchStateRel.declare_stack_live_existing_at hScratch hAfter hFresh
+          hNameAfter hLocation hStackOrder hTargetValue hValue)
+
+end ActivationStateRel
+
+/--
+Transient realization of raw procedure parameters in either allocation mode.
+Pending values occupy the target stack in reverse source order above the
+already realized locals.
+-/
+structure ActivationCalleeEntryRel
+    (contract : MemoryContract.Contract) (plan : Plan)
+    (realized : List Locals.Name)
+    (pending : List (Locals.Name × Nat))
+    (frameBase : Nat) (mode : ActivationMode)
+    (source : SourceState) (target : TargetState) : Prop where
+  state :
+    ActivationStateRel contract plan realized pending.length frameBase
+      mode source target
+  realization :
+    ∃ values suffix,
+      Functions.Source.Store.lookupMany
+          (pending.map Prod.fst) source.vars =
+        some values ∧
+      target.evm.stack = values.reverse ++ suffix
+
+namespace ActivationCalleeEntryRel
+
+/-- Construct an all-stack callee before any parameter is activated. -/
+theorem stack_empty
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {pending : List (Locals.Name × Nat)} {frameBase : Nat}
+    {source : SourceState} {target : TargetState}
+    {values suffix : List Word}
+    (hMachine :
+      Compiler.MemoryRelation.MachineRel contract
+        source.shared.toMachineState target.evm.toMachineState)
+    (hWorld : source.shared.toState = target.evm.toSharedState.toState)
+    (hActiveNoWrap :
+      target.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (hLookup :
+      Functions.Source.Store.lookupMany
+          (pending.map Prod.fst) source.vars =
+        some values)
+    (hStack : target.evm.stack = values.reverse ++ suffix) :
+    ActivationCalleeEntryRel contract plan [] pending frameBase .stack
+      source target := by
+  refine
+    { state := .stack ?_ hActiveNoWrap ?_
+      realization := ⟨values, suffix, hLookup, hStack⟩ }
+  · intro name slot hLive _hLocation
+    simp at hLive
+  · exact
+      { machine := hMachine
+        world := hWorld
+        store := by
+          intro name location hLive _hLocation
+          simp at hLive }
+
+/-- Construct a scratch-backed callee before any parameter is activated. -/
+theorem scratch_empty
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {pending : List (Locals.Name × Nat)}
+    {frameBase frameDepth frameWords : Nat}
+    {source : SourceState} {target : TargetState}
+    {values suffix : List Word}
+    (hMachine :
+      Compiler.MemoryRelation.MachineRel contract
+        source.shared.toMachineState target.evm.toMachineState)
+    (hWorld : source.shared.toState = target.evm.toSharedState.toState)
+    (hFramePointer :
+      target.evm.stack[pending.length + frameDepth]? =
+        some (EvmYul.UInt256.ofNat frameBase))
+    (hFrameActive :
+      frameBase + MemoryContract.wordBytes * frameWords ≤
+        target.evm.activeWords.toNat * MemoryContract.wordBytes)
+    (hFrameAllocated :
+      frameBase + MemoryContract.wordBytes * frameWords ≤
+        target.evm.toMachineState.memory.size)
+    (hFrameNoWrap :
+      frameBase + MemoryContract.wordBytes * frameWords <
+        EvmYul.UInt256.size)
+    (hFrameHostAddressable :
+      frameBase + MemoryContract.wordBytes * frameWords < USize.size)
+    (hActiveNoWrap :
+      target.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (hFrameReserved :
+      ∃ reservation,
+        contract.scratch? = some reservation ∧
+          reservation.containsRegion frameBase frameWords)
+    (hLookup :
+      Functions.Source.Store.lookupMany
+          (pending.map Prod.fst) source.vars =
+        some values)
+    (hStack : target.evm.stack = values.reverse ++ suffix) :
+    ActivationCalleeEntryRel contract plan [] pending frameBase
+      (.scratch frameDepth frameWords) source target := by
+  refine
+    { state := .scratch ?_
+      realization := ⟨values, suffix, hLookup, hStack⟩ }
+  exact
+    { base :=
+        { machine := hMachine
+          world := hWorld
+          store := by
+            intro name location hLive _hLocation
+            simp at hLive }
+      framePointer := hFramePointer
+      frameActive := hFrameActive
+      frameAllocated := hFrameAllocated
+      frameNoWrap := hFrameNoWrap
+      frameHostAddressable := hFrameHostAddressable
+      activeNoWrap := hActiveNoWrap
+      frameReserved := hFrameReserved
+      scratchBound := by
+        intro name slot hLive _hLocation
+        simp at hLive }
+
+theorem cons_parts
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {realized : List Locals.Name}
+    {pending : List (Locals.Name × Nat)}
+    {frameBase : Nat} {mode : ActivationMode}
+    {source : SourceState} {target : TargetState}
+    {name : Locals.Name} {slot : Nat}
+    (hRel :
+      ActivationCalleeEntryRel contract plan realized
+        ((name, slot) :: pending) frameBase mode source target) :
+    ∃ value values suffix,
+      source.vars name = some value ∧
+        Functions.Source.Store.lookupMany
+            (pending.map Prod.fst) source.vars =
+          some values ∧
+        target.evm.stack = values.reverse ++ value :: suffix := by
+  obtain ⟨allValues, suffix, hLookup, hStack⟩ := hRel.realization
+  obtain ⟨value, values, hValue, hTail, hValues⟩ :=
+    Functions.Source.Store.lookupMany_cons_parts hLookup
+  rw [hValues] at hStack
+  exact
+    ⟨value, values, suffix, hValue, hTail, by
+      simpa [List.reverse_cons, List.append_assoc] using hStack⟩
+
+/-- Move one stack-designated parameter into the realized local relation. -/
+theorem activate_stack
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {realized : List Locals.Name}
+    {pending : List (Locals.Name × Nat)}
+    {frameBase planDepth : Nat} {mode : ActivationMode}
+    {source : SourceState} {target : TargetState}
+    {name : Locals.Name} {slot : Nat}
+    (hRel :
+      ActivationCalleeEntryRel contract plan realized
+        ((name, slot) :: pending) frameBase mode source target)
+    (hFresh : name ∉ realized)
+    (hLocation : plan.location? name = some (.stack planDepth))
+    (hStackOrder :
+      currentStackOrder plan (name :: realized) =
+        name :: currentStackOrder plan realized) :
+    ActivationCalleeEntryRel contract plan (name :: realized) pending
+      frameBase mode.afterStackDeclaration source target := by
+  obtain ⟨value, values, suffix, hValue, hLookup, hStack⟩ :=
+    hRel.cons_parts
+  have hValueAt : target.evm.stack[pending.length]? = some value := by
+    rw [hStack]
+    have hLength : values.length = pending.length := by
+      simpa using Functions.Source.Store.lookupMany_length hLookup
+    simp [hLength]
+  refine
+    { state := ?_
+      realization :=
+        ⟨values, value :: suffix, hLookup,
+          by simpa [List.append_assoc] using hStack⟩ }
+  exact
+    hRel.state.declare_stack_live_existing_at
+      (fun other hOther => by
+        simp at hOther
+        exact hOther)
+      hFresh (by simp) hLocation hStackOrder hValueAt hValue
+
+/-- Complete one compiler-emitted scratch-parameter store and stack pop. -/
+theorem activate_scratch_after
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {realized : List Locals.Name}
+    {pending : List (Locals.Name × Nat)}
+    {frameBase frameDepth frameWords : Nat}
+    {source : SourceState} {target written final : TargetState}
+    {name : Locals.Name} {slot : Nat}
+    {value : Word} {values suffix : List Word}
+    (hRel :
+      ActivationCalleeEntryRel contract plan realized
+        ((name, slot) :: pending) frameBase
+        (.scratch frameDepth frameWords) source target)
+    (hLookup :
+      Functions.Source.Store.lookupMany
+          (pending.map Prod.fst) source.vars =
+        some values)
+    (hTargetStack : target.evm.stack = values.reverse ++ value :: suffix)
+    (hWritten :
+      ScratchStateRel contract plan (name :: realized)
+        (pending.length + 1) frameBase frameDepth frameWords source written)
+    (hWrittenStack : written.evm.stack = target.evm.stack)
+    (hShared : final.evm.toSharedState = written.evm.toSharedState)
+    (hFinalStack : final.evm.stack = values.reverse ++ suffix) :
+    ActivationCalleeEntryRel contract plan (name :: realized) pending
+      frameBase (.scratch frameDepth frameWords) source final := by
+  have hLength : values.length = pending.length := by
+    simpa using Functions.Source.Store.lookupMany_length hLookup
+  have hOldStack :
+      written.evm.stack = (values.reverse ++ [value]) ++ suffix := by
+    rw [hWrittenStack, hTargetStack]
+    simp [List.append_assoc]
+  refine
+    { state := .scratch ?_
+      realization := ⟨values, suffix, hLookup, hFinalStack⟩ }
+  have hWritten' :
+      ScratchStateRel contract plan (name :: realized)
+        (0 + (values.reverse ++ [value]).length) frameBase
+        frameDepth frameWords source written := by
+    simpa [hLength] using hWritten
+  have hRebased :=
+    ScratchStateRel.rebase_prefix_same_source hWritten'
+      (stackOffset := 0)
+      (oldPrefix := values.reverse ++ [value])
+      (newPrefix := values.reverse)
+      (baseStack := suffix)
+      hShared hOldStack hFinalStack
+  simpa [hLength] using hRebased
+
+/-- No pending parameters leaves the ordinary activation relation. -/
+theorem finish
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {realized : List Locals.Name} {frameBase : Nat}
+    {mode : ActivationMode}
+    {source : SourceState} {target : TargetState}
+    (hRel :
+      ActivationCalleeEntryRel contract plan realized [] frameBase mode
+        source target) :
+    ActivationStateRel contract plan realized 0 frameBase mode
+      source target := by
+  simpa using hRel.state
+
+end ActivationCalleeEntryRel
+
 /-- Exact target stack prefix produced by an allocated expression. -/
 structure ExprResultRel
     (contract : MemoryContract.Contract) (plan : Plan)
