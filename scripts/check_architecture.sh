@@ -267,6 +267,11 @@ report_matches \
   EvmCompiler/Functions/AllocationInteractionRelation.lean
 
 report_matches \
+  'The canonical Functions allocation context must not depend on observers:' \
+  '^import .*Observer' \
+  EvmCompiler/Functions/AllocationContext.lean
+
+report_matches \
   'The canonical Functions allocation relation must not define a compiler or evaluator:' \
   '^[[:space:]]*(noncomputable[[:space:]]+)?def[[:space:]].*(compile|lower|emit|assemble|run|eval)[^:]*[:=]' \
   EvmCompiler/Functions/AllocationInteractionRelation.lean

@@ -867,6 +867,8 @@ Exit: the shared core builds with no compiler layer changed.
     external primitives through the emitted `argsCode ++ [.op op]` shape.
   - [x] Define one primitive-family capability and prove the actual ordinary
     lowerer/compiler decomposition consumes its recursive argument theorem.
+  - [x] Move exact stack/scratch variable lowering classification into an
+    observer-free allocation-owned compiler context.
   - [ ] Compose argument-expression preservation with external primitive
     preservation through the ordinary allocation lowerer and Locals compiler.
   - [ ] Recursive allocation preservation for expressions, statements,

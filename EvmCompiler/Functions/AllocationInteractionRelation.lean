@@ -815,6 +815,14 @@ inductive ActivationMode where
   | scratch (frameDepth frameWords : Nat)
   deriving DecidableEq, Repr
 
+namespace ActivationMode
+
+def StackDepthValid : ActivationMode → Nat → Prop
+  | .stack, _depth => True
+  | .scratch frameDepth _frameWords, depth => depth < frameDepth
+
+end ActivationMode
+
 /-- One representation-neutral allocation relation for recursive proofs. -/
 inductive ActivationStateRel
     (contract : MemoryContract.Contract) (plan : Plan)

@@ -31609,3 +31609,15 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-file hole scan, and `git diff --check` passed; generic capability
   and compiler-facing theorems use only
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 17:24:39 PDT - consolidation/functions-allocation-context -
+  migrated exact stack-only/frame-backed expression contexts and variable
+  code classification into observer-free `Functions.AllocationContext`; the
+  ordinary lowerer/compiler now exposes one mode-indexed stack-DUP or
+  scratch-load artifact to the canonical proof.
+- 2026-06-17 17:24:39 PDT - architecture/functions-allocation-context - added
+  a guard preventing observer imports in the canonical allocation context;
+  the context owns no evaluator, compiler, transcript, or replay cursor.
+- 2026-06-17 17:24:39 PDT - validation/functions-allocation-context - the
+  1156-job Functions build, 1306-job verification root, architecture guards,
+  touched-file hole scan, and `git diff --check` passed;
+  `classify_activation_var` uses only `[propext, Quot.sound]`.

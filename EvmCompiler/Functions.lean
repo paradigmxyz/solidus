@@ -5,6 +5,7 @@ import EvmCompiler.Functions.SourceSemantics
 import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.InteractionSemantics
 import EvmCompiler.Functions.AllocationInteractionRelation
+import EvmCompiler.Functions.AllocationContext
 import EvmCompiler.Functions.AllocationInteractionExpression
 import EvmCompiler.Functions.AllocationInteractionPrimitive
 import EvmCompiler.Functions.Semantics
