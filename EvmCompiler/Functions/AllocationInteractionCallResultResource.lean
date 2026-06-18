@@ -728,6 +728,7 @@ theorem complete_body
         source.vars localName = some AllocationSupport.zeroWord)
     (hStackLength :
       target.evm.stack.length = artifact.entryCtx.layout.length)
+    (hReturnFrame : target.returns ≠ [])
     (hReservation : contract.scratch? = some reservation)
     (hConfig :
       AllocationSupport.scratchFrameConfig? contract globalFrameWords =
@@ -768,6 +769,7 @@ theorem complete_body
   obtain ⟨targetFuel, hTargetFuel, hEpilogueFuel, hTargetFuelEq, hBody⟩ :=
     AllocationInteractionRecursiveResource.SelectedCallee.body_of_function_context
       (targetExtra := targetExtra) prepared hProgramScoped hEntry hZero hStackLength
+      hReturnFrame
       hReservation hConfig hReady hOwned hBudget hFuelBudget hSourceFuel hSuccess
       hRecursive
   have hReturnsLive :
@@ -877,6 +879,9 @@ theorem complete_call
           expressions (targetFuel + 1) (.call name) targetCaller) := by
   obtain ⟨targetFuel, hTargetFuel, hTargetFuelEq, hBody⟩ :=
     complete_body prepared hProgramScoped hEntry hZero hStackLength
+      (by
+        simp [AllocationInteractionCall.CalleeEntry.structuredState,
+          Structured.RunState.pushReturn])
       hReservation hConfig hReady hOwned hBudget hFuelBudget hTargetExtra
       hSourceFuel hSuccess
       hRecursive

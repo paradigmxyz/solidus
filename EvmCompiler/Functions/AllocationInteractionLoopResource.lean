@@ -48,6 +48,8 @@ theorem forward
     {lowerState : AllocationLowering.State}
     {localsCtx : Locals.Ctx} {plan : Plan}
     {returns live : List Functions.Name} {frameBase slack fuelBound : Nat}
+    {targetReturns : List Structured.ReturnDest}
+    {rootMode : ActivationMode}
     {loopCtx postCtx bodyCtx : Functions.Source.Ctx}
     {cond : Functions.Expr 1} {post body : Functions.Block}
     {targetCond : Expressions.Expr 1}
@@ -73,8 +75,10 @@ theorem forward
       ∀ (fuel : Nat) {mode source target} {effectInitial : TargetState},
         fuel < fuelBound →
         ActivationOwned config allocatorDepth frameBase mode →
+        SameFrame rootMode mode →
         OutcomeEffect config allocatorDepth mode effectInitial target
             .regular →
+        target.returns = targetReturns →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -94,9 +98,11 @@ theorem forward
         {effectInitial : TargetState},
         fuel < fuelBound →
         ActivationOwned config allocatorDepth frameBase mode →
+        SameFrame rootMode mode →
         SameFrame effectMode mode →
         OutcomeEffect config allocatorDepth effectMode effectInitial target
             .regular →
+        target.returns = targetReturns →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -113,6 +119,8 @@ theorem forward
               (fuel + slack) targetPost target)) :
     ∀ (fuel : Nat) {mode source target},
       fuel ≤ fuelBound →
+      target.returns = targetReturns →
+      SameFrame rootMode mode →
       AllocationContext.ActivationInvariant contract lowerCtx lowerState
           localsCtx plan live frameBase mode source target →
       AllocatorReady config allocatorDepth target →
@@ -128,12 +136,13 @@ theorem forward
             cond postCtx post bodyCtx body fuel source)
           (Expressions.InteractionSemantics.Stmt.openRunForLoop expressions
             (fuel + slack) targetCond targetPost targetBody target) := by
-  intro fuel mode source target hFuel hInitial hReady hOwned hSuccess
+  intro fuel mode source target hFuel hTargetReturns hRootFrame hInitial
+    hReady hOwned hSuccess
   apply AllocationInteractionLoop.forward_effect
     (Effect := OutcomeEffect config allocatorDepth)
     (outcomeEffectAlgebra config allocatorDepth frameBase)
     hLoopScope hBodyBreak hBodyContinue (hCond := ?_) hBody hPost fuel hFuel
-    hInitial hReady hOwned hSuccess
+    hTargetReturns hRootFrame hInitial hReady hOwned hSuccess
   intro nextMode nextSource nextTarget hNext hNextReady hCondSuccess
   apply Simulation.Interaction.Rel.mono
     (hCond hNext hNextReady hCondSuccess)

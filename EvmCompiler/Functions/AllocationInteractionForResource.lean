@@ -68,6 +68,7 @@ theorem forward
         SameFrame entryMode mode →
         OutcomeEffect config allocatorDepth entryMode target targetAfter
             .regular →
+        targetAfter.returns = target.returns →
         AllocationContext.ActivationInvariant contract lowerCtx loopState
             initLocals loopPlan loopLive frameBase mode sourceAfter
               targetAfter →
@@ -105,7 +106,11 @@ theorem forward
     (AllocationInteractionLoopResource.outcomeEffectAlgebra config
       allocatorDepth frameBase)
     hSourceScope hLoopLive hInitCtx hLoopCtx hPostCtx hBodyCtx hOuter hOwned
-    hExtends hPlanAgree hCleanup hTargetFuel hInit hLoop
+    hExtends hPlanAgree hCleanup hTargetFuel hInit
+    (hInitReturns :=
+      Expressions.InteractionReturns.Block.openRun_returns expressions
+        (sourceFuel + slack) targetInit target)
+    hLoop
     (hCleanupEffect := ?_) hSuccess
   intro mode sourceMid targetMid targetFinal hInvariant hPrefix hRun
   have hPrefixActivation :=

@@ -1,5 +1,6 @@
 import EvmCompiler.Functions.AllocationInteractionResourceComposition
 import EvmCompiler.Functions.AllocationInteractionRecursive
+import EvmCompiler.Functions.AllocationInteractionControlAgreement
 import EvmCompiler.Functions.AllocationInteractionStatementResource
 import EvmCompiler.Functions.AllocationInteractionAbruptResource
 import EvmCompiler.Functions.AllocationInteractionControlResource
@@ -304,6 +305,7 @@ theorem cons_of_parts_successful
             frameBase mode sourceMid targetMid →
           AllocatorReady config allocatorDepth targetMid →
           SameFrame entryMode mode →
+          targetMid.returns = target.returns →
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Block.openRun program midCtx
               childFuel { stmts := rest } sourceMid) →
@@ -326,7 +328,8 @@ theorem cons_of_parts_successful
       (sourceFuel := childFuel)
       (targetFuel := targetBudget cursor (childFuel + 1) targetExtra)
       hHead hSuccessful
-      (fun {sourceMid targetMid mode} hInvariant hReady hSame hTailSuccess => by
+      (fun {sourceMid targetMid mode} hInvariant hReady hSame hReturns
+          hTailSuccess => by
         have hInvariantTail :
             AllocationContext.ActivationInvariant contract root.lowerCtx
               afterState afterLocals tail.plan
@@ -334,7 +337,7 @@ theorem cons_of_parts_successful
               frameBase mode sourceMid targetMid := by
           simpa [hPlan] using hInvariant
         have hRecursive :=
-          hTailForward hInvariantTail hReady hSame hTailSuccess
+          hTailForward hInvariantTail hReady hSame hReturns hTailSuccess
         unfold CursorRuntimeAt at hRecursive
         rw [hPlan, hFinalState, hFinalLocals] at hRecursive
         have hTargetFuel :
@@ -380,12 +383,73 @@ structure Boundary
   semantic :
     AllocationInteractionRecursive.Boundary cursor contract frameBase mode
       sourceCtx source target
+  controlAgreement :
+    AllocationInteractionControlAgreement.Agreement cursor.plan root.returns
+      live mode sourceCtx localsCtx target
   configEq :
     AllocationSupport.scratchFrameConfig? contract globalFrameWords =
       some config
   ready : AllocatorReady config allocatorDepth target
   owned : ActivationOwned config allocatorDepth frameBase mode
   budget : AllocationInteractionFrame.Budget config allocatorDepth
+
+namespace Boundary
+
+/-- Transport exact control destinations through an ordinary statement whose
+source live set is unchanged. The cursor owner supplies Locals control
+preservation; runtime preservation supplies the unchanged return stack. -/
+def controlAgreement_same_live
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {stmt : Functions.Stmt} {rest : List Functions.Stmt}
+    {beforeState afterState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {globalFrameWords : Nat} {config : Config}
+    {allocatorDepth frameBase : Nat}
+    {mode tailMode : ActivationMode}
+    {sourceCtx nextCtx : Functions.Source.Ctx}
+    {source sourceMid : SourceState} {target targetMid : TargetState}
+    (cursor :
+      CoreCursor root scope live { stmts := stmt :: rest }
+        beforeState beforeLocals)
+    (tail :
+      CoreCursor root scope (Functions.Scope.Stmt.outEnv live stmt)
+        { stmts := rest }
+        afterState afterLocals)
+    (hBoundary :
+      Boundary cursor contract globalFrameWords config allocatorDepth
+        frameBase mode sourceCtx source target)
+    (hExact : ExactTail cursor tail)
+    (hOut : Functions.Scope.Stmt.outEnv live stmt = live)
+    (hInvariant :
+      AllocationContext.ActivationInvariant contract root.lowerCtx afterState
+        afterLocals tail.plan (Functions.Scope.Stmt.outEnv live stmt)
+        frameBase tailMode sourceMid targetMid)
+    (hSame : SameFrame mode tailMode)
+    (hSource : Functions.Source.Ctx.SameControl sourceCtx nextCtx)
+    (hReturns : targetMid.returns = target.returns) :
+    AllocationInteractionControlAgreement.Agreement tail.plan root.returns
+      live tailMode nextCtx afterLocals targetMid := by
+  have hAfterMatches := hInvariant.compiler.mode_matches
+  have hAfterMatchesLive : tailMode.Matches tail.plan live :=
+    hAfterMatches.transport_live fun name => by rw [hOut]
+  rw [hExact.plan] at hAfterMatchesLive
+  have hModeEq := hSame.eq_of_matches
+    hBoundary.semantic.invariant.compiler.mode_matches hAfterMatchesLive
+  subst tailMode
+  have hLocals := hExact.locals_sameControl cursor tail
+  rw [hExact.plan]
+  exact
+    (hBoundary.controlAgreement.transport_context hSource hLocals)
+      |>.transport_target hReturns
+
+end Boundary
 
 /--
 Fuel-bounded recursive semantic/resource capability. Configuration, allocator
@@ -519,6 +583,7 @@ theorem body_of_cursor
         source.vars localName = some AllocationSupport.zeroWord)
     (hStackLength :
       target.evm.stack.length = artifact.entryCtx.layout.length)
+    (hReturnFrame : target.returns ≠ [])
     (hReservation : contract.scratch? = some reservation)
     (hConfig :
       AllocationSupport.scratchFrameConfig? contract globalFrameWords =
@@ -541,6 +606,8 @@ theorem body_of_cursor
     (hControl :
       AllocationInteractionStatement.ControlScopesWithin fn.returns
         sourceLive sourceCtx)
+    (hSourceBreak : sourceCtx.breakScope? = none)
+    (hSourceContinue : sourceCtx.continueScope? = none)
     (hSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Block.openRun program sourceCtx
@@ -582,6 +649,20 @@ theorem body_of_cursor
   have hSetupFrame : SameFrame artifact.mode prepared.bodyMode := by
     exact SameFrame.atStackDepth artifact.mode
       (currentStackOrder prepared.plan compilerLive).length
+  have hEntryToReturnControl :
+      Locals.Ctx.SameControl artifact.entryCtx prepared.returnCtx :=
+    (Locals.Block.compileOpen_sameControl prepared.compileParams).trans
+      (Locals.Block.compileOpen_sameControl prepared.compileReturns)
+  have hLeaveDepth : prepared.returnCtx.leaveDepth? = some 0 := by
+    simpa [AllocationInteractionCall.SelectedCallee.Artifact.entryCtx,
+      Locals.Ctx.procEntryWithLayoutAndRetc,
+      Locals.Ctx.procEntryWithLayout, Locals.Ctx.procEntry,
+      Locals.Ctx.initial] using hEntryToReturnControl.leaveDepth.symm
+  have hLeaveRetc : prepared.returnCtx.leaveRetc = fn.returns.length := by
+    simpa [AllocationInteractionCall.SelectedCallee.Artifact.entryCtx,
+      Locals.Ctx.procEntryWithLayoutAndRetc,
+      Locals.Ctx.procEntryWithLayout, Locals.Ctx.procEntry,
+      Locals.Ctx.initial] using hEntryToReturnControl.leaveRetc.symm
   by_cases hNeedsFrame : artifact.needsFrame = true
   · have hScratchEntry :
         ActivationCalleeEntryRel contract prepared.plan []
@@ -618,6 +699,23 @@ theorem body_of_cursor
           bodyTarget := by
       simpa [AllocationInteractionCall.SelectedCallee.Artifact.mode,
         hNeedsFrame] using hSetupEffect
+    have hBodyReturns : bodyTarget.returns = target.returns := by
+      have hAll := Expressions.InteractionReturns.Block.openRun_returns
+        expressions
+        (prepared.markerCode.length + prepared.paramCode.length +
+          prepared.returnCode.length + 1)
+        { stmts :=
+            prepared.markerCode ++
+              (prepared.paramCode ++ prepared.returnCode) }
+        target
+      rw [hPreludeAt 1 (by omega)] at hAll
+      cases hAll with
+      | done hDone =>
+          simpa [Structured.InteractionReturns.OutcomeReturnsEq] using hDone
+    have hBodyReturnFrame : bodyTarget.returns ≠ [] := by
+      intro hEmpty
+      apply hReturnFrame
+      rw [← hBodyReturns, hEmpty]
     have hBodyBoundary :
         Boundary bodyCursor contract
           globalFrameWords config allocatorDepth frameBase prepared.bodyMode
@@ -627,6 +725,10 @@ theorem body_of_cursor
             sourceScope := hSourceScope
             control := hControl
             capacity := hCapacity }
+        controlAgreement :=
+          AllocationInteractionControlAgreement.Agreement.functionBody
+            hSourceBreak hSourceContinue hLeaveDepth hLeaveRetc
+              hBodyReturnFrame
         configEq := hConfig
         ready := hSetupEffect.ready
         owned := hOwned.sameFrame hSetupFrame
@@ -714,6 +816,23 @@ theorem body_of_cursor
           bodyTarget := by
       simpa [AllocationInteractionCall.SelectedCallee.Artifact.mode,
         hNeedsFrameFalse] using hSetupEffect
+    have hBodyReturns : bodyTarget.returns = target.returns := by
+      have hAll := Expressions.InteractionReturns.Block.openRun_returns
+        expressions
+        (prepared.markerCode.length + prepared.paramCode.length +
+          prepared.returnCode.length + 1)
+        { stmts :=
+            prepared.markerCode ++
+              (prepared.paramCode ++ prepared.returnCode) }
+        target
+      rw [hPreludeAt 1 (by omega)] at hAll
+      cases hAll with
+      | done hDone =>
+          simpa [Structured.InteractionReturns.OutcomeReturnsEq] using hDone
+    have hBodyReturnFrame : bodyTarget.returns ≠ [] := by
+      intro hEmpty
+      apply hReturnFrame
+      rw [← hBodyReturns, hEmpty]
     have hBodyBoundary :
         Boundary bodyCursor contract
           globalFrameWords config allocatorDepth frameBase prepared.bodyMode
@@ -723,6 +842,10 @@ theorem body_of_cursor
             sourceScope := hSourceScope
             control := hControl
             capacity := hCapacity }
+        controlAgreement :=
+          AllocationInteractionControlAgreement.Agreement.functionBody
+            hSourceBreak hSourceContinue hLeaveDepth hLeaveRetc
+              hBodyReturnFrame
         configEq := hConfig
         ready := hSetupEffect.ready
         owned := hOwned.sameFrame hSetupFrame
@@ -812,6 +935,7 @@ theorem body_of_function_context
         source.vars localName = some AllocationSupport.zeroWord)
     (hStackLength :
       target.evm.stack.length = artifact.entryCtx.layout.length)
+    (hReturnFrame : target.returns ≠ [])
     (hReservation : contract.scratch? = some reservation)
     (hConfig :
       AllocationSupport.scratchFrameConfig? contract globalFrameWords =
@@ -880,9 +1004,14 @@ theorem body_of_function_context
         (fn.returns ++ fn.params)
         (Functions.Source.Effectful.FunDef.bodyCtx fn) := by
     exact AllocationInteractionStatement.ControlScopesWithin.functionBody fn
+  have hSourceBreak :
+      (Functions.Source.Effectful.FunDef.bodyCtx fn).breakScope? = none := rfl
+  have hSourceContinue :
+      (Functions.Source.Effectful.FunDef.bodyCtx fn).continueScope? = none := rfl
   exact body_of_cursor prepared hProgramScoped hEntry hZero hStackLength
+    hReturnFrame
     hReservation hConfig hReady hOwned hBudget hFuelBudget hSourceFuel hLive hScope
-    hControl hSuccess hRecursive
+    hControl hSourceBreak hSourceContinue hSuccess hRecursive
 
 end SelectedCallee
 
@@ -1048,11 +1177,14 @@ theorem CoreCursor.let_runtime_head
               program sourceCtx sourceFuel (.let_ name value) source)
             (Expressions.InteractionSemantics.Block.openRun
               expressions (targetExtra + 2) { stmts := headCode } target) ∧
+          DeclarationPlacement root.lowerCtx beforeState cursor.plan live
+            name ∧
           ExactTail cursor tail := by
   obtain
       ⟨afterState, afterLocals, headLower, headCode, tail,
         hPlanning, hPlan, hFinalState, hFinalLocals, hLower, hCompile,
         _hLowered, hCompiled, hScoped⟩ := cursor.cons
+  have hPlacement := cursor.declarationPlacement tail hPlanning hPlan
   obtain ⟨afterMode, hAfter, hTransition⟩ :=
     cursor.letContext tail hPlanning hPlan
       hBoundary.semantic.invariant.compiler hLower hCompile
@@ -1172,6 +1304,7 @@ theorem CoreCursor.let_runtime_head
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled,
       Simulation.Interaction.Rel.inter hSemantic hResource,
+      hPlacement,
       ⟨hPlan, hFinalState, hFinalLocals⟩⟩
 
 /-- One cursor decomposition supplies both `break` head capabilities. -/
@@ -1597,7 +1730,8 @@ theorem expr
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
       (by simpa [childFuel, hFuel] using hSuccessful)
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hReturns
+          hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -1605,6 +1739,19 @@ theorem expr
                 control := hBoundary.semantic.control
                 capacity := by
                   cases hSame <;> exact hBoundary.semantic.capacity }
+            controlAgreement := by
+              have hAfterMatches := hInvariant.compiler.mode_matches
+              rw [hExact.plan] at hAfterMatches
+              have hModeEq := hSame.eq_of_matches
+                hBoundary.semantic.invariant.compiler.mode_matches
+                hAfterMatches
+              subst tailMode
+              rw [hExact.plan]
+              exact
+                (hBoundary.controlAgreement.transport_context
+                  (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                  (hExact.locals_sameControl cursor tail)).transport_target
+                    hReturns
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
@@ -1703,7 +1850,8 @@ theorem assign
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
       (by simpa [childFuel, hFuel] using hSuccessful)
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hReturns
+          hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -1711,6 +1859,19 @@ theorem assign
                 control := hBoundary.semantic.control
                 capacity := by
                   cases hSame <;> exact hBoundary.semantic.capacity }
+            controlAgreement := by
+              have hAfterMatches := hInvariant.compiler.mode_matches
+              rw [hExact.plan] at hAfterMatches
+              have hModeEq := hSame.eq_of_matches
+                hBoundary.semantic.invariant.compiler.mode_matches
+                hAfterMatches
+              subst tailMode
+              rw [hExact.plan]
+              exact
+                (hBoundary.controlAgreement.transport_context
+                  (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                  (hExact.locals_sameControl cursor tail)).transport_target
+                    hReturns
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
@@ -1782,7 +1943,7 @@ theorem let_
     omega
   obtain
       ⟨afterState, afterLocals, headCode, tail,
-        hCompiled, hHead, hExact⟩ :=
+        hCompiled, hHead, hPlacement, hExact⟩ :=
     AllocationInteractionRecursiveResource.CoreCursor.let_runtime_head
       cursor (sourceFuel := childFuel) (targetExtra := headExtra)
       hSafe hBoundary
@@ -1810,7 +1971,8 @@ theorem let_
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
       (by simpa [childFuel, hFuel] using hSuccessful)
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hReturns
+          hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -1822,6 +1984,43 @@ theorem let_
                     (name :: sourceCtx.scope)
                 capacity := by
                   cases hSame <;> exact hBoundary.semantic.capacity }
+            controlAgreement := by
+              have hAfterMatches := hInvariant.compiler.mode_matches
+              rw [hExact.plan] at hAfterMatches
+              have hSourceControl :
+                  Functions.Source.Ctx.SameControl sourceCtx nextCtx := by
+                simpa [nextCtx] using
+                  Functions.Source.Ctx.SameControl.scopeUpdate sourceCtx
+                    (name :: sourceCtx.scope)
+              have hLocalsControl := hExact.locals_sameControl cursor tail
+              cases hPlacement with
+              | stack slot planDepth hSlot hStack hLocation hOrder =>
+                  have hExpectedMatches :=
+                    hBoundary.semantic.invariant.compiler.mode_matches
+                      |>.after_stack_declaration hOrder
+                  have hExpectedSame :
+                      SameFrame mode.afterStackDeclaration tailMode :=
+                    (SameFrame.afterStackDeclaration mode).symm.trans hSame
+                  have hModeEq := hExpectedSame.eq_of_matches
+                    hExpectedMatches hAfterMatches
+                  subst tailMode
+                  rw [hExact.plan]
+                  exact
+                    (hBoundary.controlAgreement.after_stack_declaration
+                      hSourceControl hLocalsControl rfl hOrder)
+                      |>.transport_target hReturns
+              | scratch slot hSlot hStack hLocation hOrder =>
+                  have hExpectedMatches :=
+                    hBoundary.semantic.invariant.compiler.mode_matches
+                      |>.after_scratch_declaration hOrder
+                  have hModeEq := hSame.eq_of_matches
+                    hExpectedMatches hAfterMatches
+                  subst tailMode
+                  rw [hExact.plan]
+                  exact
+                    (hBoundary.controlAgreement.after_scratch_declaration
+                      hSourceControl hLocalsControl hOrder)
+                      |>.transport_target hReturns
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
@@ -1911,6 +2110,8 @@ theorem block
           sourceScope := hBoundary.semantic.sourceScope
           control := hBoundary.semantic.control
           capacity := hBoundary.semantic.capacity }
+      controlAgreement :=
+        hBoundary.controlAgreement.transport_plan hBodyAgree.symm
       configEq := hBoundary.configEq
       ready := hBoundary.ready
       owned := hBoundary.owned
@@ -2038,7 +2239,8 @@ theorem block
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
       (by simpa [childFuel, hFuel] using hSuccessful)
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hReturns
+          hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -2046,6 +2248,11 @@ theorem block
                 control := hBoundary.semantic.control
                 capacity := by
                   cases hSame <;> exact hBoundary.semantic.capacity }
+            controlAgreement :=
+              Boundary.controlAgreement_same_live cursor tail hBoundary
+                hExact (by simp [Functions.Scope.Stmt.outEnv]) hInvariant
+                hSame (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                hReturns
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
@@ -2191,6 +2398,7 @@ theorem if_
             afterState beforeLocals cursor.plan live frameBase mode
             sourceAfter targetAfter →
           AllocatorReady config allocatorDepth targetAfter →
+          targetAfter.returns = target.returns →
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
               bodyFuel (.block body) sourceAfter) →
@@ -2202,7 +2410,8 @@ theorem if_
               bodyFuel (.block body) sourceAfter)
             (Expressions.InteractionSemantics.Block.openRun expressions
               targetBodyFuel targetBody targetAfter) := by
-    intro sourceAfter targetAfter hAfter hReadyAfter hSelectedSuccess
+    intro sourceAfter targetAfter hAfter hReadyAfter hReturns
+      hSelectedSuccess
     have hBefore :=
       hAfter.transport_state hAfterEnv.symm hAfterLayout.symm
     have hNestedInvariant :=
@@ -2215,6 +2424,9 @@ theorem if_
             sourceScope := hBoundary.semantic.sourceScope
             control := hBoundary.semantic.control
             capacity := hBoundary.semantic.capacity }
+        controlAgreement :=
+          (hBoundary.controlAgreement.transport_plan hBodyAgree.symm)
+            |>.transport_target hReturns
         configEq := hBoundary.configEq
         ready := hReadyAfter
         owned := hBoundary.owned
@@ -2271,7 +2483,8 @@ theorem if_
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
       (by simpa [childFuel, hFuel] using hSuccessful)
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hReturns
+          hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -2279,6 +2492,11 @@ theorem if_
                 control := hBoundary.semantic.control
                 capacity := by
                   cases hSame <;> exact hBoundary.semantic.capacity }
+            controlAgreement :=
+              Boundary.controlAgreement_same_live cursor tail hBoundary
+                hExact (by simp [Functions.Scope.Stmt.outEnv]) hInvariant
+                hSame (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                hReturns
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
@@ -2458,6 +2676,7 @@ theorem switch
             afterState beforeLocals cursor.plan live frameBase mode
             sourceAfter targetAfter →
         AllocatorReady config allocatorDepth targetAfter →
+        targetAfter.returns = target.returns →
         Simulation.Interaction.Successful
           (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
             bodyFuel (.block selected) sourceAfter) →
@@ -2470,7 +2689,8 @@ theorem switch
             (Expressions.InteractionSemantics.Block.openRun expressions
               targetBodyFuel selectedTarget targetAfter) := by
     intro value selected selectedTarget sourceAfter targetAfter
-      hSourceSelect hTargetSelect hAfter hReadyAfter hSelectedSuccess
+      hSourceSelect hTargetSelect hAfter hReadyAfter hReturns
+      hSelectedSuccess
     obtain
         ⟨selectedAfter, selectedHeadLower, selectedHeadCode, selectedTail,
           selectedScrutineeCode, selectedCases, selectedDefault,
@@ -2506,6 +2726,9 @@ theorem switch
             sourceScope := hBoundary.semantic.sourceScope
             control := hBoundary.semantic.control
             capacity := hBoundary.semantic.capacity }
+        controlAgreement :=
+          (hBoundary.controlAgreement.transport_plan hBodyAgree.symm)
+            |>.transport_target hReturns
         configEq := hBoundary.configEq
         ready := hReadyAfter
         owned := hBoundary.owned
@@ -2580,7 +2803,8 @@ theorem switch
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
       (by simpa [childFuel, hFuel] using hSuccessful)
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hReturns
+          hTailSuccess =>
         hTailForward tail components.exactTail
           { semantic :=
               { invariant := hInvariant
@@ -2588,6 +2812,11 @@ theorem switch
                 control := hBoundary.semantic.control
                 capacity := by
                   cases hSame <;> exact hBoundary.semantic.capacity }
+            controlAgreement :=
+              Boundary.controlAgreement_same_live cursor tail hBoundary
+                components.exactTail
+                (by simp [Functions.Scope.Stmt.outEnv]) hInvariant hSame
+                (Functions.Source.Ctx.SameControl.refl sourceCtx) hReturns
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
@@ -2757,6 +2986,11 @@ theorem for_
             simpa [initCtx] using
               hBoundary.semantic.control.withoutLoopControl
           capacity := hBoundary.semantic.capacity }
+      controlAgreement := by
+        simpa [initCtx] using
+          (hBoundary.controlAgreement.transport_plan
+            (components.initCursor.planAgreesOn cursor rfl).symm)
+            |>.withoutLoopControl
       configEq := hBoundary.configEq
       ready := hBoundary.ready
       owned := hBoundary.owned
@@ -2798,6 +3032,7 @@ theorem for_
         ActivationOwned config allocatorDepth frameBase loopMode →
         SameFrame mode loopMode →
         OutcomeEffect config allocatorDepth mode target targetAfter .regular →
+        targetAfter.returns = target.returns →
         AllocationContext.ActivationInvariant contract root.lowerCtx
             components.loopState components.initLocals
             components.initCursor.plan components.loopLive frameBase
@@ -2817,12 +3052,33 @@ theorem for_
                 expressions (loopFuel + slack) (.code components.condCode)
                   components.compiledPost components.compiledBody
                   targetAfter) := by
-    intro loopMode sourceAfter targetAfter hLoopOwned _hSame hPrefix
-      hInvariant hSuccess
+    intro loopMode sourceAfter targetAfter hLoopOwned hSame hPrefix
+      hLoopReturns hInvariant hSuccess
     have hPrefixActivation :=
       hPrefix.activation_of_not_halt (by
         intro kind hEq
         cases hEq)
+    have hInitAgreement :
+        AllocationInteractionControlAgreement.Agreement
+          components.initCursor.plan root.returns live mode initCtx
+          beforeLocals.withoutLoopControl target := by
+      simpa [initCtx] using
+        (hBoundary.controlAgreement.transport_plan
+          (components.initCursor.planAgreesOn cursor rfl).symm)
+          |>.withoutLoopControl
+    have hLoopAgreement :
+        AllocationInteractionControlAgreement.Agreement
+          components.initCursor.plan root.returns components.loopLive
+          loopMode loopCtx components.initLocals targetAfter := by
+      apply hInitAgreement.reindexNoLoop
+      · exact Functions.Source.Ctx.SameControl.scopeUpdate initCtx
+          components.loopLive
+      · simpa only [components.initFinalLocals] using
+          (Locals.Block.compileOpen_sameControl
+            components.initCursor.compile)
+      · rfl
+      · rfl
+      · exact hLoopReturns
     apply AllocationInteractionLoopResource.forward
       (program := program) (expressions := expressions)
       (returns := root.returns) (live := components.loopLive)
@@ -2834,7 +3090,8 @@ theorem for_
       (slack := slack) (fuelBound := loopFuel) (fuel := loopFuel)
       (hLoopScope := rfl) (hBodyBreak := rfl) (hBodyContinue := rfl)
       (hCond := ?_) (hBody := ?_) (hPost := ?_)
-      (by rfl) hInvariant hPrefixActivation.ready hLoopOwned hSuccess
+      (by rfl) hLoopReturns (SameFrame.refl loopMode) hInvariant
+      hPrefixActivation.ready hLoopOwned hSuccess
     · intro nextMode nextSource nextTarget hNext hNextReady hCondSuccess
       exact AllocationInteractionExpressionResource.forwardCondition
         (AllocationInteractionPrimitiveResource.canonicalPrimitiveForward
@@ -2843,7 +3100,7 @@ theorem for_
         components.condScoped components.lowerCond components.compileCond
         hNext.state hNextReady
     · intro fuel nextMode nextSource nextTarget effectInitial hFuelLt
-        hOwned hCondEffect hNext hBodySuccess
+        hOwned hRootSame hCondEffect hCondReturns hNext hBodySuccess
       have hBodyOpenSuccess :
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Block.openRun program bodyCtx
@@ -2878,6 +3135,15 @@ theorem for_
               control := by
                 simpa [bodyCtx] using hOuterControl.withLoopControl
               capacity := hFrameCapacity hNext }
+          controlAgreement :=
+            by
+              have hModeEq := hRootSame.eq_of_matches
+                hInvariant.compiler.mode_matches hNext.compiler.mode_matches
+              subst nextMode
+              simpa [bodyCtx] using
+                ((hLoopAgreement.withLoopControl hInvariant).transport_plan
+                  hBodyAgree.symm).transport_target
+                    (hCondReturns.trans hLoopReturns.symm)
           configEq := hBoundary.configEq
           ready :=
             (hCondEffect.activation_of_not_halt (by
@@ -2932,7 +3198,8 @@ theorem for_
         rfl rfl rfl hOuterControl.withLoopControl hNext hExtendsLoop
         hBodyAgree components.finishBody hCleanupFuel hBodyRel
     · intro fuel effectMode nextMode nextSource nextTarget effectInitial
-        hFuelLt hOwned hSame hBodyEffect hNext hPostSuccess
+        hFuelLt hOwned hRootSame hSame hBodyEffect hBodyReturns hNext
+        hPostSuccess
       have hPostOpenSuccess :
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Block.openRun program postCtx
@@ -2964,6 +3231,18 @@ theorem for_
               control := by
                 simpa [postCtx] using hOuterControl.withoutLoopControl
               capacity := hFrameCapacity hNext }
+          controlAgreement := by
+            have hPostBase := hLoopAgreement.withoutLoopControl
+            have hPostAtTarget :=
+              AllocationInteractionControlAgreement.Agreement.reindexNoLoop
+              (afterLive := components.loopLive) (afterMode := nextMode)
+              hPostBase
+              (Functions.Source.Ctx.SameControl.refl postCtx)
+              (Locals.Ctx.SameControl.refl
+                components.initLocals.withoutLoopControl)
+              (by rfl) (by rfl) (hBodyReturns.trans hLoopReturns.symm)
+            simpa [postCtx] using
+              hPostAtTarget.transport_plan hPostAgree.symm
           configEq := hBoundary.configEq
           ready :=
             (hBodyEffect.activation_of_not_halt (by
@@ -3084,7 +3363,8 @@ theorem for_
       (by simpa [childFuel, hChildFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
       (by simpa [childFuel, hChildFuel] using hSuccessful)
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hReturns
+          hTailSuccess =>
         hTailForward components.tail components.exactTail
           { semantic :=
               { invariant := hInvariant
@@ -3092,6 +3372,11 @@ theorem for_
                 control := hBoundary.semantic.control
                 capacity := by
                   cases hSame <;> exact hBoundary.semantic.capacity }
+            controlAgreement :=
+              Boundary.controlAgreement_same_live cursor components.tail
+                hBoundary components.exactTail
+                (by simp [Functions.Scope.Stmt.outEnv]) hInvariant hSame
+                (Functions.Source.Ctx.SameControl.refl sourceCtx) hReturns
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
@@ -3191,7 +3476,8 @@ theorem brk
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
       (by simpa [childFuel, hFuel] using hSuccessful)
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hReturns
+          hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -3199,6 +3485,11 @@ theorem brk
                 control := hBoundary.semantic.control
                 capacity := by
                   cases hSame <;> exact hBoundary.semantic.capacity }
+            controlAgreement :=
+              Boundary.controlAgreement_same_live cursor tail hBoundary
+                hExact (by simp [Functions.Scope.Stmt.outEnv]) hInvariant
+                hSame (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                hReturns
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
@@ -3298,7 +3589,8 @@ theorem cont
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
       (by simpa [childFuel, hFuel] using hSuccessful)
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hReturns
+          hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -3306,6 +3598,11 @@ theorem cont
                 control := hBoundary.semantic.control
                 capacity := by
                   cases hSame <;> exact hBoundary.semantic.capacity }
+            controlAgreement :=
+              Boundary.controlAgreement_same_live cursor tail hBoundary
+                hExact (by simp [Functions.Scope.Stmt.outEnv]) hInvariant
+                hSame (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                hReturns
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
@@ -3406,7 +3703,8 @@ theorem leave
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
       (by simpa [childFuel, hFuel] using hSuccessful)
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hReturns
+          hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -3414,6 +3712,11 @@ theorem leave
                 control := hBoundary.semantic.control
                 capacity := by
                   cases hSame <;> exact hBoundary.semantic.capacity }
+            controlAgreement :=
+              Boundary.controlAgreement_same_live cursor tail hBoundary
+                hExact (by simp [Functions.Scope.Stmt.outEnv]) hInvariant
+                hSame (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                hReturns
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
@@ -3509,7 +3812,8 @@ theorem terminal
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
       (by simpa [childFuel, hFuel] using hSuccessful)
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hReturns
+          hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -3517,6 +3821,11 @@ theorem terminal
                 control := hBoundary.semantic.control
                 capacity := by
                   cases hSame <;> exact hBoundary.semantic.capacity }
+            controlAgreement :=
+              Boundary.controlAgreement_same_live cursor tail hBoundary
+                hExact (by simp [Functions.Scope.Stmt.outEnv]) hInvariant
+                hSame (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                hReturns
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
@@ -3625,7 +3934,8 @@ theorem terminalArgs
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
       (by simpa [childFuel, hFuel] using hSuccessful)
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hReturns
+          hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -3633,6 +3943,11 @@ theorem terminalArgs
                 control := hBoundary.semantic.control
                 capacity := by
                   cases hSame <;> exact hBoundary.semantic.capacity }
+            controlAgreement :=
+              Boundary.controlAgreement_same_live cursor tail hBoundary
+                hExact (by simp [Functions.Scope.Stmt.outEnv]) hInvariant
+                hSame (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                hReturns
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame

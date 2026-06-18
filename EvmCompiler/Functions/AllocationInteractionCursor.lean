@@ -338,6 +338,37 @@ structure ExactTail
   finalState : tail.finalState = cursor.finalState
   finalLocals : tail.finalLocals = cursor.finalLocals
 
+namespace ExactTail
+
+/-- An exact residual cursor preserves every non-layout control destination.
+Both compiler runs reach the same final Locals context, so their ordinary
+same-control facts compose through that shared endpoint. -/
+theorem locals_sameControl
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {stmt : Functions.Stmt} {rest : List Functions.Stmt}
+    {beforeState afterState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live { stmts := stmt :: rest }
+        beforeState beforeLocals)
+    (tail :
+      CoreCursor root scope (Functions.Scope.Stmt.outEnv live stmt)
+        { stmts := rest } afterState afterLocals)
+    (hExact : ExactTail cursor tail) :
+    Locals.Ctx.SameControl beforeLocals afterLocals := by
+  have hHead := Locals.Block.compileOpen_sameControl cursor.compile
+  have hTail := Locals.Block.compileOpen_sameControl tail.compile
+  rw [hExact.finalLocals] at hTail
+  exact hHead.trans hTail.symm
+
+end ExactTail
+
 /-- Static transport facts supplied by one successful source statement. -/
 structure StepTransport
     (beforeState afterState : AllocationLowering.State)

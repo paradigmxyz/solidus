@@ -347,6 +347,13 @@ namespace SameControl
 theorem refl (ctx : Ctx) : SameControl ctx ctx :=
   ⟨rfl, rfl, rfl, rfl⟩
 
+theorem symm
+    {before after : Ctx}
+    (hControl : SameControl before after) :
+    SameControl after before :=
+  ⟨hControl.breakDepth.symm, hControl.continueDepth.symm,
+    hControl.leaveDepth.symm, hControl.leaveRetc.symm⟩
+
 theorem trans
     {first second third : Ctx}
     (hFirst : SameControl first second)

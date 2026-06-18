@@ -1134,7 +1134,8 @@ theorem call
       cursor tail hExact hCompiled hMidCtx
       (by simpa [hFuel, Functions.Scope.Stmt.outEnv] using hHead)
       (by simpa [hFuel] using hSuccessful)
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hReturns
+          hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -1142,6 +1143,11 @@ theorem call
                 control := hBoundary.semantic.control
                 capacity := by
                   cases hSame <;> exact hBoundary.semantic.capacity }
+            controlAgreement :=
+              AllocationInteractionRecursiveResource.Boundary.controlAgreement_same_live
+                cursor tail hBoundary hExact
+                (by simp [Functions.Scope.Stmt.outEnv]) hInvariant hSame
+                (Functions.Source.Ctx.SameControl.refl sourceCtx) hReturns
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame

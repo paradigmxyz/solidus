@@ -36,6 +36,23 @@ theorem sameFrame
   | scratch beforeDepth afterDepth frameWords =>
       exact .scratch beforeDepth afterDepth frameWords
 
+/-- Compose two cleanup-induced representation changes. -/
+def trans
+    {firstFinal firstTarget secondFinal secondTarget : Nat}
+    {before middle after : ActivationMode}
+    (hFirst : ModeTransition firstFinal firstTarget before middle)
+    (hSecond : ModeTransition secondFinal secondTarget middle after) :
+    ModeTransition secondFinal secondTarget before after := by
+  cases hFirst with
+  | stack _hFirstTarget =>
+      cases hSecond with
+      | stack hSecondTarget =>
+          exact .stack hSecondTarget
+  | scratch beforeDepth middleDepth frameWords _hMiddle _hFirstTarget =>
+      cases hSecond with
+      | scratch _ afterDepth _ hAfter hSecondTarget =>
+          exact .scratch beforeDepth afterDepth frameWords hAfter hSecondTarget
+
 end ModeTransition
 
 /-- Source/allocation-facing transition for `break` and `continue` cleanup. -/
@@ -85,6 +102,110 @@ theorem after_matches
   | stack hTarget => trivial
   | scratch beforeDepth afterDepth frameWords hAfter hTarget =>
       exact hAfter
+
+/-- Compose two source-scope cleanup transitions through one shared middle
+scope and runtime representation. -/
+def trans
+    {plan : Plan} {firstLive middleLive finalLive : List Locals.Name}
+    {middleDepth finalDepth : Nat}
+    {beforeMode middleMode afterMode : ActivationMode}
+    (hFirst :
+      Transition plan firstLive middleLive middleDepth
+        beforeMode middleMode)
+    (hSecond :
+      Transition plan middleLive finalLive finalDepth
+        middleMode afterMode) :
+    Transition plan firstLive finalLive finalDepth beforeMode afterMode :=
+  { dropped := hFirst.dropped ++ hSecond.dropped
+    subset := fun name hName => hFirst.subset name (hSecond.subset name hName)
+    stackOrder := by
+      rw [hFirst.stackOrder, hSecond.stackOrder, List.append_assoc]
+    mode := hFirst.mode.trans hSecond.mode }
+
+/-- Reindex a cleanup transition across two allocation plans that agree on the
+entire current live scope. -/
+def transport_plan
+    {leftPlan rightPlan : Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth : Nat} {beforeMode afterMode : ActivationMode}
+    (hTransition :
+      Transition leftPlan beforeLive afterLive targetDepth
+        beforeMode afterMode)
+    (hAgree : PlanAgreesOn leftPlan rightPlan beforeLive) :
+    Transition rightPlan beforeLive afterLive targetDepth
+      beforeMode afterMode := by
+  have hAfterAgree := hAgree.mono hTransition.subset
+  refine
+    { dropped := hTransition.dropped
+      subset := hTransition.subset
+      stackOrder := ?_
+      mode := ?_ }
+  · calc
+      currentStackOrder rightPlan beforeLive =
+          currentStackOrder leftPlan beforeLive := hAgree.stackOrder.symm
+      _ = hTransition.dropped ++
+          currentStackOrder leftPlan afterLive := hTransition.stackOrder
+      _ = hTransition.dropped ++
+          currentStackOrder rightPlan afterLive := by
+            rw [hAfterAgree.stackOrder]
+  · cases hTransition.mode with
+    | stack hTarget =>
+        exact .stack (by simpa [hAfterAgree.stackOrder] using hTarget)
+    | scratch beforeDepth afterDepth frameWords hAfter hTarget =>
+        exact .scratch beforeDepth afterDepth frameWords
+          (by simpa [hAfterAgree.stackOrder] using hAfter) hTarget
+
+/-- A newly declared stack local extends every existing control cleanup by one
+leading stack entry. -/
+def after_stack_declaration
+    {plan : Plan} {name : Locals.Name}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth : Nat} {beforeMode afterMode : ActivationMode}
+    (hTransition :
+      Transition plan beforeLive afterLive targetDepth
+        beforeMode afterMode)
+    (hOrder :
+      currentStackOrder plan (name :: beforeLive) =
+        name :: currentStackOrder plan beforeLive) :
+    Transition plan (name :: beforeLive) afterLive targetDepth
+      beforeMode.afterStackDeclaration afterMode := by
+  refine
+    { dropped := name :: hTransition.dropped
+      subset := fun localName hLocal =>
+        List.mem_cons_of_mem name (hTransition.subset localName hLocal)
+      stackOrder := ?_
+      mode := ?_ }
+  · rw [hOrder, hTransition.stackOrder]
+    simp
+  · cases beforeMode with
+    | stack =>
+        cases hTransition.mode with
+        | stack hTarget => exact .stack hTarget
+    | scratch frameDepth frameWords =>
+        cases hTransition.mode with
+        | scratch _ finalDepth _ hFinal hTarget =>
+            exact .scratch (frameDepth + 1) finalDepth frameWords
+              hFinal hTarget
+
+/-- A scratch-backed declaration leaves every existing control cleanup
+unchanged because it adds no runtime stack entry. -/
+def after_scratch_declaration
+    {plan : Plan} {name : Locals.Name}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth : Nat} {beforeMode afterMode : ActivationMode}
+    (hTransition :
+      Transition plan beforeLive afterLive targetDepth
+        beforeMode afterMode)
+    (hOrder :
+      currentStackOrder plan (name :: beforeLive) =
+        currentStackOrder plan beforeLive) :
+    Transition plan (name :: beforeLive) afterLive targetDepth
+      beforeMode afterMode :=
+  { dropped := hTransition.dropped
+    subset := fun localName hLocal =>
+      List.mem_cons_of_mem name (hTransition.subset localName hLocal)
+    stackOrder := hOrder.trans hTransition.stackOrder
+    mode := hTransition.mode }
 
 end Transition
 

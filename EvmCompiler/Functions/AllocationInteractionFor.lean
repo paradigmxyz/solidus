@@ -1,4 +1,5 @@
 import EvmCompiler.Functions.AllocationInteractionLoop
+import EvmCompiler.Expressions.InteractionReturns
 
 namespace EvmCompiler
 namespace Functions
@@ -81,11 +82,17 @@ theorem forward_effect
           program initCtx sourceFuel init source)
         (Expressions.InteractionSemantics.Block.openRun
           expressions (sourceFuel + slack) targetInit target))
+    (hInitReturns :
+      Simulation.Interaction.AllDone
+        (Structured.InteractionReturns.OutcomeReturnsEq target.returns)
+        (Expressions.InteractionSemantics.Block.openRun
+          expressions (sourceFuel + slack) targetInit target))
     (hLoop :
       ∀ {mode sourceAfter targetAfter},
         effectAlgebra.Context mode →
         SameFrame entryMode mode →
         Effect entryMode target targetAfter .regular →
+        targetAfter.returns = target.returns →
         AllocationContext.ActivationInvariant contract lowerCtx loopState
             initLocals loopPlan loopLive frameBase mode sourceAfter
               targetAfter →
@@ -242,11 +249,14 @@ theorem forward_effect
   have hInitSuccess :=
     Simulation.Interaction.Successful.bind_inv hSuccess
   have hInitStrong :=
-    Simulation.Interaction.Rel.strengthen_left hInit hInitSuccess
+    Simulation.Interaction.Rel.strengthen_right
+      (Simulation.Interaction.Rel.strengthen_left hInit hInitSuccess)
+      hInitReturns
   apply Simulation.Interaction.Rel.bind_custom hInitStrong
   intro sourceDone targetDone hDone
   rcases hDone with
-    ⟨⟨hInitResult, hInitEffectRel⟩, hAfterInitSuccess⟩
+    ⟨⟨⟨hInitResult, hInitEffectRel⟩, hAfterInitSuccess⟩,
+      hInitReturnsDone⟩
   cases hInitResult with
   | error hError => exact False.elim hAfterInitSuccess
   | @ok sourceResult targetOutcome hResult =>
@@ -274,7 +284,11 @@ theorem forward_effect
             | ok value => trivial
           have hLoopRel :=
             hLoop (effectAlgebra.contextSame hContext initFrame) initFrame
-              hInitEffect hInitInvariant (by
+              hInitEffect
+              (by
+                simpa [Structured.InteractionReturns.OutcomeReturnsEq] using
+                  hInitReturnsDone)
+              hInitInvariant (by
                 simpa [canonicalLoopCtx] using hLoopRunSuccess)
           have hLoopStrong :=
             Simulation.Interaction.Rel.strengthen_left hLoopRel hLoopSuccess
@@ -510,6 +524,7 @@ theorem forward
         True →
         SameFrame entryMode mode →
         True →
+        targetAfter.returns = target.returns →
         AllocationContext.ActivationInvariant contract lowerCtx loopState
             initLocals loopPlan loopLive frameBase mode sourceAfter
               targetAfter →
@@ -525,8 +540,8 @@ theorem forward
               (Expressions.InteractionSemantics.Stmt.openRunForLoop
                 expressions (sourceFuel + slack) targetCond targetPost
                   targetBody targetAfter) := by
-    intro mode sourceAfter targetAfter _hContext _hSame _hPrefix hInvariant
-      hRunSuccess
+    intro mode sourceAfter targetAfter _hContext _hSame _hPrefix _hReturns
+      hInvariant hRunSuccess
     apply Simulation.Interaction.Rel.mono (hLoop hInvariant hRunSuccess)
     intro sourceDone targetDone hDone
     constructor
@@ -538,7 +553,10 @@ theorem forward
     (forward_effect (Effect := fun _ _ _ _ => True) EffectAlgebra.trivial
       hSourceScope hLoopLive hInitCtx hLoopCtx hPostCtx hBodyCtx hOuter
       (by simp [EffectAlgebra.trivial]) hExtends hPlanAgree hCleanup hTargetFuel
-      hInitEffect hLoopEffect
+      hInitEffect
+      (Expressions.InteractionReturns.Block.openRun_returns expressions
+        (sourceFuel + slack) targetInit target)
+      hLoopEffect
       (by intros; trivial) hSuccess)
   intro sourceDone targetDone hDone
   exact hDone.1

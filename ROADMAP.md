@@ -138,9 +138,14 @@ boundaries remain active work.
     scoped canonical expressions and terminal memory windows;
   - [x] retain successful continuation evidence through generic sequence,
     `if`, `switch`, and loop owners instead of requiring unreachable branches;
-  - [ ] construct and preserve the source/compiler control-destination
+  - [x] construct and preserve the source/compiler control-destination
     invariant needed by the recursive statement dispatcher;
-  - [ ] recursive compiler-cursor statement-list theorem.
+  - [ ] recursive compiler-cursor statement-list theorem;
+    - [x] successful head/tail fixed-point interface and source-derived safety;
+    - [x] expression, assignment, declaration, abrupt control, terminal, and
+      lexical-block dispatcher cases;
+    - [ ] replace the additive nested-code target budget with an honest
+      control-depth/sufficient-fuel interface before `if`/`switch`/`for`.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
   source-facing reservation/resource assumptions.

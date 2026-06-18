@@ -1,4 +1,5 @@
 import EvmCompiler.Functions.AllocationInteractionControl
+import EvmCompiler.Expressions.InteractionReturns
 
 namespace EvmCompiler
 namespace Functions
@@ -147,6 +148,8 @@ theorem forward_effect
     {lowerState : AllocationLowering.State}
     {localsCtx : Locals.Ctx} {plan : Plan}
     {returns live : List Functions.Name} {frameBase slack fuelBound : Nat}
+    {targetReturns : List Structured.ReturnDest}
+    {rootMode : ActivationMode}
     {loopCtx postCtx bodyCtx : Functions.Source.Ctx}
     {cond : Functions.Expr 1} {post body : Functions.Block}
     {targetCond : Expressions.Expr 1}
@@ -177,7 +180,9 @@ theorem forward_effect
       ∀ (fuel : Nat) {mode source target} {effectInitial : TargetState},
         fuel < fuelBound →
         effectAlgebra.Context mode →
+        SameFrame rootMode mode →
         Effect mode effectInitial target .regular →
+        target.returns = targetReturns →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -195,8 +200,10 @@ theorem forward_effect
         {effectInitial : TargetState},
         fuel < fuelBound →
         effectAlgebra.Context mode →
+        SameFrame rootMode mode →
         SameFrame effectMode mode →
         Effect effectMode effectInitial target .regular →
+        target.returns = targetReturns →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -211,6 +218,8 @@ theorem forward_effect
               (fuel + slack) targetPost target)) :
     ∀ (fuel : Nat) {mode source target},
       fuel ≤ fuelBound →
+      target.returns = targetReturns →
+      SameFrame rootMode mode →
       AllocationContext.ActivationInvariant contract lowerCtx lowerState
           localsCtx plan live frameBase mode source target →
       effectAlgebra.Ready target →
@@ -228,14 +237,16 @@ theorem forward_effect
   intro fuel
   induction fuel with
   | zero =>
-      intro mode source target hFuelBound hInitial hReady hContext hSuccess
+      intro mode source target hFuelBound hTargetReturns hRootFrame hInitial
+        hReady hContext hSuccess
       unfold Functions.InteractionSemantics.Stmt.openRunForLoop at hSuccess
       simp only [Functions.Source.Effectful.Control.Stmt.runForLoop] at hSuccess
       exact False.elim
         (Simulation.Interaction.Successful.error_false
           (.InvalidInstruction : EVMException) hSuccess)
   | succ fuel ih =>
-      intro mode source target hFuelBound hInitial hReady hContext hSuccess
+      intro mode source target hFuelBound hTargetReturns hRootFrame hInitial
+        hReady hContext hSuccess
       have hTargetFuel : fuel + 1 + slack = (fuel + slack) + 1 := by
         omega
       rw [hTargetFuel]
@@ -254,12 +265,17 @@ theorem forward_effect
         Locals.InteractionStatePreservation.expr_openEvalCondition_vars
           cond source
       have hCondStrong :=
-        Simulation.Interaction.Rel.strengthen_left
-          (Simulation.Interaction.Rel.strengthen_left hCondRel hVars)
-          hCondSuccess
+        Simulation.Interaction.Rel.strengthen_right
+          (Simulation.Interaction.Rel.strengthen_left
+            (Simulation.Interaction.Rel.strengthen_left hCondRel hVars)
+            hCondSuccess)
+          (Expressions.InteractionReturns.Expr.openRunCondition_returns
+            targetCond target)
       apply Simulation.Interaction.Rel.bind_custom hCondStrong
       intro sourceDone targetDone hDone
-      rcases hDone with ⟨⟨hRelated, hVarsDone⟩, hContinuationSuccess⟩
+      rcases hDone with
+        ⟨⟨⟨hRelated, hVarsDone⟩, hContinuationSuccess⟩,
+          hCondReturns⟩
       cases hRelated with
       | error hError => exact False.elim hContinuationSuccess
       | @ok sourceResult targetResult hResult =>
@@ -304,15 +320,26 @@ theorem forward_effect
                 | error err => exact hOutcome
                 | ok value => trivial
               have hBodyRel :=
-                hBody fuel (by omega) hContext hCondEffect hAfterCond
+                hBody fuel (by omega) hContext hRootFrame hCondEffect
+                  (by
+                    have hAfterReturns :
+                        targetAfterCond.returns = target.returns := by
+                      simpa [
+                        Structured.InteractionSemantics.Code.ConditionReturnsEq]
+                        using hCondReturns
+                    exact hAfterReturns.trans hTargetReturns)
+                  hAfterCond
                   hBodyRunSuccess
               have hBodyStrong :=
-                Simulation.Interaction.Rel.strengthen_left hBodyRel
-                  hBodySuccess
+                Simulation.Interaction.Rel.strengthen_right
+                  (Simulation.Interaction.Rel.strengthen_left hBodyRel
+                    hBodySuccess)
+                  (Expressions.InteractionReturns.Block.openRun_returns
+                    expressions (fuel + slack) targetBody targetAfterCond)
               apply Simulation.Interaction.Rel.bind_custom hBodyStrong
               intro bodySourceDone bodyTargetDone hBodyDone
               rcases hBodyDone with
-                ⟨hBodyRelated, hAfterBodySuccess⟩
+                ⟨⟨hBodyRelated, hAfterBodySuccess⟩, hBodyReturnsDone⟩
               rcases hBodyRelated with ⟨hBodySemantic, hBodyEffectRel⟩
               cases hBodySemantic with
               | error hError => exact False.elim hAfterBodySuccess
@@ -331,6 +358,7 @@ theorem forward_effect
                       ∀ {bodyMode bodySource bodyTarget}
                         (hFrame : SameFrame mode bodyMode),
                         Effect mode target bodyTarget .regular →
+                        bodyTarget.returns = targetReturns →
                         AllocationContext.ActivationInvariant contract
                             lowerCtx lowerState localsCtx plan live frameBase
                             bodyMode bodySource bodyTarget →
@@ -383,7 +411,7 @@ theorem forward_effect
                                 | .leave | .halt _ =>
                                     Simulation.Interaction.pure postOutcome)) := by
                     intro bodyMode bodySource bodyTarget hFrame hBodyEffect
-                      hBodyInvariant hPostAndLoopSuccess
+                      hBodyReturns hBodyInvariant hPostAndLoopSuccess
                     have hPostSuccess :=
                       Simulation.Interaction.Successful.bind_inv
                         hPostAndLoopSuccess
@@ -398,15 +426,19 @@ theorem forward_effect
                       | ok value => trivial
                     have hPostRel :=
                       hPost fuel (by omega)
-                        (effectAlgebra.contextSame hContext hFrame) hFrame
-                        hBodyEffect hBodyInvariant hPostRunSuccess
+                        (effectAlgebra.contextSame hContext hFrame)
+                        (hRootFrame.trans hFrame) hFrame
+                        hBodyEffect hBodyReturns hBodyInvariant hPostRunSuccess
                     have hPostStrong :=
-                      Simulation.Interaction.Rel.strengthen_left hPostRel
-                        hPostSuccess
+                      Simulation.Interaction.Rel.strengthen_right
+                        (Simulation.Interaction.Rel.strengthen_left hPostRel
+                          hPostSuccess)
+                        (Expressions.InteractionReturns.Block.openRun_returns
+                          expressions (fuel + slack) targetPost bodyTarget)
                     apply Simulation.Interaction.Rel.bind_custom hPostStrong
                     intro postSourceDone postTargetDone hPostDone
                     rcases hPostDone with
-                      ⟨hPostRelated, hAfterPostSuccess⟩
+                      ⟨⟨hPostRelated, hAfterPostSuccess⟩, hPostReturnsDone⟩
                     rcases hPostRelated with ⟨hPostSemantic, hPostEffectRel⟩
                     cases hPostSemantic with
                     | error hError => exact False.elim hAfterPostSuccess
@@ -422,9 +454,20 @@ theorem forward_effect
                               postSourceOutcome.mode :=
                           effectAlgebra.transSame hBodyEffect hFrame hPostEffect
                         cases hPostResult with
-                        | regular hPostInvariant postFrame postControl =>
+                        | @regular postSourceFinal postTargetFinal postMode
+                            hPostInvariant postFrame postControl =>
                             have hRecursive :=
-                              ih (by omega) hPostInvariant
+                              ih (by omega)
+                                (by
+                                  have hPostReturns :
+                                      postTargetFinal.returns =
+                                        bodyTarget.returns := by
+                                    simpa [
+                                      Structured.InteractionReturns.OutcomeReturnsEq]
+                                      using hPostReturnsDone
+                                  exact hPostReturns.trans hBodyReturns)
+                                (hRootFrame.trans hFrame |>.trans postFrame)
+                                hPostInvariant
                                 (effectAlgebra.ready hPostEffect)
                                 (effectAlgebra.contextSame hContext
                                   (hFrame.trans postFrame))
@@ -485,9 +528,24 @@ theorem forward_effect
                                 · exact Simulation.Interaction.ExceptRel.ok
                                     hThroughPost
                   cases hBodyResult with
-                  | regular hBodyInvariant bodyFrame bodyControl =>
-                      exact hContinue bodyFrame hThroughBody hBodyInvariant
-                        hAfterBodySuccess
+                  | @regular bodySourceFinal bodyTargetFinal bodyMode
+                      hBodyInvariant bodyFrame bodyControl =>
+                      exact hContinue bodyFrame hThroughBody
+                        (by
+                          have hBodyReturns :
+                              bodyTargetFinal.returns =
+                                targetAfterCond.returns := by
+                            simpa [
+                              Structured.InteractionReturns.OutcomeReturnsEq]
+                              using hBodyReturnsDone
+                          have hAfterReturns :
+                              targetAfterCond.returns = target.returns := by
+                            simpa [
+                              Structured.InteractionSemantics.Code.ConditionReturnsEq]
+                              using hCondReturns
+                          exact hBodyReturns.trans
+                            (hAfterReturns.trans hTargetReturns))
+                        hBodyInvariant hAfterBodySuccess
                   | @nonregular sourceOutcome targetOutcome finalCtx bodyMode
                       hNonregular bodyFrame bodyControl bodyState =>
                       cases bodyState with
@@ -522,7 +580,8 @@ theorem forward_effect
                               (effectAlgebra.reindexNonhalt hThroughBody (by
                                 intro kind hEq
                                 cases hEq))
-                      | cont defined stackLength modeMatches state =>
+                      | @cont bodySourceFinal bodyTargetFinal defined
+                          stackLength modeMatches state =>
                           have hDefined := defined
                           simp [AllocationInteractionStatement.outcomeLive,
                             hBodyContinue] at hDefined
@@ -543,6 +602,20 @@ theorem forward_effect
                             (effectAlgebra.reindexNonhalt hThroughBody (by
                               intro kind hEq
                               cases hEq))
+                            (by
+                              have hBodyReturns :
+                                  bodyTargetFinal.returns =
+                                    targetAfterCond.returns := by
+                                simpa [
+                                  Structured.InteractionReturns.OutcomeReturnsEq]
+                                  using hBodyReturnsDone
+                              have hAfterReturns :
+                                  targetAfterCond.returns = target.returns := by
+                                simpa [
+                                  Structured.InteractionSemantics.Code.ConditionReturnsEq]
+                                  using hCondReturns
+                              exact hBodyReturns.trans
+                                (hAfterReturns.trans hTargetReturns))
                             (AllocationContext.ActivationInvariant.ofOutcomeState
                               hAfterCond.compiler hAfterCond.planWF hDefined
                                 hState hStackLength)
@@ -642,6 +715,8 @@ theorem forward
           (Expressions.InteractionSemantics.Stmt.openRunForLoop expressions
             (fuel + slack) targetCond targetPost targetBody target) := by
   intro fuel mode source target hFuel hInitial hSuccess
+  let targetReturns := target.returns
+  let rootMode := mode
   have hCondEffect :
       ∀ {mode source target},
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
@@ -671,7 +746,9 @@ theorem forward
         {effectInitial : TargetState},
         innerFuel < fuelBound →
         True →
+        SameFrame rootMode mode →
         True →
+        target.returns = targetReturns →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -684,8 +761,8 @@ theorem forward
               program bodyCtx body innerFuel source)
             (Expressions.InteractionSemantics.Block.openRun expressions
               (innerFuel + slack) targetBody target) := by
-    intro innerFuel mode source target effectInitial hBound _hContext _hEffect
-      hInvariant hRunSuccess
+    intro innerFuel mode source target effectInitial hBound _hContext
+      _hRootFrame _hEffect _hReturns hInvariant hRunSuccess
     apply Simulation.Interaction.Rel.mono
       (hBody innerFuel hBound hInvariant hRunSuccess)
     intro sourceDone targetDone hDone
@@ -699,8 +776,10 @@ theorem forward
         {effectInitial : TargetState},
         innerFuel < fuelBound →
         True →
+        SameFrame rootMode mode →
         SameFrame effectMode mode →
         True →
+        target.returns = targetReturns →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -714,7 +793,7 @@ theorem forward
             (Expressions.InteractionSemantics.Block.openRun expressions
               (innerFuel + slack) targetPost target) := by
     intro innerFuel effectMode mode source target effectInitial hBound
-      _hContext _hSame _hEffect hInvariant hRunSuccess
+      _hContext _hRootFrame _hSame _hEffect _hReturns hInvariant hRunSuccess
     apply Simulation.Interaction.Rel.mono
       (hPost innerFuel hBound hInvariant hRunSuccess)
     intro sourceDone targetDone hDone
@@ -726,7 +805,9 @@ theorem forward
   apply Simulation.Interaction.Rel.mono
     (forward_effect (Effect := fun _ _ _ _ => True) EffectAlgebra.trivial
       hLoopScope hBodyBreak hBodyContinue hCondEffect hBodyEffect hPostEffect
-      fuel hFuel hInitial (by simp [EffectAlgebra.trivial])
+      fuel hFuel (by simp [targetReturns]) (by simp [rootMode, SameFrame.refl])
+      hInitial
+      (by simp [EffectAlgebra.trivial])
       (by simp [EffectAlgebra.trivial]) hSuccess)
   intro sourceDone targetDone hDone
   exact hDone.1

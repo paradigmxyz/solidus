@@ -693,6 +693,16 @@ def Answer : Query → Type
   | .external _ (.call _) => CallResponse
   | .external _ (.create _) => CreateResponse
 
+/-- One canonical answer used only to select a branch of an open interaction
+tree. Compiler theorems still quantify over every answer through `AllDone`. -/
+def Query.defaultAnswer : (query : Query) → Answer query
+  | .resource _ => EvmYul.UInt256.ofNat 0
+  | .external world (.call _) =>
+      { success := false, returnData := default, postWorld := world }
+  | .external world (.create _) =>
+      { address := EvmYul.UInt256.ofNat 0, returnData := default,
+        postWorld := world }
+
 universe u1 v1 u2 v2 u3 v3 w1 w2
 
 /--
@@ -777,6 +787,24 @@ inductive AllDone
       AllDone property (.request query resume)
 
 namespace AllDone
+
+/-- A universal terminal property in particular holds on the canonical branch.
+This eliminates no open-world quantification; it merely witnesses that an
+interaction tree has a terminal leaf. -/
+theorem exists_done
+    {Error : Type u1} {Result : Type v1}
+    {property : Except Error Result → Prop}
+    {interaction : Interaction Error Result}
+    (hAll : AllDone property interaction) :
+    ∃ outcome, property outcome := by
+  induction interaction with
+  | done outcome =>
+      cases hAll with
+      | done hProperty => exact ⟨outcome, hProperty⟩
+  | request query resume ih =>
+      cases hAll with
+      | request hResume =>
+          exact ih query.defaultAnswer (hResume query.defaultAnswer)
 
 theorem trivial
     {Error : Type u1} {Result : Type v1}
@@ -1272,6 +1300,30 @@ theorem strengthen_left
       | request hProperty =>
           exact .request fun answer =>
             ih answer (hProperty answer)
+
+/-- Strengthen a relation with a target-side invariant at every terminal
+leaf. -/
+theorem strengthen_right
+    {Error₁ : Type u1} {Result₁ : Type v1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    {doneRel :
+      Except Error₁ Result₁ → Except Error₂ Result₂ → Prop}
+    {property : Except Error₂ Result₂ → Prop}
+    {left : Interaction Error₁ Result₁}
+    {right : Interaction Error₂ Result₂}
+    (hRel : Rel doneRel left right)
+    (hAll : AllDone property right) :
+    Rel (fun leftDone rightDone =>
+      doneRel leftDone rightDone ∧ property rightDone)
+      left right := by
+  induction hRel with
+  | done hDone =>
+      cases hAll with
+      | done hProperty => exact .done ⟨hDone, hProperty⟩
+  | request hResume ih =>
+      cases hAll with
+      | request hProperty =>
+          exact .request fun answer => ih answer (hProperty answer)
 
 theorem allDone_right
     {Error₁ : Type u1} {Result₁ : Type v1}

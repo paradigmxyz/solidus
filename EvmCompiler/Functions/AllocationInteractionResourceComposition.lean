@@ -1,5 +1,6 @@
 import EvmCompiler.Functions.AllocationInteractionComposition
 import EvmCompiler.Functions.AllocationInteractionResource
+import EvmCompiler.Expressions.InteractionReturns
 
 namespace EvmCompiler
 namespace Functions
@@ -249,6 +250,11 @@ theorem cons_successful
             | .regular => sourceTail result.1.state result.2
             | .brk | .cont | .leave | .halt _ =>
                 Simulation.Interaction.pure (result.1, controlCtx))))
+    (hTargetReturns :
+      Simulation.Interaction.AllDone
+        (Structured.InteractionReturns.OutcomeReturnsEq
+          targetInitial.returns)
+        targetHead)
     (hTail :
       ∀ {sourceMid targetMid mode},
         AllocationContext.ActivationInvariant contract midLowerCtx
@@ -256,6 +262,7 @@ theorem cons_successful
             targetMid →
           AllocatorReady config allocatorDepth targetMid →
           SameFrame entryMode mode →
+          targetMid.returns = targetInitial.returns →
           Simulation.Interaction.Successful (sourceTail sourceMid midCtx) →
           Simulation.Interaction.Rel
             (RuntimeResultRel contract finalLowerCtx finalLowerState
@@ -281,10 +288,12 @@ theorem cons_successful
   have hHeadSuccessful :=
     Simulation.Interaction.Successful.bind_inv hSuccessful
   have hHeadStrong :=
-    Simulation.Interaction.Rel.strengthen_left hHead hHeadSuccessful
+    Simulation.Interaction.Rel.strengthen_right
+      (Simulation.Interaction.Rel.strengthen_left hHead hHeadSuccessful)
+      hTargetReturns
   apply Simulation.Interaction.Rel.bind_custom hHeadStrong
   intro sourceDone targetDone hDone
-  rcases hDone with ⟨hRuntimeDone, hContinuation⟩
+  rcases hDone with ⟨⟨hRuntimeDone, hContinuation⟩, hReturns⟩
   rcases hRuntimeDone with ⟨hSemanticDone, hResourceDone⟩
   cases hSemanticDone with
   | error _ => exact False.elim hContinuation
@@ -300,7 +309,8 @@ theorem cons_successful
               have hHeadEffectMode :=
                 hHeadActivation.sameFrame sameFrame
               apply Simulation.Interaction.Rel.mono
-                (hTail invariant hHeadEffectMode.ready sameFrame hContinuation)
+                (hTail invariant hHeadEffectMode.ready sameFrame hReturns
+                  hContinuation)
               intro tailSource tailTarget hTailDone
               rcases hTailDone with
                 ⟨hTailSemanticDone, hTailResourceDone⟩
@@ -457,6 +467,7 @@ theorem block_cons_successful
             targetMid →
           AllocatorReady config allocatorDepth targetMid →
           SameFrame entryMode mode →
+          targetMid.returns = target.returns →
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Block.openRun
               sourceProgram midCtx sourceFuel { stmts := rest } sourceMid) →
@@ -490,7 +501,10 @@ theorem block_cons_successful
       (targetTail := fun targetMid =>
         Expressions.InteractionSemantics.Block.openRun targetProgram
           (targetFuel - headCode.length) { stmts := tailCode } targetMid)
-      hHead hSuccessful hTail
+      hHead hSuccessful
+      (Expressions.InteractionReturns.Block.openRun_returns
+        targetProgram targetFuel { stmts := headCode } target)
+      hTail
 
 end AllocationInteractionResourceComposition
 end Functions

@@ -2204,6 +2204,33 @@ def afterStackDeclaration : ActivationMode → ActivationMode
   | .scratch frameDepth frameWords =>
       .scratch (frameDepth + 1) frameWords
 
+theorem Matches.after_stack_declaration
+    {mode : ActivationMode} {plan : Plan}
+    {name : Locals.Name} {live : List Locals.Name}
+    (hMatches : mode.Matches plan live)
+    (hOrder :
+      currentStackOrder plan (name :: live) =
+        name :: currentStackOrder plan live) :
+    mode.afterStackDeclaration.Matches plan (name :: live) := by
+  cases mode with
+  | stack => trivial
+  | scratch frameDepth frameWords =>
+      simp only [Matches, afterStackDeclaration] at hMatches ⊢
+      rw [hOrder, List.length_cons, hMatches]
+
+theorem Matches.after_scratch_declaration
+    {mode : ActivationMode} {plan : Plan}
+    {name : Locals.Name} {live : List Locals.Name}
+    (hMatches : mode.Matches plan live)
+    (hOrder :
+      currentStackOrder plan (name :: live) =
+        currentStackOrder plan live) :
+    mode.Matches plan (name :: live) := by
+  cases mode with
+  | stack => trivial
+  | scratch frameDepth frameWords =>
+      simpa [Matches, hOrder] using hMatches
+
 def StackDepthValid : ActivationMode → Nat → Prop
   | .stack, _depth => True
   | .scratch frameDepth _frameWords, depth => depth < frameDepth
