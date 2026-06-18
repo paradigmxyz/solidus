@@ -2727,6 +2727,81 @@ theorem Artifact.lowerCtxShared
     compilation.CtxShared artifact.lowerCtx :=
   compilation.lowerCtx_shared artifact.root artifact.scratchBindings
 
+/-- A caller lookup through any context owned by the same compilation selects
+the exact slots carried by the compiler-selected callee artifact. -/
+theorem Artifact.slots_eq_of_lookup
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    (artifact : Artifact compilation name fn)
+    {callerCtx : AllocationLowering.Ctx}
+    (hCaller : compilation.CtxShared callerCtx)
+    {slots : AllocationSupport.FunSlots}
+    (hLookup :
+      AllocationSupport.lookupFun? name callerCtx.functions = some slots) :
+    slots = artifact.slots := by
+  have hArtifactLookup :
+      AllocationSupport.lookupFun? name callerCtx.functions =
+        some artifact.slots := by
+    rw [hCaller.functions]
+    simpa [artifact.sourceName] using artifact.slotsLookup
+  rw [hArtifactLookup] at hLookup
+  exact (Option.some.inj hLookup).symm
+
+/-- The ordinary caller frame classification agrees with the selected callee's
+compiler-owned scratch bindings. -/
+theorem Artifact.mem_frameFunctions_iff
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    (artifact : Artifact compilation name fn)
+    {callerCtx : AllocationLowering.Ctx}
+    (hCaller : compilation.CtxShared callerCtx) :
+    name ∈ callerCtx.frameFunctions ↔ artifact.needsFrame = true := by
+  rw [hCaller.frameFunctions]
+  have hLookup :
+      AllocationSupport.lookupFun? name compilation.recipe.functionSlots =
+        some artifact.slots := by
+    simpa [artifact.sourceName] using artifact.slotsLookup
+  simpa [Artifact.needsFrame, Artifact.scratchBindings, Artifact.root,
+    AllocationLowering.functionNeedsFrame,
+    AllocationLowering.rootNeedsFrame, artifact.sourceName] using
+    (AllocationLowering.mem_frameFunctions_iff_of_lookup hLookup)
+
+/-- A selected scratch-backed callee has a positive checked frame size. -/
+theorem Artifact.config_frameWords_pos
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    (artifact : Artifact compilation name fn)
+    {config : AllocationSupport.ScratchFrameConfig}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          program.memoryContract compilation.recipe.frameWords =
+        some config)
+    (hNeedsFrame : artifact.needsFrame = true) :
+    0 < config.frameWords := by
+  have hRootNeeds :
+      AllocationLowering.rootNeedsFrame compilation.recipe
+          compilation.stackSlots artifact.root = true := by
+    unfold AllocationLowering.rootNeedsFrame
+    simpa only [Artifact.needsFrame, Artifact.scratchBindings] using hNeedsFrame
+  have hPositive : 0 < compilation.recipe.frameWords :=
+    AllocationLowering.frameWords_pos_of_validate_of_rootNeedsFrame
+      compilation.validate hRootNeeds
+  obtain
+      ⟨_reservation, _hReservation, _hAllocator, _hFirst, _hLimit,
+        hWords, _hWF, _hHost, _hReservationPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  rw [hWords]
+  exact hPositive
+
 theorem Artifact.planEntry_env_extension
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}

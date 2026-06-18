@@ -191,6 +191,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionCallResultResource.SelectedCallee.complete_body
 #check EvmCompiler.Functions.AllocationInteractionCallResultResource.CallAttachment.of_body
 #check EvmCompiler.Functions.AllocationInteractionCallResultResource.SelectedCallee.complete_call
+#check EvmCompiler.Functions.AllocationInteractionRecursive.callStride
+#check EvmCompiler.Functions.AllocationInteractionRecursive.proc_body_length_add_eight_le_callStride
+#check EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Artifact.slots_eq_of_lookup
+#check EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Artifact.mem_frameFunctions_iff
+#check EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Artifact.config_frameWords_pos
 #check EvmCompiler.Functions.InteractionSemantics.FunDef.openRunBody
 #check EvmCompiler.Functions.InteractionSemantics.Stmt.openRun
 #check EvmCompiler.Functions.InteractionSemantics.Program.openRunState

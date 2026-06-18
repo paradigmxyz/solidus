@@ -207,7 +207,8 @@ theorem cons_of_parts
           AllocatorReady config allocatorDepth targetMid →
           SameFrame entryMode mode →
           CursorRuntimeAt tail contract config allocatorDepth frameBase
-            childFuel (targetExtra + 8) mode midCtx sourceMid targetMid) :
+            childFuel (targetExtra + callStride expressions) mode midCtx
+            sourceMid targetMid) :
     CursorRuntimeAt cursor contract config allocatorDepth frameBase
       (childFuel + 1) targetExtra entryMode sourceCtx source target := by
   let finalLive :=
@@ -239,8 +240,9 @@ theorem cons_of_parts
         have hTargetFuel :
             targetBudget cursor (childFuel + 1) targetExtra -
                 headCode.length =
-              targetBudget tail childFuel (targetExtra + 8) := by
-          simp [targetBudget, hCompiled]
+              targetBudget tail childFuel
+                (targetExtra + callStride expressions) := by
+          simp [targetBudget, hCompiled, callStride, Nat.mul_succ]
           omega
         have hFinalCtx :
             { midCtx with scope := finalLive } =
@@ -369,7 +371,8 @@ theorem at_targetFuel
     hRecursive cursor hFuel hBoundary hSuccess (targetExtra := targetExtra)
   have hExact :
       targetBudget cursor sourceFuel targetExtra = targetFuel := by
-    simp [targetBudget, targetExtra] at hTargetFuel ⊢
+    simp [targetBudget, targetExtra, callStride, Nat.mul_succ]
+      at hTargetFuel ⊢
     omega
   simpa [CursorRuntimeAt, hExact] using hForward
 
@@ -444,6 +447,11 @@ theorem body_of_cursor
       prepared.markerCode.length + prepared.paramCode.length +
           prepared.returnCode.length + prepared.bodyCode.length +
           targetExtra ≤ targetFuel ∧
+      targetFuel =
+        prepared.markerCode.length + prepared.paramCode.length +
+          prepared.returnCode.length +
+            (targetExtra + prepared.bodyCode.length +
+              callStride expressions * (sourceFuel + 1)) ∧
       Simulation.Interaction.Rel
         (RuntimeResultRel contract artifact.lowerCtx prepared.bodyFinal
           prepared.bodyCtx prepared.plan fn.returns
@@ -523,7 +531,7 @@ theorem body_of_cursor
     let bodyFuel :=
       targetBudget bodyCursor sourceFuel targetExtra
     have hBodyFuel : 0 < bodyFuel := by
-      simp [bodyFuel, targetBudget]
+      simp [bodyFuel, targetBudget, callStride, Nat.mul_succ]
     have hBody :
         Simulation.Interaction.Rel
           (RuntimeResultRel contract artifact.lowerCtx prepared.bodyFinal
@@ -557,7 +565,7 @@ theorem body_of_cursor
     let totalFuel :=
       prepared.markerCode.length + prepared.paramCode.length +
         prepared.returnCode.length + bodyFuel
-    refine ⟨totalFuel, by simp [totalFuel]; omega, ?_, ?_⟩
+    refine ⟨totalFuel, by simp [totalFuel]; omega, ?_, ?_, ?_⟩
     · change
         prepared.markerCode.length + prepared.paramCode.length +
             prepared.returnCode.length + prepared.bodyCode.length +
@@ -565,8 +573,12 @@ theorem body_of_cursor
           prepared.markerCode.length + prepared.paramCode.length +
             prepared.returnCode.length +
               (targetExtra + prepared.bodyCode.length +
-                8 * (sourceFuel + 1))
+                callStride expressions * (sourceFuel + 1))
       omega
+    · simp [totalFuel, bodyFuel, bodyCursor, targetBudget,
+        AllocationInteractionCall.SelectedCallee.Prepared.rootCursor,
+        AllocationInteractionCall.SelectedCallee.Prepared.rootArtifact,
+        RootArtifact.cursor, CoreCursor.transport_live]
     simpa [totalFuel, live] using
       prepared.prelude_then_body hBodyFuel hPreludeAt hBodyFromEntry
   · have hNeedsFrameFalse : artifact.needsFrame = false :=
@@ -615,7 +627,7 @@ theorem body_of_cursor
     let bodyFuel :=
       targetBudget bodyCursor sourceFuel targetExtra
     have hBodyFuel : 0 < bodyFuel := by
-      simp [bodyFuel, targetBudget]
+      simp [bodyFuel, targetBudget, callStride, Nat.mul_succ]
     have hBody :
         Simulation.Interaction.Rel
           (RuntimeResultRel contract artifact.lowerCtx prepared.bodyFinal
@@ -649,7 +661,7 @@ theorem body_of_cursor
     let totalFuel :=
       prepared.markerCode.length + prepared.paramCode.length +
         prepared.returnCode.length + bodyFuel
-    refine ⟨totalFuel, by simp [totalFuel]; omega, ?_, ?_⟩
+    refine ⟨totalFuel, by simp [totalFuel]; omega, ?_, ?_, ?_⟩
     · change
         prepared.markerCode.length + prepared.paramCode.length +
             prepared.returnCode.length + prepared.bodyCode.length +
@@ -657,8 +669,12 @@ theorem body_of_cursor
           prepared.markerCode.length + prepared.paramCode.length +
             prepared.returnCode.length +
               (targetExtra + prepared.bodyCode.length +
-                8 * (sourceFuel + 1))
+                callStride expressions * (sourceFuel + 1))
       omega
+    · simp [totalFuel, bodyFuel, bodyCursor, targetBudget,
+        AllocationInteractionCall.SelectedCallee.Prepared.rootCursor,
+        AllocationInteractionCall.SelectedCallee.Prepared.rootArtifact,
+        RootArtifact.cursor, CoreCursor.transport_live]
     simpa [totalFuel, live] using
       prepared.prelude_then_body hBodyFuel hPreludeAt hBodyFromEntry
 
@@ -713,6 +729,11 @@ theorem body_of_function_context
       prepared.markerCode.length + prepared.paramCode.length +
           prepared.returnCode.length + prepared.bodyCode.length +
           targetExtra ≤ targetFuel ∧
+      targetFuel =
+        prepared.markerCode.length + prepared.paramCode.length +
+          prepared.returnCode.length +
+            (targetExtra + prepared.bodyCode.length +
+              callStride expressions * (sourceFuel + 1)) ∧
       Simulation.Interaction.Rel
         (RuntimeResultRel contract artifact.lowerCtx prepared.bodyFinal
           prepared.bodyCtx prepared.plan fn.returns
@@ -1416,7 +1437,8 @@ theorem expr
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
-              (sourceFuel - 1) (targetExtra + 8) tailMode sourceCtx
+              (sourceFuel - 1) (targetExtra + callStride expressions)
+              tailMode sourceCtx
               sourceMid targetMid) :
     CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
@@ -1427,7 +1449,7 @@ theorem expr
     simp [childFuel]
     omega
   have hHeadFuel : headExtra + 2 = totalFuel := by
-    simp [headExtra, totalFuel, targetBudget]
+    simp [headExtra, totalFuel, targetBudget, callStride, Nat.mul_succ]
     omega
   obtain
       ⟨afterState, afterLocals, headCode, tail,
@@ -1512,7 +1534,8 @@ theorem assign
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
-              (sourceFuel - 1) (targetExtra + 8) tailMode sourceCtx
+              (sourceFuel - 1) (targetExtra + callStride expressions)
+              tailMode sourceCtx
               sourceMid targetMid) :
     CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
@@ -1523,7 +1546,7 @@ theorem assign
     simp [childFuel]
     omega
   have hHeadFuel : headExtra + 2 = totalFuel := by
-    simp [headExtra, totalFuel, targetBudget]
+    simp [headExtra, totalFuel, targetBudget, callStride, Nat.mul_succ]
     omega
   obtain
       ⟨afterState, afterLocals, headCode, tail,
@@ -1609,7 +1632,7 @@ theorem let_
               tailMode { sourceCtx with scope := name :: sourceCtx.scope }
               sourceMid targetMid →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
-              (sourceFuel - 1) (targetExtra + 8) tailMode
+              (sourceFuel - 1) (targetExtra + callStride expressions) tailMode
               { sourceCtx with scope := name :: sourceCtx.scope }
               sourceMid targetMid) :
     CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
@@ -1622,7 +1645,7 @@ theorem let_
     simp [childFuel]
     omega
   have hHeadFuel : headExtra + 2 = totalFuel := by
-    simp [headExtra, totalFuel, targetBudget]
+    simp [headExtra, totalFuel, targetBudget, callStride, Nat.mul_succ]
     omega
   obtain
       ⟨afterState, afterLocals, headCode, tail,
@@ -1715,7 +1738,8 @@ theorem block
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
-              (sourceFuel - 1) (targetExtra + 8) tailMode sourceCtx
+              (sourceFuel - 1) (targetExtra + callStride expressions)
+              tailMode sourceCtx
               sourceMid targetMid) :
     CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
@@ -1754,15 +1778,21 @@ theorem block
     simp
   have hCompiledLength := congrArg List.length hCompiled
   simp only [List.length_append] at hCompiledLength
-  let bodyBase := bodyCursor.compiled.length + 8 * (childFuel + 1)
+  let bodyBase :=
+    bodyCursor.compiled.length + callStride expressions * (childFuel + 1)
   let bodyExtra := totalFuel - bodyBase
   have hBodyBase : bodyBase ≤ totalFuel := by
-    simp [bodyBase, totalFuel, targetBudget]
+    simp only [totalFuel]
+    rw [← hFuel]
+    simp [bodyBase, targetBudget, callStride, Nat.mul_succ]
     omega
   have hBodyBudget :
       targetBudget bodyCursor childFuel bodyExtra = totalFuel := by
-    simp [targetBudget, bodyExtra, bodyBase]
-    omega
+    calc
+      targetBudget bodyCursor childFuel bodyExtra = bodyExtra + bodyBase := by
+        simp [targetBudget, bodyBase]
+        omega
+      _ = totalFuel := Nat.sub_add_cancel hBodyBase
   have hBodyRecursive :=
     hBodyForward bodyCursor bodyExtra hBodyBoundary
   have hBodyRel :
@@ -1793,7 +1823,7 @@ theorem block
         (congrArg (AllocationSupport.lookupSlot? name) hAfterEnv.symm)
   have hCleanupFuel :
       2 ≤ totalFuel - bodyCursor.compiled.length := by
-    simp [totalFuel, targetBudget]
+    simp [totalFuel, targetBudget, callStride, Nat.mul_succ]
     omega
   have hSemantic :=
     AllocationInteractionControl.block_of_components
@@ -1915,7 +1945,8 @@ theorem if_
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
-              (sourceFuel - 1) (targetExtra + 8) tailMode sourceCtx
+              (sourceFuel - 1) (targetExtra + callStride expressions)
+              tailMode sourceCtx
               sourceMid targetMid) :
     CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
@@ -1930,7 +1961,7 @@ theorem if_
     simp [bodyFuel, childFuel]
     omega
   have hTargetFuel : targetBodyFuel + 2 = totalFuel := by
-    simp [targetBodyFuel, totalFuel, targetBudget]
+    simp [targetBodyFuel, totalFuel, targetBudget, callStride, Nat.mul_succ]
     omega
   obtain
       ⟨afterState, headLower, headCode, tail, loweredCond, condCode,
@@ -2120,7 +2151,8 @@ theorem switch
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
-              (sourceFuel - 1) (targetExtra + 8) tailMode sourceCtx
+              (sourceFuel - 1) (targetExtra + callStride expressions)
+              tailMode sourceCtx
               sourceMid targetMid) :
     CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
@@ -2135,7 +2167,7 @@ theorem switch
     simp [bodyFuel, childFuel]
     omega
   have hTargetFuel : targetBodyFuel + 2 = totalFuel := by
-    simp [targetBodyFuel, totalFuel, targetBudget]
+    simp [targetBodyFuel, totalFuel, targetBudget, callStride, Nat.mul_succ]
     omega
   obtain
       ⟨afterState, headLower, headCode, tail, loweredScrutinee,
@@ -2373,7 +2405,8 @@ theorem for_
           Boundary tail contract globalFrameWords config allocatorDepth
               frameBase tailMode sourceCtx sourceMid targetMid →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
-              (sourceFuel - 1) (targetExtra + 8) tailMode sourceCtx sourceMid
+              (sourceFuel - 1) (targetExtra + callStride expressions)
+              tailMode sourceCtx sourceMid
               targetMid) :
     CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
@@ -2390,11 +2423,19 @@ theorem for_
   have hLoopFuel : loopFuel + 1 = childFuel := by
     simp [loopFuel, childFuel]
     omega
+  have hSourceLeTotal : sourceFuel ≤ totalFuel := by
+    have hStride : 1 ≤ callStride expressions := by
+      exact le_trans (by omega) (eight_le_callStride expressions)
+    have hMul :
+        sourceFuel ≤ callStride expressions * sourceFuel := by
+      simpa [Nat.mul_comm] using Nat.mul_le_mul_right sourceFuel hStride
+    simp [totalFuel, targetBudget, Nat.mul_succ]
+    omega
   have hNestedFuel : loopFuel + slack = nestedFuel := by
-    simp [loopFuel, slack, nestedFuel, totalFuel, targetBudget]
+    simp only [loopFuel, slack, nestedFuel]
     omega
   have hTotalFuel : nestedFuel + 2 = totalFuel := by
-    simp [nestedFuel, totalFuel, targetBudget]
+    simp only [nestedFuel]
     omega
   change ForFuelCapacity components loopFuel slack at hCapacity
   change (∀ {nextMode : ActivationMode} {nextSource : SourceState}
@@ -2614,7 +2655,7 @@ theorem for_
       have hCleanupFuel :
           2 ≤ fuel + slack - components.bodyCursor.compiled.length := by
         have hBudget := hCapacity.body fuel hFuelLt
-        simp [targetBudget] at hBudget
+        simp [targetBudget, callStride, Nat.mul_succ] at hBudget
         omega
       exact AllocationInteractionControlResource.blockScoped_of_components
         rfl rfl rfl hOuterControl.withLoopControl hNext hExtendsLoop
@@ -2686,7 +2727,7 @@ theorem for_
       have hCleanupFuel :
           2 ≤ fuel + slack - components.postCursor.compiled.length := by
         have hBudget := hCapacity.post fuel hFuelLt
-        simp [targetBudget] at hBudget
+        simp [targetBudget, callStride, Nat.mul_succ] at hBudget
         omega
       exact AllocationInteractionControlResource.blockScoped_of_components
         rfl rfl rfl hOuterControl.withoutLoopControl hNext hExtends
@@ -2733,7 +2774,7 @@ theorem for_
       (by
         have hPositive :
             0 < targetBudget components.initCursor loopFuel 0 := by
-          simp [targetBudget]
+          simp [targetBudget, callStride, Nat.mul_succ]
         change 0 < loopFuel + slack
         exact lt_of_lt_of_le hPositive hCapacity.init)
       hInit' hLoop hHeadSuccess'
@@ -2822,7 +2863,8 @@ theorem brk
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
-              (sourceFuel - 1) (targetExtra + 8) tailMode sourceCtx
+              (sourceFuel - 1) (targetExtra + callStride expressions)
+              tailMode sourceCtx
               sourceMid targetMid) :
     CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
       targetExtra beforeMode sourceCtx source target := by
@@ -2831,7 +2873,7 @@ theorem brk
   let headExtra := totalFuel - 3
   have hFuel : childFuel + 1 = sourceFuel := by simp [childFuel]; omega
   have hHeadFuel : headExtra + 3 = totalFuel := by
-    simp [headExtra, totalFuel, targetBudget]
+    simp [headExtra, totalFuel, targetBudget, callStride, Nat.mul_succ]
     omega
   obtain
       ⟨afterState, afterLocals, headCode, tail,
@@ -2919,7 +2961,8 @@ theorem cont
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
-              (sourceFuel - 1) (targetExtra + 8) tailMode sourceCtx
+              (sourceFuel - 1) (targetExtra + callStride expressions)
+              tailMode sourceCtx
               sourceMid targetMid) :
     CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
       targetExtra beforeMode sourceCtx source target := by
@@ -2928,7 +2971,7 @@ theorem cont
   let headExtra := totalFuel - 3
   have hFuel : childFuel + 1 = sourceFuel := by simp [childFuel]; omega
   have hHeadFuel : headExtra + 3 = totalFuel := by
-    simp [headExtra, totalFuel, targetBudget]
+    simp [headExtra, totalFuel, targetBudget, callStride, Nat.mul_succ]
     omega
   obtain
       ⟨afterState, afterLocals, headCode, tail,
@@ -3016,7 +3059,8 @@ theorem leave
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
-              (sourceFuel - 1) (targetExtra + 8) tailMode sourceCtx
+              (sourceFuel - 1) (targetExtra + callStride expressions)
+              tailMode sourceCtx
               sourceMid targetMid) :
     CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
@@ -3025,7 +3069,7 @@ theorem leave
   let headExtra := totalFuel - 4
   have hFuel : childFuel + 1 = sourceFuel := by simp [childFuel]; omega
   have hHeadFuel : headExtra + 4 = totalFuel := by
-    simp [headExtra, totalFuel, targetBudget]
+    simp [headExtra, totalFuel, targetBudget, callStride, Nat.mul_succ]
     omega
   obtain
       ⟨afterState, afterLocals, headCode, tail,
@@ -3109,7 +3153,8 @@ theorem terminal
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
-              (sourceFuel - 1) (targetExtra + 8) tailMode sourceCtx
+              (sourceFuel - 1) (targetExtra + callStride expressions)
+              tailMode sourceCtx
               sourceMid targetMid) :
     CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
@@ -3118,7 +3163,7 @@ theorem terminal
   let headExtra := totalFuel - 3
   have hFuel : childFuel + 1 = sourceFuel := by simp [childFuel]; omega
   have hHeadFuel : headExtra + 3 = totalFuel := by
-    simp [headExtra, totalFuel, targetBudget]
+    simp [headExtra, totalFuel, targetBudget, callStride, Nat.mul_succ]
     omega
   obtain
       ⟨afterState, afterLocals, headCode, tail,
@@ -3214,7 +3259,8 @@ theorem terminalArgs
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
-              (sourceFuel - 1) (targetExtra + 8) tailMode sourceCtx
+              (sourceFuel - 1) (targetExtra + callStride expressions)
+              tailMode sourceCtx
               sourceMid targetMid) :
     CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
@@ -3223,7 +3269,7 @@ theorem terminalArgs
   let headExtra := totalFuel - 3
   have hFuel : childFuel + 1 = sourceFuel := by simp [childFuel]; omega
   have hHeadFuel : headExtra + 3 = totalFuel := by
-    simp [headExtra, totalFuel, targetBudget]
+    simp [headExtra, totalFuel, targetBudget, callStride, Nat.mul_succ]
     omega
   obtain
       ⟨afterState, afterLocals, headCode, tail,
@@ -3306,7 +3352,7 @@ theorem nil
   obtain ⟨hCompiled, _hFinalLocals⟩ := hCompile
   have hTargetFuel :
       0 < targetBudget cursor sourceFuel targetExtra := by
-    simp [targetBudget]
+    simp [targetBudget, callStride, Nat.mul_succ]
   have hSourceEq : sourceFuel - 1 + 1 = sourceFuel := by omega
   have hTargetEq :
       targetBudget cursor sourceFuel targetExtra - 1 + 1 =

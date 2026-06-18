@@ -663,7 +663,8 @@ theorem complete_body
     (prepared : AllocationInteractionCall.SelectedCallee.Prepared artifact)
     (hProgramScoped : program.Scoped)
     {contract : MemoryContract.Contract}
-    {globalFrameWords allocatorDepth frameBase sourceFuel fuelBound : Nat}
+    {globalFrameWords allocatorDepth frameBase sourceFuel fuelBound
+      targetExtra : Nat}
     {config : Config}
     {source : Functions.InteractionSemantics.State}
     {target : Structured.RunState}
@@ -685,6 +686,7 @@ theorem complete_body
     (hOwned :
       ActivationOwned config allocatorDepth frameBase artifact.mode)
     (hBudget : AllocationInteractionFrame.Budget config allocatorDepth)
+    (hTargetExtra : 3 ≤ targetExtra)
     (hSourceFuel : sourceFuel < fuelBound)
     (hSuccess :
       Simulation.Interaction.Successful
@@ -697,6 +699,12 @@ theorem complete_body
         contract globalFrameWords fuelBound) :
     exists targetFuel,
       0 < targetFuel ∧
+      targetFuel =
+        prepared.markerCode.length + prepared.paramCode.length +
+          prepared.returnCode.length +
+            (targetExtra + prepared.bodyCode.length +
+              AllocationInteractionRecursive.callStride expressions *
+                (sourceFuel + 1)) ∧
       Simulation.Interaction.Rel
         (OpenBodyResultRel contract fn.returns config allocatorDepth
           artifact.mode target)
@@ -705,9 +713,9 @@ theorem complete_body
           sourceFuel fn.body source)
         (Expressions.InteractionSemantics.Block.openRun expressions targetFuel
           artifact.lowerProc.body target) := by
-  obtain ⟨targetFuel, hTargetFuel, hEpilogueFuel, hBody⟩ :=
+  obtain ⟨targetFuel, hTargetFuel, hEpilogueFuel, hTargetFuelEq, hBody⟩ :=
     AllocationInteractionRecursiveResource.SelectedCallee.body_of_function_context
-      (targetExtra := 3) prepared hProgramScoped hEntry hZero hStackLength
+      (targetExtra := targetExtra) prepared hProgramScoped hEntry hZero hStackLength
       hReservation hConfig hReady hOwned hBudget hSourceFuel hSuccess
       hRecursive
   have hReturnsLive :
@@ -718,8 +726,9 @@ theorem complete_body
               (fn.returns ++ fn.params) fn.body := by
     intro localName hName
     exact Functions.Scope.Block.mem_outEnv (by simp [hName])
-  refine ⟨targetFuel, hTargetFuel, ?_⟩
-  exact complete_body_of_rel prepared hConfig hReturnsLive hEpilogueFuel hBody
+  refine ⟨targetFuel, hTargetFuel, hTargetFuelEq, ?_⟩
+  exact complete_body_of_rel prepared hConfig hReturnsLive
+    (by omega) hBody
 
 /--
 Run a compiler-selected callee through the canonical internal-call wrappers.
@@ -738,7 +747,8 @@ theorem complete_call
     (prepared : AllocationInteractionCall.SelectedCallee.Prepared artifact)
     (hProgramScoped : program.Scoped)
     {contract : MemoryContract.Contract}
-    {globalFrameWords allocatorDepth frameBase sourceFuel fuelBound : Nat}
+    {globalFrameWords allocatorDepth frameBase sourceFuel fuelBound
+      targetExtra : Nat}
     {config : Config}
     {args callArgs callerStack : List Word}
     {paramStore : Locals.Source.Store}
@@ -780,6 +790,7 @@ theorem complete_call
     (hOwned :
       ActivationOwned config allocatorDepth frameBase artifact.mode)
     (hBudget : AllocationInteractionFrame.Budget config allocatorDepth)
+    (hTargetExtra : 3 ≤ targetExtra)
     (hSourceFuel : sourceFuel < fuelBound)
     (hSuccess :
       Simulation.Interaction.Successful
@@ -794,6 +805,12 @@ theorem complete_call
         contract globalFrameWords fuelBound) :
     exists targetFuel,
       0 < targetFuel ∧
+      targetFuel =
+        prepared.markerCode.length + prepared.paramCode.length +
+          prepared.returnCode.length +
+            (targetExtra + prepared.bodyCode.length +
+              AllocationInteractionRecursive.callStride expressions *
+                (sourceFuel + 1)) ∧
       Simulation.Interaction.Rel
         (OpenCallResultRel contract config allocatorDepth artifact.mode
           targetCaller
@@ -804,11 +821,11 @@ theorem complete_call
           program fn args (sourceFuel + 1) sourceAfterArgs)
         (Expressions.InteractionSemantics.Stmt.openRun
           expressions (targetFuel + 1) (.call name) targetCaller) := by
-  obtain ⟨targetFuel, hTargetFuel, hBody⟩ :=
+  obtain ⟨targetFuel, hTargetFuel, hTargetFuelEq, hBody⟩ :=
     complete_body prepared hProgramScoped hEntry hZero hStackLength
-      hReservation hConfig hReady hOwned hBudget hSourceFuel hSuccess
+      hReservation hConfig hReady hOwned hBudget hTargetExtra hSourceFuel hSuccess
       hRecursive
-  refine ⟨targetFuel, hTargetFuel, ?_⟩
+  refine ⟨targetFuel, hTargetFuel, hTargetFuelEq, ?_⟩
   exact CallAttachment.of_body hInsert artifact.targetLookup
     prepared.procRetc hSplit hBody
 

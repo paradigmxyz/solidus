@@ -118,6 +118,8 @@ boundaries remain active work.
     scratch-frame release for nested calls;
   - [x] pass-owned caller return writeback through the exact emitted
     stack/scratch target code, including deeper-callee bounded effects;
+  - [x] strengthen the recursive target budget with a checked whole-program
+    procedure-body stride and expose exact caller-chosen selected-callee fuel;
   - [ ] orthogonal recursive allocator companion over the same Interaction
     tree (shared intersection/`cons`, empty cursor, expression statement, and
     assignment/declaration, `break`/`continue`, and lexical blocks checked;
