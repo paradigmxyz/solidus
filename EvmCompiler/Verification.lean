@@ -43,6 +43,7 @@ import EvmCompiler.Functions.AllocationInteractionCursor
 import EvmCompiler.Functions.AllocationInteractionForward
 import EvmCompiler.Functions.AllocationInteractionCall
 import EvmCompiler.Functions.AllocationInteractionRecursive
+import EvmCompiler.Functions.AllocationInteractionRecursiveResource
 import EvmCompiler.Functions.AllocationInteractionComposition
 import EvmCompiler.Functions.AllocationInteractionLeaf
 import EvmCompiler.Functions.AllocationInteractionStatement

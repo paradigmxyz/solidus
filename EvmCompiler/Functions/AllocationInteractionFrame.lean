@@ -522,6 +522,123 @@ theorem of_mstore_above
 
 end BoundedEffect
 
+/--
+Statement resource effect selected by the activation representation. Stack
+activations protect the current allocator depth; scratch activations may update
+their current frame and therefore protect only strictly suspended depths.
+-/
+def ActivationEffect
+    (config : Config) (depth : Nat) (mode : ActivationMode)
+    (before after : TargetState) : Prop :=
+  match mode with
+  | .stack => AllocatorEffect config depth before after
+  | .scratch _ _ => SuspendedEffect config depth before after
+
+namespace ActivationEffect
+
+theorem of_allocatorEffect
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState}
+    (hEffect : AllocatorEffect config depth before after) :
+    ActivationEffect config depth mode before after := by
+  cases mode with
+  | stack => exact hEffect
+  | scratch => exact SuspendedEffect.of_allocatorEffect hEffect
+
+theorem ready
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState}
+    (hEffect : ActivationEffect config depth mode before after) :
+    AllocatorReady config depth after := by
+  cases mode with
+  | stack => exact AllocatorEffect.ready hEffect
+  | scratch => exact SuspendedEffect.ready hEffect
+
+theorem growth
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState}
+    (hEffect : ActivationEffect config depth mode before after) :
+    TargetGrowth before after := by
+  cases mode with
+  | stack => exact AllocatorEffect.growth hEffect
+  | scratch => exact SuspendedEffect.growth hEffect
+
+theorem to_suspendedEffect
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState}
+    (hEffect : ActivationEffect config depth mode before after) :
+    SuspendedEffect config depth before after := by
+  cases mode with
+  | stack => exact SuspendedEffect.of_allocatorEffect hEffect
+  | scratch => exact hEffect
+
+theorem to_boundedEffect
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState}
+    (hEffect : ActivationEffect config depth mode before after) :
+    BoundedEffect config depth
+        (match mode with
+        | .stack => depth + 1
+        | .scratch _ _ => depth)
+        before after := by
+  cases mode with
+  | stack => exact BoundedEffect.of_allocatorEffect hEffect
+  | scratch => exact BoundedEffect.of_suspendedEffect hEffect
+
+theorem of_boundedEffect
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState}
+    (hEffect :
+      BoundedEffect config depth
+        (match mode with
+        | .stack => depth + 1
+        | .scratch _ _ => depth)
+        before after) :
+    ActivationEffect config depth mode before after := by
+  cases mode with
+  | stack =>
+      exact
+        { ready := hEffect.ready
+          growth := hEffect.growth
+          prefixStable := fun hDepth hBudget =>
+            hEffect.prefixStable (Nat.lt_succ_iff.mpr hDepth) hBudget }
+  | scratch =>
+      exact
+        { ready := hEffect.ready
+          growth := hEffect.growth
+          prefixStable := hEffect.prefixStable }
+
+theorem refl
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {target : TargetState}
+    (hReady : AllocatorReady config depth target) :
+    ActivationEffect config depth mode target target := by
+  cases mode with
+  | stack => exact AllocatorEffect.refl hReady
+  | scratch => exact SuspendedEffect.refl hReady
+
+theorem trans
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {first second third : TargetState}
+    (hFirst : ActivationEffect config depth mode first second)
+    (hSecond : ActivationEffect config depth mode second third) :
+    ActivationEffect config depth mode first third := by
+  cases mode with
+  | stack => exact AllocatorEffect.trans hFirst hSecond
+  | scratch => exact SuspendedEffect.trans hFirst hSecond
+
+theorem sameFrame
+    {config : Config} {depth : Nat} {beforeMode afterMode : ActivationMode}
+    {before after : TargetState}
+    (hEffect : ActivationEffect config depth beforeMode before after)
+    (hSame : SameFrame beforeMode afterMode) :
+    ActivationEffect config depth afterMode before after := by
+  cases hSame with
+  | stack => exact hEffect
+  | scratch => exact hEffect
+
+end ActivationEffect
+
 /-- Stack-only programs need no allocator; scratch programs use one config. -/
 inductive ResourceMode where
   | stackOnly

@@ -13,12 +13,15 @@ import EvmCompiler.Functions.AllocationInteractionFramePreservation
 import EvmCompiler.Functions.AllocationInteractionPrimitiveResource
 import EvmCompiler.Functions.AllocationInteractionPreparedCallResources
 import EvmCompiler.Functions.AllocationInteractionCallTargets
+import EvmCompiler.Functions.AllocationInteractionRecursiveResource
 import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 
 #check EvmCompiler.Simulation.OpenWorld
 #check EvmCompiler.Functions.AllocationInteractionCall.CallTargets.forward
 #check EvmCompiler.Functions.AllocationInteractionCall.CallTargets.forward_bounded
+#check EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.combine
+#check EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.expr
 #check EvmCompiler.Simulation.OpenWorld.installYulShared
 #check EvmCompiler.Simulation.OpenWorld.installEVMShared
 #check EvmCompiler.Simulation.Interaction.bind
@@ -268,3 +271,7 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Functions.AllocationInteractionFrame.BoundedEffect.of_mstore_above
 #print axioms EvmCompiler.Functions.AllocationInteractionCall.CallTargets.forward
 #print axioms EvmCompiler.Functions.AllocationInteractionCall.CallTargets.forward_bounded
+#print axioms EvmCompiler.Simulation.Interaction.Rel.inter
+#print axioms EvmCompiler.Functions.AllocationInteractionResourceComposition.cons
+#print axioms EvmCompiler.Functions.AllocationInteractionStatementResource.expr_of_lower_compile
+#print axioms EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.expr

@@ -1195,6 +1195,29 @@ theorem mono
   | request hResume ih =>
       exact .request ih
 
+/-- Intersect two proofs over the same open interaction tree. -/
+theorem inter
+    {Error₁ : Type u1} {Result₁ : Type v1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    {doneRel₁ doneRel₂ :
+      Except Error₁ Result₁ → Except Error₂ Result₂ → Prop}
+    {left : Interaction Error₁ Result₁}
+    {right : Interaction Error₂ Result₂}
+    (hFirst : Rel doneRel₁ left right)
+    (hSecond : Rel doneRel₂ left right) :
+    Rel (fun leftDone rightDone =>
+      doneRel₁ leftDone rightDone ∧ doneRel₂ leftDone rightDone)
+      left right := by
+  induction hFirst with
+  | done hFirstDone =>
+      cases hSecond with
+      | done hSecondDone => exact .done ⟨hFirstDone, hSecondDone⟩
+  | request hFirstResume ih =>
+      cases hSecond with
+      | request hSecondResume =>
+          exact .request fun answer =>
+            ih answer (hSecondResume answer)
+
 theorem strengthen_left
     {Error₁ : Type u1} {Result₁ : Type v1}
     {Error₂ : Type u2} {Result₂ : Type v2}
