@@ -62,6 +62,30 @@ theorem sameFrame
     SameFrame beforeMode afterMode :=
   hTransition.mode.sameFrame
 
+theorem targetDepth_eq_stackLength
+    {plan : Plan} {beforeLive afterLive : List Locals.Name}
+    {targetDepth : Nat} {beforeMode afterMode : ActivationMode}
+    (hTransition :
+      Transition plan beforeLive afterLive targetDepth
+        beforeMode afterMode) :
+    targetDepth = afterMode.stackLength plan afterLive := by
+  cases hTransition.mode with
+  | stack hTarget => simpa [ActivationMode.stackLength] using hTarget
+  | scratch beforeDepth afterDepth frameWords hAfter hTarget =>
+      simpa [ActivationMode.stackLength] using hTarget
+
+theorem after_matches
+    {plan : Plan} {beforeLive afterLive : List Locals.Name}
+    {targetDepth : Nat} {beforeMode afterMode : ActivationMode}
+    (hTransition :
+      Transition plan beforeLive afterLive targetDepth
+        beforeMode afterMode) :
+    afterMode.Matches plan afterLive := by
+  cases hTransition.mode with
+  | stack hTarget => trivial
+  | scratch beforeDepth afterDepth frameWords hAfter hTarget =>
+      exact hAfter
+
 end Transition
 
 namespace Plain

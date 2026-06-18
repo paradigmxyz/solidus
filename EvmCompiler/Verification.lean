@@ -140,6 +140,7 @@ import EvmCompiler.Yul.StateRelation
 #check EvmCompiler.Simulation.Interaction.Successful
 #check EvmCompiler.Simulation.Interaction.AllDone.bind_inv
 #check EvmCompiler.Simulation.Interaction.Successful.bind_inv
+#check EvmCompiler.Simulation.Interaction.Rel.bind_pure_left_inv
 
 /-!
 Stable verification aggregate.
@@ -322,8 +323,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionComposition.block_nil
 #check EvmCompiler.Functions.AllocationInteractionRelation.SameFrame
 #check EvmCompiler.Functions.AllocationInteractionRelation.SameFrame.trans
+#check EvmCompiler.Functions.AllocationInteractionRelation.SameFrame.eq_of_matches
+#check EvmCompiler.Functions.AllocationInteractionRelation.ActivationMode.Matches
 #check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin
 #check EvmCompiler.Functions.AllocationInteractionControl.block_of_components
+#check EvmCompiler.Functions.AllocationInteractionControl.blockScoped_of_components
 #check EvmCompiler.Functions.AllocationInteractionControl.if_of_components
 #check EvmCompiler.Functions.AllocationInteractionControl.switch_of_components
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.SwitchComponents
@@ -336,6 +340,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationContext.ActivationExprContext.transport_plan
 #check EvmCompiler.Functions.AllocationContext.ActivationInvariant.transport_plan
 #check EvmCompiler.Functions.AllocationContext.ActivationInvariant.transport_state
+#check EvmCompiler.Functions.AllocationContext.ActivationInvariant.ofOutcomeState
 #check EvmCompiler.Functions.AllocationInteractionLeaf.expr_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionLeaf.assign_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionLeaf.stack_let_of_lower_compile

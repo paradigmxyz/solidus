@@ -39,6 +39,7 @@ inductive ControlResultRel
       {targetOutcome : Expressions.InteractionSemantics.Outcome}
       {finalCtx : Functions.Source.Ctx} {mode : ActivationMode}
       (sourceNonregular : sourceOutcome.mode ≠ .regular)
+      (sameFrame : SameFrame entryMode mode)
       (control : SameControl controlCtx finalCtx)
       (state :
         ActivationOutcomeRel contract plan
@@ -106,9 +107,10 @@ theorem transport_control
   cases hRel with
   | regular invariant sameFrame control =>
       exact .regular invariant sameFrame (hOuter.trans control)
-  | @nonregular sourceOutcome targetOutcome finalCtx mode hMode control state =>
+  | @nonregular sourceOutcome targetOutcome finalCtx mode hMode sameFrame
+      control state =>
       refine ControlResultRel.nonregular (mode := mode) hMode
-        (hOuter.trans control) ?_
+        sameFrame (hOuter.trans control) ?_
       rw [outcomeLive_eq_of_sameControl hOuter sourceOutcome.mode]
       exact state
 
@@ -136,9 +138,9 @@ theorem prepend_frame
   | regular invariant tailFrame control =>
       exact .regular invariant (hFrame.trans tailFrame) control
   | @nonregular sourceOutcome targetOutcome finalCtx mode
-      hNonregular control state =>
+      hNonregular tailFrame control state =>
       exact ControlResultRel.nonregular (mode := mode)
-        hNonregular control state
+        hNonregular (hFrame.trans tailFrame) control state
 
 /-- Abrupt outcomes ignore the regular live set of an unreachable tail. -/
 theorem reindex_nonregular_live
@@ -160,8 +162,10 @@ theorem reindex_nonregular_live
       0 frameBase mode sourceOutcome targetOutcome := by
   cases hState with
   | regular state => exact False.elim (hNonregular rfl)
-  | brk state => exact .brk state
-  | cont state => exact .cont state
+  | brk defined stackLength modeMatches state =>
+      exact .brk defined stackLength modeMatches state
+  | cont defined stackLength modeMatches state =>
+      exact .cont defined stackLength modeMatches state
   | leave state => exact .leave state
   | halt kind state => exact .halt kind state
 
@@ -242,18 +246,20 @@ theorem lift_fixed
       cases hBoundary with
       | regular invariant =>
           exact .regular invariant hFrame hControl
-      | brk state =>
+      | brk defined stackLength modeMatches state =>
           exact ControlResultRel.nonregular (mode := mode)
-            (by simp) hControl (.brk state)
-      | cont state =>
+            (by simp) hFrame hControl
+            (.brk defined stackLength modeMatches state)
+      | cont defined stackLength modeMatches state =>
           exact ControlResultRel.nonregular (mode := mode)
-            (by simp) hControl (.cont state)
+            (by simp) hFrame hControl
+            (.cont defined stackLength modeMatches state)
       | leave state =>
           exact ControlResultRel.nonregular (mode := mode)
-            (by simp) hControl (.leave state)
+            (by simp) hFrame hControl (.leave state)
       | halt kind state =>
           exact ControlResultRel.nonregular (mode := mode)
-            (by simp) hControl (.halt kind state)
+            (by simp) hFrame hControl (.halt kind state)
 
 /--
 Compose one control result with a tail. Only regular execution invokes the
@@ -325,32 +331,32 @@ theorem cons
                 (ControlResultRel.prepend_frame sameFrame
                   (ControlResultRel.transport_control control hTailResult))
       | @nonregular sourceOutcome targetOutcome headCtx mode
-          hNonregular control state =>
+          hNonregular sameFrame control state =>
           cases state with
           | regular regularState => exact False.elim (hNonregular rfl)
-          | brk state =>
+          | brk defined stackLength modeMatches state =>
               apply Simulation.Interaction.Rel.done
               apply Simulation.Interaction.ExceptRel.ok
               exact ControlResultRel.nonregular (mode := mode) hNonregular
-                (Functions.Source.Ctx.SameControl.refl controlCtx)
-                (.brk state)
-          | cont state =>
+                sameFrame (Functions.Source.Ctx.SameControl.refl controlCtx)
+                (.brk defined stackLength modeMatches state)
+          | cont defined stackLength modeMatches state =>
               apply Simulation.Interaction.Rel.done
               apply Simulation.Interaction.ExceptRel.ok
               exact ControlResultRel.nonregular (mode := mode) hNonregular
-                (Functions.Source.Ctx.SameControl.refl controlCtx)
-                (.cont state)
+                sameFrame (Functions.Source.Ctx.SameControl.refl controlCtx)
+                (.cont defined stackLength modeMatches state)
           | leave state =>
               apply Simulation.Interaction.Rel.done
               apply Simulation.Interaction.ExceptRel.ok
               exact ControlResultRel.nonregular (mode := mode) hNonregular
-                (Functions.Source.Ctx.SameControl.refl controlCtx)
+                sameFrame (Functions.Source.Ctx.SameControl.refl controlCtx)
                 (.leave state)
           | halt kind state =>
               apply Simulation.Interaction.Rel.done
               apply Simulation.Interaction.ExceptRel.ok
               exact ControlResultRel.nonregular (mode := mode) hNonregular
-                (Functions.Source.Ctx.SameControl.refl controlCtx)
+                sameFrame (Functions.Source.Ctx.SameControl.refl controlCtx)
                 (.halt kind state)
 
 /-- Compose the real source statement-list and compiled target block runners. -/

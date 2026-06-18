@@ -131,7 +131,7 @@ theorem block_of_components
               (SameFrame.refl entryMode)
               (Functions.Source.Ctx.SameControl.refl sourceCtx))
       | @nonregular sourceOutcome targetOutcome finalCtx mode
-          hNonregular control state =>
+          hNonregular sameFrame control state =>
           have hReindexed :=
             ControlResultRel.reindex_nonregular_live
               (afterLive := live) state hNonregular
@@ -141,7 +141,7 @@ theorem block_of_components
           have hOuterState := hReindexed.transport_plan hAgree
           cases hOuterState with
           | regular state => exact False.elim (hNonregular rfl)
-          | brk stateRel =>
+          | brk defined stackLength modeMatches stateRel =>
               change
                 Simulation.Interaction.Rel _
                   (Simulation.Interaction.pure (_, sourceCtx))
@@ -149,9 +149,10 @@ theorem block_of_components
               apply Simulation.Interaction.Rel.done
               apply Simulation.Interaction.ExceptRel.ok
               exact ControlResultRel.nonregular (mode := mode) hNonregular
+                sameFrame
                 (Functions.Source.Ctx.SameControl.refl sourceCtx)
-                (.brk stateRel)
-          | cont stateRel =>
+                (.brk defined stackLength modeMatches stateRel)
+          | cont defined stackLength modeMatches stateRel =>
               change
                 Simulation.Interaction.Rel _
                   (Simulation.Interaction.pure (_, sourceCtx))
@@ -159,8 +160,9 @@ theorem block_of_components
               apply Simulation.Interaction.Rel.done
               apply Simulation.Interaction.ExceptRel.ok
               exact ControlResultRel.nonregular (mode := mode) hNonregular
+                sameFrame
                 (Functions.Source.Ctx.SameControl.refl sourceCtx)
-                (.cont stateRel)
+                (.cont defined stackLength modeMatches stateRel)
           | leave stateRel =>
               change
                 Simulation.Interaction.Rel _
@@ -169,6 +171,7 @@ theorem block_of_components
               apply Simulation.Interaction.Rel.done
               apply Simulation.Interaction.ExceptRel.ok
               exact ControlResultRel.nonregular (mode := mode) hNonregular
+                sameFrame
                 (Functions.Source.Ctx.SameControl.refl sourceCtx)
                 (.leave stateRel)
           | halt kind stateRel =>
@@ -179,8 +182,89 @@ theorem block_of_components
               apply Simulation.Interaction.Rel.done
               apply Simulation.Interaction.ExceptRel.ok
               exact ControlResultRel.nonregular (mode := mode) hNonregular
+                sameFrame
                 (Functions.Source.Ctx.SameControl.refl sourceCtx)
                 (.halt kind stateRel)
+
+/-- The same lexical-block theorem with its constant source context erased. -/
+theorem blockScoped_of_components
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {bodyState outerState : AllocationLowering.State}
+    {bodyLocals outerLocals : Locals.Ctx}
+    {bodyPlan outerPlan : Plan}
+    {returns live bodyLive : List Functions.Name}
+    {frameBase sourceFuel targetFuel : Nat}
+    {entryMode : ActivationMode}
+    {sourceCtx bodyCtx : Functions.Source.Ctx}
+    {body : Functions.Block}
+    {bodyCode : List Expressions.Stmt}
+    {targetBlock : Expressions.Block}
+    {source : SourceState} {target : TargetState}
+    (hSourceScope : sourceCtx.scope = live)
+    (hBodyCtx : bodyCtx = { sourceCtx with scope := bodyLive })
+    (hBodyLive : bodyLive = Functions.Scope.Block.outEnv live body)
+    (hControl : ControlScopesWithin returns live sourceCtx)
+    (hOuter :
+      AllocationContext.ActivationInvariant contract lowerCtx outerState
+        outerLocals outerPlan live frameBase entryMode source target)
+    (hExtends :
+      AllocationLowering.StateExtends live outerState bodyState)
+    (hPlanAgree : PlanAgreesOn bodyPlan outerPlan live)
+    (hFinish :
+      Locals.finishScoped outerLocals bodyLocals bodyCode = some targetBlock)
+    (hCleanupFuel : 2 ≤ targetFuel - bodyCode.length)
+    (hBody :
+      Simulation.Interaction.Rel
+        (OpenControlResultRel contract lowerCtx bodyState bodyLocals bodyPlan
+          returns bodyLive frameBase entryMode sourceCtx bodyCtx)
+        (Functions.InteractionSemantics.Block.openRun
+          program sourceCtx sourceFuel body source)
+        (Expressions.InteractionSemantics.Block.openRun
+          expressions targetFuel { stmts := bodyCode } target)) :
+    Simulation.Interaction.Rel
+      (Simulation.Interaction.ExceptRel
+        (fun left right : EVMException => left = right)
+        (fun sourceOutcome targetOutcome =>
+          ControlResultRel contract lowerCtx outerState outerLocals outerPlan
+            returns live frameBase entryMode sourceCtx sourceCtx
+            (sourceOutcome, sourceCtx) targetOutcome))
+      (Functions.InteractionSemantics.Block.openRunScoped
+        program sourceCtx body sourceFuel source)
+      (Expressions.InteractionSemantics.Block.openRun
+        expressions targetFuel targetBlock target) := by
+  have hOpen :=
+    block_of_components hSourceScope hBodyCtx hBodyLive hControl hOuter
+      hExtends hPlanAgree hFinish hCleanupFuel hBody
+  have hOpen' :
+      Simulation.Interaction.Rel
+        (OpenControlResultRel contract lowerCtx outerState outerLocals
+          outerPlan returns live frameBase entryMode sourceCtx sourceCtx)
+        (Simulation.Interaction.bind
+          (Functions.InteractionSemantics.Block.openRunScoped
+            program sourceCtx body sourceFuel source)
+          (fun outcome =>
+            Simulation.Interaction.pure (outcome, sourceCtx)))
+        (Expressions.InteractionSemantics.Block.openRun
+          expressions targetFuel targetBlock target) := by
+    simpa [Functions.InteractionSemantics.Stmt.openRun,
+      Functions.Source.Canonical.Stmt.run,
+      Functions.Source.Effectful.Control.Stmt.run,
+      Functions.InteractionSemantics.Block.openRunScoped,
+      Functions.Source.Canonical.Block.runScoped] using hOpen
+  have hErased :=
+    Simulation.Interaction.Rel.bind_pure_left_inv hOpen'
+  apply Simulation.Interaction.Rel.mono hErased
+  intro leftDone rightDone hDone
+  cases leftDone with
+  | error err =>
+      cases hDone with
+      | error hError => exact .error hError
+  | ok outcome =>
+      cases hDone with
+      | ok hResult => exact .ok hResult
 
 /-- Preserve a conditional from condition truth and the selected body theorem. -/
 theorem if_of_components

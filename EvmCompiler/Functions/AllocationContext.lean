@@ -160,6 +160,35 @@ inductive ActivationExprContext
 
 namespace ActivationExprContext
 
+theorem layout_length
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name} {mode : ActivationMode}
+    (hCtx :
+      ActivationExprContext lowerCtx lowerState localsCtx plan live mode) :
+    localsCtx.layout.length = mode.stackLength plan live := by
+  cases hCtx with
+  | stack hStack =>
+      rw [hStack.layout, ← hStack.stackOrder]
+      rfl
+  | @scratch frameDepth frameWords hScratch =>
+      rw [hScratch.layout, hScratch.frameBottom]
+      rfl
+
+theorem mode_matches
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name} {mode : ActivationMode}
+    (hCtx :
+      ActivationExprContext lowerCtx lowerState localsCtx plan live mode) :
+    mode.Matches plan live := by
+  cases hCtx with
+  | stack hStack => trivial
+  | @scratch frameDepth frameWords hScratch =>
+      exact hScratch.currentStackOrder_length.symm
+
 /-- Construct an all-stack context from checked layout and plan facts. -/
 theorem stack_of_layout
     {lowerCtx : AllocationLowering.Ctx}
@@ -538,6 +567,31 @@ structure ActivationInvariant
   stackLength : target.evm.stack.length = localsCtx.layout.length
 
 namespace ActivationInvariant
+
+theorem ofOutcomeState
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {source : AllocationInteractionRelation.SourceState}
+    {target : AllocationInteractionRelation.TargetState}
+    (hCompiler :
+      ActivationExprContext lowerCtx lowerState localsCtx plan live mode)
+    (hPlanWF : plan.WellFormed)
+    (hDefined : LiveDefined live source)
+    (hState :
+      ActivationStateRel contract plan live 0 frameBase mode source target)
+    (hLength :
+      target.evm.stack.length = mode.stackLength plan live) :
+    ActivationInvariant contract lowerCtx lowerState localsCtx plan live
+      frameBase mode source target :=
+  { compiler := hCompiler
+    planWF := hPlanWF
+    defined := hDefined
+    state := hState
+    stackLength := hLength.trans hCompiler.layout_length.symm }
 
 /-- Restricting source scope to the current live set preserves the boundary. -/
 theorem restrict_source_live

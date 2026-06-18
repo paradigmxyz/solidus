@@ -9,7 +9,8 @@ failed=0
 
 for theorem in \
     '#check EvmCompiler.Simulation.Interaction.Successful' \
-    '#check EvmCompiler.Simulation.Interaction.Successful.bind_inv'; do
+    '#check EvmCompiler.Simulation.Interaction.Successful.bind_inv' \
+    '#check EvmCompiler.Simulation.Interaction.Rel.bind_pure_left_inv'; do
   if ! rg -Fq "$theorem" EvmCompiler/Verification.lean; then
     printf 'Verification root is missing shared interaction-safety interface: %s\n\n' \
       "$theorem" >&2
@@ -307,6 +308,7 @@ fi
 
 for theorem in \
     '#check EvmCompiler.Functions.AllocationInteractionControl.block_of_components' \
+    '#check EvmCompiler.Functions.AllocationInteractionControl.blockScoped_of_components' \
     '#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.block' \
     '#check EvmCompiler.Functions.AllocationInteractionControl.if_of_components' \
     '#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.if_' \

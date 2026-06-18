@@ -1852,6 +1852,29 @@ inductive ActivationMode where
 
 namespace ActivationMode
 
+def stackLength (mode : ActivationMode) (plan : Plan)
+    (live : List Locals.Name) : Nat :=
+  match mode with
+  | .stack => (currentStackOrder plan live).length
+  | .scratch frameDepth _frameWords => frameDepth + 1
+
+def Matches (mode : ActivationMode) (plan : Plan)
+    (live : List Locals.Name) : Prop :=
+  match mode with
+  | .stack => True
+  | .scratch frameDepth _frameWords =>
+      frameDepth = (currentStackOrder plan live).length
+
+theorem Matches.transport_plan
+    {left right : Plan} {live : List Locals.Name} {mode : ActivationMode}
+    (hMatches : mode.Matches left live)
+    (hAgree : PlanAgreesOn left right live) :
+    mode.Matches right live := by
+  cases mode with
+  | stack => trivial
+  | scratch frameDepth frameWords =>
+      simpa [Matches, hAgree.stackOrder] using hMatches
+
 def afterStackDeclaration : ActivationMode → ActivationMode
   | .stack => .stack
   | .scratch frameDepth frameWords =>
@@ -1910,6 +1933,20 @@ theorem trans
       cases hRight with
       | scratch _ rightDepth _ =>
           exact .scratch leftDepth rightDepth frameWords
+
+theorem eq_of_matches
+    {left right : ActivationMode} {plan : Plan}
+    {live : List Locals.Name}
+    (hSame : SameFrame left right)
+    (hLeft : left.Matches plan live)
+    (hRight : right.Matches plan live) :
+    left = right := by
+  cases hSame with
+  | stack => rfl
+  | scratch leftDepth rightDepth frameWords =>
+      simp only [ActivationMode.Matches] at hLeft hRight
+      cases hLeft.trans hRight.symm
+      rfl
 
 theorem afterStackDeclaration (mode : ActivationMode) :
     SameFrame mode mode.afterStackDeclaration := by
@@ -2922,6 +2959,10 @@ inductive ActivationOutcomeRel
         (Functions.Source.Effectful.Outcome.regular source)
         (Structured.EffectSemantics.Outcome.regular target)
   | brk {source : SourceState} {target : TargetState}
+      (defined : LiveDefined live source)
+      (stackLength :
+        target.evm.stack.length = mode.stackLength plan live)
+      (modeMatches : mode.Matches plan live)
       (state :
         ActivationStateRel contract plan live stackOffset frameBase mode
           source target) :
@@ -2929,6 +2970,10 @@ inductive ActivationOutcomeRel
         (Functions.Source.Effectful.Outcome.brk source)
         (Structured.EffectSemantics.Outcome.brk target)
   | cont {source : SourceState} {target : TargetState}
+      (defined : LiveDefined live source)
+      (stackLength :
+        target.evm.stack.length = mode.stackLength plan live)
+      (modeMatches : mode.Matches plan live)
       (state :
         ActivationStateRel contract plan live stackOffset frameBase mode
           source target) :
@@ -2963,8 +3008,26 @@ theorem transport_plan
       source target := by
   cases hRel with
   | regular state => exact .regular (state.transport_plan hAgree)
-  | brk state => exact .brk (state.transport_plan hAgree)
-  | cont state => exact .cont (state.transport_plan hAgree)
+  | @brk source target defined stackLength modeMatches state =>
+      have hLength :
+          mode.stackLength left live = mode.stackLength right live := by
+        cases mode with
+        | stack => simpa [ActivationMode.stackLength] using
+            congrArg List.length hAgree.stackOrder
+        | scratch frameDepth frameWords => rfl
+      exact .brk defined (stackLength.trans hLength)
+        (modeMatches.transport_plan hAgree)
+        (state.transport_plan hAgree)
+  | @cont source target defined stackLength modeMatches state =>
+      have hLength :
+          mode.stackLength left live = mode.stackLength right live := by
+        cases mode with
+        | stack => simpa [ActivationMode.stackLength] using
+            congrArg List.length hAgree.stackOrder
+        | scratch frameDepth frameWords => rfl
+      exact .cont defined (stackLength.trans hLength)
+        (modeMatches.transport_plan hAgree)
+        (state.transport_plan hAgree)
   | leave state => exact .leave state
   | halt kind state => exact .halt kind { shared := state.shared }
 
@@ -2979,8 +3042,8 @@ theorem modeRel
     ModeRel source.mode target.mode := by
   cases hRel with
   | regular _ => exact .regular
-  | brk _ => exact .brk
-  | cont _ => exact .cont
+  | brk _ _ _ _ => exact .brk
+  | cont _ _ _ _ => exact .cont
   | leave _ => exact .leave
   | halt kind _ => exact .halt kind
 

@@ -48,7 +48,7 @@ theorem brk_of_lower_compile
         targetProgram (targetExtra + 3) { stmts := compiledStmts } target) := by
   obtain ⟨cleanup, hCleanup, rfl, rfl, rfl, rfl⟩ :=
     BreakLeaf.compiler_shape hTargetDepth hLower hCompile
-  obtain ⟨targetFinal, hCleanupRun, hFinalRel, _hStackLength⟩ :=
+  obtain ⟨targetFinal, hCleanupRun, hFinalRel, hStackLength⟩ :=
     Plain.forward_exact hInvariant hTransition hCleanup
   have hTarget :=
     Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_brk
@@ -75,9 +75,14 @@ theorem brk_of_lower_compile
   apply Simulation.Interaction.Rel.done
   apply Simulation.Interaction.ExceptRel.ok
   refine ControlResultRel.nonregular (mode := afterMode) (by simp)
+    hTransition.sameFrame
     (Functions.Source.Ctx.SameControl.refl sourceCtx) ?_
   simpa [AllocationInteractionStatement.outcomeLive, hSourceScope] using
-    (ActivationOutcomeRel.brk hFinalRel)
+    (ActivationOutcomeRel.brk
+      (hInvariant.defined.restrictTo hTransition.subset)
+      (hStackLength.trans hTransition.targetDepth_eq_stackLength)
+      hTransition.after_matches
+      hFinalRel)
 
 /-- `continue` preservation through the ordinary allocation and Locals passes. -/
 theorem cont_of_lower_compile
@@ -118,7 +123,7 @@ theorem cont_of_lower_compile
         targetProgram (targetExtra + 3) { stmts := compiledStmts } target) := by
   obtain ⟨cleanup, hCleanup, rfl, rfl, rfl, rfl⟩ :=
     ContinueLeaf.compiler_shape hTargetDepth hLower hCompile
-  obtain ⟨targetFinal, hCleanupRun, hFinalRel, _hStackLength⟩ :=
+  obtain ⟨targetFinal, hCleanupRun, hFinalRel, hStackLength⟩ :=
     Plain.forward_exact hInvariant hTransition hCleanup
   have hTarget :=
     Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_cont
@@ -145,9 +150,14 @@ theorem cont_of_lower_compile
   apply Simulation.Interaction.Rel.done
   apply Simulation.Interaction.ExceptRel.ok
   refine ControlResultRel.nonregular (mode := afterMode) (by simp)
+    hTransition.sameFrame
     (Functions.Source.Ctx.SameControl.refl sourceCtx) ?_
   simpa [AllocationInteractionStatement.outcomeLive, hSourceScope] using
-    (ActivationOutcomeRel.cont hFinalRel)
+    (ActivationOutcomeRel.cont
+      (hInvariant.defined.restrictTo hTransition.subset)
+      (hStackLength.trans hTransition.targetDepth_eq_stackLength)
+      hTransition.after_matches
+      hFinalRel)
 
 end AllocationInteractionAbrupt
 end Functions

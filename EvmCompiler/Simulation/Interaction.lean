@@ -1348,6 +1348,40 @@ theorem bind_custom
   | request hResume ih =>
       exact .request fun answer => ih answer
 
+/-- Remove a pure administrative map from the left side of a relation. -/
+theorem bind_pure_left_inv
+    {Error₁ : Type u1} {Source₁ : Type v1} {Target₁ : Type w1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    {doneRel :
+      Except Error₁ Target₁ → Except Error₂ Result₂ → Prop}
+    {left : Interaction Error₁ Source₁}
+    {right : Interaction Error₂ Result₂}
+    {f : Source₁ → Target₁}
+    (hRel :
+      Rel doneRel
+        (Interaction.bind left
+          (fun value => Interaction.pure (f value)))
+        right) :
+    Rel
+      (fun leftDone rightDone =>
+        match leftDone with
+        | .error err => doneRel (.error err) rightDone
+        | .ok value => doneRel (.ok (f value)) rightDone)
+      left right := by
+  induction left generalizing right with
+  | done outcome =>
+      cases outcome with
+      | error err =>
+          cases hRel with
+          | done hDone => exact .done hDone
+      | ok value =>
+          cases hRel with
+          | done hDone => exact .done hDone
+  | request query resume ih =>
+      cases hRel with
+      | request hResume =>
+          exact .request fun answer => ih answer (hResume answer)
+
 theorem done_left
     {Error₁ : Type u1} {Result₁ : Type v1}
     {Error₂ : Type u2} {Result₂ : Type v2}

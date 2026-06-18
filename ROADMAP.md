@@ -91,6 +91,8 @@ boundaries remain active work.
   - [x] correct the loop theorem boundary with shared open-world
     `Interaction.Successful` and generic bind inversion, excluding source
     meta-fuel exhaustion without duplicating loop semantics;
+  - [x] strengthen caught `break`/`continue` outcomes with destination
+    definedness, stack length, mode/live agreement, and frame continuity;
   - [ ] exact recursive loop core and compiler-owned `for` wrapper;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.

@@ -279,6 +279,7 @@ theorem leave_of_lower_compile
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
       refine ControlResultRel.nonregular (mode := mode) (by simp)
+        (SameFrame.refl mode)
         (Functions.Source.Ctx.SameControl.refl sourceCtx) ?_
       exact ActivationOutcomeRel.leave hLeaveRel
 

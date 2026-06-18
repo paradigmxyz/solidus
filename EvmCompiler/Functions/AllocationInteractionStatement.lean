@@ -116,6 +116,11 @@ inductive BoundaryOutcomeRel
         (Functions.Source.Effectful.Outcome.regular source)
         (Structured.EffectSemantics.Outcome.regular target)
   | brk {source : SourceState} {target : TargetState}
+      (defined : LiveDefined (controlCtx.breakScope?.getD []) source)
+      (stackLength :
+        target.evm.stack.length =
+          mode.stackLength plan (controlCtx.breakScope?.getD []))
+      (modeMatches : mode.Matches plan (controlCtx.breakScope?.getD []))
       (state :
         ActivationStateRel contract plan (controlCtx.breakScope?.getD []) 0
           frameBase mode source target) :
@@ -124,6 +129,11 @@ inductive BoundaryOutcomeRel
         (Functions.Source.Effectful.Outcome.brk source)
         (Structured.EffectSemantics.Outcome.brk target)
   | cont {source : SourceState} {target : TargetState}
+      (defined : LiveDefined (controlCtx.continueScope?.getD []) source)
+      (stackLength :
+        target.evm.stack.length =
+          mode.stackLength plan (controlCtx.continueScope?.getD []))
+      (modeMatches : mode.Matches plan (controlCtx.continueScope?.getD []))
       (state :
         ActivationStateRel contract plan (controlCtx.continueScope?.getD []) 0
           frameBase mode source target) :
@@ -197,8 +207,10 @@ theorem toActivationOutcomeRel
       0 frameBase mode sourceOutcome targetOutcome := by
   cases hRel with
   | regular invariant => exact .regular invariant.state
-  | brk state => exact .brk state
-  | cont state => exact .cont state
+  | brk defined stackLength modeMatches state =>
+      exact .brk defined stackLength modeMatches state
+  | cont defined stackLength modeMatches state =>
+      exact .cont defined stackLength modeMatches state
   | leave state => exact .leave state
   | halt kind state => exact .halt kind state
 
@@ -226,8 +238,10 @@ theorem reindex_nonregular
       targetOutcome := by
   cases hRel with
   | regular invariant => exact False.elim (hNonregular rfl)
-  | brk state => exact .brk state
-  | cont state => exact .cont state
+  | brk defined stackLength modeMatches state =>
+      exact .brk defined stackLength modeMatches state
+  | cont defined stackLength modeMatches state =>
+      exact .cont defined stackLength modeMatches state
   | leave state => exact .leave state
   | halt kind state => exact .halt kind state
 
