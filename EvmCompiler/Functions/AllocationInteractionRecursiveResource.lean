@@ -4,6 +4,7 @@ import EvmCompiler.Functions.AllocationInteractionStatementResource
 import EvmCompiler.Functions.AllocationInteractionAbruptResource
 import EvmCompiler.Functions.AllocationInteractionControlResource
 import EvmCompiler.Functions.AllocationInteractionLeaveResource
+import EvmCompiler.Functions.AllocationInteractionLoopResource
 import EvmCompiler.Functions.AllocationInteractionTerminalResource
 
 namespace EvmCompiler
