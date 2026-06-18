@@ -297,6 +297,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionForward.CoreCursor.leave_head
 #check EvmCompiler.Functions.AllocationInteractionForward.CoreCursor.terminal_head
 #check EvmCompiler.Functions.AllocationInteractionForward.CoreCursor.terminalArgs_head
+#check EvmCompiler.Functions.AllocationInteractionSafety.ArgListSafe
+#check EvmCompiler.Functions.AllocationInteractionCall.ArgList.forwardArg
+#check EvmCompiler.Functions.AllocationInteractionCall.ArgList.forward
+#check EvmCompiler.Functions.AllocationInteractionCall.CallComponents
+#check EvmCompiler.Functions.AllocationInteractionCall.CoreCursor.callComponents
 #check EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Artifact.of_find
 #check EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Artifact.lowerCtxShared
 #check EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Artifact.bodyScoped

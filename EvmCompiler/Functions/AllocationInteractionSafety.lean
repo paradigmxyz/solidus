@@ -38,6 +38,19 @@ mutual
             (Functions.InteractionSemantics.Expr.openEval head source)
 end
 
+/-- Source-facing safety for canonical left-to-right call arguments. -/
+def ArgListSafe (contract : MemoryContract.Contract) :
+    List (Functions.Expr 1) → SourceState → Prop
+  | [], _source => True
+  | arg :: rest, source =>
+      ExprSafe contract arg source ∧
+        Simulation.Interaction.AllDone
+          (fun outcome =>
+            match outcome with
+            | .error _ => True
+            | .ok result => ArgListSafe contract rest result.1)
+          (Functions.InteractionSemantics.Expr.openEvalOne arg source)
+
 end AllocationInteractionSafety
 end Functions
 end EvmCompiler

@@ -7,6 +7,7 @@ import EvmCompiler.Structured.InteractionLoopPreservation
 import EvmCompiler.Structured.InteractionCallPreservation
 import EvmCompiler.Structured.InteractionOwnerPreservation
 import EvmCompiler.Expressions.InteractionPreservation
+import EvmCompiler.Functions.AllocationInteractionCall
 import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 
@@ -234,3 +235,6 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_exec
 #print axioms EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes
 #print axioms EvmCompiler.Assembly.Bytecode.compile_openRunNResult_executes
+#print axioms EvmCompiler.Functions.AllocationInteractionCall.ArgList.forwardArg
+#print axioms EvmCompiler.Functions.AllocationInteractionCall.ArgList.forward
+#print axioms EvmCompiler.Functions.AllocationInteractionCall.CoreCursor.callComponents

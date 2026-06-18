@@ -96,6 +96,8 @@ boundaries remain active work.
   - [x] exact recursive loop core and compiler-owned `for` wrapper;
   - [x] canonical source/target internal-call equations and compiler-owned
     caller call decomposition;
+  - [x] canonical open-world argument-list safety and arbitrary-length
+    stack/scratch argument preservation;
   - [ ] caller argument, selected-callee, return-writeback, scratch-release,
     and exact-tail interaction composition;
   - [ ] recursive compiler-cursor statement-list theorem.
