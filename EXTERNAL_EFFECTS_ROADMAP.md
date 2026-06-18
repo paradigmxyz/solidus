@@ -857,8 +857,10 @@ Exit: the shared core builds with no compiler layer changed.
     CALL/CREATE request and response windows.
   - [x] Exact CALL/CREATE query equality and shared-state preservation for
     every common response and arbitrary post-world.
-  - [ ] Preserve concrete scratch slots and returned stack prefixes across
+  - [x] Preserve concrete scratch slots and returned stack prefixes across
     CALL/CREATE response installation.
+  - [ ] Prove one structural `Interaction.Rel` theorem for all four CALL and
+    both CREATE opcodes using the checked query and response interfaces.
   - [ ] Recursive allocation preservation for expressions, statements,
     internal calls, loops, terminals, and whole programs.
 - [ ] Yul.

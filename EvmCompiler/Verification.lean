@@ -164,6 +164,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionRelation.SharedRel.finishCall
 #check EvmCompiler.Functions.AllocationInteractionRelation.SharedRel.finishCreate
 #check EvmCompiler.Functions.AllocationInteractionRelation.ScratchStateRel
+#check EvmCompiler.Functions.AllocationInteractionRelation.ScratchStateRel.finishExternal
+#check EvmCompiler.Functions.AllocationInteractionRelation.ScratchStateRel.finishCall
+#check EvmCompiler.Functions.AllocationInteractionRelation.ScratchStateRel.finishCreate
 #check EvmCompiler.Functions.AllocationInteractionRelation.OutcomeRel
 #check EvmCompiler.Functions.AllocationInteractionRelation.OpenOutcomeRel
 #check EvmCompiler.Functions.AllocationInteractionExpression.literal_open
@@ -204,6 +207,8 @@ or audit-alias corridor.
 #check EvmCompiler.Simulation.MemorySafety.WindowSafe.expansion
 #check EvmCompiler.Simulation.MemorySafety.readWithPadding_eq_of_windowSafe
 #check EvmCompiler.Simulation.MemorySafety.finishExternalCall_both
+#check EvmCompiler.Simulation.MemorySafety.finishExternalCall_growth
+#check EvmCompiler.Simulation.MemorySafety.lookupMemory_finishExternalCall_of_reserved
 #check EvmCompiler.Simulation.MemorySafety.OpenPrimitiveMemorySafe
 #check EvmCompiler.Simulation.MemorySafety.openPrimitiveMemorySafe_call_zero_windows
 #check EvmCompiler.Simulation.MemorySafety.openPrimitiveMemorySafe_create_zero_window

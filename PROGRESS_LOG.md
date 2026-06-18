@@ -31557,3 +31557,17 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1154-job Functions build, 1304-job verification root, architecture guards,
   touched-file hole scan, and `git diff --check` passed; all three response
   theorems use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 17:05:25 PDT - proof/functions-scratch-response - moved
+  transcript-free store-prefix and scratch-frame growth lemmas into the
+  canonical allocation relation; proved safe response copies preserve every
+  live scratch slot, and proved `ScratchStateRel.finishCall`/`finishCreate`
+  through the shared `finishExternal` response-installation theorem.
+- 2026-06-17 17:05:25 PDT - theorem-boundary/functions-open-world - CALL
+  status words and CREATE addresses now remain exact while arbitrary common
+  response data and post-worlds preserve the full allocated state relation;
+  the remaining primitive obligation is the structural six-opcode
+  `Interaction.Rel` theorem around request equality and these continuations.
+- 2026-06-17 17:05:25 PDT - validation/functions-scratch-response - the
+  1154-job Functions build, 1304-job verification root, architecture guards,
+  touched-file hole scan, and `git diff --check` passed; new public theorems
+  use only `[propext, Classical.choice, Quot.sound]`.

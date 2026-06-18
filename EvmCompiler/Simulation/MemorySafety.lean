@@ -307,6 +307,7 @@ theorem finishExternalCall_both
           EvmYul.writeBytes, hActive]
       · simp [EvmYul.MachineState.finishExternalCall]
       · simp [EvmYul.MachineState.finishExternalCall]
+
   | some reservation =>
       have hMemory :
           Compiler.MemoryRelation.OutsideReservation
@@ -375,6 +376,165 @@ theorem finishExternalCall_both
             (Compiler.MemoryRelation.M_mono_active hActive)
       · simp [EvmYul.MachineState.finishExternalCall]
       · simp [EvmYul.MachineState.finishExternalCall]
+
+/-- Growth facts for one concrete external-response installation. -/
+structure FinishExternalGrowth
+    (before after : EvmYul.MachineState) : Prop where
+  memory : before.memory.size ≤ after.memory.size
+  active : before.activeWords.toNat ≤ after.activeWords.toNat
+  activeNoWrap :
+    after.activeWords.toNat * MemoryContract.wordBytes <
+      EvmYul.UInt256.size
+
+theorem finishExternalCall_growth
+    {contract : MemoryContract.Contract}
+    (before : EvmYul.MachineState)
+    (hBeforeNoWrap :
+      before.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (returnData : ByteArray)
+    (inputOffset inputSize outputOffset outputSize : Word)
+    (hInput : WindowSafe contract inputOffset.toNat inputSize.toNat)
+    (hOutput : WindowSafe contract outputOffset.toNat outputSize.toNat) :
+    FinishExternalGrowth before
+      (before.finishExternalCall returnData
+        inputOffset inputSize outputOffset outputSize) := by
+  let inputWords :=
+    EvmYul.MachineState.M before.activeWords.toNat
+      inputOffset.toNat inputSize.toNat
+  let finalWords :=
+    EvmYul.MachineState.M inputWords
+      outputOffset.toNat outputSize.toNat
+  let copyLen := min outputSize.toNat returnData.size
+  have hInputNoWrap :
+      inputWords * MemoryContract.wordBytes < EvmYul.UInt256.size :=
+    Compiler.MemoryRelation.M_activeBytes_lt_of_expansionNoWrap
+      hBeforeNoWrap hInput.expansion
+  have hFinalNoWrap :
+      finalWords * MemoryContract.wordBytes < EvmYul.UInt256.size :=
+    Compiler.MemoryRelation.M_activeBytes_lt_of_expansionNoWrap
+      hInputNoWrap hOutput.expansion
+  have hFinalLt : finalWords < EvmYul.UInt256.size := by
+    have hPositive : 0 < MemoryContract.wordBytes := by decide
+    nlinarith
+  have hInputMono : before.activeWords.toNat ≤ inputWords := by
+    dsimp [inputWords]
+    cases hSize : inputSize.toNat with
+    | zero => simp [EvmYul.MachineState.M, hSize]
+    | succ size =>
+        simp only [EvmYul.MachineState.M]
+        exact Nat.le_max_left _ _
+  have hFinalMono : inputWords ≤ finalWords := by
+    dsimp [finalWords]
+    cases hSize : outputSize.toNat with
+    | zero => simp [EvmYul.MachineState.M, hSize]
+    | succ size =>
+        simp only [EvmYul.MachineState.M]
+        exact Nat.le_max_left _ _
+  refine ⟨?_, ?_, ?_⟩
+  · by_cases hOutputZero : outputSize.toNat = 0
+    · simp [EvmYul.MachineState.finishExternalCall,
+        EvmYul.writeBytes, ByteArray.write, copyLen, hOutputZero]
+    · have hOutputPos : 0 < outputSize.toNat :=
+        Nat.pos_of_ne_zero hOutputZero
+      have hHost := hOutput.host_of_pos hOutputPos
+      have hCopyLe : copyLen ≤ outputSize.toNat := min_le_left _ _
+      have hCopyHost : outputOffset.toNat + copyLen < USize.size := by
+        omega
+      simpa [EvmYul.MachineState.finishExternalCall,
+        EvmYul.writeBytes, copyLen] using
+        Compiler.MemoryRelation.size_write_ge
+          returnData before.memory 0 outputOffset.toNat copyLen hCopyHost
+  · simp only [EvmYul.MachineState.finishExternalCall,
+      EvmYul.writeBytes]
+    change before.activeWords.toNat ≤
+      (EvmYul.UInt256.ofNat finalWords).toNat
+    rw [EvmYul.UInt256.toNat_ofNat_of_lt hFinalLt]
+    exact hInputMono.trans hFinalMono
+  · simp only [EvmYul.MachineState.finishExternalCall,
+      EvmYul.writeBytes]
+    change
+      (EvmYul.UInt256.ofNat finalWords).toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size
+    rw [EvmYul.UInt256.toNat_ofNat_of_lt hFinalLt]
+    exact hFinalNoWrap
+
+/-- A safe response copy cannot change a compiler-reserved scratch word. -/
+theorem lookupMemory_finishExternalCall_of_reserved
+    {contract : MemoryContract.Contract}
+    {reservation : MemoryContract.ScratchReservation}
+    (before : EvmYul.MachineState)
+    (hBeforeNoWrap :
+      before.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (returnData : ByteArray)
+    (inputOffset inputSize outputOffset outputSize : Word)
+    (hInput : WindowSafe contract inputOffset.toNat inputSize.toNat)
+    (hOutput : WindowSafe contract outputOffset.toNat outputSize.toNat)
+    (query : Nat)
+    (hReservation : contract.scratch? = some reservation)
+    (hReserved : reservation.containsRegion query 1)
+    (hReadMemory :
+      query + MemoryContract.wordBytes ≤ before.memory.size)
+    (hReadActive :
+      query + MemoryContract.wordBytes ≤
+        before.activeWords.toNat * MemoryContract.wordBytes) :
+    (before.finishExternalCall returnData
+        inputOffset inputSize outputOffset outputSize).lookupMemory
+          (EvmYul.UInt256.ofNat query) =
+      before.lookupMemory (EvmYul.UInt256.ofNat query) := by
+  let after := before.finishExternalCall returnData
+    inputOffset inputSize outputOffset outputSize
+  have hGrowth : FinishExternalGrowth before after :=
+    finishExternalCall_growth before hBeforeNoWrap returnData
+      inputOffset inputSize outputOffset outputSize hInput hOutput
+  have hQueryLt : query < EvmYul.UInt256.size :=
+    lt_of_le_of_lt
+      (Nat.le_add_right query MemoryContract.wordBytes)
+      (hReadActive.trans_lt hBeforeNoWrap)
+  have hQuery :
+      (EvmYul.UInt256.ofNat query).toNat = query :=
+    EvmYul.UInt256.toNat_ofNat_of_lt hQueryLt
+  by_cases hOutputZero : outputSize.toNat = 0
+  · have hMemory : after.memory = before.memory := by
+      simp [after, EvmYul.MachineState.finishExternalCall,
+        EvmYul.writeBytes, ByteArray.write, hOutputZero]
+    exact
+      Compiler.MemoryRelation.MachineRel.lookupMemory_eq_of_memory_eq_active_growth
+        query hQuery hMemory hGrowth.active hBeforeNoWrap
+        hGrowth.activeNoWrap hReadMemory hReadActive
+  · have hOutputPos : 0 < outputSize.toNat :=
+      Nat.pos_of_ne_zero hOutputZero
+    have hHost := hOutput.host_of_pos hOutputPos
+    have hAllowed :
+        reservation.sourceAccessAllowed
+          outputOffset.toNat outputSize.toNat := by
+      simpa [RegionAllowed, hReservation] using
+        hOutput.allowed_of_pos hOutputPos
+    let copyLen := min outputSize.toNat returnData.size
+    have hCopyLe : copyLen ≤ outputSize.toNat := min_le_left _ _
+    have hCopyHost : outputOffset.toNat + copyLen < USize.size := by
+      omega
+    have hReservedStart : reservation.base ≤ query := hReserved.1
+    have hReservedEnd :
+        query + MemoryContract.wordBytes ≤ reservation.endExclusive := by
+      simpa using hReserved.2
+    have hDisjoint :
+        query + MemoryContract.wordBytes ≤ outputOffset.toNat ∨
+          outputOffset.toNat + copyLen ≤ query := by
+      rcases hAllowed with hBefore | hAfter
+      · exact Or.inr (by omega)
+      · exact Or.inl (by omega)
+    have hMemory :
+        after.memory =
+          returnData.write 0 before.memory outputOffset.toNat copyLen := by
+      rfl
+    exact
+      Compiler.MemoryRelation.lookupMemory_eq_of_write_disjoint_growing
+        returnData before after 0 outputOffset.toNat copyLen query
+        hCopyHost hMemory hQuery hReadMemory hReadActive
+        hBeforeNoWrap hGrowth.active hGrowth.activeNoWrap hDisjoint
 
 /--
 Source-facing primitive safety for the open interaction semantics.
