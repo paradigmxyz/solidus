@@ -67,6 +67,43 @@ structure ClosedSpec (contract : MemoryContract.Contract)
             op targetShared values = .ok (targetFinal, outputs) ∧
         TargetEffect contract sourceFinal targetShared targetFinal
 
+/-- Closed primitive capability that preserves both success and error outcomes. -/
+structure FallibleClosedSpec (contract : MemoryContract.Contract)
+    (op : Structured.BasicOp) : Prop where
+  sourceStep :
+    ∃ step,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep? op = some step
+  supportsOpen : Locals.InteractionSemantics.Primitive.supportsOpen op = true
+  notGas : op.toPrimOp ≠ .gas
+  notMsize : op.toPrimOp ≠ .msize
+  simulateSuccess :
+    ∀ {sourceShared sourceFinal targetShared : EvmYul.SharedState .EVM}
+      {values outputs : List Word},
+      values.length = Expressions.Structured.BasicOp.inputs op →
+      SharedRel contract sourceShared targetShared →
+      Simulation.MemorySafety.OpenPrimitiveMemorySafe
+        contract op sourceShared.toMachineState values →
+      targetShared.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes < EvmYul.UInt256.size →
+      Locals.Source.PrimitiveSemantics.structured.eval
+          op sourceShared values = .ok (sourceFinal, outputs) →
+      ∃ targetFinal,
+        Locals.Source.PrimitiveSemantics.structured.eval
+            op targetShared values = .ok (targetFinal, outputs) ∧
+        TargetEffect contract sourceFinal targetShared targetFinal
+  errorSuffix :
+    ∀ {step : Assembly.PrimStep}
+      {sourceShared : EvmYul.SharedState .EVM}
+      {target : Assembly.EVMState} {values baseStack : List Word}
+      {error : EVMException},
+      values.length = Expressions.Structured.BasicOp.inputs op →
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep? op = some step →
+      SharedRel contract sourceShared target.toSharedState →
+      target.stack = values.reverse ++ baseStack →
+      Locals.Source.PrimitiveSemantics.structured.eval
+          op sourceShared values = .error error →
+      step.run target = .error error
+
 /--
 Canonical primitive families that neither inspect nor modify EVM memory.
 This classifies the existing ordinary source step; it is not another primitive
@@ -658,6 +695,193 @@ theorem openForward
 
 end ClosedSpec
 
+namespace FallibleClosedSpec
+
+/-- Every checked fallible closed spec implements the canonical open capability. -/
+theorem openForward
+    {contract : MemoryContract.Contract} {op : Structured.BasicOp}
+    (spec : FallibleClosedSpec contract op) :
+    AllocationInteractionPrimitive.OpenForward contract op where
+  preserve := by
+    intro plan live stackOffset frameBase mode source initialTarget target
+      values hLength hRel hStack hSafe
+    obtain ⟨step, hSourceStep⟩ := spec.sourceStep
+    have hPrimitiveStep :=
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?_toPrimOp
+        hSourceStep
+    have hExternal :=
+      Assembly.InteractionSemantics.PrimOp.externalKind_none_of_continuingStep
+        hPrimitiveStep
+    have hOpenSafe :
+        Simulation.MemorySafety.OpenPrimitiveMemorySafe
+          contract op source.shared.toMachineState values := by
+      simpa [AllocationInteractionPrimitive.PrimitiveSafe, hExternal] using hSafe
+    cases hSourceEval :
+        Locals.Source.PrimitiveSemantics.structured.eval
+          op source.shared values with
+    | error error =>
+        have hSourceStepRun :
+            step.run (Locals.InteractionSemantics.Primitive.isolated source values) =
+              .error error := by
+          simpa [Locals.InteractionSemantics.Primitive.isolated,
+            Assembly.PrimStep.isoState] using
+            (Locals.Source.PrimitiveSemantics.structured_eval_error_run
+              hLength hSourceStep hSourceEval)
+        have hTargetStepRun : step.run target.evm = .error error :=
+          spec.errorSuffix hLength hSourceStep hRel.shared hStack hSourceEval
+        have hSourceOpen :
+            Locals.InteractionSemantics.Primitive.openEval op source values =
+              .done (.error error) := by
+          rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+            hLength spec.supportsOpen hSourceStep spec.notGas spec.notMsize]
+          rw [hSourceStepRun]
+          simp [Simulation.Interaction.map]
+        have hTargetOpen :
+            Structured.InteractionSemantics.BasicInstr.openStep (.op op) target =
+              .done (.error error) := by
+          unfold Structured.InteractionSemantics.BasicInstr.openStep
+            Structured.InteractionSemantics.BasicInstr.openStepEVM
+          change
+            Simulation.Interaction.map target.withEVM
+                (Assembly.InteractionSemantics.PrimOp.openStep
+                  op.toPrimOp target.evm) =
+              .done (.error error)
+          rw [Assembly.InteractionSemantics.PrimOp.openStep_of_continuingStep
+            hPrimitiveStep spec.notGas spec.notMsize]
+          rw [hTargetStepRun]
+          simp [Simulation.Interaction.map]
+        rw [hSourceOpen, hTargetOpen]
+        exact Simulation.Interaction.Rel.done
+          (Simulation.Interaction.ExceptRel.error rfl)
+    | ok result =>
+        rcases result with ⟨sourceSharedFinal, outputs⟩
+        obtain ⟨targetSharedFinal, hTargetEval, hEffect⟩ :=
+          spec.simulateSuccess hLength hRel.shared hOpenSafe hRel.activeNoWrap
+            hSourceEval
+        obtain ⟨sourceEVMFinal, hSourceBasicStep, hSourceShared, hSourceStack⟩ :=
+          Locals.Source.PrimitiveSemantics.structured_eval_step_exists
+            (evm := Locals.InteractionSemantics.Primitive.isolated source values)
+            (baseStack := []) hSourceEval rfl (by
+              simp [Locals.InteractionSemantics.Primitive.isolated])
+        obtain ⟨targetEVMFinal, hTargetBasicStep, hTargetShared, hTargetStack⟩ :=
+          Locals.Source.PrimitiveSemantics.structured_eval_step_exists
+            hTargetEval rfl hStack
+        have hSourceStepRun :
+            step.run (Locals.InteractionSemantics.Primitive.isolated source values) =
+              .ok sourceEVMFinal := by
+          rw [← Locals.Source.PrimitiveSemantics.sourceContinuingStep_basicOpStep
+            hSourceStep]
+          exact hSourceBasicStep
+        have hTargetStepRun : step.run target.evm = .ok targetEVMFinal := by
+          rw [← Locals.Source.PrimitiveSemantics.sourceContinuingStep_basicOpStep
+            hSourceStep]
+          exact hTargetBasicStep
+        let sourceFinal := source.withShared sourceSharedFinal
+        let targetFinal := target.withEVM targetEVMFinal
+        have hSourceOpen :
+            Locals.InteractionSemantics.Primitive.openEval op source values =
+              .done (.ok (sourceFinal, outputs)) := by
+          rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+            hLength spec.supportsOpen hSourceStep spec.notGas spec.notMsize]
+          rw [hSourceStepRun]
+          simp [Simulation.Interaction.map,
+            Simulation.Interaction.pure,
+            Locals.InteractionSemantics.Primitive.finish,
+            sourceFinal, hSourceShared, hSourceStack]
+        have hTargetOpen :
+            Structured.InteractionSemantics.BasicInstr.openStep (.op op) target =
+              .done (.ok targetFinal) := by
+          unfold Structured.InteractionSemantics.BasicInstr.openStep
+            Structured.InteractionSemantics.BasicInstr.openStepEVM
+          change
+            Simulation.Interaction.map target.withEVM
+                (Assembly.InteractionSemantics.PrimOp.openStep
+                  op.toPrimOp target.evm) =
+              .done (.ok targetFinal)
+          rw [Assembly.InteractionSemantics.PrimOp.openStep_of_continuingStep
+            hPrimitiveStep spec.notGas spec.notMsize]
+          rw [hTargetStepRun]
+          simp [Simulation.Interaction.map, Simulation.Interaction.pure,
+            targetFinal]
+        have hSharedEVM :
+            SharedRel contract sourceSharedFinal targetEVMFinal.toSharedState := by
+          rw [hTargetShared]
+          exact hEffect.shared
+        have hOldRel :
+            ActivationStateRel contract plan live
+              (stackOffset + values.reverse.length) frameBase mode source target := by
+          simpa [List.length_reverse, hLength] using hRel
+        have hScratchStable :
+            ∀ name slot,
+              name ∈ live →
+              plan.location? name = some (.scratch slot) →
+              targetFinal.evm.toMachineState.lookupMemory
+                  (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)) =
+                target.evm.toMachineState.lookupMemory
+                  (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)) := by
+          intro name slot hLive hLocation
+          cases hOldRel with
+          | stack liveStackOnly _activeNoWrap _state =>
+              exact False.elim (liveStackOnly name slot hLive hLocation)
+          | scratch state =>
+              obtain ⟨reservation, hReservation, _hFrame⟩ := state.frameReserved
+              change
+                targetEVMFinal.toMachineState.lookupMemory
+                    (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)) =
+                  target.evm.toMachineState.lookupMemory
+                    (EvmYul.UInt256.ofNat (scratchAddress frameBase slot))
+              rw [hTargetShared]
+              exact hEffect.scratchStable reservation hReservation
+                (scratchAddress frameBase slot)
+                (state.scratchAddress_reserved hLive hLocation hReservation)
+                (state.scratchAddress_end_le_memory hLive hLocation)
+                (state.scratchAddress_end_le_active hLive hLocation)
+        have hMemoryMono :
+            target.evm.toMachineState.memory.size ≤
+              targetFinal.evm.toMachineState.memory.size := by
+          change
+            target.evm.toMachineState.memory.size ≤
+              targetEVMFinal.toMachineState.memory.size
+          rw [hTargetShared]
+          exact hEffect.memoryMono
+        have hActiveMono :
+            target.evm.activeWords.toNat ≤ targetFinal.evm.activeWords.toNat := by
+          change target.evm.activeWords.toNat ≤ targetEVMFinal.activeWords.toNat
+          rw [hTargetShared]
+          exact hEffect.activeMono
+        have hFinalNoWrap :
+            targetFinal.evm.activeWords.toNat * MemoryContract.wordBytes <
+              EvmYul.UInt256.size := by
+          change
+            targetEVMFinal.activeWords.toNat * MemoryContract.wordBytes <
+              EvmYul.UInt256.size
+          rw [hTargetShared]
+          exact hEffect.activeNoWrap
+        have hRebased :=
+          hOldRel.rebase_prefix
+            (sourceFinal := sourceFinal) (targetFinal := targetFinal)
+            (oldPrefix := values.reverse) (newPrefix := outputs.reverse)
+            (baseStack := initialTarget.evm.stack)
+            (by simpa [sourceFinal, targetFinal] using hSharedEVM)
+            hStack (by simpa [targetFinal] using hTargetStack)
+            hScratchStable (by rfl) hMemoryMono hActiveMono hFinalNoWrap
+        have hOutputsLength :
+            outputs.length = Expressions.Structured.BasicOp.outputs op :=
+          Locals.Source.PrimitiveSemantics.structured_eval_length hSourceEval
+        have hFinalState :
+            ActivationStateRel contract plan live
+              (stackOffset + Expressions.Structured.BasicOp.outputs op)
+              frameBase mode sourceFinal targetFinal := by
+          simpa [List.length_reverse, hOutputsLength] using hRebased
+        rw [hSourceOpen, hTargetOpen]
+        apply Simulation.Interaction.Rel.done
+        apply Simulation.Interaction.ExceptRel.ok
+        exact
+          ⟨hFinalState, hOutputsLength,
+            by simpa [targetFinal] using hTargetStack⟩
+
+end FallibleClosedSpec
+
 namespace SharedFamily
 
 def toClosedSpec
@@ -1136,6 +1360,46 @@ structure CopySpec (contract : MemoryContract.Contract)
       values.length = Expressions.Structured.BasicOp.inputs op →
       CopyInvocation contract op values
 
+theorem targetEffect_of_copy
+    {contract : MemoryContract.Contract}
+    {sourceFinal targetInitial targetFinal : EvmYul.SharedState .EVM}
+    {copied : ByteArray} {sourceOffset destination size : Nat}
+    (hShared : SharedRel contract sourceFinal targetFinal)
+    (hMemory :
+      targetFinal.toMachineState.memory =
+        copied.write sourceOffset targetInitial.toMachineState.memory
+          destination size)
+    (hAllowed :
+      Simulation.MemorySafety.RegionAllowed contract destination size)
+    (hHost : destination + size < USize.size)
+    (hMemoryMono :
+      targetInitial.toMachineState.memory.size ≤
+        targetFinal.toMachineState.memory.size)
+    (hActiveMono :
+      targetInitial.toMachineState.activeWords.toNat ≤
+        targetFinal.toMachineState.activeWords.toNat)
+    (hInitialNoWrap :
+      targetInitial.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes < EvmYul.UInt256.size)
+    (hFinalNoWrap :
+      targetFinal.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes < EvmYul.UInt256.size) :
+    TargetEffect contract sourceFinal targetInitial targetFinal := by
+  refine ⟨hShared, ?_, hMemoryMono, hActiveMono, hFinalNoWrap⟩
+  intro reservation hReservation query hReserved hReadMemory hReadActive
+  have hQueryLt : query < EvmYul.UInt256.size :=
+    lt_of_le_of_lt (Nat.le_add_right query MemoryContract.wordBytes)
+      (hReadActive.trans_lt hInitialNoWrap)
+  have hDisjoint :=
+    Simulation.MemorySafety.reservedWord_disjoint_of_regionAllowed
+      hReservation hAllowed hReserved
+  exact
+    Compiler.MemoryRelation.lookupMemory_eq_of_write_disjoint_growing
+      copied targetInitial.toMachineState targetFinal.toMachineState
+      sourceOffset destination size query hHost hMemory
+      (EvmYul.UInt256.toNat_ofNat_of_lt hQueryLt)
+      hReadMemory hReadActive hInitialNoWrap hActiveMono hFinalNoWrap hDisjoint
+
 namespace CopySpec
 
 def toClosedSpec
@@ -1154,22 +1418,9 @@ def toClosedSpec
     obtain ⟨targetFinal, copied, hTargetEval, hShared, hMemory,
         hMemoryMono, hActiveMono, hFinalNoWrap⟩ :=
       invocation.simulate hRel hSafe hTargetNoWrap hEval
-    refine ⟨targetFinal, hTargetEval, hShared, ?_, hMemoryMono,
-      hActiveMono, hFinalNoWrap⟩
-    intro reservation hReservation query hReserved hReadMemory hReadActive
-    have hQueryLt : query < EvmYul.UInt256.size :=
-      lt_of_le_of_lt (Nat.le_add_right query MemoryContract.wordBytes)
-        (hReadActive.trans_lt hTargetNoWrap)
-    have hDisjoint :=
-      Simulation.MemorySafety.reservedWord_disjoint_of_regionAllowed
-        hReservation hAllowed hReserved
-    exact
-      Compiler.MemoryRelation.lookupMemory_eq_of_write_disjoint_growing
-        copied targetShared.toMachineState targetFinal.toMachineState
-        invocation.sourceOffset.toNat invocation.destination.toNat
-        invocation.size.toNat query hHost hMemory
-        (EvmYul.UInt256.toNat_ofNat_of_lt hQueryLt)
-        hReadMemory hReadActive hTargetNoWrap hActiveMono hFinalNoWrap hDisjoint
+    exact ⟨targetFinal, hTargetEval,
+      targetEffect_of_copy hShared hMemory hAllowed hHost hMemoryMono
+        hActiveMono hTargetNoWrap hFinalNoWrap⟩
 
 theorem openForward
     {contract : MemoryContract.Contract} {op : Structured.BasicOp}
@@ -1475,6 +1726,189 @@ def codecopySpec (contract : MemoryContract.Contract) :
 theorem codecopy_openForward (contract : MemoryContract.Contract) :
     AllocationInteractionPrimitive.OpenForward contract .codecopy :=
   (codecopySpec contract).openForward
+
+theorem returndatacopy_simulate
+    {contract : MemoryContract.Contract}
+    {sourceShared sourceFinal targetShared : EvmYul.SharedState .EVM}
+    {destination sourceOffset size : Word} {outputs : List Word}
+    (hRel : SharedRel contract sourceShared targetShared)
+    (hExpansion :
+      Compiler.MemoryRelation.ExpansionNoWrap destination.toNat size.toNat)
+    (hHost : destination.toNat + size.toNat < USize.size)
+    (hTargetNoWrap :
+      targetShared.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes < EvmYul.UInt256.size)
+    (hEval :
+      Locals.Source.PrimitiveSemantics.structured.eval
+          .returndatacopy sourceShared [size, sourceOffset, destination] =
+        .ok (sourceFinal, outputs)) :
+    ∃ targetFinal,
+      Locals.Source.PrimitiveSemantics.structured.eval
+          .returndatacopy targetShared [size, sourceOffset, destination] =
+        .ok (targetFinal, outputs) ∧
+      SharedRel contract sourceFinal targetFinal ∧
+      targetFinal.toMachineState.memory =
+        targetShared.toMachineState.returnData.write sourceOffset.toNat
+          targetShared.toMachineState.memory destination.toNat size.toNat ∧
+      targetShared.toMachineState.memory.size ≤
+        targetFinal.toMachineState.memory.size ∧
+      targetShared.toMachineState.activeWords.toNat ≤
+        targetFinal.toMachineState.activeWords.toNat ∧
+      targetFinal.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes < EvmYul.UInt256.size := by
+  have hReturnData :
+      sourceShared.toMachineState.returnData =
+        targetShared.toMachineState.returnData :=
+    hRel.machine.returnData
+  have hBound :
+      ¬ sourceShared.toMachineState.returnData.size <
+          sourceOffset.toNat + size.toNat := by
+    intro hPast
+    simp [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp,
+      Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+      Expressions.Structured.BasicOp.inputs,
+      EvmYul.Stack.pop3, hPast] at hEval
+  have hTargetBound :
+      ¬ targetShared.toMachineState.returnData.size <
+          sourceOffset.toNat + size.toNat := by
+    simpa [← hReturnData] using hBound
+  have hMachine :=
+    Compiler.MemoryRelation.MachineRel.copy_both
+      hRel.machine hTargetNoWrap sourceShared.toMachineState.returnData
+      sourceOffset.toNat destination.toNat size.toNat hExpansion hHost
+  have hSourceResult :
+      sourceFinal =
+          { sourceShared with
+            toMachineState :=
+              sourceShared.toMachineState.returndatacopy
+                destination sourceOffset size } ∧
+        outputs = [] := by
+    simpa [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp,
+      Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+      Expressions.Structured.BasicOp.inputs,
+      EvmYul.Stack.pop3, hBound,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Id.run] using hEval.symm
+  rcases hSourceResult with ⟨rfl, rfl⟩
+  let targetFinal : EvmYul.SharedState .EVM :=
+    { targetShared with
+      toMachineState :=
+        targetShared.toMachineState.returndatacopy
+          destination sourceOffset size }
+  have hShared :
+      SharedRel contract
+        { sourceShared with
+          toMachineState :=
+            sourceShared.toMachineState.returndatacopy
+              destination sourceOffset size }
+        targetFinal := by
+    refine ⟨?_, ?_⟩
+    · simpa [EvmYul.MachineState.returndatacopy, EvmYul.writeBytes,
+        targetFinal, hReturnData] using hMachine.1
+    · simpa [EvmYul.MachineState.returndatacopy, targetFinal] using hRel.world
+  refine ⟨targetFinal, ?_, hShared, ?_, ?_, ?_, ?_⟩
+  · simp [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp,
+      Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+      Expressions.Structured.BasicOp.inputs,
+      EvmYul.Stack.pop3, hTargetBound,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Id.run, targetFinal]
+  · simp [EvmYul.MachineState.returndatacopy, EvmYul.writeBytes, targetFinal]
+  · simpa [EvmYul.MachineState.returndatacopy, EvmYul.writeBytes,
+      targetFinal, hReturnData] using hMachine.2.2.2
+  · simpa [EvmYul.MachineState.returndatacopy, EvmYul.writeBytes,
+      targetFinal] using hMachine.2.2.1
+  · simpa [EvmYul.MachineState.returndatacopy, EvmYul.writeBytes,
+      targetFinal] using hMachine.2.1
+
+def returndatacopySpec (contract : MemoryContract.Contract) :
+    FallibleClosedSpec contract .returndatacopy where
+  sourceStep := ⟨.returndatacopy, rfl⟩
+  supportsOpen := rfl
+  notGas := by decide
+  notMsize := by decide
+  simulateSuccess := by
+    intro sourceShared sourceFinal targetShared values outputs hLength hRel
+      hSafe hTargetNoWrap hEval
+    obtain ⟨size, sourceOffset, destination, rfl⟩ :=
+      List.length_eq_three.mp (by simpa using hLength)
+    have hFacts :
+        Compiler.MemoryRelation.MemoryConsistent sourceShared.toMachineState ∧
+          Simulation.MemorySafety.RegionAllowed contract
+            destination.toNat size.toNat ∧
+          Compiler.MemoryRelation.ExpansionNoWrap
+            destination.toNat size.toNat ∧
+          destination.toNat + size.toNat < USize.size := by
+      simpa [Simulation.MemorySafety.OpenPrimitiveMemorySafe,
+        Simulation.MemorySafety.PrimitiveMemorySafe,
+        Simulation.MemorySafety.PrimitiveExpansionSafe,
+        Simulation.MemorySafety.PrimitiveHostSafe] using hSafe
+    obtain ⟨targetFinal, hTargetEval, hShared, hMemory,
+        hMemoryMono, hActiveMono, hFinalNoWrap⟩ :=
+      returndatacopy_simulate hRel hFacts.2.2.1 hFacts.2.2.2
+        hTargetNoWrap hEval
+    exact ⟨targetFinal, hTargetEval,
+      targetEffect_of_copy hShared hMemory hFacts.2.1 hFacts.2.2.2
+        hMemoryMono hActiveMono hTargetNoWrap hFinalNoWrap⟩
+  errorSuffix := by
+    intro step sourceShared target values baseStack error hLength hStep hRel
+      hStack hEval
+    have hStepEq : step = .returndatacopy := by
+      simpa [Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+        Structured.BasicOp.toPrimOp,
+        Assembly.PrimOp.continuingStep?] using (Option.some.inj hStep).symm
+    subst step
+    obtain ⟨size, sourceOffset, destination, rfl⟩ :=
+      List.length_eq_three.mp (by simpa using hLength)
+    have hBound :
+        sourceShared.toMachineState.returnData.size <
+          sourceOffset.toNat + size.toNat := by
+      by_contra hBound
+      simp [Locals.Source.PrimitiveSemantics.structured,
+        Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+        Structured.BasicOp.toPrimOp,
+        Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+        Expressions.Structured.BasicOp.inputs,
+        EvmYul.Stack.pop3, hBound,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC, Id.run] at hEval
+    have hError : error = .InvalidMemoryAccess := by
+      simpa [Locals.Source.PrimitiveSemantics.structured,
+        Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+        Structured.BasicOp.toPrimOp,
+        Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+        Expressions.Structured.BasicOp.inputs,
+        EvmYul.Stack.pop3, hBound] using hEval.symm
+    have hTargetBound :
+        target.returnData.size < sourceOffset.toNat + size.toNat := by
+      simpa [← hRel.machine.returnData] using hBound
+    have hTargetStack :
+        target.stack = [destination, sourceOffset, size] ++ baseStack := by
+      simpa using hStack
+    have hPrefixPop :
+        EvmYul.Stack.pop3 [destination, sourceOffset, size] =
+          some ([], destination, sourceOffset, size) := by
+      rfl
+    have hTargetPop :=
+      Assembly.PrimStep.Stack.pop3_append_of_some
+        (tail := baseStack) hPrefixPop
+    have hTargetPop' :
+        EvmYul.Stack.pop3
+            (destination :: sourceOffset :: size :: baseStack) =
+          some (baseStack, destination, sourceOffset, size) := by
+      simpa using hTargetPop
+    rw [hError]
+    simp [Assembly.PrimStep.run, hTargetStack, hTargetPop', hTargetBound]
+
+theorem returndatacopy_openForward (contract : MemoryContract.Contract) :
+    AllocationInteractionPrimitive.OpenForward contract .returndatacopy :=
+  (returndatacopySpec contract).openForward
 
 theorem extcodecopy_simulate
     {contract : MemoryContract.Contract}

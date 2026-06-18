@@ -881,6 +881,8 @@ Exit: the shared core builds with no compiler layer changed.
     reserved spill word while maintaining related memory and active growth.
   - [x] Define one total-copy capability and instantiate `calldatacopy`,
     `codecopy`, `extcodecopy`, and overlapping `mcopy` with exact spill safety.
+  - [x] Define an error-aware closed capability and prove `returndatacopy`
+    preserves both successful copies and exact out-of-bounds errors.
   - [ ] Compose argument-expression preservation with external primitive
     preservation through the ordinary allocation lowerer and Locals compiler.
   - [ ] Recursive allocation preservation for expressions, statements,

@@ -31687,3 +31687,16 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   focused 1145-job module, 1307-job verification root, architecture guard,
   touched-file hole scan, axiom audit, and `git diff --check` passed; all copy
   theorems use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 21:18:55 PDT - proof/functions-fallible-closed-family - added the
+  Locals-owned primitive-error bridge and generic `FallibleClosedSpec`; exact
+  error equality is preserved over hidden target stack suffixes without a
+  replay oracle or target-run premise.
+- 2026-06-17 21:18:55 PDT - proof/functions-returndatacopy-open - proved both
+  branches of `returndatacopy_openForward`: in-bounds copies reuse the shared
+  spill-safe copy effect, while out-of-bounds runs agree exactly on
+  `InvalidMemoryAccess` from equal return data.
+- 2026-06-17 21:18:55 PDT - validation/functions-returndatacopy-open - the
+  focused 1145-job module, 1307-job verification root, architecture guard,
+  touched-file hole scan, axiom audit, and `git diff --check` passed; fallible
+  and return-data-copy theorems use only
+  `[propext, Classical.choice, Quot.sound]`.

@@ -89,6 +89,34 @@ theorem sourceContinuingStep_basicOpStep
     cases hStep
     rfl
 
+/-- An error from canonical primitive evaluation is the underlying step error. -/
+theorem structured_eval_error_run
+    {op : Structured.BasicOp} {step : Assembly.PrimStep}
+    {shared : EvmYul.SharedState .EVM} {values : List Word}
+    {error : EVMException}
+    (hLength : values.length = Expressions.Structured.BasicOp.inputs op)
+    (hStep : sourceContinuingStep? op = some step)
+    (hEval : structured.eval op shared values = .error error) :
+    step.run (Assembly.PrimStep.isoState shared values.reverse) =
+      .error error := by
+  change
+    step.run
+        { toSharedState := shared
+          pc := EvmYul.UInt256.ofNat 0
+          stack := values.reverse
+          execLength := 0 } =
+      .error error
+  cases hRun : step.run
+      { toSharedState := shared
+        pc := EvmYul.UInt256.ofNat 0
+        stack := values.reverse
+        execLength := 0 } with
+  | error stepError =>
+      simp [structured, hLength, hStep, hRun] at hEval
+      simpa [hEval] using hRun
+  | ok final =>
+      simp [structured, hLength, hStep, hRun] at hEval
+
 /--
 Successful canonical primitive evaluation can be replayed over an arbitrary
 caller stack suffix without changing its projected shared result.
