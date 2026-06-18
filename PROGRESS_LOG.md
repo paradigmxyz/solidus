@@ -31989,3 +31989,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1168-job build, full verification root, architecture guard, touched-Lean hole
   scan, axiom audit, and `git diff --check` passed; new call decomposition and
   entry theorems use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-18 00:12:00 PDT - proof/functions-scratch-parameter-prelude - proved
+  entry marker code silent in the open interpreter, strengthened the shared
+  scratch-store theorem with its exact machine update, and checked one real
+  `lowerScratchParam`/Locals compilation/open-execution step back into the
+  canonical callee-entry relation.
+- 2026-06-18 00:14:00 PDT - validation/functions-scratch-parameter-prelude -
+  focused 1168-job build, full verification root, architecture guard,
+  touched-Lean hole scan, axiom audit, and `git diff --check` passed; new
+  prelude theorems use only `[propext, Classical.choice, Quot.sound]`.

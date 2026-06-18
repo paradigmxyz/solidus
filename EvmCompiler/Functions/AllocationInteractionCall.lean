@@ -1,4 +1,6 @@
 import EvmCompiler.Functions.AllocationInteractionCursor
+import EvmCompiler.Functions.AllocationInteractionScratchStore
+import EvmCompiler.Locals.InteractionCleanupPreservation
 
 namespace EvmCompiler
 namespace Functions
@@ -113,6 +115,454 @@ theorem components
           hStores, hRelease, hArgsCode, hReleaseCode, rfl, rfl, rfl⟩
 
 end CallCompiler
+
+namespace EntryMarkers
+
+theorem compileOpen
+    {localsCtx : Locals.Ctx}
+    {entryLayout : Locals.Layout}
+    {baseDepth : Nat}
+    {scratchBindings : List (Locals.Name × Nat)}
+    {needsFrame : Bool} :
+    Locals.Block.compileOpen localsCtx
+        { stmts :=
+            [AllocationLowering.bindEntryLayout entryLayout] ++
+              if needsFrame then
+                [AllocationLowering.bindScratchBindings
+                  baseDepth scratchBindings]
+              else
+                [] } =
+      some
+        ([.code [.bindLocals 0 entryLayout]] ++
+          if needsFrame then
+            [.code
+              (AllocationSupport.bindScratchBindingsCode
+                baseDepth scratchBindings)]
+          else
+            [],
+         localsCtx) := by
+  exact AllocationLowering.entryMarkers_compileOpen
+
+theorem openRun_bindScratchBindingsCode
+    (baseDepth : Nat)
+    (bindings : List (Locals.Name × Nat))
+    (target : Structured.RunState) :
+    Structured.InteractionSemantics.Code.openRun
+        (AllocationSupport.bindScratchBindingsCode baseDepth bindings)
+        target =
+      .done (.ok target) := by
+  induction bindings with
+  | nil =>
+      rfl
+  | cons binding rest ih =>
+      rcases binding with ⟨name, slot⟩
+      rw [show
+        AllocationSupport.bindScratchBindingsCode baseDepth
+            ((name, slot) :: rest) =
+          [.bindScratch baseDepth name slot] ++
+            AllocationSupport.bindScratchBindingsCode baseDepth rest by
+        rfl]
+      rw [Structured.InteractionSemantics.Code.openRun_append]
+      change
+        Simulation.Interaction.bind (.done (.ok target))
+            (Structured.InteractionSemantics.Code.openRun
+              (AllocationSupport.bindScratchBindingsCode baseDepth rest)) =
+          .done (.ok target)
+      exact ih
+
+theorem openRun
+    (entryLayout : Locals.Layout)
+    (baseDepth : Nat)
+    (scratchBindings : List (Locals.Name × Nat))
+    (needsFrame : Bool)
+    (target : Structured.RunState) :
+    Structured.InteractionSemantics.Code.openRun
+        ([.bindLocals 0 entryLayout] ++
+          if needsFrame then
+            AllocationSupport.bindScratchBindingsCode
+              baseDepth scratchBindings
+          else
+            [])
+        target =
+      .done (.ok target) := by
+  cases needsFrame with
+  | false =>
+      simpa using
+        Locals.InteractionPreservation.Code.openRun_bindLocals
+          0 entryLayout target
+  | true =>
+      rw [Structured.InteractionSemantics.Code.openRun_append]
+      change
+        Simulation.Interaction.bind (.done (.ok target))
+            (Structured.InteractionSemantics.Code.openRun
+              (AllocationSupport.bindScratchBindingsCode
+                baseDepth scratchBindings)) =
+          .done (.ok target)
+      exact
+        openRun_bindScratchBindingsCode baseDepth scratchBindings target
+
+end EntryMarkers
+
+namespace ParameterPrelude
+
+/-- Execute one compiler-emitted scratch-parameter realization step. -/
+theorem scratch_step_code
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan}
+    {realized : List Locals.Name}
+    {pending : List (Locals.Name × Nat)}
+    {frameBase frameDepth frameWords slot : Nat}
+    {source : Functions.InteractionSemantics.State}
+    {target : Structured.RunState}
+    {name : Locals.Name}
+    {nameOp frameOp : Structured.BasicOp}
+    {promoteCode : Structured.Code}
+    {reservation : MemoryContract.ScratchReservation}
+    (hRel :
+      ActivationCalleeEntryRel contract plan realized
+        ((name, slot) :: pending) frameBase
+        (.scratch frameDepth frameWords) source target)
+    (hWF : plan.WellFormed)
+    (hLocation : plan.location? name = some (.scratch slot))
+    (hStackOrder :
+      currentStackOrder plan (name :: realized) =
+        currentStackOrder plan realized)
+    (hSlot : slot < frameWords)
+    (hReservation : contract.scratch? = some reservation)
+    (hNameOp :
+      Locals.StackOp.dup? (pending.length + 1) = some nameOp)
+    (hFrameOp :
+      Locals.StackOp.dup? ((pending.length + 1) + frameDepth + 2) =
+        some frameOp)
+    (hPromote :
+      Locals.Ctx.swapRestoreUpTo? pending.length = some promoteCode) :
+    ∃ written promoted final,
+      Structured.InteractionSemantics.Code.openRun
+          ([.op nameOp] ++
+            [.op frameOp,
+             .push (AllocationSupport.slotOffset slot),
+             .op .add,
+             .op .mstore])
+          target =
+        .done (.ok written) ∧
+      Structured.InteractionSemantics.Code.openRun promoteCode written =
+        .done (.ok promoted) ∧
+      Structured.InteractionSemantics.Code.openRun [.op .pop] promoted =
+        .done (.ok final) ∧
+      Structured.InteractionSemantics.Code.openRun
+          ([.op nameOp] ++
+            [.op frameOp,
+             .push (AllocationSupport.slotOffset slot),
+             .op .add,
+             .op .mstore] ++
+            promoteCode ++ [.op .pop])
+          target =
+        .done (.ok final) ∧
+      ActivationCalleeEntryRel contract plan (name :: realized) pending
+        frameBase (.scratch frameDepth frameWords) source final ∧
+      final.evm.stack.length + 1 = target.evm.stack.length ∧
+      final.evm.toMachineState =
+        target.evm.toMachineState.mstore
+          (EvmYul.UInt256.ofNat (scratchAddress frameBase slot))
+          ((source.vars name).getD AllocationSupport.zeroWord) := by
+  obtain ⟨value, values, suffix, hValue, hLookup, hTargetStack⟩ :=
+    hRel.cons_parts
+  have hValuesLength : values.length = pending.length := by
+    simpa using Functions.Source.Store.lookupMany_length hLookup
+  have hValueAt : target.evm.stack[pending.length]? = some value := by
+    rw [hTargetStack]
+    simp [hValuesLength]
+  let afterValue := StateRel.pushTarget value target
+  have hValueRun :
+      Structured.InteractionSemantics.Code.openRun [.op nameOp] target =
+        .done (.ok afterValue) := by
+    simpa [afterValue, StateRel.pushTarget] using
+      Locals.InteractionPreservation.Code.openRun_dup hNameOp hValueAt
+  have hScratch :
+      ScratchStateRel contract plan realized (pending.length + 1) frameBase
+        frameDepth frameWords source target := by
+    cases hRel.state with
+    | scratch state => simpa using state
+  have hAfterValueRel :
+      ScratchStateRel contract plan realized
+        ((pending.length + 1) + 1) frameBase frameDepth frameWords
+        source afterValue := by
+    simpa [afterValue, StateRel.pushTarget] using
+      hScratch.push_target_by 1 value
+  have hAfterValueStack :
+      afterValue.evm.stack = value :: target.evm.stack := by
+    rfl
+  have hRegion :
+      reservation.containsRegion (scratchAddress frameBase slot) 1 :=
+    hScratch.scratchAddress_reserved_of_bound hSlot hReservation
+  obtain
+      ⟨written, hStoreRun, hWrittenRel, hWrittenStack,
+        hWrittenMachine⟩ :=
+    AllocationInteractionScratchStore.assignTop
+      (stackOffset := pending.length + 1)
+      hAfterValueRel hAfterValueStack hWF
+      (fun other hOther => by
+        simp at hOther
+        exact hOther)
+      hStackOrder hLocation hSlot hReservation hRegion hFrameOp
+  have hWrittenRel' :
+      ScratchStateRel contract plan (name :: realized)
+        (pending.length + 1) frameBase frameDepth frameWords
+        source written := by
+    have hInsert : source.insert name value = source :=
+      Locals.Source.State.insert_eq_of_apply_eq hValue
+    simpa [hInsert] using hWrittenRel
+  have hWrittenStack' :
+      written.evm.stack = values.reverse ++ value :: suffix := by
+    rw [hWrittenStack, hTargetStack]
+  obtain
+      ⟨promoted, hPromoteRun, hPromoteStack, hPromoteShared,
+        _hPromoteReturns⟩ :=
+    Locals.InteractionCleanupPreservation.openRun_swapRestoreUpTo?
+      hPromote (by simpa using hValuesLength) hWrittenStack'
+  let final :=
+    promoted.withEVM
+      (promoted.evm.replaceStackAndIncrPC (values.reverse ++ suffix))
+  have hPopRun :
+      Structured.InteractionSemantics.Code.openRun [.op .pop] promoted =
+        .done (.ok final) := by
+    simpa [final] using
+      Locals.InteractionPreservation.Code.openRun_pop hPromoteStack
+  have hFinalShared :
+      final.evm.toSharedState = written.evm.toSharedState := by
+    rw [show final.evm.toSharedState = promoted.evm.toSharedState by
+      simp [final, EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC]]
+    exact hPromoteShared
+  have hFinalStack : final.evm.stack = values.reverse ++ suffix := by
+    rfl
+  have hFinalRel :
+      ActivationCalleeEntryRel contract plan (name :: realized) pending
+        frameBase (.scratch frameDepth frameWords) source final :=
+    hRel.activate_scratch_after hLookup hTargetStack hWrittenRel'
+      hWrittenStack hFinalShared hFinalStack
+  have hWholeStoreRun :
+      Structured.InteractionSemantics.Code.openRun
+          ([.op nameOp] ++
+            [.op frameOp,
+             .push (AllocationSupport.slotOffset slot),
+             .op .add,
+             .op .mstore])
+          target =
+        .done (.ok written) := by
+    rw [Structured.InteractionSemantics.Code.openRun_append, hValueRun]
+    exact hStoreRun
+  have hWholeRun :
+      Structured.InteractionSemantics.Code.openRun
+          ([.op nameOp] ++
+            [.op frameOp,
+             .push (AllocationSupport.slotOffset slot),
+             .op .add,
+             .op .mstore] ++
+            promoteCode ++ [.op .pop])
+          target =
+        .done (.ok final) := by
+    rw [Structured.InteractionSemantics.Code.openRun_append,
+      Structured.InteractionSemantics.Code.openRun_append,
+      hWholeStoreRun]
+    change
+      Simulation.Interaction.bind
+          (Structured.InteractionSemantics.Code.openRun promoteCode written)
+          (Structured.InteractionSemantics.Code.openRun [.op .pop]) =
+        .done (.ok final)
+    rw [hPromoteRun]
+    exact hPopRun
+  refine
+    ⟨written, promoted, final, hWholeStoreRun, hPromoteRun, hPopRun,
+      hWholeRun, hFinalRel, ?_, ?_⟩
+  · rw [hFinalStack, hTargetStack]
+    simp only [List.length_append, List.length_reverse,
+      List.length_cons, hValuesLength]
+    omega
+  · have hFinalMachine :
+        final.evm.toMachineState = written.evm.toMachineState := by
+      calc
+        final.evm.toMachineState = promoted.evm.toMachineState := by
+          simp [final, EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC]
+        _ = written.evm.toMachineState :=
+          congrArg EvmYul.SharedState.toMachineState hPromoteShared
+    rw [hFinalMachine, hWrittenMachine]
+    simpa [hValue, afterValue, StateRel.pushTarget, StateRel.pushTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC]
+
+/-- Compile and execute the real lowering of one scratch parameter. -/
+theorem scratch_step_of_lowerScratchParam
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan}
+    {realized : List Locals.Name}
+    {pending : List (Locals.Name × Nat)}
+    {frameBase frameDepth frameWords slot : Nat}
+    {source : Functions.InteractionSemantics.State}
+    {target : Structured.RunState}
+    {name : Locals.Name}
+    {ctx : AllocationLowering.Ctx}
+    {localsCtx : Locals.Ctx}
+    {above suffix : Locals.Layout}
+    {targetProgram : Expressions.Program}
+    {reservation : MemoryContract.ScratchReservation}
+    (hRel :
+      ActivationCalleeEntryRel contract plan realized
+        ((name, slot) :: pending) frameBase
+        (.scratch frameDepth frameWords) source target)
+    (hWF : plan.WellFormed)
+    (hLocation : plan.location? name = some (.scratch slot))
+    (hStackOrder :
+      currentStackOrder plan (name :: realized) =
+        currentStackOrder plan realized)
+    (hSlot : slot < frameWords)
+    (hReservation : contract.scratch? = some reservation)
+    (hLayout : localsCtx.layout = above ++ name :: suffix)
+    (hAboveLength : above.length = pending.length)
+    (hAboveFresh : name ∉ above)
+    (hSuffixFresh : name ∉ suffix)
+    (hNameDepthBound : above.length + 1 ≤ 16)
+    (hFrameDepth :
+      Locals.Layout.lookupDepth? ctx.frameName (above ++ name :: suffix) =
+        some ((pending.length + 1) + frameDepth + 1))
+    (hFrameDepthBound :
+      1 + ((pending.length + 1) + frameDepth + 1) ≤ 16) :
+    ∃ compiled final,
+      Locals.Block.compileOpen localsCtx
+          { stmts :=
+              (AllocationLowering.lowerScratchParam ctx name slot
+                (above ++ name :: suffix)).1 } =
+        some (compiled, localsCtx.withLayout (above ++ suffix)) ∧
+      Expressions.InteractionSemantics.Block.openRun targetProgram 4
+          { stmts := compiled } target =
+        .done (.ok (Structured.Outcome.regular final)) ∧
+      ActivationCalleeEntryRel contract plan (name :: realized) pending
+        frameBase (.scratch frameDepth frameWords) source final ∧
+      final.evm.stack.length + 1 = target.evm.stack.length ∧
+      final.evm.toMachineState =
+        target.evm.toMachineState.mstore
+          (EvmYul.UInt256.ofNat (scratchAddress frameBase slot))
+          ((source.vars name).getD AllocationSupport.zeroWord) := by
+  obtain ⟨nameOp, hNameOp⟩ :=
+    Locals.StackOp.exists_dup?_of_pos_of_le
+      (depth := above.length + 1) (by omega) hNameDepthBound
+  obtain ⟨frameOp, hFrameOp⟩ :=
+    Locals.StackOp.exists_dup?_of_pos_of_le
+      (depth := 1 + ((pending.length + 1) + frameDepth + 1))
+      (by omega) hFrameDepthBound
+  obtain ⟨promoteCode, hPromote⟩ :=
+    Locals.Ctx.exists_swapRestoreUpTo?_of_le
+      (depth := above.length) (by omega)
+  have hCompile :=
+    AllocationLowering.lowerScratchParam_compileOpen
+      (ctx := ctx) (name := name) (slot := slot)
+      (frameDepth := (pending.length + 1) + frameDepth + 1)
+      (above := above) (suffix := suffix) (localsCtx := localsCtx)
+      (nameOp := nameOp) (frameOp := frameOp)
+      (promoteCode := promoteCode)
+      hLayout hAboveFresh hSuffixFresh (by omega) hFrameDepth
+      hNameOp hFrameOp hPromote
+  have hNameOp' :
+      Locals.StackOp.dup? (pending.length + 1) = some nameOp := by
+    simpa [hAboveLength] using hNameOp
+  have hFrameOp' :
+      Locals.StackOp.dup? ((pending.length + 1) + frameDepth + 2) =
+        some frameOp := by
+    simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hFrameOp
+  have hPromote' :
+      Locals.Ctx.swapRestoreUpTo? pending.length = some promoteCode := by
+    simpa [hAboveLength] using hPromote
+  obtain
+      ⟨written, promoted, final, hStoreRun, hPromoteRun, hPopRun,
+        _hWholeRun, hFinalRel, hStackLength, hFinalMachine⟩ :=
+    scratch_step_code hRel hWF hLocation hStackOrder hSlot
+      hReservation hNameOp' hFrameOp' hPromote'
+  let compiled : List Expressions.Stmt :=
+    [.code
+      ([.op nameOp] ++
+        [.op frameOp,
+         .push (AllocationSupport.slotOffset slot),
+         .op .add,
+         .op .mstore]),
+     .code promoteCode,
+     .code [.op .pop]]
+  refine
+    ⟨compiled, final, by simpa [compiled] using hCompile, ?_,
+      hFinalRel, hStackLength, hFinalMachine⟩
+  let storeCode : Structured.Code :=
+    [.op nameOp] ++
+      [.op frameOp,
+       .push (AllocationSupport.slotOffset slot),
+       .op .add,
+       .op .mstore]
+  have hStoreStmt :
+      Expressions.InteractionSemantics.Stmt.openRun targetProgram 3
+          (.code storeCode) target =
+        .done (.ok (Structured.Outcome.regular written)) := by
+    unfold Expressions.InteractionSemantics.Stmt.openRun
+    simp only [Expressions.EffectSemantics.Control.Stmt.run]
+    change
+      Simulation.Interaction.bind
+          (Structured.InteractionSemantics.Code.openRun storeCode target)
+          _ =
+        .done (.ok (Structured.Outcome.regular written))
+    rw [show
+      Structured.InteractionSemantics.Code.openRun storeCode target =
+        .done (.ok written) by simpa [storeCode] using hStoreRun]
+    rfl
+  have hPromoteStmt :
+      Expressions.InteractionSemantics.Stmt.openRun targetProgram 2
+          (.code promoteCode) written =
+        .done (.ok (Structured.Outcome.regular promoted)) := by
+    unfold Expressions.InteractionSemantics.Stmt.openRun
+    simp only [Expressions.EffectSemantics.Control.Stmt.run]
+    change
+      Simulation.Interaction.bind
+          (Structured.InteractionSemantics.Code.openRun promoteCode written)
+          _ =
+        .done (.ok (Structured.Outcome.regular promoted))
+    rw [hPromoteRun]
+    rfl
+  have hPopStmt :
+      Expressions.InteractionSemantics.Stmt.openRun targetProgram 1
+          (.code [.op .pop]) promoted =
+        .done (.ok (Structured.Outcome.regular final)) := by
+    unfold Expressions.InteractionSemantics.Stmt.openRun
+    simp only [Expressions.EffectSemantics.Control.Stmt.run]
+    change
+      Simulation.Interaction.bind
+          (Structured.InteractionSemantics.Code.openRun [.op .pop] promoted)
+          _ =
+        .done (.ok (Structured.Outcome.regular final))
+    rw [hPopRun]
+    rfl
+  unfold Expressions.InteractionSemantics.Stmt.openRun at hStoreStmt
+  unfold Expressions.InteractionSemantics.Stmt.openRun at hPromoteStmt
+  unfold Expressions.InteractionSemantics.Stmt.openRun at hPopStmt
+  dsimp only [compiled]
+  change
+    Expressions.InteractionSemantics.Block.openRun targetProgram (3 + 1)
+        { stmts :=
+            [.code storeCode, .code promoteCode, .code [.op .pop]] }
+        target =
+      .done (.ok (Structured.Outcome.regular final))
+  rw [Expressions.InteractionSemantics.Block.openRun_cons, hStoreStmt]
+  change
+    Expressions.InteractionSemantics.Block.openRun targetProgram (2 + 1)
+        { stmts := [.code promoteCode, .code [.op .pop]] } written =
+      .done (.ok (Structured.Outcome.regular final))
+  rw [Expressions.InteractionSemantics.Block.openRun_cons, hPromoteStmt]
+  change
+    Expressions.InteractionSemantics.Block.openRun targetProgram (1 + 1)
+        { stmts := [.code [.op .pop]] } promoted =
+      .done (.ok (Structured.Outcome.regular final))
+  rw [Expressions.InteractionSemantics.Block.openRun_cons, hPopStmt]
+  exact
+    Expressions.InteractionSemantics.Block.openRun_nil
+      targetProgram 0 final
+
+end ParameterPrelude
 
 namespace SelectedCallee
 

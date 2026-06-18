@@ -532,7 +532,7 @@ theorem of_lower_compile
                                 hBound hReservation
                             obtain
                                 ⟨targetFinal, hStoreRun, hFinalRel,
-                                  hFinalStack⟩ :=
+                                  hFinalStack, _hFinalMachine⟩ :=
                               AllocationInteractionScratchStore.assignTop
                                 hValueScratch hValueStack hInvariant.planWF
                                 (by

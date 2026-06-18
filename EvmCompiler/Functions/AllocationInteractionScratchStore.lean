@@ -47,7 +47,10 @@ theorem assignTop
         .done (.ok targetFinal) ∧
       ScratchStateRel contract plan afterLive stackOffset frameBase
         frameDepth frameWords (source.insert name value) targetFinal ∧
-      targetFinal.evm.stack = rest := by
+      targetFinal.evm.stack = rest ∧
+      targetFinal.evm.toMachineState =
+        target.evm.toMachineState.mstore
+          (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)) value := by
   let frameWord := EvmYul.UInt256.ofNat frameBase
   let offsetWord := AllocationSupport.slotOffset slot
   let address := EvmYul.UInt256.add offsetWord frameWord
@@ -125,7 +128,7 @@ theorem assignTop
         .done (.ok targetFinal) := by
     simpa [targetFinal, StateRel.mstoreTarget] using
       Locals.InteractionPreservation.Code.openRun_mstore hAfterAddStack
-  refine ⟨targetFinal, ?_, hFinalRel, ?_⟩
+  refine ⟨targetFinal, ?_, hFinalRel, ?_, ?_⟩
   · calc
       Structured.InteractionSemantics.Code.openRun
           [.op op, .push offsetWord, .op .add, .op .mstore] target =
@@ -164,6 +167,11 @@ theorem assignTop
             rw [hAddRun]
             rfl
       _ = .done (.ok targetFinal) := hStoreRun
+  · simp [targetFinal, afterAdd, afterPush, afterDup, hAddress,
+      StateRel.mstoreTarget, StateRel.pushTarget, StateRel.pushTargetBy,
+      StateRel.contractTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC]
   · simp [targetFinal, afterAdd, afterPush, afterDup, hAddress,
       StateRel.mstoreTarget, StateRel.pushTarget, StateRel.pushTargetBy,
       StateRel.contractTargetBy,

@@ -61,6 +61,8 @@ boundaries remain active work.
     and recursive cursor;
   - [x] real call-code decomposition and canonical stack/scratch callee-entry
     realization, including parameter spill-store transitions;
+  - [x] silent entry-marker execution and one compiler-selected scratch
+    parameter lowering/compilation/execution step;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

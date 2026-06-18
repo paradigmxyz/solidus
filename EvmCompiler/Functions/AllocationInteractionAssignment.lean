@@ -595,7 +595,7 @@ theorem scratch_of_lower_compile
                                 hBound hReservation
                             obtain
                                 ⟨targetFinal, hStoreRun, hFinalRel,
-                                  hFinalStack⟩ :=
+                                  hFinalStack, _hFinalMachine⟩ :=
                               AllocationInteractionScratchStore.assignTop
                                 hScratch hValueStack hInvariant.planWF
                                 (fun other hOther => Or.inr hOther) rfl
