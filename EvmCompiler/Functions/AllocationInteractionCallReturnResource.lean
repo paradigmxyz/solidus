@@ -1,5 +1,6 @@
 import EvmCompiler.Functions.AllocationInteractionCallTargets
 import EvmCompiler.Functions.AllocationInteractionFrame
+import EvmCompiler.Functions.AllocationInteractionFramePreservation
 
 namespace EvmCompiler
 namespace Functions
@@ -7,6 +8,8 @@ namespace AllocationInteractionCallReturnResource
 
 open AllocationInteractionCall
 open AllocationInteractionFrame
+open AllocationInteractionFrameExecution
+open AllocationInteractionFramePreservation
 open AllocationInteractionRelation
 
 /--
@@ -115,6 +118,53 @@ theorem resume_and_writeback
   have hEffect := hBeforeWrite.trans hWriteEffect
   refine ⟨targetFinal, hStoresRun, ?_, hFinalStack, hEffect⟩
   simpa [callerReturned, Locals.Source.State.withVars] using hFinalRel
+
+/-- Package a completed call that did not acquire a nested scratch frame. -/
+theorem complete_without_release
+    {config : Config} {allocatorDepth frameBase : Nat}
+    {mode : ActivationMode} {before after : TargetState}
+    (hEffect :
+      BoundedEffect config allocatorDepth
+        (CallTargets.protectedBound allocatorDepth mode) before after) :
+    ActivationEffect config allocatorDepth mode before after := by
+  apply ActivationEffect.of_boundedEffect
+  simpa [CallTargets.protectedBound] using hEffect
+
+/-- Release one nested scratch frame and restore the caller resource mode. -/
+theorem complete_with_release
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase : Nat}
+    {config : Config} {plan : Plan} {live : List Locals.Name}
+    {mode : ActivationMode} {source : SourceState}
+    {before afterWrite : TargetState}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hBudget : Budget config allocatorDepth)
+    (hOwned : ActivationOwned config allocatorDepth frameBase mode)
+    (hRel :
+      ActivationStateRel contract plan live 0 frameBase mode source afterWrite)
+    (hEffect :
+      BoundedEffect config (allocatorDepth + 1)
+        (CallTargets.protectedBound allocatorDepth mode) before afterWrite) :
+    let final := scratchFrameReleaseTarget config allocatorDepth afterWrite
+    Structured.InteractionSemantics.Code.openRun
+        (AllocationSupport.scratchFrameReleaseCode config) afterWrite =
+      .done (.ok final) ∧
+      ActivationStateRel contract plan live 0 frameBase mode source final ∧
+      ActivationEffect config allocatorDepth mode before final := by
+  dsimp only
+  obtain ⟨hRelease, hFinalRel⟩ :=
+    scratchFrameRelease_activation_correct hConfig hBudget hEffect.ready
+      hOwned hRel
+  have hBound :
+      CallTargets.protectedBound allocatorDepth mode ≤ allocatorDepth + 1 := by
+    cases mode <;> simp [CallTargets.protectedBound]
+  have hReleaseBounded := BoundedEffect.weaken hBound hRelease.effect
+  have hCombined := hEffect.trans hReleaseBounded
+  refine ⟨hRelease.execution, hFinalRel, ?_⟩
+  exact ActivationEffect.of_boundedEffect
+    (by simpa [CallTargets.protectedBound] using hCombined)
 
 end AllocationInteractionCallReturnResource
 end Functions
