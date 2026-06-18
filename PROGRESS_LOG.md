@@ -32062,3 +32062,14 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-file hole scan, axiom audit, and `git diff --check` passed. Added a
   verification-root and architecture-guard requirement for the selected-body
   theorem; dependencies remain `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-18 03:02:00 PDT - theorem-boundary/functions-recursive-budget -
+  replaced existential recursive target fuel with a uniform pass-owned budget
+  indexed by compiled length, source fuel, and caller slack. Checked the empty
+  cursor, generic exact head/tail composition, and the first recursive
+  expression leaf; every open-world continuation now shares one static target
+  budget rather than choosing branch-local witnesses.
+- 2026-06-18 03:04:00 PDT - validation/functions-recursive-budget - focused
+  1172-job build, full verification root, architecture dependency guard,
+  touched-file hole scan, axiom audit, and `git diff --check` passed. The new
+  recursive budget, nil, composition, and expression theorems are present in
+  the verification root and use only `[propext, Classical.choice, Quot.sound]`.

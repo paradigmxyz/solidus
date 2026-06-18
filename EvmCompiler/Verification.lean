@@ -295,6 +295,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Artifact.bodyScoped
 #check EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Prepared.prelude_forward_at
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt
+#check EvmCompiler.Functions.AllocationInteractionRecursive.targetBudget
+#check EvmCompiler.Functions.AllocationInteractionRecursive.Boundary
+#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.nil
+#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.cons_of_parts
+#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.expr
 #check EvmCompiler.Functions.AllocationInteractionRecursive.SelectedCallee.body_of_cursor
 #check EvmCompiler.Functions.AllocationInteractionComposition.ControlResultRel
 #check EvmCompiler.Functions.AllocationInteractionComposition.lift_fixed
