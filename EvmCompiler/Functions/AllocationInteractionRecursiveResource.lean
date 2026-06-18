@@ -3035,6 +3035,8 @@ theorem for_
     (hSourceFuel : 2 < sourceFuel)
     (hCondSafe :
       ∀ sourceState,
+        AllocationInteractionRelation.LiveDefined
+            cursor.forArtifact.loopLive sourceState →
         Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Expr.openEvalCondition
               cond sourceState) →
@@ -3060,13 +3062,6 @@ theorem for_
       ForFuelCapacity cursor.forArtifact (sourceFuel - 2)
         ((targetBudget cursor sourceFuel targetExtra - 2) -
           (sourceFuel - 2)))
-    (hFrameCapacity :
-      ∀ {nextMode nextSource nextTarget},
-        AllocationContext.ActivationInvariant contract root.lowerCtx
-            cursor.forArtifact.loopState cursor.forArtifact.initLocals
-            cursor.forArtifact.initCursor.plan cursor.forArtifact.loopLive
-            frameBase nextMode nextSource nextTarget →
-          AllocationInteractionForward.FrameCapacity compilation nextMode)
     (hTailForward :
       ∀ {afterState : AllocationLowering.State}
         (tail : CoreCursor root scope live { stmts := rest }
@@ -3112,13 +3107,6 @@ theorem for_
     simp only [nestedFuel]
     omega
   change ForFuelCapacity components loopFuel slack at hCapacity
-  change (∀ {nextMode : ActivationMode} {nextSource : SourceState}
-      {nextTarget : TargetState},
-    AllocationContext.ActivationInvariant contract root.lowerCtx
-        components.loopState components.initLocals
-        components.initCursor.plan components.loopLive frameBase
-        nextMode nextSource nextTarget →
-      AllocationInteractionForward.FrameCapacity compilation nextMode) at hFrameCapacity
   let initCtx := sourceCtx.withoutLoopControl
   let loopCtx : Functions.Source.Ctx :=
     { initCtx with scope := components.loopLive }
@@ -3236,7 +3224,7 @@ theorem for_
                 expressions (loopFuel + slack) (.code components.condCode)
                   components.compiledPost components.compiledBody
                   targetAfter) := by
-    intro loopMode sourceAfter targetAfter hLoopOwned hSame hPrefix
+    intro loopMode sourceAfter targetAfter hLoopOwned hLoopSame hPrefix
       hLoopReturns hInvariant hSuccess
     have hPrefixActivation :=
       hPrefix.activation_of_not_halt (by
@@ -3280,7 +3268,8 @@ theorem for_
       exact AllocationInteractionExpressionResource.forwardCondition
         (AllocationInteractionPrimitiveResource.canonicalPrimitiveForward
           contract)
-        hBoundary.configEq (hCondSafe nextSource hCondSuccess) hNext.compiler
+        hBoundary.configEq
+        (hCondSafe nextSource hNext.defined hCondSuccess) hNext.compiler
         components.condScoped components.lowerCond components.compileCond
         hNext.state hNextReady
     · intro fuel nextMode nextSource nextTarget effectInitial hFuelLt
@@ -3318,7 +3307,10 @@ theorem for_
               sourceScope := rfl
               control := by
                 simpa [bodyCtx] using hOuterControl.withLoopControl
-              capacity := hFrameCapacity hNext }
+              capacity := by
+                have hEntrySame : SameFrame mode nextMode :=
+                  hLoopSame.trans hRootSame
+                cases hEntrySame <;> exact hBoundary.semantic.capacity }
           controlAgreement :=
             by
               have hModeEq := hRootSame.eq_of_matches
@@ -3414,7 +3406,10 @@ theorem for_
               sourceScope := rfl
               control := by
                 simpa [postCtx] using hOuterControl.withoutLoopControl
-              capacity := hFrameCapacity hNext }
+              capacity := by
+                have hEntrySame : SameFrame mode nextMode :=
+                  hLoopSame.trans hRootSame
+                cases hEntrySame <;> exact hBoundary.semantic.capacity }
           controlAgreement := by
             have hPostBase := hLoopAgreement.withoutLoopControl
             have hPostAtTarget :=

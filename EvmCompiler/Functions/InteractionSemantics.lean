@@ -196,6 +196,23 @@ def openRunBody (program : Functions.Program) (fn : Functions.FunDef)
   Functions.Source.Canonical.FunDef.runBody
     stateModel primitiveSemantics program fn args fuel state
 
+/-- Successful canonical function execution has positive meta-fuel. -/
+theorem successful_openRunBody_fuel_pos
+    {program : Functions.Program} {fn : Functions.FunDef}
+    {args : List Word} {fuel : Nat} {state : State}
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (openRunBody program fn args fuel state)) :
+    0 < fuel := by
+  cases fuel with
+  | zero =>
+      unfold openRunBody Functions.Source.Canonical.FunDef.runBody at hSuccess
+      simp only [Functions.Source.Effectful.Control.FunDef.runBody] at hSuccess
+      exact False.elim
+        (Simulation.Interaction.Successful.error_false
+          (.InvalidInstruction : EVMException) hSuccess)
+  | succ fuel => omega
+
 /-- Successful canonical function execution exposes the real initialized body
 run one fuel level below it. -/
 theorem successful_openRunBody_parts
@@ -289,6 +306,58 @@ def openRun (program : Functions.Program) (ctx : Functions.Source.Ctx)
     Open (Outcome × Functions.Source.Ctx) :=
   Functions.Source.Canonical.Stmt.run
     stateModel primitiveSemantics program ctx fuel stmt state
+
+/-- Successful canonical call execution has positive caller meta-fuel. -/
+theorem successful_openRun_call_fuel_pos
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {fuel : Nat} {targets : List Functions.Name}
+    {functionName : Functions.Name} {args : List (Functions.Expr 1)}
+    {state : State}
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (openRun program ctx fuel (.call targets functionName args) state)) :
+    0 < fuel := by
+  cases fuel with
+  | zero =>
+      unfold openRun Functions.Source.Canonical.Stmt.run at hSuccess
+      simp only [Functions.Source.Effectful.Control.Stmt.run] at hSuccess
+      exact False.elim
+        (Simulation.Interaction.Successful.error_false
+          (.InvalidInstruction : EVMException) hSuccess)
+  | succ fuel => omega
+
+/-- Successful canonical `for` execution has positive statement meta-fuel. -/
+theorem successful_openRun_for_fuel_pos
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {fuel : Nat} {init : Functions.Block} {cond : Functions.Expr 1}
+    {post body : Functions.Block} {state : State}
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (openRun program ctx fuel (.for_ init cond post body) state)) :
+    0 < fuel := by
+  cases fuel with
+  | zero =>
+      unfold openRun Functions.Source.Canonical.Stmt.run at hSuccess
+      simp only [Functions.Source.Effectful.Control.Stmt.run] at hSuccess
+      exact False.elim
+        (Simulation.Interaction.Successful.error_false
+          (.InvalidInstruction : EVMException) hSuccess)
+  | succ fuel => omega
+
+/-- A successful positive-fuel `for` statement exposes its initializer run. -/
+theorem successful_openRun_for_init
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {fuel : Nat} {init : Functions.Block} {cond : Functions.Expr 1}
+    {post body : Functions.Block} {state : State}
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (openRun program ctx (fuel + 1) (.for_ init cond post body) state)) :
+    Simulation.Interaction.Successful
+      (Block.openRun program ctx.withoutLoopControl fuel init state) := by
+  unfold openRun Functions.Source.Canonical.Stmt.run at hSuccess
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hSuccess
+  unfold Block.openRun Functions.Source.Canonical.Block.runOpen
+  exact Simulation.Interaction.Successful.bind_left hSuccess
 
 /-- A lexical block restricts its state only after regular body completion. -/
 theorem openRun_block

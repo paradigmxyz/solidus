@@ -140,14 +140,14 @@ boundaries remain active work.
     `if`, `switch`, and loop owners instead of requiring unreachable branches;
   - [x] construct and preserve the source/compiler control-destination
     invariant needed by the recursive statement dispatcher;
-  - [ ] recursive compiler-cursor statement-list theorem;
+  - [x] recursive compiler-cursor statement-list theorem;
     - [x] successful head/tail fixed-point interface and source-derived safety;
     - [x] expression, assignment, declaration, abrupt control, terminal, and
       lexical-block dispatcher cases;
     - [x] replace the false arbitrary-extra target budget with a checked
       nested-code reserve, exact compiled suffixes, and procedure-table bounds;
     - [x] selected-body fixed-point cases for `if` and `switch`;
-    - [ ] loop capacity, selected internal-call dispatcher, and whole-block
+    - [x] loop capacity, selected internal-call dispatcher, and whole-block
       fixed point.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

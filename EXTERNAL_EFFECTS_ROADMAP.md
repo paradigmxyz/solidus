@@ -895,7 +895,7 @@ Exit: the shared core builds with no compiler layer changed.
   - [x] Compiler-owned `for` artifacts compose initializer, condition, body,
     post, exact cleanup, caught exits, ordered interactions, and tail
     execution without observer evidence or lower-pass imports.
-  - [ ] Close the recursive internal-call case and whole statement/program
+  - [x] Close the recursive internal-call case and whole statement/program
     dispatcher, deriving nested fuel and frame capacity from the checked
     compiler artifact rather than exposing them publicly.
 - [ ] Yul.
@@ -978,7 +978,7 @@ Exit: every layer exposes one canonical open computation.
   - [x] Compose compiler-emitted scratch acquire, canonical arguments, selected
     callee entry, and exact scratch release through one target-only resource
     capability.
-  - [ ] Compose return writeback and recursive selected internal calls while
+  - [x] Compose return writeback and recursive selected internal calls while
     discharging resource capabilities internally.
   - [ ] Compose selected internal callees and publish the whole-program
     adjacent theorem.
