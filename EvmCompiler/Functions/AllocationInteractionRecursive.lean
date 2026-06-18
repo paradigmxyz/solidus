@@ -86,6 +86,93 @@ structure Boundary
       root.returns live sourceCtx
   capacity : AllocationInteractionForward.FrameCapacity compilation mode
 
+/--
+Fuel-bounded recursive capability used internally by compound cursor
+constructors. The whole-block owner constructs it by source-fuel induction;
+it is not a public callee oracle or compiler premise.
+-/
+def RecursiveOpenForward
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    (contract : MemoryContract.Contract)
+    (frameBase fuelBound : Nat) : Prop :=
+  ∀ {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {sourceFuel targetExtra : Nat}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live sourceBlock lowerState localsCtx),
+    sourceFuel < fuelBound →
+    Boundary cursor contract frameBase mode sourceCtx source target →
+    Simulation.Interaction.Successful
+      (Functions.InteractionSemantics.Block.openRun program sourceCtx
+        sourceFuel sourceBlock source) →
+    CursorForwardAt cursor contract frameBase sourceFuel targetExtra mode
+      sourceCtx source target
+
+namespace RecursiveOpenForward
+
+/-- Instantiate the recursive capability at any sufficiently large exact fuel. -/
+theorem at_targetFuel
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {contract : MemoryContract.Contract}
+    {frameBase fuelBound : Nat}
+    (hRecursive :
+      RecursiveOpenForward (root := root) contract frameBase fuelBound)
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {sourceFuel targetFuel : Nat}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live sourceBlock lowerState localsCtx)
+    (hFuel : sourceFuel < fuelBound)
+    (hTargetFuel : targetBudget cursor sourceFuel 0 ≤ targetFuel)
+    (hBoundary :
+      Boundary cursor contract frameBase mode sourceCtx source target)
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel sourceBlock source)) :
+    Simulation.Interaction.Rel
+      (OpenControlResultRel contract root.lowerCtx cursor.finalState
+        cursor.finalLocals cursor.plan root.returns
+        (Functions.Scope.Block.outEnv live sourceBlock) frameBase mode
+        sourceCtx
+        { sourceCtx with
+          scope := Functions.Scope.Block.outEnv live sourceBlock })
+      (Functions.InteractionSemantics.Block.openRun program sourceCtx
+        sourceFuel sourceBlock source)
+      (Expressions.InteractionSemantics.Block.openRun expressions targetFuel
+        { stmts := cursor.compiled } target) := by
+  let targetExtra := targetFuel - targetBudget cursor sourceFuel 0
+  have hForward :=
+    hRecursive cursor hFuel hBoundary hSuccess
+      (targetExtra := targetExtra)
+  have hExact :
+      targetBudget cursor sourceFuel targetExtra = targetFuel := by
+    simp [targetBudget, targetExtra] at hTargetFuel ⊢
+    omega
+  simpa [CursorForwardAt, hExact] using hForward
+
+end RecursiveOpenForward
+
 namespace CursorForwardAt
 
 /-- The empty canonical cursor preserves the boundary at every target slack. -/

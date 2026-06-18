@@ -92,6 +92,9 @@ theorem forward
       ∀ (fuel : Nat) {mode source target},
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Block.openRunScoped
+              program bodyCtx body fuel source) →
           Simulation.Interaction.Rel
             (OpenScopedResultRel contract lowerCtx lowerState localsCtx plan
               returns live frameBase mode bodyCtx)
@@ -103,6 +106,9 @@ theorem forward
       ∀ (fuel : Nat) {mode source target},
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Block.openRunScoped
+              program postCtx post fuel source) →
           Simulation.Interaction.Rel
             (OpenScopedResultRel contract lowerCtx lowerState localsCtx plan
               returns live frameBase mode postCtx)
@@ -187,7 +193,16 @@ theorem forward
               have hBodySuccess :=
                 Simulation.Interaction.Successful.bind_inv
                   hContinuationSuccess
-              have hBodyRel := hBody fuel hAfterCond
+              have hBodyRunSuccess :
+                  Simulation.Interaction.Successful
+                    (Functions.InteractionSemantics.Block.openRunScoped
+                      program bodyCtx body fuel sourceAfterCond) := by
+                apply Simulation.Interaction.AllDone.mono hBodySuccess
+                intro outcome hOutcome
+                cases outcome with
+                | error err => exact hOutcome
+                | ok value => trivial
+              have hBodyRel := hBody fuel hAfterCond hBodyRunSuccess
               have hBodyStrong :=
                 Simulation.Interaction.Rel.strengthen_left hBodyRel
                   hBodySuccess
@@ -256,7 +271,17 @@ theorem forward
                     have hPostSuccess :=
                       Simulation.Interaction.Successful.bind_inv
                         hPostAndLoopSuccess
-                    have hPostRel := hPost fuel hBodyInvariant
+                    have hPostRunSuccess :
+                        Simulation.Interaction.Successful
+                          (Functions.InteractionSemantics.Block.openRunScoped
+                            program postCtx post fuel bodySource) := by
+                      apply Simulation.Interaction.AllDone.mono hPostSuccess
+                      intro outcome hOutcome
+                      cases outcome with
+                      | error err => exact hOutcome
+                      | ok value => trivial
+                    have hPostRel :=
+                      hPost fuel hBodyInvariant hPostRunSuccess
                     have hPostStrong :=
                       Simulation.Interaction.Rel.strengthen_left hPostRel
                         hPostSuccess

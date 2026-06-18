@@ -316,6 +316,8 @@ for theorem in \
     '#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.switch' \
     '#check EvmCompiler.Functions.AllocationInteractionLoop.forward' \
     '#check EvmCompiler.Functions.AllocationInteractionFor.forward' \
+    '#check EvmCompiler.Functions.AllocationInteractionRecursive.RecursiveOpenForward' \
+    '#check EvmCompiler.Functions.AllocationInteractionRecursive.RecursiveOpenForward.at_targetFuel' \
     '#check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin.withoutLoopControl' \
     '#check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin.withLoopControl' \
     '#check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardOne'; do
