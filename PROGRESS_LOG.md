@@ -32073,3 +32073,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-file hole scan, axiom audit, and `git diff --check` passed. The new
   recursive budget, nil, composition, and expression theorems are present in
   the verification root and use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-18 03:17:00 PDT - proof/functions-recursive-leaves - checked uniform
+  recursive assignment and declaration constructors. Declaration consumes
+  the pass frame-capacity premise, updates the exact source scope, and carries
+  either stack or scratch allocation through the ordinary cursor theorem.
+- 2026-06-18 03:19:00 PDT - validation/functions-recursive-leaves - focused
+  1172-job build, full verification root, architecture dependency guard,
+  touched-file hole scan, axiom audit, and `git diff --check` passed; recursive
+  assignment and declaration depend only on
+  `[propext, Classical.choice, Quot.sound]`.

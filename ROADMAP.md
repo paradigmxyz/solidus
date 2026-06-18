@@ -73,7 +73,8 @@ boundaries remain active work.
   - [x] prefix exact setup to the fuel-decreasing canonical callee-body
     preservation interface;
   - [x] define the uniform recursive target budget and checked empty,
-    head/tail-composition, and expression-leaf cursor constructors;
+    head/tail-composition, expression, assignment, and stack/scratch
+    declaration cursor constructors;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
