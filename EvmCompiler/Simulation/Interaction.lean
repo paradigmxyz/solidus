@@ -130,6 +130,15 @@ def ofEVMOperation? (op : EvmYul.Operation .EVM) : Option ExternalKind :=
   | call kind => cases kind <;> rfl
   | create kind => cases kind <;> rfl
 
+theorem eq_toYulOperation_of_ofYulOperation?_eq_some
+    {op : EvmYul.Operation .Yul} {kind : ExternalKind}
+    (hKind : ofYulOperation? op = some kind) :
+    op = kind.toYulOperation := by
+  cases op <;> rename_i family <;> cases family <;>
+    simp [ofYulOperation?, CallKind.ofYulOperation?,
+      CreateKind.ofYulOperation?] at hKind
+  all_goals subst kind <;> rfl
+
 @[simp] theorem ofEVMOperation?_toEVMOperation (kind : ExternalKind) :
     ofEVMOperation? kind.toEVMOperation = some kind := by
   cases kind with

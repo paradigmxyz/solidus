@@ -122,6 +122,7 @@ import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.EffectRefinement.Failure
 import EvmCompiler.Yul.InteractionSemantics
 import EvmCompiler.Yul.FunctionsInteractionPrimitive
+import EvmCompiler.Yul.FunctionsInteractionExpression
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.CompilerCallDecomposition
 import EvmCompiler.Yul.CompilerExpressionDecomposition
@@ -1359,6 +1360,12 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionPrimitive.Primitive.msize
 #check EvmCompiler.Yul.FunctionsInteractionPrimitive.Primitive.callFamily
 #check EvmCompiler.Yul.FunctionsInteractionPrimitive.Primitive.createFamily
+#check EvmCompiler.Yul.FunctionsInteractionPrimitive.Primitive.callArbitrary
+#check EvmCompiler.Yul.FunctionsInteractionPrimitive.Primitive.createArbitrary
+#check EvmCompiler.Yul.FunctionsInteractionPrimitive.Primitive.compilerSelected_of_closed
+#check EvmCompiler.Yul.InteractionSemantics.EvalArgs.one_cons
+#check EvmCompiler.Yul.InteractionSemantics.EvalArgs.succ_succ_cons
+#check EvmCompiler.Yul.FunctionsInteractionExpression.directAt
 #check EvmCompiler.Yul.StateRelation.Vars.rel_of_scopedExact
 #check EvmCompiler.Yul.StateRelation.Regular.rel_of_scopedExact
 #check EvmCompiler.Yul.StateRelation.Replay.rel_of_scopedExact

@@ -182,6 +182,13 @@ boundaries remain active work.
   - [x] Exact code-erased state relation and arbitrary post-world transport.
   - [x] GAS/MSIZE plus all CALL/CREATE primitive-family preservation.
   - [ ] Recursive expressions, statements, internal calls, and whole program.
+    - [x] Source-truncation-aware direct literals, variables, primitive calls,
+      and arbitrary argument lists under one compiler-selected capability.
+    - [x] Compose independent CALL/CREATE and GAS/MSIZE providers with a
+      closed-ordinary-primitive capability; no opcode dispatch occurs inside
+      expression recursion.
+    - [ ] Discharge the closed ordinary primitive capability over canonical
+      code-erased state and lift direct expressions through statements.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
   source-facing reservation/resource assumptions.
 - [ ] Run representative interleaving/reentrancy/static/zero-window tests and

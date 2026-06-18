@@ -133,6 +133,17 @@ end VarsRel
 
 namespace StateRel
 
+theorem lookup
+    {source : SourceState} {target : TargetState}
+    (hRel : StateRel source target)
+    {name : EvmYul.Identifier} {value : Word}
+    (hLookup : source.lookup? name = some value) :
+    target.vars name = some value := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  rw [hSource] at hLookup
+  exact hVars name value (by simpa [EvmYul.Yul.State.lookup?] using hLookup)
+
 theorem shared
     {source : SourceState} {target : TargetState}
     (hRel : StateRel source target) :

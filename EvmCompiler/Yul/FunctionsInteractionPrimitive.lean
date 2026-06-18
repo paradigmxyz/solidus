@@ -11,8 +11,24 @@ def ErrorRel (source : Yul.InteractionSemantics.Failure)
   match source.exception, target with
   | .OutOfFuel, .OutOfFuel => True
   | .InvalidArguments, .StackUnderflow => True
+  | .InvalidInstruction, .InvalidInstruction => True
+  | .InvalidMemoryAccess, .InvalidMemoryAccess => True
   | .StaticModeViolation, .StaticModeViolation => True
   | _, _ => False
+
+/-- Source-control failures for which finite source semantics intentionally
+makes no target-suffix claim. Runtime failures shared with EVM remain related
+by `ErrorRel`; terminal Yul exceptions are handled by the outcome relation. -/
+def Truncated (failure : Yul.InteractionSemantics.Failure) : Prop :=
+  match failure.exception with
+  | .OutOfFuel
+  | .MissingContract _
+  | .MissingContractFunction _
+  | .InvalidExpression
+  | .UnknownIdentifier _
+  | .DuplicateDeclaration _
+  | .YulEXTCODESIZENotImplemented => True
+  | _ => False
 
 def ResultRel
     (source : Yul.InteractionSemantics.State × List Word)
@@ -22,6 +38,54 @@ def ResultRel
 
 abbrev DoneRel :=
   Simulation.Interaction.ExceptRel ErrorRel ResultRel
+
+def PrimitiveResultRel (op : Structured.BasicOp)
+    (source : Yul.InteractionSemantics.State × List Word)
+    (target : Functions.InteractionSemantics.State × List Word) : Prop :=
+  ResultRel source target ∧
+    source.2.length = Expressions.Structured.BasicOp.outputs op
+
+abbrev PrimitiveDoneRel (op : Structured.BasicOp) :=
+  Simulation.Interaction.ExceptRel ErrorRel (PrimitiveResultRel op)
+
+/-- The one primitive capability consumed by recursive Yul expression and
+statement proofs. It refers only to the ordinary compiler's selected opcode;
+family modules discharge it without changing either interpreter. -/
+def CompilerSelected : Prop :=
+  ∀ {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceValues : List Word},
+    Prim.toUncheckedBasicOp? prim = some op →
+    sourceValues.length = Expressions.Structured.BasicOp.inputs op →
+    FunctionsInteractionRelation.StateRel source target →
+    Simulation.Interaction.ForwardRel Truncated (PrimitiveDoneRel op)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source prim sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        op target sourceValues.reverse)
+
+/-- Closed ordinary primitive capability, independent of open external and
+resource families. The final compiler-selected capability is assembled from
+this interface plus the CALL/CREATE and GAS/MSIZE family theorems below. -/
+def ClosedSelected : Prop :=
+  ∀ {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceValues : List Word},
+    Simulation.ExternalKind.ofYulOperation? prim = none →
+    prim ≠ .StackMemFlow .GAS →
+    prim ≠ .StackMemFlow .MSIZE →
+    Prim.toUncheckedBasicOp? prim = some op →
+    sourceValues.length = Expressions.Structured.BasicOp.inputs op →
+    FunctionsInteractionRelation.StateRel source target →
+    Simulation.Interaction.ForwardRel Truncated (PrimitiveDoneRel op)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source prim sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        op target sourceValues.reverse)
 
 namespace ResultRel
 
@@ -37,6 +101,80 @@ end ResultRel
 
 namespace Primitive
 
+private theorem list_eq_five_of_length
+    {α : Type} {values : List α} (hLength : values.length = 5) :
+    ∃ first second third fourth fifth,
+      values = [first, second, third, fourth, fifth] := by
+  cases values with
+  | nil => simp at hLength
+  | cons first rest =>
+      have hRest : rest.length = 4 := by simpa using hLength
+      obtain ⟨second, third, fourth, fifth, rfl⟩ :=
+        List.length_eq_four.mp hRest
+      exact ⟨first, second, third, fourth, fifth, rfl⟩
+
+private theorem list_eq_six_of_length
+    {α : Type} {values : List α} (hLength : values.length = 6) :
+    ∃ first second third fourth fifth sixth,
+      values = [first, second, third, fourth, fifth, sixth] := by
+  cases values with
+  | nil => simp at hLength
+  | cons first rest =>
+      have hRest : rest.length = 5 := by simpa using hLength
+      obtain ⟨second, third, fourth, fifth, sixth, rfl⟩ :=
+        list_eq_five_of_length hRest
+      exact ⟨first, second, third, fourth, fifth, sixth, rfl⟩
+
+private theorem list_eq_seven_of_length
+    {α : Type} {values : List α} (hLength : values.length = 7) :
+    ∃ first second third fourth fifth sixth seventh,
+      values = [first, second, third, fourth, fifth, sixth, seventh] := by
+  cases values with
+  | nil => simp at hLength
+  | cons first rest =>
+      have hRest : rest.length = 6 := by simpa using hLength
+      obtain ⟨second, third, fourth, fifth, sixth, seventh, rfl⟩ :=
+        list_eq_six_of_length hRest
+      exact ⟨first, second, third, fourth, fifth, sixth, seventh, rfl⟩
+
+theorem callOperands_of_length
+    (kind : Simulation.CallKind) {args : List Word}
+    (hLength : args.length = kind.inputArity) :
+    ∃ operands,
+      kind.evmOperands? args = some ([], operands) := by
+  cases kind with
+  | call =>
+      obtain ⟨gas, address, value, inputOffset, inputSize, outputOffset,
+          outputSize, rfl⟩ := list_eq_seven_of_length hLength
+      exact ⟨_, rfl⟩
+  | callcode =>
+      obtain ⟨gas, address, value, inputOffset, inputSize, outputOffset,
+          outputSize, rfl⟩ := list_eq_seven_of_length hLength
+      exact ⟨_, rfl⟩
+  | delegatecall =>
+      obtain ⟨gas, address, inputOffset, inputSize, outputOffset,
+          outputSize, rfl⟩ := list_eq_six_of_length hLength
+      exact ⟨_, rfl⟩
+  | staticcall =>
+      obtain ⟨gas, address, inputOffset, inputSize, outputOffset,
+          outputSize, rfl⟩ := list_eq_six_of_length hLength
+      exact ⟨_, rfl⟩
+
+theorem createOperands_of_length
+    (kind : Simulation.CreateKind) {args : List Word}
+    (hLength : args.length = kind.inputArity) :
+    ∃ operands,
+      kind.evmOperands? args = some ([], operands) := by
+  cases kind with
+  | create =>
+      obtain ⟨value, inputOffset, inputSize, rfl⟩ :=
+        List.length_eq_three.mp hLength
+      exact ⟨_, rfl⟩
+  | create2 =>
+      obtain ⟨value, inputOffset, inputSize, salt, rfl⟩ :=
+        List.length_eq_four.mp hLength
+      exact ⟨_, rfl⟩
+
 def callBasicOp : Simulation.CallKind → Structured.BasicOp
   | .call => .call
   | .callcode => .callcode
@@ -47,18 +185,87 @@ def createBasicOp : Simulation.CreateKind → Structured.BasicOp
   | .create => .create
   | .create2 => .create2
 
+@[simp] theorem toUncheckedBasicOp?_callBasicOp
+    (kind : Simulation.CallKind) :
+    Prim.toUncheckedBasicOp? kind.toYulOperation =
+      some (callBasicOp kind) := by
+  cases kind <;> rfl
+
+@[simp] theorem toUncheckedBasicOp?_createBasicOp
+    (kind : Simulation.CreateKind) :
+    Prim.toUncheckedBasicOp? kind.toYulOperation =
+      some (createBasicOp kind) := by
+  cases kind <;> rfl
+
+@[simp] theorem callBasicOp_inputs (kind : Simulation.CallKind) :
+    Expressions.Structured.BasicOp.inputs (callBasicOp kind) =
+      kind.inputArity := by
+  cases kind <;> rfl
+
+@[simp] theorem createBasicOp_inputs (kind : Simulation.CreateKind) :
+    Expressions.Structured.BasicOp.inputs (createBasicOp kind) =
+      kind.inputArity := by
+  cases kind <;> rfl
+
+theorem openEval_callBasicOp
+    (kind : Simulation.CallKind)
+    {target : Functions.InteractionSemantics.State}
+    {args : List Word}
+    (hLength : args.length = kind.inputArity) :
+    Locals.InteractionSemantics.Primitive.openEval
+        (callBasicOp kind) target args.reverse =
+      Simulation.Interaction.map
+        (Locals.InteractionSemantics.Primitive.finish target)
+        (Assembly.InteractionSemantics.PrimOp.callStep kind
+          (Locals.InteractionSemantics.Primitive.isolated
+            target args.reverse)) := by
+  cases kind with
+  | call =>
+      exact Locals.InteractionSemantics.Primitive.openEval_call
+        target args.reverse (by simpa [Simulation.CallKind.inputArity] using hLength)
+  | callcode =>
+      exact Locals.InteractionSemantics.Primitive.openEval_callcode
+        target args.reverse (by simpa [Simulation.CallKind.inputArity] using hLength)
+  | delegatecall =>
+      exact Locals.InteractionSemantics.Primitive.openEval_delegatecall
+        target args.reverse (by simpa [Simulation.CallKind.inputArity] using hLength)
+  | staticcall =>
+      exact Locals.InteractionSemantics.Primitive.openEval_staticcall
+        target args.reverse (by simpa [Simulation.CallKind.inputArity] using hLength)
+
+theorem openEval_createBasicOp
+    (kind : Simulation.CreateKind)
+    {target : Functions.InteractionSemantics.State}
+    {args : List Word}
+    (hLength : args.length = kind.inputArity) :
+    Locals.InteractionSemantics.Primitive.openEval
+        (createBasicOp kind) target args.reverse =
+      Simulation.Interaction.map
+        (Locals.InteractionSemantics.Primitive.finish target)
+        (Assembly.InteractionSemantics.PrimOp.createStep kind
+          (Locals.InteractionSemantics.Primitive.isolated
+            target args.reverse)) := by
+  cases kind with
+  | create =>
+      exact Locals.InteractionSemantics.Primitive.openEval_create
+        target args.reverse (by simpa [Simulation.CreateKind.inputArity] using hLength)
+  | create2 =>
+      exact Locals.InteractionSemantics.Primitive.openEval_create2
+        target args.reverse (by simpa [Simulation.CreateKind.inputArity] using hLength)
+
 theorem resourceEval_rel
-    (kind : Simulation.ResourceQuery)
+    (kind : Simulation.ResourceQuery) (op : Structured.BasicOp)
+    (hOutputs : Expressions.Structured.BasicOp.outputs op = 1)
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
     (hRel : FunctionsInteractionRelation.StateRel source target) :
-    Simulation.Interaction.Rel DoneRel
+    Simulation.Interaction.Rel (PrimitiveDoneRel op)
       (Yul.InteractionSemantics.Primitive.resourceEval kind source)
       (.request (.resource kind) fun value =>
         .done (.ok (target, [value]))) := by
   apply Simulation.Interaction.Rel.request
   intro value
-  exact .done (.ok (ResultRel.refl_values hRel [value]))
+  exact .done (.ok ⟨ResultRel.refl_values hRel [value], by simpa [hOutputs]⟩)
 
 /-- One CALL-family suspension, before choosing the concrete source/target
 opcode wrappers. Arguments are in Yul source order; the isolated EVM stack is
@@ -70,7 +277,7 @@ theorem callEval_rel_callStep
     {args : List Word} {operands : Simulation.CallOperands}
     (hOperands : kind.evmOperands? args = some ([], operands))
     (hRel : FunctionsInteractionRelation.StateRel source target) :
-    Simulation.Interaction.Rel DoneRel
+    Simulation.Interaction.Rel (PrimitiveDoneRel (callBasicOp kind))
       (Yul.InteractionSemantics.Primitive.callEval kind source args)
       (Simulation.Interaction.map
         (Locals.InteractionSemantics.Primitive.finish target)
@@ -94,23 +301,24 @@ theorem callEval_rel_callStep
     intro response
     apply Simulation.Interaction.Rel.done
     apply Simulation.Interaction.ExceptRel.ok
-    refine ⟨?_, rfl⟩
-    simpa [Simulation.Interaction.map,
-      Assembly.InteractionSemantics.EVMState.finishCall,
-      Assembly.InteractionSemantics.EVMState.installWorld,
-      Locals.InteractionSemantics.Primitive.finish,
-      EvmYul.EVM.State.incrPC,
-      EvmYul.EVM.State.replaceStackAndIncrPC] using
-      FunctionsInteractionRelation.StateRel.withWorldAndMachine hRel
-        response.postWorld
-        (operands.callLocal.finishMachine
-          source.sharedState.toMachineState response.returnData)
-        (operands.callLocal.finishMachine
-          target.shared.toMachineState response.returnData)
-        (congrArg
-          (fun machine =>
-            operands.callLocal.finishMachine machine response.returnData)
-          (FunctionsInteractionRelation.StateRel.shared hRel).machine)
+    refine ⟨⟨?_, rfl⟩, ?_⟩
+    · simpa [Simulation.Interaction.map,
+        Assembly.InteractionSemantics.EVMState.finishCall,
+        Assembly.InteractionSemantics.EVMState.installWorld,
+        Locals.InteractionSemantics.Primitive.finish,
+        EvmYul.EVM.State.incrPC,
+        EvmYul.EVM.State.replaceStackAndIncrPC] using
+        FunctionsInteractionRelation.StateRel.withWorldAndMachine hRel
+          response.postWorld
+          (operands.callLocal.finishMachine
+            source.sharedState.toMachineState response.returnData)
+          (operands.callLocal.finishMachine
+            target.shared.toMachineState response.returnData)
+          (congrArg
+            (fun machine =>
+              operands.callLocal.finishMachine machine response.returnData)
+            (FunctionsInteractionRelation.StateRel.shared hRel).machine)
+    · cases kind <;> rfl
   · simp only [hAllowed, if_neg]
     exact .done (.error trivial)
 
@@ -122,7 +330,7 @@ theorem createEval_rel_createStep
     {args : List Word} {operands : Simulation.CreateOperands}
     (hOperands : kind.evmOperands? args = some ([], operands))
     (hRel : FunctionsInteractionRelation.StateRel source target) :
-    Simulation.Interaction.Rel DoneRel
+    Simulation.Interaction.Rel (PrimitiveDoneRel (createBasicOp kind))
       (Yul.InteractionSemantics.Primitive.createEval kind source args)
       (Simulation.Interaction.map
         (Locals.InteractionSemantics.Primitive.finish target)
@@ -145,23 +353,24 @@ theorem createEval_rel_createStep
     intro response
     apply Simulation.Interaction.Rel.done
     apply Simulation.Interaction.ExceptRel.ok
-    refine ⟨?_, rfl⟩
-    simpa [Simulation.Interaction.map,
-      Assembly.InteractionSemantics.EVMState.finishCreate,
-      Assembly.InteractionSemantics.EVMState.installWorld,
-      Locals.InteractionSemantics.Primitive.finish,
-      EvmYul.EVM.State.incrPC,
-      EvmYul.EVM.State.replaceStackAndIncrPC] using
-      FunctionsInteractionRelation.StateRel.withWorldAndMachine hRel
-        response.postWorld
-        (operands.createLocal.finishMachine
-          source.sharedState.toMachineState response.returnData)
-        (operands.createLocal.finishMachine
-          target.shared.toMachineState response.returnData)
-        (congrArg
-          (fun machine =>
-            operands.createLocal.finishMachine machine response.returnData)
-          (FunctionsInteractionRelation.StateRel.shared hRel).machine)
+    refine ⟨⟨?_, rfl⟩, ?_⟩
+    · simpa [Simulation.Interaction.map,
+        Assembly.InteractionSemantics.EVMState.finishCreate,
+        Assembly.InteractionSemantics.EVMState.installWorld,
+        Locals.InteractionSemantics.Primitive.finish,
+        EvmYul.EVM.State.incrPC,
+        EvmYul.EVM.State.replaceStackAndIncrPC] using
+        FunctionsInteractionRelation.StateRel.withWorldAndMachine hRel
+          response.postWorld
+          (operands.createLocal.finishMachine
+            source.sharedState.toMachineState response.returnData)
+          (operands.createLocal.finishMachine
+            target.shared.toMachineState response.returnData)
+          (congrArg
+            (fun machine =>
+              operands.createLocal.finishMachine machine response.returnData)
+            (FunctionsInteractionRelation.StateRel.shared hRel).machine)
+    · cases kind <;> rfl
   · simp only [hAllowed, if_neg]
     exact .done (.error trivial)
 
@@ -170,7 +379,7 @@ theorem gas
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
     (hRel : FunctionsInteractionRelation.StateRel source target) :
-    Simulation.Interaction.Rel DoneRel
+    Simulation.Interaction.Rel (PrimitiveDoneRel .gas)
       (Yul.InteractionSemantics.Primitive.openEval (fuel + 1) source
         (.StackMemFlow .GAS) [])
       (Locals.InteractionSemantics.Primitive.openEval .gas target []) := by
@@ -182,14 +391,14 @@ theorem gas
     Assembly.InteractionSemantics.PrimOp.resourceStep,
     EvmYul.EVM.State.replaceStackAndIncrPC,
     EvmYul.EVM.State.incrPC,
-    Simulation.Interaction.map] using resourceEval_rel .gas hRel
+    Simulation.Interaction.map] using resourceEval_rel .gas .gas rfl hRel
 
 theorem msize
     (fuel : Nat)
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
     (hRel : FunctionsInteractionRelation.StateRel source target) :
-    Simulation.Interaction.Rel DoneRel
+    Simulation.Interaction.Rel (PrimitiveDoneRel .msize)
       (Yul.InteractionSemantics.Primitive.openEval (fuel + 1) source
         (.StackMemFlow .MSIZE) [])
       (Locals.InteractionSemantics.Primitive.openEval .msize target []) := by
@@ -201,7 +410,7 @@ theorem msize
     Assembly.InteractionSemantics.PrimOp.resourceStep,
     EvmYul.EVM.State.replaceStackAndIncrPC,
     EvmYul.EVM.State.incrPC,
-    Simulation.Interaction.map] using resourceEval_rel .msize hRel
+    Simulation.Interaction.map] using resourceEval_rel .msize .msize rfl hRel
 
 theorem callFamily
     (kind : Simulation.CallKind) (fuel : Nat)
@@ -209,7 +418,7 @@ theorem callFamily
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
     (hRel : FunctionsInteractionRelation.StateRel source target) :
-    Simulation.Interaction.Rel DoneRel
+    Simulation.Interaction.Rel (PrimitiveDoneRel (callBasicOp kind))
       (Yul.InteractionSemantics.Primitive.openEval (fuel + 1) source
         kind.toYulOperation (kind.args operands))
       (Locals.InteractionSemantics.Primitive.openEval
@@ -239,7 +448,7 @@ theorem createFamily
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
     (hRel : FunctionsInteractionRelation.StateRel source target) :
-    Simulation.Interaction.Rel DoneRel
+    Simulation.Interaction.Rel (PrimitiveDoneRel (createBasicOp kind))
       (Yul.InteractionSemantics.Primitive.openEval (fuel + 1) source
         kind.toYulOperation (kind.args operands))
       (Locals.InteractionSemantics.Primitive.openEval
@@ -253,6 +462,143 @@ theorem createFamily
       simpa [createBasicOp, Yul.InteractionSemantics.Primitive.openEval] using
         createEval_rel_createStep .create2
           (Simulation.CreateKind.evmOperands?_args .create2 operands []) hRel
+
+theorem callArbitrary
+    (kind : Simulation.CallKind) (fuel : Nat)
+    {args : List Word}
+    (hLength : args.length = kind.inputArity)
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel (callBasicOp kind))
+      (Yul.InteractionSemantics.Primitive.openEval (fuel + 1) source
+        kind.toYulOperation args)
+      (Locals.InteractionSemantics.Primitive.openEval
+        (callBasicOp kind) target args.reverse) := by
+  obtain ⟨operands, hOperands⟩ := callOperands_of_length kind hLength
+  have hRaw :
+      Simulation.Interaction.Rel (PrimitiveDoneRel (callBasicOp kind))
+        (Yul.InteractionSemantics.Primitive.openEval (fuel + 1) source
+          kind.toYulOperation args)
+        (Locals.InteractionSemantics.Primitive.openEval
+          (callBasicOp kind) target args.reverse) := by
+    rw [openEval_callBasicOp kind hLength]
+    cases kind with
+    | call =>
+        simpa [callBasicOp, Yul.InteractionSemantics.Primitive.openEval,
+          Simulation.ExternalKind.ofYulOperation?,
+          Simulation.CallKind.ofYulOperation?,
+          Simulation.CallKind.toYulOperation,
+          Simulation.CallKind.inputArity] using
+          callEval_rel_callStep .call hOperands hRel
+    | callcode =>
+        simpa [callBasicOp, Yul.InteractionSemantics.Primitive.openEval,
+          Simulation.ExternalKind.ofYulOperation?,
+          Simulation.CallKind.ofYulOperation?,
+          Simulation.CallKind.toYulOperation,
+          Simulation.CallKind.inputArity] using
+          callEval_rel_callStep .callcode hOperands hRel
+    | delegatecall =>
+        simpa [callBasicOp, Yul.InteractionSemantics.Primitive.openEval,
+          Simulation.ExternalKind.ofYulOperation?,
+          Simulation.CallKind.ofYulOperation?,
+          Simulation.CallKind.toYulOperation,
+          Simulation.CallKind.inputArity] using
+          callEval_rel_callStep .delegatecall hOperands hRel
+    | staticcall =>
+        simpa [callBasicOp, Yul.InteractionSemantics.Primitive.openEval,
+          Simulation.ExternalKind.ofYulOperation?,
+          Simulation.CallKind.ofYulOperation?,
+          Simulation.CallKind.toYulOperation,
+          Simulation.CallKind.inputArity] using
+          callEval_rel_callStep .staticcall hOperands hRel
+  exact Simulation.Interaction.ForwardRel.ofRel hRaw
+
+theorem createArbitrary
+    (kind : Simulation.CreateKind) (fuel : Nat)
+    {args : List Word}
+    (hLength : args.length = kind.inputArity)
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel (createBasicOp kind))
+      (Yul.InteractionSemantics.Primitive.openEval (fuel + 1) source
+        kind.toYulOperation args)
+      (Locals.InteractionSemantics.Primitive.openEval
+        (createBasicOp kind) target args.reverse) := by
+  obtain ⟨operands, hOperands⟩ := createOperands_of_length kind hLength
+  have hRaw :
+      Simulation.Interaction.Rel (PrimitiveDoneRel (createBasicOp kind))
+        (Yul.InteractionSemantics.Primitive.openEval (fuel + 1) source
+          kind.toYulOperation args)
+        (Locals.InteractionSemantics.Primitive.openEval
+          (createBasicOp kind) target args.reverse) := by
+    rw [openEval_createBasicOp kind hLength]
+    cases kind with
+    | create =>
+        simpa [createBasicOp, Yul.InteractionSemantics.Primitive.openEval,
+          Simulation.ExternalKind.ofYulOperation?,
+          Simulation.CallKind.ofYulOperation?,
+          Simulation.CreateKind.ofYulOperation?,
+          Simulation.CreateKind.toYulOperation,
+          Simulation.CreateKind.inputArity] using
+          createEval_rel_createStep .create hOperands hRel
+    | create2 =>
+        simpa [createBasicOp, Yul.InteractionSemantics.Primitive.openEval,
+          Simulation.ExternalKind.ofYulOperation?,
+          Simulation.CallKind.ofYulOperation?,
+          Simulation.CreateKind.ofYulOperation?,
+          Simulation.CreateKind.toYulOperation,
+          Simulation.CreateKind.inputArity] using
+          createEval_rel_createStep .create2 hOperands hRel
+  exact Simulation.Interaction.ForwardRel.ofRel hRaw
+
+/-- Assemble the one recursive-expression primitive capability from adjacent,
+independently reusable family capabilities. -/
+theorem compilerSelected_of_closed
+    (hClosed : ClosedSelected) : CompilerSelected := by
+  intro fuel source target prim op sourceValues hOp hLength hRel
+  cases hExternal : Simulation.ExternalKind.ofYulOperation? prim with
+  | some kind =>
+      have hPrim :=
+        Simulation.ExternalKind.eq_toYulOperation_of_ofYulOperation?_eq_some
+          hExternal
+      subst prim
+      cases kind with
+      | call kind =>
+          change
+            Prim.toUncheckedBasicOp? kind.toYulOperation = some op at hOp
+          rw [toUncheckedBasicOp?_callBasicOp] at hOp
+          cases hOp
+          exact callArbitrary kind fuel (by simpa using hLength) hRel
+      | create kind =>
+          change
+            Prim.toUncheckedBasicOp? kind.toYulOperation = some op at hOp
+          rw [toUncheckedBasicOp?_createBasicOp] at hOp
+          cases hOp
+          exact createArbitrary kind fuel (by simpa using hLength) hRel
+  | none =>
+      by_cases hGas : prim = .StackMemFlow .GAS
+      · subst prim
+        simp [Prim.toUncheckedBasicOp?] at hOp
+        subst op
+        have hValues : sourceValues = [] := by
+          apply List.eq_nil_of_length_eq_zero
+          simpa [Expressions.Structured.BasicOp.inputs] using hLength
+        subst sourceValues
+        exact Simulation.Interaction.ForwardRel.ofRel (gas fuel hRel)
+      · by_cases hMsize : prim = .StackMemFlow .MSIZE
+        · subst prim
+          simp [Prim.toUncheckedBasicOp?] at hOp
+          subst op
+          have hValues : sourceValues = [] := by
+            apply List.eq_nil_of_length_eq_zero
+            simpa [Expressions.Structured.BasicOp.inputs] using hLength
+          subst sourceValues
+          exact Simulation.Interaction.ForwardRel.ofRel (msize fuel hRel)
+        · exact hClosed hExternal hGas hMsize hOp hLength hRel
 
 end Primitive
 

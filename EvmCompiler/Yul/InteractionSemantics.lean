@@ -138,6 +138,57 @@ abbrev exec :=
 abbrev loop :=
   Yul.Source.Canonical.loop stateModel primitiveSemantics
 
+namespace EvalArgs
+
+/-- One argument followed by exhausted list fuel. Adjacent compiler proofs use
+this equation without unfolding the canonical mutual evaluator. -/
+theorem one_cons
+    (head : EvmYul.Yul.Ast.Expr) (rest : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    evalArgs 1 (head :: rest) code state =
+      Simulation.Interaction.bind (evalValues 0 head code state) fun result =>
+        Primitive.fail result.1 .OutOfFuel := by
+  simp only [evalArgs, Yul.Source.Canonical.evalArgs,
+    Yul.Source.Effectful.evalArgs, Yul.Source.Effectful.evalTail,
+    Yul.Source.Effectful.eval]
+  change
+    Simulation.Interaction.bind
+        (Simulation.Interaction.bind (evalValues 0 head code state)
+          (fun result => pure (result.1, result.2.head!)))
+        (fun result => Primitive.fail result.1 .OutOfFuel) = _
+  rw [Simulation.Interaction.bind_assoc]
+  rfl
+
+/-- Positive residual list fuel exposes the head expression and exact tail. -/
+theorem succ_succ_cons
+    (fuel : Nat) (head : EvmYul.Yul.Ast.Expr)
+    (rest : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    evalArgs (fuel + 2) (head :: rest) code state =
+      Simulation.Interaction.bind (evalValues (fuel + 1) head code state)
+        fun headResult =>
+          Simulation.Interaction.bind
+            (evalArgs fuel rest code headResult.1) fun tailResult =>
+              pure
+                (tailResult.1, headResult.2.head! :: tailResult.2) := by
+  simp only [evalArgs, Yul.Source.Canonical.evalArgs,
+    Yul.Source.Effectful.evalArgs, Yul.Source.Effectful.evalTail,
+    Yul.Source.Effectful.eval]
+  change
+    Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (evalValues (fuel + 1) head code state)
+          (fun result => pure (result.1, result.2.head!)))
+        (fun headResult =>
+          Simulation.Interaction.bind
+            (evalArgs fuel rest code headResult.1)
+            (fun tailResult =>
+              pure (tailResult.1, headResult.2 :: tailResult.2))) = _
+  rw [Simulation.Interaction.bind_assoc]
+  rfl
+
+end EvalArgs
+
 namespace Program
 
 def openRun (fuel : Nat) (code : EvmYul.Yul.Ast.YulContract)
