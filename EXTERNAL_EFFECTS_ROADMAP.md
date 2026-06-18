@@ -879,6 +879,8 @@ Exit: the shared core builds with no compiler layer changed.
     LOG opcodes, preserving exact log order and live spill words across reads.
   - [x] Prove source-authorized `mstore` and `mstore8` writes preserve every
     reserved spill word while maintaining related memory and active growth.
+  - [x] Define one total-copy capability and instantiate `calldatacopy`,
+    `codecopy`, `extcodecopy`, and overlapping `mcopy` with exact spill safety.
   - [ ] Compose argument-expression preservation with external primitive
     preservation through the ordinary allocation lowerer and Locals compiler.
   - [ ] Recursive allocation preservation for expressions, statements,

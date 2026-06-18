@@ -31676,3 +31676,14 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   focused 1145-job module, 1307-job verification root, architecture guard,
   touched-file hole scan, axiom audit, and `git diff --check` passed; write
   theorems use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 21:12:15 PDT - proof/functions-total-copy-family - defined one
+  pass-owned `CopySpec` and proved open preservation for `calldatacopy`,
+  `codecopy`, `extcodecopy`, and overlapping `mcopy`; destination writes keep
+  reserved spill words exact, while `mcopy` separately checks its source read.
+- 2026-06-17 21:12:15 PDT - theorem-boundary/functions-copy-errors - kept
+  `returndatacopy` outside success-total `CopySpec`: its return-data bounds
+  failure must be preserved through an explicit error-aware closed interface.
+- 2026-06-17 21:12:15 PDT - validation/functions-total-copy-family - the
+  focused 1145-job module, 1307-job verification root, architecture guard,
+  touched-file hole scan, axiom audit, and `git diff --check` passed; all copy
+  theorems use only `[propext, Classical.choice, Quot.sound]`.
