@@ -918,6 +918,107 @@ theorem boundedEffect_of_scratchStore
 
 end ActivationOwned
 
+/--
+Reconstruct a caller activation after a callee returns values above the exact
+caller stack. Scratch locals are recovered from the protected allocator prefix.
+-/
+theorem resume_after_call
+    {contract : MemoryContract.Contract}
+    {config : Config} {allocatorDepth : Nat}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {sourceBefore sourceAfter : SourceState}
+    {targetBefore targetAfter : TargetState}
+    {returned : List Word}
+    (hRel :
+      ActivationStateRel contract plan live 0 frameBase mode
+        sourceBefore targetBefore)
+    (hOwned : ActivationOwned config allocatorDepth frameBase mode)
+    (hVars : sourceAfter.vars = sourceBefore.vars)
+    (hMachine :
+      Compiler.MemoryRelation.MachineRel contract
+        sourceAfter.shared.toMachineState targetAfter.evm.toMachineState)
+    (hWorld :
+      sourceAfter.shared.toState = targetAfter.evm.toSharedState.toState)
+    (hStack :
+      targetAfter.evm.stack = returned ++ targetBefore.evm.stack)
+    (hActiveNoWrap :
+      targetAfter.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (hProtected :
+      ProtectedPrefix config allocatorDepth targetBefore targetAfter) :
+    ActivationStateRel contract plan live returned.length frameBase mode
+      sourceAfter targetAfter := by
+  cases hRel with
+  | stack hOnly _hBeforeNoWrap hState =>
+      refine .stack hOnly hActiveNoWrap ?_
+      refine
+        { machine := hMachine
+          world := hWorld
+          store := ?_ }
+      intro name location hLive hLocation
+      have hOld := hState.store name location hLive hLocation
+      cases location with
+      | stack planDepth =>
+          rcases hOld with ⟨depth, hDepth, hValue⟩
+          refine ⟨depth, hDepth, ?_⟩
+          rw [hStack]
+          rw [List.getElem?_append_right
+            (Nat.le_add_right returned.length depth)]
+          simpa [hVars] using hValue
+      | scratch slot =>
+          exact False.elim (hOnly name slot hLive hLocation)
+  | scratch hScratch =>
+      refine .scratch ?_
+      refine
+        { base :=
+            { machine := hMachine
+              world := hWorld
+              store := ?_ }
+          framePointer := ?_
+          frameActive :=
+            hScratch.frameActive.trans
+              (Nat.mul_le_mul_right MemoryContract.wordBytes
+                hProtected.growth.active)
+          frameAllocated :=
+            hScratch.frameAllocated.trans hProtected.growth.memory
+          frameNoWrap := hScratch.frameNoWrap
+          frameHostAddressable := hScratch.frameHostAddressable
+          activeNoWrap := hActiveNoWrap
+          frameReserved := hScratch.frameReserved
+          scratchBound := hScratch.scratchBound }
+      · intro name location hLive hLocation
+        have hOld := hScratch.base.store name location hLive hLocation
+        cases location with
+        | stack planDepth =>
+            rcases hOld with ⟨depth, hDepth, hValue⟩
+            refine ⟨depth, hDepth, ?_⟩
+            rw [hStack]
+            rw [List.getElem?_append_right
+              (Nat.le_add_right returned.length depth)]
+            simpa [hVars] using hValue
+        | scratch slot =>
+            exact
+              (hProtected.lookup
+                hOwned.firstFrame_le_scratchAddress
+                (hOwned.scratchAddress_end_le_allocatorBase
+                  (hScratch.scratchBound name slot hLive hLocation))
+                ((hOwned.scratchAddress_end_le_allocatorBase
+                    (hScratch.scratchBound name slot hLive hLocation)).trans
+                  (by
+                    rw [← hOwned.frameEnd_eq_allocatorBase]
+                    exact hScratch.frameAllocated))
+                ((hOwned.scratchAddress_end_le_allocatorBase
+                    (hScratch.scratchBound name slot hLive hLocation)).trans
+                  (by
+                    rw [← hOwned.frameEnd_eq_allocatorBase]
+                    exact hScratch.frameActive))).trans
+                (by simpa [hVars] using hOld)
+      · rw [hStack]
+        rw [List.getElem?_append_right
+          (Nat.le_add_right returned.length _)]
+        simpa [Nat.add_assoc] using hScratch.framePointer
+
 theorem budget_mono {config : Config} {smaller larger : Nat}
     (hDepth : smaller ≤ larger) (hBudget : Budget config larger) :
     Budget config smaller := by
