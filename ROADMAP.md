@@ -189,6 +189,10 @@ boundaries remain active work.
       expression recursion.
     - [ ] Discharge the closed ordinary primitive capability over canonical
       code-erased state.
+      - [x] Pure binary, unary, and ternary arithmetic/comparison/bitwise
+        families through one reusable `PureSpec` forward theorem.
+      - [ ] Machine, environment, world, copy, log, and invalid families;
+        assemble the concrete `ClosedSelected` theorem.
     - [x] Define the code-erased outcome-indexed relation and source-owned
       exact lexical-domain invariant; check direct expression, one-name
       declaration, and one-name assignment statements plus `break`,

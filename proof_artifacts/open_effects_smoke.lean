@@ -22,6 +22,7 @@ import EvmCompiler.Functions.AllocationInteractionProgram
 import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.Yul.FunctionsInteractionStatement
+import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 
 #check EvmCompiler.Simulation.OpenWorld
 #check EvmCompiler.Functions.AllocationInteractionCall.CallTargets.forward
@@ -376,3 +377,7 @@ import EvmCompiler.Yul.FunctionsInteractionStatement
 #print axioms EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.of_state_store_eq
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.let_one
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.assign_one
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.PureSpec.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.PureBinary.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.PureUnary.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.PureTernary.forward

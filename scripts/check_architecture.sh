@@ -613,6 +613,7 @@ report_matches \
   '^import EvmCompiler\.(Locals|Expressions|Structured|TypedCfg|Assembly)' \
   EvmCompiler/Yul/FunctionsInteractionRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionPrimitive.lean \
+  EvmCompiler/Yul/FunctionsInteractionClosedPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionExpression.lean \
   EvmCompiler/Yul/FunctionsInteractionStatement.lean
 
@@ -621,6 +622,7 @@ report_matches \
   '^[[:space:]]*(partial[[:space:]]+)?def[[:space:]]+.*(compile|lower|emit|assemble|evalTail|evalArgs|evalValues|execSeq|loop)[^:]*[:=]' \
   EvmCompiler/Yul/FunctionsInteractionRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionPrimitive.lean \
+  EvmCompiler/Yul/FunctionsInteractionClosedPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionExpression.lean \
   EvmCompiler/Yul/FunctionsInteractionStatement.lean
 
@@ -629,6 +631,7 @@ report_matches \
   '^import EvmCompiler\..*(Observer|Replay|Oracle)' \
   EvmCompiler/Yul/FunctionsInteractionRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionPrimitive.lean \
+  EvmCompiler/Yul/FunctionsInteractionClosedPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionExpression.lean \
   EvmCompiler/Yul/FunctionsInteractionStatement.lean
 

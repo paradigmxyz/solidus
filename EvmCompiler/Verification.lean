@@ -122,6 +122,7 @@ import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.EffectRefinement.Failure
 import EvmCompiler.Yul.InteractionSemantics
 import EvmCompiler.Yul.FunctionsInteractionPrimitive
+import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 import EvmCompiler.Yul.FunctionsInteractionExpression
 import EvmCompiler.Yul.FunctionsInteractionStatement
 import EvmCompiler.Yul.EndToEnd
@@ -1364,6 +1365,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionPrimitive.Primitive.callArbitrary
 #check EvmCompiler.Yul.FunctionsInteractionPrimitive.Primitive.createArbitrary
 #check EvmCompiler.Yul.FunctionsInteractionPrimitive.Primitive.compilerSelected_of_closed
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.PureSpec.forward
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.PureBinary.forward
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.PureUnary.forward
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.PureTernary.forward
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.one_cons
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.succ_succ_cons
 #check EvmCompiler.Yul.FunctionsInteractionExpression.directAt
