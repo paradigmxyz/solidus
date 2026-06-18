@@ -339,6 +339,408 @@ theorem returned_with_release
         Simulation.Interaction.ExceptRel.ok
           (OutcomeEffect.of_activation hFinalEffect)⟩⟩
 
+/-- A halting callee skips every caller continuation while retaining the
+caller's control and allocator result relation. -/
+theorem halted
+    {contract : MemoryContract.Contract}
+    {config : Config} {callerDepth calleeDepth : Nat}
+    {callerLowerCtx : AllocationLowering.Ctx}
+    {callerLowerState : AllocationLowering.State}
+    {callerLocalsCtx : Locals.Ctx}
+    {callerPlan : Plan} {returns callerLive : List Locals.Name}
+    {callerFrameBase : Nat} {callerMode calleeMode : ActivationMode}
+    {controlCtx : Functions.Source.Ctx}
+    {targetInitial targetCaller targetEntry targetFinal : TargetState}
+    {callerStack : List Word}
+    {source : SourceState} {kind : Assembly.HaltKind}
+    (hPrefix :
+      BoundedEffect config calleeDepth (callerDepth + 1)
+        targetInitial targetEntry)
+    (hCallerBound :
+      activationProtectedBound callerDepth callerMode ≤ callerDepth + 1)
+    (hCalleeBound :
+      activationProtectedBound calleeDepth calleeMode = callerDepth + 1)
+    (hCall :
+      AllocationInteractionCallResultResource.CallResultRel
+        contract config calleeDepth calleeMode targetCaller targetEntry
+        callerStack (.halted kind source)
+        (Structured.EffectSemantics.Outcome.halt kind targetFinal)) :
+    RuntimeResultRel contract callerLowerCtx callerLowerState callerLocalsCtx
+      callerPlan returns callerLive callerFrameBase callerMode controlCtx
+      controlCtx config callerDepth targetInitial
+      (.ok (Functions.Source.Effectful.Outcome.halt kind source, controlCtx))
+      (.ok (Structured.EffectSemantics.Outcome.halt kind targetFinal)) := by
+  have hEffect :=
+    AllocationInteractionCallResultResource.CallResultRel.halt_to_caller
+      hPrefix hCallerBound hCalleeBound hCall
+  cases hCall with
+  | halted _ hShared _ =>
+      exact
+        ⟨Simulation.Interaction.ExceptRel.ok
+            (ControlResultRel.nonregular (mode := callerMode)
+              (by simp) (SameFrame.refl callerMode)
+              (Functions.Source.Ctx.SameControl.refl controlCtx)
+              (ActivationOutcomeRel.halt kind { shared := hShared })),
+          Simulation.Interaction.ExceptRel.ok hEffect⟩
+
+/-- Bind a stack-backed selected call to the canonical source continuation and
+the exact compiler-emitted return-store statement. -/
+theorem finish_without_release
+    {contract : MemoryContract.Contract}
+    {expressions : Expressions.Program}
+    {globalFrameWords callerDepth calleeDepth storesFuel : Nat}
+    {config : Config}
+    {callerLowerCtx : AllocationLowering.Ctx}
+    {callerLowerState : AllocationLowering.State}
+    {callerLocalsCtx : Locals.Ctx}
+    {callerPlan : Plan} {returns callerLive : List Locals.Name}
+    {callerFrameBase : Nat} {callerMode calleeMode : ActivationMode}
+    {controlCtx : Functions.Source.Ctx}
+    {sourceInitial sourceAfterArgs : SourceState}
+    {targetInitial targetCaller callerBase targetEntry : TargetState}
+    {callerStack : List Word}
+    {targets : List Locals.Name} {stores : Structured.Code}
+    {sourceCall : Simulation.Interaction EVMException
+      Functions.InteractionSemantics.CallResult}
+    {targetCall : Simulation.Interaction EVMException
+      Expressions.InteractionSemantics.Outcome}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hInitial :
+      AllocationContext.ActivationInvariant contract callerLowerCtx
+        callerLowerState callerLocalsCtx callerPlan callerLive callerFrameBase
+        callerMode sourceInitial targetInitial)
+    (hArgsVars : sourceAfterArgs.vars = sourceInitial.vars)
+    (hCallerRel :
+      ActivationStateRel contract callerPlan callerLive 0 callerFrameBase
+        callerMode sourceAfterArgs callerBase)
+    (hCallerOwned :
+      ActivationOwned config callerDepth callerFrameBase callerMode)
+    (hDepthEq : calleeDepth = callerDepth)
+    (hBudget : Budget config callerDepth)
+    (hCallerStack : callerBase.evm.stack = callerStack)
+    (hCallerStackLength :
+      callerBase.evm.stack.length = callerLocalsCtx.layout.length)
+    (hInitialToBase :
+      BoundedEffect config calleeDepth (callerDepth + 1)
+        targetInitial callerBase)
+    (hBaseToEntry :
+      BoundedEffect config calleeDepth (callerDepth + 1)
+        callerBase targetEntry)
+    (hCalleeBound :
+      activationProtectedBound calleeDepth calleeMode = callerDepth + 1)
+    (hCall :
+      Simulation.Interaction.Rel
+        (AllocationInteractionCallResultResource.OpenCallResultRel
+          contract config calleeDepth calleeMode targetCaller targetEntry
+          callerStack)
+        sourceCall targetCall)
+    (hFinish :
+      Simulation.Interaction.AllDone
+        (fun callDone =>
+          match callDone with
+          | .error _ => False
+          | .ok callResult =>
+              Simulation.Interaction.Successful
+                (Functions.InteractionSemantics.Stmt.finishCall targets
+                  controlCtx sourceAfterArgs callResult))
+        sourceCall)
+    (hTargetsLive : ∀ target, target ∈ targets → target ∈ callerLive)
+    (hTargetsNodup : targets.Nodup)
+    (hStores :
+      AllocationLowering.lowerCallTargetsCode?
+          callerLowerCtx callerLowerState targets.reverse targets.length =
+        some stores)
+    (hStoresFuel : 2 ≤ storesFuel) :
+    Simulation.Interaction.Rel
+      (RuntimeResultRel contract callerLowerCtx callerLowerState
+        callerLocalsCtx callerPlan returns callerLive callerFrameBase
+        callerMode controlCtx controlCtx config callerDepth targetInitial)
+      (Simulation.Interaction.bind sourceCall
+        (Functions.InteractionSemantics.Stmt.finishCall targets controlCtx
+          sourceAfterArgs))
+      (Simulation.Interaction.bind targetCall
+        (fun outcome =>
+          match outcome.mode with
+          | .regular =>
+              Expressions.InteractionSemantics.Block.openRun expressions
+                storesFuel { stmts := Locals.codeStmt stores } outcome.state
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure outcome)) := by
+  have hStrong := Simulation.Interaction.Rel.strengthen_left hCall hFinish
+  apply Simulation.Interaction.Rel.bind_custom hStrong
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hRelated, hSuccessful⟩
+  cases hRelated with
+  | error _ => exact False.elim hSuccessful
+  | ok hCallResult =>
+      cases hCallResult with
+      | @returned sourceReturned returnValues callFinal hShared hStack
+          hReturns hEffect =>
+          obtain ⟨returnStore, hAssign⟩ :=
+            Functions.InteractionSemantics.Stmt.successful_finishCall_returned
+              targets controlCtx sourceAfterArgs _ _ hSuccessful
+          have hAssign' :
+              Functions.Source.Store.assignMany targets returnValues
+                  sourceAfterArgs.vars =
+                some returnStore := by
+            simpa [Functions.InteractionSemantics.stateModel,
+              Locals.InteractionSemantics.stateModel,
+              Locals.Source.Effectful.Ordinary.stateModel,
+              Locals.Source.Effectful.StateModel.vars,
+              Locals.Source.Effectful.StateModel.source, id_eq] using hAssign
+          have hCallResult :
+              AllocationInteractionCallResultResource.CallResultRel
+                contract config calleeDepth calleeMode targetCaller targetEntry
+                callerStack
+                (.returned _ _) (.regular _) :=
+            .returned hShared hStack hReturns hEffect
+          obtain ⟨targetFinal, hStoresRun, hResult⟩ :=
+            returned_without_release (returns := returns)
+              (controlCtx := controlCtx) hConfig hInitial hArgsVars hCallerRel
+              hCallerOwned hDepthEq hBudget hCallerStack hCallerStackLength
+              hInitialToBase hBaseToEntry hCalleeBound hCallResult
+              hTargetsLive hTargetsNodup hAssign' hStores
+          have hTargetRun :=
+            Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+              expressions storesFuel stores _ targetFinal hStoresFuel hStoresRun
+          simp only [Simulation.Interaction.bind_done_ok,
+            Structured.Outcome.mode, Structured.Outcome.state,
+            Locals.codeStmt]
+          change Simulation.Interaction.Rel
+            (RuntimeResultRel contract callerLowerCtx callerLowerState
+              callerLocalsCtx callerPlan returns callerLive callerFrameBase
+              callerMode controlCtx controlCtx config callerDepth targetInitial)
+            (Functions.InteractionSemantics.Stmt.finishCall targets controlCtx
+              sourceAfterArgs (.returned sourceReturned returnValues))
+            (Expressions.InteractionSemantics.Block.openRun expressions
+              storesFuel { stmts := [.code stores] } callFinal)
+          rw [hTargetRun]
+          simpa [Functions.InteractionSemantics.Stmt.finishCall, hAssign',
+            Functions.InteractionSemantics.stateModel,
+            Locals.InteractionSemantics.stateModel,
+            Locals.Source.Effectful.Ordinary.stateModel,
+            Locals.Source.Effectful.StateModel.source,
+            Locals.Source.Effectful.StateModel.vars,
+            Locals.Source.Effectful.StateModel.withSource, id_eq] using
+            (Simulation.Interaction.Rel.done hResult)
+      | @halted kind haltedState targetFinal hShared hEffect =>
+          have hCallResult :
+              AllocationInteractionCallResultResource.CallResultRel
+                contract config calleeDepth calleeMode targetCaller targetEntry
+                callerStack
+                (.halted kind _) (.halt kind _) :=
+            .halted kind hShared hEffect
+          have hResult :=
+            halted (callerLowerCtx := callerLowerCtx)
+              (callerLowerState := callerLowerState)
+              (callerLocalsCtx := callerLocalsCtx)
+              (callerPlan := callerPlan) (returns := returns)
+              (callerLive := callerLive) (callerFrameBase := callerFrameBase)
+              (callerMode := callerMode) (calleeMode := calleeMode)
+              (controlCtx := controlCtx)
+              (hInitialToBase.trans hBaseToEntry) (by
+                cases callerMode <;>
+                  simp [activationProtectedBound]) hCalleeBound hCallResult
+          simpa [Functions.InteractionSemantics.Stmt.finishCall,
+            Simulation.Interaction.pure] using
+            (Simulation.Interaction.Rel.done hResult)
+
+/-- Bind a scratch-backed selected call to return writeback followed by the
+compiler-owned frame release. Halts skip both suffixes. -/
+theorem finish_with_release
+    {contract : MemoryContract.Contract}
+    {expressions : Expressions.Program}
+    {globalFrameWords callerDepth calleeDepth storesFuel : Nat}
+    {config : Config}
+    {callerLowerCtx : AllocationLowering.Ctx}
+    {callerLowerState : AllocationLowering.State}
+    {callerLocalsCtx : Locals.Ctx}
+    {callerPlan : Plan} {returns callerLive : List Locals.Name}
+    {callerFrameBase : Nat} {callerMode calleeMode : ActivationMode}
+    {controlCtx : Functions.Source.Ctx}
+    {sourceInitial sourceAfterArgs : SourceState}
+    {targetInitial targetCaller callerBase targetEntry : TargetState}
+    {callerStack : List Word}
+    {targets : List Locals.Name} {stores : Structured.Code}
+    {sourceCall : Simulation.Interaction EVMException
+      Functions.InteractionSemantics.CallResult}
+    {targetCall : Simulation.Interaction EVMException
+      Expressions.InteractionSemantics.Outcome}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hInitial :
+      AllocationContext.ActivationInvariant contract callerLowerCtx
+        callerLowerState callerLocalsCtx callerPlan callerLive callerFrameBase
+        callerMode sourceInitial targetInitial)
+    (hArgsVars : sourceAfterArgs.vars = sourceInitial.vars)
+    (hCallerRel :
+      ActivationStateRel contract callerPlan callerLive 0 callerFrameBase
+        callerMode sourceAfterArgs callerBase)
+    (hCallerOwned :
+      ActivationOwned config callerDepth callerFrameBase callerMode)
+    (hDepthEq : calleeDepth = callerDepth + 1)
+    (hBudget : Budget config callerDepth)
+    (hCallerStack : callerBase.evm.stack = callerStack)
+    (hCallerStackLength :
+      callerBase.evm.stack.length = callerLocalsCtx.layout.length)
+    (hInitialToBase :
+      BoundedEffect config calleeDepth (callerDepth + 1)
+        targetInitial callerBase)
+    (hBaseToEntry :
+      BoundedEffect config calleeDepth (callerDepth + 1)
+        callerBase targetEntry)
+    (hCalleeBound :
+      activationProtectedBound calleeDepth calleeMode = callerDepth + 1)
+    (hCall :
+      Simulation.Interaction.Rel
+        (AllocationInteractionCallResultResource.OpenCallResultRel
+          contract config calleeDepth calleeMode targetCaller targetEntry
+          callerStack)
+        sourceCall targetCall)
+    (hFinish :
+      Simulation.Interaction.AllDone
+        (fun callDone =>
+          match callDone with
+          | .error _ => False
+          | .ok callResult =>
+              Simulation.Interaction.Successful
+                (Functions.InteractionSemantics.Stmt.finishCall targets
+                  controlCtx sourceAfterArgs callResult))
+        sourceCall)
+    (hTargetsLive : ∀ target, target ∈ targets → target ∈ callerLive)
+    (hTargetsNodup : targets.Nodup)
+    (hStores :
+      AllocationLowering.lowerCallTargetsCode?
+          callerLowerCtx callerLowerState targets.reverse targets.length =
+        some stores)
+    (hStoresFuel : 3 ≤ storesFuel) :
+    Simulation.Interaction.Rel
+      (RuntimeResultRel contract callerLowerCtx callerLowerState
+        callerLocalsCtx callerPlan returns callerLive callerFrameBase
+        callerMode controlCtx controlCtx config callerDepth targetInitial)
+      (Simulation.Interaction.bind sourceCall
+        (Functions.InteractionSemantics.Stmt.finishCall targets controlCtx
+          sourceAfterArgs))
+      (Simulation.Interaction.bind targetCall
+        (fun outcome =>
+          match outcome.mode with
+          | .regular =>
+              Expressions.InteractionSemantics.Block.openRun expressions
+                storesFuel
+                { stmts :=
+                    Locals.codeStmt stores ++
+                      Locals.codeStmt
+                        (AllocationSupport.scratchFrameReleaseCode config) }
+                outcome.state
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure outcome)) := by
+  have hStrong := Simulation.Interaction.Rel.strengthen_left hCall hFinish
+  apply Simulation.Interaction.Rel.bind_custom hStrong
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hRelated, hSuccessful⟩
+  cases hRelated with
+  | error _ => exact False.elim hSuccessful
+  | ok hCallResult =>
+      cases hCallResult with
+      | @returned sourceReturned returnValues callFinal hShared hStack
+          hReturns hEffect =>
+          obtain ⟨returnStore, hAssign⟩ :=
+            Functions.InteractionSemantics.Stmt.successful_finishCall_returned
+              targets controlCtx sourceAfterArgs _ _ hSuccessful
+          have hAssign' :
+              Functions.Source.Store.assignMany targets returnValues
+                  sourceAfterArgs.vars =
+                some returnStore := by
+            simpa [Functions.InteractionSemantics.stateModel,
+              Locals.InteractionSemantics.stateModel,
+              Locals.Source.Effectful.Ordinary.stateModel,
+              Locals.Source.Effectful.StateModel.vars,
+              Locals.Source.Effectful.StateModel.source, id_eq] using hAssign
+          have hCallResult :
+              AllocationInteractionCallResultResource.CallResultRel
+                contract config calleeDepth calleeMode targetCaller targetEntry
+                callerStack
+                (.returned _ _) (.regular _) :=
+            .returned hShared hStack hReturns hEffect
+          obtain ⟨targetAfterWrite, targetFinal, hStoresRun, hReleaseRun,
+              hResult⟩ :=
+            returned_with_release (returns := returns)
+              (controlCtx := controlCtx) hConfig hInitial hArgsVars hCallerRel
+              hCallerOwned hDepthEq hBudget hCallerStack hCallerStackLength
+              hInitialToBase hBaseToEntry hCalleeBound hCallResult
+              hTargetsLive hTargetsNodup hAssign' hStores
+          have hWriteBlock :=
+            Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+              expressions storesFuel stores _ targetAfterWrite
+              (by omega) hStoresRun
+          have hReleaseBlock :=
+            Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+              expressions (storesFuel - 1)
+              (AllocationSupport.scratchFrameReleaseCode config)
+              targetAfterWrite targetFinal (by omega) hReleaseRun
+          have hTargetRun :
+              Expressions.InteractionSemantics.Block.openRun expressions
+                  storesFuel
+                  { stmts :=
+                      Locals.codeStmt stores ++
+                        Locals.codeStmt
+                          (AllocationSupport.scratchFrameReleaseCode config) }
+                  callFinal =
+                .done (.ok (.regular targetFinal)) := by
+            rw [Expressions.InteractionSemantics.Block.openRun_append]
+            simp only [Locals.codeStmt]
+            rw [hWriteBlock]
+            simp only [Simulation.Interaction.bind_done_ok, List.length_singleton]
+            simpa [Locals.codeStmt] using hReleaseBlock
+          simp only [Simulation.Interaction.bind_done_ok,
+            Structured.Outcome.mode, Structured.Outcome.state]
+          change Simulation.Interaction.Rel
+            (RuntimeResultRel contract callerLowerCtx callerLowerState
+              callerLocalsCtx callerPlan returns callerLive callerFrameBase
+              callerMode controlCtx controlCtx config callerDepth targetInitial)
+            (Functions.InteractionSemantics.Stmt.finishCall targets controlCtx
+              sourceAfterArgs (.returned sourceReturned returnValues))
+            (Expressions.InteractionSemantics.Block.openRun expressions
+              storesFuel
+              { stmts :=
+                  Locals.codeStmt stores ++
+                    Locals.codeStmt
+                      (AllocationSupport.scratchFrameReleaseCode config) }
+              callFinal)
+          rw [hTargetRun]
+          simpa [Functions.InteractionSemantics.Stmt.finishCall, hAssign',
+            Functions.InteractionSemantics.stateModel,
+            Locals.InteractionSemantics.stateModel,
+            Locals.Source.Effectful.Ordinary.stateModel,
+            Locals.Source.Effectful.StateModel.source,
+            Locals.Source.Effectful.StateModel.vars,
+            Locals.Source.Effectful.StateModel.withSource, id_eq] using
+            (Simulation.Interaction.Rel.done hResult)
+      | @halted kind haltedState targetFinal hShared hEffect =>
+          have hCallResult :
+              AllocationInteractionCallResultResource.CallResultRel
+                contract config calleeDepth calleeMode targetCaller targetEntry
+                callerStack
+                (.halted kind _) (.halt kind _) :=
+            .halted kind hShared hEffect
+          have hResult :=
+            halted (callerLowerCtx := callerLowerCtx)
+              (callerLowerState := callerLowerState)
+              (callerLocalsCtx := callerLocalsCtx)
+              (callerPlan := callerPlan) (returns := returns)
+              (callerLive := callerLive) (callerFrameBase := callerFrameBase)
+              (callerMode := callerMode) (calleeMode := calleeMode)
+              (controlCtx := controlCtx)
+              (hInitialToBase.trans hBaseToEntry) (by
+                cases callerMode <;>
+                  simp [activationProtectedBound]) hCalleeBound hCallResult
+          simpa [Functions.InteractionSemantics.Stmt.finishCall,
+            Simulation.Interaction.pure] using
+            (Simulation.Interaction.Rel.done hResult)
+
 end CallResultRel
 
 namespace SelectedCallee

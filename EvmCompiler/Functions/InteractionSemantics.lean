@@ -222,6 +222,28 @@ def finishCall (targets : List Functions.Name)
   | .halted kind haltedState =>
       pure (Functions.Source.Effectful.Outcome.halt kind haltedState, ctx)
 
+/-- A successful regular call continuation supplies its canonical return
+assignment rather than leaving it as generated evidence. -/
+theorem successful_finishCall_returned
+    (targets : List Functions.Name) (ctx : Functions.Source.Ctx)
+    (stateAfterArgs sourceReturned : State) (returnValues : List Word)
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (finishCall targets ctx stateAfterArgs
+          (.returned sourceReturned returnValues))) :
+    ∃ returnStore,
+      Functions.Source.Store.assignMany targets returnValues
+          (stateModel.vars stateAfterArgs) =
+        some returnStore := by
+  cases hAssign : Functions.Source.Store.assignMany targets returnValues
+      (stateModel.vars stateAfterArgs) with
+  | none =>
+      have hPrefix := Simulation.Interaction.Successful.bind_left hSuccess
+      simp [finishCall, hAssign] at hPrefix
+      exact False.elim
+        (Simulation.Interaction.Successful.error_false _ hPrefix)
+  | some returnStore => exact ⟨returnStore, rfl⟩
+
 def openRunForLoop (program : Functions.Program)
     (loopCtx : Functions.Source.Ctx) (cond : Functions.Expr 1)
     (postBase : Functions.Source.Ctx) (post : Functions.Block)
@@ -444,6 +466,73 @@ theorem successful_openRun_call_parts
           simp only [hFind, Option.elim_some,
             Simulation.Interaction.bind_done_ok] at hOutcome
           exact Simulation.Interaction.Successful.bind_left hOutcome
+
+/-- Successful call execution exposes the exact successful caller
+continuation after every open-world callee result. -/
+theorem successful_openRun_call_continuations
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (targets : List Functions.Name)
+    (functionName : Functions.Name) (args : List (Functions.Expr 1))
+    (state : State) (hTargets : targets.Nodup)
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (openRun program ctx (fuel + 1)
+          (.call targets functionName args) state)) :
+    Simulation.Interaction.AllDone
+      (fun outcome =>
+        match outcome with
+        | .error _ => False
+        | .ok result =>
+            ∃ fn,
+              Functions.Source.FunList.find? functionName program.functions =
+                  some fn ∧
+                Simulation.Interaction.AllDone
+                  (fun callDone =>
+                    match callDone with
+                    | .error _ => False
+                    | .ok callResult =>
+                        Simulation.Interaction.Successful
+                          (finishCall targets ctx result.1 callResult))
+                  (Functions.InteractionSemantics.FunDef.openRunBody
+                    program fn result.2 fuel result.1))
+      (Functions.InteractionSemantics.ArgList.openEval args state) := by
+  rw [openRun_call] at hSuccess
+  simp only [hTargets, if_pos] at hSuccess
+  have hArgs := Simulation.Interaction.Successful.bind_inv hSuccess
+  apply Simulation.Interaction.AllDone.mono hArgs
+  intro outcome hOutcome
+  cases outcome with
+  | error _ => exact hOutcome
+  | ok result =>
+      rcases result with ⟨stateAfterArgs, argValues⟩
+      cases hFind : Functions.Source.FunList.find?
+          functionName program.functions with
+      | none =>
+          have hLookup := Simulation.Interaction.Successful.bind_left hOutcome
+          simp only [hFind, Option.elim_none] at hLookup
+          exact False.elim
+            (Simulation.Interaction.Successful.error_false _ hLookup)
+      | some fn =>
+          refine ⟨fn, rfl, ?_⟩
+          simp only [hFind, Option.elim_some,
+            Simulation.Interaction.bind_done_ok] at hOutcome
+          have hFn := Simulation.Interaction.Successful.bind_inv hOutcome
+          cases hFn with
+          | done hFnSuccess =>
+              change Simulation.Interaction.AllDone
+                (fun callDone =>
+                  match callDone with
+                  | .error _ => False
+                  | .ok callResult =>
+                      Simulation.Interaction.Successful
+                        (finishCall targets ctx stateAfterArgs callResult))
+                (Functions.Source.Effectful.Control.FunDef.runBody
+                  stateModel primitiveSemantics program fn argValues fuel
+                  stateAfterArgs)
+              apply Simulation.Interaction.AllDone.mono
+                (Simulation.Interaction.Successful.bind_inv hFnSuccess)
+              intro callDone hDone
+              cases callDone <;> exact hDone
 
 end Stmt
 
