@@ -189,6 +189,8 @@ boundaries remain active work.
       blocks, conditionals, switches, and loops.
     - [x] Path-sensitive scoped result interface and generic nil/singleton/cons
       composition, including exact abrupt suffix skipping.
+    - [x] Outcome-indexed terminal representation relation and terminal-aware
+      singleton/list composition for source failures versus target halts.
     - [ ] Complete recursive statement/list proof over compiler decomposition;
       break, continue, leave, and multi-name uninitialized declaration compiler
       cases are checked. Direct-safe one-name initialized declarations and

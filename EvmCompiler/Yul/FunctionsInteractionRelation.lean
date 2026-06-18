@@ -1456,6 +1456,38 @@ theorem leave_restrict
 
 end ScopedOutcomeRel
 
+/-- Yul exposes terminal control as a distinguished failure, while Functions
+keeps it as an outcome. The terminal syntax theorem chooses the exact
+non-revert halt kind; this relation preserves the terminal state and permits
+that representation change without treating runtime errors as outcomes. -/
+inductive TerminalFailureRel :
+    Yul.InteractionSemantics.Failure →
+      Functions.InteractionSemantics.Outcome → Prop where
+  | stop
+      {source : SourceState} {value : Word} {target : TargetState}
+      (state : StateRel source target) :
+      TerminalFailureRel
+        { exception := .YulHalt source value, state := source }
+        (Functions.Source.Effectful.Outcome.halt .stop target)
+  | return_
+      {source : SourceState} {value : Word} {target : TargetState}
+      (state : StateRel source target) :
+      TerminalFailureRel
+        { exception := .YulHalt source value, state := source }
+        (Functions.Source.Effectful.Outcome.halt .return target)
+  | selfdestruct
+      {source : SourceState} {value : Word} {target : TargetState}
+      (state : StateRel source target) :
+      TerminalFailureRel
+        { exception := .YulHalt source value, state := source }
+        (Functions.Source.Effectful.Outcome.halt .selfdestruct target)
+  | revert
+      {source : SourceState} {target : TargetState}
+      (state : StateRel source target) :
+      TerminalFailureRel
+        { exception := .Revert source, state := source }
+        (Functions.Source.Effectful.Outcome.halt .revert target)
+
 end FunctionsInteractionRelation
 end Yul
 end EvmCompiler

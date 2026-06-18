@@ -42,9 +42,21 @@ def PathScopedResultRel (regularLayout : List Functions.Name)
         finalLayout source target.1 ∧
       (target.1.mode = .regular → finalLayout = regularLayout)
 
-abbrev PathScopedDoneRel (regularLayout : List Functions.Name) :=
-  Simulation.Interaction.ExceptRel ErrorRel
-    (PathScopedResultRel regularLayout)
+inductive PathScopedDoneRel (regularLayout : List Functions.Name) :
+    Except Yul.InteractionSemantics.Failure
+        Yul.InteractionSemantics.State →
+      Except EVMException
+        (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx) →
+      Prop where
+  | error {source target} :
+      ErrorRel source target →
+        PathScopedDoneRel regularLayout (.error source) (.error target)
+  | ok {source target} :
+      PathScopedResultRel regularLayout source target →
+        PathScopedDoneRel regularLayout (.ok source) (.ok target)
+  | terminal {source target ctx} :
+      FunctionsInteractionRelation.TerminalFailureRel source target →
+        PathScopedDoneRel regularLayout (.error source) (.ok (target, ctx))
 
 namespace PathScopedResultRel
 
@@ -148,9 +160,26 @@ theorem singleton
                     { stmts := [] } targetResult.1.state
             | .brk | .cont | .leave | .halt _ =>
                 pure (targetResult.1, ctx)) := by
-    apply Simulation.Interaction.ForwardRel.bind hStmt
-    intro sourceResult targetResult hResult
-    ·
+    apply Simulation.Interaction.ForwardRel.bind_custom hStmt
+    intro sourceDone targetDone hDone
+    cases hDone with
+    | error hError =>
+        exact Simulation.Interaction.ForwardRel.done (.error hError)
+    | terminal hTerminal =>
+        cases hTerminal with
+        | stop hState =>
+            exact Simulation.Interaction.ForwardRel.done
+              (.terminal (.stop hState))
+        | return_ hState =>
+            exact Simulation.Interaction.ForwardRel.done
+              (.terminal (.return_ hState))
+        | selfdestruct hState =>
+            exact Simulation.Interaction.ForwardRel.done
+              (.terminal (.selfdestruct hState))
+        | revert hState =>
+            exact Simulation.Interaction.ForwardRel.done
+              (.terminal (.revert hState))
+    | @ok sourceResult targetResult hResult =>
         rcases targetResult with ⟨targetOutcome, ctxMid⟩
         rcases targetOutcome with ⟨targetMid, mode⟩
         rcases hResult with ⟨finalLayout, hScoped, hRegular⟩
@@ -159,27 +188,27 @@ theorem singleton
             dsimp
             rw [Functions.InteractionSemantics.Block.openRun_nil]
             exact Simulation.Interaction.ForwardRel.done
-              (Simulation.Interaction.ExceptRel.ok
+              (PathScopedDoneRel.ok
                 ⟨finalLayout, hScoped, hRegular⟩)
         | brk =>
             dsimp
             exact Simulation.Interaction.ForwardRel.done
-              (Simulation.Interaction.ExceptRel.ok
+              (PathScopedDoneRel.ok
                 ⟨finalLayout, hScoped, by simp⟩)
         | cont =>
             dsimp
             exact Simulation.Interaction.ForwardRel.done
-              (Simulation.Interaction.ExceptRel.ok
+              (PathScopedDoneRel.ok
                 ⟨finalLayout, hScoped, by simp⟩)
         | leave =>
             dsimp
             exact Simulation.Interaction.ForwardRel.done
-              (Simulation.Interaction.ExceptRel.ok
+              (PathScopedDoneRel.ok
                 ⟨finalLayout, hScoped, by simp⟩)
         | halt kind =>
             dsimp
             exact Simulation.Interaction.ForwardRel.done
-              (Simulation.Interaction.ExceptRel.ok
+              (PathScopedDoneRel.ok
                 ⟨finalLayout, hScoped, by simp⟩)
   rw [show targetFuel + 2 = (targetFuel + 1) + 1 by omega,
     Functions.InteractionSemantics.Block.openRun_cons]
@@ -231,18 +260,36 @@ theorem cons
           { stmts := lowerHead ++ lowerRest } target) := by
   rw [Yul.InteractionSemantics.ExecSeq.cons_succ,
     Functions.InteractionSemantics.Block.openRun_append]
-  apply Simulation.Interaction.ForwardRel.bind hHead
-  intro sourceMid targetResult hResult
-  rcases targetResult with ⟨targetOutcome, ctxMid⟩
-  rcases targetOutcome with ⟨targetMid, mode⟩
-  cases mode with
-  | regular =>
+  apply Simulation.Interaction.ForwardRel.bind_custom hHead
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ForwardRel.done (.error hError)
+  | terminal hTerminal =>
+      cases hTerminal with
+      | stop hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.stop hState))
+      | return_ hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.return_ hState))
+      | selfdestruct hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.selfdestruct hState))
+      | revert hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.revert hState))
+  | @ok sourceMid targetResult hResult =>
+    rcases targetResult with ⟨targetOutcome, ctxMid⟩
+    rcases targetOutcome with ⟨targetMid, mode⟩
+    cases mode with
+    | regular =>
       have hState := PathScopedResultRel.regular_state hResult
       rcases hState.state with
         ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
       subst sourceMid
       simpa using hTail hState
-  | brk =>
+    | brk =>
       rcases hResult with ⟨branchLayout, hScoped, hRegular⟩
       have hMode := hScoped.outcome.mode
       cases sourceMid with
@@ -255,7 +302,7 @@ theorem cons
                 (.ok ⟨branchLayout, hScoped, by simp⟩)
           | Continue sourceShared sourceVars => simp [ModeRel] at hMode
           | Leave sourceShared sourceVars => simp [ModeRel] at hMode
-  | cont =>
+    | cont =>
       rcases hResult with ⟨branchLayout, hScoped, hRegular⟩
       have hMode := hScoped.outcome.mode
       cases sourceMid with
@@ -268,7 +315,7 @@ theorem cons
               exact Simulation.Interaction.ForwardRel.done
                 (.ok ⟨branchLayout, hScoped, by simp⟩)
           | Leave sourceShared sourceVars => simp [ModeRel] at hMode
-  | leave =>
+    | leave =>
       rcases hResult with ⟨branchLayout, hScoped, hRegular⟩
       have hMode := hScoped.outcome.mode
       cases sourceMid with
@@ -281,7 +328,7 @@ theorem cons
           | Leave sourceShared sourceVars =>
               exact Simulation.Interaction.ForwardRel.done
                 (.ok ⟨branchLayout, hScoped, by simp⟩)
-  | halt kind =>
+    | halt kind =>
       rcases hResult with ⟨branchLayout, hScoped, hRegular⟩
       have hMode := hScoped.outcome.mode
       cases sourceMid with

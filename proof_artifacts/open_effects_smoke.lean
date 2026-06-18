@@ -438,6 +438,11 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 #print axioms EvmCompiler.Yul.InteractionSemantics.Exec.for_succ
 #print axioms EvmCompiler.Yul.FunctionsInteractionRelation.ScopedOutcomeRel.of_regular_target
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedResultRel.regular_state
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TerminalFailureRel.stop
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TerminalFailureRel.return_
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TerminalFailureRel.selfdestruct
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TerminalFailureRel.revert
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.terminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.of_fixed
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.nil
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.singleton
