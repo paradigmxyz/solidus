@@ -1350,6 +1350,7 @@ theorem forward_scratch
     (hReservation : contract.scratch? = some reservation) :
     ∃ compiled finalCtx finalTarget finalFrameDepth fuel,
       0 < fuel ∧
+      fuel = compiled.length + 1 ∧
       Locals.Block.compileOpen localsCtx
           { stmts :=
               (AllocationLowering.lowerParams lowerCtx pending
@@ -1358,9 +1359,10 @@ theorem forward_scratch
       finalCtx.layout =
         (AllocationLowering.lowerParams lowerCtx pending
           localsCtx.layout).2 ∧
-      Expressions.InteractionSemantics.Block.openRun targetProgram fuel
-          { stmts := compiled } target =
-        .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      (∀ targetExtra,
+        Expressions.InteractionSemantics.Block.openRun targetProgram
+            (targetExtra + fuel) { stmts := compiled } target =
+          .done (.ok (Structured.Outcome.regular finalTarget))) ∧
       ScratchStateRel contract plan
         ((pending.map Prod.fst).reverse ++ realized) 0 frameBase
         finalFrameDepth frameWords source finalTarget ∧
@@ -1370,13 +1372,14 @@ theorem forward_scratch
       finalTarget.evm.stack.length = finalCtx.layout.length := by
   cases hContext with
   | nil =>
-      refine ⟨[], localsCtx, target, frameDepth, 1, by omega, ?_, ?_, ?_,
-        ?_, ?_, hStackLength⟩
+      refine ⟨[], localsCtx, target, frameDepth, 1, by omega, rfl,
+        ?_, ?_, ?_, ?_, ?_, hStackLength⟩
       · simp [AllocationLowering.lowerParams, Locals.Block.compileOpen]
       · simp [AllocationLowering.lowerParams]
-      · exact
+      · intro targetExtra
+        simpa using
           Expressions.InteractionSemantics.Block.openRun_nil
-            targetProgram 0 target
+            targetProgram targetExtra target
       · cases hRel.finish with
         | scratch state => simpa using state
       · simpa using hFrameDepth
@@ -1390,16 +1393,16 @@ theorem forward_scratch
           hRel.activate_stack fresh location stackOrder
       obtain
           ⟨compiled, finalCtx, finalTarget, finalFrameDepth, fuel,
-            hFuel, hCompile, hFinalLayout, hEval, hFinalRel,
+            hFuel, hFuelLength, hCompile, hFinalLayout, hEvalAt, hFinalRel,
             hFinalDepth, hFinalStackLength⟩ :=
-        forward_scratch tail hNextRel
+        forward_scratch (targetProgram := targetProgram) tail hNextRel
           (by
             rw [stackOrder, hFrameDepth]
             simp)
           hStackLength hWF hReservation
       refine
         ⟨compiled, finalCtx, finalTarget, finalFrameDepth, fuel, hFuel,
-          ?_, ?_, hEval, ?_, ?_, hFinalStackLength⟩
+          hFuelLength, ?_, ?_, hEvalAt, ?_, ?_, hFinalStackLength⟩
       · simpa [AllocationLowering.lowerParams, classification] using hCompile
       · simpa [AllocationLowering.lowerParams, classification] using
           hFinalLayout
@@ -1447,9 +1450,10 @@ theorem forward_scratch
         omega
       obtain
           ⟨tailCompiled, finalCtx, finalTarget, finalFrameDepth, tailFuel,
-            hTailFuel, hTailCompile, hFinalLayout, hTailEval, hFinalRel,
+            hTailFuel, hTailFuelLength, hTailCompile, hFinalLayout,
+            hTailEvalAt, hFinalRel,
             hFinalDepth, hFinalStackLength⟩ :=
-        forward_scratch tail hNextRel
+        forward_scratch (targetProgram := targetProgram) tail hNextRel
           (by simpa [stackOrder] using hFrameDepth)
           (by
             simpa [above, suffix, List.append_assoc] using hMidStackLength)
@@ -1478,29 +1482,38 @@ theorem forward_scratch
             above ++ suffix :=
         AllocationLowering.eraseName_append_name aboveFresh hSuffixFresh
       let fuel := headCompiled.length + tailFuel
-      have hHeadAtFuel :
-          Expressions.InteractionSemantics.Block.openRun targetProgram fuel
-              { stmts := headCompiled } target =
-            .done (.ok (Structured.Outcome.regular midTarget)) := by
-        have hRun := hHeadEval (tailFuel - 1)
-        have hFuelEq : tailFuel - 1 + 4 = fuel := by
-          simp [fuel, hHeadLength]
-          omega
-        simpa [hFuelEq] using hRun
       have hCombinedEval :
-          Expressions.InteractionSemantics.Block.openRun targetProgram fuel
-              { stmts := headCompiled ++ tailCompiled } target =
-            .done (.ok (Structured.Outcome.regular finalTarget)) := by
+          ∀ targetExtra,
+            Expressions.InteractionSemantics.Block.openRun targetProgram
+                (targetExtra + fuel)
+                { stmts := headCompiled ++ tailCompiled } target =
+              .done (.ok (Structured.Outcome.regular finalTarget)) := by
+        intro targetExtra
+        have hHeadAtFuel :
+            Expressions.InteractionSemantics.Block.openRun targetProgram
+                (targetExtra + fuel) { stmts := headCompiled } target =
+              .done (.ok (Structured.Outcome.regular midTarget)) := by
+          have hRun := hHeadEval (targetExtra + tailFuel - 1)
+          have hFuelEq :
+              targetExtra + tailFuel - 1 + 4 = targetExtra + fuel := by
+            simp [fuel, hHeadLength]
+            omega
+          simpa [hFuelEq] using hRun
         rw [Expressions.InteractionSemantics.Block.openRun_append,
           hHeadAtFuel]
-        have hRemaining : fuel - headCompiled.length = tailFuel := by
-          simp [fuel]
-        simpa [hRemaining] using hTailEval
+        have hRemaining :
+            targetExtra + fuel - headCompiled.length =
+              targetExtra + tailFuel := by
+          simp only [fuel]
+          omega
+        simpa [hRemaining] using hTailEvalAt targetExtra
       refine
         ⟨headCompiled ++ tailCompiled, finalCtx, finalTarget,
-          finalFrameDepth, fuel, ?_, ?_, ?_, ?_, ?_, ?_,
+          finalFrameDepth, fuel, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
           hFinalStackLength⟩
       · simp [fuel]
+        omega
+      · simp only [fuel, List.length_append, hHeadLength, hTailFuelLength]
         omega
       · simpa [AllocationLowering.lowerParams, classification, hLayout,
           AllocationLowering.lowerScratchParam, hErase] using
@@ -1536,6 +1549,7 @@ theorem forward_stack
     (hStackLength : target.evm.stack.length = localsCtx.layout.length) :
     ∃ compiled finalCtx finalTarget fuel,
       0 < fuel ∧
+      fuel = compiled.length + 1 ∧
       Locals.Block.compileOpen localsCtx
           { stmts :=
               (AllocationLowering.lowerParams lowerCtx pending
@@ -1544,22 +1558,24 @@ theorem forward_stack
       finalCtx.layout =
         (AllocationLowering.lowerParams lowerCtx pending
           localsCtx.layout).2 ∧
-      Expressions.InteractionSemantics.Block.openRun targetProgram fuel
-          { stmts := compiled } target =
-        .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      (∀ targetExtra,
+        Expressions.InteractionSemantics.Block.openRun targetProgram
+            (targetExtra + fuel) { stmts := compiled } target =
+          .done (.ok (Structured.Outcome.regular finalTarget))) ∧
       ActivationStateRel contract plan
         ((pending.map Prod.fst).reverse ++ realized) 0 frameBase
         .stack source finalTarget ∧
       finalTarget.evm.stack.length = finalCtx.layout.length := by
   cases hContext with
   | nil =>
-      refine ⟨[], localsCtx, target, 1, by omega, ?_, ?_, ?_, ?_,
+      refine ⟨[], localsCtx, target, 1, by omega, rfl, ?_, ?_, ?_, ?_,
         hStackLength⟩
       · simp [AllocationLowering.lowerParams, Locals.Block.compileOpen]
       · simp [AllocationLowering.lowerParams]
-      · exact
+      · intro targetExtra
+        simpa using
           Expressions.InteractionSemantics.Block.openRun_nil
-            targetProgram 0 target
+            targetProgram targetExtra target
       · simpa using hRel.finish
   | @stack _ tailPending _ _ _ name slot classification fresh location
       stackOrder tail =>
@@ -1569,14 +1585,15 @@ theorem forward_stack
         simpa [ActivationMode.afterStackDeclaration] using
           hRel.activate_stack fresh location stackOrder
       obtain
-          ⟨compiled, finalCtx, finalTarget, fuel, hFuel, hCompile,
-            hFinalLayout, hEval, hFinalRel, hFinalStackLength⟩ :=
-        forward_stack tail
+          ⟨compiled, finalCtx, finalTarget, fuel, hFuel, hFuelLength, hCompile,
+            hFinalLayout, hEvalAt, hFinalRel, hFinalStackLength⟩ :=
+        forward_stack (targetProgram := targetProgram) tail
           (fun binding hBinding =>
             hAllStack binding (by simp [hBinding]))
           hNextRel hStackLength
       refine
-        ⟨compiled, finalCtx, finalTarget, fuel, hFuel, ?_, ?_, hEval,
+        ⟨compiled, finalCtx, finalTarget, fuel, hFuel, hFuelLength,
+          ?_, ?_, hEvalAt,
           ?_, hFinalStackLength⟩
       · simpa [AllocationLowering.lowerParams, classification] using hCompile
       · simpa [AllocationLowering.lowerParams, classification] using
@@ -1854,6 +1871,7 @@ theorem forward_scratch
     (hReservation : contract.scratch? = some reservation) :
     ∃ compiled finalCtx finalTarget finalFrameDepth fuel,
       0 < fuel ∧
+      fuel = compiled.length + 1 ∧
       Locals.Block.compileOpen localsCtx
           { stmts :=
               (AllocationLowering.lowerReturns lowerCtx pending
@@ -1862,9 +1880,10 @@ theorem forward_scratch
       finalCtx.layout =
         (AllocationLowering.lowerReturns lowerCtx pending
           localsCtx.layout).2 ∧
-      Expressions.InteractionSemantics.Block.openRun targetProgram fuel
-          { stmts := compiled } target =
-        .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      (∀ targetExtra,
+        Expressions.InteractionSemantics.Block.openRun targetProgram
+            (targetExtra + fuel) { stmts := compiled } target =
+          .done (.ok (Structured.Outcome.regular finalTarget))) ∧
       ScratchStateRel contract plan
         ((pending.map Prod.fst).reverse ++ live) 0 frameBase
         finalFrameDepth frameWords source finalTarget ∧
@@ -1874,13 +1893,14 @@ theorem forward_scratch
       finalTarget.evm.stack.length = finalCtx.layout.length := by
   cases hContext with
   | nil =>
-      refine ⟨[], localsCtx, target, frameDepth, 1, by omega, ?_, ?_, ?_,
-        ?_, ?_, hStackLength⟩
+      refine ⟨[], localsCtx, target, frameDepth, 1, by omega, rfl,
+        ?_, ?_, ?_, ?_, ?_, hStackLength⟩
       · simp [AllocationLowering.lowerReturns, Locals.Block.compileOpen]
       · simp [AllocationLowering.lowerReturns]
-      · exact
+      · intro targetExtra
+        simpa using
           Expressions.InteractionSemantics.Block.openRun_nil
-            targetProgram 0 target
+            targetProgram targetExtra target
       · simpa using hRel
       · simpa using hFrameDepth
   | @stack _ tailPending _ planDepth _ name slot classification fresh
@@ -1923,9 +1943,10 @@ theorem forward_scratch
         simp [Locals.Ctx.withLayout, hStackLength]
       obtain
           ⟨tailCompiled, finalCtx, finalTarget, finalFrameDepth,
-            tailFuel, hTailFuel, hTailCompile, hFinalLayout, hTailEval,
+            tailFuel, hTailFuel, hTailFuelLength, hTailCompile, hFinalLayout,
+            hTailEvalAt,
             hFinalRel, hFinalDepth, hFinalStackLength⟩ :=
-        forward_scratch tail hNextRel
+        forward_scratch (targetProgram := targetProgram) tail hNextRel
           (fun other hOther => hZero other (by simp [hOther]))
           (by
             rw [stackOrder, hFrameDepth]
@@ -1946,11 +1967,11 @@ theorem forward_scratch
               Locals.bindLocals 0 (name :: localsCtx.layout) by rfl,
           Structured.InteractionSemantics.Code.openRun_append, hPushRun]
         rfl
-      have hHeadStmtRun :
+      have hHeadStmtRun (targetExtra : Nat) :
           Expressions.EffectSemantics.Control.Stmt.run
               Structured.EffectSemantics.Ordinary.runStateModel
               Structured.InteractionSemantics.handler targetProgram
-              tailFuel headStmt target =
+              (targetExtra + tailFuel) headStmt target =
             .done (.ok (Structured.Outcome.regular pushed)) := by
         simp only [headStmt, Expressions.EffectSemantics.Control.Stmt.run]
         change
@@ -1963,17 +1984,23 @@ theorem forward_scratch
       have hCombinedCompile :=
         Locals.Block.compileOpen_append hHeadCompile hTailCompile
       have hCombinedEval :
-          Expressions.InteractionSemantics.Block.openRun targetProgram
-              (tailFuel + 1)
-              { stmts := headStmt :: tailCompiled } target =
-            .done (.ok (Structured.Outcome.regular finalTarget)) := by
-        rw [show tailFuel + 1 = tailFuel + 1 by rfl,
-          Expressions.InteractionSemantics.Block.openRun_cons, hHeadStmtRun]
-        exact hTailEval
+          ∀ targetExtra,
+            Expressions.InteractionSemantics.Block.openRun targetProgram
+                (targetExtra + (tailFuel + 1))
+                { stmts := headStmt :: tailCompiled } target =
+              .done (.ok (Structured.Outcome.regular finalTarget)) := by
+        intro targetExtra
+        have hFuel :
+            targetExtra + (tailFuel + 1) =
+              (targetExtra + tailFuel) + 1 := by omega
+        rw [hFuel, Expressions.InteractionSemantics.Block.openRun_cons,
+          hHeadStmtRun targetExtra]
+        exact hTailEvalAt targetExtra
       refine
         ⟨headStmt :: tailCompiled, finalCtx, finalTarget, finalFrameDepth,
-          tailFuel + 1, by omega, ?_, ?_, hCombinedEval, ?_, ?_,
+          tailFuel + 1, by omega, ?_, ?_, ?_, hCombinedEval, ?_, ?_,
           hFinalStackLength⟩
+      · simp [hTailFuelLength]
       · simpa [headStmt, headCode, AllocationLowering.lowerReturns,
           classification] using hCombinedCompile
       · simpa [AllocationLowering.lowerReturns, classification] using
@@ -2031,9 +2058,10 @@ theorem forward_scratch
         exact hStackLength
       obtain
           ⟨tailCompiled, finalCtx, finalTarget, finalFrameDepth,
-            tailFuel, hTailFuel, hTailCompile, hFinalLayout, hTailEval,
+            tailFuel, hTailFuel, hTailFuelLength, hTailCompile, hFinalLayout,
+            hTailEvalAt,
             hFinalRel, hFinalDepth, hFinalStackLength⟩ :=
-        forward_scratch tail hNextRel
+        forward_scratch (targetProgram := targetProgram) tail hNextRel
           (fun other hOther => hZero other (by simp [hOther]))
           (by simpa [stackOrder] using hFrameDepth)
           hNextStackLength hWF hReservation
@@ -2060,11 +2088,11 @@ theorem forward_scratch
                .op .mstore] by rfl,
           Structured.InteractionSemantics.Code.openRun_append, hPushRun]
         exact hStoreRun
-      have hHeadStmtRun :
+      have hHeadStmtRun (targetExtra : Nat) :
           Expressions.EffectSemantics.Control.Stmt.run
               Structured.EffectSemantics.Ordinary.runStateModel
               Structured.InteractionSemantics.handler targetProgram
-              tailFuel headStmt target =
+              (targetExtra + tailFuel) headStmt target =
             .done (.ok (Structured.Outcome.regular midTarget)) := by
         simp only [headStmt, Expressions.EffectSemantics.Control.Stmt.run]
         change
@@ -2077,17 +2105,23 @@ theorem forward_scratch
       have hCombinedCompile :=
         Locals.Block.compileOpen_append hHeadCompile hTailCompile
       have hCombinedEval :
-          Expressions.InteractionSemantics.Block.openRun targetProgram
-              (tailFuel + 1)
-              { stmts := headStmt :: tailCompiled } target =
-            .done (.ok (Structured.Outcome.regular finalTarget)) := by
-        rw [Expressions.InteractionSemantics.Block.openRun_cons,
-          hHeadStmtRun]
-        exact hTailEval
+          ∀ targetExtra,
+            Expressions.InteractionSemantics.Block.openRun targetProgram
+                (targetExtra + (tailFuel + 1))
+                { stmts := headStmt :: tailCompiled } target =
+              .done (.ok (Structured.Outcome.regular finalTarget)) := by
+        intro targetExtra
+        have hFuel :
+            targetExtra + (tailFuel + 1) =
+              (targetExtra + tailFuel) + 1 := by omega
+        rw [hFuel, Expressions.InteractionSemantics.Block.openRun_cons,
+          hHeadStmtRun targetExtra]
+        exact hTailEvalAt targetExtra
       refine
         ⟨headStmt :: tailCompiled, finalCtx, finalTarget, finalFrameDepth,
-          tailFuel + 1, by omega, ?_, ?_, hCombinedEval, ?_, ?_,
+          tailFuel + 1, by omega, ?_, ?_, ?_, hCombinedEval, ?_, ?_,
           hFinalStackLength⟩
+      · simp [hTailFuelLength]
       · simpa [headStmt, headCode, AllocationLowering.lowerReturns,
           classification] using hCombinedCompile
       · simpa [AllocationLowering.lowerReturns, classification] using
@@ -2122,6 +2156,7 @@ theorem forward_stack
     (hStackLength : target.evm.stack.length = localsCtx.layout.length) :
     ∃ compiled finalCtx finalTarget fuel,
       0 < fuel ∧
+      fuel = compiled.length + 1 ∧
       Locals.Block.compileOpen localsCtx
           { stmts :=
               (AllocationLowering.lowerReturns lowerCtx pending
@@ -2130,22 +2165,24 @@ theorem forward_stack
       finalCtx.layout =
         (AllocationLowering.lowerReturns lowerCtx pending
           localsCtx.layout).2 ∧
-      Expressions.InteractionSemantics.Block.openRun targetProgram fuel
-          { stmts := compiled } target =
-        .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      (∀ targetExtra,
+        Expressions.InteractionSemantics.Block.openRun targetProgram
+            (targetExtra + fuel) { stmts := compiled } target =
+          .done (.ok (Structured.Outcome.regular finalTarget))) ∧
       ActivationStateRel contract plan
         ((pending.map Prod.fst).reverse ++ live) 0 frameBase .stack
         source finalTarget ∧
       finalTarget.evm.stack.length = finalCtx.layout.length := by
   cases hContext with
   | nil =>
-      refine ⟨[], localsCtx, target, 1, by omega, ?_, ?_, ?_, ?_,
+      refine ⟨[], localsCtx, target, 1, by omega, rfl, ?_, ?_, ?_, ?_,
         hStackLength⟩
       · simp [AllocationLowering.lowerReturns, Locals.Block.compileOpen]
       · simp [AllocationLowering.lowerReturns]
-      · exact
+      · intro targetExtra
+        simpa using
           Expressions.InteractionSemantics.Block.openRun_nil
-            targetProgram 0 target
+            targetProgram targetExtra target
       · simpa using hRel
   | @stack _ tailPending _ _ _ name slot classification fresh location
       stackOrder tail =>
@@ -2187,9 +2224,9 @@ theorem forward_stack
         simp [Locals.Ctx.withLayout, hStackLength]
       obtain
           ⟨tailCompiled, finalCtx, finalTarget, tailFuel, hTailFuel,
-            hTailCompile, hFinalLayout, hTailEval, hFinalRel,
+            hTailFuelLength, hTailCompile, hFinalLayout, hTailEvalAt, hFinalRel,
             hFinalStackLength⟩ :=
-        forward_stack tail
+        forward_stack (targetProgram := targetProgram) tail
           (fun binding hBinding =>
             hAllStack binding (by simp [hBinding]))
           hNextRel
@@ -2210,11 +2247,11 @@ theorem forward_stack
               Locals.bindLocals 0 (name :: localsCtx.layout) by rfl,
           Structured.InteractionSemantics.Code.openRun_append, hPushRun]
         rfl
-      have hHeadStmtRun :
+      have hHeadStmtRun (targetExtra : Nat) :
           Expressions.EffectSemantics.Control.Stmt.run
               Structured.EffectSemantics.Ordinary.runStateModel
               Structured.InteractionSemantics.handler targetProgram
-              tailFuel headStmt target =
+              (targetExtra + tailFuel) headStmt target =
             .done (.ok (Structured.Outcome.regular pushed)) := by
         simp only [headStmt, Expressions.EffectSemantics.Control.Stmt.run]
         change
@@ -2227,16 +2264,22 @@ theorem forward_stack
       have hCombinedCompile :=
         Locals.Block.compileOpen_append hHeadCompile hTailCompile
       have hCombinedEval :
-          Expressions.InteractionSemantics.Block.openRun targetProgram
-              (tailFuel + 1)
-              { stmts := headStmt :: tailCompiled } target =
-            .done (.ok (Structured.Outcome.regular finalTarget)) := by
-        rw [Expressions.InteractionSemantics.Block.openRun_cons,
-          hHeadStmtRun]
-        exact hTailEval
+          ∀ targetExtra,
+            Expressions.InteractionSemantics.Block.openRun targetProgram
+                (targetExtra + (tailFuel + 1))
+                { stmts := headStmt :: tailCompiled } target =
+              .done (.ok (Structured.Outcome.regular finalTarget)) := by
+        intro targetExtra
+        have hFuel :
+            targetExtra + (tailFuel + 1) =
+              (targetExtra + tailFuel) + 1 := by omega
+        rw [hFuel, Expressions.InteractionSemantics.Block.openRun_cons,
+          hHeadStmtRun targetExtra]
+        exact hTailEvalAt targetExtra
       refine
         ⟨headStmt :: tailCompiled, finalCtx, finalTarget, tailFuel + 1,
-          by omega, ?_, ?_, hCombinedEval, ?_, hFinalStackLength⟩
+          by omega, ?_, ?_, ?_, hCombinedEval, ?_, hFinalStackLength⟩
+      · simp [hTailFuelLength]
       · simpa [headStmt, headCode, AllocationLowering.lowerReturns,
           classification] using hCombinedCompile
       · simpa [AllocationLowering.lowerReturns, classification] using
@@ -3672,12 +3715,17 @@ theorem Prepared.parameters_forward_scratch
     (hReservation : contract.scratch? = some reservation) :
     ∃ finalTarget finalFrameDepth fuel,
       0 < fuel ∧
+      fuel = prepared.paramCode.length + 1 ∧
       prepared.paramCtx.layout =
         (AllocationLowering.lowerParams artifact.lowerCtx
           artifact.slots.params artifact.entryCtx.layout).2 ∧
       Expressions.InteractionSemantics.Block.openRun expressions fuel
           { stmts := prepared.paramCode } target =
         .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      (∀ targetExtra,
+        Expressions.InteractionSemantics.Block.openRun expressions
+            (targetExtra + fuel) { stmts := prepared.paramCode } target =
+          .done (.ok (Structured.Outcome.regular finalTarget))) ∧
       ScratchStateRel contract prepared.plan
         (artifact.slots.params.map Prod.fst).reverse 0 frameBase
         finalFrameDepth compilation.recipe.frameWords source finalTarget ∧
@@ -3687,7 +3735,7 @@ theorem Prepared.parameters_forward_scratch
       finalTarget.evm.stack.length = prepared.paramCtx.layout.length := by
   obtain
       ⟨compiled, finalCtx, finalTarget, finalFrameDepth, fuel, hFuel,
-        hCompile, hFinalLayout, hEval, hFinalRel, hFinalDepth,
+        hFuelLength, hCompile, hFinalLayout, hEvalAt, hFinalRel, hFinalDepth,
         hFinalStackLength⟩ :=
     ParameterPrelude.forward_scratch prepared.parameterContext hRel
       (by simp [currentStackOrder]) hStackLength prepared.planWF hReservation
@@ -3696,7 +3744,8 @@ theorem Prepared.parameters_forward_scratch
     Option.some.inj (hCompile.symm.trans prepared.compileParams)
   cases hPair
   exact
-    ⟨finalTarget, finalFrameDepth, fuel, hFuel, hFinalLayout, hEval,
+    ⟨finalTarget, finalFrameDepth, fuel, hFuel, hFuelLength, hFinalLayout,
+      by simpa using hEvalAt 0, hEvalAt,
       by simpa using hFinalRel, by simpa using hFinalDepth,
       hFinalStackLength⟩
 
@@ -3720,19 +3769,24 @@ theorem Prepared.parameters_forward_stack
       target.evm.stack.length = artifact.entryCtx.layout.length) :
     ∃ finalTarget fuel,
       0 < fuel ∧
+      fuel = prepared.paramCode.length + 1 ∧
       prepared.paramCtx.layout =
         (AllocationLowering.lowerParams artifact.lowerCtx
           artifact.slots.params artifact.entryCtx.layout).2 ∧
       Expressions.InteractionSemantics.Block.openRun expressions fuel
           { stmts := prepared.paramCode } target =
         .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      (∀ targetExtra,
+        Expressions.InteractionSemantics.Block.openRun expressions
+            (targetExtra + fuel) { stmts := prepared.paramCode } target =
+          .done (.ok (Structured.Outcome.regular finalTarget))) ∧
       ActivationStateRel contract prepared.plan
         (artifact.slots.params.map Prod.fst).reverse 0 frameBase .stack
         source finalTarget ∧
       finalTarget.evm.stack.length = prepared.paramCtx.layout.length := by
   obtain
-      ⟨compiled, finalCtx, finalTarget, fuel, hFuel, hCompile,
-        hFinalLayout, hEval, hFinalRel, hFinalStackLength⟩ :=
+      ⟨compiled, finalCtx, finalTarget, fuel, hFuel, hFuelLength, hCompile,
+        hFinalLayout, hEvalAt, hFinalRel, hFinalStackLength⟩ :=
     ParameterPrelude.forward_stack prepared.parameterContext
       (artifact.paramsAllStack_of_needsFrame_false hNeedsFrame)
       hRel hStackLength
@@ -3741,7 +3795,8 @@ theorem Prepared.parameters_forward_stack
     Option.some.inj (hCompile.symm.trans prepared.compileParams)
   cases hPair
   exact
-    ⟨finalTarget, fuel, hFuel, hFinalLayout, hEval,
+    ⟨finalTarget, fuel, hFuel, hFuelLength, hFinalLayout,
+      by simpa using hEvalAt 0, hEvalAt,
       by simpa using hFinalRel, hFinalStackLength⟩
 
 theorem Prepared.returns_forward_scratch
@@ -3772,12 +3827,17 @@ theorem Prepared.returns_forward_scratch
     (hReservation : contract.scratch? = some reservation) :
     ∃ finalTarget finalFrameDepth fuel,
       0 < fuel ∧
+      fuel = prepared.returnCode.length + 1 ∧
       prepared.returnCtx.layout =
         (AllocationLowering.lowerReturns artifact.lowerCtx
           artifact.slots.returns prepared.paramCtx.layout).2 ∧
       Expressions.InteractionSemantics.Block.openRun expressions fuel
           { stmts := prepared.returnCode } target =
         .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      (∀ targetExtra,
+        Expressions.InteractionSemantics.Block.openRun expressions
+            (targetExtra + fuel) { stmts := prepared.returnCode } target =
+          .done (.ok (Structured.Outcome.regular finalTarget))) ∧
       ScratchStateRel contract prepared.plan
         ((artifact.slots.returns.map Prod.fst).reverse ++
           (artifact.slots.params.map Prod.fst).reverse)
@@ -3790,16 +3850,18 @@ theorem Prepared.returns_forward_scratch
       finalTarget.evm.stack.length = prepared.returnCtx.layout.length := by
   obtain
       ⟨compiled, finalCtx, finalTarget, finalFrameDepth, fuel, hFuel,
-        hCompile, hFinalLayout, hEval, hFinalRel, hFinalDepth,
+        hFuelLength, hCompile, hFinalLayout, hEvalAt, hFinalRel, hFinalDepth,
         hFinalStackLength⟩ :=
-    ReturnPrelude.forward_scratch prepared.returnContext hRel hZero rfl
+    ReturnPrelude.forward_scratch (targetProgram := expressions)
+      prepared.returnContext hRel hZero rfl
       hStackLength prepared.planWF hReservation
   have hPair :
       (compiled, finalCtx) = (prepared.returnCode, prepared.returnCtx) :=
     Option.some.inj (hCompile.symm.trans prepared.compileReturns)
   cases hPair
   exact
-    ⟨finalTarget, finalFrameDepth, fuel, hFuel, hFinalLayout, hEval,
+    ⟨finalTarget, finalFrameDepth, fuel, hFuel, hFuelLength, hFinalLayout,
+      by simpa using hEvalAt 0, hEvalAt,
       hFinalRel, hFinalDepth, hFinalStackLength⟩
 
 theorem Prepared.returns_forward_stack
@@ -3827,21 +3889,27 @@ theorem Prepared.returns_forward_stack
       target.evm.stack.length = prepared.paramCtx.layout.length) :
     ∃ finalTarget fuel,
       0 < fuel ∧
+      fuel = prepared.returnCode.length + 1 ∧
       prepared.returnCtx.layout =
         (AllocationLowering.lowerReturns artifact.lowerCtx
           artifact.slots.returns prepared.paramCtx.layout).2 ∧
       Expressions.InteractionSemantics.Block.openRun expressions fuel
           { stmts := prepared.returnCode } target =
         .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      (∀ targetExtra,
+        Expressions.InteractionSemantics.Block.openRun expressions
+            (targetExtra + fuel) { stmts := prepared.returnCode } target =
+          .done (.ok (Structured.Outcome.regular finalTarget))) ∧
       ActivationStateRel contract prepared.plan
         ((artifact.slots.returns.map Prod.fst).reverse ++
           (artifact.slots.params.map Prod.fst).reverse)
         0 frameBase .stack source finalTarget ∧
       finalTarget.evm.stack.length = prepared.returnCtx.layout.length := by
   obtain
-      ⟨compiled, finalCtx, finalTarget, fuel, hFuel, hCompile,
-        hFinalLayout, hEval, hFinalRel, hFinalStackLength⟩ :=
-    ReturnPrelude.forward_stack prepared.returnContext
+      ⟨compiled, finalCtx, finalTarget, fuel, hFuel, hFuelLength, hCompile,
+        hFinalLayout, hEvalAt, hFinalRel, hFinalStackLength⟩ :=
+    ReturnPrelude.forward_stack (targetProgram := expressions)
+      prepared.returnContext
       (artifact.returnsAllStack_of_needsFrame_false hNeedsFrame)
       hRel hZero hStackLength
   have hPair :
@@ -3849,22 +3917,27 @@ theorem Prepared.returns_forward_stack
     Option.some.inj (hCompile.symm.trans prepared.compileReturns)
   cases hPair
   exact
-    ⟨finalTarget, fuel, hFuel, hFinalLayout, hEval,
+    ⟨finalTarget, fuel, hFuel, hFuelLength, hFinalLayout,
+      by simpa using hEvalAt 0, hEvalAt,
       hFinalRel, hFinalStackLength⟩
 
-/-- Execute the exact compiler-selected metadata markers at callee entry. -/
-theorem Prepared.markers_forward
+/-- Exact generated shape of the compiler-selected callee-entry markers. -/
+theorem Prepared.markerCode_shape
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
     {compilation : Compilation allocation program expressions}
     {name : Functions.Name} {fn : Functions.FunDef}
     {artifact : Artifact compilation name fn}
-    (prepared : Prepared artifact)
-    (target : Structured.RunState) :
-    Expressions.InteractionSemantics.Block.openRun expressions 4
-        { stmts := prepared.markerCode } target =
-      .done (.ok (Structured.Outcome.regular target)) := by
+    (prepared : Prepared artifact) :
+    prepared.markerCode =
+    [.code [.bindLocals 0 artifact.entryLayout]] ++
+      if artifact.needsFrame then
+        [.code
+          (AllocationSupport.bindScratchBindingsCode
+            fn.params.length artifact.scratchBindings)]
+      else
+        [] := by
   let generated : List Expressions.Stmt :=
     [.code [.bindLocals 0 artifact.entryLayout]] ++
       if artifact.needsFrame then
@@ -3884,13 +3957,28 @@ theorem Prepared.markers_forward
         (baseDepth := fn.params.length)
         (scratchBindings := artifact.scratchBindings)
         (needsFrame := artifact.needsFrame))
-  have hCode : prepared.markerCode = generated := by
-    have hPair :
-        (prepared.markerCode, artifact.entryCtx) =
-          (generated, artifact.entryCtx) :=
-      Option.some.inj (prepared.compileMarkers.symm.trans hGenerated)
-    exact congrArg Prod.fst hPair
-  rw [hCode]
+  have hPair :
+      (prepared.markerCode, artifact.entryCtx) =
+        (generated, artifact.entryCtx) :=
+    Option.some.inj (prepared.compileMarkers.symm.trans hGenerated)
+  simpa [generated] using congrArg Prod.fst hPair
+
+/-- Entry markers execute with any positive fuel reserved for their suffix. -/
+theorem Prepared.markers_forward_at
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : Artifact compilation name fn}
+    (prepared : Prepared artifact)
+    (target : Structured.RunState)
+    (tailFuel : Nat) (hTailFuel : 0 < tailFuel) :
+    Expressions.InteractionSemantics.Block.openRun expressions
+        (prepared.markerCode.length + tailFuel)
+        { stmts := prepared.markerCode } target =
+      .done (.ok (Structured.Outcome.regular target)) := by
+  rw [prepared.markerCode_shape]
   by_cases hNeedsFrame : artifact.needsFrame = true
   · have hBind :
         Structured.InteractionSemantics.Code.openRun
@@ -3909,21 +3997,22 @@ theorem Prepared.markers_forward
         fn.params.length artifact.scratchBindings target
     have hFirst :=
       Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
-        expressions 4 [.bindLocals 0 artifact.entryLayout]
+        expressions (2 + tailFuel) [.bindLocals 0 artifact.entryLayout]
         target target (by omega) hBind
     have hSecond :=
       Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
-        expressions 3
+        expressions (1 + tailFuel)
         (AllocationSupport.bindScratchBindingsCode
           fn.params.length artifact.scratchBindings)
         target target (by omega) hScratch
-    simp only [generated, hNeedsFrame, if_true]
+    simp only [hNeedsFrame, if_true, List.length_append,
+      List.length_singleton]
     rw [Expressions.InteractionSemantics.Block.openRun_append expressions
       [Expressions.Stmt.code [.bindLocals 0 artifact.entryLayout]]
       [Expressions.Stmt.code
         (AllocationSupport.bindScratchBindingsCode
           fn.params.length artifact.scratchBindings)]
-      4 target, hFirst]
+      (2 + tailFuel) target, hFirst]
     simpa using hSecond
   · have hNeedsFrameFalse : artifact.needsFrame = false :=
       Bool.eq_false_of_not_eq_true hNeedsFrame
@@ -3934,11 +4023,110 @@ theorem Prepared.markers_forward
       simpa using
         Locals.InteractionPreservation.Code.openRun_bindLocals
           0 artifact.entryLayout target
-    simp only [generated, hNeedsFrameFalse, if_false, List.append_nil]
+    simp only [hNeedsFrameFalse, if_false, List.append_nil,
+      List.length_singleton]
     exact
       Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
-        expressions 4 [.bindLocals 0 artifact.entryLayout]
+        expressions (1 + tailFuel) [.bindLocals 0 artifact.entryLayout]
         target target (by omega) hBind
+
+/-- Execute the exact compiler-selected metadata markers at callee entry. -/
+theorem Prepared.markers_forward
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : Artifact compilation name fn}
+    (prepared : Prepared artifact)
+    (target : Structured.RunState) :
+    Expressions.InteractionSemantics.Block.openRun expressions 4
+        { stmts := prepared.markerCode } target =
+      .done (.ok (Structured.Outcome.regular target)) := by
+  by_cases hNeedsFrame : artifact.needsFrame = true
+  · have hRun := prepared.markers_forward_at target 2 (by omega)
+    have hLength : prepared.markerCode.length = 2 := by
+      rw [prepared.markerCode_shape]
+      simp [hNeedsFrame]
+    simpa [hLength] using hRun
+  · have hNeedsFrameFalse : artifact.needsFrame = false :=
+      Bool.eq_false_of_not_eq_true hNeedsFrame
+    have hRun := prepared.markers_forward_at target 3 (by omega)
+    have hLength : prepared.markerCode.length = 1 := by
+      rw [prepared.markerCode_shape]
+      simp [hNeedsFrameFalse]
+    simpa [hLength] using hRun
+
+/-- Compose marker, parameter, and return setup with exact suffix fuel. -/
+theorem Prepared.prelude_forward
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : Artifact compilation name fn}
+    (prepared : Prepared artifact)
+    {target afterParams finalTarget : Structured.RunState}
+    {paramFuel returnFuel : Nat}
+    (hParamFuel : 0 < paramFuel)
+    (hReturnFuel : 0 < returnFuel)
+    (hParamFuelLength : paramFuel = prepared.paramCode.length + 1)
+    (hParamRunAt :
+      ∀ targetExtra,
+        Expressions.InteractionSemantics.Block.openRun expressions
+            (targetExtra + paramFuel)
+            { stmts := prepared.paramCode } target =
+          .done (.ok (Structured.Outcome.regular afterParams)))
+    (hReturnRun :
+      Expressions.InteractionSemantics.Block.openRun expressions returnFuel
+          { stmts := prepared.returnCode } afterParams =
+        .done (.ok (Structured.Outcome.regular finalTarget))) :
+    ∃ preludeFuel,
+      0 < preludeFuel ∧
+      preludeFuel =
+        prepared.markerCode.length + prepared.paramCode.length +
+          returnFuel ∧
+      Expressions.InteractionSemantics.Block.openRun expressions preludeFuel
+          { stmts :=
+              prepared.markerCode ++
+                (prepared.paramCode ++ prepared.returnCode) }
+          target =
+        .done (.ok (Structured.Outcome.regular finalTarget)) := by
+  let tailFuel := prepared.paramCode.length + returnFuel
+  let preludeFuel := prepared.markerCode.length + tailFuel
+  have hTailFuel : 0 < tailFuel := by
+    simp [tailFuel]
+    omega
+  have hMarkerRun :=
+    prepared.markers_forward_at target tailFuel hTailFuel
+  have hParamRun :
+      Expressions.InteractionSemantics.Block.openRun expressions tailFuel
+          { stmts := prepared.paramCode } target =
+        .done (.ok (Structured.Outcome.regular afterParams)) := by
+    have hRun := hParamRunAt (returnFuel - 1)
+    have hFuelEq : returnFuel - 1 + paramFuel = tailFuel := by
+      rw [hParamFuelLength]
+      simp only [tailFuel]
+      omega
+    simpa [hFuelEq] using hRun
+  have hParamReturnRun :
+      Expressions.InteractionSemantics.Block.openRun expressions tailFuel
+          { stmts := prepared.paramCode ++ prepared.returnCode } target =
+        .done (.ok (Structured.Outcome.regular finalTarget)) := by
+    rw [Expressions.InteractionSemantics.Block.openRun_append, hParamRun]
+    have hRemaining :
+        tailFuel - prepared.paramCode.length = returnFuel := by
+      simp [tailFuel]
+    simpa [hRemaining] using hReturnRun
+  refine ⟨preludeFuel, ?_, ?_, ?_⟩
+  · simp [preludeFuel, tailFuel]
+    omega
+  · simp [preludeFuel, tailFuel, Nat.add_assoc]
+  · rw [Expressions.InteractionSemantics.Block.openRun_append, hMarkerRun]
+    have hRemaining :
+        preludeFuel - prepared.markerCode.length = tailFuel := by
+      simp [preludeFuel]
+    simpa [hRemaining] using hParamReturnRun
 
 /-- The real argument lookup and return initialization define every body local. -/
 theorem Prepared.bodyLiveDefined
@@ -4004,7 +4192,7 @@ theorem Prepared.body_entry_scratch
     (hStackLength :
       target.evm.stack.length = artifact.entryCtx.layout.length)
     (hReservation : contract.scratch? = some reservation) :
-    ∃ afterParams finalTarget paramFuel returnFuel,
+    ∃ afterParams finalTarget paramFuel returnFuel preludeFuel,
       0 < paramFuel ∧
       0 < returnFuel ∧
       Expressions.InteractionSemantics.Block.openRun expressions 4
@@ -4016,23 +4204,38 @@ theorem Prepared.body_entry_scratch
       Expressions.InteractionSemantics.Block.openRun expressions returnFuel
           { stmts := prepared.returnCode } afterParams =
         .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      0 < preludeFuel ∧
+      preludeFuel =
+        prepared.markerCode.length + prepared.paramCode.length +
+          returnFuel ∧
+      Expressions.InteractionSemantics.Block.openRun expressions preludeFuel
+          { stmts :=
+              prepared.markerCode ++
+                (prepared.paramCode ++ prepared.returnCode) }
+          target =
+        .done (.ok (Structured.Outcome.regular finalTarget)) ∧
       AllocationContext.ActivationInvariant contract artifact.lowerCtx
         artifact.bodyStart prepared.returnCtx prepared.plan
         ((artifact.slots.returns.map Prod.fst).reverse ++
           (artifact.slots.params.map Prod.fst).reverse)
         frameBase prepared.bodyMode source finalTarget := by
   obtain
-      ⟨afterParams, paramFrameDepth, paramFuel, hParamFuel,
-        _hParamLayout, hParamRun, hParamRel, hParamDepth,
+        ⟨afterParams, paramFrameDepth, paramFuel, hParamFuel,
+        hParamFuelLength,
+        _hParamLayout, hParamRun, hParamRunAt, hParamRel, hParamDepth,
         hParamStackLength⟩ :=
     prepared.parameters_forward_scratch hRel hStackLength hReservation
   obtain
-      ⟨finalTarget, finalFrameDepth, returnFuel, hReturnFuel,
-        _hReturnLayout, hReturnRun, hReturnRel, hReturnDepth,
+        ⟨finalTarget, finalFrameDepth, returnFuel, hReturnFuel,
+        _hReturnFuelLength,
+        _hReturnLayout, hReturnRun, _hReturnRunAt, hReturnRel, hReturnDepth,
         hReturnStackLength⟩ :=
     prepared.returns_forward_scratch
       (by simpa [hParamDepth] using hParamRel) hZero
       hParamStackLength hReservation
+  obtain ⟨preludeFuel, hPreludeFuel, hPreludeLength, hPreludeRun⟩ :=
+    prepared.prelude_forward hParamFuel hReturnFuel hParamFuelLength
+      hParamRunAt hReturnRun
   have hState :
       ActivationStateRel contract prepared.plan
         ((artifact.slots.returns.map Prod.fst).reverse ++
@@ -4049,9 +4252,9 @@ theorem Prepared.body_entry_scratch
     simpa [Prepared.bodyMode, Artifact.mode, hNeedsFrame,
       ActivationMode.atStackDepth, hReturnDepth] using hScratchState
   refine
-    ⟨afterParams, finalTarget, paramFuel, returnFuel,
+    ⟨afterParams, finalTarget, paramFuel, returnFuel, preludeFuel,
       hParamFuel, hReturnFuel, prepared.markers_forward target,
-      hParamRun, hReturnRun, ?_⟩
+      hParamRun, hReturnRun, hPreludeFuel, hPreludeLength, hPreludeRun, ?_⟩
   exact
     { compiler := prepared.bodyCompiler
       planWF := prepared.planWF
@@ -4082,7 +4285,7 @@ theorem Prepared.body_entry_stack
         source.vars localName = some AllocationSupport.zeroWord)
     (hStackLength :
       target.evm.stack.length = artifact.entryCtx.layout.length) :
-    ∃ afterParams finalTarget paramFuel returnFuel,
+    ∃ afterParams finalTarget paramFuel returnFuel preludeFuel,
       0 < paramFuel ∧
       0 < returnFuel ∧
       Expressions.InteractionSemantics.Block.openRun expressions 4
@@ -4094,20 +4297,34 @@ theorem Prepared.body_entry_stack
       Expressions.InteractionSemantics.Block.openRun expressions returnFuel
           { stmts := prepared.returnCode } afterParams =
         .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      0 < preludeFuel ∧
+      preludeFuel =
+        prepared.markerCode.length + prepared.paramCode.length +
+          returnFuel ∧
+      Expressions.InteractionSemantics.Block.openRun expressions preludeFuel
+          { stmts :=
+              prepared.markerCode ++
+                (prepared.paramCode ++ prepared.returnCode) }
+          target =
+        .done (.ok (Structured.Outcome.regular finalTarget)) ∧
       AllocationContext.ActivationInvariant contract artifact.lowerCtx
         artifact.bodyStart prepared.returnCtx prepared.plan
         ((artifact.slots.returns.map Prod.fst).reverse ++
           (artifact.slots.params.map Prod.fst).reverse)
         frameBase prepared.bodyMode source finalTarget := by
   obtain
-      ⟨afterParams, paramFuel, hParamFuel, _hParamLayout,
-        hParamRun, hParamRel, hParamStackLength⟩ :=
+      ⟨afterParams, paramFuel, hParamFuel, hParamFuelLength, _hParamLayout,
+        hParamRun, hParamRunAt, hParamRel, hParamStackLength⟩ :=
     prepared.parameters_forward_stack hNeedsFrame hRel hStackLength
   obtain
-      ⟨finalTarget, returnFuel, hReturnFuel, _hReturnLayout,
-        hReturnRun, hReturnRel, hReturnStackLength⟩ :=
+      ⟨finalTarget, returnFuel, hReturnFuel, _hReturnFuelLength,
+        _hReturnLayout,
+        hReturnRun, _hReturnRunAt, hReturnRel, hReturnStackLength⟩ :=
     prepared.returns_forward_stack hNeedsFrame hParamRel hZero
       hParamStackLength
+  obtain ⟨preludeFuel, hPreludeFuel, hPreludeLength, hPreludeRun⟩ :=
+    prepared.prelude_forward hParamFuel hReturnFuel hParamFuelLength
+      hParamRunAt hReturnRun
   have hState :
       ActivationStateRel contract prepared.plan
         ((artifact.slots.returns.map Prod.fst).reverse ++
@@ -4116,9 +4333,9 @@ theorem Prepared.body_entry_stack
     simpa [Prepared.bodyMode, Artifact.mode, hNeedsFrame,
       ActivationMode.atStackDepth] using hReturnRel
   refine
-    ⟨afterParams, finalTarget, paramFuel, returnFuel,
+    ⟨afterParams, finalTarget, paramFuel, returnFuel, preludeFuel,
       hParamFuel, hReturnFuel, prepared.markers_forward target,
-      hParamRun, hReturnRun, ?_⟩
+      hParamRun, hReturnRun, hPreludeFuel, hPreludeLength, hPreludeRun, ?_⟩
   exact
     { compiler := prepared.bodyCompiler
       planWF := prepared.planWF

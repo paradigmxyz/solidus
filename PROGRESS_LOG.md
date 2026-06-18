@@ -32040,3 +32040,14 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1168-job build, full verification root, architecture dependency guard,
   touched-file hole scan, axiom audit, and `git diff --check` passed. New entry
   theorems use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-18 02:18:00 PDT - proof/functions-callee-prelude-fuel - strengthened
+  compiler-selected parameter and return initialization at their owning
+  recursions to run under arbitrary target suffix fuel, retained exact
+  generated-code length equations, and composed markers, parameters, and
+  returns into one exact open execution ending at the canonical body
+  invariant. This is ordinary target execution, not replay evidence.
+- 2026-06-18 02:20:00 PDT - validation/functions-callee-prelude-fuel - focused
+  1168-job build, full verification root, architecture dependency guard,
+  touched-file hole scan, axiom audit, and `git diff --check` passed. The
+  pass-owned call module remains below the 5K-line soft limit at 4432 lines;
+  checked additions use only `[propext, Classical.choice, Quot.sound]`.
