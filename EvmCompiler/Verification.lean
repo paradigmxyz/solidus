@@ -250,6 +250,13 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionCursor.RootArtifact.cursor
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.cons
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.finished
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.headScoped
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.lookupSlot_of_live
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.currentStackOrder
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.location_stack_of_lookup
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.location_scratch_of_lookup
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.planAgreesOn
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.scratch_bound_of_location
 #check EvmCompiler.Functions.AllocationInteractionComposition.ControlResultRel
 #check EvmCompiler.Functions.AllocationInteractionComposition.lift_fixed
 #check EvmCompiler.Functions.AllocationInteractionComposition.cons

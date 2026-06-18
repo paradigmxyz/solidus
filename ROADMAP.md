@@ -39,6 +39,8 @@ boundaries remain active work.
   - [x] plain and argument-bearing terminal preservation under source-facing
     terminal memory safety;
   - [x] canonical compiler-owned root/cursor and exact head/tail decomposition;
+  - [x] pass-owned live-slot, stack-order, stack/scratch-location, and sibling
+    cursor agreement facts;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

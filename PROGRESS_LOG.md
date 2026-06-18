@@ -31876,3 +31876,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   resumed from the checked canonical allocation cursor checkpoint; preserving
   that boundary before deriving pass-owned cursor contexts and the recursive
   statement/block forward theorem.
+- 2026-06-17 22:55:00 PDT - proof/functions-cursor-context - derived live-name
+  slot lookup, spill-frame freshness, exact current stack order, stack/scratch
+  plan locations, frame bounds, and sibling-cursor plan agreement from the
+  canonical allocation cursor. These are static facts owned by the allocation
+  pass and contain no observer execution or generated public evidence.
+- 2026-06-17 22:55:00 PDT - validation/functions-cursor-context - focused
+  source check, the 1322-job verification root, architecture guard,
+  touched-Lean hole scan, axiom audit, and `git diff --check` passed. New
+  cursor facts use only `[propext, Classical.choice, Quot.sound]`.

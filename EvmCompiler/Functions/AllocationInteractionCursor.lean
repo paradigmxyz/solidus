@@ -466,6 +466,587 @@ def CoreCursor.finished
           Functions.Scope.StmtList.Scoped]
       activeEnv := hFinalActive }
 
+theorem CoreCursor.headScoped
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {stmt : Functions.Stmt} {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live { stmts := stmt :: rest }
+        lowerState localsCtx) :
+    Functions.Scope.Stmt.Scoped live stmt := by
+  simpa [Functions.Scope.Block.Scoped,
+    Functions.Scope.StmtList.Scoped] using cursor.sourceScoped.1
+
+/-- The final planner environment extends the environment at this cursor. -/
+theorem CoreCursor.final_env_extension
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live sourceBlock lowerState localsCtx) :
+    ∃ added,
+      cursor.finalState.allocation.env =
+        added ++ lowerState.allocation.env := by
+  obtain ⟨added, hEnv⟩ :=
+    AllocationSupport.planBlockOpen_env_extension
+      scope cursor.planning sourceBlock
+  refine ⟨added, ?_⟩
+  calc
+    cursor.finalState.allocation.env =
+        (AllocationSupport.planBlockOpen
+          scope cursor.planning sourceBlock).allocation.env :=
+      congrArg AllocationSupport.CompileState.env cursor.plannedFinal.symm
+    _ = added ++ cursor.planning.allocation.env := hEnv
+    _ = added ++ lowerState.allocation.env := by
+      rw [cursor.planningAllocation]
+
+/-- A binding visible at the cursor keeps its slot in the final plan state. -/
+theorem CoreCursor.bodyFinal_lookup_of_lookup
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live sourceBlock lowerState localsCtx)
+    {localName : Functions.Name} {slot : Nat}
+    (hLookup :
+      AllocationSupport.lookupSlot?
+          localName lowerState.allocation.env =
+        some slot) :
+    AllocationSupport.lookupSlot?
+        localName cursor.finalState.allocation.env =
+      some slot := by
+  obtain ⟨added, hEnv⟩ := cursor.final_env_extension
+  have hMemCurrent :
+      (localName, slot) ∈ lowerState.allocation.env :=
+    AllocationSupport.mem_of_lookupSlot?_eq_some hLookup
+  have hMemEntry :
+      (localName, slot) ∈ cursor.finalState.allocation.env := by
+    rw [hEnv]
+    exact List.mem_append_right added hMemCurrent
+  have hEntryNodup :
+      (cursor.finalState.allocation.env.map Prod.fst).Nodup := by
+    have hScopeNodup := cursor.planWF.2.1
+    simpa [cursor.planEq, MixedAllocation.allocationOfState] using
+      hScopeNodup
+  exact
+    AllocationSupport.lookupSlot?_eq_some_of_mem
+      hEntryNodup hMemEntry
+
+/-- Every source-live name at a cursor has a checked lowering slot. -/
+theorem CoreCursor.lookupSlot_of_live
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live sourceBlock lowerState localsCtx)
+    {localName : Functions.Name}
+    (hLive : localName ∈ live) :
+    ∃ slot,
+      AllocationSupport.lookupSlot?
+          localName lowerState.allocation.env =
+        some slot := by
+  rcases cursor.activeEnv with ⟨locals, hCurrent, hLiveEq⟩
+  have hNamePlanning :
+      localName ∈ cursor.planning.allocation.env.map Prod.fst := by
+    rw [hCurrent]
+    rw [hLiveEq] at hLive
+    simpa [AllocationSupport.functionEnv, List.map_append] using hLive
+  obtain ⟨binding, hBinding, hName⟩ :=
+    List.mem_map.mp hNamePlanning
+  rcases binding with ⟨candidate, slot⟩
+  simp only at hName
+  subst candidate
+  have hBindingLower :
+      (localName, slot) ∈ lowerState.allocation.env := by
+    have hEnv :
+        cursor.planning.allocation.env =
+          lowerState.allocation.env :=
+      congrArg AllocationSupport.CompileState.env
+        cursor.planningAllocation
+    rw [← hEnv]
+    exact hBinding
+  obtain ⟨added, hFinal⟩ := cursor.final_env_extension
+  have hFinalNodup :
+      (cursor.finalState.allocation.env.map Prod.fst).Nodup := by
+    have hScopeNodup := cursor.planWF.2.1
+    simpa [cursor.planEq, MixedAllocation.allocationOfState] using
+      hScopeNodup
+  have hLowerNodup :
+      (lowerState.allocation.env.map Prod.fst).Nodup := by
+    rw [hFinal, List.map_append] at hFinalNodup
+    exact (List.nodup_append.mp hFinalNodup).2.1
+  exact
+    ⟨slot,
+      AllocationSupport.lookupSlot?_eq_some_of_mem
+        hLowerNodup hBindingLower⟩
+
+theorem CoreCursor.frameName_not_mem_live
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live sourceBlock lowerState localsCtx) :
+    compilation.frameName ∉ live := by
+  intro hFrame
+  obtain ⟨slot, hLookup⟩ := cursor.lookupSlot_of_live hFrame
+  have hMemCurrent :
+      (compilation.frameName, slot) ∈ lowerState.allocation.env :=
+    AllocationSupport.mem_of_lookupSlot?_eq_some hLookup
+  obtain ⟨added, hFinal⟩ := cursor.final_env_extension
+  apply cursor.finalFrameFresh
+  rw [hFinal, List.map_append]
+  exact
+    List.mem_append_right _
+      (List.mem_map.mpr
+        ⟨(compilation.frameName, slot), hMemCurrent, rfl⟩)
+
+theorem CoreCursor.frameName_not_mem_currentStackOrder
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live sourceBlock lowerState localsCtx) :
+    compilation.frameName ∉
+      currentStackOrder cursor.plan live := by
+  intro hFrame
+  exact
+    cursor.frameName_not_mem_live
+      (mem_live_of_mem_currentStackOrder hFrame)
+
+/-- Recover the exact runtime stack order at the cursor position. -/
+theorem CoreCursor.currentStackOrder_of_active
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live sourceBlock lowerState localsCtx)
+    (locals : AllocationSupport.SlotEnv)
+    (hCurrent :
+      cursor.planning.allocation.env =
+        locals ++ AllocationSupport.functionEnv root.slots)
+    (hLive :
+      live =
+        locals.map Prod.fst ++
+          (root.slots.returns.map Prod.fst).reverse ++
+          (root.slots.params.map Prod.fst).reverse) :
+    currentStackOrder cursor.plan live =
+      MixedAllocation.stackOrder compilation.stackSlots locals ++
+        MixedAllocation.stackOrder compilation.stackSlots
+          root.slots.returns.reverse ++
+        MixedAllocation.stackOrder compilation.stackSlots
+          root.slots.params.reverse := by
+  subst live
+  obtain ⟨future, hFinal⟩ := cursor.final_env_extension
+  have hPlanningLower :
+      cursor.planning.allocation.env =
+        lowerState.allocation.env :=
+    congrArg AllocationSupport.CompileState.env
+      cursor.planningAllocation
+  have hLowerCurrent :
+      lowerState.allocation.env =
+        locals ++ AllocationSupport.functionEnv root.slots :=
+    hPlanningLower.symm.trans hCurrent
+  have hFinalExtension :
+      cursor.finalState.allocation.env =
+        (future ++ locals) ++
+          AllocationSupport.functionEnv root.slots := by
+    rw [hFinal, hLowerCurrent, List.append_assoc]
+  have hFinalEnv :
+      cursor.finalState.allocation.env =
+        future ++ locals ++ root.slots.returns ++
+          root.slots.params := by
+    simpa [AllocationSupport.functionEnv, List.append_assoc] using
+      hFinalExtension
+  have hEntries :
+      MixedAllocation.AllocationRecipe.stackEntriesForScope
+          compilation.recipe compilation.stackSlots scope
+          cursor.finalState.allocation =
+        MixedAllocation.stackEntries compilation.stackSlots
+            (future ++ locals) ++
+          MixedAllocation.stackEntries compilation.stackSlots
+            root.slots.returns.reverse ++
+          MixedAllocation.stackEntries compilation.stackSlots
+            root.slots.params.reverse := by
+    exact root.scopeStackEntries cursor.scopeRoot hFinalExtension
+  have hEntryNodup :
+      (cursor.finalState.allocation.env.map Prod.fst).Nodup := by
+    have hScopeNodup := cursor.planWF.2.1
+    simpa [cursor.planEq, MixedAllocation.allocationOfState] using
+      hScopeNodup
+  have hOrder :=
+    MixedAllocation.allocationOfState_active_stack_filter
+      (contract := program.memoryContract)
+      (frameWords := compilation.recipe.frameWords)
+      (stackSlots := compilation.stackSlots)
+      (state := cursor.finalState.allocation)
+      (future := future) (locals := locals)
+      (returns := root.slots.returns)
+      (params := root.slots.params)
+      hFinalEnv hEntryNodup
+  rw [cursor.planEq]
+  unfold currentStackOrder
+  rw [hEntries]
+  exact hOrder
+
+theorem CoreCursor.currentStackOrder
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live sourceBlock lowerState localsCtx) :
+    ∃ locals,
+      cursor.planning.allocation.env =
+          locals ++ AllocationSupport.functionEnv root.slots ∧
+        live =
+          locals.map Prod.fst ++
+            (root.slots.returns.map Prod.fst).reverse ++
+            (root.slots.params.map Prod.fst).reverse ∧
+        currentStackOrder cursor.plan live =
+          MixedAllocation.stackOrder compilation.stackSlots locals ++
+            MixedAllocation.stackOrder compilation.stackSlots
+              root.slots.returns.reverse ++
+            MixedAllocation.stackOrder compilation.stackSlots
+              root.slots.params.reverse := by
+  rcases cursor.activeEnv with ⟨locals, hCurrent, hLive⟩
+  exact
+    ⟨locals, hCurrent, hLive,
+      cursor.currentStackOrder_of_active locals hCurrent hLive⟩
+
+private theorem CoreCursor.location_stack_of_lookup_aux
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live sourceBlock lowerState localsCtx)
+    {localName : Functions.Name} {slot : Nat}
+    (hLookup :
+      AllocationSupport.lookupSlot?
+          localName lowerState.allocation.env =
+        some slot)
+    (hStack :
+      AllocationLowering.isStackSlot root.lowerCtx slot = true) :
+    ∃ depth,
+      cursor.plan.location? localName = some (.stack depth) := by
+  have hFinalLookup := cursor.bodyFinal_lookup_of_lookup hLookup
+  have hFinalMem :=
+    AllocationSupport.mem_of_lookupSlot?_eq_some hFinalLookup
+  have hNodup :
+      (cursor.finalState.allocation.env.map Prod.fst).Nodup := by
+    have hScopeNodup := cursor.planWF.2.1
+    simpa [cursor.planEq, MixedAllocation.allocationOfState] using
+      hScopeNodup
+  rcases cursor.activeEnv with ⟨locals, hCurrent, _hLive⟩
+  obtain ⟨future, hFinal⟩ := cursor.final_env_extension
+  have hPlanningLower :
+      cursor.planning.allocation.env = lowerState.allocation.env :=
+    congrArg AllocationSupport.CompileState.env
+      cursor.planningAllocation
+  have hFinalExtension :
+      cursor.finalState.allocation.env =
+        (future ++ locals) ++
+          AllocationSupport.functionEnv root.slots := by
+    rw [hFinal, ← hPlanningLower, hCurrent, List.append_assoc]
+  have hEntry :
+      (localName, slot) ∈
+        MixedAllocation.AllocationRecipe.stackEntriesForScope
+          compilation.recipe compilation.stackSlots scope
+          cursor.finalState.allocation := by
+    rw [root.scopeStackEntries cursor.scopeRoot hFinalExtension]
+    rw [hFinalExtension] at hFinalMem
+    have hSlot : slot ∈ compilation.stackSlots := by
+      have hSlotCtx :=
+        (AllocationLowering.isStackSlot_eq_true_iff
+          root.lowerCtx slot).mp hStack
+      rwa [root.lowerCtxShared.stackSlots] at hSlotCtx
+    rcases List.mem_append.mp hFinalMem with hAdded | hSignature
+    · exact
+        List.mem_append_left _
+          (List.mem_append_left _
+            (MixedAllocation.mem_stackEntries_iff.mpr
+              ⟨hAdded, hSlot⟩))
+    · rcases List.mem_append.mp hSignature with hReturn | hParam
+      · exact
+          List.mem_append_left _
+            (List.mem_append_right _
+              (MixedAllocation.mem_stackEntries_iff.mpr
+                ⟨by simpa using hReturn, hSlot⟩))
+      · exact
+          List.mem_append_right _
+            (MixedAllocation.mem_stackEntries_iff.mpr
+              ⟨by simpa using hParam, hSlot⟩)
+  rw [cursor.planEq]
+  exact
+    MixedAllocation.allocationOfState_location_stack_of_entry
+      hNodup hFinalMem hEntry
+
+private theorem CoreCursor.location_scratch_of_lookup_aux
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live sourceBlock lowerState localsCtx)
+    {localName : Functions.Name} {slot : Nat}
+    (hLookup :
+      AllocationSupport.lookupSlot?
+          localName lowerState.allocation.env =
+        some slot)
+    (hScratch :
+      AllocationLowering.isStackSlot root.lowerCtx slot = false) :
+    cursor.plan.location? localName = some (.scratch slot) := by
+  have hFinalLookup := cursor.bodyFinal_lookup_of_lookup hLookup
+  have hFinalMem :=
+    AllocationSupport.mem_of_lookupSlot?_eq_some hFinalLookup
+  have hNodup :
+      (cursor.finalState.allocation.env.map Prod.fst).Nodup := by
+    have hScopeNodup := cursor.planWF.2.1
+    simpa [cursor.planEq, MixedAllocation.allocationOfState] using
+      hScopeNodup
+  have hNotEntry :
+      (localName, slot) ∉
+        MixedAllocation.AllocationRecipe.stackEntriesForScope
+          compilation.recipe compilation.stackSlots scope
+          cursor.finalState.allocation := by
+    have hSlot : slot ∉ compilation.stackSlots := by
+      have hSlotCtx :=
+        (AllocationLowering.isStackSlot_eq_false_iff
+          root.lowerCtx slot).mp hScratch
+      rwa [root.lowerCtxShared.stackSlots] at hSlotCtx
+    exact
+      MixedAllocation.AllocationRecipe.not_mem_stackEntriesForScope_of_slot_not_mem
+        hSlot
+  rw [cursor.planEq]
+  exact
+    MixedAllocation.allocationOfState_location_scratch_of_not_entry
+      hNodup hFinalMem hNotEntry
+
+theorem CoreCursor.location_stack_of_lookup
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live sourceBlock lowerState localsCtx)
+    {localName : Functions.Name} {slot : Nat}
+    (hLookup :
+      AllocationSupport.lookupSlot?
+          localName lowerState.allocation.env =
+        some slot)
+    (hStack :
+      AllocationLowering.isStackSlot root.lowerCtx slot = true) :
+    ∃ depth,
+      cursor.plan.location? localName = some (.stack depth) := by
+  exact cursor.location_stack_of_lookup_aux hLookup hStack
+
+theorem CoreCursor.location_scratch_of_lookup
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live sourceBlock lowerState localsCtx)
+    {localName : Functions.Name} {slot : Nat}
+    (hLookup :
+      AllocationSupport.lookupSlot?
+          localName lowerState.allocation.env =
+        some slot)
+    (hScratch :
+      AllocationLowering.isStackSlot root.lowerCtx slot = false) :
+    cursor.plan.location? localName = some (.scratch slot) := by
+  exact cursor.location_scratch_of_lookup_aux hLookup hScratch
+
+/-- Cursors with the same live environment agree on every live binding. -/
+theorem CoreCursor.planAgreesOn
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {leftScope rightScope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {leftBlock rightBlock : Functions.Block}
+    {leftState rightState : AllocationLowering.State}
+    {leftLocals rightLocals : Locals.Ctx}
+    (left :
+      CoreCursor root leftScope live leftBlock leftState leftLocals)
+    (right :
+      CoreCursor root rightScope live rightBlock rightState rightLocals)
+    (hEnv :
+      leftState.allocation.env = rightState.allocation.env) :
+    PlanAgreesOn left.plan right.plan live := by
+  rcases left.activeEnv with ⟨locals, hLeftEnv, hLive⟩
+  have hLeftPlanning :
+      left.planning.allocation.env =
+        leftState.allocation.env :=
+    congrArg AllocationSupport.CompileState.env
+      left.planningAllocation
+  have hRightPlanning :
+      right.planning.allocation.env =
+        rightState.allocation.env :=
+    congrArg AllocationSupport.CompileState.env
+      right.planningAllocation
+  have hRightEnv :
+      right.planning.allocation.env =
+        locals ++ AllocationSupport.functionEnv root.slots := by
+    calc
+      right.planning.allocation.env =
+          rightState.allocation.env := hRightPlanning
+      _ = leftState.allocation.env := hEnv.symm
+      _ = left.planning.allocation.env := hLeftPlanning.symm
+      _ =
+          locals ++ AllocationSupport.functionEnv root.slots :=
+        hLeftEnv
+  refine ⟨?_, ?_⟩
+  · exact
+      (left.currentStackOrder_of_active locals hLeftEnv hLive).trans
+        (right.currentStackOrder_of_active
+          locals hRightEnv hLive).symm
+  · intro localName hLocalLive
+    obtain ⟨slot, hLookup⟩ :=
+      left.lookupSlot_of_live hLocalLive
+    by_cases hStack :
+        AllocationLowering.isStackSlot root.lowerCtx slot = true
+    · obtain ⟨leftDepth, hLeftLocation⟩ :=
+        left.location_stack_of_lookup hLookup hStack
+      have hRightLookup :
+          AllocationSupport.lookupSlot?
+              localName rightState.allocation.env =
+            some slot := by
+        simpa [hEnv] using hLookup
+      obtain ⟨rightDepth, hRightLocation⟩ :=
+        right.location_stack_of_lookup hRightLookup hStack
+      exact
+        ⟨.stack leftDepth, .stack rightDepth,
+          hLeftLocation, hRightLocation,
+          .stack leftDepth rightDepth⟩
+    · have hScratch :
+          AllocationLowering.isStackSlot root.lowerCtx slot = false :=
+        Bool.eq_false_of_not_eq_true hStack
+      have hLeftLocation :=
+        left.location_scratch_of_lookup hLookup hScratch
+      have hRightLookup :
+          AllocationSupport.lookupSlot?
+              localName rightState.allocation.env =
+            some slot := by
+        simpa [hEnv] using hLookup
+      have hRightLocation :=
+        right.location_scratch_of_lookup hRightLookup hScratch
+      exact
+        ⟨.scratch slot, .scratch slot,
+          hLeftLocation, hRightLocation, .scratch slot⟩
+
+theorem CoreCursor.scratch_bound_of_location
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live sourceBlock lowerState localsCtx)
+    {localName : Locals.Name} {slot : Nat}
+    (hLocation :
+      cursor.plan.location? localName = some (.scratch slot)) :
+    slot < compilation.recipe.frameWords := by
+  rw [cursor.planEq] at hLocation
+  have hWF :
+      (MixedAllocation.allocationOfState
+        program.memoryContract compilation.recipe.frameWords
+        (MixedAllocation.AllocationRecipe.stackEntriesForScope
+          compilation.recipe compilation.stackSlots scope
+          cursor.finalState.allocation)
+        cursor.finalState.allocation).WellFormed := by
+    rw [← cursor.planEq]
+    exact cursor.planWF
+  exact
+    MixedAllocation.allocationOfState_scratch_bound_of_wellFormed
+      hWF hLocation
+
 end AllocationInteractionCursor
 end Functions
 end EvmCompiler
