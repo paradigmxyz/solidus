@@ -382,6 +382,7 @@ theorem stack_after_arguments
     (hCallerOwned :
       ActivationOwned config allocatorDepth callerFrameBase callerMode)
     (hBudget : Budget config allocatorDepth)
+    (hFuelBudget : Budget config (allocatorDepth + bodyFuel))
     (hTargetExtra : 3 ≤ targetExtra)
     (hBodyFuel : bodyFuel < fuelBound)
     (hBodySuccess :
@@ -449,7 +450,7 @@ theorem stack_after_arguments
         AllocationInteractionCall.SelectedCallee.Artifact.mode,
         hNeedsFrame] using hEntry)
       hZero hEntryStackLength hReservation hConfig hEntryReady hEntryOwned
-      hBudget hTargetExtra hBodyFuel hBodySuccess hRecursive
+      hBudget hFuelBudget hTargetExtra hBodyFuel hBodySuccess hRecursive
   let callerBase :=
     AllocationInteractionCall.PreparedArguments.callerState
       targetAfterArgs targetInitial
@@ -519,7 +520,7 @@ theorem scratch_after_arguments
           compilation.recipe.frameWords =
         some config)
     (hBudget : Budget config allocatorDepth)
-    (hCalleeBudget : Budget config (allocatorDepth + 1))
+    (hFuelBudget : Budget config ((allocatorDepth + 1) + bodyFuel))
     (hTargetExtra : 3 ≤ targetExtra)
     (hBodyFuel : bodyFuel < fuelBound)
     (hBodySuccess :
@@ -597,6 +598,8 @@ theorem scratch_after_arguments
           (previousDepth := allocatorDepth)
           (frameBase := baseAt config allocatorDepth)
           (frameDepth := 0) (frameWords := config.frameWords) rfl rfl)
+  have hCalleeBudget : Budget config (allocatorDepth + 1) :=
+    Budget.mono (by omega) hFuelBudget
   obtain ⟨targetFuel, _hPositive, hTargetFuel, hCall⟩ :=
     AllocationInteractionCallResultResource.SelectedCallee.complete_call
       prepared hProgramScoped hInsert hSplit
@@ -604,7 +607,7 @@ theorem scratch_after_arguments
         AllocationInteractionCall.SelectedCallee.Artifact.mode,
         hNeedsFrame, hFrameWords] using hEntry)
       hZero hEntryStackLength hReservation hConfig hEntryReady hEntryOwned
-      hCalleeBudget hTargetExtra hBodyFuel hBodySuccess hRecursive
+      hCalleeBudget hFuelBudget hTargetExtra hBodyFuel hBodySuccess hRecursive
   let callerBase :=
     AllocationInteractionCall.PreparedArguments.callerState
       targetAfterArgs targetInitial

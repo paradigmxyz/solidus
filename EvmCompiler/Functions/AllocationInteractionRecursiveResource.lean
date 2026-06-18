@@ -315,6 +315,7 @@ def RecursiveOpenRuntime
     sourceFuel < fuelBound →
     Boundary cursor contract globalFrameWords config allocatorDepth frameBase
       mode sourceCtx source target →
+    AllocationInteractionFrame.Budget config (allocatorDepth + sourceFuel) →
     Simulation.Interaction.Successful
       (Functions.InteractionSemantics.Block.openRun program sourceCtx
         sourceFuel sourceBlock source) →
@@ -351,6 +352,8 @@ theorem at_targetFuel
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
         mode sourceCtx source target)
+    (hFuelBudget :
+      AllocationInteractionFrame.Budget config (allocatorDepth + sourceFuel))
     (hSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Block.openRun program sourceCtx
@@ -368,7 +371,8 @@ theorem at_targetFuel
         { stmts := cursor.compiled } target) := by
   let targetExtra := targetFuel - targetBudget cursor sourceFuel 0
   have hForward :=
-    hRecursive cursor hFuel hBoundary hSuccess (targetExtra := targetExtra)
+    hRecursive cursor hFuel hBoundary hFuelBudget hSuccess
+      (targetExtra := targetExtra)
   have hExact :
       targetBudget cursor sourceFuel targetExtra = targetFuel := by
     simp [targetBudget, targetExtra, callStride, Nat.mul_succ]
@@ -422,6 +426,8 @@ theorem body_of_cursor
     (hOwned :
       ActivationOwned config allocatorDepth frameBase artifact.mode)
     (hBudget : AllocationInteractionFrame.Budget config allocatorDepth)
+    (hFuelBudget :
+      AllocationInteractionFrame.Budget config (allocatorDepth + sourceFuel))
     (hSourceFuel : sourceFuel < fuelBound)
     (hLive :
       ∀ localName,
@@ -527,7 +533,7 @@ theorem body_of_cursor
         budget := hBudget }
     have hBodyRaw :=
       hRecursive bodyCursor hSourceFuel
-        hBodyBoundary hSuccess (targetExtra := targetExtra)
+        hBodyBoundary hFuelBudget hSuccess (targetExtra := targetExtra)
     let bodyFuel :=
       targetBudget bodyCursor sourceFuel targetExtra
     have hBodyFuel : 0 < bodyFuel := by
@@ -623,7 +629,7 @@ theorem body_of_cursor
         budget := hBudget }
     have hBodyRaw :=
       hRecursive bodyCursor hSourceFuel
-        hBodyBoundary hSuccess (targetExtra := targetExtra)
+        hBodyBoundary hFuelBudget hSuccess (targetExtra := targetExtra)
     let bodyFuel :=
       targetBudget bodyCursor sourceFuel targetExtra
     have hBodyFuel : 0 < bodyFuel := by
@@ -714,6 +720,8 @@ theorem body_of_function_context
     (hOwned :
       ActivationOwned config allocatorDepth frameBase artifact.mode)
     (hBudget : AllocationInteractionFrame.Budget config allocatorDepth)
+    (hFuelBudget :
+      AllocationInteractionFrame.Budget config (allocatorDepth + sourceFuel))
     (hSourceFuel : sourceFuel < fuelBound)
     (hSuccess :
       Simulation.Interaction.Successful
@@ -774,7 +782,7 @@ theorem body_of_function_context
         (Functions.Source.Effectful.FunDef.bodyCtx fn) := by
     exact AllocationInteractionStatement.ControlScopesWithin.functionBody fn
   exact body_of_cursor prepared hProgramScoped hEntry hZero hStackLength
-    hReservation hConfig hReady hOwned hBudget hSourceFuel hLive hScope
+    hReservation hConfig hReady hOwned hBudget hFuelBudget hSourceFuel hLive hScope
     hControl hSuccess hRecursive
 
 end SelectedCallee
@@ -2379,6 +2387,8 @@ theorem for_
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
         mode sourceCtx source target)
+    (hFuelBudget :
+      AllocationInteractionFrame.Budget config (allocatorDepth + sourceFuel))
     (hHeadSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
@@ -2505,7 +2515,8 @@ theorem for_
       (sourceFuel := loopFuel) (targetFuel := nestedFuel)
       (by simp [loopFuel]; omega)
       (by simpa [hNestedFuel] using hCapacity.init)
-      hInitBoundary hInitSuccess
+      hInitBoundary (Budget.mono (by simp [loopFuel]) hFuelBudget)
+      hInitSuccess
   have hInit :
       Simulation.Interaction.Rel
         (RuntimeResultRel contract root.lowerCtx components.loopState
@@ -2627,7 +2638,9 @@ theorem for_
         RecursiveOpenRuntime.at_targetFuel hRecursive components.bodyCursor
           (sourceFuel := fuel) (targetFuel := fuel + slack)
           (by simp [loopFuel] at *; omega)
-          (hCapacity.body fuel hFuelLt) hBodyBoundary hBodyOpenSuccess
+          (hCapacity.body fuel hFuelLt) hBodyBoundary
+          (Budget.mono (by simp [loopFuel] at *; omega) hFuelBudget)
+          hBodyOpenSuccess
       have hBodyRel :
           Simulation.Interaction.Rel
             (RuntimeResultRel contract root.lowerCtx
@@ -2711,7 +2724,9 @@ theorem for_
         RecursiveOpenRuntime.at_targetFuel hRecursive components.postCursor
           (sourceFuel := fuel) (targetFuel := fuel + slack)
           (by simp [loopFuel] at *; omega)
-          (hCapacity.post fuel hFuelLt) hPostBoundary hPostOpenSuccess
+          (hCapacity.post fuel hFuelLt) hPostBoundary
+          (Budget.mono (by simp [loopFuel] at *; omega) hFuelBudget)
+          hPostOpenSuccess
       have hPostRel :
           Simulation.Interaction.Rel
             (RuntimeResultRel contract root.lowerCtx

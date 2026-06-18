@@ -736,6 +736,8 @@ theorem complete_body
     (hOwned :
       ActivationOwned config allocatorDepth frameBase artifact.mode)
     (hBudget : AllocationInteractionFrame.Budget config allocatorDepth)
+    (hFuelBudget :
+      AllocationInteractionFrame.Budget config (allocatorDepth + sourceFuel))
     (hTargetExtra : 3 ≤ targetExtra)
     (hSourceFuel : sourceFuel < fuelBound)
     (hSuccess :
@@ -766,7 +768,7 @@ theorem complete_body
   obtain ⟨targetFuel, hTargetFuel, hEpilogueFuel, hTargetFuelEq, hBody⟩ :=
     AllocationInteractionRecursiveResource.SelectedCallee.body_of_function_context
       (targetExtra := targetExtra) prepared hProgramScoped hEntry hZero hStackLength
-      hReservation hConfig hReady hOwned hBudget hSourceFuel hSuccess
+      hReservation hConfig hReady hOwned hBudget hFuelBudget hSourceFuel hSuccess
       hRecursive
   have hReturnsLive :
       forall localName,
@@ -840,6 +842,8 @@ theorem complete_call
     (hOwned :
       ActivationOwned config allocatorDepth frameBase artifact.mode)
     (hBudget : AllocationInteractionFrame.Budget config allocatorDepth)
+    (hFuelBudget :
+      AllocationInteractionFrame.Budget config (allocatorDepth + sourceFuel))
     (hTargetExtra : 3 ≤ targetExtra)
     (hSourceFuel : sourceFuel < fuelBound)
     (hSuccess :
@@ -873,7 +877,8 @@ theorem complete_call
           expressions (targetFuel + 1) (.call name) targetCaller) := by
   obtain ⟨targetFuel, hTargetFuel, hTargetFuelEq, hBody⟩ :=
     complete_body prepared hProgramScoped hEntry hZero hStackLength
-      hReservation hConfig hReady hOwned hBudget hTargetExtra hSourceFuel hSuccess
+      hReservation hConfig hReady hOwned hBudget hFuelBudget hTargetExtra
+      hSourceFuel hSuccess
       hRecursive
   refine ⟨targetFuel, hTargetFuel, hTargetFuelEq, ?_⟩
   exact CallAttachment.of_body hInsert artifact.targetLookup

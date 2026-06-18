@@ -17,6 +17,18 @@ def baseAt (config : Config) (depth : Nat) : Nat :=
 def Budget (config : Config) (depth : Nat) : Prop :=
   baseAt config depth + bytes config ≤ config.limit
 
+namespace Budget
+
+/-- A budget for a deeper allocator position also covers every shallower one. -/
+theorem mono {config : Config} {smaller larger : Nat}
+    (hDepth : smaller ≤ larger) (hBudget : Budget config larger) :
+    Budget config smaller := by
+  unfold Budget baseAt at hBudget ⊢
+  have hScaled := Nat.mul_le_mul_right (bytes config) hDepth
+  omega
+
+end Budget
+
 def AllocatorAt (config : Config) (depth : Nat)
     (target : TargetState) : Prop :=
   target.evm.toMachineState.lookupMemory
