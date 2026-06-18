@@ -63,6 +63,10 @@ boundaries remain active work.
     realization, including parameter spill-store transitions;
   - [x] silent entry-marker execution and one compiler-selected scratch
     parameter lowering/compilation/execution step;
+  - [x] recursive all-stack and mixed stack/scratch parameter-prelude
+    preservation under the pass-owned compiler context;
+  - [ ] construct the parameter-prelude context from the selected compiler
+    artifact and complete return initialization;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

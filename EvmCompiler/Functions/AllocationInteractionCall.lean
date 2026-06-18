@@ -205,6 +205,73 @@ end EntryMarkers
 
 namespace ParameterPrelude
 
+/-- Compiler-owned invariant following the real `lowerParams` recursion. -/
+inductive Context
+    (lowerCtx : AllocationLowering.Ctx)
+    (plan : Locals.Allocation.Plan) (frameWords : Nat) :
+    List Locals.Name → List (Locals.Name × Nat) → Nat →
+      Locals.Ctx → Prop where
+  | nil
+      {realized : List Locals.Name}
+      {frameDepth : Nat} {localsCtx : Locals.Ctx} :
+      Context lowerCtx plan frameWords realized [] frameDepth localsCtx
+  | stack
+      {realized : List Locals.Name}
+      {pending : List (Locals.Name × Nat)}
+      {frameDepth planDepth : Nat}
+      {localsCtx : Locals.Ctx}
+      {name : Locals.Name} {slot : Nat}
+      (classification :
+        AllocationLowering.isStackSlot lowerCtx slot = true)
+      (fresh : name ∉ realized)
+      (location : plan.location? name = some (.stack planDepth))
+      (stackOrder :
+        currentStackOrder plan (name :: realized) =
+          name :: currentStackOrder plan realized)
+      (tail :
+        Context lowerCtx plan frameWords (name :: realized) pending
+          (frameDepth + 1) localsCtx) :
+      Context lowerCtx plan frameWords realized ((name, slot) :: pending)
+        frameDepth localsCtx
+  | scratch
+      {realized : List Locals.Name}
+      {pending : List (Locals.Name × Nat)}
+      {frameDepth : Nat} {localsCtx : Locals.Ctx}
+      {name : Locals.Name} {slot : Nat}
+      (classification :
+        AllocationLowering.isStackSlot lowerCtx slot = false)
+      (fresh : name ∉ realized)
+      (location : plan.location? name = some (.scratch slot))
+      (stackOrder :
+        currentStackOrder plan (name :: realized) =
+          currentStackOrder plan realized)
+      (slotBound : slot < frameWords)
+      (layout :
+        localsCtx.layout =
+          (pending.map Prod.fst).reverse ++
+            name :: (currentStackOrder plan realized ++ [lowerCtx.frameName]))
+      (aboveFresh : name ∉ (pending.map Prod.fst).reverse)
+      (suffixFresh :
+        name ∉ currentStackOrder plan realized ++ [lowerCtx.frameName])
+      (nameDepthBound : pending.length + 1 ≤ 16)
+      (frameDepthLookup :
+        Locals.Layout.lookupDepth? lowerCtx.frameName
+            ((pending.map Prod.fst).reverse ++
+              name ::
+                (currentStackOrder plan realized ++ [lowerCtx.frameName])) =
+          some ((pending.length + 1) + frameDepth + 1))
+      (frameDepthBound :
+        1 + ((pending.length + 1) + frameDepth + 1) ≤ 16)
+      (tail :
+        Context lowerCtx plan frameWords (name :: realized) pending
+          frameDepth
+          (localsCtx.withLayout
+            ((pending.map Prod.fst).reverse ++
+              currentStackOrder plan (name :: realized) ++
+              [lowerCtx.frameName]))) :
+      Context lowerCtx plan frameWords realized ((name, slot) :: pending)
+        frameDepth localsCtx
+
 /-- Execute one compiler-emitted scratch-parameter realization step. -/
 theorem scratch_step_code
     {contract : MemoryContract.Contract}
@@ -434,9 +501,12 @@ theorem scratch_step_of_lowerScratchParam
               (AllocationLowering.lowerScratchParam ctx name slot
                 (above ++ name :: suffix)).1 } =
         some (compiled, localsCtx.withLayout (above ++ suffix)) ∧
-      Expressions.InteractionSemantics.Block.openRun targetProgram 4
-          { stmts := compiled } target =
-        .done (.ok (Structured.Outcome.regular final)) ∧
+      compiled.length = 3 ∧
+      (∀ targetExtra,
+        Expressions.InteractionSemantics.Block.openRun targetProgram
+            (targetExtra + 4)
+            { stmts := compiled } target =
+          .done (.ok (Structured.Outcome.regular final))) ∧
       ActivationCalleeEntryRel contract plan (name :: realized) pending
         frameBase (.scratch frameDepth frameWords) source final ∧
       final.evm.stack.length + 1 = target.evm.stack.length ∧
@@ -488,8 +558,9 @@ theorem scratch_step_of_lowerScratchParam
      .code promoteCode,
      .code [.op .pop]]
   refine
-    ⟨compiled, final, by simpa [compiled] using hCompile, ?_,
-      hFinalRel, hStackLength, hFinalMachine⟩
+    ⟨compiled, final, by simpa [compiled] using hCompile, by simp [compiled],
+      ?_, hFinalRel, hStackLength, hFinalMachine⟩
+  intro targetExtra
   let storeCode : Structured.Code :=
     [.op nameOp] ++
       [.op frameOp,
@@ -497,7 +568,8 @@ theorem scratch_step_of_lowerScratchParam
        .op .add,
        .op .mstore]
   have hStoreStmt :
-      Expressions.InteractionSemantics.Stmt.openRun targetProgram 3
+      Expressions.InteractionSemantics.Stmt.openRun targetProgram
+          (targetExtra + 3)
           (.code storeCode) target =
         .done (.ok (Structured.Outcome.regular written)) := by
     unfold Expressions.InteractionSemantics.Stmt.openRun
@@ -512,7 +584,8 @@ theorem scratch_step_of_lowerScratchParam
         .done (.ok written) by simpa [storeCode] using hStoreRun]
     rfl
   have hPromoteStmt :
-      Expressions.InteractionSemantics.Stmt.openRun targetProgram 2
+      Expressions.InteractionSemantics.Stmt.openRun targetProgram
+          (targetExtra + 2)
           (.code promoteCode) written =
         .done (.ok (Structured.Outcome.regular promoted)) := by
     unfold Expressions.InteractionSemantics.Stmt.openRun
@@ -525,7 +598,8 @@ theorem scratch_step_of_lowerScratchParam
     rw [hPromoteRun]
     rfl
   have hPopStmt :
-      Expressions.InteractionSemantics.Stmt.openRun targetProgram 1
+      Expressions.InteractionSemantics.Stmt.openRun targetProgram
+          (targetExtra + 1)
           (.code [.op .pop]) promoted =
         .done (.ok (Structured.Outcome.regular final)) := by
     unfold Expressions.InteractionSemantics.Stmt.openRun
@@ -542,25 +616,294 @@ theorem scratch_step_of_lowerScratchParam
   unfold Expressions.InteractionSemantics.Stmt.openRun at hPopStmt
   dsimp only [compiled]
   change
-    Expressions.InteractionSemantics.Block.openRun targetProgram (3 + 1)
+    Expressions.InteractionSemantics.Block.openRun targetProgram
+        ((targetExtra + 3) + 1)
         { stmts :=
             [.code storeCode, .code promoteCode, .code [.op .pop]] }
         target =
       .done (.ok (Structured.Outcome.regular final))
   rw [Expressions.InteractionSemantics.Block.openRun_cons, hStoreStmt]
   change
-    Expressions.InteractionSemantics.Block.openRun targetProgram (2 + 1)
+    Expressions.InteractionSemantics.Block.openRun targetProgram
+        ((targetExtra + 2) + 1)
         { stmts := [.code promoteCode, .code [.op .pop]] } written =
       .done (.ok (Structured.Outcome.regular final))
   rw [Expressions.InteractionSemantics.Block.openRun_cons, hPromoteStmt]
   change
-    Expressions.InteractionSemantics.Block.openRun targetProgram (1 + 1)
+    Expressions.InteractionSemantics.Block.openRun targetProgram
+        ((targetExtra + 1) + 1)
         { stmts := [.code [.op .pop]] } promoted =
       .done (.ok (Structured.Outcome.regular final))
   rw [Expressions.InteractionSemantics.Block.openRun_cons, hPopStmt]
   exact
     Expressions.InteractionSemantics.Block.openRun_nil
-      targetProgram 0 final
+      targetProgram targetExtra final
+
+/-- Execute and compile the complete scratch-backed parameter prelude. -/
+theorem forward_scratch
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan}
+    {frameBase frameWords : Nat}
+    {source : Functions.InteractionSemantics.State}
+    {target : Structured.RunState}
+    {lowerCtx : AllocationLowering.Ctx}
+    {localsCtx : Locals.Ctx}
+    {targetProgram : Expressions.Program}
+    {realized : List Locals.Name}
+    {pending : List (Locals.Name × Nat)}
+    {frameDepth : Nat}
+    {reservation : MemoryContract.ScratchReservation}
+    (hContext :
+      Context lowerCtx plan frameWords realized pending frameDepth localsCtx)
+    (hRel :
+      ActivationCalleeEntryRel contract plan realized pending frameBase
+        (.scratch frameDepth frameWords) source target)
+    (hFrameDepth :
+      frameDepth = (currentStackOrder plan realized).length)
+    (hStackLength : target.evm.stack.length = localsCtx.layout.length)
+    (hWF : plan.WellFormed)
+    (hReservation : contract.scratch? = some reservation) :
+    ∃ compiled finalCtx finalTarget finalFrameDepth fuel,
+      0 < fuel ∧
+      Locals.Block.compileOpen localsCtx
+          { stmts :=
+              (AllocationLowering.lowerParams lowerCtx pending
+                localsCtx.layout).1 } =
+        some (compiled, finalCtx) ∧
+      finalCtx.layout =
+        (AllocationLowering.lowerParams lowerCtx pending
+          localsCtx.layout).2 ∧
+      Expressions.InteractionSemantics.Block.openRun targetProgram fuel
+          { stmts := compiled } target =
+        .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      ScratchStateRel contract plan
+        ((pending.map Prod.fst).reverse ++ realized) 0 frameBase
+        finalFrameDepth frameWords source finalTarget ∧
+      finalFrameDepth =
+        (currentStackOrder plan
+          ((pending.map Prod.fst).reverse ++ realized)).length ∧
+      finalTarget.evm.stack.length = finalCtx.layout.length := by
+  cases hContext with
+  | nil =>
+      refine ⟨[], localsCtx, target, frameDepth, 1, by omega, ?_, ?_, ?_,
+        ?_, ?_, hStackLength⟩
+      · simp [AllocationLowering.lowerParams, Locals.Block.compileOpen]
+      · simp [AllocationLowering.lowerParams]
+      · exact
+          Expressions.InteractionSemantics.Block.openRun_nil
+            targetProgram 0 target
+      · cases hRel.finish with
+        | scratch state => simpa using state
+      · simpa using hFrameDepth
+  | @stack _ tailPending _ planDepth _ name slot classification fresh
+      location stackOrder tail =>
+      have hNextRel :
+          ActivationCalleeEntryRel contract plan (name :: realized)
+            tailPending frameBase
+            (.scratch (frameDepth + 1) frameWords) source target := by
+        simpa [ActivationMode.afterStackDeclaration] using
+          hRel.activate_stack fresh location stackOrder
+      obtain
+          ⟨compiled, finalCtx, finalTarget, finalFrameDepth, fuel,
+            hFuel, hCompile, hFinalLayout, hEval, hFinalRel,
+            hFinalDepth, hFinalStackLength⟩ :=
+        forward_scratch tail hNextRel
+          (by
+            rw [stackOrder, hFrameDepth]
+            simp)
+          hStackLength hWF hReservation
+      refine
+        ⟨compiled, finalCtx, finalTarget, finalFrameDepth, fuel, hFuel,
+          ?_, ?_, hEval, ?_, ?_, hFinalStackLength⟩
+      · simpa [AllocationLowering.lowerParams, classification] using hCompile
+      · simpa [AllocationLowering.lowerParams, classification] using
+          hFinalLayout
+      · simpa [List.reverse_cons, List.append_assoc] using hFinalRel
+      · simpa [List.reverse_cons, List.append_assoc] using hFinalDepth
+  | @scratch _ tailPending _ _ name slot classification fresh location
+      stackOrder slotBound layout aboveFresh suffixFresh nameDepthBound
+      frameDepthLookup frameDepthBound tail =>
+      let above : Locals.Layout := (tailPending.map Prod.fst).reverse
+      let suffix : Locals.Layout :=
+        currentStackOrder plan (name :: realized) ++ [lowerCtx.frameName]
+      have hLayout : localsCtx.layout = above ++ name :: suffix := by
+        simpa [above, suffix, stackOrder] using layout
+      have hSuffixFresh : name ∉ suffix := by
+        simpa [suffix, stackOrder] using suffixFresh
+      have hFrameDepthLookup :
+          Locals.Layout.lookupDepth? lowerCtx.frameName
+              (above ++ name :: suffix) =
+            some ((tailPending.length + 1) + frameDepth + 1) := by
+        simpa [above, suffix, stackOrder] using frameDepthLookup
+      obtain
+          ⟨headCompiled, midTarget, hHeadCompile, hHeadLength,
+            hHeadEval, hNextRel, hStepLength, _hStepMachine⟩ :=
+        scratch_step_of_lowerScratchParam
+          (contract := contract) (plan := plan) (realized := realized)
+          (pending := tailPending) (frameBase := frameBase)
+          (frameDepth := frameDepth) (frameWords := frameWords)
+          (slot := slot) (source := source) (target := target)
+          (name := name) (ctx := lowerCtx) (localsCtx := localsCtx)
+          (above := above) (suffix := suffix)
+          (targetProgram := targetProgram) (reservation := reservation)
+          hRel hWF location stackOrder slotBound hReservation hLayout
+          (by simp [above]) (by simpa [above] using aboveFresh)
+          hSuffixFresh (by simpa [above] using nameDepthBound)
+          hFrameDepthLookup frameDepthBound
+      have hMidStackLength :
+          midTarget.evm.stack.length =
+            (localsCtx.withLayout (above ++ suffix)).layout.length := by
+        simp only [Locals.Ctx.withLayout]
+        have hInitialLength :
+            target.evm.stack.length = (above ++ name :: suffix).length := by
+          rw [hStackLength, hLayout]
+        simp only [List.length_append, List.length_cons] at hInitialLength
+        simp only [List.length_append]
+        omega
+      obtain
+          ⟨tailCompiled, finalCtx, finalTarget, finalFrameDepth, tailFuel,
+            hTailFuel, hTailCompile, hFinalLayout, hTailEval, hFinalRel,
+            hFinalDepth, hFinalStackLength⟩ :=
+        forward_scratch tail hNextRel
+          (by simpa [stackOrder] using hFrameDepth)
+          (by
+            simpa [above, suffix, List.append_assoc] using hMidStackLength)
+          hWF hReservation
+      have hHeadCompile' :
+          Locals.Block.compileOpen localsCtx
+              { stmts :=
+                  (AllocationLowering.lowerScratchParam lowerCtx name slot
+                    localsCtx.layout).1 } =
+            some
+              (headCompiled, localsCtx.withLayout (above ++ suffix)) := by
+        simpa [hLayout] using hHeadCompile
+      have hTailCompile' :
+          Locals.Block.compileOpen
+              (localsCtx.withLayout (above ++ suffix))
+              { stmts :=
+                  (AllocationLowering.lowerParams lowerCtx tailPending
+                    (above ++ suffix)).1 } =
+            some (tailCompiled, finalCtx) := by
+        simpa [Locals.Ctx.withLayout, above, suffix,
+          List.append_assoc] using hTailCompile
+      have hCombinedCompile :=
+        Locals.Block.compileOpen_append hHeadCompile' hTailCompile'
+      have hErase :
+          AllocationLowering.eraseName name (above ++ name :: suffix) =
+            above ++ suffix :=
+        AllocationLowering.eraseName_append_name aboveFresh hSuffixFresh
+      let fuel := headCompiled.length + tailFuel
+      have hHeadAtFuel :
+          Expressions.InteractionSemantics.Block.openRun targetProgram fuel
+              { stmts := headCompiled } target =
+            .done (.ok (Structured.Outcome.regular midTarget)) := by
+        have hRun := hHeadEval (tailFuel - 1)
+        have hFuelEq : tailFuel - 1 + 4 = fuel := by
+          simp [fuel, hHeadLength]
+          omega
+        simpa [hFuelEq] using hRun
+      have hCombinedEval :
+          Expressions.InteractionSemantics.Block.openRun targetProgram fuel
+              { stmts := headCompiled ++ tailCompiled } target =
+            .done (.ok (Structured.Outcome.regular finalTarget)) := by
+        rw [Expressions.InteractionSemantics.Block.openRun_append,
+          hHeadAtFuel]
+        have hRemaining : fuel - headCompiled.length = tailFuel := by
+          simp [fuel]
+        simpa [hRemaining] using hTailEval
+      refine
+        ⟨headCompiled ++ tailCompiled, finalCtx, finalTarget,
+          finalFrameDepth, fuel, ?_, ?_, ?_, ?_, ?_, ?_,
+          hFinalStackLength⟩
+      · simp [fuel]
+        omega
+      · simpa [AllocationLowering.lowerParams, classification, hLayout,
+          AllocationLowering.lowerScratchParam, hErase] using
+          hCombinedCompile
+      · simpa [AllocationLowering.lowerParams, classification, hLayout,
+          AllocationLowering.lowerScratchParam, hErase] using hFinalLayout
+      · exact hCombinedEval
+      · simpa [List.reverse_cons, List.append_assoc] using hFinalRel
+      · simpa [List.reverse_cons, List.append_assoc] using hFinalDepth
+termination_by pending.length
+
+/-- Execute and compile the complete all-stack parameter prelude. -/
+theorem forward_stack
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan}
+    {frameBase frameWords : Nat}
+    {source : Functions.InteractionSemantics.State}
+    {target : Structured.RunState}
+    {lowerCtx : AllocationLowering.Ctx}
+    {localsCtx : Locals.Ctx}
+    {targetProgram : Expressions.Program}
+    {realized : List Locals.Name}
+    {pending : List (Locals.Name × Nat)}
+    {frameDepth : Nat}
+    (hContext :
+      Context lowerCtx plan frameWords realized pending frameDepth localsCtx)
+    (hAllStack :
+      ∀ binding, binding ∈ pending →
+        AllocationLowering.isStackSlot lowerCtx binding.2 = true)
+    (hRel :
+      ActivationCalleeEntryRel contract plan realized pending frameBase
+        .stack source target)
+    (hStackLength : target.evm.stack.length = localsCtx.layout.length) :
+    ∃ compiled finalCtx finalTarget fuel,
+      0 < fuel ∧
+      Locals.Block.compileOpen localsCtx
+          { stmts :=
+              (AllocationLowering.lowerParams lowerCtx pending
+                localsCtx.layout).1 } =
+        some (compiled, finalCtx) ∧
+      finalCtx.layout =
+        (AllocationLowering.lowerParams lowerCtx pending
+          localsCtx.layout).2 ∧
+      Expressions.InteractionSemantics.Block.openRun targetProgram fuel
+          { stmts := compiled } target =
+        .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      ActivationStateRel contract plan
+        ((pending.map Prod.fst).reverse ++ realized) 0 frameBase
+        .stack source finalTarget ∧
+      finalTarget.evm.stack.length = finalCtx.layout.length := by
+  cases hContext with
+  | nil =>
+      refine ⟨[], localsCtx, target, 1, by omega, ?_, ?_, ?_, ?_,
+        hStackLength⟩
+      · simp [AllocationLowering.lowerParams, Locals.Block.compileOpen]
+      · simp [AllocationLowering.lowerParams]
+      · exact
+          Expressions.InteractionSemantics.Block.openRun_nil
+            targetProgram 0 target
+      · simpa using hRel.finish
+  | @stack _ tailPending _ _ _ name slot classification fresh location
+      stackOrder tail =>
+      have hNextRel :
+          ActivationCalleeEntryRel contract plan (name :: realized)
+            tailPending frameBase .stack source target := by
+        simpa [ActivationMode.afterStackDeclaration] using
+          hRel.activate_stack fresh location stackOrder
+      obtain
+          ⟨compiled, finalCtx, finalTarget, fuel, hFuel, hCompile,
+            hFinalLayout, hEval, hFinalRel, hFinalStackLength⟩ :=
+        forward_stack tail
+          (fun binding hBinding =>
+            hAllStack binding (by simp [hBinding]))
+          hNextRel hStackLength
+      refine
+        ⟨compiled, finalCtx, finalTarget, fuel, hFuel, ?_, ?_, hEval,
+          ?_, hFinalStackLength⟩
+      · simpa [AllocationLowering.lowerParams, classification] using hCompile
+      · simpa [AllocationLowering.lowerParams, classification] using
+          hFinalLayout
+      · simpa [List.reverse_cons, List.append_assoc] using hFinalRel
+  | @scratch _ tailPending _ _ name slot classification _fresh _location
+      _stackOrder _slotBound _layout _aboveFresh _suffixFresh
+      _nameDepthBound _frameDepthLookup _frameDepthBound _tail =>
+      have hCurrent := hAllStack (name, slot) (by simp)
+      rw [classification] at hCurrent
+      contradiction
+termination_by pending.length
 
 end ParameterPrelude
 

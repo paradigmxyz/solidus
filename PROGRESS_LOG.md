@@ -31998,3 +31998,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   focused 1168-job build, full verification root, architecture guard,
   touched-Lean hole scan, axiom audit, and `git diff --check` passed; new
   prelude theorems use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-18 00:31:00 PDT - proof/functions-parameter-prelude-recursive -
+  generalized each compiler-selected scratch-parameter step to one final state
+  under arbitrary target-fuel slack, then proved complete recursive parameter
+  prelude preservation for both all-stack and mixed stack/scratch allocation.
+  The internal compiler context remains to be constructed from `Prepared`.
+- 2026-06-18 00:33:00 PDT - validation/functions-parameter-prelude-recursive -
+  focused 1168-job build, full verification root, architecture guard,
+  touched-Lean hole scan, axiom audit, and `git diff --check` passed; recursive
+  prelude theorems use only `[propext, Classical.choice, Quot.sound]`.
