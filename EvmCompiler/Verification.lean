@@ -40,6 +40,7 @@ import EvmCompiler.Functions.AllocationInteractionAbrupt
 import EvmCompiler.Functions.AllocationInteractionLeave
 import EvmCompiler.Functions.AllocationInteractionTerminal
 import EvmCompiler.Functions.AllocationInteractionCursor
+import EvmCompiler.Functions.AllocationInteractionForward
 import EvmCompiler.Functions.AllocationInteractionComposition
 import EvmCompiler.Functions.AllocationInteractionLeaf
 import EvmCompiler.Functions.AllocationInteractionStatement
@@ -274,6 +275,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.switchSelectedCursorOfComponents
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.switchSelectedCursors
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.forCursors
+#check EvmCompiler.Functions.AllocationInteractionForward.CoreCursor.nil
+#check EvmCompiler.Functions.AllocationInteractionForward.CoreCursor.cons_of_parts
 #check EvmCompiler.Functions.AllocationInteractionComposition.ControlResultRel
 #check EvmCompiler.Functions.AllocationInteractionComposition.lift_fixed
 #check EvmCompiler.Functions.AllocationInteractionComposition.cons

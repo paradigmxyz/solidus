@@ -31920,3 +31920,13 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   check, the 1322-job verification root, architecture guard, touched-Lean hole
   scan, axiom audit, and `git diff --check` passed; the loop cursor theorem
   uses only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 23:18:00 PDT - proof/functions-recursive-composition - started
+  canonical semantic recursion with `CoreCursor.nil` and
+  `CoreCursor.cons_of_parts`. The latter composes one adjacent statement
+  theorem with an exact recursive tail over the real Functions/Expressions
+  open runners and transports only pass-owned cursor endpoints.
+- 2026-06-17 23:19:00 PDT - validation/functions-recursive-composition -
+  focused check, the 1323-job verification root, architecture guard,
+  touched-Lean hole scan, axiom audit, and `git diff --check` passed; both
+  semantic composition theorems use only
+  `[propext, Classical.choice, Quot.sound]`.
