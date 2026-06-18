@@ -35,6 +35,8 @@ import EvmCompiler.Functions.AllocationInteractionExpressionRecursive
 import EvmCompiler.Functions.AllocationInteractionScratchStore
 import EvmCompiler.Functions.AllocationInteractionDeclaration
 import EvmCompiler.Functions.AllocationInteractionAssignment
+import EvmCompiler.Functions.AllocationInteractionCleanup
+import EvmCompiler.Functions.AllocationInteractionAbrupt
 import EvmCompiler.Functions.AllocationInteractionComposition
 import EvmCompiler.Functions.AllocationInteractionLeaf
 import EvmCompiler.Functions.AllocationInteractionStatement
@@ -215,6 +217,13 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionAssignment.scratch_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionAssignment.stack_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionAssignment.of_lower_compile
+#check EvmCompiler.Functions.AllocationInteractionRelation.StateRel.restrict_drop_stack_prefix
+#check EvmCompiler.Functions.AllocationInteractionCleanup.Transition
+#check EvmCompiler.Functions.AllocationInteractionCleanup.Plain.forward_exact
+#check EvmCompiler.Functions.AllocationInteractionCleanup.BreakLeaf.compiler_shape
+#check EvmCompiler.Functions.AllocationInteractionCleanup.ContinueLeaf.compiler_shape
+#check EvmCompiler.Functions.AllocationInteractionAbrupt.brk_of_lower_compile
+#check EvmCompiler.Functions.AllocationInteractionAbrupt.cont_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionComposition.ControlResultRel
 #check EvmCompiler.Functions.AllocationInteractionComposition.lift_fixed
 #check EvmCompiler.Functions.AllocationInteractionComposition.cons

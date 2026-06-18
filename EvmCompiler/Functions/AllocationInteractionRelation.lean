@@ -187,6 +187,23 @@ theorem restrictTo
 
 end LiveDefined
 
+theorem currentStackOrder_nodup
+    {plan : Plan} {live : List Locals.Name}
+    (hWF : plan.WellFormed) :
+    (currentStackOrder plan live).Nodup := by
+  rcases hWF with
+    ⟨_hBindings, _hScope, _hLength,
+      ⟨hStackNodup, _hStackScope⟩,
+      _hValid, _hScratch, _hKeys, _hIntervals, _hCalls, _hReturns⟩
+  exact hStackNodup.filter _
+
+theorem mem_live_of_mem_currentStackOrder
+    {plan : Plan} {live : List Locals.Name} {name : Locals.Name}
+    (hMem : name ∈ currentStackOrder plan live) :
+    name ∈ live := by
+  simp [currentStackOrder] at hMem
+  exact hMem.2
+
 /-- Realization of the live source store in allocated stack/scratch slots. -/
 def StoreRel (plan : Plan) (live : List Locals.Name)
     (stackOffset frameBase : Nat) (source : Locals.Source.State)
@@ -511,6 +528,89 @@ theorem restrict_source_live
     | scratch slot =>
         simpa [Locals.Source.State.restrictTo,
           Locals.Source.Store.restrictTo, hLive] using hValue
+
+/--
+Discarding a prefix of stack-resident locals and restricting the source store
+to the surviving lexical scope preserves the canonical allocation relation.
+-/
+theorem restrict_drop_stack_prefix
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {beforeLive afterLive dropped : List Locals.Name}
+    {frameBase : Nat}
+    {source : SourceState} {target targetFinal : TargetState}
+    (hRel : StateRel contract plan beforeLive 0 frameBase source target)
+    (hWF : plan.WellFormed)
+    (hSubset : ∀ name, name ∈ afterLive → name ∈ beforeLive)
+    (hOrder :
+      currentStackOrder plan beforeLive =
+        dropped ++ currentStackOrder plan afterLive)
+    (hShared :
+      targetFinal.evm.toSharedState = target.evm.toSharedState)
+    (hStack :
+      targetFinal.evm.stack = target.evm.stack.drop dropped.length) :
+    StateRel contract plan afterLive 0 frameBase
+      (source.restrictTo afterLive) targetFinal := by
+  let sourceFinal := source.restrictTo afterLive
+  refine ⟨?_, ?_, ?_⟩
+  · rw [hShared]
+    simpa [sourceFinal, Locals.Source.State.restrictTo] using hRel.machine
+  · rw [hShared]
+    simpa [sourceFinal, Locals.Source.State.restrictTo] using hRel.world
+  · intro name location hAfterLive hLocation
+    have hBeforeLive := hSubset name hAfterLive
+    have hOld := hRel.store name location hBeforeLive hLocation
+    cases location with
+    | scratch slot =>
+        change
+          targetFinal.evm.toMachineState.lookupMemory
+              (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)) =
+            (sourceFinal.vars name).getD (EvmYul.UInt256.ofNat 0)
+        have hVars : sourceFinal.vars name = source.vars name := by
+          simp [sourceFinal, Locals.Source.State.restrictTo,
+            Locals.Source.Store.restrictTo, hAfterLive]
+        rw [hVars, hShared]
+        exact hOld
+    | stack planDepth =>
+        rcases hOld with ⟨oldDepth, hOldDepth, hOldValue⟩
+        have hNameBefore :
+            name ∈ currentStackOrder plan beforeLive :=
+          Locals.Layout.mem_of_lookupDepth?_eq_some hOldDepth
+        have hPlanStack : name ∈ plan.stackOrder := by
+          simp [currentStackOrder] at hNameBefore
+          exact hNameBefore.1
+        have hNameAfter :
+            name ∈ currentStackOrder plan afterLive := by
+          simp [currentStackOrder, hPlanStack, hAfterLive]
+        obtain ⟨afterDepth, hAfterDepth⟩ :=
+          Locals.Layout.exists_lookupDepth?_eq_some_of_mem hNameAfter
+        have hBeforeNodup :=
+          currentStackOrder_nodup (live := beforeLive) hWF
+        rw [hOrder] at hBeforeNodup
+        have hDisjoint :
+            List.Disjoint dropped (currentStackOrder plan afterLive) :=
+          List.disjoint_of_nodup_append hBeforeNodup
+        have hNameNotDropped : name ∉ dropped := by
+          intro hDropped
+          exact (List.disjoint_left.mp hDisjoint) hDropped hNameAfter
+        have hExpectedDepth :
+            Locals.Layout.lookupDepth? name
+                (currentStackOrder plan beforeLive) =
+              some (dropped.length + (afterDepth + 1)) := by
+          rw [hOrder]
+          exact
+            Locals.Layout.lookupDepth?_append_of_not_mem
+              hNameNotDropped hAfterDepth
+        have hOldDepthEq : oldDepth = dropped.length + afterDepth := by
+          rw [hExpectedDepth] at hOldDepth
+          have hEq := Option.some.inj hOldDepth
+          omega
+        refine ⟨afterDepth, hAfterDepth, ?_⟩
+        have hVars : sourceFinal.vars name = source.vars name := by
+          simp [sourceFinal, Locals.Source.State.restrictTo,
+            Locals.Source.Store.restrictTo, hAfterLive]
+        rw [hStack, hVars]
+        simpa [List.getElem?_drop, hOldDepthEq,
+          Nat.add_comm, Nat.add_left_comm, Nat.add_assoc] using hOldValue
 
 def pushTargetBy (pcDelta : Nat) (value : Word)
     (target : TargetState) : TargetState :=

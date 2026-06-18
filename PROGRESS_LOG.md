@@ -31832,3 +31832,14 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1316-job verification root, architecture guard, touched-file hole scan,
   axiom audit, and `git diff --check` passed; adapters use only
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 22:25:07 PDT - compaction-resume - resumed the horizontal
+  CALL/CREATE proof from green commit `1612575f9`; the active boundary is
+  recursive Functions statement/control preservation before Yul composition.
+- 2026-06-17 22:31:00 PDT - proof/functions-abrupt-cleanup - added canonical
+  allocator-owned stack-prefix cleanup and proved ordinary compiled `break`
+  and `continue` preserve outcome-indexed stack/scratch activations without
+  importing observer semantics or exposing generated code publicly.
+- 2026-06-17 22:36:00 PDT - validation/functions-abrupt-cleanup - focused
+  builds, the 1318-job verification root, architecture guard, touched-file
+  hole scan, axiom audit, and `git diff --check` passed; new theorems use only
+  `[propext, Classical.choice, Quot.sound]`.
