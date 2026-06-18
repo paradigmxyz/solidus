@@ -31843,3 +31843,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   builds, the 1318-job verification root, architecture guard, touched-file
   hole scan, axiom audit, and `git diff --check` passed; new theorems use only
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 23:05:00 PDT - proof/functions-leave - moved preserving cleanup
+  semantics into a Locals-owned open theorem, then proved allocated Functions
+  `leave`: generated return reads preserve declaration order, remove every
+  dead stack local and hidden frame cell, and establish `LeaveStateRel` for
+  both stack and scratch activations.
+- 2026-06-17 23:09:00 PDT - validation/functions-leave - focused builds, the
+  1320-job verification root, architecture guard, touched-file hole scan,
+  axiom audit, and `git diff --check` passed; checked axioms remain
+  `[propext, Classical.choice, Quot.sound]`.

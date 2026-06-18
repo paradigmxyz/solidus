@@ -37,6 +37,7 @@ import EvmCompiler.Functions.AllocationInteractionDeclaration
 import EvmCompiler.Functions.AllocationInteractionAssignment
 import EvmCompiler.Functions.AllocationInteractionCleanup
 import EvmCompiler.Functions.AllocationInteractionAbrupt
+import EvmCompiler.Functions.AllocationInteractionLeave
 import EvmCompiler.Functions.AllocationInteractionComposition
 import EvmCompiler.Functions.AllocationInteractionLeaf
 import EvmCompiler.Functions.AllocationInteractionStatement
@@ -48,6 +49,7 @@ import EvmCompiler.Functions.EffectSemanticsInversion
 import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Functions.ObserverSafety
 import EvmCompiler.Locals.EffectSemantics
+import EvmCompiler.Locals.InteractionCleanupPreservation
 import EvmCompiler.Locals.InteractionSemantics
 import EvmCompiler.Locals.InteractionStatePreservation
 import EvmCompiler.Locals.InteractionPreservation
@@ -224,6 +226,14 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionCleanup.ContinueLeaf.compiler_shape
 #check EvmCompiler.Functions.AllocationInteractionAbrupt.brk_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionAbrupt.cont_of_lower_compile
+#check EvmCompiler.Locals.InteractionCleanupPreservation.openRun_swapRestoreUpTo?
+#check EvmCompiler.Locals.InteractionCleanupPreservation.openRun_cleanupOnePreserving?
+#check EvmCompiler.Locals.InteractionCleanupPreservation.openRun_cleanupManyPreserving?
+#check EvmCompiler.Functions.AllocationInteractionCleanup.Preserving.forward_zero
+#check EvmCompiler.Functions.AllocationInteractionCleanup.LeaveLeaf.compiler_shape
+#check EvmCompiler.Functions.AllocationInteractionLeave.ReturnValues.openEval
+#check EvmCompiler.Functions.AllocationInteractionLeave.ReturnValues.safe
+#check EvmCompiler.Functions.AllocationInteractionLeave.leave_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionComposition.ControlResultRel
 #check EvmCompiler.Functions.AllocationInteractionComposition.lift_fixed
 #check EvmCompiler.Functions.AllocationInteractionComposition.cons

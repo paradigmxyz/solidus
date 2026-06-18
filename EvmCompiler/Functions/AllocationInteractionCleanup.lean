@@ -1,4 +1,5 @@
 import EvmCompiler.Functions.AllocationContext
+import EvmCompiler.Locals.InteractionCleanupPreservation
 import EvmCompiler.Locals.InteractionPreservation
 
 namespace EvmCompiler
@@ -165,6 +166,155 @@ theorem forward_exact
     omega
 
 end Plain
+
+namespace Preserving
+
+theorem cleanupToPreserving?_shape
+    {ctx : Locals.Ctx} {preserve targetDepth : Nat}
+    {code : Structured.Code}
+    (hCleanup :
+      ctx.cleanupToPreserving? preserve targetDepth = some code) :
+    targetDepth ≤ ctx.layout.length ∧
+      Locals.Ctx.cleanupManyPreserving?
+          (ctx.layout.length - targetDepth) preserve =
+        some code := by
+  unfold Locals.Ctx.cleanupToPreserving? at hCleanup
+  by_cases hDepth : targetDepth ≤ ctx.layout.length
+  · simp only [hDepth, if_pos] at hCleanup
+    exact ⟨hDepth, hCleanup⟩
+  · simp [hDepth] at hCleanup
+
+/-- Cleanup to activation depth zero retains exactly the returned values. -/
+theorem forward_zero
+    {ctx : Locals.Ctx} {preserve : Nat}
+    {cleanup : Structured.Code}
+    {values baseStack : List Assembly.Word}
+    {target : Structured.RunState}
+    (hCleanup : ctx.cleanupToPreserving? preserve 0 = some cleanup)
+    (hValuesLength : values.length = preserve)
+    (hBaseLength : baseStack.length = ctx.layout.length)
+    (hStack : target.evm.stack = values ++ baseStack) :
+    ∃ final,
+      Structured.InteractionSemantics.Code.openRun cleanup target =
+          .done (.ok final) ∧
+        final.evm.stack = values ∧
+        final.evm.toSharedState = target.evm.toSharedState ∧
+        final.returns = target.returns := by
+  obtain ⟨_hDepth, hMany⟩ := cleanupToPreserving?_shape hCleanup
+  obtain ⟨final, hRun, hFinalStack, hShared, hReturns⟩ :=
+    Locals.InteractionCleanupPreservation.openRun_cleanupManyPreserving?
+      (discarded := baseStack) (suffix := []) hMany hValuesLength
+      (by simpa [hBaseLength]) (by simpa using hStack)
+  exact ⟨final, hRun, by simpa using hFinalStack, hShared, hReturns⟩
+
+end Preserving
+
+namespace ReturnValues
+
+private theorem exprSeqScoped_cast
+    {left right : Nat} (h : left = right)
+    {live : List Functions.Name} {exprs : Locals.ExprSeq left}
+    (hScoped : Functions.Scope.ExprSeqScoped live exprs) :
+    Functions.Scope.ExprSeqScoped live
+      (cast (congrArg Locals.ExprSeq h) exprs) := by
+  cases h
+  exact hScoped
+
+theorem returnExprsScoped
+    {returns live : List Functions.Name}
+    (hSubset : ∀ name, name ∈ returns → name ∈ live) :
+    Functions.Scope.ExprSeqScoped live
+      (Functions.Lower.returnExprs returns) := by
+  induction returns with
+  | nil => trivial
+  | cons name returns ih =>
+      unfold Functions.Lower.returnExprs
+      let exprs : Locals.ExprSeq (1 + returns.length) :=
+        Locals.ExprSeq.cons (.var name)
+          (Functions.Lower.returnExprs returns)
+      have hLen : 1 + returns.length = returns.length + 1 := by omega
+      change
+        Functions.Scope.ExprSeqScoped live
+          (cast (congrArg Locals.ExprSeq hLen) exprs)
+      apply exprSeqScoped_cast hLen
+      exact
+        ⟨hSubset name (by simp),
+          ih (fun other hOther => hSubset other (by simp [hOther]))⟩
+
+theorem lowerExprSeq
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {returns : List Functions.Name}
+    {lowered : Locals.ExprSeq returns.length}
+    (hLower :
+      AllocationLowering.lowerReturnExprs lowerCtx lowerState returns =
+        some lowered) :
+    AllocationLowering.lowerExprSeq lowerCtx lowerState
+        (Functions.Lower.returnExprs returns) =
+      some lowered :=
+  hLower
+
+end ReturnValues
+
+namespace LeaveLeaf
+
+theorem compiler_shape
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    (hDepth : localsCtx.leaveDepth? = some 0)
+    (hRetc : localsCtx.leaveRetc = returns.length)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState .leave =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ loweredReturns returnCode cleanup,
+      AllocationLowering.lowerReturnExprs lowerCtx lowerState returns =
+          some loweredReturns ∧
+        AllocationLowering.lowerExprSeq lowerCtx lowerState
+            (Functions.Lower.returnExprs returns) =
+          some loweredReturns ∧
+        Locals.ExprSeq.compileCode localsCtx 0 loweredReturns =
+          some returnCode ∧
+        localsCtx.cleanupToPreserving? returns.length 0 = some cleanup ∧
+        loweredStmts = [.exprs loweredReturns, .leave] ∧
+        lowerFinal = lowerState ∧
+        compiledStmts = [.code returnCode, .code cleanup, .leave] ∧
+        localsFinal = localsCtx := by
+  cases hReturns :
+      AllocationLowering.lowerReturnExprs lowerCtx lowerState returns with
+  | none => simp [AllocationLowering.lowerStmt, hReturns] at hLower
+  | some loweredReturns =>
+      simp [AllocationLowering.lowerStmt, hReturns] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      have hLowerSeq := ReturnValues.lowerExprSeq hReturns
+      cases hReturnCode :
+          Locals.ExprSeq.compileCode localsCtx 0 loweredReturns with
+      | none =>
+          simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+            hReturnCode] at hCompile
+      | some returnCode =>
+          cases hCleanup :
+              localsCtx.cleanupToPreserving? localsCtx.leaveRetc 0 with
+          | none =>
+              simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                hReturnCode, hDepth, hCleanup] at hCompile
+          | some cleanup =>
+              simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                Locals.codeStmt, hReturnCode, hDepth, hCleanup] at hCompile
+              rcases hCompile with ⟨rfl, rfl⟩
+              refine
+                ⟨loweredReturns, returnCode, cleanup,
+                  rfl, hLowerSeq, hReturnCode, ?_,
+                  rfl, rfl, rfl, rfl⟩
+              simpa [hRetc] using hCleanup
+
+end LeaveLeaf
 
 namespace BreakLeaf
 

@@ -187,6 +187,22 @@ theorem restrictTo
 
 end LiveDefined
 
+theorem lookupMany_of_liveDefined
+    {live names : List Locals.Name} {source : Locals.Source.State}
+    (hDefined : LiveDefined live source)
+    (hSubset : ∀ name, name ∈ names → name ∈ live) :
+    ∃ values,
+      Functions.Source.Store.lookupMany names source.vars = some values := by
+  induction names with
+  | nil => exact ⟨[], rfl⟩
+  | cons name names ih =>
+      obtain ⟨value, hValue⟩ :=
+        hDefined name (hSubset name (by simp))
+      obtain ⟨values, hValues⟩ :=
+        ih (fun other hOther => hSubset other (by simp [hOther]))
+      exact ⟨value :: values, by
+        simp [Functions.Source.Store.lookupMany, hValue, hValues]⟩
+
 theorem currentStackOrder_nodup
     {plan : Plan} {live : List Locals.Name}
     (hWF : plan.WellFormed) :
