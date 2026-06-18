@@ -26,6 +26,97 @@ structure InitialRel
     target.evm.activeWords.toNat * MemoryContract.wordBytes <
       EvmYul.UInt256.size
 
+/-- Observable state relation after the distinguished program activation has
+ended and compiler-owned locals are no longer live. -/
+structure FinalStateRel
+    (contract : MemoryContract.Contract)
+    (source : Functions.InteractionSemantics.State)
+    (target : Expressions.InteractionSemantics.RunState) : Prop where
+  shared : SharedRel contract source.shared target.evm.toSharedState
+
+/-- Whole-program outcome relation.  Allocation representation is erased at
+the public boundary, while control mode and the cleaned regular stack remain
+observable. -/
+inductive OutcomeRel
+    (contract : MemoryContract.Contract) :
+    Functions.InteractionSemantics.Outcome →
+      Expressions.InteractionSemantics.Outcome → Prop where
+  | regular {source target}
+      (state : FinalStateRel contract source target)
+      (stack : target.evm.stack = []) :
+      OutcomeRel contract
+        (Functions.Source.Effectful.Outcome.regular source)
+        (Structured.EffectSemantics.Outcome.regular target)
+  | brk {source target}
+      (state : FinalStateRel contract source target) :
+      OutcomeRel contract
+        (Functions.Source.Effectful.Outcome.brk source)
+        (Structured.EffectSemantics.Outcome.brk target)
+  | cont {source target}
+      (state : FinalStateRel contract source target) :
+      OutcomeRel contract
+        (Functions.Source.Effectful.Outcome.cont source)
+        (Structured.EffectSemantics.Outcome.cont target)
+  | leave {source target}
+      (state : FinalStateRel contract source target) :
+      OutcomeRel contract
+        (Functions.Source.Effectful.Outcome.leave source)
+        (Structured.EffectSemantics.Outcome.leave target)
+  | halt (kind : Assembly.HaltKind) {source target}
+      (state : FinalStateRel contract source target) :
+      OutcomeRel contract
+        (Functions.Source.Effectful.Outcome.halt kind source)
+        (Structured.EffectSemantics.Outcome.halt kind target)
+
+abbrev OpenOutcomeRel (contract : MemoryContract.Contract) :=
+  Simulation.Interaction.ExceptRel
+    (fun left right : EVMException => left = right)
+    (OutcomeRel contract)
+
+namespace FinalStateRel
+
+theorem of_activationOutcome
+    {contract : MemoryContract.Contract} {plan : Locals.Allocation.Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {source : Functions.InteractionSemantics.Outcome}
+    {target : Expressions.InteractionSemantics.Outcome}
+    (hRel :
+      ActivationOutcomeRel contract plan live stackOffset frameBase mode
+        source target) :
+    FinalStateRel contract source.state target.state := by
+  cases hRel with
+  | regular state | brk _ _ _ state | cont _ _ _ state =>
+      exact ⟨state.shared⟩
+  | leave state => exact ⟨state.shared⟩
+  | halt kind state => exact ⟨state.shared⟩
+
+end FinalStateRel
+
+namespace OutcomeRel
+
+theorem of_nonregular_activation
+    {contract : MemoryContract.Contract} {plan : Locals.Allocation.Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {source : Functions.InteractionSemantics.Outcome}
+    {target : Expressions.InteractionSemantics.Outcome}
+    (hRel :
+      ActivationOutcomeRel contract plan live stackOffset frameBase mode
+        source target)
+    (hNonregular : source.mode ≠ .regular) :
+    OutcomeRel contract source target := by
+  cases hRel with
+  | regular state => exact False.elim (hNonregular rfl)
+  | brk defined stackLength modeMatches state =>
+      exact .brk ⟨state.shared⟩
+  | cont defined stackLength modeMatches state =>
+      exact .cont ⟨state.shared⟩
+  | leave state => exact .leave ⟨state.shared⟩
+  | halt kind state => exact .halt kind ⟨state.shared⟩
+
+end OutcomeRel
+
 namespace InitialRel
 
 /-- Every related initial state realizes the compiler's empty stack
@@ -78,6 +169,126 @@ theorem invariant
     rfl
 
 end InitialRel
+
+/-- Execute the exact top-level cleanup selected by the Locals compiler after
+a regular main-body result.  The theorem intentionally erases stack/scratch
+representation instead of pretending that a scratch frame remains live after
+its frame pointer is popped. -/
+theorem regularCleanup
+    {contract : MemoryContract.Contract}
+    {program : Expressions.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx} {plan : Locals.Allocation.Plan}
+    {live : List Locals.Name} {frameBase targetFuel : Nat}
+    {mode : ActivationMode}
+    {source : Functions.InteractionSemantics.State}
+    {target : Expressions.InteractionSemantics.RunState}
+    {cleanup : Structured.Code}
+    (hInvariant :
+      AllocationContext.ActivationInvariant contract lowerCtx lowerState
+        localsCtx plan live frameBase mode source target)
+    (hCleanup : localsCtx.cleanupTo? 0 = some cleanup)
+    (hFuel : 2 ≤ targetFuel) :
+    ∃ targetFinal,
+      Expressions.InteractionSemantics.Block.openRun program targetFuel
+          { stmts := Locals.codeStmt cleanup } target =
+        .done (.ok (Structured.Outcome.regular targetFinal)) ∧
+      OutcomeRel contract
+        (Functions.Source.Effectful.Outcome.regular
+          (source.restrictTo []))
+        (Structured.Outcome.regular targetFinal) := by
+  obtain ⟨_hDepth, hCleanupCode⟩ :=
+    AllocationInteractionCleanup.Plain.cleanupTo?_shape hCleanup
+  have hPopBound :
+      localsCtx.layout.length ≤ target.evm.stack.length := by
+    rw [hInvariant.stackLength]
+  obtain ⟨targetFinal, hRun, hFinalStack, hShared, _hReturns⟩ :=
+    Locals.InteractionPreservation.Code.openRun_replicate_pop
+      localsCtx.layout.length hPopBound
+  have hTargetRun :=
+    Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+      program targetFuel cleanup target targetFinal hFuel
+        (by simpa [hCleanupCode] using hRun)
+  refine ⟨targetFinal, by simpa [Locals.codeStmt] using hTargetRun, ?_⟩
+  apply OutcomeRel.regular
+  · refine ⟨?_⟩
+    rw [hShared]
+    simpa [Locals.Source.State.restrictTo] using hInvariant.state.shared
+  · rw [hFinalStack, ← hInvariant.stackLength]
+    exact List.drop_length
+
+/-- Append compiler-owned top-level cleanup to any related main-body run.
+Regular results execute cleanup and erase locals; abrupt and terminal results
+skip the unreachable suffix with their exact mode preserved. -/
+theorem closeBody
+    {sourceProgram : Functions.Program}
+    {targetProgram : Expressions.Program}
+    {sourceFuel targetFuel : Nat}
+    {sourceBlock : Functions.Block}
+    {bodyCode : List Expressions.Stmt}
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx} {plan : Locals.Allocation.Plan}
+    {returns regularLive : List Locals.Name} {frameBase : Nat}
+    {entryMode : ActivationMode}
+    {regularCtx : Functions.Source.Ctx}
+    {source : Functions.InteractionSemantics.State}
+    {target : Expressions.InteractionSemantics.RunState}
+    {cleanup : Structured.Code}
+    (hCleanup : localsCtx.cleanupTo? 0 = some cleanup)
+    (hCleanupFuel : 2 ≤ targetFuel - bodyCode.length)
+    (hBody :
+      Simulation.Interaction.Rel
+        (AllocationInteractionComposition.OpenControlResultRel contract
+          lowerCtx lowerState localsCtx plan returns regularLive frameBase
+          entryMode Functions.Source.Ctx.initial regularCtx)
+        (Functions.InteractionSemantics.Block.openRun sourceProgram
+          Functions.Source.Ctx.initial sourceFuel sourceBlock source)
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          targetFuel { stmts := bodyCode } target)) :
+    Simulation.Interaction.Rel (OpenOutcomeRel contract)
+      (Functions.InteractionSemantics.Block.openRunScoped sourceProgram
+        Functions.Source.Ctx.initial sourceBlock sourceFuel source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
+        { stmts := bodyCode ++ Locals.codeStmt cleanup } target) := by
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  unfold Functions.InteractionSemantics.Block.openRunScoped
+    Functions.Source.Canonical.Block.runScoped
+    Functions.Source.Effectful.Control.Block.runScoped
+  apply Simulation.Interaction.Rel.bind_custom hBody
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error hError => exact .done (.error hError)
+  | ok hResult =>
+      cases hResult with
+      | @regular sourceAfter targetAfter modeAfter hInvariant hSameFrame
+          hControl =>
+          obtain ⟨targetFinal, hTargetCleanup, hOutcome⟩ :=
+            regularCleanup hInvariant hCleanup hCleanupFuel
+              (program := targetProgram)
+          change
+            Simulation.Interaction.Rel (OpenOutcomeRel contract)
+              (Simulation.Interaction.pure
+                (Functions.Source.Effectful.Outcome.regular
+                  (sourceAfter.restrictTo [])))
+              (Expressions.InteractionSemantics.Block.openRun targetProgram
+                (targetFuel - bodyCode.length)
+                { stmts := Locals.codeStmt cleanup } targetAfter)
+          rw [hTargetCleanup]
+          exact .done (.ok hOutcome)
+      | nonregular hNonregular hSameFrame hControl hState =>
+          have hOutcome :=
+            OutcomeRel.of_nonregular_activation hState hNonregular
+          cases hState with
+          | regular state => exact False.elim (hNonregular rfl)
+          | brk defined stackLength modeMatches state =>
+              exact .done (.ok hOutcome)
+          | cont defined stackLength modeMatches state =>
+              exact .done (.ok hOutcome)
+          | leave state => exact .done (.ok hOutcome)
+          | halt kind state => exact .done (.ok hOutcome)
 
 /-- Result of executing the allocator and optional main-frame setup selected by
 the ordinary allocation and Locals passes.  This is internal pass state: the
@@ -600,7 +811,7 @@ theorem body
     {prepared : MainPrepared artifact}
     {source : Functions.InteractionSemantics.State}
     {target : Expressions.InteractionSemantics.RunState}
-    {targetFuel sourceFuel : Nat}
+    {targetFuel sourceFuel bodyTargetFuel : Nat}
     (mainRoot : MainRoot prepared)
     (hSetup : StackSetupResult prepared source target targetFuel)
     (hNoAllocator :
@@ -609,6 +820,12 @@ theorem body
     (hProgramScoped : program.Scoped)
     (hSafety :
       AllocationInteractionSafety.SourceSafety program.memoryContract)
+    (hTargetCapacity :
+      AllocationInteractionRecursive.targetBudget mainRoot.root.cursor
+          sourceFuel
+          (AllocationInteractionTargetFuel.stmtListNestedSize
+            mainRoot.root.cursor.compiled) ≤
+        bodyTargetFuel)
     (hSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Block.openRun program
@@ -633,10 +850,7 @@ theorem body
         Functions.Source.Ctx.initial sourceFuel
         mainRoot.root.sourceBlock source)
       (Expressions.InteractionSemantics.Block.openRun expressions
-        (AllocationInteractionRecursive.targetBudget mainRoot.root.cursor
-          sourceFuel
-          (AllocationInteractionTargetFuel.stmtListNestedSize
-            mainRoot.root.cursor.compiled))
+        bodyTargetFuel
         { stmts := mainRoot.root.cursor.compiled } target) := by
   have hAllStack :
       AllocationInteractionStackRuntime.AllFunctionsStack compilation :=
@@ -649,7 +863,7 @@ theorem body
         (sourceFuel + 1)
   exact
     AllocationInteractionStackRuntime.RecursiveOpenRuntime.at_targetFuel
-      hRecursive mainRoot.root.cursor (by omega) (Nat.le_refl _)
+      hRecursive mainRoot.root.cursor (by omega) hTargetCapacity
       (hSetup.boundary mainRoot) hSuccess
 
 end StackSetupResult
@@ -739,7 +953,7 @@ theorem body
     {config : Config}
     {source : Functions.InteractionSemantics.State}
     {target targetFinal : Expressions.InteractionSemantics.RunState}
-    {frameBase targetFuel sourceFuel : Nat}
+    {frameBase targetFuel sourceFuel bodyTargetFuel : Nat}
     {mode : ActivationMode}
     (mainRoot : MainRoot prepared)
     (hSetup :
@@ -751,6 +965,12 @@ theorem body
     (hFrameConfig : compilation.frameConfig? = some config)
     (hFuelBudget :
       Budget config (mainSetupDepth compilation + sourceFuel))
+    (hTargetCapacity :
+      AllocationInteractionRecursive.targetBudget mainRoot.root.cursor
+          sourceFuel
+          (AllocationInteractionTargetFuel.stmtListNestedSize
+            mainRoot.root.cursor.compiled) ≤
+        bodyTargetFuel)
     (hSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Block.openRun program
@@ -776,10 +996,7 @@ theorem body
         Functions.Source.Ctx.initial sourceFuel
         mainRoot.root.sourceBlock source)
       (Expressions.InteractionSemantics.Block.openRun expressions
-        (AllocationInteractionRecursive.targetBudget mainRoot.root.cursor
-          sourceFuel
-          (AllocationInteractionTargetFuel.stmtListNestedSize
-            mainRoot.root.cursor.compiled))
+        bodyTargetFuel
         { stmts := mainRoot.root.cursor.compiled } targetFinal) := by
   have hRecursive :
       AllocationInteractionRecursiveResource.RecursiveOpenRuntime
@@ -791,7 +1008,7 @@ theorem body
     hSetup.boundary mainRoot hFrameConfig hFuelBudget
   exact
     AllocationInteractionRecursiveResource.RecursiveOpenRuntime.at_targetFuel
-      hRecursive mainRoot.root.cursor (by omega) (Nat.le_refl _)
+      hRecursive mainRoot.root.cursor (by omega) hTargetCapacity
       hBoundary hFuelBudget hSuccess
 
 end ScratchSetupResult

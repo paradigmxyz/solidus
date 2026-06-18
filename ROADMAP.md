@@ -167,6 +167,8 @@ boundaries remain active work.
       source-fuel fixed point.
     - [x] compiler-derived stack-only main setup and recursive main-body
       preservation, with no public all-stack certificate.
+    - [x] outcome-indexed top-level cleanup for regular, abrupt, and terminal
+      results, with allocation representation erased only after program exit.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
   source-facing reservation/resource assumptions.
