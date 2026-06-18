@@ -31802,3 +31802,13 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1313-job verification root, architecture guard, touched-file hole scan,
   axiom audit, and `git diff --check` passed; the new preservation theorem uses
   only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 22:16:00 PDT - proof/functions-assignment - proved canonical
+  `StateRel.assign_stack_live` and `ScratchStateRel.assign_stack_live`, real
+  stack/scratch assignment compiler shapes, and mode-polymorphic
+  `AllocationInteractionAssignment.of_lower_compile`; stack updates compose
+  with Locals `SWAP/POP`, spills compose with the reserved-frame store, and
+  both retain the shared ordered interaction semantics.
+- 2026-06-17 22:21:00 PDT - validation/functions-assignment - focused build,
+  1314-job verification root, architecture guard, touched-file hole scan,
+  axiom audit, and `git diff --check` passed; assignment preservation uses only
+  `[propext, Classical.choice, Quot.sound]`.

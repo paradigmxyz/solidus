@@ -26,9 +26,10 @@ boundaries remain active work.
   effects, including CALL-family, CREATE-family, logs, storage, `gas()`, and
   `msize()`.
 - [x] Functions allocation relation, primitive families, recursive
-  expressions, and stack/scratch declaration preservation.
-- [ ] Complete Functions statement and program preservation: assignments,
-  statement-list composition, scoped control, loops, terminal outcomes,
+  expressions, stack/scratch declaration preservation, and assignment
+  preservation in both activation modes.
+- [ ] Complete Functions statement and program preservation: statement-list
+  composition, scoped control, loops, terminal outcomes,
   internal calls, activation setup/cleanup, and whole program.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

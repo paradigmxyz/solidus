@@ -718,6 +718,90 @@ theorem declare_stack_live
           rw [Locals.Source.Store.insert_of_ne hName]
           exact hOld
 
+/-- Replace one live stack local with the expression result above the layout. -/
+theorem assign_stack_live
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {frameBase planDepth depth : Nat}
+    {source : SourceState} {target targetFinal : TargetState}
+    {name : Locals.Name} {value old : Word} {rest : List Word}
+    (hRel : StateRel contract plan live 1 frameBase source target)
+    (hStack : target.evm.stack = value :: rest)
+    (hFinalStack : targetFinal.evm.stack = rest.set depth value)
+    (hShared : targetFinal.evm.toSharedState = target.evm.toSharedState)
+    (hLive : name ∈ live)
+    (hLocation : plan.location? name = some (.stack planDepth))
+    (hDepth :
+      Locals.Layout.lookupDepth? name (currentStackOrder plan live) =
+        some (depth + 1))
+    (hOld : source.vars name = some old) :
+    StateRel contract plan live 0 frameBase
+      (source.insert name value) targetFinal := by
+  have hAssigned := hRel.store name (.stack planDepth) hLive hLocation
+  rcases hAssigned with ⟨assignedDepth, hAssignedDepth, hAssignedValue⟩
+  have hAssignedDepthEq : assignedDepth = depth := by
+    exact Nat.succ.inj
+      (Option.some.inj
+        (hAssignedDepth.symm.trans hDepth))
+  subst assignedDepth
+  rw [hStack, hOld] at hAssignedValue
+  have hRestAssigned : rest[depth]? = some old := by
+    simpa [Nat.add_comm, Nat.add_left_comm, Nat.add_assoc] using
+      hAssignedValue
+  have hDepthBound : depth < rest.length :=
+    List.getElem?_eq_some_iff.mp hRestAssigned |>.1
+  refine ⟨?_, ?_, ?_⟩
+  · simpa [Locals.Source.State.insert, hShared] using hRel.machine
+  · simpa [Locals.Source.State.insert, hShared] using hRel.world
+  · intro other location hOtherLive hOtherLocation
+    have hPrevious := hRel.store other location hOtherLive hOtherLocation
+    cases location with
+    | stack otherPlanDepth =>
+        rcases hPrevious with ⟨otherDepth, hOtherDepth, hOtherValue⟩
+        refine ⟨otherDepth, hOtherDepth, ?_⟩
+        simp only [Nat.zero_add, Locals.Source.State.insert]
+        rw [hFinalStack]
+        by_cases hName : other = name
+        · subst other
+          rw [hDepth] at hOtherDepth
+          cases hOtherDepth
+          rw [List.getElem?_set_eq_of_lt value hDepthBound]
+          exact
+            (Locals.Source.Store.insert_self source.vars name value).symm
+        · have hDepthNe : depth ≠ otherDepth := by
+            intro hEq
+            have hOtherName : other = name :=
+              Locals.Layout.name_eq_of_lookupDepth?_eq_some
+                (by simpa [hEq] using hOtherDepth) hDepth
+            exact hName hOtherName
+          change target.evm.stack[1 + otherDepth]? = source.vars other
+            at hOtherValue
+          rw [hStack] at hOtherValue
+          have hRestOther : rest[otherDepth]? = source.vars other := by
+            simpa [show 1 + otherDepth = otherDepth + 1 by omega] using
+              hOtherValue
+          rw [List.getElem?_set_of_lt' value rest hDepthBound]
+          simp [hDepthNe, hRestOther,
+            Locals.Source.Store.insert_of_ne hName]
+    | scratch slot =>
+        change
+          targetFinal.evm.toMachineState.lookupMemory
+              (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)) =
+            (Locals.Source.Store.insert source.vars name value other).getD
+              (EvmYul.UInt256.ofNat 0)
+        have hName : other ≠ name := by
+          intro hEq
+          subst other
+          rw [hLocation] at hOtherLocation
+          simp at hOtherLocation
+        rw [Locals.Source.Store.insert_of_ne hName]
+        have hMachine := congrArg EvmYul.SharedState.toMachineState hShared
+        change
+          target.evm.toMachineState.lookupMemory
+              (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)) =
+            (source.vars other).getD (EvmYul.UInt256.ofNat 0) at hPrevious
+        rw [hMachine]
+        exact hPrevious
+
 end StateRel
 
 /-- Additional representation facts for a live compiler-owned scratch frame. -/
@@ -1258,6 +1342,58 @@ theorem finishCreate
       EvmYul.EVM.State.incrPC]
   · exact hInput
   · exact Simulation.MemorySafety.windowSafe_zero contract 0
+
+/-- Assign a stack local while retaining every scratch-frame invariant. -/
+theorem assign_stack_live
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {frameBase frameDepth frameWords planDepth depth : Nat}
+    {source : SourceState} {target targetFinal : TargetState}
+    {name : Locals.Name} {value old : Word} {rest : List Word}
+    (hRel :
+      ScratchStateRel contract plan live 1 frameBase
+        frameDepth frameWords source target)
+    (hStack : target.evm.stack = value :: rest)
+    (hFinalStack : targetFinal.evm.stack = rest.set depth value)
+    (hShared : targetFinal.evm.toSharedState = target.evm.toSharedState)
+    (hLive : name ∈ live)
+    (hLocation : plan.location? name = some (.stack planDepth))
+    (hDepth :
+      Locals.Layout.lookupDepth? name (currentStackOrder plan live) =
+        some (depth + 1))
+    (hDepthFrame : depth < frameDepth)
+    (hOld : source.vars name = some old) :
+    ScratchStateRel contract plan live 0 frameBase frameDepth frameWords
+      (source.insert name value) targetFinal := by
+  have hPointer := hRel.framePointer
+  rw [hStack] at hPointer
+  have hRestPointer :
+      rest[frameDepth]? = some (EvmYul.UInt256.ofNat frameBase) := by
+    simpa [show 1 + frameDepth = frameDepth + 1 by omega] using hPointer
+  have hFrameBound : frameDepth < rest.length :=
+    List.getElem?_eq_some_iff.mp hRestPointer |>.1
+  have hFinalPointer :
+      (rest.set depth value)[frameDepth]? =
+        some (EvmYul.UInt256.ofNat frameBase) := by
+    rw [List.getElem?_set_of_lt value rest hFrameBound]
+    simp [Nat.ne_of_lt hDepthFrame, hRestPointer]
+  refine
+    { base :=
+        hRel.base.assign_stack_live hStack hFinalStack hShared hLive
+          hLocation hDepth hOld
+      framePointer := ?_
+      frameActive := ?_
+      frameAllocated := ?_
+      frameNoWrap := hRel.frameNoWrap
+      frameHostAddressable := hRel.frameHostAddressable
+      activeNoWrap := ?_
+      frameReserved := hRel.frameReserved
+      scratchBound := hRel.scratchBound }
+  · rw [hFinalStack]
+    simpa using hFinalPointer
+  · simpa [hShared] using hRel.frameActive
+  · simpa [hShared] using hRel.frameAllocated
+  · simpa [hShared] using hRel.activeNoWrap
 
 /--
 Store a newly live scratch local in compiler-reserved frame memory. The source
