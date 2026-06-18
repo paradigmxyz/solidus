@@ -47,6 +47,35 @@ theorem forward_allocator
 
 end Plain
 
+namespace Preserving
+
+/-- Cleanup that preserves returned values changes only stack metadata. -/
+theorem forward_zero_allocator
+    {config : Config} {allocatorDepth : Nat}
+    {ctx : Locals.Ctx} {preserve : Nat}
+    {cleanup : Structured.Code}
+    {values baseStack : List Assembly.Word}
+    {target : Structured.RunState}
+    (hCleanup : ctx.cleanupToPreserving? preserve 0 = some cleanup)
+    (hValuesLength : values.length = preserve)
+    (hBaseLength : baseStack.length = ctx.layout.length)
+    (hStack : target.evm.stack = values ++ baseStack)
+    (hReady : AllocatorReady config allocatorDepth target) :
+    ∃ final,
+      Structured.InteractionSemantics.Code.openRun cleanup target =
+          .done (.ok final) ∧
+        final.evm.stack = values ∧
+        final.returns = target.returns ∧
+        AllocatorEffect config allocatorDepth target final := by
+  obtain ⟨final, hRun, hFinalStack, hShared, hReturns⟩ :=
+    AllocationInteractionCleanup.Preserving.forward_zero
+      hCleanup hValuesLength hBaseLength hStack
+  refine ⟨final, hRun, hFinalStack, hReturns, ?_⟩
+  exact AllocatorEffect.of_machine_eq hReady
+    (congrArg EvmYul.SharedState.toMachineState hShared)
+
+end Preserving
+
 end AllocationInteractionCleanupResource
 end Functions
 end EvmCompiler
