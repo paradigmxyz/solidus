@@ -567,7 +567,8 @@ theorem boundary
           sourceScope := ?_
           control := ?_
           capacity := trivial }
-      controlAgreement := ?_ }
+      controlAgreement := ?_
+      stackMode := rfl }
   · simpa [AllocationInteractionCursor.RootArtifact.cursor,
       mainRoot.lowerCtx, mainRoot.startState, mainRoot.startLocals,
       mainRoot.plan, mainRoot.live] using hSetup.invariant

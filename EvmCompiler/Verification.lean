@@ -52,6 +52,9 @@ import EvmCompiler.Functions.AllocationInteractionProgramArtifact
 import EvmCompiler.Functions.AllocationInteractionProgram
 import EvmCompiler.Functions.AllocationInteractionStackRuntime
 import EvmCompiler.Functions.AllocationInteractionFunctionReturn
+import EvmCompiler.Functions.AllocationInteractionPreparedCall
+import EvmCompiler.Functions.AllocationInteractionCallResult
+import EvmCompiler.Functions.AllocationInteractionCallStatement
 import EvmCompiler.Functions.AllocationInteractionComposition
 import EvmCompiler.Functions.AllocationInteractionLeaf
 import EvmCompiler.Functions.AllocationInteractionStatement
@@ -158,6 +161,9 @@ import EvmCompiler.Yul.StateRelation
 #check EvmCompiler.Functions.AllocationInteractionSafety.SourceSafety.argList
 #check EvmCompiler.Functions.AllocationInteractionResourceComposition.block_cons_successful
 #check EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.cons_of_parts_successful
+#check EvmCompiler.Functions.AllocationInteractionComposition.cons_successful
+#check EvmCompiler.Functions.AllocationInteractionComposition.block_cons_successful
+#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.cons_of_parts_successful
 #check EvmCompiler.Simulation.Interaction.Successful
 #check EvmCompiler.Simulation.Interaction.AllDone.bind_inv
 #check EvmCompiler.Simulation.Interaction.Successful.bind_inv
@@ -406,8 +412,16 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionComposition.ControlResultRel
 #check EvmCompiler.Functions.AllocationInteractionComposition.lift_fixed
 #check EvmCompiler.Functions.AllocationInteractionComposition.cons
+#check EvmCompiler.Functions.AllocationInteractionComposition.cons_successful
 #check EvmCompiler.Functions.AllocationInteractionComposition.block_cons
+#check EvmCompiler.Functions.AllocationInteractionComposition.block_cons_successful
 #check EvmCompiler.Functions.AllocationInteractionComposition.block_nil
+#check EvmCompiler.Functions.AllocationInteractionCall.PreparedArguments.caller_state_of_semantic_result
+#check EvmCompiler.Functions.AllocationInteractionCallResult.CallAttachment.of_body
+#check EvmCompiler.Functions.AllocationInteractionCallResult.SelectedCallee.complete_body_of_rel
+#check EvmCompiler.Functions.AllocationInteractionCallStatement.finish
+#check EvmCompiler.Functions.AllocationInteractionStackRuntime.CoreCursor.call_runtime_head
+#check EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.call
 #check EvmCompiler.Functions.AllocationInteractionRelation.SameFrame
 #check EvmCompiler.Functions.AllocationInteractionRelation.SameFrame.trans
 #check EvmCompiler.Functions.AllocationInteractionRelation.SameFrame.eq_of_matches

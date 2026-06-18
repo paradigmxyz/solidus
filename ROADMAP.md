@@ -158,8 +158,9 @@ boundaries remain active work.
       adapter;
     - [x] compiler proof that every selected callee is stack-backed and a
       resource-free function-return epilogue;
-    - [ ] resource-free internal-call attachment and recursive stack fixed
-      point.
+    - [x] resource-free internal-call attachment, caller writeback, exact
+      successful-tail composition, and compiler-selected all-stack CALL head;
+    - [ ] recursive all-stack fixed point for every statement constructor.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
   source-facing reservation/resource assumptions.

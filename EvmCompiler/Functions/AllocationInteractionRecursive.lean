@@ -463,6 +463,112 @@ theorem cons_of_parts
           hRecursive)
   simpa [CursorForwardAt, finalLive] using hComposed
 
+/-- Compose one exact cursor head with only successful, dynamically reachable
+tail branches.  This keeps the recursive fixed point independent of allocator
+resource bookkeeping. -/
+theorem cons_of_parts_successful
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {stmt : Functions.Stmt} {rest : List Functions.Stmt}
+    {beforeState afterState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {childFuel targetExtra frameBase : Nat}
+    {entryMode : ActivationMode}
+    {sourceCtx midCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    {headCode : List Expressions.Stmt}
+    (cursor :
+      CoreCursor root scope live { stmts := stmt :: rest }
+        beforeState beforeLocals)
+    (tail :
+      CoreCursor root scope (Functions.Scope.Stmt.outEnv live stmt)
+        { stmts := rest } afterState afterLocals)
+    (hTail : ExactTail cursor tail)
+    (hCompiled : cursor.compiled = headCode ++ tail.compiled)
+    (hMidCtx :
+      midCtx =
+        { sourceCtx with
+          scope := Functions.Scope.Stmt.outEnv live stmt })
+    (hHead :
+      Simulation.Interaction.Rel
+        (OpenControlResultRel contract root.lowerCtx afterState afterLocals
+          cursor.plan root.returns
+          (Functions.Scope.Stmt.outEnv live stmt) frameBase entryMode
+          sourceCtx midCtx)
+        (Functions.InteractionSemantics.Stmt.openRun
+          program sourceCtx childFuel stmt source)
+        (Expressions.InteractionSemantics.Block.openRun expressions
+          (targetBudget cursor (childFuel + 1) targetExtra)
+          { stmts := headCode } target))
+    (hSuccessful :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          (childFuel + 1) { stmts := stmt :: rest } source))
+    (hTailForward :
+      ∀ {sourceMid targetMid mode},
+        AllocationContext.ActivationInvariant contract root.lowerCtx
+            afterState afterLocals tail.plan
+            (Functions.Scope.Stmt.outEnv live stmt)
+            frameBase mode sourceMid targetMid →
+          SameFrame entryMode mode →
+          targetMid.returns = target.returns →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Block.openRun program midCtx
+              childFuel { stmts := rest } sourceMid) →
+          CursorForwardAt tail contract frameBase childFuel
+            (targetExtra + callStride expressions) mode
+            midCtx sourceMid targetMid) :
+    CursorForwardAt cursor contract frameBase (childFuel + 1) targetExtra
+      entryMode sourceCtx source target := by
+  let finalLive :=
+    Functions.Scope.Block.outEnv
+      (Functions.Scope.Stmt.outEnv live stmt) { stmts := rest }
+  rcases hTail with ⟨hPlan, hFinalState, hFinalLocals, _hCompiledTail⟩
+  have hComposed :=
+    AllocationInteractionComposition.block_cons_successful
+      (rest := rest) (headCode := headCode) (tailCode := tail.compiled)
+      (plan := cursor.plan) (finalLowerCtx := root.lowerCtx)
+      (finalLowerState := cursor.finalState)
+      (finalLocals := cursor.finalLocals) (finalLive := finalLive)
+      (finalCtx := { sourceCtx with scope := finalLive })
+      (sourceFuel := childFuel)
+      (targetFuel := targetBudget cursor (childFuel + 1) targetExtra)
+      hHead hSuccessful
+      (fun {sourceMid targetMid mode} hInvariant hSame hReturns
+          hTailSuccess => by
+        have hInvariantTail :
+            AllocationContext.ActivationInvariant contract root.lowerCtx
+              afterState afterLocals tail.plan
+              (Functions.Scope.Stmt.outEnv live stmt)
+              frameBase mode sourceMid targetMid := by
+          simpa [hPlan] using hInvariant
+        have hRecursive :=
+          hTailForward hInvariantTail hSame hReturns hTailSuccess
+        unfold CursorForwardAt at hRecursive
+        rw [hPlan, hFinalState, hFinalLocals] at hRecursive
+        have hTargetFuel :
+            targetBudget cursor (childFuel + 1) targetExtra -
+                headCode.length =
+              targetBudget tail childFuel
+                (targetExtra + callStride expressions) := by
+          simp [targetBudget, hCompiled, callStride, Nat.mul_succ]
+          omega
+        have hFinalCtx :
+            { midCtx with scope := finalLive } =
+              { sourceCtx with scope := finalLive } := by
+          rw [hMidCtx]
+        simpa [CursorForwardAt, finalLive, hTargetFuel, hFinalCtx] using
+          hRecursive)
+  unfold CursorForwardAt
+  rw [hCompiled]
+  simpa [finalLive] using hComposed
+
 /-- Recursive expression-statement constructor over the canonical cursor. -/
 theorem expr
     {allocation : Locals.Allocation.ProgramPlan}
