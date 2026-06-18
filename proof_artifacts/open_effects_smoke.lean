@@ -450,6 +450,8 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 #print axioms EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.zeroFill_insertMany
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.InitNames.openRun
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_let_none
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_let_one_direct
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_assign_one_direct
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_brk
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_cont
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_leave

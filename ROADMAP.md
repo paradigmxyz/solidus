@@ -191,8 +191,9 @@ boundaries remain active work.
       composition, including exact abrupt suffix skipping.
     - [ ] Complete recursive statement/list proof over compiler decomposition;
       break, continue, leave, and multi-name uninitialized declaration compiler
-      cases are checked, while initialized declarations, branches, loops,
-      terminals, and internal-call preludes remain.
+      cases are checked. Direct-safe one-name initialized declarations and
+      assignments are also checked; general generated-expression preludes,
+      branches, loops, terminals, and internal-call preludes remain.
     - [x] Compose independent CALL/CREATE and GAS/MSIZE providers with a
       closed-ordinary-primitive capability; no opcode dispatch occurs inside
       expression recursion.

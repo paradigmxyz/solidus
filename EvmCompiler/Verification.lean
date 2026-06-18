@@ -1437,6 +1437,8 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.zeroFill_insertMany
 #check EvmCompiler.Yul.FunctionsInteractionStatement.InitNames.openRun
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_let_none
+#check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_let_one_direct
+#check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_assign_one_direct
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_brk
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_cont
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_leave

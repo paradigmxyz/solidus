@@ -797,6 +797,80 @@ theorem compiled_let_none
             { shared := target.shared, vars := finalVars },
             { ctx with scope := (identNames names).reverse ++ ctx.scope })))
 
+theorem compiled_let_one_direct
+    {compilerFuel fuel targetFuel : Nat}
+    {before after : Fresh.State} {lower : List Functions.Stmt}
+    {name : EvmYul.Identifier} {valueExpr : AstExpr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {layout : List Functions.Name}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hNotFunctionCall :
+      ∀ functionName functionArgs,
+        valueExpr ≠ .Call (.inr functionName) functionArgs)
+    (hDirect : Expr.directPureArgSafeAt? 0 valueExpr = true)
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+          (.Let [name] (some valueExpr)) = some (lower, after))
+    (hFresh : identName name ∉ layout)
+    (hRel : FunctionsInteractionRelation.ScopedStateRel
+      layout source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PathScopedDoneRel (identName name :: layout))
+      (Yul.InteractionSemantics.exec fuel
+        (.Let [name] (some valueExpr)) codeOverride source)
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx (targetFuel + 2) { stmts := lower } target) := by
+  obtain ⟨pre, lowerValue, hValueLower, hLowerStmts⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_let_one_parts
+      hNotFunctionCall hLower
+  obtain ⟨rfl, rfl, hValueDirect⟩ :=
+    Expr.lower1Unchecked?_direct_parts hDirect hValueLower
+  simp only [List.nil_append] at hLowerStmts
+  subst lower
+  apply PathScopedDoneRel.singleton
+  apply PathScopedDoneRel.of_fixed
+  exact let_one FunctionsInteractionClosedPrimitive.compilerSelected
+    hValueDirect hFresh hRel
+
+theorem compiled_assign_one_direct
+    {compilerFuel fuel targetFuel : Nat}
+    {before after : Fresh.State} {lower : List Functions.Stmt}
+    {name : EvmYul.Identifier} {valueExpr : AstExpr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {layout : List Functions.Name}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hNotFunctionCall :
+      ∀ functionName functionArgs,
+        valueExpr ≠ .Call (.inr functionName) functionArgs)
+    (hDirect : Expr.directPureArgSafeAt? 0 valueExpr = true)
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+          (.Assign [name] valueExpr) = some (lower, after))
+    (hName : identName name ∈ layout)
+    (hRel : FunctionsInteractionRelation.ScopedStateRel
+      layout source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PathScopedDoneRel layout)
+      (Yul.InteractionSemantics.exec fuel
+        (.Assign [name] valueExpr) codeOverride source)
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx (targetFuel + 2) { stmts := lower } target) := by
+  obtain ⟨pre, lowerValue, hValueLower, hLowerStmts⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_assign_one_parts
+      hNotFunctionCall hLower
+  obtain ⟨rfl, rfl, hValueDirect⟩ :=
+    Expr.lower1Unchecked?_direct_parts hDirect hValueLower
+  simp only [List.nil_append] at hLowerStmts
+  subst lower
+  apply PathScopedDoneRel.singleton
+  apply PathScopedDoneRel.of_fixed
+  exact assign_one FunctionsInteractionClosedPrimitive.compilerSelected
+    hValueDirect hName hRel
+
 theorem compiled_brk
     {compilerFuel fuel targetFuel : Nat}
     {before after : Fresh.State} {lower : List Functions.Stmt}
