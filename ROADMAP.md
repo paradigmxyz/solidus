@@ -163,7 +163,7 @@ boundaries remain active work.
     - [x] successful stack recursion for expression, assignment, declaration,
       abrupt control, terminal, lexical block, conditional, switch, and call
       constructors;
-    - [ ] stack-only `for` init/body/post recursion and the thirteen-constructor
+    - [x] stack-only `for` init/body/post recursion and the thirteen-constructor
       source-fuel fixed point.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

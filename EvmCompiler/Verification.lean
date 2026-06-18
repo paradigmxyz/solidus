@@ -50,6 +50,7 @@ import EvmCompiler.Functions.AllocationInteractionRecursiveCallResource
 import EvmCompiler.Functions.AllocationInteractionRecursiveRuntime
 import EvmCompiler.Functions.AllocationInteractionProgramArtifact
 import EvmCompiler.Functions.AllocationInteractionProgram
+import EvmCompiler.Functions.AllocationInteractionSuccessful
 import EvmCompiler.Functions.AllocationInteractionStackRuntime
 import EvmCompiler.Functions.AllocationInteractionFunctionReturn
 import EvmCompiler.Functions.AllocationInteractionPreparedCall
@@ -446,6 +447,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.block
 #check EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.if_
 #check EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.switch
+#check EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.for_
+#check EvmCompiler.Functions.AllocationInteractionStackRuntime.complete
 #check EvmCompiler.Functions.AllocationInteractionLoop.forward
 #check EvmCompiler.Functions.AllocationInteractionFor.forward
 #check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin.withoutLoopControl

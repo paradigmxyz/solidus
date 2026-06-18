@@ -358,3 +358,5 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.block
 #print axioms EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.if_
 #print axioms EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.switch
+#print axioms EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.for_
+#print axioms EvmCompiler.Functions.AllocationInteractionStackRuntime.complete
