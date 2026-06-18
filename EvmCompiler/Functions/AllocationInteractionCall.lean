@@ -2563,7 +2563,8 @@ theorem CoreCursor.callComponents
     lower := hLower
     compile := hCompile
     step := StepTransport.of_compilers hScoped hLower hCompile
-    exactTail := ⟨hPlan, hFinalState, hFinalLocals⟩ }⟩
+    exactTail :=
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩ }⟩
 
 namespace SelectedCallee
 

@@ -786,6 +786,9 @@ theorem stack_after_arguments
     (hBudget : Budget config allocatorDepth)
     (hFuelBudget : Budget config (allocatorDepth + bodyFuel))
     (hTargetExtra : 3 ≤ targetExtra)
+    (hTargetReserve :
+      AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode ≤
+        targetExtra)
     (hBodyFuel : bodyFuel < fuelBound)
     (hBodySuccess :
       Simulation.Interaction.Successful
@@ -852,7 +855,8 @@ theorem stack_after_arguments
         AllocationInteractionCall.SelectedCallee.Artifact.mode,
         hNeedsFrame] using hEntry)
       hZero hEntryStackLength hReservation hConfig hEntryReady hEntryOwned
-      hBudget hFuelBudget hTargetExtra hBodyFuel hBodySuccess hRecursive
+      hBudget hFuelBudget hTargetExtra hTargetReserve hBodyFuel hBodySuccess
+      hRecursive
   let callerBase :=
     AllocationInteractionCall.PreparedArguments.callerState
       targetAfterArgs targetInitial
@@ -924,6 +928,9 @@ theorem scratch_after_arguments
     (hBudget : Budget config allocatorDepth)
     (hFuelBudget : Budget config ((allocatorDepth + 1) + bodyFuel))
     (hTargetExtra : 3 ≤ targetExtra)
+    (hTargetReserve :
+      AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode ≤
+        targetExtra)
     (hBodyFuel : bodyFuel < fuelBound)
     (hBodySuccess :
       Simulation.Interaction.Successful
@@ -1009,7 +1016,8 @@ theorem scratch_after_arguments
         AllocationInteractionCall.SelectedCallee.Artifact.mode,
         hNeedsFrame, hFrameWords] using hEntry)
       hZero hEntryStackLength hReservation hConfig hEntryReady hEntryOwned
-      hCalleeBudget hFuelBudget hTargetExtra hBodyFuel hBodySuccess hRecursive
+      hCalleeBudget hFuelBudget hTargetExtra hTargetReserve hBodyFuel
+      hBodySuccess hRecursive
   let callerBase :=
     AllocationInteractionCall.PreparedArguments.callerState
       targetAfterArgs targetInitial

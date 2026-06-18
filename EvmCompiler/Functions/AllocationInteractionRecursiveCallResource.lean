@@ -82,7 +82,7 @@ theorem selected_call_extra
       prepared.markerCode.length + prepared.paramCode.length +
         prepared.returnCode.length + prepared.bodyCode.length +
           callStride expressions * (bodyFuel + 1)
-    3 ≤ callTargetFuel - callBase ∧
+    2 * callStride expressions + 3 ≤ callTargetFuel - callBase ∧
       callBase + (callTargetFuel - callBase) = callTargetFuel := by
   dsimp only
   have hProc :=
@@ -311,6 +311,9 @@ theorem stack_after_arguments_and_finish
     (hBudget : Budget config allocatorDepth)
     (hFuelBudget : Budget config (allocatorDepth + bodyFuel))
     (hTargetExtra : 3 ≤ targetExtra)
+    (hTargetReserve :
+      AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode ≤
+        targetExtra)
     (hBodyFuel : bodyFuel < fuelBound)
     (hBodySuccess :
       Simulation.Interaction.Successful
@@ -371,7 +374,7 @@ theorem stack_after_arguments_and_finish
     AllocationInteractionCallStatementResource.SelectedCallee.stack_after_arguments
       (targetExtra := targetExtra) prepared hProgramScoped hNeedsFrame hArgs
       hInsert hReservation hConfig hCallerOwned hBudget hFuelBudget
-      hTargetExtra hBodyFuel hBodySuccess hRecursive
+      hTargetExtra hTargetReserve hBodyFuel hBodySuccess hRecursive
   have hCallerStackLength :
       callerBase.evm.stack.length = callerLocalsCtx.layout.length := by
     rw [hCallerStack]
@@ -441,6 +444,9 @@ theorem scratch_after_arguments_and_finish
     (hBudget : Budget config allocatorDepth)
     (hFuelBudget : Budget config ((allocatorDepth + 1) + bodyFuel))
     (hTargetExtra : 3 ≤ targetExtra)
+    (hTargetReserve :
+      AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode ≤
+        targetExtra)
     (hBodyFuel : bodyFuel < fuelBound)
     (hBodySuccess :
       Simulation.Interaction.Successful
@@ -506,7 +512,7 @@ theorem scratch_after_arguments_and_finish
     AllocationInteractionCallStatementResource.SelectedCallee.scratch_after_arguments
       (targetExtra := targetExtra) prepared hProgramScoped hNeedsFrame hAcquire
       hArgs hInsert hReservation hConfig hBudget hFuelBudget hTargetExtra
-      hBodyFuel hBodySuccess hRecursive
+      hTargetReserve hBodyFuel hBodySuccess hRecursive
   have hCallerStackLength :
       callerBase.evm.stack.length = callerLocalsCtx.layout.length := by
     rw [hCallerStack]
@@ -631,8 +637,17 @@ theorem stack_runtime_head
     Simulation.Interaction.Rel.strengthen_left hArgsWithContinuations hVars
   have hExtra := selected_call_extra (cursor := cursor)
     (targetExtra := targetExtra) prepared hSourceFuel
-  change 3 ≤ selectedExtra ∧
+  change 2 * callStride expressions + 3 ≤ selectedExtra ∧
     callBase + selectedExtra = callTargetFuel at hExtra
+  have hBodyCodeSize :=
+    AllocationInteractionRecursiveResource.SelectedCallee.bodyCode_size_le_callStride
+      prepared
+  have hSelectedReserve :
+      AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode ≤
+        selectedExtra := by
+    exact
+      (AllocationInteractionTargetFuel.nestedSize_le_size
+        prepared.bodyCode).trans (hBodyCodeSize.trans (by omega))
   have hTotalFuel : 2 ≤ totalFuel := by
     have hStride := eight_le_callStride expressions
     change 2 ≤ targetExtra + cursor.compiled.length +
@@ -710,7 +725,7 @@ theorem stack_runtime_head
             hBoundary.semantic.invariant hArgRel' hArgsVars hInsert
             hReservation
             hBoundary.configEq hBoundary.owned hBoundary.budget hBodyBudget
-            hExtra.1 (by omega) hBodySuccess hRecursive
+            (by omega) hSelectedReserve (by omega) hBodySuccess hRecursive
             (by simpa [hBodyFuel] using hFinish)
             hTargetsLive hTargetsNodup components.stores_eq (by omega)
         have hSelectedTargetFuel : selectedTargetFuel = callTargetFuel := by
@@ -854,8 +869,17 @@ theorem scratch_runtime_head
     Simulation.Interaction.Rel.strengthen_left hArgsWithContinuations hVars
   have hExtra := selected_call_extra (cursor := cursor)
     (targetExtra := targetExtra) prepared hSourceFuel
-  change 3 ≤ selectedExtra ∧
+  change 2 * callStride expressions + 3 ≤ selectedExtra ∧
     callBase + selectedExtra = callTargetFuel at hExtra
+  have hBodyCodeSize :=
+    AllocationInteractionRecursiveResource.SelectedCallee.bodyCode_size_le_callStride
+      prepared
+  have hSelectedReserve :
+      AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode ≤
+        selectedExtra := by
+    exact
+      (AllocationInteractionTargetFuel.nestedSize_le_size
+        prepared.bodyCode).trans (hBodyCodeSize.trans (by omega))
   have hTotalFuel : 2 ≤ totalFuel := by
     have hStride := eight_le_callStride expressions
     change 2 ≤ targetExtra + cursor.compiled.length +
@@ -932,8 +956,8 @@ theorem scratch_runtime_head
             prepared hProgramScoped hNeedsFrame
             hBoundary.semantic.invariant hAcquire hArgRel' hArgsVars hInsert
             hReservation hBoundary.configEq hBoundary.owned
-            hBoundary.budget hBodyBudget hExtra.1 (by omega) hBodySuccess
-            hRecursive (by simpa [hBodyFuel] using hFinish)
+            hBoundary.budget hBodyBudget (by omega) hSelectedReserve (by omega)
+            hBodySuccess hRecursive (by simpa [hBodyFuel] using hFinish)
             hTargetsLive hTargetsNodup components.stores_eq (by omega)
         have hSelectedTargetFuel : selectedTargetFuel = callTargetFuel := by
           rw [hSelectedFuel]

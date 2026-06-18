@@ -62,6 +62,8 @@ private theorem recursive_tail
     (hFuelBudget :
       AllocationInteractionFrame.Budget config
         (allocatorDepth + sourceFuel))
+    (hReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra)
     (hSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Block.openRun program sourceCtx
@@ -69,7 +71,8 @@ private theorem recursive_tail
     CursorRuntimeAt cursor contract config allocatorDepth frameBase
       (sourceFuel - 1) targetExtra mode sourceCtx source target := by
   exact hRecursive cursor (by omega) hBoundary
-    (AllocationInteractionFrame.Budget.mono (by omega) hFuelBudget) hSuccess
+    (AllocationInteractionFrame.Budget.mono (by omega) hFuelBudget)
+    hReserve hSuccess
 
 private theorem successful_expr_eval
     {program : Functions.Program} {ctx : Functions.Source.Ctx}
@@ -261,6 +264,8 @@ private theorem expr_of_recursive
     (hFuelBudget :
       AllocationInteractionFrame.Budget config
         (allocatorDepth + sourceFuel))
+    (hReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra)
     (hSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Block.openRun program sourceCtx
@@ -274,10 +279,11 @@ private theorem expr_of_recursive
     hBoundary.semantic.invariant.defined
     (successful_expr_eval hHeadSuccess)
   exact CursorRuntimeAt.expr cursor hSourceFuel hSafe hBoundary hSuccess
-    (fun {afterState afterLocals} tail _hExact
+    (fun {afterState afterLocals} tail hExact
         {sourceMid targetMid tailMode} hTailBoundary
         hTailSuccess =>
       recursive_tail hRecursive tail hSourceFuel hTailBoundary hFuelBudget
+        (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
         hTailSuccess)
 
 private theorem assign_of_recursive
@@ -311,6 +317,8 @@ private theorem assign_of_recursive
     (hFuelBudget :
       AllocationInteractionFrame.Budget config
         (allocatorDepth + sourceFuel))
+    (hReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra)
     (hSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Block.openRun program sourceCtx
@@ -324,10 +332,11 @@ private theorem assign_of_recursive
     hBoundary.semantic.invariant.defined
     (successful_assign_eval hHeadSuccess)
   exact CursorRuntimeAt.assign cursor hSourceFuel hSafe hBoundary hSuccess
-    (fun {afterState afterLocals} tail _hExact
+    (fun {afterState afterLocals} tail hExact
         {sourceMid targetMid tailMode} hTailBoundary
         hTailSuccess =>
       recursive_tail hRecursive tail hSourceFuel hTailBoundary hFuelBudget
+        (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
         hTailSuccess)
 
 private theorem let_of_recursive
@@ -361,6 +370,8 @@ private theorem let_of_recursive
     (hFuelBudget :
       AllocationInteractionFrame.Budget config
         (allocatorDepth + sourceFuel))
+    (hReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra)
     (hSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Block.openRun program sourceCtx
@@ -374,10 +385,11 @@ private theorem let_of_recursive
     hBoundary.semantic.invariant.defined
     (successful_let_eval hHeadSuccess)
   exact CursorRuntimeAt.let_ cursor hSourceFuel hSafe hBoundary hSuccess
-    (fun {afterState afterLocals} tail _hExact
+    (fun {afterState afterLocals} tail hExact
         {sourceMid targetMid tailMode} hTailBoundary
         hTailSuccess =>
       recursive_tail hRecursive tail hSourceFuel hTailBoundary hFuelBudget
+        (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
         hTailSuccess)
 
 private theorem brk_of_recursive
@@ -407,6 +419,8 @@ private theorem brk_of_recursive
     (hFuelBudget :
       AllocationInteractionFrame.Budget config
         (allocatorDepth + sourceFuel))
+    (hReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra)
     (hSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Block.openRun program sourceCtx
@@ -419,9 +433,10 @@ private theorem brk_of_recursive
     hBoundary.controlAgreement.brk hSourceScope
   exact CursorRuntimeAt.brk cursor hSourceFuel hSourceScope hTargetDepth
     hTransition hBoundary hSuccess
-    (fun {afterState afterLocals} tail _hExact
+    (fun {afterState afterLocals} tail hExact
         {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
       recursive_tail hRecursive tail hSourceFuel hTailBoundary hFuelBudget
+        (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
         hTailSuccess)
 
 private theorem cont_of_recursive
@@ -451,6 +466,8 @@ private theorem cont_of_recursive
     (hFuelBudget :
       AllocationInteractionFrame.Budget config
         (allocatorDepth + sourceFuel))
+    (hReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra)
     (hSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Block.openRun program sourceCtx
@@ -463,9 +480,10 @@ private theorem cont_of_recursive
     hBoundary.controlAgreement.cont hSourceScope
   exact CursorRuntimeAt.cont cursor hSourceFuel hSourceScope hTargetDepth
     hTransition hBoundary hSuccess
-    (fun {afterState afterLocals} tail _hExact
+    (fun {afterState afterLocals} tail hExact
         {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
       recursive_tail hRecursive tail hSourceFuel hTailBoundary hFuelBudget
+        (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
         hTailSuccess)
 
 private theorem leave_of_recursive
@@ -495,6 +513,8 @@ private theorem leave_of_recursive
     (hFuelBudget :
       AllocationInteractionFrame.Budget config
         (allocatorDepth + sourceFuel))
+    (hReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra)
     (hSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Block.openRun program sourceCtx
@@ -510,9 +530,10 @@ private theorem leave_of_recursive
     hBoundary.semantic.control.returnsLive
     (hBoundary.semantic.control.leaveScope functionScope hSourceScope)
     hTargetDepth hRetc hReturnFrame hBoundary hSuccess
-    (fun {afterState afterLocals} tail _hExact
+    (fun {afterState afterLocals} tail hExact
         {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
       recursive_tail hRecursive tail hSourceFuel hTailBoundary hFuelBudget
+        (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
         hTailSuccess)
 
 private theorem terminal_of_recursive
@@ -544,6 +565,8 @@ private theorem terminal_of_recursive
     (hFuelBudget :
       AllocationInteractionFrame.Budget config
         (allocatorDepth + sourceFuel))
+    (hReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra)
     (hSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Block.openRun program sourceCtx
@@ -558,9 +581,10 @@ private theorem terminal_of_recursive
     Simulation.Interaction.Successful.bind_left hHeadSuccess
   exact CursorRuntimeAt.terminal cursor hSourceFuel
     (hSafety.terminal hTerminalSuccess) hBoundary hSuccess
-    (fun {afterState afterLocals} tail _hExact
+    (fun {afterState afterLocals} tail hExact
         {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
       recursive_tail hRecursive tail hSourceFuel hTailBoundary hFuelBudget
+        (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
         hTailSuccess)
 
 private theorem terminalArgs_of_recursive
@@ -594,6 +618,8 @@ private theorem terminalArgs_of_recursive
     (hFuelBudget :
       AllocationInteractionFrame.Budget config
         (allocatorDepth + sourceFuel))
+    (hReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra)
     (hSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Block.openRun program sourceCtx
@@ -630,9 +656,10 @@ private theorem terminalArgs_of_recursive
           (Simulation.Interaction.Successful.bind_left hOutcome)
   exact CursorRuntimeAt.terminalArgs cursor hSourceFuel hArgsSafe
     hTerminalSafe hBoundary hSuccess
-    (fun {afterState afterLocals} tail _hExact
+    (fun {afterState afterLocals} tail hExact
         {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
       recursive_tail hRecursive tail hSourceFuel hTailBoundary hFuelBudget
+        (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
         hTailSuccess)
 
 private theorem block_of_recursive
@@ -663,20 +690,178 @@ private theorem block_of_recursive
     (hFuelBudget :
       AllocationInteractionFrame.Budget config
         (allocatorDepth + sourceFuel))
+    (hReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra)
     (hSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Block.openRun program sourceCtx
           sourceFuel { stmts := .block body :: rest } source)) :
     CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
-  exact CursorRuntimeAt.block cursor hSourceFuel hBoundary hSuccess
-    (fun bodyCursor bodyExtra hBodyBoundary hBodySuccess =>
+  exact CursorRuntimeAt.block cursor hSourceFuel hReserve hBoundary hSuccess
+    (fun bodyCursor bodyExtra hBodyReserve hBodyBoundary hBodySuccess =>
       hRecursive bodyCursor (by omega) hBodyBoundary
         (AllocationInteractionFrame.Budget.mono (by omega) hFuelBudget)
-        hBodySuccess)
-    (fun {afterState} tail _hExact
+        hBodyReserve hBodySuccess)
+    (fun {afterState} tail hExact
         {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
       recursive_tail hRecursive tail hSourceFuel hTailBoundary hFuelBudget
+        (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
+        hTailSuccess)
+
+private theorem if_of_recursive
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {cond : Functions.Expr 1} {body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase sourceFuel targetExtra : Nat}
+    {config : Config} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (hSafety : AllocationInteractionSafety.SourceSafety contract)
+    (hRecursive :
+      RecursiveOpenRuntime (compilation := compilation)
+        contract globalFrameWords sourceFuel)
+    (cursor : CoreCursor root scope live
+      { stmts := .if_ cond body :: rest } lowerState localsCtx)
+    (hSourceFuel : 1 < sourceFuel)
+    (hBoundary :
+      Boundary cursor contract globalFrameWords config allocatorDepth frameBase
+        mode sourceCtx source target)
+    (hFuelBudget :
+      AllocationInteractionFrame.Budget config
+        (allocatorDepth + sourceFuel))
+    (hReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra)
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel { stmts := .if_ cond body :: rest } source)) :
+    CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
+      targetExtra mode sourceCtx source target := by
+  have hHeadSuccess := successful_head (by omega) hSuccess
+  have hCondScoped : Functions.Scope.ExprScoped live cond := by
+    simpa [Functions.Scope.Stmt.Scoped] using cursor.headScoped.1
+  have hCondSafe := hSafety.expr hCondScoped
+    hBoundary.semantic.invariant.defined
+    (successful_if_condition hHeadSuccess).2
+  exact CursorRuntimeAt.if_ cursor hSourceFuel hReserve hCondSafe hBoundary
+    hSuccess
+    (fun bodyCursor {sourceAfter targetAfter} hTargetCapacity hBodyBoundary
+        hBodySuccess => by
+      have hBodyRel :=
+        RecursiveOpenRuntime.at_targetFuel hRecursive bodyCursor
+          (by omega) hTargetCapacity hBodyBoundary
+          (AllocationInteractionFrame.Budget.mono (by omega) hFuelBudget)
+          hBodySuccess
+      have hCleanupFuel :
+          2 ≤
+            (targetBudget cursor sourceFuel targetExtra - 2) -
+              bodyCursor.compiled.length := by
+        have hStride := eight_le_callStride expressions
+        have hMul := Nat.mul_le_mul hStride
+          (show 1 ≤ sourceFuel - 2 + 1 by omega)
+        have hEnough :
+            bodyCursor.compiled.length + 2 ≤
+              targetBudget cursor sourceFuel targetExtra - 2 := by
+          exact le_trans (by
+            unfold targetBudget
+            omega) hTargetCapacity
+        omega
+      exact ⟨hCleanupFuel, hBodyRel⟩)
+    (fun {afterState} tail hExact
+        {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
+      recursive_tail hRecursive tail (by omega) hTailBoundary hFuelBudget
+        (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
+        hTailSuccess)
+
+private theorem switch_of_recursive
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {scrutinee : Functions.Expr 1}
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase sourceFuel targetExtra : Nat}
+    {config : Config} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (hSafety : AllocationInteractionSafety.SourceSafety contract)
+    (hRecursive :
+      RecursiveOpenRuntime (compilation := compilation)
+        contract globalFrameWords sourceFuel)
+    (cursor : CoreCursor root scope live
+      { stmts := .switch scrutinee cases defaultBody :: rest }
+      lowerState localsCtx)
+    (hSourceFuel : 1 < sourceFuel)
+    (hBoundary :
+      Boundary cursor contract globalFrameWords config allocatorDepth frameBase
+        mode sourceCtx source target)
+    (hFuelBudget :
+      AllocationInteractionFrame.Budget config
+        (allocatorDepth + sourceFuel))
+    (hReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra)
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel
+          { stmts := .switch scrutinee cases defaultBody :: rest }
+          source)) :
+    CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
+      targetExtra mode sourceCtx source target := by
+  have hHeadSuccess := successful_head (by omega) hSuccess
+  have hScrutineeScoped :
+      Functions.Scope.ExprScoped live scrutinee := by
+    simpa [Functions.Scope.Stmt.Scoped] using cursor.headScoped.1
+  have hScrutineeSafe := hSafety.expr hScrutineeScoped
+    hBoundary.semantic.invariant.defined
+    (successful_switch_scrutinee hHeadSuccess).2
+  exact CursorRuntimeAt.switch cursor hSourceFuel hReserve hScrutineeSafe
+    hBoundary hSuccess
+    (fun {value selected selectedStart selectedPlanning} hSelect bodyCursor
+        {sourceAfter targetAfter} hTargetCapacity hBodyBoundary
+        hBodySuccess => by
+      have hBodyRel :=
+        RecursiveOpenRuntime.at_targetFuel hRecursive bodyCursor
+          (by omega) hTargetCapacity hBodyBoundary
+          (AllocationInteractionFrame.Budget.mono (by omega) hFuelBudget)
+          hBodySuccess
+      have hCleanupFuel :
+          2 ≤
+            (targetBudget cursor sourceFuel targetExtra - 2) -
+              bodyCursor.compiled.length := by
+        have hStride := eight_le_callStride expressions
+        have hMul := Nat.mul_le_mul hStride
+          (show 1 ≤ sourceFuel - 2 + 1 by omega)
+        have hEnough :
+            bodyCursor.compiled.length + 2 ≤
+              targetBudget cursor sourceFuel targetExtra - 2 := by
+          exact le_trans (by
+            unfold targetBudget
+            omega) hTargetCapacity
+        omega
+      exact ⟨hCleanupFuel, hBodyRel⟩)
+    (fun {afterState} tail hExact
+        {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
+      recursive_tail hRecursive tail (by omega) hTailBoundary hFuelBudget
+        (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
         hTailSuccess)
 
 end AllocationInteractionRecursiveRuntime

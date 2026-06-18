@@ -740,6 +740,9 @@ theorem complete_body
     (hFuelBudget :
       AllocationInteractionFrame.Budget config (allocatorDepth + sourceFuel))
     (hTargetExtra : 3 ≤ targetExtra)
+    (hTargetReserve :
+      AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode ≤
+        targetExtra)
     (hSourceFuel : sourceFuel < fuelBound)
     (hSuccess :
       Simulation.Interaction.Successful
@@ -770,8 +773,8 @@ theorem complete_body
     AllocationInteractionRecursiveResource.SelectedCallee.body_of_function_context
       (targetExtra := targetExtra) prepared hProgramScoped hEntry hZero hStackLength
       hReturnFrame
-      hReservation hConfig hReady hOwned hBudget hFuelBudget hSourceFuel hSuccess
-      hRecursive
+      hReservation hConfig hReady hOwned hBudget hFuelBudget hTargetReserve
+      hSourceFuel hSuccess hRecursive
   have hReturnsLive :
       forall localName,
         localName ∈ fn.returns ->
@@ -847,6 +850,9 @@ theorem complete_call
     (hFuelBudget :
       AllocationInteractionFrame.Budget config (allocatorDepth + sourceFuel))
     (hTargetExtra : 3 ≤ targetExtra)
+    (hTargetReserve :
+      AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode ≤
+        targetExtra)
     (hSourceFuel : sourceFuel < fuelBound)
     (hSuccess :
       Simulation.Interaction.Successful
@@ -883,7 +889,7 @@ theorem complete_call
         simp [AllocationInteractionCall.CalleeEntry.structuredState,
           Structured.RunState.pushReturn])
       hReservation hConfig hReady hOwned hBudget hFuelBudget hTargetExtra
-      hSourceFuel hSuccess
+      hTargetReserve hSourceFuel hSuccess
       hRecursive
   refine ⟨targetFuel, hTargetFuel, hTargetFuelEq, ?_⟩
   exact CallAttachment.of_body hInsert artifact.targetLookup

@@ -167,7 +167,7 @@ theorem CoreCursor.cons_of_parts
         (sourceFuel + 1) { stmts := stmt :: rest } source)
       (Expressions.InteractionSemantics.Block.openRun expressions targetFuel
         { stmts := cursor.compiled } target) := by
-  rcases hTail with ⟨hPlan, hFinalState, hFinalLocals⟩
+  rcases hTail with ⟨hPlan, hFinalState, hFinalLocals, _hCompiledTail⟩
   rw [hPlan, hFinalState, hFinalLocals] at hTailForward
   rw [hCompiled]
   exact AllocationInteractionComposition.block_cons hHead hTailForward
@@ -227,7 +227,7 @@ theorem CoreCursor.expr_head
       hSafe hExprScoped hLower hCompile hInvariant
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
 
 /-- Derive an assignment head theorem and exact tail from its cursor. -/
 theorem CoreCursor.assign_head
@@ -283,7 +283,7 @@ theorem CoreCursor.assign_head
       hSafe hScoped.2 hScoped.1 hLower hCompile hInvariant
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
 
 /-- Derive a declaration head theorem in stack or scratch representation. -/
 theorem CoreCursor.let_head
@@ -403,7 +403,7 @@ theorem CoreCursor.let_head
                     hLower hCompile hInvariant
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
 
 /-- Derive a `break` head theorem from its loop-destination transition. -/
 theorem CoreCursor.brk_head
@@ -462,7 +462,7 @@ theorem CoreCursor.brk_head
       hSourceScope hTargetDepth hTransition hLower hCompile hInvariant
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
 
 /-- Derive a `continue` head theorem from its loop-destination transition. -/
 theorem CoreCursor.cont_head
@@ -521,7 +521,7 @@ theorem CoreCursor.cont_head
       hSourceScope hTargetDepth hTransition hLower hCompile hInvariant
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
 
 /-- Derive a `leave` head theorem and exact unreachable tail. -/
 theorem CoreCursor.leave_head
@@ -582,7 +582,7 @@ theorem CoreCursor.leave_head
       hReturnFrame hLower hCompile hInvariant
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
 
 /-- Derive a plain terminal head theorem and exact unreachable tail. -/
 theorem CoreCursor.terminal_head
@@ -638,7 +638,7 @@ theorem CoreCursor.terminal_head
       hMemory hLower hCompile hInvariant
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
 
 /-- Derive an argument-bearing terminal head and exact unreachable tail. -/
 theorem CoreCursor.terminalArgs_head
@@ -708,7 +708,7 @@ theorem CoreCursor.terminalArgs_head
       hArgsSafe hTerminalSafe hArgsScoped hLower hCompile hInvariant
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled, hHead,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
 
 end AllocationInteractionForward
 end Functions

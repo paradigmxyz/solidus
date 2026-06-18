@@ -1,6 +1,7 @@
 import EvmCompiler.Functions.AllocationInteractionSelectedCallEntry
 import EvmCompiler.Functions.AllocationInteractionFor
 import EvmCompiler.Functions.AllocationInteractionForward
+import EvmCompiler.Functions.AllocationInteractionTargetFuel
 
 namespace EvmCompiler
 namespace Functions
@@ -16,11 +17,14 @@ The fixed administrative allowance covers local statement plumbing; the
 procedure-body sum covers any compiler-selected internal callee. -/
 def callStride (program : Expressions.Program) : Nat :=
   8 +
-    (program.toStructured.procs.map fun proc => proc.body.stmts.length).sum
+    (program.toStructured.procs.map fun proc => proc.body.stmts.length).sum +
+    (program.toStructured.procs.map fun proc =>
+      AllocationInteractionTargetFuel.structuredBlockSize proc.body).sum
 
 theorem eight_le_callStride (program : Expressions.Program) :
     8 ≤ callStride program := by
-  simp [callStride]
+  unfold callStride
+  omega
 
 private theorem proc_body_length_le_sum
     {proc : Structured.Proc} {procs : List Structured.Proc}
@@ -51,6 +55,55 @@ theorem proc_body_length_add_eight_le_callStride
   simp only [callStride]
   omega
 
+/-- A compiler-selected procedure body, including retained nested blocks, fits
+inside one global recursive stride. -/
+theorem proc_body_size_add_eight_le_callStride
+    {program : Expressions.Program} {name : Expressions.Name}
+    {proc : Structured.Proc}
+    (hLookup :
+      Structured.ProcList.lookup? name program.toStructured.procs =
+        some proc) :
+    AllocationInteractionTargetFuel.structuredBlockSize proc.body + 8 ≤
+      callStride program := by
+  have hSize :=
+    AllocationInteractionTargetFuel.structured_block_size_le_program hLookup
+  unfold callStride
+  omega
+
+/-- Any contiguous body segment of a selected Expressions procedure fits in
+the recursive stride. -/
+theorem selected_body_code_size_le_callStride
+    {program : Expressions.Program} {name : Expressions.Name}
+    {proc : Expressions.Proc}
+    {bodyPrefix bodyCode bodySuffix : List Expressions.Stmt}
+    (hLookup :
+      Structured.ProcList.lookup? name program.toStructured.procs =
+        some proc.toStructured)
+    (hBody :
+      proc.body.stmts = bodyPrefix ++ bodyCode ++ bodySuffix) :
+    AllocationInteractionTargetFuel.stmtListSize bodyCode ≤
+      callStride program := by
+  have hSegment :
+      AllocationInteractionTargetFuel.stmtListSize bodyCode ≤
+        AllocationInteractionTargetFuel.stmtListSize proc.body.stmts := by
+    rw [hBody, AllocationInteractionTargetFuel.stmtListSize_append,
+      AllocationInteractionTargetFuel.stmtListSize_append]
+    omega
+  have hStructured :=
+    proc_body_size_add_eight_le_callStride (program := program) hLookup
+  have hProcPreserved :
+      AllocationInteractionTargetFuel.structuredBlockSize
+          proc.toStructured.body =
+        AllocationInteractionTargetFuel.stmtListSize proc.body.stmts := by
+    change
+      AllocationInteractionTargetFuel.structuredBlockSize
+          proc.body.toStructured =
+        AllocationInteractionTargetFuel.stmtListSize proc.body.stmts
+    rw [AllocationInteractionTargetFuel.blockSize_toStructured]
+    cases proc.body
+    rfl
+  omega
+
 /-- Uniform target budget used by the recursive allocation proof. -/
 def targetBudget
     {allocation : Locals.Allocation.ProgramPlan}
@@ -68,6 +121,26 @@ def targetBudget
     (sourceFuel targetExtra : Nat) : Nat :=
   targetExtra + cursor.compiled.length +
     callStride expressions * (sourceFuel + 1)
+
+theorem targetBudget_mono_extra
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live sourceBlock lowerState localsCtx)
+    (sourceFuel : Nat) {beforeExtra afterExtra : Nat}
+    (hExtra : beforeExtra ≤ afterExtra) :
+    targetBudget cursor sourceFuel beforeExtra ≤
+      targetBudget cursor sourceFuel afterExtra := by
+  unfold targetBudget
+  omega
 
 /-- Exact adjacent preservation statement for one canonical allocation cursor. -/
 def CursorForwardAt
@@ -237,13 +310,22 @@ structure ForFuelCapacity
     (components : cursor.ForComponents)
     (loopFuel slack : Nat) : Prop where
   init :
-    targetBudget components.initCursor loopFuel 0 ≤ loopFuel + slack
+    targetBudget components.initCursor loopFuel
+        (AllocationInteractionTargetFuel.stmtListNestedSize
+          components.initCursor.compiled) ≤
+      loopFuel + slack
   post :
     ∀ fuel, fuel < loopFuel →
-      targetBudget components.postCursor fuel 0 ≤ fuel + slack
+      targetBudget components.postCursor fuel
+          (AllocationInteractionTargetFuel.stmtListNestedSize
+            components.postCursor.compiled) ≤
+        fuel + slack
   body :
     ∀ fuel, fuel < loopFuel →
-      targetBudget components.bodyCursor fuel 0 ≤ fuel + slack
+      targetBudget components.bodyCursor fuel
+          (AllocationInteractionTargetFuel.stmtListNestedSize
+            components.bodyCursor.compiled) ≤
+        fuel + slack
 
 namespace CursorForwardAt
 
@@ -1367,7 +1449,11 @@ theorem for_
     RecursiveOpenForward.at_targetFuel hRecursive components.initCursor
       (sourceFuel := loopFuel) (targetFuel := nestedFuel)
       (by simp [loopFuel]; omega)
-      (by simpa [hNestedFuel] using hCapacity.init)
+      (by
+        exact
+          (targetBudget_mono_extra components.initCursor loopFuel
+            (Nat.zero_le _)).trans
+            (by simpa [hNestedFuel] using hCapacity.init))
       hInitBoundary hInitSuccess
   have hInit :
       Simulation.Interaction.Rel
@@ -1471,7 +1557,8 @@ theorem for_
           components.bodyCursor (sourceFuel := fuel)
           (targetFuel := fuel + slack)
           (by simp [loopFuel] at *; omega)
-          (hCapacity.body fuel hFuelLt)
+          ((targetBudget_mono_extra components.bodyCursor fuel
+            (Nat.zero_le _)).trans (hCapacity.body fuel hFuelLt))
           hBodyBoundary hBodyOpenSuccess
       have hExtends :
           AllocationLowering.StateExtends components.loopLive
@@ -1533,7 +1620,8 @@ theorem for_
           components.postCursor (sourceFuel := fuel)
           (targetFuel := fuel + slack)
           (by simp [loopFuel] at *; omega)
-          (hCapacity.post fuel hFuelLt)
+          ((targetBudget_mono_extra components.postCursor fuel
+            (Nat.zero_le _)).trans (hCapacity.post fuel hFuelLt))
           hPostBoundary hPostOpenSuccess
       have hExtends :
           AllocationLowering.StateExtends components.loopLive
@@ -1591,7 +1679,9 @@ theorem for_
             0 < targetBudget components.initCursor loopFuel 0 := by
           simp [targetBudget, callStride, Nat.mul_succ]
         change 0 < loopFuel + slack
-        exact lt_of_lt_of_le hPositive hCapacity.init)
+        exact lt_of_lt_of_le hPositive
+          ((targetBudget_mono_extra components.initCursor loopFuel
+            (Nat.zero_le _)).trans hCapacity.init))
       hInit' hLoop hHeadSuccess'
   have hHead' :
       Simulation.Interaction.Rel

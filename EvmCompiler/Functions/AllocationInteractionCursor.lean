@@ -337,6 +337,7 @@ structure ExactTail
   plan : tail.plan = cursor.plan
   finalState : tail.finalState = cursor.finalState
   finalLocals : tail.finalLocals = cursor.finalLocals
+  compiled : ∃ headCode, cursor.compiled = headCode ++ tail.compiled
 
 namespace ExactTail
 
@@ -2005,7 +2006,7 @@ theorem CoreCursor.blockCursors
     ⟨afterState, headCode, tail, targetBlock, bodyCursor,
       hCompiled, hHeadCode, ?_, hAfterShape.1, hAfterShape.2,
       StepTransport.of_compilers hScopedStmt hLower hHeadCompile,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
   rw [hBodyCode, hBodyLocals]
   exact hFinish
 
@@ -2087,7 +2088,7 @@ theorem CoreCursor.ifCursors
     ⟨afterState, headLower, headCode, tail, loweredCond, condCode,
       targetBody, bodyCursor, hCompiled, hLower, ?_, hHeadCode, hLowerCond,
       hCompileCond, ?_, hAfterShape.1, hAfterShape.2, hScoped.1,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
   · simpa using hHeadCompile
   rw [hBodyCode, hBodyLocals]
   exact hFinish
@@ -2234,7 +2235,8 @@ theorem CoreCursor.switchCursors
       scrutineeScoped := hScoped.1
       casesScoped := hScoped.2.1
       defaultScoped := hScoped.2.2
-      exactTail := ⟨hPlan, hFinalState, hFinalLocals⟩ }⟩
+      exactTail :=
+        ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩ }⟩
 
 /-- Lift an already-selected switch planner entry into a lexical cursor. -/
 theorem CoreCursor.switchSelectedCursorOfComponents
@@ -2503,7 +2505,9 @@ theorem CoreCursor.switchSelectedCursors
       hSelectedLayout,
       hDefaultShape.1.trans hCasesShape.1,
       hDefaultShape.2.trans hCasesShape.2, hScoped.1,
-      hSelectedScoped, ⟨hTailPlan, hTailFinalState, hTailFinalLocals⟩⟩
+      hSelectedScoped,
+      ⟨hTailPlan, hTailFinalState, hTailFinalLocals,
+        ⟨headCode, hCompiled⟩⟩⟩
   rw [hBodyCode, hBodyLocals]
   exact hFinishSelected
 
@@ -2850,7 +2854,8 @@ theorem CoreCursor.forCursors
       hCleanup, ?_, hAfterState, hScoped.2.1, hScoped.2.2.1,
       hScoped.2.2.2,
       StepTransport.of_compilers hScopedStmt hLower hHeadCompile,
-      ⟨hTailPlan, hTailFinalState, hTailFinalLocals⟩⟩
+      ⟨hTailPlan, hTailFinalState, hTailFinalLocals,
+        ⟨headCode, hCompiled⟩⟩⟩
   · rw [hHeadLower]
     exact hCompile
   · rw [hPostCursorLowered]

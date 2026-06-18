@@ -144,8 +144,11 @@ boundaries remain active work.
     - [x] successful head/tail fixed-point interface and source-derived safety;
     - [x] expression, assignment, declaration, abrupt control, terminal, and
       lexical-block dispatcher cases;
-    - [ ] replace the additive nested-code target budget with an honest
-      control-depth/sufficient-fuel interface before `if`/`switch`/`for`.
+    - [x] replace the false arbitrary-extra target budget with a checked
+      nested-code reserve, exact compiled suffixes, and procedure-table bounds;
+    - [x] selected-body fixed-point cases for `if` and `switch`;
+    - [ ] loop capacity, selected internal-call dispatcher, and whole-block
+      fixed point.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
   source-facing reservation/resource assumptions.

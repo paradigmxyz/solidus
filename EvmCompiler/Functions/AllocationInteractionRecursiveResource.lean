@@ -215,7 +215,7 @@ theorem cons_of_parts
   let finalLive :=
     Functions.Scope.Block.outEnv
       (Functions.Scope.Stmt.outEnv live stmt) { stmts := rest }
-  rcases hTail with ⟨hPlan, hFinalState, hFinalLocals⟩
+  rcases hTail with ⟨hPlan, hFinalState, hFinalLocals, _hCompiledTail⟩
   have hComposed :=
     AllocationInteractionResourceComposition.block_cons
       (rest := rest) (headCode := headCode) (tailCode := tail.compiled)
@@ -317,7 +317,7 @@ theorem cons_of_parts_successful
   let finalLive :=
     Functions.Scope.Block.outEnv
       (Functions.Scope.Stmt.outEnv live stmt) { stmts := rest }
-  rcases hTail with ⟨hPlan, hFinalState, hFinalLocals⟩
+  rcases hTail with ⟨hPlan, hFinalState, hFinalLocals, _hCompiledTail⟩
   have hComposed :=
     AllocationInteractionResourceComposition.block_cons_successful
       (rest := rest) (headCode := headCode) (tailCode := tail.compiled)
@@ -480,6 +480,7 @@ def RecursiveOpenRuntime
     Boundary cursor contract globalFrameWords config allocatorDepth frameBase
       mode sourceCtx source target →
     AllocationInteractionFrame.Budget config (allocatorDepth + sourceFuel) →
+    AllocationInteractionTargetFuel.Reserve cursor targetExtra →
     Simulation.Interaction.Successful
       (Functions.InteractionSemantics.Block.openRun program sourceCtx
         sourceFuel sourceBlock source) →
@@ -513,7 +514,11 @@ theorem at_targetFuel
     (cursor :
       CoreCursor root scope live sourceBlock lowerState localsCtx)
     (hFuel : sourceFuel < fuelBound)
-    (hTargetFuel : targetBudget cursor sourceFuel 0 ≤ targetFuel)
+    (hTargetFuel :
+      targetBudget cursor sourceFuel
+          (AllocationInteractionTargetFuel.stmtListNestedSize
+            cursor.compiled) ≤
+        targetFuel)
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
         mode sourceCtx source target)
@@ -535,8 +540,15 @@ theorem at_targetFuel
       (Expressions.InteractionSemantics.Block.openRun expressions targetFuel
         { stmts := cursor.compiled } target) := by
   let targetExtra := targetFuel - targetBudget cursor sourceFuel 0
+  have hReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra := by
+    change
+      AllocationInteractionTargetFuel.stmtListNestedSize cursor.compiled ≤
+        targetExtra
+    simp only [targetExtra, targetBudget] at hTargetFuel ⊢
+    omega
   have hForward :=
-    hRecursive cursor hFuel hBoundary hFuelBudget hSuccess
+    hRecursive cursor hFuel hBoundary hFuelBudget hReserve hSuccess
       (targetExtra := targetExtra)
   have hExact :
       targetBudget cursor sourceFuel targetExtra = targetFuel := by
@@ -548,6 +560,31 @@ theorem at_targetFuel
 end RecursiveOpenRuntime
 
 namespace SelectedCallee
+
+/-- The real selected procedure table bounds every nested statement in the
+prepared callee body. -/
+theorem bodyCode_size_le_callStride
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : AllocationInteractionCall.SelectedCallee.Artifact
+      compilation name fn}
+    (prepared :
+      AllocationInteractionCall.SelectedCallee.Prepared artifact) :
+    AllocationInteractionTargetFuel.stmtListSize prepared.bodyCode ≤
+      callStride expressions := by
+  apply selected_body_code_size_le_callStride
+    (program := expressions) (name := name)
+    (proc := artifact.lowerProc)
+    (bodyPrefix :=
+      prepared.markerCode ++ prepared.paramCode ++ prepared.returnCode)
+    (bodySuffix :=
+      Locals.codeStmt prepared.returnValueCode ++
+        Locals.codeStmt prepared.cleanup)
+    artifact.targetLookup
+  simpa [List.append_assoc] using prepared.procBody
 
 /--
 Compose compiler-selected callee setup with the shared recursive runtime for
@@ -594,6 +631,9 @@ theorem body_of_cursor
     (hBudget : AllocationInteractionFrame.Budget config allocatorDepth)
     (hFuelBudget :
       AllocationInteractionFrame.Budget config (allocatorDepth + sourceFuel))
+    (hTargetReserve :
+      AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode ≤
+        targetExtra)
     (hSourceFuel : sourceFuel < fuelBound)
     (hLive :
       ∀ localName,
@@ -735,7 +775,11 @@ theorem body_of_cursor
         budget := hBudget }
     have hBodyRaw :=
       hRecursive bodyCursor hSourceFuel
-        hBodyBoundary hFuelBudget hSuccess (targetExtra := targetExtra)
+        hBodyBoundary hFuelBudget
+          (by
+            simpa [AllocationInteractionTargetFuel.Reserve, bodyCursor] using
+              hTargetReserve)
+          hSuccess (targetExtra := targetExtra)
     let bodyFuel :=
       targetBudget bodyCursor sourceFuel targetExtra
     have hBodyFuel : 0 < bodyFuel := by
@@ -852,7 +896,11 @@ theorem body_of_cursor
         budget := hBudget }
     have hBodyRaw :=
       hRecursive bodyCursor hSourceFuel
-        hBodyBoundary hFuelBudget hSuccess (targetExtra := targetExtra)
+        hBodyBoundary hFuelBudget
+          (by
+            simpa [AllocationInteractionTargetFuel.Reserve, bodyCursor] using
+              hTargetReserve)
+          hSuccess (targetExtra := targetExtra)
     let bodyFuel :=
       targetBudget bodyCursor sourceFuel targetExtra
     have hBodyFuel : 0 < bodyFuel := by
@@ -946,6 +994,9 @@ theorem body_of_function_context
     (hBudget : AllocationInteractionFrame.Budget config allocatorDepth)
     (hFuelBudget :
       AllocationInteractionFrame.Budget config (allocatorDepth + sourceFuel))
+    (hTargetReserve :
+      AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode ≤
+        targetExtra)
     (hSourceFuel : sourceFuel < fuelBound)
     (hSuccess :
       Simulation.Interaction.Successful
@@ -1010,8 +1061,9 @@ theorem body_of_function_context
       (Functions.Source.Effectful.FunDef.bodyCtx fn).continueScope? = none := rfl
   exact body_of_cursor prepared hProgramScoped hEntry hZero hStackLength
     hReturnFrame
-    hReservation hConfig hReady hOwned hBudget hFuelBudget hSourceFuel hLive hScope
-    hControl hSourceBreak hSourceContinue hSuccess hRecursive
+    hReservation hConfig hReady hOwned hBudget hFuelBudget hTargetReserve
+    hSourceFuel hLive hScope hControl hSourceBreak hSourceContinue hSuccess
+    hRecursive
 
 end SelectedCallee
 
@@ -1075,7 +1127,7 @@ theorem CoreCursor.expr_runtime_head
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled,
       Simulation.Interaction.Rel.inter hSemantic hResource,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
 
 /-- One compiler decomposition supplies both assignment-head capabilities. -/
 theorem CoreCursor.assign_runtime_head
@@ -1136,7 +1188,7 @@ theorem CoreCursor.assign_runtime_head
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled,
       Simulation.Interaction.Rel.inter hSemantic hResource,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
 
 /-- One compiler decomposition supplies both declaration-head capabilities. -/
 theorem CoreCursor.let_runtime_head
@@ -1305,7 +1357,7 @@ theorem CoreCursor.let_runtime_head
     ⟨afterState, afterLocals, headCode, tail, hCompiled,
       Simulation.Interaction.Rel.inter hSemantic hResource,
       hPlacement,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
 
 /-- One cursor decomposition supplies both `break` head capabilities. -/
 theorem CoreCursor.brk_runtime_head
@@ -1371,7 +1423,7 @@ theorem CoreCursor.brk_runtime_head
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled,
       Simulation.Interaction.Rel.inter hSemantic hResource,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
 
 /-- One cursor decomposition supplies both `continue` head capabilities. -/
 theorem CoreCursor.cont_runtime_head
@@ -1437,7 +1489,7 @@ theorem CoreCursor.cont_runtime_head
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled,
       Simulation.Interaction.Rel.inter hSemantic hResource,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
 
 /-- One cursor decomposition supplies both function-leave capabilities. -/
 theorem CoreCursor.leave_runtime_head
@@ -1504,7 +1556,7 @@ theorem CoreCursor.leave_runtime_head
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled,
       Simulation.Interaction.Rel.inter hSemantic hResource,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
 
 /-- One cursor decomposition supplies both plain-terminal capabilities. -/
 theorem CoreCursor.terminal_runtime_head
@@ -1563,7 +1615,7 @@ theorem CoreCursor.terminal_runtime_head
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled,
       Simulation.Interaction.Rel.inter hSemantic hResource,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
 
 /-- One cursor decomposition supplies argument-terminal capabilities. -/
 theorem CoreCursor.terminalArgs_runtime_head
@@ -1638,7 +1690,7 @@ theorem CoreCursor.terminalArgs_runtime_head
   exact
     ⟨afterState, afterLocals, headCode, tail, hCompiled,
       Simulation.Interaction.Rel.inter hSemantic hResource,
-      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+      ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
 
 namespace CursorRuntimeAt
 
@@ -2051,6 +2103,8 @@ theorem block
       CoreCursor root scope live { stmts := .block body :: rest }
         beforeState beforeLocals)
     (hSourceFuel : 0 < sourceFuel)
+    (hTargetReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra)
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
         mode sourceCtx source target)
@@ -2063,7 +2117,8 @@ theorem block
           CoreCursor root (.lexical scope cursor.planning.nextScope)
             live body beforeState beforeLocals)
         (bodyExtra : Nat),
-        Boundary bodyCursor contract globalFrameWords config allocatorDepth
+        AllocationInteractionTargetFuel.Reserve bodyCursor bodyExtra →
+          Boundary bodyCursor contract globalFrameWords config allocatorDepth
             frameBase mode sourceCtx source target →
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Block.openRun program sourceCtx
@@ -2159,8 +2214,33 @@ theorem block
         simp [targetBudget, bodyBase]
         omega
       _ = totalFuel := Nat.sub_add_cancel hBodyBase
+  have hBodyNestedSize :
+      AllocationInteractionTargetFuel.stmtListNestedSize
+          bodyCursor.compiled ≤
+        AllocationInteractionTargetFuel.stmtListNestedSize
+          cursor.compiled := by
+    rw [hCompiled,
+      AllocationInteractionTargetFuel.stmtListNestedSize_append,
+      hHeadCode, hTargetShape,
+      AllocationInteractionTargetFuel.stmtListNestedSize_append]
+    omega
+  have hStrideFuel :
+      callStride expressions * (sourceFuel + 1) =
+        callStride expressions * (childFuel + 1) +
+          callStride expressions := by
+    rw [← hFuel, show childFuel + 1 + 1 = (childFuel + 1) + 1 by rfl,
+      Nat.mul_add]
+    simp
+  have hExtraLe : targetExtra ≤ bodyExtra := by
+    unfold bodyExtra bodyBase totalFuel targetBudget
+    rw [hStrideFuel]
+    omega
+  have hBodyReserve :
+      AllocationInteractionTargetFuel.Reserve bodyCursor bodyExtra := by
+    unfold AllocationInteractionTargetFuel.Reserve at hTargetReserve ⊢
+    omega
   have hBodyRecursive :=
-    hBodyForward bodyCursor bodyExtra hBodyBoundary
+    hBodyForward bodyCursor bodyExtra hBodyReserve hBodyBoundary
       (by simpa [childFuel] using hBodySuccess)
   have hBodyRel :
       Simulation.Interaction.Rel
@@ -2284,6 +2364,8 @@ theorem if_
       CoreCursor root scope live { stmts := .if_ cond body :: rest }
         beforeState beforeLocals)
     (hSourceFuel : 1 < sourceFuel)
+    (hTargetReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra)
     (hCondSafe : AllocationInteractionSafety.ExprSafe contract cond source)
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
@@ -2297,7 +2379,11 @@ theorem if_
           CoreCursor root (.lexical scope cursor.planning.nextScope)
             live body beforeState beforeLocals)
         {sourceAfter targetAfter},
-        Boundary bodyCursor contract globalFrameWords config allocatorDepth
+        targetBudget bodyCursor (sourceFuel - 2)
+              (AllocationInteractionTargetFuel.stmtListNestedSize
+                bodyCursor.compiled) ≤
+            targetBudget cursor sourceFuel targetExtra - 2 →
+          Boundary bodyCursor contract globalFrameWords config allocatorDepth
             frameBase mode sourceCtx sourceAfter targetAfter →
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Block.openRun program sourceCtx
@@ -2392,6 +2478,46 @@ theorem if_
     · intro name hLive
       exact (hSlots name hLive).trans
         (congrArg (AllocationSupport.lookupSlot? name) hAfterEnv.symm)
+  obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
+    AllocationInteractionCleanup.Plain.finishScoped_shape hFinish
+  have hTargetBlockSize :
+      AllocationInteractionTargetFuel.blockSize targetBody =
+        AllocationInteractionTargetFuel.stmtListSize targetBody.stmts := by
+    cases targetBody
+    rfl
+  have hBodyWithinParent :
+      AllocationInteractionTargetFuel.stmtListSize bodyCursor.compiled ≤
+        AllocationInteractionTargetFuel.stmtListNestedSize
+          cursor.compiled := by
+    rw [hCompiled,
+      AllocationInteractionTargetFuel.stmtListNestedSize_append,
+      hHeadCode]
+    simp only [AllocationInteractionTargetFuel.stmtListNestedSize,
+      AllocationInteractionTargetFuel.stmtNestedSize]
+    rw [hTargetBlockSize, hTargetShape,
+      AllocationInteractionTargetFuel.stmtListSize_append]
+    omega
+  have hFuelGap : sourceFuel + 1 = (bodyFuel + 1) + 2 := by
+    simp [bodyFuel]
+    omega
+  have hStrideFuel :
+      callStride expressions * (sourceFuel + 1) =
+        callStride expressions * (bodyFuel + 1) +
+          callStride expressions * 2 := by
+    rw [hFuelGap, Nat.mul_add]
+  have hBodySizeEq :=
+    AllocationInteractionTargetFuel.stmtListSize_eq
+      bodyCursor.compiled
+  have hBodyTargetCapacity :
+      targetBudget bodyCursor bodyFuel
+            (AllocationInteractionTargetFuel.stmtListNestedSize
+              bodyCursor.compiled) ≤
+        targetBodyFuel := by
+    unfold AllocationInteractionTargetFuel.Reserve at hTargetReserve
+    unfold targetBodyFuel totalFuel targetBudget
+    rw [hStrideFuel]
+    have hStride := eight_le_callStride expressions
+    omega
   have hTrue :
       ∀ {sourceAfter targetAfter},
         AllocationContext.ActivationInvariant contract root.lowerCtx
@@ -2439,7 +2565,7 @@ theorem if_
         at hSelectedSuccess
       exact Simulation.Interaction.Successful.bind_left hSelectedSuccess
     obtain ⟨hCleanupFuel, hBody⟩ :=
-      hBodyForward bodyCursor hNestedBoundary
+      hBodyForward bodyCursor hBodyTargetCapacity hNestedBoundary
         (by simpa [bodyFuel] using hBodySuccess)
     have hSemantic :=
       AllocationInteractionControl.block_of_components
@@ -2531,6 +2657,8 @@ theorem switch
         { stmts := .switch scrutinee cases defaultBody :: rest }
         beforeState beforeLocals)
     (hSourceFuel : 1 < sourceFuel)
+    (hTargetReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra)
     (hScrutineeSafe :
       AllocationInteractionSafety.ExprSafe contract scrutinee source)
     (hBoundary :
@@ -2552,7 +2680,11 @@ theorem switch
           CoreCursor root (.lexical scope selectedPlanning.nextScope)
             live selected selectedStart beforeLocals)
         {sourceAfter targetAfter},
-        Boundary bodyCursor contract globalFrameWords config allocatorDepth
+        targetBudget bodyCursor (sourceFuel - 2)
+              (AllocationInteractionTargetFuel.stmtListNestedSize
+                bodyCursor.compiled) ≤
+            targetBudget cursor sourceFuel targetExtra - 2 →
+          Boundary bodyCursor contract globalFrameWords config allocatorDepth
             frameBase mode sourceCtx sourceAfter targetAfter →
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Block.openRun program sourceCtx
@@ -2755,8 +2887,60 @@ theorem switch
       rw [Functions.InteractionSemantics.Stmt.openRun_block]
         at hSelectedSuccess
       exact Simulation.Interaction.Successful.bind_left hSelectedSuccess
+    obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
+      AllocationInteractionCleanup.Plain.finishScoped_shape hFinish
+    have hActualTargetSize :
+        AllocationInteractionTargetFuel.blockSize selectedTarget =
+          AllocationInteractionTargetFuel.stmtListSize selectedTarget.stmts := by
+      cases selectedTarget
+      rfl
+    have hBodyWithinTarget :
+        AllocationInteractionTargetFuel.stmtListSize bodyCursor.compiled ≤
+          AllocationInteractionTargetFuel.blockSize selectedTarget := by
+      rw [hActualTargetSize, hTargetShape,
+        AllocationInteractionTargetFuel.stmtListSize_append]
+      omega
+    have hTargetWithinSwitch :=
+      AllocationInteractionTargetFuel.selected_block_size_le hTargetSelect
+    have hSwitchWithinParent :
+        AllocationInteractionTargetFuel.caseListSize compiledCases +
+            AllocationInteractionTargetFuel.defaultSize compiledDefault ≤
+          AllocationInteractionTargetFuel.stmtListNestedSize
+            cursor.compiled := by
+      rw [components.compiled,
+        AllocationInteractionTargetFuel.stmtListNestedSize_append,
+        components.codeHead]
+      simp only [AllocationInteractionTargetFuel.stmtListNestedSize,
+        AllocationInteractionTargetFuel.stmtNestedSize]
+      omega
+    have hBodyWithinParent :
+        AllocationInteractionTargetFuel.stmtListSize bodyCursor.compiled ≤
+          AllocationInteractionTargetFuel.stmtListNestedSize
+            cursor.compiled :=
+      hBodyWithinTarget.trans (hTargetWithinSwitch.trans hSwitchWithinParent)
+    have hFuelGap : sourceFuel + 1 = (bodyFuel + 1) + 2 := by
+      simp [bodyFuel]
+      omega
+    have hStrideFuel :
+        callStride expressions * (sourceFuel + 1) =
+          callStride expressions * (bodyFuel + 1) +
+            callStride expressions * 2 := by
+      rw [hFuelGap, Nat.mul_add]
+    have hBodySizeEq :=
+      AllocationInteractionTargetFuel.stmtListSize_eq
+        bodyCursor.compiled
+    have hBodyTargetCapacity :
+        targetBudget bodyCursor bodyFuel
+              (AllocationInteractionTargetFuel.stmtListNestedSize
+                bodyCursor.compiled) ≤
+          targetBodyFuel := by
+      unfold AllocationInteractionTargetFuel.Reserve at hTargetReserve
+      unfold targetBodyFuel totalFuel targetBudget
+      rw [hStrideFuel]
+      have hStride := eight_le_callStride expressions
+      omega
     obtain ⟨hCleanupFuel, hBody⟩ :=
-      hBodyForward hSourceSelect bodyCursor hNestedBoundary
+      hBodyForward hSourceSelect bodyCursor hBodyTargetCapacity hNestedBoundary
         (by simpa [bodyFuel] using hBodySuccess)
     have hSemantic :=
       AllocationInteractionControl.block_of_components
@@ -3331,7 +3515,9 @@ theorem for_
             0 < targetBudget components.initCursor loopFuel 0 := by
           simp [targetBudget, callStride, Nat.mul_succ]
         change 0 < loopFuel + slack
-        exact lt_of_lt_of_le hPositive hCapacity.init)
+        exact lt_of_lt_of_le hPositive
+          ((targetBudget_mono_extra components.initCursor loopFuel
+            (Nat.zero_le _)).trans hCapacity.init))
       hInit' hLoop hHeadSuccess'
   have hHead' :
       Simulation.Interaction.Rel
