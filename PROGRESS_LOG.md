@@ -31852,3 +31852,13 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1320-job verification root, architecture guard, touched-file hole scan,
   axiom audit, and `git diff --check` passed; checked axioms remain
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 23:32:00 PDT - proof/functions-terminals - added canonical
+  source-approved terminal simulation for STOP/RETURN/REVERT/SELFDESTRUCT,
+  including reserved-memory-safe reads, then proved both terminal statement
+  forms through allocation lowering and Locals compilation. Plain terminals
+  discard the complete local/frame stack; terminal arguments retain exact
+  ordered expression interactions before halting.
+- 2026-06-17 23:36:00 PDT - validation/functions-terminals - focused build,
+  the 1321-job verification root, architecture guard, touched-file hole scan,
+  axiom audit, and `git diff --check` passed; terminal theorems use only
+  `[propext, Classical.choice, Quot.sound]`.

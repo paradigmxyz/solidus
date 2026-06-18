@@ -36,6 +36,8 @@ boundaries remain active work.
   - [x] expression, assignment, and stack/scratch declaration leaf adapters;
   - [x] outcome-indexed `break`/`continue` cleanup in both activation modes;
   - [x] ordered return-value emission and frame-cleaning `leave` preservation;
+  - [x] plain and argument-bearing terminal preservation under source-facing
+    terminal memory safety;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

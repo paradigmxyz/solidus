@@ -38,6 +38,7 @@ import EvmCompiler.Functions.AllocationInteractionAssignment
 import EvmCompiler.Functions.AllocationInteractionCleanup
 import EvmCompiler.Functions.AllocationInteractionAbrupt
 import EvmCompiler.Functions.AllocationInteractionLeave
+import EvmCompiler.Functions.AllocationInteractionTerminal
 import EvmCompiler.Functions.AllocationInteractionComposition
 import EvmCompiler.Functions.AllocationInteractionLeaf
 import EvmCompiler.Functions.AllocationInteractionStatement
@@ -234,6 +235,14 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionLeave.ReturnValues.openEval
 #check EvmCompiler.Functions.AllocationInteractionLeave.ReturnValues.safe
 #check EvmCompiler.Functions.AllocationInteractionLeave.leave_of_lower_compile
+#check EvmCompiler.Functions.AllocationInteractionTerminal.Invocation.of_memorySafe
+#check EvmCompiler.Functions.AllocationInteractionTerminal.Invocation.simulate
+#check EvmCompiler.Functions.AllocationInteractionTerminal.Invocation.forward_shared
+#check EvmCompiler.Functions.AllocationInteractionTerminal.Invocation.forward
+#check EvmCompiler.Functions.AllocationInteractionTerminal.TerminalLeaf.compiler_shape
+#check EvmCompiler.Functions.AllocationInteractionTerminal.TerminalLeaf.args_compiler_shape
+#check EvmCompiler.Functions.AllocationInteractionTerminal.terminalArgs_of_lower_compile
+#check EvmCompiler.Functions.AllocationInteractionTerminal.terminal_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionComposition.ControlResultRel
 #check EvmCompiler.Functions.AllocationInteractionComposition.lift_fixed
 #check EvmCompiler.Functions.AllocationInteractionComposition.cons
