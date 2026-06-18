@@ -805,6 +805,17 @@ inductive ActivationOwned (config : Config) :
 
 namespace ActivationOwned
 
+/-- An owned scratch activation uses the one frame width selected by the
+compiler-owned allocator configuration. -/
+theorem scratch_words
+    {config : Config} {allocatorDepth frameBase frameDepth frameWords : Nat}
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch frameDepth frameWords)) :
+    frameWords = config.frameWords := by
+  cases hOwned with
+  | scratch _ hWords => exact hWords
+
 theorem sameFrame {config : Config}
     {allocatorDepth frameBase : Nat} {before after : ActivationMode}
     (hOwned : ActivationOwned config allocatorDepth frameBase before)
@@ -925,6 +936,28 @@ theorem baseAt_mono (config : Config) : Monotone (baseAt config) := by
   unfold baseAt
   exact Nat.add_le_add_left
     (Nat.mul_le_mul_right (bytes config) hLe) config.firstFrame
+
+/-- A validated scratch configuration always admits the allocator's initial
+depth. -/
+theorem budget_zero_of_scratchFrameConfig?
+    {contract : MemoryContract.Contract} {frameWords : Nat}
+    {config : Config}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config) :
+    Budget config 0 := by
+  obtain
+      ⟨reservation, _hReservation, _hAllocator, hFirst, hLimit,
+        hWords, _hWF, _hHost, hPositive, hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  simp only [Budget, baseAt_zero, bytes]
+  rw [hFirst, hLimit, hWords]
+  change frameWords ≤ reservation.words - 1 at hFits
+  change 0 < reservation.words at hPositive
+  change
+    reservation.base + 32 + 32 * frameWords ≤
+      reservation.base + 32 * reservation.words
+  omega
 
 namespace ActivationOwned
 

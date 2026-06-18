@@ -8,6 +8,165 @@ open AllocationInteractionRelation
 open AllocationInteractionFrame
 open AllocationInteractionFrameExecution
 
+/-- Initialize the compiler-owned allocator cell with the exact emitted code.
+This is silent in the shared interaction semantics and preserves every
+source-visible location. -/
+theorem allocatorInit_correct
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan}
+    {stackOffset frameBase frameWords : Nat}
+    {config : Config}
+    {source : SourceState} {target : TargetState}
+    (hRel :
+      StateRel contract plan [] stackOffset frameBase source target)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords = some config)
+    (hActiveNoWrap :
+      target.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size) :
+    ∃ targetFinal,
+      Structured.InteractionSemantics.Code.openRun
+          (AllocationSupport.scratchAllocatorInitCode config) target =
+        .done (.ok targetFinal) ∧
+      StateRel contract plan [] stackOffset frameBase source targetFinal ∧
+      AllocatorReady config 0 targetFinal ∧
+      targetFinal.evm.stack = target.evm.stack ∧
+      targetFinal.returns = target.returns := by
+  let firstWord := EvmYul.UInt256.ofNat config.firstFrame
+  let cellWord := EvmYul.UInt256.ofNat config.allocatorCell
+  let afterFirst := StateRel.pushTargetBy 33 firstWord target
+  let afterCell := StateRel.pushTargetBy 33 cellWord afterFirst
+  let targetFinal :=
+    StateRel.mstoreTarget cellWord firstWord target.evm.stack afterCell
+  obtain
+      ⟨reservation, hReservation, hAllocator, _hFirst, _hLimit,
+        _hWords, hWF, hHost, _hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  have hRegion :
+      reservation.containsRegion config.allocatorCell 1 := by
+    rw [hAllocator]
+    unfold MemoryContract.ScratchReservation.containsRegion
+      MemoryContract.ScratchReservation.allocatorCell
+      MemoryContract.ScratchReservation.endExclusive
+      MemoryContract.ScratchReservation.bytes
+    simp only [MemoryContract.wordBytes]
+    constructor <;> omega
+  have hCellEnd256 :
+      config.allocatorCell + MemoryContract.wordBytes <
+        EvmYul.UInt256.size :=
+    lt_of_le_of_lt hRegion.2 hWF.2
+  have hCellHost :
+      config.allocatorCell + MemoryContract.wordBytes < USize.size :=
+    lt_of_le_of_lt hRegion.2 hHost
+  have hCellAddress :
+      (EvmYul.UInt256.ofNat config.allocatorCell).toNat =
+        config.allocatorCell :=
+    EvmYul.UInt256.toNat_ofNat_of_lt (by omega)
+  have hBaseMachine :
+      Compiler.MemoryRelation.MachineRel contract source.shared.toMachineState
+        afterCell.evm.toMachineState := by
+    simpa [afterCell, afterFirst, StateRel.pushTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.machine
+  have hMachine :
+      Compiler.MemoryRelation.MachineRel contract source.shared.toMachineState
+        (afterCell.evm.toMachineState.mstore cellWord firstWord) :=
+    Compiler.MemoryRelation.MachineRel.mstore_target
+      config.allocatorCell firstWord hBaseMachine hReservation hRegion
+      hCellEnd256 hCellHost
+  have hFinalRel :
+      StateRel contract plan [] stackOffset frameBase source targetFinal := by
+    refine { machine := ?_, world := ?_, store := ?_ }
+    · simpa [targetFinal, cellWord, StateRel.mstoreTarget,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC] using hMachine
+    · simpa [targetFinal, afterCell, afterFirst, StateRel.pushTargetBy,
+        StateRel.mstoreTarget, EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC] using hRel.world
+    · intro name location hLive _hLocation
+      simp at hLive
+  have hAfterCellActive :
+      afterCell.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size := by
+    simpa [afterCell, afterFirst, StateRel.pushTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hActiveNoWrap
+  have hPostActive :
+      (afterCell.evm.toMachineState.mstore
+          (EvmYul.UInt256.ofNat config.allocatorCell)
+          (EvmYul.UInt256.ofNat config.firstFrame)).activeWords.toNat *
+          MemoryContract.wordBytes < EvmYul.UInt256.size := by
+    simpa [MemoryContract.wordBytes] using
+      (Compiler.MemoryRelation.mstore_activeBytes_lt_size_of_activeBytes_lt_size
+        afterCell.evm.toMachineState config.allocatorCell
+        (EvmYul.UInt256.ofNat config.firstFrame)
+        (by simpa [MemoryContract.wordBytes] using hAfterCellActive)
+        (by simpa [MemoryContract.wordBytes] using hCellHost))
+  have hLookup :=
+    Compiler.MemoryRelation.lookupMemory_mstore_same_growing
+      afterCell.evm.toMachineState config.allocatorCell
+      (EvmYul.UInt256.ofNat config.firstFrame) hCellAddress
+      (by simpa [MemoryContract.wordBytes] using hCellHost)
+      (by simpa [MemoryContract.wordBytes] using hCellEnd256)
+      (by simpa [MemoryContract.wordBytes] using hPostActive)
+  have hReady : AllocatorReady config 0 targetFinal := by
+    refine
+      { allocatorAt := ?_
+        cellActive := ?_
+        cellAllocated := ?_
+        activeNoWrap := ?_ }
+    · simpa [AllocatorAt, targetFinal, cellWord, firstWord,
+        StateRel.mstoreTarget, baseAt_zero,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC] using hLookup
+    · simpa [targetFinal, StateRel.mstoreTarget,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC, MemoryContract.wordBytes] using
+          (Compiler.MemoryRelation.mstore_end_le_activeBytes
+            afterCell.evm.toMachineState config.allocatorCell
+            (EvmYul.UInt256.ofNat config.firstFrame)
+            (by simpa [MemoryContract.wordBytes] using hCellEnd256))
+    · simpa [targetFinal, StateRel.mstoreTarget,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC, EvmYul.MachineState.mstore] using
+          (Compiler.MemoryRelation.writeWord_memory_size_ge_end
+            afterCell.evm.toMachineState config.allocatorCell
+            (EvmYul.UInt256.ofNat config.firstFrame) hCellAddress
+            (by simpa [MemoryContract.wordBytes] using hCellHost))
+    · simpa [targetFinal, StateRel.mstoreTarget,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC] using hPostActive
+  have hAfterCellStack :
+      afterCell.evm.stack = cellWord :: firstWord :: target.evm.stack := rfl
+  have hReturns : targetFinal.returns = target.returns := by
+    simp [targetFinal, afterCell, afterFirst, StateRel.pushTargetBy,
+      StateRel.mstoreTarget]
+  refine ⟨targetFinal, ?_, hFinalRel, hReady, rfl, hReturns⟩
+  simp only [AllocationSupport.scratchAllocatorInitCode]
+  calc
+    Structured.InteractionSemantics.Code.openRun
+        [.push firstWord, .push cellWord, .op .mstore] target =
+      Simulation.Interaction.bind
+        (Structured.InteractionSemantics.Code.openRun [.push firstWord] target)
+        (Structured.InteractionSemantics.Code.openRun
+          [.push cellWord, .op .mstore]) := by
+            simpa using Structured.InteractionSemantics.Code.openRun_append
+              [.push firstWord] [.push cellWord, .op .mstore] target
+    _ = Structured.InteractionSemantics.Code.openRun
+          [.push cellWord, .op .mstore] afterFirst := by
+      rw [Code.openRun_push firstWord target]
+      rfl
+    _ = Simulation.Interaction.bind
+        (Structured.InteractionSemantics.Code.openRun [.push cellWord]
+          afterFirst)
+        (Structured.InteractionSemantics.Code.openRun [.op .mstore]) := by
+      simpa using Structured.InteractionSemantics.Code.openRun_append
+        [.push cellWord] [.op .mstore] afterFirst
+    _ = Structured.InteractionSemantics.Code.openRun [.op .mstore] afterCell := by
+      rw [Code.openRun_push cellWord afterFirst]
+      rfl
+    _ = .done (.ok targetFinal) := Code.openRun_mstore hAfterCellStack
+
 @[simp] theorem allocatorAdvanceTarget_stack
     (config : Config) (depth : Nat) (target : TargetState) :
     (allocatorAdvanceTarget config depth target).evm.stack =
@@ -834,6 +993,81 @@ theorem scratchFrameAcquire_correct
       framePreallocTarget_frameAllocated
         (target := advanced) (rest := target.evm.stack)
         hConfig hPositive hBudget
+
+/-- Acquire the first frame for an activation with no live source locals. -/
+theorem scratchFrameAcquire_empty_correct
+    {contract : MemoryContract.Contract}
+    {globalFrameWords depth oldFrameBase : Nat}
+    {config : Config} {plan : Plan}
+    {source : SourceState} {target : TargetState}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hPositive : 0 < config.frameWords)
+    (hBudget : Budget config depth)
+    (hReady : AllocatorReady config depth target)
+    (hRel :
+      StateRel contract plan [] 0 oldFrameBase source target) :
+    let targetFinal := scratchFrameAcquireTarget config depth target
+    ScratchFrameAcquireCorrect contract config depth
+        source.shared.toMachineState target targetFinal ∧
+      ActivationStateRel contract plan [] 0 (baseAt config depth)
+        (.scratch 0 config.frameWords) source targetFinal := by
+  dsimp only
+  have hAcquire := scratchFrameAcquire_correct hConfig hPositive hBudget hReady
+    hRel.machine
+  have hFrameNoWrap :
+      baseAt config depth + MemoryContract.wordBytes * config.frameWords <
+        EvmYul.UInt256.size := by
+    simpa [bytes, MemoryContract.wordBytes] using
+      noWrap_of_budget_of_scratchFrameConfig? hConfig hBudget
+  have hFrameHost :
+      baseAt config depth + MemoryContract.wordBytes * config.frameWords <
+        USize.size := by
+    simpa [bytes, MemoryContract.wordBytes] using
+      hostAddressable_of_budget_of_scratchFrameConfig? hConfig hBudget
+  have hFrameReserved :
+      ∃ reservation,
+        contract.scratch? = some reservation ∧
+          reservation.containsRegion (baseAt config depth) config.frameWords :=
+    reserved_of_budget_of_scratchFrameConfig? hConfig hBudget
+  have hAcquireWorld :
+      (scratchFrameAcquireTarget config depth target).evm.toSharedState.toState =
+        target.evm.toSharedState.toState := by
+    cases hWords : config.frameWords with
+    | zero =>
+        simp [scratchFrameAcquireTarget, framePreallocTarget,
+          allocatorAdvanceTarget, hWords, StateRel.pushTargetBy,
+          StateRel.pushTarget, StateRel.contractTargetBy,
+          StateRel.mstoreTarget, EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC]
+    | succ slot =>
+        simp [scratchFrameAcquireTarget, framePreallocTarget,
+          allocatorAdvanceTarget, hWords, StateRel.pushTargetBy,
+          StateRel.pushTarget, StateRel.contractTargetBy,
+          StateRel.mstoreTarget, EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC]
+  have hEntry :
+      ActivationCalleeEntryRel contract plan [] [] (baseAt config depth)
+        (.scratch 0 config.frameWords) source
+        (scratchFrameAcquireTarget config depth target) := by
+    apply ActivationCalleeEntryRel.scratch_empty
+      (values := [])
+      (suffix :=
+        EvmYul.UInt256.ofNat (baseAt config depth) :: target.evm.stack)
+    · exact hAcquire.machine
+    · exact hRel.world.trans hAcquireWorld.symm
+    · rw [hAcquire.stack]
+      rfl
+    · simpa [bytes, MemoryContract.wordBytes] using hAcquire.frameActive
+    · simpa [bytes, MemoryContract.wordBytes] using hAcquire.frameAllocated
+    · exact hFrameNoWrap
+    · exact hFrameHost
+    · exact hAcquire.effect.ready.activeNoWrap
+    · exact hFrameReserved
+    · simp [Functions.Source.Store.lookupMany]
+    · simpa using hAcquire.stack
+  exact ⟨hAcquire, ActivationCalleeEntryRel.finish hEntry⟩
 
 @[simp] theorem scratchFrameAcquireTarget_world
     (config : Config) (depth : Nat) (target : TargetState) :

@@ -138,6 +138,15 @@ def MainArtifact.beforeSetup
         nextSlot := compilation.recipe.stateAfterFunctions.nextSlot }
     layout := [] }
 
+/-- Number of compiler-owned scratch frames active at main-body entry. -/
+def mainSetupDepth
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    (compilation : Compilation allocation program expressions) : Nat :=
+  if AllocationLowering.mainNeedsFrame
+      compilation.recipe compilation.stackSlots then 1 else 0
+
 theorem MainArtifact.lowerRest
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}

@@ -423,6 +423,21 @@ def scratchFrameAcquireTarget (config : Config) (depth : Nat)
   framePreallocTarget config depth target.evm.stack
     (allocatorAdvanceTarget config depth target)
 
+@[simp] theorem scratchFrameAcquireTarget_returns
+    (config : Config) (depth : Nat) (target : TargetState) :
+    (scratchFrameAcquireTarget config depth target).returns = target.returns := by
+  cases hWords : config.frameWords with
+  | zero =>
+      simp [scratchFrameAcquireTarget, framePreallocTarget,
+        allocatorAdvanceTarget, hWords, StateRel.pushTargetBy,
+        StateRel.pushTarget, StateRel.contractTargetBy,
+        StateRel.mstoreTarget]
+  | succ slot =>
+      simp [scratchFrameAcquireTarget, framePreallocTarget,
+        allocatorAdvanceTarget, hWords, StateRel.pushTargetBy,
+        StateRel.pushTarget, StateRel.contractTargetBy,
+        StateRel.mstoreTarget]
+
 /-- Exact canonical execution of the emitted scratch-frame acquire code. -/
 theorem scratchFrameAcquire_openRun
     {config : Config} {depth : Nat} {target : TargetState}

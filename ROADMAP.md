@@ -149,6 +149,11 @@ boundaries remain active work.
     - [x] selected-body fixed-point cases for `if` and `switch`;
     - [x] loop capacity, selected internal-call dispatcher, and whole-block
       fixed point.
+  - [x] construct the compiler-selected main artifact and check exact scratch
+    allocator/frame setup plus recursive main-body preservation.
+  - [ ] thread the existing resource-mode interface through stack-only
+    recursion, then compose source prelude, main body, and cleanup into the
+    public adjacent theorem without an allocator premise for stack-only code.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
   source-facing reservation/resource assumptions.
