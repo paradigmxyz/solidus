@@ -56,6 +56,32 @@ def ofEVM (account : EvmYul.Account .EVM) : OpenAccount where
 @[simp] theorem ofAccount_evm (account : EvmYul.Account .EVM) :
     ofAccount account = ofEVM account := rfl
 
+theorem ofAccount_updateStorage {τ : EvmYul.OperationType}
+    (account : EvmYul.Account τ) (key value : EvmYul.UInt256) :
+    ofAccount (account.updateStorage key value) =
+      { ofAccount account with
+        storage :=
+          if value == (default : EvmYul.UInt256) then
+            account.storage.erase key
+          else account.storage.insert key value } := by
+  cases τ <;>
+    by_cases hZero : value == (default : EvmYul.UInt256) <;>
+    simp [EvmYul.Account.updateStorage, hZero, ofAccount,
+      EvmYul.State.accountCodeImage]
+
+theorem ofAccount_updateTransientStorage {τ : EvmYul.OperationType}
+    (account : EvmYul.Account τ) (key value : EvmYul.UInt256) :
+    ofAccount (account.updateTransientStorage key value) =
+      { ofAccount account with
+        transientStorage :=
+          if value == (default : EvmYul.UInt256) then
+            account.tstorage.erase key
+          else account.tstorage.insert key value } := by
+  cases τ <;>
+    by_cases hZero : value == (default : EvmYul.UInt256) <;>
+    simp [EvmYul.Account.updateTransientStorage, hZero, ofAccount,
+      EvmYul.State.accountCodeImage]
+
 /--
 Install code-erased account data into a legacy Yul account while retaining an
 explicit compatibility AST. Canonical open semantics must not inspect that AST.
@@ -133,6 +159,71 @@ theorem extCodeHash_evm (state : EvmYul.State .EVM) (value : EvmYul.UInt256) :
   simp [extCodeHash, dead, EvmYul.State.extCodeHash,
     EvmYul.State.dead, hEmpty]
 
+def currentStorageValue {τ : EvmYul.OperationType}
+    (state : EvmYul.State τ) (owner : EvmYul.AccountAddress)
+    (key : EvmYul.UInt256) : EvmYul.UInt256 :=
+  (state.accountMap.find! owner).1.storage.findD key ⟨0⟩
+
+def initialStorageValue {τ : EvmYul.OperationType}
+    (state : EvmYul.State τ) (owner : EvmYul.AccountAddress)
+    (key : EvmYul.UInt256) : EvmYul.UInt256 :=
+  (state.σ₀.find? owner).option ⟨0⟩
+    (fun account => account.storage.findD key ⟨0⟩)
+
+def sstoreRefundBalance
+    (initial current new refundBalance : EvmYul.UInt256) :
+    EvmYul.UInt256 :=
+  let dirtyClear : ℤ :=
+    if initial ≠ .ofNat 0 && current = .ofNat 0 then
+      -GasConstants.Rsclear
+    else if initial ≠ .ofNat 0 && new = .ofNat 0 then
+      GasConstants.Rsclear
+    else 0
+  let dirtyReset : ℤ :=
+    if initial = new && initial = .ofNat 0 then
+      GasConstants.Gsset - GasConstants.Gwarmaccess
+    else if initial = new && initial ≠ .ofNat 0 then
+      GasConstants.Gsreset - GasConstants.Gwarmaccess
+    else 0
+  let refundDelta : ℤ :=
+    if current ≠ new && initial = current && new = .ofNat 0 then
+      GasConstants.Rsclear
+    else if current ≠ new && initial ≠ current then
+      dirtyClear + dirtyReset
+    else 0
+  match refundDelta with
+  | .ofNat n => refundBalance + .ofNat n
+  | .negSucc n => refundBalance - .ofNat n - ⟨1⟩
+
+theorem sstore_eq {τ : EvmYul.OperationType}
+    (state : EvmYul.State τ) (key value : EvmYul.UInt256) :
+    state.sstore key value =
+      let owner := state.executionEnv.codeOwner
+      state.lookupAccount owner |>.option state fun account =>
+        let state' :=
+          state.setAccount owner (account.updateStorage key value)
+            |>.addAccessedStorageKey (owner, key)
+        { state' with
+          substate.refundBalance :=
+            sstoreRefundBalance
+              (initialStorageValue state owner key)
+              (currentStorageValue state owner key)
+              value state.substate.refundBalance } := by
+  unfold EvmYul.State.sstore
+  dsimp only
+  congr 1
+  funext account
+  congr 1
+  simp [sstoreRefundBalance, initialStorageValue,
+    currentStorageValue]
+  have hStorage :
+      (state.accountMap.find! state.executionEnv.codeOwner).1.storage =
+        (state.accountMap.find! state.executionEnv.codeOwner).storage := by
+    rfl
+  rw [hStorage]
+  cases hInitial : state.σ₀.find? state.executionEnv.codeOwner <;>
+    simp [hInitial, Option.option] <;> rfl
+
 end CodeErasedState
 
 /--
@@ -180,6 +271,133 @@ theorem find?_mapVal_const
         simp [Batteries.RBNode.map, Batteries.RBNode.find?,
           Batteries.RBMap.Imp.mapSnd, hCompare, leftIH, rightIH,
           Function.comp_def]
+
+private theorem mapSnd_setBlack
+    {α β γ : Type} (f : α → β → γ)
+    (tree : Batteries.RBNode (α × β)) :
+    (tree.setBlack.map (Batteries.RBMap.Imp.mapSnd f)) =
+      (tree.map (Batteries.RBMap.Imp.mapSnd f)).setBlack := by
+  cases tree <;> rfl
+
+private theorem mapSnd_balance1
+    {α β γ : Type} (f : α → β → γ)
+    (left : Batteries.RBNode (α × β)) (value : α × β)
+    (right : Batteries.RBNode (α × β)) :
+    (Batteries.RBNode.balance1 left value right).map
+        (Batteries.RBMap.Imp.mapSnd f) =
+      Batteries.RBNode.balance1
+        (left.map (Batteries.RBMap.Imp.mapSnd f))
+        (Batteries.RBMap.Imp.mapSnd f value)
+        (right.map (Batteries.RBMap.Imp.mapSnd f)) := by
+  cases left with
+  | nil => rfl
+  | node color leftLeft leftValue leftRight =>
+      cases color with
+      | black => rfl
+      | red =>
+          cases leftLeft with
+          | nil =>
+              cases leftRight with
+              | nil => rfl
+              | node rightColor rightLeft rightValue rightRight =>
+                  cases rightColor <;> rfl
+          | node leftColor farLeft pivot nearLeft =>
+              cases leftColor with
+              | red => rfl
+              | black =>
+                  cases leftRight with
+                  | nil => rfl
+                  | node rightColor rightLeft rightValue rightRight =>
+                      cases rightColor <;> rfl
+
+private theorem mapSnd_balance2
+    {α β γ : Type} (f : α → β → γ)
+    (left : Batteries.RBNode (α × β)) (value : α × β)
+    (right : Batteries.RBNode (α × β)) :
+    (Batteries.RBNode.balance2 left value right).map
+        (Batteries.RBMap.Imp.mapSnd f) =
+      Batteries.RBNode.balance2
+        (left.map (Batteries.RBMap.Imp.mapSnd f))
+        (Batteries.RBMap.Imp.mapSnd f value)
+        (right.map (Batteries.RBMap.Imp.mapSnd f)) := by
+  cases right with
+  | nil => rfl
+  | node color rightLeft rightValue rightRight =>
+      cases color with
+      | black => rfl
+      | red =>
+          cases rightRight with
+          | nil =>
+              cases rightLeft with
+              | nil => rfl
+              | node leftColor leftLeft leftValue leftRight =>
+                  cases leftColor <;> rfl
+          | node rightColor nearRight pivot farRight =>
+              cases rightColor with
+              | red => rfl
+              | black =>
+                  cases rightLeft with
+                  | nil => rfl
+                  | node leftColor leftLeft leftValue leftRight =>
+                      cases leftColor <;> rfl
+
+private theorem mapSnd_ins
+    {α β γ : Type} {cmp : α → α → Ordering}
+    (f : α → β → γ) (key : α) (value : β)
+    (tree : Batteries.RBNode (α × β)) :
+    (tree.ins (Ordering.byKey Prod.fst cmp) (key, value)).map
+        (Batteries.RBMap.Imp.mapSnd f) =
+      (tree.map (Batteries.RBMap.Imp.mapSnd f)).ins
+        (Ordering.byKey Prod.fst cmp) (key, f key value) := by
+  induction tree with
+  | nil => rfl
+  | node color left entry right leftIH rightIH =>
+      cases color with
+      | red =>
+          cases hCompare : cmp key entry.1 <;>
+            simp [Batteries.RBNode.ins, Batteries.RBNode.map,
+              Batteries.RBMap.Imp.mapSnd, Ordering.byKey,
+              hCompare, leftIH, rightIH]
+      | black =>
+          cases hCompare : cmp key entry.1 with
+          | lt =>
+              simp only [Batteries.RBNode.ins, Batteries.RBNode.map,
+                Batteries.RBMap.Imp.mapSnd, Ordering.byKey, hCompare]
+              rw [mapSnd_balance1, leftIH]
+              simp [Batteries.RBMap.Imp.mapSnd]
+          | gt =>
+              simp only [Batteries.RBNode.ins, Batteries.RBNode.map,
+                Batteries.RBMap.Imp.mapSnd, Ordering.byKey, hCompare]
+              rw [mapSnd_balance2, rightIH]
+              simp [Batteries.RBMap.Imp.mapSnd]
+          | eq =>
+              simp [Batteries.RBNode.ins, Batteries.RBNode.map,
+                Batteries.RBMap.Imp.mapSnd, Ordering.byKey, hCompare]
+
+private theorem mapSnd_insert
+    {α β γ : Type} {cmp : α → α → Ordering}
+    (f : α → β → γ) (key : α) (value : β)
+    (tree : Batteries.RBNode (α × β)) :
+    (tree.insert (Ordering.byKey Prod.fst cmp) (key, value)).map
+        (Batteries.RBMap.Imp.mapSnd f) =
+      (tree.map (Batteries.RBMap.Imp.mapSnd f)).insert
+        (Ordering.byKey Prod.fst cmp) (key, f key value) := by
+  unfold Batteries.RBNode.insert
+  have hColor :
+      (tree.map (Batteries.RBMap.Imp.mapSnd f)).isRed = tree.isRed := by
+    cases tree <;> rfl
+  rw [hColor]
+  cases tree.isRed <;>
+    simp [mapSnd_ins, mapSnd_setBlack]
+
+theorem mapVal_insert
+    {α β γ : Type} {cmp : α → α → Ordering}
+    (map : Batteries.RBMap α β cmp) (f : α → β → γ)
+    (key : α) (value : β) :
+    (map.insert key value).mapVal f =
+      (map.mapVal f).insert key (f key value) := by
+  apply Subtype.ext
+  exact mapSnd_insert f key value map.1
 
 private theorem mapVal_leftInverse
     {α β γ : Type} {cmp : α → α → Ordering}

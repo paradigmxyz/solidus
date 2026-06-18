@@ -425,21 +425,27 @@ theorem simulate
       dsimp [Locals.Source.PrimitiveSemantics.structured] at hEval ⊢
       by_cases hLength :
           values.length = Expressions.Structured.BasicOp.inputs op
-      · simp [hLength, hStep, Assembly.PrimStep.run,
-          EvmYul.EVM.binaryStateOp] at hEval ⊢
-        cases hPop : EvmYul.Stack.pop2 values.reverse with
-        | none =>
-            simp [hPop] at hEval
-        | some popped =>
-            rcases popped with ⟨rest, left, right⟩
-            simp [hPop, EvmYul.EVM.State.replaceStackAndIncrPC,
-              EvmYul.EVM.State.incrPC, hWorld] at hEval ⊢
-            rcases hEval with ⟨rfl, rfl⟩
-            exact
-              ⟨_, rfl,
-                hRel.replaceToState_same
-                  (f sourceShared.toState left right),
-                rfl⟩
+      · cases hPermission : targetShared.executionEnv.perm with
+        | false =>
+            simp [hLength, hStep, Assembly.PrimStep.run,
+              hRel.executionEnv_eq, hPermission] at hEval
+        | true =>
+            simp [hLength, hStep, Assembly.PrimStep.run,
+              EvmYul.EVM.binaryStateOp, hRel.executionEnv_eq,
+              hPermission] at hEval ⊢
+            cases hPop : EvmYul.Stack.pop2 values.reverse with
+            | none =>
+                simp [hPop] at hEval
+            | some popped =>
+                rcases popped with ⟨rest, left, right⟩
+                simp [hPop, EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC, hWorld] at hEval ⊢
+                rcases hEval with ⟨rfl, rfl⟩
+                exact
+                  ⟨_, rfl,
+                    hRel.replaceToState_same
+                      (f sourceShared.toState left right),
+                    rfl⟩
       · simp [hLength] at hEval
   | returnDataSize =>
       have hValue :

@@ -977,7 +977,7 @@ theorem shared_resourceForward
     (family : AllocationInteractionOrdinaryPrimitive.SharedFamily op)
     (contract : MemoryContract.Contract) :
     PrimitiveForward contract op :=
-  ClosedSpec.resourceForward (family.toClosedSpec contract)
+  FallibleClosedSpec.resourceForward (family.toFallibleClosedSpec contract)
 
 theorem log_resourceForward
     {op : Structured.BasicOp}

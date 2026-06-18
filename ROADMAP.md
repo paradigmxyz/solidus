@@ -205,7 +205,10 @@ boundaries remain active work.
       - [x] World-access transitions through reusable `WorldSpec`: BALANCE,
         EXTCODESIZE, EXTCODEHASH, SLOAD, and TLOAD, including exact account and
         storage warming in the shared open-world substate.
-      - [ ] World, copy, log, and invalid families;
+      - [x] World-write transitions through reusable `WorldWriteSpec`: SSTORE
+        and TSTORE, including refunds, warm storage, exact account updates,
+        and matching static-mode failure.
+      - [ ] Copy, log, and invalid families;
         assemble the concrete `ClosedSelected` theorem.
     - [x] Define the code-erased outcome-indexed relation and source-owned
       exact lexical-domain invariant; check direct expression, one-name

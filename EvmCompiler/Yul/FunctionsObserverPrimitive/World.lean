@@ -1078,6 +1078,10 @@ theorem forwardAt_of_worldBinaryWrite
                             sourceWorld targetWorld := by
                         simpa [sourceWorld, targetWorld] using
                           hFamily.related hShared.world key value
+                      have hTargetPermission :
+                          target.shared.executionEnv.perm = true := by
+                        rw [← hShared.world.executionEnv.permission]
+                        exact hPermission
                       let targetShared : EvmYul.SharedState .EVM :=
                         { target.shared with toState := targetWorld }
                       refine ⟨targetShared, ?_, ?_, by rfl⟩
@@ -1088,7 +1092,7 @@ theorem forwardAt_of_worldBinaryWrite
                           EvmYul.EVM.State.replaceStackAndIncrPC,
                           EvmYul.EVM.State.incrPC,
                           EvmYul.Stack.pop2, targetShared,
-                          targetWorld, Id.run]
+                          targetWorld, hTargetPermission, Id.run]
                       · exact
                           ⟨{ sourceShared with
                               toState := sourceWorld },
@@ -1160,7 +1164,7 @@ theorem backwardAt_of_worldBinaryWrite
                   EvmYul.EVM.State.replaceStackAndIncrPC,
                   EvmYul.EVM.State.incrPC,
                   EvmYul.Stack.pop2, targetAfter,
-                  targetWorld, Id.run]
+                  targetWorld, hTargetPermission, Id.run]
               have hRun' :
                   Locals.Source.PrimitiveSemantics.structured.eval
                       op target.shared [value, key] =

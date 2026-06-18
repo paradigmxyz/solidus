@@ -1372,6 +1372,373 @@ theorem forward
 
 end WorldUnaryAccess
 
+/-- Closed world writes share a deterministic permitted transition and an
+exact static-mode failure on both sides. -/
+structure WorldWriteSpec (prim : EvmYul.Operation .Yul)
+    (op : Structured.BasicOp) where
+  sourceStep :
+    EvmYul.State .Yul → List Word → EvmYul.State .Yul × List Word
+  targetStep :
+    EvmYul.State .EVM → List Word → EvmYul.State .EVM × List Word
+  resultLength :
+    ∀ world values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        (sourceStep world values).2.length =
+          Expressions.Structured.BasicOp.outputs op
+  related :
+    ∀ sourceWorld targetWorld values,
+      FunctionsInteractionRelation.WorldRel sourceWorld targetWorld →
+        FunctionsInteractionRelation.WorldRel
+            (sourceStep sourceWorld values).1
+            (targetStep targetWorld values).1 ∧
+          (sourceStep sourceWorld values).2 =
+            (targetStep targetWorld values).2
+  sourceZero :
+    ∀ source values,
+      Yul.InteractionSemantics.Primitive.openEval 1 source prim values =
+        .done
+          (.error
+            ({ exception := .OutOfFuel, state := source } :
+              Yul.InteractionSemantics.Failure))
+  sourceAllowed :
+    ∀ fuel sourceShared sourceVars values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        sourceShared.executionEnv.perm = true →
+          Yul.InteractionSemantics.Primitive.openEval (fuel + 2)
+              (EvmYul.Yul.State.Ok sourceShared sourceVars) prim values =
+            .done
+              (.ok
+                ((EvmYul.Yul.State.Ok sourceShared sourceVars).setState
+                    (sourceStep sourceShared.toState values).1,
+                  (sourceStep sourceShared.toState values).2))
+  sourceDenied :
+    ∀ fuel sourceShared sourceVars values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        sourceShared.executionEnv.perm = false →
+          Yul.InteractionSemantics.Primitive.openEval (fuel + 2)
+              (EvmYul.Yul.State.Ok sourceShared sourceVars) prim values =
+            .done
+              (.error
+                ({ exception := .StaticModeViolation,
+                    state := EvmYul.Yul.State.Ok sourceShared sourceVars } :
+                  Yul.InteractionSemantics.Failure))
+  targetAllowed :
+    ∀ (state : Functions.InteractionSemantics.State)
+      (values : List Word),
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        state.shared.executionEnv.perm = true →
+          Locals.InteractionSemantics.Primitive.openEval
+              op state values.reverse =
+            .done
+              (.ok
+                (state.withShared
+                    { state.shared with
+                      toState := (targetStep state.shared.toState values).1 },
+                  (targetStep state.shared.toState values).2))
+  targetDenied :
+    ∀ (state : Functions.InteractionSemantics.State)
+      (values : List Word),
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        state.shared.executionEnv.perm = false →
+          Locals.InteractionSemantics.Primitive.openEval
+              op state values.reverse =
+            .done (.error .StaticModeViolation)
+
+namespace WorldWriteSpec
+
+theorem forward
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    (spec : WorldWriteSpec prim op)
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {sourceValues : List Word}
+    (hLength :
+      sourceValues.length = Expressions.Structured.BasicOp.inputs op)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source op)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source prim sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        op target sourceValues.reverse) := by
+  cases fuel with
+  | zero =>
+      rw [spec.sourceZero]
+      exact
+        Simulation.Interaction.ForwardRel.truncated
+          (doneRel := PrimitiveDoneRel source op)
+          (right := Locals.InteractionSemantics.Primitive.openEval
+            op target sourceValues.reverse)
+          (by trivial)
+  | succ previous =>
+      rcases hRel with
+        ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+      subst source
+      cases hPermission : sourceShared.executionEnv.perm with
+      | false =>
+          have hTargetPermission :
+              target.shared.executionEnv.perm = false := by
+            simpa [hPermission] using hShared.executionEnv.permission.symm
+          rw [show previous.succ + 1 = previous + 2 by omega,
+            spec.sourceDenied previous sourceShared sourceVars sourceValues
+              hLength hPermission,
+            spec.targetDenied target sourceValues hLength hTargetPermission]
+          exact
+            Simulation.Interaction.ForwardRel.done
+              (Simulation.Interaction.ExceptRel.error trivial)
+      | true =>
+          have hTargetPermission :
+              target.shared.executionEnv.perm = true := by
+            simpa [hPermission] using hShared.executionEnv.permission.symm
+          let sourceResult :=
+            spec.sourceStep sourceShared.toState sourceValues
+          let targetResult :=
+            spec.targetStep target.shared.toState sourceValues
+          have hRelated :
+              FunctionsInteractionRelation.WorldRel
+                  sourceResult.1 targetResult.1 ∧
+                sourceResult.2 = targetResult.2 := by
+            simpa [sourceResult, targetResult] using
+              spec.related sourceShared.toState target.shared.toState
+                sourceValues hShared.world
+          have hStateRel :
+              FunctionsInteractionRelation.StateRel
+                (EvmYul.Yul.State.Ok sourceShared sourceVars) target :=
+            ⟨sourceShared, sourceVars, rfl, hShared, hVars⟩
+          have hFinalRel :=
+            FunctionsInteractionRelation.StateRel.withWorldState hStateRel
+              sourceResult.1 targetResult.1 hRelated.1
+          have hDone :
+              PrimitiveDoneRel
+                (EvmYul.Yul.State.Ok sourceShared sourceVars) op
+                (.ok
+                  ((EvmYul.Yul.State.Ok sourceShared sourceVars).setState
+                      sourceResult.1,
+                    sourceResult.2))
+                (.ok
+                  (target.withShared
+                      { target.shared with toState := targetResult.1 },
+                    sourceResult.2)) :=
+            .ok
+              ⟨FunctionsInteractionPrimitive.ResultRel.refl_values
+                  hFinalRel sourceResult.2,
+                by simpa [sourceResult] using
+                  spec.resultLength sourceShared.toState sourceValues hLength,
+                rfl⟩
+          have hTarget :=
+            spec.targetAllowed target sourceValues hLength hTargetPermission
+          change
+            Locals.InteractionSemantics.Primitive.openEval
+                op target sourceValues.reverse =
+              .done
+                (.ok
+                  (target.withShared
+                      { target.shared with toState := targetResult.1 },
+                    targetResult.2)) at hTarget
+          rw [← hRelated.2] at hTarget
+          rw [show previous.succ + 1 = previous + 2 by omega,
+            spec.sourceAllowed previous sourceShared sourceVars sourceValues
+              hLength hPermission]
+          change
+            Simulation.Interaction.ForwardRel Truncated
+              (PrimitiveDoneRel
+                (EvmYul.Yul.State.Ok sourceShared sourceVars) op)
+              (.done
+                (.ok
+                  ((EvmYul.Yul.State.Ok sourceShared sourceVars).setState
+                      sourceResult.1,
+                    sourceResult.2)))
+              (Locals.InteractionSemantics.Primitive.openEval
+                op target sourceValues.reverse)
+          rw [hTarget]
+          exact Simulation.Interaction.ForwardRel.done hDone
+
+end WorldWriteSpec
+
+inductive WorldBinaryWrite :
+    EvmYul.Operation .Yul → Structured.BasicOp →
+      (EvmYul.State .Yul → Word → Word → EvmYul.State .Yul) →
+      (EvmYul.State .EVM → Word → Word → EvmYul.State .EVM) → Prop where
+  | sstore :
+      WorldBinaryWrite (.StackMemFlow .SSTORE) .sstore
+        EvmYul.State.sstore EvmYul.State.sstore
+  | tstore :
+      WorldBinaryWrite (.StackMemFlow .TSTORE) .tstore
+        EvmYul.State.tstore EvmYul.State.tstore
+
+namespace WorldBinaryWrite
+
+theorem inputs
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep : EvmYul.State .Yul → Word → Word → EvmYul.State .Yul}
+    {targetStep : EvmYul.State .EVM → Word → Word → EvmYul.State .EVM}
+    (hFamily : WorldBinaryWrite prim op sourceStep targetStep) :
+    Expressions.Structured.BasicOp.inputs op = 2 := by
+  cases hFamily <;> rfl
+
+theorem outputs
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep : EvmYul.State .Yul → Word → Word → EvmYul.State .Yul}
+    {targetStep : EvmYul.State .EVM → Word → Word → EvmYul.State .EVM}
+    (hFamily : WorldBinaryWrite prim op sourceStep targetStep) :
+    Expressions.Structured.BasicOp.outputs op = 0 := by
+  cases hFamily <;> rfl
+
+def spec
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep : EvmYul.State .Yul → Word → Word → EvmYul.State .Yul}
+    {targetStep : EvmYul.State .EVM → Word → Word → EvmYul.State .EVM}
+    (hFamily : WorldBinaryWrite prim op sourceStep targetStep) :
+    WorldWriteSpec prim op where
+  sourceStep world values :=
+    match values with
+    | [key, value] => (sourceStep world key value, [])
+    | _ => (world, [])
+  targetStep world values :=
+    match values with
+    | [key, value] => (targetStep world key value, [])
+    | _ => (world, [])
+  resultLength := by
+    intro world values hLength
+    rw [hFamily.outputs]
+    cases values with
+    | nil => rfl
+    | cons first rest =>
+        cases rest with
+        | nil => rfl
+        | cons second extra => cases extra <;> rfl
+  related := by
+    intro source target values hRel
+    cases values with
+    | nil => exact ⟨hRel, rfl⟩
+    | cons key rest =>
+        cases rest with
+        | nil => exact ⟨hRel, rfl⟩
+        | cons value extra =>
+            cases extra with
+            | cons next tail => exact ⟨hRel, rfl⟩
+            | nil =>
+                constructor
+                · cases hFamily with
+                  | sstore => exact hRel.sstore key value
+                  | tstore => exact hRel.tstore key value
+                · rfl
+  sourceZero := by
+    intro source values
+    cases hFamily <;>
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Yul.InteractionSemantics.Primitive.fail,
+        Yul.InteractionSemantics.State.afterException,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+  sourceAllowed := by
+    intro fuel sourceShared sourceVars values hLength hPermission
+    have hLengthTwo : values.length = 2 := by
+      simpa [hFamily.inputs] using hLength
+    obtain ⟨key, value, rfl⟩ := List.length_eq_two.mp hLengthTwo
+    cases hFamily <;>
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall,
+        EvmYul.Yul.State.executionEnv,
+        EvmYul.Yul.binaryStateOp, EvmYul.Yul.State.setState,
+        EvmYul.Yul.State.setSharedState, hPermission] <;>
+      unfold EvmYul.step <;> rfl
+  sourceDenied := by
+    intro fuel sourceShared sourceVars values hLength hPermission
+    have hLengthTwo : values.length = 2 := by
+      simpa [hFamily.inputs] using hLength
+    obtain ⟨key, value, rfl⟩ := List.length_eq_two.mp hLengthTwo
+    cases hFamily <;>
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Yul.InteractionSemantics.Primitive.fail,
+        Yul.InteractionSemantics.State.afterException,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall,
+        EvmYul.Yul.State.executionEnv, hPermission] <;>
+      unfold EvmYul.step <;> rfl
+  targetAllowed := by
+    intro state values hLength hPermission
+    have hLengthTwo : values.length = 2 := by
+      simpa [hFamily.inputs] using hLength
+    obtain ⟨key, value, rfl⟩ := List.length_eq_two.mp hLengthTwo
+    have hSupports :
+        Locals.InteractionSemantics.Primitive.supportsOpen op = true := by
+      cases hFamily <;> rfl
+    have hStep :
+        Locals.Source.PrimitiveSemantics.sourceContinuingStep? op =
+          some (.binaryState targetStep) := by
+      cases hFamily <;> rfl
+    let result := targetStep state.shared.toState key value
+    change
+      Locals.InteractionSemantics.Primitive.openEval
+          op state [value, key] =
+        .done
+          (.ok
+            (state.withShared
+              { state.shared with toState := result }, []))
+    rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+      (by simpa [hFamily.inputs]) hSupports hStep
+      (by cases hFamily <;> decide) (by cases hFamily <;> decide)]
+    cases hFamily <;>
+      simp [Assembly.PrimStep.run, EvmYul.EVM.binaryStateOp,
+        Locals.InteractionSemantics.Primitive.finish,
+        Locals.InteractionSemantics.Primitive.isolated,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC, EvmYul.Stack.pop2,
+        Locals.Source.State.withShared, Simulation.Interaction.map,
+        Simulation.Interaction.bind, Simulation.Interaction.pure,
+        hPermission, result] <;> rfl
+  targetDenied := by
+    intro state values hLength hPermission
+    have hLengthTwo : values.length = 2 := by
+      simpa [hFamily.inputs] using hLength
+    obtain ⟨key, value, rfl⟩ := List.length_eq_two.mp hLengthTwo
+    have hSupports :
+        Locals.InteractionSemantics.Primitive.supportsOpen op = true := by
+      cases hFamily <;> rfl
+    have hStep :
+        Locals.Source.PrimitiveSemantics.sourceContinuingStep? op =
+          some (.binaryState targetStep) := by
+      cases hFamily <;> rfl
+    rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+      (by simpa [hFamily.inputs]) hSupports hStep
+      (by cases hFamily <;> decide) (by cases hFamily <;> decide)]
+    cases hFamily <;>
+      simp [Assembly.PrimStep.run, EvmYul.EVM.binaryStateOp,
+        Locals.InteractionSemantics.Primitive.isolated,
+        Simulation.Interaction.map, Simulation.Interaction.bind,
+        hPermission]
+
+theorem forward
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep : EvmYul.State .Yul → Word → Word → EvmYul.State .Yul}
+    {targetStep : EvmYul.State .EVM → Word → Word → EvmYul.State .EVM}
+    {sourceValues : List Word}
+    (hFamily : WorldBinaryWrite prim op sourceStep targetStep)
+    (hLength :
+      sourceValues.length = Expressions.Structured.BasicOp.inputs op)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source op)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source prim sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        op target sourceValues.reverse) :=
+  (spec hFamily).forward hLength hRel
+
+end WorldBinaryWrite
+
 /-- Pure two-input operations whose Yul and Functions meanings are the same
 word function and leave shared state unchanged. -/
 inductive PureBinary :

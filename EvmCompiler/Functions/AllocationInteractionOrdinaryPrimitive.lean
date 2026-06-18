@@ -249,10 +249,11 @@ theorem not_msize
       exact primOp_ne_of_sourceStep hStep (forbidden := .msize) rfl (by simp)
   | returnDataSize => decide
 
-theorem eval_exists
+theorem eval_exists_of_permitted
     {op : Structured.BasicOp} (family : SharedFamily op)
     {shared : EvmYul.SharedState .EVM} {values : List Word}
-    (hLength : values.length = Expressions.Structured.BasicOp.inputs op) :
+    (hLength : values.length = Expressions.Structured.BasicOp.inputs op)
+    (hPermission : shared.executionEnv.perm = true) :
     ∃ sharedFinal outputs,
       Locals.Source.PrimitiveSemantics.structured.eval op shared values =
         .ok (sharedFinal, outputs) := by
@@ -347,7 +348,7 @@ theorem eval_exists
       obtain ⟨rest, left, right, hPop⟩ :=
         Assembly.PrimStep.Stack.exists_pop2_of_two_le hBound
       simp [Locals.Source.PrimitiveSemantics.structured, hLength, hStep,
-        Assembly.PrimStep.run, EvmYul.EVM.binaryStateOp, hPop,
+        Assembly.PrimStep.run, hPermission, EvmYul.EVM.binaryStateOp, hPop,
         EvmYul.EVM.State.replaceStackAndIncrPC, EvmYul.EVM.State.incrPC,
         Assembly.PrimStep.idRun_eq]
   | returnDataSize =>
@@ -506,20 +507,26 @@ theorem simulate
       dsimp [Locals.Source.PrimitiveSemantics.structured] at hEval ⊢
       by_cases hLength :
           values.length = Expressions.Structured.BasicOp.inputs op
-      · simp [hLength, hStep, Assembly.PrimStep.run,
-          EvmYul.EVM.binaryStateOp] at hEval ⊢
-        cases hPop : EvmYul.Stack.pop2 values.reverse with
-        | none => simp [hPop] at hEval
-        | some popped =>
-            rcases popped with ⟨rest, left, right⟩
-            simp [hPop, EvmYul.EVM.State.replaceStackAndIncrPC,
-              EvmYul.EVM.State.incrPC, hWorld] at hEval ⊢
-            rcases hEval with ⟨rfl, rfl⟩
-            exact
-              ⟨_, rfl,
-                hRel.replaceToState_same
-                  (f sourceShared.toState left right),
-                rfl⟩
+      · cases hPermission : targetShared.executionEnv.perm with
+        | false =>
+            simp [hLength, hStep, Assembly.PrimStep.run,
+              hRel.executionEnv_eq, hPermission] at hEval
+        | true =>
+            simp [hLength, hStep, Assembly.PrimStep.run,
+              EvmYul.EVM.binaryStateOp, hRel.executionEnv_eq,
+              hPermission] at hEval ⊢
+            cases hPop : EvmYul.Stack.pop2 values.reverse with
+            | none => simp [hPop] at hEval
+            | some popped =>
+                rcases popped with ⟨rest, left, right⟩
+                simp [hPop, EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC, hWorld] at hEval ⊢
+                rcases hEval with ⟨rfl, rfl⟩
+                exact
+                  ⟨_, rfl,
+                    hRel.replaceToState_same
+                      (f sourceShared.toState left right),
+                    rfl⟩
       · simp [hLength] at hEval
   | returnDataSize =>
       have hValue :
@@ -884,15 +891,14 @@ end FallibleClosedSpec
 
 namespace SharedFamily
 
-def toClosedSpec
+def toFallibleClosedSpec
     {op : Structured.BasicOp} (family : SharedFamily op)
-    (contract : MemoryContract.Contract) : ClosedSpec contract op where
+    (contract : MemoryContract.Contract) : FallibleClosedSpec contract op where
   sourceStep := family.sourceStep
   supportsOpen := family.supportsOpen
   notGas := family.not_gas
   notMsize := family.not_msize
-  evalExists := family.eval_exists
-  simulate := by
+  simulateSuccess := by
     intro sourceShared sourceFinal targetShared values outputs _hLength hRel
       _hSafe hTargetNoWrap hEval
     obtain ⟨targetFinal, hTargetEval, hShared, hMachine⟩ :=
@@ -904,13 +910,145 @@ def toClosedSpec
     · simp [hMachine]
     · simp [hMachine]
     · simpa [hMachine] using hTargetNoWrap
+  errorSuffix := by
+    intro step sourceShared target values baseStack error hLength hStep hRel
+      hStack hEval
+    cases family with
+    | bin f hFamilyStep =>
+        have hBound : 2 ≤ values.reverse.length := by
+          have hArity :=
+            Locals.Source.PrimitiveSemantics.sourceContinuingStep_inputArity
+              hFamilyStep
+          rw [List.length_reverse, hLength, ← hArity]
+          simp [Assembly.PrimStep.inputArity]
+        obtain ⟨rest, left, right, hPop⟩ :=
+          Assembly.PrimStep.Stack.exists_pop2_of_two_le hBound
+        simp [Locals.Source.PrimitiveSemantics.structured, hLength,
+          hFamilyStep, Assembly.PrimStep.run, EvmYul.EVM.execBinOp, hPop,
+          EvmYul.Stack.push, EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, Assembly.PrimStep.idRun_eq] at hEval
+    | un f hFamilyStep =>
+        have hBound : 1 ≤ values.reverse.length := by
+          have hArity :=
+            Locals.Source.PrimitiveSemantics.sourceContinuingStep_inputArity
+              hFamilyStep
+          rw [List.length_reverse, hLength, ← hArity]
+          simp [Assembly.PrimStep.inputArity]
+        obtain ⟨rest, value, hPop⟩ :=
+          Assembly.PrimStep.Stack.exists_pop_of_one_le hBound
+        simp [Locals.Source.PrimitiveSemantics.structured, hLength,
+          hFamilyStep, Assembly.PrimStep.run, EvmYul.EVM.execUnOp, hPop,
+          EvmYul.Stack.push, EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, Assembly.PrimStep.idRun_eq] at hEval
+    | tri f hFamilyStep =>
+        have hBound : 3 ≤ values.reverse.length := by
+          have hArity :=
+            Locals.Source.PrimitiveSemantics.sourceContinuingStep_inputArity
+              hFamilyStep
+          rw [List.length_reverse, hLength, ← hArity]
+          simp [Assembly.PrimStep.inputArity]
+        obtain ⟨rest, left, middle, right, hPop⟩ :=
+          Assembly.PrimStep.Stack.exists_pop3_of_three_le hBound
+        simp [Locals.Source.PrimitiveSemantics.structured, hLength,
+          hFamilyStep, Assembly.PrimStep.run, EvmYul.EVM.execTriOp, hPop,
+          EvmYul.Stack.push, EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, Assembly.PrimStep.idRun_eq] at hEval
+    | pop hFamilyStep =>
+        have hBound : 1 ≤ values.reverse.length := by
+          have hArity :=
+            Locals.Source.PrimitiveSemantics.sourceContinuingStep_inputArity
+              hFamilyStep
+          rw [List.length_reverse, hLength, ← hArity]
+          simp [Assembly.PrimStep.inputArity]
+        obtain ⟨rest, value, hPop⟩ :=
+          Assembly.PrimStep.Stack.exists_pop_of_one_le hBound
+        simp [Locals.Source.PrimitiveSemantics.structured, hLength,
+          hFamilyStep, Assembly.PrimStep.run, hPop,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC] at hEval
+    | executionEnv f hFamilyStep =>
+        simp [Locals.Source.PrimitiveSemantics.structured, hLength,
+          hFamilyStep, Assembly.PrimStep.run, EvmYul.EVM.executionEnvOp,
+          EvmYul.Stack.push, EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, Assembly.PrimStep.idRun_eq] at hEval
+    | unaryExecutionEnv f hFamilyStep =>
+        have hBound : 1 ≤ values.reverse.length := by
+          have hArity :=
+            Locals.Source.PrimitiveSemantics.sourceContinuingStep_inputArity
+              hFamilyStep
+          rw [List.length_reverse, hLength, ← hArity]
+          simp [Assembly.PrimStep.inputArity]
+        obtain ⟨rest, value, hPop⟩ :=
+          Assembly.PrimStep.Stack.exists_pop_of_one_le hBound
+        simp [Locals.Source.PrimitiveSemantics.structured, hLength,
+          hFamilyStep, Assembly.PrimStep.run,
+          EvmYul.EVM.unaryExecutionEnvOp, hPop, EvmYul.Stack.push,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, Assembly.PrimStep.idRun_eq] at hEval
+    | state f hFamilyStep =>
+        simp [Locals.Source.PrimitiveSemantics.structured, hLength,
+          hFamilyStep, Assembly.PrimStep.run, EvmYul.EVM.stateOp,
+          EvmYul.Stack.push, EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, Assembly.PrimStep.idRun_eq] at hEval
+    | unaryState f hFamilyStep =>
+        have hBound : 1 ≤ values.reverse.length := by
+          have hArity :=
+            Locals.Source.PrimitiveSemantics.sourceContinuingStep_inputArity
+              hFamilyStep
+          rw [List.length_reverse, hLength, ← hArity]
+          simp [Assembly.PrimStep.inputArity]
+        obtain ⟨rest, value, hPop⟩ :=
+          Assembly.PrimStep.Stack.exists_pop_of_one_le hBound
+        simp [Locals.Source.PrimitiveSemantics.structured, hLength,
+          hFamilyStep, Assembly.PrimStep.run, EvmYul.EVM.unaryStateOp,
+          hPop, EvmYul.Stack.push,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, Assembly.PrimStep.idRun_eq] at hEval
+    | binaryState f hFamilyStep =>
+        have hStepEq : step = .binaryState f := by
+          rw [hFamilyStep] at hStep
+          exact (Option.some.inj hStep).symm
+        subst step
+        cases hPermission : sourceShared.executionEnv.perm with
+        | false =>
+            have hTargetPermission :
+                target.executionEnv.perm = false := by
+              change target.toSharedState.executionEnv.perm = false
+              rw [← hRel.executionEnv_eq]
+              exact hPermission
+            simp [Locals.Source.PrimitiveSemantics.structured, hLength,
+              hFamilyStep, Assembly.PrimStep.run, hPermission] at hEval
+            subst error
+            simp [Assembly.PrimStep.run, hTargetPermission]
+        | true =>
+            have hBound : 2 ≤ values.reverse.length := by
+              have hArity :=
+                Locals.Source.PrimitiveSemantics.sourceContinuingStep_inputArity
+                  hFamilyStep
+              rw [List.length_reverse, hLength, ← hArity]
+              simp [Assembly.PrimStep.inputArity]
+            obtain ⟨rest, left, right, hPop⟩ :=
+              Assembly.PrimStep.Stack.exists_pop2_of_two_le hBound
+            simp [Locals.Source.PrimitiveSemantics.structured, hLength,
+              hFamilyStep, Assembly.PrimStep.run, hPermission,
+              EvmYul.EVM.binaryStateOp, hPop,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC,
+              Assembly.PrimStep.idRun_eq] at hEval
+    | returnDataSize =>
+        simp [Locals.Source.PrimitiveSemantics.structured,
+          Locals.Source.PrimitiveSemantics.sourceContinuingStep?, hLength,
+          Structured.BasicOp.toPrimOp, Assembly.PrimOp.continuingStep?,
+          Assembly.PrimStep.run, EvmYul.EVM.machineStateOp,
+          EvmYul.Stack.push, EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, Assembly.PrimStep.idRun_eq] at hEval
 
 /-- Memory-neutral ordinary primitives implement the canonical open capability. -/
 theorem openForward
     {op : Structured.BasicOp}
     (family : SharedFamily op) (contract : MemoryContract.Contract) :
     AllocationInteractionPrimitive.OpenForward contract op :=
-  (family.toClosedSpec contract).openForward
+  (family.toFallibleClosedSpec contract).openForward
 
 end SharedFamily
 

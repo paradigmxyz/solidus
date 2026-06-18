@@ -403,3 +403,14 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 #print axioms EvmCompiler.Yul.FunctionsInteractionRelation.WorldRel.codeErasedExtCodeHash
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldSpec.forward
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldUnaryAccess.forward
+#print axioms EvmCompiler.Assembly.PrimStep.run_binaryState_of_permitted
+#print axioms EvmCompiler.Assembly.PrimStep.run_binaryState_of_static
+#print axioms EvmCompiler.Simulation.OpenWorld.mapVal_insert
+#print axioms EvmCompiler.Simulation.CodeErasedState.sstore_eq
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.WorldRel.sstore
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.WorldRel.tstore
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldWriteSpec.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldBinaryWrite.forward
+#print axioms EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.SharedFamily.eval_exists_of_permitted
+#print axioms EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.SharedFamily.toFallibleClosedSpec
+#print axioms EvmCompiler.Functions.AllocationInteractionPrimitiveResource.shared_resourceForward

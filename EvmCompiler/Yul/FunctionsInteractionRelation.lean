@@ -269,6 +269,279 @@ theorem addAccessedStorageKey
         simpa [EvmYul.State.addAccessedStorageKey] using
           hRel.genesisBlockHeader }
 
+theorem updateAccount
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : WorldRel source target)
+    (address : EvmYul.AccountAddress)
+    (sourceAccount : EvmYul.Account .Yul)
+    (targetAccount : EvmYul.Account .EVM)
+    (hAccount :
+      Simulation.OpenAccount.ofYul sourceAccount =
+        Simulation.OpenAccount.ofEVM targetAccount) :
+    WorldRel
+      (source.updateAccount address sourceAccount)
+      (target.updateAccount address targetAccount) := by
+  exact
+    { openWorld := by
+        apply Simulation.OpenWorld.ext_of_fields
+        · change
+            ((source.accountMap.insert address sourceAccount).mapVal
+                fun _ account => Simulation.OpenAccount.ofYul account) =
+              ((target.accountMap.insert address targetAccount).mapVal
+                fun _ account => Simulation.OpenAccount.ofEVM account)
+          rw [Simulation.OpenWorld.mapVal_insert,
+            Simulation.OpenWorld.mapVal_insert]
+          have hAccounts := hRel.accounts
+          change
+            (source.accountMap.mapVal
+                fun _ account => Simulation.OpenAccount.ofYul account) =
+              (target.accountMap.mapVal
+                fun _ account => Simulation.OpenAccount.ofEVM account)
+            at hAccounts
+          rw [hAccounts, hAccount]
+        · simpa [Simulation.OpenWorld.ofYulState,
+            Simulation.OpenWorld.ofEVMState,
+            EvmYul.State.updateAccount] using hRel.substate
+        · simpa [Simulation.OpenWorld.ofYulState,
+            Simulation.OpenWorld.ofEVMState,
+            EvmYul.State.updateAccount] using hRel.createdAccounts
+      initialAccounts := by
+        simpa [EvmYul.State.updateAccount] using hRel.initialAccounts
+      totalGasUsedInBlock := by
+        simpa [EvmYul.State.updateAccount] using
+          hRel.totalGasUsedInBlock
+      transactionReceipts := by
+        simpa [EvmYul.State.updateAccount] using
+          hRel.transactionReceipts
+      executionEnv := by
+        simpa [EvmYul.State.updateAccount] using hRel.executionEnv
+      blocks := by
+        simpa [EvmYul.State.updateAccount] using hRel.blocks
+      genesisBlockHeader := by
+        simpa [EvmYul.State.updateAccount] using hRel.genesisBlockHeader }
+
+theorem withRefundBalance
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : WorldRel source target) (refundBalance : EvmYul.UInt256) :
+    WorldRel
+      { source with substate.refundBalance := refundBalance }
+      { target with substate.refundBalance := refundBalance } := by
+  exact
+    { openWorld := by
+        apply Simulation.OpenWorld.ext_of_fields
+        · simpa [Simulation.OpenWorld.ofYulState,
+            Simulation.OpenWorld.ofEVMState] using hRel.accounts
+        · simp [Simulation.OpenWorld.ofYulState,
+            Simulation.OpenWorld.ofEVMState, hRel.substate]
+        · simpa [Simulation.OpenWorld.ofYulState,
+            Simulation.OpenWorld.ofEVMState] using hRel.createdAccounts
+      initialAccounts := by simpa using hRel.initialAccounts
+      totalGasUsedInBlock := by simpa using hRel.totalGasUsedInBlock
+      transactionReceipts := by simpa using hRel.transactionReceipts
+      executionEnv := by simpa using hRel.executionEnv
+      blocks := by simpa using hRel.blocks
+      genesisBlockHeader := by simpa using hRel.genesisBlockHeader }
+
+theorem updateStorageAccount
+    {source : EvmYul.Account .Yul}
+    {target : EvmYul.Account .EVM}
+    (hAccount :
+      Simulation.OpenAccount.ofYul source =
+        Simulation.OpenAccount.ofEVM target)
+    (key value : EvmYul.UInt256) :
+    Simulation.OpenAccount.ofYul (source.updateStorage key value) =
+      Simulation.OpenAccount.ofEVM (target.updateStorage key value) := by
+  rw [← Simulation.OpenAccount.ofAccount_yul,
+    ← Simulation.OpenAccount.ofAccount_evm,
+    Simulation.OpenAccount.ofAccount_updateStorage,
+    Simulation.OpenAccount.ofAccount_updateStorage]
+  rw [Simulation.OpenAccount.ofAccount_yul,
+    Simulation.OpenAccount.ofAccount_evm, hAccount]
+  have hStorage := congrArg Simulation.OpenAccount.storage hAccount
+  change source.storage = target.storage at hStorage
+  simp [hStorage]
+
+theorem updateTransientStorageAccount
+    {source : EvmYul.Account .Yul}
+    {target : EvmYul.Account .EVM}
+    (hAccount :
+      Simulation.OpenAccount.ofYul source =
+        Simulation.OpenAccount.ofEVM target)
+    (key value : EvmYul.UInt256) :
+    Simulation.OpenAccount.ofYul
+        (source.updateTransientStorage key value) =
+      Simulation.OpenAccount.ofEVM
+        (target.updateTransientStorage key value) := by
+  rw [← Simulation.OpenAccount.ofAccount_yul,
+    ← Simulation.OpenAccount.ofAccount_evm,
+    Simulation.OpenAccount.ofAccount_updateTransientStorage,
+    Simulation.OpenAccount.ofAccount_updateTransientStorage]
+  rw [Simulation.OpenAccount.ofAccount_yul,
+    Simulation.OpenAccount.ofAccount_evm, hAccount]
+  have hStorage :=
+    congrArg Simulation.OpenAccount.transientStorage hAccount
+  change source.tstorage = target.tstorage at hStorage
+  simp [hStorage]
+
+theorem tstore
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : WorldRel source target) (key value : EvmYul.UInt256) :
+    WorldRel (source.tstore key value) (target.tstore key value) := by
+  let owner := source.executionEnv.codeOwner
+  have hTargetOwner : target.executionEnv.codeOwner = owner := by
+    simpa [owner] using hRel.executionEnv.codeOwner.symm
+  unfold EvmYul.State.tstore
+  dsimp only
+  rw [hTargetOwner]
+  have hLookup := hRel.accountViews owner
+  cases hSource : source.lookupAccount owner with
+  | none =>
+      change source.accountMap.find? owner = none at hSource
+      rw [hSource] at hLookup
+      cases hTarget : target.lookupAccount owner with
+      | none => simpa [hSource, hTarget] using hRel
+      | some targetAccount =>
+          change target.accountMap.find? owner = some targetAccount at hTarget
+          rw [hTarget] at hLookup
+          simp at hLookup
+  | some sourceAccount =>
+      change source.accountMap.find? owner = some sourceAccount at hSource
+      rw [hSource] at hLookup
+      cases hTarget : target.lookupAccount owner with
+      | none =>
+          change target.accountMap.find? owner = none at hTarget
+          rw [hTarget] at hLookup
+          simp at hLookup
+      | some targetAccount =>
+          change target.accountMap.find? owner = some targetAccount at hTarget
+          rw [hTarget] at hLookup
+          have hAccount :
+              Simulation.OpenAccount.ofYul sourceAccount =
+                Simulation.OpenAccount.ofEVM targetAccount := by
+            simpa using Option.some.inj hLookup
+          simpa [hSource, hTarget] using
+            hRel.updateAccount owner
+              (sourceAccount.updateTransientStorage key value)
+              (targetAccount.updateTransientStorage key value)
+              (updateTransientStorageAccount hAccount key value)
+
+theorem sstore
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : WorldRel source target) (key value : EvmYul.UInt256) :
+    WorldRel (source.sstore key value) (target.sstore key value) := by
+  let owner := source.executionEnv.codeOwner
+  have hTargetOwner : target.executionEnv.codeOwner = owner := by
+    simpa [owner] using hRel.executionEnv.codeOwner.symm
+  have hCurrent :
+      Simulation.CodeErasedState.currentStorageValue source owner key =
+        Simulation.CodeErasedState.currentStorageValue target owner key := by
+    have hLookup := hRel.accountViews owner
+    cases hSource : source.accountMap.find? owner with
+    | none =>
+        rw [hSource] at hLookup
+        cases hTarget : target.accountMap.find? owner with
+        | none =>
+            simp [Simulation.CodeErasedState.currentStorageValue,
+              Batteries.RBMap.find!, hSource, hTarget]
+            rfl
+        | some targetAccount => simp [hTarget] at hLookup
+    | some sourceAccount =>
+        rw [hSource] at hLookup
+        cases hTarget : target.accountMap.find? owner with
+        | none => simp [hTarget] at hLookup
+        | some targetAccount =>
+            rw [hTarget] at hLookup
+            have hAccount :
+                Simulation.OpenAccount.ofYul sourceAccount =
+                  Simulation.OpenAccount.ofEVM targetAccount := by
+              simpa using Option.some.inj hLookup
+            have hStorage :=
+              congrArg Simulation.OpenAccount.storage hAccount
+            change sourceAccount.storage = targetAccount.storage at hStorage
+            simp [Simulation.CodeErasedState.currentStorageValue,
+              Batteries.RBMap.find!, hSource, hTarget, hStorage]
+  have hInitial :
+      Simulation.CodeErasedState.initialStorageValue source owner key =
+        Simulation.CodeErasedState.initialStorageValue target owner key := by
+    simp [Simulation.CodeErasedState.initialStorageValue,
+      hRel.initialAccounts]
+  have hRefund :
+      source.substate.refundBalance = target.substate.refundBalance := by
+    simpa using congrArg EvmYul.Substate.refundBalance hRel.substate
+  rw [Simulation.CodeErasedState.sstore_eq,
+    Simulation.CodeErasedState.sstore_eq, hTargetOwner]
+  let newRefund : EvmYul.UInt256 :=
+    Simulation.CodeErasedState.sstoreRefundBalance
+      (Simulation.CodeErasedState.initialStorageValue source owner key)
+      (Simulation.CodeErasedState.currentStorageValue source owner key)
+      value source.substate.refundBalance
+  have hNewRefund :
+      newRefund =
+        Simulation.CodeErasedState.sstoreRefundBalance
+          (Simulation.CodeErasedState.initialStorageValue target owner key)
+          (Simulation.CodeErasedState.currentStorageValue target owner key)
+          value target.substate.refundBalance := by
+    simp [newRefund, hInitial, hCurrent, hRefund]
+  change
+    WorldRel
+      ((source.lookupAccount owner).option source
+        (fun account =>
+          { (source.setAccount owner
+                (account.updateStorage key value)
+              |>.addAccessedStorageKey (owner, key)) with
+            substate.refundBalance := newRefund }))
+      ((target.lookupAccount owner).option target
+        (fun account =>
+          { (target.setAccount owner
+                (account.updateStorage key value)
+              |>.addAccessedStorageKey (owner, key)) with
+            substate.refundBalance :=
+              Simulation.CodeErasedState.sstoreRefundBalance
+                (Simulation.CodeErasedState.initialStorageValue
+                  target owner key)
+                (Simulation.CodeErasedState.currentStorageValue
+                  target owner key)
+                value target.substate.refundBalance }))
+  rw [← hNewRefund]
+  have hLookup := hRel.accountViews owner
+  cases hSource : source.lookupAccount owner with
+  | none =>
+      change source.accountMap.find? owner = none at hSource
+      rw [hSource] at hLookup
+      cases hTarget : target.lookupAccount owner with
+      | none => simpa [hSource, hTarget] using hRel
+      | some targetAccount =>
+          change target.accountMap.find? owner = some targetAccount at hTarget
+          rw [hTarget] at hLookup
+          simp at hLookup
+  | some sourceAccount =>
+      change source.accountMap.find? owner = some sourceAccount at hSource
+      rw [hSource] at hLookup
+      cases hTarget : target.lookupAccount owner with
+      | none =>
+          change target.accountMap.find? owner = none at hTarget
+          rw [hTarget] at hLookup
+          simp at hLookup
+      | some targetAccount =>
+          change target.accountMap.find? owner = some targetAccount at hTarget
+          rw [hTarget] at hLookup
+          have hAccount :
+              Simulation.OpenAccount.ofYul sourceAccount =
+                Simulation.OpenAccount.ofEVM targetAccount := by
+            simpa using Option.some.inj hLookup
+          have hUpdated :=
+            hRel.updateAccount owner
+              (sourceAccount.updateStorage key value)
+              (targetAccount.updateStorage key value)
+              (updateStorageAccount hAccount key value)
+          have hAccessed := hUpdated.addAccessedStorageKey (owner, key)
+          simpa [hSource, hTarget, EvmYul.State.setAccount] using
+            hAccessed.withRefundBalance newRefund
+
 theorem codeErasedExtCodeHash
     {source : EvmYul.State .Yul}
     {target : EvmYul.State .EVM}

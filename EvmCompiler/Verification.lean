@@ -1390,6 +1390,17 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionRelation.WorldRel.codeErasedExtCodeHash
 #check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldSpec.forward
 #check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldUnaryAccess.forward
+#check EvmCompiler.Assembly.PrimStep.run_binaryState_of_permitted
+#check EvmCompiler.Assembly.PrimStep.run_binaryState_of_static
+#check EvmCompiler.Simulation.OpenWorld.mapVal_insert
+#check EvmCompiler.Simulation.CodeErasedState.sstore_eq
+#check EvmCompiler.Yul.FunctionsInteractionRelation.WorldRel.sstore
+#check EvmCompiler.Yul.FunctionsInteractionRelation.WorldRel.tstore
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldWriteSpec.forward
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.WorldBinaryWrite.forward
+#check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.SharedFamily.eval_exists_of_permitted
+#check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.SharedFamily.toFallibleClosedSpec
+#check EvmCompiler.Functions.AllocationInteractionPrimitiveResource.shared_resourceForward
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.one_cons
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.succ_succ_cons
 #check EvmCompiler.Yul.FunctionsInteractionExpression.directAt
