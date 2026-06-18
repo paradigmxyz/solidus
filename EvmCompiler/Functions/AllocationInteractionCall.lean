@@ -2294,6 +2294,151 @@ termination_by pending.length
 
 end ReturnPrelude
 
+/-- Stable caller-side decomposition of one ordinary compiled function call. -/
+structure CallComponents
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {targets : List Functions.Name}
+    {functionName : Functions.Name}
+    {args : List (Functions.Expr 1)}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .call targets functionName args :: rest }
+        lowerState localsCtx) where
+  headLower : List Locals.Stmt
+  headCode : List Expressions.Stmt
+  tail :
+    CoreCursor root scope live { stmts := rest } lowerState localsCtx
+  fn : AllocationSupport.FunSlots
+  loweredArgs : List (Locals.Expr 1)
+  callArgs : List (Locals.Expr 1)
+  stores : Structured.Code
+  release : List Locals.Stmt
+  argsCode : Structured.Code
+  releaseCode : List Expressions.Stmt
+  lookup :
+    AllocationSupport.lookupFun? functionName root.lowerCtx.functions = some fn
+  argsLength : args.length = fn.params.length
+  targetsLength : targets.length = fn.returns.length
+  targetsNodup : targets.Nodup
+  lowerArgs :
+    AllocationLowering.lowerExprList root.lowerCtx lowerState args =
+      some loweredArgs
+  callArgs_eq :
+    (if functionName ∈ root.lowerCtx.frameFunctions then do
+        let frameConfig ← root.lowerCtx.frameConfig?
+        some (AllocationLowering.frameExpr frameConfig :: loweredArgs)
+      else
+        some loweredArgs) =
+      some callArgs
+  stores_eq :
+    AllocationLowering.lowerCallTargetsCode?
+        root.lowerCtx lowerState targets.reverse targets.length =
+      some stores
+  release_eq :
+    (if functionName ∈ root.lowerCtx.frameFunctions then do
+        let frameConfig ← root.lowerCtx.frameConfig?
+        some
+          [.expr
+            (Locals.Expr.code (results := 0)
+              (AllocationSupport.scratchFrameReleaseCode frameConfig))]
+      else
+        some []) =
+      some release
+  compileArgs :
+    Locals.ExprSeq.compileCode localsCtx 0
+        (AllocationLowering.exprSeqOfList callArgs) =
+      some argsCode
+  compileRelease :
+    Locals.Block.compileOpen localsCtx { stmts := release } =
+      some (releaseCode, localsCtx)
+  headCode_eq :
+    headCode =
+      Locals.codeStmt argsCode ++ [.call functionName] ++
+        Locals.codeStmt stores ++ releaseCode
+  compiled : cursor.compiled = headCode ++ tail.compiled
+  lower :
+    AllocationLowering.lowerStmt root.lowerCtx root.returns lowerState
+        (.call targets functionName args) =
+      some (headLower, lowerState)
+  compile :
+    Locals.Block.compileOpen localsCtx { stmts := headLower } =
+      some (headCode, localsCtx)
+  step :
+    StepTransport lowerState lowerState localsCtx localsCtx live
+      (.call targets functionName args)
+  exactTail : ExactTail cursor tail
+
+/-- Construct the caller-side artifact solely from the ordinary compiler. -/
+theorem CoreCursor.callComponents
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {targets : List Functions.Name}
+    {functionName : Functions.Name}
+    {args : List (Functions.Expr 1)}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .call targets functionName args :: rest }
+        lowerState localsCtx) :
+    Nonempty (CallComponents cursor) := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, hPlan, hFinalState, hFinalLocals,
+        hLower, hCompile, _hLowered, hCompiled, hScoped⟩ :=
+    cursor.cons
+  obtain
+      ⟨fn, loweredArgs, callArgs, stores, release, argsCode, releaseCode,
+        hLookup, hArgsLength, hTargetsLength, hTargetsNodup,
+        hLowerArgs, hCallArgs, hStores, hRelease,
+        hCompileArgs, hCompileRelease, hHeadCode,
+        hAfterState, hAfterLocals⟩ :=
+    CallCompiler.components hLower hCompile
+  subst afterState
+  subst afterLocals
+  exact ⟨{
+    headLower := headLower
+    headCode := headCode
+    tail := tail
+    fn := fn
+    loweredArgs := loweredArgs
+    callArgs := callArgs
+    stores := stores
+    release := release
+    argsCode := argsCode
+    releaseCode := releaseCode
+    lookup := hLookup
+    argsLength := hArgsLength
+    targetsLength := hTargetsLength
+    targetsNodup := hTargetsNodup
+    lowerArgs := hLowerArgs
+    callArgs_eq := hCallArgs
+    stores_eq := hStores
+    release_eq := hRelease
+    compileArgs := hCompileArgs
+    compileRelease := hCompileRelease
+    headCode_eq := hHeadCode
+    compiled := hCompiled
+    lower := hLower
+    compile := hCompile
+    step := StepTransport.of_compilers hScoped hLower hCompile
+    exactTail := ⟨hPlan, hFinalState, hFinalLocals⟩ }⟩
+
 namespace SelectedCallee
 
 /-- Compiler-owned artifact for the source function selected by one call. -/

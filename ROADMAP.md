@@ -93,7 +93,11 @@ boundaries remain active work.
     meta-fuel exhaustion without duplicating loop semantics;
   - [x] strengthen caught `break`/`continue` outcomes with destination
     definedness, stack length, mode/live agreement, and frame continuity;
-  - [ ] exact recursive loop core and compiler-owned `for` wrapper;
+  - [x] exact recursive loop core and compiler-owned `for` wrapper;
+  - [x] canonical source/target internal-call equations and compiler-owned
+    caller call decomposition;
+  - [ ] caller argument, selected-callee, return-writeback, scratch-release,
+    and exact-tail interaction composition;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

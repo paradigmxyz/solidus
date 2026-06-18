@@ -296,6 +296,122 @@ def openRun (program : Expressions.Program) (fuel : Nat)
     Structured.InteractionSemantics.handler
     program fuel stmt state
 
+/-- A positive-fuel procedure call exposes stack splitting and its body run. -/
+theorem openRun_call
+    (program : Expressions.Program) (fuel : Nat)
+    (name : Expressions.Name) (state : RunState) :
+    openRun program (fuel + 1) (.call name) state =
+      (let model := Structured.EffectSemantics.Ordinary.runStateModel
+       match EffectSemantics.ProcList.lookup? name program.procs with
+       | none => throw .InvalidInstruction
+       | some proc =>
+           match Structured.StackFrame.splitArgs? proc.argc state.evm.stack with
+           | none => throw .StackUnderflow
+           | some (args, callerStack) => do
+               let callEVM := { state.evm with stack := args }
+               let callState :=
+                 model.pushReturn (model.withEVM state callEVM)
+                   callerStack proc.retc
+               let outcome ←
+                 EffectSemantics.Control.Block.run model
+                   Structured.InteractionSemantics.handler
+                   program fuel proc.body callState
+               match outcome.mode with
+               | .regular | .leave =>
+                   match model.popReturn? outcome.state with
+                   | none => throw .InvalidInstruction
+                   | some (frame, returned) =>
+                       match Structured.StackFrame.attachReturns?
+                           frame outcome.state.evm.stack with
+                       | none => throw .InvalidInstruction
+                       | some stack =>
+                           let evm := { outcome.state.evm with stack := stack }
+                           pure
+                             (Structured.EffectSemantics.Outcome.regular
+                               (model.withEVM returned evm))
+               | .brk | .cont =>
+                   throw .InvalidInstruction
+               | .halt kind =>
+                   pure
+                     (Structured.EffectSemantics.Outcome.halt kind outcome.state)) := by
+  unfold openRun
+  simp only [EffectSemantics.Control.Stmt.run,
+    Structured.EffectSemantics.Ordinary.runStateModel_evm,
+    Structured.EffectSemantics.Ordinary.runStateModel_withEVM,
+    Structured.EffectSemantics.Ordinary.runStateModel_pushReturn,
+    Structured.EffectSemantics.Ordinary.runStateModel_popReturn?]
+  cases hLookup : EffectSemantics.ProcList.lookup? name program.procs with
+  | none => simp only [hLookup]
+  | some proc =>
+      simp only [hLookup]
+      cases hSplit : Structured.StackFrame.splitArgs?
+          proc.argc state.evm.stack with
+      | none => simp only [hSplit]
+      | some split =>
+          rcases split with ⟨args, callerStack⟩
+          simp only [hSplit]
+          apply Simulation.Interaction.AllDone.bind_congr
+            (Simulation.Interaction.AllDone.trivial
+              (EffectSemantics.Control.Block.run
+                Structured.EffectSemantics.Ordinary.runStateModel
+                Structured.InteractionSemantics.handler program fuel proc.body
+                ((state.withEVM
+                  { state.evm with stack := args }).pushReturn
+                    callerStack proc.retc)))
+          intro outcome _
+          rcases outcome with ⟨outState, outMode⟩
+          cases outMode with
+          | regular =>
+              dsimp only [Structured.OutcomeT.mode,
+                Structured.OutcomeT.state]
+              cases hPop : outState.popReturn? with
+              | none =>
+                  change Simulation.Interaction.error _ =
+                    Simulation.Interaction.error _
+                  rfl
+              | some popped =>
+                  rcases popped with ⟨frame, returned⟩
+                  simp only [hPop]
+                  cases hAttach : Structured.StackFrame.attachReturns?
+                      frame outState.evm.stack with
+                  | none =>
+                      change Simulation.Interaction.error _ =
+                        Simulation.Interaction.error _
+                      rfl
+                  | some stack =>
+                      change Simulation.Interaction.pure _ =
+                        Simulation.Interaction.pure _
+                      rfl
+          | leave =>
+              dsimp only [Structured.OutcomeT.mode,
+                Structured.OutcomeT.state]
+              cases hPop : outState.popReturn? with
+              | none =>
+                  change Simulation.Interaction.error _ =
+                    Simulation.Interaction.error _
+                  rfl
+              | some popped =>
+                  rcases popped with ⟨frame, returned⟩
+                  simp only [hPop]
+                  cases hAttach : Structured.StackFrame.attachReturns?
+                      frame outState.evm.stack with
+                  | none =>
+                      change Simulation.Interaction.error _ =
+                        Simulation.Interaction.error _
+                      rfl
+                  | some stack =>
+                      change Simulation.Interaction.pure _ =
+                        Simulation.Interaction.pure _
+                      rfl
+          | brk | cont =>
+              change Simulation.Interaction.error _ =
+                Simulation.Interaction.error _
+              rfl
+          | halt kind =>
+              change Simulation.Interaction.pure _ =
+                Simulation.Interaction.pure _
+              rfl
+
 end Stmt
 
 namespace Program

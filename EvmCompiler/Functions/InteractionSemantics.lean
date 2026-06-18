@@ -246,6 +246,95 @@ theorem openRun_switch
   intro result _
   cases Functions.Source.Switch.select result.2 cases defaultBody <;> rfl
 
+/-- A positive-fuel internal call exposes arguments, body execution, and writeback. -/
+theorem openRun_call
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (targets : List Functions.Name)
+    (functionName : Functions.Name) (args : List (Functions.Expr 1))
+    (state : State) :
+    openRun program ctx (fuel + 1) (.call targets functionName args) state =
+      (do
+        if targets.Nodup then
+          let (stateAfterArgs, argValues) ←
+            Functions.Source.Effectful.ArgList.Control.eval
+              stateModel primitiveSemantics args state
+          let fn ←
+            (Functions.Source.FunList.find? functionName program.functions).elim
+              (throw .InvalidInstruction) pure
+          let callResult ←
+            Functions.Source.Effectful.Control.FunDef.runBody
+              stateModel primitiveSemantics program fn argValues fuel
+                stateAfterArgs
+          match callResult with
+          | .returned stateAfterCall returnValues =>
+              let returnStore ←
+                (Functions.Source.Store.assignMany targets returnValues
+                  (stateModel.vars stateAfterArgs)).elim
+                    (throw .InvalidInstruction) pure
+              let returnedSource := stateModel.source stateAfterCall
+              pure
+                (Functions.Source.Effectful.Outcome.regular
+                  (stateModel.withSource stateAfterCall
+                    { shared := returnedSource.shared, vars := returnStore }),
+                  ctx)
+          | .halted kind haltedState =>
+              pure
+                (Functions.Source.Effectful.Outcome.halt kind haltedState, ctx)
+        else
+          throw .InvalidInstruction) := by
+  unfold openRun Functions.Source.Canonical.Stmt.run
+  simp only [Functions.Source.Effectful.Control.Stmt.run]
+  by_cases hTargets : targets.Nodup
+  · simp only [if_pos hTargets]
+    apply Simulation.Interaction.AllDone.bind_congr
+      (Simulation.Interaction.AllDone.trivial
+        (Functions.Source.Effectful.ArgList.Control.eval
+          stateModel primitiveSemantics args state))
+    intro result _
+    rcases result with ⟨stateAfterArgs, argValues⟩
+    cases hFind : Functions.Source.FunList.find?
+        functionName program.functions with
+    | none =>
+        simp only [hFind]
+        change Simulation.Interaction.bind
+            (Simulation.Interaction.error (Error := EVMException)
+              (Result := Functions.FunDef) .InvalidInstruction) _ =
+          Simulation.Interaction.bind
+            (Simulation.Interaction.error (Error := EVMException)
+              (Result := Functions.FunDef) .InvalidInstruction) _
+        rfl
+    | some fn =>
+        simp only [hFind]
+        change Simulation.Interaction.bind
+            (Simulation.Interaction.pure (Error := EVMException) fn) _ =
+          Simulation.Interaction.bind
+            (Simulation.Interaction.pure (Error := EVMException) fn) _
+        apply Simulation.Interaction.AllDone.bind_congr
+          (Simulation.Interaction.AllDone.trivial
+            (Simulation.Interaction.pure (Error := EVMException) fn))
+        intro fn _
+        apply Simulation.Interaction.AllDone.bind_congr
+          (Simulation.Interaction.AllDone.trivial
+            (Functions.Source.Effectful.Control.FunDef.runBody
+              stateModel primitiveSemantics program fn argValues fuel
+                stateAfterArgs))
+        intro callResult _
+        cases callResult with
+        | returned stateAfterCall returnValues =>
+            cases hAssign : Functions.Source.Store.assignMany
+                targets returnValues (stateModel.vars stateAfterArgs) with
+            | none =>
+                simp [hAssign, Simulation.Interaction.error,
+                  Simulation.Interaction.pure, Simulation.Interaction.bind]
+            | some returnStore =>
+                simp [hAssign, Simulation.Interaction.error,
+                  Simulation.Interaction.pure, Simulation.Interaction.bind]
+        | halted kind haltedState =>
+            change Simulation.Interaction.pure _ =
+              Simulation.Interaction.pure _
+            rfl
+  · simp only [if_neg hTargets]
+
 end Stmt
 
 mutual
