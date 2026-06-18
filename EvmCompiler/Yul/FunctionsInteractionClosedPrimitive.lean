@@ -653,6 +653,351 @@ theorem forward
 
 end MachineBinaryZero
 
+namespace MachineMCopy
+
+def spec : MachineSpec (.StackMemFlow .MCOPY) .mcopy where
+  result machine values :=
+    match values with
+    | [destination, readStart, size] =>
+        (machine.mcopy destination readStart size, [])
+    | _ => (machine, [])
+  resultLength := by
+    intro machine values hLength
+    cases values with
+    | nil => rfl
+    | cons first rest =>
+        cases rest with
+        | nil => rfl
+        | cons second rest =>
+            cases rest with
+            | nil => rfl
+            | cons third extra =>
+                cases extra <;> rfl
+  sourceZero := by
+    intro source values
+    simp [Yul.InteractionSemantics.Primitive.openEval,
+      Yul.InteractionSemantics.Primitive.closedEval,
+      Yul.InteractionSemantics.Primitive.fail,
+      Yul.InteractionSemantics.State.afterException,
+      Simulation.ExternalKind.ofYulOperation?,
+      Simulation.CallKind.ofYulOperation?,
+      Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+  sourceSucc := by
+    intro fuel sourceShared sourceVars values hLength
+    obtain ⟨destination, readStart, size, rfl⟩ :=
+      List.length_eq_three.mp hLength
+    simp [Yul.InteractionSemantics.Primitive.openEval,
+      Yul.InteractionSemantics.Primitive.closedEval,
+      Simulation.ExternalKind.ofYulOperation?,
+      Simulation.CallKind.ofYulOperation?,
+      Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall,
+      EvmYul.Yul.ternaryMachineStateOp,
+      EvmYul.Yul.State.setMachineState,
+      EvmYul.Yul.State.setSharedState]
+    unfold EvmYul.step
+    rfl
+  target := by
+    intro state values hLength
+    obtain ⟨destination, readStart, size, rfl⟩ :=
+      List.length_eq_three.mp hLength
+    change
+      Locals.InteractionSemantics.Primitive.openEval .mcopy state
+          [size, readStart, destination] =
+        .done
+          (.ok
+            (state.withShared
+              { state.shared with
+                toMachineState :=
+                  state.shared.toMachineState.mcopy
+                    destination readStart size }, []))
+    rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+      (by rfl) (by rfl) (by rfl) (by decide) (by decide)]
+    rfl
+
+theorem forward
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {sourceValues : List Word}
+    (hLength : sourceValues.length = 3)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source .mcopy)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source (.StackMemFlow .MCOPY) sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        .mcopy target sourceValues.reverse) :=
+  spec.forward hLength hRel
+
+end MachineMCopy
+
+namespace MachineMLoad
+
+def result (machine : EvmYul.MachineState) (values : List Word) :
+    EvmYul.MachineState × List Word :=
+  match values with
+  | [address] =>
+      let loaded := machine.mload address
+      (loaded.2, [loaded.1])
+  | _ => (machine, [])
+
+def spec : MachineSpec (.StackMemFlow .MLOAD) .mload where
+  result := result
+  resultLength := by
+    intro machine values hLength
+    obtain ⟨address, rfl⟩ := List.length_eq_one_iff.mp hLength
+    rfl
+  sourceZero := by
+    intro source values
+    simp [Yul.InteractionSemantics.Primitive.openEval,
+      Yul.InteractionSemantics.Primitive.closedEval,
+      Yul.InteractionSemantics.Primitive.fail,
+      Yul.InteractionSemantics.State.afterException,
+      Simulation.ExternalKind.ofYulOperation?,
+      Simulation.CallKind.ofYulOperation?,
+      Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+  sourceSucc := by
+    intro fuel sourceShared sourceVars values hLength
+    obtain ⟨address, rfl⟩ := List.length_eq_one_iff.mp hLength
+    simp [result, Yul.InteractionSemantics.Primitive.openEval,
+      Yul.InteractionSemantics.Primitive.closedEval,
+      Simulation.ExternalKind.ofYulOperation?,
+      Simulation.CallKind.ofYulOperation?,
+      Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall,
+      EvmYul.Yul.State.setMachineState,
+      EvmYul.Yul.State.setSharedState]
+    unfold EvmYul.step
+    rfl
+  target := by
+    intro state values hLength
+    obtain ⟨address, rfl⟩ := List.length_eq_one_iff.mp hLength
+    let loaded := state.shared.toMachineState.mload address
+    change
+      Locals.InteractionSemantics.Primitive.openEval .mload state [address] =
+        .done
+          (.ok
+            (state.withShared
+              { state.shared with toMachineState := loaded.2 }, [loaded.1]))
+    rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+      (by rfl) (by rfl) (by rfl) (by decide) (by decide)]
+    rfl
+
+theorem forward
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {sourceValues : List Word}
+    (hLength : sourceValues.length = 1)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source .mload)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source (.StackMemFlow .MLOAD) sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        .mload target sourceValues.reverse) :=
+  spec.forward hLength hRel
+
+end MachineMLoad
+
+namespace MachineKeccak256
+
+def result (machine : EvmYul.MachineState) (values : List Word) :
+    EvmYul.MachineState × List Word :=
+  match values with
+  | [address, size] =>
+      let hashed := machine.keccak256 address size
+      (hashed.2, [hashed.1])
+  | _ => (machine, [])
+
+def spec : MachineSpec (.Keccak .KECCAK256) .keccak256 where
+  result := result
+  resultLength := by
+    intro machine values hLength
+    obtain ⟨address, size, rfl⟩ := List.length_eq_two.mp hLength
+    rfl
+  sourceZero := by
+    intro source values
+    simp [Yul.InteractionSemantics.Primitive.openEval,
+      Yul.InteractionSemantics.Primitive.closedEval,
+      Yul.InteractionSemantics.Primitive.fail,
+      Yul.InteractionSemantics.State.afterException,
+      Simulation.ExternalKind.ofYulOperation?,
+      Simulation.CallKind.ofYulOperation?,
+      Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+  sourceSucc := by
+    intro fuel sourceShared sourceVars values hLength
+    obtain ⟨address, size, rfl⟩ := List.length_eq_two.mp hLength
+    simp [result, Yul.InteractionSemantics.Primitive.openEval,
+      Yul.InteractionSemantics.Primitive.closedEval,
+      Simulation.ExternalKind.ofYulOperation?,
+      Simulation.CallKind.ofYulOperation?,
+      Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall,
+      EvmYul.Yul.binaryMachineStateOp',
+      EvmYul.Yul.State.setMachineState,
+      EvmYul.Yul.State.setSharedState]
+    unfold EvmYul.step
+    rfl
+  target := by
+    intro state values hLength
+    obtain ⟨address, size, rfl⟩ := List.length_eq_two.mp hLength
+    let hashed := state.shared.toMachineState.keccak256 address size
+    change
+      Locals.InteractionSemantics.Primitive.openEval
+          .keccak256 state [size, address] =
+        .done
+          (.ok
+            (state.withShared
+              { state.shared with toMachineState := hashed.2 }, [hashed.1]))
+    rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+      (by rfl) (by rfl) (by rfl) (by decide) (by decide)]
+    rfl
+
+theorem forward
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {sourceValues : List Word}
+    (hLength : sourceValues.length = 2)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source .keccak256)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source (.Keccak .KECCAK256) sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        .keccak256 target sourceValues.reverse) :=
+  spec.forward hLength hRel
+
+end MachineKeccak256
+
+namespace MachineReturnDataSize
+
+def spec : MachineSpec (.Env .RETURNDATASIZE) .returndatasize where
+  result machine values :=
+    match values with
+    | [] => (machine, [machine.returndatasize])
+    | _ => (machine, [])
+  resultLength := by
+    intro machine values hLength
+    have hValues : values = [] := List.eq_nil_of_length_eq_zero hLength
+    subst values
+    rfl
+  sourceZero := by
+    intro source values
+    simp [Yul.InteractionSemantics.Primitive.openEval,
+      Yul.InteractionSemantics.Primitive.closedEval,
+      Yul.InteractionSemantics.Primitive.fail,
+      Yul.InteractionSemantics.State.afterException,
+      Simulation.ExternalKind.ofYulOperation?,
+      Simulation.CallKind.ofYulOperation?,
+      Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+  sourceSucc := by
+    intro fuel sourceShared sourceVars values hLength
+    have hValues : values = [] := List.eq_nil_of_length_eq_zero hLength
+    subst values
+    simp [Yul.InteractionSemantics.Primitive.openEval,
+      Yul.InteractionSemantics.Primitive.closedEval,
+      Simulation.ExternalKind.ofYulOperation?,
+      Simulation.CallKind.ofYulOperation?,
+      Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+    unfold EvmYul.step
+    rfl
+  target := by
+    intro state values hLength
+    have hValues : values = [] := List.eq_nil_of_length_eq_zero hLength
+    subst values
+    change
+      Locals.InteractionSemantics.Primitive.openEval
+          .returndatasize state [] =
+        .done
+          (.ok
+            (state.withShared
+              { state.shared with
+                toMachineState := state.shared.toMachineState },
+              [state.shared.toMachineState.returndatasize]))
+    rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+      (by rfl) (by rfl) (by rfl) (by decide) (by decide)]
+    rfl
+
+theorem forward
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {sourceValues : List Word}
+    (hLength : sourceValues.length = 0)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source .returndatasize)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source (.Env .RETURNDATASIZE) sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        .returndatasize target sourceValues.reverse) :=
+  spec.forward hLength hRel
+
+end MachineReturnDataSize
+
+namespace MachinePop
+
+def spec : MachineSpec (.StackMemFlow .POP) .pop where
+  result machine values :=
+    match values with
+    | [_] => (machine, [])
+    | _ => (machine, [])
+  resultLength := by
+    intro machine values hLength
+    cases values with
+    | nil => rfl
+    | cons first rest =>
+        cases rest <;> rfl
+  sourceZero := by
+    intro source values
+    simp [Yul.InteractionSemantics.Primitive.openEval,
+      Yul.InteractionSemantics.Primitive.closedEval,
+      Yul.InteractionSemantics.Primitive.fail,
+      Yul.InteractionSemantics.State.afterException,
+      Simulation.ExternalKind.ofYulOperation?,
+      Simulation.CallKind.ofYulOperation?,
+      Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+  sourceSucc := by
+    intro fuel sourceShared sourceVars values hLength
+    obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLength
+    simp [Yul.InteractionSemantics.Primitive.openEval,
+      Yul.InteractionSemantics.Primitive.closedEval,
+      Simulation.ExternalKind.ofYulOperation?,
+      Simulation.CallKind.ofYulOperation?,
+      Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+    unfold EvmYul.step
+    rfl
+  target := by
+    intro state values hLength
+    obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLength
+    change
+      Locals.InteractionSemantics.Primitive.openEval .pop state [value] =
+        .done
+          (.ok
+            (state.withShared
+              { state.shared with
+                toMachineState := state.shared.toMachineState }, []))
+    rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+      (by rfl) (by rfl) (by rfl) (by decide) (by decide)]
+    rfl
+
+theorem forward
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {sourceValues : List Word}
+    (hLength : sourceValues.length = 1)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source .pop)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source (.StackMemFlow .POP) sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        .pop target sourceValues.reverse) :=
+  spec.forward hLength hRel
+
+end MachinePop
+
 end FunctionsInteractionClosedPrimitive
 end Yul
 end EvmCompiler

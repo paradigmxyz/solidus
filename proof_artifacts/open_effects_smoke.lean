@@ -384,3 +384,8 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 #print axioms EvmCompiler.Yul.FunctionsInteractionRelation.StateRel.withMachine
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineSpec.forward
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineBinaryZero.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineMCopy.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineMLoad.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineKeccak256.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineReturnDataSize.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachinePop.forward

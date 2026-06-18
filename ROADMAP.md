@@ -191,9 +191,8 @@ boundaries remain active work.
       code-erased state.
       - [x] Pure binary, unary, and ternary arithmetic/comparison/bitwise
         families through one reusable `PureSpec` forward theorem.
-      - [ ] Machine families through one reusable `MachineSpec` theorem:
-        MSTORE and MSTORE8 are checked; MCOPY, MLOAD, KECCAK256,
-        RETURNDATASIZE, and POP remain.
+      - [x] Machine families through one reusable `MachineSpec` theorem:
+        MSTORE, MSTORE8, MCOPY, MLOAD, KECCAK256, RETURNDATASIZE, and POP.
       - [ ] Environment, world, copy, log, and invalid families;
         assemble the concrete `ClosedSelected` theorem.
     - [x] Define the code-erased outcome-indexed relation and source-owned
