@@ -914,6 +914,66 @@ theorem openForward
 
 end SharedFamily
 
+inductive ResourceFamily : Structured.BasicOp → Simulation.ResourceQuery → Prop where
+  | gas : ResourceFamily .gas .gas
+  | msize : ResourceFamily .msize .msize
+
+namespace ResourceFamily
+
+/-- Resource primitives expose one identical query and preserve every answer. -/
+theorem openForward
+    {op : Structured.BasicOp} {kind : Simulation.ResourceQuery}
+    (family : ResourceFamily op kind) (contract : MemoryContract.Contract) :
+    AllocationInteractionPrimitive.OpenForward contract op where
+  preserve := by
+    intro plan live stackOffset frameBase mode source initialTarget target
+      values hLength hRel hStack _hSafe
+    have hValues : values = [] := by
+      apply List.eq_nil_of_length_eq_zero
+      cases family <;> simpa [Expressions.Structured.BasicOp.inputs] using hLength
+    subst values
+    cases family with
+    | gas =>
+        rw [Locals.InteractionSemantics.Primitive.openEval_gas,
+          Structured.InteractionSemantics.BasicInstr.openStep_gas]
+        apply Simulation.Interaction.Rel.request
+        intro value
+        apply Simulation.Interaction.Rel.done
+        apply Simulation.Interaction.ExceptRel.ok
+        refine ⟨?_, rfl, ?_⟩
+        · simpa [Locals.InteractionSemantics.Primitive.finish,
+            Locals.InteractionSemantics.Primitive.isolated,
+            Assembly.InteractionSemantics.PrimOp.resourceStep,
+            Simulation.Interaction.map, StateRel.pushTarget,
+            StateRel.pushTargetBy] using hRel.push_target_by 1 value
+        · simp [Assembly.InteractionSemantics.PrimOp.resourceStep,
+            Locals.InteractionSemantics.Primitive.finish,
+            Locals.InteractionSemantics.Primitive.isolated,
+            StateRel.pushTarget, StateRel.pushTargetBy, hStack,
+            EvmYul.Stack.push, EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC]
+    | msize =>
+        rw [Locals.InteractionSemantics.Primitive.openEval_msize,
+          Structured.InteractionSemantics.BasicInstr.openStep_msize]
+        apply Simulation.Interaction.Rel.request
+        intro value
+        apply Simulation.Interaction.Rel.done
+        apply Simulation.Interaction.ExceptRel.ok
+        refine ⟨?_, rfl, ?_⟩
+        · simpa [Locals.InteractionSemantics.Primitive.finish,
+            Locals.InteractionSemantics.Primitive.isolated,
+            Assembly.InteractionSemantics.PrimOp.resourceStep,
+            Simulation.Interaction.map, StateRel.pushTarget,
+            StateRel.pushTargetBy] using hRel.push_target_by 1 value
+        · simp [Assembly.InteractionSemantics.PrimOp.resourceStep,
+            Locals.InteractionSemantics.Primitive.finish,
+            Locals.InteractionSemantics.Primitive.isolated,
+            StateRel.pushTarget, StateRel.pushTargetBy, hStack,
+            EvmYul.Stack.push, EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC]
+
+end ResourceFamily
+
 namespace MemoryFamily
 
 theorem targetEffect_of_memory_eq
@@ -2590,6 +2650,49 @@ theorem openForward
 end LogFamily
 
 end MemoryFamily
+
+/-- Complete open capability for every primitive admitted by source semantics. -/
+theorem canonicalOpenForward
+    (contract : MemoryContract.Contract) (op : Structured.BasicOp)
+    (hSupported :
+      Locals.InteractionSemantics.Primitive.supportsOpen op = true) :
+    AllocationInteractionPrimitive.OpenForward contract op := by
+  cases op <;>
+    first
+    | exact ResourceFamily.gas.openForward contract
+    | exact ResourceFamily.msize.openForward contract
+    | exact MemoryFamily.mload_openForward contract
+    | exact MemoryFamily.mstore_openForward contract
+    | exact MemoryFamily.mstore8_openForward contract
+    | exact MemoryFamily.calldatacopy_openForward contract
+    | exact MemoryFamily.codecopy_openForward contract
+    | exact MemoryFamily.returndatacopy_openForward contract
+    | exact MemoryFamily.extcodecopy_openForward contract
+    | exact MemoryFamily.mcopy_openForward contract
+    | exact MemoryFamily.keccak256_openForward contract
+    | exact MemoryFamily.LogFamily.log0.openForward contract
+    | exact MemoryFamily.LogFamily.log1.openForward contract
+    | exact MemoryFamily.LogFamily.log2.openForward contract
+    | exact MemoryFamily.LogFamily.log3.openForward contract
+    | exact MemoryFamily.LogFamily.log4.openForward contract
+    | exact AllocationInteractionPrimitive.call_openForward contract .call
+    | exact AllocationInteractionPrimitive.call_openForward contract .callcode
+    | exact AllocationInteractionPrimitive.call_openForward contract .delegatecall
+    | exact AllocationInteractionPrimitive.call_openForward contract .staticcall
+    | exact AllocationInteractionPrimitive.create_openForward contract .create
+    | exact AllocationInteractionPrimitive.create_openForward contract .create2
+    | exact SharedFamily.openForward (.bin _ rfl) contract
+    | exact SharedFamily.openForward (.un _ rfl) contract
+    | exact SharedFamily.openForward (.tri _ rfl) contract
+    | exact SharedFamily.openForward (.pop rfl) contract
+    | exact SharedFamily.openForward (.executionEnv _ rfl) contract
+    | exact SharedFamily.openForward (.unaryExecutionEnv _ rfl) contract
+    | exact SharedFamily.openForward (.state _ rfl) contract
+    | exact SharedFamily.openForward (.unaryState _ rfl) contract
+    | exact SharedFamily.openForward (.binaryState _ rfl) contract
+    | exact SharedFamily.openForward .returnDataSize contract
+    | (simp [Locals.InteractionSemantics.Primitive.supportsOpen] at hSupported)
+
 end AllocationInteractionOrdinaryPrimitive
 end Functions
 end EvmCompiler

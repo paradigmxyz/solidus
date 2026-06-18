@@ -31700,3 +31700,15 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-file hole scan, axiom audit, and `git diff --check` passed; fallible
   and return-data-copy theorems use only
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 21:22:28 PDT - proof/functions-resource-family - proved `gas` and
+  `msize` expose the same single resource query and preserve every exact shared
+  answer in both allocation modes; concrete target-derived answers remain the
+  separate end-to-end resource obligation.
+- 2026-06-17 21:22:28 PDT - audit/functions-primitive-surface -
+  `canonicalOpenForward` now classifies every primitive admitted by canonical
+  `OpenSupported`; backend DUP/SWAP and `invalid` are rejected by that semantic
+  predicate rather than silently narrowed inside the theorem.
+- 2026-06-17 21:22:28 PDT - validation/functions-primitive-surface - the
+  focused 1145-job module, 1307-job verification root, architecture guard,
+  touched-file hole scan, axiom audit, and `git diff --check` passed; the
+  canonical classifier uses only `[propext, Classical.choice, Quot.sound]`.
