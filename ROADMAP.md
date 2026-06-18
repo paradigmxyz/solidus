@@ -179,6 +179,9 @@ boundaries remain active work.
   immutable active contract and a shared open-`Interaction` specialization for
   resources and all CALL/CREATE families.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
+  - [x] Exact code-erased state relation and arbitrary post-world transport.
+  - [x] GAS/MSIZE plus all CALL/CREATE primitive-family preservation.
+  - [ ] Recursive expressions, statements, internal calls, and whole program.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
   source-facing reservation/resource assumptions.
 - [ ] Run representative interleaving/reentrancy/static/zero-window tests and

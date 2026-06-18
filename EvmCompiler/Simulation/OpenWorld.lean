@@ -85,6 +85,21 @@ structure OpenWorld where
 
 namespace OpenWorld
 
+private theorem mapVal_leftInverse
+    {α β γ : Type} {cmp : α → α → Ordering}
+    (f : α → β → γ) (g : α → γ → β)
+    (h : ∀ key value, g key (f key value) = value)
+    (map : Batteries.RBMap α β cmp) :
+    (map.mapVal f).mapVal g = map := by
+  apply Subtype.ext
+  change Batteries.RBNode.map (Batteries.RBMap.Imp.mapSnd g)
+      (Batteries.RBNode.map (Batteries.RBMap.Imp.mapSnd f) map.1) = map.1
+  induction map.1 with
+  | nil => rfl
+  | node color left value right leftIH rightIH =>
+      simp [Batteries.RBNode.map, leftIH, rightIH,
+        Batteries.RBMap.Imp.mapSnd, h]
+
 def ofYulState (state : EvmYul.State .Yul) : OpenWorld where
   accounts := state.accountMap.mapVal fun _ account => OpenAccount.ofYul account
   substate := state.substate
@@ -148,6 +163,58 @@ def installEVMShared
     (base : EvmYul.SharedState .EVM) (world : OpenWorld) :
     EvmYul.SharedState .EVM :=
   { base with toState := installEVM base.toState world }
+
+@[simp] theorem ofYulState_installYul
+    (base : EvmYul.State .Yul) (world : OpenWorld) :
+    ofYulState (installYul base world) = world := by
+  cases world with
+  | mk accounts substate createdAccounts =>
+      change OpenWorld.mk
+          ((accounts.mapVal fun address account =>
+              let compatibilityCode :=
+                match base.accountMap.find? address with
+                | some existing => existing.code
+                | none => default
+              account.toYul compatibilityCode).mapVal
+            fun _ account => OpenAccount.ofYul account)
+          substate createdAccounts =
+        OpenWorld.mk accounts substate createdAccounts
+      rw [mapVal_leftInverse
+          (fun address account =>
+            let compatibilityCode :=
+              match base.accountMap.find? address with
+              | some existing => existing.code
+              | none => default
+            account.toYul compatibilityCode)
+          (fun _ account => OpenAccount.ofYul account)
+          (by intro address account; simp)
+          accounts]
+
+@[simp] theorem ofEVMState_installEVM
+    (base : EvmYul.State .EVM) (world : OpenWorld) :
+    ofEVMState (installEVM base world) = world := by
+  cases world with
+  | mk accounts substate createdAccounts =>
+      change OpenWorld.mk
+          ((accounts.mapVal fun _ account => account.toEVM).mapVal
+            fun _ account => OpenAccount.ofEVM account)
+          substate createdAccounts =
+        OpenWorld.mk accounts substate createdAccounts
+      rw [mapVal_leftInverse
+          (fun _ account => account.toEVM)
+          (fun _ account => OpenAccount.ofEVM account)
+          (by intro address account; simp)
+          accounts]
+
+@[simp] theorem ofYulShared_installYulShared
+    (base : EvmYul.SharedState .Yul) (world : OpenWorld) :
+    ofYulShared (installYulShared base world) = world := by
+  exact ofYulState_installYul base.toState world
+
+@[simp] theorem ofEVMShared_installEVMShared
+    (base : EvmYul.SharedState .EVM) (world : OpenWorld) :
+    ofEVMShared (installEVMShared base world) = world := by
+  exact ofEVMState_installEVM base.toState world
 
 @[simp] theorem installYul_executionEnv
     (base : EvmYul.State .Yul) (world : OpenWorld) :
