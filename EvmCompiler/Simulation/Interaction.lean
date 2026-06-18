@@ -881,7 +881,68 @@ theorem bind_congr
         funext answer
         exact ih answer (hResume answer) hNext
 
+/-- Invert a terminal property through a bind into its reachable continuations. -/
+theorem bind_inv
+    {Error : Type u1} {Source : Type v1} {Target : Type w1}
+    {targetProperty : Except Error Target → Prop}
+    {interaction : Interaction Error Source}
+    {next : Source → Interaction Error Target}
+    (hResult : AllDone targetProperty (Interaction.bind interaction next)) :
+    AllDone
+      (fun outcome =>
+        match outcome with
+        | .error err => targetProperty (.error err)
+        | .ok value => AllDone targetProperty (next value))
+      interaction := by
+  induction interaction with
+  | done outcome =>
+      cases outcome with
+      | error err =>
+          cases hResult with
+          | done hDone => exact .done hDone
+      | ok value =>
+          exact .done hResult
+  | request query resume ih =>
+      cases hResult with
+      | request hResume =>
+          exact .request fun answer => ih answer (hResume answer)
+
 end AllDone
+
+/-- Every open-world terminal branch returns successfully. -/
+def Successful
+    {Error : Type u1} {Result : Type v1}
+    (interaction : Interaction Error Result) : Prop :=
+  AllDone
+    (fun outcome =>
+      match outcome with
+      | .error _ => False
+      | .ok _ => True)
+    interaction
+
+namespace Successful
+
+theorem bind_inv
+    {Error : Type u1} {Source : Type v1} {Target : Type w1}
+    {interaction : Interaction Error Source}
+    {next : Source → Interaction Error Target}
+    (hResult : Successful (Interaction.bind interaction next)) :
+    AllDone
+      (fun outcome =>
+        match outcome with
+        | .error _ => False
+        | .ok value => Successful (next value))
+      interaction :=
+  AllDone.bind_inv hResult
+
+theorem error_false
+    {Error : Type u1} {Result : Type v1} (err : Error)
+    (hResult : Successful (Interaction.error (Result := Result) err)) :
+    False := by
+  cases hResult with
+  | done hDone => exact hDone
+
+end Successful
 
 @[simp] theorem bind_done_ok
     {Error : Type u1} {Source : Type v1} {Target : Type w1}

@@ -7,6 +7,16 @@ cd "$repo_root"
 
 failed=0
 
+for theorem in \
+    '#check EvmCompiler.Simulation.Interaction.Successful' \
+    '#check EvmCompiler.Simulation.Interaction.Successful.bind_inv'; do
+  if ! rg -Fq "$theorem" EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing shared interaction-safety interface: %s\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
 report_matches() {
   local title="$1"
   shift

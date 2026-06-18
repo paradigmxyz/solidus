@@ -137,6 +137,10 @@ import EvmCompiler.Yul.PrimitiveFuel
 import EvmCompiler.Yul.PrimitiveOwner
 import EvmCompiler.Yul.StateRelation
 
+#check EvmCompiler.Simulation.Interaction.Successful
+#check EvmCompiler.Simulation.Interaction.AllDone.bind_inv
+#check EvmCompiler.Simulation.Interaction.Successful.bind_inv
+
 /-!
 Stable verification aggregate.
 
