@@ -129,6 +129,22 @@ theorem empty :
   change (none : Option Word) = some value at hLookup
   contradiction
 
+theorem insert
+    {source : EvmYul.Yul.VarStore} {target : Locals.Source.Store}
+    (hRel : VarsRel source target) (name : EvmYul.Identifier)
+    (value : Word) :
+    VarsRel (source.insert name value)
+      (Locals.Source.Store.insert target name value) := by
+  intro key result hLookup
+  by_cases hKey : key = name
+  · subst key
+    simp at hLookup
+    rcases hLookup with ⟨rfl⟩
+    simp [Locals.Source.Store.insert]
+  · rw [Finmap.lookup_insert_of_ne source hKey] at hLookup
+    rw [Locals.Source.Store.insert_of_ne hKey]
+    exact hRel key result hLookup
+
 end VarsRel
 
 namespace StateRel
@@ -185,14 +201,32 @@ theorem withWorldAndMachine
   refine ⟨_, sourceVars, rfl, ?_, hVars⟩
   exact hShared.withWorldAndMachine world sourceMachine targetMachine hMachine
 
+theorem multifill_single
+    {source : SourceState} {target : TargetState}
+    (hRel : StateRel source target)
+    (name : EvmYul.Identifier) (value : Word) :
+    StateRel (source.multifill [name] [value])
+      (target.insert name value) := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  refine
+    ⟨sourceShared, sourceVars.insert name value, ?_, hShared,
+      VarsRel.insert hVars name value⟩
+  simp [EvmYul.Yul.State.multifill, EvmYul.Yul.State.insert]
+
 end StateRel
 
 def VarsDomainWithin (layout : List Functions.Name)
     (source : EvmYul.Yul.VarStore) : Prop :=
   ∀ name value, source.lookup name = some value → name ∈ layout
 
-/-- Regular adjacent relation plus the source-only lexical-domain fact needed
-when Functions control exits restrict compiler-private target locals. -/
+def VarsDefinedOn (layout : List Functions.Name)
+    (source : EvmYul.Yul.VarStore) : Prop :=
+  ∀ name, name ∈ layout → ∃ value, source.lookup name = some value
+
+/-- Regular adjacent relation plus the exact source lexical domain. Target
+locals may still extend this domain with compiler-private names. -/
 structure ScopedStateRel (layout : List Functions.Name)
     (source : SourceState) (target : TargetState) : Prop where
   state : StateRel source target
@@ -200,6 +234,10 @@ structure ScopedStateRel (layout : List Functions.Name)
     ∀ sourceShared sourceVars,
       source = .Ok sourceShared sourceVars →
         VarsDomainWithin layout sourceVars
+  defined :
+    ∀ sourceShared sourceVars,
+      source = .Ok sourceShared sourceVars →
+        VarsDefinedOn layout sourceVars
 
 namespace ScopedStateRel
 
@@ -219,6 +257,150 @@ theorem restrictTarget
   simpa [Locals.Source.State.restrictTo,
     Locals.Source.Store.restrictTo, hScope] using
     hVars name value hLookup
+
+theorem of_state_store_eq
+    {layout : List Functions.Name}
+    {entry finalSource : SourceState}
+    {entryTarget finalTarget : TargetState}
+    (hEntry : ScopedStateRel layout entry entryTarget)
+    (hFinal : StateRel finalSource finalTarget)
+    (hStore : finalSource.store = entry.store) :
+    ScopedStateRel layout finalSource finalTarget := by
+  refine ⟨hFinal, ?_, ?_⟩
+  · intro finalShared finalVars hFinalSource
+    rcases hEntry.state with
+      ⟨entryShared, entryVars, hEntrySource, _hShared, _hVars⟩
+    have hVarsEq : finalVars = entryVars := by
+      simpa [hFinalSource, hEntrySource] using hStore
+    simpa [hVarsEq] using
+      hEntry.domain entryShared entryVars hEntrySource
+  · intro finalShared finalVars hFinalSource
+    rcases hEntry.state with
+      ⟨entryShared, entryVars, hEntrySource, _hShared, _hVars⟩
+    have hVarsEq : finalVars = entryVars := by
+      simpa [hFinalSource, hEntrySource] using hStore
+    simpa [hVarsEq] using
+      hEntry.defined entryShared entryVars hEntrySource
+
+theorem declarationCheck
+    {layout : List Functions.Name}
+    {source : SourceState} {target : TargetState}
+    (hRel : ScopedStateRel layout source target)
+    {name : EvmYul.Identifier} (hFresh : name ∉ layout) :
+    EvmYul.Yul.checkDeclaration source [name] = .ok () := by
+  rcases hRel.state with
+    ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
+  subst source
+  have hLookup : sourceVars.lookup name = none := by
+    cases hValue : sourceVars.lookup name with
+    | none => rfl
+    | some value =>
+        exact False.elim
+          (hFresh (hRel.domain sourceShared sourceVars rfl
+            name value hValue))
+  simp [EvmYul.Yul.checkDeclaration, EvmYul.Yul.firstDuplicate?,
+    EvmYul.Yul.firstDeclared?, EvmYul.Yul.State.lookup?, hLookup]
+
+theorem assignmentCheck
+    {layout : List Functions.Name}
+    {source : SourceState} {target : TargetState}
+    (hRel : ScopedStateRel layout source target)
+    {name : EvmYul.Identifier} (hName : name ∈ layout) :
+    EvmYul.Yul.checkAssignment source [name] = .ok () := by
+  rcases hRel.state with
+    ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
+  subst source
+  obtain ⟨value, hLookup⟩ :=
+    hRel.defined sourceShared sourceVars rfl name hName
+  simp [EvmYul.Yul.checkAssignment, EvmYul.Yul.firstDuplicate?,
+    EvmYul.Yul.firstUndeclared?, EvmYul.Yul.State.lookup?, hLookup]
+
+theorem targetContains
+    {layout : List Functions.Name}
+    {source : SourceState} {target : TargetState}
+    (hRel : ScopedStateRel layout source target)
+    {name : Functions.Name} (hName : name ∈ layout) :
+    target.vars.contains name = true := by
+  rcases hRel.state with
+    ⟨sourceShared, sourceVars, hSource, _hShared, hVars⟩
+  obtain ⟨value, hLookup⟩ :=
+    hRel.defined sourceShared sourceVars hSource name hName
+  have hTarget : target.vars name = some value := hVars name value hLookup
+  simp [Locals.Source.Store.contains, hTarget]
+
+theorem multifill_single_cons
+    {layout : List Functions.Name}
+    {source : SourceState} {target : TargetState}
+    (hRel : ScopedStateRel layout source target)
+    (name : EvmYul.Identifier) (value : Word) :
+    ScopedStateRel (name :: layout)
+      (source.multifill [name] [value])
+      (target.insert name value) := by
+  refine ⟨StateRel.multifill_single hRel.state name value, ?_, ?_⟩
+  rcases hRel.state with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  intro finalShared finalVars hFinal
+  simp [EvmYul.Yul.State.multifill, EvmYul.Yul.State.insert] at hFinal
+  rcases hFinal with ⟨rfl, rfl⟩
+  intro key result hLookup
+  by_cases hKey : key = name
+  · subst key
+    exact List.mem_cons_self
+  · rw [Finmap.lookup_insert_of_ne sourceVars hKey] at hLookup
+    exact List.mem_cons_of_mem name
+      (hRel.domain sourceShared sourceVars rfl key result hLookup)
+  · rcases hRel.state with
+      ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+    subst source
+    intro finalShared finalVars hFinal
+    simp [EvmYul.Yul.State.multifill, EvmYul.Yul.State.insert] at hFinal
+    rcases hFinal with ⟨rfl, rfl⟩
+    intro key hKey
+    by_cases hName : key = name
+    · subst key
+      exact ⟨value, by simp⟩
+    · have hOld : key ∈ layout := by simpa [hName] using hKey
+      obtain ⟨result, hLookup⟩ :=
+        hRel.defined sourceShared sourceVars rfl key hOld
+      exact ⟨result, by simpa [Finmap.lookup_insert_of_ne sourceVars hName]⟩
+
+theorem multifill_single_visible
+    {layout : List Functions.Name}
+    {source : SourceState} {target : TargetState}
+    (hRel : ScopedStateRel layout source target)
+    {name : EvmYul.Identifier} (hName : name ∈ layout)
+    (value : Word) :
+    ScopedStateRel layout
+      (source.multifill [name] [value])
+      (target.insert name value) := by
+  refine ⟨StateRel.multifill_single hRel.state name value, ?_, ?_⟩
+  rcases hRel.state with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  intro finalShared finalVars hFinal
+  simp [EvmYul.Yul.State.multifill, EvmYul.Yul.State.insert] at hFinal
+  rcases hFinal with ⟨rfl, rfl⟩
+  intro key result hLookup
+  by_cases hKey : key = name
+  · simpa [hKey] using hName
+  · rw [Finmap.lookup_insert_of_ne sourceVars hKey] at hLookup
+    exact hRel.domain sourceShared sourceVars rfl key result hLookup
+  · rcases hRel.state with
+      ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+    subst source
+    intro finalShared finalVars hFinal
+    simp [EvmYul.Yul.State.multifill, EvmYul.Yul.State.insert] at hFinal
+    rcases hFinal with ⟨rfl, rfl⟩
+    intro key hKey
+    by_cases hNameEq : key = name
+    · subst key
+      exact ⟨value, by simp⟩
+    · obtain ⟨result, hLookup⟩ :=
+        hRel.defined sourceShared sourceVars rfl key hKey
+      exact
+        ⟨result, by
+          simpa [Finmap.lookup_insert_of_ne sourceVars hNameEq] using hLookup⟩
 
 end ScopedStateRel
 
@@ -279,6 +461,100 @@ theorem leave
   ⟨trivial, hRel⟩
 
 end OutcomeRel
+
+/-- Outcome relation retaining the source-only lexical domain required by the
+next adjacent statement. -/
+structure ScopedOutcomeRel (layout : List Functions.Name)
+    (source : SourceState)
+    (target : Functions.InteractionSemantics.Outcome) : Prop where
+  outcome : OutcomeRel source target
+  domain :
+    ∀ sourceShared sourceVars,
+      source.reviveJump = .Ok sourceShared sourceVars →
+        VarsDomainWithin layout sourceVars
+  defined :
+    ∀ sourceShared sourceVars,
+      source.reviveJump = .Ok sourceShared sourceVars →
+        VarsDefinedOn layout sourceVars
+
+namespace ScopedOutcomeRel
+
+theorem regular
+    {layout : List Functions.Name}
+    {source : SourceState} {target : TargetState}
+    (hRel : ScopedStateRel layout source target) :
+    ScopedOutcomeRel layout source
+      (Functions.Source.Effectful.Outcome.regular target) := by
+  refine ⟨OutcomeRel.regular hRel.state, ?_, ?_⟩
+  rcases hRel.state with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  intro finalShared finalVars hFinal
+  cases hFinal
+  exact hRel.domain sourceShared sourceVars rfl
+  · rcases hRel.state with
+      ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+    subst source
+    intro finalShared finalVars hFinal
+    cases hFinal
+    exact hRel.defined sourceShared sourceVars rfl
+
+theorem brk_restrict
+    {layout scope : List Functions.Name}
+    {sourceShared : EvmYul.SharedState .Yul}
+    {sourceVars : EvmYul.Yul.VarStore} {target : TargetState}
+    (hRel : ScopedStateRel layout (.Ok sourceShared sourceVars) target)
+    (hSubset : ∀ name, name ∈ layout → name ∈ scope) :
+    ScopedOutcomeRel layout (.Checkpoint (.Break sourceShared sourceVars))
+      (Functions.Source.Effectful.Outcome.brk
+        (target.restrictTo scope)) := by
+  refine
+    ⟨OutcomeRel.brk (ScopedStateRel.restrictTarget hRel hSubset), ?_, ?_⟩
+  intro finalShared finalVars hFinal
+  cases hFinal
+  exact hRel.domain sourceShared sourceVars rfl
+  · intro finalShared finalVars hFinal
+    cases hFinal
+    exact hRel.defined sourceShared sourceVars rfl
+
+theorem cont_restrict
+    {layout scope : List Functions.Name}
+    {sourceShared : EvmYul.SharedState .Yul}
+    {sourceVars : EvmYul.Yul.VarStore} {target : TargetState}
+    (hRel : ScopedStateRel layout (.Ok sourceShared sourceVars) target)
+    (hSubset : ∀ name, name ∈ layout → name ∈ scope) :
+    ScopedOutcomeRel layout
+      (.Checkpoint (.Continue sourceShared sourceVars))
+      (Functions.Source.Effectful.Outcome.cont
+        (target.restrictTo scope)) := by
+  refine
+    ⟨OutcomeRel.cont (ScopedStateRel.restrictTarget hRel hSubset), ?_, ?_⟩
+  intro finalShared finalVars hFinal
+  cases hFinal
+  exact hRel.domain sourceShared sourceVars rfl
+  · intro finalShared finalVars hFinal
+    cases hFinal
+    exact hRel.defined sourceShared sourceVars rfl
+
+theorem leave_restrict
+    {layout scope : List Functions.Name}
+    {sourceShared : EvmYul.SharedState .Yul}
+    {sourceVars : EvmYul.Yul.VarStore} {target : TargetState}
+    (hRel : ScopedStateRel layout (.Ok sourceShared sourceVars) target)
+    (hSubset : ∀ name, name ∈ layout → name ∈ scope) :
+    ScopedOutcomeRel layout (.Checkpoint (.Leave sourceShared sourceVars))
+      (Functions.Source.Effectful.Outcome.leave
+        (target.restrictTo scope)) := by
+  refine
+    ⟨OutcomeRel.leave (ScopedStateRel.restrictTarget hRel hSubset), ?_, ?_⟩
+  intro finalShared finalVars hFinal
+  cases hFinal
+  exact hRel.domain sourceShared sourceVars rfl
+  · intro finalShared finalVars hFinal
+    cases hFinal
+    exact hRel.defined sourceShared sourceVars rfl
+
+end ScopedOutcomeRel
 
 end FunctionsInteractionRelation
 end Yul

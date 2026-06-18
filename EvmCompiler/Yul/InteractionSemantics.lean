@@ -232,6 +232,32 @@ theorem leave_succ
   simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
     stateModel]
 
+theorem let_one_succ
+    (fuel : Nat) (name : EvmYul.Identifier)
+    (expr : EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State)
+    (hCheck : EvmYul.Yul.checkDeclaration state [name] = .ok ()) :
+    exec (fuel + 1) (.Let [name] (some expr)) code state =
+      Simulation.Interaction.bind (evalValues fuel expr code state)
+        (fun result =>
+          pure (stateModel.multifill [name] result.1 result.2)) := by
+  simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
+    evalValues, hCheck, Yul.Source.Effectful.Control.multifill, stateModel]
+  rfl
+
+theorem assign_one_succ
+    (fuel : Nat) (name : EvmYul.Identifier)
+    (expr : EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State)
+    (hCheck : EvmYul.Yul.checkAssignment state [name] = .ok ()) :
+    exec (fuel + 1) (.Assign [name] expr) code state =
+      Simulation.Interaction.bind (evalValues fuel expr code state)
+        (fun result =>
+          pure (stateModel.multifill [name] result.1 result.2)) := by
+  simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
+    evalValues, hCheck, Yul.Source.Effectful.Control.multifill, stateModel]
+  rfl
+
 /-- A primitive expression statement is canonical value evaluation followed
 by the empty destination assignment. -/
 theorem expr_primitive

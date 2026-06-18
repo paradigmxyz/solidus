@@ -8,15 +8,16 @@ namespace FunctionsInteractionExpression
 open FunctionsInteractionRelation
 open FunctionsInteractionPrimitive
 
-def ResultRel (results : Nat)
+def ResultRel (entry : Yul.InteractionSemantics.State) (results : Nat)
     (source : Yul.InteractionSemantics.State × List Word)
     (target : Functions.InteractionSemantics.State × List Word) : Prop :=
   FunctionsInteractionRelation.StateRel source.1 target.1 ∧
-    source.2 = target.2 ∧ source.2.length = results
+    source.2 = target.2 ∧ source.2.length = results ∧
+    source.1.store = entry.store
 
-abbrev DoneRel (results : Nat) :=
+abbrev DoneRel (entry : Yul.InteractionSemantics.State) (results : Nat) :=
   Simulation.Interaction.ExceptRel
-    FunctionsInteractionPrimitive.ErrorRel (ResultRel results)
+    FunctionsInteractionPrimitive.ErrorRel (ResultRel entry results)
 
 namespace ResultRel
 
@@ -27,8 +28,8 @@ theorem of_state
     {values : List Word}
     (hRel : FunctionsInteractionRelation.StateRel source target)
     (hLength : values.length = results) :
-    ResultRel results (source, values) (target, values) :=
-  ⟨hRel, rfl, hLength⟩
+    ResultRel source results (source, values) (target, values) :=
+  ⟨hRel, rfl, hLength, rfl⟩
 
 end ResultRel
 
@@ -44,6 +45,7 @@ theorem primitive_of_args
     {targetArgs :
       Functions.InteractionSemantics.Open
         (Functions.InteractionSemantics.State × List Word)}
+    {sourceInitial : Yul.InteractionSemantics.State}
     {primitiveFuel : Nat}
     (hOp : Prim.toUncheckedBasicOp? prim = some op)
     (hOutputs :
@@ -51,10 +53,10 @@ theorem primitive_of_args
     (hArgs :
       Simulation.Interaction.ForwardRel
         FunctionsInteractionPrimitive.Truncated
-        (DoneRel (Expressions.Structured.BasicOp.inputs op))
+        (DoneRel sourceInitial (Expressions.Structured.BasicOp.inputs op))
         sourceArgs targetArgs) :
     Simulation.Interaction.ForwardRel
-      FunctionsInteractionPrimitive.Truncated (DoneRel results)
+      FunctionsInteractionPrimitive.Truncated (DoneRel sourceInitial results)
       (Simulation.Interaction.bind sourceArgs fun result =>
         Yul.InteractionSemantics.Primitive.openEval
           primitiveFuel result.1 prim result.2.reverse)
@@ -63,7 +65,7 @@ theorem primitive_of_args
           op result.1 result.2) := by
   apply Simulation.Interaction.ForwardRel.bind hArgs
   intro sourceResult targetResult hResult
-  rcases hResult with ⟨hState, hValues, hLength⟩
+  rcases hResult with ⟨hState, hValues, hLength, hArgsStore⟩
   cases primitiveFuel with
   | zero =>
       have hTruncated :
@@ -74,7 +76,7 @@ theorem primitive_of_args
       simpa [Yul.InteractionSemantics.Primitive.openEval,
         Yul.InteractionSemantics.Primitive.fail] using
         (Simulation.Interaction.ForwardRel.truncated
-          (doneRel := DoneRel results)
+          (doneRel := DoneRel sourceInitial results)
           (right := Locals.InteractionSemantics.Primitive.openEval
             op targetResult.1 targetResult.2)
           hTruncated)
@@ -87,7 +89,7 @@ theorem primitive_of_args
       have hPrimitiveRel' :
           Simulation.Interaction.ForwardRel
             FunctionsInteractionPrimitive.Truncated
-            (FunctionsInteractionPrimitive.PrimitiveDoneRel op)
+            (FunctionsInteractionPrimitive.PrimitiveDoneRel sourceResult.1 op)
             (Yul.InteractionSemantics.Primitive.openEval
               (fuel + 1) sourceResult.1 prim sourceResult.2.reverse)
             (Locals.InteractionSemantics.Primitive.openEval
@@ -98,7 +100,9 @@ theorem primitive_of_args
       cases hDone with
       | error hError => exact .error hError
       | ok hOk =>
-          exact .ok ⟨hOk.1.1, hOk.1.2, hOk.2.trans hOutputs⟩
+          exact .ok
+            ⟨hOk.1.1, hOk.1.2, hOk.2.1.trans hOutputs,
+              hOk.2.2.trans hArgsStore⟩
 
 theorem fuel_zero
     {results : Nat} (expr : AstExpr) (lower : Locals.Expr results)
@@ -106,7 +110,7 @@ theorem fuel_zero
     (source : Yul.InteractionSemantics.State)
     (target : Functions.InteractionSemantics.State) :
     Simulation.Interaction.ForwardRel
-      FunctionsInteractionPrimitive.Truncated (DoneRel results)
+      FunctionsInteractionPrimitive.Truncated (DoneRel source results)
       (Yul.InteractionSemantics.evalValues
         0 expr codeOverride source)
       (Locals.InteractionSemantics.Expr.openEval lower target) := by
@@ -119,7 +123,7 @@ theorem fuel_zero
     Yul.Source.Effectful.evalValues,
     Yul.Source.Effectful.Control.fail] using
     (Simulation.Interaction.ForwardRel.truncated
-      (doneRel := DoneRel results)
+      (doneRel := DoneRel source results)
       (right := Locals.InteractionSemantics.Expr.openEval lower target)
       hTruncated)
 
@@ -133,7 +137,7 @@ theorem lit
       EvmCompiler.Yul.Expr.toLocals? results (.Lit value) = some lower)
     (hRel : FunctionsInteractionRelation.StateRel source target) :
     Simulation.Interaction.ForwardRel
-      FunctionsInteractionPrimitive.Truncated (DoneRel results)
+      FunctionsInteractionPrimitive.Truncated (DoneRel source results)
       (Yul.InteractionSemantics.evalValues
         (fuel + 1) (.Lit value) codeOverride source)
       (Locals.InteractionSemantics.Expr.openEval lower target) := by
@@ -143,7 +147,7 @@ theorem lit
       at hLower
     subst lower
     have hDone :
-        DoneRel 1 (.ok (source, [value])) (.ok (target, [value])) :=
+        DoneRel source 1 (.ok (source, [value])) (.ok (target, [value])) :=
       .ok (ResultRel.of_state hRel rfl)
     simpa [Yul.InteractionSemantics.evalValues,
       Yul.Source.Effectful.evalValues,
@@ -163,7 +167,7 @@ theorem var
       EvmCompiler.Yul.Expr.toLocals? results (.Var name) = some lower)
     (hRel : FunctionsInteractionRelation.StateRel source target) :
     Simulation.Interaction.ForwardRel
-      FunctionsInteractionPrimitive.Truncated (DoneRel results)
+      FunctionsInteractionPrimitive.Truncated (DoneRel source results)
       (Yul.InteractionSemantics.evalValues
         (fuel + 1) (.Var name) codeOverride source)
       (Locals.InteractionSemantics.Expr.openEval lower target) := by
@@ -184,14 +188,15 @@ theorem var
           Yul.Source.Effectful.evalValues,
           Yul.Source.Effectful.Control.fail, hLookup] using
           (Simulation.Interaction.ForwardRel.truncated
-            (doneRel := DoneRel 1)
+            (doneRel := DoneRel source 1)
             (right := Locals.InteractionSemantics.Expr.openEval
               (.var (identName name)) target)
             hTruncated)
     | some value =>
         have hTarget := FunctionsInteractionRelation.StateRel.lookup hRel hLookup
         have hDone :
-            DoneRel 1 (.ok (source, [value])) (.ok (target, [value])) :=
+            DoneRel source 1 (.ok (source, [value]))
+              (.ok (target, [value])) :=
           .ok (ResultRel.of_state hRel rfl)
         simpa [Yul.InteractionSemantics.evalValues,
           Yul.InteractionSemantics.stateModel,
@@ -217,7 +222,7 @@ theorem fuel_zero
     (seq : Locals.ExprSeq results)
     (target : Functions.InteractionSemantics.State) :
     Simulation.Interaction.ForwardRel
-      FunctionsInteractionPrimitive.Truncated (DoneRel results)
+      FunctionsInteractionPrimitive.Truncated (DoneRel source results)
       (Yul.InteractionSemantics.evalArgs
         0 args codeOverride source)
       (Locals.InteractionSemantics.ExprSeq.openEval seq target) := by
@@ -230,12 +235,13 @@ theorem fuel_zero
     Yul.Source.Effectful.evalArgs,
     Yul.Source.Effectful.Control.fail] using
     (Simulation.Interaction.ForwardRel.truncated
-      (doneRel := DoneRel results)
+      (doneRel := DoneRel source results)
       (right := Locals.InteractionSemantics.ExprSeq.openEval seq target)
       hTruncated)
 
 theorem cons
     {results : Nat}
+    {sourceInitial : Yul.InteractionSemantics.State}
     {sourceHead :
       Yul.InteractionSemantics.Open
         (Yul.InteractionSemantics.State × List Word)}
@@ -250,16 +256,17 @@ theorem cons
         (Functions.InteractionSemantics.State × List Word)}
     (hHead :
       Simulation.Interaction.ForwardRel
-        FunctionsInteractionPrimitive.Truncated (DoneRel 1)
+        FunctionsInteractionPrimitive.Truncated (DoneRel sourceInitial 1)
         sourceHead targetHead)
     (hTail :
       ∀ {source target},
         FunctionsInteractionRelation.StateRel source target →
         Simulation.Interaction.ForwardRel
-          FunctionsInteractionPrimitive.Truncated (DoneRel results)
+          FunctionsInteractionPrimitive.Truncated (DoneRel source results)
           (sourceTail source) (targetTail target)) :
     Simulation.Interaction.ForwardRel
-      FunctionsInteractionPrimitive.Truncated (DoneRel (results + 1))
+      FunctionsInteractionPrimitive.Truncated
+        (DoneRel sourceInitial (results + 1))
       (Simulation.Interaction.bind sourceHead fun head =>
         Simulation.Interaction.bind (sourceTail head.1) fun tail =>
           pure (tail.1, head.2.head! :: tail.2))
@@ -268,13 +275,15 @@ theorem cons
           pure (tail.1, head.2 ++ tail.2)) := by
   apply Simulation.Interaction.ForwardRel.bind hHead
   intro sourceHeadResult targetHeadResult hHeadResult
-  rcases hHeadResult with ⟨hHeadState, hHeadValues, hHeadLength⟩
+  rcases hHeadResult with
+    ⟨hHeadState, hHeadValues, hHeadLength, hHeadStore⟩
   apply Simulation.Interaction.ForwardRel.bind (hTail hHeadState)
   intro sourceTailResult targetTailResult hTailResult
-  rcases hTailResult with ⟨hTailState, hTailValues, hTailLength⟩
+  rcases hTailResult with
+    ⟨hTailState, hTailValues, hTailLength, hTailStore⟩
   apply Simulation.Interaction.ForwardRel.done
   apply Simulation.Interaction.ExceptRel.ok
-  refine ⟨hTailState, ?_, ?_⟩
+  refine ⟨hTailState, ?_, ?_, hTailStore.trans hHeadStore⟩
   · have hSingleton :
         sourceHeadResult.2 = [sourceHeadResult.2.head!] := by
       obtain ⟨head, hHeadEq⟩ :=
@@ -287,6 +296,7 @@ theorem cons
 
 theorem cons_truncated
     {results : Nat}
+    {sourceInitial : Yul.InteractionSemantics.State}
     {sourceHead :
       Yul.InteractionSemantics.Open
         (Yul.InteractionSemantics.State × List Word)}
@@ -298,10 +308,11 @@ theorem cons_truncated
         (Functions.InteractionSemantics.State × List Word)}
     (hHead :
       Simulation.Interaction.ForwardRel
-        FunctionsInteractionPrimitive.Truncated (DoneRel 1)
+        FunctionsInteractionPrimitive.Truncated (DoneRel sourceInitial 1)
         sourceHead targetHead) :
     Simulation.Interaction.ForwardRel
-      FunctionsInteractionPrimitive.Truncated (DoneRel (results + 1))
+      FunctionsInteractionPrimitive.Truncated
+        (DoneRel sourceInitial (results + 1))
       (Simulation.Interaction.bind sourceHead fun head =>
         Yul.InteractionSemantics.Primitive.fail head.1 .OutOfFuel)
       (Simulation.Interaction.bind targetHead fun head =>
@@ -316,7 +327,7 @@ theorem cons_truncated
     trivial
   simpa [Yul.InteractionSemantics.Primitive.fail] using
     (Simulation.Interaction.ForwardRel.truncated
-      (doneRel := DoneRel (results + 1))
+      (doneRel := DoneRel sourceInitial (results + 1))
       (right :=
         Simulation.Interaction.bind (targetTail targetHeadResult.1) fun tail =>
           pure (tail.1, targetHeadResult.2 ++ tail.2))
@@ -345,7 +356,7 @@ structure DirectAt
       EvmCompiler.Yul.Expr.toLocals? results expr = some lower →
       FunctionsInteractionRelation.StateRel source target →
       Simulation.Interaction.ForwardRel
-        FunctionsInteractionPrimitive.Truncated (DoneRel results)
+        FunctionsInteractionPrimitive.Truncated (DoneRel source results)
         (Yul.InteractionSemantics.evalValues
           fuel expr codeOverride source)
         (Locals.InteractionSemantics.Expr.openEval lower target)
@@ -358,7 +369,7 @@ structure DirectAt
       EvmCompiler.Yul.Expr.List.toSeq? lower results = some seq →
       FunctionsInteractionRelation.StateRel source target →
       Simulation.Interaction.ForwardRel
-        FunctionsInteractionPrimitive.Truncated (DoneRel results)
+        FunctionsInteractionPrimitive.Truncated (DoneRel source results)
         (Yul.InteractionSemantics.evalArgs
           fuel args codeOverride source)
         (Locals.InteractionSemantics.ExprSeq.openEval seq target)
@@ -457,7 +468,8 @@ theorem directAt
                     simp [EvmCompiler.Yul.Expr.List.toSeq?] at hSeq
                     subst seq
                     have hDone :
-                        DoneRel 0 (.ok (source, [])) (.ok (target, [])) :=
+                        DoneRel source 0 (.ok (source, []))
+                          (.ok (target, [])) :=
                       .ok (ResultRel.of_state hRel rfl)
                     simpa [Yul.InteractionSemantics.evalArgs,
                       Yul.Source.Effectful.evalArgs,
@@ -527,7 +539,7 @@ theorem directAt
                                               source target →
                                             Simulation.Interaction.ForwardRel
                                               FunctionsInteractionPrimitive.Truncated
-                                              (DoneRel tailResults)
+                                              (DoneRel source tailResults)
                                               (Yul.InteractionSemantics.evalArgs
                                                 tailFuel rest codeOverride source)
                                               (Locals.InteractionSemantics.ExprSeq.openEval

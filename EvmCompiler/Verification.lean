@@ -1368,11 +1368,17 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.succ_succ_cons
 #check EvmCompiler.Yul.FunctionsInteractionExpression.directAt
 #check EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.restrictTarget
+#check EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.of_state_store_eq
+#check EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.declarationCheck
+#check EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.assignmentCheck
+#check EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.targetContains
 #check EvmCompiler.Yul.FunctionsInteractionRelation.OutcomeRel.regular
 #check EvmCompiler.Yul.FunctionsInteractionRelation.OutcomeRel.brk
 #check EvmCompiler.Yul.FunctionsInteractionRelation.OutcomeRel.cont
 #check EvmCompiler.Yul.FunctionsInteractionRelation.OutcomeRel.leave
 #check EvmCompiler.Yul.FunctionsInteractionStatement.expr
+#check EvmCompiler.Yul.FunctionsInteractionStatement.let_one
+#check EvmCompiler.Yul.FunctionsInteractionStatement.assign_one
 #check EvmCompiler.Yul.FunctionsInteractionStatement.brk
 #check EvmCompiler.Yul.FunctionsInteractionStatement.cont
 #check EvmCompiler.Yul.FunctionsInteractionStatement.leave

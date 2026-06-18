@@ -310,6 +310,21 @@ def openEvalOne {results : Nat} (expr : Locals.Expr results)
   Locals.Source.Effectful.Expr.Control.evalOne
     stateModel primitiveSemantics expr state
 
+theorem openEvalOne_eq_bind {results : Nat}
+    (expr : Locals.Expr results) (state : State) :
+    openEvalOne expr state =
+      Simulation.Interaction.bind (openEval expr state) fun result =>
+        match result.2 with
+        | [value] => pure (result.1, value)
+        | _ => throw .InvalidInstruction := by
+  unfold openEvalOne Locals.Source.Effectful.Expr.Control.evalOne
+  change
+    Simulation.Interaction.bind (openEval expr state) (fun result =>
+      match result.2 with
+      | [value] => pure (result.1, value)
+      | _ => throw .InvalidInstruction) = _
+  rfl
+
 def openEvalCondition (expr : Locals.Expr 1)
     (state : State) : Open (State × Bool) :=
   Locals.Source.Effectful.Expr.Control.evalCondition

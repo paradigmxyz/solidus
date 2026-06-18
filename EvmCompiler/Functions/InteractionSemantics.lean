@@ -505,6 +505,82 @@ theorem openRun_leave
     Locals.Source.Effectful.Ordinary.stateModel,
     Locals.Source.Effectful.StateModel.restrictTo]
 
+theorem openRun_let
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (name : Functions.Name) (expr : Functions.Expr 1)
+    (state : State) :
+    openRun program ctx fuel (.let_ name expr) state =
+      Simulation.Interaction.bind (Expr.openEval expr state)
+        (fun result =>
+          match result.2 with
+          | [value] =>
+              pure
+                (Functions.Source.Effectful.Outcome.regular
+                  (stateModel.insert result.1 name value),
+                  { ctx with scope := name :: ctx.scope })
+          | _ => throw .InvalidInstruction) := by
+  unfold openRun Functions.Source.Canonical.Stmt.run
+    Functions.Source.Effectful.Control.Stmt.run
+  change
+    Simulation.Interaction.bind
+        (Locals.InteractionSemantics.Expr.openEvalOne expr state)
+        (fun result =>
+          pure
+            (Functions.Source.Effectful.Outcome.regular
+              (stateModel.insert result.1 name result.2),
+              { ctx with scope := name :: ctx.scope })) = _
+  rw [Locals.InteractionSemantics.Expr.openEvalOne_eq_bind,
+    Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial (Expr.openEval expr state))
+  intro result _hResult
+  cases result.2 with
+  | nil => rfl
+  | cons value rest =>
+      cases rest <;> rfl
+
+theorem openRun_assign
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (name : Functions.Name) (expr : Functions.Expr 1)
+    (state : State) (hContains : state.vars.contains name = true) :
+    openRun program ctx fuel (.assign name expr) state =
+      Simulation.Interaction.bind (Expr.openEval expr state)
+        (fun result =>
+          match result.2 with
+          | [value] =>
+              pure
+                (Functions.Source.Effectful.Outcome.regular
+                  (stateModel.withVars result.1
+                    (Locals.Source.Store.insert result.1.vars name value)),
+                  ctx)
+          | _ => throw .InvalidInstruction) := by
+  unfold openRun Functions.Source.Canonical.Stmt.run
+    Functions.Source.Effectful.Control.Stmt.run
+  have hContains' :
+      (stateModel.vars state).contains name = true := by
+    simpa [stateModel, Locals.InteractionSemantics.stateModel,
+      Locals.Source.Effectful.Ordinary.stateModel,
+      Locals.Source.Effectful.StateModel.vars] using hContains
+  simp only [hContains', if_pos]
+  change
+    Simulation.Interaction.bind
+        (Locals.InteractionSemantics.Expr.openEvalOne expr state)
+        (fun result =>
+          pure
+            (Functions.Source.Effectful.Outcome.regular
+              (stateModel.withVars result.1
+                (Locals.Source.Store.insert result.1.vars name result.2)),
+              ctx)) = _
+  rw [Locals.InteractionSemantics.Expr.openEvalOne_eq_bind,
+    Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial (Expr.openEval expr state))
+  intro result _hResult
+  cases result.2 with
+  | nil => rfl
+  | cons value rest =>
+      cases rest <;> rfl
+
 /-- Successful canonical call execution has positive caller meta-fuel. -/
 theorem successful_openRun_call_fuel_pos
     {program : Functions.Program} {ctx : Functions.Source.Ctx}

@@ -181,17 +181,18 @@ boundaries remain active work.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
   - [x] Exact code-erased state relation and arbitrary post-world transport.
   - [x] GAS/MSIZE plus all CALL/CREATE primitive-family preservation.
-  - [ ] Recursive expressions, statements, internal calls, and whole program.
+  - [ ] Recursive statements, internal calls, and whole program.
     - [x] Source-truncation-aware direct literals, variables, primitive calls,
       and arbitrary argument lists under one compiler-selected capability.
     - [x] Compose independent CALL/CREATE and GAS/MSIZE providers with a
       closed-ordinary-primitive capability; no opcode dispatch occurs inside
       expression recursion.
     - [ ] Discharge the closed ordinary primitive capability over canonical
-      code-erased state and lift direct expressions through statements.
+      code-erased state.
     - [x] Define the code-erased outcome-indexed relation and source-owned
-      lexical-domain invariant; check direct expression statements plus
-      `break`, `continue`, and `leave` with exact Functions scope restriction.
+      exact lexical-domain invariant; check direct expression, one-name
+      declaration, and one-name assignment statements plus `break`,
+      `continue`, and `leave` with exact Functions scope restriction.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
   source-facing reservation/resource assumptions.
 - [ ] Run representative interleaving/reentrancy/static/zero-window tests and

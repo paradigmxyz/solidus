@@ -21,6 +21,7 @@ import EvmCompiler.Functions.AllocationInteractionStackRuntime
 import EvmCompiler.Functions.AllocationInteractionProgram
 import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
+import EvmCompiler.Yul.FunctionsInteractionStatement
 
 #check EvmCompiler.Simulation.OpenWorld
 #check EvmCompiler.Functions.AllocationInteractionCall.CallTargets.forward
@@ -369,3 +370,9 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Functions.AllocationInteractionProgram.regularCleanup
 #print axioms EvmCompiler.Functions.AllocationInteractionProgram.closeBody
 #print axioms EvmCompiler.Functions.AllocationInteractionProgram.mainForward
+#print axioms EvmCompiler.Yul.FunctionsInteractionPrimitive.Primitive.callFamily
+#print axioms EvmCompiler.Yul.FunctionsInteractionPrimitive.Primitive.createFamily
+#print axioms EvmCompiler.Yul.FunctionsInteractionExpression.directAt
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.of_state_store_eq
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.let_one
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.assign_one
