@@ -32,8 +32,10 @@ abbrev ResultRel
 theorem forwardArg
     {contract : MemoryContract.Contract}
     (primitiveOwner :
-      ∀ op, AllocationInteractionExpressionResource.PrimitiveForward
-        contract op)
+      ∀ op,
+        Locals.InteractionSemantics.Primitive.supportsOpen op = true →
+          AllocationInteractionExpressionResource.PrimitiveForward
+            contract op)
     {globalFrameWords allocatorDepth : Nat} {config : Config}
     {lowerCtx : AllocationLowering.Ctx}
     {lowerState : AllocationLowering.State} {localsCtx : Locals.Ctx}
@@ -94,8 +96,10 @@ theorem forwardArg
 theorem forward
     {contract : MemoryContract.Contract}
     (primitiveOwner :
-      ∀ op, AllocationInteractionExpressionResource.PrimitiveForward
-        contract op)
+      ∀ op,
+        Locals.InteractionSemantics.Primitive.supportsOpen op = true →
+          AllocationInteractionExpressionResource.PrimitiveForward
+            contract op)
     {globalFrameWords allocatorDepth : Nat} {config : Config}
     {lowerCtx : AllocationLowering.Ctx}
     {lowerState : AllocationLowering.State} {localsCtx : Locals.Ctx}

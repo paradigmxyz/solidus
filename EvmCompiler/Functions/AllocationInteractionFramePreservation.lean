@@ -835,6 +835,432 @@ theorem scratchFrameAcquire_correct
         (target := advanced) (rest := target.evm.stack)
         hConfig hPositive hBudget
 
+@[simp] theorem scratchFrameAcquireTarget_world
+    (config : Config) (depth : Nat) (target : TargetState) :
+    (scratchFrameAcquireTarget config depth target).evm.toSharedState.toState =
+      target.evm.toSharedState.toState := by
+  cases hWords : config.frameWords with
+  | zero =>
+      simp [scratchFrameAcquireTarget, framePreallocTarget,
+        allocatorAdvanceTarget, hWords, StateRel.pushTargetBy,
+        StateRel.pushTarget, StateRel.contractTargetBy,
+        StateRel.mstoreTarget,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC]
+  | succ slot =>
+      simp [scratchFrameAcquireTarget, framePreallocTarget,
+        allocatorAdvanceTarget, hWords, StateRel.pushTargetBy,
+        StateRel.pushTarget, StateRel.contractTargetBy,
+        StateRel.mstoreTarget,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC]
+
+/--
+Acquire one nested frame while preserving the suspended caller activation.
+The proof is representation-neutral: acquisition is a protected memory
+transition plus one target-only stack prefix.
+-/
+theorem scratchFrameAcquire_activation_correct
+    {contract : MemoryContract.Contract}
+    {globalFrameWords depth stackOffset frameBase : Nat}
+    {config : Config} {plan : Plan} {live : List Locals.Name}
+    {mode : ActivationMode} {source : SourceState} {target : TargetState}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hPositive : 0 < config.frameWords)
+    (hBudget : Budget config depth)
+    (hReady : AllocatorReady config depth target)
+    (hOwned : ActivationOwned config depth frameBase mode)
+    (hRel :
+      ActivationStateRel contract plan live stackOffset frameBase mode
+        source target) :
+    let targetFinal := scratchFrameAcquireTarget config depth target
+    ScratchFrameAcquireCorrect contract config depth
+        source.shared.toMachineState target targetFinal ∧
+      ActivationStateRel contract plan live (stackOffset + 1) frameBase mode
+        source targetFinal := by
+  dsimp only
+  have hAcquire :=
+    scratchFrameAcquire_correct hConfig hPositive hBudget hReady
+      hRel.state.machine
+  refine ⟨hAcquire, ?_⟩
+  apply hRel.rebase_prefix
+      (oldPrefix := [])
+      (newPrefix := [EvmYul.UInt256.ofNat (baseAt config depth)])
+      (baseStack := target.evm.stack)
+  · exact
+      { machine := hAcquire.machine
+        world := by
+          rw [scratchFrameAcquireTarget_world]
+          exact hRel.state.world }
+  · simp
+  · simpa using hAcquire.stack
+  · intro name slot hLive hLocation
+    cases hRel with
+    | stack hOnly _hActive _hState =>
+        exact False.elim (hOnly name slot hLive hLocation)
+    | @scratch frameDepth frameWords _ _ hScratch =>
+        cases hOwned with
+        | @scratch previousDepth _ _ _ hBase hWords =>
+            have hOwnedScratch :
+                ActivationOwned config (previousDepth + 1) frameBase
+                  (.scratch frameDepth frameWords) :=
+              .scratch hBase hWords
+            have hPrefix :=
+              hAcquire.effect.prefixStable (by omega) hBudget
+            exact hPrefix.lookup
+              hOwnedScratch.firstFrame_le_scratchAddress
+              (hOwnedScratch.scratchAddress_end_le_allocatorBase
+                (hScratch.scratchBound name slot hLive hLocation))
+              (hScratch.scratchAddress_end_le_memory hLive hLocation)
+              (hScratch.scratchAddress_end_le_active hLive hLocation)
+  · rfl
+  · exact hAcquire.effect.growth.memory
+  · exact hAcquire.effect.growth.active
+  · exact hAcquire.effect.ready.activeNoWrap
+
+@[simp] theorem scratchFrameReleaseTarget_stack
+    (config : Config) (depth : Nat) (target : TargetState) :
+    (scratchFrameReleaseTarget config depth target).evm.stack =
+      target.evm.stack := by
+  rfl
+
+@[simp] theorem scratchFrameReleaseTarget_world
+    (config : Config) (depth : Nat) (target : TargetState) :
+    (scratchFrameReleaseTarget config depth target).evm.toSharedState.toState =
+      target.evm.toSharedState.toState := by
+  rfl
+
+theorem scratchFrameReleaseTarget_machine
+    (config : Config) (depth : Nat) (target : TargetState) :
+    (scratchFrameReleaseTarget config depth target).evm.toMachineState =
+      target.evm.toMachineState.mstore
+        (AllocationSupport.word config.allocatorCell)
+        (EvmYul.UInt256.ofNat (baseAt config depth)) := by
+  rfl
+
+theorem scratchFrameReleaseTarget_activeWords
+    {config : Config} {depth : Nat} {target : TargetState}
+    (hReady : AllocatorReady config (depth + 1) target) :
+    (scratchFrameReleaseTarget config depth target).evm.activeWords =
+      target.evm.activeWords := by
+  have hCellLt : config.allocatorCell < EvmYul.UInt256.size :=
+    lt_of_le_of_lt
+      (Nat.le_add_right config.allocatorCell MemoryContract.wordBytes)
+      (hReady.cellActive.trans_lt hReady.activeNoWrap)
+  have hCellAddress :
+      (EvmYul.UInt256.ofNat config.allocatorCell).toNat =
+        config.allocatorCell :=
+    EvmYul.UInt256.toNat_ofNat_of_lt hCellLt
+  rw [scratchFrameReleaseTarget_machine]
+  simpa [AllocationSupport.word] using
+    (Compiler.MemoryRelation.mstore_activeWords_eq_of_end_le
+      target.evm.toMachineState config.allocatorCell
+      (EvmYul.UInt256.ofNat (baseAt config depth)) hCellAddress
+      (by simpa [MemoryContract.wordBytes] using hReady.cellActive))
+
+theorem scratchFrameReleaseTarget_memorySize
+    {contract : MemoryContract.Contract} {frameWords depth : Nat}
+    {config : Config} {target : TargetState}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hReady : AllocatorReady config (depth + 1) target) :
+    (scratchFrameReleaseTarget config depth target).evm.toMachineState.memory.size =
+      target.evm.toMachineState.memory.size := by
+  obtain
+      ⟨reservation, _hReservation, hAllocator, _hFirst, _hLimit,
+        _hWords, _hWF, hHost, _hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  have hRegion : reservation.containsRegion config.allocatorCell 1 := by
+    rw [hAllocator]
+    unfold MemoryContract.ScratchReservation.containsRegion
+      MemoryContract.ScratchReservation.allocatorCell
+      MemoryContract.ScratchReservation.endExclusive
+      MemoryContract.ScratchReservation.bytes
+    simp only [MemoryContract.wordBytes]
+    constructor <;> omega
+  have hCellHost :
+      config.allocatorCell + MemoryContract.wordBytes < USize.size :=
+    lt_of_le_of_lt hRegion.2 hHost
+  have hCellLt : config.allocatorCell < EvmYul.UInt256.size :=
+    lt_of_le_of_lt
+      (Nat.le_add_right config.allocatorCell MemoryContract.wordBytes)
+      (hReady.cellActive.trans_lt hReady.activeNoWrap)
+  have hCellAddress :
+      (EvmYul.UInt256.ofNat config.allocatorCell).toNat =
+        config.allocatorCell :=
+    EvmYul.UInt256.toNat_ofNat_of_lt hCellLt
+  rw [scratchFrameReleaseTarget_machine]
+  simpa [AllocationSupport.word, EvmYul.MachineState.mstore] using
+    (Compiler.MemoryRelation.writeWord_memory_size_eq_of_end_le
+      target.evm.toMachineState config.allocatorCell
+      (EvmYul.UInt256.ofNat (baseAt config depth)) hCellAddress
+      (by simpa [MemoryContract.wordBytes] using hCellHost)
+      (by simpa [MemoryContract.wordBytes] using hReady.cellAllocated))
+
+theorem scratchFrameReleaseTarget_ready
+    {contract : MemoryContract.Contract} {frameWords depth : Nat}
+    {config : Config} {target : TargetState}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hReady : AllocatorReady config (depth + 1) target) :
+    AllocatorReady config depth
+      (scratchFrameReleaseTarget config depth target) := by
+  obtain
+      ⟨reservation, _hReservation, hAllocator, _hFirst, _hLimit,
+        _hWords, _hWF, hHost, _hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  have hRegion : reservation.containsRegion config.allocatorCell 1 := by
+    rw [hAllocator]
+    unfold MemoryContract.ScratchReservation.containsRegion
+      MemoryContract.ScratchReservation.allocatorCell
+      MemoryContract.ScratchReservation.endExclusive
+      MemoryContract.ScratchReservation.bytes
+    simp only [MemoryContract.wordBytes]
+    constructor <;> omega
+  have hCellHost :
+      config.allocatorCell + MemoryContract.wordBytes < USize.size :=
+    lt_of_le_of_lt hRegion.2 hHost
+  have hCellLt : config.allocatorCell < EvmYul.UInt256.size :=
+    lt_of_le_of_lt
+      (Nat.le_add_right config.allocatorCell MemoryContract.wordBytes)
+      (hReady.cellActive.trans_lt hReady.activeNoWrap)
+  have hCellAddress :
+      (EvmYul.UInt256.ofNat config.allocatorCell).toNat =
+        config.allocatorCell :=
+    EvmYul.UInt256.toNat_ofNat_of_lt hCellLt
+  refine
+    { allocatorAt := ?_
+      cellActive := ?_
+      cellAllocated := ?_
+      activeNoWrap := ?_ }
+  · have hLookup :=
+      Compiler.MemoryRelation.lookupMemory_mstore_same
+        target.evm.toMachineState config.allocatorCell
+        (EvmYul.UInt256.ofNat (baseAt config depth)) hCellAddress
+        (by simpa [MemoryContract.wordBytes] using hCellHost)
+        (by simpa [MemoryContract.wordBytes] using hReady.cellAllocated)
+        (by simpa [MemoryContract.wordBytes] using hReady.cellActive)
+        (by simpa [MemoryContract.wordBytes] using hReady.activeNoWrap)
+    simpa [AllocatorAt, scratchFrameReleaseTarget_machine,
+      AllocationSupport.word] using hLookup
+  · simpa [scratchFrameReleaseTarget_activeWords hReady] using
+      hReady.cellActive
+  · simpa [scratchFrameReleaseTarget_memorySize hConfig hReady] using
+      hReady.cellAllocated
+  · simpa [scratchFrameReleaseTarget_activeWords hReady] using
+      hReady.activeNoWrap
+
+theorem scratchFrameReleaseTarget_machineRel
+    {contract : MemoryContract.Contract} {frameWords depth : Nat}
+    {config : Config} {sourceMachine : EvmYul.MachineState}
+    {target : TargetState}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hMachine :
+      Compiler.MemoryRelation.MachineRel contract sourceMachine
+        target.evm.toMachineState) :
+    Compiler.MemoryRelation.MachineRel contract sourceMachine
+      (scratchFrameReleaseTarget config depth target).evm.toMachineState := by
+  obtain
+      ⟨reservation, hReservation, hAllocator, _hFirst, _hLimit,
+        _hWords, hWF, hHost, _hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  have hRegion : reservation.containsRegion config.allocatorCell 1 := by
+    rw [hAllocator]
+    unfold MemoryContract.ScratchReservation.containsRegion
+      MemoryContract.ScratchReservation.allocatorCell
+      MemoryContract.ScratchReservation.endExclusive
+      MemoryContract.ScratchReservation.bytes
+    simp only [MemoryContract.wordBytes]
+    constructor <;> omega
+  rw [scratchFrameReleaseTarget_machine]
+  exact Compiler.MemoryRelation.MachineRel.mstore_target
+    config.allocatorCell (EvmYul.UInt256.ofNat (baseAt config depth))
+    hMachine hReservation hRegion
+    (lt_of_le_of_lt hRegion.2 hWF.2)
+    (lt_of_le_of_lt hRegion.2 hHost)
+
+theorem scratchFrameReleaseTarget_lookupMemory
+    {contract : MemoryContract.Contract}
+    {frameWords depth query : Nat} {config : Config}
+    {target : TargetState}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hReady : AllocatorReady config (depth + 1) target)
+    (hAfterCell :
+      config.allocatorCell + MemoryContract.wordBytes ≤ query)
+    (hReadMemory :
+      query + MemoryContract.wordBytes ≤ target.evm.toMachineState.memory.size)
+    (hReadActive :
+      query + MemoryContract.wordBytes ≤
+        target.evm.activeWords.toNat * MemoryContract.wordBytes) :
+    (scratchFrameReleaseTarget config depth target).evm.toMachineState.lookupMemory
+        (EvmYul.UInt256.ofNat query) =
+      target.evm.toMachineState.lookupMemory
+        (EvmYul.UInt256.ofNat query) := by
+  obtain
+      ⟨reservation, _hReservation, hAllocator, _hFirst, _hLimit,
+        _hWords, _hWF, hHost, _hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  have hRegion : reservation.containsRegion config.allocatorCell 1 := by
+    rw [hAllocator]
+    unfold MemoryContract.ScratchReservation.containsRegion
+      MemoryContract.ScratchReservation.allocatorCell
+      MemoryContract.ScratchReservation.endExclusive
+      MemoryContract.ScratchReservation.bytes
+    simp only [MemoryContract.wordBytes]
+    constructor <;> omega
+  have hCellHost :
+      config.allocatorCell + MemoryContract.wordBytes < USize.size :=
+    lt_of_le_of_lt hRegion.2 hHost
+  have hCellLt : config.allocatorCell < EvmYul.UInt256.size :=
+    lt_of_le_of_lt
+      (Nat.le_add_right config.allocatorCell MemoryContract.wordBytes)
+      (hReady.cellActive.trans_lt hReady.activeNoWrap)
+  have hCellAddress :
+      (EvmYul.UInt256.ofNat config.allocatorCell).toNat =
+        config.allocatorCell :=
+    EvmYul.UInt256.toNat_ofNat_of_lt hCellLt
+  have hQueryLt : query < EvmYul.UInt256.size :=
+    lt_of_le_of_lt (Nat.le_add_right query MemoryContract.wordBytes)
+      (hReadActive.trans_lt hReady.activeNoWrap)
+  have hQuery : (EvmYul.UInt256.ofNat query).toNat = query :=
+    EvmYul.UInt256.toNat_ofNat_of_lt hQueryLt
+  rw [scratchFrameReleaseTarget_machine]
+  simpa [AllocationSupport.word] using
+    (Compiler.MemoryRelation.lookupMemory_mstore_disjoint
+      target.evm.toMachineState config.allocatorCell query
+      (EvmYul.UInt256.ofNat (baseAt config depth)) hCellAddress hQuery
+      (by simpa [MemoryContract.wordBytes] using hCellHost)
+      (by simpa [MemoryContract.wordBytes] using hReady.cellAllocated)
+      (by simpa [MemoryContract.wordBytes] using hReadMemory)
+      (by simpa [MemoryContract.wordBytes] using hReady.cellActive)
+      (Or.inr (by simpa [MemoryContract.wordBytes] using hAfterCell)))
+
+structure ScratchFrameReleaseCorrect
+    (contract : MemoryContract.Contract) (config : Config) (depth : Nat)
+    (sourceMachine : EvmYul.MachineState)
+    (before after : TargetState) : Prop where
+  execution :
+    Structured.InteractionSemantics.Code.openRun
+        (AllocationSupport.scratchFrameReleaseCode config) before =
+      .done (.ok after)
+  stack : after.evm.stack = before.evm.stack
+  machine :
+    Compiler.MemoryRelation.MachineRel contract sourceMachine
+      after.evm.toMachineState
+  effect : BoundedEffect config depth (depth + 1) before after
+
+theorem scratchFrameRelease_correct
+    {contract : MemoryContract.Contract} {frameWords depth : Nat}
+    {config : Config} {sourceMachine : EvmYul.MachineState}
+    {target : TargetState}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hBudget : Budget config depth)
+    (hReady : AllocatorReady config (depth + 1) target)
+    (hMachine :
+      Compiler.MemoryRelation.MachineRel contract sourceMachine
+        target.evm.toMachineState) :
+    ScratchFrameReleaseCorrect contract config depth sourceMachine target
+      (scratchFrameReleaseTarget config depth target) := by
+  have hFinalReady := scratchFrameReleaseTarget_ready hConfig hReady
+  have hGrowth :
+      TargetGrowth target (scratchFrameReleaseTarget config depth target) :=
+    { active := by
+        simp [scratchFrameReleaseTarget_activeWords hReady]
+      memory := by
+        simp [scratchFrameReleaseTarget_memorySize hConfig hReady] }
+  obtain
+      ⟨_reservation, _hReservation, hAllocator, hFirst, _hLimit,
+        _hWords, _hWF, _hHost, _hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  have hCellBeforeFirst :
+      config.allocatorCell + MemoryContract.wordBytes ≤ config.firstFrame := by
+    rw [hAllocator, hFirst]
+    unfold MemoryContract.ScratchReservation.allocatorCell
+      MemoryContract.ScratchReservation.frameBase
+    omega
+  refine
+    { execution := scratchFrameRelease_openRun hConfig hBudget hReady
+      stack := scratchFrameReleaseTarget_stack config depth target
+      machine := scratchFrameReleaseTarget_machineRel hConfig hMachine
+      effect :=
+        { ready := hFinalReady
+          growth := hGrowth
+          prefixStable := ?_ } }
+  intro protectedDepth _hProtectedDepth _hProtectedBudget
+  exact
+    { growth := hGrowth
+      lookup := by
+        intro address hStart _hEnd hReadMemory hReadActive
+        exact scratchFrameReleaseTarget_lookupMemory hConfig hReady
+          (hCellBeforeFirst.trans hStart) hReadMemory hReadActive }
+
+/-- Release one nested frame and restore the suspended caller activation. -/
+theorem scratchFrameRelease_activation_correct
+    {contract : MemoryContract.Contract}
+    {globalFrameWords depth stackOffset frameBase : Nat}
+    {config : Config} {plan : Plan} {live : List Locals.Name}
+    {mode : ActivationMode} {source : SourceState} {target : TargetState}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hBudget : Budget config depth)
+    (hReady : AllocatorReady config (depth + 1) target)
+    (hOwned : ActivationOwned config depth frameBase mode)
+    (hRel :
+      ActivationStateRel contract plan live stackOffset frameBase mode
+        source target) :
+    let targetFinal := scratchFrameReleaseTarget config depth target
+    ScratchFrameReleaseCorrect contract config depth
+        source.shared.toMachineState target targetFinal ∧
+      ActivationStateRel contract plan live stackOffset frameBase mode
+        source targetFinal := by
+  dsimp only
+  have hRelease :=
+    scratchFrameRelease_correct hConfig hBudget hReady hRel.state.machine
+  refine ⟨hRelease, ?_⟩
+  apply hRel.rebase_prefix
+      (oldPrefix := []) (newPrefix := []) (baseStack := target.evm.stack)
+  · exact
+      { machine := hRelease.machine
+        world := by
+          rw [scratchFrameReleaseTarget_world]
+          exact hRel.state.world }
+  · simp
+  · simpa using hRelease.stack
+  · intro name slot hLive hLocation
+    cases hRel with
+    | stack hOnly _hActive _hState =>
+        exact False.elim (hOnly name slot hLive hLocation)
+    | @scratch frameDepth frameWords _ _ hScratch =>
+        cases hOwned with
+        | @scratch previousDepth _ _ _ hBase hWords =>
+            have hOwnedScratch :
+                ActivationOwned config (previousDepth + 1) frameBase
+                  (.scratch frameDepth frameWords) :=
+              .scratch hBase hWords
+            have hPrefix :=
+              hRelease.effect.prefixStable (by omega) hBudget
+            exact hPrefix.lookup
+              hOwnedScratch.firstFrame_le_scratchAddress
+              (hOwnedScratch.scratchAddress_end_le_allocatorBase
+                (hScratch.scratchBound name slot hLive hLocation))
+              (hScratch.scratchAddress_end_le_memory hLive hLocation)
+              (hScratch.scratchAddress_end_le_active hLive hLocation)
+  · rfl
+  · exact hRelease.effect.growth.memory
+  · exact hRelease.effect.growth.active
+  · exact hRelease.effect.ready.activeNoWrap
+
 end AllocationInteractionFramePreservation
 end Functions
 end EvmCompiler

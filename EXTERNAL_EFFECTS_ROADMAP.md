@@ -975,8 +975,11 @@ Exit: every layer exposes one canonical open computation.
   - [x] Prove allocator preservation for canonical expressions, argument
     lists, ordinary primitives, all four CALL variants, and both CREATE
     variants under every shared open-world response.
-  - [ ] Compose scratch release, return writeback, and recursive selected
-    internal calls while discharging resource capabilities internally.
+  - [x] Compose compiler-emitted scratch acquire, canonical arguments, selected
+    callee entry, and exact scratch release through one target-only resource
+    capability.
+  - [ ] Compose return writeback and recursive selected internal calls while
+    discharging resource capabilities internally.
   - [ ] Compose selected internal callees and publish the whole-program
     adjacent theorem.
 - [ ] Yul -> Functions.

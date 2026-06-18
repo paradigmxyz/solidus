@@ -418,6 +418,22 @@ def Ready (mode : ResourceMode) (depth : Nat)
 
 end ResourceMode
 
+theorem scratchAddress_end_le_frameEnd
+    {config : Config} {frameBase slot : Nat}
+    (hSlot : slot < config.frameWords) :
+    scratchAddress frameBase slot + MemoryContract.wordBytes ≤
+      frameBase + bytes config := by
+  have hSucc : slot + 1 ≤ config.frameWords :=
+    Nat.succ_le_iff.mpr hSlot
+  calc
+    scratchAddress frameBase slot + MemoryContract.wordBytes =
+        frameBase + MemoryContract.wordBytes * (slot + 1) := by
+          simp [scratchAddress, Nat.mul_add, Nat.add_assoc]
+    _ ≤ frameBase + MemoryContract.wordBytes * config.frameWords :=
+      Nat.add_le_add_left
+        (Nat.mul_le_mul_left MemoryContract.wordBytes hSucc) frameBase
+    _ = frameBase + bytes config := rfl
+
 /-- Relationship between one activation and the global allocator depth. -/
 inductive ActivationOwned (config : Config) :
     Nat → Nat → ActivationMode → Prop where
@@ -445,6 +461,97 @@ theorem sameFrame {config : Config}
       cases hSame with
       | scratch _ afterDepth _ =>
           exact .scratch hBase hWords
+
+/-- Every spill in an owned scratch activation starts in frame storage. -/
+theorem firstFrame_le_scratchAddress
+    {config : Config}
+    {allocatorDepth frameBase frameDepth frameWords slot : Nat}
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch frameDepth frameWords)) :
+    config.firstFrame ≤ scratchAddress frameBase slot := by
+  cases hOwned with
+  | @scratch previousDepth _ _ _ hBase _hWords =>
+      rw [hBase]
+      exact
+        (Nat.le_add_right config.firstFrame
+          (previousDepth * bytes config)).trans
+          (Nat.le_add_right (baseAt config previousDepth)
+            (MemoryContract.wordBytes * slot))
+
+/-- The allocator metadata word ends before every owned scratch frame. -/
+theorem allocatorCell_end_le_frameBase
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase frameDepth frameWords : Nat}
+    {config : Config}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch frameDepth frameWords)) :
+    config.allocatorCell + MemoryContract.wordBytes ≤ frameBase := by
+  cases hOwned with
+  | @scratch previousDepth _ _ _ hBase _hWords =>
+      obtain
+          ⟨_reservation, _hReservation, hAllocator, hFirst, _hLimit,
+            _hWords, _hWF, _hHost, _hPositive, _hFits⟩ :=
+        AllocationSupport.scratchFrameConfig?_sound hConfig
+      rw [hBase, baseAt, hAllocator, hFirst]
+      unfold MemoryContract.ScratchReservation.allocatorCell
+        MemoryContract.ScratchReservation.frameBase
+      exact Nat.le_add_right _ _
+
+theorem allocatorCell_disjoint_scratchAddress
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase frameDepth frameWords slot : Nat}
+    {config : Config}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch frameDepth frameWords)) :
+    config.allocatorCell + MemoryContract.wordBytes ≤
+      scratchAddress frameBase slot :=
+  (hOwned.allocatorCell_end_le_frameBase hConfig).trans
+    (Nat.le_add_right frameBase (MemoryContract.wordBytes * slot))
+
+/-- Every live spill in an owned frame ends before the next allocator base. -/
+theorem scratchAddress_end_le_allocatorBase
+    {config : Config}
+    {allocatorDepth frameBase frameDepth frameWords slot : Nat}
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch frameDepth frameWords))
+    (hSlot : slot < frameWords) :
+    scratchAddress frameBase slot + MemoryContract.wordBytes ≤
+      baseAt config allocatorDepth := by
+  cases hOwned with
+  | @scratch previousDepth _ _ _ hBase hWords =>
+      rw [hBase]
+      calc
+        scratchAddress (baseAt config previousDepth) slot +
+              MemoryContract.wordBytes ≤
+            baseAt config previousDepth +
+              MemoryContract.wordBytes * config.frameWords :=
+          scratchAddress_end_le_frameEnd (by simpa [hWords] using hSlot)
+        _ = baseAt config (previousDepth + 1) := by
+          simp [baseAt, bytes, Nat.add_mul, Nat.add_assoc]
+
+/-- An owned scratch frame ends exactly at the current allocator base. -/
+theorem frameEnd_eq_allocatorBase
+    {config : Config}
+    {allocatorDepth frameBase frameDepth frameWords : Nat}
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch frameDepth frameWords)) :
+    frameBase + MemoryContract.wordBytes * frameWords =
+      baseAt config allocatorDepth := by
+  cases hOwned with
+  | @scratch previousDepth _ _ _ hBase hWords =>
+      rw [hBase, hWords]
+      simp [baseAt, bytes, Nat.add_mul, Nat.add_assoc]
 
 end ActivationOwned
 

@@ -539,7 +539,10 @@ set_option maxHeartbeats 800000 in
 mutual
   theorem forwardExprFuel
       {contract : MemoryContract.Contract}
-      (primitiveOwner : ∀ op, PrimitiveForward contract op)
+      (primitiveOwner :
+        ∀ op,
+          Locals.InteractionSemantics.Primitive.supportsOpen op = true →
+            PrimitiveForward contract op)
       (fuel : Nat)
       {globalFrameWords allocatorDepth : Nat} {config : Config}
       {lowerCtx : AllocationLowering.Ctx}
@@ -588,10 +591,10 @@ mutual
     | code rawCode =>
         simp [AllocationInteractionSafety.ExprSafe] at hSafe
     | prim op args =>
-        rcases hSafe with ⟨_hSupported, hArgsSafe, hPrimitiveSafe⟩
+        rcases hSafe with ⟨hSupported, hArgsSafe, hPrimitiveSafe⟩
         have hArgsScoped : Functions.Scope.ExprSeqScoped live args := by
           simpa [Functions.Scope.ExprScoped] using hScoped
-        apply prim_of_lower_compile op (primitiveOwner op) args hConfig
+        apply prim_of_lower_compile op (primitiveOwner op hSupported) args hConfig
           hLower hCompile
         · intro loweredArgs argsCode hLowerArgs hArgsCode
           exact forwardExprSeqFuel primitiveOwner (fuel - 1) hConfig
@@ -608,7 +611,10 @@ mutual
 
   theorem forwardExprSeqFuel
       {contract : MemoryContract.Contract}
-      (primitiveOwner : ∀ op, PrimitiveForward contract op)
+      (primitiveOwner :
+        ∀ op,
+          Locals.InteractionSemantics.Primitive.supportsOpen op = true →
+            PrimitiveForward contract op)
       (fuel : Nat)
       {globalFrameWords allocatorDepth : Nat} {config : Config}
       {lowerCtx : AllocationLowering.Ctx}
@@ -719,7 +725,10 @@ end
 
 theorem forwardExpr
     {contract : MemoryContract.Contract}
-    (primitiveOwner : ∀ op, PrimitiveForward contract op)
+    (primitiveOwner :
+      ∀ op,
+        Locals.InteractionSemantics.Primitive.supportsOpen op = true →
+          PrimitiveForward contract op)
     {globalFrameWords allocatorDepth : Nat} {config : Config}
     {lowerCtx : AllocationLowering.Ctx}
     {lowerState : AllocationLowering.State} {localsCtx : Locals.Ctx}
@@ -754,7 +763,10 @@ theorem forwardExpr
 
 theorem forwardExprSeq
     {contract : MemoryContract.Contract}
-    (primitiveOwner : ∀ op, PrimitiveForward contract op)
+    (primitiveOwner :
+      ∀ op,
+        Locals.InteractionSemantics.Primitive.supportsOpen op = true →
+          PrimitiveForward contract op)
     {globalFrameWords allocatorDepth : Nat} {config : Config}
     {lowerCtx : AllocationLowering.Ctx}
     {lowerState : AllocationLowering.State} {localsCtx : Locals.Ctx}

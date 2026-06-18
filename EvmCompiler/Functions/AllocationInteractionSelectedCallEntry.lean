@@ -1,4 +1,5 @@
 import EvmCompiler.Functions.AllocationInteractionScratchCallEntry
+import EvmCompiler.Functions.AllocationInteractionCallArgumentResources
 
 namespace EvmCompiler
 namespace Functions
@@ -126,12 +127,10 @@ theorem Prepared.scratch_entry_of_arguments
       ScratchFrameAcquireCorrect contract config depth acquireSourceMachine
         targetInitial targetAfterAcquire)
     (hArgs :
-      ActivationExprResultRel contract callerPlan callerLive 1
-        callerFrameBase args.length callerMode sourceAfterArgs
-        targetAfterAcquire targetAfterArgs args)
-    (hArgsEffect :
-      BoundedEffect config (depth + 1) (depth + 1)
-        targetAfterAcquire targetAfterArgs)
+      AllocationInteractionCallArgumentResources.ResultRel
+        contract config (depth + 1) callerPlan callerLive 1
+        callerFrameBase args.length callerMode targetAfterAcquire
+        (sourceAfterArgs, args) targetAfterArgs)
     (hInsert :
       Functions.Source.Store.insertMany fn.params args
           Locals.Source.Store.empty =
@@ -156,6 +155,7 @@ theorem Prepared.scratch_entry_of_arguments
       BoundedEffect config (depth + 1) (depth + 1)
         targetInitial targetEntry := by
   dsimp only
+  rcases hArgs with ⟨hArgs, hArgsEffect⟩
   have hSignature : (fn.returns ++ fn.params).Nodup := by
     simpa [List.map_append, artifact.slotsMatch.2.1,
       artifact.slotsMatch.2.2] using prepared.signatureNodup
@@ -200,7 +200,12 @@ theorem Prepared.scratch_entry_of_arguments
         (CalleeEntry.structuredState targetAfterArgs
           (args.reverse ++ [EvmYul.UInt256.ofNat (baseAt config depth)])
           targetInitial.evm.stack fn.returns.length) := by
-    have hBaseEffect := hAcquire.effect.trans hArgsEffect
+    have hArgsBounded :
+        BoundedEffect config (depth + 1) (depth + 1)
+          targetAfterAcquire targetAfterArgs :=
+      BoundedEffect.weaken (by omega)
+        (BoundedEffect.of_allocatorEffect hArgsEffect)
+    have hBaseEffect := hAcquire.effect.trans hArgsBounded
     refine
       { ready := ?_
         growth := ?_

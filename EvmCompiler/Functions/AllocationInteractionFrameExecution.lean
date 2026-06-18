@@ -440,6 +440,153 @@ theorem scratchFrameAcquire_openRun
   rw [Structured.InteractionSemantics.Code.openRun_append, hAdvance]
   simpa [scratchFrameAcquireTarget] using hPrealloc
 
+/-- Concrete target state produced by the emitted frame-release sequence. -/
+def scratchFrameReleaseTarget (config : Config) (depth : Nat)
+    (target : TargetState) : TargetState :=
+  let bytesWord := AllocationSupport.frameBytes config.frameWords
+  let cellWord := AllocationSupport.word config.allocatorCell
+  let currentWord := EvmYul.UInt256.ofNat (baseAt config (depth + 1))
+  let priorWord := EvmYul.UInt256.ofNat (baseAt config depth)
+  let afterBytes := StateRel.pushTargetBy 33 bytesWord target
+  let afterCell := StateRel.pushTargetBy 33 cellWord afterBytes
+  let afterLoad :=
+    StateRel.contractTargetBy 1 currentWord
+      (bytesWord :: target.evm.stack) afterCell
+  let afterSub :=
+    StateRel.contractTargetBy 1 priorWord target.evm.stack afterLoad
+  let afterCellStore := StateRel.pushTargetBy 33 cellWord afterSub
+  StateRel.mstoreTarget cellWord priorWord target.evm.stack afterCellStore
+
+/-- Exact canonical execution of the emitted scratch-frame release code. -/
+theorem scratchFrameRelease_openRun
+    {contract : MemoryContract.Contract} {frameWords depth : Nat}
+    {config : Config} {target : TargetState}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hBudget : Budget config depth)
+    (hReady : AllocatorReady config (depth + 1) target) :
+    Structured.InteractionSemantics.Code.openRun
+        (AllocationSupport.scratchFrameReleaseCode config) target =
+      .done (.ok (scratchFrameReleaseTarget config depth target)) := by
+  let bytesWord := AllocationSupport.frameBytes config.frameWords
+  let cellWord := AllocationSupport.word config.allocatorCell
+  let currentWord := EvmYul.UInt256.ofNat (baseAt config (depth + 1))
+  let priorWord := EvmYul.UInt256.ofNat (baseAt config depth)
+  let afterBytes := StateRel.pushTargetBy 33 bytesWord target
+  let afterCell := StateRel.pushTargetBy 33 cellWord afterBytes
+  let afterLoad :=
+    StateRel.contractTargetBy 1 currentWord
+      (bytesWord :: target.evm.stack) afterCell
+  let afterSub :=
+    StateRel.contractTargetBy 1 priorWord target.evm.stack afterLoad
+  let afterCellStore := StateRel.pushTargetBy 33 cellWord afterSub
+  have hCellLt : config.allocatorCell < EvmYul.UInt256.size :=
+    lt_of_le_of_lt
+      (Nat.le_add_right config.allocatorCell MemoryContract.wordBytes)
+      (hReady.cellActive.trans_lt hReady.activeNoWrap)
+  have hCellAddress :
+      (EvmYul.UInt256.ofNat config.allocatorCell).toNat =
+        config.allocatorCell :=
+    EvmYul.UInt256.toNat_ofNat_of_lt hCellLt
+  have hPriorWord : EvmYul.UInt256.sub currentWord bytesWord = priorWord := by
+    change
+      EvmYul.UInt256.sub
+          (EvmYul.UInt256.ofNat (baseAt config (depth + 1)))
+          (EvmYul.UInt256.ofNat
+            (MemoryContract.wordBytes * config.frameWords)) =
+        EvmYul.UInt256.ofNat (baseAt config depth)
+    rw [baseAt_succ]
+    exact Assembly.UInt256_ofNat_add_sub_right
+      (baseAt config depth) (bytes config)
+      (noWrap_of_budget_of_scratchFrameConfig? hConfig hBudget)
+  have hAfterCellStack :
+      afterCell.evm.stack = cellWord :: bytesWord :: target.evm.stack := rfl
+  have hLoad :
+      afterCell.evm.toMachineState.mload cellWord =
+        (currentWord, afterCell.evm.toMachineState) := by
+    have hBaseLoad :=
+      Compiler.MemoryRelation.mload_eq_lookup_of_end_le
+        target.evm.toMachineState config.allocatorCell hCellAddress
+        (by simpa [MemoryContract.wordBytes] using hReady.cellActive)
+    rw [hReady.allocatorAt] at hBaseLoad
+    simpa [afterCell, afterBytes, cellWord, currentWord,
+      AllocationSupport.word, StateRel.pushTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hBaseLoad
+  have hAfterLoadStack :
+      afterLoad.evm.stack =
+        currentWord :: bytesWord :: target.evm.stack := rfl
+  have hAfterCellStoreStack :
+      afterCellStore.evm.stack =
+        cellWord :: priorWord :: target.evm.stack := rfl
+  simp only [AllocationSupport.scratchFrameReleaseCode]
+  calc
+    Structured.InteractionSemantics.Code.openRun
+        [.push bytesWord, .push cellWord, .op .mload, .op .sub,
+          .push cellWord, .op .mstore] target =
+      Simulation.Interaction.bind
+        (Structured.InteractionSemantics.Code.openRun [.push bytesWord] target)
+        (Structured.InteractionSemantics.Code.openRun
+          [.push cellWord, .op .mload, .op .sub,
+            .push cellWord, .op .mstore]) := by
+      simpa using Structured.InteractionSemantics.Code.openRun_append
+        [.push bytesWord]
+        [.push cellWord, .op .mload, .op .sub,
+          .push cellWord, .op .mstore] target
+    _ = Structured.InteractionSemantics.Code.openRun
+        [.push cellWord, .op .mload, .op .sub,
+          .push cellWord, .op .mstore] afterBytes := by
+      rw [Code.openRun_push bytesWord target]
+      rfl
+    _ = Simulation.Interaction.bind
+        (Structured.InteractionSemantics.Code.openRun [.push cellWord]
+          afterBytes)
+        (Structured.InteractionSemantics.Code.openRun
+          [.op .mload, .op .sub, .push cellWord, .op .mstore]) := by
+      simpa using Structured.InteractionSemantics.Code.openRun_append
+        [.push cellWord] [.op .mload, .op .sub, .push cellWord, .op .mstore]
+        afterBytes
+    _ = Structured.InteractionSemantics.Code.openRun
+        [.op .mload, .op .sub, .push cellWord, .op .mstore] afterCell := by
+      rw [Code.openRun_push cellWord afterBytes]
+      rfl
+    _ = Simulation.Interaction.bind
+        (Structured.InteractionSemantics.Code.openRun [.op .mload] afterCell)
+        (Structured.InteractionSemantics.Code.openRun
+          [.op .sub, .push cellWord, .op .mstore]) := by
+      simpa using Structured.InteractionSemantics.Code.openRun_append
+        [.op .mload] [.op .sub, .push cellWord, .op .mstore] afterCell
+    _ = Structured.InteractionSemantics.Code.openRun
+        [.op .sub, .push cellWord, .op .mstore] afterLoad := by
+      rw [Code.openRun_mload hAfterCellStack hLoad]
+      rfl
+    _ = Simulation.Interaction.bind
+        (Structured.InteractionSemantics.Code.openRun [.op .sub] afterLoad)
+        (Structured.InteractionSemantics.Code.openRun
+          [.push cellWord, .op .mstore]) := by
+      simpa using Structured.InteractionSemantics.Code.openRun_append
+        [.op .sub] [.push cellWord, .op .mstore] afterLoad
+    _ = Structured.InteractionSemantics.Code.openRun
+        [.push cellWord, .op .mstore] afterSub := by
+      rw [Code.openRun_sub hAfterLoadStack, hPriorWord]
+      rfl
+    _ = Simulation.Interaction.bind
+        (Structured.InteractionSemantics.Code.openRun [.push cellWord]
+          afterSub)
+        (Structured.InteractionSemantics.Code.openRun [.op .mstore]) := by
+      simpa using Structured.InteractionSemantics.Code.openRun_append
+        [.push cellWord] [.op .mstore] afterSub
+    _ = Structured.InteractionSemantics.Code.openRun
+        [.op .mstore] afterCellStore := by
+      rw [Code.openRun_push cellWord afterSub]
+      rfl
+    _ = .done (.ok (scratchFrameReleaseTarget config depth target)) := by
+      simpa [scratchFrameReleaseTarget, bytesWord, cellWord,
+        currentWord, priorWord, afterBytes, afterCell, afterLoad,
+        afterSub, afterCellStore] using
+        Code.openRun_mstore hAfterCellStoreStack
+
 end AllocationInteractionFrameExecution
 end Functions
 end EvmCompiler
