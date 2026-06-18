@@ -75,6 +75,8 @@ boundaries remain active work.
   - [x] define the uniform recursive target budget and checked empty,
     head/tail-composition, expression, assignment, and stack/scratch
     declaration cursor constructors;
+  - [x] lift plain/argument terminals and ordered function `leave` into the
+    uniform recursive cursor interface;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

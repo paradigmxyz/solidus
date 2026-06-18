@@ -32082,3 +32082,10 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-file hole scan, axiom audit, and `git diff --check` passed; recursive
   assignment and declaration depend only on
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-18 03:34:00 PDT - proof/functions-recursive-abrupt - checked plain
+  and argument-bearing terminal constructors plus ordered function `leave`
+  under the uniform recursive budget. Terminal windows remain source-facing;
+  nonregular outcomes retain the destination-indexed relation and do not
+  execute their syntactic tails.
+- 2026-06-18 00:20:25 PDT - compaction-resume/functions-recursive-abrupt - resumed while validating recursive terminal and `leave` constructors; finish their checkpoint, then assess break/continue, compound control, internal calls, and the remaining CALL/CREATE public spine.
+- 2026-06-18 00:24:00 PDT - audit/functions-recursive-abrupt - `CursorForwardAt.terminal`, `terminalArgs`, and `leave` pass the full verification root and architecture gate; focused hole scan is empty, axiom audit reports only `propext`, `Classical.choice`, and `Quot.sound`, and `git diff --check` passes.

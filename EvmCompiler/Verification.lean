@@ -302,6 +302,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.expr
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.assign
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.let_
+#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.terminal
+#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.terminalArgs
+#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.leave
 #check EvmCompiler.Functions.AllocationInteractionRecursive.SelectedCallee.body_of_cursor
 #check EvmCompiler.Functions.AllocationInteractionComposition.ControlResultRel
 #check EvmCompiler.Functions.AllocationInteractionComposition.lift_fixed
