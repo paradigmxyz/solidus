@@ -195,6 +195,40 @@ theorem succ_succ_cons
 
 end EvalArgs
 
+namespace ExecSeq
+
+theorem zero
+    (stmts : List EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    execSeq 0 stmts code state = Primitive.fail state .OutOfFuel := by
+  simp [execSeq, Yul.Source.Canonical.execSeq,
+    Yul.Source.Effectful.execSeq, Primitive.fail,
+    Yul.Source.Effectful.Control.fail]
+  rfl
+
+theorem nil_succ
+    (fuel : Nat) (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : State) :
+    execSeq (fuel + 1) [] code state = pure state := by
+  simp [execSeq, Yul.Source.Canonical.execSeq,
+    Yul.Source.Effectful.execSeq]
+
+theorem cons_succ
+    (fuel : Nat) (stmt : EvmYul.Yul.Ast.Stmt)
+    (rest : List EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    execSeq (fuel + 1) (stmt :: rest) code state =
+      Simulation.Interaction.bind (exec fuel stmt code state)
+        (fun stateAfterStmt =>
+          match stateAfterStmt with
+          | .Ok _ _ => execSeq fuel rest code stateAfterStmt
+          | .OutOfFuel | .Checkpoint _ => pure stateAfterStmt) := by
+  simp only [execSeq, exec, Yul.Source.Canonical.execSeq,
+    Yul.Source.Canonical.exec, Yul.Source.Effectful.execSeq]
+  rfl
+
+end ExecSeq
+
 namespace Exec
 
 theorem zero
@@ -211,6 +245,58 @@ theorem zero
         (.error ({ exception := .OutOfFuel, state := state } : Failure) :
           Except Failure State)
   rfl
+
+theorem block_succ
+    (fuel : Nat) (body : List EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    exec (fuel + 1) (.Block body) code state =
+      Simulation.Interaction.bind (execSeq fuel body code state)
+        (fun stateAfterBody =>
+          pure (stateAfterBody.restrictStoreTo state.store)) := by
+  simp only [exec, execSeq, Yul.Source.Canonical.exec,
+    Yul.Source.Canonical.execSeq, Yul.Source.Effectful.exec]
+  rfl
+
+theorem if_succ
+    (fuel : Nat) (cond : EvmYul.Yul.Ast.Expr)
+    (body : List EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    exec (fuel + 1) (.If cond body) code state =
+      Simulation.Interaction.bind (eval fuel cond code state)
+        (fun result =>
+          if result.2 ≠ EvmYul.UInt256.ofNat 0 then
+            exec fuel (.Block body) code result.1
+          else
+            pure result.1) := by
+  simp only [exec, eval, Yul.Source.Canonical.exec,
+    Yul.Source.Canonical.eval, Yul.Source.Effectful.exec]
+  rfl
+
+theorem switch_succ
+    (fuel : Nat) (cond : EvmYul.Yul.Ast.Expr)
+    (cases : List (Word × List EvmYul.Yul.Ast.Stmt))
+    (defaultBody : List EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    exec (fuel + 1) (.Switch cond cases defaultBody) code state =
+      Simulation.Interaction.bind (eval fuel cond code state)
+        (fun result =>
+          exec fuel
+            (.Block
+              (EvmYul.Yul.selectSwitchCase
+                result.2 defaultBody cases))
+            code result.1) := by
+  simp only [exec, eval, Yul.Source.Canonical.exec,
+    Yul.Source.Canonical.eval, Yul.Source.Effectful.exec]
+  rfl
+
+theorem for_succ
+    (fuel : Nat) (cond : EvmYul.Yul.Ast.Expr)
+    (post body : List EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    exec (fuel + 1) (.For cond post body) code state =
+      loop fuel cond post body code state := by
+  simp only [exec, loop, Yul.Source.Canonical.exec,
+    Yul.Source.Canonical.loop, Yul.Source.Effectful.exec]
 
 theorem brk_zero
     (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :

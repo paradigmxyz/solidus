@@ -1,5 +1,5 @@
 import EvmCompiler.Yul.Compiler
-import EvmCompiler.Yul.FunctionsInteractionPrimitive
+import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 
 namespace EvmCompiler
 namespace Yul
@@ -564,6 +564,16 @@ theorem directAt
                                       Locals.Source.Effectful.Expr.Control.ExprSeq.eval]
                                       using
                                       hCombined
+
+/-- Concrete adjacent expression preservation for the ordinary compiler's
+complete primitive surface. -/
+theorem compilerDirectAt
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (fuel : Nat) :
+    DirectAt FunctionsInteractionClosedPrimitive.compilerSelected
+      codeOverride fuel :=
+  directAt FunctionsInteractionClosedPrimitive.compilerSelected
+    codeOverride fuel
 
 end FunctionsInteractionExpression
 end Yul

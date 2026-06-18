@@ -428,5 +428,14 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.Invalid.forward
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.closedSelected
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.compilerSelected
+#print axioms EvmCompiler.Yul.FunctionsInteractionExpression.compilerDirectAt
+#print axioms EvmCompiler.Yul.InteractionSemantics.ExecSeq.zero
+#print axioms EvmCompiler.Yul.InteractionSemantics.ExecSeq.nil_succ
+#print axioms EvmCompiler.Yul.InteractionSemantics.ExecSeq.cons_succ
+#print axioms EvmCompiler.Yul.InteractionSemantics.Exec.block_succ
+#print axioms EvmCompiler.Yul.InteractionSemantics.Exec.if_succ
+#print axioms EvmCompiler.Yul.InteractionSemantics.Exec.switch_succ
+#print axioms EvmCompiler.Yul.InteractionSemantics.Exec.for_succ
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.ScopedOutcomeRel.of_regular_target
 #print axioms EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.MemoryFamily.LogFamily.closedSpec
 #print axioms EvmCompiler.Functions.AllocationInteractionPrimitiveResource.log_resourceForward

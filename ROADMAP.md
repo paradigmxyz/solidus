@@ -184,6 +184,11 @@ boundaries remain active work.
   - [ ] Recursive statements, internal calls, and whole program.
     - [x] Source-truncation-aware direct literals, variables, primitive calls,
       and arbitrary argument lists under one compiler-selected capability.
+    - [x] Concrete same-observation expression theorem with the complete
+      primitive capability, plus source-owner equations for statement lists,
+      blocks, conditionals, switches, and loops.
+    - [ ] Compiler-owned scoped result interface for path-dependent
+      declarations and internal-call preludes; recursive statement/list proof.
     - [x] Compose independent CALL/CREATE and GAS/MSIZE providers with a
       closed-ordinary-primitive capability; no opcode dispatch occurs inside
       expression recursion.

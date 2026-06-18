@@ -1214,6 +1214,32 @@ structure ScopedOutcomeRel (layout : List Functions.Name)
 
 namespace ScopedOutcomeRel
 
+/-- A related regular Functions outcome exposes the scoped Yul state needed
+by the next statement in a source block. -/
+theorem of_regular_target
+    {layout : List Functions.Name}
+    {source : SourceState} {target : TargetState}
+    (hRel : ScopedOutcomeRel layout source
+      (Functions.Source.Effectful.Outcome.regular target)) :
+    ScopedStateRel layout source target := by
+  cases source with
+  | Ok sourceShared sourceVars =>
+      refine ⟨?_, ?_, ?_⟩
+      · simpa using hRel.outcome.state
+      · intro finalShared finalVars hSource
+        cases hSource
+        exact hRel.domain sourceShared sourceVars rfl
+      · intro finalShared finalVars hSource
+        cases hSource
+        exact hRel.defined sourceShared sourceVars rfl
+  | OutOfFuel =>
+      have hImpossible := hRel.outcome.mode
+      simp [ModeRel] at hImpossible
+  | Checkpoint checkpoint =>
+      cases checkpoint <;>
+        have hImpossible := hRel.outcome.mode <;>
+        simp [ModeRel] at hImpossible
+
 theorem regular
     {layout : List Functions.Name}
     {source : SourceState} {target : TargetState}
