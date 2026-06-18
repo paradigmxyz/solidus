@@ -980,6 +980,8 @@ Exit: every layer exposes one canonical open computation.
     capability.
   - [x] Compose return writeback and recursive selected internal calls while
     discharging resource capabilities internally.
+  - [x] Construct the distinguished main lowering split and recursive root
+    from ordinary compiler artifacts in an observer-free pass owner.
   - [ ] Compose selected internal callees and publish the whole-program
     adjacent theorem.
 - [ ] Yul -> Functions.
