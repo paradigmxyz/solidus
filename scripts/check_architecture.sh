@@ -315,6 +315,7 @@ for theorem in \
     '#check EvmCompiler.Functions.AllocationInteractionControl.switch_of_components' \
     '#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.switch' \
     '#check EvmCompiler.Functions.AllocationInteractionLoop.forward' \
+    '#check EvmCompiler.Functions.AllocationInteractionFor.forward' \
     '#check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardOne'; do
   if ! rg -Fq "$theorem" EvmCompiler/Verification.lean; then
     printf 'Verification root is missing horizontal lexical-control theorem: %s\n\n' \
