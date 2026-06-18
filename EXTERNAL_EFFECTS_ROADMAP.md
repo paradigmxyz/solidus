@@ -859,8 +859,10 @@ Exit: the shared core builds with no compiler layer changed.
     every common response and arbitrary post-world.
   - [x] Preserve concrete scratch slots and returned stack prefixes across
     CALL/CREATE response installation.
-  - [ ] Prove one structural `Interaction.Rel` theorem for all four CALL and
-    both CREATE opcodes using the checked query and response interfaces.
+  - [x] Prove family-level structural `Interaction.Rel` theorems for all four
+    CALL and both CREATE opcodes using the checked query/response interfaces.
+  - [ ] Compose argument-expression preservation with external primitive
+    preservation through the ordinary allocation lowerer and Locals compiler.
   - [ ] Recursive allocation preservation for expressions, statements,
     internal calls, loops, terminals, and whole programs.
 - [ ] Yul.

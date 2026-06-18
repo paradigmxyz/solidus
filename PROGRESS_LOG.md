@@ -31571,3 +31571,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1154-job Functions build, 1304-job verification root, architecture guards,
   touched-file hole scan, and `git diff --check` passed; new public theorems
   use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 17:08:57 PDT - proof/functions-external-primitives - proved the
+  adjacent family-level `call_open` and `create_open` structural relations;
+  CALL, CALLCODE, DELEGATECALL, STATICCALL, CREATE, and CREATE2 now emit equal
+  requests and preserve exact result values and allocated state for every
+  common open-world answer, including static-mode violation leaves.
+- 2026-06-17 17:08:57 PDT - validation/functions-external-primitives - the
+  1155-job Functions build, 1305-job verification root, architecture guards,
+  touched-file hole scan, and `git diff --check` passed; both family theorems
+  use only `[propext, Classical.choice, Quot.sound]`.
