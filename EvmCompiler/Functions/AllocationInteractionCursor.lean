@@ -301,6 +301,62 @@ structure CoreCursor
   sourceScoped : Functions.Scope.Block.Scoped live sourceBlock
   activeEnv : ActiveEnv root.slots planning.allocation.env live
 
+/-- Exact parent endpoint equalities retained by a decomposed tail cursor. -/
+structure ExactTail
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {stmt : Functions.Stmt} {rest : List Functions.Stmt}
+    {beforeState afterState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live { stmts := stmt :: rest }
+        beforeState beforeLocals)
+    (tail :
+      CoreCursor root scope (Functions.Scope.Stmt.outEnv live stmt)
+        { stmts := rest } afterState afterLocals) : Prop where
+  plan : tail.plan = cursor.plan
+  finalState : tail.finalState = cursor.finalState
+  finalLocals : tail.finalLocals = cursor.finalLocals
+
+/-- Static transport facts supplied by one successful source statement. -/
+structure StepTransport
+    (beforeState afterState : AllocationLowering.State)
+    (beforeLocals afterLocals : Locals.Ctx)
+    (beforeLive : List Functions.Name)
+    (stmt : Functions.Stmt) : Prop where
+  state :
+    AllocationLowering.StateExtends beforeLive beforeState afterState
+  locals : Locals.Ctx.SameControl beforeLocals afterLocals
+  live :
+    ∀ name, name ∈ beforeLive →
+      name ∈ Functions.Scope.Stmt.outEnv beforeLive stmt
+
+theorem StepTransport.of_compilers
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns beforeLive : List Functions.Name}
+    {beforeState afterState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx}
+    {stmt : Functions.Stmt}
+    {lowered : List Locals.Stmt}
+    {compiled : List Expressions.Stmt}
+    (hScoped : Functions.Scope.Stmt.Scoped beforeLive stmt)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns beforeState stmt =
+        some (lowered, afterState))
+    (hCompile :
+      Locals.Block.compileOpen beforeLocals { stmts := lowered } =
+        some (compiled, afterLocals)) :
+    StepTransport beforeState afterState beforeLocals afterLocals
+      beforeLive stmt :=
+  { state := AllocationLowering.lowerStmt_stateExtends hScoped hLower
+    locals := Locals.Block.compileOpen_sameControl hCompile
+    live := fun _ hName => Functions.Scope.Stmt.mem_outEnv hName }
+
 def RootArtifact.cursor
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
@@ -1522,6 +1578,456 @@ theorem CoreCursor.letContext
                       · exact hAfterSlot
                       · exact hAfterStackLocation
                       · exact hAfterScratchLocation
+
+/-- Build a cursor from any validated lexical planner entry. -/
+theorem CoreCursor.lexicalOfPlanState
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {cursorLive nestedLive : List Functions.Name}
+    {sourceBlock body : Functions.Block}
+    {cursorLowerState lowerState openFinal : AllocationLowering.State}
+    {planState : AllocationSupport.CompileState}
+    {cursorLocalsCtx nestedLocalsCtx bodyLocals : Locals.Ctx}
+    {lowered : Locals.Block}
+    {bodyCode : List Expressions.Stmt}
+    (_cursor :
+      CoreCursor root scope cursorLive sourceBlock cursorLowerState
+        cursorLocalsCtx)
+    (lexicalScope : Locals.Allocation.ScopeId)
+    (planning : AllocationSupport.PlanningState)
+    (hPlanningAllocation :
+      planning.allocation = lowerState.allocation)
+    (hScopeRoot :
+      MixedAllocation.AllocationRecipe.functionRoot? lexicalScope =
+        root.functionRoot?)
+    (hEntryRecipe :
+      ({ scope := lexicalScope
+         state := planState } :
+        AllocationSupport.ScopedAllocation) ∈
+        compilation.recipe.lexicalScopes)
+    (hPlanEnv : planState.env = openFinal.allocation.env)
+    (hInnerScopes :
+      ∀ entry,
+        entry ∈
+            (AllocationSupport.planBlockOpen
+              lexicalScope planning body).scopes →
+          entry ∈ compilation.recipe.lexicalScopes)
+    (hLower :
+      AllocationLowering.lowerBlockOpen root.lowerCtx root.returns
+          lowerState body =
+        some (lowered, openFinal))
+    (hCompile :
+      Locals.Block.compileOpen nestedLocalsCtx lowered =
+        some (bodyCode, bodyLocals))
+    (hScoped : Functions.Scope.Block.Scoped nestedLive body)
+    (hActiveEnv :
+      ActiveEnv root.slots planning.allocation.env nestedLive) :
+    ∃ nested :
+        CoreCursor root lexicalScope nestedLive body lowerState
+          nestedLocalsCtx,
+      nested.lowered = lowered ∧
+        nested.finalState = openFinal ∧
+        nested.compiled = bodyCode ∧
+        nested.finalLocals = bodyLocals := by
+  let scopeEntry : AllocationSupport.ScopedAllocation :=
+    { scope := lexicalScope
+      state := planState }
+  have hPlannedOpen :
+      (AllocationSupport.planBlockOpen
+        lexicalScope planning body).allocation =
+        openFinal.allocation := by
+    exact
+      AllocationLowering.lowerBlockOpen_allocation_eq_planBlockOpen
+        body lexicalScope planning root.lowerCtx root.returns
+        lowerState openFinal lowered hPlanningAllocation hLower
+  let plan :=
+    MixedAllocation.allocationOfState
+      program.memoryContract compilation.recipe.frameWords
+      (MixedAllocation.AllocationRecipe.stackEntriesForScope
+        compilation.recipe compilation.stackSlots lexicalScope planState)
+      planState
+  have hFind : allocation.find? lexicalScope = some plan := by
+    have hEntryFind :=
+      AllocationLowering.validatePlan?_lexical_entry_plan
+        compilation.validate hEntryRecipe
+    simpa [scopeEntry, plan] using hEntryFind
+  have hPlanWF : plan.WellFormed :=
+    Locals.Allocation.ProgramPlan.wellFormed_of_find?_eq_some
+      (AllocationLowering.validatePlan?_sound compilation.validate).1
+      hFind
+  have hEntries :
+      MixedAllocation.AllocationRecipe.stackEntriesForScope
+          compilation.recipe compilation.stackSlots lexicalScope planState =
+        MixedAllocation.AllocationRecipe.stackEntriesForScope
+          compilation.recipe compilation.stackSlots lexicalScope
+            openFinal.allocation :=
+    MixedAllocation.AllocationRecipe.stackEntriesForScope_eq_of_env_eq
+      hPlanEnv
+  have hPlanEq :
+      plan =
+        MixedAllocation.allocationOfState
+          program.memoryContract compilation.recipe.frameWords
+          (MixedAllocation.AllocationRecipe.stackEntriesForScope
+            compilation.recipe compilation.stackSlots lexicalScope
+            openFinal.allocation)
+          openFinal.allocation := by
+    exact
+      MixedAllocation.allocationOfState_eq_of_env_eq
+        hEntries hPlanEnv
+  let nested :
+      CoreCursor root lexicalScope nestedLive body lowerState
+        nestedLocalsCtx :=
+    { planning := planning
+      planningAllocation := hPlanningAllocation
+      scopeRoot := hScopeRoot
+      plan := plan
+      planWF := hPlanWF
+      finalState := openFinal
+      finalLocals := bodyLocals
+      planEq := hPlanEq
+      finalFrameFresh := by
+        have hFresh := root.lexicalFrameFresh _ hEntryRecipe
+        rw [hPlanEnv] at hFresh
+        simpa [scopeEntry] using hFresh
+      plannedFinal := hPlannedOpen
+      plannedScopes := hInnerScopes
+      lowered := lowered
+      compiled := bodyCode
+      lower := hLower
+      compile := hCompile
+      sourceScoped := hScoped
+      activeEnv := hActiveEnv }
+  exact ⟨nested, rfl, rfl, rfl, rfl⟩
+
+/-- Build a cursor whose lexical entry is the open block endpoint. -/
+theorem CoreCursor.lexical
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {cursorLive nestedLive : List Functions.Name}
+    {sourceBlock body : Functions.Block}
+    {cursorLowerState lowerState openFinal : AllocationLowering.State}
+    {cursorLocalsCtx nestedLocalsCtx bodyLocals : Locals.Ctx}
+    {lowered : Locals.Block}
+    {bodyCode : List Expressions.Stmt}
+    (cursor :
+      CoreCursor root scope cursorLive sourceBlock cursorLowerState
+        cursorLocalsCtx)
+    (lexicalScope : Locals.Allocation.ScopeId)
+    (planning : AllocationSupport.PlanningState)
+    (hPlanningAllocation :
+      planning.allocation = lowerState.allocation)
+    (hScopeRoot :
+      MixedAllocation.AllocationRecipe.functionRoot? lexicalScope =
+        root.functionRoot?)
+    (hEntryRecipe :
+      ({ scope := lexicalScope
+         state :=
+           (AllocationSupport.planBlockOpen
+             lexicalScope planning body).allocation } :
+        AllocationSupport.ScopedAllocation) ∈
+        compilation.recipe.lexicalScopes)
+    (hInnerScopes :
+      ∀ entry,
+        entry ∈
+            (AllocationSupport.planBlockOpen
+              lexicalScope planning body).scopes →
+          entry ∈ compilation.recipe.lexicalScopes)
+    (hLower :
+      AllocationLowering.lowerBlockOpen root.lowerCtx root.returns
+          lowerState body =
+        some (lowered, openFinal))
+    (hCompile :
+      Locals.Block.compileOpen nestedLocalsCtx lowered =
+        some (bodyCode, bodyLocals))
+    (hScoped : Functions.Scope.Block.Scoped nestedLive body)
+    (hActiveEnv :
+      ActiveEnv root.slots planning.allocation.env nestedLive) :
+    ∃ nested :
+        CoreCursor root lexicalScope nestedLive body lowerState
+          nestedLocalsCtx,
+      nested.lowered = lowered ∧
+        nested.finalState = openFinal ∧
+        nested.compiled = bodyCode ∧
+        nested.finalLocals = bodyLocals :=
+  cursor.lexicalOfPlanState lexicalScope planning
+    hPlanningAllocation hScopeRoot hEntryRecipe
+    (by
+      exact congrArg AllocationSupport.CompileState.env
+        (AllocationLowering.lowerBlockOpen_allocation_eq_planBlockOpen
+          body lexicalScope planning root.lowerCtx root.returns
+          lowerState openFinal lowered hPlanningAllocation hLower))
+    hInnerScopes hLower hCompile hScoped hActiveEnv
+
+/-- Build the cursor for one immediate compiler-scoped source block. -/
+theorem CoreCursor.scoped
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {stmt : Functions.Stmt} {rest : List Functions.Stmt}
+    {body : Functions.Block}
+    {lowerState scopedFinal : AllocationLowering.State}
+    {localsCtx bodyLocals : Locals.Ctx}
+    {lowered : Locals.Block}
+    {bodyCode : List Expressions.Stmt}
+    (cursor :
+      CoreCursor root scope live { stmts := stmt :: rest }
+        lowerState localsCtx)
+    (hPlanning :
+      AllocationSupport.planStmt scope cursor.planning stmt =
+        AllocationSupport.planBlockScoped scope cursor.planning body)
+    (hLower :
+      AllocationLowering.lowerBlockScoped root.lowerCtx root.returns
+          lowerState body =
+        some (lowered, scopedFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx lowered =
+        some (bodyCode, bodyLocals))
+    (hScoped : Functions.Scope.Block.Scoped live body) :
+    ∃ nested :
+        CoreCursor root (.lexical scope cursor.planning.nextScope)
+          live body lowerState localsCtx,
+      nested.compiled = bodyCode ∧
+        nested.finalLocals = bodyLocals := by
+  obtain ⟨openFinal, hOpen, _hScopedEnv, _hScopedNext,
+      _hScopedLayout⟩ :=
+    AllocationLowering.lowerBlockScoped_components hLower
+  let lexicalScope : Locals.Allocation.ScopeId :=
+    .lexical scope cursor.planning.nextScope
+  let entered : AllocationSupport.PlanningState :=
+    { cursor.planning with
+      nextScope := cursor.planning.nextScope + 1 }
+  let scopeEntry : AllocationSupport.ScopedAllocation :=
+    { scope := lexicalScope
+      state :=
+        (AllocationSupport.planBlockOpen
+          lexicalScope entered body).allocation }
+  have hEntryHead :
+      scopeEntry ∈
+        (AllocationSupport.planStmt
+          scope cursor.planning stmt).scopes := by
+    rw [hPlanning]
+    exact
+      AllocationSupport.planBlockScoped_entry_mem
+        body scope cursor.planning
+  have hEntryFinal :
+      scopeEntry ∈
+        (AllocationSupport.planBlockOpen scope cursor.planning
+          { stmts := stmt :: rest }).scopes := by
+    simp only [AllocationSupport.planBlockOpen,
+      AllocationSupport.planStmtList]
+    exact
+      AllocationSupport.mem_planStmtList_scopes_of_mem
+        rest scope
+        (AllocationSupport.planStmt scope cursor.planning stmt)
+        hEntryHead
+  have hEntryRecipe :
+      scopeEntry ∈ compilation.recipe.lexicalScopes :=
+    cursor.plannedScopes scopeEntry hEntryFinal
+  have hInnerScopes :
+      ∀ entry,
+        entry ∈
+            (AllocationSupport.planBlockOpen
+              lexicalScope entered body).scopes →
+          entry ∈ compilation.recipe.lexicalScopes := by
+    intro entry hEntry
+    have hScopedEntry :
+        entry ∈
+          (AllocationSupport.planBlockScoped
+            scope cursor.planning body).scopes :=
+      AllocationSupport.mem_planBlockScoped_scopes_of_open_mem
+        body scope cursor.planning hEntry
+    have hHeadEntry :
+        entry ∈
+          (AllocationSupport.planStmt
+            scope cursor.planning stmt).scopes := by
+      rw [hPlanning]
+      exact hScopedEntry
+    apply cursor.plannedScopes entry
+    simp only [AllocationSupport.planBlockOpen,
+      AllocationSupport.planStmtList]
+    exact
+      AllocationSupport.mem_planStmtList_scopes_of_mem
+        rest scope
+        (AllocationSupport.planStmt scope cursor.planning stmt)
+        hHeadEntry
+  obtain ⟨nested, _hLowered, _hFinalState, hCode, hLocals⟩ :=
+    cursor.lexical lexicalScope entered
+      (by simpa [entered] using cursor.planningAllocation)
+      (by
+        simpa [lexicalScope,
+          MixedAllocation.AllocationRecipe.functionRoot?] using
+          cursor.scopeRoot)
+      (by simpa [scopeEntry] using hEntryRecipe)
+      hInnerScopes hOpen hCompile hScoped
+      (by simpa [entered] using cursor.activeEnv)
+  exact ⟨nested, hCode, hLocals⟩
+
+/-- Decompose a lexical block into its body cursor and exact outer tail. -/
+theorem CoreCursor.blockCursors
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .block body :: rest } lowerState localsCtx) :
+    ∃ afterState headCode,
+      ∃ tail :
+        CoreCursor root scope live
+          { stmts := rest } afterState localsCtx,
+      ∃ targetBlock : Expressions.Block,
+      ∃ bodyCursor :
+        CoreCursor root (.lexical scope cursor.planning.nextScope)
+          live body lowerState localsCtx,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          headCode = targetBlock.stmts ∧
+          Locals.finishScoped
+              localsCtx bodyCursor.finalLocals bodyCursor.compiled =
+            some targetBlock ∧
+          afterState.allocation.env =
+            lowerState.allocation.env ∧
+          afterState.layout = lowerState.layout ∧
+          StepTransport lowerState afterState localsCtx localsCtx
+            live (.block body) ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, hPlan, hFinalState, hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, hScopedStmt⟩ :=
+    cursor.cons
+  obtain ⟨loweredBody, hLowerBody, hHeadLower⟩ :=
+    AllocationLowering.lowerStmt_block_components hLower
+  have hHeadCompile := hCompile
+  rw [hHeadLower] at hCompile
+  have hStmtCompile :=
+    Locals.Block.compileOpen_single_components hCompile
+  obtain
+      ⟨bodyCode, bodyLocals, targetBlock,
+        hBodyCompile, hFinish, hHeadCode, hAfterLocals⟩ :=
+    Locals.Stmt.compile_block_components hStmtCompile
+  have hBodyScoped :
+      Functions.Scope.Block.Scoped live body := by
+    simpa [Functions.Scope.Stmt.Scoped] using hScopedStmt
+  have hBodyCursor :=
+    cursor.scoped
+      (stmt := .block body)
+      (body := body)
+      (by simp [AllocationSupport.planStmt])
+      hLowerBody hBodyCompile hBodyScoped
+  rcases hBodyCursor with
+    ⟨bodyCursor, hBodyCode, hBodyLocals⟩
+  have hAfterShape :=
+    AllocationLowering.lowerBlockScoped_state_shape hLowerBody
+  cases hAfterLocals
+  refine
+    ⟨afterState, headCode, tail, targetBlock, bodyCursor,
+      hCompiled, hHeadCode, ?_, hAfterShape.1, hAfterShape.2,
+      StepTransport.of_compilers hScopedStmt hLower hHeadCompile,
+      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+  rw [hBodyCode, hBodyLocals]
+  exact hFinish
+
+/-- Decompose an `if` into its condition, body cursor, and exact tail. -/
+theorem CoreCursor.ifCursors
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {cond : Functions.Expr 1}
+    {body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .if_ cond body :: rest } lowerState localsCtx) :
+    ∃ afterState headLower headCode,
+      ∃ tail :
+        CoreCursor root scope live
+          { stmts := rest } afterState localsCtx,
+      ∃ loweredCond condCode targetBody,
+      ∃ bodyCursor :
+        CoreCursor root (.lexical scope cursor.planning.nextScope)
+          live body lowerState localsCtx,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationLowering.lowerStmt root.lowerCtx root.returns
+              lowerState (.if_ cond body) =
+            some (headLower, afterState) ∧
+          Locals.Block.compileOpen localsCtx { stmts := headLower } =
+            some (headCode, localsCtx) ∧
+          headCode =
+            [Expressions.Stmt.if_
+              (Expressions.Expr.code condCode) targetBody] ∧
+          AllocationLowering.lowerExpr root.lowerCtx lowerState cond =
+            some loweredCond ∧
+          Locals.Expr.compileCode localsCtx 0 loweredCond =
+            some condCode ∧
+          Locals.finishScoped
+              localsCtx bodyCursor.finalLocals bodyCursor.compiled =
+            some targetBody ∧
+          afterState.allocation.env =
+            lowerState.allocation.env ∧
+          afterState.layout = lowerState.layout ∧
+          Functions.Scope.ExprScoped live cond ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, hPlan, hFinalState, hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, hScopedStmt⟩ :=
+    cursor.cons
+  obtain
+      ⟨loweredCond, loweredBody, hLowerCond, hLowerBody, hHeadLower⟩ :=
+    AllocationLowering.lowerStmt_if_components hLower
+  have hHeadCompile := hCompile
+  rw [hHeadLower] at hCompile
+  obtain
+      ⟨condCode, bodyCode, bodyLocals, targetBody,
+        hCompileCond, hCompileBody, hFinish, hHeadCode,
+        hAfterLocals⟩ :=
+    Locals.Block.compileOpen_single_if_components hCompile
+  have hScoped :
+      Functions.Scope.ExprScoped live cond ∧
+        Functions.Scope.Block.Scoped live body := by
+    simpa [Functions.Scope.Stmt.Scoped] using hScopedStmt
+  obtain ⟨bodyCursor, hBodyCode, hBodyLocals⟩ :=
+    cursor.scoped
+      (stmt := .if_ cond body)
+      (body := body)
+      (by simp [AllocationSupport.planStmt])
+      hLowerBody hCompileBody hScoped.2
+  have hAfterShape :=
+    AllocationLowering.lowerBlockScoped_state_shape hLowerBody
+  cases hAfterLocals
+  refine
+    ⟨afterState, headLower, headCode, tail, loweredCond, condCode,
+      targetBody, bodyCursor, hCompiled, hLower, ?_, hHeadCode, hLowerCond,
+      hCompileCond, ?_, hAfterShape.1, hAfterShape.2, hScoped.1,
+      ⟨hPlan, hFinalState, hFinalLocals⟩⟩
+  · simpa using hHeadCompile
+  rw [hBodyCode, hBodyLocals]
+  exact hFinish
 
 end AllocationInteractionCursor
 end Functions

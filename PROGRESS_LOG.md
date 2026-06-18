@@ -31894,3 +31894,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   builds, the 1322-job verification root, architecture guard, touched-Lean
   hole scan, axiom audit, and `git diff --check` passed. New context and cursor
   theorems use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 23:03:00 PDT - proof/functions-lexical-cursors - added a shared
+  constructor for validated lexical planner entries, immediate scoped cursors,
+  and exact lexical-block and `if` decompositions. Nested bodies and outer
+  tails are now pass-owned cursors derived from real compiler equations rather
+  than observer-specific generated evidence.
+- 2026-06-17 23:04:00 PDT - validation/functions-lexical-cursors - focused
+  check, the 1322-job verification root, architecture guard, touched-Lean hole
+  scan, axiom audit, and `git diff --check` passed; lexical cursor theorems use
+  only `[propext, Classical.choice, Quot.sound]`.

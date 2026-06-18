@@ -263,6 +263,13 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.scratch_bound_of_location
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.declarationPlacement
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.letContext
+#check EvmCompiler.Functions.AllocationInteractionCursor.ExactTail
+#check EvmCompiler.Functions.AllocationInteractionCursor.StepTransport.of_compilers
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.lexicalOfPlanState
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.lexical
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.scoped
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.blockCursors
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.ifCursors
 #check EvmCompiler.Functions.AllocationInteractionComposition.ControlResultRel
 #check EvmCompiler.Functions.AllocationInteractionComposition.lift_fixed
 #check EvmCompiler.Functions.AllocationInteractionComposition.cons

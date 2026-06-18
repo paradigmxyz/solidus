@@ -43,6 +43,8 @@ boundaries remain active work.
     cursor agreement facts;
   - [x] canonical post-declaration activation context and mode transition for
     stack and scratch placement;
+  - [x] shared lexical cursor construction and exact lexical-block/`if`
+    decomposition;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
