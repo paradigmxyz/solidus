@@ -65,6 +65,35 @@ def openEval (op : Structured.BasicOp) (state : State)
   else
     throw .StackUnderflow
 
+/-- Primitive interactions may change shared state but never the source local
+store, for every possible open-world response. -/
+theorem openEval_vars_eq (op : Structured.BasicOp) (state : State)
+    (values : List Word) :
+    Simulation.Interaction.AllDone
+      (fun outcome =>
+        match outcome with
+        | .error _ => True
+        | .ok result => result.1.vars = state.vars)
+      (openEval op state values) := by
+  unfold openEval
+  by_cases hLength :
+      values.length = Expressions.Structured.BasicOp.inputs op
+  · simp only [hLength, if_pos]
+    by_cases hSupports : supportsOpen op = true
+    · simp only [hSupports, if_pos]
+      apply Simulation.Interaction.AllDone.map (finish state)
+        (Simulation.Interaction.AllDone.trivial
+          (Assembly.InteractionSemantics.PrimOp.openStep
+            op.toPrimOp (isolated state values)))
+      · intro _ _
+        trivial
+      · intro _ _
+        rfl
+    · simp only [hSupports, if_neg]
+      exact .done True.intro
+  · simp only [hLength, if_neg]
+    exact .done True.intro
+
 /--
 A primitive admitted by the canonical ordinary source semantics is a closed
 interaction. This is the semantic bridge used by upper pass proofs; it does
@@ -286,6 +315,102 @@ def openEvalCondition (expr : Locals.Expr 1)
   Locals.Source.Effectful.Expr.Control.evalCondition
     stateModel primitiveSemantics expr state
 
+mutual
+  /-- Expression evaluation preserves local bindings on every open branch. -/
+  theorem openEval_vars_eq {results : Nat}
+      (expr : Locals.Expr results) (state : State) :
+      Simulation.Interaction.AllDone
+        (fun outcome =>
+          match outcome with
+          | .error _ => True
+          | .ok result => result.1.vars = state.vars)
+        (openEval expr state) := by
+    cases expr with
+    | lit value =>
+        exact .done rfl
+    | var name =>
+        cases hLookup : state.vars name with
+        | none =>
+            change Simulation.Interaction.AllDone _
+              (match state.vars name with
+              | some value => Simulation.Interaction.pure (state, [value])
+              | none => throw EvmYul.EVM.ExecutionException.InvalidInstruction)
+            rw [hLookup]
+            exact .done True.intro
+        | some value =>
+            change Simulation.Interaction.AllDone _
+              (match state.vars name with
+              | some value => Simulation.Interaction.pure (state, [value])
+              | none => throw EvmYul.EVM.ExecutionException.InvalidInstruction)
+            rw [hLookup]
+            exact .done rfl
+    | code code =>
+        exact .done True.intro
+    | prim op args =>
+        unfold openEval Locals.Source.Effectful.Expr.Control.eval
+        apply Simulation.Interaction.AllDone.bind (openEvalSeq_vars_eq args state)
+        · intro _ _
+          trivial
+        · intro result hArgs
+          rcases result with ⟨afterArgs, values⟩
+          apply Simulation.Interaction.AllDone.mono
+            (Primitive.openEval_vars_eq op afterArgs values)
+          intro outcome hOutcome
+          cases outcome with
+          | error _ => trivial
+          | ok result => exact hOutcome.trans hArgs
+
+  /-- Expression-sequence evaluation preserves local bindings on every branch. -/
+  theorem openEvalSeq_vars_eq {results : Nat}
+      (exprs : Locals.ExprSeq results) (state : State) :
+      Simulation.Interaction.AllDone
+        (fun outcome =>
+          match outcome with
+          | .error _ => True
+          | .ok result => result.1.vars = state.vars)
+        (Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+          stateModel primitiveSemantics exprs state) := by
+    cases exprs with
+    | nil =>
+        exact .done rfl
+    | cons head tail =>
+        unfold Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+        apply Simulation.Interaction.AllDone.bind (openEval_vars_eq head state)
+        · intro _ _
+          trivial
+        · intro headResult hHead
+          rcases headResult with ⟨afterHead, headValues⟩
+          apply Simulation.Interaction.AllDone.bind
+            (openEvalSeq_vars_eq tail afterHead)
+          · intro _ _
+            trivial
+          · intro tailResult hTail
+            rcases tailResult with ⟨afterTail, tailValues⟩
+            exact .done (hTail.trans hHead)
+end
+
+/-- One-result evaluation inherits local-store preservation. -/
+theorem openEvalOne_vars_eq {results : Nat}
+    (expr : Locals.Expr results) (state : State) :
+    Simulation.Interaction.AllDone
+      (fun outcome =>
+        match outcome with
+        | .error _ => True
+        | .ok result => result.1.vars = state.vars)
+      (openEvalOne expr state) := by
+  unfold openEvalOne Locals.Source.Effectful.Expr.Control.evalOne
+  apply Simulation.Interaction.AllDone.bind (openEval_vars_eq expr state)
+  · intro _ _
+    trivial
+  · intro result hVars
+    rcases result with ⟨final, values⟩
+    cases values with
+    | nil => exact .done True.intro
+    | cons value rest =>
+        cases rest with
+        | nil => exact .done hVars
+        | cons next tail => exact .done True.intro
+
 end Expr
 
 namespace ExprSeq
@@ -294,6 +419,16 @@ def openEval {results : Nat} (exprs : Locals.ExprSeq results)
     (state : State) : Open (State × List Word) :=
   Locals.Source.Effectful.Expr.Control.ExprSeq.eval
     stateModel primitiveSemantics exprs state
+
+theorem openEval_vars_eq {results : Nat}
+    (exprs : Locals.ExprSeq results) (state : State) :
+    Simulation.Interaction.AllDone
+      (fun outcome =>
+        match outcome with
+        | .error _ => True
+        | .ok result => result.1.vars = state.vars)
+      (openEval exprs state) :=
+  Expr.openEvalSeq_vars_eq exprs state
 
 end ExprSeq
 

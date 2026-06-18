@@ -935,6 +935,20 @@ theorem bind_inv
       interaction :=
   AllDone.bind_inv hResult
 
+/-- Successful continuation execution implies that the bound prefix itself
+has no failing open-world branch. -/
+theorem bind_left
+    {Error : Type u1} {Source : Type v1} {Target : Type w1}
+    {interaction : Interaction Error Source}
+    {next : Source → Interaction Error Target}
+    (hResult : Successful (Interaction.bind interaction next)) :
+    Successful interaction := by
+  apply AllDone.mono (bind_inv hResult)
+  intro outcome hOutcome
+  cases outcome with
+  | error _ => exact hOutcome
+  | ok _ => trivial
+
 theorem error_false
     {Error : Type u1} {Result : Type v1} (err : Error)
     (hResult : Successful (Interaction.error (Result := Result) err)) :

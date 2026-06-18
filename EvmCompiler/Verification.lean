@@ -147,6 +147,7 @@ import EvmCompiler.Yul.StateRelation
 #check EvmCompiler.Simulation.Interaction.Successful
 #check EvmCompiler.Simulation.Interaction.AllDone.bind_inv
 #check EvmCompiler.Simulation.Interaction.Successful.bind_inv
+#check EvmCompiler.Simulation.Interaction.Successful.bind_left
 #check EvmCompiler.Simulation.Interaction.Rel.bind_pure_left_inv
 
 /-!
@@ -196,6 +197,13 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Artifact.slots_eq_of_lookup
 #check EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Artifact.mem_frameFunctions_iff
 #check EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Artifact.config_frameWords_pos
+#check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_vars_eq
+#check EvmCompiler.Locals.InteractionSemantics.Expr.openEval_vars_eq
+#check EvmCompiler.Functions.InteractionSemantics.ArgList.openEval_vars_eq
+#check EvmCompiler.Functions.InteractionSemantics.FunDef.successful_openRunBody_parts
+#check EvmCompiler.Functions.InteractionSemantics.Stmt.successful_openRun_call_parts
+#check EvmCompiler.Functions.AllocationInteractionCall.PreparedArguments.caller_state_of_result
+#check EvmCompiler.Functions.AllocationInteractionRelation.LiveDefined.assignMany_preserves
 #check EvmCompiler.Functions.InteractionSemantics.FunDef.openRunBody
 #check EvmCompiler.Functions.InteractionSemantics.Stmt.openRun
 #check EvmCompiler.Functions.InteractionSemantics.Program.openRunState

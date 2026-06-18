@@ -61,6 +61,34 @@ def OpenSupported (args : List (Functions.Expr 1)) : Prop :=
   ∀ expr, expr ∈ args →
     Locals.InteractionSemantics.Expr.OpenSupported expr
 
+/-- Ordered function arguments preserve the caller's local bindings on every
+open-world branch. -/
+theorem openEval_vars_eq (args : List (Functions.Expr 1)) (state : State) :
+    Simulation.Interaction.AllDone
+      (fun outcome =>
+        match outcome with
+        | .error _ => True
+        | .ok result => result.1.vars = state.vars)
+      (openEval args state) := by
+  induction args generalizing state with
+  | nil =>
+      exact .done rfl
+  | cons arg rest ih =>
+      unfold openEval Functions.Source.Canonical.ArgList.eval
+        Functions.Source.Effectful.ArgList.Control.eval
+      apply Simulation.Interaction.AllDone.bind
+        (Locals.InteractionSemantics.Expr.openEvalOne_vars_eq arg state)
+      · intro _ _
+        trivial
+      · intro headResult hHead
+        rcases headResult with ⟨afterHead, value⟩
+        apply Simulation.Interaction.AllDone.bind (ih afterHead)
+        · intro _ _
+          trivial
+        · intro tailResult hTail
+          rcases tailResult with ⟨afterTail, values⟩
+          exact .done (hTail.trans hHead)
+
 end ArgList
 
 namespace Block
@@ -136,6 +164,39 @@ def openRunBody (program : Functions.Program) (fn : Functions.FunDef)
     (args : List Word) (fuel : Nat) (state : State) : Open CallResult :=
   Functions.Source.Canonical.FunDef.runBody
     stateModel primitiveSemantics program fn args fuel state
+
+/-- Successful canonical function execution exposes the real initialized body
+run one fuel level below it. -/
+theorem successful_openRunBody_parts
+    (program : Functions.Program) (fn : Functions.FunDef)
+    (args : List Word) (fuel : Nat) (state : State)
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (openRunBody program fn args (fuel + 1) state)) :
+    ∃ paramStore,
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty = some paramStore ∧
+        Simulation.Interaction.Successful
+          (Block.openRun program
+            (Functions.Source.Effectful.FunDef.bodyCtx fn) fuel fn.body
+            (stateModel.withSource state
+              { shared := (stateModel.source state).shared
+                vars := Functions.Source.Store.initReturns
+                  fn.returns paramStore })) := by
+  unfold openRunBody Functions.Source.Canonical.FunDef.runBody
+    Functions.Source.Effectful.Control.FunDef.runBody at hSuccess
+  cases hParams : Functions.Source.Store.insertMany fn.params args
+      Locals.Source.Store.empty with
+  | none =>
+      have hPrefix := Simulation.Interaction.Successful.bind_left hSuccess
+      simp only [hParams, Option.elim_none] at hPrefix
+      exact False.elim
+        (Simulation.Interaction.Successful.error_false _ hPrefix)
+  | some paramStore =>
+      refine ⟨paramStore, rfl, ?_⟩
+      simp only [hParams, Option.elim_some,
+        Simulation.Interaction.bind_done_ok] at hSuccess
+      exact Simulation.Interaction.Successful.bind_left hSuccess
 
 end FunDef
 
@@ -334,6 +395,51 @@ theorem openRun_call
               Simulation.Interaction.pure _
             rfl
   · simp only [if_neg hTargets]
+
+/-- Successful canonical call execution exposes the real source function and
+successful `runBody` continuation on every open-world argument branch. -/
+theorem successful_openRun_call_parts
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (targets : List Functions.Name)
+    (functionName : Functions.Name) (args : List (Functions.Expr 1))
+    (state : State) (hTargets : targets.Nodup)
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (openRun program ctx (fuel + 1)
+          (.call targets functionName args) state)) :
+    Simulation.Interaction.AllDone
+      (fun outcome =>
+        match outcome with
+        | .error _ => False
+        | .ok result =>
+            ∃ fn,
+              Functions.Source.FunList.find? functionName program.functions =
+                  some fn ∧
+                Simulation.Interaction.Successful
+                  (Functions.InteractionSemantics.FunDef.openRunBody
+                    program fn result.2 fuel result.1))
+      (Functions.InteractionSemantics.ArgList.openEval args state) := by
+  rw [openRun_call] at hSuccess
+  simp only [hTargets, if_pos] at hSuccess
+  have hArgs := Simulation.Interaction.Successful.bind_inv hSuccess
+  apply Simulation.Interaction.AllDone.mono hArgs
+  intro outcome hOutcome
+  cases outcome with
+  | error _ => exact hOutcome
+  | ok result =>
+      rcases result with ⟨stateAfterArgs, argValues⟩
+      cases hFind :
+          Functions.Source.FunList.find? functionName program.functions with
+      | none =>
+          have hLookup := Simulation.Interaction.Successful.bind_left hOutcome
+          simp only [hFind, Option.elim_none] at hLookup
+          exact False.elim
+            (Simulation.Interaction.Successful.error_false _ hLookup)
+      | some fn =>
+          refine ⟨fn, rfl, ?_⟩
+          simp only [hFind, Option.elim_some,
+            Simulation.Interaction.bind_done_ok] at hOutcome
+          exact Simulation.Interaction.Successful.bind_left hOutcome
 
 end Stmt
 

@@ -11,6 +11,61 @@ open AllocationInteractionFrame
 open AllocationInteractionFrameExecution
 open AllocationInteractionFramePreservation
 
+/-- Suspended caller state after argument effects, with only the temporary
+argument stack prefix removed. -/
+def callerState (targetAfterArgs targetInitial : TargetState) : TargetState :=
+  targetAfterArgs.withEVM
+    { targetAfterArgs.evm with stack := targetInitial.evm.stack }
+
+/-- Canonical arguments leave a related suspended caller once their temporary
+target stack prefix is removed. -/
+theorem caller_state_of_result
+    {contract : MemoryContract.Contract}
+    {config : Config} {allocatorDepth : Nat}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {sourceAfterArgs : SourceState}
+    {targetInitial targetAfterArgs : TargetState}
+    {args : List Word}
+    (hArgs :
+      AllocationInteractionCallArgumentResources.ResultRel
+        contract config allocatorDepth plan live 0 frameBase args.length
+        mode targetInitial (sourceAfterArgs, args) targetAfterArgs) :
+    ActivationStateRel contract plan live 0 frameBase mode sourceAfterArgs
+        (callerState targetAfterArgs targetInitial) ∧
+      AllocatorReady config allocatorDepth
+        (callerState targetAfterArgs targetInitial) ∧
+      (callerState targetAfterArgs targetInitial).evm.stack =
+        targetInitial.evm.stack := by
+  rcases hArgs with ⟨hSemantic, hEffect⟩
+  have hState :
+      ActivationStateRel contract plan live
+        (0 + args.reverse.length) frameBase mode sourceAfterArgs
+        targetAfterArgs := by
+    simpa [hSemantic.valuesLength] using hSemantic.state
+  have hRebased :=
+    hState.rebase_prefix
+      (sourceFinal := sourceAfterArgs)
+      (targetFinal := callerState targetAfterArgs targetInitial)
+      (oldPrefix := args.reverse) (newPrefix := [])
+      (baseStack := targetInitial.evm.stack)
+      (by
+        simpa [callerState, Structured.RunState.withEVM] using hState.shared)
+      hSemantic.stack
+      (by simp [callerState, Structured.RunState.withEVM])
+      (by
+        intro name slot hLive hLocation
+        rfl)
+      rfl
+      (by simp [callerState, Structured.RunState.withEVM])
+      (by simp [callerState, Structured.RunState.withEVM])
+      (by
+        simpa [callerState, Structured.RunState.withEVM] using
+          hState.activeNoWrap)
+  refine ⟨by simpa using hRebased, ?_, by rfl⟩
+  exact hEffect.ready.of_machine_eq (by
+    simp [callerState, Structured.RunState.withEVM])
+
 /-- Canonical stack-only argument preparation with allocator preservation. -/
 theorem stack
     {contract : MemoryContract.Contract}

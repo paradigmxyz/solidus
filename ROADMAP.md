@@ -120,6 +120,8 @@ boundaries remain active work.
     stack/scratch target code, including deeper-callee bounded effects;
   - [x] strengthen the recursive target budget with a checked whole-program
     procedure-body stride and expose exact caller-chosen selected-callee fuel;
+  - [x] expose successful canonical call/body inversion, open argument local
+    preservation, and the related suspended caller after argument stack removal;
   - [ ] orthogonal recursive allocator companion over the same Interaction
     tree (shared intersection/`cons`, empty cursor, expression statement, and
     assignment/declaration, `break`/`continue`, and lexical blocks checked;
