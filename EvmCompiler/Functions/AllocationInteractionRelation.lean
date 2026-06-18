@@ -646,6 +646,70 @@ theorem replace_top_by
         simpa [contractTargetBy, EvmYul.EVM.State.replaceStackAndIncrPC,
           EvmYul.EVM.State.incrPC] using hStored
 
+/-- Turn the top expression result into a newly live stack local. -/
+theorem declare_stack_live
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase planDepth : Nat}
+    {source : SourceState} {target : TargetState}
+    {name : Locals.Name} {value : Word} {rest : List Word}
+    (hRel :
+      StateRel contract plan beforeLive 1 frameBase source target)
+    (hStack : target.evm.stack = value :: rest)
+    (hAfter :
+      ∀ other, other ∈ afterLive →
+        other = name ∨ other ∈ beforeLive)
+    (hLocation : plan.location? name = some (.stack planDepth))
+    (hStackOrder :
+      currentStackOrder plan afterLive =
+        name :: currentStackOrder plan beforeLive) :
+    StateRel contract plan afterLive 0 frameBase
+      (source.insert name value) target := by
+  refine ⟨?_, ?_, ?_⟩
+  · simpa [Locals.Source.State.insert] using hRel.machine
+  · simpa [Locals.Source.State.insert] using hRel.world
+  · intro other location hOtherAfter hOtherLocation
+    by_cases hName : other = name
+    · subst other
+      cases location with
+      | stack otherPlanDepth =>
+          rw [hLocation] at hOtherLocation
+          cases hOtherLocation
+          refine ⟨0, ?_, ?_⟩
+          · simp [hStackOrder, Locals.Layout.lookupDepth?,
+              Locals.Layout.lookupDepthFrom]
+          · rw [hStack]
+            simp [Locals.Source.State.insert]
+      | scratch slot =>
+          rw [hLocation] at hOtherLocation
+          simp at hOtherLocation
+    · have hOtherBefore : other ∈ beforeLive := by
+        rcases hAfter other hOtherAfter with hEq | hBefore
+        · exact False.elim (hName hEq)
+        · exact hBefore
+      have hOld :=
+        hRel.store other location hOtherBefore hOtherLocation
+      cases location with
+      | stack otherPlanDepth =>
+          rcases hOld with ⟨depth, hDepth, hValue⟩
+          refine ⟨depth + 1, ?_, ?_⟩
+          · rw [hStackOrder]
+            simpa [Nat.add_assoc] using
+              (Locals.Layout.lookupDepth?_cons_of_ne
+                (Ne.symm hName) hDepth)
+          · simpa [Locals.Source.State.insert,
+              Locals.Source.Store.insert_of_ne hName,
+              Nat.add_comm, Nat.add_left_comm, Nat.add_assoc] using hValue
+      | scratch slot =>
+          change
+            target.evm.toMachineState.lookupMemory
+                (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)) =
+              (Locals.Source.Store.insert
+                source.vars name value other).getD
+                  (EvmYul.UInt256.ofNat 0)
+          rw [Locals.Source.Store.insert_of_ne hName]
+          exact hOld
+
 end StateRel
 
 /-- Additional representation facts for a live compiler-owned scratch frame. -/
@@ -1187,6 +1251,51 @@ theorem finishCreate
   · exact hInput
   · exact Simulation.MemorySafety.windowSafe_zero contract 0
 
+/-- A stack declaration shifts only the hidden scratch-frame depth. -/
+theorem declare_stack_live
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase frameDepth frameWords planDepth : Nat}
+    {source : SourceState} {target : TargetState}
+    {name : Locals.Name} {value : Word} {rest : List Word}
+    (hRel :
+      ScratchStateRel contract plan beforeLive 1 frameBase
+        frameDepth frameWords source target)
+    (hStack : target.evm.stack = value :: rest)
+    (hAfter :
+      ∀ other, other ∈ afterLive →
+        other = name ∨ other ∈ beforeLive)
+    (hLocation : plan.location? name = some (.stack planDepth))
+    (hStackOrder :
+      currentStackOrder plan afterLive =
+        name :: currentStackOrder plan beforeLive) :
+    ScratchStateRel contract plan afterLive 0 frameBase
+      (frameDepth + 1) frameWords
+      (source.insert name value) target := by
+  refine
+    { base :=
+        hRel.base.declare_stack_live hStack hAfter hLocation hStackOrder
+      framePointer := ?_
+      frameActive := hRel.frameActive
+      frameAllocated := hRel.frameAllocated
+      frameNoWrap := hRel.frameNoWrap
+      frameHostAddressable := hRel.frameHostAddressable
+      activeNoWrap := hRel.activeNoWrap
+      frameReserved := hRel.frameReserved
+      scratchBound := ?_ }
+  · simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+      hRel.framePointer
+  · intro other slot hOtherAfter hOtherLocation
+    by_cases hName : other = name
+    · subst other
+      rw [hLocation] at hOtherLocation
+      simp at hOtherLocation
+    · have hOtherBefore : other ∈ beforeLive := by
+        rcases hAfter other hOtherAfter with hEq | hBefore
+        · exact False.elim (hName hEq)
+        · exact hBefore
+      exact hRel.scratchBound other slot hOtherBefore hOtherLocation
+
 end ScratchStateRel
 
 /-- Runtime representation selected by the ordinary allocation artifact. -/
@@ -1196,6 +1305,11 @@ inductive ActivationMode where
   deriving DecidableEq, Repr
 
 namespace ActivationMode
+
+def afterStackDeclaration : ActivationMode → ActivationMode
+  | .stack => .stack
+  | .scratch frameDepth frameWords =>
+      .scratch (frameDepth + 1) frameWords
 
 def StackDepthValid : ActivationMode → Nat → Prop
   | .stack, _depth => True
@@ -1244,6 +1358,45 @@ theorem restrict_source_live
       exact .scratch
         { hScratch with
           base := hScratch.base.restrict_source_live }
+
+/-- Declare one stack-resident local in either allocation representation. -/
+theorem declare_stack_live
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase planDepth : Nat} {mode : ActivationMode}
+    {source : SourceState} {target : TargetState}
+    {name : Locals.Name} {value : Word} {rest : List Word}
+    (hRel :
+      ActivationStateRel contract plan beforeLive 1 frameBase mode
+        source target)
+    (hStack : target.evm.stack = value :: rest)
+    (hAfter :
+      ∀ other, other ∈ afterLive →
+        other = name ∨ other ∈ beforeLive)
+    (hLocation : plan.location? name = some (.stack planDepth))
+    (hStackOrder :
+      currentStackOrder plan afterLive =
+        name :: currentStackOrder plan beforeLive) :
+    ActivationStateRel contract plan afterLive 0 frameBase
+      mode.afterStackDeclaration (source.insert name value) target := by
+  cases hRel with
+  | stack hOnly hActive hState =>
+      have hAfterOnly : LiveStackOnly plan afterLive := by
+        intro other slot hOtherAfter hOtherLocation
+        by_cases hName : other = name
+        · subst other
+          rw [hLocation] at hOtherLocation
+          simp at hOtherLocation
+        · have hOtherBefore : other ∈ beforeLive := by
+            rcases hAfter other hOtherAfter with hEq | hBefore
+            · exact False.elim (hName hEq)
+            · exact hBefore
+          exact hOnly other slot hOtherBefore hOtherLocation
+      exact .stack hAfterOnly hActive
+        (hState.declare_stack_live hStack hAfter hLocation hStackOrder)
+  | scratch hScratch =>
+      exact .scratch
+        (hScratch.declare_stack_live hStack hAfter hLocation hStackOrder)
 
 theorem shared
     {contract : MemoryContract.Contract} {plan : Plan}

@@ -177,6 +177,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionRelation.ScratchStateRel.finishCall
 #check EvmCompiler.Functions.AllocationInteractionRelation.ScratchStateRel.finishCreate
 #check EvmCompiler.Functions.AllocationInteractionRelation.ActivationStateRel
+#check EvmCompiler.Functions.AllocationInteractionRelation.ActivationMode.afterStackDeclaration
+#check EvmCompiler.Functions.AllocationInteractionRelation.StateRel.declare_stack_live
+#check EvmCompiler.Functions.AllocationInteractionRelation.ScratchStateRel.declare_stack_live
+#check EvmCompiler.Functions.AllocationInteractionRelation.ActivationStateRel.declare_stack_live
 #check EvmCompiler.Functions.AllocationInteractionRelation.ActivationOutcomeRel
 #check EvmCompiler.Functions.AllocationInteractionRelation.ActivationStateRel.finishCall
 #check EvmCompiler.Functions.AllocationInteractionRelation.ActivationStateRel.finishCreate

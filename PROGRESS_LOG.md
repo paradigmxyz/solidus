@@ -31759,3 +31759,11 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   focused 1158-job build, 1311-job verification root, architecture guard,
   touched-file hole scan, axiom audit, and `git diff --check` passed; checked
   axioms remain `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 21:44:08 PDT - consolidation/allocation-declaration-state - moved
+  stack-declaration realization into the canonical allocation relation for
+  core, scratch-backed, and representation-neutral activation states; scratch
+  declarations shift only the hidden frame-pointer depth.
+- 2026-06-17 21:44:08 PDT - validation/allocation-declaration-state - the
+  1311-job verification root, architecture guard, touched-file hole scan,
+  axiom audit, and `git diff --check` passed; the declaration theorem uses
+  only `[propext, Classical.choice, Quot.sound]`.
