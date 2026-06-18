@@ -19,6 +19,7 @@ inductive ControlResultRel
     (lowerState : AllocationLowering.State)
     (localsCtx : Locals.Ctx) (plan : Plan)
     (returns regularLive : List Locals.Name) (frameBase : Nat)
+    (entryMode : ActivationMode)
     (controlCtx regularCtx : Functions.Source.Ctx) :
     (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx) →
       Expressions.InteractionSemantics.Outcome → Prop where
@@ -27,9 +28,10 @@ inductive ControlResultRel
       (invariant :
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
           localsCtx plan regularLive frameBase mode source target)
+      (sameFrame : SameFrame entryMode mode)
       (control : SameControl controlCtx regularCtx) :
       ControlResultRel contract lowerCtx lowerState localsCtx plan returns
-        regularLive frameBase controlCtx regularCtx
+        regularLive frameBase entryMode controlCtx regularCtx
         (Functions.Source.Effectful.Outcome.regular source, regularCtx)
         (Structured.EffectSemantics.Outcome.regular target)
   | nonregular
@@ -44,7 +46,7 @@ inductive ControlResultRel
             returns regularLive controlCtx sourceOutcome.mode)
           0 frameBase mode sourceOutcome targetOutcome) :
       ControlResultRel contract lowerCtx lowerState localsCtx plan returns
-        regularLive frameBase controlCtx regularCtx
+        regularLive frameBase entryMode controlCtx regularCtx
         (sourceOutcome, finalCtx) targetOutcome
 
 abbrev OpenControlResultRel
@@ -53,11 +55,12 @@ abbrev OpenControlResultRel
     (lowerState : AllocationLowering.State)
     (localsCtx : Locals.Ctx) (plan : Plan)
     (returns regularLive : List Locals.Name) (frameBase : Nat)
+    (entryMode : ActivationMode)
     (controlCtx regularCtx : Functions.Source.Ctx) :=
   Simulation.Interaction.ExceptRel
     (fun left right : EVMException => left = right)
     (ControlResultRel contract lowerCtx lowerState localsCtx plan returns
-      regularLive frameBase controlCtx regularCtx)
+      regularLive frameBase entryMode controlCtx regularCtx)
 
 namespace ControlResultRel
 
@@ -87,6 +90,7 @@ theorem transport_control
     {lowerState : AllocationLowering.State}
     {localsCtx : Locals.Ctx} {plan : Plan}
     {returns regularLive : List Locals.Name} {frameBase : Nat}
+    {entryMode : ActivationMode}
     {outerCtx innerCtx regularCtx : Functions.Source.Ctx}
     {sourceResult :
       Functions.InteractionSemantics.Outcome × Functions.Source.Ctx}
@@ -94,17 +98,47 @@ theorem transport_control
     (hOuter : SameControl outerCtx innerCtx)
     (hRel :
       ControlResultRel contract lowerCtx lowerState localsCtx plan returns
-        regularLive frameBase innerCtx regularCtx sourceResult targetResult) :
+        regularLive frameBase entryMode innerCtx regularCtx
+        sourceResult targetResult) :
     ControlResultRel contract lowerCtx lowerState localsCtx plan returns
-      regularLive frameBase outerCtx regularCtx sourceResult targetResult := by
+      regularLive frameBase entryMode outerCtx regularCtx
+      sourceResult targetResult := by
   cases hRel with
-  | regular invariant control =>
-      exact .regular invariant (hOuter.trans control)
+  | regular invariant sameFrame control =>
+      exact .regular invariant sameFrame (hOuter.trans control)
   | @nonregular sourceOutcome targetOutcome finalCtx mode hMode control state =>
       refine ControlResultRel.nonregular (mode := mode) hMode
         (hOuter.trans control) ?_
       rw [outcomeLive_eq_of_sameControl hOuter sourceOutcome.mode]
       exact state
+
+/-- Prefix a recursive result with the frame relation of an earlier segment. -/
+theorem prepend_frame
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx} {plan : Plan}
+    {returns regularLive : List Locals.Name} {frameBase : Nat}
+    {entryMode middleMode : ActivationMode}
+    {controlCtx regularCtx : Functions.Source.Ctx}
+    {sourceResult :
+      Functions.InteractionSemantics.Outcome × Functions.Source.Ctx}
+    {targetResult : Expressions.InteractionSemantics.Outcome}
+    (hFrame : SameFrame entryMode middleMode)
+    (hRel :
+      ControlResultRel contract lowerCtx lowerState localsCtx plan returns
+        regularLive frameBase middleMode controlCtx regularCtx
+        sourceResult targetResult) :
+    ControlResultRel contract lowerCtx lowerState localsCtx plan returns
+      regularLive frameBase entryMode controlCtx regularCtx
+      sourceResult targetResult := by
+  cases hRel with
+  | regular invariant tailFrame control =>
+      exact .regular invariant (hFrame.trans tailFrame) control
+  | @nonregular sourceOutcome targetOutcome finalCtx mode
+      hNonregular control state =>
+      exact ControlResultRel.nonregular (mode := mode)
+        hNonregular control state
 
 /-- Abrupt outcomes ignore the regular live set of an unreachable tail. -/
 theorem reindex_nonregular_live
@@ -133,14 +167,14 @@ theorem reindex_nonregular_live
 
 end ControlResultRel
 
-/-- Lift a fixed-mode adjacent statement theorem into recursive control form. -/
-theorem lift_fixed
+/-- Prefix every regular result of an open computation with frame continuity. -/
+theorem prepend_frame
     {contract : MemoryContract.Contract}
     {lowerCtx : AllocationLowering.Ctx}
     {lowerState : AllocationLowering.State}
     {localsCtx : Locals.Ctx} {plan : Plan}
     {returns regularLive : List Locals.Name} {frameBase : Nat}
-    {mode : ActivationMode}
+    {entryMode middleMode : ActivationMode}
     {controlCtx regularCtx : Functions.Source.Ctx}
     {sourceRun :
       Simulation.Interaction EVMException
@@ -148,6 +182,39 @@ theorem lift_fixed
     {targetRun :
       Simulation.Interaction EVMException
         Expressions.InteractionSemantics.Outcome}
+    (hFrame : SameFrame entryMode middleMode)
+    (hRel :
+      Simulation.Interaction.Rel
+        (OpenControlResultRel contract lowerCtx lowerState localsCtx plan
+          returns regularLive frameBase middleMode controlCtx regularCtx)
+        sourceRun targetRun) :
+    Simulation.Interaction.Rel
+      (OpenControlResultRel contract lowerCtx lowerState localsCtx plan
+        returns regularLive frameBase entryMode controlCtx regularCtx)
+      sourceRun targetRun := by
+  apply Simulation.Interaction.Rel.mono hRel
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error hError => exact .error hError
+  | ok hResult =>
+      exact .ok (ControlResultRel.prepend_frame hFrame hResult)
+
+/-- Lift a fixed-mode adjacent statement theorem into recursive control form. -/
+theorem lift_fixed
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx} {plan : Plan}
+    {returns regularLive : List Locals.Name} {frameBase : Nat}
+    {entryMode mode : ActivationMode}
+    {controlCtx regularCtx : Functions.Source.Ctx}
+    {sourceRun :
+      Simulation.Interaction EVMException
+        (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx)}
+    {targetRun :
+      Simulation.Interaction EVMException
+        Expressions.InteractionSemantics.Outcome}
+    (hFrame : SameFrame entryMode mode)
     (hControl : SameControl controlCtx regularCtx)
     (hRel :
       Simulation.Interaction.Rel
@@ -157,7 +224,7 @@ theorem lift_fixed
         sourceRun targetRun) :
     Simulation.Interaction.Rel
       (OpenControlResultRel contract lowerCtx lowerState localsCtx plan returns
-        regularLive frameBase controlCtx regularCtx)
+        regularLive frameBase entryMode controlCtx regularCtx)
       sourceRun targetRun := by
   apply Simulation.Interaction.Rel.mono hRel
   intro sourceDone targetDone hDone
@@ -173,7 +240,8 @@ theorem lift_fixed
       rcases hResult with ⟨rfl, hBoundary⟩
       apply Simulation.Interaction.ExceptRel.ok
       cases hBoundary with
-      | regular invariant => exact .regular invariant hControl
+      | regular invariant =>
+          exact .regular invariant hFrame hControl
       | brk state =>
           exact ControlResultRel.nonregular (mode := mode)
             (by simp) hControl (.brk state)
@@ -198,6 +266,7 @@ theorem cons
     {midLowerState finalLowerState : AllocationLowering.State}
     {midLocals finalLocals : Locals.Ctx} {plan : Plan}
     {returns midLive finalLive : List Locals.Name} {frameBase : Nat}
+    {entryMode : ActivationMode}
     {controlCtx midCtx finalCtx : Functions.Source.Ctx}
     {sourceHead :
       Simulation.Interaction EVMException
@@ -214,7 +283,7 @@ theorem cons
     (hHead :
       Simulation.Interaction.Rel
         (OpenControlResultRel contract midLowerCtx midLowerState midLocals
-          plan returns midLive frameBase controlCtx midCtx)
+          plan returns midLive frameBase entryMode controlCtx midCtx)
         sourceHead targetHead)
     (hTail :
       ∀ {sourceMid targetMid mode},
@@ -223,11 +292,11 @@ theorem cons
             targetMid →
           Simulation.Interaction.Rel
             (OpenControlResultRel contract finalLowerCtx finalLowerState
-              finalLocals plan returns finalLive frameBase midCtx finalCtx)
+              finalLocals plan returns finalLive frameBase mode midCtx finalCtx)
             (sourceTail sourceMid midCtx) (targetTail targetMid)) :
     Simulation.Interaction.Rel
       (OpenControlResultRel contract finalLowerCtx finalLowerState finalLocals
-        plan returns finalLive frameBase controlCtx finalCtx)
+        plan returns finalLive frameBase entryMode controlCtx finalCtx)
       (Simulation.Interaction.bind sourceHead
         (fun result =>
           match result.1.mode with
@@ -246,14 +315,15 @@ theorem cons
   | error hError => exact .done (.error hError)
   | ok hResult =>
       cases hResult with
-      | regular invariant control =>
+      | regular invariant sameFrame control =>
           apply Simulation.Interaction.Rel.mono (hTail invariant)
           intro tailSource tailTarget hTailDone
           cases hTailDone with
           | error hError => exact .error hError
           | ok hTailResult =>
               exact .ok
-                (ControlResultRel.transport_control control hTailResult)
+                (ControlResultRel.prepend_frame sameFrame
+                  (ControlResultRel.transport_control control hTailResult))
       | @nonregular sourceOutcome targetOutcome headCtx mode
           hNonregular control state =>
           cases state with
@@ -296,11 +366,12 @@ theorem block_cons
     {midLowerState finalLowerState : AllocationLowering.State}
     {midLocals finalLocals : Locals.Ctx} {plan : Plan}
     {returns midLive finalLive : List Locals.Name} {frameBase : Nat}
+    {entryMode : ActivationMode}
     {controlCtx midCtx finalCtx : Functions.Source.Ctx}
     (hHead :
       Simulation.Interaction.Rel
         (OpenControlResultRel contract midLowerCtx midLowerState midLocals
-          plan returns midLive frameBase controlCtx midCtx)
+          plan returns midLive frameBase entryMode controlCtx midCtx)
         (Functions.InteractionSemantics.Stmt.openRun
           sourceProgram controlCtx sourceFuel stmt source)
         (Expressions.InteractionSemantics.Block.openRun
@@ -312,7 +383,7 @@ theorem block_cons
             targetMid →
           Simulation.Interaction.Rel
             (OpenControlResultRel contract finalLowerCtx finalLowerState
-              finalLocals plan returns finalLive frameBase midCtx finalCtx)
+              finalLocals plan returns finalLive frameBase mode midCtx finalCtx)
             (Functions.InteractionSemantics.Block.openRun
               sourceProgram midCtx sourceFuel { stmts := rest } sourceMid)
             (Expressions.InteractionSemantics.Block.openRun
@@ -320,7 +391,7 @@ theorem block_cons
                 { stmts := tailCode } targetMid)) :
     Simulation.Interaction.Rel
       (OpenControlResultRel contract finalLowerCtx finalLowerState finalLocals
-        plan returns finalLive frameBase controlCtx finalCtx)
+        plan returns finalLive frameBase entryMode controlCtx finalCtx)
       (Functions.InteractionSemantics.Block.openRun sourceProgram controlCtx
         (sourceFuel + 1) { stmts := stmt :: rest } source)
       (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
@@ -359,7 +430,7 @@ theorem block_nil
         localsCtx plan live frameBase mode source target) :
     Simulation.Interaction.Rel
       (OpenControlResultRel contract lowerCtx lowerState localsCtx plan returns
-        live frameBase ctx ctx)
+        live frameBase mode ctx ctx)
       (Functions.InteractionSemantics.Block.openRun sourceProgram ctx
         (sourceFuel + 1) { stmts := [] } source)
       (Expressions.InteractionSemantics.Block.openRun targetProgram
@@ -368,7 +439,8 @@ theorem block_nil
     Expressions.InteractionSemantics.Block.openRun_nil]
   apply Simulation.Interaction.Rel.done
   apply Simulation.Interaction.ExceptRel.ok
-  exact .regular hInvariant (Functions.Source.Ctx.SameControl.refl ctx)
+  exact .regular hInvariant (SameFrame.refl mode)
+    (Functions.Source.Ctx.SameControl.refl ctx)
 
 end AllocationInteractionComposition
 end Functions

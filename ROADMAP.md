@@ -79,6 +79,9 @@ boundaries remain active work.
     uniform recursive cursor interface;
   - [x] lift `break` and `continue` with compiler-owned loop cleanup into the
     uniform recursive cursor interface;
+  - [x] retain entry-to-result frame continuity in the shared control relation
+    and compose it through recursive sequencing;
+  - [x] prove pass-owned lexical-block cleanup and its recursive cursor lift;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

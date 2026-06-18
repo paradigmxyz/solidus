@@ -152,6 +152,47 @@ def openRun (program : Functions.Program) (ctx : Functions.Source.Ctx)
   Functions.Source.Canonical.Stmt.run
     stateModel primitiveSemantics program ctx fuel stmt state
 
+/-- A lexical block restricts its state only after regular body completion. -/
+theorem openRun_block
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (body : Functions.Block) (state : State) :
+    openRun program ctx fuel (.block body) state =
+      Simulation.Interaction.bind
+        (Block.openRun program ctx fuel body state)
+        (fun result =>
+          match result.1.mode with
+          | .regular =>
+              Simulation.Interaction.pure
+                (Functions.Source.Effectful.Outcome.regular
+                  (stateModel.restrictTo ctx.scope result.1.state), ctx)
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure (result.1, ctx)) := by
+  unfold openRun Block.openRun Functions.Source.Canonical.Stmt.run
+    Functions.Source.Canonical.Block.runOpen
+  simp only [Functions.Source.Effectful.Control.Stmt.run]
+  unfold Functions.Source.Effectful.Control.Block.runScoped
+  change
+    Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Functions.Source.Effectful.Control.Block.runOpen
+            stateModel primitiveSemantics program ctx fuel body state)
+          (fun result =>
+            match result.1.mode with
+            | .regular =>
+                Simulation.Interaction.pure
+                  (Functions.Source.Effectful.Outcome.regular
+                    (stateModel.restrictTo ctx.scope result.1.state))
+            | .brk | .cont | .leave | .halt _ =>
+                Simulation.Interaction.pure result.1))
+        (fun outcome => Simulation.Interaction.pure (outcome, ctx)) = _
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Functions.Source.Effectful.Control.Block.runOpen
+        stateModel primitiveSemantics program ctx fuel body state))
+  intro result _
+  cases hMode : result.1.mode <;> rfl
+
 end Stmt
 
 mutual

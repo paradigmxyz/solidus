@@ -302,6 +302,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.expr
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.assign
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.let_
+#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.block
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.brk
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.cont
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.terminal
@@ -313,6 +314,13 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionComposition.cons
 #check EvmCompiler.Functions.AllocationInteractionComposition.block_cons
 #check EvmCompiler.Functions.AllocationInteractionComposition.block_nil
+#check EvmCompiler.Functions.AllocationInteractionRelation.SameFrame
+#check EvmCompiler.Functions.AllocationInteractionRelation.SameFrame.trans
+#check EvmCompiler.Functions.AllocationInteractionStatement.ControlScopesWithin
+#check EvmCompiler.Functions.AllocationInteractionControl.block_of_components
+#check EvmCompiler.Functions.AllocationContext.ActivationExprContext.transport_plan
+#check EvmCompiler.Functions.AllocationContext.ActivationInvariant.transport_plan
+#check EvmCompiler.Functions.AllocationContext.ActivationInvariant.transport_state
 #check EvmCompiler.Functions.AllocationInteractionLeaf.expr_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionLeaf.assign_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionLeaf.stack_let_of_lower_compile

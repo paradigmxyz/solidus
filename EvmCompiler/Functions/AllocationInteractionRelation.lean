@@ -325,6 +325,32 @@ theorem rebase_prefix_stack_only
   intro name slot hLive hLocation
   exact False.elim (hOnly name slot hLive hLocation)
 
+/-- Transport a live store realization across extensionally agreeing plans. -/
+theorem transport_plan
+    {left right : Plan} {live : List Locals.Name}
+    {stackOffset frameBase : Nat}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hRel : StoreRel left live stackOffset frameBase source target)
+    (hAgree : PlanAgreesOn left right live) :
+    StoreRel right live stackOffset frameBase source target := by
+  intro name rightLocation hLive hRightLocation
+  obtain
+      ⟨leftLocation, agreedRightLocation,
+        hLeftLocation, hAgreedRightLocation, hLocationAgree⟩ :=
+    hAgree.location name hLive
+  rw [hRightLocation] at hAgreedRightLocation
+  cases hAgreedRightLocation
+  cases hLocationAgree with
+  | stack leftDepth rightDepth =>
+      obtain ⟨depth, hDepth, hValue⟩ :=
+        hRel name (.stack leftDepth) hLive hLeftLocation
+      refine ⟨depth, ?_, hValue⟩
+      rw [← hAgree.stackOrder]
+      exact hDepth
+  | scratch slot =>
+      exact hRel name (.scratch slot) hLive hLeftLocation
+
 end StoreRel
 
 /-- Observable shared state, allowing only compiler-reserved memory differences. -/
@@ -544,6 +570,19 @@ theorem restrict_source_live
     | scratch slot =>
         simpa [Locals.Source.State.restrictTo,
           Locals.Source.Store.restrictTo, hLive] using hValue
+
+/-- Transport the canonical state relation across agreeing allocation plans. -/
+theorem transport_plan
+    {contract : MemoryContract.Contract}
+    {left right : Plan} {live : List Locals.Name}
+    {stackOffset frameBase : Nat}
+    {source : SourceState} {target : TargetState}
+    (hRel : StateRel contract left live stackOffset frameBase source target)
+    (hAgree : PlanAgreesOn left right live) :
+    StateRel contract right live stackOffset frameBase source target :=
+  { machine := hRel.machine
+    world := hRel.world
+    store := hRel.store.transport_plan hAgree }
 
 /--
 Discarding a prefix of stack-resident locals and restricting the source store
@@ -956,6 +995,39 @@ structure ScratchStateRel
       slot < frameWords
 
 namespace ScratchStateRel
+
+/-- Transport a live scratch-frame relation across agreeing plans. -/
+theorem transport_plan
+    {contract : MemoryContract.Contract}
+    {left right : Plan} {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState} {target : TargetState}
+    (hRel :
+      ScratchStateRel contract left live stackOffset frameBase
+        frameDepth frameWords source target)
+    (hAgree : PlanAgreesOn left right live) :
+    ScratchStateRel contract right live stackOffset frameBase
+      frameDepth frameWords source target := by
+  refine
+    { base := hRel.base.transport_plan hAgree
+      framePointer := hRel.framePointer
+      frameActive := hRel.frameActive
+      frameAllocated := hRel.frameAllocated
+      frameNoWrap := hRel.frameNoWrap
+      frameHostAddressable := hRel.frameHostAddressable
+      activeNoWrap := hRel.activeNoWrap
+      frameReserved := hRel.frameReserved
+      scratchBound := ?_ }
+  intro name slot hLive hRightLocation
+  obtain
+      ⟨leftLocation, rightLocation,
+        hLeftLocation, hAgreedRightLocation, hLocationAgree⟩ :=
+    hAgree.location name hLive
+  rw [hRightLocation] at hAgreedRightLocation
+  cases hAgreedRightLocation
+  cases hLocationAgree with
+  | scratch agreedSlot =>
+      exact hRel.scratchBound name slot hLive hLeftLocation
 
 theorem scratchAddress_reserved_of_bound
     {contract : MemoryContract.Contract} {plan : Plan}
@@ -1797,6 +1869,64 @@ def atStackDepth (mode : ActivationMode) (depth : Nat) : ActivationMode :=
 
 end ActivationMode
 
+/--
+Two activation modes retain the same runtime representation and, for scratch
+activations, the same fixed compiler-owned frame width.
+-/
+inductive SameFrame : ActivationMode → ActivationMode → Prop where
+  | stack : SameFrame .stack .stack
+  | scratch (leftDepth rightDepth frameWords : Nat) :
+      SameFrame
+        (.scratch leftDepth frameWords)
+        (.scratch rightDepth frameWords)
+
+namespace SameFrame
+
+theorem refl (mode : ActivationMode) : SameFrame mode mode := by
+  cases mode with
+  | stack => exact .stack
+  | scratch frameDepth frameWords =>
+      exact .scratch frameDepth frameDepth frameWords
+
+theorem symm
+    {left right : ActivationMode}
+    (hSame : SameFrame left right) :
+    SameFrame right left := by
+  cases hSame with
+  | stack => exact .stack
+  | scratch leftDepth rightDepth frameWords =>
+      exact .scratch rightDepth leftDepth frameWords
+
+theorem trans
+    {left middle right : ActivationMode}
+    (hLeft : SameFrame left middle)
+    (hRight : SameFrame middle right) :
+    SameFrame left right := by
+  cases hLeft with
+  | stack =>
+      cases hRight
+      exact .stack
+  | scratch leftDepth middleDepth frameWords =>
+      cases hRight with
+      | scratch _ rightDepth _ =>
+          exact .scratch leftDepth rightDepth frameWords
+
+theorem afterStackDeclaration (mode : ActivationMode) :
+    SameFrame mode mode.afterStackDeclaration := by
+  cases mode with
+  | stack => exact .stack
+  | scratch frameDepth frameWords =>
+      exact .scratch frameDepth (frameDepth + 1) frameWords
+
+theorem atStackDepth (mode : ActivationMode) (depth : Nat) :
+    SameFrame mode (mode.atStackDepth depth) := by
+  cases mode with
+  | stack => exact .stack
+  | scratch frameDepth frameWords =>
+      exact .scratch frameDepth depth frameWords
+
+end SameFrame
+
 /-- One representation-neutral allocation relation for recursive proofs. -/
 inductive ActivationStateRel
     (contract : MemoryContract.Contract) (plan : Plan)
@@ -1838,6 +1968,35 @@ theorem restrict_source_live
       exact .scratch
         { hScratch with
           base := hScratch.base.restrict_source_live }
+
+/-- Transport either activation representation across agreeing plans. -/
+theorem transport_plan
+    {contract : MemoryContract.Contract}
+    {left right : Plan} {live : List Locals.Name}
+    {stackOffset frameBase : Nat} {mode : ActivationMode}
+    {source : SourceState} {target : TargetState}
+    (hRel :
+      ActivationStateRel contract left live stackOffset frameBase mode
+        source target)
+    (hAgree : PlanAgreesOn left right live) :
+    ActivationStateRel contract right live stackOffset frameBase mode
+      source target := by
+  cases hRel with
+  | stack hOnly hActive hState =>
+      have hRightOnly : LiveStackOnly right live := by
+        intro name slot hLive hRightLocation
+        obtain
+            ⟨leftLocation, agreedRightLocation,
+              hLeftLocation, hAgreedRightLocation, hLocationAgree⟩ :=
+          hAgree.location name hLive
+        rw [hRightLocation] at hAgreedRightLocation
+        cases hAgreedRightLocation
+        cases hLocationAgree with
+        | scratch agreedSlot =>
+            exact hOnly name slot hLive hLeftLocation
+      exact .stack hRightOnly hActive (hState.transport_plan hAgree)
+  | scratch hScratch =>
+      exact .scratch (hScratch.transport_plan hAgree)
 
 /-- Declare one stack-resident local in either allocation representation. -/
 theorem declare_stack_live
@@ -2765,6 +2924,25 @@ inductive ActivationOutcomeRel
         (Structured.EffectSemantics.Outcome.halt kind target)
 
 namespace ActivationOutcomeRel
+
+/-- Transport an outcome-indexed activation relation across agreeing plans. -/
+theorem transport_plan
+    {contract : MemoryContract.Contract}
+    {left right : Plan} {live : List Locals.Name}
+    {stackOffset frameBase : Nat} {mode : ActivationMode}
+    {source : SourceOutcome} {target : TargetOutcome}
+    (hRel :
+      ActivationOutcomeRel contract left live stackOffset frameBase mode
+        source target)
+    (hAgree : PlanAgreesOn left right live) :
+    ActivationOutcomeRel contract right live stackOffset frameBase mode
+      source target := by
+  cases hRel with
+  | regular state => exact .regular (state.transport_plan hAgree)
+  | brk state => exact .brk (state.transport_plan hAgree)
+  | cont state => exact .cont (state.transport_plan hAgree)
+  | leave state => exact .leave state
+  | halt kind state => exact .halt kind { shared := state.shared }
 
 theorem modeRel
     {contract : MemoryContract.Contract} {plan : Plan}

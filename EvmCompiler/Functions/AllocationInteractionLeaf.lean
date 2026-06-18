@@ -36,13 +36,14 @@ theorem expr_of_lower_compile
         localsCtx plan live frameBase mode source target) :
     Simulation.Interaction.Rel
       (OpenControlResultRel contract lowerCtx lowerFinal localsFinal plan
-        returns live frameBase sourceCtx sourceCtx)
+        returns live frameBase mode sourceCtx sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel (.expr expr) source)
       (Expressions.InteractionSemantics.Block.openRun
         targetProgram (targetExtra + 2) { stmts := compiledStmts } target) := by
   exact
-    lift_fixed (Functions.Source.Ctx.SameControl.refl sourceCtx)
+    lift_fixed (SameFrame.refl mode)
+      (Functions.Source.Ctx.SameControl.refl sourceCtx)
       (AllocationInteractionStatement.expr_of_lower_compile
         hSafe hScoped hLower hCompile hInvariant)
 
@@ -77,13 +78,14 @@ theorem assign_of_lower_compile
         localsCtx plan live frameBase mode source target) :
     Simulation.Interaction.Rel
       (OpenControlResultRel contract lowerCtx lowerFinal localsFinal plan
-        returns live frameBase sourceCtx sourceCtx)
+        returns live frameBase mode sourceCtx sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel (.assign name valueExpr) source)
       (Expressions.InteractionSemantics.Block.openRun
         targetProgram (targetExtra + 2) { stmts := compiledStmts } target) := by
   exact
-    lift_fixed (Functions.Source.Ctx.SameControl.refl sourceCtx)
+    lift_fixed (SameFrame.refl mode)
+      (Functions.Source.Ctx.SameControl.refl sourceCtx)
       (AllocationInteractionAssignment.of_lower_compile
         hSafe hScoped hLive hLower hCompile hInvariant)
 
@@ -120,14 +122,14 @@ theorem stack_let_of_lower_compile
         beforeLocals plan live frameBase .stack source target) :
     Simulation.Interaction.Rel
       (OpenControlResultRel contract lowerCtx afterState afterLocals plan
-        returns (name :: live) frameBase sourceCtx
+        returns (name :: live) frameBase .stack sourceCtx
         { sourceCtx with scope := name :: sourceCtx.scope })
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel (.let_ name valueExpr) source)
       (Expressions.InteractionSemantics.Block.openRun
         targetProgram (targetExtra + 2) { stmts := compiledStmts } target) := by
   exact
-    lift_fixed
+    lift_fixed SameFrame.stack
       (Functions.Source.Ctx.SameControl.scopeUpdate sourceCtx
         (name :: sourceCtx.scope))
       (AllocationInteractionStatement.stack_let_of_lower_compile
@@ -173,7 +175,8 @@ theorem scratch_let_of_lower_compile
           (.scratch beforeFrameDepth frameWords) source target) :
     Simulation.Interaction.Rel
       (OpenControlResultRel contract lowerCtx afterState afterLocals plan
-        returns afterLive frameBase sourceCtx
+        returns afterLive frameBase (.scratch beforeFrameDepth frameWords)
+        sourceCtx
         { sourceCtx with scope := name :: sourceCtx.scope })
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel (.let_ name valueExpr) source)
@@ -181,6 +184,7 @@ theorem scratch_let_of_lower_compile
         targetProgram (targetExtra + 2) { stmts := compiledStmts } target) := by
   exact
     lift_fixed
+      (SameFrame.scratch beforeFrameDepth afterFrameDepth frameWords)
       (Functions.Source.Ctx.SameControl.scopeUpdate sourceCtx
         (name :: sourceCtx.scope))
       (AllocationInteractionDeclaration.of_lower_compile

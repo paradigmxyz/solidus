@@ -173,7 +173,7 @@ theorem leave_of_lower_compile
         localsCtx plan live frameBase mode source target) :
     Simulation.Interaction.Rel
       (OpenControlResultRel contract lowerCtx lowerFinal localsFinal plan
-        returns live frameBase sourceCtx sourceCtx)
+        returns live frameBase mode sourceCtx sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel .leave source)
       (Expressions.InteractionSemantics.Block.openRun

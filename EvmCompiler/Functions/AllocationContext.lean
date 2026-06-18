@@ -329,6 +329,178 @@ theorem scratch_of_layout
       ⟨hScratchLocation name slot hLive hLookup hClassification,
         hFrameLookup⟩
 
+/-- Transport a compiler context between plans agreeing on every live name. -/
+theorem transport_plan
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {leftPlan rightPlan : Plan}
+    {live : List Locals.Name} {mode : ActivationMode}
+    (hCtx :
+      ActivationExprContext lowerCtx lowerState localsCtx leftPlan live mode)
+    (hAgree : PlanAgreesOn leftPlan rightPlan live) :
+    ActivationExprContext lowerCtx lowerState localsCtx rightPlan live mode := by
+  cases hCtx with
+  | stack hStack =>
+      refine .stack
+        { layout := hStack.layout
+          stackOrder := hAgree.stackOrder.symm.trans hStack.stackOrder
+          frameAbsent := hStack.frameAbsent
+          liveStackOnly := ?_
+          location := ?_
+          slot := hStack.slot
+          stack := ?_ }
+      · intro name slot hLive hRightLocation
+        obtain
+            ⟨leftLocation, rightLocation,
+              hLeftLocation, hAgreedRight, hLocationAgree⟩ :=
+          hAgree.location name hLive
+        rw [hRightLocation] at hAgreedRight
+        cases hAgreedRight
+        cases hLocationAgree with
+        | scratch _ =>
+            exact hStack.liveStackOnly name slot hLive hLeftLocation
+      · intro name hLive
+        obtain
+            ⟨leftLocation, rightLocation,
+              hLeftLocation, hRightLocation, hLocationAgree⟩ :=
+          hAgree.location name hLive
+        cases leftLocation with
+        | scratch slot =>
+            exact False.elim
+              (hStack.liveStackOnly name slot hLive hLeftLocation)
+        | stack leftDepth =>
+            cases hLocationAgree with
+            | stack _ rightDepth =>
+                exact ⟨.stack rightDepth, hRightLocation⟩
+      · intro name slot hLive hLookup hClassification
+        obtain
+            ⟨leftDepth, depth, hLeftPlan, hLeftCurrent, hLowerDepth⟩ :=
+          hStack.stack name slot hLive hLookup hClassification
+        obtain
+            ⟨leftLocation, rightLocation,
+              hAgreedLeft, hRightPlan, hLocationAgree⟩ :=
+          hAgree.location name hLive
+        rw [hLeftPlan] at hAgreedLeft
+        cases hAgreedLeft
+        cases hLocationAgree with
+        | stack _ rightDepth =>
+            exact
+              ⟨rightDepth, depth, hRightPlan,
+                by rw [← hAgree.stackOrder]; exact hLeftCurrent,
+                hLowerDepth⟩
+  | @scratch frameDepth frameWords hScratch =>
+      refine .scratch
+        { layout := hScratch.layout
+          stackPrefix := hAgree.stackOrder.symm.trans hScratch.stackPrefix
+          frame := hScratch.frame
+          frameBottom := hScratch.frameBottom
+          location := ?_
+          slot := hScratch.slot
+          stack := ?_
+          scratch := ?_ }
+      · intro name hLive
+        obtain
+            ⟨_leftLocation, rightLocation,
+              _hLeftLocation, hRightLocation, _hLocationAgree⟩ :=
+          hAgree.location name hLive
+        exact ⟨rightLocation, hRightLocation⟩
+      · intro name slot hLive hLookup hClassification
+        obtain
+            ⟨leftDepth, depth, hLeftPlan, hLeftCurrent, hLowerDepth⟩ :=
+          hScratch.stack name slot hLive hLookup hClassification
+        obtain
+            ⟨leftLocation, rightLocation,
+              hAgreedLeft, hRightPlan, hLocationAgree⟩ :=
+          hAgree.location name hLive
+        rw [hLeftPlan] at hAgreedLeft
+        cases hAgreedLeft
+        cases hLocationAgree with
+        | stack _ rightDepth =>
+            exact
+              ⟨rightDepth, depth, hRightPlan,
+                by rw [← hAgree.stackOrder]; exact hLeftCurrent,
+                hLowerDepth⟩
+      · intro name slot hLive hLookup hClassification
+        obtain ⟨hLeftPlan, hFrame⟩ :=
+          hScratch.scratch name slot hLive hLookup hClassification
+        obtain
+            ⟨leftLocation, rightLocation,
+              hAgreedLeft, hRightPlan, hLocationAgree⟩ :=
+          hAgree.location name hLive
+        rw [hLeftPlan] at hAgreedLeft
+        cases hAgreedLeft
+        cases hLocationAgree with
+        | scratch agreedSlot => exact ⟨hRightPlan, hFrame⟩
+
+/-- Transport a compiler context across state changes preserving env/layout. -/
+theorem transport_state
+    {lowerCtx : AllocationLowering.Ctx}
+    {before after : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name} {mode : ActivationMode}
+    (hCtx :
+      ActivationExprContext lowerCtx before localsCtx plan live mode)
+    (hEnv : after.allocation.env = before.allocation.env)
+    (hLayout : after.layout = before.layout) :
+    ActivationExprContext lowerCtx after localsCtx plan live mode := by
+  cases hCtx with
+  | stack hStack =>
+      refine .stack
+        { layout := hStack.layout.trans hLayout.symm
+          stackOrder := hStack.stackOrder.trans hLayout.symm
+          frameAbsent := by simpa [hLayout] using hStack.frameAbsent
+          liveStackOnly := hStack.liveStackOnly
+          location := hStack.location
+          slot := ?_
+          stack := ?_ }
+      · intro name hLive
+        obtain ⟨slot, hSlot⟩ := hStack.slot name hLive
+        exact ⟨slot, by simpa [hEnv] using hSlot⟩
+      · intro name slot hLive hSlot hIsStack
+        have hBeforeSlot :
+            AllocationSupport.lookupSlot? name before.allocation.env =
+              some slot := by
+          simpa [hEnv] using hSlot
+        obtain
+            ⟨planDepth, depth, hLocation, hCurrent, hDepth⟩ :=
+          hStack.stack name slot hLive hBeforeSlot hIsStack
+        exact
+          ⟨planDepth, depth, hLocation, hCurrent,
+            by simpa [hLayout] using hDepth⟩
+  | @scratch frameDepth frameWords hScratch =>
+      refine .scratch
+        { layout := hScratch.layout.trans hLayout.symm
+          stackPrefix := by simpa [hLayout] using hScratch.stackPrefix
+          frame := by simpa [hLayout] using hScratch.frame
+          frameBottom := by simpa [hLayout] using hScratch.frameBottom
+          location := hScratch.location
+          slot := ?_
+          stack := ?_
+          scratch := ?_ }
+      · intro name hLive
+        obtain ⟨slot, hSlot⟩ := hScratch.slot name hLive
+        exact ⟨slot, by simpa [hEnv] using hSlot⟩
+      · intro name slot hLive hSlot hIsStack
+        have hBeforeSlot :
+            AllocationSupport.lookupSlot? name before.allocation.env =
+              some slot := by
+          simpa [hEnv] using hSlot
+        obtain
+            ⟨planDepth, depth, hLocation, hCurrent, hDepth⟩ :=
+          hScratch.stack name slot hLive hBeforeSlot hIsStack
+        exact
+          ⟨planDepth, depth, hLocation, hCurrent,
+            by simpa [hLayout] using hDepth⟩
+      · intro name slot hLive hSlot hIsScratch
+        have hBeforeSlot :
+            AllocationSupport.lookupSlot? name before.allocation.env =
+              some slot := by
+          simpa [hEnv] using hSlot
+        obtain ⟨hLocation, hFrame⟩ :=
+          hScratch.scratch name slot hLive hBeforeSlot hIsScratch
+        exact ⟨hLocation, by simpa [hLayout] using hFrame⟩
+
 end ActivationExprContext
 
 /-- Runtime-representation change caused by one allocated declaration. -/
@@ -387,6 +559,52 @@ theorem restrict_source_live
     defined :=
       hInvariant.defined.restrictTo (fun _name hLive => hLive)
     state := hInvariant.state.restrict_source_live
+    stackLength := hInvariant.stackLength }
+
+/-- Transport a complete boundary between compiler-owned agreeing plans. -/
+theorem transport_plan
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {leftPlan rightPlan : Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {source : AllocationInteractionRelation.SourceState}
+    {target : AllocationInteractionRelation.TargetState}
+    (hInvariant :
+      ActivationInvariant contract lowerCtx lowerState localsCtx leftPlan live
+        frameBase mode source target)
+    (hAgree : PlanAgreesOn leftPlan rightPlan live)
+    (hRightWF : rightPlan.WellFormed) :
+    ActivationInvariant contract lowerCtx lowerState localsCtx rightPlan live
+      frameBase mode source target :=
+  { compiler := hInvariant.compiler.transport_plan hAgree
+    planWF := hRightWF
+    defined := hInvariant.defined
+    state := hInvariant.state.transport_plan hAgree
+    stackLength := hInvariant.stackLength }
+
+/-- Transport a boundary across lowering-state changes preserving env/layout. -/
+theorem transport_state
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {before after : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {source : AllocationInteractionRelation.SourceState}
+    {target : AllocationInteractionRelation.TargetState}
+    (hInvariant :
+      ActivationInvariant contract lowerCtx before localsCtx plan live
+        frameBase mode source target)
+    (hEnv : after.allocation.env = before.allocation.env)
+    (hLayout : after.layout = before.layout) :
+    ActivationInvariant contract lowerCtx after localsCtx plan live
+      frameBase mode source target :=
+  { compiler := hInvariant.compiler.transport_state hEnv hLayout
+    planWF := hInvariant.planWF
+    defined := hInvariant.defined
+    state := hInvariant.state
     stackLength := hInvariant.stackLength }
 
 end ActivationInvariant

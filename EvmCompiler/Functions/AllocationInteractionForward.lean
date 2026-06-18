@@ -85,7 +85,7 @@ theorem CoreCursor.nil
         lowerState localsCtx cursor.plan live frameBase mode source target) :
     Simulation.Interaction.Rel
       (OpenControlResultRel contract root.lowerCtx cursor.finalState
-        cursor.finalLocals cursor.plan root.returns live frameBase ctx ctx)
+        cursor.finalLocals cursor.plan root.returns live frameBase mode ctx ctx)
       (Functions.InteractionSemantics.Block.openRun program ctx
         (sourceFuel + 1) { stmts := [] } source)
       (Expressions.InteractionSemantics.Block.openRun expressions
@@ -122,6 +122,7 @@ theorem CoreCursor.cons_of_parts
     {beforeLocals afterLocals : Locals.Ctx}
     {contract : MemoryContract.Contract}
     {sourceFuel targetFuel frameBase : Nat}
+    {entryMode : ActivationMode}
     {sourceCtx midCtx finalCtx : Functions.Source.Ctx}
     {source : SourceState} {target : TargetState}
     {headCode : List Expressions.Stmt}
@@ -137,7 +138,8 @@ theorem CoreCursor.cons_of_parts
       Simulation.Interaction.Rel
         (OpenControlResultRel contract root.lowerCtx afterState afterLocals
           cursor.plan root.returns
-          (Functions.Scope.Stmt.outEnv live stmt) frameBase sourceCtx midCtx)
+          (Functions.Scope.Stmt.outEnv live stmt) frameBase entryMode
+          sourceCtx midCtx)
         (Functions.InteractionSemantics.Stmt.openRun
           program sourceCtx sourceFuel stmt source)
         (Expressions.InteractionSemantics.Block.openRun
@@ -151,7 +153,7 @@ theorem CoreCursor.cons_of_parts
           Simulation.Interaction.Rel
             (OpenControlResultRel contract root.lowerCtx tail.finalState
               tail.finalLocals tail.plan root.returns finalLive frameBase
-              midCtx finalCtx)
+              mode midCtx finalCtx)
             (Functions.InteractionSemantics.Block.openRun
               program midCtx sourceFuel { stmts := rest } sourceMid)
             (Expressions.InteractionSemantics.Block.openRun
@@ -160,7 +162,7 @@ theorem CoreCursor.cons_of_parts
     Simulation.Interaction.Rel
       (OpenControlResultRel contract root.lowerCtx cursor.finalState
         cursor.finalLocals cursor.plan root.returns finalLive frameBase
-        sourceCtx finalCtx)
+        entryMode sourceCtx finalCtx)
       (Functions.InteractionSemantics.Block.openRun program sourceCtx
         (sourceFuel + 1) { stmts := stmt :: rest } source)
       (Expressions.InteractionSemantics.Block.openRun expressions targetFuel
@@ -203,7 +205,7 @@ theorem CoreCursor.expr_head
           Simulation.Interaction.Rel
             (OpenControlResultRel contract root.lowerCtx afterState
               afterLocals cursor.plan root.returns live frameBase
-              sourceCtx sourceCtx)
+              mode sourceCtx sourceCtx)
             (Functions.InteractionSemantics.Stmt.openRun
               program sourceCtx sourceFuel (.expr expr) source)
             (Expressions.InteractionSemantics.Block.openRun
@@ -261,7 +263,7 @@ theorem CoreCursor.assign_head
           Simulation.Interaction.Rel
             (OpenControlResultRel contract root.lowerCtx afterState
               afterLocals cursor.plan root.returns live frameBase
-              sourceCtx sourceCtx)
+              mode sourceCtx sourceCtx)
             (Functions.InteractionSemantics.Stmt.openRun
               program sourceCtx sourceFuel (.assign name value) source)
             (Expressions.InteractionSemantics.Block.openRun
@@ -318,7 +320,8 @@ theorem CoreCursor.let_head
           Simulation.Interaction.Rel
             (OpenControlResultRel contract root.lowerCtx afterState
               afterLocals cursor.plan root.returns (name :: live) frameBase
-              sourceCtx { sourceCtx with scope := name :: sourceCtx.scope })
+              mode sourceCtx
+              { sourceCtx with scope := name :: sourceCtx.scope })
             (Functions.InteractionSemantics.Stmt.openRun
               program sourceCtx sourceFuel (.let_ name value) source)
             (Expressions.InteractionSemantics.Block.openRun
@@ -354,7 +357,8 @@ theorem CoreCursor.let_head
       Simulation.Interaction.Rel
         (OpenControlResultRel contract root.lowerCtx afterState
           afterLocals cursor.plan root.returns (name :: live) frameBase
-          sourceCtx { sourceCtx with scope := name :: sourceCtx.scope })
+          mode sourceCtx
+          { sourceCtx with scope := name :: sourceCtx.scope })
         (Functions.InteractionSemantics.Stmt.openRun
           program sourceCtx sourceFuel (.let_ name value) source)
         (Expressions.InteractionSemantics.Block.openRun
@@ -438,7 +442,7 @@ theorem CoreCursor.brk_head
           Simulation.Interaction.Rel
             (OpenControlResultRel contract root.lowerCtx afterState
               afterLocals cursor.plan root.returns live frameBase
-              sourceCtx sourceCtx)
+              beforeMode sourceCtx sourceCtx)
             (Functions.InteractionSemantics.Stmt.openRun
               program sourceCtx sourceFuel .brk source)
             (Expressions.InteractionSemantics.Block.openRun
@@ -497,7 +501,7 @@ theorem CoreCursor.cont_head
           Simulation.Interaction.Rel
             (OpenControlResultRel contract root.lowerCtx afterState
               afterLocals cursor.plan root.returns live frameBase
-              sourceCtx sourceCtx)
+              beforeMode sourceCtx sourceCtx)
             (Functions.InteractionSemantics.Stmt.openRun
               program sourceCtx sourceFuel .cont source)
             (Expressions.InteractionSemantics.Block.openRun
@@ -557,7 +561,7 @@ theorem CoreCursor.leave_head
           Simulation.Interaction.Rel
             (OpenControlResultRel contract root.lowerCtx afterState
               afterLocals cursor.plan root.returns live frameBase
-              sourceCtx sourceCtx)
+              mode sourceCtx sourceCtx)
             (Functions.InteractionSemantics.Stmt.openRun
               program sourceCtx sourceFuel .leave source)
             (Expressions.InteractionSemantics.Block.openRun
@@ -614,7 +618,7 @@ theorem CoreCursor.terminal_head
           Simulation.Interaction.Rel
             (OpenControlResultRel contract root.lowerCtx afterState
               afterLocals cursor.plan root.returns live frameBase
-              sourceCtx sourceCtx)
+              mode sourceCtx sourceCtx)
             (Functions.InteractionSemantics.Stmt.openRun
               program sourceCtx sourceFuel (.terminal kind) source)
             (Expressions.InteractionSemantics.Block.openRun
@@ -682,7 +686,7 @@ theorem CoreCursor.terminalArgs_head
           Simulation.Interaction.Rel
             (OpenControlResultRel contract root.lowerCtx afterState
               afterLocals cursor.plan root.returns live frameBase
-              sourceCtx sourceCtx)
+              mode sourceCtx sourceCtx)
             (Functions.InteractionSemantics.Stmt.openRun
               program sourceCtx sourceFuel (.terminalArgs kind args) source)
             (Expressions.InteractionSemantics.Block.openRun

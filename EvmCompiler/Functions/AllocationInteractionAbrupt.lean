@@ -41,7 +41,7 @@ theorem brk_of_lower_compile
         localsCtx plan beforeLive frameBase beforeMode source target) :
     Simulation.Interaction.Rel
       (OpenControlResultRel contract lowerCtx lowerFinal localsFinal plan
-        returns beforeLive frameBase sourceCtx sourceCtx)
+        returns beforeLive frameBase beforeMode sourceCtx sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel .brk source)
       (Expressions.InteractionSemantics.Block.openRun
@@ -111,7 +111,7 @@ theorem cont_of_lower_compile
         localsCtx plan beforeLive frameBase beforeMode source target) :
     Simulation.Interaction.Rel
       (OpenControlResultRel contract lowerCtx lowerFinal localsFinal plan
-        returns beforeLive frameBase sourceCtx sourceCtx)
+        returns beforeLive frameBase beforeMode sourceCtx sourceCtx)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel .cont source)
       (Expressions.InteractionSemantics.Block.openRun

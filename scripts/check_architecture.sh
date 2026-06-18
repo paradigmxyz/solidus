@@ -295,6 +295,16 @@ if ! rg -Fq \
   failed=1
 fi
 
+for theorem in \
+    '#check EvmCompiler.Functions.AllocationInteractionControl.block_of_components' \
+    '#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.block'; do
+  if ! rg -Fq "$theorem" EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing horizontal lexical-control theorem: %s\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
 for wrapper in \
     'Block.runOpen' \
     'Block.runScoped' \

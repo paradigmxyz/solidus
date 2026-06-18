@@ -18,6 +18,81 @@ def outcomeLive
   | .leave => returns
   | .halt _ => regularLive
 
+/-- Every source control destination is contained in the current live scope. -/
+structure ControlScopesWithin
+    (returns live : List Functions.Name)
+    (ctx : Functions.Source.Ctx) : Prop where
+  breakScope :
+    ∀ scope, ctx.breakScope? = some scope →
+      ∀ name, name ∈ scope → name ∈ live
+  continueScope :
+    ∀ scope, ctx.continueScope? = some scope →
+      ∀ name, name ∈ scope → name ∈ live
+  returnsLive : ∀ name, name ∈ returns → name ∈ live
+  leaveScope :
+    ∀ scope, ctx.leaveScope? = some scope →
+      ∀ name, name ∈ returns → name ∈ scope
+
+namespace ControlScopesWithin
+
+theorem mono
+    {returns beforeLive afterLive : List Functions.Name}
+    {ctx : Functions.Source.Ctx}
+    (hControl : ControlScopesWithin returns beforeLive ctx)
+    (hSubset : ∀ name, name ∈ beforeLive → name ∈ afterLive) :
+    ControlScopesWithin returns afterLive ctx :=
+  { breakScope := fun scope hScope name hName =>
+      hSubset name (hControl.breakScope scope hScope name hName)
+    continueScope := fun scope hScope name hName =>
+      hSubset name (hControl.continueScope scope hScope name hName)
+    returnsLive := fun name hName =>
+      hSubset name (hControl.returnsLive name hName)
+    leaveScope := hControl.leaveScope }
+
+theorem outcomeLive_subset
+    {returns live : List Functions.Name}
+    {ctx : Functions.Source.Ctx}
+    (hControl : ControlScopesWithin returns live ctx)
+    (mode : Locals.Source.Mode) :
+    ∀ name, name ∈ outcomeLive returns live ctx mode → name ∈ live := by
+  intro name hName
+  cases mode with
+  | regular => exact hName
+  | brk =>
+      cases hBreak : ctx.breakScope? with
+      | none => simp [outcomeLive, hBreak] at hName
+      | some scope =>
+          exact hControl.breakScope scope hBreak name
+            (by simpa [outcomeLive, hBreak] using hName)
+  | cont =>
+      cases hContinue : ctx.continueScope? with
+      | none => simp [outcomeLive, hContinue] at hName
+      | some scope =>
+          exact hControl.continueScope scope hContinue name
+            (by simpa [outcomeLive, hContinue] using hName)
+  | leave => exact hControl.returnsLive name hName
+  | halt kind => exact hName
+
+theorem push
+    {returns live : List Functions.Name}
+    {ctx : Functions.Source.Ctx}
+    (hControl : ControlScopesWithin returns live ctx)
+    (name : Functions.Name) :
+    ControlScopesWithin returns (name :: live)
+      { ctx with scope := name :: ctx.scope } :=
+  { breakScope := fun scope hScope localName hLocal =>
+      List.mem_cons_of_mem name
+        (hControl.breakScope scope hScope localName hLocal)
+    continueScope := fun scope hScope localName hLocal =>
+      List.mem_cons_of_mem name
+        (hControl.continueScope scope hScope localName hLocal)
+    returnsLive := fun returnName hReturn =>
+      List.mem_cons_of_mem name
+        (hControl.returnsLive returnName hReturn)
+    leaveScope := hControl.leaveScope }
+
+end ControlScopesWithin
+
 /--
 Statement outcomes retain the full compiler/runtime invariant on regular
 continuation and the activation-owned relation on abrupt or terminal exits.
