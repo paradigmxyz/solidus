@@ -182,6 +182,91 @@ theorem block_of_components
                 (Functions.Source.Ctx.SameControl.refl sourceCtx)
                 (.halt kind stateRel)
 
+/-- Preserve a conditional from condition truth and the selected body theorem. -/
+theorem if_of_components
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx} {plan : Plan}
+    {returns live : List Functions.Name}
+    {frameBase sourceBodyFuel targetBodyFuel : Nat}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {cond : Functions.Expr 1} {body : Functions.Block}
+    {targetCond : Expressions.Expr 1}
+    {targetBody : Expressions.Block}
+    {source : SourceState} {target : TargetState}
+    (hInitial :
+      AllocationContext.ActivationInvariant contract lowerCtx lowerState
+        localsCtx plan live frameBase mode source target)
+    (hCond :
+      Simulation.Interaction.Rel
+        (Simulation.Interaction.ExceptRel
+          (fun left right : EVMException => left = right)
+          (ActivationConditionResultRel contract plan live frameBase mode
+            target))
+        (Functions.InteractionSemantics.Expr.openEvalCondition cond source)
+        (Expressions.InteractionSemantics.Expr.openRunCondition
+          targetCond target))
+    (hVars :
+      Simulation.Interaction.AllDone
+        (Locals.InteractionStatePreservation.ResultVars
+          (α := Bool) source)
+        (Functions.InteractionSemantics.Expr.openEvalCondition cond source))
+    (hTrue :
+      ∀ {sourceAfter targetAfter},
+        AllocationContext.ActivationInvariant contract lowerCtx lowerState
+            localsCtx plan live frameBase mode sourceAfter targetAfter →
+          Simulation.Interaction.Rel
+            (OpenControlResultRel contract lowerCtx lowerState localsCtx plan
+              returns live frameBase mode sourceCtx sourceCtx)
+            (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+              sourceBodyFuel (.block body) sourceAfter)
+            (Expressions.InteractionSemantics.Block.openRun expressions
+              targetBodyFuel targetBody targetAfter)) :
+    Simulation.Interaction.Rel
+      (OpenControlResultRel contract lowerCtx lowerState localsCtx plan
+        returns live frameBase mode sourceCtx sourceCtx)
+      (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+        (sourceBodyFuel + 1) (.if_ cond body) source)
+      (Expressions.InteractionSemantics.Block.openRun expressions
+        (targetBodyFuel + 2)
+        { stmts := [.if_ targetCond targetBody] } target) := by
+  rw [Functions.InteractionSemantics.Stmt.openRun_if,
+    Expressions.InteractionSemantics.Block.openRun_single_if]
+  have hCondStrong :=
+    Simulation.Interaction.Rel.strengthen_left hCond hVars
+  apply Simulation.Interaction.Rel.bind_custom hCondStrong
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hRelated, hVarsDone⟩
+  cases hRelated with
+  | error hError => exact .done (.error hError)
+  | @ok sourceResult targetResult hResult =>
+      rcases sourceResult with ⟨sourceAfter, sourceCondition⟩
+      rcases targetResult with ⟨targetAfter, targetCondition⟩
+      cases hResult.condition
+      have hDefined : LiveDefined live sourceAfter :=
+        hInitial.defined.congr_vars hVarsDone
+      have hAfter :
+          AllocationContext.ActivationInvariant contract lowerCtx lowerState
+            localsCtx plan live frameBase mode sourceAfter targetAfter :=
+        { compiler := hInitial.compiler
+          planWF := hInitial.planWF
+          defined := hDefined
+          state := hResult.state
+          stackLength :=
+            (congrArg List.length hResult.stack).trans
+              hInitial.stackLength }
+      cases sourceCondition with
+      | false =>
+          apply Simulation.Interaction.Rel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact ControlResultRel.regular hAfter (SameFrame.refl mode)
+            (Functions.Source.Ctx.SameControl.refl sourceCtx)
+      | true => exact hTrue hAfter
+
 end AllocationInteractionControl
 end Functions
 end EvmCompiler

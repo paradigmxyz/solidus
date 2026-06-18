@@ -2854,6 +2854,18 @@ theorem append
 
 end ActivationExprResultRel
 
+/-- A compiled condition returns the same truth value and restores stack shape. -/
+structure ActivationConditionResultRel
+    (contract : MemoryContract.Contract) (plan : Plan)
+    (live : List Locals.Name) (frameBase : Nat) (mode : ActivationMode)
+    (targetInitial : TargetState)
+    (source : SourceState × Bool) (target : TargetState × Bool) : Prop where
+  condition : source.2 = target.2
+  state :
+    ActivationStateRel contract plan live 0 frameBase mode
+      source.1 target.1
+  stack : target.1.evm.stack = targetInitial.evm.stack
+
 inductive ModeRel : Locals.Source.Mode → Structured.Mode → Prop where
   | regular : ModeRel .regular .regular
   | brk : ModeRel .brk .brk

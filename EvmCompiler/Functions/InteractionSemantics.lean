@@ -29,6 +29,10 @@ def openEvalOne (expr : Functions.Expr 1)
     (state : State) : Open (State × Word) :=
   Locals.InteractionSemantics.Expr.openEvalOne expr state
 
+def openEvalCondition (expr : Functions.Expr 1)
+    (state : State) : Open (State × Bool) :=
+  Locals.InteractionSemantics.Expr.openEvalCondition expr state
+
 abbrev OpenSupported {results : Nat} (expr : Functions.Expr results) : Prop :=
   Locals.InteractionSemantics.Expr.OpenSupported expr
 
@@ -192,6 +196,26 @@ theorem openRun_block
         stateModel primitiveSemantics program ctx fuel body state))
   intro result _
   cases hMode : result.1.mode <;> rfl
+
+/-- A positive-fuel conditional exposes condition evaluation and one branch. -/
+theorem openRun_if
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (cond : Functions.Expr 1) (body : Functions.Block)
+    (state : State) :
+    openRun program ctx (fuel + 1) (.if_ cond body) state =
+      Simulation.Interaction.bind
+        (Expr.openEvalCondition cond state)
+        (fun result =>
+          if result.2 then
+            openRun program ctx fuel (.block body) result.1
+          else
+            Simulation.Interaction.pure
+              (Functions.Source.Effectful.Outcome.regular result.1, ctx)) := by
+  unfold openRun Functions.Source.Canonical.Stmt.run
+  simp only [Functions.Source.Effectful.Control.Stmt.run]
+  unfold Expr.openEvalCondition
+    Locals.InteractionSemantics.Expr.openEvalCondition
+  rfl
 
 end Stmt
 

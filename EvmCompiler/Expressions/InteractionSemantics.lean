@@ -70,6 +70,62 @@ theorem openRun_nil
       Simulation.Interaction.pure (Structured.Outcome.regular state) := by
   cases fuel <;> rfl
 
+/-- A singleton target block exposes its statement at residual fuel. -/
+theorem openRun_single_stmt
+    (program : Expressions.Program) (fuel : Nat)
+    (stmt : Expressions.Stmt) (state : RunState) :
+    openRun program (fuel + 2) { stmts := [stmt] } state =
+      EffectSemantics.Control.Stmt.run
+        Structured.EffectSemantics.Ordinary.runStateModel
+        Structured.InteractionSemantics.handler
+        program (fuel + 1) stmt state := by
+  unfold openRun
+  simp only [EffectSemantics.Control.Block.run]
+  change
+    Simulation.Interaction.bind
+        (EffectSemantics.Control.Stmt.run
+          Structured.EffectSemantics.Ordinary.runStateModel
+          Structured.InteractionSemantics.handler
+          program (fuel + 1) stmt state) _ =
+      EffectSemantics.Control.Stmt.run
+        Structured.EffectSemantics.Ordinary.runStateModel
+        Structured.InteractionSemantics.handler
+        program (fuel + 1) stmt state
+  conv_rhs =>
+    rw [← Simulation.Interaction.bind_pure
+      (EffectSemantics.Control.Stmt.run
+        Structured.EffectSemantics.Ordinary.runStateModel
+        Structured.InteractionSemantics.handler
+        program (fuel + 1) stmt state)]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (EffectSemantics.Control.Stmt.run
+        Structured.EffectSemantics.Ordinary.runStateModel
+        Structured.InteractionSemantics.handler
+        program (fuel + 1) stmt state))
+  intro outcome _
+  rcases outcome with ⟨outcomeState, outcomeMode⟩
+  cases outcomeMode <;> rfl
+
+/-- A singleton conditional exposes its condition and selected body. -/
+theorem openRun_single_if
+    (program : Expressions.Program) (fuel : Nat)
+    (cond : Expressions.Expr 1) (body : Expressions.Block)
+    (state : RunState) :
+    openRun program (fuel + 2) { stmts := [.if_ cond body] } state =
+      Simulation.Interaction.bind
+        (Expr.openRunCondition cond state)
+        (fun result =>
+          if result.2 then
+            openRun program fuel body result.1
+          else
+            Simulation.Interaction.pure
+              (Structured.Outcome.regular result.1)) := by
+  rw [openRun_single_stmt]
+  unfold Expr.openRunCondition EffectSemantics.Control.Expr.runCondition
+  simp only [EffectSemantics.Control.Stmt.run]
+  rfl
+
 /--
 Executing an appended block factors through the left block. A regular left
 outcome continues with the exact residual list fuel; abrupt outcomes skip the

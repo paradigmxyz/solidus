@@ -633,6 +633,176 @@ theorem block
   rw [hFuel'] at hResult
   exact hResult
 
+/-- Recursive conditional constructor over one compiler-selected body cursor. -/
+theorem if_
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {cond : Functions.Expr 1} {body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {frameBase sourceFuel targetExtra : Nat}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live { stmts := .if_ cond body :: rest }
+        beforeState beforeLocals)
+    (hSourceFuel : 2 < sourceFuel)
+    (hCondSafe : AllocationInteractionSafety.ExprSafe contract cond source)
+    (hBoundary :
+      Boundary cursor contract frameBase mode sourceCtx source target)
+    (hBodyForward :
+      ∀ (bodyCursor :
+          CoreCursor root (.lexical scope cursor.planning.nextScope)
+            live body beforeState beforeLocals)
+        {sourceAfter targetAfter},
+        Boundary bodyCursor contract frameBase mode sourceCtx
+            sourceAfter targetAfter →
+          2 ≤
+              (targetBudget cursor sourceFuel targetExtra - 2) -
+                bodyCursor.compiled.length ∧
+            Simulation.Interaction.Rel
+              (OpenControlResultRel contract root.lowerCtx
+                bodyCursor.finalState bodyCursor.finalLocals bodyCursor.plan
+                root.returns (Functions.Scope.Block.outEnv live body)
+                frameBase mode sourceCtx
+                { sourceCtx with
+                  scope := Functions.Scope.Block.outEnv live body })
+              (Functions.InteractionSemantics.Block.openRun program sourceCtx
+                (sourceFuel - 2) body sourceAfter)
+              (Expressions.InteractionSemantics.Block.openRun expressions
+                (targetBudget cursor sourceFuel targetExtra - 2)
+                { stmts := bodyCursor.compiled } targetAfter))
+    (hTailForward :
+      ∀ {afterState : AllocationLowering.State}
+        (tail :
+          CoreCursor root scope live { stmts := rest }
+            afterState beforeLocals),
+        ExactTail cursor tail →
+        ∀ {sourceMid targetMid tailMode},
+          AllocationContext.ActivationInvariant contract root.lowerCtx
+              afterState beforeLocals tail.plan live frameBase tailMode
+              sourceMid targetMid →
+            CursorForwardAt tail contract frameBase (sourceFuel - 1)
+              (targetExtra + 8) tailMode sourceCtx sourceMid targetMid) :
+    CursorForwardAt cursor contract frameBase sourceFuel targetExtra mode
+      sourceCtx source target := by
+  let childFuel := sourceFuel - 1
+  let bodyFuel := sourceFuel - 2
+  let totalFuel := targetBudget cursor sourceFuel targetExtra
+  let targetBodyFuel := totalFuel - 2
+  have hFuel : childFuel + 1 = sourceFuel := by
+    simp [childFuel]
+    omega
+  have hBodyFuel : bodyFuel + 1 = childFuel := by
+    simp [bodyFuel, childFuel]
+    omega
+  have hTargetFuel : targetBodyFuel + 2 = totalFuel := by
+    simp [targetBodyFuel, totalFuel, targetBudget]
+    omega
+  obtain
+      ⟨afterState, headLower, headCode, tail, loweredCond, condCode,
+        targetBody, bodyCursor, hCompiled, _hLower, _hCompile,
+        hHeadCode, hLowerCond, hCompileCond, hFinish, hAfterEnv,
+        hAfterLayout, hCondScoped, hExact⟩ :=
+    cursor.ifCursors
+  have hBodyAgree : PlanAgreesOn bodyCursor.plan cursor.plan live :=
+    bodyCursor.planAgreesOn cursor rfl
+  have hAfterInvariant :=
+    hBoundary.invariant.transport_state hAfterEnv hAfterLayout
+  have hCond :=
+    AllocationInteractionExpressionRecursive.forwardCondition
+      hCondSafe hBoundary.invariant.compiler hCondScoped hLowerCond
+      hCompileCond hBoundary.invariant.state
+  have hVars :=
+    Locals.InteractionStatePreservation.expr_openEvalCondition_vars
+      cond source
+  have hExtendsBefore :
+      AllocationLowering.StateExtends live beforeState bodyCursor.finalState :=
+    AllocationLowering.lowerBlockOpen_stateExtends
+      bodyCursor.sourceScoped bodyCursor.lower
+  have hExtendsAfter :
+      AllocationLowering.StateExtends live afterState bodyCursor.finalState := by
+    rcases hExtendsBefore with ⟨dropped, hLayout, hFresh, hSlots⟩
+    refine ⟨dropped, ?_, hFresh, ?_⟩
+    · rw [hLayout, hAfterLayout]
+    · intro name hLive
+      exact (hSlots name hLive).trans
+        (congrArg (AllocationSupport.lookupSlot? name) hAfterEnv.symm)
+  have hTrue :
+      ∀ {sourceAfter targetAfter},
+        AllocationContext.ActivationInvariant contract root.lowerCtx
+            afterState beforeLocals cursor.plan live frameBase mode
+            sourceAfter targetAfter →
+          Simulation.Interaction.Rel
+            (OpenControlResultRel contract root.lowerCtx afterState
+              beforeLocals cursor.plan root.returns live frameBase mode
+              sourceCtx sourceCtx)
+            (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+              bodyFuel (.block body) sourceAfter)
+            (Expressions.InteractionSemantics.Block.openRun expressions
+              targetBodyFuel targetBody targetAfter) := by
+    intro sourceAfter targetAfter hAfter
+    have hBefore :=
+      hAfter.transport_state hAfterEnv.symm hAfterLayout.symm
+    have hNestedInvariant :=
+      hBefore.transport_plan hBodyAgree.symm bodyCursor.planWF
+    have hNestedBoundary :
+        Boundary bodyCursor contract frameBase mode sourceCtx
+          sourceAfter targetAfter :=
+      { invariant := hNestedInvariant
+        sourceScope := hBoundary.sourceScope
+        control := hBoundary.control
+        capacity := hBoundary.capacity }
+    obtain ⟨hCleanupFuel, hBody⟩ :=
+      hBodyForward bodyCursor hNestedBoundary
+    apply AllocationInteractionControl.block_of_components
+      (bodyLive := Functions.Scope.Block.outEnv live body)
+      hBoundary.sourceScope rfl rfl hBoundary.control hAfter
+      hExtendsAfter hBodyAgree hFinish hCleanupFuel
+    simpa [bodyFuel, targetBodyFuel, totalFuel] using hBody
+  have hHead :=
+    AllocationInteractionControl.if_of_components
+      (sourceBodyFuel := bodyFuel) (targetBodyFuel := targetBodyFuel)
+      hAfterInvariant hCond hVars hTrue
+  have hHead' :
+      Simulation.Interaction.Rel
+        (OpenControlResultRel contract root.lowerCtx afterState beforeLocals
+          cursor.plan root.returns live frameBase mode sourceCtx sourceCtx)
+        (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+          childFuel (.if_ cond body) source)
+        (Expressions.InteractionSemantics.Block.openRun expressions totalFuel
+          { stmts := headCode } target) := by
+    simpa [hBodyFuel, hTargetFuel, hHeadCode] using hHead
+  have hMidCtx :
+      sourceCtx =
+        { sourceCtx with
+          scope := Functions.Scope.Stmt.outEnv live (.if_ cond body) } := by
+    have hCtx : { sourceCtx with scope := live } = sourceCtx := by
+      cases sourceCtx
+      have hScope := hBoundary.sourceScope
+      simp only at hScope
+      cases hScope
+      rfl
+    simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
+  have hResult :=
+    cons_of_parts cursor tail hExact hCompiled hMidCtx
+      (by
+        simpa [childFuel, hFuel, totalFuel,
+          Functions.Scope.Stmt.outEnv] using hHead')
+      (fun {sourceMid targetMid tailMode} hInvariant =>
+        hTailForward tail hExact hInvariant)
+  have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
+  rw [hFuel'] at hResult
+  exact hResult
+
 /-- Recursive `break` constructor with loop-destination cleanup. -/
 theorem brk
     {allocation : Locals.Allocation.ProgramPlan}
