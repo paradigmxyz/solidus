@@ -125,6 +125,7 @@ import EvmCompiler.Yul.FunctionsInteractionPrimitive
 import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 import EvmCompiler.Yul.FunctionsInteractionExpression
 import EvmCompiler.Yul.FunctionsInteractionStatement
+import EvmCompiler.Yul.FunctionsInteractionTerminal
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.CompilerCallDecomposition
 import EvmCompiler.Yul.CompilerExpressionDecomposition
@@ -1429,6 +1430,13 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionRelation.TerminalFailureRel.return_
 #check EvmCompiler.Yul.FunctionsInteractionRelation.TerminalFailureRel.selfdestruct
 #check EvmCompiler.Yul.FunctionsInteractionRelation.TerminalFailureRel.revert
+#check EvmCompiler.Yul.FunctionsInteractionRelation.TerminalMachineRel
+#check EvmCompiler.Yul.FunctionsInteractionRelation.TerminalSharedRel.stop
+#check EvmCompiler.Yul.FunctionsInteractionRelation.TerminalSharedRel.evmReturn
+#check EvmCompiler.Yul.FunctionsInteractionRelation.TerminalSharedRel.evmRevert
+#check EvmCompiler.Yul.FunctionsInteractionTerminal.stop
+#check EvmCompiler.Yul.FunctionsInteractionTerminal.return_
+#check EvmCompiler.Yul.FunctionsInteractionTerminal.revert
 #check EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.terminal
 #check EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.of_fixed
 #check EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.nil

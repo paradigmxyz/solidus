@@ -23,6 +23,7 @@ import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.Yul.FunctionsInteractionStatement
 import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
+import EvmCompiler.Yul.FunctionsInteractionTerminal
 
 #check EvmCompiler.Simulation.OpenWorld
 #check EvmCompiler.Functions.AllocationInteractionCall.CallTargets.forward
@@ -442,6 +443,12 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 #print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TerminalFailureRel.return_
 #print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TerminalFailureRel.selfdestruct
 #print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TerminalFailureRel.revert
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TerminalSharedRel.stop
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TerminalSharedRel.evmReturn
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TerminalSharedRel.evmRevert
+#print axioms EvmCompiler.Yul.FunctionsInteractionTerminal.stop
+#print axioms EvmCompiler.Yul.FunctionsInteractionTerminal.return_
+#print axioms EvmCompiler.Yul.FunctionsInteractionTerminal.revert
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.terminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.of_fixed
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.nil

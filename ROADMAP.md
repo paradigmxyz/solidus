@@ -191,6 +191,9 @@ boundaries remain active work.
       composition, including exact abrupt suffix skipping.
     - [x] Outcome-indexed terminal representation relation and terminal-aware
       singleton/list composition for source failures versus target halts.
+    - [ ] Complete the canonical terminal primitive family; STOP, RETURN, and
+      REVERT are checked at the primitive boundary, while SELFDESTRUCT and
+      compiler-generated argument preludes remain.
     - [ ] Complete recursive statement/list proof over compiler decomposition;
       break, continue, leave, and multi-name uninitialized declaration compiler
       cases are checked. Direct-safe one-name initialized declarations and

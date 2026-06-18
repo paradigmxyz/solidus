@@ -64,6 +64,33 @@ structure SharedRel
   genesisBlockHeader :
     source.genesisBlockHeader = target.genesisBlockHeader
 
+/-- Machine observations retained after terminal control. Return-data scratch
+bookkeeping is intentionally absent: STOP clears it on EVM but not in imported
+Yul, and no continuation can observe it after a halt. -/
+structure TerminalMachineRel
+    (source target : EvmYul.MachineState) : Prop where
+  gasAvailable : source.gasAvailable = target.gasAvailable
+  activeWords : source.activeWords = target.activeWords
+  memory : source.memory = target.memory
+  output : source.H_return = target.H_return
+
+structure TerminalSharedRel
+    (source : EvmYul.SharedState .Yul)
+    (target : EvmYul.SharedState .EVM) : Prop where
+  openWorld :
+    Simulation.OpenWorld.ofYulShared source =
+      Simulation.OpenWorld.ofEVMShared target
+  machine : TerminalMachineRel source.toMachineState target.toMachineState
+  initialAccounts : source.σ₀ = target.σ₀
+  totalGasUsedInBlock :
+    source.totalGasUsedInBlock = target.totalGasUsedInBlock
+  transactionReceipts :
+    source.transactionReceipts = target.transactionReceipts
+  executionEnv : ExecutionEnvRel source.executionEnv target.executionEnv
+  blocks : source.blocks = target.blocks
+  genesisBlockHeader :
+    source.genesisBlockHeader = target.genesisBlockHeader
+
 def VarsRel (source : EvmYul.Yul.VarStore)
     (target : Locals.Source.Store) : Prop :=
   ∀ name value, source.lookup name = some value →
@@ -75,6 +102,12 @@ def StateRel (source : SourceState) (target : TargetState) : Prop :=
   ∃ sourceShared sourceVars,
     source = .Ok sourceShared sourceVars ∧
       SharedRel sourceShared target.shared ∧
+      VarsRel sourceVars target.vars
+
+def TerminalStateRel (source : SourceState) (target : TargetState) : Prop :=
+  ∃ sourceShared sourceVars,
+    source = .Ok sourceShared sourceVars ∧
+      TerminalSharedRel sourceShared target.shared ∧
       VarsRel sourceVars target.vars
 
 namespace ExecutionEnvRel
@@ -744,6 +777,104 @@ theorem logOp
       blocks := by simpa [EvmYul.SharedState.logOp] using hRel.blocks
       genesisBlockHeader := by
         simpa [EvmYul.SharedState.logOp] using hRel.genesisBlockHeader }
+
+end SharedRel
+
+namespace TerminalMachineRel
+
+theorem of_eq {source target : EvmYul.MachineState}
+    (hEq : source = target) : TerminalMachineRel source target := by
+  subst target
+  exact ⟨rfl, rfl, rfl, rfl⟩
+
+end TerminalMachineRel
+
+namespace TerminalSharedRel
+
+theorem of_shared
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel source target) :
+    TerminalSharedRel source target :=
+  { openWorld := hRel.openWorld
+    machine := TerminalMachineRel.of_eq hRel.machine
+    initialAccounts := hRel.initialAccounts
+    totalGasUsedInBlock := hRel.totalGasUsedInBlock
+    transactionReceipts := hRel.transactionReceipts
+    executionEnv := hRel.executionEnv
+    blocks := hRel.blocks
+    genesisBlockHeader := hRel.genesisBlockHeader }
+
+theorem stop
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel source target) :
+    TerminalSharedRel
+      { source with H_return := ByteArray.empty }
+      { target with
+          returnData := ByteArray.empty
+          H_return := ByteArray.empty } := by
+  exact
+    { openWorld := by simpa using hRel.openWorld
+      machine :=
+        { gasAvailable := by
+            simpa using congrArg (·.gasAvailable) hRel.machine
+          activeWords := by
+            simpa using congrArg (·.activeWords) hRel.machine
+          memory := by simpa using congrArg (·.memory) hRel.machine
+          output := rfl }
+      initialAccounts := hRel.initialAccounts
+      totalGasUsedInBlock := hRel.totalGasUsedInBlock
+      transactionReceipts := hRel.transactionReceipts
+      executionEnv := by simpa using hRel.executionEnv
+      blocks := hRel.blocks
+      genesisBlockHeader := hRel.genesisBlockHeader }
+
+theorem evmReturn
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel source target) (address size : Word) :
+    TerminalSharedRel
+      { source with
+          toMachineState := source.toMachineState.evmReturn address size }
+      { target with
+          toMachineState := target.toMachineState.evmReturn address size } := by
+  exact
+    { openWorld := by simpa using hRel.openWorld
+      machine := TerminalMachineRel.of_eq
+        (congrArg (fun machine => machine.evmReturn address size)
+          hRel.machine)
+      initialAccounts := hRel.initialAccounts
+      totalGasUsedInBlock := hRel.totalGasUsedInBlock
+      transactionReceipts := hRel.transactionReceipts
+      executionEnv := by simpa using hRel.executionEnv
+      blocks := hRel.blocks
+      genesisBlockHeader := hRel.genesisBlockHeader }
+
+theorem evmRevert
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel source target) (address size : Word) :
+    TerminalSharedRel
+      { source with
+          toMachineState := source.toMachineState.evmRevert address size }
+      { target with
+          toMachineState := target.toMachineState.evmRevert address size } := by
+  exact
+    { openWorld := by simpa using hRel.openWorld
+      machine := TerminalMachineRel.of_eq
+        (congrArg (fun machine => machine.evmRevert address size)
+          hRel.machine)
+      initialAccounts := hRel.initialAccounts
+      totalGasUsedInBlock := hRel.totalGasUsedInBlock
+      transactionReceipts := hRel.transactionReceipts
+      executionEnv := by simpa using hRel.executionEnv
+      blocks := hRel.blocks
+      genesisBlockHeader := hRel.genesisBlockHeader }
+
+end TerminalSharedRel
+
+namespace SharedRel
 
 theorem externalFrame_eq
     {source : EvmYul.SharedState .Yul}
@@ -1465,25 +1596,25 @@ inductive TerminalFailureRel :
       Functions.InteractionSemantics.Outcome → Prop where
   | stop
       {source : SourceState} {value : Word} {target : TargetState}
-      (state : StateRel source target) :
+      (state : TerminalStateRel source target) :
       TerminalFailureRel
         { exception := .YulHalt source value, state := source }
         (Functions.Source.Effectful.Outcome.halt .stop target)
   | return_
       {source : SourceState} {value : Word} {target : TargetState}
-      (state : StateRel source target) :
+      (state : TerminalStateRel source target) :
       TerminalFailureRel
         { exception := .YulHalt source value, state := source }
         (Functions.Source.Effectful.Outcome.halt .return target)
   | selfdestruct
       {source : SourceState} {value : Word} {target : TargetState}
-      (state : StateRel source target) :
+      (state : TerminalStateRel source target) :
       TerminalFailureRel
         { exception := .YulHalt source value, state := source }
         (Functions.Source.Effectful.Outcome.halt .selfdestruct target)
   | revert
       {source : SourceState} {target : TargetState}
-      (state : StateRel source target) :
+      (state : TerminalStateRel source target) :
       TerminalFailureRel
         { exception := .Revert source, state := source }
         (Functions.Source.Effectful.Outcome.halt .revert target)
