@@ -80,7 +80,7 @@ theorem leave_of_lower_compile
   | @ok sourceResult targetAfterReturns hReturnResult =>
       obtain
           ⟨targetFinal, hCleanupRun, _hFinalStack,
-            hCleanupReturns, hCleanupEffect⟩ :=
+            _hCleanupShared, hCleanupReturns, hCleanupEffect⟩ :=
         AllocationInteractionCleanupResource.Preserving.forward_zero_allocator
           (values := values.reverse) (baseStack := target.evm.stack)
           hCleanup

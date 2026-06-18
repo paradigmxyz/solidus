@@ -91,12 +91,13 @@ theorem forward_zero_allocator
       Structured.InteractionSemantics.Code.openRun cleanup target =
           .done (.ok final) ∧
         final.evm.stack = values ∧
+        final.evm.toSharedState = target.evm.toSharedState ∧
         final.returns = target.returns ∧
         AllocatorEffect config allocatorDepth target final := by
   obtain ⟨final, hRun, hFinalStack, hShared, hReturns⟩ :=
     AllocationInteractionCleanup.Preserving.forward_zero
       hCleanup hValuesLength hBaseLength hStack
-  refine ⟨final, hRun, hFinalStack, hReturns, ?_⟩
+  refine ⟨final, hRun, hFinalStack, hShared, hReturns, ?_⟩
   exact AllocatorEffect.of_machine_eq hReady
     (congrArg EvmYul.SharedState.toMachineState hShared)
 
