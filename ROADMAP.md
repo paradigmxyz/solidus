@@ -189,6 +189,9 @@ boundaries remain active work.
       expression recursion.
     - [ ] Discharge the closed ordinary primitive capability over canonical
       code-erased state and lift direct expressions through statements.
+    - [x] Define the code-erased outcome-indexed relation and source-owned
+      lexical-domain invariant; check direct expression statements plus
+      `break`, `continue`, and `leave` with exact Functions scope restriction.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
   source-facing reservation/resource assumptions.
 - [ ] Run representative interleaving/reentrancy/static/zero-window tests and

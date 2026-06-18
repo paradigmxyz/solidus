@@ -187,6 +187,99 @@ theorem withWorldAndMachine
 
 end StateRel
 
+def VarsDomainWithin (layout : List Functions.Name)
+    (source : EvmYul.Yul.VarStore) : Prop :=
+  ∀ name value, source.lookup name = some value → name ∈ layout
+
+/-- Regular adjacent relation plus the source-only lexical-domain fact needed
+when Functions control exits restrict compiler-private target locals. -/
+structure ScopedStateRel (layout : List Functions.Name)
+    (source : SourceState) (target : TargetState) : Prop where
+  state : StateRel source target
+  domain :
+    ∀ sourceShared sourceVars,
+      source = .Ok sourceShared sourceVars →
+        VarsDomainWithin layout sourceVars
+
+namespace ScopedStateRel
+
+theorem restrictTarget
+    {layout scope : List Functions.Name}
+    {source : SourceState} {target : TargetState}
+    (hRel : ScopedStateRel layout source target)
+    (hSubset : ∀ name, name ∈ layout → name ∈ scope) :
+    StateRel source (target.restrictTo scope) := by
+  rcases hRel.state with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  refine ⟨sourceShared, sourceVars, hSource, by simpa, ?_⟩
+  intro name value hLookup
+  have hLayout : name ∈ layout :=
+    hRel.domain sourceShared sourceVars hSource name value hLookup
+  have hScope : name ∈ scope := hSubset name hLayout
+  simpa [Locals.Source.State.restrictTo,
+    Locals.Source.Store.restrictTo, hScope] using
+    hVars name value hLookup
+
+end ScopedStateRel
+
+/-- Agreement between imported Yul checkpoints and canonical Functions
+control outcomes. Yul's historical `OutOfFuel` state is not a terminal
+control outcome and therefore relates to no Functions mode. -/
+def ModeRel (source : SourceState)
+    (target : Functions.InteractionSemantics.Outcome) : Prop :=
+  match source, target.mode with
+  | .Ok _ _, .regular => True
+  | .Checkpoint (.Break _ _), .brk => True
+  | .Checkpoint (.Continue _ _), .cont => True
+  | .Checkpoint (.Leave _ _), .leave => True
+  | _, _ => False
+
+/-- Outcome-indexed adjacent state relation. Checkpoint payloads are revived
+only for relating their shared state and visible locals; `ModeRel` retains
+the exact control destination. -/
+structure OutcomeRel (source : SourceState)
+    (target : Functions.InteractionSemantics.Outcome) : Prop where
+  mode : ModeRel source target
+  state : StateRel source.reviveJump target.state
+
+namespace OutcomeRel
+
+theorem regular
+    {source : SourceState} {target : TargetState}
+    (hRel : StateRel source target) :
+    OutcomeRel source
+      (Functions.Source.Effectful.Outcome.regular target) := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  exact ⟨trivial, ⟨sourceShared, sourceVars, rfl, hShared, hVars⟩⟩
+
+theorem brk
+    {sourceShared : EvmYul.SharedState .Yul}
+    {sourceVars : EvmYul.Yul.VarStore} {target : TargetState}
+    (hRel : StateRel (.Ok sourceShared sourceVars) target) :
+    OutcomeRel (.Checkpoint (.Break sourceShared sourceVars))
+      (Functions.Source.Effectful.Outcome.brk target) :=
+  ⟨trivial, hRel⟩
+
+theorem cont
+    {sourceShared : EvmYul.SharedState .Yul}
+    {sourceVars : EvmYul.Yul.VarStore} {target : TargetState}
+    (hRel : StateRel (.Ok sourceShared sourceVars) target) :
+    OutcomeRel (.Checkpoint (.Continue sourceShared sourceVars))
+      (Functions.Source.Effectful.Outcome.cont target) :=
+  ⟨trivial, hRel⟩
+
+theorem leave
+    {sourceShared : EvmYul.SharedState .Yul}
+    {sourceVars : EvmYul.Yul.VarStore} {target : TargetState}
+    (hRel : StateRel (.Ok sourceShared sourceVars) target) :
+    OutcomeRel (.Checkpoint (.Leave sourceShared sourceVars))
+      (Functions.Source.Effectful.Outcome.leave target) :=
+  ⟨trivial, hRel⟩
+
+end OutcomeRel
+
 end FunctionsInteractionRelation
 end Yul
 end EvmCompiler

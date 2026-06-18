@@ -189,6 +189,100 @@ theorem succ_succ_cons
 
 end EvalArgs
 
+namespace Exec
+
+theorem zero
+    (stmt : EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    exec 0 stmt code state = Primitive.fail state .OutOfFuel := by
+  simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
+    Primitive.fail, Yul.Source.Effectful.Control.fail]
+  change
+    Simulation.Interaction.done
+        (.error ({ exception := .OutOfFuel, state := state } : Failure) :
+          Except Failure State) =
+      Simulation.Interaction.done
+        (.error ({ exception := .OutOfFuel, state := state } : Failure) :
+          Except Failure State)
+  rfl
+
+theorem brk_zero
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    exec 0 .Break code state = Primitive.fail state .OutOfFuel :=
+  zero .Break code state
+
+theorem brk_succ
+    (fuel : Nat) (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : State) :
+    exec (fuel + 1) .Break code state = pure state.setBreak := by
+  simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
+    stateModel]
+
+theorem cont_succ
+    (fuel : Nat) (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : State) :
+    exec (fuel + 1) .Continue code state = pure state.setContinue := by
+  simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
+    stateModel]
+
+theorem leave_succ
+    (fuel : Nat) (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : State) :
+    exec (fuel + 1) .Leave code state = pure state.setLeave := by
+  simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
+    stateModel]
+
+/-- A primitive expression statement is canonical value evaluation followed
+by the empty destination assignment. -/
+theorem expr_primitive
+    (fuel : Nat) (prim : EvmYul.Operation .Yul)
+    (args : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    exec fuel (.ExprStmtCall (.Call (.inl prim) args)) code state =
+      Simulation.Interaction.bind
+        (evalValues fuel (.Call (.inl prim) args) code state)
+        (fun result =>
+          pure (stateModel.multifill [] result.1 result.2)) := by
+  cases fuel with
+  | zero =>
+      simp only [exec, evalValues, Yul.Source.Canonical.exec,
+        Yul.Source.Canonical.evalValues, Yul.Source.Effectful.exec,
+        Yul.Source.Effectful.evalValues]
+      unfold Yul.Source.Effectful.Control.fail
+      rfl
+  | succ fuel =>
+      simp only [exec, evalValues, Yul.Source.Canonical.exec,
+        Yul.Source.Canonical.evalValues, Yul.Source.Effectful.exec,
+        Yul.Source.Effectful.evalValues,
+        Yul.Source.Effectful.Control.multifill]
+      change
+        Simulation.Interaction.bind
+            (evalArgs fuel args.reverse code state)
+            (fun argsResult =>
+              Simulation.Interaction.bind
+                (primitiveSemantics.eval fuel argsResult.1 prim
+                  argsResult.2.reverse)
+                (fun result =>
+                  pure (stateModel.multifill [] result.1 result.2))) =
+          Simulation.Interaction.bind
+            (Simulation.Interaction.bind
+              (evalArgs fuel args.reverse code state)
+              (fun argsResult =>
+                primitiveSemantics.eval fuel argsResult.1 prim
+                  argsResult.2.reverse))
+            (fun result =>
+              pure (stateModel.multifill [] result.1 result.2))
+      exact
+        (Simulation.Interaction.bind_assoc
+          (evalArgs fuel args.reverse code state)
+          (fun argsResult =>
+            primitiveSemantics.eval fuel argsResult.1 prim
+              argsResult.2.reverse)
+          (fun result =>
+            pure (stateModel.multifill [] result.1 result.2))).symm
+
+end Exec
+
 namespace Program
 
 def openRun (fuel : Nat) (code : EvmYul.Yul.Ast.YulContract)

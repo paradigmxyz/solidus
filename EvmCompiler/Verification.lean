@@ -123,6 +123,7 @@ import EvmCompiler.Yul.EffectRefinement.Failure
 import EvmCompiler.Yul.InteractionSemantics
 import EvmCompiler.Yul.FunctionsInteractionPrimitive
 import EvmCompiler.Yul.FunctionsInteractionExpression
+import EvmCompiler.Yul.FunctionsInteractionStatement
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.CompilerCallDecomposition
 import EvmCompiler.Yul.CompilerExpressionDecomposition
@@ -1366,6 +1367,15 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.one_cons
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.succ_succ_cons
 #check EvmCompiler.Yul.FunctionsInteractionExpression.directAt
+#check EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.restrictTarget
+#check EvmCompiler.Yul.FunctionsInteractionRelation.OutcomeRel.regular
+#check EvmCompiler.Yul.FunctionsInteractionRelation.OutcomeRel.brk
+#check EvmCompiler.Yul.FunctionsInteractionRelation.OutcomeRel.cont
+#check EvmCompiler.Yul.FunctionsInteractionRelation.OutcomeRel.leave
+#check EvmCompiler.Yul.FunctionsInteractionStatement.expr
+#check EvmCompiler.Yul.FunctionsInteractionStatement.brk
+#check EvmCompiler.Yul.FunctionsInteractionStatement.cont
+#check EvmCompiler.Yul.FunctionsInteractionStatement.leave
 #check EvmCompiler.Yul.StateRelation.Vars.rel_of_scopedExact
 #check EvmCompiler.Yul.StateRelation.Regular.rel_of_scopedExact
 #check EvmCompiler.Yul.StateRelation.Replay.rel_of_scopedExact

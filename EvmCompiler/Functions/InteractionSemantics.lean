@@ -441,6 +441,70 @@ def openRun (program : Functions.Program) (ctx : Functions.Source.Ctx)
   Functions.Source.Canonical.Stmt.run
     stateModel primitiveSemantics program ctx fuel stmt state
 
+theorem openRun_expr
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (expr : Functions.Expr 0) (state : State) :
+    openRun program ctx fuel (.expr expr) state =
+      Simulation.Interaction.bind (Expr.openEval expr state)
+        (fun result =>
+          pure (Functions.Source.Effectful.Outcome.regular result.1, ctx)) := by
+  simp [openRun, Expr.openEval, Functions.Source.Canonical.Stmt.run,
+    Functions.Source.Effectful.Control.Stmt.run,
+    Locals.InteractionSemantics.Expr.openEval, stateModel,
+    primitiveSemantics]
+  change
+    Simulation.Interaction.bind
+        (Expr.openEval expr state)
+        (fun result =>
+          pure (Functions.Source.Effectful.Outcome.regular result.1, ctx)) =
+      Simulation.Interaction.bind
+        (Expr.openEval expr state)
+        (fun result =>
+          pure (Functions.Source.Effectful.Outcome.regular result.1, ctx))
+  rfl
+
+theorem openRun_brk
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (state : State) {scope : List Functions.Name}
+    (hScope : ctx.breakScope? = some scope) :
+    openRun program ctx fuel .brk state =
+      pure
+        (Functions.Source.Effectful.Outcome.brk
+          (state.restrictTo scope), ctx) := by
+  simp [openRun, Functions.Source.Canonical.Stmt.run,
+    Functions.Source.Effectful.Control.Stmt.run, hScope, stateModel,
+    Locals.InteractionSemantics.stateModel,
+    Locals.Source.Effectful.Ordinary.stateModel,
+    Locals.Source.Effectful.StateModel.restrictTo]
+
+theorem openRun_cont
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (state : State) {scope : List Functions.Name}
+    (hScope : ctx.continueScope? = some scope) :
+    openRun program ctx fuel .cont state =
+      pure
+        (Functions.Source.Effectful.Outcome.cont
+          (state.restrictTo scope), ctx) := by
+  simp [openRun, Functions.Source.Canonical.Stmt.run,
+    Functions.Source.Effectful.Control.Stmt.run, hScope, stateModel,
+    Locals.InteractionSemantics.stateModel,
+    Locals.Source.Effectful.Ordinary.stateModel,
+    Locals.Source.Effectful.StateModel.restrictTo]
+
+theorem openRun_leave
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (state : State) {scope : List Functions.Name}
+    (hScope : ctx.leaveScope? = some scope) :
+    openRun program ctx fuel .leave state =
+      pure
+        (Functions.Source.Effectful.Outcome.leave
+          (state.restrictTo scope), ctx) := by
+  simp [openRun, Functions.Source.Canonical.Stmt.run,
+    Functions.Source.Effectful.Control.Stmt.run, hScope, stateModel,
+    Locals.InteractionSemantics.stateModel,
+    Locals.Source.Effectful.Ordinary.stateModel,
+    Locals.Source.Effectful.StateModel.restrictTo]
+
 /-- Successful canonical call execution has positive caller meta-fuel. -/
 theorem successful_openRun_call_fuel_pos
     {program : Functions.Program} {ctx : Functions.Source.Ctx}

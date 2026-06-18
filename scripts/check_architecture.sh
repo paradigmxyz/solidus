@@ -613,21 +613,24 @@ report_matches \
   '^import EvmCompiler\.(Locals|Expressions|Structured|TypedCfg|Assembly)' \
   EvmCompiler/Yul/FunctionsInteractionRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionPrimitive.lean \
-  EvmCompiler/Yul/FunctionsInteractionExpression.lean
+  EvmCompiler/Yul/FunctionsInteractionExpression.lean \
+  EvmCompiler/Yul/FunctionsInteractionStatement.lean
 
 report_matches \
   'The canonical Yul-to-Functions interaction boundary must not define a compiler or recursive evaluator:' \
   '^[[:space:]]*(partial[[:space:]]+)?def[[:space:]]+.*(compile|lower|emit|assemble|evalTail|evalArgs|evalValues|execSeq|loop)[^:]*[:=]' \
   EvmCompiler/Yul/FunctionsInteractionRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionPrimitive.lean \
-  EvmCompiler/Yul/FunctionsInteractionExpression.lean
+  EvmCompiler/Yul/FunctionsInteractionExpression.lean \
+  EvmCompiler/Yul/FunctionsInteractionStatement.lean
 
 report_matches \
   'The canonical Yul-to-Functions interaction boundary must not import observer or replay modules:' \
   '^import EvmCompiler\..*(Observer|Replay|Oracle)' \
   EvmCompiler/Yul/FunctionsInteractionRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionPrimitive.lean \
-  EvmCompiler/Yul/FunctionsInteractionExpression.lean
+  EvmCompiler/Yul/FunctionsInteractionExpression.lean \
+  EvmCompiler/Yul/FunctionsInteractionStatement.lean
 
 report_matches \
   'The Yul-to-Functions observer proof must not reason directly about lower pass semantics:' \
