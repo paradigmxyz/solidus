@@ -31730,3 +31730,20 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-file hole scan, axiom audit, and `git diff --check` passed; public
   recursive expression theorems use only
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 21:29:59 PDT - compaction-resume - resumed the horizontal
+  CALL/CREATE proof at checked commit `3485c2543`; recursive expressions are
+  complete and the next adjacent obligation is Functions statement/control
+  preservation through allocation and Locals compilation.
+- 2026-06-17 21:37:10 PDT - consolidation/functions-statement-interface -
+  moved transcript-free live-definedness, scope restriction, exact activation
+  outcomes, and the complete statement-boundary invariant into the canonical
+  allocation relation/context owners.
+- 2026-06-17 21:37:10 PDT - proof/functions-expression-statement - proved
+  `AllocationInteractionStatement.expr_of_lower_compile` through the ordinary
+  allocation lowerer and Locals compiler over canonical Functions and
+  Expressions interaction semantics; no observer module or replay evidence is
+  imported.
+- 2026-06-17 21:37:10 PDT - validation/functions-expression-statement - the
+  focused 1157-job module, 1310-job verification root, architecture guard,
+  touched-file hole scan, axiom audit, and `git diff --check` passed; the new
+  public theorems use only `[propext, Classical.choice, Quot.sound]`.

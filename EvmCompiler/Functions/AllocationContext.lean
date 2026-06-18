@@ -125,6 +125,50 @@ inductive ActivationExprContext
       ActivationExprContext lowerCtx lowerState localsCtx plan live
         (.scratch frameDepth frameWords)
 
+/-- Complete observer-free invariant at a Functions statement boundary. -/
+structure ActivationInvariant
+    (contract : MemoryContract.Contract)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerState : AllocationLowering.State)
+    (localsCtx : Locals.Ctx)
+    (plan : Plan) (live : List Locals.Name)
+    (frameBase : Nat) (mode : ActivationMode)
+    (source : AllocationInteractionRelation.SourceState)
+    (target : AllocationInteractionRelation.TargetState) : Prop where
+  compiler :
+    ActivationExprContext lowerCtx lowerState localsCtx plan live mode
+  planWF : plan.WellFormed
+  defined : AllocationInteractionRelation.LiveDefined live source
+  state :
+    ActivationStateRel contract plan live 0 frameBase mode source target
+  stackLength : target.evm.stack.length = localsCtx.layout.length
+
+namespace ActivationInvariant
+
+/-- Restricting source scope to the current live set preserves the boundary. -/
+theorem restrict_source_live
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {source : AllocationInteractionRelation.SourceState}
+    {target : AllocationInteractionRelation.TargetState}
+    (hInvariant :
+      ActivationInvariant contract lowerCtx lowerState localsCtx plan live
+        frameBase mode source target) :
+    ActivationInvariant contract lowerCtx lowerState localsCtx plan live
+      frameBase mode (source.restrictTo live) target :=
+  { compiler := hInvariant.compiler
+    planWF := hInvariant.planWF
+    defined :=
+      hInvariant.defined.restrictTo (fun _name hLive => hLive)
+    state := hInvariant.state.restrict_source_live
+    stackLength := hInvariant.stackLength }
+
+end ActivationInvariant
+
 /-- Exact lowerer/compiler classification of one frame-backed variable read. -/
 inductive VarCode
     (plan : Plan) (live : List Locals.Name) (name : Locals.Name)

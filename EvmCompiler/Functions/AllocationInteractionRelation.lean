@@ -34,6 +34,36 @@ def currentStackOrder (plan : Plan) (live : List Locals.Name) :
     List Locals.Name :=
   plan.stackOrder.filter fun name => decide (name ∈ live)
 
+theorem currentStackOrder_congr
+    {plan : Plan} {left right : List Locals.Name}
+    (hLive : ∀ name, name ∈ left ↔ name ∈ right) :
+    currentStackOrder plan left = currentStackOrder plan right := by
+  unfold currentStackOrder
+  apply congrArg (fun predicate => plan.stackOrder.filter predicate)
+  funext name
+  by_cases hLeft : name ∈ left
+  · have hRight : name ∈ right := (hLive name).mp hLeft
+    simp [hLeft, hRight]
+  · have hRight : name ∉ right := by
+      intro hName
+      exact hLeft ((hLive name).mpr hName)
+    simp [hLeft, hRight]
+
+theorem currentStackOrder_restrict
+    {plan : Plan} {beforeLive afterLive : List Locals.Name}
+    (hSubset : ∀ name, name ∈ afterLive → name ∈ beforeLive) :
+    (currentStackOrder plan beforeLive).filter
+        (fun name => decide (name ∈ afterLive)) =
+      currentStackOrder plan afterLive := by
+  unfold currentStackOrder
+  rw [List.filter_filter]
+  apply congrArg (fun predicate => plan.stackOrder.filter predicate)
+  funext name
+  by_cases hAfter : name ∈ afterLive
+  · have hBefore : name ∈ beforeLive := hSubset name hAfter
+    simp [hAfter, hBefore]
+  · simp [hAfter]
+
 inductive LocationAgrees : Location → Location → Prop where
   | stack (leftDepth rightDepth : Nat) :
       LocationAgrees (.stack leftDepth) (.stack rightDepth)
@@ -52,9 +82,110 @@ structure PlanAgreesOn
           right.location? name = some rightLocation ∧
           LocationAgrees leftLocation rightLocation
 
+namespace PlanAgreesOn
+
+theorem symm
+    {left right : Plan} {live : List Locals.Name}
+    (hAgree : PlanAgreesOn left right live) :
+    PlanAgreesOn right left live := by
+  refine ⟨hAgree.stackOrder.symm, ?_⟩
+  intro name hLive
+  obtain
+      ⟨leftLocation, rightLocation,
+        hLeft, hRight, hLocation⟩ :=
+    hAgree.location name hLive
+  refine ⟨rightLocation, leftLocation, hRight, hLeft, ?_⟩
+  cases hLocation with
+  | stack leftDepth rightDepth =>
+      exact .stack rightDepth leftDepth
+  | scratch slot =>
+      exact .scratch slot
+
+theorem mono
+    {left right : Plan}
+    {larger smaller : List Locals.Name}
+    (hAgree : PlanAgreesOn left right larger)
+    (hSubset : ∀ name, name ∈ smaller → name ∈ larger) :
+    PlanAgreesOn left right smaller := by
+  refine ⟨?_, ?_⟩
+  · calc
+      currentStackOrder left smaller =
+          (currentStackOrder left larger).filter
+            (fun name => decide (name ∈ smaller)) :=
+        (currentStackOrder_restrict hSubset).symm
+      _ =
+          (currentStackOrder right larger).filter
+            (fun name => decide (name ∈ smaller)) := by
+        rw [hAgree.stackOrder]
+      _ = currentStackOrder right smaller :=
+        currentStackOrder_restrict hSubset
+  · intro name hLive
+    exact hAgree.location name (hSubset name hLive)
+
+end PlanAgreesOn
+
 def LiveDefined (live : List Locals.Name) (source : Locals.Source.State) :
     Prop :=
   ∀ name, name ∈ live → ∃ value, source.vars name = some value
+
+namespace LiveDefined
+
+theorem congr_vars
+    {live : List Locals.Name}
+    {source final : Locals.Source.State}
+    (hDefined : LiveDefined live source)
+    (hVars : final.vars = source.vars) :
+    LiveDefined live final := by
+  intro name hLive
+  rw [hVars]
+  exact hDefined name hLive
+
+theorem insert_preserves
+    {live : List Locals.Name}
+    {source : Locals.Source.State}
+    {name : Locals.Name} {value : Word}
+    (hDefined : LiveDefined live source) :
+    LiveDefined live (source.insert name value) := by
+  intro other hLive
+  by_cases hName : other = name
+  · subst other
+    exact ⟨value, Locals.Source.Store.insert_self _ _ _⟩
+  · obtain ⟨old, hOld⟩ := hDefined other hLive
+    exact
+      ⟨old, by
+        simpa [Locals.Source.State.insert] using
+          (Locals.Source.Store.insert_of_ne
+            (store := source.vars) (name := name)
+            (other := other) (value := value) hName).trans hOld⟩
+
+theorem insert_cons
+    {live : List Locals.Name}
+    {source : Locals.Source.State}
+    {name : Locals.Name} {value : Word}
+    (hDefined : LiveDefined live source) :
+    LiveDefined (name :: live) (source.insert name value) := by
+  intro other hLive
+  rcases List.mem_cons.mp hLive with hName | hLive
+  · subst other
+    exact ⟨value, Locals.Source.Store.insert_self _ _ _⟩
+  · exact hDefined.insert_preserves other hLive
+
+theorem restrictTo
+    {beforeLive afterLive : List Locals.Name}
+    {source : Locals.Source.State}
+    (hDefined : LiveDefined beforeLive source)
+    (hSubset : ∀ name, name ∈ afterLive → name ∈ beforeLive) :
+    LiveDefined afterLive (source.restrictTo afterLive) := by
+  intro name hLive
+  obtain ⟨value, hValue⟩ :=
+    hDefined name (hSubset name hLive)
+  exact
+    ⟨value, by
+      simpa [Locals.Source.State.restrictTo] using
+        (Locals.Source.Store.restrictTo_mem
+          (scope := afterLive) (store := source.vars) hLive).trans hValue⟩
+
+end LiveDefined
 
 /-- Realization of the live source store in allocated stack/scratch slots. -/
 def StoreRel (plan : Plan) (live : List Locals.Name)
@@ -355,6 +486,31 @@ structure CoreRel
 abbrev StateRel := CoreRel
 
 namespace StateRel
+
+/-- Restricting the source store to represented live names preserves it. -/
+theorem restrict_source_live
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {source : SourceState} {target : TargetState}
+    (hRel :
+      StateRel contract plan live stackOffset frameBase source target) :
+    StateRel contract plan live stackOffset frameBase
+      (source.restrictTo live) target := by
+  refine ⟨?_, ?_, ?_⟩
+  · simpa [Locals.Source.State.restrictTo] using hRel.machine
+  · simpa [Locals.Source.State.restrictTo] using hRel.world
+  · intro name location hLive hLocation
+    have hValue := hRel.store name location hLive hLocation
+    cases location with
+    | stack depth =>
+        rcases hValue with ⟨actualDepth, hDepth, hStack⟩
+        exact
+          ⟨actualDepth, hDepth, by
+            simpa [Locals.Source.State.restrictTo,
+              Locals.Source.Store.restrictTo, hLive] using hStack⟩
+    | scratch slot =>
+        simpa [Locals.Source.State.restrictTo,
+          Locals.Source.Store.restrictTo, hLive] using hValue
 
 def pushTargetBy (pcDelta : Nat) (value : Word)
     (target : TargetState) : TargetState :=
@@ -1070,6 +1226,25 @@ inductive ActivationStateRel
 
 namespace ActivationStateRel
 
+/-- Scope restriction preserves either allocation representation. -/
+theorem restrict_source_live
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {source : SourceState} {target : TargetState}
+    (hRel :
+      ActivationStateRel contract plan live stackOffset frameBase mode
+        source target) :
+    ActivationStateRel contract plan live stackOffset frameBase mode
+      (source.restrictTo live) target := by
+  cases hRel with
+  | stack hOnly hActive hState =>
+      exact .stack hOnly hActive hState.restrict_source_live
+  | scratch hScratch =>
+      exact .scratch
+        { hScratch with
+          base := hScratch.base.restrict_source_live }
+
 theorem shared
     {contract : MemoryContract.Contract} {plan : Plan}
     {live : List Locals.Name} {stackOffset frameBase : Nat}
@@ -1466,6 +1641,81 @@ structure HaltStateRel
     (contract : MemoryContract.Contract) (plan : Plan)
     (source : SourceState) (target : TargetState) : Prop where
   shared : SharedRel contract source.shared target.evm.toSharedState
+
+/-- Exact activation-exit relation after compiler-owned frame cleanup. -/
+structure LeaveStateRel
+    (contract : MemoryContract.Contract) (returns : List Locals.Name)
+    (source : SourceState) (target : TargetState) : Prop where
+  shared : SharedRel contract source.shared target.evm.toSharedState
+  activeNoWrap :
+    target.evm.activeWords.toNat * MemoryContract.wordBytes <
+      EvmYul.UInt256.size
+  values :
+    ∃ returned,
+      Functions.Source.Store.lookupMany returns source.vars = some returned ∧
+        target.evm.stack = returned.reverse
+
+/--
+Outcome relation retaining the selected allocation representation for every
+continuing mode. Activation exits intentionally erase local realization after
+the compiler-owned cleanup has made it unobservable.
+-/
+inductive ActivationOutcomeRel
+    (contract : MemoryContract.Contract) (plan : Plan)
+    (live : List Locals.Name) (stackOffset frameBase : Nat)
+    (mode : ActivationMode) : SourceOutcome → TargetOutcome → Prop where
+  | regular {source : SourceState} {target : TargetState}
+      (state :
+        ActivationStateRel contract plan live stackOffset frameBase mode
+          source target) :
+      ActivationOutcomeRel contract plan live stackOffset frameBase mode
+        (Functions.Source.Effectful.Outcome.regular source)
+        (Structured.EffectSemantics.Outcome.regular target)
+  | brk {source : SourceState} {target : TargetState}
+      (state :
+        ActivationStateRel contract plan live stackOffset frameBase mode
+          source target) :
+      ActivationOutcomeRel contract plan live stackOffset frameBase mode
+        (Functions.Source.Effectful.Outcome.brk source)
+        (Structured.EffectSemantics.Outcome.brk target)
+  | cont {source : SourceState} {target : TargetState}
+      (state :
+        ActivationStateRel contract plan live stackOffset frameBase mode
+          source target) :
+      ActivationOutcomeRel contract plan live stackOffset frameBase mode
+        (Functions.Source.Effectful.Outcome.cont source)
+        (Structured.EffectSemantics.Outcome.cont target)
+  | leave {source : SourceState} {target : TargetState}
+      (state : LeaveStateRel contract live source target) :
+      ActivationOutcomeRel contract plan live stackOffset frameBase mode
+        (Functions.Source.Effectful.Outcome.leave source)
+        (Structured.EffectSemantics.Outcome.leave target)
+  | halt (kind : Assembly.HaltKind)
+      {source : SourceState} {target : TargetState}
+      (state : HaltStateRel contract plan source target) :
+      ActivationOutcomeRel contract plan live stackOffset frameBase mode
+        (Functions.Source.Effectful.Outcome.halt kind source)
+        (Structured.EffectSemantics.Outcome.halt kind target)
+
+namespace ActivationOutcomeRel
+
+theorem modeRel
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {source : SourceOutcome} {target : TargetOutcome}
+    (hRel :
+      ActivationOutcomeRel contract plan live stackOffset frameBase mode
+        source target) :
+    ModeRel source.mode target.mode := by
+  cases hRel with
+  | regular _ => exact .regular
+  | brk _ => exact .brk
+  | cont _ => exact .cont
+  | leave _ => exact .leave
+  | halt kind _ => exact .halt kind
+
+end ActivationOutcomeRel
 
 /-- Mode-indexed result relation for ordinary activation control. -/
 inductive OutcomeRel

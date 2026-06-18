@@ -887,8 +887,10 @@ Exit: the shared core builds with no compiler layer changed.
     then classify every source-supported primitive into one checked capability.
   - [x] Compose recursively safe expressions and expression sequences with the
     complete primitive classifier through the ordinary lowerer and compiler.
-  - [ ] Recursive allocation preservation for expressions, statements,
-    internal calls, loops, terminals, and whole programs.
+  - [x] Recursive allocation preservation for expressions and expression
+    sequences.
+  - [ ] Recursive allocation preservation for statements, internal calls,
+    loops, terminals, and whole programs.
 - [ ] Yul.
 
 At each layer:
