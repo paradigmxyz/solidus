@@ -2565,7 +2565,8 @@ theorem eval
     {op : Structured.BasicOp} {values : List Word}
     {address size : Word} {topics : Array Word}
     (invocation : LogInvocation op values address size topics)
-    (shared : EvmYul.SharedState .EVM) :
+    (shared : EvmYul.SharedState .EVM)
+    (hPermission : shared.executionEnv.perm = true) :
     Locals.Source.PrimitiveSemantics.structured.eval op shared values =
       .ok (EvmYul.SharedState.logOp address size topics shared, []) := by
   cases invocation <;>
@@ -2576,7 +2577,22 @@ theorem eval
       EvmYul.Stack.pop2, EvmYul.Stack.pop3, EvmYul.Stack.pop4,
       EvmYul.Stack.pop5, EvmYul.Stack.pop6,
       EvmYul.EVM.State.replaceStackAndIncrPC,
-      EvmYul.EVM.State.incrPC, Id.run]
+      EvmYul.EVM.State.incrPC, hPermission, Id.run]
+
+theorem eval_of_static
+    {op : Structured.BasicOp} {values : List Word}
+    {address size : Word} {topics : Array Word}
+    (invocation : LogInvocation op values address size topics)
+    (shared : EvmYul.SharedState .EVM)
+    (hPermission : shared.executionEnv.perm = false) :
+    Locals.Source.PrimitiveSemantics.structured.eval op shared values =
+      .error .StaticModeViolation := by
+  cases invocation <;>
+    simp [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp, Assembly.PrimOp.continuingStep?,
+      Assembly.PrimStep.run, Expressions.Structured.BasicOp.inputs,
+      hPermission]
 
 theorem memorySafe
     {contract : MemoryContract.Contract}
@@ -2744,32 +2760,36 @@ theorem simulate
           MemoryContract.wordBytes < EvmYul.UInt256.size := by
   obtain ⟨address, size, topics, invocation⟩ :=
     family.invocation_of_length values hLength
-  obtain ⟨_hConsistent, hAllowed, hExpansion, hHost⟩ :=
-    invocation.memorySafe hSafe
-  have hSourceCanonical := invocation.eval sourceShared
-  rw [hSourceCanonical] at hEval
-  cases hEval
-  obtain ⟨hShared, hMemory, hActive, hNoWrap⟩ :=
-    logOp_both hRel address size topics hAllowed hExpansion hHost
-      hTargetNoWrap
-  exact
-    ⟨EvmYul.SharedState.logOp address size topics targetShared,
-      invocation.eval targetShared, hShared, hMemory, hActive, hNoWrap⟩
+  cases hSourcePermission : sourceShared.executionEnv.perm with
+  | false =>
+      rw [invocation.eval_of_static sourceShared hSourcePermission] at hEval
+      contradiction
+  | true =>
+    have hTargetPermission : targetShared.executionEnv.perm = true := by
+      rw [← hRel.executionEnv_eq]
+      exact hSourcePermission
+    obtain ⟨_hConsistent, hAllowed, hExpansion, hHost⟩ :=
+      invocation.memorySafe hSafe
+    have hSourceCanonical :=
+      invocation.eval sourceShared hSourcePermission
+    rw [hSourceCanonical] at hEval
+    cases hEval
+    obtain ⟨hShared, hMemory, hActive, hNoWrap⟩ :=
+      logOp_both hRel address size topics hAllowed hExpansion hHost
+        hTargetNoWrap
+    exact
+      ⟨EvmYul.SharedState.logOp address size topics targetShared,
+        invocation.eval targetShared hTargetPermission,
+        hShared, hMemory, hActive, hNoWrap⟩
 
 def closedSpec
     {op : Structured.BasicOp} (family : LogFamily op)
-    (contract : MemoryContract.Contract) : ClosedSpec contract op where
+    (contract : MemoryContract.Contract) : FallibleClosedSpec contract op where
   sourceStep := family.sourceStep
   supportsOpen := by cases family <;> rfl
   notGas := by cases family <;> decide
   notMsize := by cases family <;> decide
-  evalExists := by
-    intro shared values hLength
-    obtain ⟨address, size, topics, invocation⟩ :=
-      family.invocation_of_length values hLength
-    exact ⟨EvmYul.SharedState.logOp address size topics shared, [],
-      invocation.eval shared⟩
-  simulate := by
+  simulateSuccess := by
     intro sourceShared sourceFinal targetShared values outputs hLength hRel
       hSafe hTargetNoWrap hEval
     obtain ⟨targetFinal, hTargetEval, hShared, hMemory,
@@ -2778,6 +2798,67 @@ def closedSpec
     exact ⟨targetFinal, hTargetEval,
       targetEffect_of_memory_eq hShared hMemory hActive
         hTargetNoWrap hFinalNoWrap⟩
+  errorSuffix := by
+    intro step sourceShared target values baseStack error hLength hStep hRel
+      hStack hEval
+    obtain ⟨address, size, topics, invocation⟩ :=
+      family.invocation_of_length values hLength
+    have hSourcePermission : sourceShared.executionEnv.perm = false := by
+      cases hPermission : sourceShared.executionEnv.perm with
+      | false => rfl
+      | true =>
+          rw [invocation.eval sourceShared hPermission] at hEval
+          contradiction
+    have hError : error = .StaticModeViolation := by
+      rw [invocation.eval_of_static sourceShared hSourcePermission] at hEval
+      cases hEval
+      rfl
+    subst error
+    have hTargetPermission : target.executionEnv.perm = false := by
+      change target.toSharedState.executionEnv.perm = false
+      rw [← hRel.executionEnv_eq]
+      exact hSourcePermission
+    cases family with
+    | log0 =>
+        have hFamilyStep :
+            Locals.Source.PrimitiveSemantics.sourceContinuingStep? .log0 =
+              some .log0 := rfl
+        rw [hFamilyStep] at hStep
+        have hStepEq : step = .log0 := (Option.some.inj hStep).symm
+        subst step
+        simp [Assembly.PrimStep.run, hTargetPermission]
+    | log1 =>
+        have hFamilyStep :
+            Locals.Source.PrimitiveSemantics.sourceContinuingStep? .log1 =
+              some .log1 := rfl
+        rw [hFamilyStep] at hStep
+        have hStepEq : step = .log1 := (Option.some.inj hStep).symm
+        subst step
+        simp [Assembly.PrimStep.run, hTargetPermission]
+    | log2 =>
+        have hFamilyStep :
+            Locals.Source.PrimitiveSemantics.sourceContinuingStep? .log2 =
+              some .log2 := rfl
+        rw [hFamilyStep] at hStep
+        have hStepEq : step = .log2 := (Option.some.inj hStep).symm
+        subst step
+        simp [Assembly.PrimStep.run, hTargetPermission]
+    | log3 =>
+        have hFamilyStep :
+            Locals.Source.PrimitiveSemantics.sourceContinuingStep? .log3 =
+              some .log3 := rfl
+        rw [hFamilyStep] at hStep
+        have hStepEq : step = .log3 := (Option.some.inj hStep).symm
+        subst step
+        simp [Assembly.PrimStep.run, hTargetPermission]
+    | log4 =>
+        have hFamilyStep :
+            Locals.Source.PrimitiveSemantics.sourceContinuingStep? .log4 =
+              some .log4 := rfl
+        rw [hFamilyStep] at hStep
+        have hStepEq : step = .log4 := (Option.some.inj hStep).symm
+        subst step
+        simp [Assembly.PrimStep.run, hTargetPermission]
 
 theorem openForward
     {op : Structured.BasicOp} (family : LogFamily op)

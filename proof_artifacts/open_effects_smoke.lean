@@ -421,3 +421,9 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 #print axioms EvmCompiler.Yul.FunctionsInteractionRelation.SharedRel.extCodeCopy
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.SharedExtCodeCopy.forward
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineReturnDataCopy.forward
+#print axioms EvmCompiler.Assembly.PrimStep.LogStep.run_of_static
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.SharedRel.logOp
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.SharedWriteSpec.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.LogFamily.forward
+#print axioms EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.MemoryFamily.LogFamily.closedSpec
+#print axioms EvmCompiler.Functions.AllocationInteractionPrimitiveResource.log_resourceForward

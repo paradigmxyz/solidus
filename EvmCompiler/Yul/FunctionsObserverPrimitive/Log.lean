@@ -413,6 +413,10 @@ theorem forwardAtArity_log0
       | true =>
           simp [EvmYul.Yul.State.executionEnv,
             hPermission] at hCall
+          have hTargetPermission :
+              target.shared.executionEnv.perm = true := by
+            rw [← hShared.world.executionEnv.permission]
+            exact hPermission
           have hInputs :
               Expressions.Structured.BasicOp.inputs .log0 = 2 := rfl
           have hStep :
@@ -450,7 +454,7 @@ theorem forwardAtArity_log0
                           EvmYul.Stack.pop2,
                           EvmYul.EVM.State.replaceStackAndIncrPC,
                           EvmYul.EVM.State.incrPC,
-                          targetShared, Id.run]
+                          hTargetPermission, targetShared, Id.run]
                       · exact
                           ⟨EvmYul.SharedState.logOp
                               address size #[] sourceShared,
@@ -492,6 +496,10 @@ theorem forwardAtArity_log1
       | true =>
           simp [EvmYul.Yul.State.executionEnv,
             hPermission] at hCall
+          have hTargetPermission :
+              target.shared.executionEnv.perm = true := by
+            rw [← hShared.world.executionEnv.permission]
+            exact hPermission
           have hInputs :
               Expressions.Structured.BasicOp.inputs .log1 = 3 := rfl
           have hStep :
@@ -533,7 +541,7 @@ theorem forwardAtArity_log1
                               EvmYul.Stack.pop3,
                               EvmYul.EVM.State.replaceStackAndIncrPC,
                               EvmYul.EVM.State.incrPC,
-                              targetShared, Id.run]
+                              hTargetPermission, targetShared, Id.run]
                           · exact
                               ⟨EvmYul.SharedState.logOp
                                   address size #[topic0] sourceShared,
@@ -575,6 +583,10 @@ theorem forwardAtArity_log2
       | true =>
           simp [EvmYul.Yul.State.executionEnv,
             hPermission] at hCall
+          have hTargetPermission :
+              target.shared.executionEnv.perm = true := by
+            rw [← hShared.world.executionEnv.permission]
+            exact hPermission
           have hInputs :
               Expressions.Structured.BasicOp.inputs .log2 = 4 := rfl
           have hStep :
@@ -622,7 +634,7 @@ theorem forwardAtArity_log2
                                   EvmYul.Stack.pop4,
                                   EvmYul.EVM.State.replaceStackAndIncrPC,
                                   EvmYul.EVM.State.incrPC,
-                                  targetShared, Id.run]
+                                  hTargetPermission, targetShared, Id.run]
                               · exact
                                   ⟨EvmYul.SharedState.logOp
                                       address size #[topic0, topic1]
@@ -665,6 +677,10 @@ theorem forwardAtArity_log3
       | true =>
           simp [EvmYul.Yul.State.executionEnv,
             hPermission] at hCall
+          have hTargetPermission :
+              target.shared.executionEnv.perm = true := by
+            rw [← hShared.world.executionEnv.permission]
+            exact hPermission
           have hInputs :
               Expressions.Structured.BasicOp.inputs .log3 = 5 := rfl
           have hStep :
@@ -720,7 +736,7 @@ theorem forwardAtArity_log3
                                       EvmYul.Stack.pop5,
                                       EvmYul.EVM.State.replaceStackAndIncrPC,
                                       EvmYul.EVM.State.incrPC,
-                                      targetShared, Id.run]
+                                      hTargetPermission, targetShared, Id.run]
                                   · exact
                                       ⟨EvmYul.SharedState.logOp
                                           address size
@@ -765,6 +781,10 @@ theorem forwardAtArity_log4
       | true =>
           simp [EvmYul.Yul.State.executionEnv,
             hPermission] at hCall
+          have hTargetPermission :
+              target.shared.executionEnv.perm = true := by
+            rw [← hShared.world.executionEnv.permission]
+            exact hPermission
           have hInputs :
               Expressions.Structured.BasicOp.inputs .log4 = 6 := rfl
           have hStep :
@@ -825,7 +845,8 @@ theorem forwardAtArity_log4
                                           EvmYul.Stack.pop6,
                                           EvmYul.EVM.State.replaceStackAndIncrPC,
                                           EvmYul.EVM.State.incrPC,
-                                          targetShared, Id.run]
+                                          hTargetPermission, targetShared,
+                                          Id.run]
                                       · exact
                                           ⟨EvmYul.SharedState.logOp
                                               address size

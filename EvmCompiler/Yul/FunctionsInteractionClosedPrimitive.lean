@@ -324,6 +324,169 @@ theorem forward
 
 end SharedSpec
 
+/-- Shared-state writes share a deterministic permitted transition and an
+exact static-mode failure on both sides. -/
+structure SharedWriteSpec (prim : EvmYul.Operation .Yul)
+    (op : Structured.BasicOp) where
+  sourceResult :
+    EvmYul.SharedState .Yul → List Word →
+      EvmYul.SharedState .Yul × List Word
+  targetResult :
+    EvmYul.SharedState .EVM → List Word →
+      EvmYul.SharedState .EVM × List Word
+  resultLength :
+    ∀ shared values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        (sourceResult shared values).2.length =
+          Expressions.Structured.BasicOp.outputs op
+  related :
+    ∀ source target values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+      FunctionsInteractionRelation.SharedRel source target →
+        FunctionsInteractionRelation.SharedRel
+            (sourceResult source values).1
+            (targetResult target values).1 ∧
+          (sourceResult source values).2 =
+            (targetResult target values).2
+  sourceZero :
+    ∀ source values,
+      Yul.InteractionSemantics.Primitive.openEval 1 source prim values =
+        .done
+          (.error
+            ({ exception := .OutOfFuel, state := source } :
+              Yul.InteractionSemantics.Failure))
+  sourceAllowed :
+    ∀ fuel sourceShared sourceVars values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        sourceShared.executionEnv.perm = true →
+          Yul.InteractionSemantics.Primitive.openEval (fuel + 2)
+              (.Ok sourceShared sourceVars) prim values =
+            .done
+              (.ok
+                ((EvmYul.Yul.State.Ok sourceShared sourceVars).setSharedState
+                    (sourceResult sourceShared values).1,
+                  (sourceResult sourceShared values).2))
+  sourceDenied :
+    ∀ fuel sourceShared sourceVars values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        sourceShared.executionEnv.perm = false →
+          Yul.InteractionSemantics.Primitive.openEval (fuel + 2)
+              (.Ok sourceShared sourceVars) prim values =
+            .done
+              (.error
+                ({ exception := .StaticModeViolation,
+                    state := .Ok sourceShared sourceVars } :
+                  Yul.InteractionSemantics.Failure))
+  targetAllowed :
+    ∀ (state : Functions.InteractionSemantics.State) (values : List Word),
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        state.shared.executionEnv.perm = true →
+          Locals.InteractionSemantics.Primitive.openEval
+              op state values.reverse =
+            .done
+              (.ok
+                (state.withShared (targetResult state.shared values).1,
+                  (targetResult state.shared values).2))
+  targetDenied :
+    ∀ (state : Functions.InteractionSemantics.State) (values : List Word),
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        state.shared.executionEnv.perm = false →
+          Locals.InteractionSemantics.Primitive.openEval
+              op state values.reverse =
+            .done (.error .StaticModeViolation)
+
+namespace SharedWriteSpec
+
+theorem forward
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    (spec : SharedWriteSpec prim op)
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {sourceValues : List Word}
+    (hLength :
+      sourceValues.length = Expressions.Structured.BasicOp.inputs op)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source op)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source prim sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        op target sourceValues.reverse) := by
+  cases fuel with
+  | zero =>
+      rw [spec.sourceZero]
+      exact
+        Simulation.Interaction.ForwardRel.truncated
+          (doneRel := PrimitiveDoneRel source op)
+          (right := Locals.InteractionSemantics.Primitive.openEval
+            op target sourceValues.reverse)
+          (by trivial)
+  | succ previous =>
+      rcases hRel with
+        ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+      subst source
+      cases hPermission : sourceShared.executionEnv.perm with
+      | false =>
+          have hTargetPermission :
+              target.shared.executionEnv.perm = false := by
+            simpa [hPermission] using hShared.executionEnv.permission.symm
+          rw [show previous.succ + 1 = previous + 2 by omega,
+            spec.sourceDenied previous sourceShared sourceVars sourceValues
+              hLength hPermission,
+            spec.targetDenied target sourceValues hLength hTargetPermission]
+          exact Simulation.Interaction.ForwardRel.done
+            (Simulation.Interaction.ExceptRel.error trivial)
+      | true =>
+          have hTargetPermission :
+              target.shared.executionEnv.perm = true := by
+            simpa [hPermission] using hShared.executionEnv.permission.symm
+          let sourceResult := spec.sourceResult sourceShared sourceValues
+          let targetResult := spec.targetResult target.shared sourceValues
+          have hRelated :
+              FunctionsInteractionRelation.SharedRel
+                  sourceResult.1 targetResult.1 ∧
+                sourceResult.2 = targetResult.2 := by
+            simpa [sourceResult, targetResult] using
+              spec.related sourceShared target.shared sourceValues hLength hShared
+          have hStateRel :
+              FunctionsInteractionRelation.StateRel
+                (EvmYul.Yul.State.Ok sourceShared sourceVars) target :=
+            ⟨sourceShared, sourceVars, rfl, hShared, hVars⟩
+          have hFinalRel :=
+            FunctionsInteractionRelation.StateRel.withSharedState hStateRel
+              sourceResult.1 targetResult.1 hRelated.1
+          have hDone :
+              PrimitiveDoneRel
+                (EvmYul.Yul.State.Ok sourceShared sourceVars) op
+                (.ok
+                  ((EvmYul.Yul.State.Ok sourceShared sourceVars).setSharedState
+                      sourceResult.1,
+                    sourceResult.2))
+                (.ok
+                  (target.withShared targetResult.1,
+                    sourceResult.2)) :=
+            .ok
+              ⟨⟨hFinalRel, rfl⟩,
+                by simpa [sourceResult] using
+                  spec.resultLength sourceShared sourceValues hLength,
+                rfl⟩
+          have hTarget :=
+            spec.targetAllowed target sourceValues hLength hTargetPermission
+          change
+            Locals.InteractionSemantics.Primitive.openEval
+                op target sourceValues.reverse =
+              .done (.ok (target.withShared targetResult.1, targetResult.2))
+            at hTarget
+          rw [← hRelated.2] at hTarget
+          rw [show previous.succ + 1 = previous + 2 by omega,
+            spec.sourceAllowed previous sourceShared sourceVars sourceValues
+              hLength hPermission,
+            hTarget]
+          exact Simulation.Interaction.ForwardRel.done hDone
+
+end SharedWriteSpec
+
 /-- Shared proof interface for read-only execution-environment primitives.
 Source and target environment types differ only at their code representation,
 so each family supplies one result-equality theorem over `ExecutionEnvRel`. -/
@@ -2991,6 +3154,305 @@ theorem forward
   spec.forward hLength hRel
 
 end SharedExtCodeCopy
+
+inductive LogFamily :
+    EvmYul.Operation .Yul → Structured.BasicOp → Nat → Type where
+  | log0 : LogFamily (.Log .LOG0) .log0 2
+  | log1 : LogFamily (.Log .LOG1) .log1 3
+  | log2 : LogFamily (.Log .LOG2) .log2 4
+  | log3 : LogFamily (.Log .LOG3) .log3 5
+  | log4 : LogFamily (.Log .LOG4) .log4 6
+
+namespace LogFamily
+
+def result {τ : EvmYul.OperationType}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp} {arity : Nat}
+    (hFamily : LogFamily prim op arity)
+    (shared : EvmYul.SharedState τ) (values : List Word) :
+    EvmYul.SharedState τ × List Word :=
+  match hFamily with
+  | .log0 =>
+      match values with
+      | [offset, size] =>
+          (EvmYul.SharedState.logOp offset size #[] shared, [])
+      | _ => (shared, [])
+  | .log1 =>
+      match values with
+      | [offset, size, topic0] =>
+          (EvmYul.SharedState.logOp offset size #[topic0] shared, [])
+      | _ => (shared, [])
+  | .log2 =>
+      match values with
+      | [offset, size, topic0, topic1] =>
+          (EvmYul.SharedState.logOp offset size #[topic0, topic1] shared, [])
+      | _ => (shared, [])
+  | .log3 =>
+      match values with
+      | [offset, size, topic0, topic1, topic2] =>
+          (EvmYul.SharedState.logOp offset size #[topic0, topic1, topic2]
+            shared, [])
+      | _ => (shared, [])
+  | .log4 =>
+      match values with
+      | [offset, size, topic0, topic1, topic2, topic3] =>
+          (EvmYul.SharedState.logOp offset size
+            #[topic0, topic1, topic2, topic3] shared, [])
+      | _ => (shared, [])
+
+theorem inputs
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp} {arity : Nat}
+    (hFamily : LogFamily prim op arity) :
+    Expressions.Structured.BasicOp.inputs op = arity := by
+  cases hFamily <;> rfl
+
+theorem outputs
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp} {arity : Nat}
+    (hFamily : LogFamily prim op arity) :
+    Expressions.Structured.BasicOp.outputs op = 0 := by
+  cases hFamily <;> rfl
+
+private theorem list_eq_five_of_length
+    {α : Type} {values : List α} (hLength : values.length = 5) :
+    ∃ first second third fourth fifth,
+      values = [first, second, third, fourth, fifth] := by
+  cases values with
+  | nil => simp at hLength
+  | cons first rest =>
+      have hRest : rest.length = 4 := by simpa using hLength
+      obtain ⟨second, third, fourth, fifth, rfl⟩ :=
+        List.length_eq_four.mp hRest
+      exact ⟨first, second, third, fourth, fifth, rfl⟩
+
+private theorem list_eq_six_of_length
+    {α : Type} {values : List α} (hLength : values.length = 6) :
+    ∃ first second third fourth fifth sixth,
+      values = [first, second, third, fourth, fifth, sixth] := by
+  cases values with
+  | nil => simp at hLength
+  | cons first rest =>
+      have hRest : rest.length = 5 := by simpa using hLength
+      obtain ⟨second, third, fourth, fifth, sixth, rfl⟩ :=
+        list_eq_five_of_length hRest
+      exact ⟨first, second, third, fourth, fifth, sixth, rfl⟩
+
+def spec
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp} {arity : Nat}
+    (hFamily : LogFamily prim op arity) : SharedWriteSpec prim op where
+  sourceResult := result hFamily
+  targetResult := result hFamily
+  resultLength := by
+    intro shared values hLength
+    rw [hFamily.outputs]
+    cases hFamily <;> simp only [result] <;> split <;> rfl
+  related := by
+    intro source target values hLength hRel
+    rw [hFamily.inputs] at hLength
+    cases hFamily with
+    | log0 =>
+        obtain ⟨offset, size, rfl⟩ := List.length_eq_two.mp hLength
+        exact ⟨by simpa [result] using hRel.logOp offset size #[], rfl⟩
+    | log1 =>
+        obtain ⟨offset, size, topic0, rfl⟩ :=
+          List.length_eq_three.mp hLength
+        exact
+          ⟨by simpa [result] using hRel.logOp offset size #[topic0], rfl⟩
+    | log2 =>
+        obtain ⟨offset, size, topic0, topic1, rfl⟩ :=
+          List.length_eq_four.mp hLength
+        exact
+          ⟨by simpa [result] using
+              hRel.logOp offset size #[topic0, topic1],
+            rfl⟩
+    | log3 =>
+        obtain ⟨offset, size, topic0, topic1, topic2, rfl⟩ :=
+          list_eq_five_of_length hLength
+        exact
+          ⟨by simpa [result] using
+              hRel.logOp offset size #[topic0, topic1, topic2],
+            rfl⟩
+    | log4 =>
+        obtain ⟨offset, size, topic0, topic1, topic2, topic3, rfl⟩ :=
+          list_eq_six_of_length hLength
+        exact
+          ⟨by simpa [result] using
+              hRel.logOp offset size #[topic0, topic1, topic2, topic3],
+            rfl⟩
+  sourceZero := by
+    intro source values
+    cases hFamily <;>
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Yul.InteractionSemantics.Primitive.fail,
+        Yul.InteractionSemantics.State.afterException,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+  sourceAllowed := by
+    intro fuel sourceShared sourceVars values hLength hPermission
+    rw [hFamily.inputs] at hLength
+    cases hFamily with
+    | log0 =>
+        obtain ⟨offset, size, rfl⟩ := List.length_eq_two.mp hLength
+        simp [Yul.InteractionSemantics.Primitive.openEval,
+          Yul.InteractionSemantics.Primitive.closedEval,
+          Simulation.ExternalKind.ofYulOperation?,
+          Simulation.CallKind.ofYulOperation?,
+          Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+        unfold EvmYul.step
+        simp [Id.run, EvmYul.Yul.State.executionEnv, hPermission,
+          EvmYul.Yul.State.setSharedState, result] <;> rfl
+    | log1 =>
+        obtain ⟨offset, size, topic0, rfl⟩ :=
+          List.length_eq_three.mp hLength
+        simp [Yul.InteractionSemantics.Primitive.openEval,
+          Yul.InteractionSemantics.Primitive.closedEval,
+          Simulation.ExternalKind.ofYulOperation?,
+          Simulation.CallKind.ofYulOperation?,
+          Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+        unfold EvmYul.step
+        simp [Id.run, EvmYul.Yul.State.executionEnv, hPermission,
+          EvmYul.Yul.State.setSharedState, result] <;> rfl
+    | log2 =>
+        obtain ⟨offset, size, topic0, topic1, rfl⟩ :=
+          List.length_eq_four.mp hLength
+        simp [Yul.InteractionSemantics.Primitive.openEval,
+          Yul.InteractionSemantics.Primitive.closedEval,
+          Simulation.ExternalKind.ofYulOperation?,
+          Simulation.CallKind.ofYulOperation?,
+          Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+        unfold EvmYul.step
+        simp [Id.run, EvmYul.Yul.State.executionEnv, hPermission,
+          EvmYul.Yul.State.setSharedState, result] <;> rfl
+    | log3 =>
+        obtain ⟨offset, size, topic0, topic1, topic2, rfl⟩ :=
+          list_eq_five_of_length hLength
+        simp [Yul.InteractionSemantics.Primitive.openEval,
+          Yul.InteractionSemantics.Primitive.closedEval,
+          Simulation.ExternalKind.ofYulOperation?,
+          Simulation.CallKind.ofYulOperation?,
+          Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+        unfold EvmYul.step
+        simp [Id.run, EvmYul.Yul.State.executionEnv, hPermission,
+          EvmYul.Yul.State.setSharedState, result] <;> rfl
+    | log4 =>
+        obtain ⟨offset, size, topic0, topic1, topic2, topic3, rfl⟩ :=
+          list_eq_six_of_length hLength
+        simp [Yul.InteractionSemantics.Primitive.openEval,
+          Yul.InteractionSemantics.Primitive.closedEval,
+          Simulation.ExternalKind.ofYulOperation?,
+          Simulation.CallKind.ofYulOperation?,
+          Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+        unfold EvmYul.step
+        simp [Id.run, EvmYul.Yul.State.executionEnv, hPermission,
+          EvmYul.Yul.State.setSharedState, result] <;> rfl
+  sourceDenied := by
+    intro fuel sourceShared sourceVars values hLength hPermission
+    cases hFamily <;>
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall] <;>
+      unfold EvmYul.step <;>
+      simp [Id.run, EvmYul.Yul.State.executionEnv, hPermission,
+        Yul.InteractionSemantics.Primitive.fail,
+        Yul.InteractionSemantics.State.afterException] <;> rfl
+  targetAllowed := by
+    intro state values hLength hPermission
+    rw [hFamily.inputs] at hLength
+    cases hFamily with
+    | log0 =>
+        obtain ⟨offset, size, rfl⟩ := List.length_eq_two.mp hLength
+        rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+          (by rfl) (by rfl) (by rfl) (by decide) (by decide)]
+        simp [Assembly.PrimStep.run, hPermission,
+          Locals.InteractionSemantics.Primitive.finish,
+          Locals.InteractionSemantics.Primitive.isolated,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, EvmYul.Stack.pop2,
+          Locals.Source.State.withShared, Simulation.Interaction.map,
+          Simulation.Interaction.bind, Simulation.Interaction.pure, result] <;>
+          rfl
+    | log1 =>
+        obtain ⟨offset, size, topic0, rfl⟩ :=
+          List.length_eq_three.mp hLength
+        rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+          (by rfl) (by rfl) (by rfl) (by decide) (by decide)]
+        simp [Assembly.PrimStep.run, hPermission,
+          Locals.InteractionSemantics.Primitive.finish,
+          Locals.InteractionSemantics.Primitive.isolated,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, EvmYul.Stack.pop3,
+          Locals.Source.State.withShared, Simulation.Interaction.map,
+          Simulation.Interaction.bind, Simulation.Interaction.pure, result] <;>
+          rfl
+    | log2 =>
+        obtain ⟨offset, size, topic0, topic1, rfl⟩ :=
+          List.length_eq_four.mp hLength
+        rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+          (by rfl) (by rfl) (by rfl) (by decide) (by decide)]
+        simp [Assembly.PrimStep.run, hPermission,
+          Locals.InteractionSemantics.Primitive.finish,
+          Locals.InteractionSemantics.Primitive.isolated,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, EvmYul.Stack.pop4,
+          Locals.Source.State.withShared, Simulation.Interaction.map,
+          Simulation.Interaction.bind, Simulation.Interaction.pure, result] <;>
+          rfl
+    | log3 =>
+        obtain ⟨offset, size, topic0, topic1, topic2, rfl⟩ :=
+          list_eq_five_of_length hLength
+        rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+          (by rfl) (by rfl) (by rfl) (by decide) (by decide)]
+        simp [Assembly.PrimStep.run, hPermission,
+          Locals.InteractionSemantics.Primitive.finish,
+          Locals.InteractionSemantics.Primitive.isolated,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, EvmYul.Stack.pop5,
+          Locals.Source.State.withShared, Simulation.Interaction.map,
+          Simulation.Interaction.bind, Simulation.Interaction.pure, result] <;>
+          rfl
+    | log4 =>
+        obtain ⟨offset, size, topic0, topic1, topic2, topic3, rfl⟩ :=
+          list_eq_six_of_length hLength
+        rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+          (by rfl) (by rfl) (by rfl) (by decide) (by decide)]
+        simp [Assembly.PrimStep.run, hPermission,
+          Locals.InteractionSemantics.Primitive.finish,
+          Locals.InteractionSemantics.Primitive.isolated,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, EvmYul.Stack.pop6,
+          Locals.Source.State.withShared, Simulation.Interaction.map,
+          Simulation.Interaction.bind, Simulation.Interaction.pure, result] <;>
+          rfl
+  targetDenied := by
+    intro state values hLength hPermission
+    cases hFamily <;>
+      rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+        (by simpa using hLength) (by rfl) (by rfl)
+        (by decide) (by decide)] <;>
+      simp [Assembly.PrimStep.run, hPermission,
+        Locals.InteractionSemantics.Primitive.isolated,
+        Simulation.Interaction.map]
+
+theorem forward
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp} {arity : Nat}
+    {sourceValues : List Word}
+    (hFamily : LogFamily prim op arity)
+    (hLength : sourceValues.length = arity)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source op)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source prim sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        op target sourceValues.reverse) :=
+  (spec hFamily).forward (by simpa [hFamily.inputs]) hRel
+
+end LogFamily
 
 namespace MachineReturnDataCopy
 

@@ -984,7 +984,7 @@ theorem log_resourceForward
     (family : AllocationInteractionOrdinaryPrimitive.MemoryFamily.LogFamily op)
     (contract : MemoryContract.Contract) :
     PrimitiveForward contract op :=
-  ClosedSpec.resourceForward (family.closedSpec contract)
+  FallibleClosedSpec.resourceForward (family.closedSpec contract)
 
 /-- Complete resource capability for every primitive admitted by open semantics. -/
 theorem canonicalPrimitiveForward

@@ -214,8 +214,10 @@ boundaries remain active work.
         - [x] RETURNDATACOPY success and exact bounds failure.
         - [x] EXTCODECOPY over code-erased account bytes with identical account
           warming and machine updates.
-      - [ ] Log and invalid families;
-        assemble the concrete `ClosedSelected` theorem.
+      - [x] LOG0-LOG4 through reusable `SharedWriteSpec`, including exact
+        address/topic/data ordering, active-memory growth, and matching
+        static-mode failure.
+      - [ ] Invalid family; assemble the concrete `ClosedSelected` theorem.
     - [x] Define the code-erased outcome-indexed relation and source-owned
       exact lexical-domain invariant; check direct expression, one-name
       declaration, and one-name assignment statements plus `break`,

@@ -519,47 +519,62 @@ def run (step : PrimStep) (state : EvmYul.EVM.State) :
   | .dup n => EvmYul.dup n state
   | .swap n => EvmYul.swap n state
   | .log0 =>
-      match state.stack.pop2 with
-      | some ⟨stack, μ₀, μ₁⟩ =>
-          let sharedState' :=
-            EvmYul.SharedState.logOp μ₀ μ₁ #[] state.toSharedState
-          let state' := { state with toSharedState := sharedState' }
-          .ok <| state'.replaceStackAndIncrPC stack
-      | none => .error .StackUnderflow
+      if state.executionEnv.perm then
+        match state.stack.pop2 with
+        | some ⟨stack, μ₀, μ₁⟩ =>
+            let sharedState' :=
+              EvmYul.SharedState.logOp μ₀ μ₁ #[] state.toSharedState
+            let state' := { state with toSharedState := sharedState' }
+            .ok <| state'.replaceStackAndIncrPC stack
+        | none => .error .StackUnderflow
+      else
+        .error .StaticModeViolation
   | .log1 =>
-      match state.stack.pop3 with
-      | some ⟨stack, μ₀, μ₁, μ₂⟩ =>
-          let sharedState' :=
-            EvmYul.SharedState.logOp μ₀ μ₁ #[μ₂] state.toSharedState
-          let state' := { state with toSharedState := sharedState' }
-          .ok <| state'.replaceStackAndIncrPC stack
-      | none => .error .StackUnderflow
+      if state.executionEnv.perm then
+        match state.stack.pop3 with
+        | some ⟨stack, μ₀, μ₁, μ₂⟩ =>
+            let sharedState' :=
+              EvmYul.SharedState.logOp μ₀ μ₁ #[μ₂] state.toSharedState
+            let state' := { state with toSharedState := sharedState' }
+            .ok <| state'.replaceStackAndIncrPC stack
+        | none => .error .StackUnderflow
+      else
+        .error .StaticModeViolation
   | .log2 =>
-      match state.stack.pop4 with
-      | some ⟨stack, μ₀, μ₁, μ₂, μ₃⟩ =>
-          let sharedState' :=
-            EvmYul.SharedState.logOp μ₀ μ₁ #[μ₂, μ₃] state.toSharedState
-          let state' := { state with toSharedState := sharedState' }
-          .ok <| state'.replaceStackAndIncrPC stack
-      | none => .error .StackUnderflow
+      if state.executionEnv.perm then
+        match state.stack.pop4 with
+        | some ⟨stack, μ₀, μ₁, μ₂, μ₃⟩ =>
+            let sharedState' :=
+              EvmYul.SharedState.logOp μ₀ μ₁ #[μ₂, μ₃] state.toSharedState
+            let state' := { state with toSharedState := sharedState' }
+            .ok <| state'.replaceStackAndIncrPC stack
+        | none => .error .StackUnderflow
+      else
+        .error .StaticModeViolation
   | .log3 =>
-      match state.stack.pop5 with
-      | some ⟨stack, μ₀, μ₁, μ₂, μ₃, μ₄⟩ =>
-          let sharedState' :=
-            EvmYul.SharedState.logOp μ₀ μ₁ #[μ₂, μ₃, μ₄]
-              state.toSharedState
-          let state' := { state with toSharedState := sharedState' }
-          .ok <| state'.replaceStackAndIncrPC stack
-      | none => .error .StackUnderflow
+      if state.executionEnv.perm then
+        match state.stack.pop5 with
+        | some ⟨stack, μ₀, μ₁, μ₂, μ₃, μ₄⟩ =>
+            let sharedState' :=
+              EvmYul.SharedState.logOp μ₀ μ₁ #[μ₂, μ₃, μ₄]
+                state.toSharedState
+            let state' := { state with toSharedState := sharedState' }
+            .ok <| state'.replaceStackAndIncrPC stack
+        | none => .error .StackUnderflow
+      else
+        .error .StaticModeViolation
   | .log4 =>
-      match state.stack.pop6 with
-      | some ⟨stack, μ₀, μ₁, μ₂, μ₃, μ₄, μ₅⟩ =>
-          let sharedState' :=
-            EvmYul.SharedState.logOp μ₀ μ₁ #[μ₂, μ₃, μ₄, μ₅]
-              state.toSharedState
-          let state' := { state with toSharedState := sharedState' }
-          .ok <| state'.replaceStackAndIncrPC stack
-      | none => .error .StackUnderflow
+      if state.executionEnv.perm then
+        match state.stack.pop6 with
+        | some ⟨stack, μ₀, μ₁, μ₂, μ₃, μ₄, μ₅⟩ =>
+            let sharedState' :=
+              EvmYul.SharedState.logOp μ₀ μ₁ #[μ₂, μ₃, μ₄, μ₅]
+                state.toSharedState
+            let state' := { state with toSharedState := sharedState' }
+            .ok <| state'.replaceStackAndIncrPC stack
+        | none => .error .StackUnderflow
+      else
+        .error .StaticModeViolation
   | .invalid => .error .InvalidInstruction
 
 @[simp] theorem run_binaryState_of_permitted
@@ -577,6 +592,25 @@ def run (step : PrimStep) (state : EvmYul.EVM.State) :
     (PrimStep.binaryState f).run state =
       .error .StaticModeViolation := by
   simp [PrimStep.run, hPermission]
+
+/-- The five LOG steps share the EVM static-context failure behavior. -/
+inductive LogStep : PrimStep → Prop where
+  | log0 : LogStep .log0
+  | log1 : LogStep .log1
+  | log2 : LogStep .log2
+  | log3 : LogStep .log3
+  | log4 : LogStep .log4
+
+namespace LogStep
+
+@[simp] theorem run_of_static
+    {step : PrimStep} (hLog : LogStep step)
+    (state : EvmYul.EVM.State)
+    (hPermission : state.executionEnv.perm = false) :
+    step.run state = .error .StaticModeViolation := by
+  cases hLog <;> simp [PrimStep.run, hPermission]
+
+end LogStep
 
 theorem run_pc {step : PrimStep}
     {state final : EvmYul.EVM.State}
@@ -842,40 +876,55 @@ theorem run_inputArity_le
     · exact hLen
     · simp [EvmYul.swap, hLen] at hRun
   case log0 =>
-    cases hPop : state.stack.pop2 with
-    | none => simp [hPop] at hRun
-    | some popped =>
-        rcases popped with ⟨rest, a, b⟩
-        have hLen := Stack.length_of_pop2_some hPop
-        omega
+    cases hPermission : state.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hRun
+    | true =>
+        cases hPop : state.stack.pop2 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hRun
+        | some popped =>
+            rcases popped with ⟨rest, a, b⟩
+            have hLen := Stack.length_of_pop2_some hPop
+            omega
   case log1 =>
-    cases hPop : state.stack.pop3 with
-    | none => simp [hPop] at hRun
-    | some popped =>
-        rcases popped with ⟨rest, a, b, c⟩
-        have hLen := Stack.length_of_pop3_some hPop
-        omega
+    cases hPermission : state.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hRun
+    | true =>
+        cases hPop : state.stack.pop3 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hRun
+        | some popped =>
+            rcases popped with ⟨rest, a, b, c⟩
+            have hLen := Stack.length_of_pop3_some hPop
+            omega
   case log2 =>
-    cases hPop : state.stack.pop4 with
-    | none => simp [hPop] at hRun
-    | some popped =>
-        rcases popped with ⟨rest, a, b, c, d⟩
-        have hLen := Stack.length_of_pop4_some hPop
-        omega
+    cases hPermission : state.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hRun
+    | true =>
+        cases hPop : state.stack.pop4 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hRun
+        | some popped =>
+            rcases popped with ⟨rest, a, b, c, d⟩
+            have hLen := Stack.length_of_pop4_some hPop
+            omega
   case log3 =>
-    cases hPop : state.stack.pop5 with
-    | none => simp [hPop] at hRun
-    | some popped =>
-        rcases popped with ⟨rest, a, b, c, d, e⟩
-        have hLen := Stack.length_of_pop5_some hPop
-        omega
+    cases hPermission : state.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hRun
+    | true =>
+        cases hPop : state.stack.pop5 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hRun
+        | some popped =>
+            rcases popped with ⟨rest, a, b, c, d, e⟩
+            have hLen := Stack.length_of_pop5_some hPop
+            omega
   case log4 =>
-    cases hPop : state.stack.pop6 with
-    | none => simp [hPop] at hRun
-    | some popped =>
-        rcases popped with ⟨rest, a, b, c, d, e, f⟩
-        have hLen := Stack.length_of_pop6_some hPop
-        omega
+    cases hPermission : state.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hRun
+    | true =>
+        cases hPop : state.stack.pop6 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hRun
+        | some popped =>
+            rcases popped with ⟨rest, a, b, c, d, e, f⟩
+            have hLen := Stack.length_of_pop6_some hPop
+            omega
 
 theorem idRun_eq {α : Type} (value : α) :
     Id.run value = value :=
@@ -989,25 +1038,40 @@ theorem exists_run_of_inputArity_le_of_append_run
       simp [PrimStep.run, EvmYul.swap, List.length_take,
         Nat.min_eq_left hBound, hBound]
   | log0 =>
-      obtain ⟨rest, a, b, hPop⟩ :=
-        Stack.exists_pop2_of_two_le (by simpa [inputArity] using hBound)
-      simp [PrimStep.run, hPop]
+      cases hPermission : state.executionEnv.perm with
+      | false => simp [PrimStep.run, hPermission] at hFramed
+      | true =>
+          obtain ⟨rest, a, b, hPop⟩ :=
+            Stack.exists_pop2_of_two_le (by simpa [inputArity] using hBound)
+          simp [PrimStep.run, hPermission, hPop]
   | log1 =>
-      obtain ⟨rest, a, b, c, hPop⟩ :=
-        Stack.exists_pop3_of_three_le (by simpa [inputArity] using hBound)
-      simp [PrimStep.run, hPop]
+      cases hPermission : state.executionEnv.perm with
+      | false => simp [PrimStep.run, hPermission] at hFramed
+      | true =>
+          obtain ⟨rest, a, b, c, hPop⟩ :=
+            Stack.exists_pop3_of_three_le (by simpa [inputArity] using hBound)
+          simp [PrimStep.run, hPermission, hPop]
   | log2 =>
-      obtain ⟨rest, a, b, c, d, hPop⟩ :=
-        Stack.exists_pop4_of_four_le (by simpa [inputArity] using hBound)
-      simp [PrimStep.run, hPop]
+      cases hPermission : state.executionEnv.perm with
+      | false => simp [PrimStep.run, hPermission] at hFramed
+      | true =>
+          obtain ⟨rest, a, b, c, d, hPop⟩ :=
+            Stack.exists_pop4_of_four_le (by simpa [inputArity] using hBound)
+          simp [PrimStep.run, hPermission, hPop]
   | log3 =>
-      obtain ⟨rest, a, b, c, d, e, hPop⟩ :=
-        Stack.exists_pop5_of_five_le (by simpa [inputArity] using hBound)
-      simp [PrimStep.run, hPop]
+      cases hPermission : state.executionEnv.perm with
+      | false => simp [PrimStep.run, hPermission] at hFramed
+      | true =>
+          obtain ⟨rest, a, b, c, d, e, hPop⟩ :=
+            Stack.exists_pop5_of_five_le (by simpa [inputArity] using hBound)
+          simp [PrimStep.run, hPermission, hPop]
   | log4 =>
-      obtain ⟨rest, a, b, c, d, e, f, hPop⟩ :=
-        Stack.exists_pop6_of_six_le (by simpa [inputArity] using hBound)
-      simp [PrimStep.run, hPop]
+      cases hPermission : state.executionEnv.perm with
+      | false => simp [PrimStep.run, hPermission] at hFramed
+      | true =>
+          obtain ⟨rest, a, b, c, d, e, f, hPop⟩ :=
+            Stack.exists_pop6_of_six_le (by simpa [inputArity] using hBound)
+          simp [PrimStep.run, hPermission, hPop]
   | invalid =>
       simp [PrimStep.run] at hFramed
 
@@ -1199,20 +1263,24 @@ theorem run_isolated_length_safe
             | exact List.eq_nil_of_length_eq_zero hRestZero
             | simp [hRestZero]
   case log0 =>
-    cases hPop : stack.pop2 with
-    | none => simp [hPop] at hRun
-    | some tup =>
-        rcases tup with ⟨rest, a, b⟩
-        simp [hPop, EvmYul.EVM.State.replaceStackAndIncrPC,
-          EvmYul.EVM.State.incrPC] at hRun ⊢
-        have hRestLen := Stack.length_of_pop2_some hPop
-        have hRestZero : rest.length = 0 := by
-          rw [hRestLen] at hLen
-          omega
-        cases hRun
-        first
-        | exact List.eq_nil_of_length_eq_zero hRestZero
-        | simp [hRestZero]
+    cases hPermission : shared.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hRun
+    | true =>
+        cases hPop : stack.pop2 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hRun
+        | some tup =>
+            rcases tup with ⟨rest, a, b⟩
+            simp [PrimStep.run, hPermission, hPop,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC] at hRun ⊢
+            have hRestLen := Stack.length_of_pop2_some hPop
+            have hRestZero : rest.length = 0 := by
+              rw [hRestLen] at hLen
+              omega
+            cases hRun
+            first
+            | exact List.eq_nil_of_length_eq_zero hRestZero
+            | simp [hRestZero]
   case ternaryMachineState f =>
     cases hPop : stack.pop3 with
     | none => simp [hPop] at hRun
@@ -1261,20 +1329,24 @@ theorem run_isolated_length_safe
         | exact List.eq_nil_of_length_eq_zero hRestZero
         | simp [hRestZero]
   case log1 =>
-    cases hPop : stack.pop3 with
-    | none => simp [hPop] at hRun
-    | some tup =>
-        rcases tup with ⟨rest, a, b, c⟩
-        simp [hPop, EvmYul.EVM.State.replaceStackAndIncrPC,
-          EvmYul.EVM.State.incrPC] at hRun ⊢
-        have hRestLen := Stack.length_of_pop3_some hPop
-        have hRestZero : rest.length = 0 := by
-          rw [hRestLen] at hLen
-          omega
-        cases hRun
-        first
-        | exact List.eq_nil_of_length_eq_zero hRestZero
-        | simp [hRestZero]
+    cases hPermission : shared.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hRun
+    | true =>
+        cases hPop : stack.pop3 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hRun
+        | some tup =>
+            rcases tup with ⟨rest, a, b, c⟩
+            simp [PrimStep.run, hPermission, hPop,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC] at hRun ⊢
+            have hRestLen := Stack.length_of_pop3_some hPop
+            have hRestZero : rest.length = 0 := by
+              rw [hRestLen] at hLen
+              omega
+            cases hRun
+            first
+            | exact List.eq_nil_of_length_eq_zero hRestZero
+            | simp [hRestZero]
   case quaternaryCopy f =>
     cases hPop : stack.pop4 with
     | none => simp [hPop] at hRun
@@ -1291,50 +1363,62 @@ theorem run_isolated_length_safe
         | exact List.eq_nil_of_length_eq_zero hRestZero
         | simp [hRestZero]
   case log2 =>
-    cases hPop : stack.pop4 with
-    | none => simp [hPop] at hRun
-    | some tup =>
-        rcases tup with ⟨rest, a, b, c, d⟩
-        simp [hPop, EvmYul.EVM.State.replaceStackAndIncrPC,
-          EvmYul.EVM.State.incrPC] at hRun ⊢
-        have hRestLen := Stack.length_of_pop4_some hPop
-        have hRestZero : rest.length = 0 := by
-          rw [hRestLen] at hLen
-          omega
-        cases hRun
-        first
-        | exact List.eq_nil_of_length_eq_zero hRestZero
-        | simp [hRestZero]
+    cases hPermission : shared.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hRun
+    | true =>
+        cases hPop : stack.pop4 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hRun
+        | some tup =>
+            rcases tup with ⟨rest, a, b, c, d⟩
+            simp [PrimStep.run, hPermission, hPop,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC] at hRun ⊢
+            have hRestLen := Stack.length_of_pop4_some hPop
+            have hRestZero : rest.length = 0 := by
+              rw [hRestLen] at hLen
+              omega
+            cases hRun
+            first
+            | exact List.eq_nil_of_length_eq_zero hRestZero
+            | simp [hRestZero]
   case log3 =>
-    cases hPop : stack.pop5 with
-    | none => simp [hPop] at hRun
-    | some tup =>
-        rcases tup with ⟨rest, a, b, c, d, e⟩
-        simp [hPop, EvmYul.EVM.State.replaceStackAndIncrPC,
-          EvmYul.EVM.State.incrPC] at hRun ⊢
-        have hRestLen := Stack.length_of_pop5_some hPop
-        have hRestZero : rest.length = 0 := by
-          rw [hRestLen] at hLen
-          omega
-        cases hRun
-        first
-        | exact List.eq_nil_of_length_eq_zero hRestZero
-        | simp [hRestZero]
+    cases hPermission : shared.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hRun
+    | true =>
+        cases hPop : stack.pop5 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hRun
+        | some tup =>
+            rcases tup with ⟨rest, a, b, c, d, e⟩
+            simp [PrimStep.run, hPermission, hPop,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC] at hRun ⊢
+            have hRestLen := Stack.length_of_pop5_some hPop
+            have hRestZero : rest.length = 0 := by
+              rw [hRestLen] at hLen
+              omega
+            cases hRun
+            first
+            | exact List.eq_nil_of_length_eq_zero hRestZero
+            | simp [hRestZero]
   case log4 =>
-    cases hPop : stack.pop6 with
-    | none => simp [hPop] at hRun
-    | some tup =>
-        rcases tup with ⟨rest, a, b, c, d, e, f⟩
-        simp [hPop, EvmYul.EVM.State.replaceStackAndIncrPC,
-          EvmYul.EVM.State.incrPC] at hRun ⊢
-        have hRestLen := Stack.length_of_pop6_some hPop
-        have hRestZero : rest.length = 0 := by
-          rw [hRestLen] at hLen
-          omega
-        cases hRun
-        first
-        | exact List.eq_nil_of_length_eq_zero hRestZero
-        | simp [hRestZero]
+    cases hPermission : shared.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hRun
+    | true =>
+        cases hPop : stack.pop6 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hRun
+        | some tup =>
+            rcases tup with ⟨rest, a, b, c, d, e, f⟩
+            simp [PrimStep.run, hPermission, hPop,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC] at hRun ⊢
+            have hRestLen := Stack.length_of_pop6_some hPop
+            have hRestZero : rest.length = 0 := by
+              rw [hRestLen] at hLen
+              omega
+            cases hRun
+            first
+            | exact List.eq_nil_of_length_eq_zero hRestZero
+            | simp [hRestZero]
 
 theorem run_stack_length_safe
     {step : Assembly.PrimStep}
@@ -1474,15 +1558,19 @@ theorem run_stack_length_safe
             have hLen := Stack.length_of_pop2_some hPop
             simp [hLen]
   case log0 =>
-    cases hPop : state.stack.pop2 with
-    | none => simp [hPop] at hRun
-    | some tup =>
-        rcases tup with ⟨rest, a, b⟩
-        simp [hPop, EvmYul.EVM.State.replaceStackAndIncrPC,
-          EvmYul.EVM.State.incrPC] at hRun ⊢
-        cases hRun
-        have hLen := Stack.length_of_pop2_some hPop
-        simp [hLen]
+    cases hPermission : state.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hRun
+    | true =>
+        cases hPop : state.stack.pop2 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hRun
+        | some tup =>
+            rcases tup with ⟨rest, a, b⟩
+            simp [PrimStep.run, hPermission, hPop,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC] at hRun ⊢
+            cases hRun
+            have hLen := Stack.length_of_pop2_some hPop
+            simp [hLen]
   case ternaryMachineState f =>
     cases hPop : state.stack.pop3 with
     | none => simp [hPop] at hRun
@@ -1516,15 +1604,19 @@ theorem run_stack_length_safe
         have hLen := Stack.length_of_pop3_some hPop
         simp [hLen]
   case log1 =>
-    cases hPop : state.stack.pop3 with
-    | none => simp [hPop] at hRun
-    | some tup =>
-        rcases tup with ⟨rest, a, b, c⟩
-        simp [hPop, EvmYul.EVM.State.replaceStackAndIncrPC,
-          EvmYul.EVM.State.incrPC] at hRun ⊢
-        cases hRun
-        have hLen := Stack.length_of_pop3_some hPop
-        simp [hLen]
+    cases hPermission : state.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hRun
+    | true =>
+        cases hPop : state.stack.pop3 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hRun
+        | some tup =>
+            rcases tup with ⟨rest, a, b, c⟩
+            simp [PrimStep.run, hPermission, hPop,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC] at hRun ⊢
+            cases hRun
+            have hLen := Stack.length_of_pop3_some hPop
+            simp [hLen]
   case quaternaryCopy f =>
     cases hPop : state.stack.pop4 with
     | none => simp [hPop] at hRun
@@ -1536,35 +1628,47 @@ theorem run_stack_length_safe
         have hLen := Stack.length_of_pop4_some hPop
         simp [hLen]
   case log2 =>
-    cases hPop : state.stack.pop4 with
-    | none => simp [hPop] at hRun
-    | some tup =>
-        rcases tup with ⟨rest, a, b, c, d⟩
-        simp [hPop, EvmYul.EVM.State.replaceStackAndIncrPC,
-          EvmYul.EVM.State.incrPC] at hRun ⊢
-        cases hRun
-        have hLen := Stack.length_of_pop4_some hPop
-        simp [hLen]
+    cases hPermission : state.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hRun
+    | true =>
+        cases hPop : state.stack.pop4 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hRun
+        | some tup =>
+            rcases tup with ⟨rest, a, b, c, d⟩
+            simp [PrimStep.run, hPermission, hPop,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC] at hRun ⊢
+            cases hRun
+            have hLen := Stack.length_of_pop4_some hPop
+            simp [hLen]
   case log3 =>
-    cases hPop : state.stack.pop5 with
-    | none => simp [hPop] at hRun
-    | some tup =>
-        rcases tup with ⟨rest, a, b, c, d, e⟩
-        simp [hPop, EvmYul.EVM.State.replaceStackAndIncrPC,
-          EvmYul.EVM.State.incrPC] at hRun ⊢
-        cases hRun
-        have hLen := Stack.length_of_pop5_some hPop
-        simp [hLen]
+    cases hPermission : state.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hRun
+    | true =>
+        cases hPop : state.stack.pop5 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hRun
+        | some tup =>
+            rcases tup with ⟨rest, a, b, c, d, e⟩
+            simp [PrimStep.run, hPermission, hPop,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC] at hRun ⊢
+            cases hRun
+            have hLen := Stack.length_of_pop5_some hPop
+            simp [hLen]
   case log4 =>
-    cases hPop : state.stack.pop6 with
-    | none => simp [hPop] at hRun
-    | some tup =>
-        rcases tup with ⟨rest, a, b, c, d, e, f⟩
-        simp [hPop, EvmYul.EVM.State.replaceStackAndIncrPC,
-          EvmYul.EVM.State.incrPC] at hRun ⊢
-        cases hRun
-        have hLen := Stack.length_of_pop6_some hPop
-        simp [hLen]
+    cases hPermission : state.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hRun
+    | true =>
+        cases hPop : state.stack.pop6 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hRun
+        | some tup =>
+            rcases tup with ⟨rest, a, b, c, d, e, f⟩
+            simp [PrimStep.run, hPermission, hPop,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC] at hRun ⊢
+            cases hRun
+            have hLen := Stack.length_of_pop6_some hPop
+            simp [hLen]
 
 theorem run_dup_stack_length
     {n : Nat} {state evm' : EvmYul.EVM.State}
@@ -1786,16 +1890,19 @@ theorem run_suffix_sound_safe
             cases hRun
             simp
   case log0 =>
-    cases hPop : stack.pop2 with
-    | none => simp [hPop] at hIso
-    | some tup =>
-        rcases tup with ⟨rest, a, b⟩
-        have hPopTarget := Stack.pop2_append_of_some (tail := base) hPop
-        rw [hStack, hPopTarget] at hRun
-        simp [hPop, hShared] at hIso hRun
-        cases hIso
-        cases hRun
-        simp
+    cases hPermission : shared.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hIso
+    | true =>
+        cases hPop : stack.pop2 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hIso
+        | some tup =>
+            rcases tup with ⟨rest, a, b⟩
+            have hPopTarget := Stack.pop2_append_of_some (tail := base) hPop
+            rw [hStack, hPopTarget] at hRun
+            simp [PrimStep.run, hPermission, hPop, hShared] at hIso hRun
+            cases hIso
+            cases hRun
+            simp
   case ternaryMachineState =>
     cases hPop : stack.pop3 with
     | none => simp [hPop] at hIso
@@ -1833,16 +1940,19 @@ theorem run_suffix_sound_safe
           cases hRun
           simp
   case log1 =>
-    cases hPop : stack.pop3 with
-    | none => simp [hPop] at hIso
-    | some tup =>
-        rcases tup with ⟨rest, a, b, c⟩
-        have hPopTarget := Stack.pop3_append_of_some (tail := base) hPop
-        rw [hStack, hPopTarget] at hRun
-        simp [hPop, hShared] at hIso hRun
-        cases hIso
-        cases hRun
-        simp
+    cases hPermission : shared.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hIso
+    | true =>
+        cases hPop : stack.pop3 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hIso
+        | some tup =>
+            rcases tup with ⟨rest, a, b, c⟩
+            have hPopTarget := Stack.pop3_append_of_some (tail := base) hPop
+            rw [hStack, hPopTarget] at hRun
+            simp [PrimStep.run, hPermission, hPop, hShared] at hIso hRun
+            cases hIso
+            cases hRun
+            simp
   case quaternaryCopy =>
     cases hPop : stack.pop4 with
     | none => simp [hPop] at hIso
@@ -1855,38 +1965,47 @@ theorem run_suffix_sound_safe
         cases hRun
         simp
   case log2 =>
-    cases hPop : stack.pop4 with
-    | none => simp [hPop] at hIso
-    | some tup =>
-        rcases tup with ⟨rest, a, b, c, d⟩
-        have hPopTarget := Stack.pop4_append_of_some (tail := base) hPop
-        rw [hStack, hPopTarget] at hRun
-        simp [hPop, hShared] at hIso hRun
-        cases hIso
-        cases hRun
-        simp
+    cases hPermission : shared.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hIso
+    | true =>
+        cases hPop : stack.pop4 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hIso
+        | some tup =>
+            rcases tup with ⟨rest, a, b, c, d⟩
+            have hPopTarget := Stack.pop4_append_of_some (tail := base) hPop
+            rw [hStack, hPopTarget] at hRun
+            simp [PrimStep.run, hPermission, hPop, hShared] at hIso hRun
+            cases hIso
+            cases hRun
+            simp
   case log3 =>
-    cases hPop : stack.pop5 with
-    | none => simp [hPop] at hIso
-    | some tup =>
-        rcases tup with ⟨rest, a, b, c, d, e⟩
-        have hPopTarget := Stack.pop5_append_of_some (tail := base) hPop
-        rw [hStack, hPopTarget] at hRun
-        simp [hPop, hShared] at hIso hRun
-        cases hIso
-        cases hRun
-        simp
+    cases hPermission : shared.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hIso
+    | true =>
+        cases hPop : stack.pop5 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hIso
+        | some tup =>
+            rcases tup with ⟨rest, a, b, c, d, e⟩
+            have hPopTarget := Stack.pop5_append_of_some (tail := base) hPop
+            rw [hStack, hPopTarget] at hRun
+            simp [PrimStep.run, hPermission, hPop, hShared] at hIso hRun
+            cases hIso
+            cases hRun
+            simp
   case log4 =>
-    cases hPop : stack.pop6 with
-    | none => simp [hPop] at hIso
-    | some tup =>
-        rcases tup with ⟨rest, a, b, c, d, e, f⟩
-        have hPopTarget := Stack.pop6_append_of_some (tail := base) hPop
-        rw [hStack, hPopTarget] at hRun
-        simp [hPop, hShared] at hIso hRun
-        cases hIso
-        cases hRun
-        simp
+    cases hPermission : shared.executionEnv.perm with
+    | false => simp [PrimStep.run, hPermission] at hIso
+    | true =>
+        cases hPop : stack.pop6 with
+        | none => simp [PrimStep.run, hPermission, hPop] at hIso
+        | some tup =>
+            rcases tup with ⟨rest, a, b, c, d, e, f⟩
+            have hPopTarget := Stack.pop6_append_of_some (tail := base) hPop
+            rw [hStack, hPopTarget] at hRun
+            simp [PrimStep.run, hPermission, hPop, hShared] at hIso hRun
+            cases hIso
+            cases hRun
+            simp
 
 theorem run_suffix_exists_safe
     {step : Assembly.PrimStep}
@@ -2028,13 +2147,17 @@ theorem run_suffix_exists_safe
                 simp [PrimStep.run, hPermission, hPop, hShared] at hIso hRun
                 cases hRun
       case log0 =>
-        cases hPop : stack.pop2 with
-        | none => simp [hPop] at hIso
-        | some tup =>
-            rcases tup with ⟨rest, a, b⟩
-            have hPopTarget := Stack.pop2_append_of_some (tail := base) hPop
-            rw [hStack, hPopTarget] at hRun
-            simp [hPop, hShared] at hIso hRun
+        cases hPermission : shared.executionEnv.perm with
+        | false => simp [PrimStep.run, hPermission] at hIso
+        | true =>
+            cases hPop : stack.pop2 with
+            | none => simp [PrimStep.run, hPermission, hPop] at hIso
+            | some tup =>
+                rcases tup with ⟨rest, a, b⟩
+                have hPopTarget :=
+                  Stack.pop2_append_of_some (tail := base) hPop
+                rw [hStack, hPopTarget] at hRun
+                simp [PrimStep.run, hPermission, hPop, hShared] at hIso hRun
       case ternaryMachineState =>
         cases hPop : stack.pop3 with
         | none => simp [hPop] at hIso
@@ -2065,13 +2188,17 @@ theorem run_suffix_exists_safe
             · simp at hIso
             · simp [*] at hRun
       case log1 =>
-        cases hPop : stack.pop3 with
-        | none => simp [hPop] at hIso
-        | some tup =>
-            rcases tup with ⟨rest, a, b, c⟩
-            have hPopTarget := Stack.pop3_append_of_some (tail := base) hPop
-            rw [hStack, hPopTarget] at hRun
-            simp [hPop, hShared] at hIso hRun
+        cases hPermission : shared.executionEnv.perm with
+        | false => simp [PrimStep.run, hPermission] at hIso
+        | true =>
+            cases hPop : stack.pop3 with
+            | none => simp [PrimStep.run, hPermission, hPop] at hIso
+            | some tup =>
+                rcases tup with ⟨rest, a, b, c⟩
+                have hPopTarget :=
+                  Stack.pop3_append_of_some (tail := base) hPop
+                rw [hStack, hPopTarget] at hRun
+                simp [PrimStep.run, hPermission, hPop, hShared] at hIso hRun
       case quaternaryCopy =>
         cases hPop : stack.pop4 with
         | none => simp [hPop] at hIso
@@ -2082,29 +2209,41 @@ theorem run_suffix_exists_safe
             simp [hPop, hShared] at hIso hRun
             cases hRun
       case log2 =>
-        cases hPop : stack.pop4 with
-        | none => simp [hPop] at hIso
-        | some tup =>
-            rcases tup with ⟨rest, a, b, c, d⟩
-            have hPopTarget := Stack.pop4_append_of_some (tail := base) hPop
-            rw [hStack, hPopTarget] at hRun
-            simp [hPop, hShared] at hIso hRun
+        cases hPermission : shared.executionEnv.perm with
+        | false => simp [PrimStep.run, hPermission] at hIso
+        | true =>
+            cases hPop : stack.pop4 with
+            | none => simp [PrimStep.run, hPermission, hPop] at hIso
+            | some tup =>
+                rcases tup with ⟨rest, a, b, c, d⟩
+                have hPopTarget :=
+                  Stack.pop4_append_of_some (tail := base) hPop
+                rw [hStack, hPopTarget] at hRun
+                simp [PrimStep.run, hPermission, hPop, hShared] at hIso hRun
       case log3 =>
-        cases hPop : stack.pop5 with
-        | none => simp [hPop] at hIso
-        | some tup =>
-            rcases tup with ⟨rest, a, b, c, d, e⟩
-            have hPopTarget := Stack.pop5_append_of_some (tail := base) hPop
-            rw [hStack, hPopTarget] at hRun
-            simp [hPop, hShared] at hIso hRun
+        cases hPermission : shared.executionEnv.perm with
+        | false => simp [PrimStep.run, hPermission] at hIso
+        | true =>
+            cases hPop : stack.pop5 with
+            | none => simp [PrimStep.run, hPermission, hPop] at hIso
+            | some tup =>
+                rcases tup with ⟨rest, a, b, c, d, e⟩
+                have hPopTarget :=
+                  Stack.pop5_append_of_some (tail := base) hPop
+                rw [hStack, hPopTarget] at hRun
+                simp [PrimStep.run, hPermission, hPop, hShared] at hIso hRun
       case log4 =>
-        cases hPop : stack.pop6 with
-        | none => simp [hPop] at hIso
-        | some tup =>
-            rcases tup with ⟨rest, a, b, c, d, e, f⟩
-            have hPopTarget := Stack.pop6_append_of_some (tail := base) hPop
-            rw [hStack, hPopTarget] at hRun
-            simp [hPop, hShared] at hIso hRun
+        cases hPermission : shared.executionEnv.perm with
+        | false => simp [PrimStep.run, hPermission] at hIso
+        | true =>
+            cases hPop : stack.pop6 with
+            | none => simp [PrimStep.run, hPermission, hPop] at hIso
+            | some tup =>
+                rcases tup with ⟨rest, a, b, c, d, e, f⟩
+                have hPopTarget :=
+                  Stack.pop6_append_of_some (tail := base) hPop
+                rw [hStack, hPopTarget] at hRun
+                simp [PrimStep.run, hPermission, hPop, hShared] at hIso hRun
 
 attribute [local simp] idRun_eq
 
@@ -2257,32 +2396,37 @@ theorem run_map_eraseRuntimeControl
                   EvmYul.EVM.State.replaceStackAndIncrPC,
                   EvmYul.EVM.State.incrPC]
           | log0 =>
-              cases hPop : targetStack.pop2 <;>
-                simp [Except.map, PrimStep.run, hPop,
+              cases hPermission : targetShared.executionEnv.perm <;>
+                cases hPop : targetStack.pop2 <;>
+                simp [Except.map, PrimStep.run, hPermission, hPop,
                   eraseRuntimeControl,
                   EvmYul.EVM.State.replaceStackAndIncrPC,
                   EvmYul.EVM.State.incrPC]
           | log1 =>
-              cases hPop : targetStack.pop3 <;>
-                simp [Except.map, PrimStep.run, hPop,
+              cases hPermission : targetShared.executionEnv.perm <;>
+                cases hPop : targetStack.pop3 <;>
+                simp [Except.map, PrimStep.run, hPermission, hPop,
                   eraseRuntimeControl,
                   EvmYul.EVM.State.replaceStackAndIncrPC,
                   EvmYul.EVM.State.incrPC]
           | log2 =>
-              cases hPop : targetStack.pop4 <;>
-                simp [Except.map, PrimStep.run, hPop,
+              cases hPermission : targetShared.executionEnv.perm <;>
+                cases hPop : targetStack.pop4 <;>
+                simp [Except.map, PrimStep.run, hPermission, hPop,
                   eraseRuntimeControl,
                   EvmYul.EVM.State.replaceStackAndIncrPC,
                   EvmYul.EVM.State.incrPC]
           | log3 =>
-              cases hPop : targetStack.pop5 <;>
-                simp [Except.map, PrimStep.run, hPop,
+              cases hPermission : targetShared.executionEnv.perm <;>
+                cases hPop : targetStack.pop5 <;>
+                simp [Except.map, PrimStep.run, hPermission, hPop,
                   eraseRuntimeControl,
                   EvmYul.EVM.State.replaceStackAndIncrPC,
                   EvmYul.EVM.State.incrPC]
           | log4 =>
-              cases hPop : targetStack.pop6 <;>
-                simp [Except.map, PrimStep.run, hPop,
+              cases hPermission : targetShared.executionEnv.perm <;>
+                cases hPop : targetStack.pop6 <;>
+                simp [Except.map, PrimStep.run, hPermission, hPop,
                   eraseRuntimeControl,
                   EvmYul.EVM.State.replaceStackAndIncrPC,
                   EvmYul.EVM.State.incrPC]

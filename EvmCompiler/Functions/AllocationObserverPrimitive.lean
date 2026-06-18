@@ -945,7 +945,8 @@ theorem eval
     {op : Structured.BasicOp} {values : List Word}
     {address size : Word} {topics : Array Word}
     (invocation : LogInvocation op values address size topics)
-    (shared : EvmYul.SharedState .EVM) :
+    (shared : EvmYul.SharedState .EVM)
+    (hPermission : shared.executionEnv.perm = true) :
     Locals.Source.PrimitiveSemantics.structured.eval op shared values =
       .ok (EvmYul.SharedState.logOp address size topics shared, []) := by
   cases invocation <;>
@@ -957,7 +958,22 @@ theorem eval
       EvmYul.Stack.pop2, EvmYul.Stack.pop3, EvmYul.Stack.pop4,
       EvmYul.Stack.pop5, EvmYul.Stack.pop6,
       EvmYul.EVM.State.replaceStackAndIncrPC,
-      EvmYul.EVM.State.incrPC, Id.run]
+      EvmYul.EVM.State.incrPC, hPermission, Id.run]
+
+theorem eval_of_static
+    {op : Structured.BasicOp} {values : List Word}
+    {address size : Word} {topics : Array Word}
+    (invocation : LogInvocation op values address size topics)
+    (shared : EvmYul.SharedState .EVM)
+    (hPermission : shared.executionEnv.perm = false) :
+    Locals.Source.PrimitiveSemantics.structured.eval op shared values =
+      .error .StaticModeViolation := by
+  cases invocation <;>
+    simp [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp,
+      Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+      Expressions.Structured.BasicOp.inputs, hPermission]
 
 theorem memorySafe
     {contract : MemoryContract.Contract}
@@ -1251,23 +1267,32 @@ theorem simulate
         EvmYul.UInt256.size := by
   obtain ⟨address, size, topics, invocation⟩ :=
     family.invocation_of_eval hEval
-  obtain ⟨_hConsistent, hAllowed, hExpansion, hHost⟩ :=
-    invocation.memorySafe hSafe
-  have hAllowed' :
-      match contract.scratch? with
-      | none => True
-      | some reservation =>
-          reservation.sourceAccessAllowed address.toNat size.toNat := by
-    simpa [AllocationObserverSafety.RegionAllowed] using hAllowed
-  have hSourceCanonical := invocation.eval sourceShared
-  rw [hSourceCanonical] at hEval
-  cases hEval
-  obtain ⟨hShared, hMemory, hActive, hNoWrap⟩ :=
-    logOp_both hRel address size topics hAllowed' hExpansion hHost
-      hTargetNoWrap
-  exact
-    ⟨EvmYul.SharedState.logOp address size topics targetShared,
-      invocation.eval targetShared, hShared, hMemory, hActive, hNoWrap⟩
+  cases hSourcePermission : sourceShared.executionEnv.perm with
+  | false =>
+      rw [invocation.eval_of_static sourceShared hSourcePermission] at hEval
+      contradiction
+  | true =>
+    have hTargetPermission : targetShared.executionEnv.perm = true := by
+      rw [← hRel.executionEnv_eq]
+      exact hSourcePermission
+    obtain ⟨_hConsistent, hAllowed, hExpansion, hHost⟩ :=
+      invocation.memorySafe hSafe
+    have hAllowed' :
+        match contract.scratch? with
+        | none => True
+        | some reservation =>
+            reservation.sourceAccessAllowed address.toNat size.toNat := by
+      simpa [AllocationObserverSafety.RegionAllowed] using hAllowed
+    have hSourceCanonical := invocation.eval sourceShared hSourcePermission
+    rw [hSourceCanonical] at hEval
+    cases hEval
+    obtain ⟨hShared, hMemory, hActive, hNoWrap⟩ :=
+      logOp_both hRel address size topics hAllowed' hExpansion hHost
+        hTargetNoWrap
+    exact
+      ⟨EvmYul.SharedState.logOp address size topics targetShared,
+        invocation.eval targetShared hTargetPermission,
+        hShared, hMemory, hActive, hNoWrap⟩
 
 end LogFamily
 

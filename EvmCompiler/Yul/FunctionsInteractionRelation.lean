@@ -708,6 +708,43 @@ theorem extCodeCopy
           EvmYul.State.addAccessedAccount, address] using
           hWorld.genesisBlockHeader }
 
+theorem logOp
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel source target)
+    (offset size : EvmYul.UInt256) (topics : Array EvmYul.UInt256) :
+    SharedRel
+      (EvmYul.SharedState.logOp offset size topics source)
+      (EvmYul.SharedState.logOp offset size topics target) := by
+  exact
+    { openWorld := by
+        apply Simulation.OpenWorld.ext_of_fields
+        · simpa [Simulation.OpenWorld.ofYulShared,
+            Simulation.OpenWorld.ofEVMShared,
+            EvmYul.SharedState.logOp] using hRel.world.accounts
+        · simp [Simulation.OpenWorld.ofYulShared,
+            Simulation.OpenWorld.ofEVMShared,
+            Simulation.OpenWorld.ofYulState,
+            Simulation.OpenWorld.ofEVMState,
+            EvmYul.SharedState.logOp, hRel.world.substate,
+            hRel.executionEnv.codeOwner, hRel.machine]
+        · simpa [Simulation.OpenWorld.ofYulShared,
+            Simulation.OpenWorld.ofEVMShared,
+            EvmYul.SharedState.logOp] using hRel.world.createdAccounts
+      machine := by
+        simp [EvmYul.SharedState.logOp, hRel.machine]
+      initialAccounts := by
+        simpa [EvmYul.SharedState.logOp] using hRel.initialAccounts
+      totalGasUsedInBlock := by
+        simpa [EvmYul.SharedState.logOp] using hRel.totalGasUsedInBlock
+      transactionReceipts := by
+        simpa [EvmYul.SharedState.logOp] using hRel.transactionReceipts
+      executionEnv := by
+        simpa [EvmYul.SharedState.logOp] using hRel.executionEnv
+      blocks := by simpa [EvmYul.SharedState.logOp] using hRel.blocks
+      genesisBlockHeader := by
+        simpa [EvmYul.SharedState.logOp] using hRel.genesisBlockHeader }
+
 theorem externalFrame_eq
     {source : EvmYul.SharedState .Yul}
     {target : EvmYul.SharedState .EVM}

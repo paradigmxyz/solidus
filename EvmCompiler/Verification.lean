@@ -1408,6 +1408,12 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionRelation.SharedRel.extCodeCopy
 #check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.SharedExtCodeCopy.forward
 #check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.MachineReturnDataCopy.forward
+#check EvmCompiler.Assembly.PrimStep.LogStep.run_of_static
+#check EvmCompiler.Yul.FunctionsInteractionRelation.SharedRel.logOp
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.SharedWriteSpec.forward
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.LogFamily.forward
+#check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.MemoryFamily.LogFamily.closedSpec
+#check EvmCompiler.Functions.AllocationInteractionPrimitiveResource.log_resourceForward
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.one_cons
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.succ_succ_cons
 #check EvmCompiler.Yul.FunctionsInteractionExpression.directAt
