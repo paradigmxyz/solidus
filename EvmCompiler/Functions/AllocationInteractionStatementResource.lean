@@ -87,7 +87,8 @@ theorem expr_of_lower_compile
           | ok hResult =>
               apply Simulation.Interaction.Rel.done
               apply Simulation.Interaction.ExceptRel.ok
-              exact ActivationEffect.of_allocatorEffect hResult.2
+              exact OutcomeEffect.of_activation
+                (ActivationEffect.of_allocatorEffect hResult.2)
 
 /-- Resource preservation for a declaration in a stack-only activation. -/
 theorem stack_let_of_lower_compile
@@ -185,7 +186,8 @@ theorem stack_let_of_lower_compile
                 | nil =>
                     apply Simulation.Interaction.Rel.done
                     apply Simulation.Interaction.ExceptRel.ok
-                    exact hResult.2
+                    exact OutcomeEffect.of_activation
+                      (ActivationEffect.of_allocatorEffect hResult.2)
       have hCoreNested :
           Simulation.Interaction.Rel
             (OpenResultRel config allocatorDepth .stack target)
@@ -367,7 +369,8 @@ theorem scratch_let_of_lower_compile
                     | nil =>
                         apply Simulation.Interaction.Rel.done
                         apply Simulation.Interaction.ExceptRel.ok
-                        exact ActivationEffect.of_allocatorEffect hResult.2
+                        exact OutcomeEffect.of_activation
+                          (ActivationEffect.of_allocatorEffect hResult.2)
           have hCoreNested :
               Simulation.Interaction.Rel
                 (OpenResultRel config allocatorDepth
@@ -531,9 +534,10 @@ theorem scratch_let_of_lower_compile
                             simp only [Simulation.Interaction.bind, hStoreRun]
                             apply Simulation.Interaction.Rel.done
                             apply Simulation.Interaction.ExceptRel.ok
-                            exact ActivationEffect.trans
-                              (ActivationEffect.of_allocatorEffect hResult.2)
-                              hStoreEffect
+                            exact OutcomeEffect.of_activation
+                              (ActivationEffect.trans
+                                (ActivationEffect.of_allocatorEffect hResult.2)
+                                hStoreEffect)
           have hCoreNested :
               Simulation.Interaction.Rel
                 (OpenResultRel config allocatorDepth
@@ -778,8 +782,9 @@ theorem scratch_assign_of_lower_compile
                         simp only [Simulation.Interaction.bind, hTailRun]
                         apply Simulation.Interaction.Rel.done
                         apply Simulation.Interaction.ExceptRel.ok
-                        exact ActivationEffect.of_allocatorEffect
-                          (hResult.2.trans hTailEffect)
+                        exact OutcomeEffect.of_activation
+                          (ActivationEffect.of_allocatorEffect
+                            (hResult.2.trans hTailEffect))
           have hCoreNested :
               Simulation.Interaction.Rel
                 (OpenResultRel config allocatorDepth
@@ -940,9 +945,10 @@ theorem scratch_assign_of_lower_compile
                             simp only [Simulation.Interaction.bind, hStoreRun]
                             apply Simulation.Interaction.Rel.done
                             apply Simulation.Interaction.ExceptRel.ok
-                            exact ActivationEffect.trans
-                              (ActivationEffect.of_allocatorEffect hResult.2)
-                              hStoreEffect
+                            exact OutcomeEffect.of_activation
+                              (ActivationEffect.trans
+                                (ActivationEffect.of_allocatorEffect hResult.2)
+                                hStoreEffect)
           have hCoreNested :
               Simulation.Interaction.Rel
                 (OpenResultRel config allocatorDepth
@@ -1181,7 +1187,9 @@ theorem stack_assign_of_lower_compile
                     simp only [Simulation.Interaction.bind, hTailRun]
                     apply Simulation.Interaction.Rel.done
                     apply Simulation.Interaction.ExceptRel.ok
-                    exact hResult.2.trans hTailEffect
+                    exact OutcomeEffect.of_activation
+                      (ActivationEffect.of_allocatorEffect
+                        (hResult.2.trans hTailEffect))
       have hCoreNested :
           Simulation.Interaction.Rel
             (OpenResultRel config allocatorDepth .stack target)

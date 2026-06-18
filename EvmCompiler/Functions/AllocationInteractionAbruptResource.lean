@@ -77,7 +77,8 @@ theorem brk_of_lower_compile
   rw [hSource, hTarget]
   apply Simulation.Interaction.Rel.done
   apply Simulation.Interaction.ExceptRel.ok
-  exact ActivationEffect.of_allocatorEffect hEffect
+  exact OutcomeEffect.of_activation
+    (ActivationEffect.of_allocatorEffect hEffect)
 
 /-- `continue` cleanup preserves the current activation's resources. -/
 theorem cont_of_lower_compile
@@ -145,7 +146,8 @@ theorem cont_of_lower_compile
   rw [hSource, hTarget]
   apply Simulation.Interaction.Rel.done
   apply Simulation.Interaction.ExceptRel.ok
-  exact ActivationEffect.of_allocatorEffect hEffect
+  exact OutcomeEffect.of_activation
+    (ActivationEffect.of_allocatorEffect hEffect)
 
 end AllocationInteractionAbruptResource
 end Functions

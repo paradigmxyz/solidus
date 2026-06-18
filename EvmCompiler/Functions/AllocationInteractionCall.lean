@@ -4952,6 +4952,51 @@ def Prepared.rootCursor
 
 end SelectedCallee
 
+/-- A real caller lookup determines a canonical source function and all of the
+compiler-owned callee artifacts needed by the adjacent call proof. -/
+theorem CallComponents.selectedCallee
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {targets : List Functions.Name}
+    {functionName : Functions.Name}
+    {args : List (Functions.Expr 1)}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {cursor :
+      CoreCursor root scope live
+        { stmts := .call targets functionName args :: rest }
+        lowerState localsCtx}
+    (components : CallComponents cursor) :
+    ∃ fn,
+      Functions.Source.FunList.find? functionName program.functions =
+          some fn ∧
+        ∃ artifact : SelectedCallee.Artifact compilation functionName fn,
+          Nonempty (SelectedCallee.Prepared artifact) ∧
+            components.fn = artifact.slots := by
+  have hRecipe :
+      AllocationSupport.planRecipeCore? program =
+        some compilation.recipe :=
+    (AllocationLowering.validatePlan?_eq_some_exact
+      compilation.validate).2.2.1
+  have hRecipeLookup :
+      AllocationSupport.lookupFun? functionName
+          compilation.recipe.functionSlots =
+        some components.fn := by
+    simpa [root.lowerCtxShared.functions] using components.lookup
+  obtain ⟨fn, hFind, _hSlotsMatch⟩ :=
+    AllocationSupport.planRecipeCore?_find?_of_lookupFun?
+      hRecipe hRecipeLookup
+  obtain ⟨artifact⟩ := SelectedCallee.Artifact.of_find hFind
+  have hSlots : components.fn = artifact.slots :=
+    artifact.slots_eq_of_lookup root.lowerCtxShared components.lookup
+  exact ⟨fn, hFind, artifact, artifact.prepare, hSlots⟩
+
 end AllocationInteractionCall
 end Functions
 end EvmCompiler

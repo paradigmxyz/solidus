@@ -1,4 +1,4 @@
-import EvmCompiler.Functions.Syntax
+import EvmCompiler.Functions.SourceSemantics
 import EvmCompiler.Locals.Syntax
 
 namespace EvmCompiler
@@ -6,13 +6,7 @@ namespace Functions
 
 namespace FunList
 
-def find? (name : Name) : List FunDef → Option FunDef
-  | [] => none
-  | fn :: rest =>
-      if fn.name = name then
-        some fn
-      else
-        find? name rest
+abbrev find? := Source.FunList.find?
 
 end FunList
 

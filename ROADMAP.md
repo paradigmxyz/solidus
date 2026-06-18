@@ -122,6 +122,9 @@ boundaries remain active work.
     procedure-body stride and expose exact caller-chosen selected-callee fuel;
   - [x] expose successful canonical call/body inversion, open argument local
     preservation, and the related suspended caller after argument stack removal;
+  - [x] restore outcome-indexed allocator effects across statements, scoped
+    blocks, loops, and selected callees, so a halting scratch-backed nested call
+    protects caller frames without falsely requiring unreachable frame release;
   - [ ] orthogonal recursive allocator companion over the same Interaction
     tree (shared intersection/`cons`, empty cursor, expression statement, and
     assignment/declaration, `break`/`continue`, and lexical blocks checked;

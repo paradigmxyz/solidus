@@ -10,20 +10,28 @@ open AllocationInteractionFrame
 open AllocationInteractionRelation
 open AllocationInteractionResource
 
-def activationEffectAlgebra
+def outcomeEffectAlgebra
     (config : Config) (allocatorDepth frameBase : Nat) :
     AllocationInteractionLoop.EffectAlgebra
-      (ActivationEffect config allocatorDepth) := by
+      (OutcomeEffect config allocatorDepth) := by
   refine
     { Ready := AllocatorReady config allocatorDepth
       Context := ActivationOwned config allocatorDepth frameBase
       transSame := ?_
       ready := ?_
+      reindexNonhalt := ?_
       contextSame := ?_ }
-  · intro beforeMode afterMode first second third hFirst hSame hSecond
-    exact hFirst.trans (hSecond.sameFrame hSame.symm)
+  · intro beforeMode afterMode first second third outcomeMode
+      hFirst hSame hSecond
+    exact OutcomeEffect.prepend_activation
+      (hFirst.activation_of_not_halt (by intro kind hEq; cases hEq))
+      hSame hSecond
   · intro mode before after hEffect
-    exact hEffect.ready
+    exact (hEffect.activation_of_not_halt
+      (by intro kind hEq; cases hEq)).ready
+  · intro mode before after outcomeMode replacement hEffect hNotHalt
+    exact OutcomeEffect.of_activation
+      (hEffect.activation_of_not_halt hNotHalt)
   · intro beforeMode afterMode hOwned hSame
     exact hOwned.sameFrame hSame
 
@@ -62,7 +70,8 @@ theorem forward
       ∀ (fuel : Nat) {mode source target} {effectInitial : TargetState},
         fuel < fuelBound →
         ActivationOwned config allocatorDepth frameBase mode →
-        ActivationEffect config allocatorDepth mode effectInitial target →
+        OutcomeEffect config allocatorDepth mode effectInitial target
+            .regular →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -70,7 +79,7 @@ theorem forward
               program bodyCtx body fuel source) →
           Simulation.Interaction.Rel
             (AllocationInteractionLoop.OpenScopedEffectResultRel
-              (ActivationEffect config allocatorDepth) contract lowerCtx
+              (OutcomeEffect config allocatorDepth) contract lowerCtx
               lowerState localsCtx plan returns live frameBase mode bodyCtx
               target)
             (Functions.InteractionSemantics.Block.openRunScoped
@@ -83,7 +92,8 @@ theorem forward
         fuel < fuelBound →
         ActivationOwned config allocatorDepth frameBase mode →
         SameFrame effectMode mode →
-        ActivationEffect config allocatorDepth effectMode effectInitial target →
+        OutcomeEffect config allocatorDepth effectMode effectInitial target
+            .regular →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -91,7 +101,7 @@ theorem forward
               program postCtx post fuel source) →
           Simulation.Interaction.Rel
             (AllocationInteractionLoop.OpenScopedEffectResultRel
-              (ActivationEffect config allocatorDepth) contract lowerCtx
+              (OutcomeEffect config allocatorDepth) contract lowerCtx
               lowerState localsCtx plan returns live frameBase mode postCtx
               target)
             (Functions.InteractionSemantics.Block.openRunScoped
@@ -109,7 +119,7 @@ theorem forward
           cond postCtx post bodyCtx body fuel source) →
         Simulation.Interaction.Rel
           (AllocationInteractionLoop.OpenLoopEffectResultRel
-            (ActivationEffect config allocatorDepth) contract lowerCtx
+            (OutcomeEffect config allocatorDepth) contract lowerCtx
             lowerState localsCtx plan returns live frameBase mode loopCtx target)
           (Functions.InteractionSemantics.Stmt.openRunForLoop program loopCtx
             cond postCtx post bodyCtx body fuel source)
@@ -117,8 +127,8 @@ theorem forward
             (fuel + slack) targetCond targetPost targetBody target) := by
   intro fuel mode source target hFuel hInitial hReady hOwned hSuccess
   apply AllocationInteractionLoop.forward_effect
-    (Effect := ActivationEffect config allocatorDepth)
-    (activationEffectAlgebra config allocatorDepth frameBase)
+    (Effect := OutcomeEffect config allocatorDepth)
+    (outcomeEffectAlgebra config allocatorDepth frameBase)
     hLoopScope hBodyBreak hBodyContinue (hCond := ?_) hBody hPost fuel hFuel
     hInitial hReady hOwned hSuccess
   intro nextMode nextSource nextTarget hNext hNextReady
@@ -128,7 +138,8 @@ theorem forward
   | error hError => exact .error hError
   | ok hResult =>
       exact .ok ⟨hResult.1,
-        ActivationEffect.of_allocatorEffect hResult.2⟩
+        OutcomeEffect.of_activation
+          (ActivationEffect.of_allocatorEffect hResult.2)⟩
 
 end AllocationInteractionLoopResource
 end Functions

@@ -61,7 +61,8 @@ inductive BodyResultRel
       {target : TargetState}
       (state : SharedRel contract source.shared target.evm.toSharedState)
       (effect :
-        ActivationEffect config allocatorDepth entryMode targetInitial target) :
+        OutcomeEffect config allocatorDepth entryMode targetInitial target
+          (.halt kind)) :
       BodyResultRel contract returns config allocatorDepth entryMode
         targetInitial
         (Functions.Source.Effectful.Outcome.halt kind source, sourceCtx)
@@ -98,7 +99,8 @@ inductive CallResultRel
       {source : SourceState} {target : TargetState}
       (shared : SharedRel contract source.shared target.evm.toSharedState)
       (effect :
-        ActivationEffect config allocatorDepth entryMode targetEntry target) :
+        OutcomeEffect config allocatorDepth entryMode targetEntry target
+          (.halt kind)) :
       CallResultRel contract config allocatorDepth entryMode
         targetCaller targetEntry callerStack
         (.halted kind source)
@@ -570,6 +572,10 @@ theorem complete_body_of_rel
                 cases hControl with
                 | @regular sourceBody targetBody finalMode hInvariant
                     hSameFrame _hControl =>
+                    have hActivation :=
+                      hEffect.activation_of_not_halt (by
+                        intro kind hEq
+                        cases hEq)
                     obtain ⟨values, hLookup⟩ :=
                       lookupMany_of_liveDefined hInvariant.defined
                         hReturnsLive
@@ -581,7 +587,7 @@ theorem complete_body_of_rel
                         hConfig hInvariant hReturnsLive
                         hLookup prepared.lowerReturnValues
                         prepared.compileReturnValues prepared.compileCleanup
-                        hEffect.ready
+                        hActivation.ready
                     have hTail :=
                       code_pair_openRun expressions hResidual hReturnRun
                         hCleanupRun
@@ -594,7 +600,7 @@ theorem complete_body_of_rel
                     have hFinalEffect :
                         ActivationEffect config allocatorDepth artifact.mode
                           target final :=
-                      hEffect.trans
+                      hActivation.trans
                         (hReturnEffect.sameFrame hSameFrame.symm)
                     change
                       Simulation.Interaction.Rel
@@ -622,13 +628,19 @@ theorem complete_body_of_rel
                           (Simulation.Interaction.ExceptRel.ok
                             (BodyResultRel.brk (by
                             simpa [Structured.InteractionReturns.OutcomeReturnsEq]
-                              using hTargetReturns) hEffect))
+                              using hTargetReturns)
+                              (hEffect.activation_of_not_halt (by
+                                intro kind hEq
+                                cases hEq))))
                     | cont _ _ _ _ =>
                         exact Simulation.Interaction.Rel.done
                           (Simulation.Interaction.ExceptRel.ok
                             (BodyResultRel.cont (by
                             simpa [Structured.InteractionReturns.OutcomeReturnsEq]
-                              using hTargetReturns) hEffect))
+                              using hTargetReturns)
+                              (hEffect.activation_of_not_halt (by
+                                intro kind hEq
+                                cases hEq))))
                     | leave hLeave =>
                         exact Simulation.Interaction.Rel.done
                           (Simulation.Interaction.ExceptRel.ok
@@ -636,7 +648,10 @@ theorem complete_body_of_rel
                               AllocationInteractionStatement.outcomeLive]
                             using hLeave) (by
                               simpa [Structured.InteractionReturns.OutcomeReturnsEq]
-                                using hTargetReturns) hEffect))
+                                using hTargetReturns)
+                              (hEffect.activation_of_not_halt (by
+                                intro kind hEq
+                                cases hEq))))
                     | halt kind hHalt =>
                         exact Simulation.Interaction.Rel.done
                           (Simulation.Interaction.ExceptRel.ok

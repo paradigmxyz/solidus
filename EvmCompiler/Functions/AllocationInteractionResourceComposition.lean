@@ -70,7 +70,7 @@ theorem prepend_frame
       | ok hEffect =>
           exact
             ⟨.ok (ControlResultRel.prepend_frame hSame hControl),
-              .ok (hPrefix.trans (hEffect.sameFrame hSame.symm))⟩
+              .ok (OutcomeEffect.prepend_activation hPrefix hSame hEffect)⟩
 
 end RuntimeResultRel
 
@@ -147,7 +147,12 @@ theorem cons
       | ok hHeadEffect =>
           cases hSemanticResult with
           | regular invariant sameFrame control =>
-              have hHeadEffectMode := hHeadEffect.sameFrame sameFrame
+              have hHeadActivation :=
+                hHeadEffect.activation_of_not_halt (by
+                  intro kind hEq
+                  cases hEq)
+              have hHeadEffectMode :=
+                hHeadActivation.sameFrame sameFrame
               apply Simulation.Interaction.Rel.mono
                 (hTail invariant hHeadEffectMode.ready sameFrame)
               intro tailSource tailTarget hTailDone
@@ -166,8 +171,8 @@ theorem cons
                               (ControlResultRel.transport_control control
                                 hTailSemantic)),
                           .ok
-                            (hHeadEffect.trans
-                              (hTailEffect.sameFrame sameFrame.symm))⟩
+                            (OutcomeEffect.prepend_activation
+                              hHeadActivation sameFrame hTailEffect)⟩
           | @nonregular sourceOutcome targetOutcome headCtx mode
               hNonregular sameFrame control state =>
               cases state with

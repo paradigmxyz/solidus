@@ -252,8 +252,9 @@ theorem terminal_of_lower_compile
   rw [hSource, hTargetCompiled]
   apply Simulation.Interaction.Rel.done
   apply Simulation.Interaction.ExceptRel.ok
-  exact ActivationEffect.of_allocatorEffect
-    (hCleanupEffect.trans hTerminalEffect)
+  exact OutcomeEffect.of_activation
+    (ActivationEffect.of_allocatorEffect
+      (hCleanupEffect.trans hTerminalEffect))
 
 /-- Argument evaluation and terminal growth preserve activation resources. -/
 theorem terminalArgs_of_lower_compile
@@ -379,8 +380,9 @@ theorem terminalArgs_of_lower_compile
       rw [hSourceTerminal, hTargetTerminal]
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
-      exact ActivationEffect.of_allocatorEffect
-        (hArgsResult.2.trans hTerminalEffect)
+      exact OutcomeEffect.of_activation
+        (ActivationEffect.of_allocatorEffect
+          (hArgsResult.2.trans hTerminalEffect))
 
 end AllocationInteractionTerminalResource
 end Functions

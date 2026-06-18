@@ -10,7 +10,8 @@ open AllocationInteractionLoop
 
 /-- A control result paired with one abstract target effect. -/
 abbrev OpenControlEffectResultRel
-    (Effect : ActivationMode → TargetState → TargetState → Prop)
+    (Effect :
+      ActivationMode → TargetState → TargetState → Locals.Source.Mode → Prop)
     (contract : MemoryContract.Contract)
     (lowerCtx : AllocationLowering.Ctx)
     (lowerState : AllocationLowering.State)
@@ -25,8 +26,8 @@ abbrev OpenControlEffectResultRel
         targetDone ∧
       Simulation.Interaction.ExceptRel
         (fun left right : EVMException => left = right)
-        (fun _source target =>
-          Effect entryMode targetInitial target.state)
+        (fun source target =>
+          Effect entryMode targetInitial target.state source.1.mode)
         sourceDone targetDone
 
 /--
@@ -35,7 +36,8 @@ cleanup emitted for a Functions `for`. Compiler cursor decomposition remains
 outside this theorem; this owner only sequences adjacent semantic components.
 -/
 theorem forward_effect
-    {Effect : ActivationMode → TargetState → TargetState → Prop}
+    {Effect :
+      ActivationMode → TargetState → TargetState → Locals.Source.Mode → Prop}
     {program : Functions.Program}
     {expressions : Expressions.Program}
     {contract : MemoryContract.Contract}
@@ -83,7 +85,7 @@ theorem forward_effect
       ∀ {mode sourceAfter targetAfter},
         effectAlgebra.Context mode →
         SameFrame entryMode mode →
-        Effect entryMode target targetAfter →
+        Effect entryMode target targetAfter .regular →
         AllocationContext.ActivationInvariant contract lowerCtx loopState
             initLocals loopPlan loopLive frameBase mode sourceAfter
               targetAfter →
@@ -103,10 +105,10 @@ theorem forward_effect
       ∀ {mode sourceMid targetMid targetFinal},
         AllocationContext.ActivationInvariant contract lowerCtx loopState
             initLocals loopPlan loopLive frameBase mode sourceMid targetMid →
-          Effect entryMode target targetMid →
+          Effect entryMode target targetMid .regular →
           Structured.InteractionSemantics.Code.openRun cleanup targetMid =
             .done (.ok targetFinal) →
-          Effect mode targetMid targetFinal)
+          Effect mode targetMid targetFinal .regular)
     (hSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
@@ -248,7 +250,8 @@ theorem forward_effect
   cases hInitResult with
   | error hError => exact False.elim hAfterInitSuccess
   | @ok sourceResult targetOutcome hResult =>
-      have hInitEffect : Effect entryMode target targetOutcome.state := by
+      have hInitEffect :
+          Effect entryMode target targetOutcome.state sourceResult.1.mode := by
         cases hInitEffectRel with
         | ok hEffect => exact hEffect
       cases hResult with
@@ -283,11 +286,13 @@ theorem forward_effect
           | error hError => exact False.elim hAfterLoopSuccess
           | @ok sourceLoopOutcome targetLoopOutcome hLoopRelated =>
               have hLoopEffect :
-                  Effect initMode initTarget targetLoopOutcome.state := by
+                  Effect initMode initTarget targetLoopOutcome.state
+                    sourceLoopOutcome.mode := by
                 cases hLoopEffectRel with
                 | ok hEffect => exact hEffect
               have hThroughLoop :
-                  Effect entryMode target targetLoopOutcome.state :=
+                  Effect entryMode target targetLoopOutcome.state
+                    sourceLoopOutcome.mode :=
                 effectAlgebra.transSame hInitEffect initFrame hLoopEffect
               cases hLoopRelated with
               | @regular sourceFinal targetMid loopMode hLoopInvariant
@@ -486,7 +491,7 @@ theorem forward
         target) := by
   have hInitEffect :
       Simulation.Interaction.Rel
-        (OpenControlEffectResultRel (fun _ _ _ => True) contract lowerCtx
+        (OpenControlEffectResultRel (fun _ _ _ _ => True) contract lowerCtx
           loopState initLocals loopPlan returns loopLive frameBase entryMode
           initCtx loopCtx target)
         (Functions.InteractionSemantics.Block.openRun
@@ -512,7 +517,7 @@ theorem forward
             (Functions.InteractionSemantics.Stmt.openRunForLoop program
               loopCtx cond postCtx post bodyCtx body sourceFuel sourceAfter) →
             Simulation.Interaction.Rel
-              (OpenLoopEffectResultRel (fun _ _ _ => True) contract lowerCtx
+              (OpenLoopEffectResultRel (fun _ _ _ _ => True) contract lowerCtx
                 loopState initLocals loopPlan returns loopLive frameBase mode
                 loopCtx targetAfter)
               (Functions.InteractionSemantics.Stmt.openRunForLoop program
@@ -530,7 +535,7 @@ theorem forward
       | error hError => exact .error hError
       | ok _ => exact .ok trivial
   apply Simulation.Interaction.Rel.mono
-    (forward_effect (Effect := fun _ _ _ => True) EffectAlgebra.trivial
+    (forward_effect (Effect := fun _ _ _ _ => True) EffectAlgebra.trivial
       hSourceScope hLoopLive hInitCtx hLoopCtx hPostCtx hBodyCtx hOuter
       (by simp [EffectAlgebra.trivial]) hExtends hPlanAgree hCleanup hTargetFuel
       hInitEffect hLoopEffect

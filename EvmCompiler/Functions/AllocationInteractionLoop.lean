@@ -57,17 +57,23 @@ abbrev OpenScopedResultRel
 
 /-- Effect composition across the representation change recorded by control. -/
 structure EffectAlgebra
-    (Effect : ActivationMode → TargetState → TargetState → Prop) where
+    (Effect :
+      ActivationMode → TargetState → TargetState → Locals.Source.Mode → Prop) where
   Ready : TargetState → Prop
   Context : ActivationMode → Prop
   transSame :
-    ∀ {beforeMode afterMode first second third},
-      Effect beforeMode first second →
+    ∀ {beforeMode afterMode first second third outcomeMode},
+      Effect beforeMode first second .regular →
       SameFrame beforeMode afterMode →
-      Effect afterMode second third →
-      Effect beforeMode first third
+      Effect afterMode second third outcomeMode →
+      Effect beforeMode first third outcomeMode
   ready :
-    ∀ {mode before after}, Effect mode before after → Ready after
+    ∀ {mode before after}, Effect mode before after .regular → Ready after
+  reindexNonhalt :
+    ∀ {mode before after outcomeMode replacement},
+      Effect mode before after outcomeMode →
+      (∀ kind, outcomeMode ≠ .halt kind) →
+      Effect mode before after replacement
   contextSame :
     ∀ {beforeMode afterMode},
       Context beforeMode → SameFrame beforeMode afterMode → Context afterMode
@@ -75,18 +81,20 @@ structure EffectAlgebra
 namespace EffectAlgebra
 
 def trivial :
-    EffectAlgebra (fun _mode _before _after => True) :=
+    EffectAlgebra (fun _mode _before _after _outcomeMode => True) :=
   { Ready := fun _ => True
     Context := fun _ => True
     transSame := by intros; trivial
     ready := by intros; trivial
+    reindexNonhalt := by intros; trivial
     contextSame := by intros; trivial }
 
 end EffectAlgebra
 
 /-- Semantic loop result paired with one abstract target effect. -/
 abbrev OpenLoopEffectResultRel
-    (Effect : ActivationMode → TargetState → TargetState → Prop)
+    (Effect :
+      ActivationMode → TargetState → TargetState → Locals.Source.Mode → Prop)
     (contract : MemoryContract.Contract)
     (lowerCtx : AllocationLowering.Ctx)
     (lowerState : AllocationLowering.State)
@@ -99,13 +107,14 @@ abbrev OpenLoopEffectResultRel
         frameBase entryMode loopCtx sourceDone targetDone ∧
       Simulation.Interaction.ExceptRel
         (fun left right : EVMException => left = right)
-        (fun _source target =>
-          Effect entryMode targetInitial target.state)
+        (fun source target =>
+          Effect entryMode targetInitial target.state source.mode)
         sourceDone targetDone
 
 /-- Semantic scoped result paired with one abstract target effect. -/
 abbrev OpenScopedEffectResultRel
-    (Effect : ActivationMode → TargetState → TargetState → Prop)
+    (Effect :
+      ActivationMode → TargetState → TargetState → Locals.Source.Mode → Prop)
     (contract : MemoryContract.Contract)
     (lowerCtx : AllocationLowering.Ctx)
     (lowerState : AllocationLowering.State)
@@ -118,8 +127,8 @@ abbrev OpenScopedEffectResultRel
         frameBase entryMode ctx sourceDone targetDone ∧
       Simulation.Interaction.ExceptRel
         (fun left right : EVMException => left = right)
-        (fun _source target =>
-          Effect entryMode targetInitial target.state)
+        (fun source target =>
+          Effect entryMode targetInitial target.state source.mode)
         sourceDone targetDone
 
 /--
@@ -129,7 +138,8 @@ callbacks; no compiler or cursor reasoning occurs inside this semantic
 induction.
 -/
 theorem forward_effect
-    {Effect : ActivationMode → TargetState → TargetState → Prop}
+    {Effect :
+      ActivationMode → TargetState → TargetState → Locals.Source.Mode → Prop}
     {program : Functions.Program}
     {expressions : Expressions.Program}
     {contract : MemoryContract.Contract}
@@ -156,7 +166,7 @@ theorem forward_effect
               (fun sourceResult targetResult =>
                 ActivationConditionResultRel contract plan live frameBase mode
                     target sourceResult targetResult ∧
-                  Effect mode target targetResult.1))
+                  Effect mode target targetResult.1 .regular))
             (Functions.InteractionSemantics.Expr.openEvalCondition cond source)
             (Expressions.InteractionSemantics.Expr.openRunCondition
               targetCond target))
@@ -164,7 +174,7 @@ theorem forward_effect
       ∀ (fuel : Nat) {mode source target} {effectInitial : TargetState},
         fuel < fuelBound →
         effectAlgebra.Context mode →
-        Effect mode effectInitial target →
+        Effect mode effectInitial target .regular →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -183,7 +193,7 @@ theorem forward_effect
         fuel < fuelBound →
         effectAlgebra.Context mode →
         SameFrame effectMode mode →
-        Effect effectMode effectInitial target →
+        Effect effectMode effectInitial target .regular →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -303,17 +313,19 @@ theorem forward_effect
               | error hError => exact False.elim hAfterBodySuccess
               | @ok bodySourceOutcome bodyTargetOutcome hBodyResult =>
                   have hBodyEffect :
-                      Effect mode targetAfterCond bodyTargetOutcome.state := by
+                      Effect mode targetAfterCond bodyTargetOutcome.state
+                        bodySourceOutcome.mode := by
                     cases hBodyEffectRel with
                     | ok hEffect => exact hEffect
                   have hThroughBody :
-                      Effect mode target bodyTargetOutcome.state :=
+                      Effect mode target bodyTargetOutcome.state
+                        bodySourceOutcome.mode :=
                     effectAlgebra.transSame hCondEffect (SameFrame.refl mode)
                       hBodyEffect
                   have hContinue :
                       ∀ {bodyMode bodySource bodyTarget}
                         (hFrame : SameFrame mode bodyMode),
-                        Effect mode target bodyTarget →
+                        Effect mode target bodyTarget .regular →
                         AllocationContext.ActivationInvariant contract
                             lowerCtx lowerState localsCtx plan live frameBase
                             bodyMode bodySource bodyTarget →
@@ -396,11 +408,13 @@ theorem forward_effect
                     | @ok postSourceOutcome postTargetOutcome hPostResult =>
                         have hPostEffect :
                             Effect bodyMode bodyTarget
-                              postTargetOutcome.state := by
+                              postTargetOutcome.state
+                              postSourceOutcome.mode := by
                           cases hPostEffectRel with
                           | ok hEffect => exact hEffect
                         have hThroughPost :
-                            Effect mode target postTargetOutcome.state :=
+                            Effect mode target postTargetOutcome.state
+                              postSourceOutcome.mode :=
                           effectAlgebra.transSame hBodyEffect hFrame hPostEffect
                         cases hPostResult with
                         | regular hPostInvariant postFrame postControl =>
@@ -499,7 +513,10 @@ theorem forward_effect
                                   hState hStackLength)
                               bodyFrame
                               (Functions.Source.Ctx.SameControl.refl loopCtx)
-                          · exact Simulation.Interaction.ExceptRel.ok hThroughBody
+                          · exact Simulation.Interaction.ExceptRel.ok
+                              (effectAlgebra.reindexNonhalt hThroughBody (by
+                                intro kind hEq
+                                cases hEq))
                       | cont defined stackLength modeMatches state =>
                           have hDefined := defined
                           simp [AllocationInteractionStatement.outcomeLive,
@@ -517,7 +534,10 @@ theorem forward_effect
                             bodyFrame.eq_of_matches
                               hAfterCond.compiler.mode_matches hModeMatches
                           cases hModeEq
-                          exact hContinue bodyFrame hThroughBody
+                          exact hContinue bodyFrame
+                            (effectAlgebra.reindexNonhalt hThroughBody (by
+                              intro kind hEq
+                              cases hEq))
                             (AllocationContext.ActivationInvariant.ofOutcomeState
                               hAfterCond.compiler hAfterCond.planWF hDefined
                                 hState hStackLength)
@@ -647,7 +667,7 @@ theorem forward
             (Functions.InteractionSemantics.Block.openRunScoped
               program bodyCtx body innerFuel source) →
           Simulation.Interaction.Rel
-            (OpenScopedEffectResultRel (fun _ _ _ => True) contract lowerCtx
+            (OpenScopedEffectResultRel (fun _ _ _ _ => True) contract lowerCtx
               lowerState localsCtx plan returns live frameBase mode bodyCtx target)
             (Functions.InteractionSemantics.Block.openRunScoped
               program bodyCtx body innerFuel source)
@@ -676,7 +696,7 @@ theorem forward
             (Functions.InteractionSemantics.Block.openRunScoped
               program postCtx post innerFuel source) →
           Simulation.Interaction.Rel
-            (OpenScopedEffectResultRel (fun _ _ _ => True) contract lowerCtx
+            (OpenScopedEffectResultRel (fun _ _ _ _ => True) contract lowerCtx
               lowerState localsCtx plan returns live frameBase mode postCtx target)
             (Functions.InteractionSemantics.Block.openRunScoped
               program postCtx post innerFuel source)
@@ -693,7 +713,7 @@ theorem forward
       | error hError => exact .error hError
       | ok _ => exact .ok trivial
   apply Simulation.Interaction.Rel.mono
-    (forward_effect (Effect := fun _ _ _ => True) EffectAlgebra.trivial
+    (forward_effect (Effect := fun _ _ _ _ => True) EffectAlgebra.trivial
       hLoopScope hBodyBreak hBodyContinue hCondEffect hBodyEffect hPostEffect
       fuel hFuel hInitial (by simp [EffectAlgebra.trivial])
       (by simp [EffectAlgebra.trivial]) hSuccess)

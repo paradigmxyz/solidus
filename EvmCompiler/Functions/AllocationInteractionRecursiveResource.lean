@@ -2535,7 +2535,7 @@ theorem for_
       ∀ {loopMode sourceAfter targetAfter},
         ActivationOwned config allocatorDepth frameBase loopMode →
         SameFrame mode loopMode →
-        ActivationEffect config allocatorDepth mode target targetAfter →
+        OutcomeEffect config allocatorDepth mode target targetAfter .regular →
         AllocationContext.ActivationInvariant contract root.lowerCtx
             components.loopState components.initLocals
             components.initCursor.plan components.loopLive frameBase
@@ -2545,7 +2545,7 @@ theorem for_
               loopCtx cond postCtx post bodyCtx body loopFuel sourceAfter) →
             Simulation.Interaction.Rel
               (AllocationInteractionLoop.OpenLoopEffectResultRel
-                (ActivationEffect config allocatorDepth) contract
+                (OutcomeEffect config allocatorDepth) contract
                 root.lowerCtx components.loopState components.initLocals
                 components.initCursor.plan root.returns components.loopLive
                 frameBase loopMode loopCtx targetAfter)
@@ -2557,6 +2557,10 @@ theorem for_
                   targetAfter) := by
     intro loopMode sourceAfter targetAfter hLoopOwned _hSame hPrefix
       hInvariant hSuccess
+    have hPrefixActivation :=
+      hPrefix.activation_of_not_halt (by
+        intro kind hEq
+        cases hEq)
     apply AllocationInteractionLoopResource.forward
       (program := program) (expressions := expressions)
       (returns := root.returns) (live := components.loopLive)
@@ -2568,7 +2572,7 @@ theorem for_
       (slack := slack) (fuelBound := loopFuel) (fuel := loopFuel)
       (hLoopScope := rfl) (hBodyBreak := rfl) (hBodyContinue := rfl)
       (hCond := ?_) (hBody := ?_) (hPost := ?_)
-      (by rfl) hInvariant hPrefix.ready hLoopOwned hSuccess
+      (by rfl) hInvariant hPrefixActivation.ready hLoopOwned hSuccess
     · intro nextMode nextSource nextTarget hNext hNextReady
       exact AllocationInteractionExpressionResource.forwardCondition
         (AllocationInteractionPrimitiveResource.canonicalPrimitiveForward
@@ -2613,7 +2617,10 @@ theorem for_
                 simpa [bodyCtx] using hOuterControl.withLoopControl
               capacity := hFrameCapacity hNext }
           configEq := hBoundary.configEq
-          ready := hCondEffect.ready
+          ready :=
+            (hCondEffect.activation_of_not_halt (by
+              intro kind hEq
+              cases hEq)).ready
           owned := hOwned
           budget := hBoundary.budget }
       have hBodyRaw :=
@@ -2694,7 +2701,10 @@ theorem for_
                 simpa [postCtx] using hOuterControl.withoutLoopControl
               capacity := hFrameCapacity hNext }
           configEq := hBoundary.configEq
-          ready := hBodyEffect.ready
+          ready :=
+            (hBodyEffect.activation_of_not_halt (by
+              intro kind hEq
+              cases hEq)).ready
           owned := hOwned
           budget := hBoundary.budget }
       have hPostRaw :=
@@ -3369,7 +3379,7 @@ theorem nil
   rw [hSourceRun, hCompiled, hTargetRun]
   exact Simulation.Interaction.Rel.done
     (Simulation.Interaction.ExceptRel.ok
-      (ActivationEffect.refl hReady))
+      (OutcomeEffect.of_activation (ActivationEffect.refl hReady)))
 
 end CursorResourceAt
 

@@ -276,6 +276,40 @@ theorem lookupFun?_of_matches
             by simp [lookupFun?, hHeadName, hNe, hLookup],
             hSlots⟩
 
+/-- Reverse a slot lookup through the positional source/signature match. -/
+theorem find?_of_lookupFun?_matches
+    {functions : List FunDef} {slots : List FunSlots}
+    {name : Name} {fnSlots : FunSlots}
+    (hMatch :
+      List.Forall₂ (fun fn slots => slots.Matches fn) functions slots)
+    (hLookup : lookupFun? name slots = some fnSlots) :
+    ∃ fn,
+      Functions.Source.FunList.find? name functions = some fn ∧
+        fnSlots.Matches fn := by
+  induction hMatch with
+  | nil =>
+      simp [lookupFun?] at hLookup
+  | @cons head headSlots functions slots hHead hTail ih =>
+      by_cases hHeadName : headSlots.name = name
+      · simp [lookupFun?, hHeadName] at hLookup
+        subst fnSlots
+        have hSourceName : head.name = name := by
+          rw [← hHead.1]
+          exact hHeadName
+        exact
+          ⟨head, by simp [Functions.Source.FunList.find?, hSourceName], hHead⟩
+      · have hSourceNe : head.name ≠ name := by
+          intro hEq
+          apply hHeadName
+          rw [hHead.1, hEq]
+        have hTailLookup : lookupFun? name slots = some fnSlots := by
+          simpa [lookupFun?, hHeadName] using hLookup
+        obtain ⟨fn, hFind, hSlots⟩ := ih hTailLookup
+        exact
+          ⟨fn, by
+            simpa [Functions.Source.FunList.find?, hSourceNe] using hFind,
+            hSlots⟩
+
 structure ScopedAllocation where
   scope : Locals.Allocation.ScopeId
   state : CompileState
@@ -1099,6 +1133,36 @@ theorem planRecipeCore?_lookupFun_matches
                 program.functions initial
             rw [hSignatures] at hMatch
             exact lookupFun?_of_matches hMatch hNames hMem
+  · simp [hNames] at hPlan
+
+/-- Every checked recipe slot lookup comes from the corresponding real source
+function and carries its exact signature match. -/
+theorem planRecipeCore?_find?_of_lookupFun?
+    {program : Program} {recipe : AllocationRecipe}
+    {name : Name} {slots : FunSlots}
+    (hPlan : planRecipeCore? program = some recipe)
+    (hLookup : lookupFun? name recipe.functionSlots = some slots) :
+    ∃ fn,
+      Functions.Source.FunList.find? name program.functions = some fn ∧
+        slots.Matches fn := by
+  unfold planRecipeCore? at hPlan
+  by_cases hNames : (program.functions.map FunDef.name).Nodup
+  · let initial : CompileState := { env := [], nextSlot := 0 }
+    cases hSignatures :
+        allocateFunctionSignatures program.functions initial with
+    | mk functionSlots stateAfterSignatures =>
+        cases hFunctions :
+            planFunctions functionSlots stateAfterSignatures
+              program.functions with
+        | none =>
+            simp [hNames, initial, hSignatures, hFunctions] at hPlan
+        | some functionPlan =>
+            simp [hNames, initial, hSignatures, hFunctions] at hPlan
+            subst recipe
+            have hMatch :=
+              allocateFunctionSignatures_matches program.functions initial
+            rw [hSignatures] at hMatch
+            exact find?_of_lookupFun?_matches hMatch hLookup
   · simp [hNames] at hPlan
 
 theorem planRecipeCore?_function_signature_valid

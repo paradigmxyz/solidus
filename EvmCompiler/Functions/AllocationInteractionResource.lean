@@ -16,11 +16,11 @@ result. Semantic outcome matching remains an independent adjacent capability.
 abbrev ResultRel
     (config : Config) (allocatorDepth : Nat) (entryMode : ActivationMode)
     (targetInitial : TargetState)
-    (_sourceResult :
+    (sourceResult :
       Functions.InteractionSemantics.Outcome × Functions.Source.Ctx)
     (targetResult : Expressions.InteractionSemantics.Outcome) : Prop :=
-  ActivationEffect config allocatorDepth entryMode
-    targetInitial targetResult.state
+  OutcomeEffect config allocatorDepth entryMode
+    targetInitial targetResult.state sourceResult.1.mode
 
 abbrev OpenResultRel
     (config : Config) (allocatorDepth : Nat) (entryMode : ActivationMode)

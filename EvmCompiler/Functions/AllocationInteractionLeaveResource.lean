@@ -141,8 +141,9 @@ theorem leave_of_lower_compile
       rw [hSource, hTarget]
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
-      exact ActivationEffect.of_allocatorEffect
-        (hReturnResult.2.trans hCleanupEffect)
+      exact OutcomeEffect.of_activation
+        (ActivationEffect.of_allocatorEffect
+          (hReturnResult.2.trans hCleanupEffect))
 
 end AllocationInteractionLeaveResource
 end Functions

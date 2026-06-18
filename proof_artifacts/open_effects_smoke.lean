@@ -14,6 +14,7 @@ import EvmCompiler.Functions.AllocationInteractionPrimitiveResource
 import EvmCompiler.Functions.AllocationInteractionPreparedCallResources
 import EvmCompiler.Functions.AllocationInteractionCallTargets
 import EvmCompiler.Functions.AllocationInteractionRecursiveResource
+import EvmCompiler.Functions.AllocationInteractionCallResultResource
 import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 
@@ -313,3 +314,9 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.terminal
 #print axioms EvmCompiler.Functions.AllocationInteractionTerminalResource.terminalArgs_of_lower_compile
 #print axioms EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.terminalArgs
+#print axioms EvmCompiler.Functions.AllocationInteractionFrame.OutcomeEffect.prepend_activation
+#print axioms EvmCompiler.Functions.AllocationInteractionLoop.forward_effect
+#print axioms EvmCompiler.Functions.AllocationInteractionFor.forward_effect
+#print axioms EvmCompiler.Functions.AllocationSupport.planRecipeCore?_find?_of_lookupFun?
+#print axioms EvmCompiler.Functions.AllocationInteractionCall.CallComponents.selectedCallee
+#print axioms EvmCompiler.Functions.AllocationInteractionCallResultResource.SelectedCallee.complete_call

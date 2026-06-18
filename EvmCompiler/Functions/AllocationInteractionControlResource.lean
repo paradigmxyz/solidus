@@ -78,9 +78,13 @@ theorem block_of_components
         cases hResult with
         | @regular sourceFinal targetMid bodyMode
             bodyInvariant sameFrame control =>
+          have hActivation' :=
+            hActivation.activation_of_not_halt (by
+              intro kind hEq
+              cases hEq)
           obtain ⟨targetFinal, hCleanupRun, hCleanupEffect⟩ :=
             AllocationInteractionCleanupResource.Plain.forward_allocator
-              bodyInvariant hCleanup hActivation.ready
+              bodyInvariant hCleanup hActivation'.ready
           have hTargetCleanup :=
             Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
               expressions (targetFuel - bodyCode.length) cleanup
@@ -102,8 +106,9 @@ theorem block_of_components
             Locals.InteractionSemantics.stateModel,
             Locals.Source.Effectful.Ordinary.stateModel,
             Locals.Source.Effectful.StateModel.restrictTo] using
-            (ActivationEffect.trans hActivation
-              (ActivationEffect.of_allocatorEffect hCleanupEffect))
+            (OutcomeEffect.of_activation
+              (ActivationEffect.trans hActivation'
+                (ActivationEffect.of_allocatorEffect hCleanupEffect)))
         | @nonregular sourceOutcome targetOutcome finalCtx mode
             hNonregular sameFrame control state =>
           cases state with
@@ -177,7 +182,7 @@ theorem blockScoped_of_components
           expressions targetFuel { stmts := bodyCode } target)) :
     Simulation.Interaction.Rel
       (AllocationInteractionLoop.OpenScopedEffectResultRel
-        (ActivationEffect config allocatorDepth) contract lowerCtx outerState
+        (OutcomeEffect config allocatorDepth) contract lowerCtx outerState
         outerLocals outerPlan returns live frameBase entryMode sourceCtx target)
       (Functions.InteractionSemantics.Block.openRunScoped
         program sourceCtx body sourceFuel source)
@@ -208,9 +213,9 @@ theorem blockScoped_of_components
       Simulation.Interaction.Rel
         (Simulation.Interaction.ExceptRel
           (fun left right : EVMException => left = right)
-          (fun _source targetFinal =>
-            ActivationEffect config allocatorDepth entryMode target
-              targetFinal.state))
+          (fun sourceFinal targetFinal =>
+            OutcomeEffect config allocatorDepth entryMode target
+              targetFinal.state sourceFinal.mode))
         (Functions.InteractionSemantics.Block.openRunScoped
           program sourceCtx body sourceFuel source)
         (Expressions.InteractionSemantics.Block.openRun
@@ -311,7 +316,8 @@ theorem if_of_components
             Simulation.Interaction.ExceptRel.ok ?_⟩
           · exact ControlResultRel.regular hAfter (SameFrame.refl mode)
               (Functions.Source.Ctx.SameControl.refl sourceCtx)
-          · exact ActivationEffect.of_allocatorEffect hResult.2
+          · exact OutcomeEffect.of_activation
+              (ActivationEffect.of_allocatorEffect hResult.2)
       | true =>
           apply Simulation.Interaction.Rel.mono
             (hTrue hAfter hResult.2.ready)
@@ -321,8 +327,9 @@ theorem if_of_components
           | error hError => exact ⟨hSemantic, .error hError⟩
           | ok hEffect =>
               exact ⟨hSemantic, .ok
-                (ActivationEffect.trans
-                  (ActivationEffect.of_allocatorEffect hResult.2) hEffect)⟩
+                (OutcomeEffect.prepend_activation
+                  (ActivationEffect.of_allocatorEffect hResult.2)
+                  (SameFrame.refl mode) hEffect)⟩
 
 /-- Preserve one-value resources and compose the compiler-selected branch. -/
 theorem switch_of_components
@@ -424,7 +431,8 @@ theorem switch_of_components
             Simulation.Interaction.ExceptRel.ok ?_⟩
           · exact ControlResultRel.regular hAfter (SameFrame.refl mode)
               (Functions.Source.Ctx.SameControl.refl sourceCtx)
-          · exact ActivationEffect.of_allocatorEffect hResult.2
+          · exact OutcomeEffect.of_activation
+              (ActivationEffect.of_allocatorEffect hResult.2)
       | some sourceBody targetBody hSource hTarget =>
           simp only
           rw [hSource, hTarget]
@@ -436,8 +444,9 @@ theorem switch_of_components
           | error hError => exact ⟨hSemantic, .error hError⟩
           | ok hEffect =>
               exact ⟨hSemantic, .ok
-                (ActivationEffect.trans
-                  (ActivationEffect.of_allocatorEffect hResult.2) hEffect)⟩
+                (OutcomeEffect.prepend_activation
+                  (ActivationEffect.of_allocatorEffect hResult.2)
+                  (SameFrame.refl mode) hEffect)⟩
 
 end AllocationInteractionControlResource
 end Functions

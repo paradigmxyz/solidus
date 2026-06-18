@@ -639,6 +639,94 @@ theorem sameFrame
 
 end ActivationEffect
 
+/-- The allocator prefix owned by one activation representation. -/
+def activationProtectedBound (depth : Nat) (mode : ActivationMode) : Nat :=
+  match mode with
+  | .stack => depth + 1
+  | .scratch _ _ => depth
+
+/--
+Outcome-indexed allocator preservation. Continuing outcomes restore the
+activation's exact allocator depth. A halt may retain a deeper final depth,
+because no generated continuation can observe the allocator cell, while still
+protecting every caller-owned frame.
+-/
+inductive OutcomeEffect
+    (config : Config) (depth : Nat) (mode : ActivationMode)
+    (before after : TargetState) : Locals.Source.Mode -> Prop where
+  | activation {outcomeMode : Locals.Source.Mode}
+      (effect : ActivationEffect config depth mode before after) :
+      OutcomeEffect config depth mode before after outcomeMode
+  | halt (kind : Assembly.HaltKind) {finalDepth : Nat}
+      (effect :
+        BoundedEffect config finalDepth
+          (activationProtectedBound depth mode) before after) :
+      OutcomeEffect config depth mode before after (.halt kind)
+
+namespace OutcomeEffect
+
+theorem of_activation
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState} {outcomeMode : Locals.Source.Mode}
+    (hEffect : ActivationEffect config depth mode before after) :
+    OutcomeEffect config depth mode before after outcomeMode :=
+  .activation hEffect
+
+theorem halt_of_bounded
+    {config : Config} {depth finalDepth : Nat} {mode : ActivationMode}
+    {before after : TargetState} {kind : Assembly.HaltKind}
+    (hEffect :
+      BoundedEffect config finalDepth
+        (activationProtectedBound depth mode) before after) :
+    OutcomeEffect config depth mode before after (.halt kind) :=
+  .halt kind hEffect
+
+theorem activation_of_not_halt
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState} {outcomeMode : Locals.Source.Mode}
+    (hEffect : OutcomeEffect config depth mode before after outcomeMode)
+    (hNotHalt : ∀ kind, outcomeMode ≠ .halt kind) :
+    ActivationEffect config depth mode before after := by
+  cases hEffect with
+  | activation effect => exact effect
+  | halt kind _ => exact False.elim (hNotHalt kind rfl)
+
+theorem mode_of_sameFrame
+    {config : Config} {depth : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {before after : TargetState} {outcomeMode : Locals.Source.Mode}
+    (hEffect :
+      OutcomeEffect config depth beforeMode before after outcomeMode)
+    (hSame : SameFrame beforeMode afterMode) :
+    OutcomeEffect config depth afterMode before after outcomeMode := by
+  cases hEffect with
+  | activation effect => exact .activation (effect.sameFrame hSame)
+  | halt kind effect => cases hSame <;> exact .halt kind effect
+
+theorem prepend_activation
+    {config : Config} {depth : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {first second third : TargetState}
+    {outcomeMode : Locals.Source.Mode}
+    (hFirst : ActivationEffect config depth beforeMode first second)
+    (hSame : SameFrame beforeMode afterMode)
+    (hSecond :
+      OutcomeEffect config depth afterMode second third outcomeMode) :
+    OutcomeEffect config depth beforeMode first third outcomeMode := by
+  cases hSame with
+  | stack =>
+      cases hSecond with
+      | activation effect => exact .activation (hFirst.trans effect)
+      | halt kind effect =>
+          exact .halt kind (hFirst.to_boundedEffect.trans effect)
+  | scratch =>
+      cases hSecond with
+      | activation effect => exact .activation (hFirst.trans effect)
+      | halt kind effect =>
+          exact .halt kind (hFirst.to_boundedEffect.trans effect)
+
+end OutcomeEffect
+
 /-- Stack-only programs need no allocator; scratch programs use one config. -/
 inductive ResourceMode where
   | stackOnly

@@ -66,7 +66,8 @@ theorem forward
       ∀ {mode sourceAfter targetAfter},
         ActivationOwned config allocatorDepth frameBase mode →
         SameFrame entryMode mode →
-        ActivationEffect config allocatorDepth entryMode target targetAfter →
+        OutcomeEffect config allocatorDepth entryMode target targetAfter
+            .regular →
         AllocationContext.ActivationInvariant contract lowerCtx loopState
             initLocals loopPlan loopLive frameBase mode sourceAfter
               targetAfter →
@@ -75,7 +76,7 @@ theorem forward
               loopCtx cond postCtx post bodyCtx body sourceFuel sourceAfter) →
             Simulation.Interaction.Rel
               (OpenLoopEffectResultRel
-                (ActivationEffect config allocatorDepth) contract lowerCtx
+                (OutcomeEffect config allocatorDepth) contract lowerCtx
                 loopState initLocals loopPlan returns loopLive frameBase mode
                 loopCtx targetAfter)
               (Functions.InteractionSemantics.Stmt.openRunForLoop program
@@ -100,16 +101,21 @@ theorem forward
               .code cleanup] }
         target) := by
   apply AllocationInteractionFor.forward_effect
-    (Effect := ActivationEffect config allocatorDepth)
-    (AllocationInteractionLoopResource.activationEffectAlgebra config
+    (Effect := OutcomeEffect config allocatorDepth)
+    (AllocationInteractionLoopResource.outcomeEffectAlgebra config
       allocatorDepth frameBase)
     hSourceScope hLoopLive hInitCtx hLoopCtx hPostCtx hBodyCtx hOuter hOwned
     hExtends hPlanAgree hCleanup hTargetFuel hInit hLoop
     (hCleanupEffect := ?_) hSuccess
   intro mode sourceMid targetMid targetFinal hInvariant hPrefix hRun
-  exact ActivationEffect.of_allocatorEffect
-    (AllocationInteractionCleanupResource.Plain.effect_of_run hInvariant
-      hCleanup hPrefix.ready hRun)
+  have hPrefixActivation :=
+    hPrefix.activation_of_not_halt (by
+      intro kind hEq
+      cases hEq)
+  exact OutcomeEffect.of_activation
+    (ActivationEffect.of_allocatorEffect
+      (AllocationInteractionCleanupResource.Plain.effect_of_run hInvariant
+        hCleanup hPrefixActivation.ready hRun))
 
 end AllocationInteractionForResource
 end Functions
