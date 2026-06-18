@@ -442,6 +442,14 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.nil
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.singleton
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.cons
+#print axioms EvmCompiler.Functions.InteractionSemantics.Stmt.openRun_let_lit
+#print axioms EvmCompiler.Yul.InteractionSemantics.State.zeroFill_eq_multifill_zero
+#print axioms EvmCompiler.Yul.InteractionSemantics.Exec.let_none_succ
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.declarationCheck_many
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.multifill_insertMany
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.zeroFill_insertMany
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.InitNames.openRun
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_let_none
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_brk
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_cont
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_leave

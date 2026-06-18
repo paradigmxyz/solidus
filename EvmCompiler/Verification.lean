@@ -1429,6 +1429,14 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.nil
 #check EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.singleton
 #check EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.cons
+#check EvmCompiler.Functions.InteractionSemantics.Stmt.openRun_let_lit
+#check EvmCompiler.Yul.InteractionSemantics.State.zeroFill_eq_multifill_zero
+#check EvmCompiler.Yul.InteractionSemantics.Exec.let_none_succ
+#check EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.declarationCheck_many
+#check EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.multifill_insertMany
+#check EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.zeroFill_insertMany
+#check EvmCompiler.Yul.FunctionsInteractionStatement.InitNames.openRun
+#check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_let_none
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_brk
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_cont
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_leave

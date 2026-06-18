@@ -292,6 +292,73 @@ theorem cons
 
 end PathScopedDoneRel
 
+namespace InitNames
+
+theorem openRun
+    (names : List Functions.Name)
+    (program : Functions.Program)
+    (target : Functions.InteractionSemantics.State)
+    (ctx : Functions.Source.Ctx) :
+    ∃ finalVars,
+      Functions.Source.Store.insertMany names
+          (names.map fun _name => Functions.Source.zero)
+          target.vars = some finalVars ∧
+      Functions.InteractionSemantics.Block.openRun
+          program ctx (names.length + 1)
+          { stmts := Stmt.initNames names } target =
+        pure
+          (Functions.Source.Effectful.Outcome.regular
+            { shared := target.shared, vars := finalVars },
+            { ctx with scope := names.reverse ++ ctx.scope }) := by
+  induction names generalizing target ctx with
+  | nil =>
+      refine ⟨target.vars, rfl, ?_⟩
+      change
+        Functions.InteractionSemantics.Block.openRun
+            program ctx 1 { stmts := [] } target =
+          pure
+            (Functions.Source.Effectful.Outcome.regular
+              { shared := target.shared, vars := target.vars }, ctx)
+      rw [Functions.InteractionSemantics.Block.openRun_nil]
+  | cons name rest ih =>
+      let targetHead := target.insert name Functions.Source.zero
+      let ctxHead := { ctx with scope := name :: ctx.scope }
+      obtain ⟨finalVars, hInsert, hTail⟩ :=
+        ih (target := targetHead) (ctx := ctxHead)
+      refine ⟨finalVars, ?_, ?_⟩
+      · simpa [Functions.Source.Store.insertMany, targetHead,
+          Locals.Source.State.insert] using hInsert
+      · change
+          Functions.InteractionSemantics.Block.openRun
+              program ctx ((name :: rest).length + 1)
+                { stmts :=
+                    .let_ name (.lit Stmt.zero) :: Stmt.initNames rest }
+                target = _
+        have hHead :=
+          Functions.InteractionSemantics.Stmt.openRun_let_lit
+            program ctx (rest.length + 1) name Stmt.zero target
+        change
+          Functions.Source.Effectful.Control.Stmt.run
+              Functions.InteractionSemantics.stateModel
+              Functions.InteractionSemantics.primitiveSemantics
+              program ctx (rest.length + 1)
+                (.let_ name (.lit Stmt.zero)) target = _ at hHead
+        rw [show (name :: rest).length + 1 = (rest.length + 1) + 1 by simp,
+          Functions.InteractionSemantics.Block.openRun_cons, hHead]
+        change
+          Functions.Source.Effectful.Control.Block.runOpen
+              Functions.InteractionSemantics.stateModel
+              Functions.InteractionSemantics.primitiveSemantics
+              program ctxHead (rest.length + 1)
+                { stmts := Stmt.initNames rest } targetHead = _
+        unfold Functions.InteractionSemantics.Block.openRun
+          Functions.Source.Canonical.Block.runOpen at hTail
+        rw [hTail]
+        simp [targetHead, ctxHead, Stmt.initNames,
+          List.reverse_cons, List.append_assoc]
+
+end InitNames
+
 theorem expr
     (hPrimitive : FunctionsInteractionPrimitive.CompilerSelected)
     {fuel targetFuel : Nat}
@@ -666,6 +733,69 @@ theorem leave
         Functions.InteractionSemantics.Stmt.openRun_leave
           program ctx targetFuel target hScope]
       exact Simulation.Interaction.ForwardRel.done hDone
+
+theorem compiled_let_none
+    {compilerFuel fuel : Nat}
+    {before after : Fresh.State} {lower : List Functions.Stmt}
+    {names : List EvmYul.Identifier}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {layout : List Functions.Name}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+          (.Let names none) = some (lower, after))
+    (hNoDup : (identNames names).Nodup)
+    (hFresh : ∀ name, name ∈ identNames names → name ∉ layout)
+    (hRel : FunctionsInteractionRelation.ScopedStateRel
+      layout source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PathScopedDoneRel (identNames names ++ layout))
+      (Yul.InteractionSemantics.exec
+        (fuel + 1) (.Let names none) codeOverride source)
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx (names.length + 1) { stmts := lower } target) := by
+  rcases Stmt.toFunctionsListUncheckedFuel?_let_none_parts hLower with
+    ⟨rfl, rfl⟩
+  have hCheck : EvmYul.Yul.checkDeclaration source names = .ok () := by
+    simpa [identNames_eq_self] using
+      FunctionsInteractionRelation.ScopedStateRel.declarationCheck_many
+        hRel hNoDup hFresh
+  obtain ⟨finalVars, hInsert, hTargetRun⟩ :=
+    InitNames.openRun (identNames names) program target ctx
+  have hFinalRel :
+      FunctionsInteractionRelation.ScopedStateRel
+        (identNames names ++ layout) (source.zeroFill names)
+          { shared := target.shared, vars := finalVars } := by
+    simpa [identNames_eq_self] using
+      FunctionsInteractionRelation.ScopedStateRel.zeroFill_insertMany
+        hRel hNoDup hFresh hInsert
+  have hDone :
+      PathScopedDoneRel (identNames names ++ layout)
+        (.ok (source.zeroFill names))
+        (.ok
+          (Functions.Source.Effectful.Outcome.regular
+            { shared := target.shared, vars := finalVars },
+            { ctx with scope := (identNames names).reverse ++ ctx.scope })) :=
+    .ok
+      ⟨identNames names ++ layout,
+        FunctionsInteractionRelation.ScopedOutcomeRel.regular hFinalRel,
+        fun _ => rfl⟩
+  rw [Yul.InteractionSemantics.Exec.let_none_succ
+      fuel names codeOverride source hCheck]
+  rw [identNames_eq_self]
+  simp only [identNames_eq_self] at hTargetRun
+  rw [hTargetRun]
+  simpa [identNames_eq_self] using
+    (Simulation.Interaction.ForwardRel.done hDone :
+      Simulation.Interaction.ForwardRel Truncated
+        (PathScopedDoneRel (identNames names ++ layout))
+        (pure (source.zeroFill names))
+        (pure
+          (Functions.Source.Effectful.Outcome.regular
+            { shared := target.shared, vars := finalVars },
+            { ctx with scope := (identNames names).reverse ++ ctx.scope })))
 
 theorem compiled_brk
     {compilerFuel fuel targetFuel : Nat}

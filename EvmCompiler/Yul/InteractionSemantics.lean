@@ -23,6 +23,20 @@ def stateModel : Yul.Source.Canonical.StateModel State where
 
 namespace State
 
+theorem zeroFill_eq_multifill_zero
+    (shared : EvmYul.SharedState .Yul)
+    (source : EvmYul.Yul.VarStore) (names : List Functions.Name) :
+    (EvmYul.Yul.State.Ok shared source).zeroFill names =
+      (EvmYul.Yul.State.Ok shared source).multifill names
+        (names.map fun _name => EvmYul.UInt256.ofNat 0) := by
+  induction names with
+  | nil => rfl
+  | cons name rest ih =>
+      simpa [EvmYul.Yul.State.zeroFill,
+        EvmYul.Yul.State.multifill] using
+          congrArg
+            (fun state => state.insert name (EvmYul.UInt256.ofNat 0)) ih
+
 def afterException (state : State) : EvmYul.Yul.Exception → State
   | .YulHalt final _ => final
   | .Revert final => final
@@ -323,6 +337,15 @@ theorem leave_succ
     exec (fuel + 1) .Leave code state = pure state.setLeave := by
   simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
     stateModel]
+
+theorem let_none_succ
+    (fuel : Nat) (names : List EvmYul.Identifier)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State)
+    (hCheck : EvmYul.Yul.checkDeclaration state names = .ok ()) :
+    exec (fuel + 1) (.Let names none) code state =
+      pure (state.zeroFill names) := by
+  simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
+    hCheck, stateModel]
 
 theorem let_one_succ
     (fuel : Nat) (name : EvmYul.Identifier)

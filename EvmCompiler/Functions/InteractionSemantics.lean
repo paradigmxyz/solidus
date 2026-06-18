@@ -539,6 +539,23 @@ theorem openRun_let
   | cons value rest =>
       cases rest <;> rfl
 
+theorem openRun_let_lit
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (name : Functions.Name) (value : Word)
+    (state : State) :
+    openRun program ctx fuel (.let_ name (.lit value)) state =
+      pure
+        (Functions.Source.Effectful.Outcome.regular
+          (state.insert name value),
+          { ctx with scope := name :: ctx.scope }) := by
+  rw [openRun_let]
+  simp [Expr.openEval, Locals.InteractionSemantics.Expr.openEval,
+    Locals.Source.Effectful.Expr.Control.eval,
+    Locals.Source.Effectful.Expr.eval, stateModel,
+    Locals.InteractionSemantics.stateModel,
+    Locals.Source.Effectful.Ordinary.stateModel]
+  rfl
+
 theorem openRun_assign
     (program : Functions.Program) (ctx : Functions.Source.Ctx)
     (fuel : Nat) (name : Functions.Name) (expr : Functions.Expr 1)

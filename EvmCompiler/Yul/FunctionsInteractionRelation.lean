@@ -1036,6 +1036,42 @@ theorem declarationCheck
   simp [EvmYul.Yul.checkDeclaration, EvmYul.Yul.firstDuplicate?,
     EvmYul.Yul.firstDeclared?, EvmYul.Yul.State.lookup?, hLookup]
 
+private theorem firstDuplicate?_none_of_nodup
+    (names : List Functions.Name) (hNoDup : names.Nodup) :
+    EvmYul.Yul.firstDuplicate? names = none := by
+  induction names with
+  | nil => rfl
+  | cons name rest ih =>
+      have hParts := List.nodup_cons.mp hNoDup
+      simp [EvmYul.Yul.firstDuplicate?, hParts.1, ih hParts.2]
+
+theorem declarationCheck_many
+    {layout names : List Functions.Name}
+    {source : SourceState} {target : TargetState}
+    (hRel : ScopedStateRel layout source target)
+    (hNoDup : names.Nodup)
+    (hFresh : ∀ name, name ∈ names → name ∉ layout) :
+    EvmYul.Yul.checkDeclaration source names = .ok () := by
+  rcases hRel.state with
+    ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
+  subst source
+  have hDeclared :
+      EvmYul.Yul.firstDeclared? (.Ok sourceShared sourceVars) names = none := by
+    unfold EvmYul.Yul.firstDeclared?
+    apply List.find?_eq_none.mpr
+    intro name hMem
+    have hLookup : sourceVars.lookup name = none := by
+      cases hValue : sourceVars.lookup name with
+      | none => rfl
+      | some value =>
+          exact False.elim
+            (hFresh name hMem
+              (hRel.domain sourceShared sourceVars rfl
+                name value hValue))
+    simp [EvmYul.Yul.State.lookup?, hLookup]
+  simp [EvmYul.Yul.checkDeclaration,
+    firstDuplicate?_none_of_nodup names hNoDup, hDeclared]
+
 theorem assignmentCheck
     {layout : List Functions.Name}
     {source : SourceState} {target : TargetState}
@@ -1136,6 +1172,109 @@ theorem multifill_single_visible
       exact
         ⟨result, by
           simpa [Finmap.lookup_insert_of_ne sourceVars hNameEq] using hLookup⟩
+
+/-- A fresh, duplicate-free source multifill agrees with the ordinary
+Functions `insertMany`, despite their opposite insertion traversals. -/
+theorem multifill_insertMany :
+    ∀ {names : List Functions.Name} {values : List Word}
+      {layout : List Functions.Name}
+      {source : SourceState} {target : TargetState}
+      {finalVars : Locals.Source.Store},
+      ScopedStateRel layout source target →
+      names.Nodup →
+      (∀ name, name ∈ names → name ∉ layout) →
+      Functions.Source.Store.insertMany names values target.vars =
+        some finalVars →
+      ScopedStateRel (names ++ layout)
+        (source.multifill names values)
+        { shared := target.shared, vars := finalVars }
+  | [], [], layout, source, target, finalVars,
+      hRel, _hNodup, _hFresh, hInsert => by
+      rcases hRel.state with
+        ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+      subst source
+      simp [Functions.Source.Store.insertMany] at hInsert
+      subst finalVars
+      simpa [EvmYul.Yul.State.multifill] using hRel
+  | [], _value :: _values, _layout, _source, _target, _finalVars,
+      _hRel, _hNodup, _hFresh, hInsert => by
+      simp [Functions.Source.Store.insertMany] at hInsert
+  | _name :: _names, [], _layout, _source, _target, _finalVars,
+      _hRel, _hNodup, _hFresh, hInsert => by
+      simp [Functions.Source.Store.insertMany] at hInsert
+  | name :: names, value :: values, layout, source, target, finalVars,
+      hRel, hNodup, hFresh, hInsert => by
+      rcases hRel.state with
+        ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+      subst source
+      have hParts := List.nodup_cons.mp hNodup
+      have hLength : values.length = names.length := by
+        have hAllLength :=
+          Functions.Source.Store.insertMany_length hInsert
+        simpa using hAllLength
+      obtain ⟨tailVars, hTailInsert⟩ :=
+        Functions.Source.Store.insertMany_exists_of_length
+          (store := target.vars) hLength
+      have hTailFresh :
+          ∀ candidate, candidate ∈ names → candidate ∉ layout := by
+        intro candidate hMem
+        exact hFresh candidate (by simp [hMem])
+      have hTailRel :=
+        multifill_insertMany hRel hParts.2 hTailFresh hTailInsert
+      have hTargetInsert :
+          Functions.Source.Store.insertMany names values
+              (Locals.Source.Store.insert target.vars name value) =
+            some (Locals.Source.Store.insert tailVars name value) :=
+        Functions.Source.Store.insertMany_commute_insert_of_not_mem
+          hTailInsert hParts.1
+      have hTargetEq :
+          finalVars = Locals.Source.Store.insert tailVars name value := by
+        change
+          Functions.Source.Store.insertMany names values
+              (Locals.Source.Store.insert target.vars name value) =
+            some finalVars at hInsert
+        rw [hTargetInsert] at hInsert
+        exact Option.some.inj hInsert.symm
+      subst finalVars
+      have hHeadRel :=
+        hTailRel.multifill_single_cons name value
+      have hSourceEq :
+          (EvmYul.Yul.State.Ok sourceShared sourceVars).multifill
+              (name :: names) (value :: values) =
+            ((EvmYul.Yul.State.Ok sourceShared sourceVars).multifill
+                names values).multifill [name] [value] := by
+        rcases hTailRel.state with
+          ⟨tailShared, tailSourceVars, hTailSource, _hShared, _hVars⟩
+        change
+          ((EvmYul.Yul.State.Ok sourceShared sourceVars).multifill
+              names values).insert name value =
+            ((EvmYul.Yul.State.Ok sourceShared sourceVars).multifill
+              names values).multifill [name] [value]
+        rw [hTailSource]
+        rfl
+      rw [hSourceEq]
+      simpa [List.cons_append, Locals.Source.State.insert,
+        Locals.Source.Store.insert] using hHeadRel
+
+theorem zeroFill_insertMany
+    {layout names : List Functions.Name}
+    {source : SourceState} {target : TargetState}
+    {finalVars : Locals.Source.Store}
+    (hRel : ScopedStateRel layout source target)
+    (hNoDup : names.Nodup)
+    (hFresh : ∀ name, name ∈ names → name ∉ layout)
+    (hInsert :
+      Functions.Source.Store.insertMany names
+          (names.map fun _name => Functions.Source.zero)
+          target.vars = some finalVars) :
+    ScopedStateRel (names ++ layout)
+      (source.zeroFill names)
+      { shared := target.shared, vars := finalVars } := by
+  rcases hRel.state with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  rw [Yul.InteractionSemantics.State.zeroFill_eq_multifill_zero]
+  exact multifill_insertMany hRel hNoDup hFresh hInsert
 
 end ScopedStateRel
 
