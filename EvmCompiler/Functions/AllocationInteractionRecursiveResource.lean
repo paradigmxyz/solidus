@@ -2,6 +2,7 @@ import EvmCompiler.Functions.AllocationInteractionResourceComposition
 import EvmCompiler.Functions.AllocationInteractionRecursive
 import EvmCompiler.Functions.AllocationInteractionStatementResource
 import EvmCompiler.Functions.AllocationInteractionAbruptResource
+import EvmCompiler.Functions.AllocationInteractionControlResource
 
 namespace EvmCompiler
 namespace Functions
@@ -981,6 +982,190 @@ theorem let_
                   (hBoundary.semantic.control.mono
                     (fun other hOther => by simp [hOther])).scopeUpdate
                     (name :: sourceCtx.scope)
+                capacity := by
+                  cases hSame <;> exact hBoundary.semantic.capacity }
+            configEq := hBoundary.configEq
+            ready := hReady
+            owned := hBoundary.owned.sameFrame hSame
+            budget := hBoundary.budget })
+  have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
+  rw [hFuel'] at hResult
+  exact hResult
+
+/-- Recursive lexical block with exact cleanup and allocator preservation. -/
+theorem block
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {body : Functions.Block} {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase sourceFuel targetExtra : Nat}
+    {config : Config} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live { stmts := .block body :: rest }
+        beforeState beforeLocals)
+    (hSourceFuel : 0 < sourceFuel)
+    (hBoundary :
+      Boundary cursor contract globalFrameWords config allocatorDepth frameBase
+        mode sourceCtx source target)
+    (hBodyForward :
+      ∀ (bodyCursor :
+          CoreCursor root (.lexical scope cursor.planning.nextScope)
+            live body beforeState beforeLocals)
+        (bodyExtra : Nat),
+        Boundary bodyCursor contract globalFrameWords config allocatorDepth
+            frameBase mode sourceCtx source target →
+          CursorRuntimeAt bodyCursor contract config allocatorDepth frameBase
+            (sourceFuel - 1) bodyExtra mode sourceCtx source target)
+    (hTailForward :
+      ∀ {afterState : AllocationLowering.State}
+        (tail : CoreCursor root scope live { stmts := rest }
+          afterState beforeLocals),
+        ExactTail cursor tail →
+        ∀ {sourceMid targetMid tailMode},
+          Boundary tail contract globalFrameWords config allocatorDepth frameBase
+              tailMode sourceCtx sourceMid targetMid →
+            CursorRuntimeAt tail contract config allocatorDepth frameBase
+              (sourceFuel - 1) (targetExtra + 8) tailMode sourceCtx
+              sourceMid targetMid) :
+    CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
+      targetExtra mode sourceCtx source target := by
+  let childFuel := sourceFuel - 1
+  let totalFuel := targetBudget cursor sourceFuel targetExtra
+  have hFuel : childFuel + 1 = sourceFuel := by
+    simp [childFuel]
+    omega
+  obtain
+      ⟨afterState, headCode, tail, targetBlock, bodyCursor,
+        hCompiled, hHeadCode, hFinish, hAfterEnv, hAfterLayout,
+        _hTransport, hExact⟩ := cursor.blockCursors
+  have hBodyAgree :
+      PlanAgreesOn bodyCursor.plan cursor.plan live :=
+    bodyCursor.planAgreesOn cursor rfl
+  have hBodyInvariant :=
+    hBoundary.semantic.invariant.transport_plan
+      hBodyAgree.symm bodyCursor.planWF
+  have hBodyBoundary :
+      Boundary bodyCursor contract globalFrameWords config allocatorDepth
+        frameBase mode sourceCtx source target :=
+    { semantic :=
+        { invariant := hBodyInvariant
+          sourceScope := hBoundary.semantic.sourceScope
+          control := hBoundary.semantic.control
+          capacity := hBoundary.semantic.capacity }
+      configEq := hBoundary.configEq
+      ready := hBoundary.ready
+      owned := hBoundary.owned
+      budget := hBoundary.budget }
+  obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
+    AllocationInteractionCleanup.Plain.finishScoped_shape hFinish
+  have hHeadLength :
+      headCode.length = bodyCursor.compiled.length + 1 := by
+    rw [hHeadCode, hTargetShape, List.length_append]
+    simp
+  have hCompiledLength := congrArg List.length hCompiled
+  simp only [List.length_append] at hCompiledLength
+  let bodyBase := bodyCursor.compiled.length + 8 * (childFuel + 1)
+  let bodyExtra := totalFuel - bodyBase
+  have hBodyBase : bodyBase ≤ totalFuel := by
+    simp [bodyBase, totalFuel, targetBudget]
+    omega
+  have hBodyBudget :
+      targetBudget bodyCursor childFuel bodyExtra = totalFuel := by
+    simp [targetBudget, bodyExtra, bodyBase]
+    omega
+  have hBodyRecursive :=
+    hBodyForward bodyCursor bodyExtra hBodyBoundary
+  have hBodyRel :
+      Simulation.Interaction.Rel
+        (RuntimeResultRel contract root.lowerCtx bodyCursor.finalState
+          bodyCursor.finalLocals bodyCursor.plan root.returns
+          (Functions.Scope.Block.outEnv live body) frameBase mode sourceCtx
+          { sourceCtx with scope := Functions.Scope.Block.outEnv live body }
+          config allocatorDepth target)
+        (Functions.InteractionSemantics.Block.openRun
+          program sourceCtx childFuel body source)
+        (Expressions.InteractionSemantics.Block.openRun expressions totalFuel
+          { stmts := bodyCursor.compiled } target) := by
+    simpa [CursorRuntimeAt, childFuel, hBodyBudget] using hBodyRecursive
+  have hAfterInvariant :=
+    hBoundary.semantic.invariant.transport_state hAfterEnv hAfterLayout
+  have hExtends :
+      AllocationLowering.StateExtends live beforeState bodyCursor.finalState :=
+    AllocationLowering.lowerBlockOpen_stateExtends
+      bodyCursor.sourceScoped bodyCursor.lower
+  have hExtendsAfter :
+      AllocationLowering.StateExtends live afterState bodyCursor.finalState := by
+    rcases hExtends with ⟨dropped, hLayout, hFresh, hSlots⟩
+    refine ⟨dropped, ?_, hFresh, ?_⟩
+    · rw [hLayout, hAfterLayout]
+    · intro name hLive
+      exact (hSlots name hLive).trans
+        (congrArg (AllocationSupport.lookupSlot? name) hAfterEnv.symm)
+  have hCleanupFuel :
+      2 ≤ totalFuel - bodyCursor.compiled.length := by
+    simp [totalFuel, targetBudget]
+    omega
+  have hSemantic :=
+    AllocationInteractionControl.block_of_components
+      (bodyLive := Functions.Scope.Block.outEnv live body)
+      hBoundary.semantic.sourceScope rfl rfl hBoundary.semantic.control
+      hAfterInvariant hExtendsAfter hBodyAgree hFinish hCleanupFuel
+      (Simulation.Interaction.Rel.mono hBodyRel
+        (fun _ _ hDone => hDone.1))
+  have hResource :=
+    AllocationInteractionControlResource.block_of_components
+      hBoundary.semantic.sourceScope hFinish hCleanupFuel hBodyRel
+  have hHead :
+      Simulation.Interaction.Rel
+        (RuntimeResultRel contract root.lowerCtx afterState beforeLocals
+          cursor.plan root.returns live frameBase mode sourceCtx sourceCtx
+          config allocatorDepth target)
+        (Functions.InteractionSemantics.Stmt.openRun
+          program sourceCtx childFuel (.block body) source)
+        (Expressions.InteractionSemantics.Block.openRun expressions totalFuel
+          targetBlock target) :=
+    Simulation.Interaction.Rel.inter hSemantic hResource
+  have hHead' :
+      Simulation.Interaction.Rel
+        (RuntimeResultRel contract root.lowerCtx afterState beforeLocals
+          cursor.plan root.returns live frameBase mode sourceCtx sourceCtx
+          config allocatorDepth target)
+        (Functions.InteractionSemantics.Stmt.openRun
+          program sourceCtx childFuel (.block body) source)
+        (Expressions.InteractionSemantics.Block.openRun expressions totalFuel
+          { stmts := headCode } target) := by
+    cases targetBlock
+    simpa [hHeadCode] using hHead
+  have hMidCtx :
+      sourceCtx =
+        { sourceCtx with
+          scope := Functions.Scope.Stmt.outEnv live (.block body) } := by
+    have hCtx : { sourceCtx with scope := live } = sourceCtx := by
+      cases sourceCtx
+      have hScope := hBoundary.semantic.sourceScope
+      simp only at hScope
+      cases hScope
+      rfl
+    simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
+  have hResult :=
+    cons_of_parts cursor tail hExact hCompiled hMidCtx
+      (by simpa [childFuel, hFuel, totalFuel,
+        Functions.Scope.Stmt.outEnv] using hHead')
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame =>
+        hTailForward tail hExact
+          { semantic :=
+              { invariant := hInvariant
+                sourceScope := hBoundary.semantic.sourceScope
+                control := hBoundary.semantic.control
                 capacity := by
                   cases hSame <;> exact hBoundary.semantic.capacity }
             configEq := hBoundary.configEq
