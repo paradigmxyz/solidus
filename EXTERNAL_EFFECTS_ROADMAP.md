@@ -885,8 +885,8 @@ Exit: the shared core builds with no compiler layer changed.
     preserves both successful copies and exact out-of-bounds errors.
   - [x] Prove `gas`/`msize` expose one equal resource query for every answer,
     then classify every source-supported primitive into one checked capability.
-  - [ ] Compose argument-expression preservation with external primitive
-    preservation through the ordinary allocation lowerer and Locals compiler.
+  - [x] Compose recursively safe expressions and expression sequences with the
+    complete primitive classifier through the ordinary lowerer and compiler.
   - [ ] Recursive allocation preservation for expressions, statements,
     internal calls, loops, terminals, and whole programs.
 - [ ] Yul.

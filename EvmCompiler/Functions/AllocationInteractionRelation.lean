@@ -1400,6 +1400,18 @@ structure ActivationExprResultRel
 
 namespace ActivationExprResultRel
 
+theorem nil
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {source : SourceState} {target : TargetState}
+    (hRel :
+      ActivationStateRel contract plan live stackOffset frameBase mode
+        source target) :
+    ActivationExprResultRel contract plan live stackOffset frameBase 0 mode
+      source target target [] := by
+  exact ⟨by simpa using hRel, rfl, by simp⟩
+
 theorem literal
     {contract : MemoryContract.Contract} {plan : Plan}
     {live : List Locals.Name} {stackOffset frameBase : Nat}
@@ -1414,6 +1426,30 @@ theorem literal
   simp [StateRel.pushTargetBy,
     EvmYul.EVM.State.replaceStackAndIncrPC,
     EvmYul.EVM.State.incrPC]
+
+theorem append
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {sourceHead sourceFinal : SourceState}
+    {targetInitial targetHead targetFinal : TargetState}
+    {headCount tailCount : Nat}
+    {headValues tailValues : List Word}
+    (hHead :
+      ActivationExprResultRel contract plan live stackOffset frameBase
+        headCount mode sourceHead targetInitial targetHead headValues)
+    (hTail :
+      ActivationExprResultRel contract plan live
+        (stackOffset + headCount) frameBase tailCount mode
+        sourceFinal targetHead targetFinal tailValues) :
+    ActivationExprResultRel contract plan live stackOffset frameBase
+      (headCount + tailCount) mode sourceFinal targetInitial targetFinal
+      (headValues ++ tailValues) := by
+  refine ⟨?_, ?_, ?_⟩
+  · simpa [Nat.add_assoc] using hTail.state
+  · simp [List.length_append, hHead.valuesLength, hTail.valuesLength]
+  · rw [hTail.stack, hHead.stack]
+    simp [List.reverse_append, List.append_assoc]
 
 end ActivationExprResultRel
 

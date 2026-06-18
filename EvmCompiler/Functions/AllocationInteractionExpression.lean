@@ -1,5 +1,7 @@
 import EvmCompiler.Functions.AllocationInteractionRelation
 import EvmCompiler.Functions.AllocationInteractionPrimitive
+import EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive
+import EvmCompiler.Functions.AllocationInteractionSafety
 import EvmCompiler.Functions.AllocationContext
 import EvmCompiler.Functions.AllocationLowering
 import EvmCompiler.Locals.InteractionPreservation
@@ -531,6 +533,92 @@ theorem prim_of_lower_compile
           subst code
           exact prim_of_args op hPrimitive args argsCode
             (hArgsPreserve hLowerArgs hArgsCode) hSafe
+
+/-- Compose a checked expression head with every safe continuation of its tail. -/
+theorem exprSeq_cons_of_parts
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase left right : Nat}
+    {mode : ActivationMode}
+    {head : Functions.Expr left} {tail : Locals.ExprSeq right}
+    {source : SourceState} {target : TargetState}
+    (headCode tailCode : Structured.Code)
+    (hHead :
+      Simulation.Interaction.Rel
+        (AllocationInteractionPrimitive.ActivationExprOutcomeRel
+          contract plan live stackOffset frameBase left mode target)
+        (Functions.InteractionSemantics.Expr.openEval head source)
+        (Structured.InteractionSemantics.Code.openRun headCode target))
+    (hTailSafe :
+      Simulation.Interaction.AllDone
+        (fun outcome =>
+          match outcome with
+          | .error _ => True
+          | .ok result =>
+              AllocationInteractionSafety.ExprSeqSafe contract tail result.1)
+        (Functions.InteractionSemantics.Expr.openEval head source))
+    (hTail :
+      ∀ {sourceHead : SourceState} {targetHead : TargetState}
+        {headValues : List Word},
+        ActivationExprResultRel contract plan live stackOffset frameBase left
+            mode sourceHead target targetHead headValues →
+        AllocationInteractionSafety.ExprSeqSafe contract tail sourceHead →
+        Simulation.Interaction.Rel
+          (AllocationInteractionPrimitive.ActivationExprOutcomeRel
+            contract plan live (stackOffset + left) frameBase right mode
+            targetHead)
+          (Functions.InteractionSemantics.ExprSeq.openEval tail sourceHead)
+          (Structured.InteractionSemantics.Code.openRun tailCode targetHead)) :
+    Simulation.Interaction.Rel
+      (AllocationInteractionPrimitive.ActivationExprOutcomeRel
+        contract plan live stackOffset frameBase (left + right) mode target)
+      (Functions.InteractionSemantics.ExprSeq.openEval (.cons head tail) source)
+      (Structured.InteractionSemantics.Code.openRun
+        (headCode ++ tailCode) target) := by
+  rw [Structured.InteractionSemantics.Code.openRun_append]
+  unfold Functions.InteractionSemantics.ExprSeq.openEval
+    Locals.InteractionSemantics.ExprSeq.openEval
+    Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+  have hHeadSafe :=
+    Simulation.Interaction.Rel.strengthen_left hHead hTailSafe
+  apply Simulation.Interaction.Rel.bind_custom hHeadSafe
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hHeadDone, hSafeDone⟩
+  cases hHeadDone with
+  | @error sourceError targetError hError =>
+      cases hError
+      exact Simulation.Interaction.Rel.done
+        (Simulation.Interaction.ExceptRel.error rfl)
+  | @ok sourceHeadResult targetHead hHeadResult =>
+      rcases sourceHeadResult with ⟨sourceHead, headValues⟩
+      simp only [Prod.fst, Prod.snd] at hHeadResult hSafeDone
+      have hTailRel := hTail hHeadResult hSafeDone
+      have hMapped :
+          Simulation.Interaction.Rel
+            (AllocationInteractionPrimitive.ActivationExprOutcomeRel
+              contract plan live stackOffset frameBase (left + right) mode
+              target)
+            (Simulation.Interaction.bind
+              (Functions.InteractionSemantics.ExprSeq.openEval tail sourceHead)
+              (fun result =>
+                Simulation.Interaction.pure
+                  (result.1, headValues ++ result.2)))
+            (Simulation.Interaction.bind
+              (Structured.InteractionSemantics.Code.openRun tailCode targetHead)
+              Simulation.Interaction.pure) := by
+        apply Simulation.Interaction.Rel.bind_custom hTailRel
+        intro sourceTailDone targetTailDone hTailDone
+        cases hTailDone with
+        | @error sourceError targetError hError =>
+            cases hError
+            exact Simulation.Interaction.Rel.done
+              (Simulation.Interaction.ExceptRel.error rfl)
+        | @ok sourceTailResult targetFinal hTailResult =>
+            rcases sourceTailResult with ⟨sourceFinal, tailValues⟩
+            simp only
+            apply Simulation.Interaction.Rel.done
+            apply Simulation.Interaction.ExceptRel.ok
+            exact ActivationExprResultRel.append hHeadResult hTailResult
+      simpa using hMapped
 
 /-- Compose recursively checked arguments with one CALL-family primitive. -/
 theorem call_prim_of_args

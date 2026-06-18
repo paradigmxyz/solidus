@@ -31,8 +31,10 @@ import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.InteractionSemantics
 import EvmCompiler.Functions.AllocationInteractionRelation
 import EvmCompiler.Functions.AllocationInteractionExpression
+import EvmCompiler.Functions.AllocationInteractionExpressionRecursive
 import EvmCompiler.Functions.AllocationInteractionPrimitive
 import EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive
+import EvmCompiler.Functions.AllocationInteractionSafety
 import EvmCompiler.Functions.AllocationContext
 import EvmCompiler.Functions.EffectSemanticsInversion
 import EvmCompiler.Functions.ObserverSemantics
@@ -175,6 +177,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionRelation.ActivationStateRel
 #check EvmCompiler.Functions.AllocationInteractionRelation.ActivationStateRel.finishCall
 #check EvmCompiler.Functions.AllocationInteractionRelation.ActivationStateRel.finishCreate
+#check EvmCompiler.Functions.AllocationInteractionRelation.ActivationExprResultRel.nil
+#check EvmCompiler.Functions.AllocationInteractionRelation.ActivationExprResultRel.append
 #check EvmCompiler.Functions.AllocationInteractionRelation.OutcomeRel
 #check EvmCompiler.Functions.AllocationInteractionRelation.OpenOutcomeRel
 #check EvmCompiler.Functions.AllocationInteractionExpression.literal_open
@@ -187,6 +191,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionExpression.prim_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionExpression.call_prim_of_args
 #check EvmCompiler.Functions.AllocationInteractionExpression.create_prim_of_args
+#check EvmCompiler.Functions.AllocationInteractionExpression.exprSeq_cons_of_parts
+#check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardExpr
+#check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardExprSeq
+#check EvmCompiler.Functions.AllocationInteractionSafety.ExprSafe
+#check EvmCompiler.Functions.AllocationInteractionSafety.ExprSeqSafe
 #check EvmCompiler.Functions.AllocationInteractionPrimitive.call_open
 #check EvmCompiler.Functions.AllocationInteractionPrimitive.create_open
 #check EvmCompiler.Functions.AllocationInteractionPrimitive.OpenForward

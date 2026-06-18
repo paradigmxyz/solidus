@@ -31712,3 +31712,21 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   focused 1145-job module, 1307-job verification root, architecture guard,
   touched-file hole scan, axiom audit, and `git diff --check` passed; the
   canonical classifier uses only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 21:29:08 PDT - theorem-boundary/functions-open-safety - defined
+  source-facing `ExprSafe`/`ExprSeqSafe` recursively over syntax and
+  `Interaction.AllDone`; safety quantifies over every exact open-world answer
+  and contains no compiler artifact, replay certificate, or target-run fact.
+- 2026-06-17 21:29:08 PDT - proof/functions-recursive-expressions - moved
+  transcript-free empty/append result laws into the canonical allocation
+  relation, proved generic ordered sequence composition, and checked mutual
+  `forwardExpr`/`forwardExprSeq` through the actual allocation lowerer and
+  Locals compiler for both stack-only and scratch-backed activations.
+- 2026-06-17 21:29:08 PDT - audit/functions-expression-surface - literals,
+  bound variables, all source-supported primitives, primitive argument trees,
+  and arbitrary expression sequences now share one adjacent open theorem;
+  raw code expressions remain rejected by canonical source support.
+- 2026-06-17 21:29:08 PDT - validation/functions-recursive-expressions - the
+  focused 1156-job module, 1309-job verification root, architecture guard,
+  touched-file hole scan, axiom audit, and `git diff --check` passed; public
+  recursive expression theorems use only
+  `[propext, Classical.choice, Quot.sound]`.
