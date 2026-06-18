@@ -10,13 +10,22 @@ open AllocationInteractionFrame
 open AllocationInteractionRelation
 open AllocationInteractionResource
 
-theorem activationEffectAlgebra
-    (config : Config) (allocatorDepth : Nat) :
+def activationEffectAlgebra
+    (config : Config) (allocatorDepth frameBase : Nat) :
     AllocationInteractionLoop.EffectAlgebra
       (ActivationEffect config allocatorDepth) := by
-  refine ⟨?_⟩
-  intro beforeMode afterMode first second third hFirst hSame hSecond
-  exact hFirst.trans (hSecond.sameFrame hSame.symm)
+  refine
+    { Ready := AllocatorReady config allocatorDepth
+      Context := ActivationOwned config allocatorDepth frameBase
+      transSame := ?_
+      ready := ?_
+      contextSame := ?_ }
+  · intro beforeMode afterMode first second third hFirst hSame hSecond
+    exact hFirst.trans (hSecond.sameFrame hSame.symm)
+  · intro mode before after hEffect
+    exact hEffect.ready
+  · intro beforeMode afterMode hOwned hSame
+    exact hOwned.sameFrame hSame
 
 /--
 Resource-aware loop preservation is the concrete activation-effect
@@ -42,6 +51,7 @@ theorem forward
       ∀ {mode source target},
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
+          AllocatorReady config allocatorDepth target →
           Simulation.Interaction.Rel
             (AllocationInteractionExpressionResource.ConditionOutcomeRel
               contract config allocatorDepth plan live frameBase mode target)
@@ -49,8 +59,10 @@ theorem forward
             (Expressions.InteractionSemantics.Expr.openRunCondition
               targetCond target))
     (hBody :
-      ∀ (fuel : Nat) {mode source target},
+      ∀ (fuel : Nat) {mode source target} {effectInitial : TargetState},
         fuel < fuelBound →
+        ActivationOwned config allocatorDepth frameBase mode →
+        ActivationEffect config allocatorDepth mode effectInitial target →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -66,8 +78,12 @@ theorem forward
             (Expressions.InteractionSemantics.Block.openRun expressions
               (fuel + slack) targetBody target))
     (hPost :
-      ∀ (fuel : Nat) {mode source target},
+      ∀ (fuel : Nat) {effectMode mode : ActivationMode} {source target}
+        {effectInitial : TargetState},
         fuel < fuelBound →
+        ActivationOwned config allocatorDepth frameBase mode →
+        SameFrame effectMode mode →
+        ActivationEffect config allocatorDepth effectMode effectInitial target →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -86,6 +102,8 @@ theorem forward
       fuel ≤ fuelBound →
       AllocationContext.ActivationInvariant contract lowerCtx lowerState
           localsCtx plan live frameBase mode source target →
+      AllocatorReady config allocatorDepth target →
+      ActivationOwned config allocatorDepth frameBase mode →
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Stmt.openRunForLoop program loopCtx
           cond postCtx post bodyCtx body fuel source) →
@@ -97,14 +115,14 @@ theorem forward
             cond postCtx post bodyCtx body fuel source)
           (Expressions.InteractionSemantics.Stmt.openRunForLoop expressions
             (fuel + slack) targetCond targetPost targetBody target) := by
-  intro fuel mode source target hFuel hInitial hSuccess
+  intro fuel mode source target hFuel hInitial hReady hOwned hSuccess
   apply AllocationInteractionLoop.forward_effect
     (Effect := ActivationEffect config allocatorDepth)
-    (activationEffectAlgebra config allocatorDepth)
+    (activationEffectAlgebra config allocatorDepth frameBase)
     hLoopScope hBodyBreak hBodyContinue (hCond := ?_) hBody hPost fuel hFuel
-    hInitial hSuccess
-  intro nextMode nextSource nextTarget hNext
-  apply Simulation.Interaction.Rel.mono (hCond hNext)
+    hInitial hReady hOwned hSuccess
+  intro nextMode nextSource nextTarget hNext hNextReady
+  apply Simulation.Interaction.Rel.mono (hCond hNext hNextReady)
   intro sourceDone targetDone hDone
   cases hDone with
   | error hError => exact .error hError

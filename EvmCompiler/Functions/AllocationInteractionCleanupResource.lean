@@ -45,6 +45,32 @@ theorem forward_allocator
   · exact AllocatorEffect.of_machine_eq hReady
       (congrArg EvmYul.SharedState.toMachineState hShared)
 
+/-- The exact cleanup run selected by control has the allocator effect. -/
+theorem effect_of_run
+    {contract : MemoryContract.Contract}
+    {config : Config} {allocatorDepth : Nat}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx} {plan : Plan}
+    {live : List Locals.Name} {targetDepth frameBase : Nat}
+    {mode : ActivationMode}
+    {source : SourceState} {target targetFinal : TargetState}
+    {cleanup : Structured.Code}
+    (hInvariant :
+      AllocationContext.ActivationInvariant contract lowerCtx lowerState
+        localsCtx plan live frameBase mode source target)
+    (hCleanup : localsCtx.cleanupTo? targetDepth = some cleanup)
+    (hReady : AllocatorReady config allocatorDepth target)
+    (hRun :
+      Structured.InteractionSemantics.Code.openRun cleanup target =
+        .done (.ok targetFinal)) :
+    AllocatorEffect config allocatorDepth target targetFinal := by
+  obtain ⟨otherFinal, hOtherRun, hEffect⟩ :=
+    forward_allocator hInvariant hCleanup hReady
+  rw [hRun] at hOtherRun
+  cases hOtherRun
+  exact hEffect
+
 end Plain
 
 namespace Preserving

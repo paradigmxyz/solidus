@@ -8,12 +8,34 @@ open AllocationInteractionRelation
 open AllocationInteractionComposition
 open AllocationInteractionLoop
 
+/-- A control result paired with one abstract target effect. -/
+abbrev OpenControlEffectResultRel
+    (Effect : ActivationMode → TargetState → TargetState → Prop)
+    (contract : MemoryContract.Contract)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerState : AllocationLowering.State)
+    (localsCtx : Locals.Ctx) (plan : Plan)
+    (returns regularLive : List Functions.Name) (frameBase : Nat)
+    (entryMode : ActivationMode)
+    (controlCtx regularCtx : Functions.Source.Ctx)
+    (targetInitial : TargetState) :=
+  fun sourceDone targetDone =>
+    OpenControlResultRel contract lowerCtx lowerState localsCtx plan returns
+        regularLive frameBase entryMode controlCtx regularCtx sourceDone
+        targetDone ∧
+      Simulation.Interaction.ExceptRel
+        (fun left right : EVMException => left = right)
+        (fun _source target =>
+          Effect entryMode targetInitial target.state)
+        sourceDone targetDone
+
 /--
 Compose an already-related initializer and recursive loop with the exact outer
 cleanup emitted for a Functions `for`. Compiler cursor decomposition remains
 outside this theorem; this owner only sequences adjacent semantic components.
 -/
-theorem forward
+theorem forward_effect
+    {Effect : ActivationMode → TargetState → TargetState → Prop}
     {program : Functions.Program}
     {expressions : Expressions.Program}
     {contract : MemoryContract.Contract}
@@ -31,6 +53,7 @@ theorem forward
     {targetCond : Expressions.Expr 1}
     {cleanup : Structured.Code}
     {source : SourceState} {target : TargetState}
+    (effectAlgebra : EffectAlgebra Effect)
     (hSourceScope : sourceCtx.scope = live)
     (hLoopLive : loopLive = Functions.Scope.Block.outEnv live init)
     (hInitCtx : initCtx = sourceCtx.withoutLoopControl)
@@ -40,6 +63,7 @@ theorem forward
     (hOuter :
       AllocationContext.ActivationInvariant contract lowerCtx outerState
         outerLocals outerPlan live frameBase entryMode source target)
+    (hContext : effectAlgebra.Context entryMode)
     (hExtends :
       AllocationLowering.StateExtends live outerState loopState)
     (hPlanAgree : PlanAgreesOn loopPlan outerPlan live)
@@ -48,14 +72,18 @@ theorem forward
     (hTargetFuel : 1 ≤ sourceFuel + slack)
     (hInit :
       Simulation.Interaction.Rel
-        (OpenControlResultRel contract lowerCtx loopState initLocals loopPlan
-          returns loopLive frameBase entryMode initCtx loopCtx)
+        (OpenControlEffectResultRel Effect contract lowerCtx loopState
+          initLocals loopPlan returns loopLive frameBase entryMode initCtx
+          loopCtx target)
         (Functions.InteractionSemantics.Block.openRun
           program initCtx sourceFuel init source)
         (Expressions.InteractionSemantics.Block.openRun
           expressions (sourceFuel + slack) targetInit target))
     (hLoop :
       ∀ {mode sourceAfter targetAfter},
+        effectAlgebra.Context mode →
+        SameFrame entryMode mode →
+        Effect entryMode target targetAfter →
         AllocationContext.ActivationInvariant contract lowerCtx loopState
             initLocals loopPlan loopLive frameBase mode sourceAfter
               targetAfter →
@@ -63,20 +91,30 @@ theorem forward
             (Functions.InteractionSemantics.Stmt.openRunForLoop program
               loopCtx cond postCtx post bodyCtx body sourceFuel sourceAfter) →
             Simulation.Interaction.Rel
-              (OpenLoopResultRel contract lowerCtx loopState initLocals
-                loopPlan returns loopLive frameBase mode loopCtx)
+              (OpenLoopEffectResultRel Effect contract lowerCtx loopState
+                initLocals loopPlan returns loopLive frameBase mode loopCtx
+                targetAfter)
               (Functions.InteractionSemantics.Stmt.openRunForLoop program
                 loopCtx cond postCtx post bodyCtx body sourceFuel sourceAfter)
               (Expressions.InteractionSemantics.Stmt.openRunForLoop
                 expressions (sourceFuel + slack) targetCond targetPost
                   targetBody targetAfter))
+    (hCleanupEffect :
+      ∀ {mode sourceMid targetMid targetFinal},
+        AllocationContext.ActivationInvariant contract lowerCtx loopState
+            initLocals loopPlan loopLive frameBase mode sourceMid targetMid →
+          Effect entryMode target targetMid →
+          Structured.InteractionSemantics.Code.openRun cleanup targetMid =
+            .done (.ok targetFinal) →
+          Effect mode targetMid targetFinal)
     (hSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
           (sourceFuel + 1) (.for_ init cond post body) source)) :
     Simulation.Interaction.Rel
-      (OpenControlResultRel contract lowerCtx outerState outerLocals outerPlan
-        returns live frameBase entryMode sourceCtx sourceCtx)
+      (OpenControlEffectResultRel Effect contract lowerCtx outerState
+        outerLocals outerPlan returns live frameBase entryMode sourceCtx
+        sourceCtx target)
       (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
         (sourceFuel + 1) (.for_ init cond post body) source)
       (Expressions.InteractionSemantics.Block.openRun expressions
@@ -205,10 +243,14 @@ theorem forward
     Simulation.Interaction.Rel.strengthen_left hInit hInitSuccess
   apply Simulation.Interaction.Rel.bind_custom hInitStrong
   intro sourceDone targetDone hDone
-  rcases hDone with ⟨hInitResult, hAfterInitSuccess⟩
+  rcases hDone with
+    ⟨⟨hInitResult, hInitEffectRel⟩, hAfterInitSuccess⟩
   cases hInitResult with
   | error hError => exact False.elim hAfterInitSuccess
   | @ok sourceResult targetOutcome hResult =>
+      have hInitEffect : Effect entryMode target targetOutcome.state := by
+        cases hInitEffectRel with
+        | ok hEffect => exact hEffect
       cases hResult with
       | @regular initSource initTarget initMode hInitInvariant initFrame
           initControl =>
@@ -227,16 +269,26 @@ theorem forward
             cases outcome with
             | error err => exact hOutcome
             | ok value => trivial
-          have hLoopRel := hLoop hInitInvariant (by
-            simpa [canonicalLoopCtx] using hLoopRunSuccess)
+          have hLoopRel :=
+            hLoop (effectAlgebra.contextSame hContext initFrame) initFrame
+              hInitEffect hInitInvariant (by
+                simpa [canonicalLoopCtx] using hLoopRunSuccess)
           have hLoopStrong :=
             Simulation.Interaction.Rel.strengthen_left hLoopRel hLoopSuccess
           apply Simulation.Interaction.Rel.bind_custom hLoopStrong
           intro loopSourceDone loopTargetDone hLoopDone
-          rcases hLoopDone with ⟨hLoopResult, hAfterLoopSuccess⟩
+          rcases hLoopDone with
+            ⟨⟨hLoopResult, hLoopEffectRel⟩, hAfterLoopSuccess⟩
           cases hLoopResult with
           | error hError => exact False.elim hAfterLoopSuccess
           | @ok sourceLoopOutcome targetLoopOutcome hLoopRelated =>
+              have hLoopEffect :
+                  Effect initMode initTarget targetLoopOutcome.state := by
+                cases hLoopEffectRel with
+                | ok hEffect => exact hEffect
+              have hThroughLoop :
+                  Effect entryMode target targetLoopOutcome.state :=
+                effectAlgebra.transSame hInitEffect initFrame hLoopEffect
               cases hLoopRelated with
               | @regular sourceFinal targetMid loopMode hLoopInvariant
                   loopFrame loopControl =>
@@ -266,29 +318,34 @@ theorem forward
                         { stmts := [.code cleanup] } targetMid)
                   rw [hCleanupBlock]
                   apply Simulation.Interaction.Rel.done
-                  apply Simulation.Interaction.ExceptRel.ok
-                  have hDefined :
-                      LiveDefined live
-                        (sourceFinal.restrictTo live) :=
-                    hLoopInvariant.defined.restrictTo hSubset
-                  have hFinalInvariant :
-                      AllocationContext.ActivationInvariant contract lowerCtx
-                        outerState outerLocals outerPlan live frameBase
-                          entryMode
-                        (sourceFinal.restrictTo live) targetFinal :=
-                    { compiler := hOuter.compiler
-                      planWF := hOuter.planWF
-                      defined := hDefined
-                      state := hFinalState.transport_plan hPlanAgree
-                      stackLength := by simpa using hFinalLength }
-                  simpa [hSourceScope,
-                    Functions.InteractionSemantics.stateModel,
-                    Locals.InteractionSemantics.stateModel,
-                    Locals.Source.Effectful.Ordinary.stateModel,
-                    Locals.Source.Effectful.StateModel.restrictTo] using
-                    (ControlResultRel.regular hFinalInvariant
-                      (SameFrame.refl entryMode)
-                      (Functions.Source.Ctx.SameControl.refl sourceCtx))
+                  constructor
+                  · apply Simulation.Interaction.ExceptRel.ok
+                    have hDefined :
+                        LiveDefined live
+                          (sourceFinal.restrictTo live) :=
+                      hLoopInvariant.defined.restrictTo hSubset
+                    have hFinalInvariant :
+                        AllocationContext.ActivationInvariant contract lowerCtx
+                          outerState outerLocals outerPlan live frameBase
+                            entryMode
+                          (sourceFinal.restrictTo live) targetFinal :=
+                      { compiler := hOuter.compiler
+                        planWF := hOuter.planWF
+                        defined := hDefined
+                        state := hFinalState.transport_plan hPlanAgree
+                        stackLength := by simpa using hFinalLength }
+                    simpa [hSourceScope,
+                      Functions.InteractionSemantics.stateModel,
+                      Locals.InteractionSemantics.stateModel,
+                      Locals.Source.Effectful.Ordinary.stateModel,
+                      Locals.Source.Effectful.StateModel.restrictTo] using
+                      (ControlResultRel.regular hFinalInvariant
+                        (SameFrame.refl entryMode)
+                        (Functions.Source.Ctx.SameControl.refl sourceCtx))
+                  · apply Simulation.Interaction.ExceptRel.ok
+                    exact effectAlgebra.transSame hThroughLoop
+                      (initFrame.trans loopFrame)
+                      (hCleanupEffect hLoopInvariant hThroughLoop hCleanupRun)
               | @nonregular sourceOutcome targetOutcome finalCtx loopMode
                   hNonregular loopFrame loopControl loopStateRel =>
                   cases loopStateRel with
@@ -305,20 +362,24 @@ theorem forward
                           hAfterLoopSuccess)
                   | leave state =>
                       apply Simulation.Interaction.Rel.done
-                      apply Simulation.Interaction.ExceptRel.ok
-                      exact ControlResultRel.nonregular
-                        (mode := loopMode) hNonregular
-                        (initFrame.trans loopFrame)
-                        (Functions.Source.Ctx.SameControl.refl sourceCtx)
-                        (.leave state)
+                      constructor
+                      · apply Simulation.Interaction.ExceptRel.ok
+                        exact ControlResultRel.nonregular
+                          (mode := loopMode) hNonregular
+                          (initFrame.trans loopFrame)
+                          (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                          (.leave state)
+                      · exact Simulation.Interaction.ExceptRel.ok hThroughLoop
                   | halt kind state =>
                       apply Simulation.Interaction.Rel.done
-                      apply Simulation.Interaction.ExceptRel.ok
-                      exact ControlResultRel.nonregular
-                        (mode := loopMode) hNonregular
-                        (initFrame.trans loopFrame)
-                        (Functions.Source.Ctx.SameControl.refl sourceCtx)
-                        (.halt kind { shared := state.shared })
+                      constructor
+                      · apply Simulation.Interaction.ExceptRel.ok
+                        exact ControlResultRel.nonregular
+                          (mode := loopMode) hNonregular
+                          (initFrame.trans loopFrame)
+                          (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                          (.halt kind { shared := state.shared })
+                      · exact Simulation.Interaction.ExceptRel.ok hThroughLoop
       | @nonregular sourceOutcome targetOutcome finalCtx initMode
           hNonregular initFrame initControl initStateRel =>
           cases initStateRel with
@@ -333,18 +394,149 @@ theorem forward
                   (.InvalidInstruction : EVMException) hAfterInitSuccess)
           | leave state =>
               apply Simulation.Interaction.Rel.done
-              apply Simulation.Interaction.ExceptRel.ok
-              exact ControlResultRel.nonregular
-                (mode := initMode) hNonregular initFrame
-                (Functions.Source.Ctx.SameControl.refl sourceCtx)
-                (.leave state)
+              constructor
+              · apply Simulation.Interaction.ExceptRel.ok
+                exact ControlResultRel.nonregular
+                  (mode := initMode) hNonregular initFrame
+                  (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                  (.leave state)
+              · exact Simulation.Interaction.ExceptRel.ok hInitEffect
           | halt kind state =>
               apply Simulation.Interaction.Rel.done
-              apply Simulation.Interaction.ExceptRel.ok
-              exact ControlResultRel.nonregular
-                (mode := initMode) hNonregular initFrame
-                (Functions.Source.Ctx.SameControl.refl sourceCtx)
-                (.halt kind { shared := state.shared })
+              constructor
+              · apply Simulation.Interaction.ExceptRel.ok
+                exact ControlResultRel.nonregular
+                  (mode := initMode) hNonregular initFrame
+                  (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                  (.halt kind { shared := state.shared })
+              · exact Simulation.Interaction.ExceptRel.ok hInitEffect
+
+/-- The semantic-only `for` theorem is the trivial-effect specialization. -/
+theorem forward
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {outerState loopState : AllocationLowering.State}
+    {outerLocals initLocals : Locals.Ctx}
+    {outerPlan loopPlan : Plan}
+    {returns live loopLive : List Functions.Name}
+    {frameBase sourceFuel slack : Nat}
+    {entryMode : ActivationMode}
+    {sourceCtx initCtx loopCtx postCtx bodyCtx : Functions.Source.Ctx}
+    {init : Functions.Block} {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {targetInit targetPost targetBody : Expressions.Block}
+    {targetCond : Expressions.Expr 1}
+    {cleanup : Structured.Code}
+    {source : SourceState} {target : TargetState}
+    (hSourceScope : sourceCtx.scope = live)
+    (hLoopLive : loopLive = Functions.Scope.Block.outEnv live init)
+    (hInitCtx : initCtx = sourceCtx.withoutLoopControl)
+    (hLoopCtx : loopCtx = { initCtx with scope := loopLive })
+    (hPostCtx : postCtx = loopCtx.withoutLoopControl)
+    (hBodyCtx : bodyCtx = loopCtx.withLoopControl loopLive loopLive)
+    (hOuter :
+      AllocationContext.ActivationInvariant contract lowerCtx outerState
+        outerLocals outerPlan live frameBase entryMode source target)
+    (hExtends :
+      AllocationLowering.StateExtends live outerState loopState)
+    (hPlanAgree : PlanAgreesOn loopPlan outerPlan live)
+    (hCleanup :
+      initLocals.cleanupTo? outerLocals.layout.length = some cleanup)
+    (hTargetFuel : 1 ≤ sourceFuel + slack)
+    (hInit :
+      Simulation.Interaction.Rel
+        (OpenControlResultRel contract lowerCtx loopState initLocals loopPlan
+          returns loopLive frameBase entryMode initCtx loopCtx)
+        (Functions.InteractionSemantics.Block.openRun
+          program initCtx sourceFuel init source)
+        (Expressions.InteractionSemantics.Block.openRun
+          expressions (sourceFuel + slack) targetInit target))
+    (hLoop :
+      ∀ {mode sourceAfter targetAfter},
+        AllocationContext.ActivationInvariant contract lowerCtx loopState
+            initLocals loopPlan loopLive frameBase mode sourceAfter
+              targetAfter →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Stmt.openRunForLoop program
+              loopCtx cond postCtx post bodyCtx body sourceFuel sourceAfter) →
+            Simulation.Interaction.Rel
+              (OpenLoopResultRel contract lowerCtx loopState initLocals
+                loopPlan returns loopLive frameBase mode loopCtx)
+              (Functions.InteractionSemantics.Stmt.openRunForLoop program
+                loopCtx cond postCtx post bodyCtx body sourceFuel sourceAfter)
+              (Expressions.InteractionSemantics.Stmt.openRunForLoop
+                expressions (sourceFuel + slack) targetCond targetPost
+                  targetBody targetAfter))
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+          (sourceFuel + 1) (.for_ init cond post body) source)) :
+    Simulation.Interaction.Rel
+      (OpenControlResultRel contract lowerCtx outerState outerLocals outerPlan
+        returns live frameBase entryMode sourceCtx sourceCtx)
+      (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+        (sourceFuel + 1) (.for_ init cond post body) source)
+      (Expressions.InteractionSemantics.Block.openRun expressions
+        (sourceFuel + slack + 2)
+        { stmts :=
+            [.for_ targetInit targetCond targetPost targetBody,
+              .code cleanup] }
+        target) := by
+  have hInitEffect :
+      Simulation.Interaction.Rel
+        (OpenControlEffectResultRel (fun _ _ _ => True) contract lowerCtx
+          loopState initLocals loopPlan returns loopLive frameBase entryMode
+          initCtx loopCtx target)
+        (Functions.InteractionSemantics.Block.openRun
+          program initCtx sourceFuel init source)
+        (Expressions.InteractionSemantics.Block.openRun
+          expressions (sourceFuel + slack) targetInit target) := by
+    apply Simulation.Interaction.Rel.mono hInit
+    intro sourceDone targetDone hDone
+    constructor
+    · exact hDone
+    · cases hDone with
+      | error hError => exact .error hError
+      | ok _ => exact .ok trivial
+  have hLoopEffect :
+      ∀ {mode sourceAfter targetAfter},
+        True →
+        SameFrame entryMode mode →
+        True →
+        AllocationContext.ActivationInvariant contract lowerCtx loopState
+            initLocals loopPlan loopLive frameBase mode sourceAfter
+              targetAfter →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Stmt.openRunForLoop program
+              loopCtx cond postCtx post bodyCtx body sourceFuel sourceAfter) →
+            Simulation.Interaction.Rel
+              (OpenLoopEffectResultRel (fun _ _ _ => True) contract lowerCtx
+                loopState initLocals loopPlan returns loopLive frameBase mode
+                loopCtx targetAfter)
+              (Functions.InteractionSemantics.Stmt.openRunForLoop program
+                loopCtx cond postCtx post bodyCtx body sourceFuel sourceAfter)
+              (Expressions.InteractionSemantics.Stmt.openRunForLoop
+                expressions (sourceFuel + slack) targetCond targetPost
+                  targetBody targetAfter) := by
+    intro mode sourceAfter targetAfter _hContext _hSame _hPrefix hInvariant
+      hRunSuccess
+    apply Simulation.Interaction.Rel.mono (hLoop hInvariant hRunSuccess)
+    intro sourceDone targetDone hDone
+    constructor
+    · exact hDone
+    · cases hDone with
+      | error hError => exact .error hError
+      | ok _ => exact .ok trivial
+  apply Simulation.Interaction.Rel.mono
+    (forward_effect (Effect := fun _ _ _ => True) EffectAlgebra.trivial
+      hSourceScope hLoopLive hInitCtx hLoopCtx hPostCtx hBodyCtx hOuter
+      (by simp [EffectAlgebra.trivial]) hExtends hPlanAgree hCleanup hTargetFuel
+      hInitEffect hLoopEffect
+      (by intros; trivial) hSuccess)
+  intro sourceDone targetDone hDone
+  exact hDone.1
 
 end AllocationInteractionFor
 end Functions

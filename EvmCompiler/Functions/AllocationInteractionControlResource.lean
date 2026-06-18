@@ -1,6 +1,7 @@
 import EvmCompiler.Functions.AllocationInteractionControl
 import EvmCompiler.Functions.AllocationInteractionCleanupResource
 import EvmCompiler.Functions.AllocationInteractionExpressionResource
+import EvmCompiler.Functions.AllocationInteractionLoop
 import EvmCompiler.Functions.AllocationInteractionResourceComposition
 
 namespace EvmCompiler
@@ -131,6 +132,99 @@ theorem block_of_components
                   (Simulation.Interaction.pure (_, sourceCtx))
                   (Simulation.Interaction.pure _)
               exact .done (.ok hActivation)
+
+/-- The scoped-block interface combines the same semantic and resource run. -/
+theorem blockScoped_of_components
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {contract : MemoryContract.Contract}
+    {config : Config} {allocatorDepth : Nat}
+    {lowerCtx : AllocationLowering.Ctx}
+    {bodyState outerState : AllocationLowering.State}
+    {bodyLocals outerLocals : Locals.Ctx}
+    {bodyPlan outerPlan : Plan}
+    {returns live bodyLive : List Functions.Name}
+    {frameBase sourceFuel targetFuel : Nat}
+    {entryMode : ActivationMode}
+    {sourceCtx bodyCtx : Functions.Source.Ctx}
+    {body : Functions.Block}
+    {bodyCode : List Expressions.Stmt}
+    {targetBlock : Expressions.Block}
+    {source : SourceState} {target : TargetState}
+    (hSourceScope : sourceCtx.scope = live)
+    (hBodyCtx : bodyCtx = { sourceCtx with scope := bodyLive })
+    (hBodyLive : bodyLive = Functions.Scope.Block.outEnv live body)
+    (hControl :
+      AllocationInteractionStatement.ControlScopesWithin
+        returns live sourceCtx)
+    (hOuter :
+      AllocationContext.ActivationInvariant contract lowerCtx outerState
+        outerLocals outerPlan live frameBase entryMode source target)
+    (hExtends :
+      AllocationLowering.StateExtends live outerState bodyState)
+    (hPlanAgree : PlanAgreesOn bodyPlan outerPlan live)
+    (hFinish :
+      Locals.finishScoped outerLocals bodyLocals bodyCode = some targetBlock)
+    (hCleanupFuel : 2 ≤ targetFuel - bodyCode.length)
+    (hBody :
+      Simulation.Interaction.Rel
+        (RuntimeResultRel contract lowerCtx bodyState bodyLocals bodyPlan
+          returns bodyLive frameBase entryMode sourceCtx bodyCtx config
+          allocatorDepth target)
+        (Functions.InteractionSemantics.Block.openRun
+          program sourceCtx sourceFuel body source)
+        (Expressions.InteractionSemantics.Block.openRun
+          expressions targetFuel { stmts := bodyCode } target)) :
+    Simulation.Interaction.Rel
+      (AllocationInteractionLoop.OpenScopedEffectResultRel
+        (ActivationEffect config allocatorDepth) contract lowerCtx outerState
+        outerLocals outerPlan returns live frameBase entryMode sourceCtx target)
+      (Functions.InteractionSemantics.Block.openRunScoped
+        program sourceCtx body sourceFuel source)
+      (Expressions.InteractionSemantics.Block.openRun
+        expressions targetFuel targetBlock target) := by
+  have hSemantic :=
+    AllocationInteractionControl.blockScoped_of_components
+      hSourceScope hBodyCtx hBodyLive hControl hOuter hExtends hPlanAgree
+      hFinish hCleanupFuel
+      (Simulation.Interaction.Rel.mono hBody (fun _ _ hDone => hDone.1))
+  have hResourceOpen :=
+    block_of_components hSourceScope hFinish hCleanupFuel hBody
+  have hResourceOpen' :
+      Simulation.Interaction.Rel
+        (OpenResultRel config allocatorDepth entryMode target)
+        (Simulation.Interaction.bind
+          (Functions.InteractionSemantics.Block.openRunScoped
+            program sourceCtx body sourceFuel source)
+          (fun outcome => Simulation.Interaction.pure (outcome, sourceCtx)))
+        (Expressions.InteractionSemantics.Block.openRun
+          expressions targetFuel targetBlock target) := by
+    simpa [Functions.InteractionSemantics.Stmt.openRun,
+      Functions.Source.Canonical.Stmt.run,
+      Functions.Source.Effectful.Control.Stmt.run] using hResourceOpen
+  have hResourceErased :=
+    Simulation.Interaction.Rel.bind_pure_left_inv hResourceOpen'
+  have hResource :
+      Simulation.Interaction.Rel
+        (Simulation.Interaction.ExceptRel
+          (fun left right : EVMException => left = right)
+          (fun _source targetFinal =>
+            ActivationEffect config allocatorDepth entryMode target
+              targetFinal.state))
+        (Functions.InteractionSemantics.Block.openRunScoped
+          program sourceCtx body sourceFuel source)
+        (Expressions.InteractionSemantics.Block.openRun
+          expressions targetFuel targetBlock target) := by
+    apply Simulation.Interaction.Rel.mono hResourceErased
+    intro sourceDone targetDone hDone
+    cases sourceDone with
+    | error err =>
+        cases hDone with
+        | error hError => exact .error hError
+    | ok outcome =>
+        cases hDone with
+        | ok hEffect => exact .ok hEffect
+  exact Simulation.Interaction.Rel.inter hSemantic hResource
 
 /-- Preserve condition resources and compose the selected true branch. -/
 theorem if_of_components

@@ -57,19 +57,30 @@ abbrev OpenScopedResultRel
 
 /-- Effect composition across the representation change recorded by control. -/
 structure EffectAlgebra
-    (Effect : ActivationMode → TargetState → TargetState → Prop) : Prop where
+    (Effect : ActivationMode → TargetState → TargetState → Prop) where
+  Ready : TargetState → Prop
+  Context : ActivationMode → Prop
   transSame :
     ∀ {beforeMode afterMode first second third},
       Effect beforeMode first second →
       SameFrame beforeMode afterMode →
       Effect afterMode second third →
       Effect beforeMode first third
+  ready :
+    ∀ {mode before after}, Effect mode before after → Ready after
+  contextSame :
+    ∀ {beforeMode afterMode},
+      Context beforeMode → SameFrame beforeMode afterMode → Context afterMode
 
 namespace EffectAlgebra
 
-theorem trivial :
+def trivial :
     EffectAlgebra (fun _mode _before _after => True) :=
-  ⟨by intros; trivial⟩
+  { Ready := fun _ => True
+    Context := fun _ => True
+    transSame := by intros; trivial
+    ready := by intros; trivial
+    contextSame := by intros; trivial }
 
 end EffectAlgebra
 
@@ -138,6 +149,7 @@ theorem forward_effect
       ∀ {mode source target},
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
+          effectAlgebra.Ready target →
           Simulation.Interaction.Rel
             (Simulation.Interaction.ExceptRel
               (fun left right : EVMException => left = right)
@@ -149,8 +161,10 @@ theorem forward_effect
             (Expressions.InteractionSemantics.Expr.openRunCondition
               targetCond target))
     (hBody :
-      ∀ (fuel : Nat) {mode source target},
+      ∀ (fuel : Nat) {mode source target} {effectInitial : TargetState},
         fuel < fuelBound →
+        effectAlgebra.Context mode →
+        Effect mode effectInitial target →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -164,8 +178,12 @@ theorem forward_effect
             (Expressions.InteractionSemantics.Block.openRun expressions
               (fuel + slack) targetBody target))
     (hPost :
-      ∀ (fuel : Nat) {mode source target},
+      ∀ (fuel : Nat) {effectMode mode : ActivationMode} {source target}
+        {effectInitial : TargetState},
         fuel < fuelBound →
+        effectAlgebra.Context mode →
+        SameFrame effectMode mode →
+        Effect effectMode effectInitial target →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -182,6 +200,8 @@ theorem forward_effect
       fuel ≤ fuelBound →
       AllocationContext.ActivationInvariant contract lowerCtx lowerState
           localsCtx plan live frameBase mode source target →
+      effectAlgebra.Ready target →
+      effectAlgebra.Context mode →
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Stmt.openRunForLoop program loopCtx
           cond postCtx post bodyCtx body fuel source) →
@@ -195,14 +215,14 @@ theorem forward_effect
   intro fuel
   induction fuel with
   | zero =>
-      intro mode source target hFuelBound hInitial hSuccess
+      intro mode source target hFuelBound hInitial hReady hContext hSuccess
       unfold Functions.InteractionSemantics.Stmt.openRunForLoop at hSuccess
       simp only [Functions.Source.Effectful.Control.Stmt.runForLoop] at hSuccess
       exact False.elim
         (Simulation.Interaction.Successful.error_false
           (.InvalidInstruction : EVMException) hSuccess)
   | succ fuel ih =>
-      intro mode source target hFuelBound hInitial hSuccess
+      intro mode source target hFuelBound hInitial hReady hContext hSuccess
       have hTargetFuel : fuel + 1 + slack = (fuel + slack) + 1 := by
         omega
       rw [hTargetFuel]
@@ -214,7 +234,7 @@ theorem forward_effect
       simp only [Functions.Source.Effectful.Control.Stmt.runForLoop] at hSuccess
       have hCondSuccess :=
         Simulation.Interaction.Successful.bind_inv hSuccess
-      have hCondRel := hCond hInitial
+      have hCondRel := hCond hInitial hReady
       have hVars :=
         Locals.InteractionStatePreservation.expr_openEvalCondition_vars
           cond source
@@ -269,7 +289,8 @@ theorem forward_effect
                 | error err => exact hOutcome
                 | ok value => trivial
               have hBodyRel :=
-                hBody fuel (by omega) hAfterCond hBodyRunSuccess
+                hBody fuel (by omega) hContext hCondEffect hAfterCond
+                  hBodyRunSuccess
               have hBodyStrong :=
                 Simulation.Interaction.Rel.strengthen_left hBodyRel
                   hBodySuccess
@@ -359,7 +380,9 @@ theorem forward_effect
                       | error err => exact hOutcome
                       | ok value => trivial
                     have hPostRel :=
-                      hPost fuel (by omega) hBodyInvariant hPostRunSuccess
+                      hPost fuel (by omega)
+                        (effectAlgebra.contextSame hContext hFrame) hFrame
+                        hBodyEffect hBodyInvariant hPostRunSuccess
                     have hPostStrong :=
                       Simulation.Interaction.Rel.strengthen_left hPostRel
                         hPostSuccess
@@ -382,7 +405,11 @@ theorem forward_effect
                         cases hPostResult with
                         | regular hPostInvariant postFrame postControl =>
                             have hRecursive :=
-                              ih (by omega) hPostInvariant hAfterPostSuccess
+                              ih (by omega) hPostInvariant
+                                (effectAlgebra.ready hPostEffect)
+                                (effectAlgebra.contextSame hContext
+                                  (hFrame.trans postFrame))
+                                hAfterPostSuccess
                             apply Simulation.Interaction.Rel.mono hRecursive
                             intro sourceDone targetDone hDone
                             rcases hDone with ⟨hSemantic, hEffectRel⟩
@@ -591,6 +618,7 @@ theorem forward
       ∀ {mode source target},
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
+          True →
           Simulation.Interaction.Rel
             (Simulation.Interaction.ExceptRel
               (fun left right : EVMException => left = right)
@@ -601,15 +629,18 @@ theorem forward
             (Functions.InteractionSemantics.Expr.openEvalCondition cond source)
             (Expressions.InteractionSemantics.Expr.openRunCondition
               targetCond target) := by
-    intro mode source target hInvariant
+    intro mode source target hInvariant _hReady
     apply Simulation.Interaction.Rel.mono (hCond hInvariant)
     intro sourceDone targetDone hDone
     cases hDone with
     | error hError => exact .error hError
     | ok hResult => exact .ok ⟨hResult, trivial⟩
   have hBodyEffect :
-      ∀ (innerFuel : Nat) {mode source target},
+      ∀ (innerFuel : Nat) {mode source target}
+        {effectInitial : TargetState},
         innerFuel < fuelBound →
+        True →
+        True →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -622,7 +653,8 @@ theorem forward
               program bodyCtx body innerFuel source)
             (Expressions.InteractionSemantics.Block.openRun expressions
               (innerFuel + slack) targetBody target) := by
-    intro innerFuel mode source target hBound hInvariant hRunSuccess
+    intro innerFuel mode source target effectInitial hBound _hContext _hEffect
+      hInvariant hRunSuccess
     apply Simulation.Interaction.Rel.mono
       (hBody innerFuel hBound hInvariant hRunSuccess)
     intro sourceDone targetDone hDone
@@ -632,8 +664,12 @@ theorem forward
       | error hError => exact .error hError
       | ok _ => exact .ok trivial
   have hPostEffect :
-      ∀ (innerFuel : Nat) {mode source target},
+      ∀ (innerFuel : Nat) {effectMode mode : ActivationMode} {source target}
+        {effectInitial : TargetState},
         innerFuel < fuelBound →
+        True →
+        SameFrame effectMode mode →
+        True →
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
@@ -646,7 +682,8 @@ theorem forward
               program postCtx post innerFuel source)
             (Expressions.InteractionSemantics.Block.openRun expressions
               (innerFuel + slack) targetPost target) := by
-    intro innerFuel mode source target hBound hInvariant hRunSuccess
+    intro innerFuel effectMode mode source target effectInitial hBound
+      _hContext _hSame _hEffect hInvariant hRunSuccess
     apply Simulation.Interaction.Rel.mono
       (hPost innerFuel hBound hInvariant hRunSuccess)
     intro sourceDone targetDone hDone
@@ -658,7 +695,8 @@ theorem forward
   apply Simulation.Interaction.Rel.mono
     (forward_effect (Effect := fun _ _ _ => True) EffectAlgebra.trivial
       hLoopScope hBodyBreak hBodyContinue hCondEffect hBodyEffect hPostEffect
-      fuel hFuel hInitial hSuccess)
+      fuel hFuel hInitial (by simp [EffectAlgebra.trivial])
+      (by simp [EffectAlgebra.trivial]) hSuccess)
   intro sourceDone targetDone hDone
   exact hDone.1
 
