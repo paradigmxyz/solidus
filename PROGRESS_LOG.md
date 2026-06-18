@@ -32007,3 +32007,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   focused 1168-job build, full verification root, architecture guard,
   touched-Lean hole scan, axiom audit, and `git diff --check` passed; recursive
   prelude theorems use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-18 00:49:00 PDT - proof/functions-parameter-context-constructor -
+  reconstructed parameter placement from the mixed allocator, derived exact
+  prelude layouts and depth bounds from real `compileOpen`, and exposed
+  compiler-selected stack/scratch parameter execution through `Prepared`.
+  No generated context evidence remains at this phase boundary.
+- 2026-06-18 00:51:00 PDT - validation/functions-parameter-context-constructor
+  - focused 1168-job build, full verification root, architecture guard,
+  touched-Lean hole scan, axiom audit, and `git diff --check` passed; all new
+  constructors use only `[propext, Classical.choice, Quot.sound]`.

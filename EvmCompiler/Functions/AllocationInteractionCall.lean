@@ -205,6 +205,250 @@ end EntryMarkers
 
 namespace ParameterPrelude
 
+/-- Mixed-allocation placement shared by parameter-prelude construction. -/
+inductive Placement
+    (lowerCtx : AllocationLowering.Ctx)
+    (plan : Locals.Allocation.Plan) (frameWords : Nat) :
+    List Locals.Name → List (Locals.Name × Nat) → Prop where
+  | nil {live : List Locals.Name} :
+      Placement lowerCtx plan frameWords live []
+  | stack
+      {live : List Locals.Name}
+      {pending : List (Locals.Name × Nat)}
+      {name : Locals.Name} {slot planDepth : Nat}
+      (classification :
+        AllocationLowering.isStackSlot lowerCtx slot = true)
+      (fresh : name ∉ live)
+      (location : plan.location? name = some (.stack planDepth))
+      (stackOrder :
+        currentStackOrder plan (name :: live) =
+          name :: currentStackOrder plan live)
+      (tail : Placement lowerCtx plan frameWords (name :: live) pending) :
+      Placement lowerCtx plan frameWords live ((name, slot) :: pending)
+  | scratch
+      {live : List Locals.Name}
+      {pending : List (Locals.Name × Nat)}
+      {name : Locals.Name} {slot : Nat}
+      (classification :
+        AllocationLowering.isStackSlot lowerCtx slot = false)
+      (fresh : name ∉ live)
+      (location : plan.location? name = some (.scratch slot))
+      (stackOrder :
+        currentStackOrder plan (name :: live) =
+          currentStackOrder plan live)
+      (slotBound : slot < frameWords)
+      (tail : Placement lowerCtx plan frameWords (name :: live) pending) :
+      Placement lowerCtx plan frameWords live ((name, slot) :: pending)
+
+namespace Placement
+
+theorem parameters_of_generated
+    {lowerCtx : AllocationLowering.Ctx}
+    {contract : MemoryContract.Contract}
+    {frameWords : Nat}
+    {stackSlots : MixedAllocation.SlotSet}
+    {state : AllocationSupport.CompileState}
+    {added returns allParams processed pending : AllocationSupport.SlotEnv}
+    (hCtxSlots : lowerCtx.stackSlots = stackSlots)
+    (hEnv : state.env = added ++ returns ++ allParams)
+    (hStateNodup : (state.env.map Prod.fst).Nodup)
+    (hParamsNodup : (allParams.map Prod.fst).Nodup)
+    (hSplit : allParams = processed ++ pending)
+    (hWF :
+      (MixedAllocation.allocationOfState contract frameWords
+        (MixedAllocation.stackEntries stackSlots added ++
+          MixedAllocation.stackEntries stackSlots returns.reverse ++
+          MixedAllocation.stackEntries stackSlots allParams.reverse)
+        state).WellFormed) :
+    Placement lowerCtx
+      (MixedAllocation.allocationOfState contract frameWords
+        (MixedAllocation.stackEntries stackSlots added ++
+          MixedAllocation.stackEntries stackSlots returns.reverse ++
+          MixedAllocation.stackEntries stackSlots allParams.reverse)
+        state)
+      frameWords (processed.map Prod.fst).reverse pending := by
+  induction pending generalizing processed with
+  | nil =>
+      exact .nil
+  | cons binding rest ih =>
+      rcases binding with ⟨name, slot⟩
+      have hCurrentMem : (name, slot) ∈ allParams := by
+        rw [hSplit]
+        simp
+      have hStateMem : (name, slot) ∈ state.env := by
+        rw [hEnv]
+        simp [hCurrentMem]
+      have hNamesNodup :
+          (processed.map Prod.fst ++ name :: rest.map Prod.fst).Nodup := by
+        simpa [hSplit, List.map_append] using hParamsNodup
+      have hNameFresh : name ∉ (processed.map Prod.fst).reverse := by
+        have hParts := List.nodup_append.mp hNamesNodup
+        intro hName
+        exact
+          hParts.2.2 name (by simpa using hName) name (by simp) rfl
+      have hTailSplit :
+          allParams = (processed ++ [(name, slot)]) ++ rest := by
+        rw [hSplit]
+        simp [List.append_assoc]
+      have hBefore :=
+        MixedAllocation.allocationOfState_parameter_stack_filter
+          (contract := contract) (frameWords := frameWords)
+          (stackSlots := stackSlots) (state := state)
+          (added := added) (returns := returns)
+          (params := allParams) (processed := processed)
+          (pending := (name, slot) :: rest)
+          hEnv hStateNodup hSplit
+      have hAfter :=
+        MixedAllocation.allocationOfState_parameter_stack_filter
+          (contract := contract) (frameWords := frameWords)
+          (stackSlots := stackSlots) (state := state)
+          (added := added) (returns := returns)
+          (params := allParams)
+          (processed := processed ++ [(name, slot)])
+          (pending := rest)
+          hEnv hStateNodup hTailSplit
+      have hNextLive :
+          ((processed ++ [(name, slot)]).map Prod.fst).reverse =
+            name :: (processed.map Prod.fst).reverse := by
+        simp [List.map_append]
+      have hBeforeOrder :
+          currentStackOrder
+              (MixedAllocation.allocationOfState contract frameWords
+                (MixedAllocation.stackEntries stackSlots added ++
+                  MixedAllocation.stackEntries stackSlots returns.reverse ++
+                  MixedAllocation.stackEntries stackSlots allParams.reverse)
+                state)
+              (processed.map Prod.fst).reverse =
+            MixedAllocation.stackOrder stackSlots processed.reverse := by
+        simpa [currentStackOrder] using hBefore
+      have hAfterOrder :
+          currentStackOrder
+              (MixedAllocation.allocationOfState contract frameWords
+                (MixedAllocation.stackEntries stackSlots added ++
+                  MixedAllocation.stackEntries stackSlots returns.reverse ++
+                  MixedAllocation.stackEntries stackSlots allParams.reverse)
+                state)
+              (name :: (processed.map Prod.fst).reverse) =
+            MixedAllocation.stackOrder stackSlots
+              (processed ++ [(name, slot)]).reverse := by
+        rw [← hNextLive]
+        simpa [currentStackOrder] using hAfter
+      by_cases hStack : slot ∈ stackSlots
+      · have hClassification :
+            AllocationLowering.isStackSlot lowerCtx slot = true := by
+          rw [AllocationLowering.isStackSlot_eq_true_iff, hCtxSlots]
+          exact hStack
+        have hEntry :
+            (name, slot) ∈
+              MixedAllocation.stackEntries stackSlots added ++
+                MixedAllocation.stackEntries stackSlots returns.reverse ++
+                MixedAllocation.stackEntries stackSlots allParams.reverse := by
+          simp only [List.mem_append]
+          exact
+            Or.inr
+              (MixedAllocation.mem_stackEntries_iff.mpr
+                ⟨by simpa using hCurrentMem, hStack⟩)
+        obtain ⟨planDepth, hLocation⟩ :=
+          MixedAllocation.allocationOfState_location_stack_of_entry
+            hStateNodup hStateMem hEntry
+        have hStackOrder :
+            currentStackOrder
+                (MixedAllocation.allocationOfState contract frameWords
+                  (MixedAllocation.stackEntries stackSlots added ++
+                    MixedAllocation.stackEntries stackSlots returns.reverse ++
+                    MixedAllocation.stackEntries stackSlots allParams.reverse)
+                  state)
+                (name :: (processed.map Prod.fst).reverse) =
+              name ::
+                currentStackOrder
+                  (MixedAllocation.allocationOfState contract frameWords
+                    (MixedAllocation.stackEntries stackSlots added ++
+                      MixedAllocation.stackEntries stackSlots returns.reverse ++
+                      MixedAllocation.stackEntries stackSlots allParams.reverse)
+                    state)
+                  (processed.map Prod.fst).reverse := by
+          rw [hAfterOrder, hBeforeOrder, List.reverse_append,
+            MixedAllocation.stackOrder_append]
+          simp [MixedAllocation.stackOrder,
+            MixedAllocation.stackEntries, hStack]
+        exact
+          .stack hClassification hNameFresh hLocation hStackOrder
+            (by simpa [List.map_append] using ih hTailSplit)
+      · have hClassification :
+            AllocationLowering.isStackSlot lowerCtx slot = false := by
+          rw [AllocationLowering.isStackSlot_eq_false_iff, hCtxSlots]
+          exact hStack
+        have hNotEntry :
+            (name, slot) ∉
+              MixedAllocation.stackEntries stackSlots added ++
+                MixedAllocation.stackEntries stackSlots returns.reverse ++
+                MixedAllocation.stackEntries stackSlots allParams.reverse := by
+          simp only [List.mem_append, not_or]
+          exact
+            ⟨⟨MixedAllocation.not_mem_stackEntries_of_slot_not_mem hStack,
+                MixedAllocation.not_mem_stackEntries_of_slot_not_mem hStack⟩,
+              MixedAllocation.not_mem_stackEntries_of_slot_not_mem hStack⟩
+        have hLocation :=
+          MixedAllocation.allocationOfState_location_scratch_of_not_entry
+            (contract := contract) (frameWords := frameWords)
+            hStateNodup hStateMem hNotEntry
+        have hSlotBound :=
+          MixedAllocation.allocationOfState_scratch_bound_of_wellFormed
+            hWF hLocation
+        have hStackOrder :
+            currentStackOrder
+                (MixedAllocation.allocationOfState contract frameWords
+                  (MixedAllocation.stackEntries stackSlots added ++
+                    MixedAllocation.stackEntries stackSlots returns.reverse ++
+                    MixedAllocation.stackEntries stackSlots allParams.reverse)
+                  state)
+                (name :: (processed.map Prod.fst).reverse) =
+              currentStackOrder
+                (MixedAllocation.allocationOfState contract frameWords
+                  (MixedAllocation.stackEntries stackSlots added ++
+                    MixedAllocation.stackEntries stackSlots returns.reverse ++
+                    MixedAllocation.stackEntries stackSlots allParams.reverse)
+                  state)
+                (processed.map Prod.fst).reverse := by
+          rw [hAfterOrder, hBeforeOrder, List.reverse_append,
+            MixedAllocation.stackOrder_append]
+          simp [MixedAllocation.stackOrder,
+            MixedAllocation.stackEntries, hStack]
+        exact
+          .scratch hClassification hNameFresh hLocation hStackOrder
+            hSlotBound
+            (by simpa [List.map_append] using ih hTailSplit)
+
+theorem parameters
+    {lowerCtx : AllocationLowering.Ctx}
+    {contract : MemoryContract.Contract}
+    {frameWords : Nat}
+    {stackSlots : MixedAllocation.SlotSet}
+    {state : AllocationSupport.CompileState}
+    {added returns params : AllocationSupport.SlotEnv}
+    (hCtxSlots : lowerCtx.stackSlots = stackSlots)
+    (hEnv : state.env = added ++ returns ++ params)
+    (hStateNodup : (state.env.map Prod.fst).Nodup)
+    (hParamsNodup : (params.map Prod.fst).Nodup)
+    (hWF :
+      (MixedAllocation.allocationOfState contract frameWords
+        (MixedAllocation.stackEntries stackSlots added ++
+          MixedAllocation.stackEntries stackSlots returns.reverse ++
+          MixedAllocation.stackEntries stackSlots params.reverse)
+        state).WellFormed) :
+    Placement lowerCtx
+      (MixedAllocation.allocationOfState contract frameWords
+        (MixedAllocation.stackEntries stackSlots added ++
+          MixedAllocation.stackEntries stackSlots returns.reverse ++
+          MixedAllocation.stackEntries stackSlots params.reverse)
+        state)
+      frameWords [] params := by
+  simpa using
+    parameters_of_generated hCtxSlots hEnv hStateNodup hParamsNodup
+      (processed := []) (pending := params) rfl hWF
+
+end Placement
+
 /-- Compiler-owned invariant following the real `lowerParams` recursion. -/
 inductive Context
     (lowerCtx : AllocationLowering.Ctx)
@@ -271,6 +515,205 @@ inductive Context
               [lowerCtx.frameName]))) :
       Context lowerCtx plan frameWords realized ((name, slot) :: pending)
         frameDepth localsCtx
+
+namespace Context
+
+theorem of_stack_placement
+    {lowerCtx : AllocationLowering.Ctx}
+    {plan : Locals.Allocation.Plan} {frameWords frameDepth : Nat}
+    {live : List Locals.Name}
+    {pending : List (Locals.Name × Nat)}
+    {localsCtx : Locals.Ctx}
+    (hPlacement : Placement lowerCtx plan frameWords live pending)
+    (hStack :
+      ∀ binding, binding ∈ pending →
+        AllocationLowering.isStackSlot lowerCtx binding.2 = true) :
+    Context lowerCtx plan frameWords live pending frameDepth localsCtx := by
+  cases hPlacement with
+  | nil =>
+      exact .nil
+  | @stack _ tailPending name slot planDepth classification fresh
+      location stackOrder tail =>
+      exact
+        .stack classification fresh location stackOrder
+          (of_stack_placement tail
+            (fun binding hBinding =>
+              hStack binding (by simp [hBinding])))
+  | @scratch _ tailPending name slot classification fresh location
+      stackOrder slotBound tail =>
+      have hCurrent := hStack (name, slot) (by simp)
+      rw [classification] at hCurrent
+      contradiction
+termination_by pending.length
+
+theorem of_placement
+    {lowerCtx : AllocationLowering.Ctx}
+    {plan : Locals.Allocation.Plan} {frameWords frameDepth : Nat}
+    {live : List Locals.Name}
+    {pending : List (Locals.Name × Nat)}
+    {localsCtx finalCtx : Locals.Ctx}
+    {compiled : List Expressions.Stmt}
+    (hPlacement : Placement lowerCtx plan frameWords live pending)
+    (hLayout :
+      localsCtx.layout =
+        (pending.map Prod.fst).reverse ++
+          currentStackOrder plan live ++ [lowerCtx.frameName])
+    (hNodup : localsCtx.layout.Nodup)
+    (hFrameDepth :
+      frameDepth = (currentStackOrder plan live).length)
+    (hCompile :
+      Locals.Block.compileOpen localsCtx
+          { stmts :=
+              (AllocationLowering.lowerParams lowerCtx pending
+                localsCtx.layout).1 } =
+        some (compiled, finalCtx)) :
+    Context lowerCtx plan frameWords live pending frameDepth localsCtx := by
+  cases hPlacement with
+  | nil =>
+      exact .nil
+  | @stack _ tailPending name slot planDepth classification fresh
+      location stackOrder tail =>
+      have hTailLayout :
+          localsCtx.layout =
+            (tailPending.map Prod.fst).reverse ++
+              currentStackOrder plan (name :: live) ++
+              [lowerCtx.frameName] := by
+        rw [stackOrder]
+        simpa [List.reverse_cons, List.append_assoc] using hLayout
+      have hTailDepth :
+          frameDepth + 1 =
+            (currentStackOrder plan (name :: live)).length := by
+        rw [stackOrder, hFrameDepth]
+        simp
+      have hTailCompile :
+          Locals.Block.compileOpen localsCtx
+              { stmts :=
+                  (AllocationLowering.lowerParams lowerCtx tailPending
+                    localsCtx.layout).1 } =
+            some (compiled, finalCtx) := by
+        simpa [AllocationLowering.lowerParams, classification] using hCompile
+      exact
+        .stack classification fresh location stackOrder
+          (of_placement tail hTailLayout hNodup hTailDepth hTailCompile)
+  | @scratch _ tailPending name slot classification fresh location
+      stackOrder slotBound tail =>
+      let above : Locals.Layout := (tailPending.map Prod.fst).reverse
+      let suffix : Locals.Layout :=
+        currentStackOrder plan live ++ [lowerCtx.frameName]
+      have hCanonicalLayout :
+          localsCtx.layout = above ++ name :: suffix := by
+        simpa [above, suffix, List.reverse_cons, List.append_assoc] using
+          hLayout
+      have hCanonicalNodup : (above ++ name :: suffix).Nodup := by
+        simpa [hCanonicalLayout] using hNodup
+      have hParts := List.nodup_append.mp hCanonicalNodup
+      have hAboveFresh : name ∉ above := by
+        intro hName
+        exact hParts.2.2 name hName name (by simp) rfl
+      have hSuffixFresh : name ∉ suffix :=
+        (List.nodup_cons.mp hParts.2.1).1
+      have hErase :
+          AllocationLowering.eraseName name (above ++ name :: suffix) =
+            above ++ suffix :=
+        AllocationLowering.eraseName_append_name
+          hAboveFresh hSuffixFresh
+      have hCompile' :
+          Locals.Block.compileOpen localsCtx
+              { stmts :=
+                  (AllocationLowering.lowerScratchParam lowerCtx name slot
+                      (above ++ name :: suffix)).1 ++
+                    (AllocationLowering.lowerParams lowerCtx tailPending
+                      (above ++ suffix)).1 } =
+            some (compiled, finalCtx) := by
+        simpa [AllocationLowering.lowerParams, classification,
+          hCanonicalLayout, AllocationLowering.lowerScratchParam,
+          hErase] using hCompile
+      obtain
+          ⟨headCompiled, middleCtx, tailCompiled,
+            hHeadCompile, hTailCompile, _hCompiled⟩ :=
+        Locals.Block.compileOpen_append_components hCompile'
+      have hFrameLookup :
+          Locals.Layout.lookupDepth? lowerCtx.frameName
+              (above ++ name :: suffix) =
+            some ((tailPending.length + 1) + frameDepth + 1) := by
+        have hLast :=
+          Locals.Layout.lookupDepth?_getLast_of_nodup
+            hCanonicalNodup (by simp [above, suffix])
+        simpa [above, suffix, hFrameDepth, List.length_append,
+          Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hLast
+      obtain ⟨hNameDepthBound, hFrameDepthBound⟩ :=
+        AllocationLowering.lowerScratchParam_compileOpen_depth_bounds
+          (ctx := lowerCtx) (name := name) (slot := slot)
+          (frameDepth := (tailPending.length + 1) + frameDepth + 1)
+          (above := above) (suffix := suffix) (localsCtx := localsCtx)
+          hCanonicalLayout hAboveFresh hSuffixFresh hFrameLookup
+          hHeadCompile
+      have hTailNodup : (above ++ suffix).Nodup := by
+        apply List.nodup_append.mpr
+        exact
+          ⟨hParts.1, (List.nodup_cons.mp hParts.2.1).2,
+            by
+              intro left hLeft right hRight hEq
+              subst right
+              exact
+                hParts.2.2 left hLeft left (by simp [hRight]) rfl⟩
+      have hTailLayout :
+          (localsCtx.withLayout (above ++ suffix)).layout =
+            (tailPending.map Prod.fst).reverse ++
+              currentStackOrder plan (name :: live) ++
+              [lowerCtx.frameName] := by
+        simp [Locals.Ctx.withLayout, above, suffix, stackOrder,
+          List.append_assoc]
+      have hTailCompile' :
+          Locals.Block.compileOpen
+              (localsCtx.withLayout (above ++ suffix))
+              { stmts :=
+                  (AllocationLowering.lowerParams lowerCtx tailPending
+                    (localsCtx.withLayout (above ++ suffix)).layout).1 } =
+            some (tailCompiled, finalCtx) := by
+        have hMiddle :
+            middleCtx = localsCtx.withLayout (above ++ suffix) := by
+          obtain ⟨nameOp, hNameOp⟩ :=
+            Locals.StackOp.exists_dup?_of_pos_of_le
+              (depth := above.length + 1) (by simp) hNameDepthBound
+          obtain ⟨frameOp, hFrameOp⟩ :=
+            Locals.StackOp.exists_dup?_of_pos_of_le
+              (depth :=
+                1 + ((tailPending.length + 1) + frameDepth + 1))
+              (by omega) hFrameDepthBound
+          obtain ⟨promoteCode, hPromoteCode⟩ :=
+            Locals.Ctx.exists_swapRestoreUpTo?_of_le
+              (depth := above.length) (by omega)
+          have hHeadShape :=
+            AllocationLowering.lowerScratchParam_compileOpen
+              (ctx := lowerCtx) (name := name) (slot := slot)
+              (frameDepth :=
+                (tailPending.length + 1) + frameDepth + 1)
+              (above := above) (suffix := suffix) (localsCtx := localsCtx)
+              hCanonicalLayout hAboveFresh hSuffixFresh (by omega)
+              hFrameLookup hNameOp hFrameOp hPromoteCode
+          rw [hHeadShape] at hHeadCompile
+          exact
+            (congrArg Prod.snd (Option.some.inj hHeadCompile)).symm
+        subst middleCtx
+        simpa [Locals.Ctx.withLayout] using hTailCompile
+      have hTailDepth :
+          frameDepth =
+            (currentStackOrder plan (name :: live)).length := by
+        rw [stackOrder, hFrameDepth]
+      have hTailContext :=
+        of_placement tail hTailLayout hTailNodup hTailDepth hTailCompile'
+      exact
+        .scratch classification fresh location stackOrder slotBound
+          hCanonicalLayout hAboveFresh hSuffixFresh
+          (by simpa [above] using hNameDepthBound)
+          hFrameLookup hFrameDepthBound
+          (by
+            simpa [above, suffix, stackOrder, List.append_assoc] using
+              hTailContext)
+termination_by pending.length
+
+end Context
 
 /-- Execute one compiler-emitted scratch-parameter realization step. -/
 theorem scratch_step_code
@@ -1929,6 +2372,255 @@ theorem Artifact.bodyScoped
         intro localName
         simp [artifact.slotsMatch.2.1, artifact.slotsMatch.2.2])
       (Functions.FunDef.bodyScoped hFnScoped)
+
+theorem Prepared.parameterPlacement
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : Artifact compilation name fn}
+    (prepared : Prepared artifact) :
+    ParameterPrelude.Placement artifact.lowerCtx prepared.plan
+      compilation.recipe.frameWords [] artifact.slots.params := by
+  obtain ⟨added, hEnv⟩ := artifact.planEntry_env_extension
+  have hEnv' :
+      artifact.planEntry.state.env =
+        added ++ artifact.slots.returns ++ artifact.slots.params := by
+    simpa [AllocationSupport.functionEnv, List.append_assoc] using hEnv
+  have hStateNodup :
+      (artifact.planEntry.state.env.map Prod.fst).Nodup := by
+    simpa [prepared.planEq, MixedAllocation.allocationOfState] using
+      prepared.planWF.2.1
+  have hParamsNodup : (artifact.slots.params.map Prod.fst).Nodup := by
+    exact
+      (List.nodup_append.mp (by
+        simpa [List.map_append] using prepared.signatureNodup)).2.1
+  have hEntries :
+      MixedAllocation.AllocationRecipe.stackEntriesForScope
+          compilation.recipe compilation.stackSlots artifact.planEntry.scope
+          artifact.planEntry.state =
+        MixedAllocation.stackEntries compilation.stackSlots added ++
+          MixedAllocation.stackEntries compilation.stackSlots
+            artifact.slots.returns.reverse ++
+          MixedAllocation.stackEntries compilation.stackSlots
+            artifact.slots.params.reverse := by
+    rw [artifact.planEntryScope]
+    exact
+      MixedAllocation.AllocationRecipe.stackEntriesForScope_function_of_env_extension
+        artifact.slotsLookup hEnv
+  have hPlanEq :
+      prepared.plan =
+        MixedAllocation.allocationOfState program.memoryContract
+          compilation.recipe.frameWords
+          (MixedAllocation.stackEntries compilation.stackSlots added ++
+            MixedAllocation.stackEntries compilation.stackSlots
+              artifact.slots.returns.reverse ++
+            MixedAllocation.stackEntries compilation.stackSlots
+              artifact.slots.params.reverse)
+          artifact.planEntry.state := by
+    rw [prepared.planEq, hEntries]
+  have hExplicitWF :
+      (MixedAllocation.allocationOfState program.memoryContract
+        compilation.recipe.frameWords
+        (MixedAllocation.stackEntries compilation.stackSlots added ++
+          MixedAllocation.stackEntries compilation.stackSlots
+            artifact.slots.returns.reverse ++
+          MixedAllocation.stackEntries compilation.stackSlots
+            artifact.slots.params.reverse)
+        artifact.planEntry.state).WellFormed := by
+    rw [← hPlanEq]
+    exact prepared.planWF
+  have hPlacement :=
+    ParameterPrelude.Placement.parameters
+      artifact.lowerCtxShared.stackSlots hEnv' hStateNodup hParamsNodup
+      hExplicitWF
+  rw [← hPlanEq] at hPlacement
+  exact hPlacement
+
+theorem Artifact.paramsAllStack_of_needsFrame_false
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    (artifact : Artifact compilation name fn)
+    (hNeedsFrame : artifact.needsFrame = false) :
+    ∀ binding, binding ∈ artifact.slots.params →
+      AllocationLowering.isStackSlot artifact.lowerCtx binding.2 = true := by
+  have hRootNoFrame :
+      AllocationLowering.rootNeedsFrame compilation.recipe
+          compilation.stackSlots (.function fn.name) = false := by
+    simpa [Artifact.needsFrame, Artifact.scratchBindings, Artifact.root,
+      AllocationLowering.rootNeedsFrame] using hNeedsFrame
+  intro binding hBinding
+  rcases binding with ⟨localName, slot⟩
+  obtain ⟨added, hEnv⟩ := artifact.planEntry_env_extension
+  have hMemEntry :
+      (localName, slot) ∈ artifact.planEntry.state.env := by
+    rw [hEnv]
+    simp [AllocationSupport.functionEnv, hBinding]
+  have hSlot :=
+    AllocationLowering.slot_mem_of_function_rootNeedsFrame_eq_false
+      artifact.planEntryMem artifact.planEntryScope hMemEntry hRootNoFrame
+  simpa [AllocationLowering.isStackSlot, Artifact.lowerCtx,
+    Compilation.lowerCtx] using hSlot
+
+theorem Prepared.parameterContext
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : Artifact compilation name fn}
+    (prepared : Prepared artifact) :
+    ParameterPrelude.Context artifact.lowerCtx prepared.plan
+      compilation.recipe.frameWords [] artifact.slots.params 0
+      artifact.entryCtx := by
+  have hPlacement := prepared.parameterPlacement
+  have hParamsNodup : (artifact.slots.params.map Prod.fst).Nodup := by
+    exact
+      (List.nodup_append.mp (by
+        simpa [List.map_append] using prepared.signatureNodup)).2.1
+  by_cases hNeedsFrame : artifact.needsFrame = true
+  · have hLayout :
+        artifact.entryCtx.layout =
+          (artifact.slots.params.map Prod.fst).reverse ++
+            currentStackOrder prepared.plan [] ++
+            [artifact.lowerCtx.frameName] := by
+      simp [Artifact.entryCtx, Artifact.entryLayout, hNeedsFrame,
+        artifact.slotsMatch.2.1, Artifact.lowerCtx, Compilation.lowerCtx,
+        currentStackOrder, List.append_assoc,
+        Locals.Ctx.procEntryWithLayoutAndRetc,
+        Locals.Ctx.procEntryWithLayout, Locals.Ctx.procEntry,
+        Locals.Ctx.initial]
+    have hNodup : artifact.entryCtx.layout.Nodup := by
+      have hEntryLayout :
+          artifact.entryCtx.layout =
+            (artifact.slots.params.map Prod.fst).reverse ++
+              [artifact.lowerCtx.frameName] := by
+        simp [Artifact.entryCtx, Artifact.entryLayout, hNeedsFrame,
+          artifact.slotsMatch.2.1, Artifact.lowerCtx, Compilation.lowerCtx,
+          Locals.Ctx.procEntryWithLayoutAndRetc,
+          Locals.Ctx.procEntryWithLayout, Locals.Ctx.procEntry,
+          Locals.Ctx.initial]
+      rw [hEntryLayout]
+      apply List.nodup_append.mpr
+      refine ⟨by simpa using hParamsNodup, by simp, ?_⟩
+      intro localName hParam frame hFrame hEq
+      simp only [List.mem_singleton] at hFrame
+      subst frame
+      subst localName
+      have hParam' :
+          compilation.frameName ∈ artifact.slots.params.map Prod.fst := by
+        simpa using hParam
+      apply prepared.frameFresh
+      simp [List.map_append, hParam']
+    exact
+      ParameterPrelude.Context.of_placement hPlacement hLayout hNodup
+        (by simp [currentStackOrder]) prepared.compileParams
+  · have hNeedsFrameFalse : artifact.needsFrame = false :=
+      Bool.eq_false_of_not_eq_true hNeedsFrame
+    have hAllStack :
+        ∀ binding, binding ∈ artifact.slots.params →
+          AllocationLowering.isStackSlot artifact.lowerCtx binding.2 = true :=
+      artifact.paramsAllStack_of_needsFrame_false hNeedsFrameFalse
+    exact
+      ParameterPrelude.Context.of_stack_placement hPlacement hAllStack
+
+theorem Prepared.parameters_forward_scratch
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : Artifact compilation name fn}
+    (prepared : Prepared artifact)
+    {contract : MemoryContract.Contract}
+    {frameBase : Nat}
+    {source : Functions.InteractionSemantics.State}
+    {target : Structured.RunState}
+    {reservation : MemoryContract.ScratchReservation}
+    (hRel :
+      ActivationCalleeEntryRel contract prepared.plan []
+        artifact.slots.params frameBase
+        (.scratch 0 compilation.recipe.frameWords) source target)
+    (hStackLength :
+      target.evm.stack.length = artifact.entryCtx.layout.length)
+    (hReservation : contract.scratch? = some reservation) :
+    ∃ finalTarget finalFrameDepth fuel,
+      0 < fuel ∧
+      prepared.paramCtx.layout =
+        (AllocationLowering.lowerParams artifact.lowerCtx
+          artifact.slots.params artifact.entryCtx.layout).2 ∧
+      Expressions.InteractionSemantics.Block.openRun expressions fuel
+          { stmts := prepared.paramCode } target =
+        .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      ScratchStateRel contract prepared.plan
+        (artifact.slots.params.map Prod.fst).reverse 0 frameBase
+        finalFrameDepth compilation.recipe.frameWords source finalTarget ∧
+      finalFrameDepth =
+        (currentStackOrder prepared.plan
+          (artifact.slots.params.map Prod.fst).reverse).length ∧
+      finalTarget.evm.stack.length = prepared.paramCtx.layout.length := by
+  obtain
+      ⟨compiled, finalCtx, finalTarget, finalFrameDepth, fuel, hFuel,
+        hCompile, hFinalLayout, hEval, hFinalRel, hFinalDepth,
+        hFinalStackLength⟩ :=
+    ParameterPrelude.forward_scratch prepared.parameterContext hRel
+      (by simp [currentStackOrder]) hStackLength prepared.planWF hReservation
+  have hPair :
+      (compiled, finalCtx) = (prepared.paramCode, prepared.paramCtx) :=
+    Option.some.inj (hCompile.symm.trans prepared.compileParams)
+  cases hPair
+  exact
+    ⟨finalTarget, finalFrameDepth, fuel, hFuel, hFinalLayout, hEval,
+      by simpa using hFinalRel, by simpa using hFinalDepth,
+      hFinalStackLength⟩
+
+theorem Prepared.parameters_forward_stack
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : Artifact compilation name fn}
+    (prepared : Prepared artifact)
+    {contract : MemoryContract.Contract}
+    {frameBase : Nat}
+    {source : Functions.InteractionSemantics.State}
+    {target : Structured.RunState}
+    (hNeedsFrame : artifact.needsFrame = false)
+    (hRel :
+      ActivationCalleeEntryRel contract prepared.plan []
+        artifact.slots.params frameBase .stack source target)
+    (hStackLength :
+      target.evm.stack.length = artifact.entryCtx.layout.length) :
+    ∃ finalTarget fuel,
+      0 < fuel ∧
+      prepared.paramCtx.layout =
+        (AllocationLowering.lowerParams artifact.lowerCtx
+          artifact.slots.params artifact.entryCtx.layout).2 ∧
+      Expressions.InteractionSemantics.Block.openRun expressions fuel
+          { stmts := prepared.paramCode } target =
+        .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      ActivationStateRel contract prepared.plan
+        (artifact.slots.params.map Prod.fst).reverse 0 frameBase .stack
+        source finalTarget ∧
+      finalTarget.evm.stack.length = prepared.paramCtx.layout.length := by
+  obtain
+      ⟨compiled, finalCtx, finalTarget, fuel, hFuel, hCompile,
+        hFinalLayout, hEval, hFinalRel, hFinalStackLength⟩ :=
+    ParameterPrelude.forward_stack prepared.parameterContext
+      (artifact.paramsAllStack_of_needsFrame_false hNeedsFrame)
+      hRel hStackLength
+  have hPair :
+      (compiled, finalCtx) = (prepared.paramCode, prepared.paramCtx) :=
+    Option.some.inj (hCompile.symm.trans prepared.compileParams)
+  cases hPair
+  exact
+    ⟨finalTarget, fuel, hFuel, hFinalLayout, hEval,
+      by simpa using hFinalRel, hFinalStackLength⟩
 
 /-- Package a compiler-selected function body as an ordinary recursive root. -/
 def Prepared.rootArtifact
