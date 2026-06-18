@@ -865,6 +865,8 @@ Exit: the shared core builds with no compiler layer changed.
     behind one allocation-owned activation relation.
   - [x] Compose arbitrary checked runtime argument computations with all six
     external primitives through the emitted `argsCode ++ [.op op]` shape.
+  - [x] Define one primitive-family capability and prove the actual ordinary
+    lowerer/compiler decomposition consumes its recursive argument theorem.
   - [ ] Compose argument-expression preservation with external primitive
     preservation through the ordinary allocation lowerer and Locals compiler.
   - [ ] Recursive allocation preservation for expressions, statements,

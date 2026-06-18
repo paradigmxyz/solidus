@@ -125,6 +125,127 @@ theorem stack_var_open
     EvmYul.EVM.State.replaceStackAndIncrPC,
     EvmYul.EVM.State.incrPC]
 
+/-- Compose recursively checked arguments with one primitive capability. -/
+theorem prim_of_args
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {source : SourceState} {target : TargetState}
+    (op : Structured.BasicOp)
+    (hPrimitive : AllocationInteractionPrimitive.OpenForward contract op)
+    (args : Locals.ExprSeq (Expressions.Structured.BasicOp.inputs op))
+    (argsCode : Structured.Code)
+    (hArgs :
+      Simulation.Interaction.Rel
+        (AllocationInteractionPrimitive.ActivationExprOutcomeRel
+          contract plan live stackOffset frameBase
+          (Expressions.Structured.BasicOp.inputs op) mode target)
+        (Functions.InteractionSemantics.ExprSeq.openEval args source)
+        (Structured.InteractionSemantics.Code.openRun argsCode target))
+    (hSafe :
+      Simulation.Interaction.AllDone
+        (AllocationInteractionPrimitive.PrimitiveArgsSafe contract op)
+        (Functions.InteractionSemantics.ExprSeq.openEval args source)) :
+    Simulation.Interaction.Rel
+      (AllocationInteractionPrimitive.ActivationExprOutcomeRel
+        contract plan live stackOffset frameBase
+        (Expressions.Structured.BasicOp.outputs op) mode target)
+      (Functions.InteractionSemantics.Expr.openEval (.prim op args) source)
+      (Structured.InteractionSemantics.Code.openRun
+        (argsCode ++ [.op op]) target) := by
+  rw [Structured.InteractionSemantics.Code.openRun_append]
+  change
+    Simulation.Interaction.Rel _
+      (Simulation.Interaction.bind
+        (Functions.InteractionSemantics.ExprSeq.openEval args source)
+        (fun result =>
+          Locals.InteractionSemantics.Primitive.openEval
+            op result.1 result.2))
+      (Simulation.Interaction.bind
+        (Structured.InteractionSemantics.Code.openRun argsCode target)
+        (Structured.InteractionSemantics.Code.openRun [.op op]))
+  have hArgsSafe :=
+    Simulation.Interaction.Rel.strengthen_left hArgs hSafe
+  apply Simulation.Interaction.Rel.bind_custom hArgsSafe
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hArgsDone, hSafeDone⟩
+  cases hArgsDone with
+  | @error left right hError =>
+      cases hError
+      exact Simulation.Interaction.Rel.done
+        (Simulation.Interaction.ExceptRel.error rfl)
+  | @ok sourceArgs targetArgs hArgsResult =>
+      simp only
+      rw [Structured.InteractionSemantics.Code.openRun_single]
+      apply hPrimitive.preserve hArgsResult.valuesLength hArgsResult.state
+        hArgsResult.stack
+      simpa [AllocationInteractionPrimitive.PrimitiveArgsSafe] using hSafeDone
+
+/--
+Compiler-facing primitive composition. The recursive argument premise is the
+structural induction hypothesis and is discharged inside this pass owner.
+-/
+theorem prim_of_lower_compile
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {source : SourceState} {target : TargetState}
+    (op : Structured.BasicOp)
+    (hPrimitive : AllocationInteractionPrimitive.OpenForward contract op)
+    (args : Locals.ExprSeq (Expressions.Structured.BasicOp.inputs op))
+    {lowered : Locals.Expr (Expressions.Structured.BasicOp.outputs op)}
+    {code : Structured.Code}
+    (hLower :
+      AllocationLowering.lowerExpr lowerCtx lowerState (.prim op args) =
+        some lowered)
+    (hCompile :
+      Locals.Expr.compileCode localsCtx stackOffset lowered = some code)
+    (hArgsPreserve :
+      ∀ {loweredArgs :
+          Locals.ExprSeq (Expressions.Structured.BasicOp.inputs op)}
+        {argsCode : Structured.Code},
+      AllocationLowering.lowerExprSeq lowerCtx lowerState args =
+          some loweredArgs →
+      Locals.ExprSeq.compileCode localsCtx stackOffset loweredArgs =
+          some argsCode →
+      Simulation.Interaction.Rel
+        (AllocationInteractionPrimitive.ActivationExprOutcomeRel
+          contract plan live stackOffset frameBase
+          (Expressions.Structured.BasicOp.inputs op) mode target)
+        (Functions.InteractionSemantics.ExprSeq.openEval args source)
+        (Structured.InteractionSemantics.Code.openRun argsCode target))
+    (hSafe :
+      Simulation.Interaction.AllDone
+        (AllocationInteractionPrimitive.PrimitiveArgsSafe contract op)
+        (Functions.InteractionSemantics.ExprSeq.openEval args source)) :
+    Simulation.Interaction.Rel
+      (AllocationInteractionPrimitive.ActivationExprOutcomeRel
+        contract plan live stackOffset frameBase
+        (Expressions.Structured.BasicOp.outputs op) mode target)
+      (Functions.InteractionSemantics.Expr.openEval (.prim op args) source)
+      (Structured.InteractionSemantics.Code.openRun code target) := by
+  cases hLowerArgs :
+      AllocationLowering.lowerExprSeq lowerCtx lowerState args with
+  | none =>
+      simp [AllocationLowering.lowerExpr, hLowerArgs] at hLower
+  | some loweredArgs =>
+      have hLowered : lowered = .prim op loweredArgs := by
+        simpa [AllocationLowering.lowerExpr, hLowerArgs] using hLower.symm
+      subst lowered
+      cases hArgsCode :
+          Locals.ExprSeq.compileCode localsCtx stackOffset loweredArgs with
+      | none =>
+          simp [Locals.Expr.compileCode, hArgsCode] at hCompile
+      | some argsCode =>
+          have hCode : code = argsCode ++ [.op op] := by
+            simpa [Locals.Expr.compileCode, hArgsCode] using hCompile.symm
+          subst code
+          exact prim_of_args op hPrimitive args argsCode
+            (hArgsPreserve hLowerArgs hArgsCode) hSafe
+
 /-- Compose recursively checked arguments with one CALL-family primitive. -/
 theorem call_prim_of_args
     {contract : MemoryContract.Contract} {plan : Plan}
@@ -156,37 +277,22 @@ theorem call_prim_of_args
       (Structured.InteractionSemantics.Code.openRun
         (argsCode ++ [.op (AllocationInteractionPrimitive.callOp kind)])
         target) := by
-  rw [Structured.InteractionSemantics.Code.openRun_append]
-  change
-    Simulation.Interaction.Rel _
-      (Simulation.Interaction.bind
-        (Functions.InteractionSemantics.ExprSeq.openEval args source)
-        (fun result =>
-          Locals.InteractionSemantics.Primitive.openEval
-            (AllocationInteractionPrimitive.callOp kind)
-            result.1 result.2))
-      (Simulation.Interaction.bind
-        (Structured.InteractionSemantics.Code.openRun argsCode target)
-        (Structured.InteractionSemantics.Code.openRun
-          [.op (AllocationInteractionPrimitive.callOp kind)]))
-  have hArgsSafe :=
-    Simulation.Interaction.Rel.strengthen_left hArgs hSafe
-  apply Simulation.Interaction.Rel.bind_custom hArgsSafe
-  intro sourceDone targetDone hDone
-  rcases hDone with ⟨hArgsDone, hSafeDone⟩
-  cases hArgsDone with
-  | @error left right hError =>
-      cases hError
-      exact Simulation.Interaction.Rel.done
-        (Simulation.Interaction.ExceptRel.error rfl)
-  | @ok sourceArgs targetArgs hArgsResult =>
-      simp only
-      rw [Structured.InteractionSemantics.Code.openRun_single]
-      apply AllocationInteractionPrimitive.call_open kind sourceArgs.2
-      · simpa using hArgsResult.valuesLength
-      · simpa using hArgsResult.state
-      · exact hArgsResult.stack
-      · simpa [AllocationInteractionPrimitive.CallArgsSafe] using hSafeDone
+  have hSafe' :
+      Simulation.Interaction.AllDone
+        (AllocationInteractionPrimitive.PrimitiveArgsSafe contract
+          (AllocationInteractionPrimitive.callOp kind))
+        (Functions.InteractionSemantics.ExprSeq.openEval args source) := by
+    apply Simulation.Interaction.AllDone.mono hSafe
+    intro outcome hOutcome
+    cases outcome with
+    | error error => trivial
+    | ok result =>
+        simpa [AllocationInteractionPrimitive.PrimitiveArgsSafe,
+          AllocationInteractionPrimitive.CallArgsSafe] using hOutcome
+  simpa using
+    (prim_of_args _
+      (AllocationInteractionPrimitive.call_openForward contract kind)
+      args argsCode hArgs hSafe')
 
 /-- Compose recursively checked arguments with one CREATE-family primitive. -/
 theorem create_prim_of_args
@@ -219,37 +325,22 @@ theorem create_prim_of_args
       (Structured.InteractionSemantics.Code.openRun
         (argsCode ++ [.op (AllocationInteractionPrimitive.createOp kind)])
         target) := by
-  rw [Structured.InteractionSemantics.Code.openRun_append]
-  change
-    Simulation.Interaction.Rel _
-      (Simulation.Interaction.bind
-        (Functions.InteractionSemantics.ExprSeq.openEval args source)
-        (fun result =>
-          Locals.InteractionSemantics.Primitive.openEval
-            (AllocationInteractionPrimitive.createOp kind)
-            result.1 result.2))
-      (Simulation.Interaction.bind
-        (Structured.InteractionSemantics.Code.openRun argsCode target)
-        (Structured.InteractionSemantics.Code.openRun
-          [.op (AllocationInteractionPrimitive.createOp kind)]))
-  have hArgsSafe :=
-    Simulation.Interaction.Rel.strengthen_left hArgs hSafe
-  apply Simulation.Interaction.Rel.bind_custom hArgsSafe
-  intro sourceDone targetDone hDone
-  rcases hDone with ⟨hArgsDone, hSafeDone⟩
-  cases hArgsDone with
-  | @error left right hError =>
-      cases hError
-      exact Simulation.Interaction.Rel.done
-        (Simulation.Interaction.ExceptRel.error rfl)
-  | @ok sourceArgs targetArgs hArgsResult =>
-      simp only
-      rw [Structured.InteractionSemantics.Code.openRun_single]
-      apply AllocationInteractionPrimitive.create_open kind sourceArgs.2
-      · simpa using hArgsResult.valuesLength
-      · simpa using hArgsResult.state
-      · exact hArgsResult.stack
-      · simpa [AllocationInteractionPrimitive.CreateArgsSafe] using hSafeDone
+  have hSafe' :
+      Simulation.Interaction.AllDone
+        (AllocationInteractionPrimitive.PrimitiveArgsSafe contract
+          (AllocationInteractionPrimitive.createOp kind))
+        (Functions.InteractionSemantics.ExprSeq.openEval args source) := by
+    apply Simulation.Interaction.AllDone.mono hSafe
+    intro outcome hOutcome
+    cases outcome with
+    | error error => trivial
+    | ok result =>
+        simpa [AllocationInteractionPrimitive.PrimitiveArgsSafe,
+          AllocationInteractionPrimitive.CreateArgsSafe] using hOutcome
+  simpa using
+    (prim_of_args _
+      (AllocationInteractionPrimitive.create_openForward contract kind)
+      args argsCode hArgs hSafe')
 
 end AllocationInteractionExpression
 end Functions

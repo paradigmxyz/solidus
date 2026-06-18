@@ -31594,3 +31594,18 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-file hole scan, and `git diff --check` passed; activation response
   and argument-composition theorems use only
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 17:21:48 PDT - consolidation/functions-primitive-interface -
+  replaced duplicated CALL/CREATE argument bind proofs with one
+  `OpenForward` primitive-family capability, one `PrimitiveSafe` classifier,
+  and one generic `prim_of_args` theorem; all six external opcodes construct
+  the shared capability.
+- 2026-06-17 17:21:48 PDT - proof/functions-primitive-lowering - proved
+  `prim_of_lower_compile`, which decomposes the actual ordinary
+  `AllocationLowering.lowerExpr` and `Locals.Expr.compileCode` results and
+  composes the recursively supplied argument theorem with emitted primitive
+  code.
+- 2026-06-17 17:21:48 PDT - validation/functions-primitive-interface - the
+  1155-job Functions build, 1305-job verification root, architecture guards,
+  touched-file hole scan, and `git diff --check` passed; generic capability
+  and compiler-facing theorems use only
+  `[propext, Classical.choice, Quot.sound]`.

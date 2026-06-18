@@ -176,10 +176,15 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionExpression.literal_open
 #check EvmCompiler.Functions.AllocationInteractionExpression.literal_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionExpression.stack_var_open
+#check EvmCompiler.Functions.AllocationInteractionExpression.prim_of_args
+#check EvmCompiler.Functions.AllocationInteractionExpression.prim_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionExpression.call_prim_of_args
 #check EvmCompiler.Functions.AllocationInteractionExpression.create_prim_of_args
 #check EvmCompiler.Functions.AllocationInteractionPrimitive.call_open
 #check EvmCompiler.Functions.AllocationInteractionPrimitive.create_open
+#check EvmCompiler.Functions.AllocationInteractionPrimitive.OpenForward
+#check EvmCompiler.Functions.AllocationInteractionPrimitive.call_openForward
+#check EvmCompiler.Functions.AllocationInteractionPrimitive.create_openForward
 #check EvmCompiler.Functions.AllocationObserverRelation.StateRel.toInteraction
 #check EvmCompiler.Functions.AllocationObserverRelation.ScratchStateRel.toInteraction
 #check EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_nonObserver

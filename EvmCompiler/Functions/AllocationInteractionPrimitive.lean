@@ -72,6 +72,56 @@ def CreateArgsSafe (contract : MemoryContract.Contract)
   | .error _ => True
   | .ok result => CreateMemorySafe contract kind result.2
 
+def PrimitiveSafe (contract : MemoryContract.Contract)
+    (op : Structured.BasicOp) (source : SourceState)
+    (values : List Word) : Prop :=
+  match Simulation.ExternalKind.ofEVMOperation? op.toPrimOp.toEVM with
+  | some (.call kind) => CallMemorySafe contract kind values
+  | some (.create kind) => CreateMemorySafe contract kind values
+  | none =>
+      Simulation.MemorySafety.OpenPrimitiveMemorySafe contract op
+        source.shared.toMachineState values
+
+def PrimitiveArgsSafe (contract : MemoryContract.Contract)
+    (op : Structured.BasicOp) :
+    Except EVMException (SourceState × List Word) → Prop
+  | .error _ => True
+  | .ok result => PrimitiveSafe contract op result.1 result.2
+
+@[simp] theorem primitiveSafe_callOp
+    (contract : MemoryContract.Contract) (kind : Simulation.CallKind)
+    (source : SourceState) (values : List Word) :
+    PrimitiveSafe contract (callOp kind) source values =
+      CallMemorySafe contract kind values := by
+  cases kind <;> rfl
+
+@[simp] theorem primitiveSafe_createOp
+    (contract : MemoryContract.Contract) (kind : Simulation.CreateKind)
+    (source : SourceState) (values : List Word) :
+    PrimitiveSafe contract (createOp kind) source values =
+      CreateMemorySafe contract kind values := by
+  cases kind <;> rfl
+
+/-- Stable adjacent interface implemented once per primitive semantic family. -/
+structure OpenForward (contract : MemoryContract.Contract)
+    (op : Structured.BasicOp) : Prop where
+  preserve :
+    ∀ {plan : Plan} {live : List Locals.Name}
+      {stackOffset frameBase : Nat} {mode : ActivationMode}
+      {source : SourceState} {initialTarget target : TargetState}
+      {values : List Word},
+    values.length = Expressions.Structured.BasicOp.inputs op →
+    ActivationStateRel contract plan live
+        (stackOffset + Expressions.Structured.BasicOp.inputs op)
+        frameBase mode source target →
+    target.evm.stack = values.reverse ++ initialTarget.evm.stack →
+    PrimitiveSafe contract op source values →
+    Simulation.Interaction.Rel
+      (ActivationExprOutcomeRel contract plan live stackOffset frameBase
+        (Expressions.Structured.BasicOp.outputs op) mode initialTarget)
+      (Locals.InteractionSemantics.Primitive.openEval op source values)
+      (Structured.InteractionSemantics.BasicInstr.openStep (.op op) target)
+
 private theorem callOperands_of_length
     (kind : Simulation.CallKind) (stack : List Word)
     (hLength : stack.length = kind.inputArity) :
@@ -482,6 +532,30 @@ theorem create_open
         · exact Simulation.Interaction.Rel.done
             (Simulation.Interaction.ExceptRel.error rfl)
       · simpa [Simulation.CreateKind.inputArity] using hLength
+
+theorem call_openForward (contract : MemoryContract.Contract)
+    (kind : Simulation.CallKind) : OpenForward contract (callOp kind) where
+  preserve := by
+    intro plan live stackOffset frameBase mode source initialTarget target
+      values hLength hRel hStack hSafe
+    simpa using
+      call_open (contract := contract) (plan := plan) (live := live)
+        (stackOffset := stackOffset) (frameBase := frameBase)
+        (mode := mode) (source := source) (initialTarget := initialTarget)
+        (target := target) kind values (by simpa using hLength)
+        (by simpa using hRel) hStack (by simpa using hSafe)
+
+theorem create_openForward (contract : MemoryContract.Contract)
+    (kind : Simulation.CreateKind) : OpenForward contract (createOp kind) where
+  preserve := by
+    intro plan live stackOffset frameBase mode source initialTarget target
+      values hLength hRel hStack hSafe
+    simpa using
+      create_open (contract := contract) (plan := plan) (live := live)
+        (stackOffset := stackOffset) (frameBase := frameBase)
+        (mode := mode) (source := source) (initialTarget := initialTarget)
+        (target := target) kind values (by simpa using hLength)
+        (by simpa using hRel) hStack (by simpa using hSafe)
 
 end AllocationInteractionPrimitive
 end Functions
