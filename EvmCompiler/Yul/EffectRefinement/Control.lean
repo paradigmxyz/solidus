@@ -120,43 +120,40 @@ theorem call_succ_refines
       (call model targetPrim fuel.succ args functionName?
         codeOverride state) := by
   let source := model.source state
-  generalize hAccount :
-    source.sharedState.accountMap.find?
-      source.executionEnv.codeOwner = account?
-  cases account? with
+  generalize hCode : resolveActiveCode? source codeOverride = code?
+  cases code? with
   | none =>
-      simpa only [call, source, hAccount] using
+      simpa only [call, source, hCode] using
         (Result.Refines.refl
           (fail state (.MissingContract
             (s!"{source.executionEnv.codeOwner}")) :
             Result σ (σ × List Word)))
-  | some yulContract =>
+  | some code =>
       cases functionName? with
       | none =>
-          simpa only [call, source, hAccount] using
+          simpa only [call, source, hCode] using
             (callBody_refines model sourcePrim targetPrim fuel args
               [] []
-              [(codeOverride.getD yulContract.code).dispatcher]
+              [code.dispatcher]
               codeOverride state
               (hExec
-                [(codeOverride.getD yulContract.code).dispatcher]
+                [code.dispatcher]
                 (model.withSource state
                   (EvmYul.Yul.State.mkOk
                     (source.initcall [] [] args)))))
       | some functionName =>
           generalize hLookup :
-            (codeOverride.getD yulContract.code).functions.lookup
-              functionName = function?
+            code.functions.lookup functionName = function?
           cases function? with
           | none =>
-              simpa only [call, source, hAccount, hLookup] using
+              simpa only [call, source, hCode, hLookup] using
                 (Result.Refines.refl
                   (fail state
                     (.MissingContractFunction functionName) :
                     Result σ (σ × List Word)))
           | some function =>
               rcases function with ⟨params, rets, body⟩
-              simpa only [call, source, hAccount, hLookup] using
+              simpa only [call, source, hCode, hLookup] using
                 (callBody_refines model sourcePrim targetPrim fuel args
                   params rets body codeOverride state
                   (hExec body

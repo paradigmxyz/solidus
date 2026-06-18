@@ -305,19 +305,16 @@ theorem call_observable_error_parts
           codeOverride state =
         .error failure)
     (hObservable : Exception.Observable failure.exception) :
-    ∃ previous yulContract params returns body,
+    ∃ previous code params returns body,
       fuel = previous + 1 ∧
-      (model.source state).sharedState.accountMap.find?
-          (model.source state).executionEnv.codeOwner =
-        some yulContract ∧
+      resolveActiveCode? (model.source state) codeOverride = some code ∧
       (match functionName? with
         | none =>
             some
               (EvmYul.Yul.Ast.FunctionDefinition.Def [] []
-                [(codeOverride.getD yulContract.code).dispatcher])
+                [code.dispatcher])
         | some functionName =>
-            (codeOverride.getD yulContract.code).functions.lookup
-              functionName) =
+            code.functions.lookup functionName) =
         some
           (EvmYul.Yul.Ast.FunctionDefinition.Def
             params returns body) ∧
@@ -333,39 +330,35 @@ theorem call_observable_error_parts
       rw [← hRun] at hObservable
       simp [Exception.Observable] at hObservable
   | succ previous =>
-      cases hContract :
-          (model.source state).sharedState.accountMap.find?
-            (model.source state).executionEnv.codeOwner with
+      cases hCode :
+          resolveActiveCode? (model.source state) codeOverride with
       | none =>
-          simp [call, hContract, fail] at hRun
+          simp [call, hCode, fail] at hRun
           rw [← hRun] at hObservable
           simp [Exception.Observable] at hObservable
-      | some yulContract =>
+      | some code =>
           cases functionName? with
           | none =>
               cases hBody :
                   exec model prim previous
-                    (.Block
-                      [(codeOverride.getD yulContract.code).dispatcher])
+                    (.Block [code.dispatcher])
                     codeOverride
                     (model.withSource state
                       (EvmYul.Yul.State.mkOk
                         ((model.source state).initcall [] [] args))) with
               | error bodyFailure =>
-                  simp [call, hContract, hBody] at hRun
+                  simp [call, hCode, hBody] at hRun
                   subst failure
                   exact
-                    ⟨previous, yulContract, [], [],
-                      [(codeOverride.getD yulContract.code).dispatcher],
+                    ⟨previous, code, [], [], [code.dispatcher],
                       rfl, rfl, rfl, hBody⟩
               | ok stateAfterBody =>
-                  simp [call, hContract, hBody] at hRun
+                  simp [call, hCode, hBody] at hRun
           | some functionName =>
               cases hFunction :
-                  (codeOverride.getD yulContract.code).functions.lookup
-                    functionName with
+                  code.functions.lookup functionName with
               | none =>
-                  simp [call, hContract, hFunction, fail] at hRun
+                  simp [call, hCode, hFunction, fail] at hRun
                   rw [← hRun] at hObservable
                   simp [Exception.Observable] at hObservable
               | some fn =>
@@ -379,13 +372,13 @@ theorem call_observable_error_parts
                                 ((model.source state).initcall
                                   params returns args))) with
                       | error bodyFailure =>
-                          simp [call, hContract, hFunction, hBody] at hRun
+                          simp [call, hCode, hFunction, hBody] at hRun
                           subst failure
                           exact
-                            ⟨previous, yulContract, params, returns, body,
+                            ⟨previous, code, params, returns, body,
                               rfl, rfl, hFunction, hBody⟩
                       | ok stateAfterBody =>
-                          simp [call, hContract, hFunction, hBody] at hRun
+                          simp [call, hCode, hFunction, hBody] at hRun
 
 theorem callDispatcher_observable_error_parts
     {σ : Type} (model : StateModel σ)

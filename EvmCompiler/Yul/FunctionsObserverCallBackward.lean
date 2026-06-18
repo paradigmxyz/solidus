@@ -483,7 +483,11 @@ theorem compose
       (ObserverSemantics.SourceReplay.stateModel transcript)
       (ObserverSafety.SafeSemantics.primitiveSemantics
         contract transcript)
-      hAccount hSourceLookup returned.sourceRun
+      (show
+        Yul.Source.Effectful.resolveActiveCode? sourceCaller.source
+            (some sourceProgram.contract) =
+          some sourceProgram.contract by rfl)
+      hSourceLookup returned.sourceRun
   have hReturnNames : fn.returns = returns := by
     simpa [identNames_eq_self] using hReturns
   have hTargetReturns :

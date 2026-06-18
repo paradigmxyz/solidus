@@ -845,7 +845,7 @@ Exit: the shared core builds with no compiler layer changed.
       remove recursive callback premises from the compiler-facing loop theorem.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
-- [ ] Functions.
+- [x] Functions.
   - [x] One monad-polymorphic canonical control kernel shared by ordinary,
     observer, and open-world semantics, with architecture guards against
     specialization-owned recursion.
@@ -966,7 +966,7 @@ Exit: every layer exposes one canonical open computation.
       switch interpreter.
     - [x] Exact loop-control frames are an orthogonal proof capability rather
       than a stronger global outcome relation or a loop-specific interpreter.
-- [ ] Functions -> allocated Locals/Expressions.
+- [x] Functions -> allocated Locals/Expressions.
   - [x] Own emitted stack protocol, spill state, lexical cleanup, compound
     control, and loop constructs without extending stack-free Locals with an
     operand stack.
@@ -982,7 +982,7 @@ Exit: every layer exposes one canonical open computation.
     discharging resource capabilities internally.
   - [x] Construct the distinguished main lowering split and recursive root
     from ordinary compiler artifacts in an observer-free pass owner.
-  - [ ] Compose selected internal callees and publish the whole-program
+  - [x] Compose selected internal callees and publish the whole-program
     adjacent theorem.
 - [ ] Yul -> Functions.
 

@@ -48,6 +48,23 @@ def multifill {σ : Type} (model : StateModel σ)
   | .ok (state, values) => .ok (model.multifill vars state values)
   | .error failure => .error failure
 
+/-- Resolve the immutable active source program. Canonical compiler semantics
+always supplies `some code`; account-map lookup remains only for legacy
+compatibility callers that pass `none`. -/
+def resolveActiveCode? (source : EvmYul.Yul.State)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract) :
+    Option EvmYul.Yul.Ast.YulContract :=
+  match codeOverride with
+  | some code => some code
+  | none =>
+      (source.sharedState.accountMap.find?
+        source.executionEnv.codeOwner).map (fun account => account.code)
+
+@[simp] theorem resolveActiveCode?_some
+    (source : EvmYul.Yul.State)
+    (code : EvmYul.Yul.Ast.YulContract) :
+    resolveActiveCode? source (some code) = some code := rfl
+
 mutual
 
   def evalTail {σ : Type} (model : StateModel σ)
@@ -132,13 +149,10 @@ mutual
     | 0 => fail state .OutOfFuel
     | fuel' + 1 =>
         let source := model.source state
-        match source.sharedState.accountMap.find?
-            source.executionEnv.codeOwner with
+        match resolveActiveCode? source codeOverride with
         | none =>
             fail state (.MissingContract (s!"{source.executionEnv.codeOwner}"))
-        | some yulContract =>
-            let code : EvmYul.Yul.Ast.YulContract :=
-              codeOverride.getD yulContract.code
+        | some code =>
             let function? : Option EvmYul.Yul.Ast.FunctionDefinition :=
               match functionName? with
               | none =>
@@ -540,11 +554,9 @@ theorem call_succ_ok_parts
       call model prim (fuel + 1) args (some functionName)
           codeOverride state =
         .ok (final, values)) :
-    ∃ yulContract params returns body stateAfterBody,
-      (model.source state).sharedState.accountMap.find?
-          (model.source state).executionEnv.codeOwner =
-        some yulContract ∧
-      (codeOverride.getD yulContract.code).functions.lookup functionName =
+    ∃ code params returns body stateAfterBody,
+      resolveActiveCode? (model.source state) codeOverride = some code ∧
+      code.functions.lookup functionName =
         some (.Def params returns body) ∧
       exec model prim fuel (.Block body) codeOverride
           (model.withSource state
@@ -557,16 +569,14 @@ theorem call_succ_ok_parts
               (model.source state)).setStore (model.source state)) ∧
       values = List.map (model.source stateAfterBody).lookup! returns := by
   unfold call at hRun
-  cases hContract :
-      (model.source state).sharedState.accountMap.find?
-        (model.source state).executionEnv.codeOwner with
+  cases hCode : resolveActiveCode? (model.source state) codeOverride with
   | none =>
-      simp [hContract, fail] at hRun
-  | some yulContract =>
+      simp [hCode, fail] at hRun
+  | some code =>
       cases hFunction :
-          (codeOverride.getD yulContract.code).functions.lookup functionName with
+          code.functions.lookup functionName with
       | none =>
-          simp [hContract, hFunction, fail] at hRun
+          simp [hCode, hFunction, fail] at hRun
       | some fn =>
           cases fn with
           | Def params returns body =>
@@ -577,12 +587,12 @@ theorem call_succ_ok_parts
                         ((model.source state).initcall
                           params returns args))) with
               | error failure =>
-                  simp [hContract, hFunction, hBody] at hRun
+                  simp [hCode, hFunction, hBody] at hRun
               | ok stateAfterBody =>
-                  simp [hContract, hFunction, hBody] at hRun
+                  simp [hCode, hFunction, hBody] at hRun
                   rcases hRun with ⟨rfl, rfl⟩
                   exact
-                    ⟨yulContract, params, returns, body, stateAfterBody,
+                    ⟨code, params, returns, body, stateAfterBody,
                       rfl, hFunction, hBody, rfl, rfl⟩
 
 theorem call_succ_of_parts
@@ -592,15 +602,12 @@ theorem call_succ_of_parts
     {functionName : EvmYul.Yul.Ast.YulFunctionName}
     {codeOverride : Option EvmYul.Yul.Ast.YulContract}
     {state stateAfterBody : σ}
-    {yulContract : EvmYul.Account .Yul}
+    {code : EvmYul.Yul.Ast.YulContract}
     {params returns : List EvmYul.Identifier}
     {body : List EvmYul.Yul.Ast.Stmt}
-    (hContract :
-      (model.source state).sharedState.accountMap.find?
-          (model.source state).executionEnv.codeOwner =
-        some yulContract)
+    (hCode : resolveActiveCode? (model.source state) codeOverride = some code)
     (hFunction :
-      (codeOverride.getD yulContract.code).functions.lookup functionName =
+      code.functions.lookup functionName =
         some (.Def params returns body))
     (hBody :
       exec model prim fuel (.Block body) codeOverride
@@ -615,7 +622,36 @@ theorem call_succ_of_parts
             (((model.source stateAfterBody).reviveJump.overwrite?
                 (model.source state)).setStore (model.source state)),
           List.map (model.source stateAfterBody).lookup! returns) := by
-  simp [call, hContract, hFunction, hBody]
+  simp [call, hCode, hFunction, hBody]
+
+/-- Canonical internal calls consume the explicit active program and therefore
+do not require an account-map code premise. -/
+theorem call_succ_of_explicit_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {args : List Word}
+    {functionName : EvmYul.Yul.Ast.YulFunctionName}
+    {code : EvmYul.Yul.Ast.YulContract}
+    {state stateAfterBody : σ}
+    {params returns : List EvmYul.Identifier}
+    {body : List EvmYul.Yul.Ast.Stmt}
+    (hFunction :
+      code.functions.lookup functionName =
+        some (.Def params returns body))
+    (hBody :
+      exec model prim fuel (.Block body) (some code)
+          (model.withSource state
+            (EvmYul.Yul.State.mkOk
+              ((model.source state).initcall params returns args))) =
+        .ok stateAfterBody) :
+    call model prim (fuel + 1) args (some functionName)
+        (some code) state =
+      .ok
+        (model.withSource stateAfterBody
+            (((model.source stateAfterBody).reviveJump.overwrite?
+                (model.source state)).setStore (model.source state)),
+          List.map (model.source stateAfterBody).lookup! returns) := by
+  exact call_succ_of_parts model prim rfl hFunction hBody
 
 theorem call_succ_error_of_parts
     {σ : Type} (model : StateModel σ)
@@ -624,15 +660,12 @@ theorem call_succ_error_of_parts
     {functionName : EvmYul.Yul.Ast.YulFunctionName}
     {codeOverride : Option EvmYul.Yul.Ast.YulContract}
     {state : σ} {failure : Failure σ}
-    {yulContract : EvmYul.Account .Yul}
+    {code : EvmYul.Yul.Ast.YulContract}
     {params returns : List EvmYul.Identifier}
     {body : List EvmYul.Yul.Ast.Stmt}
-    (hContract :
-      (model.source state).sharedState.accountMap.find?
-          (model.source state).executionEnv.codeOwner =
-        some yulContract)
+    (hCode : resolveActiveCode? (model.source state) codeOverride = some code)
     (hFunction :
-      (codeOverride.getD yulContract.code).functions.lookup functionName =
+      code.functions.lookup functionName =
         some (.Def params returns body))
     (hBody :
       exec model prim fuel (.Block body) codeOverride
@@ -643,7 +676,7 @@ theorem call_succ_error_of_parts
     call model prim (fuel + 1) args (some functionName)
         codeOverride state =
       .error failure := by
-  simp [call, hContract, hFunction, hBody]
+  simp [call, hCode, hFunction, hBody]
 
 theorem callDispatcher_ok_parts
     {σ : Type} (model : StateModel σ)
@@ -712,11 +745,12 @@ theorem evalValues_function_ok_length
       simp [call, fail] at hCall
   | succ bodyFuel =>
       obtain
-          ⟨_accountContract, callParams, callReturns, callBody,
-            _stateAfterBody, _hAccount, hFunction, _hBody,
+          ⟨callCode, callParams, callReturns, callBody,
+            _stateAfterBody, hCode, hFunction, _hBody,
             _hFinal, hValues⟩ :=
         call_succ_ok_parts model prim hCall
-      simp at hFunction
+      simp [resolveActiveCode?] at hCode
+      subst callCode
       rw [hLookup] at hFunction
       cases hFunction
       simpa using congrArg List.length hValues

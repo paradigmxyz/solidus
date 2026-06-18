@@ -261,16 +261,15 @@ mutual
         | succ fuel' =>
             have hFuelLe : fuel ≤ fuel' :=
               Nat.succ_le_succ_iff.mp hLe
-            cases hAccount :
-                (model.source state).sharedState.accountMap.find?
-                  (model.source state).executionEnv.codeOwner with
+            cases hCode :
+                resolveActiveCode? (model.source state) codeOverride with
             | none =>
-                simp [call, hAccount, fail] at hRun
-            | some account =>
+                simp [call, hCode, fail] at hRun
+            | some code =>
                 cases functionName? with
                 | none =>
                     let body :=
-                      [(codeOverride.getD account.code).dispatcher]
+                      [code.dispatcher]
                     let sourceAtEntry :=
                       EvmYul.Yul.State.mkOk
                         ((model.source state).initcall [] [] args)
@@ -278,7 +277,7 @@ mutual
                         exec model prim fuel (.Block body) codeOverride
                           (model.withSource state sourceAtEntry) with
                     | error failure =>
-                        simp [call, hAccount, body, sourceAtEntry, hBody]
+                        simp [call, hCode, body, sourceAtEntry, hBody]
                           at hRun
                     | ok stateAfterBody =>
                         have hBody' :
@@ -286,14 +285,13 @@ mutual
                                 (model.withSource state sourceAtEntry) =
                               .ok stateAfterBody :=
                           exec_mono model prim hPrim hFuelLe hBody
-                        simpa [call, hAccount, body, sourceAtEntry, hBody,
+                        simpa [call, hCode, body, sourceAtEntry, hBody,
                           hBody'] using hRun
                 | some functionName =>
                     cases hLookup :
-                        (codeOverride.getD account.code).functions.lookup
-                          functionName with
+                        code.functions.lookup functionName with
                     | none =>
-                        simp [call, hAccount, hLookup, fail] at hRun
+                        simp [call, hCode, hLookup, fail] at hRun
                     | some function =>
                         cases function with
                         | Def params rets body =>
@@ -306,7 +304,7 @@ mutual
                                   codeOverride
                                   (model.withSource state sourceAtEntry) with
                             | error failure =>
-                                simp [call, hAccount, hLookup, sourceAtEntry,
+                                simp [call, hCode, hLookup, sourceAtEntry,
                                   hBody] at hRun
                             | ok stateAfterBody =>
                                 have hBody' :
@@ -316,7 +314,7 @@ mutual
                                           sourceAtEntry) =
                                       .ok stateAfterBody :=
                                   exec_mono model prim hPrim hFuelLe hBody
-                                simpa [call, hAccount, hLookup, sourceAtEntry,
+                                simpa [call, hCode, hLookup, sourceAtEntry,
                                   hBody, hBody'] using hRun
   termination_by
     fuel _fuel' args _functionName _codeOverride _state _final _values

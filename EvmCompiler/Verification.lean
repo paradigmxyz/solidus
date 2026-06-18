@@ -1345,6 +1345,8 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Source.Effectful.eval_function_ok_parts
 #check EvmCompiler.Yul.Source.Effectful.evalArgs_ok_length
 #check EvmCompiler.Yul.Source.Effectful.call_succ_ok_parts
+#check EvmCompiler.Yul.Source.Effectful.resolveActiveCode?_some
+#check EvmCompiler.Yul.Source.Effectful.call_succ_of_explicit_parts
 #check EvmCompiler.Yul.StateRelation.Vars.rel_of_scopedExact
 #check EvmCompiler.Yul.StateRelation.Regular.rel_of_scopedExact
 #check EvmCompiler.Yul.StateRelation.Replay.rel_of_scopedExact

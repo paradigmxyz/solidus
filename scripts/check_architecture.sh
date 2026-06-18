@@ -272,6 +272,16 @@ report_matches \
   '^[[:space:]]*(partial[[:space:]]+)?def[[:space:]]+(Block\.runOpen|Block\.runScoped|FunDef\.runBody|Stmt\.runForLoop|Stmt\.run|Program\.runState)([^A-Za-z0-9_]|$)' \
   EvmCompiler/Functions -g '*Interaction*.lean' -g '*Observer*.lean'
 
+for theorem in \
+    '#check EvmCompiler.Yul.Source.Effectful.resolveActiveCode?_some' \
+    '#check EvmCompiler.Yul.Source.Effectful.call_succ_of_explicit_parts'; do
+  if ! rg -Fq "$theorem" EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing the explicit active-Yul-code interface: %s\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
 report_matches \
   'The canonical Functions allocation relation must not depend on observers:' \
   '^import .*Observer' \

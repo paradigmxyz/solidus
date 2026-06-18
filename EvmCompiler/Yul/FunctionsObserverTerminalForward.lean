@@ -623,13 +623,15 @@ theorem selectedBodyOfCallFailure
                   fn.returns paramStore })
           (Functions.Source.Effectful.FunDef.bodyCtx fn)) := by
   obtain
-      ⟨bodyFuel, _accountContract, params, returns, body,
-        hCallFuel, _hAccount, hFunction, hBodyRun⟩ :=
+      ⟨bodyFuel, activeCode, params, returns, body,
+        hCallFuel, hCode, hFunction, hBodyRun⟩ :=
     Yul.Source.Effectful.call_observable_error_parts
       (ObserverSemantics.SourceReplay.stateModel transcript)
       (ObserverSafety.SafeSemantics.primitiveSemantics
         contract transcript)
       hCallRun hObservable
+  simp [Yul.Source.Effectful.resolveActiveCode?] at hCode
+  subst activeCode
   have hLookup :
       sourceProgram.contract.functions.lookup functionName =
         some (.Def params returns body) := by

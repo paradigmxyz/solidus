@@ -1521,14 +1521,16 @@ private theorem ofFunctionCall_programBoundedOfResult
         Yul.Source.Effectful.fail] at hCallRun
   | succ bodyFuel =>
       obtain
-          ⟨_accountContract, params, returns, body, sourceAfterBody,
-            _hAccount, hFunction, hBodyRun, _hSourceAfterCall,
+          ⟨activeCode, params, returns, body, sourceAfterBody,
+            hCode, hFunction, hBodyRun, _hSourceAfterCall,
             hSourceReturns⟩ :=
         Yul.Source.Effectful.call_succ_ok_parts
           (ObserverSemantics.SourceReplay.stateModel transcript)
           (ObserverSafety.SafeSemantics.primitiveSemantics
             contract transcript)
           (by simpa [Nat.succ_eq_add_one] using hCallRun)
+      simp [Yul.Source.Effectful.resolveActiveCode?] at hCode
+      subst activeCode
       have hLookup :
           sourceProgram.contract.functions.lookup functionName =
             some (.Def params returns body) := by
@@ -2723,14 +2725,16 @@ theorem ofFunctionCall_bounded
         Yul.Source.Effectful.fail] at hCallRun
   | succ bodyFuel =>
       obtain
-          ⟨_accountContract, params, returns, body, sourceAfterBody,
-            _hAccount, hFunction, hBodyRun, hSourceFinal,
+          ⟨activeCode, params, returns, body, sourceAfterBody,
+            hCode, hFunction, hBodyRun, hSourceFinal,
             hSourceReturns⟩ :=
         Yul.Source.Effectful.call_succ_ok_parts
           (ObserverSemantics.SourceReplay.stateModel transcript)
           (ObserverSafety.SafeSemantics.primitiveSemantics
             contract transcript)
           (by simpa [Nat.succ_eq_add_one] using hCallRun)
+      simp [Yul.Source.Effectful.resolveActiveCode?] at hCode
+      subst activeCode
       have hLookup :
           sourceProgram.contract.functions.lookup functionName =
             some (.Def params returns body) := by
@@ -3073,14 +3077,16 @@ theorem ofFunctionCall_programBounded
         Yul.Source.Effectful.fail] at hCallRun
   | succ bodyFuel =>
       obtain
-          ⟨_accountContract, params, returns, body, sourceAfterBody,
-            _hAccount, hFunction, hBodyRun, hSourceFinal,
+          ⟨activeCode, params, returns, body, sourceAfterBody,
+            hCode, hFunction, hBodyRun, hSourceFinal,
             hSourceReturns⟩ :=
         Yul.Source.Effectful.call_succ_ok_parts
           (ObserverSemantics.SourceReplay.stateModel transcript)
           (ObserverSafety.SafeSemantics.primitiveSemantics
             contract transcript)
           (by simpa [Nat.succ_eq_add_one] using hCallRun)
+      simp [Yul.Source.Effectful.resolveActiveCode?] at hCode
+      subst activeCode
       have hLookup :
           sourceProgram.contract.functions.lookup functionName =
             some (.Def params returns body) := by

@@ -1797,13 +1797,15 @@ theorem selectedBodyOfCallFailure_programBounded
             (FunctionsObserverStaticCost.stmtList body)
             bodyFuel result } := by
   obtain
-      ⟨bodyFuel, _accountContract, params, returns, body,
-        hBodyFuel, _hAccount, hFunction, hBodyRun⟩ :=
+      ⟨bodyFuel, activeCode, params, returns, body,
+        hBodyFuel, hCode, hFunction, hBodyRun⟩ :=
     Yul.Source.Effectful.call_observable_error_parts
       (ObserverSemantics.SourceReplay.stateModel transcript)
       (ObserverSafety.SafeSemantics.primitiveSemantics
         contract transcript)
       hCallRun hObservable
+  simp [Yul.Source.Effectful.resolveActiveCode?] at hCode
+  subst activeCode
   have hLookup :
       sourceProgram.contract.functions.lookup functionName =
         some (.Def params returns body) := by
