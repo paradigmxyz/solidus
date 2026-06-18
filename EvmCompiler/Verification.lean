@@ -302,6 +302,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.expr
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.assign
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.let_
+#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.brk
+#check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.cont
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.terminal
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.terminalArgs
 #check EvmCompiler.Functions.AllocationInteractionRecursive.CursorForwardAt.leave

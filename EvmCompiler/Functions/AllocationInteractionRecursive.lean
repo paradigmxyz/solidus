@@ -471,6 +471,184 @@ theorem let_
   rw [hFuel'] at hResult
   exact hResult
 
+/-- Recursive `break` constructor with loop-destination cleanup. -/
+theorem brk
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live afterLive : List Functions.Name}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {frameBase sourceFuel targetExtra targetDepth : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live { stmts := .brk :: rest }
+        beforeState beforeLocals)
+    (hSourceFuel : 0 < sourceFuel)
+    (hSourceScope : sourceCtx.breakScope? = some afterLive)
+    (hTargetDepth : beforeLocals.breakDepth? = some targetDepth)
+    (hTransition :
+      AllocationInteractionCleanup.Transition cursor.plan live afterLive
+        targetDepth beforeMode afterMode)
+    (hBoundary :
+      Boundary cursor contract frameBase beforeMode sourceCtx source target)
+    (hTailForward :
+      ∀ {afterState : AllocationLowering.State}
+        {afterLocals : Locals.Ctx}
+        (tail :
+          CoreCursor root scope live { stmts := rest }
+            afterState afterLocals),
+        ExactTail cursor tail →
+        ∀ {sourceMid targetMid tailMode},
+          AllocationContext.ActivationInvariant contract root.lowerCtx
+              afterState afterLocals tail.plan live frameBase tailMode
+              sourceMid targetMid →
+            CursorForwardAt tail contract frameBase (sourceFuel - 1)
+              (targetExtra + 8) sourceCtx sourceMid targetMid) :
+    CursorForwardAt cursor contract frameBase sourceFuel targetExtra
+      sourceCtx source target := by
+  let childFuel := sourceFuel - 1
+  let totalFuel := targetBudget cursor sourceFuel targetExtra
+  let headExtra := totalFuel - 3
+  have hFuel : childFuel + 1 = sourceFuel := by
+    simp [childFuel]
+    omega
+  have hHeadFuel : headExtra + 3 = totalFuel := by
+    simp [headExtra, totalFuel, targetBudget]
+    omega
+  obtain
+      ⟨afterState, afterLocals, headCode, tail,
+        hCompiled, hHead, hExact⟩ :=
+    AllocationInteractionForward.CoreCursor.brk_head
+      (sourceFuel := childFuel) (targetExtra := headExtra)
+      cursor hSourceScope hTargetDepth hTransition hBoundary.invariant
+  have hHead' :
+      Simulation.Interaction.Rel
+        (OpenControlResultRel contract root.lowerCtx afterState afterLocals
+          cursor.plan root.returns live frameBase sourceCtx sourceCtx)
+        (Functions.InteractionSemantics.Stmt.openRun
+          program sourceCtx childFuel .brk source)
+        (Expressions.InteractionSemantics.Block.openRun expressions totalFuel
+          { stmts := headCode } target) := by
+    simpa [hHeadFuel] using hHead
+  have hMidCtx :
+      sourceCtx =
+        { sourceCtx with
+          scope := Functions.Scope.Stmt.outEnv live .brk } := by
+    have hCtx : { sourceCtx with scope := live } = sourceCtx := by
+      cases sourceCtx
+      have hScope := hBoundary.sourceScope
+      simp only at hScope
+      cases hScope
+      rfl
+    simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
+  have hResult :=
+    cons_of_parts cursor tail hExact hCompiled hMidCtx
+      (by
+        simpa [childFuel, hFuel, totalFuel,
+          Functions.Scope.Stmt.outEnv] using hHead')
+      (fun {sourceMid targetMid tailMode} hInvariant =>
+        hTailForward tail hExact hInvariant)
+  have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
+  rw [hFuel'] at hResult
+  exact hResult
+
+/-- Recursive `continue` constructor with loop-destination cleanup. -/
+theorem cont
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live afterLive : List Functions.Name}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {frameBase sourceFuel targetExtra targetDepth : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live { stmts := .cont :: rest }
+        beforeState beforeLocals)
+    (hSourceFuel : 0 < sourceFuel)
+    (hSourceScope : sourceCtx.continueScope? = some afterLive)
+    (hTargetDepth : beforeLocals.continueDepth? = some targetDepth)
+    (hTransition :
+      AllocationInteractionCleanup.Transition cursor.plan live afterLive
+        targetDepth beforeMode afterMode)
+    (hBoundary :
+      Boundary cursor contract frameBase beforeMode sourceCtx source target)
+    (hTailForward :
+      ∀ {afterState : AllocationLowering.State}
+        {afterLocals : Locals.Ctx}
+        (tail :
+          CoreCursor root scope live { stmts := rest }
+            afterState afterLocals),
+        ExactTail cursor tail →
+        ∀ {sourceMid targetMid tailMode},
+          AllocationContext.ActivationInvariant contract root.lowerCtx
+              afterState afterLocals tail.plan live frameBase tailMode
+              sourceMid targetMid →
+            CursorForwardAt tail contract frameBase (sourceFuel - 1)
+              (targetExtra + 8) sourceCtx sourceMid targetMid) :
+    CursorForwardAt cursor contract frameBase sourceFuel targetExtra
+      sourceCtx source target := by
+  let childFuel := sourceFuel - 1
+  let totalFuel := targetBudget cursor sourceFuel targetExtra
+  let headExtra := totalFuel - 3
+  have hFuel : childFuel + 1 = sourceFuel := by
+    simp [childFuel]
+    omega
+  have hHeadFuel : headExtra + 3 = totalFuel := by
+    simp [headExtra, totalFuel, targetBudget]
+    omega
+  obtain
+      ⟨afterState, afterLocals, headCode, tail,
+        hCompiled, hHead, hExact⟩ :=
+    AllocationInteractionForward.CoreCursor.cont_head
+      (sourceFuel := childFuel) (targetExtra := headExtra)
+      cursor hSourceScope hTargetDepth hTransition hBoundary.invariant
+  have hHead' :
+      Simulation.Interaction.Rel
+        (OpenControlResultRel contract root.lowerCtx afterState afterLocals
+          cursor.plan root.returns live frameBase sourceCtx sourceCtx)
+        (Functions.InteractionSemantics.Stmt.openRun
+          program sourceCtx childFuel .cont source)
+        (Expressions.InteractionSemantics.Block.openRun expressions totalFuel
+          { stmts := headCode } target) := by
+    simpa [hHeadFuel] using hHead
+  have hMidCtx :
+      sourceCtx =
+        { sourceCtx with
+          scope := Functions.Scope.Stmt.outEnv live .cont } := by
+    have hCtx : { sourceCtx with scope := live } = sourceCtx := by
+      cases sourceCtx
+      have hScope := hBoundary.sourceScope
+      simp only at hScope
+      cases hScope
+      rfl
+    simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
+  have hResult :=
+    cons_of_parts cursor tail hExact hCompiled hMidCtx
+      (by
+        simpa [childFuel, hFuel, totalFuel,
+          Functions.Scope.Stmt.outEnv] using hHead')
+      (fun {sourceMid targetMid tailMode} hInvariant =>
+        hTailForward tail hExact hInvariant)
+  have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
+  rw [hFuel'] at hResult
+  exact hResult
+
 /-- Recursive plain-terminal constructor with source-facing memory safety. -/
 theorem terminal
     {allocation : Locals.Allocation.ProgramPlan}
