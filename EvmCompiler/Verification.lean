@@ -148,6 +148,11 @@ import EvmCompiler.Yul.StateRelation
 
 #check EvmCompiler.Functions.AllocationInteractionRecursiveCallResource.CoreCursor.call_runtime_head
 #check EvmCompiler.Functions.AllocationInteractionRecursiveCallResource.CursorRuntimeAt.call
+#check EvmCompiler.Functions.AllocationInteractionSafety.SourceSafety
+#check EvmCompiler.Functions.AllocationInteractionSafety.SourceSafety.exprSeq
+#check EvmCompiler.Functions.AllocationInteractionSafety.SourceSafety.argList
+#check EvmCompiler.Functions.AllocationInteractionResourceComposition.block_cons_successful
+#check EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.cons_of_parts_successful
 #check EvmCompiler.Simulation.Interaction.Successful
 #check EvmCompiler.Simulation.Interaction.AllDone.bind_inv
 #check EvmCompiler.Simulation.Interaction.Successful.bind_inv

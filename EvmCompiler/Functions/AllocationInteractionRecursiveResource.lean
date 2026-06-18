@@ -254,6 +254,106 @@ theorem cons_of_parts
   rw [hCompiled]
   simpa [finalLive] using hComposed
 
+/-- Compose one exact runtime head with only the successful, reachable tail
+branches. -/
+theorem cons_of_parts_successful
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {stmt : Functions.Stmt} {rest : List Functions.Stmt}
+    {beforeState afterState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract} {config : Config}
+    {allocatorDepth childFuel targetExtra frameBase : Nat}
+    {entryMode : ActivationMode}
+    {sourceCtx midCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    {headCode : List Expressions.Stmt}
+    (cursor : CoreCursor root scope live { stmts := stmt :: rest }
+      beforeState beforeLocals)
+    (tail : CoreCursor root scope (Functions.Scope.Stmt.outEnv live stmt)
+      { stmts := rest } afterState afterLocals)
+    (hTail : ExactTail cursor tail)
+    (hCompiled : cursor.compiled = headCode ++ tail.compiled)
+    (hMidCtx :
+      midCtx = { sourceCtx with
+        scope := Functions.Scope.Stmt.outEnv live stmt })
+    (hHead :
+      Simulation.Interaction.Rel
+        (RuntimeResultRel contract root.lowerCtx afterState afterLocals
+          cursor.plan root.returns (Functions.Scope.Stmt.outEnv live stmt)
+          frameBase entryMode sourceCtx midCtx config allocatorDepth target)
+        (Functions.InteractionSemantics.Stmt.openRun
+          program sourceCtx childFuel stmt source)
+        (Expressions.InteractionSemantics.Block.openRun expressions
+          (targetBudget cursor (childFuel + 1) targetExtra)
+          { stmts := headCode } target))
+    (hSuccessful :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          (childFuel + 1) { stmts := stmt :: rest } source))
+    (hTailForward :
+      ∀ {sourceMid targetMid mode},
+        AllocationContext.ActivationInvariant contract root.lowerCtx
+            afterState afterLocals tail.plan
+            (Functions.Scope.Stmt.outEnv live stmt)
+            frameBase mode sourceMid targetMid →
+          AllocatorReady config allocatorDepth targetMid →
+          SameFrame entryMode mode →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Block.openRun program midCtx
+              childFuel { stmts := rest } sourceMid) →
+          CursorRuntimeAt tail contract config allocatorDepth frameBase
+            childFuel (targetExtra + callStride expressions) mode midCtx
+            sourceMid targetMid) :
+    CursorRuntimeAt cursor contract config allocatorDepth frameBase
+      (childFuel + 1) targetExtra entryMode sourceCtx source target := by
+  let finalLive :=
+    Functions.Scope.Block.outEnv
+      (Functions.Scope.Stmt.outEnv live stmt) { stmts := rest }
+  rcases hTail with ⟨hPlan, hFinalState, hFinalLocals⟩
+  have hComposed :=
+    AllocationInteractionResourceComposition.block_cons_successful
+      (rest := rest) (headCode := headCode) (tailCode := tail.compiled)
+      (plan := cursor.plan) (finalLowerCtx := root.lowerCtx)
+      (finalLowerState := cursor.finalState)
+      (finalLocals := cursor.finalLocals) (finalLive := finalLive)
+      (finalCtx := { sourceCtx with scope := finalLive })
+      (sourceFuel := childFuel)
+      (targetFuel := targetBudget cursor (childFuel + 1) targetExtra)
+      hHead hSuccessful
+      (fun {sourceMid targetMid mode} hInvariant hReady hSame hTailSuccess => by
+        have hInvariantTail :
+            AllocationContext.ActivationInvariant contract root.lowerCtx
+              afterState afterLocals tail.plan
+              (Functions.Scope.Stmt.outEnv live stmt)
+              frameBase mode sourceMid targetMid := by
+          simpa [hPlan] using hInvariant
+        have hRecursive :=
+          hTailForward hInvariantTail hReady hSame hTailSuccess
+        unfold CursorRuntimeAt at hRecursive
+        rw [hPlan, hFinalState, hFinalLocals] at hRecursive
+        have hTargetFuel :
+            targetBudget cursor (childFuel + 1) targetExtra -
+                headCode.length =
+              targetBudget tail childFuel
+                (targetExtra + callStride expressions) := by
+          simp [targetBudget, hCompiled, callStride, Nat.mul_succ]
+          omega
+        have hFinalCtx :
+            { midCtx with scope := finalLive } =
+              { sourceCtx with scope := finalLive } := by
+          rw [hMidCtx]
+        simpa [CursorRuntimeAt, finalLive, hTargetFuel, hFinalCtx] using
+          hRecursive)
+  unfold CursorRuntimeAt
+  rw [hCompiled]
+  simpa [finalLive] using hComposed
+
 end CursorRuntimeAt
 
 /--
@@ -1434,6 +1534,10 @@ theorem expr
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
         mode sourceCtx source target)
+    (hSuccessful :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel { stmts := .expr expr :: rest } source))
     (hTailForward :
       ∀ {afterState : AllocationLowering.State}
         {afterLocals : Locals.Ctx}
@@ -1443,6 +1547,9 @@ theorem expr
         ∀ {sourceMid targetMid tailMode},
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
+            Simulation.Interaction.Successful
+              (Functions.InteractionSemantics.Block.openRun program sourceCtx
+                (sourceFuel - 1) { stmts := rest } sourceMid) →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
               (sourceFuel - 1) (targetExtra + callStride expressions)
               tailMode sourceCtx
@@ -1486,10 +1593,11 @@ theorem expr
       rfl
     simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
   have hResult :=
-    cons_of_parts cursor tail hExact hCompiled hMidCtx
+    cons_of_parts_successful cursor tail hExact hCompiled hMidCtx
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame =>
+      (by simpa [childFuel, hFuel] using hSuccessful)
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -1500,7 +1608,8 @@ theorem expr
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
-            budget := hBoundary.budget })
+            budget := hBoundary.budget }
+          hTailSuccess)
   have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
   rw [hFuel'] at hResult
   exact hResult
@@ -1531,6 +1640,10 @@ theorem assign
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
         mode sourceCtx source target)
+    (hSuccessful :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel { stmts := .assign name value :: rest } source))
     (hTailForward :
       ∀ {afterState : AllocationLowering.State}
         {afterLocals : Locals.Ctx}
@@ -1540,6 +1653,9 @@ theorem assign
         ∀ {sourceMid targetMid tailMode},
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
+            Simulation.Interaction.Successful
+              (Functions.InteractionSemantics.Block.openRun program sourceCtx
+                (sourceFuel - 1) { stmts := rest } sourceMid) →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
               (sourceFuel - 1) (targetExtra + callStride expressions)
               tailMode sourceCtx
@@ -1583,10 +1699,11 @@ theorem assign
       rfl
     simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
   have hResult :=
-    cons_of_parts cursor tail hExact hCompiled hMidCtx
+    cons_of_parts_successful cursor tail hExact hCompiled hMidCtx
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame =>
+      (by simpa [childFuel, hFuel] using hSuccessful)
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -1597,7 +1714,8 @@ theorem assign
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
-            budget := hBoundary.budget })
+            budget := hBoundary.budget }
+          hTailSuccess)
   have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
   rw [hFuel'] at hResult
   exact hResult
@@ -1628,6 +1746,10 @@ theorem let_
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
         mode sourceCtx source target)
+    (hSuccessful :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel { stmts := .let_ name value :: rest } source))
     (hTailForward :
       ∀ {afterState : AllocationLowering.State}
         {afterLocals : Locals.Ctx}
@@ -1638,6 +1760,10 @@ theorem let_
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode { sourceCtx with scope := name :: sourceCtx.scope }
               sourceMid targetMid →
+            Simulation.Interaction.Successful
+              (Functions.InteractionSemantics.Block.openRun program
+                { sourceCtx with scope := name :: sourceCtx.scope }
+                (sourceFuel - 1) { stmts := rest } sourceMid) →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
               (sourceFuel - 1) (targetExtra + callStride expressions) tailMode
               { sourceCtx with scope := name :: sourceCtx.scope }
@@ -1680,10 +1806,11 @@ theorem let_
     cases hScope
     rfl
   have hResult :=
-    cons_of_parts cursor tail hExact hCompiled hMidCtx
+    cons_of_parts_successful cursor tail hExact hCompiled hMidCtx
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame =>
+      (by simpa [childFuel, hFuel] using hSuccessful)
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -1698,7 +1825,8 @@ theorem let_
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
-            budget := hBoundary.budget })
+            budget := hBoundary.budget }
+          hTailSuccess)
   have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
   rw [hFuel'] at hResult
   exact hResult
@@ -1727,6 +1855,10 @@ theorem block
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
         mode sourceCtx source target)
+    (hSuccessful :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel { stmts := .block body :: rest } source))
     (hBodyForward :
       ∀ (bodyCursor :
           CoreCursor root (.lexical scope cursor.planning.nextScope)
@@ -1734,6 +1866,9 @@ theorem block
         (bodyExtra : Nat),
         Boundary bodyCursor contract globalFrameWords config allocatorDepth
             frameBase mode sourceCtx source target →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Block.openRun program sourceCtx
+              (sourceFuel - 1) body source) →
           CursorRuntimeAt bodyCursor contract config allocatorDepth frameBase
             (sourceFuel - 1) bodyExtra mode sourceCtx source target)
     (hTailForward :
@@ -1744,6 +1879,9 @@ theorem block
         ∀ {sourceMid targetMid tailMode},
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
+            Simulation.Interaction.Successful
+              (Functions.InteractionSemantics.Block.openRun program sourceCtx
+                (sourceFuel - 1) { stmts := rest } sourceMid) →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
               (sourceFuel - 1) (targetExtra + callStride expressions)
               tailMode sourceCtx
@@ -1777,6 +1915,26 @@ theorem block
       ready := hBoundary.ready
       owned := hBoundary.owned
       budget := hBoundary.budget }
+  have hHeadSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+          childFuel (.block body) source) := by
+    have hWhole :
+        Simulation.Interaction.Successful
+          (Functions.InteractionSemantics.Block.openRun program sourceCtx
+            (childFuel + 1) { stmts := .block body :: rest } source) := by
+      rw [hFuel]
+      exact hSuccessful
+    have hHead :=
+      Functions.InteractionSemantics.Block.successful_openRun_cons_head
+        hWhole
+    simpa [Functions.InteractionSemantics.Stmt.openRun] using hHead
+  have hBodySuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          childFuel body source) := by
+    rw [Functions.InteractionSemantics.Stmt.openRun_block] at hHeadSuccess
+    exact Simulation.Interaction.Successful.bind_left hHeadSuccess
   obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
     AllocationInteractionCleanup.Plain.finishScoped_shape hFinish
   have hHeadLength :
@@ -1802,6 +1960,7 @@ theorem block
       _ = totalFuel := Nat.sub_add_cancel hBodyBase
   have hBodyRecursive :=
     hBodyForward bodyCursor bodyExtra hBodyBoundary
+      (by simpa [childFuel] using hBodySuccess)
   have hBodyRel :
       Simulation.Interaction.Rel
         (RuntimeResultRel contract root.lowerCtx bodyCursor.finalState
@@ -1875,10 +2034,11 @@ theorem block
       rfl
     simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
   have hResult :=
-    cons_of_parts cursor tail hExact hCompiled hMidCtx
+    cons_of_parts_successful cursor tail hExact hCompiled hMidCtx
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame =>
+      (by simpa [childFuel, hFuel] using hSuccessful)
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -1889,7 +2049,8 @@ theorem block
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
-            budget := hBoundary.budget })
+            budget := hBoundary.budget }
+          hTailSuccess)
   have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
   rw [hFuel'] at hResult
   exact hResult
@@ -1915,11 +2076,15 @@ theorem if_
     (cursor :
       CoreCursor root scope live { stmts := .if_ cond body :: rest }
         beforeState beforeLocals)
-    (hSourceFuel : 2 < sourceFuel)
+    (hSourceFuel : 1 < sourceFuel)
     (hCondSafe : AllocationInteractionSafety.ExprSafe contract cond source)
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
         mode sourceCtx source target)
+    (hSuccessful :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel { stmts := .if_ cond body :: rest } source))
     (hBodyForward :
       ∀ (bodyCursor :
           CoreCursor root (.lexical scope cursor.planning.nextScope)
@@ -1927,6 +2092,9 @@ theorem if_
         {sourceAfter targetAfter},
         Boundary bodyCursor contract globalFrameWords config allocatorDepth
             frameBase mode sourceCtx sourceAfter targetAfter →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Block.openRun program sourceCtx
+              (sourceFuel - 2) body sourceAfter) →
           2 ≤
               (targetBudget cursor sourceFuel targetExtra - 2) -
                 bodyCursor.compiled.length ∧
@@ -1951,6 +2119,9 @@ theorem if_
         ∀ {sourceMid targetMid tailMode},
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
+            Simulation.Interaction.Successful
+              (Functions.InteractionSemantics.Block.openRun program sourceCtx
+                (sourceFuel - 1) { stmts := rest } sourceMid) →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
               (sourceFuel - 1) (targetExtra + callStride expressions)
               tailMode sourceCtx
@@ -1970,6 +2141,19 @@ theorem if_
   have hTargetFuel : targetBodyFuel + 2 = totalFuel := by
     simp [targetBodyFuel, totalFuel, targetBudget, callStride, Nat.mul_succ]
     omega
+  have hHeadSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+          childFuel (.if_ cond body) source) := by
+    have hWhole :
+        Simulation.Interaction.Successful
+          (Functions.InteractionSemantics.Block.openRun program sourceCtx
+            (childFuel + 1) { stmts := .if_ cond body :: rest } source) := by
+      rw [hFuel]
+      exact hSuccessful
+    have hHead :=
+      Functions.InteractionSemantics.Block.successful_openRun_cons_head hWhole
+    simpa [Functions.InteractionSemantics.Stmt.openRun] using hHead
   obtain
       ⟨afterState, headLower, headCode, tail, loweredCond, condCode,
         targetBody, bodyCursor, hCompiled, _hLower, _hCompile,
@@ -2007,6 +2191,9 @@ theorem if_
             afterState beforeLocals cursor.plan live frameBase mode
             sourceAfter targetAfter →
           AllocatorReady config allocatorDepth targetAfter →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+              bodyFuel (.block body) sourceAfter) →
           Simulation.Interaction.Rel
             (RuntimeResultRel contract root.lowerCtx afterState beforeLocals
               cursor.plan root.returns live frameBase mode sourceCtx sourceCtx
@@ -2015,7 +2202,7 @@ theorem if_
               bodyFuel (.block body) sourceAfter)
             (Expressions.InteractionSemantics.Block.openRun expressions
               targetBodyFuel targetBody targetAfter) := by
-    intro sourceAfter targetAfter hAfter hReadyAfter
+    intro sourceAfter targetAfter hAfter hReadyAfter hSelectedSuccess
     have hBefore :=
       hAfter.transport_state hAfterEnv.symm hAfterLayout.symm
     have hNestedInvariant :=
@@ -2032,8 +2219,16 @@ theorem if_
         ready := hReadyAfter
         owned := hBoundary.owned
         budget := hBoundary.budget }
+    have hBodySuccess :
+        Simulation.Interaction.Successful
+          (Functions.InteractionSemantics.Block.openRun program sourceCtx
+            bodyFuel body sourceAfter) := by
+      rw [Functions.InteractionSemantics.Stmt.openRun_block]
+        at hSelectedSuccess
+      exact Simulation.Interaction.Successful.bind_left hSelectedSuccess
     obtain ⟨hCleanupFuel, hBody⟩ :=
       hBodyForward bodyCursor hNestedBoundary
+        (by simpa [bodyFuel] using hBodySuccess)
     have hSemantic :=
       AllocationInteractionControl.block_of_components
         (bodyLive := Functions.Scope.Block.outEnv live body)
@@ -2048,7 +2243,8 @@ theorem if_
   have hHead :=
     AllocationInteractionControlResource.if_of_components
       (sourceBodyFuel := bodyFuel) (targetBodyFuel := targetBodyFuel)
-      hAfterInvariant hCond hVars hTrue
+      hAfterInvariant hCond hVars
+      (by simpa [bodyFuel, hBodyFuel] using hHeadSuccess) hTrue
   have hHead' :
       Simulation.Interaction.Rel
         (RuntimeResultRel contract root.lowerCtx afterState beforeLocals
@@ -2071,10 +2267,11 @@ theorem if_
       rfl
     simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
   have hResult :=
-    cons_of_parts cursor tail hExact hCompiled hMidCtx
+    cons_of_parts_successful cursor tail hExact hCompiled hMidCtx
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame =>
+      (by simpa [childFuel, hFuel] using hSuccessful)
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -2085,7 +2282,8 @@ theorem if_
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
-            budget := hBoundary.budget })
+            budget := hBoundary.budget }
+          hTailSuccess)
   have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
   rw [hFuel'] at hResult
   exact hResult
@@ -2114,12 +2312,17 @@ theorem switch
       CoreCursor root scope live
         { stmts := .switch scrutinee cases defaultBody :: rest }
         beforeState beforeLocals)
-    (hSourceFuel : 2 < sourceFuel)
+    (hSourceFuel : 1 < sourceFuel)
     (hScrutineeSafe :
       AllocationInteractionSafety.ExprSafe contract scrutinee source)
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
         mode sourceCtx source target)
+    (hSuccessful :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel
+          { stmts := .switch scrutinee cases defaultBody :: rest } source))
     (hBodyForward :
       ∀ {value} {selected : Functions.Block}
         {selectedStart : AllocationLowering.State}
@@ -2133,6 +2336,9 @@ theorem switch
         {sourceAfter targetAfter},
         Boundary bodyCursor contract globalFrameWords config allocatorDepth
             frameBase mode sourceCtx sourceAfter targetAfter →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Block.openRun program sourceCtx
+              (sourceFuel - 2) selected sourceAfter) →
           2 ≤
               (targetBudget cursor sourceFuel targetExtra - 2) -
                 bodyCursor.compiled.length ∧
@@ -2157,6 +2363,9 @@ theorem switch
         ∀ {sourceMid targetMid tailMode},
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
+            Simulation.Interaction.Successful
+              (Functions.InteractionSemantics.Block.openRun program sourceCtx
+                (sourceFuel - 1) { stmts := rest } sourceMid) →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
               (sourceFuel - 1) (targetExtra + callStride expressions)
               tailMode sourceCtx
@@ -2176,6 +2385,21 @@ theorem switch
   have hTargetFuel : targetBodyFuel + 2 = totalFuel := by
     simp [targetBodyFuel, totalFuel, targetBudget, callStride, Nat.mul_succ]
     omega
+  have hHeadSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+          childFuel (.switch scrutinee cases defaultBody) source) := by
+    have hWhole :
+        Simulation.Interaction.Successful
+          (Functions.InteractionSemantics.Block.openRun program sourceCtx
+            (childFuel + 1)
+            { stmts := .switch scrutinee cases defaultBody :: rest }
+            source) := by
+      rw [hFuel]
+      exact hSuccessful
+    have hHead :=
+      Functions.InteractionSemantics.Block.successful_openRun_cons_head hWhole
+    simpa [Functions.InteractionSemantics.Stmt.openRun] using hHead
   obtain
       ⟨afterState, headLower, headCode, tail, loweredScrutinee,
         loweredCases, afterCases, loweredDefault, scrutineeCode,
@@ -2234,6 +2458,9 @@ theorem switch
             afterState beforeLocals cursor.plan live frameBase mode
             sourceAfter targetAfter →
         AllocatorReady config allocatorDepth targetAfter →
+        Simulation.Interaction.Successful
+          (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+            bodyFuel (.block selected) sourceAfter) →
           Simulation.Interaction.Rel
             (RuntimeResultRel contract root.lowerCtx afterState beforeLocals
               cursor.plan root.returns live frameBase mode sourceCtx sourceCtx
@@ -2243,7 +2470,7 @@ theorem switch
             (Expressions.InteractionSemantics.Block.openRun expressions
               targetBodyFuel selectedTarget targetAfter) := by
     intro value selected selectedTarget sourceAfter targetAfter
-      hSourceSelect hTargetSelect hAfter hReadyAfter
+      hSourceSelect hTargetSelect hAfter hReadyAfter hSelectedSuccess
     obtain
         ⟨selectedAfter, selectedHeadLower, selectedHeadCode, selectedTail,
           selectedScrutineeCode, selectedCases, selectedDefault,
@@ -2298,8 +2525,16 @@ theorem switch
         exact (hSlots name hLive).trans
           (congrArg (AllocationSupport.lookupSlot? name)
             (hSelectedEnv.trans components.afterEnv.symm))
+    have hBodySuccess :
+        Simulation.Interaction.Successful
+          (Functions.InteractionSemantics.Block.openRun program sourceCtx
+            bodyFuel selected sourceAfter) := by
+      rw [Functions.InteractionSemantics.Stmt.openRun_block]
+        at hSelectedSuccess
+      exact Simulation.Interaction.Successful.bind_left hSelectedSuccess
     obtain ⟨hCleanupFuel, hBody⟩ :=
       hBodyForward hSourceSelect bodyCursor hNestedBoundary
+        (by simpa [bodyFuel] using hBodySuccess)
     have hSemantic :=
       AllocationInteractionControl.block_of_components
         (bodyLive := Functions.Scope.Block.outEnv live selected)
@@ -2314,7 +2549,9 @@ theorem switch
   have hHead :=
     AllocationInteractionControlResource.switch_of_components
       (sourceBodyFuel := bodyFuel) (targetBodyFuel := targetBodyFuel)
-      hAfterInvariant hScrutinee hVars hSelection hSelected
+      hAfterInvariant hScrutinee hVars
+      (by simpa [bodyFuel, hBodyFuel] using hHeadSuccess)
+      hSelection hSelected
   have hHead' :
       Simulation.Interaction.Rel
         (RuntimeResultRel contract root.lowerCtx afterState beforeLocals
@@ -2338,10 +2575,12 @@ theorem switch
       rfl
     simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
   have hResult :=
-    cons_of_parts cursor tail components.exactTail components.compiled hMidCtx
+    cons_of_parts_successful cursor tail components.exactTail
+      components.compiled hMidCtx
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame =>
+      (by simpa [childFuel, hFuel] using hSuccessful)
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
         hTailForward tail components.exactTail
           { semantic :=
               { invariant := hInvariant
@@ -2352,7 +2591,8 @@ theorem switch
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
-            budget := hBoundary.budget })
+            budget := hBoundary.budget }
+          hTailSuccess)
   have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
   rw [hFuel'] at hResult
   exact hResult
@@ -2382,6 +2622,9 @@ theorem for_
     (hSourceFuel : 2 < sourceFuel)
     (hCondSafe :
       ∀ sourceState,
+        Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Expr.openEvalCondition
+              cond sourceState) →
         AllocationInteractionSafety.ExprSafe contract cond sourceState)
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
@@ -2392,6 +2635,11 @@ theorem for_
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
           (sourceFuel - 1) (.for_ init cond post body) source))
+    (hSuccessful :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel
+          { stmts := .for_ init cond post body :: rest } source))
     (hRecursive :
       RecursiveOpenRuntime (compilation := compilation)
         contract globalFrameWords sourceFuel)
@@ -2414,6 +2662,9 @@ theorem for_
         ∀ {sourceMid targetMid tailMode},
           Boundary tail contract globalFrameWords config allocatorDepth
               frameBase tailMode sourceCtx sourceMid targetMid →
+            Simulation.Interaction.Successful
+              (Functions.InteractionSemantics.Block.openRun program sourceCtx
+                (sourceFuel - 1) { stmts := rest } sourceMid) →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
               (sourceFuel - 1) (targetExtra + callStride expressions)
               tailMode sourceCtx sourceMid
@@ -2584,11 +2835,11 @@ theorem for_
       (hLoopScope := rfl) (hBodyBreak := rfl) (hBodyContinue := rfl)
       (hCond := ?_) (hBody := ?_) (hPost := ?_)
       (by rfl) hInvariant hPrefixActivation.ready hLoopOwned hSuccess
-    · intro nextMode nextSource nextTarget hNext hNextReady
+    · intro nextMode nextSource nextTarget hNext hNextReady hCondSuccess
       exact AllocationInteractionExpressionResource.forwardCondition
         (AllocationInteractionPrimitiveResource.canonicalPrimitiveForward
           contract)
-        hBoundary.configEq (hCondSafe nextSource) hNext.compiler
+        hBoundary.configEq (hCondSafe nextSource hCondSuccess) hNext.compiler
         components.condScoped components.lowerCond components.compileCond
         hNext.state hNextReady
     · intro fuel nextMode nextSource nextTarget effectInitial hFuelLt
@@ -2828,11 +3079,12 @@ theorem for_
       rfl
     simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
   have hResult :=
-    cons_of_parts cursor components.tail components.exactTail
+    cons_of_parts_successful cursor components.tail components.exactTail
       components.compiled hMidCtx
       (by simpa [childFuel, hChildFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame =>
+      (by simpa [childFuel, hChildFuel] using hSuccessful)
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
         hTailForward components.tail components.exactTail
           { semantic :=
               { invariant := hInvariant
@@ -2843,7 +3095,8 @@ theorem for_
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
-            budget := hBoundary.budget })
+            budget := hBoundary.budget }
+          hTailSuccess)
   have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
   rw [hFuel'] at hResult
   exact hResult
@@ -2878,6 +3131,10 @@ theorem brk
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
         beforeMode sourceCtx source target)
+    (hSuccessful :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel { stmts := .brk :: rest } source))
     (hTailForward :
       ∀ {afterState : AllocationLowering.State}
         {afterLocals : Locals.Ctx}
@@ -2887,6 +3144,9 @@ theorem brk
         ∀ {sourceMid targetMid tailMode},
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
+            Simulation.Interaction.Successful
+              (Functions.InteractionSemantics.Block.openRun program sourceCtx
+                (sourceFuel - 1) { stmts := rest } sourceMid) →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
               (sourceFuel - 1) (targetExtra + callStride expressions)
               tailMode sourceCtx
@@ -2927,10 +3187,11 @@ theorem brk
       rfl
     simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
   have hResult :=
-    cons_of_parts cursor tail hExact hCompiled hMidCtx
+    cons_of_parts_successful cursor tail hExact hCompiled hMidCtx
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame =>
+      (by simpa [childFuel, hFuel] using hSuccessful)
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -2941,7 +3202,8 @@ theorem brk
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
-            budget := hBoundary.budget })
+            budget := hBoundary.budget }
+          hTailSuccess)
   have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
   rw [hFuel'] at hResult
   exact hResult
@@ -2976,6 +3238,10 @@ theorem cont
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
         beforeMode sourceCtx source target)
+    (hSuccessful :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel { stmts := .cont :: rest } source))
     (hTailForward :
       ∀ {afterState : AllocationLowering.State}
         {afterLocals : Locals.Ctx}
@@ -2985,6 +3251,9 @@ theorem cont
         ∀ {sourceMid targetMid tailMode},
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
+            Simulation.Interaction.Successful
+              (Functions.InteractionSemantics.Block.openRun program sourceCtx
+                (sourceFuel - 1) { stmts := rest } sourceMid) →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
               (sourceFuel - 1) (targetExtra + callStride expressions)
               tailMode sourceCtx
@@ -3025,10 +3294,11 @@ theorem cont
       rfl
     simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
   have hResult :=
-    cons_of_parts cursor tail hExact hCompiled hMidCtx
+    cons_of_parts_successful cursor tail hExact hCompiled hMidCtx
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame =>
+      (by simpa [childFuel, hFuel] using hSuccessful)
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -3039,7 +3309,8 @@ theorem cont
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
-            budget := hBoundary.budget })
+            budget := hBoundary.budget }
+          hTailSuccess)
   have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
   rw [hFuel'] at hResult
   exact hResult
@@ -3074,6 +3345,10 @@ theorem leave
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
         mode sourceCtx source target)
+    (hSuccessful :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel { stmts := .leave :: rest } source))
     (hTailForward :
       ∀ {afterState : AllocationLowering.State}
         {afterLocals : Locals.Ctx}
@@ -3083,6 +3358,9 @@ theorem leave
         ∀ {sourceMid targetMid tailMode},
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
+            Simulation.Interaction.Successful
+              (Functions.InteractionSemantics.Block.openRun program sourceCtx
+                (sourceFuel - 1) { stmts := rest } sourceMid) →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
               (sourceFuel - 1) (targetExtra + callStride expressions)
               tailMode sourceCtx
@@ -3124,10 +3402,11 @@ theorem leave
       rfl
     simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
   have hResult :=
-    cons_of_parts cursor tail hExact hCompiled hMidCtx
+    cons_of_parts_successful cursor tail hExact hCompiled hMidCtx
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame =>
+      (by simpa [childFuel, hFuel] using hSuccessful)
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -3138,7 +3417,8 @@ theorem leave
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
-            budget := hBoundary.budget })
+            budget := hBoundary.budget }
+          hTailSuccess)
   have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
   rw [hFuel'] at hResult
   exact hResult
@@ -3168,6 +3448,10 @@ theorem terminal
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
         mode sourceCtx source target)
+    (hSuccessful :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel { stmts := .terminal kind :: rest } source))
     (hTailForward :
       ∀ {afterState : AllocationLowering.State}
         {afterLocals : Locals.Ctx}
@@ -3177,6 +3461,9 @@ theorem terminal
         ∀ {sourceMid targetMid tailMode},
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
+            Simulation.Interaction.Successful
+              (Functions.InteractionSemantics.Block.openRun program sourceCtx
+                (sourceFuel - 1) { stmts := rest } sourceMid) →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
               (sourceFuel - 1) (targetExtra + callStride expressions)
               tailMode sourceCtx
@@ -3218,10 +3505,11 @@ theorem terminal
       rfl
     simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
   have hResult :=
-    cons_of_parts cursor tail hExact hCompiled hMidCtx
+    cons_of_parts_successful cursor tail hExact hCompiled hMidCtx
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame =>
+      (by simpa [childFuel, hFuel] using hSuccessful)
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -3232,7 +3520,8 @@ theorem terminal
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
-            budget := hBoundary.budget })
+            budget := hBoundary.budget }
+          hTailSuccess)
   have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
   rw [hFuel'] at hResult
   exact hResult
@@ -3274,6 +3563,10 @@ theorem terminalArgs
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
         mode sourceCtx source target)
+    (hSuccessful :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel { stmts := .terminalArgs kind args :: rest } source))
     (hTailForward :
       ∀ {afterState : AllocationLowering.State}
         {afterLocals : Locals.Ctx}
@@ -3283,6 +3576,9 @@ theorem terminalArgs
         ∀ {sourceMid targetMid tailMode},
           Boundary tail contract globalFrameWords config allocatorDepth frameBase
               tailMode sourceCtx sourceMid targetMid →
+            Simulation.Interaction.Successful
+              (Functions.InteractionSemantics.Block.openRun program sourceCtx
+                (sourceFuel - 1) { stmts := rest } sourceMid) →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
               (sourceFuel - 1) (targetExtra + callStride expressions)
               tailMode sourceCtx
@@ -3325,10 +3621,11 @@ theorem terminalArgs
       rfl
     simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
   have hResult :=
-    cons_of_parts cursor tail hExact hCompiled hMidCtx
+    cons_of_parts_successful cursor tail hExact hCompiled hMidCtx
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame =>
+      (by simpa [childFuel, hFuel] using hSuccessful)
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -3339,7 +3636,8 @@ theorem terminalArgs
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
-            budget := hBoundary.budget })
+            budget := hBoundary.budget }
+          hTailSuccess)
   have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
   rw [hFuel'] at hResult
   exact hResult
@@ -3397,6 +3695,43 @@ theorem nil
       (OutcomeEffect.of_activation (ActivationEffect.refl hReady)))
 
 end CursorResourceAt
+
+namespace CursorRuntimeAt
+
+/-- The empty cursor combines the pass-owned semantic and allocator base
+cases. -/
+theorem nil
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase sourceFuel targetExtra : Nat}
+    {config : Config} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor : CoreCursor root scope live { stmts := [] } lowerState localsCtx)
+    (hSourceFuel : 0 < sourceFuel)
+    (hBoundary :
+      Boundary cursor contract globalFrameWords config allocatorDepth frameBase
+        mode sourceCtx source target) :
+    CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
+      targetExtra mode sourceCtx source target := by
+  have hSemantic :=
+    AllocationInteractionRecursive.CursorForwardAt.nil
+      (targetExtra := targetExtra) cursor hSourceFuel hBoundary.semantic
+  have hResource :=
+    CursorResourceAt.nil cursor hSourceFuel hBoundary.ready
+      (targetExtra := targetExtra) (mode := mode) (sourceCtx := sourceCtx)
+      (source := source)
+  exact Simulation.Interaction.Rel.inter hSemantic hResource
+
+end CursorRuntimeAt
 
 end AllocationInteractionRecursiveResource
 end Functions

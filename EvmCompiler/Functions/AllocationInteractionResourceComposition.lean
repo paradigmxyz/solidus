@@ -210,6 +210,152 @@ theorem cons
                           (.halt kind state)),
                       .ok hHeadEffect⟩
 
+/-- Compose a successful source sequence while exposing success of each
+reachable regular tail branch. This is the induction interface that removes
+the need for an all-block recursive preservation oracle. -/
+theorem cons_successful
+    {contract : MemoryContract.Contract}
+    {midLowerCtx finalLowerCtx : AllocationLowering.Ctx}
+    {midLowerState finalLowerState : AllocationLowering.State}
+    {midLocals finalLocals : Locals.Ctx} {plan : Plan}
+    {returns midLive finalLive : List Locals.Name} {frameBase : Nat}
+    {entryMode : ActivationMode}
+    {controlCtx midCtx finalCtx : Functions.Source.Ctx}
+    {config : Config} {allocatorDepth : Nat}
+    {targetInitial : TargetState}
+    {sourceHead :
+      Simulation.Interaction EVMException
+        (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx)}
+    {targetHead :
+      Simulation.Interaction EVMException
+        Expressions.InteractionSemantics.Outcome}
+    {sourceTail : SourceState → Functions.Source.Ctx →
+      Simulation.Interaction EVMException
+        (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx)}
+    {targetTail : TargetState →
+      Simulation.Interaction EVMException
+        Expressions.InteractionSemantics.Outcome}
+    (hHead :
+      Simulation.Interaction.Rel
+        (RuntimeResultRel contract midLowerCtx midLowerState midLocals plan
+          returns midLive frameBase entryMode controlCtx midCtx config
+          allocatorDepth targetInitial)
+        sourceHead targetHead)
+    (hSuccessful :
+      Simulation.Interaction.Successful
+        (Simulation.Interaction.bind sourceHead
+          (fun result =>
+            match result.1.mode with
+            | .regular => sourceTail result.1.state result.2
+            | .brk | .cont | .leave | .halt _ =>
+                Simulation.Interaction.pure (result.1, controlCtx))))
+    (hTail :
+      ∀ {sourceMid targetMid mode},
+        AllocationContext.ActivationInvariant contract midLowerCtx
+            midLowerState midLocals plan midLive frameBase mode sourceMid
+            targetMid →
+          AllocatorReady config allocatorDepth targetMid →
+          SameFrame entryMode mode →
+          Simulation.Interaction.Successful (sourceTail sourceMid midCtx) →
+          Simulation.Interaction.Rel
+            (RuntimeResultRel contract finalLowerCtx finalLowerState
+              finalLocals plan returns finalLive frameBase mode midCtx finalCtx
+              config allocatorDepth targetMid)
+            (sourceTail sourceMid midCtx) (targetTail targetMid)) :
+    Simulation.Interaction.Rel
+      (RuntimeResultRel contract finalLowerCtx finalLowerState finalLocals plan
+        returns finalLive frameBase entryMode controlCtx finalCtx config
+        allocatorDepth targetInitial)
+      (Simulation.Interaction.bind sourceHead
+        (fun result =>
+          match result.1.mode with
+          | .regular => sourceTail result.1.state result.2
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure (result.1, controlCtx)))
+      (Simulation.Interaction.bind targetHead
+        (fun outcome =>
+          match outcome.mode with
+          | .regular => targetTail outcome.state
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure outcome)) := by
+  have hHeadSuccessful :=
+    Simulation.Interaction.Successful.bind_inv hSuccessful
+  have hHeadStrong :=
+    Simulation.Interaction.Rel.strengthen_left hHead hHeadSuccessful
+  apply Simulation.Interaction.Rel.bind_custom hHeadStrong
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hRuntimeDone, hContinuation⟩
+  rcases hRuntimeDone with ⟨hSemanticDone, hResourceDone⟩
+  cases hSemanticDone with
+  | error _ => exact False.elim hContinuation
+  | ok hSemanticResult =>
+      cases hResourceDone with
+      | ok hHeadEffect =>
+          cases hSemanticResult with
+          | regular invariant sameFrame control =>
+              have hHeadActivation :=
+                hHeadEffect.activation_of_not_halt (by
+                  intro kind hEq
+                  cases hEq)
+              have hHeadEffectMode :=
+                hHeadActivation.sameFrame sameFrame
+              apply Simulation.Interaction.Rel.mono
+                (hTail invariant hHeadEffectMode.ready sameFrame hContinuation)
+              intro tailSource tailTarget hTailDone
+              rcases hTailDone with
+                ⟨hTailSemanticDone, hTailResourceDone⟩
+              cases hTailSemanticDone with
+              | error hError =>
+                  cases hTailResourceDone with
+                  | error _ => exact ⟨.error hError, .error hError⟩
+              | ok hTailSemantic =>
+                  cases hTailResourceDone with
+                  | ok hTailEffect =>
+                      exact
+                        ⟨.ok
+                            (ControlResultRel.prepend_frame sameFrame
+                              (ControlResultRel.transport_control control
+                                hTailSemantic)),
+                          .ok
+                            (OutcomeEffect.prepend_activation
+                              hHeadActivation sameFrame hTailEffect)⟩
+          | @nonregular sourceOutcome targetOutcome headCtx mode
+              hNonregular sameFrame control state =>
+              cases state with
+              | regular regularState => exact False.elim (hNonregular rfl)
+              | brk defined stackLength modeMatches state =>
+                  exact .done
+                    ⟨.ok
+                        (ControlResultRel.nonregular (mode := mode)
+                          hNonregular sameFrame
+                          (Functions.Source.Ctx.SameControl.refl controlCtx)
+                          (.brk defined stackLength modeMatches state)),
+                      .ok hHeadEffect⟩
+              | cont defined stackLength modeMatches state =>
+                  exact .done
+                    ⟨.ok
+                        (ControlResultRel.nonregular (mode := mode)
+                          hNonregular sameFrame
+                          (Functions.Source.Ctx.SameControl.refl controlCtx)
+                          (.cont defined stackLength modeMatches state)),
+                      .ok hHeadEffect⟩
+              | leave state =>
+                  exact .done
+                    ⟨.ok
+                        (ControlResultRel.nonregular (mode := mode)
+                          hNonregular sameFrame
+                          (Functions.Source.Ctx.SameControl.refl controlCtx)
+                          (.leave state)),
+                      .ok hHeadEffect⟩
+              | halt kind state =>
+                  exact .done
+                    ⟨.ok
+                        (ControlResultRel.nonregular (mode := mode)
+                          hNonregular sameFrame
+                          (Functions.Source.Ctx.SameControl.refl controlCtx)
+                          (.halt kind state)),
+                      .ok hHeadEffect⟩
+
 /-- Compose the real source statement-list and compiled target runners. -/
 theorem block_cons
     {contract : MemoryContract.Contract}
@@ -273,6 +419,78 @@ theorem block_cons
         Expressions.InteractionSemantics.Block.openRun targetProgram
           (targetFuel - headCode.length) { stmts := tailCode } targetMid)
       hHead hTail
+
+/-- Successful source statement-list composition with a reachable-tail
+induction hypothesis. -/
+theorem block_cons_successful
+    {contract : MemoryContract.Contract}
+    {sourceProgram : Functions.Program}
+    {targetProgram : Expressions.Program}
+    {sourceFuel targetFuel : Nat}
+    {stmt : Functions.Stmt} {rest : List Functions.Stmt}
+    {headCode tailCode : List Expressions.Stmt}
+    {source : SourceState} {target : TargetState}
+    {midLowerCtx finalLowerCtx : AllocationLowering.Ctx}
+    {midLowerState finalLowerState : AllocationLowering.State}
+    {midLocals finalLocals : Locals.Ctx} {plan : Plan}
+    {returns midLive finalLive : List Locals.Name} {frameBase : Nat}
+    {entryMode : ActivationMode}
+    {controlCtx midCtx finalCtx : Functions.Source.Ctx}
+    {config : Config} {allocatorDepth : Nat}
+    (hHead :
+      Simulation.Interaction.Rel
+        (RuntimeResultRel contract midLowerCtx midLowerState midLocals plan
+          returns midLive frameBase entryMode controlCtx midCtx config
+          allocatorDepth target)
+        (Functions.InteractionSemantics.Stmt.openRun
+          sourceProgram controlCtx sourceFuel stmt source)
+        (Expressions.InteractionSemantics.Block.openRun
+          targetProgram targetFuel { stmts := headCode } target))
+    (hSuccessful :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun sourceProgram controlCtx
+          (sourceFuel + 1) { stmts := stmt :: rest } source))
+    (hTail :
+      ∀ {sourceMid targetMid mode},
+        AllocationContext.ActivationInvariant contract midLowerCtx
+            midLowerState midLocals plan midLive frameBase mode sourceMid
+            targetMid →
+          AllocatorReady config allocatorDepth targetMid →
+          SameFrame entryMode mode →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Block.openRun
+              sourceProgram midCtx sourceFuel { stmts := rest } sourceMid) →
+          Simulation.Interaction.Rel
+            (RuntimeResultRel contract finalLowerCtx finalLowerState
+              finalLocals plan returns finalLive frameBase mode midCtx finalCtx
+              config allocatorDepth targetMid)
+            (Functions.InteractionSemantics.Block.openRun
+              sourceProgram midCtx sourceFuel { stmts := rest } sourceMid)
+            (Expressions.InteractionSemantics.Block.openRun targetProgram
+              (targetFuel - headCode.length) { stmts := tailCode } targetMid)) :
+    Simulation.Interaction.Rel
+      (RuntimeResultRel contract finalLowerCtx finalLowerState finalLocals plan
+        returns finalLive frameBase entryMode controlCtx finalCtx config
+        allocatorDepth target)
+      (Functions.InteractionSemantics.Block.openRun sourceProgram controlCtx
+        (sourceFuel + 1) { stmts := stmt :: rest } source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
+        { stmts := headCode ++ tailCode } target) := by
+  rw [Functions.InteractionSemantics.Block.openRun_cons] at hSuccessful ⊢
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  exact
+    cons_successful
+      (finalLowerCtx := finalLowerCtx)
+      (finalLowerState := finalLowerState)
+      (finalLocals := finalLocals)
+      (finalLive := finalLive) (finalCtx := finalCtx)
+      (sourceTail := fun sourceMid ctx =>
+        Functions.InteractionSemantics.Block.openRun sourceProgram ctx
+          sourceFuel { stmts := rest } sourceMid)
+      (targetTail := fun targetMid =>
+        Expressions.InteractionSemantics.Block.openRun targetProgram
+          (targetFuel - headCode.length) { stmts := tailCode } targetMid)
+      hHead hSuccessful hTail
 
 end AllocationInteractionResourceComposition
 end Functions

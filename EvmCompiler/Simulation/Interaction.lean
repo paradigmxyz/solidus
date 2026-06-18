@@ -788,6 +788,23 @@ theorem trivial
   | request query resume ih =>
       exact .request ih
 
+/-- Intersect two leaf properties over the same open interaction tree. -/
+theorem inter
+    {Error : Type u1} {Result : Type v1}
+    {left right : Except Error Result → Prop}
+    {interaction : Interaction Error Result}
+    (hLeft : AllDone left interaction)
+    (hRight : AllDone right interaction) :
+    AllDone (fun outcome => left outcome ∧ right outcome) interaction := by
+  induction hLeft with
+  | done hLeftDone =>
+      cases hRight with
+      | done hRightDone => exact .done ⟨hLeftDone, hRightDone⟩
+  | request hLeftResume ih =>
+      cases hRight with
+      | request hRightResume =>
+          exact .request fun answer => ih answer (hRightResume answer)
+
 theorem mono
     {Error : Type u1} {Result : Type v1}
     {left right : Except Error Result → Prop}

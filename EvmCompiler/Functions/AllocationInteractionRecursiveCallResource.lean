@@ -1084,6 +1084,11 @@ theorem call
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
           (sourceFuel - 1) (.call targets functionName args) source))
+    (hSuccessful :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program sourceCtx
+          sourceFuel
+          { stmts := .call targets functionName args :: rest } source))
     (hRecursive :
       AllocationInteractionRecursiveResource.RecursiveOpenRuntime
         (compilation := compilation)
@@ -1097,6 +1102,9 @@ theorem call
               program.memoryContract compilation.recipe.frameWords config
               allocatorDepth frameBase tailMode sourceCtx sourceMid
               targetMid →
+            Simulation.Interaction.Successful
+              (Functions.InteractionSemantics.Block.openRun program sourceCtx
+                (sourceFuel - 1) { stmts := rest } sourceMid) →
             AllocationInteractionRecursiveResource.CursorRuntimeAt tail
               program.memoryContract config allocatorDepth frameBase
               (sourceFuel - 1) (targetExtra + callStride expressions)
@@ -1122,10 +1130,11 @@ theorem call
       rfl
     simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
   have hResult :=
-    AllocationInteractionRecursiveResource.CursorRuntimeAt.cons_of_parts
+    AllocationInteractionRecursiveResource.CursorRuntimeAt.cons_of_parts_successful
       cursor tail hExact hCompiled hMidCtx
       (by simpa [hFuel, Functions.Scope.Stmt.outEnv] using hHead)
-      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame =>
+      (by simpa [hFuel] using hSuccessful)
+      (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hTailSuccess =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -1136,7 +1145,8 @@ theorem call
             configEq := hBoundary.configEq
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
-            budget := hBoundary.budget })
+            budget := hBoundary.budget }
+          hTailSuccess)
   rw [hFuel] at hResult
   exact hResult
 

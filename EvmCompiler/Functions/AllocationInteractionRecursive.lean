@@ -1426,7 +1426,7 @@ theorem for_
       (hLoopScope := rfl) (hBodyBreak := rfl) (hBodyContinue := rfl)
       (hCond := ?_) (hBody := ?_) (hPost := ?_)
       (by rfl) hInvariant hSuccess
-    · intro nextMode nextSource nextTarget hNext
+    · intro nextMode nextSource nextTarget hNext _hCondSuccess
       exact AllocationInteractionExpressionRecursive.forwardCondition
         (hCondSafe nextSource) hNext.compiler components.condScoped
         components.lowerCond components.compileCond hNext.state

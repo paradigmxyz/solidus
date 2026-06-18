@@ -60,6 +60,9 @@ theorem forward
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           AllocatorReady config allocatorDepth target →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Expr.openEvalCondition
+              cond source) →
           Simulation.Interaction.Rel
             (AllocationInteractionExpressionResource.ConditionOutcomeRel
               contract config allocatorDepth plan live frameBase mode target)
@@ -131,8 +134,9 @@ theorem forward
     (outcomeEffectAlgebra config allocatorDepth frameBase)
     hLoopScope hBodyBreak hBodyContinue (hCond := ?_) hBody hPost fuel hFuel
     hInitial hReady hOwned hSuccess
-  intro nextMode nextSource nextTarget hNext hNextReady
-  apply Simulation.Interaction.Rel.mono (hCond hNext hNextReady)
+  intro nextMode nextSource nextTarget hNext hNextReady hCondSuccess
+  apply Simulation.Interaction.Rel.mono
+    (hCond hNext hNextReady hCondSuccess)
   intro sourceDone targetDone hDone
   cases hDone with
   | error hError => exact .error hError

@@ -160,6 +160,9 @@ theorem forward_effect
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           effectAlgebra.Ready target →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Expr.openEvalCondition
+              cond source) →
           Simulation.Interaction.Rel
             (Simulation.Interaction.ExceptRel
               (fun left right : EVMException => left = right)
@@ -244,7 +247,9 @@ theorem forward_effect
       simp only [Functions.Source.Effectful.Control.Stmt.runForLoop] at hSuccess
       have hCondSuccess :=
         Simulation.Interaction.Successful.bind_inv hSuccess
-      have hCondRel := hCond hInitial hReady
+      have hCondRunSuccess :=
+        Simulation.Interaction.Successful.bind_left hSuccess
+      have hCondRel := hCond hInitial hReady hCondRunSuccess
       have hVars :=
         Locals.InteractionStatePreservation.expr_openEvalCondition_vars
           cond source
@@ -581,6 +586,9 @@ theorem forward
       ∀ {mode source target},
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Expr.openEvalCondition
+              cond source) →
           Simulation.Interaction.Rel
             (Simulation.Interaction.ExceptRel
               (fun left right : EVMException => left = right)
@@ -639,6 +647,9 @@ theorem forward
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           True →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Expr.openEvalCondition
+              cond source) →
           Simulation.Interaction.Rel
             (Simulation.Interaction.ExceptRel
               (fun left right : EVMException => left = right)
@@ -649,8 +660,8 @@ theorem forward
             (Functions.InteractionSemantics.Expr.openEvalCondition cond source)
             (Expressions.InteractionSemantics.Expr.openRunCondition
               targetCond target) := by
-    intro mode source target hInvariant _hReady
-    apply Simulation.Interaction.Rel.mono (hCond hInvariant)
+    intro mode source target hInvariant _hReady hCondSuccess
+    apply Simulation.Interaction.Rel.mono (hCond hInvariant hCondSuccess)
     intro sourceDone targetDone hDone
     cases hDone with
     | error hError => exact .error hError

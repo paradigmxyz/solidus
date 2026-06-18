@@ -105,6 +105,23 @@ def openRunScoped (program : Functions.Program)
   Functions.Source.Canonical.Block.runScoped
     stateModel primitiveSemantics program ctx block fuel state
 
+/-- Successful canonical block execution always has positive meta-fuel. -/
+theorem successful_openRun_fuel_pos
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {fuel : Nat} {block : Functions.Block} {state : State}
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (openRun program ctx fuel block state)) :
+    0 < fuel := by
+  cases fuel with
+  | zero =>
+      unfold openRun Functions.Source.Canonical.Block.runOpen at hSuccess
+      simp only [Functions.Source.Effectful.Control.Block.runOpen] at hSuccess
+      exact False.elim
+        (Simulation.Interaction.Successful.error_false
+          (.InvalidInstruction : EVMException) hSuccess)
+  | succ fuel => omega
+
 /-- One source statement followed by its exact residual block. -/
 theorem openRun_cons
     (program : Functions.Program) (ctx : Functions.Source.Ctx)
@@ -141,6 +158,20 @@ theorem openRun_cons
           | .brk | .cont | .leave | .halt _ =>
               Simulation.Interaction.pure (result.1, ctx)) = _
   rfl
+
+/-- A successful nonempty block exposes a successful canonical head run. -/
+theorem successful_openRun_cons_head
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {fuel : Nat} {stmt : Functions.Stmt} {rest : List Functions.Stmt}
+    {state : State}
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (openRun program ctx (fuel + 1) { stmts := stmt :: rest } state)) :
+    Simulation.Interaction.Successful
+      (Functions.Source.Effectful.Control.Stmt.run
+        stateModel primitiveSemantics program ctx fuel stmt state) := by
+  rw [openRun_cons] at hSuccess
+  exact Simulation.Interaction.Successful.bind_left hSuccess
 
 /-- A nonzero-fuel empty source block is the regular identity. -/
 theorem openRun_nil

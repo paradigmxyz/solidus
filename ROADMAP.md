@@ -128,15 +128,18 @@ boundaries remain active work.
   - [x] construct identical continuation-ready stack/scratch selected-callee
     invocations from canonical arguments, including suspended caller prefixes,
     exact recursive calls, return writeback, and optional scratch release;
-  - [ ] orthogonal recursive allocator companion over the same Interaction
-    tree (shared intersection/`cons`, empty cursor, expression statement, and
-    assignment/declaration, `break`/`continue`, and lexical blocks checked;
-    `if`/`switch`, loops, function `leave`, all terminal forms, scratch-mode
-    and all-stack parameter/return setup, callee return emission, caller
-    writeback, scratch release, and selected-callee recursive body checked;
-    full caller call/tail composition remains);
-  - [ ] compose caller arguments, selected-callee recursion, return writeback,
-    scratch release, and the exact tail;
+  - [x] orthogonal recursive allocator companion over the same Interaction
+    tree, including all statement/control forms, stack/scratch call setup,
+    selected-callee recursion, return writeback, scratch release, and exact
+    successful-tail composition;
+  - [x] compose caller arguments, selected-callee recursion, return writeback,
+    scratch release, and the exact successful tail;
+  - [x] define an execution-indexed source reservation-safety interface over
+    scoped canonical expressions and terminal memory windows;
+  - [x] retain successful continuation evidence through generic sequence,
+    `if`, `switch`, and loop owners instead of requiring unreachable branches;
+  - [ ] construct and preserve the source/compiler control-destination
+    invariant needed by the recursive statement dispatcher;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

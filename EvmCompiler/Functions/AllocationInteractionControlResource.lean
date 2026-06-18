@@ -263,11 +263,18 @@ theorem if_of_components
         (Locals.InteractionStatePreservation.ResultVars
           (α := Bool) source)
         (Functions.InteractionSemantics.Expr.openEvalCondition cond source))
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+          (sourceBodyFuel + 1) (.if_ cond body) source))
     (hTrue :
       ∀ {sourceAfter targetAfter},
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode sourceAfter targetAfter →
           AllocatorReady config allocatorDepth targetAfter →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+              sourceBodyFuel (.block body) sourceAfter) →
           Simulation.Interaction.Rel
             (RuntimeResultRel contract lowerCtx lowerState localsCtx plan
               returns live frameBase mode sourceCtx sourceCtx config
@@ -286,11 +293,14 @@ theorem if_of_components
         { stmts := [.if_ targetCond targetBody] } target) := by
   rw [Functions.InteractionSemantics.Stmt.openRun_if,
     Expressions.InteractionSemantics.Block.openRun_single_if]
+  rw [Functions.InteractionSemantics.Stmt.openRun_if] at hSuccess
+  have hCondSuccess := Simulation.Interaction.Successful.bind_inv hSuccess
   have hCondStrong :=
-    Simulation.Interaction.Rel.strengthen_left hCond hVars
+    Simulation.Interaction.Rel.strengthen_left
+      (Simulation.Interaction.Rel.strengthen_left hCond hVars) hCondSuccess
   apply Simulation.Interaction.Rel.bind_custom hCondStrong
   intro sourceDone targetDone hDone
-  rcases hDone with ⟨hRelated, hVarsDone⟩
+  rcases hDone with ⟨⟨hRelated, hVarsDone⟩, hContinuationSuccess⟩
   cases hRelated with
   | error hError => exact .done ⟨.error hError, .error hError⟩
   | @ok sourceResult targetResult hResult =>
@@ -320,7 +330,7 @@ theorem if_of_components
               (ActivationEffect.of_allocatorEffect hResult.2)
       | true =>
           apply Simulation.Interaction.Rel.mono
-            (hTrue hAfter hResult.2.ready)
+            (hTrue hAfter hResult.2.ready hContinuationSuccess)
           intro sourceFinal targetFinal hFinal
           rcases hFinal with ⟨hSemantic, hBodyEffect⟩
           cases hBodyEffect with
@@ -366,6 +376,11 @@ theorem switch_of_components
         (Locals.InteractionStatePreservation.ResultVars
           (α := Word) source)
         (Functions.InteractionSemantics.Expr.openEvalOne scrutinee source))
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+          (sourceBodyFuel + 1)
+          (.switch scrutinee sourceCases sourceDefault) source))
     (hSelection :
       ∀ value,
         AllocationInteractionControl.SwitchSelection sourceCases sourceDefault
@@ -379,6 +394,9 @@ theorem switch_of_components
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode sourceAfter targetAfter →
         AllocatorReady config allocatorDepth targetAfter →
+        Simulation.Interaction.Successful
+          (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+            sourceBodyFuel (.block sourceBody) sourceAfter) →
           Simulation.Interaction.Rel
             (RuntimeResultRel contract lowerCtx lowerState localsCtx plan
               returns live frameBase mode sourceCtx sourceCtx config
@@ -399,11 +417,16 @@ theorem switch_of_components
         target) := by
   rw [Functions.InteractionSemantics.Stmt.openRun_switch,
     Expressions.InteractionSemantics.Block.openRun_single_switch]
+  rw [Functions.InteractionSemantics.Stmt.openRun_switch] at hSuccess
+  have hScrutineeSuccess :=
+    Simulation.Interaction.Successful.bind_inv hSuccess
   have hScrutineeStrong :=
-    Simulation.Interaction.Rel.strengthen_left hScrutinee hVars
+    Simulation.Interaction.Rel.strengthen_left
+      (Simulation.Interaction.Rel.strengthen_left hScrutinee hVars)
+      hScrutineeSuccess
   apply Simulation.Interaction.Rel.bind_custom hScrutineeStrong
   intro sourceDone targetDone hDone
-  rcases hDone with ⟨hRelated, hVarsDone⟩
+  rcases hDone with ⟨⟨hRelated, hVarsDone⟩, hContinuationSuccess⟩
   cases hRelated with
   | error hError => exact .done ⟨.error hError, .error hError⟩
   | @ok sourceResult targetResult hResult =>
@@ -436,8 +459,15 @@ theorem switch_of_components
       | some sourceBody targetBody hSource hTarget =>
           simp only
           rw [hSource, hTarget]
+          have hSelectedSuccess :
+              Simulation.Interaction.Successful
+                (Functions.InteractionSemantics.Stmt.openRun program
+                  sourceCtx sourceBodyFuel (.block sourceBody)
+                  sourceAfter) := by
+            simpa [hSource] using hContinuationSuccess
           apply Simulation.Interaction.Rel.mono
-            (hSelected hSource hTarget hAfter hResult.2.ready)
+            (hSelected hSource hTarget hAfter hResult.2.ready
+              hSelectedSuccess)
           intro sourceFinal targetFinal hFinal
           rcases hFinal with ⟨hSemantic, hBodyEffect⟩
           cases hBodyEffect with
