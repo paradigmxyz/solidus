@@ -394,7 +394,8 @@ theorem body_of_cursor
       AllocationInteractionCall.SelectedCallee.Prepared artifact)
     (hProgramScoped : program.Scoped)
     {contract : MemoryContract.Contract}
-    {globalFrameWords allocatorDepth frameBase sourceFuel fuelBound : Nat}
+    {globalFrameWords allocatorDepth frameBase sourceFuel fuelBound
+      targetExtra : Nat}
     {config : Config}
     {sourceLive : List Functions.Name}
     {sourceCtx : Functions.Source.Ctx}
@@ -440,6 +441,9 @@ theorem body_of_cursor
         contract globalFrameWords fuelBound) :
     ∃ targetFuel,
       0 < targetFuel ∧
+      prepared.markerCode.length + prepared.paramCode.length +
+          prepared.returnCode.length + prepared.bodyCode.length +
+          targetExtra ≤ targetFuel ∧
       Simulation.Interaction.Rel
         (RuntimeResultRel contract artifact.lowerCtx prepared.bodyFinal
           prepared.bodyCtx prepared.plan fn.returns
@@ -515,9 +519,9 @@ theorem body_of_cursor
         budget := hBudget }
     have hBodyRaw :=
       hRecursive bodyCursor hSourceFuel
-        hBodyBoundary hSuccess (targetExtra := 0)
+        hBodyBoundary hSuccess (targetExtra := targetExtra)
     let bodyFuel :=
-      targetBudget bodyCursor sourceFuel 0
+      targetBudget bodyCursor sourceFuel targetExtra
     have hBodyFuel : 0 < bodyFuel := by
       simp [bodyFuel, targetBudget]
     have hBody :
@@ -553,7 +557,16 @@ theorem body_of_cursor
     let totalFuel :=
       prepared.markerCode.length + prepared.paramCode.length +
         prepared.returnCode.length + bodyFuel
-    refine ⟨totalFuel, by simp [totalFuel]; omega, ?_⟩
+    refine ⟨totalFuel, by simp [totalFuel]; omega, ?_, ?_⟩
+    · change
+        prepared.markerCode.length + prepared.paramCode.length +
+            prepared.returnCode.length + prepared.bodyCode.length +
+            targetExtra ≤
+          prepared.markerCode.length + prepared.paramCode.length +
+            prepared.returnCode.length +
+              (targetExtra + prepared.bodyCode.length +
+                8 * (sourceFuel + 1))
+      omega
     simpa [totalFuel, live] using
       prepared.prelude_then_body hBodyFuel hPreludeAt hBodyFromEntry
   · have hNeedsFrameFalse : artifact.needsFrame = false :=
@@ -598,9 +611,9 @@ theorem body_of_cursor
         budget := hBudget }
     have hBodyRaw :=
       hRecursive bodyCursor hSourceFuel
-        hBodyBoundary hSuccess (targetExtra := 0)
+        hBodyBoundary hSuccess (targetExtra := targetExtra)
     let bodyFuel :=
-      targetBudget bodyCursor sourceFuel 0
+      targetBudget bodyCursor sourceFuel targetExtra
     have hBodyFuel : 0 < bodyFuel := by
       simp [bodyFuel, targetBudget]
     have hBody :
@@ -636,7 +649,16 @@ theorem body_of_cursor
     let totalFuel :=
       prepared.markerCode.length + prepared.paramCode.length +
         prepared.returnCode.length + bodyFuel
-    refine ⟨totalFuel, by simp [totalFuel]; omega, ?_⟩
+    refine ⟨totalFuel, by simp [totalFuel]; omega, ?_, ?_⟩
+    · change
+        prepared.markerCode.length + prepared.paramCode.length +
+            prepared.returnCode.length + prepared.bodyCode.length +
+            targetExtra ≤
+          prepared.markerCode.length + prepared.paramCode.length +
+            prepared.returnCode.length +
+              (targetExtra + prepared.bodyCode.length +
+                8 * (sourceFuel + 1))
+      omega
     simpa [totalFuel, live] using
       prepared.prelude_then_body hBodyFuel hPreludeAt hBodyFromEntry
 
@@ -653,7 +675,8 @@ theorem body_of_function_context
       AllocationInteractionCall.SelectedCallee.Prepared artifact)
     (hProgramScoped : program.Scoped)
     {contract : MemoryContract.Contract}
-    {globalFrameWords allocatorDepth frameBase sourceFuel fuelBound : Nat}
+    {globalFrameWords allocatorDepth frameBase sourceFuel fuelBound
+      targetExtra : Nat}
     {config : Config}
     {source : Functions.InteractionSemantics.State}
     {target : Structured.RunState}
@@ -687,6 +710,9 @@ theorem body_of_function_context
         contract globalFrameWords fuelBound) :
     ∃ targetFuel,
       0 < targetFuel ∧
+      prepared.markerCode.length + prepared.paramCode.length +
+          prepared.returnCode.length + prepared.bodyCode.length +
+          targetExtra ≤ targetFuel ∧
       Simulation.Interaction.Rel
         (RuntimeResultRel contract artifact.lowerCtx prepared.bodyFinal
           prepared.bodyCtx prepared.plan fn.returns

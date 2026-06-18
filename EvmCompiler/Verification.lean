@@ -44,6 +44,7 @@ import EvmCompiler.Functions.AllocationInteractionForward
 import EvmCompiler.Functions.AllocationInteractionCall
 import EvmCompiler.Functions.AllocationInteractionRecursive
 import EvmCompiler.Functions.AllocationInteractionRecursiveResource
+import EvmCompiler.Functions.AllocationInteractionCallResultResource
 import EvmCompiler.Functions.AllocationInteractionComposition
 import EvmCompiler.Functions.AllocationInteractionLeaf
 import EvmCompiler.Functions.AllocationInteractionStatement
@@ -185,6 +186,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.InteractionSemantics.ExprSeq.openEval
 #check EvmCompiler.Functions.InteractionSemantics.ArgList.openEval
 #check EvmCompiler.Functions.InteractionSemantics.Block.openRun
+#check EvmCompiler.Structured.InteractionReturns.Block.openRun_returns
+#check EvmCompiler.Expressions.InteractionReturns.Block.openRun_returns
+#check EvmCompiler.Functions.AllocationInteractionCallResultResource.SelectedCallee.complete_body
 #check EvmCompiler.Functions.InteractionSemantics.FunDef.openRunBody
 #check EvmCompiler.Functions.InteractionSemantics.Stmt.openRun
 #check EvmCompiler.Functions.InteractionSemantics.Program.openRunState

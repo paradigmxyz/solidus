@@ -74,6 +74,8 @@ boundaries remain active work.
     preservation interface;
   - [x] decouple canonical source scope order from compiler live-list order
     through pass-owned extensional cursor and invariant transport;
+  - [x] prove canonical non-halting return-stack preservation and complete a
+    compiler-selected callee through emitted return values and cleanup;
   - [x] define the uniform recursive target budget and checked empty,
     head/tail-composition, expression, assignment, and stack/scratch
     declaration cursor constructors;
