@@ -1401,6 +1401,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.SharedFamily.eval_exists_of_permitted
 #check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.SharedFamily.toFallibleClosedSpec
 #check EvmCompiler.Functions.AllocationInteractionPrimitiveResource.shared_resourceForward
+#check EvmCompiler.Yul.FunctionsInteractionRelation.SharedRel.withMachine
+#check EvmCompiler.Yul.FunctionsInteractionRelation.StateRel.withSharedState
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.SharedSpec.forward
+#check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.SharedTernaryCopy.forward
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.one_cons
 #check EvmCompiler.Yul.InteractionSemantics.EvalArgs.succ_succ_cons
 #check EvmCompiler.Yul.FunctionsInteractionExpression.directAt

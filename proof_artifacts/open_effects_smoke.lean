@@ -414,3 +414,7 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 #print axioms EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.SharedFamily.eval_exists_of_permitted
 #print axioms EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.SharedFamily.toFallibleClosedSpec
 #print axioms EvmCompiler.Functions.AllocationInteractionPrimitiveResource.shared_resourceForward
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.SharedRel.withMachine
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.StateRel.withSharedState
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.SharedSpec.forward
+#print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.SharedTernaryCopy.forward

@@ -634,6 +634,27 @@ theorem withWorldState
       blocks := hWorld.blocks
       genesisBlockHeader := hWorld.genesisBlockHeader }
 
+/-- Replace only the active machine while retaining the exact code-erased
+world relation. -/
+theorem withMachine
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel source target)
+    (sourceMachine targetMachine : EvmYul.MachineState)
+    (hMachine : sourceMachine = targetMachine) :
+    SharedRel
+      { source with toMachineState := sourceMachine }
+      { target with toMachineState := targetMachine } := by
+  exact
+    { openWorld := by simpa using hRel.openWorld
+      machine := hMachine
+      initialAccounts := hRel.initialAccounts
+      totalGasUsedInBlock := hRel.totalGasUsedInBlock
+      transactionReceipts := hRel.transactionReceipts
+      executionEnv := by simpa using hRel.executionEnv
+      blocks := hRel.blocks
+      genesisBlockHeader := hRel.genesisBlockHeader }
+
 theorem externalFrame_eq
     {source : EvmYul.SharedState .Yul}
     {target : EvmYul.SharedState .EVM}
@@ -786,6 +807,24 @@ theorem withMachine
         blocks := hShared.blocks
         genesisBlockHeader := hShared.genesisBlockHeader }
   · simpa [targetFinal, Locals.Source.State.withShared] using hVars
+
+/-- A closed primitive may replace the complete related shared-state pair
+while retaining source-visible locals. -/
+theorem withSharedState
+    {source : SourceState} {target : TargetState}
+    (hRel : StateRel source target)
+    (sourceShared : EvmYul.SharedState .Yul)
+    (targetShared : EvmYul.SharedState .EVM)
+    (hShared : SharedRel sourceShared targetShared) :
+    StateRel
+      (source.setSharedState sourceShared)
+      (target.withShared targetShared) := by
+  rcases hRel with
+    ⟨oldSourceShared, sourceVars, hSource, _hOldShared, hVars⟩
+  subst source
+  refine ⟨sourceShared, sourceVars, ?_, hShared, ?_⟩
+  · simp [EvmYul.Yul.State.setSharedState]
+  · simpa [Locals.Source.State.withShared] using hVars
 
 /-- A closed world operation may replace the state component on both sides
 while preserving the active machine and source-visible locals. -/

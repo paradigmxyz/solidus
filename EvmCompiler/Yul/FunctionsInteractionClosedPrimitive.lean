@@ -200,6 +200,130 @@ theorem forward
 
 end MachineSpec
 
+/-- Shared proof interface for deterministic closed primitives that may replace
+the complete shared state while preserving its code-erased relation. -/
+structure SharedSpec (prim : EvmYul.Operation .Yul)
+    (op : Structured.BasicOp) where
+  sourceResult :
+    EvmYul.SharedState .Yul → List Word →
+      EvmYul.SharedState .Yul × List Word
+  targetResult :
+    EvmYul.SharedState .EVM → List Word →
+      EvmYul.SharedState .EVM × List Word
+  resultLength :
+    ∀ shared values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        (sourceResult shared values).2.length =
+          Expressions.Structured.BasicOp.outputs op
+  related :
+    ∀ source target values,
+      FunctionsInteractionRelation.SharedRel source target →
+        FunctionsInteractionRelation.SharedRel
+            (sourceResult source values).1
+            (targetResult target values).1 ∧
+          (sourceResult source values).2 =
+            (targetResult target values).2
+  sourceZero :
+    ∀ source values,
+      Yul.InteractionSemantics.Primitive.openEval 1 source prim values =
+        .done
+          (.error
+            ({ exception := .OutOfFuel, state := source } :
+              Yul.InteractionSemantics.Failure))
+  sourceSucc :
+    ∀ fuel sourceShared sourceVars values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        Yul.InteractionSemantics.Primitive.openEval (fuel + 2)
+            (.Ok sourceShared sourceVars) prim values =
+          .done
+            (.ok
+              ((EvmYul.Yul.State.Ok sourceShared sourceVars).setSharedState
+                  (sourceResult sourceShared values).1,
+                (sourceResult sourceShared values).2))
+  target :
+    ∀ state values,
+      values.length = Expressions.Structured.BasicOp.inputs op →
+        Locals.InteractionSemantics.Primitive.openEval
+            op state values.reverse =
+          .done
+            (.ok
+              (state.withShared (targetResult state.shared values).1,
+                (targetResult state.shared values).2))
+
+namespace SharedSpec
+
+theorem forward
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    (spec : SharedSpec prim op)
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {sourceValues : List Word}
+    (hLength :
+      sourceValues.length = Expressions.Structured.BasicOp.inputs op)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source op)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source prim sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        op target sourceValues.reverse) := by
+  cases fuel with
+  | zero =>
+      rw [spec.sourceZero]
+      exact
+        Simulation.Interaction.ForwardRel.truncated
+          (doneRel := PrimitiveDoneRel source op)
+          (right := Locals.InteractionSemantics.Primitive.openEval
+            op target sourceValues.reverse)
+          (by trivial)
+  | succ previous =>
+      rcases hRel with
+        ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+      subst source
+      let sourceResult := spec.sourceResult sourceShared sourceValues
+      let targetResult := spec.targetResult target.shared sourceValues
+      have hRelated :
+          FunctionsInteractionRelation.SharedRel
+              sourceResult.1 targetResult.1 ∧
+            sourceResult.2 = targetResult.2 := by
+        simpa [sourceResult, targetResult] using
+          spec.related sourceShared target.shared sourceValues hShared
+      have hStateRel :
+          FunctionsInteractionRelation.StateRel
+            (EvmYul.Yul.State.Ok sourceShared sourceVars) target :=
+        ⟨sourceShared, sourceVars, rfl, hShared, hVars⟩
+      have hFinalRel :=
+        FunctionsInteractionRelation.StateRel.withSharedState hStateRel
+          sourceResult.1 targetResult.1 hRelated.1
+      have hDone :
+          PrimitiveDoneRel (EvmYul.Yul.State.Ok sourceShared sourceVars) op
+            (.ok
+              ((EvmYul.Yul.State.Ok sourceShared sourceVars).setSharedState
+                  sourceResult.1,
+                sourceResult.2))
+            (.ok
+              (target.withShared targetResult.1,
+                sourceResult.2)) :=
+        .ok
+          ⟨⟨hFinalRel, rfl⟩,
+            by simpa [sourceResult] using
+              spec.resultLength sourceShared sourceValues hLength,
+            rfl⟩
+      have hTarget := spec.target target sourceValues hLength
+      change
+        Locals.InteractionSemantics.Primitive.openEval
+            op target sourceValues.reverse =
+          .done (.ok (target.withShared targetResult.1, targetResult.2))
+        at hTarget
+      rw [← hRelated.2] at hTarget
+      rw [show previous.succ + 1 = previous + 2 by omega,
+        spec.sourceSucc previous sourceShared sourceVars sourceValues hLength,
+        hTarget]
+      exact Simulation.Interaction.ForwardRel.done hDone
+
+end SharedSpec
+
 /-- Shared proof interface for read-only execution-environment primitives.
 Source and target environment types differ only at their code representation,
 so each family supplies one result-equality theorem over `ExecutionEnvRel`. -/
@@ -2536,6 +2660,235 @@ theorem forward
   spec.forward hLength hRel
 
 end MachinePop
+
+inductive SharedTernaryCopy :
+    EvmYul.Operation .Yul → Structured.BasicOp →
+      (EvmYul.SharedState .Yul → Word → Word → Word →
+        EvmYul.SharedState .Yul) →
+      (EvmYul.SharedState .EVM → Word → Word → Word →
+        EvmYul.SharedState .EVM) → Prop where
+  | calldatacopy :
+      SharedTernaryCopy (.Env .CALLDATACOPY) .calldatacopy
+        EvmYul.SharedState.calldatacopy
+        EvmYul.SharedState.calldatacopy
+  | codecopy :
+      SharedTernaryCopy (.Env .CODECOPY) .codecopy
+        EvmYul.SharedState.codeBytesCopy
+        EvmYul.SharedState.codeCopy
+
+namespace SharedTernaryCopy
+
+theorem inputs
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceCopy :
+      EvmYul.SharedState .Yul → Word → Word → Word →
+        EvmYul.SharedState .Yul}
+    {targetCopy :
+      EvmYul.SharedState .EVM → Word → Word → Word →
+        EvmYul.SharedState .EVM}
+    (hFamily : SharedTernaryCopy prim op sourceCopy targetCopy) :
+    Expressions.Structured.BasicOp.inputs op = 3 := by
+  cases hFamily <;> rfl
+
+theorem outputs
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceCopy :
+      EvmYul.SharedState .Yul → Word → Word → Word →
+        EvmYul.SharedState .Yul}
+    {targetCopy :
+      EvmYul.SharedState .EVM → Word → Word → Word →
+        EvmYul.SharedState .EVM}
+    (hFamily : SharedTernaryCopy prim op sourceCopy targetCopy) :
+    Expressions.Structured.BasicOp.outputs op = 0 := by
+  cases hFamily <;> rfl
+
+theorem related
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceCopy :
+      EvmYul.SharedState .Yul → Word → Word → Word →
+        EvmYul.SharedState .Yul}
+    {targetCopy :
+      EvmYul.SharedState .EVM → Word → Word → Word →
+        EvmYul.SharedState .EVM}
+    (hFamily : SharedTernaryCopy prim op sourceCopy targetCopy)
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : FunctionsInteractionRelation.SharedRel source target)
+    (destination readStart size : Word) :
+    FunctionsInteractionRelation.SharedRel
+      (sourceCopy source destination readStart size)
+      (targetCopy target destination readStart size) := by
+  cases hFamily with
+  | calldatacopy =>
+      exact
+        { openWorld := by
+            simpa [EvmYul.SharedState.calldatacopy] using hRel.openWorld
+          machine := by
+            simp [EvmYul.SharedState.calldatacopy, hRel.machine,
+              hRel.executionEnv.calldata]
+          initialAccounts := by
+            simpa [EvmYul.SharedState.calldatacopy] using hRel.initialAccounts
+          totalGasUsedInBlock := by
+            simpa [EvmYul.SharedState.calldatacopy] using
+              hRel.totalGasUsedInBlock
+          transactionReceipts := by
+            simpa [EvmYul.SharedState.calldatacopy] using
+              hRel.transactionReceipts
+          executionEnv := by
+            simpa [EvmYul.SharedState.calldatacopy] using hRel.executionEnv
+          blocks := by
+            simpa [EvmYul.SharedState.calldatacopy] using hRel.blocks
+          genesisBlockHeader := by
+            simpa [EvmYul.SharedState.calldatacopy] using
+              hRel.genesisBlockHeader }
+  | codecopy =>
+      exact
+        { openWorld := by
+            simpa [EvmYul.SharedState.codeBytesCopy,
+              EvmYul.SharedState.codeCopy] using hRel.openWorld
+          machine := by
+            simp [EvmYul.SharedState.codeBytesCopy,
+              EvmYul.SharedState.codeCopy, hRel.machine,
+              hRel.executionEnv.codeImage]
+          initialAccounts := by
+            simpa [EvmYul.SharedState.codeBytesCopy,
+              EvmYul.SharedState.codeCopy] using hRel.initialAccounts
+          totalGasUsedInBlock := by
+            simpa [EvmYul.SharedState.codeBytesCopy,
+              EvmYul.SharedState.codeCopy] using hRel.totalGasUsedInBlock
+          transactionReceipts := by
+            simpa [EvmYul.SharedState.codeBytesCopy,
+              EvmYul.SharedState.codeCopy] using hRel.transactionReceipts
+          executionEnv := by
+            simpa [EvmYul.SharedState.codeBytesCopy,
+              EvmYul.SharedState.codeCopy] using hRel.executionEnv
+          blocks := by
+            simpa [EvmYul.SharedState.codeBytesCopy,
+              EvmYul.SharedState.codeCopy] using hRel.blocks
+          genesisBlockHeader := by
+            simpa [EvmYul.SharedState.codeBytesCopy,
+              EvmYul.SharedState.codeCopy] using hRel.genesisBlockHeader }
+
+def spec
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceCopy :
+      EvmYul.SharedState .Yul → Word → Word → Word →
+        EvmYul.SharedState .Yul}
+    {targetCopy :
+      EvmYul.SharedState .EVM → Word → Word → Word →
+        EvmYul.SharedState .EVM}
+    (hFamily : SharedTernaryCopy prim op sourceCopy targetCopy) :
+    SharedSpec prim op where
+  sourceResult shared values :=
+    match values with
+    | [destination, readStart, size] =>
+        (sourceCopy shared destination readStart size, [])
+    | _ => (shared, [])
+  targetResult shared values :=
+    match values with
+    | [destination, readStart, size] =>
+        (targetCopy shared destination readStart size, [])
+    | _ => (shared, [])
+  resultLength := by
+    intro shared values hLength
+    rw [hFamily.outputs]
+    cases values with
+    | nil => rfl
+    | cons first rest =>
+        cases rest with
+        | nil => rfl
+        | cons second rest =>
+            cases rest with
+            | nil => rfl
+            | cons third extra => cases extra <;> rfl
+  related := by
+    intro source target values hRel
+    cases values with
+    | nil => exact ⟨hRel, rfl⟩
+    | cons destination rest =>
+        cases rest with
+        | nil => exact ⟨hRel, rfl⟩
+        | cons readStart rest =>
+            cases rest with
+            | nil => exact ⟨hRel, rfl⟩
+            | cons size extra =>
+                cases extra with
+                | nil => exact ⟨hFamily.related hRel destination readStart size, rfl⟩
+                | cons next tail => exact ⟨hRel, rfl⟩
+  sourceZero := by
+    intro source values
+    cases hFamily <;>
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Yul.InteractionSemantics.Primitive.fail,
+        Yul.InteractionSemantics.State.afterException,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall]
+  sourceSucc := by
+    intro fuel sourceShared sourceVars values hLength
+    have hLengthThree : values.length = 3 := by
+      simpa [hFamily.inputs] using hLength
+    obtain ⟨destination, readStart, size, rfl⟩ :=
+      List.length_eq_three.mp hLengthThree
+    cases hFamily <;>
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?, EvmYul.Yul.primCall,
+        EvmYul.Yul.ternaryCopyOp, EvmYul.Yul.State.setSharedState] <;>
+      unfold EvmYul.step <;> rfl
+  target := by
+    intro state values hLength
+    have hLengthThree : values.length = 3 := by
+      simpa [hFamily.inputs] using hLength
+    obtain ⟨destination, readStart, size, rfl⟩ :=
+      List.length_eq_three.mp hLengthThree
+    have hSupports :
+        Locals.InteractionSemantics.Primitive.supportsOpen op = true := by
+      cases hFamily <;> rfl
+    have hStep :
+        Locals.Source.PrimitiveSemantics.sourceContinuingStep? op =
+          some (.ternaryCopy targetCopy) := by
+      cases hFamily <;> rfl
+    rw [Locals.InteractionSemantics.Primitive.openEval_closedStep
+      (by simpa [hFamily.inputs]) hSupports hStep
+      (by cases hFamily <;> decide) (by cases hFamily <;> decide)]
+    cases hFamily <;>
+      simp [Assembly.PrimStep.run, EvmYul.EVM.ternaryCopyOp,
+        Locals.InteractionSemantics.Primitive.finish,
+        Locals.InteractionSemantics.Primitive.isolated,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC, EvmYul.Stack.pop3,
+        Locals.Source.State.withShared, Simulation.Interaction.map,
+        Simulation.Interaction.bind, Simulation.Interaction.pure] <;> rfl
+
+theorem forward
+    {fuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceCopy :
+      EvmYul.SharedState .Yul → Word → Word → Word →
+        EvmYul.SharedState .Yul}
+    {targetCopy :
+      EvmYul.SharedState .EVM → Word → Word → Word →
+        EvmYul.SharedState .EVM}
+    {sourceValues : List Word}
+    (hFamily : SharedTernaryCopy prim op sourceCopy targetCopy)
+    (hLength :
+      sourceValues.length = Expressions.Structured.BasicOp.inputs op)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel source op)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 1) source prim sourceValues)
+      (Locals.InteractionSemantics.Primitive.openEval
+        op target sourceValues.reverse) :=
+  (spec hFamily).forward hLength hRel
+
+end SharedTernaryCopy
 
 end FunctionsInteractionClosedPrimitive
 end Yul
