@@ -35,6 +35,29 @@ structure ControlScopesWithin
 
 namespace ControlScopesWithin
 
+/-- Canonical function-body control destinations are contained in its scope. -/
+theorem functionBody (fn : Functions.FunDef) :
+    ControlScopesWithin fn.returns
+      (fn.returns ++ fn.params)
+      (Functions.Source.Effectful.FunDef.bodyCtx fn) := by
+  refine
+    { breakScope := ?_
+      continueScope := ?_
+      returnsLive := ?_
+      leaveScope := ?_ }
+  · simp [Functions.Source.Effectful.FunDef.bodyCtx,
+      Functions.Source.Ctx.initial, Functions.Source.Ctx.withLeaveScope]
+  · simp [Functions.Source.Effectful.FunDef.bodyCtx,
+      Functions.Source.Ctx.initial, Functions.Source.Ctx.withLeaveScope]
+  · intro name hName
+    simp [hName]
+  · intro scope hScope name hName
+    simp [Functions.Source.Effectful.FunDef.bodyCtx,
+      Functions.Source.Ctx.initial, Functions.Source.Ctx.withLeaveScope]
+      at hScope
+    cases hScope
+    simp [hName]
+
 theorem mono
     {returns beforeLive afterLive : List Functions.Name}
     {ctx : Functions.Source.Ctx}

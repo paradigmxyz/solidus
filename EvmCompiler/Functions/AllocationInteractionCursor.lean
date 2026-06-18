@@ -112,12 +112,25 @@ def ActiveEnv
     (live : List Functions.Name) : Prop :=
   ∃ locals,
     env = locals ++ AllocationSupport.functionEnv slots ∧
-      live =
-        locals.map Prod.fst ++
-          (slots.returns.map Prod.fst).reverse ++
-          (slots.params.map Prod.fst).reverse
+      ∀ name,
+        name ∈ live ↔
+          name ∈
+            locals.map Prod.fst ++
+              (slots.returns.map Prod.fst).reverse ++
+              (slots.params.map Prod.fst).reverse
 
 namespace ActiveEnv
+
+/-- Active allocation environments depend only on live-name membership. -/
+theorem transport_live
+    {slots : AllocationSupport.FunSlots}
+    {env : AllocationSupport.SlotEnv}
+    {before after : List Functions.Name}
+    (hActive : ActiveEnv slots env before)
+    (hLive : ∀ name, name ∈ before ↔ name ∈ after) :
+    ActiveEnv slots env after := by
+  rcases hActive with ⟨locals, hEnv, hBefore⟩
+  exact ⟨locals, hEnv, fun name => (hLive name).symm.trans (hBefore name)⟩
 
 theorem after_planStmt
     {slots : AllocationSupport.FunSlots}
@@ -133,14 +146,16 @@ theorem after_planStmt
   | let_ name value =>
       refine ⟨(name, planning.allocation.nextSlot) :: locals, ?_, ?_⟩
       · simp [AllocationSupport.planStmt_allocation_env, hEnv]
-      · simp [Functions.Scope.Stmt.outEnv, hLive, List.append_assoc]
+      · intro localName
+        simp [Functions.Scope.Stmt.outEnv, hLive, List.append_assoc]
   | expr expr | assign name value | block body | if_ cond body
   | switch scrutinee cases defaultBody | for_ init cond post body
   | brk | cont | leave | call targets functionName args
   | terminal kind | terminalArgs kind args =>
       refine ⟨locals, ?_, ?_⟩
       · simpa [AllocationSupport.planStmt_allocation_env] using hEnv
-      · simpa [Functions.Scope.Stmt.outEnv] using hLive
+      · intro localName
+        simpa [Functions.Scope.Stmt.outEnv] using hLive localName
 
 theorem after_planStmtList
     {slots : AllocationSupport.FunSlots}
@@ -384,6 +399,27 @@ def RootArtifact.cursor
     compile := root.compile
     sourceScoped := root.sourceScoped
     activeEnv := root.activeEnv }
+
+/-- A compiler cursor depends on the live environment only extensionally. -/
+def CoreCursor.transport_live
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {before after : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope before sourceBlock lowerState localsCtx)
+    (hLive : ∀ name, name ∈ before ↔ name ∈ after) :
+    CoreCursor root scope after sourceBlock lowerState localsCtx :=
+  { cursor with
+    sourceScoped :=
+      Functions.Scope.Block.Scoped.of_env_equiv hLive cursor.sourceScoped
+    activeEnv := cursor.activeEnv.transport_live hLive }
 
 theorem CoreCursor.cons
     {allocation : Locals.Allocation.ProgramPlan}
@@ -758,17 +794,19 @@ theorem CoreCursor.currentStackOrder_of_active
       cursor.planning.allocation.env =
         locals ++ AllocationSupport.functionEnv root.slots)
     (hLive :
-      live =
-        locals.map Prod.fst ++
-          (root.slots.returns.map Prod.fst).reverse ++
-          (root.slots.params.map Prod.fst).reverse) :
+      ∀ name,
+        name ∈ live ↔
+          name ∈
+            locals.map Prod.fst ++
+              (root.slots.returns.map Prod.fst).reverse ++
+              (root.slots.params.map Prod.fst).reverse) :
     currentStackOrder cursor.plan live =
       MixedAllocation.stackOrder compilation.stackSlots locals ++
         MixedAllocation.stackOrder compilation.stackSlots
           root.slots.returns.reverse ++
         MixedAllocation.stackOrder compilation.stackSlots
           root.slots.params.reverse := by
-  subst live
+  have hOrderLive := currentStackOrder_congr (plan := cursor.plan) hLive
   obtain ⟨future, hFinal⟩ := cursor.final_env_extension
   have hPlanningLower :
       cursor.planning.allocation.env =
@@ -816,7 +854,7 @@ theorem CoreCursor.currentStackOrder_of_active
       (returns := root.slots.returns)
       (params := root.slots.params)
       hFinalEnv hEntryNodup
-  rw [cursor.planEq]
+  rw [hOrderLive, cursor.planEq]
   unfold currentStackOrder
   rw [hEntries]
   exact hOrder
@@ -837,10 +875,12 @@ theorem CoreCursor.currentStackOrder
     ∃ locals,
       cursor.planning.allocation.env =
           locals ++ AllocationSupport.functionEnv root.slots ∧
-        live =
-          locals.map Prod.fst ++
-            (root.slots.returns.map Prod.fst).reverse ++
-            (root.slots.params.map Prod.fst).reverse ∧
+        (∀ name,
+          name ∈ live ↔
+            name ∈
+              locals.map Prod.fst ++
+                (root.slots.returns.map Prod.fst).reverse ++
+                (root.slots.params.map Prod.fst).reverse) ∧
         currentStackOrder cursor.plan live =
           MixedAllocation.stackOrder compilation.stackSlots locals ++
             MixedAllocation.stackOrder compilation.stackSlots
@@ -1181,23 +1221,15 @@ theorem CoreCursor.declarationPlacement
             AllocationSupport.functionEnv root.slots := by
               simp [hCurrentEnv]
   have hTailLive :
-      name :: live =
-        (((name, cursor.planning.allocation.nextSlot) :: locals).map
-            Prod.fst) ++
-          (root.slots.returns.map Prod.fst).reverse ++
-          (root.slots.params.map Prod.fst).reverse := by
-    calc
-      name :: live =
-          name ::
-            (locals.map Prod.fst ++
+      ∀ localName,
+        localName ∈ name :: live ↔
+          localName ∈
+            (((name, cursor.planning.allocation.nextSlot) :: locals).map
+                Prod.fst) ++
               (root.slots.returns.map Prod.fst).reverse ++
-              (root.slots.params.map Prod.fst).reverse) :=
-        congrArg (List.cons name) hCurrentLive
-      _ =
-          (((name, cursor.planning.allocation.nextSlot) :: locals).map
-              Prod.fst) ++
-            (root.slots.returns.map Prod.fst).reverse ++
-            (root.slots.params.map Prod.fst).reverse := rfl
+              (root.slots.params.map Prod.fst).reverse := by
+    intro localName
+    simp [hCurrentLive]
   have hTailOrder :=
     tail.currentStackOrder_of_active
       ((name, cursor.planning.allocation.nextSlot) :: locals)

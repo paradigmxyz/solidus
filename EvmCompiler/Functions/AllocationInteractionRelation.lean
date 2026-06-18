@@ -130,6 +130,16 @@ def LiveDefined (live : List Locals.Name) (source : Locals.Source.State) :
 
 namespace LiveDefined
 
+/-- Live-definedness depends only on membership, not list order. -/
+theorem transport_live
+    {before after : List Locals.Name}
+    {source : Locals.Source.State}
+    (hDefined : LiveDefined before source)
+    (hLive : ∀ name, name ∈ before ↔ name ∈ after) :
+    LiveDefined after source := by
+  intro name hAfter
+  exact hDefined name ((hLive name).mpr hAfter)
+
 theorem congr_vars
     {live : List Locals.Name}
     {source final : Locals.Source.State}
@@ -270,6 +280,25 @@ def LiveStackOnly (plan : Plan) (live : List Locals.Name) : Prop :=
     False
 
 namespace StoreRel
+
+/-- Store realization depends only on the set of live names. -/
+theorem transport_live
+    {plan : Plan} {before after : List Locals.Name}
+    {stackOffset frameBase : Nat}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hRel : StoreRel plan before stackOffset frameBase source target)
+    (hLive : ∀ name, name ∈ before ↔ name ∈ after) :
+    StoreRel plan after stackOffset frameBase source target := by
+  intro name location hAfter hLocation
+  have hBefore : name ∈ before := (hLive name).mpr hAfter
+  have hOrder := currentStackOrder_congr (plan := plan) hLive
+  cases location with
+  | stack planDepth =>
+      obtain ⟨depth, hDepth, hValue⟩ :=
+        hRel name (.stack planDepth) hBefore hLocation
+      exact ⟨depth, by simpa [hOrder] using hDepth, hValue⟩
+  | scratch slot =>
+      exact hRel name (.scratch slot) hBefore hLocation
 
 /-- Rebase live locals across a target stack-prefix replacement. -/
 theorem rebase_prefix_of_lookup
@@ -568,6 +597,18 @@ structure CoreRel
 abbrev StateRel := CoreRel
 
 namespace StateRel
+
+/-- Core allocation state depends only on live-name membership. -/
+theorem transport_live
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {before after : List Locals.Name} {stackOffset frameBase : Nat}
+    {source : SourceState} {target : TargetState}
+    (hRel : StateRel contract plan before stackOffset frameBase source target)
+    (hLive : ∀ name, name ∈ before ↔ name ∈ after) :
+    StateRel contract plan after stackOffset frameBase source target :=
+  { machine := hRel.machine
+    world := hRel.world
+    store := hRel.store.transport_live hLive }
 
 /-- Restricting the source store to represented live names preserves it. -/
 theorem restrict_source_live
@@ -1109,6 +1150,23 @@ structure ScratchStateRel
       slot < frameWords
 
 namespace ScratchStateRel
+
+/-- Scratch-frame state depends only on live-name membership. -/
+theorem transport_live
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {before after : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState} {target : TargetState}
+    (hRel :
+      ScratchStateRel contract plan before stackOffset frameBase
+        frameDepth frameWords source target)
+    (hLive : ∀ name, name ∈ before ↔ name ∈ after) :
+    ScratchStateRel contract plan after stackOffset frameBase
+      frameDepth frameWords source target :=
+  { hRel with
+    base := hRel.base.transport_live hLive
+    scratchBound := fun name slot hAfter hLocation =>
+      hRel.scratchBound name slot ((hLive name).mpr hAfter) hLocation }
 
 /-- Transport a live scratch-frame relation across agreeing plans. -/
 theorem transport_plan
@@ -2066,6 +2124,28 @@ def Matches (mode : ActivationMode) (plan : Plan)
   | .scratch frameDepth _frameWords =>
       frameDepth = (currentStackOrder plan live).length
 
+theorem stackLength_congr
+    {mode : ActivationMode} {plan : Plan}
+    {before after : List Locals.Name}
+    (hLive : ∀ name, name ∈ before ↔ name ∈ after) :
+    mode.stackLength plan before = mode.stackLength plan after := by
+  cases mode with
+  | stack =>
+      simp [stackLength, currentStackOrder_congr (plan := plan) hLive]
+  | scratch => rfl
+
+theorem Matches.transport_live
+    {mode : ActivationMode} {plan : Plan}
+    {before after : List Locals.Name}
+    (hMatches : mode.Matches plan before)
+    (hLive : ∀ name, name ∈ before ↔ name ∈ after) :
+    mode.Matches plan after := by
+  cases mode with
+  | stack => trivial
+  | scratch frameDepth frameWords =>
+      simpa [Matches, currentStackOrder_congr (plan := plan) hLive] using
+        hMatches
+
 theorem Matches.transport_plan
     {left right : Plan} {live : List Locals.Name} {mode : ActivationMode}
     (hMatches : mode.Matches left live)
@@ -2187,6 +2267,26 @@ inductive ActivationStateRel
         (.scratch frameDepth frameWords) source target
 
 namespace ActivationStateRel
+
+/-- Activation state depends only on live-name membership. -/
+theorem transport_live
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {before after : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode} {source : SourceState} {target : TargetState}
+    (hRel :
+      ActivationStateRel contract plan before stackOffset frameBase mode
+        source target)
+    (hLive : ∀ name, name ∈ before ↔ name ∈ after) :
+    ActivationStateRel contract plan after stackOffset frameBase mode
+      source target := by
+  cases hRel with
+  | stack hOnly hActive hState =>
+      exact .stack
+        (fun name slot hAfter hLocation =>
+          hOnly name slot ((hLive name).mpr hAfter) hLocation)
+        hActive (hState.transport_live hLive)
+  | scratch hScratch =>
+      exact .scratch (hScratch.transport_live hLive)
 
 /-- Scope restriction preserves either allocation representation. -/
 theorem restrict_source_live

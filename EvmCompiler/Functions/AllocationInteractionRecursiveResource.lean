@@ -396,6 +396,7 @@ theorem body_of_cursor
     {contract : MemoryContract.Contract}
     {globalFrameWords allocatorDepth frameBase sourceFuel fuelBound : Nat}
     {config : Config}
+    {sourceLive : List Functions.Name}
     {sourceCtx : Functions.Source.Ctx}
     {source : Functions.InteractionSemantics.State}
     {target : Structured.RunState}
@@ -418,15 +419,17 @@ theorem body_of_cursor
       ActivationOwned config allocatorDepth frameBase artifact.mode)
     (hBudget : AllocationInteractionFrame.Budget config allocatorDepth)
     (hSourceFuel : sourceFuel < fuelBound)
+    (hLive :
+      ∀ localName,
+        localName ∈
+            (artifact.slots.returns.map Prod.fst).reverse ++
+              (artifact.slots.params.map Prod.fst).reverse ↔
+          localName ∈ sourceLive)
     (hSourceScope :
-      sourceCtx.scope =
-        (artifact.slots.returns.map Prod.fst).reverse ++
-          (artifact.slots.params.map Prod.fst).reverse)
+      sourceCtx.scope = sourceLive)
     (hControl :
       AllocationInteractionStatement.ControlScopesWithin fn.returns
-        ((artifact.slots.returns.map Prod.fst).reverse ++
-          (artifact.slots.params.map Prod.fst).reverse)
-        sourceCtx)
+        sourceLive sourceCtx)
     (hSuccess :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Block.openRun program sourceCtx
@@ -440,17 +443,10 @@ theorem body_of_cursor
       Simulation.Interaction.Rel
         (RuntimeResultRel contract artifact.lowerCtx prepared.bodyFinal
           prepared.bodyCtx prepared.plan fn.returns
-          (Functions.Scope.Block.outEnv
-            ((artifact.slots.returns.map Prod.fst).reverse ++
-              (artifact.slots.params.map Prod.fst).reverse)
-            fn.body)
+          (Functions.Scope.Block.outEnv sourceLive fn.body)
           frameBase artifact.mode sourceCtx
           { sourceCtx with
-            scope :=
-              Functions.Scope.Block.outEnv
-                ((artifact.slots.returns.map Prod.fst).reverse ++
-                  (artifact.slots.params.map Prod.fst).reverse)
-                fn.body }
+            scope := Functions.Scope.Block.outEnv sourceLive fn.body }
           config allocatorDepth target)
         (Functions.InteractionSemantics.Block.openRun program sourceCtx
           sourceFuel fn.body source)
@@ -459,12 +455,15 @@ theorem body_of_cursor
               prepared.markerCode ++ prepared.paramCode ++
                 prepared.returnCode ++ prepared.bodyCode }
           target) := by
-  let live :=
+  let compilerLive :=
     (artifact.slots.returns.map Prod.fst).reverse ++
       (artifact.slots.params.map Prod.fst).reverse
+  let live := sourceLive
+  let bodyCursor :=
+    (prepared.rootCursor hProgramScoped).transport_live hLive
   have hSetupFrame : SameFrame artifact.mode prepared.bodyMode := by
     exact SameFrame.atStackDepth artifact.mode
-      (currentStackOrder prepared.plan live).length
+      (currentStackOrder prepared.plan compilerLive).length
   by_cases hNeedsFrame : artifact.needsFrame = true
   · have hScratchEntry :
         ActivationCalleeEntryRel contract prepared.plan []
@@ -482,11 +481,11 @@ theorem body_of_cursor
           prepared.bodyMode := by
       rw [show prepared.bodyMode =
           .scratch
-            (currentStackOrder prepared.plan live).length
+            (currentStackOrder prepared.plan compilerLive).length
             compilation.recipe.frameWords by
         simp [AllocationInteractionCall.SelectedCallee.Prepared.bodyMode,
           AllocationInteractionCall.SelectedCallee.Artifact.mode,
-          ActivationMode.atStackDepth, hNeedsFrame, live]]
+          ActivationMode.atStackDepth, hNeedsFrame, compilerLive]]
       exact Nat.le_refl _
     obtain
         ⟨_afterParams, bodyTarget, _paramFuel, _returnFuel, _preludeFuel,
@@ -502,11 +501,11 @@ theorem body_of_cursor
       simpa [AllocationInteractionCall.SelectedCallee.Artifact.mode,
         hNeedsFrame] using hSetupEffect
     have hBodyBoundary :
-        Boundary (prepared.rootCursor hProgramScoped) contract
+        Boundary bodyCursor contract
           globalFrameWords config allocatorDepth frameBase prepared.bodyMode
           sourceCtx source bodyTarget :=
       { semantic :=
-          { invariant := hInvariant
+          { invariant := hInvariant.transport_live hLive
             sourceScope := hSourceScope
             control := hControl
             capacity := hCapacity }
@@ -515,10 +514,10 @@ theorem body_of_cursor
         owned := hOwned.sameFrame hSetupFrame
         budget := hBudget }
     have hBodyRaw :=
-      hRecursive (prepared.rootCursor hProgramScoped) hSourceFuel
+      hRecursive bodyCursor hSourceFuel
         hBodyBoundary hSuccess (targetExtra := 0)
     let bodyFuel :=
-      targetBudget (prepared.rootCursor hProgramScoped) sourceFuel 0
+      targetBudget bodyCursor sourceFuel 0
     have hBodyFuel : 0 < bodyFuel := by
       simp [bodyFuel, targetBudget]
     have hBody :
@@ -534,7 +533,7 @@ theorem body_of_cursor
             sourceFuel fn.body source)
           (Expressions.InteractionSemantics.Block.openRun expressions bodyFuel
             { stmts := prepared.bodyCode } bodyTarget) := by
-      simpa [CursorRuntimeAt, bodyFuel, live] using hBodyRaw
+      simpa [CursorRuntimeAt, bodyFuel, bodyCursor, live] using hBodyRaw
     have hBodyFromEntry :
         Simulation.Interaction.Rel
           (RuntimeResultRel contract artifact.lowerCtx prepared.bodyFinal
@@ -585,11 +584,11 @@ theorem body_of_cursor
       simpa [AllocationInteractionCall.SelectedCallee.Artifact.mode,
         hNeedsFrameFalse] using hSetupEffect
     have hBodyBoundary :
-        Boundary (prepared.rootCursor hProgramScoped) contract
+        Boundary bodyCursor contract
           globalFrameWords config allocatorDepth frameBase prepared.bodyMode
           sourceCtx source bodyTarget :=
       { semantic :=
-          { invariant := hInvariant
+          { invariant := hInvariant.transport_live hLive
             sourceScope := hSourceScope
             control := hControl
             capacity := hCapacity }
@@ -598,10 +597,10 @@ theorem body_of_cursor
         owned := hOwned.sameFrame hSetupFrame
         budget := hBudget }
     have hBodyRaw :=
-      hRecursive (prepared.rootCursor hProgramScoped) hSourceFuel
+      hRecursive bodyCursor hSourceFuel
         hBodyBoundary hSuccess (targetExtra := 0)
     let bodyFuel :=
-      targetBudget (prepared.rootCursor hProgramScoped) sourceFuel 0
+      targetBudget bodyCursor sourceFuel 0
     have hBodyFuel : 0 < bodyFuel := by
       simp [bodyFuel, targetBudget]
     have hBody :
@@ -617,7 +616,7 @@ theorem body_of_cursor
             sourceFuel fn.body source)
           (Expressions.InteractionSemantics.Block.openRun expressions bodyFuel
             { stmts := prepared.bodyCode } bodyTarget) := by
-      simpa [CursorRuntimeAt, bodyFuel, live] using hBodyRaw
+      simpa [CursorRuntimeAt, bodyFuel, bodyCursor, live] using hBodyRaw
     have hBodyFromEntry :
         Simulation.Interaction.Rel
           (RuntimeResultRel contract artifact.lowerCtx prepared.bodyFinal
@@ -640,6 +639,96 @@ theorem body_of_cursor
     refine ⟨totalFuel, by simp [totalFuel]; omega, ?_⟩
     simpa [totalFuel, live] using
       prepared.prelude_then_body hBodyFuel hPreludeAt hBodyFromEntry
+
+/-- Canonical `runBody` context supplies the selected-callee scope boundary. -/
+theorem body_of_function_context
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : AllocationInteractionCall.SelectedCallee.Artifact
+      compilation name fn}
+    (prepared :
+      AllocationInteractionCall.SelectedCallee.Prepared artifact)
+    (hProgramScoped : program.Scoped)
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase sourceFuel fuelBound : Nat}
+    {config : Config}
+    {source : Functions.InteractionSemantics.State}
+    {target : Structured.RunState}
+    {reservation : MemoryContract.ScratchReservation}
+    (hEntry :
+      ActivationCalleeEntryRel contract prepared.plan []
+        artifact.slots.params frameBase artifact.mode source target)
+    (hZero :
+      ∀ localName,
+        localName ∈ artifact.slots.returns.map Prod.fst →
+        source.vars localName = some AllocationSupport.zeroWord)
+    (hStackLength :
+      target.evm.stack.length = artifact.entryCtx.layout.length)
+    (hReservation : contract.scratch? = some reservation)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hReady : AllocatorReady config allocatorDepth target)
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase artifact.mode)
+    (hBudget : AllocationInteractionFrame.Budget config allocatorDepth)
+    (hSourceFuel : sourceFuel < fuelBound)
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program
+          (Functions.Source.Effectful.FunDef.bodyCtx fn)
+          sourceFuel fn.body source))
+    (hRecursive :
+      RecursiveOpenRuntime
+        (root := prepared.rootArtifact hProgramScoped)
+        contract globalFrameWords fuelBound) :
+    ∃ targetFuel,
+      0 < targetFuel ∧
+      Simulation.Interaction.Rel
+        (RuntimeResultRel contract artifact.lowerCtx prepared.bodyFinal
+          prepared.bodyCtx prepared.plan fn.returns
+          (Functions.Scope.Block.outEnv
+            (fn.returns ++ fn.params)
+            fn.body)
+          frameBase artifact.mode
+          (Functions.Source.Effectful.FunDef.bodyCtx fn)
+          { Functions.Source.Effectful.FunDef.bodyCtx fn with
+            scope :=
+              Functions.Scope.Block.outEnv
+                (fn.returns ++ fn.params)
+                fn.body }
+          config allocatorDepth target)
+        (Functions.InteractionSemantics.Block.openRun program
+          (Functions.Source.Effectful.FunDef.bodyCtx fn)
+          sourceFuel fn.body source)
+        (Expressions.InteractionSemantics.Block.openRun expressions targetFuel
+          { stmts :=
+              prepared.markerCode ++ prepared.paramCode ++
+                prepared.returnCode ++ prepared.bodyCode }
+          target) := by
+  have hScope :
+      (Functions.Source.Effectful.FunDef.bodyCtx fn).scope =
+        fn.returns ++ fn.params := by
+    rfl
+  have hLive :
+      ∀ localName,
+        localName ∈
+            (artifact.slots.returns.map Prod.fst).reverse ++
+              (artifact.slots.params.map Prod.fst).reverse ↔
+          localName ∈ fn.returns ++ fn.params := by
+    intro localName
+    simp [artifact.slotsMatch.2.1, artifact.slotsMatch.2.2]
+  have hControl :
+      AllocationInteractionStatement.ControlScopesWithin fn.returns
+        (fn.returns ++ fn.params)
+        (Functions.Source.Effectful.FunDef.bodyCtx fn) := by
+    exact AllocationInteractionStatement.ControlScopesWithin.functionBody fn
+  exact body_of_cursor prepared hProgramScoped hEntry hZero hStackLength
+    hReservation hConfig hReady hOwned hBudget hSourceFuel hLive hScope
+    hControl hSuccess hRecursive
 
 end SelectedCallee
 

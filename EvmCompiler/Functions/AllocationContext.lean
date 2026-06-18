@@ -160,6 +160,60 @@ inductive ActivationExprContext
 
 namespace ActivationExprContext
 
+/-- Compiler expression context depends only on live-name membership. -/
+theorem transport_live
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx} {plan : Plan}
+    {before after : List Locals.Name} {mode : ActivationMode}
+    (hCtx :
+      ActivationExprContext lowerCtx lowerState localsCtx plan before mode)
+    (hLive : ∀ name, name ∈ before ↔ name ∈ after) :
+    ActivationExprContext lowerCtx lowerState localsCtx plan after mode := by
+  have hOrder := currentStackOrder_congr (plan := plan) hLive
+  cases hCtx with
+  | stack hStack =>
+      refine .stack
+        { layout := hStack.layout
+          stackOrder := hOrder.symm.trans hStack.stackOrder
+          frameAbsent := hStack.frameAbsent
+          liveStackOnly := fun name slot hAfter hLocation =>
+            hStack.liveStackOnly name slot ((hLive name).mpr hAfter) hLocation
+          location := fun name hAfter =>
+            hStack.location name ((hLive name).mpr hAfter)
+          slot := fun name hAfter =>
+            hStack.slot name ((hLive name).mpr hAfter)
+          stack := ?_ }
+      intro name slot hAfter hSlot hClassification
+      obtain ⟨planDepth, depth, hLocation, hDepth, hLowerDepth⟩ :=
+        hStack.stack name slot ((hLive name).mpr hAfter)
+          hSlot hClassification
+      exact
+        ⟨planDepth, depth, hLocation, by simpa [hOrder] using hDepth,
+          hLowerDepth⟩
+  | @scratch frameDepth frameWords hScratch =>
+      refine .scratch
+        { layout := hScratch.layout
+          stackPrefix := hOrder.symm.trans hScratch.stackPrefix
+          frame := hScratch.frame
+          frameBottom := hScratch.frameBottom
+          location := fun name hAfter =>
+            hScratch.location name ((hLive name).mpr hAfter)
+          slot := fun name hAfter =>
+            hScratch.slot name ((hLive name).mpr hAfter)
+          stack := ?_
+          scratch := ?_ }
+      · intro name slot hAfter hSlot hClassification
+        obtain ⟨planDepth, depth, hLocation, hDepth, hLowerDepth⟩ :=
+          hScratch.stack name slot ((hLive name).mpr hAfter)
+            hSlot hClassification
+        exact
+          ⟨planDepth, depth, hLocation, by simpa [hOrder] using hDepth,
+            hLowerDepth⟩
+      · intro name slot hAfter hSlot hClassification
+        exact hScratch.scratch name slot ((hLive name).mpr hAfter)
+          hSlot hClassification
+
 /-- Loop-control fields may change while the activation layout stays fixed. -/
 theorem transport_locals
     {lowerCtx : AllocationLowering.Ctx}
@@ -583,6 +637,28 @@ structure ActivationInvariant
   stackLength : target.evm.stack.length = localsCtx.layout.length
 
 namespace ActivationInvariant
+
+/-- A complete activation invariant depends only on live-name membership. -/
+theorem transport_live
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx} {plan : Plan}
+    {before after : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {source : AllocationInteractionRelation.SourceState}
+    {target : AllocationInteractionRelation.TargetState}
+    (hInvariant :
+      ActivationInvariant contract lowerCtx lowerState localsCtx plan before
+        frameBase mode source target)
+    (hLive : ∀ name, name ∈ before ↔ name ∈ after) :
+    ActivationInvariant contract lowerCtx lowerState localsCtx plan after
+      frameBase mode source target :=
+  { compiler := hInvariant.compiler.transport_live hLive
+    planWF := hInvariant.planWF
+    defined := hInvariant.defined.transport_live hLive
+    state := hInvariant.state.transport_live hLive
+    stackLength := hInvariant.stackLength }
 
 /-- Transport a complete invariant across control-only Locals context edits. -/
 theorem transport_locals

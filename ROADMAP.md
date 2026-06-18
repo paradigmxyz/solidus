@@ -72,6 +72,8 @@ boundaries remain active work.
   - [x] compose entry markers and both preludes into the callee body invariant;
   - [x] prefix exact setup to the fuel-decreasing canonical callee-body
     preservation interface;
+  - [x] decouple canonical source scope order from compiler live-list order
+    through pass-owned extensional cursor and invariant transport;
   - [x] define the uniform recursive target budget and checked empty,
     head/tail-composition, expression, assignment, and stack/scratch
     declaration cursor constructors;
