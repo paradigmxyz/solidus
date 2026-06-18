@@ -1,5 +1,6 @@
 import EvmCompiler.Functions.AllocationInteractionProgramArtifact
 import EvmCompiler.Functions.AllocationInteractionFramePreservation
+import EvmCompiler.Functions.AllocationInteractionStackRuntime
 
 namespace EvmCompiler
 namespace Functions
@@ -110,7 +111,93 @@ structure ScratchSetupResult
     ActivationOwned config (mainSetupDepth compilation) frameBase mode
   returns : targetFinal.returns = target.returns
 
+/-- Empty allocator/frame setup selected for a wholly stack-backed program. -/
+structure StackSetupResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {artifact : MainArtifact compilation}
+    (prepared : MainPrepared artifact)
+    (source : Functions.InteractionSemantics.State)
+    (target : Expressions.InteractionSemantics.RunState)
+    (targetFuel : Nat) : Prop where
+  targetFuel_eq :
+    targetFuel = (prepared.allocatorCode ++ prepared.frameCode).length + 1
+  execution :
+    Expressions.InteractionSemantics.Block.openRun expressions targetFuel
+        { stmts := prepared.allocatorCode ++ prepared.frameCode } target =
+      .done (.ok (Structured.Outcome.regular target))
+  invariant :
+    AllocationContext.ActivationInvariant program.memoryContract
+      artifact.lowerCtx artifact.start prepared.bodyCtx artifact.plan []
+      0 .stack source target
+  returns : target.returns = target.returns
+
 namespace MainPrepared
+
+/-- Execute the exact empty setup selected when no function or main activation
+uses compiler scratch storage. -/
+theorem stackSetup
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {artifact : MainArtifact compilation}
+    (prepared : MainPrepared artifact)
+    {source : Functions.InteractionSemantics.State}
+    {target : Expressions.InteractionSemantics.RunState}
+    (hSourceCtx : prepared.sourceCtx = Locals.Ctx.initial)
+    (hNoAllocator :
+      AllocationLowering.mainNeedsAllocator
+          compilation.recipe compilation.stackSlots = false)
+    (hNoFrame :
+      AllocationLowering.mainNeedsFrame
+          compilation.recipe compilation.stackSlots = false)
+    (hInitial : InitialRel program.memoryContract source target) :
+    StackSetupResult prepared source target 1 := by
+  have hInvariant := InitialRel.invariant artifact hInitial
+  have hAllocatorExpected :=
+    artifact.components.compileAllocator_of_no_allocator
+      hNoAllocator prepared.sourceCtx
+  have hAllocatorPair :
+      (prepared.allocatorCode, prepared.allocatorCtx) =
+        ([], prepared.sourceCtx) :=
+    Option.some.inj
+      (prepared.compileAllocator.symm.trans hAllocatorExpected)
+  have hAllocatorCode := congrArg Prod.fst hAllocatorPair
+  have hAllocatorCtx := congrArg Prod.snd hAllocatorPair
+  simp only [Prod.fst] at hAllocatorCode
+  simp only [Prod.snd] at hAllocatorCtx
+  have hFrameExpected :=
+    artifact.components.compileFrame_of_no_frame hNoFrame
+      prepared.allocatorCtx
+  have hFramePair :
+      (prepared.frameCode, prepared.bodyCtx) =
+        ([], prepared.allocatorCtx) :=
+    Option.some.inj (prepared.compileFrame.symm.trans hFrameExpected)
+  have hFrameCode := congrArg Prod.fst hFramePair
+  have hBodyCtx := congrArg Prod.snd hFramePair
+  simp only [Prod.fst] at hFrameCode
+  simp only [Prod.snd] at hBodyCtx
+  have hBodyCtxInitial : prepared.bodyCtx = Locals.Ctx.initial := by
+    rw [hBodyCtx, hAllocatorCtx, hSourceCtx]
+  have hStart : artifact.start = artifact.beforeSetup := by
+    simp [MainArtifact.start, MainArtifact.beforeSetup,
+      AllocationLowering.mainStartWithFrame, hNoFrame]
+  have hActivation :
+      AllocationContext.ActivationInvariant program.memoryContract
+        artifact.lowerCtx artifact.start prepared.bodyCtx artifact.plan []
+        0 .stack source target := by
+    rw [hStart, hBodyCtxInitial]
+    exact hInvariant
+  refine
+    { targetFuel_eq := by simp [hAllocatorCode, hFrameCode]
+      execution := ?_
+      invariant := hActivation
+      returns := rfl }
+  simpa [hAllocatorCode, hFrameCode] using
+    (Expressions.InteractionSemantics.Block.openRun_nil expressions 0 target)
 
 /-- Execute the exact scratch allocator and optional main-frame setup emitted
 by the ordinary compiler.  The no-main-frame branch still initializes the
@@ -455,6 +542,52 @@ theorem scratchSetup
           (allocatorDepth := 0) (frameBase := 0))
 
 end MainPrepared
+
+namespace StackSetupResult
+
+/-- Package empty stack-only setup as the exact recursive-body boundary. -/
+theorem boundary
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {artifact : MainArtifact compilation}
+    {prepared : MainPrepared artifact}
+    {source : Functions.InteractionSemantics.State}
+    {target : Expressions.InteractionSemantics.RunState}
+    {targetFuel : Nat}
+    (mainRoot : MainRoot prepared)
+    (hSetup : StackSetupResult prepared source target targetFuel) :
+    AllocationInteractionStackRuntime.Boundary mainRoot.root.cursor
+      program.memoryContract 0 .stack Functions.Source.Ctx.initial source
+      target := by
+  refine
+    { semantic :=
+        { invariant := ?_
+          sourceScope := ?_
+          control := ?_
+          capacity := trivial }
+      controlAgreement := ?_ }
+  · simpa [AllocationInteractionCursor.RootArtifact.cursor,
+      mainRoot.lowerCtx, mainRoot.startState, mainRoot.startLocals,
+      mainRoot.plan, mainRoot.live] using hSetup.invariant
+  · simpa [AllocationInteractionCursor.RootArtifact.cursor,
+      mainRoot.live, Functions.Source.Ctx.initial]
+  · refine
+      { breakScope := ?_
+        continueScope := ?_
+        returnsLive := ?_
+        leaveScope := ?_ }
+    · simp [Functions.Source.Ctx.initial]
+    · simp [Functions.Source.Ctx.initial]
+    · simpa [AllocationInteractionCursor.RootArtifact.cursor,
+        mainRoot.returns, mainRoot.live]
+    · simp [Functions.Source.Ctx.initial]
+  · exact
+      AllocationInteractionControlAgreement.Agreement.noControl
+        (by rfl) (by rfl) (by rfl)
+
+end StackSetupResult
 
 namespace ScratchSetupResult
 

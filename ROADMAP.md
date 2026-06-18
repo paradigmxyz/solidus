@@ -154,6 +154,12 @@ boundaries remain active work.
   - [ ] thread the existing resource-mode interface through stack-only
     recursion, then compose source prelude, main body, and cleanup into the
     public adjacent theorem without an allocator premise for stack-only code.
+    - [x] exact empty main setup, stack runtime boundary, and target-fuel
+      adapter;
+    - [x] compiler proof that every selected callee is stack-backed and a
+      resource-free function-return epilogue;
+    - [ ] resource-free internal-call attachment and recursive stack fixed
+      point.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
   source-facing reservation/resource assumptions.
