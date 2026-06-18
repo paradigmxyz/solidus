@@ -32,6 +32,7 @@ import EvmCompiler.Functions.InteractionSemantics
 import EvmCompiler.Functions.AllocationInteractionRelation
 import EvmCompiler.Functions.AllocationInteractionExpression
 import EvmCompiler.Functions.AllocationInteractionPrimitive
+import EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive
 import EvmCompiler.Functions.AllocationContext
 import EvmCompiler.Functions.EffectSemanticsInversion
 import EvmCompiler.Functions.ObserverSemantics
@@ -191,6 +192,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionPrimitive.OpenForward
 #check EvmCompiler.Functions.AllocationInteractionPrimitive.call_openForward
 #check EvmCompiler.Functions.AllocationInteractionPrimitive.create_openForward
+#check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.SharedFamily
+#check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.SharedFamily.openForward
 #check EvmCompiler.Functions.AllocationObserverRelation.StateRel.toInteraction
 #check EvmCompiler.Functions.AllocationObserverRelation.ScratchStateRel.toInteraction
 #check EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_nonObserver

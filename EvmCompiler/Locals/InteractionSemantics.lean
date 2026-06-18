@@ -65,6 +65,29 @@ def openEval (op : Structured.BasicOp) (state : State)
   else
     throw .StackUnderflow
 
+/--
+A primitive admitted by the canonical ordinary source semantics is a closed
+interaction. This is the semantic bridge used by upper pass proofs; it does
+not classify or reinterpret the primitive.
+-/
+theorem openEval_closedStep
+    {op : Structured.BasicOp} {step : Assembly.PrimStep}
+    {state : State} {values : List Word}
+    (hLength : values.length = Expressions.Structured.BasicOp.inputs op)
+    (hSupports : supportsOpen op = true)
+    (hSourceStep :
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep? op = some step)
+    (hGas : op.toPrimOp ≠ .gas)
+    (hMsize : op.toPrimOp ≠ .msize) :
+    openEval op state values =
+      Simulation.Interaction.map (finish state)
+        (.done (step.run (isolated state values))) := by
+  simp only [openEval, hLength, hSupports, ↓reduceIte]
+  rw [Assembly.InteractionSemantics.PrimOp.openStep_of_continuingStep
+    (Locals.Source.PrimitiveSemantics.sourceContinuingStep?_toPrimOp
+      hSourceStep)
+    hGas hMsize]
+
 def openTerminal (kind : Assembly.HaltKind) (state : State)
     (values : List Word) : Open State :=
   let isolatedState : Assembly.EVMState := isolated state values

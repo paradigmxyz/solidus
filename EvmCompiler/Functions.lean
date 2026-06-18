@@ -8,4 +8,5 @@ import EvmCompiler.Functions.AllocationInteractionRelation
 import EvmCompiler.Functions.AllocationContext
 import EvmCompiler.Functions.AllocationInteractionExpression
 import EvmCompiler.Functions.AllocationInteractionPrimitive
+import EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive
 import EvmCompiler.Functions.Semantics

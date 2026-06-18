@@ -179,6 +179,22 @@ theorem openStep_closed
   cases op <;>
     simp [openStep, hExternal] at hGas hMsize ⊢
 
+/-- Every non-resource continuing primitive is a closed interaction. -/
+theorem openStep_of_continuingStep
+    {op : Assembly.PrimOp} {step : Assembly.PrimStep} {state : EVMState}
+    (hStep : op.continuingStep? = some step)
+    (hGas : op ≠ .gas) (hMsize : op ≠ .msize) :
+    openStep op state = .done (step.run state) := by
+  have hExternal :
+      Simulation.ExternalKind.ofEVMOperation? op.toEVM = none := by
+    cases op <;>
+      first
+      | rfl
+      | simp [Assembly.PrimOp.continuingStep?] at hStep
+  rw [openStep_closed hExternal hGas hMsize]
+  exact congrArg Simulation.Interaction.done
+    (Assembly.PrimOp.step_eq_continuingStep_run hStep state)
+
 @[simp] theorem openStep_gas (state : EVMState) :
     openStep .gas state = resourceStep .gas state := rfl
 

@@ -162,6 +162,14 @@ def sourceContinuingStep? (op : Structured.BasicOp) :
   | .swap13 | .swap14 | .swap15 | .swap16 => none
   | op => op.toPrimOp.continuingStep?
 
+theorem sourceContinuingStep?_toPrimOp
+    {op : Structured.BasicOp} {step : Assembly.PrimStep}
+    (hStep : sourceContinuingStep? op = some step) :
+    op.toPrimOp.continuingStep? = some step := by
+  cases op <;>
+    simpa [sourceContinuingStep?, Structured.BasicOp.toPrimOp,
+      Assembly.PrimOp.continuingStep?] using hStep
+
 /--
 Canonical source primitive semantics for the compiler tower.
 

@@ -182,6 +182,16 @@ theorem executionEnv_eq
     source.executionEnv = target.executionEnv :=
   congrArg EvmYul.State.executionEnv hRel.world
 
+theorem replaceToState_same
+    {contract : MemoryContract.Contract}
+    {source target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel contract source target)
+    (world : EvmYul.State .EVM) :
+    SharedRel contract
+      ({ source with toState := world } : EvmYul.SharedState .EVM)
+      ({ target with toState := world } : EvmYul.SharedState .EVM) := by
+  exact ⟨by simpa using hRel.machine, rfl⟩
+
 theorem openWorld_eq
     {contract : MemoryContract.Contract}
     {source target : EvmYul.SharedState .EVM}
@@ -1116,6 +1126,57 @@ theorem push_target_by
         (state.push_target_by pcDelta value)
   | scratch state =>
       exact .scratch (state.push_target_by pcDelta value)
+
+/--
+Rebase either allocation representation across a target stack-prefix change.
+The caller supplies the exact scratch-cell equality because memory-writing
+primitive families establish it from their source-facing reservation safety.
+-/
+theorem rebase_prefix
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode} {source sourceFinal : SourceState}
+    {target targetFinal : TargetState}
+    {oldPrefix newPrefix baseStack : List Word}
+    (hRel :
+      ActivationStateRel contract plan live
+        (stackOffset + oldPrefix.length) frameBase mode source target)
+    (hShared :
+      SharedRel contract sourceFinal.shared targetFinal.evm.toSharedState)
+    (hOldStack : target.evm.stack = oldPrefix ++ baseStack)
+    (hNewStack : targetFinal.evm.stack = newPrefix ++ baseStack)
+    (hScratch :
+      ∀ name slot,
+        name ∈ live →
+        plan.location? name = some (.scratch slot) →
+        targetFinal.evm.toMachineState.lookupMemory
+            (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)) =
+          target.evm.toMachineState.lookupMemory
+            (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)))
+    (hVars : sourceFinal.vars = source.vars)
+    (hMemory :
+      target.evm.toMachineState.memory.size ≤
+        targetFinal.evm.toMachineState.memory.size)
+    (hActive :
+      target.evm.activeWords.toNat ≤ targetFinal.evm.activeWords.toNat)
+    (hActiveNoWrap :
+      targetFinal.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size) :
+    ActivationStateRel contract plan live
+      (stackOffset + newPrefix.length) frameBase mode sourceFinal targetFinal := by
+  have hBase :
+      StateRel contract plan live
+        (stackOffset + newPrefix.length) frameBase sourceFinal targetFinal :=
+    ⟨hShared.machine, hShared.world,
+      StoreRel.rebase_prefix_of_lookup hRel.state.store hOldStack hNewStack
+        hScratch hVars⟩
+  cases hRel with
+  | stack liveStackOnly _activeNoWrap _state =>
+      exact .stack liveStackOnly hActiveNoWrap hBase
+  | scratch state =>
+      exact .scratch
+        (state.rebase_prefix_mono hBase hOldStack hNewStack
+          hMemory hActive hActiveNoWrap)
 
 /-- Preserve either allocation representation across one response update. -/
 theorem finishExternal

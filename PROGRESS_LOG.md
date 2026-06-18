@@ -31632,3 +31632,16 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1156-job Functions build, 1306-job verification root, architecture guard,
   touched-file hole scan, and `git diff --check` passed; the three new public
   theorems use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 20:47:17 PDT - proof/functions-ordinary-shared-family - added
+  owner-level closed-step interfaces in Assembly and Locals, a generic
+  activation prefix rebase, and observer-free `SharedFamily.openForward` for
+  memory-neutral arithmetic, environment, world-state, and returndata-size
+  primitives across stack-only and scratch-backed allocation modes.
+- 2026-06-17 20:47:17 PDT - theorem-boundary/functions-ordinary-family - an
+  initial `sourceContinuingStep?`-only closed theorem was false for `msize` and
+  `invalid`; replaced it with explicit owner-proved support/resource facts
+  discharged by the semantic family, with no new public premise.
+- 2026-06-17 20:47:17 PDT - validation/functions-ordinary-shared-family - the
+  1157-job Functions root, 1306-job verification root, architecture guard,
+  touched-file hole scan, and `git diff --check` passed; public theorem axioms
+  are exactly `[propext, Classical.choice, Quot.sound]`.
