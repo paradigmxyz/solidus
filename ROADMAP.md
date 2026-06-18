@@ -98,6 +98,10 @@ boundaries remain active work.
     caller call decomposition;
   - [x] canonical open-world argument-list safety and arbitrary-length
     stack/scratch argument preservation;
+  - [x] compiler-selected all-stack callee source initialization, exact target
+    split/return-frame entry, and recursive-body entry relation;
+  - [ ] orthogonal allocator-cell readiness/depth capability and checked
+    scratch-frame acquire/release transitions for nested scratch calls;
   - [ ] caller argument, selected-callee, return-writeback, scratch-release,
     and exact-tail interaction composition;
   - [ ] recursive compiler-cursor statement-list theorem.

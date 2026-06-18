@@ -1,4 +1,4 @@
-import EvmCompiler.Functions.AllocationInteractionCall
+import EvmCompiler.Functions.AllocationInteractionSelectedCallEntry
 import EvmCompiler.Functions.AllocationInteractionFor
 import EvmCompiler.Functions.AllocationInteractionForward
 

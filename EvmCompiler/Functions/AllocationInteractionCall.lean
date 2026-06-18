@@ -1,3 +1,4 @@
+import EvmCompiler.Functions.AllocationInteractionCallArguments
 import EvmCompiler.Functions.AllocationInteractionCursor
 import EvmCompiler.Functions.AllocationInteractionScratchStore
 import EvmCompiler.Locals.InteractionCleanupPreservation
@@ -116,226 +117,130 @@ theorem components
 
 end CallCompiler
 
-namespace ArgList
+namespace CalleeEntry
 
-abbrev ArgResultRel
-    (contract : MemoryContract.Contract) (plan : Plan)
-    (live : List Locals.Name) (stackOffset frameBase : Nat)
-    (mode : ActivationMode) (targetInitial : TargetState)
-    (source : SourceState × Word) (target : TargetState) : Prop :=
-  ActivationExprResultRel contract plan live stackOffset frameBase 1 mode
-    source.1 targetInitial target [source.2]
+/-- Exact target state after argument splitting and return-frame creation. -/
+def structuredState (target : Structured.RunState)
+    (args callerStack : EvmYul.Stack Word) (retc : Nat) :
+    Structured.RunState :=
+  (target.withEVM { target.evm with stack := args }).pushReturn
+    callerStack retc
 
-abbrev ResultRel
-    (contract : MemoryContract.Contract) (plan : Plan)
-    (live : List Locals.Name) (stackOffset frameBase count : Nat)
-    (mode : ActivationMode) (targetInitial : TargetState)
-    (source : SourceState × List Word) (target : TargetState) : Prop :=
-  ActivationExprResultRel contract plan live stackOffset frameBase count mode
-    source.1 targetInitial target source.2
+/-- Exact source state installed by canonical function-body entry. -/
+def sourceState (sourceAfterArgs : SourceState)
+    (returns : List Functions.Name) (paramStore : Locals.Source.Store) :
+    SourceState :=
+  Functions.InteractionSemantics.stateModel.withSource sourceAfterArgs
+    { shared := sourceAfterArgs.shared
+      vars := Functions.Source.Store.initReturns returns paramStore }
 
-/-- One canonical call argument leaves its value on the target stack. -/
-theorem forwardArg
+/-- Canonical function-entry stores retain params and zero-initialize returns. -/
+theorem initialized_source_facts
+    {params returns : List Functions.Name}
+    {args : List Word}
+    {paramStore : Locals.Source.Store}
+    {source : SourceState}
+    (hSignature : (returns ++ params).Nodup)
+    (hInsert :
+      Functions.Source.Store.insertMany params args
+          Locals.Source.Store.empty =
+        some paramStore)
+    (hVars :
+      source.vars = Functions.Source.Store.initReturns returns paramStore) :
+    Functions.Source.Store.lookupMany params source.vars = some args ∧
+      (∀ name, name ∈ returns →
+        source.vars name = some AllocationSupport.zeroWord) ∧
+      LiveDefined (returns.reverse ++ params.reverse) source := by
+  obtain ⟨hParams, hReturns⟩ :=
+    Functions.Source.Store.initializedStore_lookupMany
+      hSignature hInsert
+  have hReturnNodup := (List.nodup_append.mp hSignature).1
+  have hParams' :
+      Functions.Source.Store.lookupMany params source.vars = some args := by
+    simpa [hVars] using hParams
+  have hReturns' :
+      Functions.Source.Store.lookupMany returns source.vars =
+        some (returns.map fun _name => AllocationSupport.zeroWord) := by
+    simpa [hVars] using hReturns
+  refine ⟨hParams', ?_, ?_⟩
+  · intro name hName
+    rw [hVars]
+    exact Functions.Source.Store.initReturns_apply_of_mem
+      hReturnNodup hName
+  · exact
+      (LiveDefined.of_lookupMany
+        (Functions.Source.Store.lookupMany_reverse hReturns')).append
+      (LiveDefined.of_lookupMany
+        (Functions.Source.Store.lookupMany_reverse hParams'))
+
+/-- Argument realization establishes an all-stack callee entry relation. -/
+theorem stack_of_arguments
     {contract : MemoryContract.Contract}
-    {lowerCtx : AllocationLowering.Ctx}
-    {lowerState : AllocationLowering.State}
-    {localsCtx : Locals.Ctx}
-    {plan : Plan} {live : List Locals.Name}
-    {stackOffset frameBase : Nat} {mode : ActivationMode}
-    {expr : Functions.Expr 1}
-    {lowered : Locals.Expr 1} {code : Structured.Code}
-    {source : SourceState} {target : TargetState}
-    (hSafe : AllocationInteractionSafety.ExprSafe contract expr source)
-    (hCtx :
-      AllocationContext.ActivationExprContext
-        lowerCtx lowerState localsCtx plan live mode)
-    (hScoped : Functions.Scope.ExprScoped live expr)
-    (hLower :
-      AllocationLowering.lowerExpr lowerCtx lowerState expr = some lowered)
-    (hCompile :
-      Locals.Expr.compileCode localsCtx stackOffset lowered = some code)
-    (hRel :
-      ActivationStateRel contract plan live stackOffset frameBase mode
-        source target) :
-    Simulation.Interaction.Rel
-      (Simulation.Interaction.ExceptRel
-        (fun left right : EVMException => left = right)
-        (ArgResultRel contract plan live stackOffset frameBase mode target))
-      (Functions.InteractionSemantics.Expr.openEvalOne expr source)
-      (Structured.InteractionSemantics.Code.openRun code target) := by
-  have hEval :=
-    AllocationInteractionExpressionRecursive.forwardExpr
-      hSafe hCtx hScoped hLower hCompile hRel
-  have hBound :
-      Simulation.Interaction.Rel
-        (Simulation.Interaction.ExceptRel
-          (fun left right : EVMException => left = right)
-          (ArgResultRel contract plan live stackOffset frameBase mode target))
-        (Simulation.Interaction.bind
-          (Functions.InteractionSemantics.Expr.openEval expr source)
-          (fun result =>
-            match result.2 with
-            | [value] => Simulation.Interaction.pure (result.1, value)
-            | _ => Simulation.Interaction.error .InvalidInstruction))
-        (Simulation.Interaction.bind
-          (Structured.InteractionSemantics.Code.openRun code target)
-          Simulation.Interaction.pure) := by
-    apply Simulation.Interaction.Rel.bind hEval
-    intro sourceResult targetFinal hResult
-    rcases sourceResult with ⟨sourceFinal, values⟩
-    cases values with
-    | nil =>
-        have hLength := hResult.valuesLength
-        simp at hLength
-    | cons value rest =>
-        cases rest with
-        | nil =>
-            exact Simulation.Interaction.Rel.done
-              (Simulation.Interaction.ExceptRel.ok hResult)
-        | cons next tail =>
-            have hLength := hResult.valuesLength
-            simp at hLength
-  simpa [Functions.InteractionSemantics.Expr.openEvalOne,
-    Locals.InteractionSemantics.Expr.openEvalOne,
-    Locals.Source.Effectful.Expr.Control.evalOne,
-    Simulation.Interaction.bind_pure] using hBound
+    {callerPlan calleePlan : Plan}
+    {callerLive : List Locals.Name}
+    {callerFrameBase calleeFrameBase : Nat}
+    {callerMode : ActivationMode}
+    {pending : List (Locals.Name × Nat)}
+    {sourceAfterArgs : SourceState}
+    {targetInitial targetAfterArgs : TargetState}
+    {args : List Word}
+    {initialStore : Locals.Source.Store}
+    {callerStack : EvmYul.Stack Word}
+    {retc : Nat}
+    (hArgs :
+      ActivationExprResultRel contract callerPlan callerLive 0
+        callerFrameBase args.length callerMode sourceAfterArgs targetInitial
+        targetAfterArgs args)
+    (hLookup :
+      Functions.Source.Store.lookupMany
+          (pending.map Prod.fst) initialStore =
+        some args) :
+    ActivationCalleeEntryRel contract calleePlan [] pending calleeFrameBase
+      .stack
+      (Functions.InteractionSemantics.stateModel.withSource sourceAfterArgs
+        { shared := sourceAfterArgs.shared, vars := initialStore })
+      (structuredState targetAfterArgs args.reverse callerStack retc) := by
+  have hBase := hArgs.state.state
+  apply ActivationCalleeEntryRel.stack_empty (values := args) (suffix := [])
+  · simpa [structuredState, Functions.InteractionSemantics.stateModel,
+      Locals.InteractionSemantics.stateModel,
+      Locals.Source.Effectful.Ordinary.stateModel,
+      Structured.RunState.withEVM, Structured.RunState.pushReturn] using
+        hBase.machine
+  · simpa [structuredState, Functions.InteractionSemantics.stateModel,
+      Locals.InteractionSemantics.stateModel,
+      Locals.Source.Effectful.Ordinary.stateModel,
+      Structured.RunState.withEVM, Structured.RunState.pushReturn] using
+        hBase.world
+  · simpa [structuredState, Structured.RunState.withEVM,
+      Structured.RunState.pushReturn] using hArgs.state.activeNoWrap
+  · simpa [Functions.InteractionSemantics.stateModel,
+      Locals.InteractionSemantics.stateModel,
+      Locals.Source.Effectful.Ordinary.stateModel] using hLookup
+  · simp [structuredState, Structured.RunState.withEVM,
+      Structured.RunState.pushReturn]
 
-/-- Preserve the canonical left-to-right list representation of call args. -/
-theorem forward
+/-- The real target call splitter recovers exactly the compiled arguments. -/
+theorem splitArgs_of_arguments
     {contract : MemoryContract.Contract}
-    {lowerCtx : AllocationLowering.Ctx}
-    {lowerState : AllocationLowering.State}
-    {localsCtx : Locals.Ctx}
-    {plan : Plan} {live : List Locals.Name}
-    {stackOffset frameBase : Nat} {mode : ActivationMode}
-    {args : List (Functions.Expr 1)}
-    {lowered : List (Locals.Expr 1)} {code : Structured.Code}
-    {source : SourceState} {target : TargetState}
-    (hSafe : AllocationInteractionSafety.ArgListSafe contract args source)
-    (hCtx :
-      AllocationContext.ActivationExprContext
-        lowerCtx lowerState localsCtx plan live mode)
-    (hScoped :
-      ∀ arg, arg ∈ args → Functions.Scope.ExprScoped live arg)
-    (hLower :
-      AllocationLowering.lowerExprList lowerCtx lowerState args =
-        some lowered)
-    (hCompile :
-      Locals.ExprSeq.compileCode localsCtx stackOffset
-          (AllocationLowering.exprSeqOfList lowered) =
-        some code)
-    (hRel :
-      ActivationStateRel contract plan live stackOffset frameBase mode
-        source target) :
-    Simulation.Interaction.Rel
-      (Simulation.Interaction.ExceptRel
-        (fun left right : EVMException => left = right)
-        (ResultRel contract plan live stackOffset frameBase args.length mode
-          target))
-      (Functions.InteractionSemantics.ArgList.openEval args source)
-      (Structured.InteractionSemantics.Code.openRun code target) := by
-  induction args generalizing lowered code stackOffset source target with
-  | nil =>
-      have hLowered : lowered = [] := by
-        simpa [AllocationLowering.lowerExprList] using hLower.symm
-      subst lowered
-      have hCode : code = [] := by
-        simpa [AllocationLowering.exprSeqOfList,
-          Locals.ExprSeq.compileCode] using hCompile.symm
-      subst code
-      apply Simulation.Interaction.Rel.done
-      apply Simulation.Interaction.ExceptRel.ok
-      exact ActivationExprResultRel.nil hRel
-  | cons arg rest ih =>
-      rcases hSafe with ⟨hArgSafe, hRestSafe⟩
-      cases hLowerArg :
-          AllocationLowering.lowerExpr lowerCtx lowerState arg with
-      | none =>
-          simp [AllocationLowering.lowerExprList, hLowerArg] at hLower
-      | some loweredArg =>
-          cases hLowerRest :
-              AllocationLowering.lowerExprList lowerCtx lowerState rest with
-          | none =>
-              simp [AllocationLowering.lowerExprList, hLowerArg,
-                hLowerRest] at hLower
-          | some loweredRest =>
-              have hLowered : lowered = loweredArg :: loweredRest := by
-                simpa [AllocationLowering.lowerExprList, hLowerArg,
-                  hLowerRest] using hLower.symm
-              subst lowered
-              rw [AllocationLowering.exprSeqOfList_compileCode_cons]
-                at hCompile
-              cases hArgCode :
-                  Locals.Expr.compileCode localsCtx stackOffset loweredArg with
-              | none => simp [hArgCode] at hCompile
-              | some argCode =>
-                  cases hRestCode :
-                      Locals.ExprSeq.compileCode localsCtx (stackOffset + 1)
-                        (AllocationLowering.exprSeqOfList loweredRest) with
-                  | none => simp [hArgCode, hRestCode] at hCompile
-                  | some restCode =>
-                      have hCode : code = argCode ++ restCode := by
-                        simpa [hArgCode, hRestCode] using hCompile.symm
-                      subst code
-                      have hArgScoped :
-                          Functions.Scope.ExprScoped live arg :=
-                        hScoped arg (by simp)
-                      have hRestScoped :
-                          ∀ candidate, candidate ∈ rest →
-                            Functions.Scope.ExprScoped live candidate := by
-                        intro candidate hMember
-                        exact hScoped candidate (by simp [hMember])
-                      have hArg :=
-                        forwardArg hArgSafe hCtx hArgScoped hLowerArg
-                          hArgCode hRel
-                      have hArgStrong :=
-                        Simulation.Interaction.Rel.strengthen_left
-                          hArg hRestSafe
-                      rw [Structured.InteractionSemantics.Code.openRun_append]
-                      unfold Functions.InteractionSemantics.ArgList.openEval
-                        Functions.Source.Canonical.ArgList.eval
-                      simp only [
-                        Functions.Source.Effectful.ArgList.Control.eval]
-                      apply Simulation.Interaction.Rel.bind_custom hArgStrong
-                      intro sourceDone targetDone hDone
-                      rcases hDone with ⟨hRelated, hTailSafe⟩
-                      cases hRelated with
-                      | error hError =>
-                          exact Simulation.Interaction.Rel.done
-                            (Simulation.Interaction.ExceptRel.error hError)
-                      | @ok sourceResult targetAfterArg hArgResult =>
-                          rcases sourceResult with
-                            ⟨sourceAfterArg, value⟩
-                          have hRest :=
-                            ih hTailSafe hRestScoped hLowerRest hRestCode
-                              hArgResult.state
-                          have hCons :
-                              Simulation.Interaction.Rel
-                                (Simulation.Interaction.ExceptRel
-                                  (fun left right : EVMException =>
-                                    left = right)
-                                  (ResultRel contract plan live stackOffset
-                                    frameBase (arg :: rest).length mode target))
-                                (Simulation.Interaction.bind
-                                  (Functions.InteractionSemantics.ArgList.openEval
-                                    rest sourceAfterArg)
-                                  (fun result =>
-                                    Simulation.Interaction.pure
-                                      (result.1, value :: result.2)))
-                                (Simulation.Interaction.bind
-                                  (Structured.InteractionSemantics.Code.openRun
-                                    restCode targetAfterArg)
-                                  Simulation.Interaction.pure) := by
-                            apply Simulation.Interaction.Rel.bind hRest
-                            intro sourceFinal targetFinal hRestResult
-                            apply Simulation.Interaction.Rel.done
-                            apply Simulation.Interaction.ExceptRel.ok
-                            simpa [ResultRel, Nat.add_comm] using
-                              ActivationExprResultRel.append
-                                hArgResult hRestResult
-                          simpa [Simulation.Interaction.bind_pure] using hCons
+    {callerPlan : Plan} {callerLive : List Locals.Name}
+    {callerFrameBase argc : Nat} {callerMode : ActivationMode}
+    {sourceAfterArgs : SourceState}
+    {targetInitial targetAfterArgs : TargetState}
+    {args : List Word}
+    (hArgs :
+      ActivationExprResultRel contract callerPlan callerLive 0
+        callerFrameBase args.length callerMode sourceAfterArgs targetInitial
+        targetAfterArgs args)
+    (hLength : args.length = argc) :
+    Structured.StackFrame.splitArgs? argc targetAfterArgs.evm.stack =
+      some (args.reverse, targetInitial.evm.stack) := by
+  rw [hArgs.stack, ← hLength]
+  simpa using
+    Structured.StackFrame.splitArgs?_append args.reverse
+      targetInitial.evm.stack
 
-end ArgList
+end CalleeEntry
 
 namespace EntryMarkers
 

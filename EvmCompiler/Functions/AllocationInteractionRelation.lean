@@ -170,6 +170,16 @@ theorem insert_cons
     exact ⟨value, Locals.Source.Store.insert_self _ _ _⟩
   · exact hDefined.insert_preserves other hLive
 
+theorem append
+    {left right : List Locals.Name} {source : Locals.Source.State}
+    (hLeft : LiveDefined left source)
+    (hRight : LiveDefined right source) :
+    LiveDefined (left ++ right) source := by
+  intro name hName
+  rcases List.mem_append.mp hName with hName | hName
+  · exact hLeft name hName
+  · exact hRight name hName
+
 theorem restrictTo
     {beforeLive afterLive : List Locals.Name}
     {source : Locals.Source.State}
@@ -184,6 +194,19 @@ theorem restrictTo
       simpa [Locals.Source.State.restrictTo] using
         (Locals.Source.Store.restrictTo_mem
           (scope := afterLive) (store := source.vars) hLive).trans hValue⟩
+
+theorem of_lookupMany
+    {names : List Locals.Name} {values : List Word}
+    {source : Locals.Source.State}
+    (hLookup :
+      Functions.Source.Store.lookupMany names source.vars = some values) :
+    LiveDefined names source := by
+  intro name hName
+  have hContains :=
+    Functions.Source.Store.lookupMany_contains_of_mem hLookup hName
+  cases hValue : source.vars name with
+  | none => simp [Locals.Source.Store.contains, hValue] at hContains
+  | some value => exact ⟨value, rfl⟩
 
 end LiveDefined
 

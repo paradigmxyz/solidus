@@ -7,7 +7,7 @@ import EvmCompiler.Structured.InteractionLoopPreservation
 import EvmCompiler.Structured.InteractionCallPreservation
 import EvmCompiler.Structured.InteractionOwnerPreservation
 import EvmCompiler.Expressions.InteractionPreservation
-import EvmCompiler.Functions.AllocationInteractionCall
+import EvmCompiler.Functions.AllocationInteractionSelectedCallEntry
 import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 
@@ -237,4 +237,7 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Assembly.Bytecode.compile_openRunNResult_executes
 #print axioms EvmCompiler.Functions.AllocationInteractionCall.ArgList.forwardArg
 #print axioms EvmCompiler.Functions.AllocationInteractionCall.ArgList.forward
+#print axioms EvmCompiler.Functions.AllocationInteractionCall.CalleeEntry.stack_of_arguments
+#print axioms EvmCompiler.Functions.AllocationInteractionCall.CalleeEntry.splitArgs_of_arguments
+#print axioms EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Prepared.stack_entry_of_arguments
 #print axioms EvmCompiler.Functions.AllocationInteractionCall.CoreCursor.callComponents
