@@ -4128,6 +4128,161 @@ theorem Prepared.prelude_forward
       simp [preludeFuel]
     simpa [hRemaining] using hParamReturnRun
 
+/-- Execute setup while reserving an exact positive suffix budget. -/
+theorem Prepared.prelude_forward_at
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : Artifact compilation name fn}
+    (prepared : Prepared artifact)
+    {target afterParams finalTarget : Structured.RunState}
+    {paramFuel returnFuel : Nat}
+    (hParamFuelLength : paramFuel = prepared.paramCode.length + 1)
+    (hReturnFuelLength : returnFuel = prepared.returnCode.length + 1)
+    (hParamRunAt :
+      ∀ targetExtra,
+        Expressions.InteractionSemantics.Block.openRun expressions
+            (targetExtra + paramFuel)
+            { stmts := prepared.paramCode } target =
+          .done (.ok (Structured.Outcome.regular afterParams)))
+    (hReturnRunAt :
+      ∀ targetExtra,
+        Expressions.InteractionSemantics.Block.openRun expressions
+            (targetExtra + returnFuel)
+            { stmts := prepared.returnCode } afterParams =
+          .done (.ok (Structured.Outcome.regular finalTarget)))
+    (suffixFuel : Nat) (hSuffixFuel : 0 < suffixFuel) :
+    Expressions.InteractionSemantics.Block.openRun expressions
+        (prepared.markerCode.length + prepared.paramCode.length +
+          prepared.returnCode.length + suffixFuel)
+        { stmts :=
+            prepared.markerCode ++
+              (prepared.paramCode ++ prepared.returnCode) }
+        target =
+      .done (.ok (Structured.Outcome.regular finalTarget)) := by
+  let returnBudget := prepared.returnCode.length + suffixFuel
+  let paramBudget := prepared.paramCode.length + returnBudget
+  let totalBudget := prepared.markerCode.length + paramBudget
+  have hReturnBudget : 0 < returnBudget := by
+    simp [returnBudget]
+    omega
+  have hParamBudget : 0 < paramBudget := by
+    simp [paramBudget]
+    omega
+  have hReturnRun :
+      Expressions.InteractionSemantics.Block.openRun expressions returnBudget
+          { stmts := prepared.returnCode } afterParams =
+        .done (.ok (Structured.Outcome.regular finalTarget)) := by
+    have hRun := hReturnRunAt (suffixFuel - 1)
+    have hFuelEq : suffixFuel - 1 + returnFuel = returnBudget := by
+      rw [hReturnFuelLength]
+      simp only [returnBudget]
+      omega
+    simpa [hFuelEq] using hRun
+  have hParamRun :
+      Expressions.InteractionSemantics.Block.openRun expressions paramBudget
+          { stmts := prepared.paramCode } target =
+        .done (.ok (Structured.Outcome.regular afterParams)) := by
+    have hRun := hParamRunAt (returnBudget - 1)
+    have hFuelEq : returnBudget - 1 + paramFuel = paramBudget := by
+      rw [hParamFuelLength]
+      simp only [paramBudget]
+      omega
+    simpa [hFuelEq] using hRun
+  have hParamReturnRun :
+      Expressions.InteractionSemantics.Block.openRun expressions paramBudget
+          { stmts := prepared.paramCode ++ prepared.returnCode } target =
+        .done (.ok (Structured.Outcome.regular finalTarget)) := by
+    rw [Expressions.InteractionSemantics.Block.openRun_append, hParamRun]
+    have hRemaining :
+        paramBudget - prepared.paramCode.length = returnBudget := by
+      simp [paramBudget]
+    simpa [hRemaining] using hReturnRun
+  have hMarkerRun :=
+    prepared.markers_forward_at target paramBudget hParamBudget
+  have hTotal :
+      prepared.markerCode.length + prepared.paramCode.length +
+          prepared.returnCode.length + suffixFuel = totalBudget := by
+    simp [totalBudget, paramBudget, returnBudget, Nat.add_assoc]
+  rw [hTotal, Expressions.InteractionSemantics.Block.openRun_append,
+    hMarkerRun]
+  have hRemaining :
+      totalBudget - prepared.markerCode.length = paramBudget := by
+    simp [totalBudget]
+  simpa [hRemaining] using hParamReturnRun
+
+/-- Prefix any related callee body with the exact compiler-selected setup. -/
+theorem Prepared.prelude_then_body
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : Artifact compilation name fn}
+    (prepared : Prepared artifact)
+    {sourceRun :
+      Simulation.Interaction EVMException
+        (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx)}
+    {doneRel :
+      Except EVMException
+          (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx) →
+        Except EVMException Expressions.InteractionSemantics.Outcome → Prop}
+    {target finalTarget : Structured.RunState}
+    {bodyCode : List Expressions.Stmt} {bodyFuel : Nat}
+    (hBodyFuel : 0 < bodyFuel)
+    (hPreludeAt :
+      ∀ suffixFuel, 0 < suffixFuel →
+        Expressions.InteractionSemantics.Block.openRun expressions
+            (prepared.markerCode.length + prepared.paramCode.length +
+              prepared.returnCode.length + suffixFuel)
+            { stmts :=
+                prepared.markerCode ++
+                  (prepared.paramCode ++ prepared.returnCode) }
+            target =
+          .done (.ok (Structured.Outcome.regular finalTarget)))
+    (hBody :
+      Simulation.Interaction.Rel doneRel sourceRun
+        (Expressions.InteractionSemantics.Block.openRun expressions bodyFuel
+          { stmts := bodyCode } finalTarget)) :
+    Simulation.Interaction.Rel doneRel sourceRun
+      (Expressions.InteractionSemantics.Block.openRun expressions
+        (prepared.markerCode.length + prepared.paramCode.length +
+          prepared.returnCode.length + bodyFuel)
+        { stmts :=
+            prepared.markerCode ++ prepared.paramCode ++
+              prepared.returnCode ++ bodyCode }
+        target) := by
+  have hTarget :
+      Expressions.InteractionSemantics.Block.openRun expressions
+          (prepared.markerCode.length + prepared.paramCode.length +
+            prepared.returnCode.length + bodyFuel)
+          { stmts :=
+              prepared.markerCode ++ prepared.paramCode ++
+                prepared.returnCode ++ bodyCode }
+          target =
+        Expressions.InteractionSemantics.Block.openRun expressions bodyFuel
+          { stmts := bodyCode } finalTarget := by
+    rw [show
+      prepared.markerCode ++ prepared.paramCode ++
+          prepared.returnCode ++ bodyCode =
+        (prepared.markerCode ++
+          (prepared.paramCode ++ prepared.returnCode)) ++ bodyCode by
+      simp [List.append_assoc],
+      Expressions.InteractionSemantics.Block.openRun_append,
+      hPreludeAt bodyFuel hBodyFuel]
+    have hRemaining :
+        prepared.markerCode.length + prepared.paramCode.length +
+              prepared.returnCode.length + bodyFuel -
+            (prepared.markerCode.length +
+              (prepared.paramCode.length + prepared.returnCode.length)) =
+          bodyFuel := by
+      omega
+    simpa [hRemaining]
+  rw [hTarget]
+  exact hBody
+
 /-- The real argument lookup and return initialization define every body local. -/
 theorem Prepared.bodyLiveDefined
     {allocation : Locals.Allocation.ProgramPlan}
@@ -4214,6 +4369,15 @@ theorem Prepared.body_entry_scratch
                 (prepared.paramCode ++ prepared.returnCode) }
           target =
         .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      (∀ suffixFuel, 0 < suffixFuel →
+        Expressions.InteractionSemantics.Block.openRun expressions
+            (prepared.markerCode.length + prepared.paramCode.length +
+              prepared.returnCode.length + suffixFuel)
+            { stmts :=
+                prepared.markerCode ++
+                  (prepared.paramCode ++ prepared.returnCode) }
+            target =
+          .done (.ok (Structured.Outcome.regular finalTarget))) ∧
       AllocationContext.ActivationInvariant contract artifact.lowerCtx
         artifact.bodyStart prepared.returnCtx prepared.plan
         ((artifact.slots.returns.map Prod.fst).reverse ++
@@ -4227,8 +4391,8 @@ theorem Prepared.body_entry_scratch
     prepared.parameters_forward_scratch hRel hStackLength hReservation
   obtain
         ⟨finalTarget, finalFrameDepth, returnFuel, hReturnFuel,
-        _hReturnFuelLength,
-        _hReturnLayout, hReturnRun, _hReturnRunAt, hReturnRel, hReturnDepth,
+        hReturnFuelLength,
+        _hReturnLayout, hReturnRun, hReturnRunAt, hReturnRel, hReturnDepth,
         hReturnStackLength⟩ :=
     prepared.returns_forward_scratch
       (by simpa [hParamDepth] using hParamRel) hZero
@@ -4254,7 +4418,10 @@ theorem Prepared.body_entry_scratch
   refine
     ⟨afterParams, finalTarget, paramFuel, returnFuel, preludeFuel,
       hParamFuel, hReturnFuel, prepared.markers_forward target,
-      hParamRun, hReturnRun, hPreludeFuel, hPreludeLength, hPreludeRun, ?_⟩
+      hParamRun, hReturnRun, hPreludeFuel, hPreludeLength, hPreludeRun,
+      (fun suffixFuel hSuffixFuel =>
+        prepared.prelude_forward_at hParamFuelLength hReturnFuelLength
+          hParamRunAt hReturnRunAt suffixFuel hSuffixFuel), ?_⟩
   exact
     { compiler := prepared.bodyCompiler
       planWF := prepared.planWF
@@ -4307,6 +4474,15 @@ theorem Prepared.body_entry_stack
                 (prepared.paramCode ++ prepared.returnCode) }
           target =
         .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      (∀ suffixFuel, 0 < suffixFuel →
+        Expressions.InteractionSemantics.Block.openRun expressions
+            (prepared.markerCode.length + prepared.paramCode.length +
+              prepared.returnCode.length + suffixFuel)
+            { stmts :=
+                prepared.markerCode ++
+                  (prepared.paramCode ++ prepared.returnCode) }
+            target =
+          .done (.ok (Structured.Outcome.regular finalTarget))) ∧
       AllocationContext.ActivationInvariant contract artifact.lowerCtx
         artifact.bodyStart prepared.returnCtx prepared.plan
         ((artifact.slots.returns.map Prod.fst).reverse ++
@@ -4317,9 +4493,9 @@ theorem Prepared.body_entry_stack
         hParamRun, hParamRunAt, hParamRel, hParamStackLength⟩ :=
     prepared.parameters_forward_stack hNeedsFrame hRel hStackLength
   obtain
-      ⟨finalTarget, returnFuel, hReturnFuel, _hReturnFuelLength,
+      ⟨finalTarget, returnFuel, hReturnFuel, hReturnFuelLength,
         _hReturnLayout,
-        hReturnRun, _hReturnRunAt, hReturnRel, hReturnStackLength⟩ :=
+        hReturnRun, hReturnRunAt, hReturnRel, hReturnStackLength⟩ :=
     prepared.returns_forward_stack hNeedsFrame hParamRel hZero
       hParamStackLength
   obtain ⟨preludeFuel, hPreludeFuel, hPreludeLength, hPreludeRun⟩ :=
@@ -4335,7 +4511,10 @@ theorem Prepared.body_entry_stack
   refine
     ⟨afterParams, finalTarget, paramFuel, returnFuel, preludeFuel,
       hParamFuel, hReturnFuel, prepared.markers_forward target,
-      hParamRun, hReturnRun, hPreludeFuel, hPreludeLength, hPreludeRun, ?_⟩
+      hParamRun, hReturnRun, hPreludeFuel, hPreludeLength, hPreludeRun,
+      (fun suffixFuel hSuffixFuel =>
+        prepared.prelude_forward_at hParamFuelLength hReturnFuelLength
+          hParamRunAt hReturnRunAt suffixFuel hSuffixFuel), ?_⟩
   exact
     { compiler := prepared.bodyCompiler
       planWF := prepared.planWF

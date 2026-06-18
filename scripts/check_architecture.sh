@@ -286,6 +286,15 @@ report_matches \
   '^import EvmCompiler\.(TypedCfg|Assembly\.(Preservation|ObserverPreservation)|Objects|Yul|Public)' \
   EvmCompiler/Functions/AllocationInteraction*.lean
 
+if ! rg -Fq \
+    '#check EvmCompiler.Functions.AllocationInteractionRecursive.SelectedCallee.body_of_cursor' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing the fuel-decreasing canonical callee-body theorem.' \
+    >&2
+  failed=1
+fi
+
 for wrapper in \
     'Block.runOpen' \
     'Block.runScoped' \

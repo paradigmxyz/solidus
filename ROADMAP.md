@@ -70,6 +70,8 @@ boundaries remain active work.
   - [x] complete compiler-selected stack/scratch return initialization with
     checked placement/context construction and open execution;
   - [x] compose entry markers and both preludes into the callee body invariant;
+  - [x] prefix exact setup to the fuel-decreasing canonical callee-body
+    preservation interface;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

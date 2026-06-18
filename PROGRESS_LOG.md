@@ -32051,3 +32051,14 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-file hole scan, axiom audit, and `git diff --check` passed. The
   pass-owned call module remains below the 5K-line soft limit at 4432 lines;
   checked additions use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-18 02:35:00 PDT - theorem-boundary/functions-selected-body - added
+  `CursorForwardAt` as the exact adjacent recursive body result and checked
+  `SelectedCallee.body_of_cursor`, which prefixes the real compiler-selected
+  setup to preservation of the canonical body cursor. Its recursive premise
+  is explicitly below the enclosing source-fuel bound; no all-callees oracle,
+  observer state, or generated body evidence enters the interface.
+- 2026-06-18 02:37:00 PDT - validation/functions-selected-body - focused
+  1172-job build, full verification root, architecture dependency guard,
+  touched-file hole scan, axiom audit, and `git diff --check` passed. Added a
+  verification-root and architecture-guard requirement for the selected-body
+  theorem; dependencies remain `[propext, Classical.choice, Quot.sound]`.
