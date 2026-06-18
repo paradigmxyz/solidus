@@ -31862,3 +31862,17 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   the 1321-job verification root, architecture guard, touched-file hole scan,
   axiom audit, and `git diff --check` passed; terminal theorems use only
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 23:45:00 PDT - architecture/functions-recursive-cursor - created
+  canonical compiler-owned `Compilation`, `RootArtifact`, and `CoreCursor`
+  interfaces outside observer modules. `Compilation.of_lowering` reconstructs
+  validator outputs from the real compiler equation, while `CoreCursor.cons`
+  decomposes actual allocation lowering and Locals compilation into exact
+  head/tail cursors without a generated public premise.
+- 2026-06-17 23:48:00 PDT - validation/functions-recursive-cursor - focused
+  build, the 1322-job verification root, architecture guard, touched-file hole
+  scan, axiom audit, and `git diff --check` passed; cursor theorems use only
+  `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 22:53:00 PDT - compaction-resume/functions-recursive-forward -
+  resumed from the checked canonical allocation cursor checkpoint; preserving
+  that boundary before deriving pass-owned cursor contexts and the recursive
+  statement/block forward theorem.

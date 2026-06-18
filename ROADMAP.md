@@ -38,6 +38,7 @@ boundaries remain active work.
   - [x] ordered return-value emission and frame-cleaning `leave` preservation;
   - [x] plain and argument-bearing terminal preservation under source-facing
     terminal memory safety;
+  - [x] canonical compiler-owned root/cursor and exact head/tail decomposition;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

@@ -39,6 +39,7 @@ import EvmCompiler.Functions.AllocationInteractionCleanup
 import EvmCompiler.Functions.AllocationInteractionAbrupt
 import EvmCompiler.Functions.AllocationInteractionLeave
 import EvmCompiler.Functions.AllocationInteractionTerminal
+import EvmCompiler.Functions.AllocationInteractionCursor
 import EvmCompiler.Functions.AllocationInteractionComposition
 import EvmCompiler.Functions.AllocationInteractionLeaf
 import EvmCompiler.Functions.AllocationInteractionStatement
@@ -243,6 +244,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionTerminal.TerminalLeaf.args_compiler_shape
 #check EvmCompiler.Functions.AllocationInteractionTerminal.terminalArgs_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionTerminal.terminal_of_lower_compile
+#check EvmCompiler.Functions.AllocationInteractionCursor.Compilation.of_lowering
+#check EvmCompiler.Functions.AllocationInteractionCursor.Compilation.CtxShared
+#check EvmCompiler.Functions.AllocationInteractionCursor.ActiveEnv.after_planBlockOpen
+#check EvmCompiler.Functions.AllocationInteractionCursor.RootArtifact.cursor
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.cons
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.finished
 #check EvmCompiler.Functions.AllocationInteractionComposition.ControlResultRel
 #check EvmCompiler.Functions.AllocationInteractionComposition.lift_fixed
 #check EvmCompiler.Functions.AllocationInteractionComposition.cons
