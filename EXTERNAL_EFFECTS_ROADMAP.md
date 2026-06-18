@@ -970,6 +970,13 @@ Exit: every layer exposes one canonical open computation.
   - [x] Own emitted stack protocol, spill state, lexical cleanup, compound
     control, and loop constructs without extending stack-free Locals with an
     operand stack.
+  - [x] Prove compiler-selected stack and scratch callee entry, including
+    allocator acquire and suspended-prefix protection.
+  - [x] Prove allocator preservation for canonical expressions, argument
+    lists, ordinary primitives, all four CALL variants, and both CREATE
+    variants under every shared open-world response.
+  - [ ] Compose scratch release, return writeback, and recursive selected
+    internal calls while discharging resource capabilities internally.
   - [ ] Compose selected internal callees and publish the whole-program
     adjacent theorem.
 - [ ] Yul -> Functions.

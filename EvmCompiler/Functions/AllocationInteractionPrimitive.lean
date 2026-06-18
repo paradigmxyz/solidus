@@ -122,7 +122,7 @@ structure OpenForward (contract : MemoryContract.Contract)
       (Locals.InteractionSemantics.Primitive.openEval op source values)
       (Structured.InteractionSemantics.BasicInstr.openStep (.op op) target)
 
-private theorem callOperands_of_length
+theorem callOperands_of_length
     (kind : Simulation.CallKind) (stack : List Word)
     (hLength : stack.length = kind.inputArity) :
     ∃ operands, kind.evmOperands? stack = some ([], operands) := by
@@ -202,7 +202,7 @@ private theorem callOperands_of_length
         outputOffset := outputOffset, outputSize := outputSize }, ?_⟩
       simp [Simulation.CallKind.evmOperands?, hPop]
 
-private theorem createOperands_of_length
+theorem createOperands_of_length
     (kind : Simulation.CreateKind) (stack : List Word)
     (hLength : stack.length = kind.inputArity) :
     ∃ operands, kind.evmOperands? stack = some ([], operands) := by

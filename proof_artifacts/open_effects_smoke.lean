@@ -10,6 +10,7 @@ import EvmCompiler.Expressions.InteractionPreservation
 import EvmCompiler.Functions.AllocationInteractionSelectedCallEntry
 import EvmCompiler.Functions.AllocationInteractionFrameExecution
 import EvmCompiler.Functions.AllocationInteractionFramePreservation
+import EvmCompiler.Functions.AllocationInteractionPrimitiveResource
 import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 
@@ -253,3 +254,6 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Functions.AllocationInteractionFramePreservation.scratchFrameAcquire_correct
 #print axioms EvmCompiler.Functions.AllocationInteractionCall.CalleeEntry.scratch_of_arguments
 #print axioms EvmCompiler.Functions.AllocationInteractionCall.SelectedCallee.Prepared.scratch_entry_of_arguments
+#print axioms EvmCompiler.Functions.AllocationInteractionExpressionResource.forwardExpr
+#print axioms EvmCompiler.Functions.AllocationInteractionCallArgumentResources.forward
+#print axioms EvmCompiler.Functions.AllocationInteractionPrimitiveResource.canonicalPrimitiveForward
