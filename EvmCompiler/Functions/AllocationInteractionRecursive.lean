@@ -1,5 +1,5 @@
 import EvmCompiler.Functions.AllocationInteractionCall
-import EvmCompiler.Functions.AllocationInteractionControl
+import EvmCompiler.Functions.AllocationInteractionLoop
 import EvmCompiler.Functions.AllocationInteractionForward
 
 namespace EvmCompiler
