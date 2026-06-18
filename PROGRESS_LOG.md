@@ -32016,3 +32016,17 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   - focused 1168-job build, full verification root, architecture guard,
   touched-Lean hole scan, axiom audit, and `git diff --check` passed; all new
   constructors use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-18 01:15:00 PDT - proof/functions-return-prelude - extended mixed
+  allocation placement to named returns, retained the canonical intermediate
+  parameter layout in `Prepared`, constructed stack/scratch return contexts,
+  and proved recursive compiler-selected zero initialization through the open
+  Expressions interpreter. No generated return context enters the wrapper.
+- 2026-06-18 01:24:00 PDT - compaction-resume/goal-distance - resumed from
+  checked compiler-selected parameter and return initialization; auditing the
+  remaining callee-body, recursive Functions, Yul composition, test, and final
+  verification obligations for the horizontal CALL/CREATE goal.
+- 2026-06-18 01:28:00 PDT - validation/functions-return-prelude - focused
+  1168-job build, full verification root, architecture dependency guard,
+  touched-file hole scan, axiom audit, and `git diff --check` passed. The new
+  return constructors depend only on `[propext, Classical.choice, Quot.sound]`;
+  architecture output reports only pre-existing legacy soft-limit debt.
