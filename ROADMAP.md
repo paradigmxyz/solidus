@@ -69,7 +69,7 @@ boundaries remain active work.
     execution wrappers from the selected compiler artifact;
   - [x] complete compiler-selected stack/scratch return initialization with
     checked placement/context construction and open execution;
-  - [ ] compose entry markers and both preludes into the callee body invariant;
+  - [x] compose entry markers and both preludes into the callee body invariant;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the

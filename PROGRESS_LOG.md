@@ -32030,3 +32030,13 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-file hole scan, axiom audit, and `git diff --check` passed. The new
   return constructors depend only on `[propext, Classical.choice, Quot.sound]`;
   architecture output reports only pre-existing legacy soft-limit debt.
+- 2026-06-18 01:41:00 PDT - proof/functions-callee-body-entry - checked exact
+  compiler-selected marker execution and derived body-local definedness from
+  real argument lookup plus zero-initialized returns. Stack-only and
+  scratch-backed setup now both construct the ordinary pass-owned
+  `ActivationInvariant` at the canonical body cursor; no generated context or
+  observer artifact enters either theorem.
+- 2026-06-18 01:43:00 PDT - validation/functions-callee-body-entry - focused
+  1168-job build, full verification root, architecture dependency guard,
+  touched-file hole scan, axiom audit, and `git diff --check` passed. New entry
+  theorems use only `[propext, Classical.choice, Quot.sound]`.

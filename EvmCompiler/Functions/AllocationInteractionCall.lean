@@ -3852,6 +3852,280 @@ theorem Prepared.returns_forward_stack
     ⟨finalTarget, fuel, hFuel, hFinalLayout, hEval,
       hFinalRel, hFinalStackLength⟩
 
+/-- Execute the exact compiler-selected metadata markers at callee entry. -/
+theorem Prepared.markers_forward
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : Artifact compilation name fn}
+    (prepared : Prepared artifact)
+    (target : Structured.RunState) :
+    Expressions.InteractionSemantics.Block.openRun expressions 4
+        { stmts := prepared.markerCode } target =
+      .done (.ok (Structured.Outcome.regular target)) := by
+  let generated : List Expressions.Stmt :=
+    [.code [.bindLocals 0 artifact.entryLayout]] ++
+      if artifact.needsFrame then
+        [.code
+          (AllocationSupport.bindScratchBindingsCode
+            fn.params.length artifact.scratchBindings)]
+      else
+        []
+  have hGenerated :
+      Locals.Block.compileOpen artifact.entryCtx
+          { stmts := artifact.markers } =
+        some (generated, artifact.entryCtx) := by
+    simpa [generated, Artifact.markers] using
+      (EntryMarkers.compileOpen
+        (localsCtx := artifact.entryCtx)
+        (entryLayout := artifact.entryLayout)
+        (baseDepth := fn.params.length)
+        (scratchBindings := artifact.scratchBindings)
+        (needsFrame := artifact.needsFrame))
+  have hCode : prepared.markerCode = generated := by
+    have hPair :
+        (prepared.markerCode, artifact.entryCtx) =
+          (generated, artifact.entryCtx) :=
+      Option.some.inj (prepared.compileMarkers.symm.trans hGenerated)
+    exact congrArg Prod.fst hPair
+  rw [hCode]
+  by_cases hNeedsFrame : artifact.needsFrame = true
+  · have hBind :
+        Structured.InteractionSemantics.Code.openRun
+            [.bindLocals 0 artifact.entryLayout] target =
+          .done (.ok target) := by
+      simpa using
+        Locals.InteractionPreservation.Code.openRun_bindLocals
+          0 artifact.entryLayout target
+    have hScratch :
+        Structured.InteractionSemantics.Code.openRun
+            (AllocationSupport.bindScratchBindingsCode
+              fn.params.length artifact.scratchBindings)
+            target =
+          .done (.ok target) :=
+      EntryMarkers.openRun_bindScratchBindingsCode
+        fn.params.length artifact.scratchBindings target
+    have hFirst :=
+      Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+        expressions 4 [.bindLocals 0 artifact.entryLayout]
+        target target (by omega) hBind
+    have hSecond :=
+      Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+        expressions 3
+        (AllocationSupport.bindScratchBindingsCode
+          fn.params.length artifact.scratchBindings)
+        target target (by omega) hScratch
+    simp only [generated, hNeedsFrame, if_true]
+    rw [Expressions.InteractionSemantics.Block.openRun_append expressions
+      [Expressions.Stmt.code [.bindLocals 0 artifact.entryLayout]]
+      [Expressions.Stmt.code
+        (AllocationSupport.bindScratchBindingsCode
+          fn.params.length artifact.scratchBindings)]
+      4 target, hFirst]
+    simpa using hSecond
+  · have hNeedsFrameFalse : artifact.needsFrame = false :=
+      Bool.eq_false_of_not_eq_true hNeedsFrame
+    have hBind :
+        Structured.InteractionSemantics.Code.openRun
+            [.bindLocals 0 artifact.entryLayout] target =
+          .done (.ok target) := by
+      simpa using
+        Locals.InteractionPreservation.Code.openRun_bindLocals
+          0 artifact.entryLayout target
+    simp only [generated, hNeedsFrameFalse, if_false, List.append_nil]
+    exact
+      Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+        expressions 4 [.bindLocals 0 artifact.entryLayout]
+        target target (by omega) hBind
+
+/-- The real argument lookup and return initialization define every body local. -/
+theorem Prepared.bodyLiveDefined
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : Artifact compilation name fn}
+    (prepared : Prepared artifact)
+    {contract : MemoryContract.Contract}
+    {frameBase : Nat} {mode : ActivationMode}
+    {source : Functions.InteractionSemantics.State}
+    {target : Structured.RunState}
+    (hRel :
+      ActivationCalleeEntryRel contract prepared.plan []
+        artifact.slots.params frameBase mode source target)
+    (hZero :
+      ∀ localName,
+        localName ∈ artifact.slots.returns.map Prod.fst →
+        source.vars localName = some AllocationSupport.zeroWord) :
+    LiveDefined
+      ((artifact.slots.returns.map Prod.fst).reverse ++
+        (artifact.slots.params.map Prod.fst).reverse)
+      source := by
+  obtain ⟨values, suffix, hLookup, hStack⟩ := hRel.realization
+  clear suffix hStack
+  intro localName hLive
+  rcases List.mem_append.mp hLive with hReturn | hParam
+  · exact ⟨AllocationSupport.zeroWord, hZero localName (by simpa using hReturn)⟩
+  · have hContains : source.vars.contains localName = true :=
+      Functions.Source.Store.lookupMany_contains_of_mem hLookup
+        (by simpa using hParam)
+    cases hValue : source.vars localName with
+    | none =>
+        simp [Locals.Source.Store.contains, hValue] at hContains
+    | some value =>
+        exact ⟨value, rfl⟩
+
+/-- Scratch-backed callee setup reaches the ordinary recursive body invariant. -/
+theorem Prepared.body_entry_scratch
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : Artifact compilation name fn}
+    (prepared : Prepared artifact)
+    {contract : MemoryContract.Contract}
+    {frameBase : Nat}
+    {source : Functions.InteractionSemantics.State}
+    {target : Structured.RunState}
+    {reservation : MemoryContract.ScratchReservation}
+    (hNeedsFrame : artifact.needsFrame = true)
+    (hRel :
+      ActivationCalleeEntryRel contract prepared.plan []
+        artifact.slots.params frameBase
+        (.scratch 0 compilation.recipe.frameWords) source target)
+    (hZero :
+      ∀ localName,
+        localName ∈ artifact.slots.returns.map Prod.fst →
+        source.vars localName = some AllocationSupport.zeroWord)
+    (hStackLength :
+      target.evm.stack.length = artifact.entryCtx.layout.length)
+    (hReservation : contract.scratch? = some reservation) :
+    ∃ afterParams finalTarget paramFuel returnFuel,
+      0 < paramFuel ∧
+      0 < returnFuel ∧
+      Expressions.InteractionSemantics.Block.openRun expressions 4
+          { stmts := prepared.markerCode } target =
+        .done (.ok (Structured.Outcome.regular target)) ∧
+      Expressions.InteractionSemantics.Block.openRun expressions paramFuel
+          { stmts := prepared.paramCode } target =
+        .done (.ok (Structured.Outcome.regular afterParams)) ∧
+      Expressions.InteractionSemantics.Block.openRun expressions returnFuel
+          { stmts := prepared.returnCode } afterParams =
+        .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      AllocationContext.ActivationInvariant contract artifact.lowerCtx
+        artifact.bodyStart prepared.returnCtx prepared.plan
+        ((artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+        frameBase prepared.bodyMode source finalTarget := by
+  obtain
+      ⟨afterParams, paramFrameDepth, paramFuel, hParamFuel,
+        _hParamLayout, hParamRun, hParamRel, hParamDepth,
+        hParamStackLength⟩ :=
+    prepared.parameters_forward_scratch hRel hStackLength hReservation
+  obtain
+      ⟨finalTarget, finalFrameDepth, returnFuel, hReturnFuel,
+        _hReturnLayout, hReturnRun, hReturnRel, hReturnDepth,
+        hReturnStackLength⟩ :=
+    prepared.returns_forward_scratch
+      (by simpa [hParamDepth] using hParamRel) hZero
+      hParamStackLength hReservation
+  have hState :
+      ActivationStateRel contract prepared.plan
+        ((artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+        0 frameBase prepared.bodyMode source finalTarget := by
+    have hScratchState :
+        ActivationStateRel contract prepared.plan
+          ((artifact.slots.returns.map Prod.fst).reverse ++
+            (artifact.slots.params.map Prod.fst).reverse)
+          0 frameBase
+          (.scratch finalFrameDepth compilation.recipe.frameWords)
+          source finalTarget :=
+      .scratch hReturnRel
+    simpa [Prepared.bodyMode, Artifact.mode, hNeedsFrame,
+      ActivationMode.atStackDepth, hReturnDepth] using hScratchState
+  refine
+    ⟨afterParams, finalTarget, paramFuel, returnFuel,
+      hParamFuel, hReturnFuel, prepared.markers_forward target,
+      hParamRun, hReturnRun, ?_⟩
+  exact
+    { compiler := prepared.bodyCompiler
+      planWF := prepared.planWF
+      defined := prepared.bodyLiveDefined hRel hZero
+      state := hState
+      stackLength := hReturnStackLength }
+
+/-- Stack-only callee setup reaches the ordinary recursive body invariant. -/
+theorem Prepared.body_entry_stack
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {name : Functions.Name} {fn : Functions.FunDef}
+    {artifact : Artifact compilation name fn}
+    (prepared : Prepared artifact)
+    {contract : MemoryContract.Contract}
+    {frameBase : Nat}
+    {source : Functions.InteractionSemantics.State}
+    {target : Structured.RunState}
+    (hNeedsFrame : artifact.needsFrame = false)
+    (hRel :
+      ActivationCalleeEntryRel contract prepared.plan []
+        artifact.slots.params frameBase .stack source target)
+    (hZero :
+      ∀ localName,
+        localName ∈ artifact.slots.returns.map Prod.fst →
+        source.vars localName = some AllocationSupport.zeroWord)
+    (hStackLength :
+      target.evm.stack.length = artifact.entryCtx.layout.length) :
+    ∃ afterParams finalTarget paramFuel returnFuel,
+      0 < paramFuel ∧
+      0 < returnFuel ∧
+      Expressions.InteractionSemantics.Block.openRun expressions 4
+          { stmts := prepared.markerCode } target =
+        .done (.ok (Structured.Outcome.regular target)) ∧
+      Expressions.InteractionSemantics.Block.openRun expressions paramFuel
+          { stmts := prepared.paramCode } target =
+        .done (.ok (Structured.Outcome.regular afterParams)) ∧
+      Expressions.InteractionSemantics.Block.openRun expressions returnFuel
+          { stmts := prepared.returnCode } afterParams =
+        .done (.ok (Structured.Outcome.regular finalTarget)) ∧
+      AllocationContext.ActivationInvariant contract artifact.lowerCtx
+        artifact.bodyStart prepared.returnCtx prepared.plan
+        ((artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+        frameBase prepared.bodyMode source finalTarget := by
+  obtain
+      ⟨afterParams, paramFuel, hParamFuel, _hParamLayout,
+        hParamRun, hParamRel, hParamStackLength⟩ :=
+    prepared.parameters_forward_stack hNeedsFrame hRel hStackLength
+  obtain
+      ⟨finalTarget, returnFuel, hReturnFuel, _hReturnLayout,
+        hReturnRun, hReturnRel, hReturnStackLength⟩ :=
+    prepared.returns_forward_stack hNeedsFrame hParamRel hZero
+      hParamStackLength
+  have hState :
+      ActivationStateRel contract prepared.plan
+        ((artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+        0 frameBase prepared.bodyMode source finalTarget := by
+    simpa [Prepared.bodyMode, Artifact.mode, hNeedsFrame,
+      ActivationMode.atStackDepth] using hReturnRel
+  refine
+    ⟨afterParams, finalTarget, paramFuel, returnFuel,
+      hParamFuel, hReturnFuel, prepared.markers_forward target,
+      hParamRun, hReturnRun, ?_⟩
+  exact
+    { compiler := prepared.bodyCompiler
+      planWF := prepared.planWF
+      defined := prepared.bodyLiveDefined hRel hZero
+      state := hState
+      stackLength := hReturnStackLength }
+
 /-- Package a compiler-selected function body as an ordinary recursive root. -/
 def Prepared.rootArtifact
     {allocation : Locals.Allocation.ProgramPlan}
