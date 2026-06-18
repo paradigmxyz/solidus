@@ -165,6 +165,8 @@ boundaries remain active work.
       constructors;
     - [x] stack-only `for` init/body/post recursion and the thirteen-constructor
       source-fuel fixed point.
+    - [x] compiler-derived stack-only main setup and recursive main-body
+      preservation, with no public all-stack certificate.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
   source-facing reservation/resource assumptions.

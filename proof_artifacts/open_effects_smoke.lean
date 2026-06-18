@@ -18,6 +18,7 @@ import EvmCompiler.Functions.AllocationInteractionCallResultResource
 import EvmCompiler.Functions.AllocationInteractionCallStatementResource
 import EvmCompiler.Functions.AllocationInteractionRecursiveCallResource
 import EvmCompiler.Functions.AllocationInteractionStackRuntime
+import EvmCompiler.Functions.AllocationInteractionProgram
 import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 
@@ -360,3 +361,4 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.switch
 #print axioms EvmCompiler.Functions.AllocationInteractionStackRuntime.CursorRuntimeAt.for_
 #print axioms EvmCompiler.Functions.AllocationInteractionStackRuntime.complete
+#print axioms EvmCompiler.Functions.AllocationInteractionProgram.StackSetupResult.body

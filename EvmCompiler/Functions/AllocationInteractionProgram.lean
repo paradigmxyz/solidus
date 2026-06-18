@@ -588,6 +588,70 @@ theorem boundary
       AllocationInteractionControlAgreement.Agreement.noControl
         (by rfl) (by rfl) (by rfl)
 
+/-- Preserve the compiler-selected main body after empty stack-only setup.
+The no-allocator fact comes from ordinary lowering and internally discharges
+the all-stack callee condition. -/
+theorem body
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {artifact : MainArtifact compilation}
+    {prepared : MainPrepared artifact}
+    {source : Functions.InteractionSemantics.State}
+    {target : Expressions.InteractionSemantics.RunState}
+    {targetFuel sourceFuel : Nat}
+    (mainRoot : MainRoot prepared)
+    (hSetup : StackSetupResult prepared source target targetFuel)
+    (hNoAllocator :
+      AllocationLowering.mainNeedsAllocator
+          compilation.recipe compilation.stackSlots = false)
+    (hProgramScoped : program.Scoped)
+    (hSafety :
+      AllocationInteractionSafety.SourceSafety program.memoryContract)
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Block.openRun program
+          Functions.Source.Ctx.initial sourceFuel
+          mainRoot.root.sourceBlock source)) :
+    Simulation.Interaction.Rel
+      (AllocationInteractionComposition.OpenControlResultRel
+        program.memoryContract mainRoot.root.lowerCtx
+        mainRoot.root.cursor.finalState mainRoot.root.cursor.finalLocals
+        mainRoot.root.cursor.plan mainRoot.root.returns
+        (Functions.Scope.Block.outEnv
+          ((mainRoot.root.slots.returns.map Prod.fst).reverse ++
+            (mainRoot.root.slots.params.map Prod.fst).reverse)
+          mainRoot.root.sourceBlock)
+        0 .stack Functions.Source.Ctx.initial
+        { Functions.Source.Ctx.initial with
+          scope := Functions.Scope.Block.outEnv
+            ((mainRoot.root.slots.returns.map Prod.fst).reverse ++
+              (mainRoot.root.slots.params.map Prod.fst).reverse)
+            mainRoot.root.sourceBlock })
+      (Functions.InteractionSemantics.Block.openRun program
+        Functions.Source.Ctx.initial sourceFuel
+        mainRoot.root.sourceBlock source)
+      (Expressions.InteractionSemantics.Block.openRun expressions
+        (AllocationInteractionRecursive.targetBudget mainRoot.root.cursor
+          sourceFuel
+          (AllocationInteractionTargetFuel.stmtListNestedSize
+            mainRoot.root.cursor.compiled))
+        { stmts := mainRoot.root.cursor.compiled } target) := by
+  have hAllStack :
+      AllocationInteractionStackRuntime.AllFunctionsStack compilation :=
+    (artifact.components.stackOnly_of_no_allocator hNoAllocator).2.1
+  have hRecursive :
+      AllocationInteractionStackRuntime.RecursiveOpenRuntime
+        (compilation := compilation) program.memoryContract (sourceFuel + 1) :=
+    AllocationInteractionStackRuntime.complete
+      (compilation := compilation) hAllStack hProgramScoped hSafety
+        (sourceFuel + 1)
+  exact
+    AllocationInteractionStackRuntime.RecursiveOpenRuntime.at_targetFuel
+      hRecursive mainRoot.root.cursor (by omega) (Nat.le_refl _)
+      (hSetup.boundary mainRoot) hSuccess
+
 end StackSetupResult
 
 namespace ScratchSetupResult
