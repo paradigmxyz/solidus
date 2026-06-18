@@ -31656,3 +31656,15 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   Functions root, 1306-job verification root, architecture guard, touched-file
   hole scan, and `git diff --check` passed; `ClosedSpec.openForward` and
   `mload_openForward` use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 20:59:03 PDT - compaction-resume - resumed the checked
+  Functions ordinary-primitive boundary at `ccf99dc8d`; current work extends
+  the pass-owned open-world theorem to hashing and ordered log effects before
+  recursive expression composition.
+- 2026-06-17 21:02:12 PDT - proof/functions-hash-log-family - instantiated
+  the allocation-owned closed-effect interface for `keccak256` and LOG0 through
+  LOG4; related executions read identical allowed memory, append identical
+  ordered logs, preserve exact live spill words, and track active-memory growth.
+- 2026-06-17 21:02:12 PDT - validation/functions-hash-log-family - the focused
+  1145-job module, 1307-job verification root, architecture guard, touched-file
+  hole scan, axiom audit, and `git diff --check` passed; exported hash and log
+  theorems use only `[propext, Classical.choice, Quot.sound]`.

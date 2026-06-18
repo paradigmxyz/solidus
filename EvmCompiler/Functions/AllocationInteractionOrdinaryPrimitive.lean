@@ -692,6 +692,34 @@ end SharedFamily
 
 namespace MemoryFamily
 
+theorem targetEffect_of_memory_eq
+    {contract : MemoryContract.Contract}
+    {sourceFinal targetInitial targetFinal : EvmYul.SharedState .EVM}
+    (hShared : SharedRel contract sourceFinal targetFinal)
+    (hMemory :
+      targetFinal.toMachineState.memory = targetInitial.toMachineState.memory)
+    (hActive :
+      targetInitial.toMachineState.activeWords.toNat ≤
+        targetFinal.toMachineState.activeWords.toNat)
+    (hInitialNoWrap :
+      targetInitial.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes < EvmYul.UInt256.size)
+    (hFinalNoWrap :
+      targetFinal.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes < EvmYul.UInt256.size) :
+    TargetEffect contract sourceFinal targetInitial targetFinal := by
+  refine ⟨hShared, ?_, ?_, hActive, hFinalNoWrap⟩
+  · intro reservation hReservation query hReserved hReadMemory hReadActive
+    have hQueryLt : query < EvmYul.UInt256.size :=
+      lt_of_le_of_lt
+        (Nat.le_add_right query MemoryContract.wordBytes)
+        (hReadActive.trans_lt hInitialNoWrap)
+    exact
+      Compiler.MemoryRelation.MachineRel.lookupMemory_eq_of_memory_eq_active_growth
+        query (EvmYul.UInt256.toNat_ofNat_of_lt hQueryLt)
+        hMemory hActive hInitialNoWrap hFinalNoWrap hReadMemory hReadActive
+  · simp [hMemory]
+
 theorem mload_simulate
     {contract : MemoryContract.Contract}
     {sourceShared sourceFinal targetShared : EvmYul.SharedState .EVM}
@@ -792,22 +820,374 @@ def mloadClosedSpec (contract : MemoryContract.Contract) :
         hActive, hFinalNoWrap⟩ :=
       mload_simulate hRel hSafety.1 hSafety.2.1 hSafety.2.2
         hTargetNoWrap hEval
-    refine ⟨targetFinal, hTargetEval, ?_⟩
-    refine ⟨hShared, ?_, ?_, hActive, hFinalNoWrap⟩
-    · intro reservation hReservation query hReserved hReadMemory hReadActive
-      have hQueryLt : query < EvmYul.UInt256.size :=
-        lt_of_le_of_lt
-          (Nat.le_add_right query MemoryContract.wordBytes)
-          (hReadActive.trans_lt hTargetNoWrap)
-      exact
-        Compiler.MemoryRelation.MachineRel.lookupMemory_eq_of_memory_eq_active_growth
-          query (EvmYul.UInt256.toNat_ofNat_of_lt hQueryLt)
-          hMemory hActive hTargetNoWrap hFinalNoWrap hReadMemory hReadActive
-    · simp [hMemory]
+    exact ⟨targetFinal, hTargetEval,
+      targetEffect_of_memory_eq hShared hMemory hActive
+        hTargetNoWrap hFinalNoWrap⟩
 
 theorem mload_openForward (contract : MemoryContract.Contract) :
     AllocationInteractionPrimitive.OpenForward contract .mload :=
   (mloadClosedSpec contract).openForward
+
+theorem keccak256_simulate
+    {contract : MemoryContract.Contract}
+    {sourceShared sourceFinal targetShared : EvmYul.SharedState .EVM}
+    {address size : Word} {outputs : List Word}
+    (hRel : SharedRel contract sourceShared targetShared)
+    (hAllowed :
+      Simulation.MemorySafety.RegionAllowed contract address.toNat size.toNat)
+    (hExpansion :
+      Compiler.MemoryRelation.ExpansionNoWrap address.toNat size.toNat)
+    (hHost : address.toNat + size.toNat < USize.size)
+    (hTargetNoWrap :
+      targetShared.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes < EvmYul.UInt256.size)
+    (hEval :
+      Locals.Source.PrimitiveSemantics.structured.eval
+          .keccak256 sourceShared [size, address] =
+        .ok (sourceFinal, outputs)) :
+    ∃ targetFinal,
+      Locals.Source.PrimitiveSemantics.structured.eval
+          .keccak256 targetShared [size, address] =
+        .ok (targetFinal, outputs) ∧
+      SharedRel contract sourceFinal targetFinal ∧
+      targetFinal.toMachineState.memory = targetShared.toMachineState.memory ∧
+      targetShared.toMachineState.activeWords.toNat ≤
+        targetFinal.toMachineState.activeWords.toNat ∧
+      targetFinal.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes < EvmYul.UInt256.size := by
+  obtain ⟨hRead, hMachineRel, hFinalNoWrap, hActiveMono⟩ :=
+    Compiler.MemoryRelation.MachineRel.readRange_both
+      hRel.machine hTargetNoWrap address.toNat size.toNat hAllowed
+      hExpansion hHost
+  have hValue :
+      (sourceShared.toMachineState.keccak256 address size).1 =
+        (targetShared.toMachineState.keccak256 address size).1 := by
+    simp [EvmYul.MachineState.keccak256, hRead]
+  have hSourceResult :
+      sourceFinal =
+          { sourceShared with
+            toMachineState :=
+              (sourceShared.toMachineState.keccak256 address size).2 } ∧
+        outputs =
+          [(sourceShared.toMachineState.keccak256 address size).1] := by
+    simpa [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp, Assembly.PrimOp.continuingStep?,
+      Assembly.PrimStep.run, Expressions.Structured.BasicOp.inputs,
+      EvmYul.EVM.binaryMachineStateOp', EvmYul.Stack.pop2,
+      EvmYul.Stack.push, EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Id.run] using hEval.symm
+  rcases hSourceResult with ⟨rfl, rfl⟩
+  let targetFinal : EvmYul.SharedState .EVM :=
+    { targetShared with
+      toMachineState :=
+        (targetShared.toMachineState.keccak256 address size).2 }
+  refine ⟨targetFinal, ?_, ?_, ?_, ?_, ?_⟩
+  · simp [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp, Assembly.PrimOp.continuingStep?,
+      Assembly.PrimStep.run, Expressions.Structured.BasicOp.inputs,
+      EvmYul.EVM.binaryMachineStateOp', EvmYul.Stack.pop2,
+      EvmYul.Stack.push, EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Id.run, targetFinal, hValue]
+  · refine ⟨?_, ?_⟩
+    · simpa [EvmYul.MachineState.keccak256, targetFinal] using hMachineRel
+    · simpa [EvmYul.MachineState.keccak256, targetFinal] using hRel.world
+  · simp [EvmYul.MachineState.keccak256, targetFinal]
+  · simpa [EvmYul.MachineState.keccak256, targetFinal] using hActiveMono
+  · simpa [EvmYul.MachineState.keccak256, targetFinal] using hFinalNoWrap
+
+def keccak256ClosedSpec (contract : MemoryContract.Contract) :
+    ClosedSpec contract .keccak256 where
+  sourceStep := ⟨.binaryMachineStateWithResult EvmYul.MachineState.keccak256,
+    rfl⟩
+  supportsOpen := rfl
+  notGas := by decide
+  notMsize := by decide
+  evalExists := by
+    intro shared values hLength
+    have hTwo : values.length = 2 := by simpa using hLength
+    obtain ⟨size, address, rfl⟩ := List.length_eq_two.mp hTwo
+    simp [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp, Assembly.PrimOp.continuingStep?,
+      Assembly.PrimStep.run, Expressions.Structured.BasicOp.inputs,
+      EvmYul.EVM.binaryMachineStateOp', EvmYul.Stack.pop2,
+      EvmYul.Stack.push, EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Id.run]
+  simulate := by
+    intro sourceShared sourceFinal targetShared values outputs hLength hRel
+      hSafe hTargetNoWrap hEval
+    have hTwo : values.length = 2 := by simpa using hLength
+    obtain ⟨size, address, rfl⟩ := List.length_eq_two.mp hTwo
+    have hSafety :
+        Compiler.MemoryRelation.MemoryConsistent sourceShared.toMachineState ∧
+          Simulation.MemorySafety.RegionAllowed contract
+            address.toNat size.toNat ∧
+          Compiler.MemoryRelation.ExpansionNoWrap
+            address.toNat size.toNat ∧
+          address.toNat + size.toNat < USize.size := by
+      simpa [Simulation.MemorySafety.OpenPrimitiveMemorySafe,
+        Simulation.MemorySafety.PrimitiveMemorySafe,
+        Simulation.MemorySafety.PrimitiveExpansionSafe,
+        Simulation.MemorySafety.PrimitiveHostSafe] using hSafe
+    obtain ⟨targetFinal, hTargetEval, hShared, hMemory,
+        hActive, hFinalNoWrap⟩ :=
+      keccak256_simulate hRel hSafety.2.1 hSafety.2.2.1
+        hSafety.2.2.2 hTargetNoWrap hEval
+    exact ⟨targetFinal, hTargetEval,
+      targetEffect_of_memory_eq hShared hMemory hActive
+        hTargetNoWrap hFinalNoWrap⟩
+
+theorem keccak256_openForward (contract : MemoryContract.Contract) :
+    AllocationInteractionPrimitive.OpenForward contract .keccak256 :=
+  (keccak256ClosedSpec contract).openForward
+
+inductive LogInvocation :
+    Structured.BasicOp → List Word → Word → Word → Array Word → Prop where
+  | log0 (address size : Word) :
+      LogInvocation .log0 [size, address] address size #[]
+  | log1 (address size topic0 : Word) :
+      LogInvocation .log1 [topic0, size, address]
+        address size #[topic0]
+  | log2 (address size topic0 topic1 : Word) :
+      LogInvocation .log2 [topic1, topic0, size, address]
+        address size #[topic0, topic1]
+  | log3 (address size topic0 topic1 topic2 : Word) :
+      LogInvocation .log3 [topic2, topic1, topic0, size, address]
+        address size #[topic0, topic1, topic2]
+  | log4 (address size topic0 topic1 topic2 topic3 : Word) :
+      LogInvocation .log4
+        [topic3, topic2, topic1, topic0, size, address]
+        address size #[topic0, topic1, topic2, topic3]
+
+namespace LogInvocation
+
+theorem eval
+    {op : Structured.BasicOp} {values : List Word}
+    {address size : Word} {topics : Array Word}
+    (invocation : LogInvocation op values address size topics)
+    (shared : EvmYul.SharedState .EVM) :
+    Locals.Source.PrimitiveSemantics.structured.eval op shared values =
+      .ok (EvmYul.SharedState.logOp address size topics shared, []) := by
+  cases invocation <;>
+    simp [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp, Assembly.PrimOp.continuingStep?,
+      Assembly.PrimStep.run, Expressions.Structured.BasicOp.inputs,
+      EvmYul.Stack.pop2, EvmYul.Stack.pop3, EvmYul.Stack.pop4,
+      EvmYul.Stack.pop5, EvmYul.Stack.pop6,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Id.run]
+
+theorem memorySafe
+    {contract : MemoryContract.Contract}
+    {op : Structured.BasicOp} {values : List Word}
+    {address size : Word} {topics : Array Word}
+    (invocation : LogInvocation op values address size topics)
+    {machine : EvmYul.MachineState}
+    (hSafe :
+      Simulation.MemorySafety.OpenPrimitiveMemorySafe
+        contract op machine values) :
+    Compiler.MemoryRelation.MemoryConsistent machine ∧
+      Simulation.MemorySafety.RegionAllowed contract
+        address.toNat size.toNat ∧
+      Compiler.MemoryRelation.ExpansionNoWrap
+        address.toNat size.toNat ∧
+      address.toNat + size.toNat < USize.size := by
+  cases invocation <;>
+    simpa [Simulation.MemorySafety.OpenPrimitiveMemorySafe,
+      Simulation.MemorySafety.PrimitiveMemorySafe,
+      Simulation.MemorySafety.PrimitiveExpansionSafe,
+      Simulation.MemorySafety.PrimitiveHostSafe] using hSafe
+
+end LogInvocation
+
+theorem logOp_both
+    {contract : MemoryContract.Contract}
+    {source target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel contract source target)
+    (address size : Word) (topics : Array Word)
+    (hAllowed :
+      Simulation.MemorySafety.RegionAllowed contract address.toNat size.toNat)
+    (hExpansion :
+      Compiler.MemoryRelation.ExpansionNoWrap address.toNat size.toNat)
+    (hHost : address.toNat + size.toNat < USize.size)
+    (hTargetNoWrap :
+      target.toMachineState.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size) :
+    SharedRel contract
+        (EvmYul.SharedState.logOp address size topics source)
+        (EvmYul.SharedState.logOp address size topics target) ∧
+      (EvmYul.SharedState.logOp address size topics target).toMachineState.memory =
+        target.toMachineState.memory ∧
+      target.toMachineState.activeWords.toNat ≤
+        (EvmYul.SharedState.logOp
+          address size topics target).toMachineState.activeWords.toNat ∧
+      (EvmYul.SharedState.logOp
+          address size topics target).toMachineState.activeWords.toNat *
+            MemoryContract.wordBytes < EvmYul.UInt256.size := by
+  obtain ⟨hRead, hMachineRel, hFinalNoWrap, hActiveMono⟩ :=
+    Compiler.MemoryRelation.MachineRel.readRange_both
+      hRel.machine hTargetNoWrap address.toNat size.toNat hAllowed
+      hExpansion hHost
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · refine ⟨?_, ?_⟩
+    · simpa [EvmYul.SharedState.logOp] using hMachineRel
+    · change
+        { source.toState with
+            substate.logSeries :=
+              source.toState.substate.logSeries.push
+                ⟨source.executionEnv.codeOwner, topics,
+                  source.memory.readWithPadding address.toNat size.toNat⟩ } =
+          { target.toState with
+            substate.logSeries :=
+              target.toState.substate.logSeries.push
+                ⟨target.executionEnv.codeOwner, topics,
+                  target.memory.readWithPadding address.toNat size.toNat⟩ }
+      rw [hRel.world, hRead]
+  · simp [EvmYul.SharedState.logOp]
+  · simpa [EvmYul.SharedState.logOp] using hActiveMono
+  · simpa [EvmYul.SharedState.logOp] using hFinalNoWrap
+
+inductive LogFamily : Structured.BasicOp → Prop where
+  | log0 : LogFamily .log0
+  | log1 : LogFamily .log1
+  | log2 : LogFamily .log2
+  | log3 : LogFamily .log3
+  | log4 : LogFamily .log4
+
+namespace LogFamily
+
+theorem invocation_of_length
+    {op : Structured.BasicOp} (family : LogFamily op)
+    (values : List Word)
+    (hLength : values.length = Expressions.Structured.BasicOp.inputs op) :
+    ∃ address size topics, LogInvocation op values address size topics := by
+  cases family with
+  | log0 =>
+      obtain ⟨size, address, rfl⟩ :=
+        List.length_eq_two.mp (by simpa using hLength)
+      exact ⟨address, size, #[], .log0 address size⟩
+  | log1 =>
+      obtain ⟨topic0, size, address, rfl⟩ :=
+        List.length_eq_three.mp (by simpa using hLength)
+      exact ⟨address, size, #[topic0], .log1 address size topic0⟩
+  | log2 =>
+      obtain ⟨topic1, topic0, size, address, rfl⟩ :=
+        List.length_eq_four.mp (by simpa using hLength)
+      exact
+        ⟨address, size, #[topic0, topic1],
+          .log2 address size topic0 topic1⟩
+  | log3 =>
+      cases values with
+      | nil =>
+          simp [Expressions.Structured.BasicOp.inputs] at hLength
+      | cons topic2 rest =>
+          have hRest : rest.length = 4 := by
+            simpa [Expressions.Structured.BasicOp.inputs] using hLength
+          obtain ⟨topic1, topic0, size, address, rfl⟩ :=
+            List.length_eq_four.mp hRest
+          exact
+            ⟨address, size, #[topic0, topic1, topic2],
+              .log3 address size topic0 topic1 topic2⟩
+  | log4 =>
+      cases values with
+      | nil =>
+          simp [Expressions.Structured.BasicOp.inputs] at hLength
+      | cons topic3 rest =>
+          cases rest with
+          | nil =>
+              simp [Expressions.Structured.BasicOp.inputs] at hLength
+          | cons topic2 tail =>
+              have hTail : tail.length = 4 := by
+                simpa [Expressions.Structured.BasicOp.inputs] using hLength
+              obtain ⟨topic1, topic0, size, address, rfl⟩ :=
+                List.length_eq_four.mp hTail
+              exact
+                ⟨address, size, #[topic0, topic1, topic2, topic3],
+                  .log4 address size topic0 topic1 topic2 topic3⟩
+
+theorem sourceStep
+    {op : Structured.BasicOp} (family : LogFamily op) :
+    ∃ step,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep? op = some step := by
+  cases family with
+  | log0 => exact ⟨.log0, rfl⟩
+  | log1 => exact ⟨.log1, rfl⟩
+  | log2 => exact ⟨.log2, rfl⟩
+  | log3 => exact ⟨.log3, rfl⟩
+  | log4 => exact ⟨.log4, rfl⟩
+
+theorem simulate
+    {contract : MemoryContract.Contract} {op : Structured.BasicOp}
+    (family : LogFamily op)
+    {sourceShared sourceFinal targetShared : EvmYul.SharedState .EVM}
+    {values outputs : List Word}
+    (hLength : values.length = Expressions.Structured.BasicOp.inputs op)
+    (hRel : SharedRel contract sourceShared targetShared)
+    (hSafe :
+      Simulation.MemorySafety.OpenPrimitiveMemorySafe
+        contract op sourceShared.toMachineState values)
+    (hTargetNoWrap :
+      targetShared.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes < EvmYul.UInt256.size)
+    (hEval :
+      Locals.Source.PrimitiveSemantics.structured.eval
+          op sourceShared values = .ok (sourceFinal, outputs)) :
+    ∃ targetFinal,
+      Locals.Source.PrimitiveSemantics.structured.eval
+          op targetShared values = .ok (targetFinal, outputs) ∧
+      SharedRel contract sourceFinal targetFinal ∧
+      targetFinal.toMachineState.memory = targetShared.toMachineState.memory ∧
+      targetShared.toMachineState.activeWords.toNat ≤
+        targetFinal.toMachineState.activeWords.toNat ∧
+      targetFinal.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes < EvmYul.UInt256.size := by
+  obtain ⟨address, size, topics, invocation⟩ :=
+    family.invocation_of_length values hLength
+  obtain ⟨_hConsistent, hAllowed, hExpansion, hHost⟩ :=
+    invocation.memorySafe hSafe
+  have hSourceCanonical := invocation.eval sourceShared
+  rw [hSourceCanonical] at hEval
+  cases hEval
+  obtain ⟨hShared, hMemory, hActive, hNoWrap⟩ :=
+    logOp_both hRel address size topics hAllowed hExpansion hHost
+      hTargetNoWrap
+  exact
+    ⟨EvmYul.SharedState.logOp address size topics targetShared,
+      invocation.eval targetShared, hShared, hMemory, hActive, hNoWrap⟩
+
+def closedSpec
+    {op : Structured.BasicOp} (family : LogFamily op)
+    (contract : MemoryContract.Contract) : ClosedSpec contract op where
+  sourceStep := family.sourceStep
+  supportsOpen := by cases family <;> rfl
+  notGas := by cases family <;> decide
+  notMsize := by cases family <;> decide
+  evalExists := by
+    intro shared values hLength
+    obtain ⟨address, size, topics, invocation⟩ :=
+      family.invocation_of_length values hLength
+    exact ⟨EvmYul.SharedState.logOp address size topics shared, [],
+      invocation.eval shared⟩
+  simulate := by
+    intro sourceShared sourceFinal targetShared values outputs hLength hRel
+      hSafe hTargetNoWrap hEval
+    obtain ⟨targetFinal, hTargetEval, hShared, hMemory,
+        hActive, hFinalNoWrap⟩ :=
+      family.simulate hLength hRel hSafe hTargetNoWrap hEval
+    exact ⟨targetFinal, hTargetEval,
+      targetEffect_of_memory_eq hShared hMemory hActive
+        hTargetNoWrap hFinalNoWrap⟩
+
+theorem openForward
+    {op : Structured.BasicOp} (family : LogFamily op)
+    (contract : MemoryContract.Contract) :
+    AllocationInteractionPrimitive.OpenForward contract op :=
+  (family.closedSpec contract).openForward
+
+end LogFamily
 
 end MemoryFamily
 end AllocationInteractionOrdinaryPrimitive

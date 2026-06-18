@@ -875,6 +875,8 @@ Exit: the shared core builds with no compiler layer changed.
     activation-indexed `OpenForward` capability used by external primitives.
   - [x] Define the generic closed-primitive effect contract and instantiate
     `mload`, including exact live spill-word stability across memory growth.
+  - [x] Instantiate the same pass-owned capability for `keccak256` and all five
+    LOG opcodes, preserving exact log order and live spill words across reads.
   - [ ] Compose argument-expression preservation with external primitive
     preservation through the ordinary allocation lowerer and Locals compiler.
   - [ ] Recursive allocation preservation for expressions, statements,
