@@ -877,6 +877,8 @@ Exit: the shared core builds with no compiler layer changed.
     `mload`, including exact live spill-word stability across memory growth.
   - [x] Instantiate the same pass-owned capability for `keccak256` and all five
     LOG opcodes, preserving exact log order and live spill words across reads.
+  - [x] Prove source-authorized `mstore` and `mstore8` writes preserve every
+    reserved spill word while maintaining related memory and active growth.
   - [ ] Compose argument-expression preservation with external primitive
     preservation through the ordinary allocation lowerer and Locals compiler.
   - [ ] Recursive allocation preservation for expressions, statements,

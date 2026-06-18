@@ -31668,3 +31668,11 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1145-job module, 1307-job verification root, architecture guard, touched-file
   hole scan, axiom audit, and `git diff --check` passed; exported hash and log
   theorems use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 21:07:39 PDT - proof/functions-memory-write-family - added the
+  shared source-range/reserved-word disjointness lemma and pass-owned
+  `mstore_openForward`/`mstore8_openForward`; safe writes preserve every live
+  spill word while maintaining exact related memory and active growth.
+- 2026-06-17 21:07:39 PDT - validation/functions-memory-write-family - the
+  focused 1145-job module, 1307-job verification root, architecture guard,
+  touched-file hole scan, axiom audit, and `git diff --check` passed; write
+  theorems use only `[propext, Classical.choice, Quot.sound]`.

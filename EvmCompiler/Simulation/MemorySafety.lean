@@ -19,6 +19,22 @@ reserved interval and therefore permits every source range.
   | some reservation =>
       reservation.sourceAccessAllowed address size
 
+/-- A source-approved range is disjoint from every word in the reservation. -/
+theorem reservedWord_disjoint_of_regionAllowed
+    {contract : MemoryContract.Contract}
+    {reservation : MemoryContract.ScratchReservation}
+    {address size query : Nat}
+    (hReservation : contract.scratch? = some reservation)
+    (hAllowed : RegionAllowed contract address size)
+    (hReserved : reservation.containsRegion query 1) :
+    query + MemoryContract.wordBytes ≤ address ∨
+      address + size ≤ query := by
+  have hAllowed' : reservation.sourceAccessAllowed address size := by
+    simpa [RegionAllowed, hReservation] using hAllowed
+  rcases hAllowed' with hBefore | hAfter
+  · exact Or.inr (hBefore.trans hReserved.1)
+  · exact Or.inl (hReserved.2.trans hAfter)
+
 /--
 Ordinary EVM memory states do not contain materialized bytes beyond the active
 memory extent. This source-facing invariant prevents target spill allocation

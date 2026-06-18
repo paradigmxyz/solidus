@@ -197,6 +197,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.ClosedSpec
 #check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.ClosedSpec.openForward
 #check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.MemoryFamily.mload_openForward
+#check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.MemoryFamily.mstore_openForward
+#check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.MemoryFamily.mstore8_openForward
 #check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.MemoryFamily.keccak256_openForward
 #check EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.MemoryFamily.LogFamily.openForward
 #check EvmCompiler.Functions.AllocationObserverRelation.StateRel.toInteraction

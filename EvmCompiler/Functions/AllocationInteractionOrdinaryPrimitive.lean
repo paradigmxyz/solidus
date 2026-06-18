@@ -828,6 +828,256 @@ theorem mload_openForward (contract : MemoryContract.Contract) :
     AllocationInteractionPrimitive.OpenForward contract .mload :=
   (mloadClosedSpec contract).openForward
 
+theorem mstore_simulate
+    {contract : MemoryContract.Contract}
+    {sourceShared sourceFinal targetShared : EvmYul.SharedState .EVM}
+    {address value : Word} {outputs : List Word}
+    (hRel : SharedRel contract sourceShared targetShared)
+    (hExpansion :
+      Compiler.MemoryRelation.ExpansionNoWrap
+        address.toNat MemoryContract.wordBytes)
+    (hHost : address.toNat + MemoryContract.wordBytes < USize.size)
+    (hTargetNoWrap :
+      targetShared.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes < EvmYul.UInt256.size)
+    (hEval :
+      Locals.Source.PrimitiveSemantics.structured.eval
+          .mstore sourceShared [value, address] =
+        .ok (sourceFinal, outputs)) :
+    ∃ targetFinal,
+      Locals.Source.PrimitiveSemantics.structured.eval
+          .mstore targetShared [value, address] =
+        .ok (targetFinal, outputs) ∧
+      SharedRel contract sourceFinal targetFinal ∧
+      targetFinal.toMachineState =
+        targetShared.toMachineState.mstore address value ∧
+      targetShared.toMachineState.memory.size ≤
+        targetFinal.toMachineState.memory.size ∧
+      targetShared.toMachineState.activeWords.toNat ≤
+        targetFinal.toMachineState.activeWords.toNat ∧
+      targetFinal.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes < EvmYul.UInt256.size := by
+  obtain ⟨hMachineRel, hFinalNoWrap, hActiveMono, hMemoryMono⟩ :=
+    Compiler.MemoryRelation.MachineRel.mstore_both
+      hRel.machine hTargetNoWrap address value hExpansion hHost
+  have hSourceResult :
+      sourceFinal =
+          { sourceShared with
+            toMachineState :=
+              sourceShared.toMachineState.mstore address value } ∧
+        outputs = [] := by
+    simpa [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp,
+      Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+      Expressions.Structured.BasicOp.inputs,
+      EvmYul.EVM.binaryMachineStateOp, EvmYul.Stack.pop2,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Id.run] using hEval.symm
+  rcases hSourceResult with ⟨rfl, rfl⟩
+  let targetFinal : EvmYul.SharedState .EVM :=
+    { targetShared with
+      toMachineState := targetShared.toMachineState.mstore address value }
+  refine ⟨targetFinal, ?_, ?_, rfl, ?_, ?_, ?_⟩
+  · simp [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp,
+      Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+      Expressions.Structured.BasicOp.inputs,
+      EvmYul.EVM.binaryMachineStateOp, EvmYul.Stack.pop2,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Id.run, targetFinal]
+  · exact ⟨hMachineRel, hRel.world⟩
+  · simpa [targetFinal] using hMemoryMono
+  · simpa [targetFinal] using hActiveMono
+  · simpa [targetFinal] using hFinalNoWrap
+
+def mstoreClosedSpec (contract : MemoryContract.Contract) :
+    ClosedSpec contract .mstore where
+  sourceStep := ⟨.binaryMachineState EvmYul.MachineState.mstore, rfl⟩
+  supportsOpen := rfl
+  notGas := by decide
+  notMsize := by decide
+  evalExists := by
+    intro shared values hLength
+    have hTwo : values.length = 2 := by simpa using hLength
+    obtain ⟨value, address, rfl⟩ := List.length_eq_two.mp hTwo
+    simp [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp, Assembly.PrimOp.continuingStep?,
+      Assembly.PrimStep.run, Expressions.Structured.BasicOp.inputs,
+      EvmYul.EVM.binaryMachineStateOp, EvmYul.Stack.pop2,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Id.run]
+  simulate := by
+    intro sourceShared sourceFinal targetShared values outputs hLength hRel
+      hSafe hTargetNoWrap hEval
+    have hTwo : values.length = 2 := by simpa using hLength
+    obtain ⟨value, address, rfl⟩ := List.length_eq_two.mp hTwo
+    have hSafety :
+        Compiler.MemoryRelation.MemoryConsistent sourceShared.toMachineState ∧
+          Simulation.MemorySafety.RegionAllowed contract
+            address.toNat MemoryContract.wordBytes ∧
+          Compiler.MemoryRelation.ExpansionNoWrap
+            address.toNat MemoryContract.wordBytes ∧
+          address.toNat + MemoryContract.wordBytes < USize.size := by
+      simpa [Simulation.MemorySafety.OpenPrimitiveMemorySafe,
+        Simulation.MemorySafety.PrimitiveMemorySafe,
+        Simulation.MemorySafety.PrimitiveExpansionSafe,
+        Simulation.MemorySafety.PrimitiveHostSafe] using hSafe
+    obtain ⟨targetFinal, hTargetEval, hShared, hMachine, hMemoryMono,
+        hActiveMono, hFinalNoWrap⟩ :=
+      mstore_simulate hRel hSafety.2.2.1 hSafety.2.2.2
+        hTargetNoWrap hEval
+    refine ⟨targetFinal, hTargetEval, hShared, ?_, hMemoryMono,
+      hActiveMono, hFinalNoWrap⟩
+    intro reservation hReservation query hReserved hReadMemory hReadActive
+    have hQueryLt : query < EvmYul.UInt256.size :=
+      lt_of_le_of_lt (Nat.le_add_right query MemoryContract.wordBytes)
+        (hReadActive.trans_lt hTargetNoWrap)
+    have hDisjoint :=
+      Simulation.MemorySafety.reservedWord_disjoint_of_regionAllowed
+        hReservation hSafety.2.1 hReserved
+    have hStable :=
+      Compiler.MemoryRelation.lookupMemory_mstore_disjoint_growing
+        targetShared.toMachineState address.toNat query value
+        (by simp) (EvmYul.UInt256.toNat_ofNat_of_lt hQueryLt)
+        (by simpa [MemoryContract.wordBytes] using hSafety.2.2.2)
+        (by simpa [MemoryContract.wordBytes] using hReadMemory)
+        (by simpa [MemoryContract.wordBytes] using hReadActive)
+        (by simpa [MemoryContract.wordBytes] using hTargetNoWrap)
+        (by simpa [MemoryContract.wordBytes] using hDisjoint)
+    rw [hMachine, ← EvmYul.UInt256.ofNat_toNat address]
+    exact hStable
+
+theorem mstore_openForward (contract : MemoryContract.Contract) :
+    AllocationInteractionPrimitive.OpenForward contract .mstore :=
+  (mstoreClosedSpec contract).openForward
+
+theorem mstore8_simulate
+    {contract : MemoryContract.Contract}
+    {sourceShared sourceFinal targetShared : EvmYul.SharedState .EVM}
+    {address value : Word} {outputs : List Word}
+    (hRel : SharedRel contract sourceShared targetShared)
+    (hExpansion : Compiler.MemoryRelation.ExpansionNoWrap address.toNat 1)
+    (hHost : address.toNat + 1 < USize.size)
+    (hTargetNoWrap :
+      targetShared.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes < EvmYul.UInt256.size)
+    (hEval :
+      Locals.Source.PrimitiveSemantics.structured.eval
+          .mstore8 sourceShared [value, address] =
+        .ok (sourceFinal, outputs)) :
+    ∃ targetFinal,
+      Locals.Source.PrimitiveSemantics.structured.eval
+          .mstore8 targetShared [value, address] =
+        .ok (targetFinal, outputs) ∧
+      SharedRel contract sourceFinal targetFinal ∧
+      targetFinal.toMachineState =
+        targetShared.toMachineState.mstore8 address value ∧
+      targetShared.toMachineState.memory.size ≤
+        targetFinal.toMachineState.memory.size ∧
+      targetShared.toMachineState.activeWords.toNat ≤
+        targetFinal.toMachineState.activeWords.toNat ∧
+      targetFinal.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes < EvmYul.UInt256.size := by
+  obtain ⟨hMachineRel, hFinalNoWrap, hActiveMono, hMemoryMono⟩ :=
+    Compiler.MemoryRelation.MachineRel.mstore8_both
+      hRel.machine hTargetNoWrap address value hExpansion hHost
+  have hSourceResult :
+      sourceFinal =
+          { sourceShared with
+            toMachineState :=
+              sourceShared.toMachineState.mstore8 address value } ∧
+        outputs = [] := by
+    simpa [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp,
+      Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+      Expressions.Structured.BasicOp.inputs,
+      EvmYul.EVM.binaryMachineStateOp, EvmYul.Stack.pop2,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Id.run] using hEval.symm
+  rcases hSourceResult with ⟨rfl, rfl⟩
+  let targetFinal : EvmYul.SharedState .EVM :=
+    { targetShared with
+      toMachineState := targetShared.toMachineState.mstore8 address value }
+  refine ⟨targetFinal, ?_, ?_, rfl, ?_, ?_, ?_⟩
+  · simp [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp,
+      Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+      Expressions.Structured.BasicOp.inputs,
+      EvmYul.EVM.binaryMachineStateOp, EvmYul.Stack.pop2,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Id.run, targetFinal]
+  · exact ⟨hMachineRel, hRel.world⟩
+  · simpa [targetFinal] using hMemoryMono
+  · simpa [targetFinal] using hActiveMono
+  · simpa [targetFinal] using hFinalNoWrap
+
+def mstore8ClosedSpec (contract : MemoryContract.Contract) :
+    ClosedSpec contract .mstore8 where
+  sourceStep := ⟨.binaryMachineState EvmYul.MachineState.mstore8, rfl⟩
+  supportsOpen := rfl
+  notGas := by decide
+  notMsize := by decide
+  evalExists := by
+    intro shared values hLength
+    have hTwo : values.length = 2 := by simpa using hLength
+    obtain ⟨value, address, rfl⟩ := List.length_eq_two.mp hTwo
+    simp [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp, Assembly.PrimOp.continuingStep?,
+      Assembly.PrimStep.run, Expressions.Structured.BasicOp.inputs,
+      EvmYul.EVM.binaryMachineStateOp, EvmYul.Stack.pop2,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Id.run]
+  simulate := by
+    intro sourceShared sourceFinal targetShared values outputs hLength hRel
+      hSafe hTargetNoWrap hEval
+    have hTwo : values.length = 2 := by simpa using hLength
+    obtain ⟨value, address, rfl⟩ := List.length_eq_two.mp hTwo
+    have hSafety :
+        Compiler.MemoryRelation.MemoryConsistent sourceShared.toMachineState ∧
+          Simulation.MemorySafety.RegionAllowed contract address.toNat 1 ∧
+          Compiler.MemoryRelation.ExpansionNoWrap address.toNat 1 ∧
+          address.toNat + 1 < USize.size := by
+      simpa [Simulation.MemorySafety.OpenPrimitiveMemorySafe,
+        Simulation.MemorySafety.PrimitiveMemorySafe,
+        Simulation.MemorySafety.PrimitiveExpansionSafe,
+        Simulation.MemorySafety.PrimitiveHostSafe] using hSafe
+    obtain ⟨targetFinal, hTargetEval, hShared, hMachine, hMemoryMono,
+        hActiveMono, hFinalNoWrap⟩ :=
+      mstore8_simulate hRel hSafety.2.2.1 hSafety.2.2.2
+        hTargetNoWrap hEval
+    refine ⟨targetFinal, hTargetEval, hShared, ?_, hMemoryMono,
+      hActiveMono, hFinalNoWrap⟩
+    intro reservation hReservation query hReserved hReadMemory hReadActive
+    have hQueryLt : query < EvmYul.UInt256.size :=
+      lt_of_le_of_lt (Nat.le_add_right query MemoryContract.wordBytes)
+        (hReadActive.trans_lt hTargetNoWrap)
+    let bytes : ByteArray := ⟨#[UInt8.ofNat value.toNat]⟩
+    have hWrittenMemory :
+        targetFinal.toMachineState.memory =
+          (EvmYul.writeBytes bytes 0 targetShared.toMachineState
+            address.toNat 1).memory := by
+      rw [hMachine]
+      rfl
+    have hDisjoint :=
+      Simulation.MemorySafety.reservedWord_disjoint_of_regionAllowed
+        hReservation hSafety.2.1 hReserved
+    exact
+      Compiler.MemoryRelation.lookupMemory_eq_of_writeBytes_disjoint_growing
+        bytes targetShared.toMachineState targetFinal.toMachineState
+        address.toNat 1 query rfl (by decide) hSafety.2.2.2
+        hWrittenMemory (EvmYul.UInt256.toNat_ofNat_of_lt hQueryLt)
+        hReadMemory hReadActive hTargetNoWrap hActiveMono hFinalNoWrap hDisjoint
+
+theorem mstore8_openForward (contract : MemoryContract.Contract) :
+    AllocationInteractionPrimitive.OpenForward contract .mstore8 :=
+  (mstore8ClosedSpec contract).openForward
+
 theorem keccak256_simulate
     {contract : MemoryContract.Contract}
     {sourceShared sourceFinal targetShared : EvmYul.SharedState .EVM}
