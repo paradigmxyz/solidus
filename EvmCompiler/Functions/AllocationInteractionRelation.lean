@@ -527,6 +527,14 @@ def contractTargetBy (pcDelta : Nat) (value : Word) (rest : List Word)
     (target.evm.replaceStackAndIncrPC
       (value :: rest) (pcΔ := pcDelta))
 
+def mstoreTarget (address value : Word) (rest : List Word)
+    (target : TargetState) : TargetState :=
+  target.withEVM
+    (({ target.evm with
+        toMachineState :=
+          target.evm.toMachineState.mstore address value }).replaceStackAndIncrPC
+      rest)
+
 theorem shared
     {contract : MemoryContract.Contract} {plan : Plan}
     {live : List Locals.Name} {stackOffset frameBase : Nat}
@@ -1250,6 +1258,220 @@ theorem finishCreate
       EvmYul.EVM.State.incrPC]
   · exact hInput
   · exact Simulation.MemorySafety.windowSafe_zero contract 0
+
+/--
+Store a newly live scratch local in compiler-reserved frame memory. The source
+store changes, while source-visible memory remains related outside the
+reservation.
+-/
+theorem assign_scratch_live
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState} {target : TargetState}
+    {name : Locals.Name} {slot : Nat} {value : Word}
+    {rest : List Word}
+    {reservation : MemoryContract.ScratchReservation}
+    (hRel :
+      ScratchStateRel contract plan beforeLive (stackOffset + 2) frameBase
+        frameDepth frameWords source target)
+    (hWF : plan.WellFormed)
+    (hAfter :
+      ∀ other, other ∈ afterLive →
+        other = name ∨ other ∈ beforeLive)
+    (hStackOrder :
+      currentStackOrder plan afterLive =
+        currentStackOrder plan beforeLive)
+    (hLocation : plan.location? name = some (.scratch slot))
+    (hAssignedBound : slot < frameWords)
+    (hReservation : contract.scratch? = some reservation)
+    (hRegion :
+      reservation.containsRegion (scratchAddress frameBase slot) 1)
+    (hStack :
+      target.evm.stack =
+        EvmYul.UInt256.ofNat (scratchAddress frameBase slot) ::
+          value :: rest) :
+    ScratchStateRel contract plan afterLive stackOffset frameBase
+      frameDepth frameWords (source.insert name value)
+      (StateRel.mstoreTarget
+        (EvmYul.UInt256.ofNat (scratchAddress frameBase slot))
+        value rest target) := by
+  have hWriteEndFrame :
+      scratchAddress frameBase slot + MemoryContract.wordBytes ≤
+        frameBase + MemoryContract.wordBytes * frameWords := by
+    have hSucc : slot + 1 ≤ frameWords := Nat.succ_le_iff.mpr hAssignedBound
+    calc
+      scratchAddress frameBase slot + MemoryContract.wordBytes =
+          frameBase + MemoryContract.wordBytes * (slot + 1) := by
+            simp [scratchAddress, Nat.mul_add, Nat.add_assoc]
+      _ ≤ frameBase + MemoryContract.wordBytes * frameWords :=
+        Nat.add_le_add_left
+          (Nat.mul_le_mul_left MemoryContract.wordBytes hSucc) frameBase
+  have hWriteEndActive := hWriteEndFrame.trans hRel.frameActive
+  have hWriteEndMemory := hWriteEndFrame.trans hRel.frameAllocated
+  have hWriteEndLt := lt_of_le_of_lt hWriteEndFrame hRel.frameNoWrap
+  have hWriteEndHost :=
+    lt_of_le_of_lt hWriteEndFrame hRel.frameHostAddressable
+  have hWriteAddressLt :
+      scratchAddress frameBase slot < EvmYul.UInt256.size := by
+    omega
+  have hWriteAddress :
+      (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)).toNat =
+        scratchAddress frameBase slot :=
+    EvmYul.UInt256.toNat_ofNat_of_lt hWriteAddressLt
+  have hActiveEq :=
+    Compiler.MemoryRelation.mstore_activeWords_eq_of_end_le
+      target.evm.toMachineState
+      (scratchAddress frameBase slot) value hWriteAddress
+      (by simpa [MemoryContract.wordBytes] using hWriteEndActive)
+  have hMemoryEq :=
+    Compiler.MemoryRelation.writeWord_memory_size_eq_of_end_le
+      target.evm.toMachineState
+      (scratchAddress frameBase slot) value hWriteAddress
+      (by simpa [MemoryContract.wordBytes] using hWriteEndHost)
+      (by simpa [MemoryContract.wordBytes] using hWriteEndMemory)
+  refine
+    { base := ?_
+      framePointer := ?_
+      frameActive := ?_
+      frameAllocated := ?_
+      frameNoWrap := hRel.frameNoWrap
+      frameHostAddressable := hRel.frameHostAddressable
+      activeNoWrap := ?_
+      frameReserved := hRel.frameReserved
+      scratchBound := ?_ }
+  · refine ⟨?_, ?_, ?_⟩
+    · simpa [Locals.Source.State.insert, StateRel.mstoreTarget,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC] using
+        (Compiler.MemoryRelation.MachineRel.mstore_target
+          (scratchAddress frameBase slot) value hRel.base.machine
+          hReservation hRegion hWriteEndLt hWriteEndHost)
+    · simpa [Locals.Source.State.insert, StateRel.mstoreTarget,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC] using hRel.base.world
+    · intro other location hOtherAfter hOtherLocation
+      by_cases hName : other = name
+      · subst other
+        cases location with
+        | stack depth =>
+            rw [hLocation] at hOtherLocation
+            simp at hOtherLocation
+        | scratch otherSlot =>
+            rw [hLocation] at hOtherLocation
+            cases hOtherLocation
+            change
+              (target.evm.toMachineState.mstore
+                  (EvmYul.UInt256.ofNat
+                    (scratchAddress frameBase slot)) value).lookupMemory
+                    (EvmYul.UInt256.ofNat
+                      (scratchAddress frameBase slot)) =
+                ((source.insert name value).vars name).getD
+                  (EvmYul.UInt256.ofNat 0)
+            rw [Compiler.MemoryRelation.lookupMemory_mstore_same
+              target.evm.toMachineState
+              (scratchAddress frameBase slot) value hWriteAddress
+              (by simpa [MemoryContract.wordBytes] using hWriteEndHost)
+              (by simpa [MemoryContract.wordBytes] using hWriteEndMemory)
+              (by simpa [MemoryContract.wordBytes] using hWriteEndActive)
+              (by simpa [MemoryContract.wordBytes] using hRel.activeNoWrap)]
+            simp [Locals.Source.State.insert]
+      · have hOtherBefore : other ∈ beforeLive := by
+          rcases hAfter other hOtherAfter with hEq | hBefore
+          · exact False.elim (hName hEq)
+          · exact hBefore
+        have hOld :=
+          hRel.base.store other location hOtherBefore hOtherLocation
+        cases location with
+        | stack planDepth =>
+            rcases hOld with ⟨depth, hDepth, hOld⟩
+            refine ⟨depth, ?_, ?_⟩
+            · simpa [hStackOrder] using hDepth
+            · change
+                rest[stackOffset + depth]? =
+                  Locals.Source.Store.insert
+                    source.vars name value other
+              change
+                target.evm.stack[(stackOffset + 2) + depth]? =
+                  source.vars other at hOld
+              rw [hStack] at hOld
+              have hRest :
+                  rest[stackOffset + depth]? = source.vars other := by
+                simpa [show
+                    (stackOffset + 2) + depth =
+                      (stackOffset + depth) + 2 by omega] using hOld
+              rw [Locals.Source.Store.insert_of_ne hName]
+              exact hRest
+        | scratch otherSlot =>
+            have hOtherSlotNe : otherSlot ≠ slot :=
+              plan.scratch_slot_ne_of_wellFormed
+                hWF hName hOtherLocation hLocation
+            have hOtherEndMemory :=
+              hRel.scratchAddress_end_le_memory
+                hOtherBefore hOtherLocation
+            have hOtherEndLt :=
+              hRel.scratchAddress_end_lt_size
+                hOtherBefore hOtherLocation
+            have hOtherAddress :
+                (EvmYul.UInt256.ofNat
+                  (scratchAddress frameBase otherSlot)).toNat =
+                    scratchAddress frameBase otherSlot :=
+              EvmYul.UInt256.toNat_ofNat_of_lt (by omega)
+            have hDisjoint :
+                scratchAddress frameBase otherSlot +
+                      MemoryContract.wordBytes ≤
+                    scratchAddress frameBase slot ∨
+                  scratchAddress frameBase slot +
+                      MemoryContract.wordBytes ≤
+                    scratchAddress frameBase otherSlot := by
+              simp only [scratchAddress, MemoryContract.wordBytes]
+              omega
+            change
+              (target.evm.toMachineState.mstore
+                  (EvmYul.UInt256.ofNat
+                    (scratchAddress frameBase slot)) value).lookupMemory
+                    (EvmYul.UInt256.ofNat
+                      (scratchAddress frameBase otherSlot)) =
+                (Locals.Source.Store.insert
+                  source.vars name value other).getD
+                    (EvmYul.UInt256.ofNat 0)
+            rw [Compiler.MemoryRelation.lookupMemory_mstore_disjoint
+              target.evm.toMachineState
+              (scratchAddress frameBase slot)
+              (scratchAddress frameBase otherSlot) value
+              hWriteAddress hOtherAddress
+              (by simpa [MemoryContract.wordBytes] using hWriteEndHost)
+              (by simpa [MemoryContract.wordBytes] using hWriteEndMemory)
+              (by simpa [MemoryContract.wordBytes] using hOtherEndMemory)
+              (by simpa [MemoryContract.wordBytes] using hWriteEndActive)
+              (by simpa [MemoryContract.wordBytes] using hDisjoint)]
+            rw [Locals.Source.Store.insert_of_ne hName]
+            exact hOld
+  · change
+      rest[stackOffset + frameDepth]? =
+        some (EvmYul.UInt256.ofNat frameBase)
+    have hPointer := hRel.framePointer
+    rw [hStack] at hPointer
+    simpa [show
+        (stackOffset + 2) + frameDepth =
+          (stackOffset + frameDepth) + 2 by omega] using hPointer
+  · simpa [StateRel.mstoreTarget,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, hActiveEq] using hRel.frameActive
+  · simpa [StateRel.mstoreTarget,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC,
+      EvmYul.MachineState.mstore, hMemoryEq] using hRel.frameAllocated
+  · simpa [StateRel.mstoreTarget,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, hActiveEq] using hRel.activeNoWrap
+  · intro other otherSlot hOtherAfter hOtherLocation
+    rcases hAfter other hOtherAfter with hEq | hBefore
+    · subst other
+      rw [hLocation] at hOtherLocation
+      cases hOtherLocation
+      exact hAssignedBound
+    · exact hRel.scratchBound other otherSlot hBefore hOtherLocation
 
 /-- A stack declaration shifts only the hidden scratch-frame depth. -/
 theorem declare_stack_live

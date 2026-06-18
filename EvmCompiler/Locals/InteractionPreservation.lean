@@ -223,6 +223,55 @@ theorem openRun_bindLocals (offset : Nat) (layout : Layout)
       .done (.ok target) := by
   rfl
 
+theorem openRun_add
+    {target : Structured.RunState}
+    {right left : Word} {rest : List Word}
+    (hStack : target.evm.stack = right :: left :: rest) :
+    Structured.InteractionSemantics.Code.openRun [.op .add] target =
+      .done
+        (.ok
+          (target.withEVM
+            (target.evm.replaceStackAndIncrPC
+              (EvmYul.UInt256.add right left :: rest)))) := by
+  unfold Structured.InteractionSemantics.Code.openRun
+  simp only [Structured.EffectSemantics.Control.Code.run,
+    Structured.InteractionSemantics.handler,
+    Structured.InteractionSemantics.BasicInstr.openStep,
+    Structured.InteractionSemantics.BasicInstr.openStepEVM]
+  simp only [Structured.BasicOp.toPrimOp]
+  rw [Assembly.InteractionSemantics.PrimOp.openStep_of_continuingStep
+    (by rfl : Assembly.PrimOp.add.continuingStep? =
+      some (.bin EvmYul.UInt256.add)) (by decide) (by decide)]
+  unfold Assembly.PrimStep.run EvmYul.EVM.execBinOp
+  rw [hStack]
+  rfl
+
+theorem openRun_mstore
+    {target : Structured.RunState}
+    {address value : Word} {rest : List Word}
+    (hStack : target.evm.stack = address :: value :: rest) :
+    Structured.InteractionSemantics.Code.openRun [.op .mstore] target =
+      .done
+        (.ok
+          (target.withEVM
+            (({ target.evm with
+                toMachineState :=
+                  target.evm.toMachineState.mstore address value
+              }).replaceStackAndIncrPC rest))) := by
+  unfold Structured.InteractionSemantics.Code.openRun
+  simp only [Structured.EffectSemantics.Control.Code.run,
+    Structured.InteractionSemantics.handler,
+    Structured.InteractionSemantics.BasicInstr.openStep,
+    Structured.InteractionSemantics.BasicInstr.openStepEVM]
+  simp only [Structured.BasicOp.toPrimOp]
+  rw [Assembly.InteractionSemantics.PrimOp.openStep_of_continuingStep
+    (by rfl : Assembly.PrimOp.mstore.continuingStep? =
+      some (.binaryMachineState EvmYul.MachineState.mstore))
+    (by decide) (by decide)]
+  unfold Assembly.PrimStep.run EvmYul.EVM.binaryMachineStateOp
+  rw [hStack]
+  rfl
+
 theorem openRun_dup
     {target : Structured.RunState}
     {index : Nat} {value : Word} {op : Structured.BasicOp}

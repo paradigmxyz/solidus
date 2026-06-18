@@ -31776,3 +31776,19 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1158-job module, 1311-job verification root, architecture guard,
   touched-file hole scan, axiom audit, and `git diff --check` passed; checked
   axioms remain `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 21:53:36 PDT - compaction-resume - resumed the horizontal
+  CALL/CREATE proof at the checked Functions allocation boundary; validate and
+  checkpoint the canonical scratch-store theorem, then compose scratch `let`.
+- 2026-06-17 21:57:00 PDT - proof/functions-scratch-store - proved
+  `ScratchStateRel.assign_scratch_live` and
+  `AllocationInteractionScratchStore.assignTop`: generated
+  `DUP/PUSH/ADD/MSTORE` writes one compiler-reserved frame slot, preserves all
+  prior live spills and ordered interactions, and establishes the extended
+  canonical scratch relation.
+- 2026-06-17 21:57:00 PDT - validation/functions-scratch-store - focused
+  module builds and the 1312-job verification root passed; architecture guard,
+  touched-file hole scan, and `git diff --check` passed. Axiom audit pending a
+  corrected temporary import of the new module.
+- 2026-06-17 21:58:00 PDT - validation/functions-scratch-store - corrected
+  axiom audit passed; both new theorems use only
+  `[propext, Classical.choice, Quot.sound]`.

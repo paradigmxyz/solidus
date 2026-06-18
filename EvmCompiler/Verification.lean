@@ -32,6 +32,7 @@ import EvmCompiler.Functions.InteractionSemantics
 import EvmCompiler.Functions.AllocationInteractionRelation
 import EvmCompiler.Functions.AllocationInteractionExpression
 import EvmCompiler.Functions.AllocationInteractionExpressionRecursive
+import EvmCompiler.Functions.AllocationInteractionScratchStore
 import EvmCompiler.Functions.AllocationInteractionStatement
 import EvmCompiler.Functions.AllocationInteractionPrimitive
 import EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive
@@ -181,6 +182,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionRelation.StateRel.declare_stack_live
 #check EvmCompiler.Functions.AllocationInteractionRelation.ScratchStateRel.declare_stack_live
 #check EvmCompiler.Functions.AllocationInteractionRelation.ActivationStateRel.declare_stack_live
+#check EvmCompiler.Functions.AllocationInteractionRelation.ScratchStateRel.assign_scratch_live
 #check EvmCompiler.Functions.AllocationInteractionRelation.ActivationOutcomeRel
 #check EvmCompiler.Functions.AllocationInteractionRelation.ActivationStateRel.finishCall
 #check EvmCompiler.Functions.AllocationInteractionRelation.ActivationStateRel.finishCreate
@@ -201,6 +203,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionExpression.exprSeq_cons_of_parts
 #check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardExpr
 #check EvmCompiler.Functions.AllocationInteractionExpressionRecursive.forwardExprSeq
+#check EvmCompiler.Functions.AllocationInteractionScratchStore.assignTop
 #check EvmCompiler.Functions.AllocationInteractionStatement.StmtResultRel
 #check EvmCompiler.Functions.AllocationInteractionStatement.expr_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionStatement.stack_let_compiler_shape
