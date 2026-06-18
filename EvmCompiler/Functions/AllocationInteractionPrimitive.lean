@@ -16,66 +16,225 @@ def createOp : Simulation.CreateKind → Structured.BasicOp
   | .create => .create
   | .create2 => .create2
 
-abbrev ScratchExprOutcomeRel
+@[simp] theorem callOp_inputs (kind : Simulation.CallKind) :
+    Expressions.Structured.BasicOp.inputs (callOp kind) = kind.inputArity := by
+  cases kind <;> rfl
+
+@[simp] theorem callOp_outputs (kind : Simulation.CallKind) :
+    Expressions.Structured.BasicOp.outputs (callOp kind) = 1 := by
+  cases kind <;> rfl
+
+@[simp] theorem createOp_inputs (kind : Simulation.CreateKind) :
+    Expressions.Structured.BasicOp.inputs (createOp kind) = kind.inputArity := by
+  cases kind <;> rfl
+
+@[simp] theorem createOp_outputs (kind : Simulation.CreateKind) :
+    Expressions.Structured.BasicOp.outputs (createOp kind) = 1 := by
+  cases kind <;> rfl
+
+abbrev ActivationExprOutcomeRel
     (contract : MemoryContract.Contract) (plan : Plan)
     (live : List Locals.Name)
-    (stackOffset frameBase frameDepth frameWords results : Nat)
-    (initialTarget : TargetState) :
+    (stackOffset frameBase results : Nat)
+    (mode : ActivationMode) (initialTarget : TargetState) :
     Except EVMException (SourceState × List Word) →
       Except EVMException TargetState → Prop :=
   Simulation.Interaction.ExceptRel Eq
     (fun sourceResult targetFinal =>
-      ScratchExprResultRel contract plan live stackOffset frameBase
-        frameDepth frameWords results sourceResult.1 initialTarget
-        targetFinal sourceResult.2)
+      ActivationExprResultRel contract plan live stackOffset frameBase
+        results mode sourceResult.1 initialTarget targetFinal sourceResult.2)
+
+def CallMemorySafe (contract : MemoryContract.Contract)
+    (kind : Simulation.CallKind) (values : List Word) : Prop :=
+  ∀ operands,
+    kind.evmOperands? values.reverse = some ([], operands) →
+    Simulation.MemorySafety.WindowSafe contract
+        operands.inputOffset.toNat operands.inputSize.toNat ∧
+      Simulation.MemorySafety.WindowSafe contract
+        operands.outputOffset.toNat operands.outputSize.toNat
+
+def CreateMemorySafe (contract : MemoryContract.Contract)
+    (kind : Simulation.CreateKind) (values : List Word) : Prop :=
+  ∀ operands,
+    kind.evmOperands? values.reverse = some ([], operands) →
+    Simulation.MemorySafety.WindowSafe contract
+      operands.initOffset.toNat operands.initSize.toNat
+
+def CallArgsSafe (contract : MemoryContract.Contract)
+    (kind : Simulation.CallKind) :
+    Except EVMException (SourceState × List Word) → Prop
+  | .error _ => True
+  | .ok result => CallMemorySafe contract kind result.2
+
+def CreateArgsSafe (contract : MemoryContract.Contract)
+    (kind : Simulation.CreateKind) :
+    Except EVMException (SourceState × List Word) → Prop
+  | .error _ => True
+  | .ok result => CreateMemorySafe contract kind result.2
+
+private theorem callOperands_of_length
+    (kind : Simulation.CallKind) (stack : List Word)
+    (hLength : stack.length = kind.inputArity) :
+    ∃ operands, kind.evmOperands? stack = some ([], operands) := by
+  cases kind with
+  | call =>
+      obtain ⟨rest, gas, address, value, inputOffset, inputSize,
+          outputOffset, outputSize, hPop⟩ :=
+        Assembly.PrimStep.Stack.exists_pop7_of_seven_le
+          (stack := stack)
+          (by simp [Simulation.CallKind.inputArity] at hLength; omega)
+      have hRestLength :=
+        Assembly.PrimStep.Stack.length_of_pop7_some hPop
+      have hRest : rest = [] := by
+        apply List.eq_nil_of_length_eq_zero
+        simp [Simulation.CallKind.inputArity] at hLength
+        omega
+      subst rest
+      refine ⟨{
+        requestedGas := gas, address := address, valueArg := value,
+        inputOffset := inputOffset, inputSize := inputSize,
+        outputOffset := outputOffset, outputSize := outputSize }, ?_⟩
+      simp [Simulation.CallKind.evmOperands?, hPop]
+  | callcode =>
+      obtain ⟨rest, gas, address, value, inputOffset, inputSize,
+          outputOffset, outputSize, hPop⟩ :=
+        Assembly.PrimStep.Stack.exists_pop7_of_seven_le
+          (stack := stack)
+          (by simp [Simulation.CallKind.inputArity] at hLength; omega)
+      have hRestLength :=
+        Assembly.PrimStep.Stack.length_of_pop7_some hPop
+      have hRest : rest = [] := by
+        apply List.eq_nil_of_length_eq_zero
+        simp [Simulation.CallKind.inputArity] at hLength
+        omega
+      subst rest
+      refine ⟨{
+        requestedGas := gas, address := address, valueArg := value,
+        inputOffset := inputOffset, inputSize := inputSize,
+        outputOffset := outputOffset, outputSize := outputSize }, ?_⟩
+      simp [Simulation.CallKind.evmOperands?, hPop]
+  | delegatecall =>
+      obtain ⟨rest, gas, address, inputOffset, inputSize,
+          outputOffset, outputSize, hPop⟩ :=
+        Assembly.PrimStep.Stack.exists_pop6_of_six_le
+          (stack := stack)
+          (by simp [Simulation.CallKind.inputArity] at hLength; omega)
+      have hRestLength :=
+        Assembly.PrimStep.Stack.length_of_pop6_some hPop
+      have hRest : rest = [] := by
+        apply List.eq_nil_of_length_eq_zero
+        simp [Simulation.CallKind.inputArity] at hLength
+        omega
+      subst rest
+      refine ⟨{
+        requestedGas := gas, address := address,
+        valueArg := EvmYul.UInt256.ofNat 0,
+        inputOffset := inputOffset, inputSize := inputSize,
+        outputOffset := outputOffset, outputSize := outputSize }, ?_⟩
+      simp [Simulation.CallKind.evmOperands?, hPop]
+  | staticcall =>
+      obtain ⟨rest, gas, address, inputOffset, inputSize,
+          outputOffset, outputSize, hPop⟩ :=
+        Assembly.PrimStep.Stack.exists_pop6_of_six_le
+          (stack := stack)
+          (by simp [Simulation.CallKind.inputArity] at hLength; omega)
+      have hRestLength :=
+        Assembly.PrimStep.Stack.length_of_pop6_some hPop
+      have hRest : rest = [] := by
+        apply List.eq_nil_of_length_eq_zero
+        simp [Simulation.CallKind.inputArity] at hLength
+        omega
+      subst rest
+      refine ⟨{
+        requestedGas := gas, address := address,
+        valueArg := EvmYul.UInt256.ofNat 0,
+        inputOffset := inputOffset, inputSize := inputSize,
+        outputOffset := outputOffset, outputSize := outputSize }, ?_⟩
+      simp [Simulation.CallKind.evmOperands?, hPop]
+
+private theorem createOperands_of_length
+    (kind : Simulation.CreateKind) (stack : List Word)
+    (hLength : stack.length = kind.inputArity) :
+    ∃ operands, kind.evmOperands? stack = some ([], operands) := by
+  cases kind with
+  | create =>
+      obtain ⟨rest, value, initOffset, initSize, hPop⟩ :=
+        Assembly.PrimStep.Stack.exists_pop3_of_three_le
+          (stack := stack)
+          (by simp [Simulation.CreateKind.inputArity] at hLength; omega)
+      have hRestLength :=
+        Assembly.PrimStep.Stack.length_of_pop3_some hPop
+      have hRest : rest = [] := by
+        apply List.eq_nil_of_length_eq_zero
+        simp [Simulation.CreateKind.inputArity] at hLength
+        omega
+      subst rest
+      refine ⟨{
+        value := value, initOffset := initOffset, initSize := initSize,
+        saltArg := EvmYul.UInt256.ofNat 0 }, ?_⟩
+      simp [Simulation.CreateKind.evmOperands?, hPop]
+  | create2 =>
+      obtain ⟨rest, value, initOffset, initSize, salt, hPop⟩ :=
+        Assembly.PrimStep.Stack.exists_pop4_of_four_le
+          (stack := stack)
+          (by simp [Simulation.CreateKind.inputArity] at hLength; omega)
+      have hRestLength :=
+        Assembly.PrimStep.Stack.length_of_pop4_some hPop
+      have hRest : rest = [] := by
+        apply List.eq_nil_of_length_eq_zero
+        simp [Simulation.CreateKind.inputArity] at hLength
+        omega
+      subst rest
+      refine ⟨{
+        value := value, initOffset := initOffset, initSize := initSize,
+        saltArg := salt }, ?_⟩
+      simp [Simulation.CreateKind.evmOperands?, hPop]
 
 /-- One CALL-family request and every possible response preserve allocation. -/
 theorem call_open
     {contract : MemoryContract.Contract} {plan : Plan}
     {live : List Locals.Name}
-    {stackOffset frameBase frameDepth frameWords : Nat}
+    {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
     {source : SourceState} {initialTarget target : TargetState}
-    (kind : Simulation.CallKind) (operands : Simulation.CallOperands)
+    (kind : Simulation.CallKind) (values : List Word)
+    (hLength : values.length = kind.inputArity)
     (hRel :
-      ScratchStateRel contract plan live
-        (stackOffset + kind.inputArity) frameBase
-        frameDepth frameWords source target)
+      ActivationStateRel contract plan live
+        (stackOffset + kind.inputArity) frameBase mode source target)
     (hStack :
-      target.evm.stack = kind.args operands ++ initialTarget.evm.stack)
-    (hInput :
-      Simulation.MemorySafety.WindowSafe contract
-        (kind.canonicalOperands operands).inputOffset.toNat
-        (kind.canonicalOperands operands).inputSize.toNat)
-    (hOutput :
-      Simulation.MemorySafety.WindowSafe contract
-        (kind.canonicalOperands operands).outputOffset.toNat
-        (kind.canonicalOperands operands).outputSize.toNat) :
+      target.evm.stack = values.reverse ++ initialTarget.evm.stack)
+    (hSafe : CallMemorySafe contract kind values) :
     Simulation.Interaction.Rel
-      (ScratchExprOutcomeRel contract plan live stackOffset frameBase
-        frameDepth frameWords 1 initialTarget)
+      (ActivationExprOutcomeRel contract plan live stackOffset frameBase
+        1 mode initialTarget)
       (Locals.InteractionSemantics.Primitive.openEval (callOp kind) source
-        (kind.args operands).reverse)
+        values)
       (Structured.InteractionSemantics.BasicInstr.openStep
         (.op (callOp kind)) target) := by
-  let parsed := kind.canonicalOperands operands
+  obtain ⟨parsed, hDecoded⟩ :=
+    callOperands_of_length kind values.reverse (by
+      simpa [List.length_reverse] using hLength)
+  obtain ⟨hInput, hOutput⟩ := hSafe parsed hDecoded
+  have hRelPrefix :
+      ActivationStateRel contract plan live
+        (stackOffset + values.reverse.length) frameBase mode source target := by
+    simpa [List.length_reverse, hLength] using hRel
   let sourceEVM :=
-    Locals.InteractionSemantics.Primitive.isolated source
-      (kind.args operands).reverse
-  have hSourceStack : sourceEVM.stack = kind.args operands := by
-    simp [sourceEVM, Locals.InteractionSemantics.Primitive.isolated]
+    Locals.InteractionSemantics.Primitive.isolated source values
   have hSourceOperands :
       kind.evmOperands? sourceEVM.stack = some ([], parsed) := by
-    rw [hSourceStack]
-    simpa [parsed] using kind.evmOperands?_args operands []
+    simpa [sourceEVM, Locals.InteractionSemantics.Primitive.isolated] using
+      hDecoded
   have hTargetOperands :
       kind.evmOperands? target.evm.stack =
         some (initialTarget.evm.stack, parsed) := by
     rw [hStack]
-    simp [parsed]
+    exact kind.evmOperands?_append_of_some initialTarget.evm.stack hDecoded
   have hInputRel :
       SharedRel contract sourceEVM.toSharedState target.evm.toSharedState := by
     simpa [sourceEVM,
-      Locals.InteractionSemantics.Primitive.isolated] using hRel.base.shared
+      Locals.InteractionSemantics.Primitive.isolated] using hRel.shared
   have hAllowed :
       kind.allowedIn
           (Simulation.ExternalFrame.ofShared sourceEVM.toSharedState) parsed =
@@ -108,7 +267,7 @@ theorem call_open
           apply Simulation.Interaction.Rel.done
           apply Simulation.Interaction.ExceptRel.ok
           refine ⟨?_, rfl, ?_⟩
-          · exact hRel.finishCall sourceEVM rfl parsed.callLocal response
+          · exact hRelPrefix.finishCall sourceEVM rfl parsed.callLocal response
               hStack hInput hOutput
           · simp [Locals.InteractionSemantics.Primitive.finish,
               Structured.RunState.withEVM,
@@ -117,7 +276,7 @@ theorem call_open
               EvmYul.EVM.State.incrPC]
         · exact Simulation.Interaction.Rel.done
             (Simulation.Interaction.ExceptRel.error rfl)
-      · simp [Simulation.CallKind.args]
+      · simpa [Simulation.CallKind.inputArity] using hLength
   | callcode =>
       simp only [callOp]
       rw [Locals.InteractionSemantics.Primitive.openEval_callcode]
@@ -138,7 +297,7 @@ theorem call_open
           apply Simulation.Interaction.Rel.done
           apply Simulation.Interaction.ExceptRel.ok
           refine ⟨?_, rfl, ?_⟩
-          · exact hRel.finishCall sourceEVM rfl parsed.callLocal response
+          · exact hRelPrefix.finishCall sourceEVM rfl parsed.callLocal response
               hStack hInput hOutput
           · simp [Locals.InteractionSemantics.Primitive.finish,
               Structured.RunState.withEVM,
@@ -147,7 +306,7 @@ theorem call_open
               EvmYul.EVM.State.incrPC]
         · exact Simulation.Interaction.Rel.done
             (Simulation.Interaction.ExceptRel.error rfl)
-      · simp [Simulation.CallKind.args]
+      · simpa [Simulation.CallKind.inputArity] using hLength
   | delegatecall =>
       simp only [callOp]
       rw [Locals.InteractionSemantics.Primitive.openEval_delegatecall]
@@ -168,7 +327,7 @@ theorem call_open
           apply Simulation.Interaction.Rel.done
           apply Simulation.Interaction.ExceptRel.ok
           refine ⟨?_, rfl, ?_⟩
-          · exact hRel.finishCall sourceEVM rfl parsed.callLocal response
+          · exact hRelPrefix.finishCall sourceEVM rfl parsed.callLocal response
               hStack hInput hOutput
           · simp [Locals.InteractionSemantics.Primitive.finish,
               Structured.RunState.withEVM,
@@ -177,7 +336,7 @@ theorem call_open
               EvmYul.EVM.State.incrPC]
         · exact Simulation.Interaction.Rel.done
             (Simulation.Interaction.ExceptRel.error rfl)
-      · simp [Simulation.CallKind.args]
+      · simpa [Simulation.CallKind.inputArity] using hLength
   | staticcall =>
       simp only [callOp]
       rw [Locals.InteractionSemantics.Primitive.openEval_staticcall]
@@ -198,7 +357,7 @@ theorem call_open
           apply Simulation.Interaction.Rel.done
           apply Simulation.Interaction.ExceptRel.ok
           refine ⟨?_, rfl, ?_⟩
-          · exact hRel.finishCall sourceEVM rfl parsed.callLocal response
+          · exact hRelPrefix.finishCall sourceEVM rfl parsed.callLocal response
               hStack hInput hOutput
           · simp [Locals.InteractionSemantics.Primitive.finish,
               Structured.RunState.withEVM,
@@ -207,51 +366,53 @@ theorem call_open
               EvmYul.EVM.State.incrPC]
         · exact Simulation.Interaction.Rel.done
             (Simulation.Interaction.ExceptRel.error rfl)
-      · simp [Simulation.CallKind.args]
+      · simpa [Simulation.CallKind.inputArity] using hLength
 
 /-- One CREATE-family request and every possible response preserve allocation. -/
 theorem create_open
     {contract : MemoryContract.Contract} {plan : Plan}
     {live : List Locals.Name}
-    {stackOffset frameBase frameDepth frameWords : Nat}
+    {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
     {source : SourceState} {initialTarget target : TargetState}
-    (kind : Simulation.CreateKind) (operands : Simulation.CreateOperands)
+    (kind : Simulation.CreateKind) (values : List Word)
+    (hLength : values.length = kind.inputArity)
     (hRel :
-      ScratchStateRel contract plan live
-        (stackOffset + kind.inputArity) frameBase
-        frameDepth frameWords source target)
+      ActivationStateRel contract plan live
+        (stackOffset + kind.inputArity) frameBase mode source target)
     (hStack :
-      target.evm.stack = kind.args operands ++ initialTarget.evm.stack)
-    (hInput :
-      Simulation.MemorySafety.WindowSafe contract
-        (kind.canonicalOperands operands).initOffset.toNat
-        (kind.canonicalOperands operands).initSize.toNat) :
+      target.evm.stack = values.reverse ++ initialTarget.evm.stack)
+    (hSafe : CreateMemorySafe contract kind values) :
     Simulation.Interaction.Rel
-      (ScratchExprOutcomeRel contract plan live stackOffset frameBase
-        frameDepth frameWords 1 initialTarget)
+      (ActivationExprOutcomeRel contract plan live stackOffset frameBase
+        1 mode initialTarget)
       (Locals.InteractionSemantics.Primitive.openEval (createOp kind) source
-        (kind.args operands).reverse)
+        values)
       (Structured.InteractionSemantics.BasicInstr.openStep
         (.op (createOp kind)) target) := by
-  let parsed := kind.canonicalOperands operands
+  obtain ⟨parsed, hDecoded⟩ :=
+    createOperands_of_length kind values.reverse (by
+      simpa [List.length_reverse] using hLength)
+  have hInput := hSafe parsed hDecoded
+  have hRelPrefix :
+      ActivationStateRel contract plan live
+        (stackOffset + values.reverse.length) frameBase mode source target := by
+    simpa [List.length_reverse, hLength] using hRel
   let sourceEVM :=
-    Locals.InteractionSemantics.Primitive.isolated source
-      (kind.args operands).reverse
-  have hSourceStack : sourceEVM.stack = kind.args operands := by
-    simp [sourceEVM, Locals.InteractionSemantics.Primitive.isolated]
+    Locals.InteractionSemantics.Primitive.isolated source values
   have hSourceOperands :
       kind.evmOperands? sourceEVM.stack = some ([], parsed) := by
-    rw [hSourceStack]
-    simpa [parsed] using kind.evmOperands?_args operands []
+    simpa [sourceEVM, Locals.InteractionSemantics.Primitive.isolated] using
+      hDecoded
   have hTargetOperands :
       kind.evmOperands? target.evm.stack =
         some (initialTarget.evm.stack, parsed) := by
     rw [hStack]
-    simp [parsed]
+    exact kind.evmOperands?_append_of_some initialTarget.evm.stack hDecoded
   have hInputRel :
       SharedRel contract sourceEVM.toSharedState target.evm.toSharedState := by
     simpa [sourceEVM,
-      Locals.InteractionSemantics.Primitive.isolated] using hRel.base.shared
+      Locals.InteractionSemantics.Primitive.isolated] using hRel.shared
   have hPermission :
       (Simulation.ExternalFrame.ofShared sourceEVM.toSharedState).permission =
         (Simulation.ExternalFrame.ofShared target.evm.toSharedState).permission := by
@@ -281,7 +442,7 @@ theorem create_open
           apply Simulation.Interaction.Rel.done
           apply Simulation.Interaction.ExceptRel.ok
           refine ⟨?_, rfl, ?_⟩
-          · exact hRel.finishCreate sourceEVM rfl parsed.createLocal response
+          · exact hRelPrefix.finishCreate sourceEVM rfl parsed.createLocal response
               hStack hInput
           · simp [Locals.InteractionSemantics.Primitive.finish,
               Structured.RunState.withEVM,
@@ -290,7 +451,7 @@ theorem create_open
               EvmYul.EVM.State.incrPC]
         · exact Simulation.Interaction.Rel.done
             (Simulation.Interaction.ExceptRel.error rfl)
-      · simp [Simulation.CreateKind.args]
+      · simpa [Simulation.CreateKind.inputArity] using hLength
   | create2 =>
       simp only [createOp]
       rw [Locals.InteractionSemantics.Primitive.openEval_create2]
@@ -311,7 +472,7 @@ theorem create_open
           apply Simulation.Interaction.Rel.done
           apply Simulation.Interaction.ExceptRel.ok
           refine ⟨?_, rfl, ?_⟩
-          · exact hRel.finishCreate sourceEVM rfl parsed.createLocal response
+          · exact hRelPrefix.finishCreate sourceEVM rfl parsed.createLocal response
               hStack hInput
           · simp [Locals.InteractionSemantics.Primitive.finish,
               Structured.RunState.withEVM,
@@ -320,7 +481,7 @@ theorem create_open
               EvmYul.EVM.State.incrPC]
         · exact Simulation.Interaction.Rel.done
             (Simulation.Interaction.ExceptRel.error rfl)
-      · simp [Simulation.CreateKind.args]
+      · simpa [Simulation.CreateKind.inputArity] using hLength
 
 end AllocationInteractionPrimitive
 end Functions

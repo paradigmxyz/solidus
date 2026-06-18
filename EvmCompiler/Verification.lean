@@ -168,11 +168,16 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionRelation.ScratchStateRel.finishExternal
 #check EvmCompiler.Functions.AllocationInteractionRelation.ScratchStateRel.finishCall
 #check EvmCompiler.Functions.AllocationInteractionRelation.ScratchStateRel.finishCreate
+#check EvmCompiler.Functions.AllocationInteractionRelation.ActivationStateRel
+#check EvmCompiler.Functions.AllocationInteractionRelation.ActivationStateRel.finishCall
+#check EvmCompiler.Functions.AllocationInteractionRelation.ActivationStateRel.finishCreate
 #check EvmCompiler.Functions.AllocationInteractionRelation.OutcomeRel
 #check EvmCompiler.Functions.AllocationInteractionRelation.OpenOutcomeRel
 #check EvmCompiler.Functions.AllocationInteractionExpression.literal_open
 #check EvmCompiler.Functions.AllocationInteractionExpression.literal_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionExpression.stack_var_open
+#check EvmCompiler.Functions.AllocationInteractionExpression.call_prim_of_args
+#check EvmCompiler.Functions.AllocationInteractionExpression.create_prim_of_args
 #check EvmCompiler.Functions.AllocationInteractionPrimitive.call_open
 #check EvmCompiler.Functions.AllocationInteractionPrimitive.create_open
 #check EvmCompiler.Functions.AllocationObserverRelation.StateRel.toInteraction

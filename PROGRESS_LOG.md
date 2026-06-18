@@ -31580,3 +31580,17 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1155-job Functions build, 1305-job verification root, architecture guards,
   touched-file hole scan, and `git diff --check` passed; both family theorems
   use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 17:17:37 PDT - theorem-boundary/allocation-modes - corrected the
+  external primitive boundary from scratch-only to the allocation-owned
+  `ActivationStateRel`; both stack-only and scratch-backed artifacts now share
+  the same response and expression-result interface.
+- 2026-06-17 17:17:37 PDT - proof/functions-external-arguments - generalized
+  `call_open`/`create_open` to arbitrary runtime values with exact operand
+  decoding and source-facing window safety, then proved `call_prim_of_args`
+  and `create_prim_of_args` over the actual emitted
+  `argsCode ++ [.op op]` interaction computation.
+- 2026-06-17 17:17:37 PDT - validation/functions-external-arguments - the
+  1155-job Functions build, 1305-job verification root, architecture guards,
+  touched-file hole scan, and `git diff --check` passed; activation response
+  and argument-composition theorems use only
+  `[propext, Classical.choice, Quot.sound]`.

@@ -75,6 +75,13 @@ def StoreRel (plan : Plan) (live : List Locals.Name)
             (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)) =
           (source.vars name).getD (EvmYul.UInt256.ofNat 0)
 
+/-- Every currently live local is represented on the target stack. -/
+def LiveStackOnly (plan : Plan) (live : List Locals.Name) : Prop :=
+  ∀ name slot,
+    name ∈ live →
+    plan.location? name = some (.scratch slot) →
+    False
+
 namespace StoreRel
 
 /-- Rebase live locals across a target stack-prefix replacement. -/
@@ -134,6 +141,25 @@ theorem rebase_prefix_of_lookup
       simpa using hBase
   | scratch slot =>
       simpa [hScratch name slot hLive hLocation, hVars] using hValue
+
+theorem rebase_prefix_stack_only
+    {plan : Plan} {live : List Locals.Name}
+    {stackOffset frameBase : Nat}
+    {source sourceFinal : Locals.Source.State}
+    {target targetFinal : Structured.RunState}
+    {oldPrefix newPrefix baseStack : List Word}
+    (hOnly : LiveStackOnly plan live)
+    (hRel :
+      StoreRel plan live (stackOffset + oldPrefix.length) frameBase
+        source target)
+    (hOldStack : target.evm.stack = oldPrefix ++ baseStack)
+    (hNewStack : targetFinal.evm.stack = newPrefix ++ baseStack)
+    (hVars : sourceFinal.vars = source.vars) :
+    StoreRel plan live (stackOffset + newPrefix.length) frameBase
+      sourceFinal targetFinal := by
+  apply rebase_prefix_of_lookup hRel hOldStack hNewStack _ hVars
+  intro name slot hLive hLocation
+  exact False.elim (hOnly name slot hLive hLocation)
 
 end StoreRel
 
@@ -783,6 +809,221 @@ theorem finishCreate
 
 end ScratchStateRel
 
+/-- Runtime representation selected by the ordinary allocation artifact. -/
+inductive ActivationMode where
+  | stack
+  | scratch (frameDepth frameWords : Nat)
+  deriving DecidableEq, Repr
+
+/-- One representation-neutral allocation relation for recursive proofs. -/
+inductive ActivationStateRel
+    (contract : MemoryContract.Contract) (plan : Plan)
+    (live : List Locals.Name) (stackOffset frameBase : Nat) :
+    ActivationMode → SourceState → TargetState → Prop where
+  | stack {source target}
+      (liveStackOnly : LiveStackOnly plan live)
+      (activeNoWrap :
+        target.evm.activeWords.toNat * MemoryContract.wordBytes <
+          EvmYul.UInt256.size)
+      (state :
+        StateRel contract plan live stackOffset frameBase source target) :
+      ActivationStateRel contract plan live stackOffset frameBase
+        .stack source target
+  | scratch {frameDepth frameWords source target}
+      (state :
+        ScratchStateRel contract plan live stackOffset frameBase
+          frameDepth frameWords source target) :
+      ActivationStateRel contract plan live stackOffset frameBase
+        (.scratch frameDepth frameWords) source target
+
+namespace ActivationStateRel
+
+theorem shared
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode} {source : SourceState} {target : TargetState}
+    (hRel :
+      ActivationStateRel contract plan live stackOffset frameBase mode
+        source target) :
+    SharedRel contract source.shared target.evm.toSharedState := by
+  cases hRel with
+  | stack _ _ state => exact state.shared
+  | scratch state => exact state.base.shared
+
+theorem activeNoWrap
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode} {source : SourceState} {target : TargetState}
+    (hRel :
+      ActivationStateRel contract plan live stackOffset frameBase mode
+        source target) :
+    target.evm.activeWords.toNat * MemoryContract.wordBytes <
+      EvmYul.UInt256.size := by
+  cases hRel with
+  | stack _ activeNoWrap _ => exact activeNoWrap
+  | scratch state => exact state.activeNoWrap
+
+/-- Preserve either allocation representation across one response update. -/
+theorem finishExternal
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase : Nat} {mode : ActivationMode}
+    {source : SourceState} {target : TargetState}
+    {oldPrefix baseStack : List Word}
+    (hRel :
+      ActivationStateRel contract plan live
+        (stackOffset + oldPrefix.length) frameBase mode source target)
+    (sourceFinalShared : EvmYul.SharedState .EVM)
+    (targetFinalEVM : Assembly.EVMState)
+    (result : Word) (returnData : ByteArray)
+    (inputOffset inputSize outputOffset outputSize : Word)
+    (hOldStack : target.evm.stack = oldPrefix ++ baseStack)
+    (hSharedFinal :
+      SharedRel contract sourceFinalShared targetFinalEVM.toSharedState)
+    (hFinalStack : targetFinalEVM.stack = result :: baseStack)
+    (hFinalMachine :
+      targetFinalEVM.toMachineState =
+        target.evm.toMachineState.finishExternalCall returnData
+          inputOffset inputSize outputOffset outputSize)
+    (hInput :
+      Simulation.MemorySafety.WindowSafe contract
+        inputOffset.toNat inputSize.toNat)
+    (hOutput :
+      Simulation.MemorySafety.WindowSafe contract
+        outputOffset.toNat outputSize.toNat) :
+    ActivationStateRel contract plan live (stackOffset + 1) frameBase mode
+      (source.withShared sourceFinalShared)
+      (target.withEVM targetFinalEVM) := by
+  cases hRel with
+  | scratch state =>
+      exact .scratch
+        (state.finishExternal sourceFinalShared targetFinalEVM result
+          returnData inputOffset inputSize outputOffset outputSize
+          hOldStack hSharedFinal hFinalStack hFinalMachine hInput hOutput)
+  | stack liveStackOnly activeNoWrap state =>
+      have hGrowth :=
+        Simulation.MemorySafety.finishExternalCall_growth
+          target.evm.toMachineState activeNoWrap returnData
+          inputOffset inputSize outputOffset outputSize hInput hOutput
+      have hNewStack :
+          (target.withEVM targetFinalEVM).evm.stack = [result] ++ baseStack := by
+        simpa [Structured.RunState.withEVM] using hFinalStack
+      refine .stack liveStackOnly ?_ ?_
+      · simpa [Structured.RunState.withEVM, hFinalMachine] using
+          hGrowth.activeNoWrap
+      · refine ⟨?_, ?_, ?_⟩
+        · simpa [Structured.RunState.withEVM] using hSharedFinal.machine
+        · simpa [Structured.RunState.withEVM] using hSharedFinal.world
+        · exact
+            state.store.rebase_prefix_stack_only liveStackOnly hOldStack
+              hNewStack (by simp [Locals.Source.State.withShared])
+
+theorem finishCall
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase : Nat} {mode : ActivationMode}
+    {source : SourceState} {target : TargetState}
+    {oldPrefix baseStack : List Word}
+    (hRel :
+      ActivationStateRel contract plan live
+        (stackOffset + oldPrefix.length) frameBase mode source target)
+    (sourceEVM : Assembly.EVMState)
+    (hSourceShared : sourceEVM.toSharedState = source.shared)
+    (callLocal : Simulation.CallLocal)
+    (response : Simulation.CallResponse)
+    (hOldStack : target.evm.stack = oldPrefix ++ baseStack)
+    (hInput :
+      Simulation.MemorySafety.WindowSafe contract
+        callLocal.inputOffset.toNat callLocal.inputSize.toNat)
+    (hOutput :
+      Simulation.MemorySafety.WindowSafe contract
+        callLocal.outputOffset.toNat callLocal.outputSize.toNat) :
+    ActivationStateRel contract plan live (stackOffset + 1) frameBase mode
+      (source.withShared
+        (Assembly.InteractionSemantics.EVMState.finishCall
+          sourceEVM [] callLocal response).toSharedState)
+      (target.withEVM
+        (Assembly.InteractionSemantics.EVMState.finishCall
+          target.evm baseStack callLocal response)) := by
+  have hInputRel :
+      SharedRel contract sourceEVM.toSharedState target.evm.toSharedState := by
+    rw [hSourceShared]
+    cases hRel with
+    | stack _ _ state => exact state.shared
+    | scratch state => exact state.base.shared
+  have hSharedFinal :=
+    SharedRel.finishCall hInputRel
+      (by
+        cases hRel with
+        | stack _ activeNoWrap _ => exact activeNoWrap
+        | scratch state => exact state.activeNoWrap)
+      callLocal response [] baseStack hInput hOutput
+  apply finishExternal hRel _ _ response.statusWord response.returnData
+    callLocal.inputOffset callLocal.inputSize
+    callLocal.outputOffset callLocal.outputSize hOldStack hSharedFinal
+  · simp [Assembly.InteractionSemantics.EVMState.finishCall,
+      Assembly.InteractionSemantics.EVMState.installWorld,
+      EvmYul.EVM.State.incrPC]
+  · simp [Assembly.InteractionSemantics.EVMState.finishCall,
+      Assembly.InteractionSemantics.EVMState.installWorld,
+      Simulation.CallLocal.finishMachine,
+      EvmYul.EVM.State.incrPC]
+  · exact hInput
+  · exact hOutput
+
+theorem finishCreate
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase : Nat} {mode : ActivationMode}
+    {source : SourceState} {target : TargetState}
+    {oldPrefix baseStack : List Word}
+    (hRel :
+      ActivationStateRel contract plan live
+        (stackOffset + oldPrefix.length) frameBase mode source target)
+    (sourceEVM : Assembly.EVMState)
+    (hSourceShared : sourceEVM.toSharedState = source.shared)
+    (createLocal : Simulation.CreateLocal)
+    (response : Simulation.CreateResponse)
+    (hOldStack : target.evm.stack = oldPrefix ++ baseStack)
+    (hInput :
+      Simulation.MemorySafety.WindowSafe contract
+        createLocal.initOffset.toNat createLocal.initSize.toNat) :
+    ActivationStateRel contract plan live (stackOffset + 1) frameBase mode
+      (source.withShared
+        (Assembly.InteractionSemantics.EVMState.finishCreate
+          sourceEVM [] createLocal response).toSharedState)
+      (target.withEVM
+        (Assembly.InteractionSemantics.EVMState.finishCreate
+          target.evm baseStack createLocal response)) := by
+  have hInputRel :
+      SharedRel contract sourceEVM.toSharedState target.evm.toSharedState := by
+    rw [hSourceShared]
+    cases hRel with
+    | stack _ _ state => exact state.shared
+    | scratch state => exact state.base.shared
+  have hSharedFinal :=
+    SharedRel.finishCreate hInputRel
+      (by
+        cases hRel with
+        | stack _ activeNoWrap _ => exact activeNoWrap
+        | scratch state => exact state.activeNoWrap)
+      createLocal response [] baseStack hInput
+  apply finishExternal hRel _ _ response.address response.returnData
+    createLocal.initOffset createLocal.initSize
+    (EvmYul.UInt256.ofNat 0) (EvmYul.UInt256.ofNat 0)
+    hOldStack hSharedFinal
+  · simp [Assembly.InteractionSemantics.EVMState.finishCreate,
+      Assembly.InteractionSemantics.EVMState.installWorld,
+      EvmYul.EVM.State.incrPC]
+  · simp [Assembly.InteractionSemantics.EVMState.finishCreate,
+      Assembly.InteractionSemantics.EVMState.installWorld,
+      Simulation.CreateLocal.finishMachine,
+      EvmYul.EVM.State.incrPC]
+  · exact hInput
+  · exact Simulation.MemorySafety.windowSafe_zero contract 0
+
+end ActivationStateRel
+
 /-- Exact target stack prefix produced by an allocated expression. -/
 structure ExprResultRel
     (contract : MemoryContract.Contract) (plan : Plan)
@@ -824,6 +1065,20 @@ structure ScratchExprResultRel
     ScratchStateRel contract plan live
       (stackOffset + resultCount) frameBase frameDepth frameWords
       source targetFinal
+  valuesLength : values.length = resultCount
+  stack :
+    targetFinal.evm.stack = values.reverse ++ targetInitial.evm.stack
+
+/-- Expression result retaining whichever allocation representation is live. -/
+structure ActivationExprResultRel
+    (contract : MemoryContract.Contract) (plan : Plan)
+    (live : List Locals.Name)
+    (stackOffset frameBase resultCount : Nat) (mode : ActivationMode)
+    (source : SourceState) (targetInitial targetFinal : TargetState)
+    (values : List Word) : Prop where
+  state :
+    ActivationStateRel contract plan live
+      (stackOffset + resultCount) frameBase mode source targetFinal
   valuesLength : values.length = resultCount
   stack :
     targetFinal.evm.stack = values.reverse ++ targetInitial.evm.stack

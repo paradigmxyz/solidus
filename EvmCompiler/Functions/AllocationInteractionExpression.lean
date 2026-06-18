@@ -1,4 +1,5 @@
 import EvmCompiler.Functions.AllocationInteractionRelation
+import EvmCompiler.Functions.AllocationInteractionPrimitive
 import EvmCompiler.Functions.AllocationLowering
 import EvmCompiler.Locals.InteractionPreservation
 
@@ -123,6 +124,132 @@ theorem stack_var_open
   simp [StateRel.pushTargetBy,
     EvmYul.EVM.State.replaceStackAndIncrPC,
     EvmYul.EVM.State.incrPC]
+
+/-- Compose recursively checked arguments with one CALL-family primitive. -/
+theorem call_prim_of_args
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {source : SourceState} {target : TargetState}
+    (kind : Simulation.CallKind)
+    (args : Locals.ExprSeq
+      (Expressions.Structured.BasicOp.inputs
+        (AllocationInteractionPrimitive.callOp kind)))
+    (argsCode : Structured.Code)
+    (hArgs :
+      Simulation.Interaction.Rel
+        (AllocationInteractionPrimitive.ActivationExprOutcomeRel
+          contract plan live stackOffset frameBase
+          (Expressions.Structured.BasicOp.inputs
+            (AllocationInteractionPrimitive.callOp kind)) mode target)
+        (Functions.InteractionSemantics.ExprSeq.openEval args source)
+        (Structured.InteractionSemantics.Code.openRun argsCode target))
+    (hSafe :
+      Simulation.Interaction.AllDone
+        (AllocationInteractionPrimitive.CallArgsSafe contract kind)
+        (Functions.InteractionSemantics.ExprSeq.openEval args source)) :
+    Simulation.Interaction.Rel
+      (AllocationInteractionPrimitive.ActivationExprOutcomeRel
+        contract plan live stackOffset frameBase 1 mode target)
+      (Functions.InteractionSemantics.Expr.openEval
+        (.prim (AllocationInteractionPrimitive.callOp kind) args) source)
+      (Structured.InteractionSemantics.Code.openRun
+        (argsCode ++ [.op (AllocationInteractionPrimitive.callOp kind)])
+        target) := by
+  rw [Structured.InteractionSemantics.Code.openRun_append]
+  change
+    Simulation.Interaction.Rel _
+      (Simulation.Interaction.bind
+        (Functions.InteractionSemantics.ExprSeq.openEval args source)
+        (fun result =>
+          Locals.InteractionSemantics.Primitive.openEval
+            (AllocationInteractionPrimitive.callOp kind)
+            result.1 result.2))
+      (Simulation.Interaction.bind
+        (Structured.InteractionSemantics.Code.openRun argsCode target)
+        (Structured.InteractionSemantics.Code.openRun
+          [.op (AllocationInteractionPrimitive.callOp kind)]))
+  have hArgsSafe :=
+    Simulation.Interaction.Rel.strengthen_left hArgs hSafe
+  apply Simulation.Interaction.Rel.bind_custom hArgsSafe
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hArgsDone, hSafeDone⟩
+  cases hArgsDone with
+  | @error left right hError =>
+      cases hError
+      exact Simulation.Interaction.Rel.done
+        (Simulation.Interaction.ExceptRel.error rfl)
+  | @ok sourceArgs targetArgs hArgsResult =>
+      simp only
+      rw [Structured.InteractionSemantics.Code.openRun_single]
+      apply AllocationInteractionPrimitive.call_open kind sourceArgs.2
+      · simpa using hArgsResult.valuesLength
+      · simpa using hArgsResult.state
+      · exact hArgsResult.stack
+      · simpa [AllocationInteractionPrimitive.CallArgsSafe] using hSafeDone
+
+/-- Compose recursively checked arguments with one CREATE-family primitive. -/
+theorem create_prim_of_args
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {source : SourceState} {target : TargetState}
+    (kind : Simulation.CreateKind)
+    (args : Locals.ExprSeq
+      (Expressions.Structured.BasicOp.inputs
+        (AllocationInteractionPrimitive.createOp kind)))
+    (argsCode : Structured.Code)
+    (hArgs :
+      Simulation.Interaction.Rel
+        (AllocationInteractionPrimitive.ActivationExprOutcomeRel
+          contract plan live stackOffset frameBase
+          (Expressions.Structured.BasicOp.inputs
+            (AllocationInteractionPrimitive.createOp kind)) mode target)
+        (Functions.InteractionSemantics.ExprSeq.openEval args source)
+        (Structured.InteractionSemantics.Code.openRun argsCode target))
+    (hSafe :
+      Simulation.Interaction.AllDone
+        (AllocationInteractionPrimitive.CreateArgsSafe contract kind)
+        (Functions.InteractionSemantics.ExprSeq.openEval args source)) :
+    Simulation.Interaction.Rel
+      (AllocationInteractionPrimitive.ActivationExprOutcomeRel
+        contract plan live stackOffset frameBase 1 mode target)
+      (Functions.InteractionSemantics.Expr.openEval
+        (.prim (AllocationInteractionPrimitive.createOp kind) args) source)
+      (Structured.InteractionSemantics.Code.openRun
+        (argsCode ++ [.op (AllocationInteractionPrimitive.createOp kind)])
+        target) := by
+  rw [Structured.InteractionSemantics.Code.openRun_append]
+  change
+    Simulation.Interaction.Rel _
+      (Simulation.Interaction.bind
+        (Functions.InteractionSemantics.ExprSeq.openEval args source)
+        (fun result =>
+          Locals.InteractionSemantics.Primitive.openEval
+            (AllocationInteractionPrimitive.createOp kind)
+            result.1 result.2))
+      (Simulation.Interaction.bind
+        (Structured.InteractionSemantics.Code.openRun argsCode target)
+        (Structured.InteractionSemantics.Code.openRun
+          [.op (AllocationInteractionPrimitive.createOp kind)]))
+  have hArgsSafe :=
+    Simulation.Interaction.Rel.strengthen_left hArgs hSafe
+  apply Simulation.Interaction.Rel.bind_custom hArgsSafe
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hArgsDone, hSafeDone⟩
+  cases hArgsDone with
+  | @error left right hError =>
+      cases hError
+      exact Simulation.Interaction.Rel.done
+        (Simulation.Interaction.ExceptRel.error rfl)
+  | @ok sourceArgs targetArgs hArgsResult =>
+      simp only
+      rw [Structured.InteractionSemantics.Code.openRun_single]
+      apply AllocationInteractionPrimitive.create_open kind sourceArgs.2
+      · simpa using hArgsResult.valuesLength
+      · simpa using hArgsResult.state
+      · exact hArgsResult.stack
+      · simpa [AllocationInteractionPrimitive.CreateArgsSafe] using hSafeDone
 
 end AllocationInteractionExpression
 end Functions

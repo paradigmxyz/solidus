@@ -861,6 +861,10 @@ Exit: the shared core builds with no compiler layer changed.
     CALL/CREATE response installation.
   - [x] Prove family-level structural `Interaction.Rel` theorems for all four
     CALL and both CREATE opcodes using the checked query/response interfaces.
+  - [x] Unify stack-only and scratch-backed external primitive preservation
+    behind one allocation-owned activation relation.
+  - [x] Compose arbitrary checked runtime argument computations with all six
+    external primitives through the emitted `argsCode ++ [.op op]` shape.
   - [ ] Compose argument-expression preservation with external primitive
     preservation through the ordinary allocation lowerer and Locals compiler.
   - [ ] Recursive allocation preservation for expressions, statements,
