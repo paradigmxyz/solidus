@@ -273,6 +273,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.switchCursors
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.switchSelectedCursorOfComponents
 #check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.switchSelectedCursors
+#check EvmCompiler.Functions.AllocationInteractionCursor.CoreCursor.forCursors
 #check EvmCompiler.Functions.AllocationInteractionComposition.ControlResultRel
 #check EvmCompiler.Functions.AllocationInteractionComposition.lift_fixed
 #check EvmCompiler.Functions.AllocationInteractionComposition.cons

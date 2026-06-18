@@ -31912,3 +31912,11 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   check, the 1322-job verification root, architecture guard, touched-Lean hole
   scan, axiom audit, and `git diff --check` passed; switch cursor theorems use
   only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 23:14:00 PDT - proof/functions-loop-cursors - derived the full
+  `for` compiler decomposition into loop-scope initializer, condition, scoped
+  post/body cursors, cleanup, and exact outer tail. All compound statement
+  forms now have canonical pass-owned cursor artifacts outside observer code.
+- 2026-06-17 23:15:00 PDT - validation/functions-loop-cursors - focused
+  check, the 1322-job verification root, architecture guard, touched-Lean hole
+  scan, axiom audit, and `git diff --check` passed; the loop cursor theorem
+  uses only `[propext, Classical.choice, Quot.sound]`.

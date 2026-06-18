@@ -2356,6 +2356,362 @@ theorem CoreCursor.switchSelectedCursors
   rw [hBodyCode, hBodyLocals]
   exact hFinishSelected
 
+/-- Decompose a `for` into its loop-scope, post/body cursors, and tail. -/
+theorem CoreCursor.forCursors
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {init : Functions.Block}
+    {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .for_ init cond post body :: rest }
+        lowerState localsCtx) :
+    ∃ afterState headLower headCode,
+      ∃ tail :
+        CoreCursor root scope live { stmts := rest } afterState localsCtx,
+      ∃ loopState afterPost afterBody : AllocationLowering.State,
+      ∃ initLocals _postLocals _bodyLocals : Locals.Ctx,
+      ∃ loweredCond condCode compiledPost compiledBody cleanup,
+      let loopLive := Functions.Scope.Block.outEnv live init
+      let loopScope :=
+        Locals.Allocation.ScopeId.lexical scope cursor.planning.nextScope
+      let entered : AllocationSupport.PlanningState :=
+        { cursor.planning with
+          nextScope := cursor.planning.nextScope + 1 }
+      let initPlanning :=
+        AllocationSupport.planBlockOpen loopScope entered init
+      let postPlanning :=
+        AllocationSupport.planBlockScoped loopScope initPlanning post
+      ∃ initCursor :
+          CoreCursor root loopScope live init lowerState
+            localsCtx.withoutLoopControl,
+      ∃ postCursor :
+          CoreCursor root
+            (.lexical loopScope initPlanning.nextScope)
+            loopLive post loopState initLocals.withoutLoopControl,
+      ∃ bodyCursor :
+          CoreCursor root
+            (.lexical loopScope postPlanning.nextScope)
+            loopLive body afterPost
+              (initLocals.withLoopControl initLocals.layout.length),
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationLowering.lowerStmt root.lowerCtx root.returns
+              lowerState (.for_ init cond post body) =
+            some (headLower, afterState) ∧
+          Locals.Block.compileOpen localsCtx { stmts := headLower } =
+            some (headCode, localsCtx) ∧
+          initCursor.finalState = loopState ∧
+          initCursor.finalLocals = initLocals ∧
+          AllocationLowering.lowerExpr root.lowerCtx loopState cond =
+            some loweredCond ∧
+          Locals.Expr.compileCode initLocals 0 loweredCond =
+            some condCode ∧
+          AllocationLowering.lowerBlockScoped root.lowerCtx root.returns
+              loopState post =
+            some (postCursor.lowered, afterPost) ∧
+          Locals.finishScoped initLocals.withoutLoopControl
+              postCursor.finalLocals postCursor.compiled =
+            some compiledPost ∧
+          AllocationLowering.lowerBlockScoped root.lowerCtx root.returns
+              afterPost body =
+            some (bodyCursor.lowered, afterBody) ∧
+          Locals.finishScoped
+              (initLocals.withLoopControl initLocals.layout.length)
+              bodyCursor.finalLocals bodyCursor.compiled =
+            some compiledBody ∧
+          initLocals.cleanupTo? localsCtx.layout.length = some cleanup ∧
+          headCode =
+            [Expressions.Stmt.for_
+              { stmts := initCursor.compiled }
+              (Expressions.Expr.code condCode)
+              compiledPost compiledBody] ++
+              Locals.codeStmt cleanup ∧
+          afterState =
+            { allocation :=
+                { env := lowerState.allocation.env
+                  nextSlot := afterBody.allocation.nextSlot }
+              layout := lowerState.layout } ∧
+          Functions.Scope.ExprScoped loopLive cond ∧
+          Functions.Scope.Block.Scoped loopLive post ∧
+          Functions.Scope.Block.Scoped loopLive body ∧
+          StepTransport lowerState afterState localsCtx localsCtx
+            live (.for_ init cond post body) ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hTailPlanning, hTailPlan, hTailFinalState, hTailFinalLocals,
+        hLower, hCompile, _hLowered, hCompiled, hScopedStmt⟩ :=
+    cursor.cons
+  obtain
+      ⟨loweredInit, loopState, loweredCond, loweredPost, afterPost,
+        loweredBody, afterBody, hLowerInit, hLowerCond, hLowerPost,
+        hLowerBody, hHeadLower, hAfterState, hPlanningComponents⟩ :=
+    AllocationLowering.lowerStmt_for_planning_components
+      (current := scope) cursor.planningAllocation hLower
+  let loopLive := Functions.Scope.Block.outEnv live init
+  let loopScope :=
+    Locals.Allocation.ScopeId.lexical scope cursor.planning.nextScope
+  let entered : AllocationSupport.PlanningState :=
+    { cursor.planning with
+      nextScope := cursor.planning.nextScope + 1 }
+  let initPlanning :=
+    AllocationSupport.planBlockOpen loopScope entered init
+  let postPlanning :=
+    AllocationSupport.planBlockScoped loopScope initPlanning post
+  let bodyPlanning :=
+    AllocationSupport.planBlockScoped loopScope postPlanning body
+  have hPlanningComponents' :
+      initPlanning.allocation = loopState.allocation ∧
+        postPlanning.allocation = afterPost.allocation ∧
+        bodyPlanning.allocation = afterBody.allocation := by
+    simpa [loopScope, entered, initPlanning, postPlanning,
+      bodyPlanning] using hPlanningComponents
+  have hInitPlanning := hPlanningComponents'.1
+  have hPostPlanning := hPlanningComponents'.2.1
+  have hBodyPlanning := hPlanningComponents'.2.2
+  have hHeadCompile := hCompile
+  rw [hHeadLower] at hCompile
+  obtain
+      ⟨initCode, initLocals, condCode,
+        postCode, postLocals, compiledPost,
+        bodyCode, bodyLocals, compiledBody, cleanup,
+        hCompileInit, hCompileCond, hCompilePost, hFinishPost,
+        hCompileBody, hFinishBody, hCleanup, hHeadCode,
+        hAfterLocals⟩ :=
+    Locals.Block.compileOpen_single_for_components hCompile
+  have hScoped :
+      Functions.Scope.Block.Scoped live init ∧
+        Functions.Scope.ExprScoped loopLive cond ∧
+        Functions.Scope.Block.Scoped loopLive post ∧
+        Functions.Scope.Block.Scoped loopLive body := by
+    simpa [Functions.Scope.Stmt.Scoped, loopLive] using hScopedStmt
+  have hPostShape :=
+    AllocationLowering.lowerBlockScoped_state_shape hLowerPost
+  have hBodyShape :=
+    AllocationLowering.lowerBlockScoped_state_shape hLowerBody
+  obtain ⟨postAdded, hPostScopes⟩ :=
+    AllocationSupport.planBlockScoped_scopes_extension
+      post loopScope initPlanning
+  obtain ⟨bodyAdded, hBodyScopes⟩ :=
+    AllocationSupport.planBlockScoped_scopes_extension
+      body loopScope postPlanning
+  let loopEntry : AllocationSupport.ScopedAllocation :=
+    { scope := loopScope
+      state := bodyPlanning.allocation }
+  have hHeadLoopEntry :
+      loopEntry ∈
+        (AllocationSupport.planStmt scope cursor.planning
+          (.for_ init cond post body)).scopes := by
+    simp [AllocationSupport.planStmt, loopEntry, loopScope, entered,
+      initPlanning, postPlanning, bodyPlanning]
+  have hHeadBodyScope :
+      ∀ entry,
+        entry ∈ bodyPlanning.scopes →
+          entry ∈
+            (AllocationSupport.planStmt scope cursor.planning
+              (.for_ init cond post body)).scopes := by
+    intro entry hEntry
+    simp [AllocationSupport.planStmt, loopScope, entered,
+      initPlanning, postPlanning, bodyPlanning, hEntry]
+  have hHeadScopeRecipe :
+      ∀ entry,
+        entry ∈
+            (AllocationSupport.planStmt scope cursor.planning
+              (.for_ init cond post body)).scopes →
+          entry ∈ compilation.recipe.lexicalScopes := by
+    intro entry hEntry
+    apply cursor.plannedScopes entry
+    simp only [AllocationSupport.planBlockOpen,
+      AllocationSupport.planStmtList]
+    exact
+      AllocationSupport.mem_planStmtList_scopes_of_mem
+        rest scope
+        (AllocationSupport.planStmt scope cursor.planning
+          (.for_ init cond post body))
+        hEntry
+  have hLoopEntryRecipe :
+      loopEntry ∈ compilation.recipe.lexicalScopes :=
+    hHeadScopeRecipe loopEntry hHeadLoopEntry
+  have hBodyScopesRecipe :
+      ∀ entry,
+        entry ∈ bodyPlanning.scopes →
+          entry ∈ compilation.recipe.lexicalScopes :=
+    fun entry hEntry =>
+      hHeadScopeRecipe entry (hHeadBodyScope entry hEntry)
+  have hInitScopesRecipe :
+      ∀ entry,
+        entry ∈ initPlanning.scopes →
+          entry ∈ compilation.recipe.lexicalScopes := by
+    intro entry hEntry
+    apply hBodyScopesRecipe entry
+    rw [hBodyScopes, hPostScopes]
+    simp [hEntry]
+  have hPostScopesRecipe :
+      ∀ entry,
+        entry ∈
+            (AllocationSupport.planBlockOpen
+              (.lexical loopScope initPlanning.nextScope)
+              { initPlanning with
+                nextScope := initPlanning.nextScope + 1 }
+              post).scopes →
+          entry ∈ compilation.recipe.lexicalScopes := by
+    intro entry hEntry
+    apply hBodyScopesRecipe entry
+    rw [hBodyScopes]
+    exact
+      List.mem_append_right bodyAdded
+        (AllocationSupport.mem_planBlockScoped_scopes_of_open_mem
+          post loopScope initPlanning hEntry)
+  have hBodyInnerScopesRecipe :
+      ∀ entry,
+        entry ∈
+            (AllocationSupport.planBlockOpen
+              (.lexical loopScope postPlanning.nextScope)
+              { postPlanning with
+                nextScope := postPlanning.nextScope + 1 }
+              body).scopes →
+          entry ∈ compilation.recipe.lexicalScopes := by
+    intro entry hEntry
+    exact
+      hBodyScopesRecipe entry
+        (AllocationSupport.mem_planBlockScoped_scopes_of_open_mem
+          body loopScope postPlanning hEntry)
+  have hLoopPlanEnv :
+      bodyPlanning.allocation.env = loopState.allocation.env := by
+    calc
+      bodyPlanning.allocation.env = afterBody.allocation.env :=
+        congrArg AllocationSupport.CompileState.env hBodyPlanning
+      _ = afterPost.allocation.env := hBodyShape.1
+      _ = loopState.allocation.env := hPostShape.1
+  have hEnteredActive :
+      ActiveEnv root.slots entered.allocation.env live := by
+    simpa [entered] using cursor.activeEnv
+  have hInitActive :
+      ActiveEnv root.slots initPlanning.allocation.env loopLive := by
+    simpa [initPlanning, loopLive] using
+      hEnteredActive.after_planBlockOpen
+        (scope := loopScope) (block := init)
+  have hPostActive :
+      ActiveEnv root.slots postPlanning.allocation.env loopLive := by
+    rw [congrArg AllocationSupport.CompileState.env hPostPlanning,
+      hPostShape.1,
+      ← congrArg AllocationSupport.CompileState.env hInitPlanning]
+    exact hInitActive
+  obtain
+      ⟨initCursor, _hInitLowered, hInitFinal, hInitCode,
+        hInitLocals⟩ :=
+    cursor.lexicalOfPlanState loopScope entered
+      (by simpa [entered] using cursor.planningAllocation)
+      (by
+        simpa [loopScope,
+          MixedAllocation.AllocationRecipe.functionRoot?] using
+          cursor.scopeRoot)
+      (by simpa [loopEntry] using hLoopEntryRecipe)
+      hLoopPlanEnv hInitScopesRecipe hLowerInit hCompileInit hScoped.1
+      hEnteredActive
+  obtain
+      ⟨postOpenFinal, hPostOpen, _hPostEnv, _hPostNext,
+        _hPostLayout⟩ :=
+    AllocationLowering.lowerBlockScoped_components hLowerPost
+  let postScope :=
+    Locals.Allocation.ScopeId.lexical loopScope initPlanning.nextScope
+  let postEntered : AllocationSupport.PlanningState :=
+    { initPlanning with
+      nextScope := initPlanning.nextScope + 1 }
+  let postEntry : AllocationSupport.ScopedAllocation :=
+    { scope := postScope
+      state :=
+        (AllocationSupport.planBlockOpen
+          postScope postEntered post).allocation }
+  have hPostEntryRecipe :
+      postEntry ∈ compilation.recipe.lexicalScopes := by
+    apply hBodyScopesRecipe postEntry
+    rw [hBodyScopes]
+    exact
+      List.mem_append_right bodyAdded
+        (by
+          simpa [postEntry, postScope, postEntered] using
+            AllocationSupport.planBlockScoped_entry_mem
+              post loopScope initPlanning)
+  obtain
+      ⟨postCursor, hPostCursorLowered, _hPostFinal, hPostCode,
+        hPostLocals⟩ :=
+    cursor.lexical postScope postEntered
+      (by simpa [postEntered] using hInitPlanning)
+      (by
+        simpa [postScope, loopScope,
+          MixedAllocation.AllocationRecipe.functionRoot?] using
+          cursor.scopeRoot)
+      (by simpa [postEntry, postScope, postEntered] using hPostEntryRecipe)
+      (by simpa [postScope, postEntered] using hPostScopesRecipe)
+      hPostOpen hCompilePost hScoped.2.2.1
+      (by simpa [postEntered] using hInitActive)
+  obtain
+      ⟨bodyOpenFinal, hBodyOpen, _hBodyEnv, _hBodyNext,
+        _hBodyLayout⟩ :=
+    AllocationLowering.lowerBlockScoped_components hLowerBody
+  let bodyScope :=
+    Locals.Allocation.ScopeId.lexical loopScope postPlanning.nextScope
+  let bodyEntered : AllocationSupport.PlanningState :=
+    { postPlanning with
+      nextScope := postPlanning.nextScope + 1 }
+  let bodyEntry : AllocationSupport.ScopedAllocation :=
+    { scope := bodyScope
+      state :=
+        (AllocationSupport.planBlockOpen
+          bodyScope bodyEntered body).allocation }
+  have hBodyEntryRecipe :
+      bodyEntry ∈ compilation.recipe.lexicalScopes :=
+    hBodyScopesRecipe bodyEntry
+      (by
+        simpa [bodyEntry, bodyScope, bodyEntered] using
+          AllocationSupport.planBlockScoped_entry_mem
+            body loopScope postPlanning)
+  obtain
+      ⟨bodyCursor, hBodyCursorLowered, _hBodyFinal, hBodyCode,
+        hBodyLocals⟩ :=
+    cursor.lexical bodyScope bodyEntered
+      (by simpa [bodyEntered] using hPostPlanning)
+      (by
+        simpa [bodyScope, loopScope,
+          MixedAllocation.AllocationRecipe.functionRoot?] using
+          cursor.scopeRoot)
+      (by simpa [bodyEntry, bodyScope, bodyEntered] using hBodyEntryRecipe)
+      (by simpa [bodyScope, bodyEntered] using hBodyInnerScopesRecipe)
+      hBodyOpen hCompileBody hScoped.2.2.2
+      (by simpa [bodyEntered] using hPostActive)
+  cases hAfterLocals
+  refine
+    ⟨afterState, headLower, headCode, tail, loopState, afterPost,
+      afterBody, initLocals, postLocals, bodyLocals, loweredCond,
+      condCode, compiledPost, compiledBody, cleanup, initCursor,
+      postCursor, bodyCursor, hCompiled, hLower, ?_, hInitFinal,
+      hInitLocals, hLowerCond, hCompileCond, ?_, ?_, ?_, ?_,
+      hCleanup, ?_, hAfterState, hScoped.2.1, hScoped.2.2.1,
+      hScoped.2.2.2,
+      StepTransport.of_compilers hScopedStmt hLower hHeadCompile,
+      ⟨hTailPlan, hTailFinalState, hTailFinalLocals⟩⟩
+  · rw [hHeadLower]
+    exact hCompile
+  · rw [hPostCursorLowered]
+    exact hLowerPost
+  · rw [hPostCode, hPostLocals]
+    exact hFinishPost
+  · rw [hBodyCursorLowered]
+    exact hLowerBody
+  · rw [hBodyCode, hBodyLocals]
+    exact hFinishBody
+  · rw [hInitCode, hHeadCode]
+
 end AllocationInteractionCursor
 end Functions
 end EvmCompiler

@@ -47,6 +47,8 @@ boundaries remain active work.
     decomposition;
   - [x] common and selected-branch `switch` cursor decomposition with exact
     outer-tail retention;
+  - [x] exact `for` initializer/condition/post/body/cleanup cursor
+    decomposition;
   - [ ] recursive compiler-cursor statement-list theorem.
 - [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
 - [ ] Compose the short public Yul end-to-end theorem and reconnect the
