@@ -69,7 +69,7 @@ theorem afterPrepared
           exact Simulation.Interaction.ForwardRel.done
             (.terminal (.revert hState))
   | @regular sourceAfter values targetAfter ctxAfter
-      hStable hScoped hDomain hExtends hScope hControl =>
+      hStable hScoped hDomain hExtends hScope hControl hTargetScopeAfter =>
       cases argsFuel with
       | zero =>
           have hTruncated :
@@ -277,6 +277,17 @@ theorem afterPrepared
                       (FunctionsInteractionExpression.StableValue.var hLookup)
                       (FunctionsInteractionExpression.StableArgs.nil
                         targetFinal))
+                have hTargetScopeFinal :
+                    FunctionsInteractionControlRelation.TargetScopeWithin
+                      final.used
+                      { ctxAfter with scope := tmp :: ctxAfter.scope } := by
+                  intro name hName
+                  change name ∈ tmp :: ctxAfter.scope at hName
+                  rw [hFinalUsed]
+                  rcases List.mem_cons.mp hName with rfl | hName
+                  · exact List.mem_cons_self
+                  · exact List.mem_cons_of_mem tmp
+                      (hTargetScopeAfter name hName)
                 exact Simulation.Interaction.ForwardRel.done
                   (.regular
                     hStableFinal
@@ -285,7 +296,8 @@ theorem afterPrepared
                       (Functions.Source.Ctx.ScopeExtends.cons ctxAfter tmp))
                     (Functions.Source.Ctx.SameControl.trans hControl
                       (Functions.Source.Ctx.SameControl.scopeUpdate
-                        ctxAfter (tmp :: ctxAfter.scope))))
+                        ctxAfter (tmp :: ctxAfter.scope)))
+                    hTargetScopeFinal)
           have hSourcePure :
               Simulation.Interaction.bind
                   (Yul.InteractionSemantics.Primitive.openEval
@@ -316,6 +328,8 @@ theorem bindDirectEval
       layout source target)
     (hDomain : FunctionsInteractionRelation.TargetDomainWithin
       before.used target.vars)
+    (hTargetScope :
+      FunctionsInteractionControlRelation.TargetScopeWithin before.used ctx)
     (hEval :
       Simulation.Interaction.ForwardRel Truncated
         (FunctionsInteractionExpression.DoneRel source 1)
@@ -436,11 +450,21 @@ theorem bindDirectEval
           (FunctionsInteractionExpression.StableArgs.cons
             (FunctionsInteractionExpression.StableValue.var hLookup)
             (FunctionsInteractionExpression.StableArgs.nil targetFinal))
+      have hTargetScopeFinal :
+          FunctionsInteractionControlRelation.TargetScopeWithin final.used
+            { ctx with scope := tmp :: ctx.scope } := by
+        intro name hName
+        change name ∈ tmp :: ctx.scope at hName
+        rw [hFinalUsed]
+        rcases List.mem_cons.mp hName with rfl | hName
+        · exact List.mem_cons_self
+        · exact List.mem_cons_of_mem tmp (hTargetScope name hName)
       exact Simulation.Interaction.ForwardRel.done
         (.regular hStableFinal hScopedFinal hDomainFinal hExtendsFinal
           (Functions.Source.Ctx.ScopeExtends.cons ctx tmp)
           (Functions.Source.Ctx.SameControl.scopeUpdate
-            ctx (tmp :: ctx.scope)))
+            ctx (tmp :: ctx.scope))
+          hTargetScopeFinal)
 
 /-- Direct inline operands still use the same open-world primitive theorem;
 only the outer bounded-argument result is materialized in a fresh local. -/
@@ -462,7 +486,7 @@ theorem boundDirectOfLowering
       codeOverride program layout := by
   cases hLowering with
   | @primitive op lowerArgs seq hOp hArgs hSeq hOutputs =>
-      intro _hLower _hFresh source target ctx hScoped hDomain
+      intro _hLower _hFresh source target ctx hScoped hDomain hTargetScope
       have hLowerReverse :
           Expr.List.toLocals1? args.reverse =
             some lowerArgs.reverse :=
@@ -496,7 +520,7 @@ theorem boundDirectOfLowering
           FunctionsInteractionExpression.exprSeq_openEval_seqCast] using
           hPrimitiveRel
       have hValue := bindDirectEval (program := program) (ctx := ctx)
-        hFresh hLayout hTargetFuel hScoped hDomain hEval
+        hFresh hLayout hTargetFuel hScoped hDomain hTargetScope hEval
       exact singletonOfValues hValue
 
 /-- The real bounded primitive-lowering artifact supplies a complete spilled
@@ -529,10 +553,10 @@ theorem boundOfLowering
       codeOverride program layout := by
   cases hLowering with
   | primitive hOp hArgs hSeq hOutputs =>
-      intro _hLower _hFresh source target ctx hScoped hDomain
+      intro _hLower _hFresh source target ctx hScoped hDomain hTargetScope
       have hPrepared :=
         ofUncheckedLowering (ctx := ctx) hArgsOk hArgs hNested hProgramBudget
-          hScoped hDomain hLayoutBefore (by omega)
+          hScoped hDomain hTargetScope hLayoutBefore (by omega)
       have hValue :=
         afterPrepared hPrimitive (before := before) hOp hSeq hOutputs
           hFresh hLayoutAfter hTargetFuel hPrepared

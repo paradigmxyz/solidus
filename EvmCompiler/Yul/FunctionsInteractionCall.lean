@@ -188,6 +188,8 @@ theorem finishSingleForward
     (hExtends : TargetExtends entry.vars targetBefore.vars)
     (hScope : Functions.Source.Ctx.ScopeExtends entryCtx ctx)
     (hControl : Functions.Source.Ctx.SameControl entryCtx ctx)
+    (hTargetScope : FunctionsInteractionControlRelation.TargetScopeWithin
+      final.used ctx)
     (hRunBody :
       Simulation.Interaction.ForwardRel Truncated
         (RunBodyDoneRel layout sourceCaller targetCaller 1)
@@ -291,7 +293,7 @@ theorem finishSingleForward
           (truncated := Truncated)
           (FunctionsInteractionPreparedArgs.DoneRel.regular
             hStable hFinalScoped' hFinalDomain hFinalExtends
-            hScope hControl))
+            hScope hControl hTargetScope))
 
 /-- Finish a multi-result source call and the canonical Functions target
 writeback under a caller-supplied relation for the updated lexical domain. -/
@@ -325,6 +327,8 @@ theorem finishManyForward
           { shared := targetAfter.shared, vars := finalVars })
     (hControl : FunctionsInteractionControlRelation.ControlContextRel
       sourceScopes finalLayout canBreak canContinue canLeave ctx)
+    (hTargetScope : FunctionsInteractionControlRelation.TargetScopeWithin
+      used ctx)
     (hRunBody :
       Simulation.Interaction.ForwardRel Truncated
         (RunBodyDoneRel layout sourceCaller targetCaller results)
@@ -378,7 +382,7 @@ theorem finishManyForward
       rw [hFinish]
       exact Simulation.Interaction.ForwardRel.done
         (FunctionsInteractionControlRelation.ControlDoneRel.regular
-          hFinal hFinalDomain hControl)
+          hFinal hFinalDomain hControl hTargetScope)
 
 /-- Multi-result call writeback introducing fresh source bindings. -/
 theorem finishManyFresh
@@ -403,6 +407,8 @@ theorem finishManyFresh
     (hControl : FunctionsInteractionControlRelation.ControlContextRel
       sourceScopes (targets ++ layout)
         canBreak canContinue canLeave ctx)
+    (hTargetScope : FunctionsInteractionControlRelation.TargetScopeWithin
+      used ctx)
     (hRunBody :
       Simulation.Interaction.ForwardRel Truncated
         (RunBodyDoneRel layout sourceCaller targetCaller results)
@@ -418,7 +424,7 @@ theorem finishManyFresh
   finishManyForward hTargetCount hContains hDomain hTargetsUsed
     (fun hScoped hInsert =>
       hScoped.multifill_insertMany hNodup hFresh hInsert)
-    hControl hRunBody
+    hControl hTargetScope hRunBody
 
 /-- Multi-result call writeback updating existing source-visible bindings. -/
 theorem finishManyVisible
@@ -442,6 +448,8 @@ theorem finishManyVisible
     (hTargetsUsed : ∀ name, name ∈ targets → name ∈ used)
     (hControl : FunctionsInteractionControlRelation.ControlContextRel
       sourceScopes layout canBreak canContinue canLeave ctx)
+    (hTargetScope : FunctionsInteractionControlRelation.TargetScopeWithin
+      used ctx)
     (hRunBody :
       Simulation.Interaction.ForwardRel Truncated
         (RunBodyDoneRel layout sourceCaller targetCaller results)
@@ -457,7 +465,7 @@ theorem finishManyVisible
   finishManyForward hTargetCount hContains hDomain hTargetsUsed
     (fun hScoped hInsert =>
       hScoped.multifill_insertMany_visible hNodup hVisible hInsert)
-    hControl hRunBody
+    hControl hTargetScope hRunBody
 
 /-- Attach canonical argument evaluation and function lookup around one
 already-related function body, yielding the real generated call statement. -/
@@ -491,6 +499,8 @@ theorem callStmtForward
     (hExtends : TargetExtends entry.vars targetBefore.vars)
     (hScope : Functions.Source.Ctx.ScopeExtends entryCtx ctx)
     (hControl : Functions.Source.Ctx.SameControl entryCtx ctx)
+    (hTargetScope : FunctionsInteractionControlRelation.TargetScopeWithin
+      final.used ctx)
     (hRunBody :
       Simulation.Interaction.ForwardRel Truncated
         (RunBodyDoneRel layout sourceCaller targetCaller 1)
@@ -508,7 +518,8 @@ theorem callStmtForward
         targetCaller) := by
   subst targetRunBody
   have hFinished := finishSingleForward (ctx := ctx)
-    hFresh hLayout hCallerState hDomain hExtends hScope hControl hRunBody
+    hFresh hLayout hCallerState hDomain hExtends hScope hControl hTargetScope
+      hRunBody
   have hArgsEval := hStable.openEval
     (TargetExtends.refl targetCaller.vars)
   unfold Functions.InteractionSemantics.ArgList.openEval

@@ -25,6 +25,22 @@ def LayoutWithinScope
     (layout : List Functions.Name) (ctx : Functions.Source.Ctx) : Prop :=
   ∀ name, name ∈ layout → name ∈ ctx.scope
 
+def TargetScopeWithin
+    (used : List Functions.Name) (ctx : Functions.Source.Ctx) : Prop :=
+  ∀ name, name ∈ ctx.scope → name ∈ used
+
+namespace TargetScopeWithin
+
+theorem mono
+    {before after : List Functions.Name} {ctx : Functions.Source.Ctx}
+    (hScope : TargetScopeWithin before ctx)
+    (hSubset : ∀ name, name ∈ before → name ∈ after) :
+    TargetScopeWithin after ctx := by
+  intro name hName
+  exact hSubset name (hScope name hName)
+
+end TargetScopeWithin
+
 /-- One enabled source control destination and its corresponding target scope.
 The source destination may be an outer prefix of the current lexical domain. -/
 def ScopeOptionRel (enabled : Bool)
@@ -234,6 +250,7 @@ inductive ControlDoneRel
       TargetDomainWithin regularUsed target.vars →
       ControlContextRel sourceScopes regularLayout
         canBreak canContinue canLeave ctx →
+      TargetScopeWithin regularUsed ctx →
       ControlDoneRel regularUsed regularLayout sourceScopes
         canBreak canContinue canLeave (.ok source)
         (.ok (Functions.Source.Effectful.Outcome.regular target, ctx))
@@ -281,8 +298,9 @@ theorem monoUsed
       canBreak canContinue canLeave sourceDone targetDone := by
   cases hRel with
   | error hError => exact .error hError
-  | regular hScoped hDomain hControl =>
+  | regular hScoped hDomain hControl hScope =>
       exact .regular hScoped (hDomain.mono hSubset) hControl
+        (hScope.mono hSubset)
   | brk hScope hMode hAbrupt => exact .brk hScope hMode hAbrupt
   | cont hScope hMode hAbrupt => exact .cont hScope hMode hAbrupt
   | leave hScope hMode hAbrupt => exact .leave hScope hMode hAbrupt
@@ -481,6 +499,7 @@ theorem closeFor
     {targetDone : Except EVMException Functions.InteractionSemantics.Outcome}
     (hControl : ControlContextRel sourceScopes layout
       canBreak canContinue canLeave ctx)
+    (hTargetScope : TargetScopeWithin used ctx)
     (hRel : ControlOutcomeDoneRel used layout
       (ControlContextRel.forPostScopes sourceScopes)
       false false canLeave sourceDone targetDone) :
@@ -502,7 +521,7 @@ theorem closeFor
       simp only [Functions.Source.Effectful.Outcome.regular_mode]
       exact .regular
         (hScoped.restrictTargetScoped hControl.scope)
-        hDomain.restrictTo hControl
+        hDomain.restrictTo hControl hTargetScope
   | brk hScope hMode hAbrupt =>
       simp [ControlContextRel.forPostScopes] at hScope
   | cont hScope hMode hAbrupt =>

@@ -34,6 +34,7 @@ def StmtForwardAt
       some (lower, after) →
     ScopedStateRel layout source target →
     TargetDomainWithin before.used target.vars →
+    TargetScopeWithin before.used ctx →
     (∀ name, name ∈ layout → name ∈ before.used) →
     ControlContextRel sourceScopes layout
       canBreak canContinue canLeave ctx →
@@ -79,6 +80,7 @@ def ListForwardAt
       some (lower, after) →
     ScopedStateRel layout source target →
     TargetDomainWithin before.used target.vars →
+    TargetScopeWithin before.used ctx →
     (∀ name, name ∈ layout → name ∈ before.used) →
     ControlContextRel sourceScopes layout
       canBreak canContinue canLeave ctx →
@@ -183,6 +185,7 @@ theorem ifFromCondition
         TargetDomainWithin conditionUsed targetAfter.vars →
         ControlContextRel sourceScopes layout
             canBreak canContinue canLeave ctxAfter →
+        TargetScopeWithin conditionUsed ctxAfter →
         Simulation.Interaction.ForwardRel Truncated
           (ControlDoneRel finalUsed layout sourceScopes
             canBreak canContinue canLeave)
@@ -225,7 +228,7 @@ theorem ifFromCondition
           exact Simulation.Interaction.ForwardRel.done
             (.terminal (.revert hState))
   | @regular sourceAfter values targetAfter truth ctxAfter value
-      hValues hTruth hScoped hDomain hScope hSameControl =>
+      hValues hTruth hScoped hDomain hScope hSameControl hTargetScopeAfter =>
       have hControlAfter : ControlContextRel sourceScopes layout
           canBreak canContinue canLeave ctxAfter := by
         apply ControlContextRel.transport hControl
@@ -263,7 +266,7 @@ theorem ifFromCondition
             (Functions.InteractionSemantics.Stmt.openRun
               targetProgram.toFunctions ctxAfter
               (targetFuel - pre.length - 2) (.block lowerBody) targetAfter)
-        exact hBody hScoped hDomain hControlAfter
+        exact hBody hScoped hDomain hControlAfter hTargetScopeAfter
       · have hZero : value = EvmYul.UInt256.ofNat 0 := by
           simpa using hNonzero
         subst value
@@ -273,7 +276,8 @@ theorem ifFromCondition
         simp only [ne_eq, not_true_eq_false, ↓reduceIte,
           Bool.false_eq_true, Simulation.Interaction.bind_done_ok]
         exact Simulation.Interaction.ForwardRel.done
-          (.regular hScoped (hDomain.mono hUsedSubset) hControlAfter)
+          (.regular hScoped (hDomain.mono hUsedSubset) hControlAfter
+            (hTargetScopeAfter.mono hUsedSubset))
 
 /-- Compose a checked prepared scrutinee with one adjacent selected-body
 capability. Selection remains owned by the ordinary source and target
@@ -312,6 +316,7 @@ theorem switchFromCondition
         TargetDomainWithin conditionUsed targetAfter.vars →
         ControlContextRel sourceScopes layout
             canBreak canContinue canLeave ctxAfter →
+        TargetScopeWithin conditionUsed ctxAfter →
         Simulation.Interaction.ForwardRel Truncated
           (ControlDoneRel finalUsed layout sourceScopes
             canBreak canContinue canLeave)
@@ -365,7 +370,7 @@ theorem switchFromCondition
           exact Simulation.Interaction.ForwardRel.done
             (.terminal (.revert hState))
   | @regular sourceAfter values targetAfter truth ctxAfter value
-      hValues _hTruth hScoped hDomain hScope hSameControl =>
+      hValues _hTruth hScoped hDomain hScope hSameControl hTargetScopeAfter =>
       have hControlAfter : ControlContextRel sourceScopes layout
           canBreak canContinue canLeave ctxAfter := by
         apply ControlContextRel.transport hControl
@@ -382,7 +387,7 @@ theorem switchFromCondition
           Simulation.Interaction.pure (sourceAfter, value) by rfl]
       unfold Simulation.Interaction.pure
       rw [Simulation.Interaction.bind_done_ok]
-      exact hSelected value hScoped hDomain hControlAfter
+      exact hSelected value hScoped hDomain hControlAfter hTargetScopeAfter
 
 /-- Compiler-selected lexical block from the adjacent recursive list theorem.
 The outer source/target cleanup is owned by `ControlDoneRel.block`; this wrapper
@@ -410,6 +415,7 @@ theorem block
       (.Block body) = some (lower, after))
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin before.used target.vars)
+    (hTargetScope : TargetScopeWithin before.used ctx)
     (hLayout : ∀ name, name ∈ layout → name ∈ before.used)
     (hControl : ControlContextRel sourceScopes layout
       canBreak canContinue canLeave ctx)
@@ -454,9 +460,13 @@ theorem block
       FunctionsInteractionTargetCost.block] at hTargetFuel
     omega
   have hBody := hLists (targetFuel - 1)
-    hBodyOk hBodyNames hLowerList hRel hDomain hLayout hControl hBodyFuel
+    hBodyOk hBodyNames hLowerList hRel hDomain hTargetScope hLayout hControl
+    hBodyFuel
+  have hBodyExtends : Fresh.Extends before after :=
+    Stmt.List.toFunctionsUncheckedFuel?_stateExtends hLowerList
   have hBlock := FunctionsInteractionStatement.ControlDoneRel.block
-    hRel hControl (layoutWithinStmtsOutVars layout body) hBody
+    hRel hControl (hTargetScope.mono hBodyExtends)
+    (layoutWithinStmtsOutVars layout body) hBody
   have hStmtFuelEq : targetFuel - 2 + 1 = targetFuel - 1 := by omega
   have hBlock' :
       Simulation.Interaction.ForwardRel Truncated
@@ -502,6 +512,7 @@ theorem ifThen
       (.If cond body) = some (lower, after))
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin before.used target.vars)
+    (hTargetScope : TargetScopeWithin before.used ctx)
     (hLayout : ∀ name, name ∈ layout → name ∈ before.used)
     (hControl : ControlContextRel sourceScopes layout
       canBreak canContinue canLeave ctx)
@@ -559,12 +570,13 @@ theorem ifThen
         (targetFuel - preCond.length - 2) + preCond.length + 2 := by
     omega
   have hPrepared := hCondition (ctx := ctx) hOkParts.1 hLowerCond hCondBudget
-    hLayout hRel hDomain
+    hLayout hRel hDomain hTargetScope
   apply ifFromCondition
     (conditionUsed := middle.used) (finalUsed := after.used)
     (lowerBody := { stmts := lowerBodyStmts })
     (hTargetFuel := by omega) hBodyExtends hControl hPrepared
   intro sourceAfter targetAfter ctxAfter hScopedAfter hDomainAfter hControlAfter
+    hTargetScopeAfter
   cases fuel with
   | zero =>
       rw [Yul.InteractionSemantics.Exec.zero]
@@ -590,9 +602,9 @@ theorem ifThen
         (sourceFuel := bodyFuel)
         (targetFuel := targetFuel - preCond.length - 2) (by omega)
         hOkParts.2 hBodyNames hLowerBodyList hScopedAfter hDomainAfter
-        hMiddleLayout hControlAfter hBodyBudget
+        hTargetScopeAfter hMiddleLayout hControlAfter hBodyBudget
       exact FunctionsInteractionStatement.ControlDoneRel.block
-        hScopedAfter hControlAfter
+        hScopedAfter hControlAfter (hTargetScopeAfter.mono hBodyExtends)
         (layoutWithinStmtsOutVars layout body) hBodyList
 
 /-- Ordinary compiler-selected switch. The prepared scrutinee exposes its
@@ -626,6 +638,7 @@ theorem switch
       (.Switch cond cases defaultBody) = some (lower, after))
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin before.used target.vars)
+    (hTargetScope : TargetScopeWithin before.used ctx)
     (hLayout : ∀ name, name ∈ layout → name ∈ before.used)
     (hControl : ControlContextRel sourceScopes layout
       canBreak canContinue canLeave ctx)
@@ -665,12 +678,12 @@ theorem switch
           preCond.length + 2 ≤ targetFuel := by
     omega
   have hPrepared := hCondition (ctx := ctx) hOkParts.1 hLowerCond hCondBudget
-    hLayout hRel hDomain
+    hLayout hRel hDomain hTargetScope
   apply switchFromCondition
     (conditionUsed := afterCond.used) (finalUsed := after.used)
     (hTargetFuel := by omega) hControl hPrepared
   intro value sourceAfter targetAfter ctxAfter
-    hScopedAfter hDomainAfter hControlAfter
+    hScopedAfter hDomainAfter hControlAfter hTargetScopeAfter
   have hSelection :=
     Stmt.SwitchSelectionLowering.of_compilers
       (value := value) hLowerCases hLowerDefault
@@ -702,7 +715,7 @@ theorem switch
                   VarStoreRestriction.restrict_self] using hScopedAfter
               exact Simulation.Interaction.ForwardRel.done
                 (.regular hRestricted (hDomainAfter.mono hFresh)
-                  hControlAfter)
+                  hControlAfter (hTargetScopeAfter.mono hFresh))
   | @some sourceBody lowerBody bodyCompilerFuel bodyBefore bodyAfter
       hSourceSelection hTargetSelection hLowerBody hBefore hAfter =>
       rw [hSourceSelection, hTargetSelection]
@@ -773,10 +786,13 @@ theorem switch
             (sourceFuel := bodyFuel)
             (targetFuel := targetFuel - preCond.length - 2) (by omega)
             hSelectedOk hSelectedNames hLowerBodyList hScopedAfter
-            (hDomainAfter.mono hBefore) hSelectedLayout hControlAfter
-            hBodyBudget
+            (hDomainAfter.mono hBefore) (hTargetScopeAfter.mono hBefore)
+            hSelectedLayout hControlAfter hBodyBudget
+          have hSelectedScope := hTargetScopeAfter.mono hBefore
+          have hBodyExtends : Fresh.Extends bodyBefore bodyAfter :=
+            Stmt.List.toFunctionsUncheckedFuel?_stateExtends hLowerBodyList
           have hBlock := FunctionsInteractionStatement.ControlDoneRel.block
-            hScopedAfter hControlAfter
+            hScopedAfter hControlAfter (hSelectedScope.mono hBodyExtends)
             (layoutWithinStmtsOutVars layout sourceBody) hBodyList
           exact Simulation.Interaction.ForwardRel.mono hBlock
             (fun _sourceDone _targetDone hDone => hDone.monoUsed hAfter)
@@ -801,7 +817,7 @@ theorem ofStmt
       intro targetFuel hFuel
       intro compilerFuel functionNames layout sourceScopes
         canBreak canContinue canLeave before after stmts lower source target ctx
-        hOk hNames hLower hRel hDomain hLayout hControl hTargetFuel
+        hOk hNames hLower hRel hDomain hTargetScope hLayout hControl hTargetFuel
       rw [Yul.InteractionSemantics.ExecSeq.zero]
       exact Simulation.Interaction.ForwardRel.truncated
         (right := Functions.InteractionSemantics.Block.openRun
@@ -811,7 +827,7 @@ theorem ofStmt
       intro targetFuel hFuel
       intro compilerFuel functionNames layout sourceScopes
         canBreak canContinue canLeave before after stmts lower source target ctx
-        hOk hNames hLower hRel hDomain hLayout hControl hTargetFuel
+        hOk hNames hLower hRel hDomain hTargetScope hLayout hControl hTargetFuel
       cases stmts with
       | nil =>
           obtain ⟨previous, rfl, rfl, rfl⟩ :=
@@ -824,7 +840,7 @@ theorem ofStmt
           simpa using
             (FunctionsInteractionStatement.ControlDoneRel.nil
               (sourceFuel := fuel) (targetFuel := targetFuel - 1)
-              hRel hDomain hControl)
+              hRel hDomain hControl hTargetScope)
       | cons head tail =>
           obtain ⟨previous, lowerHead, middle, lowerTail,
               rfl, hLowerHead, hLowerTail, rfl⟩ :=
@@ -874,13 +890,14 @@ theorem ofStmt
             omega
           have hHead := hStmt (sourceFuel := fuel)
             (targetFuel := targetFuel) (by omega)
-            hHeadOk hNameParts.1 hLowerHead hRel hDomain hLayout
+            hHeadOk hNameParts.1 hLowerHead hRel hDomain hTargetScope hLayout
             hControl hHeadFuel
           apply FunctionsInteractionStatement.ControlDoneRel.cons hHead
           intro sourceMid targetMid ctxMid hMidRel hMidDomain hMidControl
+            hMidTargetScope
           exact ih (targetFuel := targetFuel - lowerHead.length) (by omega)
-            hTailOk hTailNames hLowerTail hMidRel hMidDomain hMiddleLayout
-            hMidControl hTailFuel
+            hTailOk hTailNames hLowerTail hMidRel hMidDomain hMidTargetScope
+            hMiddleLayout hMidControl hTailFuel
 
 end RecursiveListForward
 

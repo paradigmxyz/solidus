@@ -69,7 +69,8 @@ theorem letOneOfPrepared
           exact Simulation.Interaction.ForwardRel.done
             (ControlDoneRel.terminal (.revert hState))
   | @regular sourceAfter values targetAfter ctxAfter
-      hStable hScoped hDomain _hExtends hScopeCtx hSameCtx =>
+      hStable hScoped hDomain _hExtends hScopeCtx hSameCtx
+      hTargetScopeAfter =>
       have hLength : values.length = 1 := by
         simpa using hStable.length
       obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLength
@@ -141,8 +142,15 @@ theorem letOneOfPrepared
               · exact List.mem_cons_self
               · exact List.mem_cons_of_mem _
                   (hScopeCtx candidate (hControl.scope candidate hTail))
+          have hFinalTargetScope : TargetScopeWithin fresh.used ctxFinal := by
+            intro candidate hMem
+            change candidate ∈ identName name :: ctxAfter.scope at hMem
+            rcases List.mem_cons.mp hMem with rfl | hTail
+            · exact hNameUsed
+            · exact hTargetScopeAfter candidate hTail
           exact Simulation.Interaction.ForwardRel.done
-            (ControlDoneRel.regular hFinal hFinalDomain hFinalCtx)
+            (ControlDoneRel.regular hFinal hFinalDomain hFinalCtx
+              hFinalTargetScope)
 
 /-- Attach the final source-visible assignment emitted after any recursively
 prepared one-result expression. -/
@@ -204,7 +212,8 @@ theorem assignOneOfPrepared
           exact Simulation.Interaction.ForwardRel.done
             (ControlDoneRel.terminal (.revert hState))
   | @regular sourceAfter values targetAfter ctxAfter
-      hStable hScoped hDomain _hExtends hScopeCtx hSameCtx =>
+      hStable hScoped hDomain _hExtends hScopeCtx hSameCtx
+      hTargetScopeAfter =>
       have hLength : values.length = 1 := by
         simpa using hStable.length
       obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLength
@@ -270,7 +279,8 @@ theorem assignOneOfPrepared
             · intro candidate hMem
               exact hScopeCtx candidate (hControl.scope candidate hMem)
           exact Simulation.Interaction.ForwardRel.done
-            (ControlDoneRel.regular hFinal hFinalDomain hFinalCtx)
+            (ControlDoneRel.regular hFinal hFinalDomain hFinalCtx
+              hTargetScopeAfter)
 
 end FunctionsInteractionPreparedStatement
 end Yul

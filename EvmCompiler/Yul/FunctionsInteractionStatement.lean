@@ -356,7 +356,8 @@ theorem nil
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin used target.vars)
     (hControl : ControlContextRel sourceScopes layout
-      canBreak canContinue canLeave ctx) :
+      canBreak canContinue canLeave ctx)
+    (hTargetScope : TargetScopeWithin used ctx) :
     Simulation.Interaction.ForwardRel Truncated
       (ControlDoneRel used layout sourceScopes
         canBreak canContinue canLeave)
@@ -367,7 +368,7 @@ theorem nil
   rw [Yul.InteractionSemantics.ExecSeq.nil_succ,
     Functions.InteractionSemantics.Block.openRun_nil]
   exact Simulation.Interaction.ForwardRel.done
-    (.regular hRel hDomain hControl)
+    (.regular hRel hDomain hControl hTargetScope)
 
 theorem singleton
     {used layout : List Functions.Name} {targetFuel : Nat}
@@ -413,11 +414,11 @@ theorem singleton
     cases hDone with
     | error hError =>
         exact Simulation.Interaction.ForwardRel.done (.error hError)
-    | regular hState hDomain hControl =>
+    | regular hState hDomain hControl hTargetScope =>
         simp only [Simulation.Interaction.bind_done_ok]
         rw [Functions.InteractionSemantics.Block.openRun_nil]
         exact Simulation.Interaction.ForwardRel.done
-          (.regular hState hDomain hControl)
+          (.regular hState hDomain hControl hTargetScope)
     | brk hScope hMode hAbrupt =>
         simpa [hMode] using
           (Simulation.Interaction.ForwardRel.done
@@ -483,6 +484,7 @@ theorem cons
           TargetDomainWithin headUsed targetMid.vars →
           ControlContextRel sourceScopes headLayout
               canBreak canContinue canLeave ctxMid →
+          TargetScopeWithin headUsed ctxMid →
           Simulation.Interaction.ForwardRel Truncated
             (ControlDoneRel finalUsed finalLayout sourceScopes
               canBreak canContinue canLeave)
@@ -506,11 +508,11 @@ theorem cons
   cases hDone with
   | error hError =>
       exact Simulation.Interaction.ForwardRel.done (.error hError)
-  | @regular sourceMid targetMid ctxMid hState hDomain hControl =>
+  | @regular sourceMid targetMid ctxMid hState hDomain hControl hTargetScope =>
       rcases hState.state with
         ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
       subst sourceMid
-      simpa using hTail hState hDomain hControl
+      simpa using hTail hState hDomain hControl hTargetScope
   | @brk sourceMid targetOutcome ctxMid scope hScope hMode hAbrupt =>
       obtain ⟨jump, hSource⟩ :=
         ModeRel.target_nonregular_source_checkpoint
@@ -574,6 +576,7 @@ theorem block
     (hEntry : ScopedStateRel entryLayout source target)
     (hControl : ControlContextRel sourceScopes entryLayout
       canBreak canContinue canLeave ctx)
+    (hTargetScope : TargetScopeWithin used ctx)
     (hBodyLayout : ∀ name, name ∈ entryLayout → name ∈ bodyLayout)
     (hBody :
       Simulation.Interaction.ForwardRel Truncated
@@ -609,7 +612,8 @@ theorem block
         hBodyLayout hControl.scope
       simpa using
         (Simulation.Interaction.ForwardRel.done
-          (ControlDoneRel.regular hFinal hDomain.restrictTo hControl))
+          (ControlDoneRel.regular hFinal hDomain.restrictTo hControl
+            hTargetScope))
   | @brk sourceAfter targetOutcome ctxAfter scope hScope hMode hAbrupt =>
       have hSubset := hControl.breakScope.source_subset_of_some hScope
       have hOuterDefined : ∀ name, name ∈ scope.layout →
@@ -2033,7 +2037,8 @@ theorem compiled_let_none_control
     (hDomain : TargetDomainWithin before.used target.vars)
     (hNames : ∀ name, name ∈ identNames names → name ∈ before.used)
     (hControl : ControlContextRel sourceScopes layout
-      canBreak canContinue canLeave ctx) :
+      canBreak canContinue canLeave ctx)
+    (hTargetScope : TargetScopeWithin before.used ctx) :
     Simulation.Interaction.ForwardRel Truncated
       (ControlDoneRel after.used (identNames names ++ layout) sourceScopes
         canBreak canContinue canLeave)
@@ -2041,6 +2046,7 @@ theorem compiled_let_none_control
         (fuel + 1) (.Let names none) codeOverride source)
       (Functions.InteractionSemantics.Block.openRun
         program ctx (names.length + 1) { stmts := lower } target) := by
+  have hExtends := Stmt.toFunctionsListUncheckedFuel?_stateExtends hLower
   rcases Stmt.toFunctionsListUncheckedFuel?_let_none_parts hLower with
     ⟨rfl, rfl⟩
   have hCheck : EvmYul.Yul.checkDeclaration source names = .ok () := by
@@ -2070,6 +2076,12 @@ theorem compiled_let_none_control
       · exact List.mem_append_left _ (List.mem_reverse.mpr hNames)
       · exact List.mem_append_right _
           (hControl.scope candidate hLayoutName)
+  have hFinalScope : TargetScopeWithin after.used finalCtx := by
+    intro candidate hMem
+    rcases List.mem_append.mp hMem with hDeclared | hOuter
+    · exact hExtends candidate
+        (hNames candidate (List.mem_reverse.mp hDeclared))
+    · exact hExtends candidate (hTargetScope candidate hOuter)
   rw [Yul.InteractionSemantics.Exec.let_none_succ
       fuel names codeOverride source hCheck]
   have hTargetRun' :
@@ -2083,7 +2095,7 @@ theorem compiled_let_none_control
   rw [hTargetRun']
   simpa [identNames_eq_self] using
     (Simulation.Interaction.ForwardRel.done
-      (ControlDoneRel.regular hFinalRel hFinalDomain hFinalControl))
+      (ControlDoneRel.regular hFinalRel hFinalDomain hFinalControl hFinalScope))
 
 theorem compiled_let_one_direct
     {compilerFuel fuel targetFuel : Nat}

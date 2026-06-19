@@ -78,6 +78,8 @@ theorem ofUncheckedFunctionCallLowering
         sourceProgram (sourceFuel + 1) ≤ targetBodyFuel)
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin initial.used target.vars)
+    (hTargetScope : FunctionsInteractionControlRelation.TargetScopeWithin
+      initial.used ctx)
     (hLayout : ∀ name, name ∈ layout → name ∈ initial.used) :
     Simulation.Interaction.ForwardRel Truncated
       (FunctionsInteractionPreparedArgs.DoneRel
@@ -130,7 +132,7 @@ theorem ofUncheckedFunctionCallLowering
           (by
             simp only [List.length_append, List.length_cons, List.length_nil]
             omega)
-          hRel hDomain hLayout
+          hRel hDomain hTargetScope hLayout
           (by simp; omega)
       rw [show sourceFuel + 2 = (sourceFuel + 1) + 1 by omega,
         Yul.InteractionSemantics.EvalValues.internal_succ]
@@ -178,7 +180,7 @@ theorem ofUncheckedFunctionCallLowering
                 (.terminal (.revert hState))
       | @regular sourceAfter reversedValues targetAfter ctxAfter
           hStable hScoped hDomainAfter hExtendsAfter
-          hScopeAfter hControlAfter =>
+          hScopeAfter hControlAfter hTargetScopeAfter =>
           have hTmpFresh : tmp ∉ argsState.used :=
             Fresh.not_mem_of_fresh? hFresh
           have hTmpLayout : tmp ∉ layout := by
@@ -271,6 +273,19 @@ theorem ofUncheckedFunctionCallLowering
               sourceFuel reversedValues.reverse functionName
               sourceProgram.contract params returns body sourceAfter hLookup]
             simpa [hFnParams, hFnReturns, identNames_eq_self] using hRunBody
+          obtain ⟨hFinalUsed, _hTmpFresh⟩ :=
+            Fresh.fresh?_components hFresh
+          have hTargetCallScope :
+              FunctionsInteractionControlRelation.TargetScopeWithin
+                final.used
+                { ctxAfter with scope := tmp :: ctxAfter.scope } := by
+            intro name hName
+            change name ∈ tmp :: ctxAfter.scope at hName
+            rw [hFinalUsed]
+            rcases List.mem_cons.mp hName with rfl | hName
+            · exact List.mem_cons_self
+            · exact List.mem_cons_of_mem tmp
+                (hTargetScopeAfter name hName)
           have hCallStmt := FunctionsInteractionCall.callStmtForward
             (ctx := { ctxAfter with scope := tmp :: ctxAfter.scope })
             hFind hCallStable hFresh hLayoutArgs rfl hDomainAfter
@@ -278,6 +293,7 @@ theorem ofUncheckedFunctionCallLowering
             (Functions.Source.Ctx.ScopeExtends.cons ctxAfter tmp)
             (Functions.Source.Ctx.SameControl.scopeUpdate
               ctxAfter (tmp :: ctxAfter.scope))
+            hTargetCallScope
             hCallRun (by rfl)
           have hSuffix := FunctionsInteractionCall.letCallBlockForward
             (ctx := ctxAfter) rfl hCallStmt
@@ -330,7 +346,7 @@ theorem headValueOfUncheckedFunctionCallLowering
       (bodyFuel + 3) targetFuel
       (.Call (.inr functionName) args) pre lower before after
       (some sourceProgram.contract) targetProgram.toFunctions layout := by
-  intro _hLower source target ctx hRel hDomain
+  intro _hLower source target ctx hRel hDomain hTargetScope
   have hFuelEq :
       pre.length + (targetFuel - pre.length - 2) + 2 = targetFuel := by
     omega
@@ -344,7 +360,7 @@ theorem headValueOfUncheckedFunctionCallLowering
     (sourceFuel := bodyFuel)
     (targetBodyFuel := targetFuel - pre.length - 2)
     (ctx := ctx) hDecomposition hProgramOk hExprOk hLowering
-    hNested' hBodyForward hTargetBodyFuel hRel hDomain hLayout
+    hNested' hBodyForward hTargetBodyFuel hRel hDomain hTargetScope hLayout
   have hSingleton :=
     FunctionsInteractionPreparedArgs.singletonOfValues hSelected
   simpa [hFuelEq] using hSingleton
@@ -409,7 +425,7 @@ theorem boundCall_lowFuel
   · exact FunctionsInteractionPreparedArgs.boundHead_lowFuel hVeryLow
   · have hFuelEq : fuel = 2 := by omega
     subst fuel
-    intro _hLower _hFresh source target ctx _hRel _hDomain
+    intro _hLower _hFresh source target ctx _hRel _hDomain _hTargetScope
     rw [Yul.InteractionSemantics.EvalArgs.succ_succ_cons]
     rw [Yul.InteractionSemantics.EvalValues.internal_succ]
     have hArgsZero :

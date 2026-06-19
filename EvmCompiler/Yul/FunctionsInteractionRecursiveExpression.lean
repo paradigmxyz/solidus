@@ -28,6 +28,7 @@ def ConditionForwardAt
     (∀ name, name ∈ layout → name ∈ before.used) →
     ScopedStateRel layout source target →
     TargetDomainWithin before.used target.vars →
+    FunctionsInteractionControlRelation.TargetScopeWithin before.used ctx →
     Simulation.Interaction.ForwardRel Truncated
       (FunctionsInteractionPreparedCondition.DoneRel layout after.used ctx)
       (Yul.InteractionSemantics.evalValues sourceFuel expr
@@ -157,7 +158,7 @@ theorem recursiveCondition
         fuel targetFuel layout := by
   intro fuel targetFuel layout hBodies
   intro expr pre lower before after source target ctx hExprOk hLower
-    hBudget hLayout hScoped hDomain
+    hBudget hLayout hScoped hDomain hTargetScope
   cases fuel with
   | zero =>
       have hTruncated :
@@ -188,6 +189,7 @@ theorem recursiveCondition
             (codeOverride := some sourceProgram.contract)
             (program := targetProgram.toFunctions) (ctx := ctx)
             (by simp [Expr.deferredBoundArgSafe?]) hLower hScoped hDomain
+            hTargetScope
           exact FunctionsInteractionPreparedCondition.ofStablePrepared hPrepared
       | Var name =>
           obtain ⟨remaining, rfl⟩ : ∃ remaining, targetFuel = remaining + 1 :=
@@ -198,6 +200,7 @@ theorem recursiveCondition
             (codeOverride := some sourceProgram.contract)
             (program := targetProgram.toFunctions) (ctx := ctx)
             (by simp [Expr.deferredBoundArgSafe?]) hLower hScoped hDomain
+            hTargetScope
           exact FunctionsInteractionPreparedCondition.ofStablePrepared hPrepared
       | Call callee args =>
           cases callee with
@@ -215,7 +218,7 @@ theorem recursiveCondition
                       (argsFuel := previous)
                       (Expr.UncheckedDirectPrimitiveLowering.primitive
                         hOp hArgs hSeq hOutputs)
-                      hTargetPositive hScoped hDomain
+                      hTargetPositive hScoped hDomain hTargetScope
               | bound hBound hOp hArgs hSeq hOutputs =>
                   have hArgsOk :=
                     SolcValidation.exprsOk_of_exprOk_primitive hExprOk
@@ -246,7 +249,7 @@ theorem recursiveCondition
                     FunctionsInteractionPreparedArgs.ofUncheckedLowering
                       (fuel := previous) (targetFuel := targetFuel)
                       (ctx := ctx) hArgsOk hArgs hNested hArgsBudget
-                      hScoped hDomain hLayout (by omega)
+                      hScoped hDomain hTargetScope hLayout (by omega)
                   exact
                     FunctionsInteractionPreparedCondition.ofPreparedPrimitive
                       FunctionsInteractionClosedPrimitive.compilerSelected
@@ -334,7 +337,7 @@ theorem recursiveCondition
                       (targetBodyFuel := targetBodyFuel)
                       (ctx := ctx) hDecomposition hProgramOk hExprOk hCallLower
                       hNestedTarget hBodyForward hTargetBodyBudget hScoped hDomain
-                      hLayout
+                      hTargetScope hLayout
                   have hSelected' :
                       Simulation.Interaction.ForwardRel Truncated
                         (FunctionsInteractionPreparedArgs.DoneRel

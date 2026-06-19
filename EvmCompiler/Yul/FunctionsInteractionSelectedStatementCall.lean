@@ -63,6 +63,7 @@ theorem selectedTargets
         sourceProgram (sourceFuel + 1) ≤ targetBodyFuel)
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin initial.used target.vars)
+    (hTargetScope : TargetScopeWithin initial.used ctx)
     (hLayout : ∀ name, name ∈ layout → name ∈ initial.used)
     (hFinalControl : ControlContextRel sourceScopes finalLayout
       canBreak canContinue canLeave ctx) :
@@ -105,7 +106,7 @@ theorem selectedTargets
   have hPrepared :=
     FunctionsInteractionPreparedCall.ofUncheckedCallArgsLowering
       (ctx := ctx) hArgsLowering hArgsOk hBound
-      (by omega) hRel hDomain hLayout
+      (by omega) hRel hDomain hTargetScope hLayout
       (by omega)
   rw [Functions.InteractionSemantics.Block.openRun_append]
   apply Simulation.Interaction.ForwardRel.bind_custom hPrepared
@@ -129,7 +130,8 @@ theorem selectedTargets
           exact Simulation.Interaction.ForwardRel.done
             (ControlDoneRel.terminal (.revert hState))
   | @regular sourceAfter reversedValues targetAfter ctxAfter
-      hStable hScoped hDomainAfter hExtendsAfter hScopeCtx hSameCtx =>
+      hStable hScoped hDomainAfter hExtendsAfter hScopeCtx hSameCtx
+      hTargetScopeAfter =>
       have hCallStable :
           FunctionsInteractionExpression.StableArgs lowerArgs targetAfter
             reversedValues.reverse := by
@@ -219,7 +221,7 @@ theorem selectedTargets
         (results := targets.length) (ctx := ctxAfter)
         rfl hContains hDomainAfter hTargetsUsed
         (fun hScopedAfter hInsert => hWriteback hScopedAfter hInsert)
-        hControlAfter hCallRun
+        hControlAfter hTargetScopeAfter hCallRun
       have hArgsEval := hCallStable.openEval
         (TargetExtends.refl targetAfter.vars)
       unfold Functions.InteractionSemantics.ArgList.openEval
@@ -293,6 +295,7 @@ theorem visibleTargets
         sourceProgram (sourceFuel + 1) ≤ targetBodyFuel)
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin initial.used target.vars)
+    (hTargetScope : TargetScopeWithin initial.used ctx)
     (hLayout : ∀ name, name ∈ layout → name ∈ initial.used)
     (hControl : ControlContextRel sourceScopes layout
       canBreak canContinue canLeave ctx) :
@@ -322,7 +325,8 @@ theorem visibleTargets
     (fun hScoped hInsert =>
       hScoped.multifill_insertMany_visible
         hTargetsNodup hTargetsVisible hInsert)
-    hArgsLowering hBound hBodyForward hTargetBodyFuel hRel hDomain hLayout
+    hArgsLowering hBound hBodyForward hTargetBodyFuel hRel hDomain hTargetScope
+    hLayout
     hControl
 
 /-- Fresh-target specialization used after the compiler's declaration
@@ -367,6 +371,7 @@ theorem freshTargets
         sourceProgram (sourceFuel + 1) ≤ targetBodyFuel)
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin initial.used target.vars)
+    (hTargetScope : TargetScopeWithin initial.used ctx)
     (hLayout : ∀ name, name ∈ layout → name ∈ initial.used)
     (hControl : ControlContextRel sourceScopes (targets ++ layout)
       canBreak canContinue canLeave ctx) :
@@ -393,7 +398,8 @@ theorem freshTargets
     (fun hScoped hInsert =>
       hScoped.multifill_insertMany
         hTargetsNodup hTargetsFresh hInsert)
-    hArgsLowering hBound hBodyForward hTargetBodyFuel hRel hDomain hLayout
+    hArgsLowering hBound hBodyForward hTargetBodyFuel hRel hDomain hTargetScope
+    hLayout
     hControl
 
 /-- Ordinary compiler-selected assignment call, with all generated argument
@@ -431,6 +437,7 @@ theorem compiledAssignCall
         profile sourceProgram targetProgram sourceFuel bodyTargetFuel)
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin initial.used target.vars)
+    (hTargetScope : TargetScopeWithin initial.used ctx)
     (hLayout : ∀ name, name ∈ layout → name ∈ initial.used)
     (hControl : ControlContextRel sourceScopes layout
       canBreak canContinue canLeave ctx)
@@ -485,7 +492,7 @@ theorem compiledAssignCall
       simp only [List.length_append, List.length_cons, List.length_nil]
         at hTargetFuel
       omega)
-    hRel hDomain hLayout hControl
+    hRel hDomain hTargetScope hLayout hControl
   have hCheck := hRel.assignmentCheck_many
     hAssignParts.1 hAssignParts.2
   have hCheck' : EvmYul.Yul.checkAssignment source names = .ok () := by
@@ -536,6 +543,7 @@ theorem compiledLetCall
         profile sourceProgram targetProgram sourceFuel bodyTargetFuel)
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin initial.used target.vars)
+    (hTargetScope : TargetScopeWithin initial.used ctx)
     (hLayout : ∀ name, name ∈ layout → name ∈ initial.used)
     (hControl : ControlContextRel sourceScopes layout
       canBreak canContinue canLeave ctx)
@@ -643,6 +651,12 @@ theorem compiledLetCall
       · exact List.mem_append_left _ (List.mem_reverse.mpr hNames)
       · exact List.mem_append_right _
           (hControl.scope candidate hLayoutName)
+  have hTargetScopeInit : TargetScopeWithin initial.used ctxInit := by
+    intro candidate hMem
+    change candidate ∈ (identNames names).reverse ++ ctx.scope at hMem
+    rcases List.mem_append.mp hMem with hNames | hOuter
+    · exact hTargetsUsed candidate (List.mem_reverse.mp hNames)
+    · exact hTargetScope candidate hOuter
   have hSelected := freshTargets
     (sourceFuel := sourceFuel)
     (targetBodyFuel :=
@@ -659,7 +673,7 @@ theorem compiledLetCall
       rw [hLowerEq] at hTargetFuel
       simp [Stmt.initNames] at hTargetFuel
       omega)
-    hRelInit hDomainInit hLayout hControlInit
+    hRelInit hDomainInit hTargetScopeInit hLayout hControlInit
   have hCheck := hRel.declarationCheck_many hBindParts.1 hBindParts.2
   have hCheck' : EvmYul.Yul.checkDeclaration source names = .ok () := by
     simpa [identNames_eq_self] using hCheck

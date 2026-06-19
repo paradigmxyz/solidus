@@ -384,6 +384,7 @@ inductive DoneRel
       TargetDomainWithin used target.vars →
       Functions.Source.Ctx.ScopeExtends entryCtx ctx →
       Functions.Source.Ctx.SameControl entryCtx ctx →
+      FunctionsInteractionControlRelation.TargetScopeWithin used ctx →
       DoneRel layout used entryCtx (.ok (source, values))
         (.ok (.value target value truth ctx))
   | terminal {source target ctx} :
@@ -416,10 +417,12 @@ theorem transport_entry
     DoneRel layout used entry sourceDone targetDone := by
   cases hDone with
   | error hError => exact .error hError
-  | regular hValues hTruth hScoped hDomain hFinalScope hFinalControl =>
+  | regular hValues hTruth hScoped hDomain hFinalScope hFinalControl
+      hTargetScope =>
       exact .regular hValues hTruth hScoped hDomain
         (Functions.Source.Ctx.ScopeExtends.trans hScope hFinalScope)
         (Functions.Source.Ctx.SameControl.trans hControl hFinalControl)
+        hTargetScope
   | terminal hTerminal => exact .terminal hTerminal
 
 end DoneRel
@@ -477,7 +480,7 @@ theorem ofStablePrepared
             exact Simulation.Interaction.ForwardRel.done
               (.terminal (.revert hState))
     | @regular sourceAfter values targetAfter ctxAfter
-        hStable hScoped hDomain _hExtends hScope hControl =>
+        hStable hScoped hDomain _hExtends hScope hControl hTargetScope =>
         have hLength : values.length = 1 := by
           simpa using hStable.length
         obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLength
@@ -511,7 +514,7 @@ theorem ofStablePrepared
               Simulation.Interaction.bind_done_ok,
               Simulation.Interaction.monad_pure_bind]
             exact Simulation.Interaction.ForwardRel.done
-              (.regular rfl rfl hScoped hDomain hScope hControl)
+              (.regular rfl rfl hScoped hDomain hScope hControl hTargetScope)
   have hSourceBind :
       Simulation.Interaction.bind
           (Yul.InteractionSemantics.evalValues
@@ -534,6 +537,8 @@ theorem ofOpenExpression
       (Yul.InteractionSemantics.State × List Word)}
     (hScoped : ScopedStateRel layout sourceEntry target)
     (hDomain : TargetDomainWithin used target.vars)
+    (hTargetScope :
+      FunctionsInteractionControlRelation.TargetScopeWithin used ctx)
     (hEval :
       Simulation.Interaction.ForwardRel Truncated
         (FunctionsInteractionExpression.DoneRel sourceEntry 1)
@@ -578,7 +583,8 @@ theorem ofOpenExpression
       exact Simulation.Interaction.ForwardRel.done
         (.regular hSourceValues rfl hFinalScoped hFinalDomain
           (Functions.Source.Ctx.ScopeExtends.refl ctx)
-          (Functions.Source.Ctx.SameControl.refl ctx))
+          (Functions.Source.Ctx.SameControl.refl ctx)
+          hTargetScope)
 
 /-- Convert a direct one-result expression theorem into the same prepared
 condition interface. This is the effectful primitive path: the expression is
@@ -595,6 +601,8 @@ theorem ofDirectExpression
     (hExtends : Fresh.Extends before after)
     (hScoped : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin before.used target.vars)
+    (hTargetScope :
+      FunctionsInteractionControlRelation.TargetScopeWithin before.used ctx)
     (hEval :
       Simulation.Interaction.ForwardRel Truncated
         (FunctionsInteractionExpression.DoneRel source 1)
@@ -610,7 +618,8 @@ theorem ofDirectExpression
     ⟨targetFuel - 1, by omega⟩
   unfold run
   rw [Functions.InteractionSemantics.Block.openRun_nil]
-  exact ofOpenExpression hScoped (hDomain.mono hExtends) hEval
+  exact ofOpenExpression hScoped (hDomain.mono hExtends)
+    (hTargetScope.mono hExtends) hEval
 
 /-- The direct branch of ordinary unchecked primitive lowering, specialized to
 condition evaluation. Arguments stay inline, while the primitive effect still
@@ -629,7 +638,9 @@ theorem ofDirectPrimitiveLowering
       before prim args lower)
     (hTargetFuel : 0 < targetFuel)
     (hScoped : ScopedStateRel layout source target)
-    (hDomain : TargetDomainWithin before.used target.vars) :
+    (hDomain : TargetDomainWithin before.used target.vars)
+    (hTargetScope :
+      FunctionsInteractionControlRelation.TargetScopeWithin before.used ctx) :
     Simulation.Interaction.ForwardRel Truncated
       (DoneRel layout before.used ctx)
       (Yul.InteractionSemantics.evalValues
@@ -668,7 +679,7 @@ theorem ofDirectPrimitiveLowering
           FunctionsInteractionExpression.exprSeq_openEval_seqCast] using
           hPrimitiveRel
       exact ofDirectExpression hTargetFuel (Fresh.Extends.refl before)
-        hScoped hDomain hEval
+        hScoped hDomain hTargetScope hEval
 
 /-- Prepared primitive arguments and the selected primitive effect compose into
 the same condition interface. This is the non-direct lowering branch used by
@@ -729,7 +740,7 @@ theorem ofPreparedPrimitive
           exact Simulation.Interaction.ForwardRel.done
             (.terminal (.revert hState))
   | @regular sourceAfter values targetAfter ctxAfter
-      hStable hScoped hDomain _hExtends hScope hControl =>
+      hStable hScoped hDomain _hExtends hScope hControl hTargetScope =>
       cases argsFuel with
       | zero =>
           have hTruncated :
@@ -800,7 +811,7 @@ theorem ofPreparedPrimitive
                 exact .ok
                   ⟨hOk.1.1, hOk.1.2, hOk.2.1.trans hOutputs, hOk.2.2⟩
           have hCondition := ofOpenExpression
-            (ctx := ctxAfter) hScoped hDomain hExprRel
+            (ctx := ctxAfter) hScoped hDomain hTargetScope hExprRel
           exact Simulation.Interaction.ForwardRel.mono hCondition
             (fun _sourceDone _targetDone conditionDone =>
               DoneRel.transport_entry hScope hControl conditionDone)

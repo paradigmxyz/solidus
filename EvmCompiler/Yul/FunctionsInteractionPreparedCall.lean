@@ -34,6 +34,8 @@ theorem ofUncheckedCallArgsLowering
       layout source target)
     (hDomain : FunctionsInteractionRelation.TargetDomainWithin
       initial.used target.vars)
+    (hTargetScope :
+      FunctionsInteractionControlRelation.TargetScopeWithin initial.used ctx)
     (hLayout : ∀ name, name ∈ layout → name ∈ initial.used)
     (hTargetFuel : pre.length < targetFuel) :
     Simulation.Interaction.ForwardRel
@@ -52,11 +54,11 @@ theorem ofUncheckedCallArgsLowering
             (FunctionsInteractionPreparedArgs.nil
               (fuel := fuel) (targetFuel := remaining)
               (codeOverride := codeOverride) (program := program)
-              (ctx := ctx) hRel hDomain)
+              (ctx := ctx) hRel hDomain hTargetScope)
   | bound _hNonempty hArgs =>
       exact FunctionsInteractionPreparedArgs.ofUncheckedLowering
         (ctx := ctx) hArgsOk hArgs hBound hProgramBudget
-        hRel hDomain hLayout hTargetFuel
+        hRel hDomain hTargetScope hLayout hTargetFuel
 
 end FunctionsInteractionPreparedCall
 end Yul
