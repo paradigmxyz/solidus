@@ -31,25 +31,27 @@ returned values into its target locals. -/
 inductive RunBodyDoneRel
     (callerLayout : List Functions.Name)
     (sourceCaller : Yul.InteractionSemantics.State)
-    (targetCaller : Functions.InteractionSemantics.State) :
+    (targetCaller : Functions.InteractionSemantics.State)
+    (results : Nat) :
     Except Yul.InteractionSemantics.Failure
         (Yul.InteractionSemantics.State × List Assembly.Word) →
       Except EVMException Functions.InteractionSemantics.CallResult → Prop where
   | error {source target} :
       ErrorRel source target →
-        RunBodyDoneRel callerLayout sourceCaller targetCaller
+        RunBodyDoneRel callerLayout sourceCaller targetCaller results
           (.error source) (.error target)
   | returned {sourceAfter targetAfter values} :
       ScopedStateRel callerLayout sourceAfter
         { shared := targetAfter.shared, vars := targetCaller.vars } →
-        RunBodyDoneRel callerLayout sourceCaller targetCaller
+      values.length = results →
+        RunBodyDoneRel callerLayout sourceCaller targetCaller results
           (.ok (sourceAfter, values))
           (.ok (Functions.Source.Effectful.CallResult.returned
             targetAfter values))
   | terminal {source kind target} :
       TerminalFailureRel source
         (Functions.Source.Effectful.Outcome.halt kind target) →
-        RunBodyDoneRel callerLayout sourceCaller targetCaller
+        RunBodyDoneRel callerLayout sourceCaller targetCaller results
           (.error source)
           (.ok (Functions.Source.Effectful.CallResult.halted kind target))
 
@@ -60,6 +62,7 @@ theorem runBodyForward
     {targetBodyFuel : Nat}
     {program : Functions.Program} {fn : Functions.FunDef}
     {args : List Assembly.Word} {paramStore : Locals.Source.Store}
+    {results : Nat}
     {callerLayout : List Functions.Name}
     {sourceCaller : Yul.InteractionSemantics.State}
     {targetCaller : Functions.InteractionSemantics.State}
@@ -73,6 +76,7 @@ theorem runBodyForward
       Functions.Source.Store.insertMany fn.params args
           Locals.Source.Store.empty = some paramStore)
     (hCaller : ScopedStateRel callerLayout sourceCaller targetCaller)
+    (hResults : fn.returns.length = results)
     (hBody :
       Simulation.Interaction.ForwardRel
         FunctionsInteractionPrimitive.Truncated
@@ -90,7 +94,7 @@ theorem runBodyForward
                 fn.returns paramStore })) :
     Simulation.Interaction.ForwardRel
       FunctionsInteractionPrimitive.Truncated
-      (RunBodyDoneRel callerLayout sourceCaller targetCaller)
+      (RunBodyDoneRel callerLayout sourceCaller targetCaller results)
       (Simulation.Interaction.bind sourceBody fun sourceAfterBody =>
         pure
           (((sourceAfterBody.reviveJump.overwrite? sourceCaller).setStore
@@ -106,7 +110,7 @@ theorem runBodyForward
   change
     Simulation.Interaction.ForwardRel
       FunctionsInteractionPrimitive.Truncated
-      (RunBodyDoneRel callerLayout sourceCaller targetCaller)
+      (RunBodyDoneRel callerLayout sourceCaller targetCaller results)
       (Simulation.Interaction.bind sourceBody _)
       (Simulation.Interaction.bind
         (Functions.InteractionSemantics.Block.openRun program
@@ -140,6 +144,9 @@ theorem runBodyForward
             intro name hMem
             exact List.mem_append_left fn.params hMem)
       have hRestored := hCaller.restore_call hFrame
+      have hLength :
+          (List.map source.lookup! fn.returns).length = results := by
+        simp [hResults]
       have hReturns' :
           Functions.Source.Store.lookupMany fn.returns
               (Functions.InteractionSemantics.stateModel.vars target.state) =
@@ -150,12 +157,138 @@ theorem runBodyForward
         rw [hMode, hReturns']
         exact Simulation.Interaction.ForwardRel.done
           (RunBodyDoneRel.returned
-            (sourceCaller := sourceCaller) hRestored)
+            (sourceCaller := sourceCaller) hRestored hLength)
       · simp only
         rw [hMode, hReturns']
         exact Simulation.Interaction.ForwardRel.done
           (RunBodyDoneRel.returned
-            (sourceCaller := sourceCaller) hRestored)
+            (sourceCaller := sourceCaller) hRestored hLength)
+
+/-- Write one returned value into the fresh temporary used by internal-call
+expression lowering. Ordinary errors and terminal halts pass through without
+manufacturing a source result. -/
+theorem finishSingleForward
+    {before final : Fresh.State} {tmp : Functions.Name}
+    {layout : List Functions.Name}
+    {entry targetBefore targetCaller :
+      Functions.InteractionSemantics.State}
+    {sourceCaller : Yul.InteractionSemantics.State}
+    {ctx : Functions.Source.Ctx}
+    {sourceCall :
+      Simulation.Interaction Yul.InteractionSemantics.Failure
+        (Yul.InteractionSemantics.State × List Assembly.Word)}
+    {targetRunBody :
+      Simulation.Interaction EVMException
+        Functions.InteractionSemantics.CallResult}
+    (hFresh : Fresh.fresh? before = some (tmp, final))
+    (hLayout : ∀ name, name ∈ layout → name ∈ before.used)
+    (hCallerState : targetCaller =
+      targetBefore.insert tmp Functions.Source.zero)
+    (hDomain : TargetDomainWithin before.used targetBefore.vars)
+    (hExtends : TargetExtends entry.vars targetBefore.vars)
+    (hRunBody :
+      Simulation.Interaction.ForwardRel Truncated
+        (RunBodyDoneRel layout sourceCaller targetCaller 1)
+        sourceCall targetRunBody) :
+    Simulation.Interaction.ForwardRel Truncated
+      (FunctionsInteractionPreparedArgs.DoneRel
+        layout final [.var tmp] entry)
+      sourceCall
+      (Simulation.Interaction.bind targetRunBody
+        (Functions.InteractionSemantics.Stmt.finishCall
+          [tmp] ctx targetCaller)) := by
+  apply Simulation.Interaction.ForwardRel.bind_right hRunBody
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ForwardRel.done (.error hError)
+  | terminal hTerminal =>
+      exact Simulation.Interaction.ForwardRel.done (.terminal hTerminal)
+  | @returned sourceAfter targetAfter values hScoped hLength =>
+      obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLength
+      obtain ⟨hFinalUsed, hTmpFresh⟩ := Fresh.fresh?_components hFresh
+      have hTmpLayout : tmp ∉ layout := by
+        intro hMem
+        exact hTmpFresh (hLayout tmp hMem)
+      have hTmpNone : targetBefore.vars tmp = none :=
+        hDomain.lookup_none hTmpFresh
+      have hInsertExtends :
+          TargetExtends targetBefore.vars
+            (Locals.Source.Store.insert targetBefore.vars tmp value) :=
+        TargetExtends.insert_fresh hTmpNone
+      have hFinalExtends :
+          TargetExtends entry.vars
+            (Locals.Source.Store.insert targetBefore.vars tmp value) :=
+        TargetExtends.trans hExtends hInsertExtends
+      have hFinalDomain :
+          TargetDomainWithin final.used
+            (Locals.Source.Store.insert targetBefore.vars tmp value) := by
+        rw [hFinalUsed]
+        exact hDomain.insert hTmpFresh
+      have hFinalScoped := hScoped.insert_private hTmpLayout value
+      have hStable :
+          FunctionsInteractionExpression.StableArgs [.var tmp]
+            { shared := targetAfter.shared
+              vars := Locals.Source.Store.insert targetBefore.vars tmp value }
+            [value] := by
+        apply FunctionsInteractionExpression.StableArgs.cons
+        · apply FunctionsInteractionExpression.StableValue.var
+          simp [Locals.Source.Store.insert]
+        · exact FunctionsInteractionExpression.StableArgs.nil _
+      subst targetCaller
+      have hOverwrite :
+          Locals.Source.Store.insert
+              (Locals.Source.Store.insert targetBefore.vars tmp
+                Functions.Source.zero)
+              tmp value =
+            Locals.Source.Store.insert targetBefore.vars tmp value := by
+        funext key
+        by_cases hKey : key = tmp
+        · subst key
+          simp
+        · simp [Locals.Source.Store.insert_of_ne hKey]
+      have hFinalScoped' :
+          ScopedStateRel layout sourceAfter
+            { shared := targetAfter.shared
+              vars := Locals.Source.Store.insert
+                targetBefore.vars tmp value } := by
+        change
+          ScopedStateRel layout sourceAfter
+            { shared := targetAfter.shared
+              vars := Locals.Source.Store.insert
+                (Locals.Source.Store.insert targetBefore.vars tmp
+                  Functions.Source.zero)
+                tmp value } at hFinalScoped
+        rw [hOverwrite] at hFinalScoped
+        exact hFinalScoped
+      have hFinish :
+          Functions.InteractionSemantics.Stmt.finishCall [tmp] ctx
+              (targetBefore.insert tmp Functions.Source.zero)
+              (Functions.Source.Effectful.CallResult.returned
+                targetAfter [value]) =
+            pure
+              (Functions.Source.Effectful.Outcome.regular
+                { shared := targetAfter.shared
+                  vars := Locals.Source.Store.insert
+                    targetBefore.vars tmp value },
+                ctx) := by
+        simp [Functions.InteractionSemantics.Stmt.finishCall,
+          Functions.Source.Store.assignMany,
+          Locals.Source.State.insert,
+          Locals.Source.Store.contains, hOverwrite,
+          Functions.InteractionSemantics.stateModel,
+          Locals.InteractionSemantics.stateModel,
+          Locals.Source.Effectful.Ordinary.stateModel,
+          Locals.Source.Effectful.StateModel.vars,
+          Locals.Source.Effectful.StateModel.withSource]
+        rfl
+      simp only
+      rw [hFinish]
+      exact
+        (Simulation.Interaction.ForwardRel.done
+          (truncated := Truncated)
+          (FunctionsInteractionPreparedArgs.DoneRel.regular
+            hStable hFinalScoped' hFinalDomain hFinalExtends))
 
 /-- Package one related regular/leave function body through the canonical
 Functions `runBody` wrapper. Return values are read from the related source

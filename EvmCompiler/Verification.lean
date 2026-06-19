@@ -1481,6 +1481,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionCall.returnedBody
 #check EvmCompiler.Yul.FunctionsInteractionCall.haltedBody
 #check EvmCompiler.Yul.FunctionsInteractionCall.runBodyForward
+#check EvmCompiler.Yul.FunctionsInteractionCall.finishSingleForward
 #check EvmCompiler.Simulation.Interaction.ForwardRel.strengthen_right
 #check EvmCompiler.Simulation.Interaction.ForwardRel.bind_right
 #check EvmCompiler.Yul.FunctionsInteractionExpression.expr_openEval_cast

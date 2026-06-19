@@ -206,8 +206,10 @@ boundaries remain active work.
         - [ ] Recursive callee-body attachment and caller writeback.
           - [x] Canonical open `runBody` equations and structural
             regular/leave/terminal body-result lift.
-          - [ ] Compiler-selected lookup, temporary writeback, and source-fuel
-            discharge of the recursive body premise.
+          - [x] Fresh one-result temporary writeback after ordinary return,
+            with error and terminal propagation.
+          - [ ] Compiler-selected lookup and source-fuel discharge of the
+            recursive body premise.
     - [ ] Complete recursive statement/list proof over compiler decomposition;
       break, continue, leave, and multi-name uninitialized declaration compiler
       cases are checked. Direct-safe one-name initialized declarations and
