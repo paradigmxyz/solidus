@@ -158,6 +158,15 @@ abbrev exec :=
 abbrev loop :=
   Yul.Source.Canonical.loop stateModel primitiveSemantics
 
+theorem eval_eq_bind
+    (fuel : Nat) (expr : EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    eval fuel expr code state =
+      Simulation.Interaction.bind (evalValues fuel expr code state)
+        (fun result => pure (result.1, result.2.head!)) := by
+  unfold eval Yul.Source.Canonical.eval Yul.Source.Effectful.eval
+  rfl
+
 namespace Call
 
 /-- Positive-fuel internal calls against an explicit active program expose

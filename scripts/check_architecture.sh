@@ -621,6 +621,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionExpression.lean \
   EvmCompiler/Yul/FunctionsInteractionStatement.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedArgs.lean \
+  EvmCompiler/Yul/FunctionsInteractionPreparedCondition.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedCall.lean \
   EvmCompiler/Yul/FunctionsCompilerArtifact.lean \
@@ -628,7 +629,8 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionSelectedCall.lean \
   EvmCompiler/Yul/FunctionsInteractionRecursiveExpression.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedStatement.lean \
-  EvmCompiler/Yul/FunctionsInteractionSelectedStatementCall.lean
+  EvmCompiler/Yul/FunctionsInteractionSelectedStatementCall.lean \
+  EvmCompiler/Yul/FunctionsInteractionRecursiveStatement.lean
 
 report_matches \
   'The canonical Yul-to-Functions interaction boundary must not define a compiler or recursive evaluator:' \
@@ -643,6 +645,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionExpression.lean \
   EvmCompiler/Yul/FunctionsInteractionStatement.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedArgs.lean \
+  EvmCompiler/Yul/FunctionsInteractionPreparedCondition.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedCall.lean \
   EvmCompiler/Yul/FunctionsCompilerArtifact.lean \
@@ -650,7 +653,8 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionSelectedCall.lean \
   EvmCompiler/Yul/FunctionsInteractionRecursiveExpression.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedStatement.lean \
-  EvmCompiler/Yul/FunctionsInteractionSelectedStatementCall.lean
+  EvmCompiler/Yul/FunctionsInteractionSelectedStatementCall.lean \
+  EvmCompiler/Yul/FunctionsInteractionRecursiveStatement.lean
 
 report_matches \
   'The canonical Yul-to-Functions interaction boundary must not import observer or replay modules:' \
@@ -665,6 +669,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionExpression.lean \
   EvmCompiler/Yul/FunctionsInteractionStatement.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedArgs.lean \
+  EvmCompiler/Yul/FunctionsInteractionPreparedCondition.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedCall.lean \
   EvmCompiler/Yul/FunctionsCompilerArtifact.lean \
@@ -672,7 +677,8 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionSelectedCall.lean \
   EvmCompiler/Yul/FunctionsInteractionRecursiveExpression.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedStatement.lean \
-  EvmCompiler/Yul/FunctionsInteractionSelectedStatementCall.lean
+  EvmCompiler/Yul/FunctionsInteractionSelectedStatementCall.lean \
+  EvmCompiler/Yul/FunctionsInteractionRecursiveStatement.lean
 
 report_matches \
   'The Yul-to-Functions observer proof must not reason directly about lower pass semantics:' \

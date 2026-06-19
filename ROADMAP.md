@@ -249,6 +249,12 @@ boundaries remain active work.
               - [x] Check canonical lexical-block cleanup and its ordinary
                 compiler-selected recursive wrapper, including regular,
                 abrupt, terminal, ownership, and control outcomes.
+              - [x] Define the canonical prepared-condition interface and
+                exhaustively dispatch literals, variables, direct/prepared
+                primitives, and selected internal calls into it.
+              - [x] Check generic `if` composition from the prepared condition
+                and adjacent lexical-body capability, including exact target
+                residual fuel and all regular/abrupt/terminal outcomes.
               - [ ] Rebuild the historical five-way fuel fixed point over
                 canonical body, value, statement, list, and compound
                 interfaces.

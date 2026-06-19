@@ -1205,6 +1205,15 @@ def TargetExtends (before after : Locals.Source.Store) : Prop :=
 
 namespace TargetDomainWithin
 
+theorem mono
+    {before after : List Functions.Name}
+    {target : Locals.Source.Store}
+    (hDomain : TargetDomainWithin before target)
+    (hSubset : ∀ name, name ∈ before → name ∈ after) :
+    TargetDomainWithin after target := by
+  intro name value hLookup
+  exact hSubset name (hDomain name value hLookup)
+
 theorem lookup_none
     {used : List Functions.Name} {target : Locals.Source.Store}
     (hDomain : TargetDomainWithin used target)

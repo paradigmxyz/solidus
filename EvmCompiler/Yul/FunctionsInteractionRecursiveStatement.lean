@@ -1,3 +1,4 @@
+import EvmCompiler.Yul.FunctionsInteractionRecursiveExpression
 import EvmCompiler.Yul.FunctionsInteractionSelectedStatementCall
 import EvmCompiler.Yul.FunctionsInteractionTargetCost
 
@@ -145,6 +146,131 @@ private theorem layoutWithinStmtsOutVars
       exact layoutWithinStmtOutVars layout head name hName
 
 namespace CompoundForward
+
+/-- Compose a checked prepared condition with the adjacent lexical-body
+theorem. The target equation is the ordinary compiler output factored by
+`PreparedCondition.run_if`; no condition evaluator is reproduced here. -/
+theorem ifFromCondition
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    {conditionFuel targetFuel : Nat}
+    {layout used : List Functions.Name}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {cond : AstExpr} {body : List AstStmt}
+    {pre : List Functions.Stmt} {lowerCond : Locals.Expr 1}
+    {lowerBody : Functions.Block}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {ctx : Functions.Source.Ctx}
+    (hTargetFuel : pre.length + 1 < targetFuel)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
+    (hCondition :
+      Simulation.Interaction.ForwardRel Truncated
+        (FunctionsInteractionPreparedCondition.DoneRel layout used ctx)
+        (Yul.InteractionSemantics.evalValues conditionFuel cond
+          (some sourceProgram.contract) source)
+        (FunctionsInteractionPreparedCondition.run targetProgram.toFunctions
+          ctx targetFuel pre lowerCond target))
+    (hBody :
+      ∀ {sourceAfter : Yul.InteractionSemantics.State}
+        {targetAfter : Functions.InteractionSemantics.State}
+        {ctxAfter : Functions.Source.Ctx},
+        ScopedStateRel layout sourceAfter targetAfter →
+        TargetDomainWithin used targetAfter.vars →
+        ControlContextRel sourceScopes layout
+            canBreak canContinue canLeave ctxAfter →
+        Simulation.Interaction.ForwardRel Truncated
+          (ControlDoneRel used layout sourceScopes
+            canBreak canContinue canLeave)
+          (Yul.InteractionSemantics.exec conditionFuel (.Block body)
+            (some sourceProgram.contract) sourceAfter)
+          (Functions.InteractionSemantics.Stmt.openRun
+            targetProgram.toFunctions ctxAfter
+            (targetFuel - pre.length - 2) (.block lowerBody) targetAfter)) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel used layout sourceScopes
+        canBreak canContinue canLeave)
+      (Yul.InteractionSemantics.exec (conditionFuel + 1) (.If cond body)
+        (some sourceProgram.contract) source)
+      (Functions.InteractionSemantics.Block.openRun
+        targetProgram.toFunctions ctx targetFuel
+        { stmts := pre ++ [.if_ lowerCond lowerBody] } target) := by
+  rw [Yul.InteractionSemantics.Exec.if_succ]
+  rw [Yul.InteractionSemantics.eval_eq_bind,
+    Simulation.Interaction.bind_assoc]
+  rw [FunctionsInteractionPreparedCondition.run_if
+    targetProgram.toFunctions ctx targetFuel pre lowerCond lowerBody target
+    hTargetFuel]
+  apply Simulation.Interaction.ForwardRel.bind_custom hCondition
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ForwardRel.done (.error hError)
+  | terminal hTerminal =>
+      cases hTerminal with
+      | stop hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.stop hState))
+      | return_ hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.return_ hState))
+      | selfdestruct hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.selfdestruct hState))
+      | revert hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.revert hState))
+  | @regular sourceAfter values targetAfter truth ctxAfter value
+      hValues hTruth hScoped hDomain hScope hSameControl =>
+      have hControlAfter : ControlContextRel sourceScopes layout
+          canBreak canContinue canLeave ctxAfter := by
+        apply ControlContextRel.transport hControl
+        · exact fun _name hName => hName
+        · exact hSameControl
+        · intro name hName
+          exact hScope name (hControl.scope name hName)
+      subst values
+      simp only [List.head!_cons, Simulation.Interaction.bind_done_ok]
+      by_cases hNonzero : value ≠ EvmYul.UInt256.ofNat 0
+      · have hTruthTrue : truth = true := by
+          exact
+            FunctionsInteractionPreparedCondition.DoneRel.truth_eq_true_of_ne
+              hTruth hNonzero
+        have hBne :
+            (value != EvmYul.UInt256.ofNat 0) = true :=
+          hTruth.symm.trans hTruthTrue
+        subst truth
+        simp only [Simulation.Interaction.bind_done_ok, pure_bind,
+          hNonzero, hBne, ↓reduceIte]
+        rw [show
+          (pure (sourceAfter, value) :
+              Yul.InteractionSemantics.Open
+                (Yul.InteractionSemantics.State × Word)) =
+            Simulation.Interaction.pure (sourceAfter, value) by rfl]
+        unfold Simulation.Interaction.pure
+        rw [Simulation.Interaction.bind_done_ok]
+        rw [if_pos hNonzero]
+        change
+          Simulation.Interaction.ForwardRel Truncated
+            (ControlDoneRel used layout sourceScopes
+              canBreak canContinue canLeave)
+            (Yul.InteractionSemantics.exec conditionFuel (.Block body)
+              (some sourceProgram.contract) sourceAfter)
+            (Functions.InteractionSemantics.Stmt.openRun
+              targetProgram.toFunctions ctxAfter
+              (targetFuel - pre.length - 2) (.block lowerBody) targetAfter)
+        exact hBody hScoped hDomain hControlAfter
+      · have hZero : value = EvmYul.UInt256.ofNat 0 := by
+          simpa using hNonzero
+        subst value
+        have hTruthFalse : truth = false := by
+          simpa using hTruth
+        subst truth
+        simp only [ne_eq, not_true_eq_false, ↓reduceIte,
+          Bool.false_eq_true, Simulation.Interaction.bind_done_ok]
+        exact Simulation.Interaction.ForwardRel.done
+          (.regular hScoped hDomain hControlAfter)
 
 /-- Compiler-selected lexical block from the adjacent recursive list theorem.
 The outer source/target cleanup is owned by `ControlDoneRel.block`; this wrapper

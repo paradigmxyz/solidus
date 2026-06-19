@@ -27,9 +27,12 @@ import EvmCompiler.Yul.FunctionsInteractionStatement
 import EvmCompiler.Yul.FunctionsInteractionFuel
 import EvmCompiler.Yul.FunctionsInteractionStaticCost
 import EvmCompiler.Yul.FunctionsInteractionPreparedArgs
+import EvmCompiler.Yul.FunctionsInteractionPreparedCondition
 import EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive
 import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
+import EvmCompiler.Yul.FunctionsInteractionRecursiveExpression
 import EvmCompiler.Yul.FunctionsInteractionSelectedStatementCall
+import EvmCompiler.Yul.FunctionsInteractionRecursiveStatement
 import EvmCompiler.Yul.FunctionsInteractionTerminal
 
 #check EvmCompiler.Simulation.OpenWorld
@@ -530,3 +533,13 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionStaticCost.function_body_le_program_of_lookup
 #print axioms EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.MemoryFamily.LogFamily.closedSpec
 #print axioms EvmCompiler.Functions.AllocationInteractionPrimitiveResource.log_resourceForward
+#print axioms EvmCompiler.Locals.InteractionSemantics.Expr.openEvalCondition_eq_bind
+#print axioms EvmCompiler.Yul.InteractionSemantics.eval_eq_bind
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TargetDomainWithin.mono
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedCondition.run_if
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofStablePrepared
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofOpenExpression
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofDirectPrimitiveLowering
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofPreparedPrimitive
+#print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.recursiveCondition
+#print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.ifFromCondition

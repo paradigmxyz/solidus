@@ -130,6 +130,7 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 import EvmCompiler.Yul.FunctionsInteractionExpression
 import EvmCompiler.Yul.FunctionsInteractionStatement
 import EvmCompiler.Yul.FunctionsInteractionPreparedArgs
+import EvmCompiler.Yul.FunctionsInteractionPreparedCondition
 import EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive
 import EvmCompiler.Yul.FunctionsInteractionPreparedCall
 import EvmCompiler.Yul.FunctionsCompilerArtifact
@@ -1484,6 +1485,12 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.RecursiveBoundHeads
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.ofUncheckedLowering
 #check EvmCompiler.Yul.FunctionsInteractionExpression.StableArgs.reverse
+#check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.TargetResult
+#check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.DoneRel
+#check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.run_if
+#check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofStablePrepared
+#check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofDirectPrimitiveLowering
+#check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofPreparedPrimitive
 #check EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.afterPrepared
 #check EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.bindDirectEval
 #check EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.boundDirectOfLowering
@@ -1513,6 +1520,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionSelectedCall.ofUncheckedFunctionCallLowering
 #check EvmCompiler.Yul.FunctionsInteractionSelectedCall.headValueOfUncheckedFunctionCallLowering
 #check EvmCompiler.Yul.FunctionsInteractionSelectedCall.boundCallAtFuel
+#check EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.ConditionForwardAt
+#check EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.recursiveCondition
+#check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.ifFromCondition
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.recursiveBoundHeads
 #check EvmCompiler.Yul.FunctionsInteractionPreparedStatement.letOneOfPrepared
 #check EvmCompiler.Yul.FunctionsInteractionPreparedStatement.assignOneOfPrepared

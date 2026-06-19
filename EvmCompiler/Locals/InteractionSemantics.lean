@@ -330,6 +330,27 @@ def openEvalCondition (expr : Locals.Expr 1)
   Locals.Source.Effectful.Expr.Control.evalCondition
     stateModel primitiveSemantics expr state
 
+theorem openEvalCondition_eq_bind (expr : Locals.Expr 1) (state : State) :
+    openEvalCondition expr state =
+      Simulation.Interaction.bind (openEval expr state) fun result =>
+        match result.2 with
+        | [value] =>
+            pure (result.1, value != EvmYul.UInt256.ofNat 0)
+        | _ => throw .InvalidInstruction := by
+  unfold openEvalCondition
+    Locals.Source.Effectful.Expr.Control.evalCondition
+  change
+    Simulation.Interaction.bind (openEvalOne expr state) (fun result =>
+      pure (result.1, result.2 != EvmYul.UInt256.ofNat 0)) = _
+  rw [openEvalOne_eq_bind, Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial (openEval expr state))
+  intro result _hResult
+  cases result.2 with
+  | nil => rfl
+  | cons value rest =>
+      cases rest <;> rfl
+
 mutual
   /-- Expression evaluation preserves local bindings on every open branch. -/
   theorem openEval_vars_eq {results : Nat}
