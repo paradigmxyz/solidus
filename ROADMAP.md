@@ -25,6 +25,10 @@ boundaries remain active work.
 - [x] Assembly/bytecode and lower control-pass preservation for all shared
   effects, including CALL-family, CREATE-family, logs, storage, `gas()`, and
   `msize()`.
+- [x] Source-budgeted Structured -> TypedCfg preservation for every statement,
+  recursive loop, internal call, statement list, and generated main program;
+  one checked theorem pads all successful open branches to a uniform target
+  fuel without a call oracle or generated public premise.
 - [x] Functions allocation relation, primitive families, recursive
   expressions, stack/scratch declaration preservation, and assignment
   preservation in both activation modes.

@@ -204,6 +204,20 @@ if ! rg -Fq \
 fi
 
 for theorem in \
+    'EvmCompiler.Structured.InteractionBranchPreservation.Stmt.openRun_if_bounded_under_of_compileStmtFuel?' \
+    'EvmCompiler.Structured.InteractionSwitchPreservation.Stmt.openRun_switch_bounded_under_of_compileStmtFuel?' \
+    'EvmCompiler.Structured.InteractionLoopPreservation.Loop.Stmt.openRun_for_bounded_under_of_compileStmtFuel?' \
+    'EvmCompiler.Structured.InteractionBoundedOwnerPreservation.OpenOutcome.block_owner' \
+    'EvmCompiler.Structured.InteractionBoundedOwnerPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_uniform' \
+    'EvmCompiler.Structured.InteractionBoundedOwnerPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_preserves'; do
+  if ! rg -Fq "#check ${theorem}" EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing bounded Structured theorem %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
+for theorem in \
     'Stmt.openStep_brk_of_compileStmtFuel?' \
     'Stmt.openRun_brk_within_of_compileStmtFuel?' \
     'Stmt.openStep_cont_of_compileStmtFuel?' \
@@ -1270,10 +1284,13 @@ report_matches \
   EvmCompiler/Structured/InteractionBoundedBlockPreservation.lean \
   EvmCompiler/Structured/InteractionLeafPreservation.lean \
   EvmCompiler/Structured/InteractionBranchPreservation.lean \
+  EvmCompiler/Structured/InteractionBoundedBranchPreservation.lean \
   EvmCompiler/Structured/InteractionSwitchPreservation.lean \
+  EvmCompiler/Structured/InteractionBoundedSwitchPreservation.lean \
   EvmCompiler/Structured/InteractionLoopPreservation.lean \
   EvmCompiler/Structured/InteractionBoundedLoopPreservation.lean \
   EvmCompiler/Structured/InteractionCallPreservation.lean \
+  EvmCompiler/Structured/InteractionBoundedOwnerPreservation.lean \
   EvmCompiler/Expressions/EffectSemantics.lean \
   EvmCompiler/Expressions/InteractionSemantics.lean \
   EvmCompiler/Expressions/InteractionPreservation.lean \

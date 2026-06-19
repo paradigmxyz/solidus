@@ -1892,6 +1892,53 @@ end PreservesUnder
 
 namespace BoundedExecPreservesUnder
 
+/-- Forget the source-owned ceiling while retaining the execution witness. -/
+theorem exec
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {targetBudget : Nat} {policy : StopPolicy}
+    (hPreserves :
+      BoundedExecPreservesUnder result cfg entry ctx regular
+        source tokens sourceRun targetBudget policy) :
+    ExecPreservesUnder result cfg entry ctx regular
+      source tokens sourceRun policy := by
+  intro target hStateRel transcript sourceOutcome hSourceExec
+  obtain
+      ⟨targetFuel, remaining, targetOutcome, _hFuel,
+        hTargetExec, hRel⟩ :=
+    hPreserves target hStateRel transcript sourceOutcome hSourceExec
+  exact ⟨targetFuel, remaining, targetOutcome, hTargetExec, hRel⟩
+
+/-- The numeric execution ceiling is independent of compiler-result metadata. -/
+theorem change_result_of_fallthrough_eq
+    {left right : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {targetBudget : Nat} {policy : StopPolicy}
+    (hFallthrough : left.fallthrough? = right.fallthrough?)
+    (hPreserves :
+      BoundedExecPreservesUnder left cfg entry ctx regular
+        source tokens sourceRun targetBudget policy) :
+    BoundedExecPreservesUnder right cfg entry ctx regular
+      source tokens sourceRun targetBudget policy := by
+  intro target hStateRel transcript sourceOutcome hSourceExec
+  obtain
+      ⟨targetFuel, remaining, targetOutcome, hFuel,
+        hTargetExec, hRel⟩ :=
+    hPreserves target hStateRel transcript sourceOutcome hSourceExec
+  exact
+    ⟨targetFuel, remaining, targetOutcome, hFuel, hTargetExec,
+      Rel.change_result_of_fallthrough_eq hFallthrough hRel⟩
+
 theorem mono_budget
     {result : TypedCfgCompiler.Result}
     {cfg : TypedCfg.Program}

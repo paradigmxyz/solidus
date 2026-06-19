@@ -83,7 +83,33 @@ def procBodyBudget (program : Structured.Program) (fuel : Nat) : Nat :=
   program.procs.foldr
     (fun proc current =>
       max (blockBudget program fuel proc.body) current)
-    0
+      0
+
+@[simp] theorem stmtBudget_code
+    (program : Structured.Program) (fuel : Nat) (code : Structured.Code) :
+    stmtBudget program fuel (.code code) = 1 := by
+  cases fuel <;> simp [stmtBudget, levelCost]
+
+@[simp] theorem stmtBudget_brk
+    (program : Structured.Program) (fuel : Nat) :
+    stmtBudget program fuel .brk = 1 := by
+  cases fuel <;> simp [stmtBudget, levelCost]
+
+@[simp] theorem stmtBudget_cont
+    (program : Structured.Program) (fuel : Nat) :
+    stmtBudget program fuel .cont = 1 := by
+  cases fuel <;> simp [stmtBudget, levelCost]
+
+@[simp] theorem stmtBudget_leave
+    (program : Structured.Program) (fuel : Nat) :
+    stmtBudget program fuel .leave = 1 := by
+  cases fuel <;> simp [stmtBudget, levelCost]
+
+@[simp] theorem stmtBudget_terminal
+    (program : Structured.Program) (fuel : Nat)
+    (kind : Assembly.HaltKind) :
+    stmtBudget program fuel (.terminal kind) = 1 := by
+  cases fuel <;> simp [stmtBudget, levelCost]
 
 @[simp] theorem blockBudget_zero
     (program : Structured.Program) (block : Structured.Block) :
