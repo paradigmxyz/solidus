@@ -30,6 +30,13 @@
   active induction frontier is `UncheckedBoundLowering.direct`, followed by
   `.bound` using the same statement/internal-call callback.
 
+- 2026-06-18 19:08 PDT - proof/yul-functions-deferred-head - Proved the
+  `.direct` leaf ingredient for unchecked bound lowering. Deferred literals
+  and variables now synchronize source evaluation with an empty generated
+  prelude, cover out-of-fuel and unknown-variable truncation, and produce one
+  stable delayed value under the canonical scoped/domain invariants. The next
+  step is list-fuel sequencing with the recursively prepared tail.
+
 - 2026-06-15 - compaction-resume - Resumed with the archive branch and
   narrowed observer-replay implementation intact. Final work is limited to
   consistency review, recording completed verification, and committing the
