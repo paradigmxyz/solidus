@@ -290,6 +290,148 @@ theorem finishSingleForward
           (FunctionsInteractionPreparedArgs.DoneRel.regular
             hStable hFinalScoped' hFinalDomain hFinalExtends))
 
+/-- Finish a multi-result source call and the canonical Functions target
+writeback under a caller-supplied relation for the updated lexical domain. -/
+theorem finishManyForward
+    {results : Nat} {targets : List Functions.Name}
+    {layout finalLayout : List Functions.Name}
+    {sourceCaller : Yul.InteractionSemantics.State}
+    {targetCaller : Functions.InteractionSemantics.State}
+    {ctx : Functions.Source.Ctx}
+    {sourceCall : Yul.InteractionSemantics.Open
+      (Yul.InteractionSemantics.State × List Assembly.Word)}
+    {targetRunBody : Functions.InteractionSemantics.Open
+      Functions.InteractionSemantics.CallResult}
+    (hTargetCount : targets.length = results)
+    (hContains : ∀ name, name ∈ targets →
+      targetCaller.vars.contains name = true)
+    (hWriteback :
+      ∀ {sourceAfter : Yul.InteractionSemantics.State}
+        {targetAfter : Functions.InteractionSemantics.State}
+        {values : List Assembly.Word} {finalVars : Locals.Source.Store},
+        ScopedStateRel layout sourceAfter
+            { shared := targetAfter.shared, vars := targetCaller.vars } →
+        Functions.Source.Store.insertMany targets values
+            targetCaller.vars = some finalVars →
+        ScopedStateRel finalLayout
+          (sourceAfter.multifill targets values)
+          { shared := targetAfter.shared, vars := finalVars })
+    (hRunBody :
+      Simulation.Interaction.ForwardRel Truncated
+        (RunBodyDoneRel layout sourceCaller targetCaller results)
+        sourceCall targetRunBody) :
+    Simulation.Interaction.ForwardRel Truncated
+      (FunctionsInteractionStatement.PathScopedDoneRel finalLayout)
+      (Simulation.Interaction.bind sourceCall fun result =>
+        pure (result.1.multifill targets result.2))
+      (Simulation.Interaction.bind targetRunBody
+        (Functions.InteractionSemantics.Stmt.finishCall
+          targets ctx targetCaller)) := by
+  apply Simulation.Interaction.ForwardRel.bind_custom hRunBody
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ForwardRel.done (.error hError)
+  | terminal hTerminal =>
+      exact Simulation.Interaction.ForwardRel.done (.terminal hTerminal)
+  | @returned sourceAfter targetAfter values hScoped hLength =>
+      have hValuesLength : values.length = targets.length := by
+        omega
+      obtain ⟨finalVars, hAssign⟩ :=
+        Functions.Source.Store.assignMany_exists_of_length_of_contains
+          (store := targetCaller.vars) hValuesLength hContains
+      have hInsert :
+          Functions.Source.Store.insertMany targets values
+              targetCaller.vars = some finalVars :=
+        Functions.Source.Store.insertMany_of_assignMany hAssign
+      have hFinal := hWriteback hScoped hInsert
+      have hFinish :
+          Functions.InteractionSemantics.Stmt.finishCall targets ctx
+              targetCaller
+              (Functions.Source.Effectful.CallResult.returned
+                targetAfter values) =
+            pure
+              (Functions.Source.Effectful.Outcome.regular
+                { shared := targetAfter.shared, vars := finalVars }, ctx) := by
+        simp [Functions.InteractionSemantics.Stmt.finishCall, hAssign,
+          Functions.InteractionSemantics.stateModel,
+          Locals.InteractionSemantics.stateModel,
+          Locals.Source.Effectful.Ordinary.stateModel,
+          Locals.Source.Effectful.StateModel.vars,
+          Locals.Source.Effectful.StateModel.withSource]
+        rfl
+      simp only
+      rw [hFinish]
+      exact Simulation.Interaction.ForwardRel.done
+        (.ok
+          ⟨finalLayout,
+            FunctionsInteractionRelation.ScopedOutcomeRel.regular hFinal,
+            fun _hRegular => rfl⟩)
+
+/-- Multi-result call writeback introducing fresh source bindings. -/
+theorem finishManyFresh
+    {results : Nat} {targets : List Functions.Name}
+    {layout : List Functions.Name}
+    {sourceCaller : Yul.InteractionSemantics.State}
+    {targetCaller : Functions.InteractionSemantics.State}
+    {ctx : Functions.Source.Ctx}
+    {sourceCall : Yul.InteractionSemantics.Open
+      (Yul.InteractionSemantics.State × List Assembly.Word)}
+    {targetRunBody : Functions.InteractionSemantics.Open
+      Functions.InteractionSemantics.CallResult}
+    (hTargetCount : targets.length = results)
+    (hNodup : targets.Nodup)
+    (hFresh : ∀ name, name ∈ targets → name ∉ layout)
+    (hContains : ∀ name, name ∈ targets →
+      targetCaller.vars.contains name = true)
+    (hRunBody :
+      Simulation.Interaction.ForwardRel Truncated
+        (RunBodyDoneRel layout sourceCaller targetCaller results)
+        sourceCall targetRunBody) :
+    Simulation.Interaction.ForwardRel Truncated
+      (FunctionsInteractionStatement.PathScopedDoneRel (targets ++ layout))
+      (Simulation.Interaction.bind sourceCall fun result =>
+        pure (result.1.multifill targets result.2))
+      (Simulation.Interaction.bind targetRunBody
+        (Functions.InteractionSemantics.Stmt.finishCall
+          targets ctx targetCaller)) :=
+  finishManyForward hTargetCount hContains
+    (fun hScoped hInsert =>
+      hScoped.multifill_insertMany hNodup hFresh hInsert)
+    hRunBody
+
+/-- Multi-result call writeback updating existing source-visible bindings. -/
+theorem finishManyVisible
+    {results : Nat} {targets : List Functions.Name}
+    {layout : List Functions.Name}
+    {sourceCaller : Yul.InteractionSemantics.State}
+    {targetCaller : Functions.InteractionSemantics.State}
+    {ctx : Functions.Source.Ctx}
+    {sourceCall : Yul.InteractionSemantics.Open
+      (Yul.InteractionSemantics.State × List Assembly.Word)}
+    {targetRunBody : Functions.InteractionSemantics.Open
+      Functions.InteractionSemantics.CallResult}
+    (hTargetCount : targets.length = results)
+    (hNodup : targets.Nodup)
+    (hVisible : ∀ name, name ∈ targets → name ∈ layout)
+    (hContains : ∀ name, name ∈ targets →
+      targetCaller.vars.contains name = true)
+    (hRunBody :
+      Simulation.Interaction.ForwardRel Truncated
+        (RunBodyDoneRel layout sourceCaller targetCaller results)
+        sourceCall targetRunBody) :
+    Simulation.Interaction.ForwardRel Truncated
+      (FunctionsInteractionStatement.PathScopedDoneRel layout)
+      (Simulation.Interaction.bind sourceCall fun result =>
+        pure (result.1.multifill targets result.2))
+      (Simulation.Interaction.bind targetRunBody
+        (Functions.InteractionSemantics.Stmt.finishCall
+          targets ctx targetCaller)) :=
+  finishManyForward hTargetCount hContains
+    (fun hScoped hInsert =>
+      hScoped.multifill_insertMany_visible hNodup hVisible hInsert)
+    hRunBody
+
 /-- Attach canonical argument evaluation and function lookup around one
 already-related function body, yielding the real generated call statement. -/
 theorem callStmtForward

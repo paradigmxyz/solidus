@@ -1228,6 +1228,48 @@ theorem insert
   · rw [Locals.Source.Store.insert_of_ne hEq] at hLookup
     exact List.mem_cons_of_mem name (hDomain key result hLookup)
 
+theorem insert_used
+    {used : List Functions.Name} {target : Locals.Source.Store}
+    (hDomain : TargetDomainWithin used target)
+    {name : Functions.Name} (hUsed : name ∈ used) (value : Word) :
+    TargetDomainWithin used
+      (Locals.Source.Store.insert target name value) := by
+  intro key result hLookup
+  by_cases hEq : key = name
+  · subst key
+    exact hUsed
+  · rw [Locals.Source.Store.insert_of_ne hEq] at hLookup
+    exact hDomain key result hLookup
+
+theorem insertMany_used :
+    ∀ {names : List Functions.Name} {values : List Word}
+      {used : List Functions.Name} {target final : Locals.Source.Store},
+      TargetDomainWithin used target →
+      (∀ name, name ∈ names → name ∈ used) →
+      Functions.Source.Store.insertMany names values target = some final →
+      TargetDomainWithin used final
+  | [], [], _used, _target, final, hDomain, _hUsed, hInsert => by
+      simp [Functions.Source.Store.insertMany] at hInsert
+      subst final
+      exact hDomain
+  | [], _value :: _values, _used, _target, _final,
+      _hDomain, _hUsed, hInsert => by
+      simp [Functions.Source.Store.insertMany] at hInsert
+  | _name :: _names, [], _used, _target, _final,
+      _hDomain, _hUsed, hInsert => by
+      simp [Functions.Source.Store.insertMany] at hInsert
+  | name :: names, value :: values, used, target, final,
+      hDomain, hUsed, hInsert => by
+      have hHead := hDomain.insert_used (hUsed name (by simp)) value
+      have hTailUsed : ∀ candidate, candidate ∈ names → candidate ∈ used := by
+        intro candidate hMem
+        exact hUsed candidate (by simp [hMem])
+      change
+        Functions.Source.Store.insertMany names values
+            (Locals.Source.Store.insert target name value) = some final
+        at hInsert
+      exact insertMany_used hHead hTailUsed hInsert
+
 end TargetDomainWithin
 
 namespace TargetExtends
@@ -1559,6 +1601,28 @@ theorem assignmentCheck
   simp [EvmYul.Yul.checkAssignment, EvmYul.Yul.firstDuplicate?,
     EvmYul.Yul.firstUndeclared?, EvmYul.Yul.State.lookup?, hLookup]
 
+theorem assignmentCheck_many
+    {layout names : List Functions.Name}
+    {source : SourceState} {target : TargetState}
+    (hRel : ScopedStateRel layout source target)
+    (hNoDup : names.Nodup)
+    (hVisible : ∀ name, name ∈ names → name ∈ layout) :
+    EvmYul.Yul.checkAssignment source names = .ok () := by
+  rcases hRel.state with
+    ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
+  subst source
+  have hUndeclared :
+      EvmYul.Yul.firstUndeclared? (.Ok sourceShared sourceVars) names = none := by
+    unfold EvmYul.Yul.firstUndeclared?
+    apply List.find?_eq_none.mpr
+    intro name hMem
+    obtain ⟨value, hLookup⟩ :=
+      hRel.defined sourceShared sourceVars rfl name
+        (hVisible name hMem)
+    simp [EvmYul.Yul.State.lookup?, hLookup]
+  simp [EvmYul.Yul.checkAssignment,
+    firstDuplicate?_none_of_nodup names hNoDup, hUndeclared]
+
 theorem targetContains
     {layout : List Functions.Name}
     {source : SourceState} {target : TargetState}
@@ -1596,6 +1660,44 @@ theorem insert_private
         (hRel.domain sourceShared sourceVars hSource name result hLookup)
     simpa [Locals.Source.State.insert,
       Locals.Source.Store.insert_of_ne hKey] using hVars key result hLookup
+
+theorem insertMany_private :
+    ∀ {names : List Functions.Name} {values : List Word}
+      {layout : List Functions.Name}
+      {source : SourceState} {target : TargetState}
+      {finalVars : Locals.Source.Store},
+      ScopedStateRel layout source target →
+      (∀ name, name ∈ names → name ∉ layout) →
+      Functions.Source.Store.insertMany names values target.vars =
+        some finalVars →
+      ScopedStateRel layout source
+        { shared := target.shared, vars := finalVars }
+  | [], [], _layout, _source, _target, finalVars,
+      hRel, _hFresh, hInsert => by
+      simp [Functions.Source.Store.insertMany] at hInsert
+      subst finalVars
+      exact hRel
+  | [], _value :: _values, _layout, _source, _target, _finalVars,
+      _hRel, _hFresh, hInsert => by
+      simp [Functions.Source.Store.insertMany] at hInsert
+  | _name :: _names, [], _layout, _source, _target, _finalVars,
+      _hRel, _hFresh, hInsert => by
+      simp [Functions.Source.Store.insertMany] at hInsert
+  | name :: names, value :: values, layout, source, target, finalVars,
+      hRel, hFresh, hInsert => by
+      have hHeadFresh : name ∉ layout := hFresh name (by simp)
+      have hTailFresh : ∀ candidate, candidate ∈ names →
+          candidate ∉ layout := by
+        intro candidate hMem
+        exact hFresh candidate (by simp [hMem])
+      have hHead := hRel.insert_private hHeadFresh value
+      change
+        Functions.Source.Store.insertMany names values
+            (Locals.Source.Store.insert target.vars name value) =
+          some finalVars at hInsert
+      exact ScopedStateRel.insertMany_private
+        (target := target.insert name value)
+        hHead hTailFresh hInsert
 
 theorem multifill_single_cons
     {layout : List Functions.Name}
@@ -1752,6 +1854,89 @@ theorem multifill_insertMany :
         rfl
       rw [hSourceEq]
       simpa [List.cons_append, Locals.Source.State.insert,
+        Locals.Source.Store.insert] using hHeadRel
+
+/-- Updating duplicate-free source-visible names agrees with ordinary
+Functions insertion while preserving the same lexical domain. -/
+theorem multifill_insertMany_visible :
+    ∀ {names : List Functions.Name} {values : List Word}
+      {layout : List Functions.Name}
+      {source : SourceState} {target : TargetState}
+      {finalVars : Locals.Source.Store},
+      ScopedStateRel layout source target →
+      names.Nodup →
+      (∀ name, name ∈ names → name ∈ layout) →
+      Functions.Source.Store.insertMany names values target.vars =
+        some finalVars →
+      ScopedStateRel layout
+        (source.multifill names values)
+        { shared := target.shared, vars := finalVars }
+  | [], [], layout, source, target, finalVars,
+      hRel, _hNodup, _hVisible, hInsert => by
+      rcases hRel.state with
+        ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+      subst source
+      simp [Functions.Source.Store.insertMany] at hInsert
+      subst finalVars
+      simpa [EvmYul.Yul.State.multifill] using hRel
+  | [], _value :: _values, _layout, _source, _target, _finalVars,
+      _hRel, _hNodup, _hVisible, hInsert => by
+      simp [Functions.Source.Store.insertMany] at hInsert
+  | _name :: _names, [], _layout, _source, _target, _finalVars,
+      _hRel, _hNodup, _hVisible, hInsert => by
+      simp [Functions.Source.Store.insertMany] at hInsert
+  | name :: names, value :: values, layout, source, target, finalVars,
+      hRel, hNodup, hVisible, hInsert => by
+      rcases hRel.state with
+        ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+      subst source
+      have hParts := List.nodup_cons.mp hNodup
+      have hLength : values.length = names.length := by
+        have hAllLength :=
+          Functions.Source.Store.insertMany_length hInsert
+        simpa using hAllLength
+      obtain ⟨tailVars, hTailInsert⟩ :=
+        Functions.Source.Store.insertMany_exists_of_length
+          (store := target.vars) hLength
+      have hTailVisible :
+          ∀ candidate, candidate ∈ names → candidate ∈ layout := by
+        intro candidate hMem
+        exact hVisible candidate (by simp [hMem])
+      have hTailRel :=
+        multifill_insertMany_visible hRel hParts.2 hTailVisible hTailInsert
+      have hTargetInsert :
+          Functions.Source.Store.insertMany names values
+              (Locals.Source.Store.insert target.vars name value) =
+            some (Locals.Source.Store.insert tailVars name value) :=
+        Functions.Source.Store.insertMany_commute_insert_of_not_mem
+          hTailInsert hParts.1
+      have hTargetEq :
+          finalVars = Locals.Source.Store.insert tailVars name value := by
+        change
+          Functions.Source.Store.insertMany names values
+              (Locals.Source.Store.insert target.vars name value) =
+            some finalVars at hInsert
+        rw [hTargetInsert] at hInsert
+        exact Option.some.inj hInsert.symm
+      subst finalVars
+      have hHeadRel := hTailRel.multifill_single_visible
+        (hVisible name (by simp)) value
+      have hSourceEq :
+          (EvmYul.Yul.State.Ok sourceShared sourceVars).multifill
+              (name :: names) (value :: values) =
+            ((EvmYul.Yul.State.Ok sourceShared sourceVars).multifill
+                names values).multifill [name] [value] := by
+        rcases hTailRel.state with
+          ⟨tailShared, tailSourceVars, hTailSource, _hShared, _hVars⟩
+        change
+          ((EvmYul.Yul.State.Ok sourceShared sourceVars).multifill
+              names values).insert name value =
+            ((EvmYul.Yul.State.Ok sourceShared sourceVars).multifill
+              names values).multifill [name] [value]
+        rw [hTailSource]
+        rfl
+      rw [hSourceEq]
+      simpa [Locals.Source.State.insert,
         Locals.Source.Store.insert] using hHeadRel
 
 theorem zeroFill_insertMany

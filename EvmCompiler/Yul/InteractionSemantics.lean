@@ -554,6 +554,19 @@ theorem let_one_succ
     evalValues, hCheck, Yul.Source.Effectful.Control.multifill, stateModel]
   rfl
 
+theorem let_some_succ
+    (fuel : Nat) (names : List EvmYul.Identifier)
+    (expr : EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State)
+    (hCheck : EvmYul.Yul.checkDeclaration state names = .ok ()) :
+    exec (fuel + 1) (.Let names (some expr)) code state =
+      Simulation.Interaction.bind (evalValues fuel expr code state)
+        (fun result =>
+          pure (stateModel.multifill names result.1 result.2)) := by
+  simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
+    evalValues, hCheck, Yul.Source.Effectful.Control.multifill, stateModel]
+  rfl
+
 theorem assign_one_succ
     (fuel : Nat) (name : EvmYul.Identifier)
     (expr : EvmYul.Yul.Ast.Expr)
@@ -563,6 +576,19 @@ theorem assign_one_succ
       Simulation.Interaction.bind (evalValues fuel expr code state)
         (fun result =>
           pure (stateModel.multifill [name] result.1 result.2)) := by
+  simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
+    evalValues, hCheck, Yul.Source.Effectful.Control.multifill, stateModel]
+  rfl
+
+theorem assign_succ
+    (fuel : Nat) (names : List EvmYul.Identifier)
+    (expr : EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State)
+    (hCheck : EvmYul.Yul.checkAssignment state names = .ok ()) :
+    exec (fuel + 1) (.Assign names expr) code state =
+      Simulation.Interaction.bind (evalValues fuel expr code state)
+        (fun result =>
+          pure (stateModel.multifill names result.1 result.2)) := by
   simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
     evalValues, hCheck, Yul.Source.Effectful.Control.multifill, stateModel]
   rfl

@@ -27,6 +27,7 @@ import EvmCompiler.Yul.FunctionsInteractionStatement
 import EvmCompiler.Yul.FunctionsInteractionPreparedArgs
 import EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive
 import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
+import EvmCompiler.Yul.FunctionsInteractionSelectedStatementCall
 import EvmCompiler.Yul.FunctionsInteractionTerminal
 
 #check EvmCompiler.Simulation.OpenWorld
@@ -520,5 +521,8 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_brk
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_cont
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_leave
+#print axioms EvmCompiler.Yul.FunctionsInteractionSelectedStatementCall.selectedTargets
+#print axioms EvmCompiler.Yul.FunctionsInteractionSelectedStatementCall.compiledAssignCall
+#print axioms EvmCompiler.Yul.FunctionsInteractionSelectedStatementCall.compiledLetCall
 #print axioms EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.MemoryFamily.LogFamily.closedSpec
 #print axioms EvmCompiler.Functions.AllocationInteractionPrimitiveResource.log_resourceForward

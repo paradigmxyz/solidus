@@ -204,6 +204,26 @@ def assignMany : List Name → List Word → Store → Option Store
         none
   | _, _, _ => none
 
+/-- A successful checked assignment performs the same ordered store updates as
+unchecked insertion; `assignMany` only adds target-existence checks. -/
+theorem insertMany_of_assignMany :
+    ∀ {names : List Name} {values : List Word} {store final : Store},
+      assignMany names values store = some final →
+        insertMany names values store = some final
+  | [], [], _store, _final, hAssign => by
+      simpa [assignMany, insertMany] using hAssign
+  | [], _value :: _values, _store, _final, hAssign => by
+      simp [assignMany] at hAssign
+  | _name :: _names, [], _store, _final, hAssign => by
+      simp [assignMany] at hAssign
+  | name :: names, value :: values, store, final, hAssign => by
+      unfold assignMany at hAssign
+      by_cases hContains : store.contains name
+      · simp [hContains] at hAssign
+        unfold insertMany
+        exact insertMany_of_assignMany hAssign
+      · simp [hContains] at hAssign
+
 theorem assignMany_exists_of_length_of_contains :
     ∀ {names : List Name} {values : List Word} {store : Store},
       values.length = names.length →

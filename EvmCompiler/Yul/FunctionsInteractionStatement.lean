@@ -602,6 +602,67 @@ theorem terminal_of_prepared_args
 
 namespace InitNames
 
+theorem openRun_extra
+    (names : List Functions.Name)
+    (program : Functions.Program)
+    (target : Functions.InteractionSemantics.State)
+    (ctx : Functions.Source.Ctx) (extra : Nat) :
+    ∃ finalVars,
+      Functions.Source.Store.insertMany names
+          (names.map fun _name => Functions.Source.zero)
+          target.vars = some finalVars ∧
+      Functions.InteractionSemantics.Block.openRun
+          program ctx (names.length + extra + 1)
+          { stmts := Stmt.initNames names } target =
+        pure
+          (Functions.Source.Effectful.Outcome.regular
+            { shared := target.shared, vars := finalVars },
+            { ctx with scope := names.reverse ++ ctx.scope }) := by
+  induction names generalizing target ctx with
+  | nil =>
+      refine ⟨target.vars, rfl, ?_⟩
+      simpa [Stmt.initNames] using
+        (Functions.InteractionSemantics.Block.openRun_nil
+          program ctx extra target)
+  | cons name rest ih =>
+      let targetHead := target.insert name Functions.Source.zero
+      let ctxHead := { ctx with scope := name :: ctx.scope }
+      obtain ⟨finalVars, hInsert, hTail⟩ :=
+        ih (target := targetHead) (ctx := ctxHead)
+      refine ⟨finalVars, ?_, ?_⟩
+      · simpa [Functions.Source.Store.insertMany, targetHead,
+          Locals.Source.State.insert] using hInsert
+      · change
+          Functions.InteractionSemantics.Block.openRun
+              program ctx ((name :: rest).length + extra + 1)
+                { stmts :=
+                    .let_ name (.lit Stmt.zero) :: Stmt.initNames rest }
+                target = _
+        have hHead :=
+          Functions.InteractionSemantics.Stmt.openRun_let_lit
+            program ctx (rest.length + extra + 1)
+            name Stmt.zero target
+        change
+          Functions.Source.Effectful.Control.Stmt.run
+              Functions.InteractionSemantics.stateModel
+              Functions.InteractionSemantics.primitiveSemantics
+              program ctx (rest.length + extra + 1)
+                (.let_ name (.lit Stmt.zero)) target = _ at hHead
+        rw [show (name :: rest).length + extra + 1 =
+              (rest.length + extra + 1) + 1 by simp; omega,
+          Functions.InteractionSemantics.Block.openRun_cons, hHead]
+        change
+          Functions.Source.Effectful.Control.Block.runOpen
+              Functions.InteractionSemantics.stateModel
+              Functions.InteractionSemantics.primitiveSemantics
+              program ctxHead (rest.length + extra + 1)
+                { stmts := Stmt.initNames rest } targetHead = _
+        unfold Functions.InteractionSemantics.Block.openRun
+          Functions.Source.Canonical.Block.runOpen at hTail
+        rw [hTail]
+        simp [targetHead, ctxHead, Stmt.initNames,
+          List.reverse_cons, List.append_assoc]
+
 theorem openRun
     (names : List Functions.Name)
     (program : Functions.Program)
