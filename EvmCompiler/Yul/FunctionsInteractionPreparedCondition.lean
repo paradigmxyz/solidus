@@ -37,6 +37,81 @@ def run
       | .brk | .cont | .leave | .halt _ =>
           pure (.terminal result.1 result.2)
 
+/-- A generated prelude followed by a one-result declaration factors through
+the same exact-value prepared computation used by conditions. -/
+theorem run_let
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (targetFuel : Nat) (pre : List Functions.Stmt)
+    (name : Functions.Name) (valueExpr : Locals.Expr 1)
+    (target : Functions.InteractionSemantics.State)
+    (hFuel : pre.length + 1 < targetFuel) :
+    Functions.InteractionSemantics.Block.openRun program ctx targetFuel
+        { stmts := pre ++ [.let_ name valueExpr] } target =
+      Simulation.Interaction.bind
+        (run program ctx targetFuel pre valueExpr target)
+        (fun result =>
+          match result with
+          | .value state value _truth ctxAfter =>
+              pure
+                (Functions.Source.Effectful.Outcome.regular
+                  (state.insert name value),
+                  { ctxAfter with scope := name :: ctxAfter.scope })
+          | .terminal outcome ctxAfter => pure (outcome, ctxAfter)) := by
+  rw [Functions.InteractionSemantics.Block.openRun_append]
+  unfold run
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx targetFuel { stmts := pre } target))
+  intro result _hResult
+  cases hMode : result.1.mode with
+  | regular =>
+      simp only [hMode]
+      obtain ⟨remaining, hResidual⟩ :
+          ∃ remaining, targetFuel - pre.length = remaining + 2 := by
+        refine ⟨targetFuel - pre.length - 2, ?_⟩
+        omega
+      rw [hResidual,
+        show remaining + 2 = (remaining + 1) + 1 by omega,
+        Functions.InteractionSemantics.Block.openRun_cons]
+      change
+        Simulation.Interaction.bind
+            (Functions.InteractionSemantics.Stmt.openRun
+              program result.2 (remaining + 1)
+              (.let_ name valueExpr) result.1.state)
+            _ = _
+      rw [Functions.InteractionSemantics.Stmt.openRun_let]
+      unfold Functions.InteractionSemantics.Expr.openEvalOne
+      rw [Locals.InteractionSemantics.Expr.openEvalOne_eq_bind]
+      unfold Simulation.Interaction.map
+      conv_lhs => rw [Simulation.Interaction.bind_assoc]
+      conv_rhs => rw [Simulation.Interaction.bind_assoc,
+        Simulation.Interaction.bind_assoc]
+      apply Simulation.Interaction.AllDone.bind_congr
+        (Simulation.Interaction.AllDone.trivial
+          (Functions.InteractionSemantics.Expr.openEval
+            valueExpr result.1.state))
+      intro evaluated _hEvaluated
+      cases hValues : evaluated.2 with
+      | nil => rfl
+      | cons value rest =>
+          cases rest with
+          | nil =>
+              simp only [Simulation.Interaction.bind_done_ok,
+                Simulation.Interaction.monad_pure_bind]
+              change
+                Functions.InteractionSemantics.Block.openRun
+                    program { result.2 with scope := name :: result.2.scope }
+                    (remaining + 1) { stmts := [] }
+                    (evaluated.1.insert name value) = _
+              rw [Functions.InteractionSemantics.Block.openRun_nil]
+              rfl
+          | cons next tail => rfl
+  | brk | cont | leave | halt =>
+      simp only [hMode]
+      rfl
+
 /-- The ordinary generated `pre ++ [if]` block factors through `run`.  The
 true continuation is exactly the singleton lexical body at the residual fuel;
 the false continuation is the regular identity. -/
