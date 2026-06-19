@@ -34,7 +34,7 @@ currently selects target fuel separately for each concrete transcript.
 - [x] Erase Structured compiler residual-fuel tags and prove that its internal
   stop policy is inert on universally halting open-world executions, yielding
   the ordinary TypedCfg runner expected by the adjacent lower pass.
-- [ ] Strengthen Assembly -> encoded bytecode from concrete-branch existential
+- [x] Strengthen Assembly -> encoded bytecode from concrete-branch existential
   fuel to one source-derived uniform target budget and `Interaction.Rel`.
 - [x] Functions allocation relation, primitive families, recursive
   expressions, stack/scratch declaration preservation, and assignment

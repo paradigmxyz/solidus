@@ -409,6 +409,26 @@ def emitInstr? (program : Program) (pc : Nat) : Instr → Option (List LocatedTa
         , { pc := pc + Instr.push32Size, instr := TargetInstr.jumpi }
         ]
 
+/-- Every symbolic Assembly instruction expands to at most two target
+instructions. -/
+theorem emitInstr?_length_le_two
+    {program : Program} {pc : Nat} {instr : Instr}
+    {emitted : List LocatedTarget}
+    (hEmit : emitInstr? program pc instr = some emitted) :
+    emitted.length <= 2 := by
+  cases instr with
+  | label name | prim name | push name =>
+      simp [emitInstr?] at hEmit
+      subst emitted
+      simp
+  | jump target | jumpi target =>
+      cases hDest : Program.labelPc program target with
+      | none => simp [emitInstr?, hDest] at hEmit
+      | some dest =>
+          simp [emitInstr?, hDest] at hEmit
+          subst emitted
+          simp
+
 theorem emitInstr?_first {program : Program} {pc : Nat} {instr : Instr}
     {emitted : List LocatedTarget}
     (hEmit : emitInstr? program pc instr = some emitted) :

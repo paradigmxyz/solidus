@@ -11,6 +11,25 @@ abbrev OpenStep :=
 abbrev OpenStepResult :=
   Simulation.Interaction EVMException StepResult
 
+/-- Every open branch terminates successfully with an EVM halt. -/
+def Terminal : Except EVMException StepResult -> Prop
+  | .ok result => result.IsTerminal
+  | .error _ => False
+
+namespace Terminal
+
+theorem successful
+    {run : Simulation.Interaction EVMException StepResult}
+    (hTerminal : Simulation.Interaction.AllDone Terminal run) :
+    Simulation.Interaction.Successful run := by
+  apply Simulation.Interaction.AllDone.mono hTerminal
+  intro outcome hOutcome
+  cases outcome with
+  | error error => cases hOutcome
+  | ok result => trivial
+
+end Terminal
+
 namespace Control
 
 theorem openRunNResultWith_add
@@ -274,6 +293,27 @@ theorem openRunNResult_add
     Control.openRunNResultWith_add
       (Assembly.Target.stepResultWith openStepInstrResult target)
       first second state
+
+/-- Once a fetched target run halts, any additional instruction fuel is inert. -/
+theorem openRunNResult_halted_add_executes
+    {target : TargetProgram} {fuel extra : Nat} {state : EVMState}
+    {transcript : Simulation.Interaction.Transcript} {halt : Halt}
+    (hExec : Simulation.Interaction.Executes
+      (openRunNResult target fuel state) transcript (.ok (.halted halt))) :
+    Simulation.Interaction.Executes
+      (openRunNResult target (fuel + extra) state)
+      transcript (.ok (.halted halt)) := by
+  rw [openRunNResult_add]
+  have hCombined :=
+    Simulation.Interaction.Executes.bind_ok
+      (next := fun result =>
+        match result with
+        | .running mid => openRunNResult target extra mid
+        | .halted final => Simulation.Interaction.pure (.halted final))
+      hExec
+      (Simulation.Interaction.Executes.done
+        (.ok (StepResult.halted halt) : Except EVMException StepResult))
+  simpa using hCombined
 
 end Target
 

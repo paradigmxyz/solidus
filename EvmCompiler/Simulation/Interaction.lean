@@ -1218,6 +1218,23 @@ theorem exists_executes
         ⟨{ query := query, answer := query.defaultAnswer } :: transcript,
           outcome, Executes.request query.defaultAnswer hExec, hProperty⟩
 
+/-- A property of every terminal leaf holds on any selected concrete branch. -/
+theorem property_of_executes
+    {Error : Type u1} {Result : Type v1}
+    {property : Except Error Result -> Prop}
+    {interaction : Interaction Error Result}
+    {transcript : Transcript} {outcome : Except Error Result}
+    (hAll : AllDone property interaction)
+    (hExec : Executes interaction transcript outcome) :
+    property outcome := by
+  induction hExec with
+  | done outcome =>
+      cases hAll with
+      | done hProperty => exact hProperty
+  | @request query resume answer transcript outcome hTail ih =>
+      cases hAll with
+      | request hResume => exact ih (hResume answer)
+
 end AllDone
 
 namespace Executes

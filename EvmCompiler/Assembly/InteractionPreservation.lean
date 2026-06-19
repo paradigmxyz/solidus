@@ -1682,10 +1682,10 @@ inductive OpenBlockTraceResult
 namespace OpenBlockTraceResult
 
 /--
-Every emitted-block branch is realized by the ordinary fetched target runner.
-The target instruction fuel is derived internally from emitted block lengths.
+Every emitted-block branch is realized by the ordinary fetched target runner
+within two target instructions per source instruction.
 -/
-theorem target_executes_exists
+theorem target_executes_bounded
     {program : Program} {target : TargetProgram}
     {fuel : Nat} {state : EVMState}
     {transcript : Simulation.Interaction.Transcript}
@@ -1695,13 +1695,14 @@ theorem target_executes_exists
       OpenBlockTraceResult program target fuel state transcript result)
     (hLen : Program.byteLength program < EvmYul.UInt256.size) :
     ∃ targetFuel,
-      Simulation.Interaction.Executes
-        (InteractionSemantics.Target.openRunNResult
-          target targetFuel state)
-        transcript (.ok result) := by
+      targetFuel <= 2 * fuel /\
+        Simulation.Interaction.Executes
+          (InteractionSemantics.Target.openRunNResult
+            target targetFuel state)
+          transcript (.ok result) := by
   induction hTrace with
   | done state =>
-      refine ⟨0, ?_⟩
+      refine ⟨0, by omega, ?_⟩
       change
         Simulation.Interaction.Executes
           (.done (.ok (StepResult.running state))) []
@@ -1721,8 +1722,10 @@ theorem target_executes_exists
         rw [target_openRunNResult_eq_openRunList_of_emitInstr?
           hAsm hAt hEmit hSafe]
         exact hRun
-      rcases ih with ⟨tailFuel, hTail⟩
-      refine ⟨emitted.length + tailFuel, ?_⟩
+      rcases ih with ⟨tailFuel, hTailLe, hTail⟩
+      have hHeadLe : emitted.length <= 2 :=
+        emitInstr?_length_le_two hEmit
+      refine ⟨emitted.length + tailFuel, by omega, ?_⟩
       rw [InteractionSemantics.Target.openRunNResult_add]
       exact Simulation.Interaction.Executes.bind_ok hHead hTail
   | stepHalted hAt hEmit hTargetBlock hRun =>
@@ -1730,10 +1733,32 @@ theorem target_executes_exists
       have hSafe : Preservation.TargetBlockPcSafe instr state :=
         Preservation.targetBlockPcSafe_of_instrAtPc_of_byteLength_lt
           hAt hLen
-      refine ⟨emitted.length, ?_⟩
+      have hHeadLe : emitted.length <= 2 :=
+        emitInstr?_length_le_two hEmit
+      refine ⟨emitted.length, by omega, ?_⟩
       rw [target_openRunNResult_eq_openRunList_of_emitInstr?
         hAsm hAt hEmit hSafe]
       exact hRun
+
+/-- Every emitted-block branch is realized by the ordinary fetched target
+runner. The exact instruction fuel is selected internally. -/
+theorem target_executes_exists
+    {program : Program} {target : TargetProgram}
+    {fuel : Nat} {state : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    {result : StepResult}
+    (hAsm : assemble? program = some target)
+    (hTrace :
+      OpenBlockTraceResult program target fuel state transcript result)
+    (hLen : Program.byteLength program < EvmYul.UInt256.size) :
+    ∃ targetFuel,
+      Simulation.Interaction.Executes
+        (InteractionSemantics.Target.openRunNResult
+          target targetFuel state)
+        transcript (.ok result) := by
+  obtain ⟨targetFuel, _hLe, hExec⟩ :=
+    target_executes_bounded hAsm hTrace hLen
+  exact ⟨targetFuel, hExec⟩
 
 end OpenBlockTraceResult
 
@@ -2700,6 +2725,52 @@ theorem compile_openRunNResult_target_executes
       hAsm
       (assemble_source_openRunNResult_block_trace hAsm hExec)
       hLen
+
+/--
+Uniform structural Assembly-to-bytecode preservation for terminal open-world
+executions. Two target instructions per source instruction cover every emitted
+path; branches using less fuel have already halted, so the remaining target
+budget is inert.
+-/
+theorem compile_openRunNResult_target_rel_terminal
+    {program : Program} {target : TargetProgram}
+    {fuel : Nat} {state : EVMState}
+    (hCompile : compile? program = some target)
+    (hLen : Program.byteLength program < EvmYul.UInt256.size)
+    (hTerminal : Simulation.Interaction.AllDone
+      InteractionSemantics.Terminal
+      (InteractionSemantics.Source.openRunNResult
+        program fuel state)) :
+    Accepted program /\
+      Simulation.Interaction.Rel Eq
+        (InteractionSemantics.Source.openRunNResult
+          program fuel state)
+        (InteractionSemantics.Target.openRunNResult
+          target (2 * fuel) state) := by
+  have hAsm : assemble? program = some target :=
+    Preservation.compile?_some_assemble hCompile
+  refine ⟨Preservation.compile?_some_accepted hCompile, ?_⟩
+  apply Simulation.Interaction.Rel.of_successful_executes
+    (InteractionSemantics.Terminal.successful hTerminal)
+  intro transcript sourceResult hSourceExec
+  have hSourceTerminal :=
+    Simulation.Interaction.AllDone.property_of_executes
+      hTerminal hSourceExec
+  cases sourceResult with
+  | running sourceFinal => cases hSourceTerminal
+  | halted halt =>
+      obtain ⟨targetFuel, hTargetFuel, hTargetExec⟩ :=
+        OpenBlockTraceResult.target_executes_bounded hAsm
+          (assemble_source_openRunNResult_block_trace hAsm hSourceExec)
+          hLen
+      let extra := 2 * fuel - targetFuel
+      have hFuel : targetFuel + extra = 2 * fuel := by
+        exact Nat.add_sub_of_le hTargetFuel
+      have hPadded :=
+        InteractionSemantics.Target.openRunNResult_halted_add_executes
+          (extra := extra) hTargetExec
+      rw [hFuel] at hPadded
+      exact ⟨.ok (.halted halt), hPadded, rfl⟩
 
 end InteractionPreservation
 end Assembly

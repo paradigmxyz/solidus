@@ -126,6 +126,15 @@ for opcode in "${external_opcodes[@]}"; do
   fi
 done
 
+if ! rg -Fq \
+    '#check EvmCompiler.Assembly.InteractionPreservation.compile_openRunNResult_target_rel_terminal' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing uniform terminal Assembly-to-bytecode preservation.' \
+    >&2
+  failed=1
+fi
+
 for theorem in \
     lower?_openRunN_rel \
     compileCertified?_entry_openRunN_rel; do
