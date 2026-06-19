@@ -1755,7 +1755,7 @@ theorem recursiveStmtOfEarlier
     {profile : SolcValidation.DialectProfile}
     {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
     (hDecomposition :
-      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+      FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
       SolcValidation.ProgramOkWith? profile sourceProgram = true)
     {bound : Nat}

@@ -21,9 +21,9 @@ def BodyForwardAt
     {fn : Functions.FunDef}
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State},
+    ∀ {compilerFuel : Nat},
     Stmt.List.toBlockUncheckedFuel?
-        (FunctionList.fuel
-          (Contract.functionEntries sourceProgram.contract))
+        compilerFuel
         before body = some (fn.body, after) →
     SolcValidation.StmtsOk? profile sourceProgram.contract
         ((Contract.functionEntries
@@ -78,7 +78,7 @@ theorem ofUncheckedFunctionCallLowering
     {target : Functions.InteractionSemantics.State}
     {ctx : Functions.Source.Ctx}
     (hDecomposition :
-      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+      FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
       SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (hExprOk :
@@ -136,7 +136,7 @@ theorem ofUncheckedFunctionCallLowering
           candidate ∈ Stmt.List.names body → candidate ∈ before.used := by
         intro candidate hCandidate
         apply hPrefix candidate
-        change candidate ∈ Contract.names sourceProgram.contract
+        apply hDecomposition.sourceNamesReserved candidate
         exact (Contract.function_names_mem_names_of_lookup hLookup).2
           candidate (by simp [FunctionDefinition.names, hCandidate])
       have hArgsExtends : Fresh.Extends initial argsState :=
@@ -358,7 +358,7 @@ theorem headValueOfUncheckedFunctionCallLowering
     {before after : Fresh.State} {pre : List Functions.Stmt}
     {lower : Locals.Expr 1} {layout : List Functions.Name}
     (hDecomposition :
-      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+      FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
       SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (hExprOk :
@@ -412,7 +412,7 @@ theorem boundCall
     {lower : Locals.Expr 1} {tmp : Functions.Name}
     {layout : List Functions.Name}
     (hDecomposition :
-      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+      FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
       SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (hExprOk :
@@ -497,7 +497,7 @@ theorem boundCallAtFuel
     {lower : Locals.Expr 1} {tmp : Functions.Name}
     {layout : List Functions.Name}
     (hDecomposition :
-      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+      FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
       SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (hExprOk :

@@ -1593,6 +1593,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCall.ofUncheckedCallArgsLowering
 #check EvmCompiler.Yul.FunctionsCompilerArtifact.decomposition_of_toObjectsWithObservers?
 #check EvmCompiler.Yul.FunctionsCompilerArtifact.decomposition_of_toObjectsCanonical?
+#check EvmCompiler.Yul.FunctionsCompilerArtifact.orderedDecomposition_of_toObjects?
+#check EvmCompiler.Yul.FunctionsCompilerArtifact.passDecomposition_of_ordered_toObjects?
+#check EvmCompiler.Yul.FunctionsCompilerArtifact.PassDecomposition.findFunction_parts
 #check EvmCompiler.Yul.FunctionsCompilerArtifact.Decomposition.findFunction_parts
 #check EvmCompiler.Yul.FunctionsInteractionCall.returnedBody
 #check EvmCompiler.Yul.FunctionsInteractionCall.haltedBody
@@ -1636,6 +1639,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveBody.recursiveStmt
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveBody.recursiveList
 #check EvmCompiler.Yul.FunctionsInteractionProgram.dispatcherForward
+#check EvmCompiler.Yul.FunctionsInteractionProgram.dispatcherForward_of_ordered_toObjects?
 #check EvmCompiler.Yul.FunctionsInteractionProgram.targetSuccessful
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToAllocatedExpressions
 #check EvmCompiler.Compiler.OpenInteractionComposition.expressionsToStructured
@@ -1646,6 +1650,9 @@ or audit-alias corridor.
 #check EvmCompiler.Compiler.OpenInteractionComposition.structuredToEncodedBytecode
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.structuredToEncodedBytecode
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledYulToEncodedBytecode
+#check EvmCompiler.Compiler.OpenInteractionComposition.compiledWithPassToEncodedBytecode
+#check EvmCompiler.Compiler.OpenInteractionComposition.compiledOrderedYulToEncodedBytecode
+#print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledOrderedYulToEncodedBytecode
 #check EvmCompiler.Compiler.OpenInteractionComposition.openWorldTerminalCorrect
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.openWorldTerminalCorrect
 #check EvmCompiler.Yul.FunctionsInteractionStatement.ControlDoneRel.block
@@ -1661,6 +1668,7 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Yul.FunctionsInteractionCompilerCost.toFunctionsUncheckedFuel?_cost
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveBody.recursiveStmt
 #print axioms EvmCompiler.Yul.FunctionsInteractionProgram.dispatcherForward
+#print axioms EvmCompiler.Yul.FunctionsInteractionProgram.dispatcherForward_of_ordered_toObjects?
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_let_none_control
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_brk_control
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_cont_control

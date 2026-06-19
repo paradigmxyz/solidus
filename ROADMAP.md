@@ -551,10 +551,10 @@ Public production spine:
 - [x] Check that frontend conversion supplies source-representing, nodup,
   solc-valid ordered entries; keep generated compiler data out of this source
   interface.
-- [ ] Generalize `FunctionsCompilerArtifact.Decomposition` from one arbitrary
+- [x] Generalize `FunctionsCompilerArtifact.Decomposition` from one arbitrary
   `Finmap` enumeration to any valid ordered entries and compiler initial-name
   set covering the source names.
-- [ ] Lift the adjacent Yul -> Functions open-interaction theorem and the short
+- [x] Lift the adjacent Yul -> Functions open-interaction theorem and the short
   end-to-end composition theorem to compiler-selected ordered artifacts; retain
   the existing canonical theorem as a corollary.
 

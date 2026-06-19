@@ -36,7 +36,7 @@ theorem yulToAllocatedExpressions
     {functionsState : Functions.InteractionSemantics.State}
     {expressionsState : Expressions.InteractionSemantics.RunState}
     (hDecomposition :
-      Yul.FunctionsCompilerArtifact.Decomposition sourceProgram objects)
+      Yul.FunctionsCompilerArtifact.PassDecomposition sourceProgram objects)
     (hProgramOk :
       Yul.SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (hLower :
@@ -96,7 +96,7 @@ theorem yulToAllocatedExpressionsTerminal
     {functionsState : Functions.InteractionSemantics.State}
     {expressionsState : Expressions.InteractionSemantics.RunState}
     (hDecomposition :
-      Yul.FunctionsCompilerArtifact.Decomposition sourceProgram objects)
+      Yul.FunctionsCompilerArtifact.PassDecomposition sourceProgram objects)
     (hProgramOk :
       Yul.SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (hLower :
@@ -214,7 +214,7 @@ theorem yulToStructuredTerminal
     {functionsState : Functions.InteractionSemantics.State}
     {expressionsState : Expressions.InteractionSemantics.RunState}
     (hDecomposition :
-      Yul.FunctionsCompilerArtifact.Decomposition sourceProgram objects)
+      Yul.FunctionsCompilerArtifact.PassDecomposition sourceProgram objects)
     (hProgramOk :
       Yul.SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (hLower :
@@ -441,7 +441,7 @@ theorem yulToEncodedBytecode
     {functionsState : Functions.InteractionSemantics.State}
     {expressionsState : Expressions.InteractionSemantics.RunState}
     (hDecomposition :
-      Yul.FunctionsCompilerArtifact.Decomposition sourceProgram objects)
+      Yul.FunctionsCompilerArtifact.PassDecomposition sourceProgram objects)
     (hProgramOk :
       Yul.SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (hLower :
@@ -573,7 +573,7 @@ def CompiledOpenWorldRel
 artifact is recovered from ordinary top-level lowering and compilation; the
 public inputs contain only source validation, initial-state relations, and
 source/allocation-facing semantic and resource safety. -/
-theorem compiledYulToEncodedBytecode
+theorem compiledWithPassToEncodedBytecode
     {profile : Yul.SolcValidation.DialectProfile}
     {sourceProgram : Yul.Program} {objects : Objects.Program}
     {compiledArtifact : Objects.Program.CompileArtifact}
@@ -581,8 +581,8 @@ theorem compiledYulToEncodedBytecode
     {source : Yul.InteractionSemantics.State}
     {functionsState : Functions.InteractionSemantics.State}
     {expressionsState : Expressions.InteractionSemantics.RunState}
-    (hObjects :
-      Yul.Program.toObjectsCanonical? sourceProgram = some objects)
+    (hDecomposition :
+      Yul.FunctionsCompilerArtifact.PassDecomposition sourceProgram objects)
     (hCompile :
       Objects.Program.compileArtifact? objects = some compiledArtifact)
     (hProgramOk :
@@ -663,13 +663,108 @@ theorem compiledYulToEncodedBytecode
     (TypedCfg.Program.compileCertified?_pcFits hCfgCompile).byteLength_lt
   obtain ⟨structuredFuel, hAccepted, generated, hRel⟩ :=
     yulToEncodedBytecode
-      (Yul.FunctionsCompilerArtifact.decomposition_of_toObjectsCanonical?
-        hObjects)
+      hDecomposition
       hProgramOk hLower hScoped hSafety hResourceSafe hYulInitial hYulDomain
       hAllocationInitial hGenerate hCfgCompile hStructuredWF
       hSelectedFrameSafe hIndependent hAssemblyCompile hByteLength hTerminal
   exact ⟨expressions, entryShapes, cfgArtifact, structuredFuel,
     hAccepted, generated, hRel⟩
+
+/-- Compatibility wrapper for canonical map-enumerated Yul lowering. -/
+theorem compiledYulToEncodedBytecode
+    {profile : Yul.SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {objects : Objects.Program}
+    {compiledArtifact : Objects.Program.CompileArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hObjects :
+      Yul.Program.toObjectsCanonical? sourceProgram = some objects)
+    (hCompile :
+      Objects.Program.compileArtifact? objects = some compiledArtifact)
+    (hProgramOk :
+      Yul.SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hScoped : objects.toFunctions.Scoped)
+    (hSafety : Functions.AllocationInteractionSafety.SourceSafety
+      objects.toFunctions.memoryContract)
+    (hResourceSafe : Functions.AllocationInteractionProgram.ResourceSafe
+      compiledArtifact.metadata.allocation objects.toFunctions
+      (Yul.FunctionsInteractionStaticCost.programBudget
+        sourceProgram (sourceFuel + 1)))
+    (hFrameSafe :
+      Functions.AllocationInteractionProgram.StructuredFrameSafe
+        compiledArtifact.metadata.allocation objects.toFunctions)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial (Yul.Contract.names sourceProgram.contract)).used
+      functionsState.vars)
+    (hAllocationInitial :
+      Functions.AllocationInteractionProgram.InitialRel
+        objects.toFunctions.memoryContract functionsState expressionsState)
+    (hTerminal : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceTerminal
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [sourceProgram.contract.dispatcher])
+        (some sourceProgram.contract) source)) :
+    CompiledOpenWorldRel sourceProgram objects compiledArtifact
+      sourceFuel source expressionsState := by
+  exact compiledWithPassToEncodedBytecode
+    (Yul.FunctionsCompilerArtifact.passDecomposition_of_toObjectsCanonical?
+      hObjects)
+    hCompile hProgramOk hScoped hSafety hResourceSafe hFrameSafe
+    hYulInitial hYulDomain hAllocationInitial hTerminal
+
+/-- Executable ordered Yul lowering composes through every adjacent pass to
+the encoded EVM target. No lower-pass artifact or generated proof premise is
+added beyond the ordinary checked compilation result. -/
+theorem compiledOrderedYulToEncodedBytecode
+    {profile : Yul.SolcValidation.DialectProfile}
+    {ordered : Yul.OrderedProgram} {objects : Objects.Program}
+    {compiledArtifact : Objects.Program.CompileArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hObjects : ordered.toObjects? = some objects)
+    (hRepresents : ordered.RepresentsSource)
+    (hNames : ordered.FunctionNamesNodup)
+    (hCompile :
+      Objects.Program.compileArtifact? objects = some compiledArtifact)
+    (hProgramOk :
+      Yul.SolcValidation.ProgramOkWith? profile ordered.program = true)
+    (hScoped : objects.toFunctions.Scoped)
+    (hSafety : Functions.AllocationInteractionSafety.SourceSafety
+      objects.toFunctions.memoryContract)
+    (hResourceSafe : Functions.AllocationInteractionProgram.ResourceSafe
+      compiledArtifact.metadata.allocation objects.toFunctions
+      (Yul.FunctionsInteractionStaticCost.programBudget
+        ordered.program (sourceFuel + 1)))
+    (hFrameSafe :
+      Functions.AllocationInteractionProgram.StructuredFrameSafe
+        compiledArtifact.metadata.allocation objects.toFunctions)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial
+        (Yul.Contract.names ordered.program.contract)).used
+      functionsState.vars)
+    (hAllocationInitial :
+      Functions.AllocationInteractionProgram.InitialRel
+        objects.toFunctions.memoryContract functionsState expressionsState)
+    (hTerminal : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceTerminal
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [ordered.program.contract.dispatcher])
+        (some ordered.program.contract) source)) :
+    CompiledOpenWorldRel ordered.program objects compiledArtifact
+      sourceFuel source expressionsState := by
+  exact compiledWithPassToEncodedBytecode
+    (Yul.FunctionsCompilerArtifact.passDecomposition_of_ordered_toObjects?
+      hObjects hRepresents hNames)
+    hCompile hProgramOk hScoped hSafety hResourceSafe hFrameSafe
+    hYulInitial hYulDomain hAllocationInitial hTerminal
 
 /-- Public proposition for open-world terminal compiler correctness. Its
 premises are source-facing; all lowering artifacts are hidden inside

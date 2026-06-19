@@ -160,7 +160,7 @@ theorem dispatcherForward
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
     (hDecomposition :
-      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+      FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
       SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (hRel : ScopedStateRel [] source target)
@@ -178,11 +178,12 @@ theorem dispatcherForward
         targetProgram.toFunctions target) := by
   have hCompiler := hDecomposition
   obtain ⟨bodyStmts, afterBody, functions, afterFunctions,
-      hLowerBody, _hLowerFunctions, hTargetProgram⟩ := hDecomposition
+      hLowerBody, _hLowerFunctions, hTargetProgram⟩ :=
+    hDecomposition.compiler
   have hLowerList :
       Stmt.List.toFunctionsUncheckedFuel?
           (Stmt.fuel sourceProgram.contract.dispatcher + 1)
-          (Fresh.initial (Contract.names sourceProgram.contract))
+          (Fresh.initial hDecomposition.initialNames)
           [sourceProgram.contract.dispatcher] =
         some (bodyStmts, afterBody) :=
     Stmt.List.toFunctionsUncheckedFuel?_singleton_of_stmt
@@ -205,20 +206,20 @@ theorem dispatcherForward
           [sourceProgram.contract.dispatcher] = true := by
     simpa [SolcValidation.StmtsOk?, SolcValidation.StmtOutVars] using
       hDispatcherOk
-  let initial := Fresh.initial (Contract.names sourceProgram.contract)
+  let initial := Fresh.initial hDecomposition.initialNames
   have hNames : ∀ name,
       name ∈ Stmt.List.names [sourceProgram.contract.dispatcher] →
         name ∈ initial.used := by
     intro name hMem
-    change name ∈ Contract.names sourceProgram.contract
     have hDispatcherName :
         name ∈ Stmt.names sourceProgram.contract.dispatcher := by
       simpa [Stmt.List.names] using hMem
-    simpa [Contract.names] using
-      List.mem_append_left
-        (FunctionList.names
-          (Contract.functionEntries sourceProgram.contract))
-        hDispatcherName
+    apply hDecomposition.sourceNamesReserved name
+    exact List.mem_append_left _ hDispatcherName
+  have hDomainActual : TargetDomainWithin initial.used target.vars := by
+    intro name value hLookup
+    apply hDecomposition.sourceNamesReserved name
+    exact hDomain name value hLookup
   let sourceScopes : SourceScopes :=
     { breakScope? := none
       continueScope? := none
@@ -272,7 +273,7 @@ theorem dispatcherForward
     (targetFuel := FunctionsInteractionStaticCost.programBudget
       sourceProgram (sourceFuel + 1))
     (by omega)
-  have hOpen := hListAt hListOk hNames hLowerList hRel hDomain hTargetScope
+  have hOpen := hListAt hListOk hNames hLowerList hRel hDomainActual hTargetScope
     (by simp) hControl hTargetFuel
   have hScoped :=
     FunctionsInteractionStatement.ControlDoneRel.blockScoped
@@ -286,6 +287,39 @@ theorem dispatcherForward
       hTargetProgram] using hScoped)
   intro sourceDone targetDone hDone
   exact ⟨afterBody.used, by simpa [sourceScopes] using hDone⟩
+
+/-- Executable source-order Yul lowering satisfies the same adjacent
+open-interaction theorem. Representation and distinct-name facts are source
+validation obligations; all compiler equations are derived from `toObjects?`.
+-/
+theorem dispatcherForward_of_ordered_toObjects?
+    {profile : SolcValidation.DialectProfile}
+    {ordered : OrderedProgram} {targetProgram : Objects.Program}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hLower : ordered.toObjects? = some targetProgram)
+    (hRepresents : ordered.RepresentsSource)
+    (hNames : ordered.FunctionNamesNodup)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile ordered.program = true)
+    (hRel : ScopedStateRel [] source target)
+    (hDomain : TargetDomainWithin
+      (Fresh.initial (Contract.names ordered.program.contract)).used
+      target.vars) :
+    Simulation.Interaction.ForwardRel Truncated
+      DoneRel
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [ordered.program.contract.dispatcher])
+        (some ordered.program.contract) source)
+      (Functions.InteractionSemantics.Program.openRunState
+        (FunctionsInteractionStaticCost.programBudget
+          ordered.program (sourceFuel + 1))
+        targetProgram.toFunctions target) := by
+  exact dispatcherForward
+    (FunctionsCompilerArtifact.passDecomposition_of_ordered_toObjects?
+      hLower hRepresents hNames)
+    hProgramOk hRel hDomain
 
 end FunctionsInteractionProgram
 end Yul

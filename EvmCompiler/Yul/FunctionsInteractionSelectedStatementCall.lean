@@ -28,7 +28,7 @@ theorem selectedTargets
     {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
     (hDecomposition :
-      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+      FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
       SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (hExprOk :
@@ -110,7 +110,7 @@ theorem selectedTargets
       candidate ∈ Stmt.List.names body → candidate ∈ before.used := by
     intro candidate hCandidate
     apply hPrefix candidate
-    change candidate ∈ Contract.names sourceProgram.contract
+    apply hDecomposition.sourceNamesReserved candidate
     exact (Contract.function_names_mem_names_of_lookup hLookup).2
       candidate (by simp [FunctionDefinition.names, hCandidate])
   have hPrepared :=
@@ -294,7 +294,7 @@ theorem visibleTargets
     {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
     (hDecomposition :
-      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+      FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
       SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (hExprOk :
@@ -371,7 +371,7 @@ theorem freshTargets
     {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
     (hDecomposition :
-      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+      FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
       SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (hExprOk :
@@ -443,7 +443,7 @@ theorem compiledExprCall
     {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
     (hDecomposition :
-      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+      FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
       SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (hStmtOk :
@@ -547,7 +547,7 @@ theorem compiledAssignCall
     {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
     (hDecomposition :
-      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+      FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
       SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (hStmtOk :
@@ -657,7 +657,7 @@ theorem compiledLetCall
     {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
     (hDecomposition :
-      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+      FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
       SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (hStmtOk :

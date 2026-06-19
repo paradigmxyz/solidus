@@ -16,6 +16,7 @@ theorem ofListAt
     {profile : SolcValidation.DialectProfile}
     {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
     {listFuel targetFuel : Nat}
+    {compilerFuel : Nat}
     {body : List AstStmt} {before after : Fresh.State}
     {fn : Functions.FunDef}
     {source : Yul.InteractionSemantics.State}
@@ -23,7 +24,7 @@ theorem ofListAt
     (hList : ListForwardAt profile sourceProgram targetProgram
       listFuel targetFuel)
     (hLower : Stmt.List.toBlockUncheckedFuel?
-      (FunctionList.fuel (Contract.functionEntries sourceProgram.contract))
+      compilerFuel
       before body = some (fn.body, after))
     (hBodyOk : SolcValidation.StmtsOk? profile sourceProgram.contract
       ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
@@ -82,7 +83,7 @@ theorem ofEarlierStatements
     (hBodyFuel : bodyFuel < bound) :
     FunctionsInteractionSelectedCall.BodyForwardAt
       profile sourceProgram targetProgram bodyFuel targetFuel := by
-  intro body before after fn source target hLower hBodyOk hReserved
+  intro body before after fn source target compilerFuel hLower hBodyOk hReserved
     hBodyNames hBudget hRel hDomain
   cases bodyFuel with
   | zero =>
@@ -124,7 +125,7 @@ theorem recursiveStmt
     {profile : SolcValidation.DialectProfile}
     {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
     (hDecomposition :
-      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+      FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
       SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (bound : Nat) :
@@ -140,7 +141,7 @@ theorem recursiveList
     {profile : SolcValidation.DialectProfile}
     {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
     (hDecomposition :
-      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+      FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
       SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (bound : Nat) :
