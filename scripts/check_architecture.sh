@@ -638,6 +638,16 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionProgram.lean
 
 report_matches \
+  'Horizontal open-interaction composition must not import observer, replay, or oracle corridors:' \
+  '^import EvmCompiler\..*(Observer|Replay|Oracle)' \
+  EvmCompiler/Compiler/OpenInteractionComposition.lean
+
+report_matches \
+  'Horizontal open-interaction composition must not define compilers or recursive interpreters:' \
+  '^[[:space:]]*(partial[[:space:]]+)?def[[:space:]]+.*(compile|lower|emit|assemble|evalTail|evalArgs|evalValues|execSeq|loop)[^:]*[:=]' \
+  EvmCompiler/Compiler/OpenInteractionComposition.lean
+
+report_matches \
   'The canonical Yul-to-Functions interaction boundary must not define a compiler or recursive evaluator:' \
   '^[[:space:]]*(partial[[:space:]]+)?def[[:space:]]+.*(compile|lower|emit|assemble|evalTail|evalArgs|evalValues|execSeq|loop)[^:]*[:=]' \
   EvmCompiler/Yul/FunctionsInteractionRelation.lean \

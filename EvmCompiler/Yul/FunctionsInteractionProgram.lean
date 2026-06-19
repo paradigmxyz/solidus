@@ -23,6 +23,42 @@ def DoneRel :
           leaveScope? := none }
         false false false source target
 
+namespace DoneRel
+
+theorem target_ok_of_source_ok
+    {sourceDone : Except Yul.InteractionSemantics.Failure
+      Yul.InteractionSemantics.State}
+    {targetDone : Except EVMException Functions.InteractionSemantics.Outcome}
+    (hRel : DoneRel sourceDone targetDone)
+    (hSource : match sourceDone with | .error _ => False | .ok _ => True) :
+    match targetDone with | .error _ => False | .ok _ => True := by
+  rcases hRel with ⟨used, hRel⟩
+  cases hRel <;> simp_all
+
+end DoneRel
+
+/-- A universally successful Yul interaction tree remains universally
+successful after the adjacent Yul-to-Functions forward simulation. -/
+theorem targetSuccessful
+    {sourceRun : Simulation.Interaction
+      Yul.InteractionSemantics.Failure Yul.InteractionSemantics.State}
+    {targetRun : Simulation.Interaction
+      EVMException Functions.InteractionSemantics.Outcome}
+    (hForward : Simulation.Interaction.ForwardRel Truncated DoneRel
+      sourceRun targetRun)
+    (hSuccessful : Simulation.Interaction.Successful sourceRun) :
+    Simulation.Interaction.Successful targetRun := by
+  apply Simulation.Interaction.ForwardRel.successful_right
+    hForward hSuccessful
+  intro sourceDone targetDone hDone hSource
+  cases sourceDone with
+  | error sourceError => exact False.elim hSource
+  | ok sourceValue =>
+      cases targetDone with
+      | error targetError =>
+          exact DoneRel.target_ok_of_source_ok hDone trivial
+      | ok targetValue => trivial
+
 /-- Whole-program Yul-to-Functions forward preservation at the compiler's
 ordinary dispatcher entry. The target fuel is derived entirely from source
 syntax and source fuel; generated target cost is discharged inside the proof.

@@ -146,6 +146,7 @@ import EvmCompiler.Yul.FunctionsInteractionRecursiveStatement
 import EvmCompiler.Yul.FunctionsInteractionRecursiveBody
 import EvmCompiler.Yul.FunctionsInteractionCompilerCost
 import EvmCompiler.Yul.FunctionsInteractionProgram
+import EvmCompiler.Compiler.OpenInteractionComposition
 import EvmCompiler.Yul.FunctionsInteractionTerminal
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.CompilerCallDecomposition
@@ -1563,6 +1564,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveBody.recursiveStmt
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveBody.recursiveList
 #check EvmCompiler.Yul.FunctionsInteractionProgram.dispatcherForward
+#check EvmCompiler.Yul.FunctionsInteractionProgram.targetSuccessful
+#check EvmCompiler.Compiler.OpenInteractionComposition.yulToAllocatedExpressions
+#check EvmCompiler.Compiler.OpenInteractionComposition.expressionsToStructured
 #check EvmCompiler.Yul.FunctionsInteractionStatement.ControlDoneRel.block
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.block
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.recursiveCondition
@@ -1582,6 +1586,8 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_leave_control
 #check EvmCompiler.Simulation.Interaction.ForwardRel.strengthen_right
 #check EvmCompiler.Simulation.Interaction.ForwardRel.bind_right
+#check EvmCompiler.Simulation.Interaction.ForwardRel.trans_rel
+#check EvmCompiler.Simulation.Interaction.ForwardRel.successful_right
 #check EvmCompiler.Yul.FunctionsInteractionExpression.expr_openEval_cast
 #check EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_permitted
 #check EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_static

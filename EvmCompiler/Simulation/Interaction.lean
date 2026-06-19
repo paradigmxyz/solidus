@@ -1698,6 +1698,71 @@ theorem mono
   | request hResume ih =>
       exact .request ih
 
+/-- A forward simulation followed by an exact open-world relation composes
+without replaying or interpreting either interaction tree. -/
+theorem trans_rel
+    {Error1 : Type u1} {Result1 : Type v1}
+    {Error2 : Type u2} {Result2 : Type v2}
+    {Error3 : Type u3} {Result3 : Type v3}
+    {truncated : Error1 → Prop}
+    {doneRel12 :
+      Except Error1 Result1 → Except Error2 Result2 → Prop}
+    {doneRel23 :
+      Except Error2 Result2 → Except Error3 Result3 → Prop}
+    {left : Interaction Error1 Result1}
+    {middle : Interaction Error2 Result2}
+    {right : Interaction Error3 Result3}
+    (hLeft : ForwardRel truncated doneRel12 left middle)
+    (hRight : Rel doneRel23 middle right) :
+    ForwardRel truncated
+      (fun leftDone rightDone =>
+        ∃ middleDone,
+          doneRel12 leftDone middleDone ∧
+            doneRel23 middleDone rightDone)
+      left right := by
+  induction hLeft generalizing right with
+  | truncated hTruncated =>
+      exact .truncated hTruncated
+  | @done leftDone middleDone hDone =>
+      cases hRight with
+      | done hRightDone =>
+          exact .done ⟨middleDone, hDone, hRightDone⟩
+  | @request query leftResume middleResume hResume ih =>
+      cases hRight with
+      | request hRightResume =>
+          exact .request fun answer =>
+            ih answer (hRightResume answer)
+
+/-- Universal source success crosses a forward simulation whenever every
+related successful source leaf has a successful target leaf. -/
+theorem successful_right
+    {Error1 : Type u1} {Result1 : Type v1}
+    {Error2 : Type u2} {Result2 : Type v2}
+    {truncated : Error1 → Prop}
+    {doneRel :
+      Except Error1 Result1 → Except Error2 Result2 → Prop}
+    {left : Interaction Error1 Result1}
+    {right : Interaction Error2 Result2}
+    (hRel : ForwardRel truncated doneRel left right)
+    (hSuccessful : Successful left)
+    (hDone : ∀ leftDone rightDone,
+      doneRel leftDone rightDone →
+        (match leftDone with | .error _ => False | .ok _ => True) →
+          (match rightDone with | .error _ => False | .ok _ => True)) :
+    Successful right := by
+  induction hRel with
+  | truncated hTruncated =>
+      cases hSuccessful with
+      | done hSource => exact False.elim hSource
+  | @done leftDone rightDone hRelated =>
+      cases hSuccessful with
+      | done hSource => exact .done (hDone leftDone rightDone hRelated hSource)
+  | @request query leftResume rightResume hResume ih =>
+      cases hSuccessful with
+      | request hSource =>
+          exact .request fun answer =>
+            ih answer (hSource answer)
+
 /-- Strengthen a forward simulation with a source-side invariant that holds at
 every terminal leaf. Source truncation remains source truncation and therefore
 does not require a target relation. -/
