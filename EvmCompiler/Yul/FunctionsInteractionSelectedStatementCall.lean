@@ -15,7 +15,7 @@ and transported through the generated argument computation. -/
 theorem selectedTargets
     {profile : SolcValidation.DialectProfile}
     {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
-    {sourceFuel targetBodyFuel : Nat}
+    {argsFuel sourceFuel targetBodyFuel : Nat}
     {functionName : Name} {args : List AstExpr}
     {targets finalLayout : List Functions.Name}
     {initial final : Fresh.State}
@@ -53,11 +53,14 @@ theorem selectedTargets
     (hArgsLowering : Expr.UncheckedCallArgsLowering
       initial args preArgs lowerArgs final)
     (hBound : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
-      profile sourceProgram (sourceFuel + 1)
+      profile sourceProgram argsFuel
       (preArgs.length + targetBodyFuel + 3)
       (some sourceProgram.contract) targetProgram.toFunctions layout)
     (hBodyForward : FunctionsInteractionSelectedCall.BodyForwardAt
       profile sourceProgram targetProgram sourceFuel targetBodyFuel)
+    (hArgsTargetFuel :
+      FunctionsInteractionStaticCost.programBudget
+        sourceProgram argsFuel ≤ targetBodyFuel)
     (hTargetBodyFuel :
       FunctionsInteractionStaticCost.programBudget
         sourceProgram (sourceFuel + 1) ≤ targetBodyFuel)
@@ -71,7 +74,7 @@ theorem selectedTargets
       (ControlDoneRel final.used finalLayout sourceScopes
         canBreak canContinue canLeave)
       (Simulation.Interaction.bind
-        (Yul.InteractionSemantics.evalArgs (sourceFuel + 1)
+        (Yul.InteractionSemantics.evalArgs argsFuel
           args.reverse (some sourceProgram.contract) source)
         (fun argsResult =>
           Simulation.Interaction.bind
@@ -105,7 +108,7 @@ theorem selectedTargets
     exact SolcValidation.programOkWith_function_bodyOk hProgramOk hLookup
   have hPrepared :=
     FunctionsInteractionPreparedCall.ofUncheckedCallArgsLowering
-      (ctx := ctx) hArgsLowering hArgsOk hBound
+      (fuel := argsFuel) (ctx := ctx) hArgsLowering hArgsOk hBound
       (by omega) hRel hDomain hTargetScope hLayout
       (by omega)
   rw [Functions.InteractionSemantics.Block.openRun_append]
@@ -261,7 +264,7 @@ theorem selectedTargets
 theorem visibleTargets
     {profile : SolcValidation.DialectProfile}
     {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
-    {sourceFuel targetBodyFuel : Nat}
+    {argsFuel sourceFuel targetBodyFuel : Nat}
     {functionName : Name} {args : List AstExpr}
     {targets : List Functions.Name}
     {initial final : Fresh.State}
@@ -285,7 +288,7 @@ theorem visibleTargets
     (hArgsLowering : Expr.UncheckedCallArgsLowering
       initial args preArgs lowerArgs final)
     (hBound : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
-      profile sourceProgram (sourceFuel + 1)
+      profile sourceProgram argsFuel
       (preArgs.length + targetBodyFuel + 3)
       (some sourceProgram.contract) targetProgram.toFunctions layout)
     (hBodyForward : FunctionsInteractionSelectedCall.BodyForwardAt
@@ -293,6 +296,9 @@ theorem visibleTargets
     (hTargetBodyFuel :
       FunctionsInteractionStaticCost.programBudget
         sourceProgram (sourceFuel + 1) ≤ targetBodyFuel)
+    (hArgsTargetFuel :
+      FunctionsInteractionStaticCost.programBudget
+        sourceProgram argsFuel ≤ targetBodyFuel)
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin initial.used target.vars)
     (hTargetScope : TargetScopeWithin initial.used ctx)
@@ -303,7 +309,7 @@ theorem visibleTargets
       (ControlDoneRel final.used layout sourceScopes
         canBreak canContinue canLeave)
       (Simulation.Interaction.bind
-        (Yul.InteractionSemantics.evalArgs (sourceFuel + 1)
+        (Yul.InteractionSemantics.evalArgs argsFuel
           args.reverse (some sourceProgram.contract) source)
         (fun argsResult =>
           Simulation.Interaction.bind
@@ -325,7 +331,8 @@ theorem visibleTargets
     (fun hScoped hInsert =>
       hScoped.multifill_insertMany_visible
         hTargetsNodup hTargetsVisible hInsert)
-    hArgsLowering hBound hBodyForward hTargetBodyFuel hRel hDomain hTargetScope
+    hArgsLowering hBound hBodyForward hArgsTargetFuel hTargetBodyFuel
+    hRel hDomain hTargetScope
     hLayout
     hControl
 
@@ -398,9 +405,114 @@ theorem freshTargets
     (fun hScoped hInsert =>
       hScoped.multifill_insertMany
         hTargetsNodup hTargetsFresh hInsert)
-    hArgsLowering hBound hBodyForward hTargetBodyFuel hRel hDomain hTargetScope
+    hArgsLowering hBound hBodyForward hTargetBodyFuel hTargetBodyFuel
+    hRel hDomain hTargetScope
     hLayout
     hControl
+
+/-- Ordinary compiler-selected discarded internal call. Argument evaluation
+has one more source-fuel step than callee execution in canonical Yul semantics,
+so the two recursive budgets remain explicit at this boundary. -/
+theorem compiledExprCall
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    {sourceFuel targetFuel compilerFuel : Nat}
+    {functionNames layout : List Functions.Name}
+    {functionName : Name} {args : List AstExpr}
+    {initial final : Fresh.State} {lower : List Functions.Stmt}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {ctx : Functions.Source.Ctx}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    (hDecomposition :
+      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hStmtOk :
+      SolcValidation.StmtOk? profile sourceProgram.contract
+        functionNames layout canBreak canContinue canLeave
+        (.ExprStmtCall (.Call (.inr functionName) args)) = true)
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel initial
+          (.ExprStmtCall (.Call (.inr functionName) args)) =
+        some (lower, final))
+    (hHeads : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
+      profile sourceProgram (sourceFuel + 2) targetFuel
+      (some sourceProgram.contract) targetProgram.toFunctions layout)
+    (hBodies : ∀ bodyTargetFuel,
+      FunctionsInteractionSelectedCall.BodyForwardAt
+        profile sourceProgram targetProgram sourceFuel bodyTargetFuel)
+    (hRel : ScopedStateRel layout source target)
+    (hDomain : TargetDomainWithin initial.used target.vars)
+    (hTargetScope : TargetScopeWithin initial.used ctx)
+    (hLayout : ∀ name, name ∈ layout → name ∈ initial.used)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
+    (hTargetFuel :
+      FunctionsInteractionStaticCost.programBudget
+          sourceProgram (sourceFuel + 2) + lower.length + 1 < targetFuel) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel final.used layout sourceScopes
+        canBreak canContinue canLeave)
+      (Yul.InteractionSemantics.exec (sourceFuel + 3)
+        (.ExprStmtCall (.Call (.inr functionName) args))
+        (some sourceProgram.contract) source)
+      (Functions.InteractionSemantics.Block.openRun
+        targetProgram.toFunctions ctx targetFuel { stmts := lower } target) := by
+  obtain ⟨preArgs, lowerArgs, hArgsLowering, hLowerEq⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_expr_call_parts hLower
+  have hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract layout 0
+          (.Call (.inr functionName) args) = true := by
+    simpa [SolcValidation.StmtOk?] using hStmtOk
+  have hFuelEq :
+      preArgs.length + (targetFuel - preArgs.length - 3) + 3 =
+        targetFuel := by
+    rw [hLowerEq] at hTargetFuel
+    simp only [List.length_append, List.length_cons, List.length_nil]
+      at hTargetFuel
+    omega
+  have hHeads' : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
+      profile sourceProgram (sourceFuel + 2)
+      (preArgs.length + (targetFuel - preArgs.length - 3) + 3)
+      (some sourceProgram.contract) targetProgram.toFunctions layout := by
+    rw [hFuelEq]
+    exact hHeads
+  have hBodyBudget :
+      FunctionsInteractionStaticCost.programBudget
+          sourceProgram (sourceFuel + 1) ≤
+        targetFuel - preArgs.length - 3 := by
+    have hMono :
+        FunctionsInteractionStaticCost.programBudget
+            sourceProgram (sourceFuel + 1) ≤
+          FunctionsInteractionStaticCost.programBudget
+            sourceProgram (sourceFuel + 2) := by
+      exact FunctionsInteractionFuel.executionBudgetFor_mono _ _ (by omega)
+    rw [hLowerEq] at hTargetFuel
+    simp only [List.length_append, List.length_cons, List.length_nil]
+      at hTargetFuel
+    omega
+  have hArgsBudget :
+      FunctionsInteractionStaticCost.programBudget
+          sourceProgram (sourceFuel + 2) ≤
+        targetFuel - preArgs.length - 3 := by
+    rw [hLowerEq] at hTargetFuel
+    simp only [List.length_append, List.length_cons, List.length_nil]
+      at hTargetFuel
+    omega
+  have hSelected := visibleTargets
+    (argsFuel := sourceFuel + 2)
+    (sourceFuel := sourceFuel)
+    (targetBodyFuel := targetFuel - preArgs.length - 3)
+    (targets := []) (ctx := ctx)
+    hDecomposition hProgramOk hExprOk (by simp) (by simp)
+    hArgsLowering hHeads' (hBodies _) hBodyBudget hArgsBudget
+    hRel hDomain hTargetScope hLayout hControl
+  rw [Yul.InteractionSemantics.Exec.expr_internal_succ
+    (sourceFuel + 1) functionName args (some sourceProgram.contract) source,
+    hLowerEq]
+  simpa [hFuelEq] using hSelected
 
 /-- Ordinary compiler-selected assignment call, with all generated argument
 preludes and multi-result writeback discharged internally. -/
@@ -480,6 +592,7 @@ theorem compiledAssignCall
     rw [hFuelEq]
     exact hHeads
   have hSelected := visibleTargets
+    (argsFuel := sourceFuel + 1)
     (sourceFuel := sourceFuel)
     (targetBodyFuel := targetFuel - preArgs.length - 3)
     (targets := identNames names) (ctx := ctx)
@@ -487,6 +600,11 @@ theorem compiledAssignCall
     (by simpa [identNames_eq_self] using hOkParts.2)
     hAssignParts.1 hAssignParts.2 hArgsLowering hHeads'
     (hBodies _)
+    (by
+      rw [hLowerEq] at hTargetFuel
+      simp only [List.length_append, List.length_cons, List.length_nil]
+        at hTargetFuel
+      omega)
     (by
       rw [hLowerEq] at hTargetFuel
       simp only [List.length_append, List.length_cons, List.length_nil]

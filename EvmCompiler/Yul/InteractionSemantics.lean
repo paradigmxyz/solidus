@@ -897,6 +897,28 @@ theorem expr_primitive
           (fun result =>
             pure (stateModel.multifill [] result.1 result.2))).symm
 
+/-- A positive-fuel internal-call expression statement exposes ordered argument
+evaluation, the canonical internal call, and empty-destination writeback. -/
+theorem expr_internal_succ
+    (fuel : Nat) (functionName : EvmYul.Yul.Ast.YulFunctionName)
+    (args : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    exec (fuel + 2) (.ExprStmtCall (.Call (.inr functionName) args))
+        code state =
+      Simulation.Interaction.bind
+        (evalArgs (fuel + 1) args.reverse code state)
+        (fun argsResult =>
+          Simulation.Interaction.bind
+            (call fuel argsResult.2.reverse (some functionName)
+              code argsResult.1)
+            (fun callResult =>
+              pure (stateModel.multifill [] callResult.1 callResult.2))) := by
+  simp only [exec, evalValues, Yul.Source.Canonical.exec,
+    Yul.Source.Canonical.evalValues, Yul.Source.Effectful.exec,
+    Yul.Source.Effectful.evalValues,
+    Yul.Source.Effectful.Control.multifill]
+  rfl
+
 end Exec
 
 namespace Program
