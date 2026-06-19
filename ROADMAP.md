@@ -231,6 +231,12 @@ boundaries remain active work.
                 outcome-indexed relation carrying exact Yul scope snapshots.
               - [x] Port generic regular/abrupt/terminal list sequencing
                 without transcript state or existential execution records.
+              - [x] Thread pass-owned monotone-scope and same-control laws
+                through generated argument, primitive, and internal-call
+                preludes.
+              - [x] Check control-aware multi-result call writeback,
+                multi-name zero declarations, and exact scoped
+                break/continue/leave leaves.
               - [ ] Rebuild the historical five-way fuel fixed point over
                 canonical body, value, statement, list, and compound
                 interfaces.

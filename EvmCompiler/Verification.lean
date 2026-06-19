@@ -1464,6 +1464,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionStatement.terminal_direct
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_terminal_direct
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.DoneRel
+#check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.DoneRel.transport_entry
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.to_terminal
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.nil
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.singletonTarget
@@ -1516,6 +1517,11 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionSelectedStatementCall.selectedTargets
 #check EvmCompiler.Yul.FunctionsInteractionSelectedStatementCall.compiledAssignCall
 #check EvmCompiler.Yul.FunctionsInteractionSelectedStatementCall.compiledLetCall
+#check EvmCompiler.Yul.FunctionsInteractionStatement.ControlDoneRel.singleton
+#check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_let_none_control
+#check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_brk_control
+#check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_cont_control
+#check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_leave_control
 #check EvmCompiler.Simulation.Interaction.ForwardRel.strengthen_right
 #check EvmCompiler.Simulation.Interaction.ForwardRel.bind_right
 #check EvmCompiler.Yul.FunctionsInteractionExpression.expr_openEval_cast

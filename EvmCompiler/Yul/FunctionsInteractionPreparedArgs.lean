@@ -12,7 +12,8 @@ The expression list is already in execution order (`lowerArgs.reverse`). -/
 inductive DoneRel
     (layout : List Functions.Name) (fresh : Fresh.State)
     (lower : List (Locals.Expr 1))
-    (entry : Functions.InteractionSemantics.State) :
+    (entry : Functions.InteractionSemantics.State)
+    (entryCtx : Functions.Source.Ctx) :
     Except Yul.InteractionSemantics.Failure
         (Yul.InteractionSemantics.State × List Word) →
       Except EVMException
@@ -20,17 +21,47 @@ inductive DoneRel
       Prop where
   | error {source target} :
       FunctionsInteractionPrimitive.ErrorRel source target →
-        DoneRel layout fresh lower entry (.error source) (.error target)
+        DoneRel layout fresh lower entry entryCtx
+          (.error source) (.error target)
   | regular {source values target ctx} :
       FunctionsInteractionExpression.StableArgs lower target values →
       FunctionsInteractionRelation.ScopedStateRel layout source target →
       FunctionsInteractionRelation.TargetDomainWithin fresh.used target.vars →
       FunctionsInteractionRelation.TargetExtends entry.vars target.vars →
-      DoneRel layout fresh lower entry (.ok (source, values))
+      Functions.Source.Ctx.ScopeExtends entryCtx ctx →
+      Functions.Source.Ctx.SameControl entryCtx ctx →
+      DoneRel layout fresh lower entry entryCtx (.ok (source, values))
         (.ok (Functions.Source.Effectful.Outcome.regular target, ctx))
   | terminal {source target ctx} :
       FunctionsInteractionRelation.TerminalFailureRel source target →
-        DoneRel layout fresh lower entry (.error source) (.ok (target, ctx))
+        DoneRel layout fresh lower entry entryCtx
+          (.error source) (.ok (target, ctx))
+
+namespace DoneRel
+
+theorem transport_entry
+    {layout : List Functions.Name} {fresh : Fresh.State}
+    {lower : List (Locals.Expr 1)}
+    {entry : Functions.InteractionSemantics.State}
+    {beforeCtx afterCtx : Functions.Source.Ctx}
+    {sourceDone : Except Yul.InteractionSemantics.Failure
+      (Yul.InteractionSemantics.State × List Word)}
+    {targetDone : Except EVMException
+      (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx)}
+    (hScopeEntry : Functions.Source.Ctx.ScopeExtends beforeCtx afterCtx)
+    (hControlEntry : Functions.Source.Ctx.SameControl beforeCtx afterCtx)
+    (hDone : DoneRel layout fresh lower entry afterCtx
+      sourceDone targetDone) :
+    DoneRel layout fresh lower entry beforeCtx sourceDone targetDone := by
+  cases hDone with
+  | error hError => exact .error hError
+  | regular hStable hScoped hDomain hExtends hScope hControl =>
+      exact .regular hStable hScoped hDomain hExtends
+        (Functions.Source.Ctx.ScopeExtends.trans hScopeEntry hScope)
+        (Functions.Source.Ctx.SameControl.trans hControlEntry hControl)
+  | terminal hTerminal => exact .terminal hTerminal
+
+end DoneRel
 
 /-- Forget recursive freshness/stability bookkeeping once the compiler's
 dependent argument sequence has been constructed. -/
@@ -39,13 +70,15 @@ theorem to_terminal
     {lowerArgs : List (Locals.Expr 1)} {results : Nat}
     {seq : Locals.ExprSeq results}
     {entry : Functions.InteractionSemantics.State}
+    {entryCtx : Functions.Source.Ctx}
     {sourceOpen : Yul.InteractionSemantics.Open
       (Yul.InteractionSemantics.State × List Word)}
     {targetOpen : Functions.InteractionSemantics.Open
       (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx)}
     (hSeq : Expr.List.toSeq? lowerArgs results = some seq)
     (hPrepared : Simulation.Interaction.ForwardRel Truncated
-      (DoneRel layout fresh lowerArgs entry) sourceOpen targetOpen) :
+      (DoneRel layout fresh lowerArgs entry entryCtx)
+      sourceOpen targetOpen) :
     Simulation.Interaction.ForwardRel Truncated
       (FunctionsInteractionStatement.PreparedArgsDoneRel layout seq)
       sourceOpen targetOpen := by
@@ -53,7 +86,7 @@ theorem to_terminal
   intro sourceDone targetDone hDone
   cases hDone with
   | error hError => exact .error hError
-  | regular hStable hRel _hDomain _hExtends =>
+  | regular hStable hRel _hDomain _hExtends _hScope _hControl =>
       exact
         FunctionsInteractionStatement.PreparedArgsDoneRel.regular_of_stable
           hSeq hStable hRel
@@ -72,7 +105,7 @@ theorem nil
     (hDomain : FunctionsInteractionRelation.TargetDomainWithin
       fresh.used target.vars) :
     Simulation.Interaction.ForwardRel Truncated
-      (DoneRel layout fresh [] target)
+      (DoneRel layout fresh [] target ctx)
       (Yul.InteractionSemantics.evalArgs
         fuel [] codeOverride source)
       (Functions.InteractionSemantics.Block.openRun
@@ -91,17 +124,19 @@ theorem nil
         Yul.InteractionSemantics.Primitive.fail,
         Yul.Source.Effectful.Control.fail] using
         (Simulation.Interaction.ForwardRel.truncated
-          (doneRel := DoneRel layout fresh [] target)
+          (doneRel := DoneRel layout fresh [] target ctx)
           (right := pure
             (Functions.Source.Effectful.Outcome.regular target, ctx))
           hTruncated)
   | succ fuel =>
       have hDone :
-          DoneRel layout fresh [] target (.ok (source, []))
+          DoneRel layout fresh [] target ctx (.ok (source, []))
             (.ok
               (Functions.Source.Effectful.Outcome.regular target, ctx)) :=
         .regular (.nil target) hRel hDomain
           (FunctionsInteractionRelation.TargetExtends.refl target.vars)
+          (Functions.Source.Ctx.ScopeExtends.refl ctx)
+          (Functions.Source.Ctx.SameControl.refl ctx)
       simpa [Yul.InteractionSemantics.evalArgs,
         Yul.Source.Canonical.evalArgs,
         Yul.Source.Effectful.evalArgs] using
@@ -114,6 +149,7 @@ theorem singletonTarget
     {layout : List Functions.Name} {fresh : Fresh.State}
     {lower : List (Locals.Expr 1)}
     {entry target : Functions.InteractionSemantics.State}
+    {entryCtx : Functions.Source.Ctx}
     {targetFuel : Nat}
     {sourceOpen :
       Simulation.Interaction Yul.InteractionSemantics.Failure
@@ -122,16 +158,16 @@ theorem singletonTarget
     {stmt : Functions.Stmt}
     (hStmt :
       Simulation.Interaction.ForwardRel Truncated
-        (DoneRel layout fresh lower entry) sourceOpen
+        (DoneRel layout fresh lower entry entryCtx) sourceOpen
         (Functions.InteractionSemantics.Stmt.openRun
           program ctx (targetFuel + 1) stmt target)) :
     Simulation.Interaction.ForwardRel Truncated
-      (DoneRel layout fresh lower entry) sourceOpen
+      (DoneRel layout fresh lower entry entryCtx) sourceOpen
       (Functions.InteractionSemantics.Block.openRun
         program ctx (targetFuel + 2) { stmts := [stmt] } target) := by
   have hBound :
       Simulation.Interaction.ForwardRel Truncated
-        (DoneRel layout fresh lower entry)
+        (DoneRel layout fresh lower entry entryCtx)
         (Simulation.Interaction.bind sourceOpen pure)
         (Simulation.Interaction.bind
           (Functions.InteractionSemantics.Stmt.openRun
@@ -149,11 +185,11 @@ theorem singletonTarget
     cases hDone with
     | error hError =>
         exact Simulation.Interaction.ForwardRel.done (.error hError)
-    | regular hStable hScoped hDomain hExtends =>
+    | regular hStable hScoped hDomain hExtends hScope hControl =>
         simp only
         rw [Functions.InteractionSemantics.Block.openRun_nil]
         exact Simulation.Interaction.ForwardRel.done
-          (DoneRel.regular hStable hScoped hDomain hExtends)
+          (DoneRel.regular hStable hScoped hDomain hExtends hScope hControl)
     | terminal hTerminal =>
         simp only
         cases hTerminal with
@@ -197,7 +233,7 @@ theorem deferred
     (hDomain : FunctionsInteractionRelation.TargetDomainWithin
       before.used target.vars) :
     Simulation.Interaction.ForwardRel Truncated
-      (DoneRel layout after [lower] target)
+      (DoneRel layout after [lower] target ctx)
       (Yul.InteractionSemantics.evalValues
         fuel expr codeOverride source)
       (Functions.InteractionSemantics.Block.openRun
@@ -218,7 +254,7 @@ theorem deferred
         Yul.InteractionSemantics.Primitive.fail,
         Yul.Source.Effectful.Control.fail] using
         (Simulation.Interaction.ForwardRel.truncated
-          (doneRel := DoneRel layout after [lower] target)
+          (doneRel := DoneRel layout after [lower] target ctx)
           (right := pure
             (Functions.Source.Effectful.Outcome.regular target, ctx))
           hTruncated)
@@ -228,7 +264,7 @@ theorem deferred
           simp [Expr.toLocals?, Expr.cast] at hDirect
           subst lower
           have hDone :
-              DoneRel layout after [.lit value] target
+              DoneRel layout after [.lit value] target ctx
                 (.ok (source, [value]))
                 (.ok
                   (Functions.Source.Effectful.Outcome.regular target,
@@ -238,6 +274,8 @@ theorem deferred
                 target value) (.nil target))
               hRel hDomain
               (FunctionsInteractionRelation.TargetExtends.refl target.vars)
+              (Functions.Source.Ctx.ScopeExtends.refl ctx)
+              (Functions.Source.Ctx.SameControl.refl ctx)
           simpa [Yul.InteractionSemantics.evalValues,
             Yul.Source.Canonical.evalValues,
             Yul.Source.Effectful.evalValues] using
@@ -261,7 +299,7 @@ theorem deferred
                 Yul.Source.Effectful.Control.fail, hLookup] using
                 (Simulation.Interaction.ForwardRel.truncated
                   (doneRel := DoneRel layout after [.var (identName name)]
-                    target)
+                    target ctx)
                   (right := pure
                     (Functions.Source.Effectful.Outcome.regular target,
                       ctx))
@@ -269,7 +307,7 @@ theorem deferred
           | some value =>
               have hTarget := hRel.state.lookup hLookup
               have hDone :
-                  DoneRel layout after [.var (identName name)] target
+                  DoneRel layout after [.var (identName name)] target ctx
                     (.ok (source, [value]))
                     (.ok
                       (Functions.Source.Effectful.Outcome.regular target,
@@ -281,6 +319,8 @@ theorem deferred
                   hRel hDomain
                   (FunctionsInteractionRelation.TargetExtends.refl
                     target.vars)
+                  (Functions.Source.Ctx.ScopeExtends.refl ctx)
+                  (Functions.Source.Ctx.SameControl.refl ctx)
               simpa [Yul.InteractionSemantics.evalValues,
                 Yul.InteractionSemantics.stateModel,
                 Yul.Source.Canonical.evalValues,
@@ -309,7 +349,7 @@ theorem deferred_arg
     (hDomain : FunctionsInteractionRelation.TargetDomainWithin
       before.used target.vars) :
     Simulation.Interaction.ForwardRel Truncated
-      (DoneRel layout after [lower] target)
+      (DoneRel layout after [lower] target ctx)
       (Yul.InteractionSemantics.evalArgs
         fuel [expr] codeOverride source)
       (Functions.InteractionSemantics.Block.openRun
@@ -330,7 +370,7 @@ theorem deferred_arg
         Yul.InteractionSemantics.Primitive.fail,
         Yul.Source.Effectful.Control.fail] using
         (Simulation.Interaction.ForwardRel.truncated
-          (doneRel := DoneRel layout after [lower] target)
+          (doneRel := DoneRel layout after [lower] target ctx)
           (right := pure
             (Functions.Source.Effectful.Outcome.regular target, ctx))
           hTruncated)
@@ -349,7 +389,7 @@ theorem deferred_arg
           | error hError =>
               exact Simulation.Interaction.ForwardRel.done (.error hError)
           | @regular sourceValues values targetAfter targetCtx
-              hStable hScoped hFinalDomain hExtends =>
+              hStable hScoped hFinalDomain hExtends hScope hControl =>
               have hTruncated :
                   Truncated
                     ({ exception := .OutOfFuel,
@@ -358,7 +398,7 @@ theorem deferred_arg
                 trivial
               simpa [Yul.InteractionSemantics.Primitive.fail] using
                 (Simulation.Interaction.ForwardRel.truncated
-                  (doneRel := DoneRel layout after [lower] target)
+                  (doneRel := DoneRel layout after [lower] target ctx)
                   (right := pure
                     (Functions.Source.Effectful.Outcome.regular targetAfter,
                       targetCtx))
@@ -376,7 +416,7 @@ theorem deferred_arg
           rw [Functions.InteractionSemantics.Block.openRun_nil] at hHead
           have hBound :
               Simulation.Interaction.ForwardRel Truncated
-                (DoneRel layout after [lower] target)
+                (DoneRel layout after [lower] target ctx)
                 (Simulation.Interaction.bind
                   (Yul.InteractionSemantics.evalValues
                     (residualFuel + 1) expr codeOverride source)
@@ -398,7 +438,7 @@ theorem deferred_arg
             | error hError =>
                 exact Simulation.Interaction.ForwardRel.done (.error hError)
             | @regular sourceAfter values targetAfter targetCtx
-                hStable hScoped hFinalDomain hExtends =>
+                hStable hScoped hFinalDomain hExtends hScope hControl =>
                 cases residualFuel with
                 | zero =>
                     have hTruncated :
@@ -413,7 +453,7 @@ theorem deferred_arg
                       Yul.InteractionSemantics.Primitive.fail,
                       Yul.Source.Effectful.Control.fail] using
                       (Simulation.Interaction.ForwardRel.truncated
-                        (doneRel := DoneRel layout after [lower] target)
+                        (doneRel := DoneRel layout after [lower] target ctx)
                         (right := pure
                           (Functions.Source.Effectful.Outcome.regular
                             targetAfter, targetCtx))
@@ -434,7 +474,7 @@ theorem deferred_arg
                       (Simulation.Interaction.ForwardRel.done
                         (truncated := Truncated)
                         (DoneRel.regular hStable hScoped hFinalDomain
-                          hExtends))
+                          hExtends hScope hControl))
             | terminal hTerminal =>
                 exact Simulation.Interaction.ForwardRel.done
                   (.terminal hTerminal)
@@ -448,6 +488,7 @@ theorem singletonOfValues
     {expr : AstExpr} {lower : Locals.Expr 1}
     {fresh : Fresh.State}
     {entry : Functions.InteractionSemantics.State}
+    {entryCtx : Functions.Source.Ctx}
     {codeOverride : Option EvmYul.Yul.Ast.YulContract}
     {layout : List Functions.Name}
     {source : Yul.InteractionSemantics.State}
@@ -455,18 +496,18 @@ theorem singletonOfValues
       (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx)}
     (hHead :
       Simulation.Interaction.ForwardRel Truncated
-        (DoneRel layout fresh [lower] entry)
+        (DoneRel layout fresh [lower] entry entryCtx)
         (Yul.InteractionSemantics.evalValues
           headFuel expr codeOverride source)
         targetOpen) :
     Simulation.Interaction.ForwardRel Truncated
-      (DoneRel layout fresh [lower] entry)
+      (DoneRel layout fresh [lower] entry entryCtx)
       (Yul.InteractionSemantics.evalArgs
         (headFuel + 1) [expr] codeOverride source)
       targetOpen := by
   have hBound :
       Simulation.Interaction.ForwardRel Truncated
-        (DoneRel layout fresh [lower] entry)
+        (DoneRel layout fresh [lower] entry entryCtx)
         (Yul.InteractionSemantics.evalArgs
           (headFuel + 1) [expr] codeOverride source)
         (Simulation.Interaction.bind targetOpen pure) := by
@@ -482,7 +523,7 @@ theorem singletonOfValues
             exact Simulation.Interaction.ForwardRel.done
               (.terminal hTerminal)
         | @regular sourceAfter values targetAfter ctxAfter
-            _hStable _hScoped _hDomain _hExtends =>
+            _hStable _hScoped _hDomain _hExtends _hScope _hControl =>
             have hTruncated :
                 Truncated
                   ({ exception := .OutOfFuel,
@@ -491,7 +532,7 @@ theorem singletonOfValues
               trivial
             simpa [Yul.InteractionSemantics.Primitive.fail] using
               (Simulation.Interaction.ForwardRel.truncated
-                (doneRel := DoneRel layout fresh [lower] entry)
+                (doneRel := DoneRel layout fresh [lower] entry entryCtx)
                 (right := pure
                   (Functions.Source.Effectful.Outcome.regular
                     targetAfter, ctxAfter))
@@ -508,7 +549,7 @@ theorem singletonOfValues
             exact Simulation.Interaction.ForwardRel.done
               (.terminal hTerminal)
         | @regular sourceAfter values targetAfter ctxAfter
-            hStable hScoped hDomain hExtends =>
+            hStable hScoped hDomain hExtends hScope hControl =>
             cases tailFuel with
             | zero =>
                 have hTruncated :
@@ -523,7 +564,7 @@ theorem singletonOfValues
                   Yul.InteractionSemantics.Primitive.fail,
                   Yul.Source.Effectful.Control.fail] using
                   (Simulation.Interaction.ForwardRel.truncated
-                    (doneRel := DoneRel layout fresh [lower] entry)
+                    (doneRel := DoneRel layout fresh [lower] entry entryCtx)
                     (right := pure
                       (Functions.Source.Effectful.Outcome.regular
                         targetAfter, ctxAfter))
@@ -543,7 +584,8 @@ theorem singletonOfValues
                 simpa [hTail] using
                   (Simulation.Interaction.ForwardRel.done
                     (truncated := Truncated)
-                    (DoneRel.regular hStable hScoped hDomain hExtends))
+                    (DoneRel.regular hStable hScoped hDomain hExtends
+                      hScope hControl))
   have hTargetPure :
       Simulation.Interaction.bind targetOpen (fun result => pure result) =
         targetOpen := by
@@ -570,13 +612,13 @@ theorem direct
       some (preHead, lowerHead, stateHead))
     (hRest :
       Simulation.Interaction.ForwardRel Truncated
-        (DoneRel layout stateRest lowerRest.reverse entry)
+        (DoneRel layout stateRest lowerRest.reverse entry ctx)
         (Yul.InteractionSemantics.evalArgs
           fuel rest.reverse codeOverride source)
         (Functions.InteractionSemantics.Block.openRun
           program ctx targetFuel { stmts := preRest } target)) :
     Simulation.Interaction.ForwardRel Truncated
-      (DoneRel layout stateHead (lowerHead :: lowerRest).reverse entry)
+      (DoneRel layout stateHead (lowerHead :: lowerRest).reverse entry ctx)
       (Yul.InteractionSemantics.evalArgs
         fuel (expr :: rest).reverse codeOverride source)
       (Functions.InteractionSemantics.Block.openRun
@@ -587,7 +629,7 @@ theorem direct
   rw [Yul.InteractionSemantics.EvalArgs.append]
   have hBound :
       Simulation.Interaction.ForwardRel Truncated
-        (DoneRel layout stateHead (lowerRest.reverse ++ [lowerHead]) entry)
+        (DoneRel layout stateHead (lowerRest.reverse ++ [lowerHead]) entry ctx)
         (Simulation.Interaction.bind
           (Yul.InteractionSemantics.evalArgs
             fuel rest.reverse codeOverride source)
@@ -612,7 +654,8 @@ theorem direct
     | terminal hTerminal =>
         exact Simulation.Interaction.ForwardRel.done (.terminal hTerminal)
     | @regular sourceRest restValues targetRest ctxRest
-        hStableRest hScopedRest hDomainRest hExtendsRest =>
+        hStableRest hScopedRest hDomainRest hExtendsRest
+        hScopeRest hControlRest =>
         have hHeadRel := deferred_arg
           (fuel := fuel - 2 * rest.reverse.length)
           (targetFuel := 0)
@@ -629,7 +672,8 @@ theorem direct
             exact Simulation.Interaction.ForwardRel.done
               (.terminal hTerminal)
         | @regular sourceAfter headValues targetAfter ctxAfter
-            hStableHead hScopedHead hDomainHead hExtendsHead =>
+            hStableHead hScopedHead hDomainHead hExtendsHead
+            hScopeHead hControlHead =>
             have hStableRest' := hStableRest.mono hExtendsHead
             have hStableFinal := hStableRest'.append hStableHead
             have hExtendsFinal :=
@@ -638,7 +682,11 @@ theorem direct
             exact Simulation.Interaction.ForwardRel.done
               (.regular
                 hStableFinal
-                hScopedHead hDomainHead hExtendsFinal)
+                hScopedHead hDomainHead hExtendsFinal
+                (Functions.Source.Ctx.ScopeExtends.trans
+                  hScopeRest hScopeHead)
+                (Functions.Source.Ctx.SameControl.trans
+                  hControlRest hControlHead))
   have hTargetPure :
       Simulation.Interaction.bind
           (Functions.InteractionSemantics.Block.openRun
@@ -669,7 +717,7 @@ def BoundHeadForward
     FunctionsInteractionRelation.TargetDomainWithin
         before.used target.vars →
       Simulation.Interaction.ForwardRel Truncated
-        (DoneRel layout final [.var tmp] target)
+        (DoneRel layout final [.var tmp] target ctx)
         (Yul.InteractionSemantics.evalArgs
           fuel [expr] codeOverride source)
         (Functions.InteractionSemantics.Block.openRun
@@ -702,7 +750,7 @@ theorem boundHead_lowFuel
         Yul.InteractionSemantics.Primitive.fail,
         Yul.Source.Effectful.Control.fail] using
         (Simulation.Interaction.ForwardRel.truncated
-          (doneRel := DoneRel layout final [.var tmp] target)
+          (doneRel := DoneRel layout final [.var tmp] target ctx)
           (right := Functions.InteractionSemantics.Block.openRun
             program ctx targetFuel
             { stmts := pre ++ [.let_ tmp lower] } target)
@@ -727,7 +775,7 @@ theorem boundHead_lowFuel
         trivial
       simpa [Yul.InteractionSemantics.Primitive.fail] using
         (Simulation.Interaction.ForwardRel.truncated
-          (doneRel := DoneRel layout final [.var tmp] target)
+          (doneRel := DoneRel layout final [.var tmp] target ctx)
           (right := Functions.InteractionSemantics.Block.openRun
             program ctx targetFuel
             { stmts := pre ++ [.let_ tmp lower] } target)
@@ -750,7 +798,7 @@ def HeadValueForward
     FunctionsInteractionRelation.TargetDomainWithin
         before.used target.vars →
       Simulation.Interaction.ForwardRel Truncated
-        (DoneRel layout after [lower] target)
+        (DoneRel layout after [lower] target ctx)
         (Yul.InteractionSemantics.evalArgs
           fuel [expr] codeOverride source)
         (Functions.InteractionSemantics.Block.openRun
@@ -798,7 +846,7 @@ theorem bindHeadValue
   have hValueRel := hValue hLower (ctx := ctx) hScoped hDomain
   have hBound :
       Simulation.Interaction.ForwardRel Truncated
-        (DoneRel layout final [.var tmp] target)
+        (DoneRel layout final [.var tmp] target ctx)
         (Simulation.Interaction.bind
           (Yul.InteractionSemantics.evalArgs
             fuel [expr] codeOverride source)
@@ -834,7 +882,8 @@ theorem bindHeadValue
             exact Simulation.Interaction.ForwardRel.done
               (.terminal (.revert hState))
     | @regular sourceAfter values targetAfter ctxAfter
-        hStable hScopedAfter hDomainAfter hExtendsAfter =>
+        hStable hScopedAfter hDomainAfter hExtendsAfter
+        hScopeAfter hControlAfter =>
         have hLength : values.length = 1 := by
           simpa using hStable.length
         obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLength
@@ -892,7 +941,7 @@ theorem bindHeadValue
                   rw [Functions.InteractionSemantics.Block.openRun_nil]
                 change
                   Simulation.Interaction.ForwardRel Truncated
-                    (DoneRel layout final [.var tmp] target)
+                    (DoneRel layout final [.var tmp] target ctx)
                     (pure (sourceAfter, [value]))
                     (Functions.InteractionSemantics.Block.openRun
                       program ctxAfter (targetFuel - pre.length)
@@ -919,7 +968,12 @@ theorem bindHeadValue
                     (.cons
                       (FunctionsInteractionExpression.StableValue.var hLookup)
                       (.nil targetFinal))
-                    hScopedFinal hDomainFinal hExtendsFinal)
+                    hScopedFinal hDomainFinal hExtendsFinal
+                    (Functions.Source.Ctx.ScopeExtends.trans hScopeAfter
+                      (Functions.Source.Ctx.ScopeExtends.cons ctxAfter tmp))
+                    (Functions.Source.Ctx.SameControl.trans hControlAfter
+                      (Functions.Source.Ctx.SameControl.scopeUpdate
+                        ctxAfter (tmp :: ctxAfter.scope))))
   have hSourcePure :
       Simulation.Interaction.bind
           (Yul.InteractionSemantics.evalArgs
@@ -974,13 +1028,13 @@ theorem bound
       codeOverride program layout)
     (hRest :
       Simulation.Interaction.ForwardRel Truncated
-        (DoneRel layout stateRest lowerRest.reverse entry)
+        (DoneRel layout stateRest lowerRest.reverse entry ctx)
         (Yul.InteractionSemantics.evalArgs
           fuel rest.reverse codeOverride source)
         (Functions.InteractionSemantics.Block.openRun
           program ctx targetFuel { stmts := preRest } target)) :
     Simulation.Interaction.ForwardRel Truncated
-      (DoneRel layout stateFresh (.var tmp :: lowerRest).reverse entry)
+      (DoneRel layout stateFresh (.var tmp :: lowerRest).reverse entry ctx)
       (Yul.InteractionSemantics.evalArgs
         fuel (expr :: rest).reverse codeOverride source)
       (Functions.InteractionSemantics.Block.openRun
@@ -1010,14 +1064,15 @@ theorem bound
           exact Simulation.Interaction.ForwardRel.done
             (.terminal (.revert hState))
   | @regular sourceRest restValues targetRest ctxRest
-      hStableRest hScopedRest hDomainRest hExtendsRest =>
+      hStableRest hScopedRest hDomainRest hExtendsRest
+      hScopeRest hControlRest =>
       have hHeadRel :=
         hHeadForward hHead hFresh (ctx := ctxRest)
           hScopedRest hDomainRest
       have hHeadBound :
           Simulation.Interaction.ForwardRel Truncated
             (DoneRel layout stateFresh
-              (lowerRest.reverse ++ [.var tmp]) entry)
+              (lowerRest.reverse ++ [.var tmp]) entry ctx)
             (Simulation.Interaction.bind
               (Yul.InteractionSemantics.evalArgs
                 (fuel - 2 * rest.reverse.length) [expr]
@@ -1041,7 +1096,8 @@ theorem bound
             exact Simulation.Interaction.ForwardRel.done
               (.terminal hTerminal)
         | @regular sourceAfter headValues targetAfter ctxAfter
-            hStableHead hScopedHead hDomainHead hExtendsHead =>
+            hStableHead hScopedHead hDomainHead hExtendsHead
+            hScopeHead hControlHead =>
             have hStableRest' := hStableRest.mono hExtendsHead
             have hStableFinal := hStableRest'.append hStableHead
             have hExtendsFinal :=
@@ -1049,7 +1105,11 @@ theorem bound
                 hExtendsRest hExtendsHead
             exact Simulation.Interaction.ForwardRel.done
               (.regular
-                hStableFinal hScopedHead hDomainHead hExtendsFinal)
+                hStableFinal hScopedHead hDomainHead hExtendsFinal
+                (Functions.Source.Ctx.ScopeExtends.trans
+                  hScopeRest hScopeHead)
+                (Functions.Source.Ctx.SameControl.trans
+                  hControlRest hControlHead))
       have hTargetPure :
           Simulation.Interaction.bind
               (Functions.InteractionSemantics.Block.openRun
@@ -1124,7 +1184,7 @@ theorem ofUncheckedLowering
     (hLayout : ∀ name, name ∈ layout → name ∈ initial.used)
     (hTargetFuel : pre.length < targetFuel) :
     Simulation.Interaction.ForwardRel Truncated
-      (DoneRel layout final lowerArgs.reverse target)
+      (DoneRel layout final lowerArgs.reverse target ctx)
       (Yul.InteractionSemantics.evalArgs
         fuel args.reverse codeOverride source)
       (Functions.InteractionSemantics.Block.openRun

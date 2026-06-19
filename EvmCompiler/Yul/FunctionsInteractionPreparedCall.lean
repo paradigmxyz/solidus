@@ -38,7 +38,7 @@ theorem ofUncheckedCallArgsLowering
     (hTargetFuel : pre.length < targetFuel) :
     Simulation.Interaction.ForwardRel
       FunctionsInteractionPrimitive.Truncated
-      (DoneRel layout final lowerArgs.reverse target)
+      (DoneRel layout final lowerArgs.reverse target ctx)
       (Yul.InteractionSemantics.evalArgs
         fuel args.reverse codeOverride source)
       (Functions.InteractionSemantics.Block.openRun

@@ -33,13 +33,13 @@ theorem afterPrepared
     (hTargetFuel : pre.length + 1 < targetFuel)
     (hPrepared :
       Simulation.Interaction.ForwardRel Truncated
-        (DoneRel layout after lowerArgs.reverse entry)
+        (DoneRel layout after lowerArgs.reverse entry ctx)
         (Yul.InteractionSemantics.evalArgs
           argsFuel args.reverse codeOverride source)
         (Functions.InteractionSemantics.Block.openRun
           program ctx targetFuel { stmts := pre } target)) :
     Simulation.Interaction.ForwardRel Truncated
-      (DoneRel layout final [.var tmp] entry)
+      (DoneRel layout final [.var tmp] entry ctx)
       (Yul.InteractionSemantics.evalValues
         (argsFuel + 1) (.Call (.inl prim) args) codeOverride source)
       (Functions.InteractionSemantics.Block.openRun
@@ -69,7 +69,7 @@ theorem afterPrepared
           exact Simulation.Interaction.ForwardRel.done
             (.terminal (.revert hState))
   | @regular sourceAfter values targetAfter ctxAfter
-      hStable hScoped hDomain hExtends =>
+      hStable hScoped hDomain hExtends hScope hControl =>
       cases argsFuel with
       | zero =>
           have hTruncated :
@@ -80,7 +80,7 @@ theorem afterPrepared
           simpa [Yul.InteractionSemantics.Primitive.openEval,
             Yul.InteractionSemantics.Primitive.fail] using
             (Simulation.Interaction.ForwardRel.truncated
-              (doneRel := DoneRel layout final [.var tmp] entry)
+              (doneRel := DoneRel layout final [.var tmp] entry ctx)
               (right :=
                 Functions.InteractionSemantics.Block.openRun
                   program ctxAfter (targetFuel - pre.length)
@@ -182,7 +182,7 @@ theorem afterPrepared
                 | cons next tail => rfl
           change
             Simulation.Interaction.ForwardRel Truncated
-              (DoneRel layout final [.var tmp] entry)
+              (DoneRel layout final [.var tmp] entry ctx)
               (Yul.InteractionSemantics.Primitive.openEval
                 (primitiveFuel + 1) sourceAfter prim values.reverse)
               (Functions.InteractionSemantics.Block.openRun
@@ -193,7 +193,7 @@ theorem afterPrepared
           rw [hTargetLet]
           have hPrimitiveBound :
               Simulation.Interaction.ForwardRel Truncated
-                (DoneRel layout final [.var tmp] entry)
+                (DoneRel layout final [.var tmp] entry ctx)
                 (Simulation.Interaction.bind
                   (Yul.InteractionSemantics.Primitive.openEval
                     (primitiveFuel + 1) sourceAfter prim values.reverse)
@@ -280,7 +280,12 @@ theorem afterPrepared
                 exact Simulation.Interaction.ForwardRel.done
                   (.regular
                     hStableFinal
-                    hScopedFinal hDomainFinal hExtendsFinal)
+                    hScopedFinal hDomainFinal hExtendsFinal
+                    (Functions.Source.Ctx.ScopeExtends.trans hScope
+                      (Functions.Source.Ctx.ScopeExtends.cons ctxAfter tmp))
+                    (Functions.Source.Ctx.SameControl.trans hControl
+                      (Functions.Source.Ctx.SameControl.scopeUpdate
+                        ctxAfter (tmp :: ctxAfter.scope))))
           have hSourcePure :
               Simulation.Interaction.bind
                   (Yul.InteractionSemantics.Primitive.openEval
@@ -317,7 +322,7 @@ theorem bindDirectEval
         sourceOpen
         (Functions.InteractionSemantics.Expr.openEval lower target)) :
     Simulation.Interaction.ForwardRel Truncated
-      (DoneRel layout final [.var tmp] target)
+      (DoneRel layout final [.var tmp] target ctx)
       sourceOpen
       (Functions.InteractionSemantics.Block.openRun
         program ctx targetFuel { stmts := [.let_ tmp lower] } target) := by
@@ -432,7 +437,10 @@ theorem bindDirectEval
             (FunctionsInteractionExpression.StableValue.var hLookup)
             (FunctionsInteractionExpression.StableArgs.nil targetFinal))
       exact Simulation.Interaction.ForwardRel.done
-        (.regular hStableFinal hScopedFinal hDomainFinal hExtendsFinal)
+        (.regular hStableFinal hScopedFinal hDomainFinal hExtendsFinal
+          (Functions.Source.Ctx.ScopeExtends.cons ctx tmp)
+          (Functions.Source.Ctx.SameControl.scopeUpdate
+            ctx (tmp :: ctx.scope)))
 
 /-- Direct inline operands still use the same open-world primitive theorem;
 only the outer bounded-argument result is materialized in a fresh local. -/

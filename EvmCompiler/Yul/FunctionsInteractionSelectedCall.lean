@@ -81,7 +81,7 @@ theorem ofUncheckedFunctionCallLowering
     (hLayout : ∀ name, name ∈ layout → name ∈ initial.used) :
     Simulation.Interaction.ForwardRel Truncated
       (FunctionsInteractionPreparedArgs.DoneRel
-        layout final [lower] target)
+        layout final [lower] target ctx)
       (Yul.InteractionSemantics.evalValues (sourceFuel + 2)
         (.Call (.inr functionName) args)
         (some sourceProgram.contract) source)
@@ -137,7 +137,7 @@ theorem ofUncheckedFunctionCallLowering
       change
         Simulation.Interaction.ForwardRel Truncated
           (FunctionsInteractionPreparedArgs.DoneRel
-            layout final [.var tmp] target)
+            layout final [.var tmp] target ctx)
           (Simulation.Interaction.bind
             (Yul.InteractionSemantics.evalArgs (sourceFuel + 1)
               args.reverse (some sourceProgram.contract) source)
@@ -177,7 +177,8 @@ theorem ofUncheckedFunctionCallLowering
               exact Simulation.Interaction.ForwardRel.done
                 (.terminal (.revert hState))
       | @regular sourceAfter reversedValues targetAfter ctxAfter
-          hStable hScoped hDomainAfter hExtendsAfter =>
+          hStable hScoped hDomainAfter hExtendsAfter
+          hScopeAfter hControlAfter =>
           have hTmpFresh : tmp ∉ argsState.used :=
             Fresh.not_mem_of_fresh? hFresh
           have hTmpLayout : tmp ∉ layout := by
@@ -273,9 +274,18 @@ theorem ofUncheckedFunctionCallLowering
           have hCallStmt := FunctionsInteractionCall.callStmtForward
             (ctx := { ctxAfter with scope := tmp :: ctxAfter.scope })
             hFind hCallStable hFresh hLayoutArgs rfl hDomainAfter
-            hExtendsAfter hCallRun (by rfl)
+            hExtendsAfter
+            (Functions.Source.Ctx.ScopeExtends.cons ctxAfter tmp)
+            (Functions.Source.Ctx.SameControl.scopeUpdate
+              ctxAfter (tmp :: ctxAfter.scope))
+            hCallRun (by rfl)
           have hSuffix := FunctionsInteractionCall.letCallBlockForward
             (ctx := ctxAfter) rfl hCallStmt
+          have hSuffix' :=
+            Simulation.Interaction.ForwardRel.mono hSuffix
+              (fun _sourceDone _targetDone hDone =>
+                FunctionsInteractionPreparedArgs.DoneRel.transport_entry
+                  hScopeAfter hControlAfter hDone)
           have hResidual :
               preArgs.length + 2 + targetBodyFuel + 2 - preArgs.length =
               targetBodyFuel + 4 := by
@@ -284,7 +294,7 @@ theorem ofUncheckedFunctionCallLowering
           simp only [List.length_append, List.length_cons, List.length_nil,
             Nat.zero_add]
           rw [hResidual]
-          simpa using hSuffix
+          simpa using hSuffix'
 
 /-- Lift one compiler-selected internal call into the generic recursively
 prepared expression-head interface. The body uses strictly smaller source
@@ -418,7 +428,7 @@ theorem boundCall_lowFuel
     simpa [Yul.InteractionSemantics.Primitive.fail] using
       (Simulation.Interaction.ForwardRel.truncated
         (doneRel := FunctionsInteractionPreparedArgs.DoneRel
-          layout final [.var tmp] target)
+          layout final [.var tmp] target ctx)
         (right := Functions.InteractionSemantics.Block.openRun
           targetProgram.toFunctions ctx targetFuel
           { stmts := pre ++ [.let_ tmp lower] } target)

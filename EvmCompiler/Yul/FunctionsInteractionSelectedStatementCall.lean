@@ -7,6 +7,7 @@ namespace FunctionsInteractionSelectedStatementCall
 
 open FunctionsInteractionPrimitive
 open FunctionsInteractionRelation
+open FunctionsInteractionControlRelation
 
 /-- Preserve a compiler-selected internal call under an abstract, relation-owned
 multi-target writeback policy. Target readiness is stated at call-prelude entry
@@ -24,6 +25,8 @@ theorem selectedTargets
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
     {ctx : Functions.Source.Ctx}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
     (hDecomposition :
       FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
     (hProgramOk :
@@ -59,9 +62,12 @@ theorem selectedTargets
         sourceProgram (sourceFuel + 1) ≤ targetBodyFuel)
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin initial.used target.vars)
-    (hLayout : ∀ name, name ∈ layout → name ∈ initial.used) :
+    (hLayout : ∀ name, name ∈ layout → name ∈ initial.used)
+    (hFinalControl : ControlContextRel sourceScopes finalLayout
+      canBreak canContinue canLeave ctx) :
     Simulation.Interaction.ForwardRel Truncated
-      (FunctionsInteractionStatement.PathScopedDoneRel finalLayout)
+      (ControlDoneRel finalLayout sourceScopes
+        canBreak canContinue canLeave)
       (Simulation.Interaction.bind
         (Yul.InteractionSemantics.evalArgs (sourceFuel + 1)
           args.reverse (some sourceProgram.contract) source)
@@ -105,23 +111,24 @@ theorem selectedTargets
   intro sourceDone targetDone hDone
   cases hDone with
   | error hError =>
-      exact Simulation.Interaction.ForwardRel.done (.error hError)
+      exact Simulation.Interaction.ForwardRel.done
+        (ControlDoneRel.error hError)
   | terminal hTerminal =>
       cases hTerminal with
       | stop hState =>
           exact Simulation.Interaction.ForwardRel.done
-            (.terminal (.stop hState))
+            (ControlDoneRel.terminal (.stop hState))
       | return_ hState =>
           exact Simulation.Interaction.ForwardRel.done
-            (.terminal (.return_ hState))
+            (ControlDoneRel.terminal (.return_ hState))
       | selfdestruct hState =>
           exact Simulation.Interaction.ForwardRel.done
-            (.terminal (.selfdestruct hState))
+            (ControlDoneRel.terminal (.selfdestruct hState))
       | revert hState =>
           exact Simulation.Interaction.ForwardRel.done
-            (.terminal (.revert hState))
+            (ControlDoneRel.terminal (.revert hState))
   | @regular sourceAfter reversedValues targetAfter ctxAfter
-      hStable hScoped _hDomainAfter hExtendsAfter =>
+      hStable hScoped _hDomainAfter hExtendsAfter hScopeCtx hSameCtx =>
       have hCallStable :
           FunctionsInteractionExpression.StableArgs lowerArgs targetAfter
             reversedValues.reverse := by
@@ -196,21 +203,30 @@ theorem selectedTargets
         cases hLookup : target.vars name with
         | none =>
             simp [Locals.Source.Store.contains, hLookup] at hReady
-        | some value =>
+          | some value =>
             have hAfter := hExtendsAfter name value hLookup
             simp [Locals.Source.Store.contains, hAfter]
+      have hControlAfter : ControlContextRel sourceScopes finalLayout
+          canBreak canContinue canLeave ctxAfter := by
+        apply ControlContextRel.transport hFinalControl
+        · exact fun _candidate hMem => hMem
+        · exact hSameCtx
+        · intro candidate hMem
+          exact hScopeCtx candidate
+            (hFinalControl.scope candidate hMem)
       have hFinished := FunctionsInteractionCall.finishManyForward
         (results := targets.length) (ctx := ctxAfter)
         rfl hContains
         (fun hScopedAfter hInsert => hWriteback hScopedAfter hInsert)
-        hCallRun
+        hControlAfter hCallRun
       have hArgsEval := hCallStable.openEval
         (TargetExtends.refl targetAfter.vars)
       unfold Functions.InteractionSemantics.ArgList.openEval
         Functions.Source.Canonical.ArgList.eval at hArgsEval
       have hStmt :
           Simulation.Interaction.ForwardRel Truncated
-            (FunctionsInteractionStatement.PathScopedDoneRel finalLayout)
+            (ControlDoneRel finalLayout sourceScopes
+              canBreak canContinue canLeave)
             (Simulation.Interaction.bind
               (Yul.InteractionSemantics.call (sourceFuel + 1)
                 reversedValues.reverse (some functionName)
@@ -228,7 +244,7 @@ theorem selectedTargets
           Option.elim_some]
         simpa [Functions.InteractionSemantics.FunDef.openRunBody,
           Functions.Source.Canonical.FunDef.runBody] using hFinished
-      have hSingleton := FunctionsInteractionStatement.PathScopedDoneRel.singleton
+      have hSingleton := FunctionsInteractionStatement.ControlDoneRel.singleton
         (targetFuel := targetBodyFuel + 1) hStmt
       have hResidual :
           preArgs.length + targetBodyFuel + 3 - preArgs.length =
@@ -252,6 +268,8 @@ theorem visibleTargets
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
     {ctx : Functions.Source.Ctx}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
     (hDecomposition :
       FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
     (hProgramOk :
@@ -274,9 +292,12 @@ theorem visibleTargets
         sourceProgram (sourceFuel + 1) ≤ targetBodyFuel)
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin initial.used target.vars)
-    (hLayout : ∀ name, name ∈ layout → name ∈ initial.used) :
+    (hLayout : ∀ name, name ∈ layout → name ∈ initial.used)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx) :
     Simulation.Interaction.ForwardRel Truncated
-      (FunctionsInteractionStatement.PathScopedDoneRel layout)
+      (ControlDoneRel layout sourceScopes
+        canBreak canContinue canLeave)
       (Simulation.Interaction.bind
         (Yul.InteractionSemantics.evalArgs (sourceFuel + 1)
           args.reverse (some sourceProgram.contract) source)
@@ -298,6 +319,7 @@ theorem visibleTargets
       hScoped.multifill_insertMany_visible
         hTargetsNodup hTargetsVisible hInsert)
     hArgsLowering hBound hBodyForward hTargetBodyFuel hRel hDomain hLayout
+    hControl
 
 /-- Fresh-target specialization used after the compiler's declaration
 initialization prefix. -/
@@ -314,6 +336,8 @@ theorem freshTargets
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
     {ctx : Functions.Source.Ctx}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
     (hDecomposition :
       FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
     (hProgramOk :
@@ -338,9 +362,12 @@ theorem freshTargets
         sourceProgram (sourceFuel + 1) ≤ targetBodyFuel)
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin initial.used target.vars)
-    (hLayout : ∀ name, name ∈ layout → name ∈ initial.used) :
+    (hLayout : ∀ name, name ∈ layout → name ∈ initial.used)
+    (hControl : ControlContextRel sourceScopes (targets ++ layout)
+      canBreak canContinue canLeave ctx) :
     Simulation.Interaction.ForwardRel Truncated
-      (FunctionsInteractionStatement.PathScopedDoneRel (targets ++ layout))
+      (ControlDoneRel (targets ++ layout) sourceScopes
+        canBreak canContinue canLeave)
       (Simulation.Interaction.bind
         (Yul.InteractionSemantics.evalArgs (sourceFuel + 1)
           args.reverse (some sourceProgram.contract) source)
@@ -362,6 +389,7 @@ theorem freshTargets
       hScoped.multifill_insertMany
         hTargetsNodup hTargetsFresh hInsert)
     hArgsLowering hBound hBodyForward hTargetBodyFuel hRel hDomain hLayout
+    hControl
 
 /-- Ordinary compiler-selected assignment call, with all generated argument
 preludes and multi-result writeback discharged internally. -/
@@ -376,6 +404,7 @@ theorem compiledAssignCall
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
     {ctx : Functions.Source.Ctx}
+    {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
     (hDecomposition :
       FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
@@ -398,11 +427,14 @@ theorem compiledAssignCall
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin initial.used target.vars)
     (hLayout : ∀ name, name ∈ layout → name ∈ initial.used)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
     (hTargetFuel :
       FunctionsInteractionStaticCost.programBudget
           sourceProgram (sourceFuel + 1) + lower.length + 1 < targetFuel) :
     Simulation.Interaction.ForwardRel Truncated
-      (FunctionsInteractionStatement.PathScopedDoneRel layout)
+      (ControlDoneRel layout sourceScopes
+        canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec (sourceFuel + 3)
         (.Assign names (.Call (.inr functionName) args))
         (some sourceProgram.contract) source)
@@ -448,7 +480,7 @@ theorem compiledAssignCall
       simp only [List.length_append, List.length_cons, List.length_nil]
         at hTargetFuel
       omega)
-    hRel hDomain hLayout
+    hRel hDomain hLayout hControl
   have hCheck := hRel.assignmentCheck_many
     hAssignParts.1 hAssignParts.2
   have hCheck' : EvmYul.Yul.checkAssignment source names = .ok () := by
@@ -475,6 +507,7 @@ theorem compiledLetCall
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
     {ctx : Functions.Source.Ctx}
+    {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
     (hDecomposition :
       FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
@@ -499,14 +532,16 @@ theorem compiledLetCall
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin initial.used target.vars)
     (hLayout : ∀ name, name ∈ layout → name ∈ initial.used)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
     (hTargetsUsed : ∀ name, name ∈ identNames names →
       name ∈ initial.used)
     (hTargetFuel :
       FunctionsInteractionStaticCost.programBudget
           sourceProgram (sourceFuel + 1) + lower.length + 1 < targetFuel) :
     Simulation.Interaction.ForwardRel Truncated
-      (FunctionsInteractionStatement.PathScopedDoneRel
-        (identNames names ++ layout))
+      (ControlDoneRel (identNames names ++ layout) sourceScopes
+        canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec (sourceFuel + 3)
         (.Let names (some (.Call (.inr functionName) args)))
         (some sourceProgram.contract) source)
@@ -590,6 +625,19 @@ theorem compiledLetCall
       (some sourceProgram.contract) targetProgram.toFunctions layout := by
     rw [hCallFuel]
     exact hHeads (targetFuel - (identNames names).length)
+  have hControlInit : ControlContextRel sourceScopes
+      (identNames names ++ layout) canBreak canContinue canLeave ctxInit := by
+    apply ControlContextRel.transport hControl
+    · intro candidate hMem
+      exact List.mem_append_right _ hMem
+    · simpa [ctxInit] using
+        (Functions.Source.Ctx.SameControl.scopeUpdate ctx
+          ((identNames names).reverse ++ ctx.scope))
+    · intro candidate hMem
+      rcases List.mem_append.mp hMem with hNames | hLayoutName
+      · exact List.mem_append_left _ (List.mem_reverse.mpr hNames)
+      · exact List.mem_append_right _
+          (hControl.scope candidate hLayoutName)
   have hSelected := freshTargets
     (sourceFuel := sourceFuel)
     (targetBodyFuel :=
@@ -603,7 +651,7 @@ theorem compiledLetCall
       rw [hLowerEq] at hTargetFuel
       simp [Stmt.initNames] at hTargetFuel
       omega)
-    hRelInit hDomainInit hLayout
+    hRelInit hDomainInit hLayout hControlInit
   have hCheck := hRel.declarationCheck_many hBindParts.1 hBindParts.2
   have hCheck' : EvmYul.Yul.checkDeclaration source names = .ok () := by
     simpa [identNames_eq_self] using hCheck
@@ -619,8 +667,8 @@ theorem compiledLetCall
     Simulation.Interaction.bind_done_ok]
   change
     Simulation.Interaction.ForwardRel Truncated
-      (FunctionsInteractionStatement.PathScopedDoneRel
-        (identNames names ++ layout))
+      (ControlDoneRel (identNames names ++ layout) sourceScopes
+        canBreak canContinue canLeave)
       _
       (Functions.InteractionSemantics.Block.openRun
         targetProgram.toFunctions ctxInit

@@ -6,6 +6,7 @@ namespace FunctionsInteractionPreparedStatement
 
 open FunctionsInteractionPrimitive
 open FunctionsInteractionRelation
+open FunctionsInteractionControlRelation
 
 /-- Attach the final source-visible declaration emitted after any recursively
 prepared one-result expression. The prelude may contain primitive effects or
@@ -19,20 +20,24 @@ theorem letOneOfPrepared
     {target : Functions.InteractionSemantics.State}
     {program : Functions.Program} {ctx : Functions.Source.Ctx}
     {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
     (hNameFresh : identName name ∉ layout)
     (hRel : ScopedStateRel layout source target)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
     (hTailFuel : pre.length + 1 < targetFuel)
     (hPrepared :
       Simulation.Interaction.ForwardRel Truncated
         (FunctionsInteractionPreparedArgs.DoneRel
-          layout fresh [lower] target)
+          layout fresh [lower] target ctx)
         (Yul.InteractionSemantics.evalValues
           exprFuel expr codeOverride source)
         (Functions.InteractionSemantics.Block.openRun
           program ctx targetFuel { stmts := pre } target)) :
     Simulation.Interaction.ForwardRel Truncated
-      (FunctionsInteractionStatement.PathScopedDoneRel
-        (identName name :: layout))
+      (ControlDoneRel (identName name :: layout) sourceScopes
+        canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec (exprFuel + 1)
         (.Let [name] (some expr)) codeOverride source)
       (Functions.InteractionSemantics.Block.openRun
@@ -46,23 +51,24 @@ theorem letOneOfPrepared
   intro sourceDone targetDone hDone
   cases hDone with
   | error hError =>
-      exact Simulation.Interaction.ForwardRel.done (.error hError)
+      exact Simulation.Interaction.ForwardRel.done
+        (ControlDoneRel.error hError)
   | terminal hTerminal =>
       cases hTerminal with
       | stop hState =>
           exact Simulation.Interaction.ForwardRel.done
-            (.terminal (.stop hState))
+            (ControlDoneRel.terminal (.stop hState))
       | return_ hState =>
           exact Simulation.Interaction.ForwardRel.done
-            (.terminal (.return_ hState))
+            (ControlDoneRel.terminal (.return_ hState))
       | selfdestruct hState =>
           exact Simulation.Interaction.ForwardRel.done
-            (.terminal (.selfdestruct hState))
+            (ControlDoneRel.terminal (.selfdestruct hState))
       | revert hState =>
           exact Simulation.Interaction.ForwardRel.done
-            (.terminal (.revert hState))
+            (ControlDoneRel.terminal (.revert hState))
   | @regular sourceAfter values targetAfter ctxAfter
-      hStable hScoped _hDomain _hExtends =>
+      hStable hScoped _hDomain _hExtends hScopeCtx hSameCtx =>
       have hLength : values.length = 1 := by
         simpa using hStable.length
       obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLength
@@ -109,8 +115,8 @@ theorem letOneOfPrepared
             rw [Functions.InteractionSemantics.Block.openRun_nil]
           change
             Simulation.Interaction.ForwardRel Truncated
-              (FunctionsInteractionStatement.PathScopedDoneRel
-                (identName name :: layout))
+              (ControlDoneRel (identName name :: layout) sourceScopes
+                canBreak canContinue canLeave)
               (pure (sourceAfter.multifill [name] [value]))
               (Functions.InteractionSemantics.Block.openRun
                 program ctxAfter (targetFuel - pre.length)
@@ -118,11 +124,22 @@ theorem letOneOfPrepared
           rw [hTargetLet]
           have hFinal := hScoped.multifill_single_cons
             (identName name) value
+          have hFinalCtx : ControlContextRel sourceScopes
+              (identName name :: layout)
+              canBreak canContinue canLeave ctxFinal := by
+            apply ControlContextRel.transport hControl
+            · intro candidate hMem
+              exact List.mem_cons_of_mem _ hMem
+            · exact Functions.Source.Ctx.SameControl.trans hSameCtx
+                (Functions.Source.Ctx.SameControl.scopeUpdate
+                  ctxAfter (identName name :: ctxAfter.scope))
+            · intro candidate hMem
+              rcases List.mem_cons.mp hMem with rfl | hTail
+              · exact List.mem_cons_self
+              · exact List.mem_cons_of_mem _
+                  (hScopeCtx candidate (hControl.scope candidate hTail))
           exact Simulation.Interaction.ForwardRel.done
-            (.ok
-              ⟨identName name :: layout,
-                FunctionsInteractionRelation.ScopedOutcomeRel.regular hFinal,
-                fun _hRegular => rfl⟩)
+            (ControlDoneRel.regular hFinal hFinalCtx)
 
 /-- Attach the final source-visible assignment emitted after any recursively
 prepared one-result expression. -/
@@ -135,19 +152,24 @@ theorem assignOneOfPrepared
     {target : Functions.InteractionSemantics.State}
     {program : Functions.Program} {ctx : Functions.Source.Ctx}
     {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
     (hName : identName name ∈ layout)
     (hRel : ScopedStateRel layout source target)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
     (hTailFuel : pre.length + 1 < targetFuel)
     (hPrepared :
       Simulation.Interaction.ForwardRel Truncated
         (FunctionsInteractionPreparedArgs.DoneRel
-          layout fresh [lower] target)
+          layout fresh [lower] target ctx)
         (Yul.InteractionSemantics.evalValues
           exprFuel expr codeOverride source)
         (Functions.InteractionSemantics.Block.openRun
           program ctx targetFuel { stmts := pre } target)) :
     Simulation.Interaction.ForwardRel Truncated
-      (FunctionsInteractionStatement.PathScopedDoneRel layout)
+      (ControlDoneRel layout sourceScopes
+        canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec (exprFuel + 1)
         (.Assign [name] expr) codeOverride source)
       (Functions.InteractionSemantics.Block.openRun
@@ -161,23 +183,24 @@ theorem assignOneOfPrepared
   intro sourceDone targetDone hDone
   cases hDone with
   | error hError =>
-      exact Simulation.Interaction.ForwardRel.done (.error hError)
+      exact Simulation.Interaction.ForwardRel.done
+        (ControlDoneRel.error hError)
   | terminal hTerminal =>
       cases hTerminal with
       | stop hState =>
           exact Simulation.Interaction.ForwardRel.done
-            (.terminal (.stop hState))
+            (ControlDoneRel.terminal (.stop hState))
       | return_ hState =>
           exact Simulation.Interaction.ForwardRel.done
-            (.terminal (.return_ hState))
+            (ControlDoneRel.terminal (.return_ hState))
       | selfdestruct hState =>
           exact Simulation.Interaction.ForwardRel.done
-            (.terminal (.selfdestruct hState))
+            (ControlDoneRel.terminal (.selfdestruct hState))
       | revert hState =>
           exact Simulation.Interaction.ForwardRel.done
-            (.terminal (.revert hState))
+            (ControlDoneRel.terminal (.revert hState))
   | @regular sourceAfter values targetAfter ctxAfter
-      hStable hScoped _hDomain _hExtends =>
+      hStable hScoped _hDomain _hExtends hScopeCtx hSameCtx =>
       have hLength : values.length = 1 := by
         simpa using hStable.length
       obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLength
@@ -225,18 +248,23 @@ theorem assignOneOfPrepared
             rw [Functions.InteractionSemantics.Block.openRun_nil]
           change
             Simulation.Interaction.ForwardRel Truncated
-              (FunctionsInteractionStatement.PathScopedDoneRel layout)
+              (ControlDoneRel layout sourceScopes
+                canBreak canContinue canLeave)
               (pure (sourceAfter.multifill [name] [value]))
               (Functions.InteractionSemantics.Block.openRun
                 program ctxAfter (targetFuel - pre.length)
                 { stmts := [.assign (identName name) lower] } targetAfter)
           rw [hTargetAssign]
           have hFinal := hScoped.multifill_single_visible hName value
+          have hFinalCtx : ControlContextRel sourceScopes layout
+              canBreak canContinue canLeave ctxAfter := by
+            apply ControlContextRel.transport hControl
+            · exact fun _candidate hMem => hMem
+            · exact hSameCtx
+            · intro candidate hMem
+              exact hScopeCtx candidate (hControl.scope candidate hMem)
           exact Simulation.Interaction.ForwardRel.done
-            (.ok
-              ⟨layout,
-                FunctionsInteractionRelation.ScopedOutcomeRel.regular hFinal,
-                fun _hRegular => rfl⟩)
+            (ControlDoneRel.regular hFinal hFinalCtx)
 
 end FunctionsInteractionPreparedStatement
 end Yul

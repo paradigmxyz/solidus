@@ -173,7 +173,7 @@ theorem finishSingleForward
     {entry targetBefore targetCaller :
       Functions.InteractionSemantics.State}
     {sourceCaller : Yul.InteractionSemantics.State}
-    {ctx : Functions.Source.Ctx}
+    {entryCtx ctx : Functions.Source.Ctx}
     {sourceCall :
       Simulation.Interaction Yul.InteractionSemantics.Failure
         (Yul.InteractionSemantics.State × List Assembly.Word)}
@@ -186,13 +186,15 @@ theorem finishSingleForward
       targetBefore.insert tmp Functions.Source.zero)
     (hDomain : TargetDomainWithin before.used targetBefore.vars)
     (hExtends : TargetExtends entry.vars targetBefore.vars)
+    (hScope : Functions.Source.Ctx.ScopeExtends entryCtx ctx)
+    (hControl : Functions.Source.Ctx.SameControl entryCtx ctx)
     (hRunBody :
       Simulation.Interaction.ForwardRel Truncated
         (RunBodyDoneRel layout sourceCaller targetCaller 1)
         sourceCall targetRunBody) :
     Simulation.Interaction.ForwardRel Truncated
       (FunctionsInteractionPreparedArgs.DoneRel
-        layout final [.var tmp] entry)
+        layout final [.var tmp] entry entryCtx)
       sourceCall
       (Simulation.Interaction.bind targetRunBody
         (Functions.InteractionSemantics.Stmt.finishCall
@@ -288,7 +290,8 @@ theorem finishSingleForward
         (Simulation.Interaction.ForwardRel.done
           (truncated := Truncated)
           (FunctionsInteractionPreparedArgs.DoneRel.regular
-            hStable hFinalScoped' hFinalDomain hFinalExtends))
+            hStable hFinalScoped' hFinalDomain hFinalExtends
+            hScope hControl))
 
 /-- Finish a multi-result source call and the canonical Functions target
 writeback under a caller-supplied relation for the updated lexical domain. -/
@@ -298,6 +301,8 @@ theorem finishManyForward
     {sourceCaller : Yul.InteractionSemantics.State}
     {targetCaller : Functions.InteractionSemantics.State}
     {ctx : Functions.Source.Ctx}
+    {sourceScopes : FunctionsInteractionControlRelation.SourceScopes}
+    {canBreak canContinue canLeave : Bool}
     {sourceCall : Yul.InteractionSemantics.Open
       (Yul.InteractionSemantics.State × List Assembly.Word)}
     {targetRunBody : Functions.InteractionSemantics.Open
@@ -316,12 +321,15 @@ theorem finishManyForward
         ScopedStateRel finalLayout
           (sourceAfter.multifill targets values)
           { shared := targetAfter.shared, vars := finalVars })
+    (hControl : FunctionsInteractionControlRelation.ControlContextRel
+      sourceScopes finalLayout canBreak canContinue canLeave ctx)
     (hRunBody :
       Simulation.Interaction.ForwardRel Truncated
         (RunBodyDoneRel layout sourceCaller targetCaller results)
         sourceCall targetRunBody) :
     Simulation.Interaction.ForwardRel Truncated
-      (FunctionsInteractionStatement.PathScopedDoneRel finalLayout)
+      (FunctionsInteractionControlRelation.ControlDoneRel
+        finalLayout sourceScopes canBreak canContinue canLeave)
       (Simulation.Interaction.bind sourceCall fun result =>
         pure (result.1.multifill targets result.2))
       (Simulation.Interaction.bind targetRunBody
@@ -331,9 +339,11 @@ theorem finishManyForward
   intro sourceDone targetDone hDone
   cases hDone with
   | error hError =>
-      exact Simulation.Interaction.ForwardRel.done (.error hError)
+      exact Simulation.Interaction.ForwardRel.done
+        (FunctionsInteractionControlRelation.ControlDoneRel.error hError)
   | terminal hTerminal =>
-      exact Simulation.Interaction.ForwardRel.done (.terminal hTerminal)
+      exact Simulation.Interaction.ForwardRel.done
+        (FunctionsInteractionControlRelation.ControlDoneRel.terminal hTerminal)
   | @returned sourceAfter targetAfter values hScoped hLength =>
       have hValuesLength : values.length = targets.length := by
         omega
@@ -363,10 +373,8 @@ theorem finishManyForward
       simp only
       rw [hFinish]
       exact Simulation.Interaction.ForwardRel.done
-        (.ok
-          ⟨finalLayout,
-            FunctionsInteractionRelation.ScopedOutcomeRel.regular hFinal,
-            fun _hRegular => rfl⟩)
+        (FunctionsInteractionControlRelation.ControlDoneRel.regular
+          hFinal hControl)
 
 /-- Multi-result call writeback introducing fresh source bindings. -/
 theorem finishManyFresh
@@ -375,6 +383,8 @@ theorem finishManyFresh
     {sourceCaller : Yul.InteractionSemantics.State}
     {targetCaller : Functions.InteractionSemantics.State}
     {ctx : Functions.Source.Ctx}
+    {sourceScopes : FunctionsInteractionControlRelation.SourceScopes}
+    {canBreak canContinue canLeave : Bool}
     {sourceCall : Yul.InteractionSemantics.Open
       (Yul.InteractionSemantics.State × List Assembly.Word)}
     {targetRunBody : Functions.InteractionSemantics.Open
@@ -384,12 +394,16 @@ theorem finishManyFresh
     (hFresh : ∀ name, name ∈ targets → name ∉ layout)
     (hContains : ∀ name, name ∈ targets →
       targetCaller.vars.contains name = true)
+    (hControl : FunctionsInteractionControlRelation.ControlContextRel
+      sourceScopes (targets ++ layout)
+        canBreak canContinue canLeave ctx)
     (hRunBody :
       Simulation.Interaction.ForwardRel Truncated
         (RunBodyDoneRel layout sourceCaller targetCaller results)
         sourceCall targetRunBody) :
     Simulation.Interaction.ForwardRel Truncated
-      (FunctionsInteractionStatement.PathScopedDoneRel (targets ++ layout))
+      (FunctionsInteractionControlRelation.ControlDoneRel
+        (targets ++ layout) sourceScopes canBreak canContinue canLeave)
       (Simulation.Interaction.bind sourceCall fun result =>
         pure (result.1.multifill targets result.2))
       (Simulation.Interaction.bind targetRunBody
@@ -398,7 +412,7 @@ theorem finishManyFresh
   finishManyForward hTargetCount hContains
     (fun hScoped hInsert =>
       hScoped.multifill_insertMany hNodup hFresh hInsert)
-    hRunBody
+    hControl hRunBody
 
 /-- Multi-result call writeback updating existing source-visible bindings. -/
 theorem finishManyVisible
@@ -407,6 +421,8 @@ theorem finishManyVisible
     {sourceCaller : Yul.InteractionSemantics.State}
     {targetCaller : Functions.InteractionSemantics.State}
     {ctx : Functions.Source.Ctx}
+    {sourceScopes : FunctionsInteractionControlRelation.SourceScopes}
+    {canBreak canContinue canLeave : Bool}
     {sourceCall : Yul.InteractionSemantics.Open
       (Yul.InteractionSemantics.State × List Assembly.Word)}
     {targetRunBody : Functions.InteractionSemantics.Open
@@ -416,12 +432,15 @@ theorem finishManyVisible
     (hVisible : ∀ name, name ∈ targets → name ∈ layout)
     (hContains : ∀ name, name ∈ targets →
       targetCaller.vars.contains name = true)
+    (hControl : FunctionsInteractionControlRelation.ControlContextRel
+      sourceScopes layout canBreak canContinue canLeave ctx)
     (hRunBody :
       Simulation.Interaction.ForwardRel Truncated
         (RunBodyDoneRel layout sourceCaller targetCaller results)
         sourceCall targetRunBody) :
     Simulation.Interaction.ForwardRel Truncated
-      (FunctionsInteractionStatement.PathScopedDoneRel layout)
+      (FunctionsInteractionControlRelation.ControlDoneRel
+        layout sourceScopes canBreak canContinue canLeave)
       (Simulation.Interaction.bind sourceCall fun result =>
         pure (result.1.multifill targets result.2))
       (Simulation.Interaction.bind targetRunBody
@@ -430,7 +449,7 @@ theorem finishManyVisible
   finishManyForward hTargetCount hContains
     (fun hScoped hInsert =>
       hScoped.multifill_insertMany_visible hNodup hVisible hInsert)
-    hRunBody
+    hControl hRunBody
 
 /-- Attach canonical argument evaluation and function lookup around one
 already-related function body, yielding the real generated call statement. -/
@@ -442,6 +461,7 @@ theorem callStmtForward
     {before final : Fresh.State} {layout : List Functions.Name}
     {entry targetBefore targetCaller :
       Functions.InteractionSemantics.State}
+    {entryCtx : Functions.Source.Ctx}
     {sourceCaller : Yul.InteractionSemantics.State}
     {ctx : Functions.Source.Ctx}
     {sourceCall :
@@ -461,6 +481,8 @@ theorem callStmtForward
       targetBefore.insert tmp Functions.Source.zero)
     (hDomain : TargetDomainWithin before.used targetBefore.vars)
     (hExtends : TargetExtends entry.vars targetBefore.vars)
+    (hScope : Functions.Source.Ctx.ScopeExtends entryCtx ctx)
+    (hControl : Functions.Source.Ctx.SameControl entryCtx ctx)
     (hRunBody :
       Simulation.Interaction.ForwardRel Truncated
         (RunBodyDoneRel layout sourceCaller targetCaller 1)
@@ -471,14 +493,14 @@ theorem callStmtForward
           program fn args (targetBodyFuel + 1) targetCaller) :
     Simulation.Interaction.ForwardRel Truncated
       (FunctionsInteractionPreparedArgs.DoneRel
-        layout final [.var tmp] entry)
+        layout final [.var tmp] entry entryCtx)
       sourceCall
       (Functions.InteractionSemantics.Stmt.openRun program ctx
         (targetBodyFuel + 2) (.call [tmp] functionName lowerArgs)
         targetCaller) := by
   subst targetRunBody
   have hFinished := finishSingleForward (ctx := ctx)
-    hFresh hLayout hCallerState hDomain hExtends hRunBody
+    hFresh hLayout hCallerState hDomain hExtends hScope hControl hRunBody
   have hArgsEval := hStable.openEval
     (TargetExtends.refl targetCaller.vars)
   unfold Functions.InteractionSemantics.ArgList.openEval
@@ -509,7 +531,7 @@ theorem letCallBlockForward
     (hCall :
       Simulation.Interaction.ForwardRel Truncated
         (FunctionsInteractionPreparedArgs.DoneRel
-          layout final [.var tmp] entry)
+          layout final [.var tmp] entry ctx)
         sourceCall
         (Functions.InteractionSemantics.Stmt.openRun program
           { ctx with scope := tmp :: ctx.scope }
@@ -517,7 +539,7 @@ theorem letCallBlockForward
           (.call [tmp] functionName lowerArgs) targetCaller)) :
     Simulation.Interaction.ForwardRel Truncated
       (FunctionsInteractionPreparedArgs.DoneRel
-        layout final [.var tmp] entry)
+        layout final [.var tmp] entry ctx)
       sourceCall
       (Functions.InteractionSemantics.Block.openRun program ctx
         (targetBodyFuel + 4)
@@ -538,7 +560,7 @@ theorem letCallBlockForward
   change
     Simulation.Interaction.ForwardRel Truncated
       (FunctionsInteractionPreparedArgs.DoneRel
-        layout final [.var tmp] entry)
+        layout final [.var tmp] entry ctx)
       sourceCall
       (Functions.InteractionSemantics.Block.openRun program
         { ctx with scope := tmp :: ctx.scope }
