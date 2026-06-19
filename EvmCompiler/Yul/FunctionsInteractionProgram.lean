@@ -9,6 +9,50 @@ open FunctionsInteractionPrimitive
 open FunctionsInteractionControlRelation
 open FunctionsInteractionRecursiveStatement
 
+/-- Whole-program Yul leaves that terminate through an EVM halt rather than a
+finite-semantics truncation or a runtime error. -/
+def SourceTerminal :
+    Except Yul.InteractionSemantics.Failure
+      Yul.InteractionSemantics.State -> Prop
+  | .error failure =>
+      match failure.exception with
+      | .YulHalt _ _ | .Revert _ => True
+      | _ => False
+  | .ok _ => False
+
+namespace SourceTerminal
+
+theorem excludes_truncated
+    {failure : Yul.InteractionSemantics.Failure}
+    (hTerminal : SourceTerminal (.error failure)) :
+    Not (Truncated failure) := by
+  rcases failure with ⟨exception, state⟩
+  cases exception <;>
+    simp [SourceTerminal, Truncated] at hTerminal ⊢
+
+end SourceTerminal
+
+/-- The Functions representation of a terminal Yul whole-program leaf. -/
+def TargetHalted :
+    Except EVMException Functions.InteractionSemantics.Outcome -> Prop
+  | .ok { mode := .halt _ , .. } => True
+  | _ => False
+
+namespace TargetHalted
+
+theorem successful
+    {run : Simulation.Interaction
+      EVMException Functions.InteractionSemantics.Outcome}
+    (hHalted : Simulation.Interaction.AllDone TargetHalted run) :
+    Simulation.Interaction.Successful run := by
+  apply Simulation.Interaction.AllDone.mono hHalted
+  intro outcome hOutcome
+  cases outcome with
+  | error error => cases hOutcome
+  | ok target => trivial
+
+end TargetHalted
+
 /-- Whole-program outcomes hide the compiler's path-independent final
 reservation set while retaining the ordinary open-world outcome relation. -/
 def DoneRel :
@@ -35,7 +79,53 @@ theorem target_ok_of_source_ok
   rcases hRel with ⟨used, hRel⟩
   cases hRel <;> simp_all
 
+theorem targetHalted_of_sourceTerminal
+    {sourceDone : Except Yul.InteractionSemantics.Failure
+      Yul.InteractionSemantics.State}
+    {targetDone : Except EVMException Functions.InteractionSemantics.Outcome}
+    (hRel : DoneRel sourceDone targetDone)
+    (hTerminal : SourceTerminal sourceDone) :
+    TargetHalted targetDone := by
+  rcases hRel with ⟨used, hRel⟩
+  cases hRel with
+  | @error sourceFailure targetError hError =>
+      rcases sourceFailure with ⟨exception, state⟩
+      cases exception <;>
+        simp [SourceTerminal, ErrorRel] at hTerminal hError
+  | regular hScoped hDomain =>
+      cases hTerminal
+  | brk hScope hMode hAbrupt =>
+      cases hTerminal
+  | cont hScope hMode hAbrupt =>
+      cases hTerminal
+  | leave hScope hMode hAbrupt =>
+      cases hTerminal
+  | terminal hTerminalRel =>
+      cases hTerminalRel <;> trivial
+
 end DoneRel
+
+/-- On universally terminal source branches, the whole-program forward theorem
+is a full open-world relation and every Functions branch is halted. -/
+theorem terminalRel
+    {sourceRun : Simulation.Interaction
+      Yul.InteractionSemantics.Failure Yul.InteractionSemantics.State}
+    {targetRun : Simulation.Interaction
+      EVMException Functions.InteractionSemantics.Outcome}
+    (hForward : Simulation.Interaction.ForwardRel Truncated DoneRel
+      sourceRun targetRun)
+    (hTerminal : Simulation.Interaction.AllDone SourceTerminal sourceRun) :
+    Simulation.Interaction.Rel DoneRel sourceRun targetRun /\
+      Simulation.Interaction.AllDone TargetHalted targetRun := by
+  have hRel := Simulation.Interaction.ForwardRel.rel_of_allDone
+    hForward hTerminal
+    (fun failure hSource => SourceTerminal.excludes_truncated hSource)
+  refine ⟨hRel, ?_⟩
+  have hStrong :=
+    Simulation.Interaction.Rel.strengthen_left hRel hTerminal
+  exact Simulation.Interaction.Rel.allDone_right hStrong
+    (fun _ _ hDone =>
+      DoneRel.targetHalted_of_sourceTerminal hDone.1 hDone.2)
 
 /-- A universally successful Yul interaction tree remains universally
 successful after the adjacent Yul-to-Functions forward simulation. -/

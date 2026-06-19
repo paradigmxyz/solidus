@@ -118,14 +118,14 @@ if len(summary_objects) != 1:
     raise SystemExit(f"unexpected object-tree summary objects: {summary_objects!r}")
 runtime_summary = summary_objects[0]
 compatibility = runtime_summary.get("backendCompatibility", {})
-if compatibility.get("status") != "blocked":
+if compatibility.get("status") != "ready":
     raise SystemExit(
         f"unexpected FactoryBox backend compatibility: {compatibility!r}"
     )
 unsupported = set(compatibility.get("unsupportedPrimitiveNames", []))
-if unsupported != {"gas"}:
+if unsupported:
     raise SystemExit(
-        f"FactoryBox summary expected only gas as a backend blocker: "
+        f"FactoryBox summary expected no backend blockers: "
         f"{unsupported!r}"
     )
 primitive_entries = runtime_summary.get("calls", {}).get("primitive", {}).get("names", [])
@@ -160,8 +160,8 @@ if (
     backend_counts.get("checkedObjects") != 4
     or backend_counts.get("checkedContracts") != 2
     or backend_counts.get("skippedContracts") != 0
-    or backend_counts.get("passedObjects") != 2
-    or backend_counts.get("failedObjects") != 2
+    or backend_counts.get("passedObjects") != 3
+    or backend_counts.get("failedObjects") != 1
 ):
     raise SystemExit(f"unexpected object-tree backend check counts: {backend_counts!r}")
 
@@ -175,7 +175,7 @@ backend_status = {
 expected_backend_status = {
     ("ChildBox", "creation"): ("pass", "none"),
     ("ChildBox", "runtime"): ("pass", "none"),
-    ("FactoryBox", "creation"): ("fail", "to_yul_contract"),
+    ("FactoryBox", "creation"): ("pass", "none"),
     ("FactoryBox", "runtime"): ("fail", "to_yul_contract"),
 }
 if backend_status != expected_backend_status:
@@ -191,10 +191,11 @@ print(f"object_tree_backend_check_passed={backend_counts['passedObjects']}")
 print(f"object_tree_backend_check_failed={backend_counts['failedObjects']}")
 print("object_tree_child_creation_backend_check=pass")
 print("object_tree_child_runtime_backend_check=pass")
-print("object_tree_factory_backend_first_none=to_yul_contract")
+print("object_tree_factory_creation_backend_check=pass")
+print("object_tree_factory_runtime_backend_first_none=to_yul_contract")
 print(f"object_tree_summary_calls={runtime_summary['counts']['calls']}")
 print("object_tree_factory_runtime_child_subobjects=yes")
 print("object_tree_factory_runtime_data_payloads=yes")
 print("object_tree_factory_create_primitives=yes")
-print("object_tree_factory_backend_compatibility=blocked")
+print("object_tree_factory_backend_compatibility=ready")
 PY

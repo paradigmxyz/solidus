@@ -467,6 +467,14 @@ def pcAfter (program : Program) : Word :=
 def PCFits (program : Program) : Prop :=
   program.pcAfter.toNat = program.byteLength
 
+theorem PCFits.byteLength_lt {program : Program}
+    (hFits : program.PCFits) :
+    program.byteLength < EvmYul.UInt256.size := by
+  have hBound : program.pcAfter.toNat < EvmYul.UInt256.size :=
+    program.pcAfter.val.isLt
+  rw [hFits] at hBound
+  exact hBound
+
 def PCFitsFrom : Program → Program → Prop
   | pre, [] => pre.PCFits
   | pre, instr :: rest =>

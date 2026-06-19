@@ -153,6 +153,21 @@ theorem loweringResult?_lowerer_exact
         · simp [hGeneric, hScratch] at hLower
           exact congrArg some hLower.2
 
+theorem lowerWithAllocation?_lowerer_exact
+    {planned : PlannedProgram} {expressions : Expressions.Program}
+    (hLower : planned.lowerWithAllocation? = some expressions) :
+    Functions.AllocationLowering.lowerExpressionsFromAllocation?
+        planned.allocation planned.source = some expressions := by
+  unfold lowerWithAllocation? at hLower
+  cases hResult : planned.loweringResult? with
+  | none =>
+      simp [hResult] at hLower
+  | some result =>
+      rcases result with ⟨backend, lowered⟩
+      simp [hResult] at hLower
+      subst expressions
+      exact loweringResult?_lowerer_exact hResult
+
 theorem loweringResult?_allocationContract
     {planned : PlannedProgram} {backend : Backend}
     {expressions : Expressions.Program}

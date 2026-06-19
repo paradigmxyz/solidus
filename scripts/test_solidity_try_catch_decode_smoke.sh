@@ -139,14 +139,14 @@ if missing_primitives:
     )
 
 compatibility = runtime_summary.get("backendCompatibility", {})
-if compatibility.get("status") != "blocked":
+if compatibility.get("status") != "ready":
     raise SystemExit(
         f"unexpected TryCatchBox backend compatibility: {compatibility!r}"
     )
 unsupported = set(compatibility.get("unsupportedPrimitiveNames", []))
-if unsupported != {"gas"}:
+if unsupported:
     raise SystemExit(
-        f"TryCatchBox summary expected only gas as a backend blocker: "
+        f"TryCatchBox summary expected no backend blockers: "
         f"{unsupported!r}"
     )
 if "log2" in unsupported:
@@ -228,5 +228,5 @@ print(f"try_catch_decode_target_runtime_first_none={target_runtime_first_none}")
 print(f"try_catch_decode_runtime_functions={len(functions)}")
 print(f"try_catch_decode_summary_calls={runtime_summary['counts']['calls']}")
 print("try_catch_decode_primitives=yes")
-print("try_catch_decode_backend_compatibility=blocked")
+print("try_catch_decode_backend_compatibility=ready")
 PY

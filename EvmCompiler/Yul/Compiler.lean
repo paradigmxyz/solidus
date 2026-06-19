@@ -4997,15 +4997,10 @@ noncomputable def toObjects? (contract : AstContract) :
     .mk "root" functionProgram [] []
   some { root := root }
 
-/--
-Observer-admitting contract lowering.
-
-This is the same Yul-to-Objects shape as `toObjects?`, but it uses the
-unchecked expression/statement lowerers so visible `gas()` and `msize()` calls
-can pass through as `BasicOp.gas`/`BasicOp.msize`.  Its preservation contract is
-the explicit observer-oracle route, not the ordinary exact-preservation route.
--/
-noncomputable def toObjectsWithObservers? (contract : AstContract) :
+/-- Canonical effect-complete Yul-to-Objects lowering. Resource observations,
+external calls/creates, logs, and ordinary primitives all pass through the
+same Functions primitive surface. -/
+noncomputable def toObjectsCanonical? (contract : AstContract) :
     Option Objects.Program := do
   let initial := Fresh.initial (names contract)
   let (bodyStmts, state) ←
@@ -5020,6 +5015,11 @@ noncomputable def toObjectsWithObservers? (contract : AstContract) :
   let root : Objects.Object :=
     .mk "root" functionProgram [] []
   some { root := root }
+
+/-- Compatibility alias for the former observer-specific entry point. -/
+noncomputable def toObjectsWithObservers? (contract : AstContract) :
+    Option Objects.Program :=
+  toObjectsCanonical? contract
 
 def Supported (contract : AstContract) : Prop :=
   Stmt.Supported contract.dispatcher ∧
@@ -5069,10 +5069,15 @@ noncomputable def compile? (program : Program) :
   let artifact ← compileArtifact? program
   some artifact.target
 
+noncomputable def toObjectsCanonical? (program : Program) :
+    Option Objects.Program :=
+  (Contract.toObjectsCanonical? program.contract).map fun lower =>
+    lower.withMemoryContract program.memoryContract
+
+/-- Compatibility alias for the former observer-specific entry point. -/
 noncomputable def toObjectsWithObservers? (program : Program) :
     Option Objects.Program :=
-  (Contract.toObjectsWithObservers? program.contract).map fun lower =>
-    lower.withMemoryContract program.memoryContract
+  toObjectsCanonical? program
 
 noncomputable def compileWithObservers? (program : Program) :
     Option Assembly.TargetProgram := do

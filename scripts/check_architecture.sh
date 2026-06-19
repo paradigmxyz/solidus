@@ -930,6 +930,48 @@ if ! rg -q '^theorem closedResourceCorrect : ClosedResourceCorrect := by$' \
   failed=1
 fi
 
+open_world_signature="$(
+  sed -n '/^def OpenWorldTerminalCorrect/,/^theorem openWorldTerminalCorrect/p' \
+    EvmCompiler/Compiler/OpenInteractionComposition.lean |
+    sed '$d'
+)"
+if [[ -z "$open_world_signature" ]] ||
+    ! printf '%s\n' "$open_world_signature" |
+      rg -q 'SourceSafety' ||
+    ! printf '%s\n' "$open_world_signature" |
+      rg -q 'ResourceSafe' ||
+    ! printf '%s\n' "$open_world_signature" |
+      rg -q 'StructuredFrameSafe'; then
+  printf '%s\n\n' \
+    'OpenWorldTerminalCorrect must expose source-facing semantic, resource, and frame safety.' \
+    >&2
+  failed=1
+fi
+if printf '%s\n' "$open_world_signature" |
+    rg -q '(Observer|Certificate|GeneratedContext|LoweredFrom|Replay|Evidence|CallOracle)'; then
+  printf '%s\n%s\n\n' \
+    'OpenWorldTerminalCorrect must not accept compiler-generated evidence:' \
+    "$open_world_signature" >&2
+  failed=1
+fi
+if ! sed -n '/^noncomputable def toObjectsWithObservers? (program/,/^[[:space:]]*toObjectsCanonical? program$/p' \
+      EvmCompiler/Yul/Compiler.lean |
+    rg -q 'toObjectsCanonical\? program'; then
+  printf '%s\n\n' \
+    'The legacy observer-named Yul lowering must remain a thin alias of the canonical compiler.' \
+    >&2
+  failed=1
+fi
+if ! rg -q '^theorem openWorldTerminalCorrect : OpenWorldTerminalCorrect :=$' \
+      EvmCompiler/Yul/EndToEnd.lean ||
+    ! rg -q '^  Compiler\.OpenInteractionComposition\.openWorldTerminalCorrect$' \
+      EvmCompiler/Yul/EndToEnd.lean; then
+  printf '%s\n\n' \
+    'Yul.EndToEnd open-world correctness must remain a short composition alias.' \
+    >&2
+  failed=1
+fi
+
 closed_artifact_signature="$(
   sed -n '/^structure ClosedArtifact/,/^theorem ClosedArtifact.valid/p' \
     EvmCompiler/Yul/EndToEnd.lean |

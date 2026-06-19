@@ -1999,7 +1999,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertEqual(compatibility["unsupportedPrimitiveNames"], [])
         self.assertEqual(compatibility["dialectBuiltinNames"], [])
         self.assertTrue(
-            any("gas() and msize() are executable" in note for note in compatibility["notes"])
+            any("gas() and msize() are covered" in note for note in compatibility["notes"])
         )
 
     def test_bridge_json_summary_marks_gas_only_executable_ready(self):
@@ -2027,7 +2027,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertEqual(compatibility["status"], "ready")
         self.assertEqual(compatibility["unsupportedPrimitiveNames"], [])
         self.assertTrue(
-            any("gas() and msize() are executable" in note for note in compatibility["notes"])
+            any("gas() and msize() are covered" in note for note in compatibility["notes"])
         )
 
     def test_bridge_json_summary_marks_local_effects_and_code_image_ready(self):
@@ -10031,11 +10031,11 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertIn("bridge-json-summary", external_smoke)
         self.assertIn("open external-boundary", external_smoke)
         self.assertIn("external_call_decode_backend_check_failed=", external_smoke)
-        self.assertIn("external_call_decode_backend_compatibility=blocked", external_smoke)
+        self.assertIn("external_call_decode_backend_compatibility=ready", external_smoke)
         self.assertIn("external_call_decode_creation_first_none=to_yul_contract", external_smoke)
-        self.assertIn("external_call_decode_runtime_first_none=lower_code_unchecked", external_smoke)
+        self.assertIn("external_call_decode_runtime_first_none=locals_compile", external_smoke)
         self.assertIn(
-            '("ExternalCallBox", "runtime"): ("fail", "lower_code_unchecked")',
+            '("ExternalCallBox", "runtime"): ("fail", "locals_compile")',
             external_smoke,
         )
         for primitive in [
@@ -10183,7 +10183,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertIn("lean-backend-check", try_catch_smoke)
         self.assertIn("bridge-json-summary", try_catch_smoke)
         self.assertIn("try_catch_decode_primitives=yes", try_catch_smoke)
-        self.assertIn("try_catch_decode_backend_compatibility=blocked", try_catch_smoke)
+        self.assertIn("try_catch_decode_backend_compatibility=ready", try_catch_smoke)
         self.assertIn("try_catch_decode_backend_check_objects=", try_catch_smoke)
         self.assertIn("try_catch_decode_backend_check_passed=", try_catch_smoke)
         self.assertIn("try_catch_decode_backend_check_failed=", try_catch_smoke)
@@ -10380,9 +10380,9 @@ class SolidityToYulLeanTests(unittest.TestCase):
         fixture = (examples_dir / "PackedStorageBox.sol").read_text()
 
         self.assertIn("lean-backend-check", smoke)
-        self.assertIn("frontend_decode_packed_backend_check=blocked", smoke)
-        self.assertIn('first_none_counts.get("to_yul_contract")', smoke)
-        self.assertIn('first_none_counts.get("functions_compile")', smoke)
+        self.assertIn("frontend_decode_packed_backend_check=pass", smoke)
+        self.assertIn('"creation": ("pass", "none")', smoke)
+        self.assertIn('"runtime": ("pass", "none")', smoke)
         for behavior in [
             "bool public flag",
             "uint8 public small",
@@ -10404,10 +10404,10 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertIn("bridge-json-summary", object_tree_smoke)
         self.assertIn("lean-backend-check", object_tree_smoke)
         self.assertIn("object_tree_factory_create_primitives=yes", object_tree_smoke)
-        self.assertIn("object_tree_factory_backend_compatibility=blocked", object_tree_smoke)
+        self.assertIn("object_tree_factory_backend_compatibility=ready", object_tree_smoke)
         self.assertIn("object_tree_child_creation_backend_check=pass", object_tree_smoke)
         self.assertIn("object_tree_child_runtime_backend_check=pass", object_tree_smoke)
-        self.assertIn("object_tree_factory_backend_first_none=to_yul_contract", object_tree_smoke)
+        self.assertIn("object_tree_factory_runtime_backend_first_none=to_yul_contract", object_tree_smoke)
         self.assertIn('("ChildBox", "creation"): ("pass", "none")', object_tree_smoke)
         self.assertIn('("ChildBox", "runtime"): ("pass", "none")', object_tree_smoke)
         self.assertIn('("FactoryBox", "runtime"): ("fail", "to_yul_contract")', object_tree_smoke)

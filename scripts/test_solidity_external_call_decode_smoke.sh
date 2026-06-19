@@ -106,14 +106,14 @@ if runtime_summary.get("selector") != "runtime":
     raise SystemExit(f"unexpected bridge summary selector: {runtime_summary!r}")
 
 compatibility = runtime_summary.get("backendCompatibility", {})
-if compatibility.get("status") != "blocked":
+if compatibility.get("status") != "ready":
     raise SystemExit(
         f"unexpected ExternalCallBox backend compatibility: {compatibility!r}"
     )
 unsupported = set(compatibility.get("unsupportedPrimitiveNames", []))
-if unsupported != {"gas"}:
+if unsupported:
     raise SystemExit(
-        f"ExternalCallBox summary expected only gas as a backend blocker: "
+        f"ExternalCallBox summary expected no backend blockers: "
         f"{unsupported!r}"
     )
 notes = compatibility.get("notes", [])
@@ -168,9 +168,9 @@ if first_none_counts.get("to_yul_contract") != 1:
         f"expected one external-call to_yul_contract backend blocker: "
         f"{first_none_counts!r}"
     )
-if first_none_counts.get("lower_code_unchecked") != 1:
+if first_none_counts.get("locals_compile") != 1:
     raise SystemExit(
-        f"expected one external-call lower_code_unchecked backend blocker: "
+        f"expected one external-call legacy locals_compile blocker: "
         f"{first_none_counts!r}"
     )
 
@@ -183,7 +183,7 @@ backend_status = {
 }
 expected_backend_status = {
     ("ExternalCallBox", "creation"): ("fail", "to_yul_contract"),
-    ("ExternalCallBox", "runtime"): ("fail", "lower_code_unchecked"),
+    ("ExternalCallBox", "runtime"): ("fail", "locals_compile"),
 }
 if backend_status != expected_backend_status:
     raise SystemExit(
@@ -195,9 +195,9 @@ print(f"external_call_decode_lean_objects={check_counts['checkedObjects']}")
 print(f"external_call_decode_backend_check_objects={backend_counts['checkedObjects']}")
 print(f"external_call_decode_backend_check_failed={backend_counts['failedObjects']}")
 print("external_call_decode_creation_first_none=to_yul_contract")
-print("external_call_decode_runtime_first_none=lower_code_unchecked")
+print("external_call_decode_runtime_first_none=locals_compile")
 print(f"external_call_decode_runtime_functions={len(functions)}")
 print(f"external_call_decode_summary_calls={runtime_summary['counts']['calls']}")
 print("external_call_decode_primitives=yes")
-print("external_call_decode_backend_compatibility=blocked")
+print("external_call_decode_backend_compatibility=ready")
 PY

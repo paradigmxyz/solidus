@@ -154,6 +154,7 @@ import EvmCompiler.Yul.FunctionsInteractionRecursiveBody
 import EvmCompiler.Yul.FunctionsInteractionCompilerCost
 import EvmCompiler.Yul.FunctionsInteractionProgram
 import EvmCompiler.Compiler.OpenInteractionComposition
+import EvmCompiler.Simulation.InteractionRegression
 import EvmCompiler.Yul.FunctionsInteractionTerminal
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.CompilerCallDecomposition
@@ -765,6 +766,15 @@ or audit-alias corridor.
 #check EvmCompiler.Simulation.ExternalKind.classifies_staticcall
 #check EvmCompiler.Simulation.ExternalKind.classifies_create
 #check EvmCompiler.Simulation.ExternalKind.classifies_create2
+#check EvmCompiler.Simulation.InteractionRegression.classifies_all_external_kinds
+#check EvmCompiler.Simulation.InteractionRegression.mixedTrace_rel
+#check EvmCompiler.Simulation.InteractionRegression.mixedTrace_first_query
+#check EvmCompiler.Simulation.InteractionRegression.finishCall_installs_arbitrary_postWorld
+#check EvmCompiler.Simulation.InteractionRegression.finishCreate_installs_arbitrary_postWorld
+#check EvmCompiler.Simulation.InteractionRegression.callStep_rejects_static_violation
+#check EvmCompiler.Simulation.InteractionRegression.createStep_rejects_static_mode
+#check EvmCompiler.Simulation.InteractionRegression.calldata_zero_window
+#check EvmCompiler.Simulation.InteractionRegression.initCode_zero_window
 #check EvmCompiler.Assembly.InteractionSemantics.PrimOp.openStep_gas
 #check EvmCompiler.Assembly.InteractionSemantics.PrimOp.openStep_msize
 #check EvmCompiler.Assembly.InteractionSemantics.PrimOp.openStep_call
@@ -1559,6 +1569,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.boundPrimitive
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCall.ofUncheckedCallArgsLowering
 #check EvmCompiler.Yul.FunctionsCompilerArtifact.decomposition_of_toObjectsWithObservers?
+#check EvmCompiler.Yul.FunctionsCompilerArtifact.decomposition_of_toObjectsCanonical?
 #check EvmCompiler.Yul.FunctionsCompilerArtifact.Decomposition.findFunction_parts
 #check EvmCompiler.Yul.FunctionsInteractionCall.returnedBody
 #check EvmCompiler.Yul.FunctionsInteractionCall.haltedBody
@@ -1605,9 +1616,15 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionProgram.targetSuccessful
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToAllocatedExpressions
 #check EvmCompiler.Compiler.OpenInteractionComposition.expressionsToStructured
+#check EvmCompiler.Simulation.Interaction.ForwardRel.rel_of_allDone
+#check EvmCompiler.Yul.FunctionsInteractionProgram.terminalRel
+#check EvmCompiler.Compiler.OpenInteractionComposition.yulToStructuredTerminal
 #check EvmCompiler.TypedCfg.InteractionPreservation.Program.compileCertified?_entry_openRunN_assembly_rel
 #check EvmCompiler.Compiler.OpenInteractionComposition.structuredToEncodedBytecode
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.structuredToEncodedBytecode
+#check EvmCompiler.Compiler.OpenInteractionComposition.compiledYulToEncodedBytecode
+#check EvmCompiler.Compiler.OpenInteractionComposition.openWorldTerminalCorrect
+#print axioms EvmCompiler.Compiler.OpenInteractionComposition.openWorldTerminalCorrect
 #check EvmCompiler.Yul.FunctionsInteractionStatement.ControlDoneRel.block
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.block
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.recursiveCondition
@@ -1930,6 +1947,9 @@ or audit-alias corridor.
 #check EvmCompiler.Public.ObserverComposition.terminalStackOnly
 #check EvmCompiler.Yul.EndToEnd.ClosedResourceCorrect
 #check EvmCompiler.Yul.EndToEnd.closedResourceCorrect
+#check EvmCompiler.Yul.EndToEnd.OpenWorldTerminalCorrect
+#check EvmCompiler.Yul.EndToEnd.openWorldTerminalCorrect
+#print axioms EvmCompiler.Yul.EndToEnd.openWorldTerminalCorrect
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.primitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mload_simulate

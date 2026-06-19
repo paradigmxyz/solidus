@@ -7,9 +7,8 @@ namespace FunctionsCompilerArtifact
 /-!
 Compiler decomposition owned by the adjacent Yul-to-Functions boundary.
 
-This module does not define an observer-specific compiler.  It only exposes
-the body and function lowering equations already executed by
-`Program.toObjectsWithObservers?`.
+This module exposes the body and function lowering equations already executed
+by the canonical effect-complete `Program.toObjectsCanonical?` pass.
 -/
 
 def Decomposition (program : Program)
@@ -33,14 +32,14 @@ def Decomposition (program : Program)
           body := { stmts := bodyStmts }
           memoryContract := program.memoryContract }
 
-theorem decomposition_of_toObjectsWithObservers?
+theorem decomposition_of_toObjectsCanonical?
     {program : Program} {lower : Objects.Program}
     (hLower :
-      Program.toObjectsWithObservers? program = some lower) :
+      Program.toObjectsCanonical? program = some lower) :
     Decomposition program lower := by
-  unfold Program.toObjectsWithObservers? at hLower
+  unfold Program.toObjectsCanonical? at hLower
   cases hContract :
-      Contract.toObjectsWithObservers? program.contract with
+      Contract.toObjectsCanonical? program.contract with
   | none =>
       simp [hContract] at hLower
   | some contractLower =>
@@ -48,7 +47,7 @@ theorem decomposition_of_toObjectsWithObservers?
           lower =
             contractLower.withMemoryContract program.memoryContract := by
         simpa [hContract] using hLower.symm
-      unfold Contract.toObjectsWithObservers? at hContract
+      unfold Contract.toObjectsCanonical? at hContract
       cases hBody :
           Stmt.toFunctionsListUncheckedFuel?
             (Stmt.fuel program.contract.dispatcher)
@@ -82,15 +81,31 @@ theorem decomposition_of_toObjectsWithObservers?
               subst contractLower
               rfl
 
+theorem decomposition_of_toObjectsWithObservers?
+    {program : Program} {lower : Objects.Program}
+    (hLower :
+      Program.toObjectsWithObservers? program = some lower) :
+    Decomposition program lower := by
+  apply decomposition_of_toObjectsCanonical?
+  simpa [Program.toObjectsWithObservers?] using hLower
+
+theorem memoryContract_of_toObjectsCanonical?
+    {program : Program} {lower : Objects.Program}
+    (hLower :
+      Program.toObjectsCanonical? program = some lower) :
+    lower.toFunctions.memoryContract = program.memoryContract := by
+  rcases decomposition_of_toObjectsCanonical? hLower with
+    ⟨bodyStmts, afterBody, functions, afterFunctions,
+      hBody, hFunctions, hProgram⟩
+  exact congrArg Functions.Program.memoryContract hProgram
+
 theorem memoryContract_of_toObjectsWithObservers?
     {program : Program} {lower : Objects.Program}
     (hLower :
       Program.toObjectsWithObservers? program = some lower) :
     lower.toFunctions.memoryContract = program.memoryContract := by
-  rcases decomposition_of_toObjectsWithObservers? hLower with
-    ⟨bodyStmts, afterBody, functions, afterFunctions,
-      hBody, hFunctions, hProgram⟩
-  exact congrArg Functions.Program.memoryContract hProgram
+  apply memoryContract_of_toObjectsCanonical?
+  simpa [Program.toObjectsWithObservers?] using hLower
 
 theorem Decomposition.findFunction
     {program : Program} {targetProgram : Objects.Program}

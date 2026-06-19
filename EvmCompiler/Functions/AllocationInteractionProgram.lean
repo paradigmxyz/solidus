@@ -31,6 +31,17 @@ def ResourceSafe
       ((if AllocationLowering.mainNeedsFrame recipe stackSlots then 1 else 0) +
         sourceFuel)
 
+/-- Source/allocation-facing safety of the Structured code selected by the
+ordinary allocation lowerer. This is semantic execution safety, not generated
+compiler evidence. -/
+def StructuredFrameSafe
+    (allocation : Locals.Allocation.ProgramPlan)
+    (program : Functions.Program) : Prop :=
+  forall expressions,
+    AllocationLowering.lowerExpressionsFromAllocation?
+        allocation program = some expressions ->
+      expressions.toStructured.FrameSafe
+
 theorem ResourceSafe.compilation
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
@@ -102,6 +113,70 @@ abbrev OpenOutcomeRel (contract : MemoryContract.Contract) :=
   Simulation.Interaction.ExceptRel
     (fun left right : EVMException => left = right)
     (OutcomeRel contract)
+
+/-- Terminal whole-program Functions outcomes at the allocation boundary. -/
+def SourceHalted :
+    Except EVMException Functions.InteractionSemantics.Outcome -> Prop
+  | .ok { mode := .halt _ , .. } => True
+  | _ => False
+
+/-- Terminal whole-program Expressions outcomes produced by allocation. -/
+def TargetHalted :
+    Except EVMException Expressions.InteractionSemantics.Outcome -> Prop
+  | .ok { mode := .halt _ , .. } => True
+  | _ => False
+
+namespace SourceHalted
+
+theorem successful
+    {run : Simulation.Interaction
+      EVMException Functions.InteractionSemantics.Outcome}
+    (hHalted : Simulation.Interaction.AllDone SourceHalted run) :
+    Simulation.Interaction.Successful run := by
+  apply Simulation.Interaction.AllDone.mono hHalted
+  intro outcome hOutcome
+  cases outcome with
+  | error error => cases hOutcome
+  | ok source => trivial
+
+end SourceHalted
+
+namespace OpenOutcomeRel
+
+theorem targetHalted_of_sourceHalted
+    {contract : MemoryContract.Contract}
+    {source : Except EVMException Functions.InteractionSemantics.Outcome}
+    {target : Except EVMException Expressions.InteractionSemantics.Outcome}
+    (hRel : OpenOutcomeRel contract source target)
+    (hSource : SourceHalted source) :
+    TargetHalted target := by
+  cases hRel with
+  | error hError => cases hSource
+  | ok hOutcome =>
+      cases hOutcome with
+      | regular state stack => cases hSource
+      | brk state => cases hSource
+      | cont state => cases hSource
+      | leave state => cases hSource
+      | halt kind state => trivial
+
+theorem allDone_targetHalted
+    {contract : MemoryContract.Contract}
+    {sourceRun : Simulation.Interaction
+      EVMException Functions.InteractionSemantics.Outcome}
+    {targetRun : Simulation.Interaction
+      EVMException Expressions.InteractionSemantics.Outcome}
+    (hRel : Simulation.Interaction.Rel (OpenOutcomeRel contract)
+      sourceRun targetRun)
+    (hSource : Simulation.Interaction.AllDone SourceHalted sourceRun) :
+    Simulation.Interaction.AllDone TargetHalted targetRun := by
+  have hStrong :=
+    Simulation.Interaction.Rel.strengthen_left hRel hSource
+  apply Simulation.Interaction.Rel.allDone_right hStrong
+  intro sourceDone targetDone hDone
+  exact targetHalted_of_sourceHalted hDone.1 hDone.2
+
+end OpenOutcomeRel
 
 namespace FinalStateRel
 

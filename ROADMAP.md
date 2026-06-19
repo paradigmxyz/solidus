@@ -19,8 +19,8 @@ preservation are checked. Every higher adjacent preservation boundary is now
 checked through terminal Structured-to-TypedCfg execution. TypedCfg compiled
 blocks are now flattened into the ordinary Assembly interpreter under a
 source-facing terminal-safety invariant, and the resulting run composes with
-uniform Assembly-to-encoded-bytecode preservation. The remaining proof work is
-the short terminal Yul-facing composition and its completion audit.
+uniform Assembly-to-encoded-bytecode preservation. The public theorem and its
+repository-wide completion gates are now checked.
 
 ## Open-Effects Migration Status
 
@@ -193,10 +193,10 @@ the short terminal Yul-facing composition and its completion audit.
 - [x] Canonical Yul control is one monad-polymorphic evaluator with an explicit
   immutable active contract and a shared open-`Interaction` specialization for
   resources and all CALL/CREATE families.
-- [ ] Prove the adjacent Yul -> Functions open-interaction theorem.
+- [x] Prove the adjacent Yul -> Functions open-interaction theorem.
   - [x] Exact code-erased state relation and arbitrary post-world transport.
   - [x] GAS/MSIZE plus all CALL/CREATE primitive-family preservation.
-  - [ ] Recursive statements, internal calls, and whole program.
+  - [x] Recursive statements, internal calls, and whole program.
     - [x] Source-truncation-aware direct literals, variables, primitive calls,
       and arbitrary argument lists under one compiler-selected capability.
     - [x] Concrete same-observation expression theorem with the complete
@@ -218,7 +218,7 @@ the short terminal Yul-facing composition and its completion audit.
       - [x] Internal-call preludes.
         - [x] Canonical call-frame initialization, return lookup, caller
           restoration, and call-specific argument lowering.
-        - [ ] Recursive callee-body attachment and caller writeback.
+        - [x] Recursive callee-body attachment and caller writeback.
           - [x] Canonical open `runBody` equations and structural
             regular/leave/terminal body-result lift.
           - [x] Fresh one-result temporary writeback after ordinary return,
@@ -228,7 +228,7 @@ the short terminal Yul-facing composition and its completion audit.
           - [x] Compiler-selected lookup, validation, call-frame construction,
             and exact generated-expression composition against a bounded
             recursive-body capability.
-          - [ ] Discharge the recursive body capability by source-fuel
+          - [x] Discharge the recursive body capability by source-fuel
             induction.
             - [x] Carry exact source validation through recursive prepared
               arguments and construct all primitive/internal-call expression
@@ -236,7 +236,7 @@ the short terminal Yul-facing composition and its completion audit.
             - [x] Replace the impossible all-target-fuel body premise with
               source-owned static/dynamic target budgets and thread the exact
               residual inequalities through argument and call preludes.
-            - [ ] Construct the budgeted recursive statement/list fixed point
+            - [x] Construct the budgeted recursive statement/list fixed point
               and use it to discharge `BodyForwardAt` without a call oracle.
               - [x] Audit the historical observer proof and classify its
                 components by architectural ownership.
@@ -337,10 +337,11 @@ the short terminal Yul-facing composition and its completion audit.
       exact lexical-domain invariant; check direct expression, one-name
       declaration, and one-name assignment statements plus `break`,
       `continue`, and `leave` with exact Functions scope restriction.
-- [ ] Compose the short public Yul end-to-end theorem and reconnect the
+- [x] Compose the short public Yul end-to-end theorem and reconnect the
   source-facing reservation/resource assumptions.
-- [ ] Run representative interleaving/reentrancy/static/zero-window tests and
-  all completion gates.
+- [x] Run representative interleaving/reentrancy/static/zero-window tests and
+  pinned Permit2/Solmate/external-call/object-tree compiler smokes.
+- [x] Run all completion gates.
 
 ## Relation To External Effects
 

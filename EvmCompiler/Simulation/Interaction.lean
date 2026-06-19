@@ -1945,6 +1945,34 @@ theorem rel_of_successful
       | request hSource =>
           exact .request fun answer => ih answer (hSource answer)
 
+/-- A source-leaf invariant that excludes every truncated failure upgrades a
+forward refinement to a full structural open-world relation. -/
+theorem rel_of_allDone
+    {Error1 : Type u1} {Result1 : Type v1}
+    {Error2 : Type u2} {Result2 : Type v2}
+    {truncated : Error1 -> Prop}
+    {doneRel :
+      Except Error1 Result1 -> Except Error2 Result2 -> Prop}
+    {property : Except Error1 Result1 -> Prop}
+    {left : Interaction Error1 Result1}
+    {right : Interaction Error2 Result2}
+    (hRel : ForwardRel truncated doneRel left right)
+    (hAll : AllDone property left)
+    (hExcludes : forall error, property (.error error) ->
+      Not (truncated error)) :
+    Rel doneRel left right := by
+  induction hRel with
+  | truncated hTruncated =>
+      cases hAll with
+      | done hProperty =>
+          exact False.elim (hExcludes _ hProperty hTruncated)
+  | done hDone =>
+      exact .done hDone
+  | request hResume ih =>
+      cases hAll with
+      | request hProperty =>
+          exact .request fun answer => ih answer (hProperty answer)
+
 /-- Strengthen a forward simulation with a source-side invariant that holds at
 every terminal leaf. Source truncation remains source truncation and therefore
 does not require a target relation. -/

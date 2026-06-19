@@ -3266,9 +3266,8 @@ def bridge_summary_backend_compatibility(
         )
     if executable_observer_primitives:
         notes.append(
-            "gas() and msize() are executable in unchecked bytecode lowering "
-            "via their EVM opcodes; exact observer preservation remains "
-            "outside the current verified theorem boundary"
+            "gas() and msize() are covered by the shared ordered-interaction "
+            "semantics and the open-world end-to-end theorem"
         )
     if dialect_builtin_names:
         notes.append(

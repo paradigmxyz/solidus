@@ -256,18 +256,13 @@ if summary_count != manifest_count:
 compatibility = bridge_summary.get("backendCompatibility", {})
 unsupported = set(compatibility.get("unsupportedPrimitiveNames", []))
 object_builtins = set(compatibility.get("objectBuiltinNames", []))
-missing_unsupported = sorted({"gas"} - unsupported)
-unexpected_unsupported = sorted(unsupported - {"gas"})
+unexpected_unsupported = sorted(unsupported)
 missing_builtins = sorted(
     {"dataoffset", "datasize", "linkersymbol", "loadimmutable", "setimmutable"}
     - object_builtins
 )
-if compatibility.get("status") != "blocked":
+if compatibility.get("status") != "needs-resolution":
     raise SystemExit(f"unexpected Solmate backend compatibility: {compatibility!r}")
-if missing_unsupported:
-    raise SystemExit(
-        f"Solmate summary missing expected backend blocker: {missing_unsupported!r}"
-    )
 if unexpected_unsupported:
     raise SystemExit(
         f"Solmate summary reported unexpected unsupported primitives: "
@@ -285,14 +280,14 @@ if len(runtime_summaries) != 1:
     raise SystemExit(f"expected one Solmate runtime summary, got {runtime_summaries!r}")
 runtime_summary = runtime_summaries[0]
 runtime_compatibility = runtime_summary.get("backendCompatibility", {})
-if runtime_compatibility.get("status") != "blocked":
+if runtime_compatibility.get("status") != "needs-resolution":
     raise SystemExit(
         f"unexpected Solmate runtime backend compatibility: {runtime_compatibility!r}"
     )
 runtime_unsupported = set(runtime_compatibility.get("unsupportedPrimitiveNames", []))
-if runtime_unsupported != {"gas"}:
+if runtime_unsupported:
     raise SystemExit(
-        f"Solmate runtime expected only gas as a backend blocker: "
+        f"Solmate runtime expected no backend blockers: "
         f"{sorted(runtime_unsupported)!r}"
     )
 runtime_primitives = {

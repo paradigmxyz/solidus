@@ -142,22 +142,29 @@ if backend_check.get("schema") != "evm-compiler.lean-backend-check.v1":
 backend_counts = backend_check.get("counts", {})
 if (
     backend_counts.get("checkedObjects") != 2
-    or backend_counts.get("failedObjects") != 2
-    or backend_counts.get("passedObjects") != 0
+    or backend_counts.get("failedObjects") != 0
+    or backend_counts.get("passedObjects") != 2
 ):
     raise SystemExit(
         f"unexpected packed-storage backend-check counts: {backend_counts!r}"
     )
 first_none_counts = backend_check.get("firstNoneCounts", {})
-if first_none_counts.get("to_yul_contract") != 1:
+if first_none_counts:
     raise SystemExit(
-        f"packed-storage backend-check missing creation to_yul_contract blocker: "
-        f"{first_none_counts!r}"
+        f"packed-storage backend-check unexpectedly reported blockers: {first_none_counts!r}"
     )
-if first_none_counts.get("functions_compile") != 1:
+checked_objects = backend_check.get("checkedObjects", [])
+actual_results = {
+    entry.get("selector"): (entry.get("status"), entry.get("firstNone"))
+    for entry in checked_objects
+}
+expected_results = {
+    "creation": ("pass", "none"),
+    "runtime": ("pass", "none"),
+}
+if actual_results != expected_results:
     raise SystemExit(
-        f"packed-storage backend-check missing runtime functions_compile blocker: "
-        f"{first_none_counts!r}"
+        f"unexpected packed-storage backend-check results: {actual_results!r}"
     )
 
 print(f"frontend_decode_packed_bridge_entries={counts['entries']}")
@@ -166,5 +173,5 @@ print(f"frontend_decode_packed_runtime_functions={len(functions)}")
 print(f"frontend_decode_packed_summary_calls={runtime_summary['counts']['calls']}")
 print("frontend_decode_packed_primitives=yes")
 print("frontend_decode_packed_backend_compatibility=ready")
-print("frontend_decode_packed_backend_check=blocked")
+print("frontend_decode_packed_backend_check=pass")
 PY

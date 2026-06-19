@@ -1,5 +1,6 @@
 import EvmCompiler.Public.ObserverComposition
 import EvmCompiler.Yul.FunctionsObserverResourceSafety
+import EvmCompiler.Compiler.OpenInteractionComposition
 
 namespace EvmCompiler
 namespace Yul
@@ -370,6 +371,14 @@ theorem closedResourceCorrect : ClosedResourceCorrect := by
   rw [hTargetEq]
   apply Result.of_adjacent_relations hSourceFunctions
   simpa [hContract] using hTerminal
+
+abbrev OpenWorldTerminalCorrect :=
+  Compiler.OpenInteractionComposition.OpenWorldTerminalCorrect
+
+/-- Public open-world terminal compiler correctness. The end-to-end module is
+only a short alias of the designated horizontal composition theorem. -/
+theorem openWorldTerminalCorrect : OpenWorldTerminalCorrect :=
+  Compiler.OpenInteractionComposition.openWorldTerminalCorrect
 
 end EndToEnd
 end Yul
