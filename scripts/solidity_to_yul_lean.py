@@ -25,7 +25,7 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
@@ -1198,6 +1198,7 @@ class YulObject:
     data: List[DataSection]
     subobjects: List["YulObject"]
     items: List[ObjectItemRef] = field(default_factory=list)
+    scratch_reservation: Optional[Tuple[int, int]] = None
 
     def lean_ir(self) -> str:
         functions = lean_list(
@@ -1211,13 +1212,23 @@ class YulObject:
         objects = lean_list([subobject.lean_ir() for subobject in self.subobjects], 1)
         items = lean_list([item.lean_ir() for item in self.items], 1)
         dispatcher = lean_ir_stmt_list(self.dispatcher, 1)
+        memory_contract = self.memory_contract_lean()
         return (
             f"{LEAN_FRONTEND}.Object.mk {lean_string(self.name)} {dispatcher} "
-            f"{functions} {data} {objects} {items}"
+            f"{functions} {data} {objects} {items} {memory_contract}"
+        )
+
+    def memory_contract_lean(self) -> str:
+        if self.scratch_reservation is None:
+            return "EvmCompiler.MemoryContract.unrestricted"
+        base, words = self.scratch_reservation
+        return (
+            "{ scratch? := some "
+            f"{{ base := {base}, words := {words} }} }}"
         )
 
     def bridge_json(self) -> Json:
-        return {
+        artifact: Json = {
             "node": "object",
             "name": self.name,
             "dispatcher": [stmt.bridge_json() for stmt in self.dispatcher],
@@ -1228,6 +1239,49 @@ class YulObject:
             "subobjects": [subobject.bridge_json() for subobject in self.subobjects],
             "items": [item.bridge_json() for item in self.items],
         }
+        if self.scratch_reservation is not None:
+            base, words = self.scratch_reservation
+            artifact["memoryContract"] = {
+                "scratch": {"base": base, "words": words}
+            }
+        return artifact
+
+
+def requested_scratch_reservation(
+    args: argparse.Namespace,
+) -> Optional[Tuple[int, int]]:
+    base = getattr(args, "scratch_reservation_base", None)
+    words = getattr(args, "scratch_reservation_words", None)
+    if (base is None) != (words is None):
+        fail(
+            "--scratch-reservation-base and --scratch-reservation-words "
+            "must be provided together"
+        )
+    if base is None:
+        return None
+    if words <= 0:
+        fail("--scratch-reservation-words must be positive")
+    end_exclusive = base + 32 * words
+    if base % 32 != 0 or end_exclusive >= 2**256:
+        fail(
+            "The source scratch reservation must be word-aligned and end "
+            "below 2^256"
+        )
+    return base, words
+
+
+def with_requested_scratch_reservation(
+    obj: YulObject, args: argparse.Namespace
+) -> YulObject:
+    reservation = requested_scratch_reservation(args)
+    if reservation is None:
+        return obj
+    if obj.scratch_reservation is not None and obj.scratch_reservation != reservation:
+        fail(
+            "The requested source scratch reservation conflicts with the "
+            "reservation already carried by bridge JSON"
+        )
+    return replace(obj, scratch_reservation=reservation)
 
 
 def expr_linker_symbol_names(expr: Expr) -> List[str]:
@@ -4331,7 +4385,26 @@ def decode_bridge_object(data: Any) -> YulObject:
                 f"Bridge JSON object {name!r} has object item index {item.index} "
                 f"but only {len(subobjects)} subobjects"
             )
-    return YulObject(name, dispatcher, functions, data_sections, subobjects, items)
+    scratch_reservation = None
+    raw_contract = obj.get("memoryContract")
+    if raw_contract is not None:
+        contract = bridge_object(raw_contract, f"object {name}.memoryContract")
+        raw_scratch = contract.get("scratch")
+        if raw_scratch is not None:
+            scratch = bridge_object(raw_scratch, f"object {name}.memoryContract.scratch")
+            scratch_reservation = (
+                bridge_uint(scratch.get("base"), "scratch reservation base"),
+                bridge_uint(scratch.get("words"), "scratch reservation words"),
+            )
+    return YulObject(
+        name,
+        dispatcher,
+        functions,
+        data_sections,
+        subobjects,
+        items,
+        scratch_reservation,
+    )
 
 
 def decode_bridge_program(data: Any) -> Tuple[str, str, YulObject]:
@@ -5340,11 +5413,14 @@ def evmCompilerRunnerTimedIO {{α : Type}} (name : String) (action : IO α) :
   pure value
 
 def evmCompilerRunnerTimedPure {{α : Type}} (name : String)
-    (thunk : Unit → α) : IO α := do
+    (thunk : Unit → Option α) : IO (Option α) := do
   let start ← IO.monoMsNow
   let value := thunk ()
+  let ok := value.isSome
   let finish ← IO.monoMsNow
-  IO.println ("timing\t" ++ name ++ "\t" ++ toString (finish - start))
+  IO.println
+    ("timing\t" ++ name ++ "\t" ++ toString (finish - start) ++ "\t" ++
+      if ok then "some" else "none")
   pure value
 
 def evmCompilerRunnerDecodeProgram :
@@ -5595,11 +5671,14 @@ def evmCompilerRunnerTimedIO {{α : Type}} (name : String) (action : IO α) :
   pure value
 
 def evmCompilerRunnerTimedPure {{α : Type}} (name : String)
-    (thunk : Unit → α) : IO α := do
+    (thunk : Unit → Option α) : IO (Option α) := do
   let start ← IO.monoMsNow
   let value := thunk ()
+  let ok := value.isSome
   let finish ← IO.monoMsNow
-  IO.println ("timing\t" ++ name ++ "\t" ++ toString (finish - start))
+  IO.println
+    ("timing\t" ++ name ++ "\t" ++ toString (finish - start) ++ "\t" ++
+      if ok then "some" else "none")
   pure value
 
 def evmCompilerRunnerDecodeProgram :
@@ -5895,46 +5974,47 @@ def main : IO Unit := do
   IO.println ("object=" ++ object.name)
   for stage in stages do
     evmCompilerRunnerPrintStage stage.fst stage.snd
-  match functionsToLocals? with
-  | none => pure ()
-  | some locals =>
-      IO.println
-        ("locals_body\\tmain\\t" ++
-          if (EvmCompiler.Locals.Block.compile
-                EvmCompiler.Locals.Ctx.initial locals.body).isSome then
-            "some"
-          else
-            "none")
-      evmCompilerRunnerPrintLocalsStmtTrace
-        "main" 0 EvmCompiler.Locals.Ctx.initial locals.body.stmts
-      for proc in locals.procs do
-        evmCompilerRunnerPrintLocalsProc proc
-        evmCompilerRunnerPrintLocalsStmtTrace
-          proc.name 0
-          (EvmCompiler.Locals.Ctx.procEntryWithLayoutAndRetc
-            proc.entryLayout proc.retc)
-          proc.body.stmts
-  match placeholderFunctionsToLocals? with
-  | none => pure ()
-  | some locals =>
-      IO.println
-        ("locals_body\\tplaceholder_main\\t" ++
-          if (EvmCompiler.Locals.Block.compile
-                EvmCompiler.Locals.Ctx.initial locals.body).isSome then
-            "some"
-          else
-            "none")
-      evmCompilerRunnerPrintLocalsStmtTrace
-        "placeholder_main" 0 EvmCompiler.Locals.Ctx.initial locals.body.stmts
-      for proc in locals.procs do
+  if !objectImageOk then
+    match functionsToLocals? with
+    | none => pure ()
+    | some locals =>
         IO.println
-          ("locals_proc\\tplaceholder:" ++ proc.name ++ "\\t" ++
-            if (proc.toExpressions?).isSome then "some" else "none")
+          ("locals_body\\tmain\\t" ++
+            if (EvmCompiler.Locals.Block.compile
+                  EvmCompiler.Locals.Ctx.initial locals.body).isSome then
+              "some"
+            else
+              "none")
         evmCompilerRunnerPrintLocalsStmtTrace
-          ("placeholder:" ++ proc.name) 0
-          (EvmCompiler.Locals.Ctx.procEntryWithLayoutAndRetc
-            proc.entryLayout proc.retc)
-          proc.body.stmts
+          "main" 0 EvmCompiler.Locals.Ctx.initial locals.body.stmts
+        for proc in locals.procs do
+          evmCompilerRunnerPrintLocalsProc proc
+          evmCompilerRunnerPrintLocalsStmtTrace
+            proc.name 0
+            (EvmCompiler.Locals.Ctx.procEntryWithLayoutAndRetc
+              proc.entryLayout proc.retc)
+            proc.body.stmts
+    match placeholderFunctionsToLocals? with
+    | none => pure ()
+    | some locals =>
+        IO.println
+          ("locals_body\\tplaceholder_main\\t" ++
+            if (EvmCompiler.Locals.Block.compile
+                  EvmCompiler.Locals.Ctx.initial locals.body).isSome then
+              "some"
+            else
+              "none")
+        evmCompilerRunnerPrintLocalsStmtTrace
+          "placeholder_main" 0 EvmCompiler.Locals.Ctx.initial locals.body.stmts
+        for proc in locals.procs do
+          IO.println
+            ("locals_proc\\tplaceholder:" ++ proc.name ++ "\\t" ++
+              if (proc.toExpressions?).isSome then "some" else "none")
+          evmCompilerRunnerPrintLocalsStmtTrace
+            ("placeholder:" ++ proc.name) 0
+            (EvmCompiler.Locals.Ctx.procEntryWithLayoutAndRetc
+              proc.entryLayout proc.retc)
+            proc.body.stmts
   IO.println ("first_none=" ++ firstNone)
   match objectImage? with
   | some image =>
@@ -6126,7 +6206,7 @@ def parse_backend_check_output(output: str) -> Json:
             continue
         if line.startswith("timing\t"):
             parts = line.split("\t")
-            if len(parts) != 3 or not parts[1]:
+            if len(parts) < 3 or not parts[1]:
                 fail(f"Lean backend check runner produced malformed timing: {line!r}")
             try:
                 summary["timingsMs"][parts[1]] = int(parts[2])
@@ -6315,6 +6395,8 @@ def parse_object_image_output(output: str) -> CompiledObjectImage:
     for line in lines:
         if line.startswith("timing\t"):
             continue
+        if line.startswith("bytecode_bytes="):
+            continue
         if line.startswith("bytecode="):
             bytecode = line.removeprefix("bytecode=")
             continue
@@ -6386,6 +6468,95 @@ def run_lake_object_image(lake: str, lean_source: str, cwd: Path) -> CompiledObj
             pass
 
 
+def run_lake_native_object_image(
+    lake: str,
+    json_path: Path,
+    cwd: Path,
+    linker_symbols: Sequence[LinkerSymbolEntry],
+) -> CompiledObjectImage:
+    command = [
+        lake,
+        "exe",
+        "evm-compiler-backend",
+        "image",
+        str(json_path),
+    ]
+    command.extend(
+        f"{entry.name}={entry.value}" for entry in linker_symbols
+    )
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=str(cwd),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except FileNotFoundError:
+        fail(
+            f"Could not find lake executable {lake!r}. "
+            "Install Lean with elan and put ~/.elan/bin on PATH."
+        )
+    if completed.returncode != 0:
+        output = "\n".join(
+            part
+            for part in [
+                f"returncode={completed.returncode}",
+                completed.stdout.strip(),
+                completed.stderr.strip(),
+            ]
+            if part
+        )
+        fail(f"`{' '.join(command)}` failed:\n{output}")
+    return parse_object_image_output(completed.stdout)
+
+
+def run_lake_native_backend_check(
+    lake: str,
+    json_path: Path,
+    cwd: Path,
+    linker_symbols: Sequence[LinkerSymbolEntry],
+) -> str:
+    command = [
+        lake,
+        "exe",
+        "evm-compiler-backend",
+        "check",
+        str(json_path),
+    ]
+    command.extend(
+        f"{entry.name}={entry.value}" for entry in linker_symbols
+    )
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=str(cwd),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except FileNotFoundError:
+        fail(
+            f"Could not find lake executable {lake!r}. "
+            "Install Lean with elan and put ~/.elan/bin on PATH."
+        )
+    if completed.returncode != 0:
+        output = "\n".join(
+            part
+            for part in [
+                f"returncode={completed.returncode}",
+                completed.stdout.strip(),
+                completed.stderr.strip(),
+            ]
+            if part
+        )
+        fail(f"`{' '.join(command)}` failed:\n{output}")
+    parse_backend_check_output(completed.stdout)
+    return completed.stdout
+
+
 def run_lake_backend_check(lake: str, lean_source: str, cwd: Path) -> str:
     with tempfile.NamedTemporaryFile(
         "w", suffix=".lean", prefix="evm_compiler_backend_check_", delete=False
@@ -6438,12 +6609,13 @@ def check_bridge_json_backend_with_lean(
     ) as handle:
         handle.write(bridge_json)
         bridge_json_path = Path(handle.name)
-    rendered = render_json_file_backend_check_runner(
-        bridge_json_path,
-        linker_symbols,
-    )
     try:
-        return run_lake_backend_check(lake, rendered, lake_cwd)
+        return run_lake_native_backend_check(
+            lake,
+            bridge_json_path,
+            lake_cwd,
+            linker_symbols,
+        )
     finally:
         try:
             bridge_json_path.unlink()
@@ -6469,16 +6641,13 @@ def compile_frontend_object_image(
     ) as handle:
         handle.write(bridge_json)
         bridge_json_path = Path(handle.name)
-    rendered = render_json_file_object_image_runner(
-        bridge_json_path,
-        linker_symbols,
-    )
     try:
         try:
-            return run_lake_object_image(
+            return run_lake_native_object_image(
                 lake,
-                rendered,
+                bridge_json_path,
                 lake_cwd,
+                linker_symbols,
             )
         except ConversionError as exc:
             if "unchecked object-image generation returned none" not in str(exc):
@@ -7542,6 +7711,24 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--scratch-reservation-base",
+        type=parse_uint256_arg,
+        help=(
+            "Explicit source-facing byte address at which the compiler may "
+            "reserve spill memory. This is a semantic promise, not an "
+            "inference; the correctness theorem requires source execution to "
+            "avoid the reserved interval."
+        ),
+    )
+    parser.add_argument(
+        "--scratch-reservation-words",
+        type=int,
+        help=(
+            "Positive number of 32-byte words in the explicit source scratch "
+            "reservation; requires --scratch-reservation-base."
+        ),
+    )
+    parser.add_argument(
         "--list-objects",
         action="store_true",
         help="List Yul objects/data sections found in solc's IR AST and exit",
@@ -7666,6 +7853,11 @@ def render_bridge_json_input_output(
         )
 
     if args.format == "bytecode-artifact":
+        if requested_scratch_reservation(args) is not None:
+            fail(
+                "An explicit scratch reservation applies to one selected Yul "
+                "object and is not valid with --format bytecode-artifact"
+            )
         if args.object is not None:
             fail(
                 "--object is not valid with --format bytecode-artifact; "
@@ -7719,6 +7911,7 @@ def render_bridge_json_input_output(
         return rendered, source_name, contract_name, selected_name
 
     selected = select_object(root, args.object) if args.object else root
+    selected = with_requested_scratch_reservation(selected, args)
     selected_name = selected.name
     bridge_json = render_bridge_json(
         selected,
@@ -7960,6 +8153,7 @@ def render_standalone_yul_object_output(
         )
 
     selected = select_object(root, args.object or "runtime")
+    selected = with_requested_scratch_reservation(selected, args)
     selected_name = selected.name
     bridge_json = render_bridge_json(selected, source_name, contract_name, ast_output)
     linker_symbols = merged_linker_symbol_entries(args.linker_symbol)
@@ -8507,6 +8701,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             compiler_input,
         )
         if args.all_contracts:
+            if requested_scratch_reservation(args) is not None:
+                fail(
+                    "An explicit scratch reservation must be attached to one "
+                    "selected Yul object; it cannot be combined with "
+                    "--all-contracts"
+                )
             if args.format not in {
                 "standard-json-output",
                 "lean-json-check",
@@ -8940,6 +9140,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "standard-json-output",
         }
         if args.format in artifact_formats:
+            if requested_scratch_reservation(args) is not None:
+                fail(
+                    "An explicit scratch reservation applies to one selected "
+                    f"Yul object and is not valid with --format {args.format}"
+                )
             if args.object is not None:
                 fail(
                     f"--object is not valid with --format {args.format}; "
@@ -9025,6 +9230,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
         else:
             selected = select_object(root, args.object or "runtime")
+            selected = with_requested_scratch_reservation(selected, args)
             selected_name = selected.name
             bridge_json = render_bridge_json(
                 selected,

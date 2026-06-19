@@ -98,6 +98,104 @@ def labelPcFrom : Program → Nat → Label → Option Nat
 def labelPc (program : Program) (target : Label) : Option Nat :=
   labelPcFrom program 0 target
 
+abbrev LabelTable := List (Label × Nat)
+
+def labelTableFromRev : Program → Nat → LabelTable → LabelTable
+  | [], _pc, acc => acc
+  | instr :: rest, pc, acc =>
+      match instr with
+      | .label name =>
+          labelTableFromRev rest (pc + instr.byteSize) ((name, pc) :: acc)
+      | _ => labelTableFromRev rest (pc + instr.byteSize) acc
+
+def labelTableFromFast (program : Program) (pc : Nat) : LabelTable :=
+  (labelTableFromRev program pc []).reverse
+
+@[implemented_by labelTableFromFast]
+def labelTableFrom : Program → Nat → LabelTable
+  | [], _ => []
+  | instr :: rest, pc =>
+      match instr with
+      | .label name =>
+          (name, pc) :: labelTableFrom rest (pc + instr.byteSize)
+      | _ => labelTableFrom rest (pc + instr.byteSize)
+
+def labelTable (program : Program) : LabelTable :=
+  labelTableFrom program 0
+
+def lookupLabel? (table : LabelTable) (target : Label) : Option Nat :=
+  (table.find? fun entry => entry.1 == target).map Prod.snd
+
+theorem labelTableFromRev_eq
+    (program : Program) (pc : Nat) (acc : LabelTable) :
+    labelTableFromRev program pc acc =
+      (labelTableFrom program pc).reverse ++ acc := by
+  induction program generalizing pc acc with
+  | nil => simp [labelTableFromRev, labelTableFrom]
+  | cons instr rest ih =>
+      cases instr <;>
+        simp [labelTableFromRev, labelTableFrom, ih,
+          List.reverse_cons, List.append_assoc]
+
+theorem labelTableFromFast_eq
+    (program : Program) (pc : Nat) :
+    labelTableFromFast program pc = labelTableFrom program pc := by
+  simp [labelTableFromFast, labelTableFromRev_eq]
+
+theorem lookupLabel?_labelTableFrom_eq_labelPcFrom
+    (program : Program) (pc : Nat) (target : Label) :
+    lookupLabel? (labelTableFrom program pc) target =
+      labelPcFrom program pc target := by
+  induction program generalizing pc with
+  | nil => simp [labelTableFrom, lookupLabel?, labelPcFrom]
+  | cons instr rest ih =>
+      cases instr with
+      | label name =>
+          by_cases hName : name = target
+          · subst name
+            simp [labelTableFrom, lookupLabel?, labelPcFrom]
+          · simp [labelTableFrom, lookupLabel?, labelPcFrom, hName]
+            change
+              lookupLabel?
+                  (labelTableFrom rest
+                    (pc + Instr.byteSize (.label name))) target =
+                labelPcFrom rest
+                  (pc + Instr.byteSize (.label name)) target
+            exact ih (pc := pc + Instr.byteSize (.label name))
+      | prim op =>
+          change
+            lookupLabel?
+                (labelTableFrom rest (pc + Instr.byteSize (.prim op))) target =
+              labelPcFrom rest (pc + Instr.byteSize (.prim op)) target
+          exact ih (pc := pc + Instr.byteSize (.prim op))
+      | push value =>
+          change
+            lookupLabel?
+                (labelTableFrom rest (pc + Instr.byteSize (.push value))) target =
+              labelPcFrom rest (pc + Instr.byteSize (.push value)) target
+          exact ih (pc := pc + Instr.byteSize (.push value))
+      | jump jumpTarget =>
+          change
+            lookupLabel?
+                (labelTableFrom rest
+                  (pc + Instr.byteSize (.jump jumpTarget))) target =
+              labelPcFrom rest
+                (pc + Instr.byteSize (.jump jumpTarget)) target
+          exact ih (pc := pc + Instr.byteSize (.jump jumpTarget))
+      | jumpi jumpTarget =>
+          change
+            lookupLabel?
+                (labelTableFrom rest
+                  (pc + Instr.byteSize (.jumpi jumpTarget))) target =
+              labelPcFrom rest
+                (pc + Instr.byteSize (.jumpi jumpTarget)) target
+          exact ih (pc := pc + Instr.byteSize (.jumpi jumpTarget))
+
+theorem lookupLabel?_labelTable_eq_labelPc
+    (program : Program) (target : Label) :
+    lookupLabel? program.labelTable target = program.labelPc target := by
+  exact lookupLabel?_labelTableFrom_eq_labelPcFrom program 0 target
+
 def instrAtPcFrom : Program → Nat → Nat → Option (Nat × Instr)
   | [], _, _ => none
   | instr :: rest, pc, query =>
@@ -382,10 +480,22 @@ theorem instrAtPcFrom_append_boundary_cons
   rw [instrAtPcFrom_append_boundary]
   exact instrAtPcFrom_at_head instr suffix (base + byteLength pre)
 
+def allTargetsResolveFast (program : Program) : Bool :=
+  let table := program.labelTable
+  program.all fun instr =>
+    instr.targets.all fun target =>
+      (lookupLabel? table target).isSome
+
+@[implemented_by allTargetsResolveFast]
 def allTargetsResolve (program : Program) : Bool :=
   program.all fun instr =>
     instr.targets.all fun target =>
       (labelPc program target).isSome
+
+theorem allTargetsResolveFast_eq_allTargetsResolve (program : Program) :
+    allTargetsResolveFast program = allTargetsResolve program := by
+  simp only [allTargetsResolveFast, allTargetsResolve,
+    lookupLabel?_labelTable_eq_labelPc]
 
 end Program
 
@@ -408,6 +518,35 @@ def emitInstr? (program : Program) (pc : Nat) : Instr → Option (List LocatedTa
         [ { pc := pc, instr := TargetInstr.push32 (EvmYul.UInt256.ofNat dest) }
         , { pc := pc + Instr.push32Size, instr := TargetInstr.jumpi }
         ]
+
+def emitInstrWithTable? (table : Program.LabelTable) (pc : Nat) :
+    Instr → Option (List LocatedTarget)
+  | .label _ =>
+      some [{ pc := pc, instr := TargetInstr.jumpdest }]
+  | .prim op =>
+      some [{ pc := pc, instr := TargetInstr.prim op }]
+  | .push value =>
+      some [{ pc := pc, instr := TargetInstr.push32 value }]
+  | .jump target => do
+      let dest ← Program.lookupLabel? table target
+      some
+        [ { pc := pc, instr := TargetInstr.push32 (EvmYul.UInt256.ofNat dest) }
+        , { pc := pc + Instr.push32Size, instr := TargetInstr.jump }
+        ]
+  | .jumpi target => do
+      let dest ← Program.lookupLabel? table target
+      some
+        [ { pc := pc, instr := TargetInstr.push32 (EvmYul.UInt256.ofNat dest) }
+        , { pc := pc + Instr.push32Size, instr := TargetInstr.jumpi }
+        ]
+
+theorem emitInstrWithTable?_eq_emitInstr?
+    (program : Program) (pc : Nat) (instr : Instr) :
+    emitInstrWithTable? program.labelTable pc instr =
+      emitInstr? program pc instr := by
+  cases instr <;>
+    simp [emitInstrWithTable?, emitInstr?,
+      Program.lookupLabel?_labelTable_eq_labelPc]
 
 /-- Every symbolic Assembly instruction expands to at most two target
 instructions. -/
@@ -556,8 +695,16 @@ def emitFromRev? (program : Program) :
       emitFromRev? program rest (pc + instr.byteSize)
         (here.reverse ++ acc)
 
+def emitFromTableRev? (table : Program.LabelTable) :
+    Program → Nat → List LocatedTarget → Option (List LocatedTarget)
+  | [], _, acc => some acc.reverse
+  | instr :: rest, pc, acc => do
+      let here ← emitInstrWithTable? table pc instr
+      emitFromTableRev? table rest (pc + instr.byteSize)
+        (here.reverse ++ acc)
+
 def emitExecutable? (program : Program) : Option (List LocatedTarget) :=
-  emitFromRev? program program 0 []
+  emitFromTableRev? program.labelTable program 0 []
 
 def assembleExecutable? (program : Program) : Option TargetProgram := do
   let code ← emitExecutable? program
@@ -586,9 +733,27 @@ theorem emitFromRev?_eq_emitFrom?_append (program : Program) :
           | some there =>
               simp [hRest, List.reverse_append, List.append_assoc]
 
+theorem emitFromTableRev?_eq_emitFromRev? (program : Program) :
+    ∀ rest pc acc,
+      emitFromTableRev? program.labelTable rest pc acc =
+        emitFromRev? program rest pc acc
+  | [], _pc, acc => by
+      simp [emitFromTableRev?, emitFromRev?]
+  | instr :: rest, pc, acc => by
+      simp [emitFromTableRev?, emitFromRev?,
+        emitInstrWithTable?_eq_emitInstr? program pc instr]
+      cases hHere : emitInstr? program pc instr with
+      | none => simp [hHere]
+      | some here =>
+          simp [hHere]
+          exact
+            emitFromTableRev?_eq_emitFromRev? program rest
+              (pc + instr.byteSize) (here.reverse ++ acc)
+
 theorem emitExecutable?_eq_emit? (program : Program) :
     emitExecutable? program = emit? program := by
-  simp [emitExecutable?, emit?,
+  rw [emitExecutable?, emitFromTableRev?_eq_emitFromRev?]
+  simp [emit?,
     emitFromRev?_eq_emitFrom?_append program program 0 []]
   cases emitFrom? program program 0 <;> rfl
 

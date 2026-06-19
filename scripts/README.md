@@ -456,10 +456,12 @@ contracts skipped because solc did not emit an IR object, such as some
 interfaces, and records whether each checked object came from solc `irAst` or
 `irOptimizedAst`.
 Use `--format lean-backend-check` when decode succeeds but executable bytecode
-generation returns `none`.  It runs a staged Lean handoff diagnostic over the
-same normalized bridge JSON and reports the first failing stage, such as
-`functions_compile`, `placeholder_code`, `solc_validation`, or `object_image`,
-without treating an expected current-backend gap as malformed bridge input.  With
+generation returns `none`.  It runs through the cached native
+`evm-compiler-backend` executable over the same normalized bridge JSON and
+reports whether `solc_validation` or `object_image` first failed, without
+treating an expected current-backend gap as malformed bridge input. The more
+detailed legacy stage trace remains a failure-only diagnostic for object-image
+generation. With
 `--input-format bridge-json-manifest`, or with solc/Standard JSON input plus
 `--all-contracts`, it emits a JSON package report with per-object status counts
 and `firstNoneCounts`; those package reports also retain the per-object solc
@@ -499,8 +501,10 @@ object-image path.
 
 For executable MVP testing, `--format bytecode` emits unchecked backend bytecode
 hex by normalizing solc's Yul JSON AST in Python, writing the normalized bridge
-JSON to a temporary sidecar file, and asking a small Lean runner to read and
-decode that JSON before evaluating `Program.bytecodeImageUnchecked?`.  The same
+JSON to a temporary sidecar file, and invoking the native
+`evm-compiler-backend` executable to decode and evaluate
+`Program.bytecodeImageUnchecked?`. Lake keeps that executable current, avoiding
+the much slower Lean IR interpreter used by `lean --run`. The same
 path can start from a cached bridge file with `--input-format bridge-json`, so
 the Solidity/solc half and the Lean backend half are separable.  That path is
 the Solidity-facing object-image lane: it recursively compiles child objects,
@@ -1059,6 +1063,22 @@ The script defaults to Aave v3 Core commit
 `AAVE_V3_DIR=/path/to/aave-v3-core` to reuse a local checkout or `KEEP_TMP=1`
 to keep the generated bridge JSON files.
 
+The full-contract backend gate compiles the actual Permit2 runtime and linked
+Aave v3 Pool runtime through checked object images. Permit2 is sourced from
+solc 0.8.17 and parsed, without changing its Yul text, by solc 0.8.26. Aave's
+old unguarded Yul receives an explicit source reservation; this remains a
+`SourceSafety` premise of the correctness theorem rather than an inferred
+compiler fact:
+
+```sh
+PYTHON=/path/to/python LAKE=/path/to/lake \
+  scripts/test_full_contract_backend_smoke.sh
+```
+
+Use `PERMIT2_DIR` and `AAVE_V3_DIR` to reuse pinned local checkouts. The
+default reservation can be changed with `AAVE_SCRATCH_BASE` and
+`AAVE_SCRATCH_WORDS`; doing so changes the source-facing proof premise.
+
 A networked smoke targets a pinned Compound v3 Comet checkout.  It builds an
 ABI-shaped wrapper around the real `CometMath` internal functions and compares
 safe-cast, signed/unsigned conversion, boolean conversion, and custom-error
@@ -1398,8 +1418,17 @@ Current bridge limits are intentionally explicit:
   value)` expands to `mstore(add(base, offset), value)` for each computed
   placeholder offset, so constructor-patched immutable values work without
   trusting solc byte offsets.
-- `memoryguard(n)` is normalized to `n`, because it is an EVM-dialect optimizer
-  marker rather than an EVM opcode.
+- `memoryguard(n)` is treated as a source memory-ownership promise rather than
+  an EVM opcode. The checked frontend reserves its configured spill interval
+  beginning at `n` and replaces the builtin result with the first address after
+  that interval, matching the pointer role of solc's builtin.
+- Old or hand-written Yul without `memoryguard` may carry the same promise
+  explicitly with `--scratch-reservation-base` and
+  `--scratch-reservation-words`. These flags do not infer safety: they annotate
+  the selected source object, and the public correctness theorem still requires
+  `SourceSafety` for every execution being related. This makes high-liveness
+  compilation available without hiding a generated reservation certificate or
+  claiming that arbitrary source memory avoids the interval.
 - `--optimized` requests solc's `irOptimizedAst` output and enables the Yul
   optimizer in generated Standard JSON.  That path is covered separately from
   default `irAst` because older solc versions may emit only textual optimized
@@ -1420,7 +1449,9 @@ Current bridge limits are intentionally explicit:
   object-image path before conversion to core Yul.  `memoryguard` is normalized
   to its guarded value by the solc AST parser, and bridge JSON inputs that carry
   it explicitly as an object builtin are accepted and resolved the same way by
-  the Lean frontend.
+  the Lean frontend. Bridge JSON can also carry an explicit
+  `memoryContract.scratch` object with `base` and `words`; the Lean decoder
+  checks positivity, alignment, and UInt256 range before accepting it.
   `linkersymbol("name")` can be resolved with explicit
   `--linker-symbol name=value` entries.  Checked object lowering runs
   solc-style Yul validation after these resolutions and before compiler

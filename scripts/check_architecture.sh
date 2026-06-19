@@ -313,6 +313,24 @@ if ! printf '%s\n' "$canonical_yul_surface" |
   failed=1
 fi
 
+if ! rg -q '@\[implemented_by lowerFunctionsFast\?\]' \
+      EvmCompiler/Functions/AllocationLowering.lean ||
+    ! rg -q 'theorem lowerFunctionsFast_eq' \
+      EvmCompiler/Functions/AllocationLowering.lean ||
+    ! rg -q '@\[implemented_by scopeLayoutsWitnessedFast\?\]' \
+      EvmCompiler/Compiler/AllocatedTypedCfg.lean ||
+    ! rg -q 'theorem scopeLayoutsWitnessedFast_eq' \
+      EvmCompiler/Compiler/AllocatedTypedCfg.lean ||
+    ! rg -q '@\[implemented_by findOccurrencesFast\]' \
+      EvmCompiler/Solidity/Frontend.lean ||
+    ! rg -q 'theorem findOccurrencesFast_eq' \
+      EvmCompiler/Solidity/Frontend.lean; then
+  printf '%s\n\n' \
+    'Large-contract runtime optimizations must remain proved implementations of their logical specifications.' \
+    >&2
+  failed=1
+fi
+
 report_matches \
   'Open-effect proofs must not restore context bisimulation or per-pass equivalence wrappers:' \
   'ExternalContext\.Rel|OpenEffectEquiv' \
@@ -1266,6 +1284,24 @@ report_matches \
   'freePtrWord|frameBumpCode|frameInitCode|ScratchRegionBase\.freeMemoryPointer' \
   EvmCompiler/Functions/AllocationSupport.lean \
   EvmCompiler/Functions/AllocationLowering.lean
+if ! rg -q 'def decodeMemoryContract' \
+      EvmCompiler/Solidity/BridgeJson.lean ||
+    rg -q 'defaultReservedWords|ofMemoryGuard\?' \
+      EvmCompiler/Solidity/BridgeJson.lean; then
+  printf '%s\n\n' \
+    'Bridge JSON may decode an explicit source reservation but must not infer or default one.' \
+    >&2
+  failed=1
+fi
+if ! rg -q 'semantic promise, not an' \
+      scripts/solidity_to_yul_lean.py ||
+    rg -q 'scratch-reservation-(base|words).*default=' \
+      scripts/solidity_to_yul_lean.py; then
+  printf '%s\n\n' \
+    'The CLI scratch reservation must remain an explicit source-facing promise with no default.' \
+    >&2
+  failed=1
+fi
 report_matches \
   'Objects inline planning must not restore the hard-coded empty allocation:' \
   'stackOnlyProgramAllocation|stackOnlyAllocation' \
@@ -1286,6 +1322,20 @@ report_matches \
   'Successful public compiler metadata must not make allocation or TypedCfg certificates optional:' \
   '(allocation|typedCfg)\?[[:space:]]*:[[:space:]]*Option' \
   EvmCompiler/Objects/Compiler.lean
+
+if ! rg -q '@\[implemented_by labelsFast\]' \
+      EvmCompiler/Assembly/Accepted.lean ||
+    ! rg -q 'theorem labelsFast_eq_labels' \
+      EvmCompiler/Assembly/Accepted.lean ||
+    ! rg -q 'emitFromTableRev\?' \
+      EvmCompiler/Assembly/Assembler.lean ||
+    ! rg -q 'theorem lookupLabel\?_labelTable_eq_labelPc' \
+      EvmCompiler/Assembly/Assembler.lean; then
+  printf '%s\n\n' \
+    'Large-program Assembly checks must retain proved stack-safe label collection and indexed executable emission.' \
+    >&2
+  failed=1
+fi
 
 report_matches \
   'Stable layer aggregates must not import preservation or legacy runtime corridors:' \

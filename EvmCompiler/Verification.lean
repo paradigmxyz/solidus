@@ -5,6 +5,7 @@ import EvmCompiler.PublicVerification
 import EvmCompiler.Compiler.AllocatedTypedCfg
 import EvmCompiler.Compiler.MemoryRelation
 import EvmCompiler.Core.MemoryContract
+import EvmCompiler.Solidity.BridgeJson
 import EvmCompiler.Assembly.InteractionSemantics
 import EvmCompiler.Assembly.InteractionPreservation
 import EvmCompiler.Assembly.InteractionBytecode
@@ -219,6 +220,18 @@ or audit-alias corridor.
 #check EvmCompiler.TypedCfg.ObserverSemantics.Instr.runState
 #check EvmCompiler.MemoryContract.ofMemoryGuard?
 #check EvmCompiler.MemoryContract.ScratchReservation.HostAddressable
+#check EvmCompiler.Assembly.Program.labelsFast_eq_labels
+#check EvmCompiler.Assembly.Program.labelTableFromFast_eq
+#check EvmCompiler.Assembly.Program.lookupLabel?_labelTable_eq_labelPc
+#check EvmCompiler.Assembly.Program.allTargetsResolveFast_eq_allTargetsResolve
+#check EvmCompiler.Assembly.emitInstrWithTable?_eq_emitInstr?
+#check EvmCompiler.Assembly.emitExecutable?_eq_emit?
+#check EvmCompiler.Functions.AllocationLowering.lowerFunctionsFast_eq
+#check EvmCompiler.Compiler.AllocatedTypedCfg.scopeLayoutsWitnessedFast_eq
+#check EvmCompiler.Solidity.Frontend.Bytecode.findOccurrencesFast_eq
+#check EvmCompiler.Solidity.Frontend.BridgeJson.decodeMemoryContract
+#check EvmCompiler.Solidity.Frontend.Object.toYulProgram?_memoryContract
+#check EvmCompiler.Solidity.Frontend.Object.toSolcYulProgram?_memoryContract
 #check EvmCompiler.Compiler.MemoryRelation.MachineRel
 #check EvmCompiler.Compiler.MemoryRelation.byteAt_writeWord_of_outside
 #check EvmCompiler.Compiler.MemoryRelation.OutsideReservation.writeWord_right

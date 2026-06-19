@@ -33,3 +33,6 @@ package «evm-compiler» {
 
 @[default_target]
 lean_lib «EvmCompiler»
+
+lean_exe «evm-compiler-backend» where
+  root := `EvmCompiler.BackendCli

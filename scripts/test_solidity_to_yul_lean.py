@@ -545,6 +545,51 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertEqual(compatibility["status"], "ready")
         self.assertEqual(compatibility["objectBuiltinNames"], ["memoryguard"])
 
+    def test_bridge_json_roundtrips_explicit_source_scratch_reservation(self):
+        obj = bridge.YulObject(
+            "Runtime",
+            [],
+            [],
+            [],
+            [],
+            scratch_reservation=(256, 9),
+        )
+
+        encoded = obj.bridge_json()
+        decoded = bridge.decode_bridge_object(encoded)
+
+        self.assertEqual(decoded.scratch_reservation, (256, 9))
+        self.assertEqual(
+            encoded["memoryContract"],
+            {"scratch": {"base": 256, "words": 9}},
+        )
+        self.assertIn("scratch? := some", obj.lean_ir())
+        self.assertIn("base := 256", obj.lean_ir())
+
+    def test_requested_source_scratch_reservation_is_explicit_and_checked(self):
+        parser = bridge.build_arg_parser()
+        args = parser.parse_args(
+            [
+                "input.sol",
+                "--scratch-reservation-base",
+                "0x100",
+                "--scratch-reservation-words",
+                "9",
+            ]
+        )
+        obj = bridge.YulObject("Runtime", [], [], [], [])
+
+        annotated = bridge.with_requested_scratch_reservation(obj, args)
+
+        self.assertEqual(annotated.scratch_reservation, (256, 9))
+        self.assertIsNone(obj.scratch_reservation)
+
+        incomplete = parser.parse_args(
+            ["input.sol", "--scratch-reservation-base", "0x100"]
+        )
+        with self.assertRaises(bridge.ConversionError):
+            bridge.requested_scratch_reservation(incomplete)
+
     def test_primitive_call_emits_typed_yul_operation(self):
         expr = bridge.parse_expr(call("add", [identifier("x"), literal("1")]))
         rendered = expr.lean()
@@ -3377,23 +3422,13 @@ class SolidityToYulLeanTests(unittest.TestCase):
         )
         calls = []
         bridge_json_paths = []
-        old_run_lake_object_image = bridge.run_lake_object_image
+        old_run_lake_object_image = bridge.run_lake_native_object_image
         try:
-            def fake_run_lake_object_image(lake, source, cwd):
-                calls.append((lake, source, cwd))
-                self.assertIn("IO.FS.readFile evmCompilerRunnerBridgeJsonPath", source)
-                self.assertIn("evmCompilerRunnerTimedIO", source)
-                self.assertIn("evmCompilerRunnerTimedPure", source)
-                rendered_path = None
-                for line in source.splitlines():
-                    stripped = line.strip()
-                    if stripped.startswith('"/') and stripped.endswith('"'):
-                        rendered_path = Path(json.loads(stripped))
-                        break
-                self.assertIsNotNone(rendered_path)
-                self.assertTrue(rendered_path.exists())
-                bridge_json_paths.append(rendered_path)
-                rendered_json = json.loads(rendered_path.read_text())
+            def fake_run_lake_object_image(lake, json_path, cwd, linker_symbols):
+                calls.append((lake, json_path, cwd, linker_symbols))
+                self.assertTrue(json_path.exists())
+                bridge_json_paths.append(json_path)
+                rendered_json = json.loads(json_path.read_text())
                 self.assertEqual(
                     rendered_json["schema"],
                     "evm-compiler.solc-yul-bridge.v3",
@@ -3401,7 +3436,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                 self.assertEqual(rendered_json["selectedObject"]["name"], "runtime")
                 return bridge.CompiledObjectImage("0x00")
 
-            bridge.run_lake_object_image = fake_run_lake_object_image
+            bridge.run_lake_native_object_image = fake_run_lake_object_image
             bytecode = bridge.compile_frontend_object_bytecode(
                 obj,
                 "Simple.sol",
@@ -3415,20 +3450,13 @@ class SolidityToYulLeanTests(unittest.TestCase):
                 Path("/tmp/project"),
             )
         finally:
-            bridge.run_lake_object_image = old_run_lake_object_image
+            bridge.run_lake_native_object_image = old_run_lake_object_image
 
         self.assertEqual(bytecode, "0x00")
         self.assertEqual(calls[0][0], "lake")
         self.assertEqual(calls[0][2], Path("/tmp/project"))
         self.assertFalse(bridge_json_paths[0].exists())
-        self.assertIn(
-            "def evmCompilerRunnerBridgeJsonPath : String",
-            calls[0][1],
-        )
-        self.assertIn(
-            "BridgeJson.parseProgram? input",
-            calls[0][1],
-        )
+        self.assertEqual(calls[0][3], [])
 
     def test_compile_frontend_object_image_adds_backend_diagnostic_on_none(self):
         obj = bridge.YulObject(
@@ -3438,10 +3466,10 @@ class SolidityToYulLeanTests(unittest.TestCase):
             data=[],
             subobjects=[],
         )
-        old_run_lake_object_image = bridge.run_lake_object_image
+        old_run_lake_object_image = bridge.run_lake_native_object_image
         old_run_lake_backend_check = bridge.run_lake_backend_check
         try:
-            def fake_run_lake_object_image(lake, source, cwd):
+            def fake_run_lake_object_image(lake, json_path, cwd, linker_symbols):
                 raise bridge.ConversionError(
                     "unchecked object-image generation returned none; "
                     "the selected object likely needs object layout/data-base "
@@ -3461,7 +3489,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                     "first_none=functions_compile\n"
                 )
 
-            bridge.run_lake_object_image = fake_run_lake_object_image
+            bridge.run_lake_native_object_image = fake_run_lake_object_image
             bridge.run_lake_backend_check = fake_run_lake_backend_check
             with self.assertRaises(bridge.ConversionError) as raised:
                 bridge.compile_frontend_object_image(
@@ -3477,7 +3505,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                     Path("/tmp/project"),
                 )
         finally:
-            bridge.run_lake_object_image = old_run_lake_object_image
+            bridge.run_lake_native_object_image = old_run_lake_object_image
             bridge.run_lake_backend_check = old_run_lake_backend_check
 
         message = str(raised.exception)
@@ -5852,21 +5880,17 @@ class SolidityToYulLeanTests(unittest.TestCase):
                 items=[bridge.ObjectItemRef("object", 0)],
             )
 
-        old_run_lake_backend_check = bridge.run_lake_backend_check
+        old_run_lake_backend_check = bridge.run_lake_native_backend_check
         old_stdout = sys.stdout
         calls = []
         try:
-            def fake_run_lake_backend_check(lake, source, cwd):
-                calls.append((lake, source, cwd))
-                self.assertIn('("MathLib.sol:MathLib", EvmYul.UInt256.ofNat 42)', source)
-                rendered_path = None
-                for line in source.splitlines():
-                    stripped = line.strip()
-                    if stripped.startswith('"/') and stripped.endswith('"'):
-                        rendered_path = Path(json.loads(stripped))
-                        break
-                self.assertIsNotNone(rendered_path)
-                rendered = json.loads(rendered_path.read_text())
+            def fake_run_lake_backend_check(lake, json_path, cwd, linker_symbols):
+                calls.append((lake, json_path, cwd, linker_symbols))
+                self.assertEqual(
+                    linker_symbols,
+                    [bridge.LinkerSymbolEntry("MathLib.sol:MathLib", 42)],
+                )
+                rendered = json.loads(json_path.read_text())
                 selected = rendered["selectedObject"]
                 object_name = selected["name"]
                 if object_name.endswith("_deployed"):
@@ -5891,7 +5915,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                     "bytecode_bytes=7\n"
                 )
 
-            bridge.run_lake_backend_check = fake_run_lake_backend_check
+            bridge.run_lake_native_backend_check = fake_run_lake_backend_check
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 bridge.write_artifact_bridge_json_outputs(
@@ -5930,7 +5954,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                 )
                 output = json.loads(sys.stdout.getvalue())
         finally:
-            bridge.run_lake_backend_check = old_run_lake_backend_check
+            bridge.run_lake_native_backend_check = old_run_lake_backend_check
             sys.stdout = old_stdout
 
         self.assertEqual(result, 0)
@@ -5984,24 +6008,17 @@ class SolidityToYulLeanTests(unittest.TestCase):
             ],
         )
 
-        old_run_lake_backend_check = bridge.run_lake_backend_check
+        old_run_lake_backend_check = bridge.run_lake_native_backend_check
         old_stdout = sys.stdout
         calls = []
         try:
-            def fake_run_lake_backend_check(lake, source, cwd):
-                calls.append(source)
-                self.assertIn(
-                    '("MathLib.sol:MathLib", EvmYul.UInt256.ofNat 42)',
-                    source,
+            def fake_run_lake_backend_check(lake, json_path, cwd, linker_symbols):
+                calls.append(json_path)
+                self.assertEqual(
+                    linker_symbols,
+                    [bridge.LinkerSymbolEntry("MathLib.sol:MathLib", 42)],
                 )
-                rendered_path = None
-                for line in source.splitlines():
-                    stripped = line.strip()
-                    if stripped.startswith('"/') and stripped.endswith('"'):
-                        rendered_path = Path(json.loads(stripped))
-                        break
-                self.assertIsNotNone(rendered_path)
-                rendered = json.loads(rendered_path.read_text())
+                rendered = json.loads(json_path.read_text())
                 selected = rendered["selectedObject"]
                 return (
                     "lean_backend_check=pass\n"
@@ -6014,7 +6031,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                     "bytecode_bytes=3\n"
                 )
 
-            bridge.run_lake_backend_check = fake_run_lake_backend_check
+            bridge.run_lake_native_backend_check = fake_run_lake_backend_check
             with tempfile.TemporaryDirectory() as directory:
                 path = Path(directory)
                 bridge.write_artifact_bridge_json_outputs(
@@ -6040,7 +6057,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                 )
                 output = json.loads(sys.stdout.getvalue())
         finally:
-            bridge.run_lake_backend_check = old_run_lake_backend_check
+            bridge.run_lake_native_backend_check = old_run_lake_backend_check
             sys.stdout = old_stdout
 
         self.assertEqual(result, 0)
@@ -6743,17 +6760,16 @@ class SolidityToYulLeanTests(unittest.TestCase):
             data=[],
             subobjects=[],
         )
-        old_run_lake_object_image = bridge.run_lake_object_image
+        old_run_lake_object_image = bridge.run_lake_native_object_image
         old_stdout = sys.stdout
         calls = []
         try:
-            def fake_run_lake_object_image(lake, source, cwd):
-                calls.append((lake, source, cwd))
-                self.assertIn("IO.FS.readFile evmCompilerRunnerBridgeJsonPath", source)
-                self.assertIn("BridgeJson.parseProgram? input", source)
+            def fake_run_lake_object_image(lake, json_path, cwd, linker_symbols):
+                calls.append((lake, json_path, cwd, linker_symbols))
+                self.assertTrue(json_path.exists())
                 return bridge.CompiledObjectImage("0x00")
 
-            bridge.run_lake_object_image = fake_run_lake_object_image
+            bridge.run_lake_native_object_image = fake_run_lake_object_image
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 path = root / "runtime.bridge.json"
@@ -6776,7 +6792,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                 )
                 output = sys.stdout.getvalue()
         finally:
-            bridge.run_lake_object_image = old_run_lake_object_image
+            bridge.run_lake_native_object_image = old_run_lake_object_image
             sys.stdout = old_stdout
 
         self.assertEqual(result, 0)
@@ -6863,24 +6879,14 @@ class SolidityToYulLeanTests(unittest.TestCase):
             data=[],
             subobjects=[],
         )
-        old_run_lake_backend_check = bridge.run_lake_backend_check
+        old_run_lake_backend_check = bridge.run_lake_native_backend_check
         old_stdout = sys.stdout
         calls = []
         try:
-            def fake_run_lake_backend_check(lake, source, cwd):
-                calls.append((lake, source, cwd))
-                self.assertIn("IO.FS.readFile evmCompilerRunnerBridgeJsonPath", source)
-                self.assertIn("BridgeJson.parseProgram? input", source)
-                self.assertIn("functions_compile", source)
-                rendered_path = None
-                for line in source.splitlines():
-                    stripped = line.strip()
-                    if stripped.startswith('"/') and stripped.endswith('"'):
-                        rendered_path = Path(json.loads(stripped))
-                        break
-                self.assertIsNotNone(rendered_path)
-                self.assertTrue(rendered_path.exists())
-                rendered_json = json.loads(rendered_path.read_text())
+            def fake_run_lake_backend_check(lake, json_path, cwd, linker_symbols):
+                calls.append((lake, json_path, cwd, linker_symbols))
+                self.assertTrue(json_path.exists())
+                rendered_json = json.loads(json_path.read_text())
                 self.assertEqual(rendered_json["selectedObject"]["name"], "runtime")
                 return (
                     "lean_backend_check=pass\n"
@@ -6894,7 +6900,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                     "bytecode=0x00\n"
                 )
 
-            bridge.run_lake_backend_check = fake_run_lake_backend_check
+            bridge.run_lake_native_backend_check = fake_run_lake_backend_check
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 path = root / "runtime.bridge.json"
@@ -6917,7 +6923,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                 )
                 output = sys.stdout.getvalue()
         finally:
-            bridge.run_lake_backend_check = old_run_lake_backend_check
+            bridge.run_lake_native_backend_check = old_run_lake_backend_check
             sys.stdout = old_stdout
 
         self.assertEqual(result, 0)
@@ -6941,18 +6947,11 @@ class SolidityToYulLeanTests(unittest.TestCase):
             subobjects=[runtime],
             items=[bridge.ObjectItemRef("object", 0)],
         )
-        old_run_lake_backend_check = bridge.run_lake_backend_check
+        old_run_lake_backend_check = bridge.run_lake_native_backend_check
         old_stdout = sys.stdout
         try:
-            def fake_run_lake_backend_check(lake, source, cwd):
-                rendered_path = None
-                for line in source.splitlines():
-                    stripped = line.strip()
-                    if stripped.startswith('"/') and stripped.endswith('"'):
-                        rendered_path = Path(json.loads(stripped))
-                        break
-                self.assertIsNotNone(rendered_path)
-                rendered_json = json.loads(rendered_path.read_text())
+            def fake_run_lake_backend_check(lake, json_path, cwd, linker_symbols):
+                rendered_json = json.loads(json_path.read_text())
                 self.assertEqual(rendered_json["selectedObject"]["name"], "Simple_1")
                 return (
                     "lean_backend_check=pass\n"
@@ -6964,7 +6963,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                     "bytecode_bytes=1\n"
                 )
 
-            bridge.run_lake_backend_check = fake_run_lake_backend_check
+            bridge.run_lake_native_backend_check = fake_run_lake_backend_check
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 path = root / "creation.bridge.json"
@@ -6987,7 +6986,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                 )
                 output = sys.stdout.getvalue()
         finally:
-            bridge.run_lake_backend_check = old_run_lake_backend_check
+            bridge.run_lake_native_backend_check = old_run_lake_backend_check
             sys.stdout = old_stdout
 
         self.assertEqual(result, 0)
@@ -7142,20 +7141,13 @@ class SolidityToYulLeanTests(unittest.TestCase):
             }
         }
         old_run_solc = bridge.run_solc
-        old_run_lake_backend_check = bridge.run_lake_backend_check
+        old_run_lake_backend_check = bridge.run_lake_native_backend_check
         old_stdout = sys.stdout
         try:
             bridge.run_solc = lambda solc, compiler_input, solc_args=(): fake_output
 
-            def fake_run_lake_backend_check(lake, source, cwd):
-                rendered_path = None
-                for line in source.splitlines():
-                    stripped = line.strip()
-                    if stripped.startswith('"/') and stripped.endswith('"'):
-                        rendered_path = Path(json.loads(stripped))
-                        break
-                self.assertIsNotNone(rendered_path)
-                rendered_json = json.loads(rendered_path.read_text())
+            def fake_run_lake_backend_check(lake, json_path, cwd, linker_symbols):
+                rendered_json = json.loads(json_path.read_text())
                 self.assertEqual(
                     rendered_json["frontend"],
                     {"producer": "solc", "ast": "irAst"},
@@ -7184,7 +7176,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                     "bytecode_bytes=3\n"
                 )
 
-            bridge.run_lake_backend_check = fake_run_lake_backend_check
+            bridge.run_lake_native_backend_check = fake_run_lake_backend_check
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 standard_json = root / "input.json"
@@ -7215,7 +7207,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                 output = json.loads(sys.stdout.getvalue())
         finally:
             bridge.run_solc = old_run_solc
-            bridge.run_lake_backend_check = old_run_lake_backend_check
+            bridge.run_lake_native_backend_check = old_run_lake_backend_check
             sys.stdout = old_stdout
 
         self.assertEqual(result, 0)

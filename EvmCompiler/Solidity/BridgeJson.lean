@@ -105,6 +105,28 @@ def decodeOptionalName (json : Lean.Json) (name : String) :
   | none => pure none
   | some value => some <$> value.getStr?
 
+/-- Decode an optional source-facing spill-memory promise. Its absence means
+unrestricted Yul memory. The promise is input metadata; compiler correctness
+still requires the semantic source-safety premise indexed by this contract. -/
+def decodeMemoryContract (json : Lean.Json) :
+    DecodeM MemoryContract.Contract :=
+  match json.getObjVal? "memoryContract" with
+  | .error _ => .ok MemoryContract.unrestricted
+  | .ok contractJson =>
+      match contractJson.getObjVal? "scratch" with
+      | .error err => .error s!"memoryContract.scratch: {err}"
+      | .ok .null => .ok MemoryContract.unrestricted
+      | .ok scratchJson => do
+          let base ← natField scratchJson "base"
+          let words ← natField scratchJson "words"
+          let reservation : MemoryContract.ScratchReservation :=
+            { base := base, words := words }
+          if 0 < words ∧ reservation.WellFormed then
+            .ok { scratch? := some reservation }
+          else
+            .error
+              "memoryContract.scratch must be positive, word-aligned, and end below 2^256"
+
 mutual
   def decodeExpr : Nat → Lean.Json → DecodeM Expr
     | 0, _ => .error "expression JSON decoder ran out of fuel"
@@ -243,13 +265,15 @@ mutual
         let data ← decodeArrayField (decodeDataSection fuel) json "data"
         let objects ← decodeArrayField (decodeObject fuel) json "subobjects"
         let items ← decodeArrayField (decodeObjectItemRef fuel) json "items"
+        let memoryContract ← decodeMemoryContract json
         .ok
           { name := name
             dispatcher := dispatcher
             functions := functions
             data := data
             objects := objects
-            items := items }
+            items := items
+            memoryContract := memoryContract }
 end
 
 def decodeProgram (json : Lean.Json) : DecodeM Program := do

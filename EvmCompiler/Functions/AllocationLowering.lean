@@ -3333,9 +3333,11 @@ theorem lowerBlockOpen_cons_components
             ⟨head, next, tail, rfl,
               by simp [lowerBlockOpen, hTail], rfl⟩
 
-def lowerFunction? (recipe : AllocationSupport.AllocationRecipe)
+def lowerFunctionWithFrameFunctions?
+    (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name)
     (frameConfig? : Option AllocationSupport.ScratchFrameConfig)
+    (cachedFrameFunctions : List Name)
     (state : AllocationSupport.CompileState) (fn : FunDef) :
     Option (Locals.Proc × AllocationSupport.CompileState) := do
   let slots ← AllocationSupport.lookupFun? fn.name recipe.functionSlots
@@ -3352,7 +3354,7 @@ def lowerFunction? (recipe : AllocationSupport.AllocationRecipe)
       stackSlots := stackSlots
       root := root
       scratchBindings := scratchBindings
-      frameFunctions := frameFunctions recipe stackSlots }
+      frameFunctions := cachedFrameFunctions }
   let markers :=
     [bindEntryLayout entryLayout] ++
       if needsFrame then
@@ -3384,6 +3386,39 @@ def lowerFunction? (recipe : AllocationSupport.AllocationRecipe)
      { env := state.env
        nextSlot := final.allocation.nextSlot })
 
+def lowerFunction? (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) (frameName : Name)
+    (frameConfig? : Option AllocationSupport.ScratchFrameConfig)
+    (state : AllocationSupport.CompileState) (fn : FunDef) :
+    Option (Locals.Proc × AllocationSupport.CompileState) :=
+  lowerFunctionWithFrameFunctions? recipe stackSlots frameName frameConfig?
+    (frameFunctions recipe stackSlots) state fn
+
+def lowerFunctionsCached? (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) (frameName : Name)
+    (frameConfig? : Option AllocationSupport.ScratchFrameConfig)
+    (cachedFrameFunctions : List Name) :
+    AllocationSupport.CompileState → List FunDef →
+      Option (List Locals.Proc × AllocationSupport.CompileState)
+  | state, [] => some ([], state)
+  | state, fn :: rest => do
+      let (proc, next) ←
+        lowerFunctionWithFrameFunctions? recipe stackSlots frameName
+          frameConfig? cachedFrameFunctions state fn
+      let (tail, final) ←
+        lowerFunctionsCached? recipe stackSlots frameName frameConfig?
+          cachedFrameFunctions next rest
+      some (proc :: tail, final)
+
+def lowerFunctionsFast? (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) (frameName : Name)
+    (frameConfig? : Option AllocationSupport.ScratchFrameConfig) :
+    AllocationSupport.CompileState → List FunDef →
+      Option (List Locals.Proc × AllocationSupport.CompileState) :=
+  lowerFunctionsCached? recipe stackSlots frameName frameConfig?
+    (frameFunctions recipe stackSlots)
+
+@[implemented_by lowerFunctionsFast?]
 def lowerFunctions? (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name)
     (frameConfig? : Option AllocationSupport.ScratchFrameConfig) :
@@ -3396,6 +3431,44 @@ def lowerFunctions? (recipe : AllocationSupport.AllocationRecipe)
       let (tail, final) ←
         lowerFunctions? recipe stackSlots frameName frameConfig? next rest
       some (proc :: tail, final)
+
+theorem lowerFunctionsCached_eq
+    (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) (frameName : Name)
+    (frameConfig? : Option AllocationSupport.ScratchFrameConfig)
+    (state : AllocationSupport.CompileState) (functions : List FunDef) :
+    lowerFunctionsCached? recipe stackSlots frameName frameConfig?
+        (frameFunctions recipe stackSlots) state functions =
+      lowerFunctions? recipe stackSlots frameName frameConfig?
+        state functions := by
+  induction functions generalizing state with
+  | nil => rfl
+  | cons fn rest ih =>
+      simp only [lowerFunctionsCached?, lowerFunctions?]
+      rw [show
+        lowerFunctionWithFrameFunctions? recipe stackSlots frameName
+            frameConfig? (frameFunctions recipe stackSlots) state fn =
+          lowerFunction? recipe stackSlots frameName frameConfig? state fn
+        from rfl]
+      cases hHead :
+          lowerFunction? recipe stackSlots frameName frameConfig? state fn with
+      | none => simp [hHead]
+      | some result =>
+          rcases result with ⟨proc, next⟩
+          simp [hHead, ih next]
+
+theorem lowerFunctionsFast_eq
+    (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) (frameName : Name)
+    (frameConfig? : Option AllocationSupport.ScratchFrameConfig)
+    (state : AllocationSupport.CompileState) (functions : List FunDef) :
+    lowerFunctionsFast? recipe stackSlots frameName frameConfig?
+        state functions =
+      lowerFunctions? recipe stackSlots frameName frameConfig?
+        state functions := by
+  exact
+    lowerFunctionsCached_eq recipe stackSlots frameName frameConfig?
+      state functions
 
 theorem lowerFunction?_name
     {recipe : AllocationSupport.AllocationRecipe}
@@ -3412,7 +3485,7 @@ theorem lowerFunction?_name
           (fun output => output.1.name) =
         (lowerFunction? recipe stackSlots frameName frameConfig? state fn).map
           (fun _output => fn.name) := by
-    simp [lowerFunction?]
+    simp [lowerFunction?, lowerFunctionWithFrameFunctions?]
   rw [hLower] at hNames
   simpa using hNames
 
@@ -3482,7 +3555,7 @@ theorem lowerFunction?_components
   cases hSlots :
       AllocationSupport.lookupFun? fn.name recipe.functionSlots with
   | none =>
-      simp [lowerFunction?, hSlots] at hLower
+      simp [lowerFunction?, lowerFunctionWithFrameFunctions?, hSlots] at hLower
   | some slots =>
       let root := ScopeId.function fn.name
       let scratchBindings :=
@@ -3515,7 +3588,8 @@ theorem lowerFunction?_components
             { env := AllocationSupport.functionEnv slots
               nextSlot := state.nextSlot }
           layout := bodyLayout }
-      simp only [lowerFunction?, hSlots] at hLower
+      simp only [lowerFunction?, lowerFunctionWithFrameFunctions?, hSlots]
+        at hLower
       change
         (do
           let (body, bodyFinal) ←

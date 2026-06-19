@@ -1,6 +1,7 @@
 import EvmCompiler.Compiler.Artifact
 import EvmCompiler.Locals.Allocation
 import EvmCompiler.TypedCfg.Certificate
+import Std.Data.HashSet
 
 namespace EvmCompiler
 namespace Compiler
@@ -69,6 +70,72 @@ def cfgWitnessesScratchBinding (program : TypedCfg.Program)
   program.blocks.any fun block =>
     blockWitnessesScratchBinding block binding
 
+def instrScratchBinding? (instr : TypedCfg.Instr) :
+    Option (Locals.Name × Nat) :=
+  match instr with
+  | .bindScratch _baseDepth name slot => some (name, slot)
+  | _ => none
+
+def cfgScratchBindings (program : TypedCfg.Program) :
+    List (Locals.Name × Nat) :=
+  program.blocks.flatMap fun block =>
+    block.body.filterMap instrScratchBinding?
+
+def scratchBindingSet (program : TypedCfg.Program) :
+    Std.HashSet (Locals.Name × Nat) :=
+  (cfgScratchBindings program).foldl
+    (fun bindings binding => bindings.insert binding)
+    (Std.HashSet.emptyWithCapacity (cfgScratchBindings program).length)
+
+private theorem instrScratchBinding?_eq_some_iff
+    (instr : TypedCfg.Instr) (binding : Locals.Name × Nat) :
+    instrScratchBinding? instr = some binding ↔
+      instrBindsScratch instr binding = true := by
+  cases instr <;> simp [instrScratchBinding?, instrBindsScratch]
+
+theorem mem_cfgScratchBindings_iff
+    (program : TypedCfg.Program) (binding : Locals.Name × Nat) :
+    binding ∈ cfgScratchBindings program ↔
+      cfgWitnessesScratchBinding program binding = true := by
+  simp [cfgScratchBindings, cfgWitnessesScratchBinding,
+    blockWitnessesScratchBinding, instrScratchBinding?_eq_some_iff]
+
+private theorem hashSetContains_foldl_insert
+    (items : List (Locals.Name × Nat))
+    (bindings : Std.HashSet (Locals.Name × Nat))
+    (binding : Locals.Name × Nat) :
+    (items.foldl (fun set item => set.insert item) bindings).contains binding =
+      (bindings.contains binding || items.contains binding) := by
+  induction items generalizing bindings with
+  | nil => simp
+  | cons head tail ih =>
+      rw [List.foldl, ih, Std.HashSet.contains_insert]
+      by_cases hEq : head = binding
+      · subst head
+        simp [Bool.or_assoc, Bool.or_comm, Bool.or_left_comm]
+      · have hRev : binding ≠ head := by
+          intro h
+          exact hEq h.symm
+        have hBeq : (head == binding) = false :=
+          beq_eq_false_iff_ne.mpr hEq
+        simp [hBeq, hEq, hRev]
+
+theorem scratchBindingSet_contains
+    (program : TypedCfg.Program) (binding : Locals.Name × Nat) :
+    (scratchBindingSet program).contains binding =
+      cfgWitnessesScratchBinding program binding := by
+  rw [show
+    scratchBindingSet program =
+      (cfgScratchBindings program).foldl
+        (fun set item => set.insert item)
+        (Std.HashSet.emptyWithCapacity
+          (cfgScratchBindings program).length) from rfl]
+  rw [hashSetContains_foldl_insert]
+  simp only [Std.HashSet.contains_emptyWithCapacity, Bool.false_or]
+  apply Bool.eq_iff_iff.mpr
+  rw [← mem_cfgScratchBindings_iff]
+  simp
+
 namespace ScopeLayout
 
 def stackNames (layout : ScopeLayout) : List Locals.Name :=
@@ -90,9 +157,25 @@ def scopeLayoutWitnessed? (layout : ScopeLayout)
     layout.scratchBindings.all fun binding =>
       cfgWitnessesScratchBinding cfg binding
 
+def scopeLayoutsWitnessedFast? (layouts : List ScopeLayout)
+    (cfg : TypedCfg.Program) : Bool :=
+  let scratchBindings := scratchBindingSet cfg
+  layouts.all fun layout =>
+    cfgWitnessesLocalLayout cfg layout.stackNames &&
+      layout.scratchBindings.all fun binding =>
+        scratchBindings.contains binding
+
+@[implemented_by scopeLayoutsWitnessedFast?]
 def scopeLayoutsWitnessed? (layouts : List ScopeLayout)
     (cfg : TypedCfg.Program) : Bool :=
   layouts.all fun layout => scopeLayoutWitnessed? layout cfg
+
+theorem scopeLayoutsWitnessedFast_eq
+    (layouts : List ScopeLayout) (cfg : TypedCfg.Program) :
+    scopeLayoutsWitnessedFast? layouts cfg =
+      scopeLayoutsWitnessed? layouts cfg := by
+  simp [scopeLayoutsWitnessedFast?, scopeLayoutsWitnessed?,
+    scopeLayoutWitnessed?, scratchBindingSet_contains]
 
 structure Program where
   allocation : Locals.Allocation.ProgramPlan

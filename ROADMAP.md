@@ -534,3 +534,18 @@ completion gates unless the narrow transcript bridge actually needs them.
   certificate, call oracle, or vertical Yul-to-bytecode proof corridor.
 - [x] Focused Lean builds, full verification root, architecture checks, hole
   scan, axiom audit, proof aggregate, and `git diff --check` pass.
+
+## Full Solc Contracts
+
+- [x] Parse exact pinned Permit2 Yul and compile its runtime through the native
+  canonical object-image path.
+- [x] Compile pinned Aave v3 Pool under an explicit source-facing scratch
+  reservation, including linked library symbols.
+- [x] Remove the large-contract superlinear traversals with proved executable
+  implementations and keep production compilation out of `lean --run`.
+- [x] Gate both contracts from fresh pinned checkouts and retain schema, Lean,
+  architecture, hole, axiom, and diff checks.
+- [ ] Select compile-validated mixed stack/scratch plans under real expression
+  pressure instead of falling back to all-scratch allocation.
+- [ ] Bring emitted runtime size into a practical deployable range without
+  weakening the horizontal correctness theorem or source memory premise.

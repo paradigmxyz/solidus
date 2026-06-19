@@ -1127,10 +1127,62 @@ def findOccurrencesAux (needle bytes : List UInt8) :
           acc
       findOccurrencesAux needle bytes (start + 1) fuel acc
 
+def findOccurrencesCursorAux (needle : List UInt8) :
+    List UInt8 → Nat → Nat → List Nat → List Nat
+  | _cursor, _start, 0, acc => acc.reverse
+  | [], _start, _fuel + 1, acc => acc.reverse
+  | cursor@(_byte :: tail), start, fuel + 1, acc =>
+      let acc :=
+        if cursor.take needle.length == needle then
+          start :: acc
+        else
+          acc
+      findOccurrencesCursorAux needle tail (start + 1) fuel acc
+
+def findOccurrencesFast (needle bytes : List UInt8) : List Nat :=
+  match needle with
+  | [] => []
+  | _ :: _ =>
+      findOccurrencesCursorAux needle bytes 0 (bytes.length + 1) []
+
+@[implemented_by findOccurrencesFast]
 def findOccurrences (needle bytes : List UInt8) : List Nat :=
   match needle with
   | [] => []
   | _ :: _ => findOccurrencesAux needle bytes 0 (bytes.length + 1) []
+
+private theorem findOccurrencesCursorAux_eq
+    {needle bytes cursor : List UInt8} {start : Nat} {acc : List Nat}
+    (hNeedle : needle ≠ [])
+    (hCursor : bytes.drop start = cursor) :
+    findOccurrencesCursorAux needle cursor start (cursor.length + 1) acc =
+      findOccurrencesAux needle bytes start (cursor.length + 1) acc := by
+  induction cursor generalizing bytes start acc with
+  | nil =>
+      simp [findOccurrencesCursorAux, findOccurrencesAux,
+        startsWithAt, hCursor, hNeedle]
+  | cons byte tail ih =>
+      have hTail : bytes.drop (start + 1) = tail := by
+        calc
+          bytes.drop (start + 1) = (bytes.drop start).drop 1 := by
+            exact (List.drop_drop (i := 1) (j := start) (l := bytes)).symm
+          _ = tail := by simp [hCursor]
+      have hStarts :
+          startsWithAt needle bytes start =
+            ((byte :: tail).take needle.length == needle) := by
+        simp [startsWithAt, hCursor]
+      rw [findOccurrencesCursorAux, findOccurrencesAux, hStarts]
+      exact ih hTail
+
+theorem findOccurrencesFast_eq
+    (needle bytes : List UInt8) :
+    findOccurrencesFast needle bytes = findOccurrences needle bytes := by
+  cases needle with
+  | nil => rfl
+  | cons byte tail =>
+      apply findOccurrencesCursorAux_eq
+      · simp
+      · rfl
 
 def zeroWord32 : List UInt8 :=
   Assembly.Bytecode.encodeWord32 (EvmYul.UInt256.ofNat 0)
@@ -2212,6 +2264,18 @@ def toYulProgram? (object : Object) : Option Yul.Program := do
     { contract := contract
       memoryContract := object.memoryContract }
 
+theorem toYulProgram?_memoryContract
+    {object : Object} {program : Yul.Program}
+    (hConvert : object.toYulProgram? = some program) :
+    program.memoryContract = object.memoryContract := by
+  unfold toYulProgram? at hConvert
+  cases hContract : Object.toYulContract? object with
+  | none => simp [hContract] at hConvert
+  | some contract =>
+      simp [hContract] at hConvert
+      subst program
+      rfl
+
 def toSolcYulProgram? (object : Object) :
     Option Yul.Program := do
   let (contract, functions) ← object.toYulContractWithFunctionEntries?
@@ -2222,6 +2286,23 @@ def toSolcYulProgram? (object : Object) :
         memoryContract := object.memoryContract }
   else
     none
+
+theorem toSolcYulProgram?_memoryContract
+    {object : Object} {program : Yul.Program}
+    (hConvert : object.toSolcYulProgram? = some program) :
+    program.memoryContract = object.memoryContract := by
+  unfold toSolcYulProgram? at hConvert
+  cases hContract : object.toYulContractWithFunctionEntries? with
+  | none => simp [hContract] at hConvert
+  | some result =>
+      rcases result with ⟨contract, functions⟩
+      by_cases hValid :
+          Yul.SolcValidation.ContractOkWithEntries?
+            Yul.SolcValidation.defaultDialectProfile contract functions
+      · simp [hContract, hValid] at hConvert
+        subst program
+        rfl
+      · simp [hContract, hValid] at hConvert
 
 def toYulProgramWithLayout? (object : Object) (layout : ObjectLayout) :
     Option Yul.Program := do

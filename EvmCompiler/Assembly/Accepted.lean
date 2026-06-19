@@ -53,10 +53,32 @@ end Instr
 
 namespace Program
 
+def labelsRev : Program → List Label → List Label
+  | [], acc => acc
+  | .label name :: rest, acc => labelsRev rest (name :: acc)
+  | _ :: rest, acc => labelsRev rest acc
+
+def labelsFast (program : Program) : List Label :=
+  (labelsRev program []).reverse
+
+@[implemented_by labelsFast]
 def labels : Program → List Label
   | [] => []
   | .label name :: rest => name :: labels rest
   | _ :: rest => labels rest
+
+theorem labelsRev_eq (program : Program) (acc : List Label) :
+    labelsRev program acc = program.labels.reverse ++ acc := by
+  induction program generalizing acc with
+  | nil => simp [labelsRev, labels]
+  | cons instr rest ih =>
+      cases instr <;>
+        simp [labelsRev, labels, ih, List.reverse_cons,
+          List.append_assoc]
+
+theorem labelsFast_eq_labels (program : Program) :
+    labelsFast program = program.labels := by
+  simp [labelsFast, labelsRev_eq]
 
 theorem labels_append (left right : Program) :
     labels (left ++ right) = labels left ++ labels right := by
