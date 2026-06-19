@@ -103,6 +103,7 @@ import EvmCompiler.Structured.InteractionBoundedLoopPreservation
 import EvmCompiler.Structured.InteractionCallPreservation
 import EvmCompiler.Structured.InteractionOwnerPreservation
 import EvmCompiler.Structured.InteractionBoundedOwnerPreservation
+import EvmCompiler.Structured.InteractionTerminalPreservation
 import EvmCompiler.Structured.ObserverSemantics
 import EvmCompiler.Structured.ObserverPreservation
 import EvmCompiler.Structured.ObserverActivationBoundary
@@ -949,6 +950,9 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.InteractionBoundedOwnerPreservation.OpenOutcome.GeneratedProgram.main_uniform
 #check EvmCompiler.Structured.InteractionBoundedOwnerPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_uniform
 #check EvmCompiler.Structured.InteractionBoundedOwnerPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_preserves
+#check EvmCompiler.Structured.InteractionTerminalPreservation.OpenOutcome.PreservesUnder.outcomes
+#check EvmCompiler.Structured.InteractionTerminalPreservation.OpenOutcome.PreservesUnder.terminal
+#check EvmCompiler.Structured.InteractionTerminalPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_terminal
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_call
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_callcode

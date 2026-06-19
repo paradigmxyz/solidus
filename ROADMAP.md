@@ -15,9 +15,11 @@ semantics for `gas`, `msize`, `CALL`, `CALLCODE`, `DELEGATECALL`, `STATICCALL`,
 `CREATE`, and `CREATE2` are now checked. Target bytecode control now uses one
 parameterized recursive kernel shared by target, source, and emitted-block
 execution. Exact per-instruction and whole-program emitted-block open
-preservation are checked. The fetched/encoded-bytecode execution bridge,
-legacy observer specialization, and all higher adjacent preservation
-boundaries remain active work.
+preservation are checked. Every higher adjacent preservation boundary is now
+checked through terminal Structured-to-TypedCfg execution. The remaining
+lower-layer proof is a uniform structural bridge from compiler-selected
+Assembly block execution to encoded-bytecode execution; the existing theorem
+currently selects target fuel separately for each concrete transcript.
 
 ## Open-Effects Migration Status
 
@@ -29,6 +31,11 @@ boundaries remain active work.
   recursive loop, internal call, statement list, and generated main program;
   one checked theorem pads all successful open branches to a uniform target
   fuel without a call oracle or generated public premise.
+- [x] Erase Structured compiler residual-fuel tags and prove that its internal
+  stop policy is inert on universally halting open-world executions, yielding
+  the ordinary TypedCfg runner expected by the adjacent lower pass.
+- [ ] Strengthen Assembly -> encoded bytecode from concrete-branch existential
+  fuel to one source-derived uniform target budget and `Interaction.Rel`.
 - [x] Functions allocation relation, primitive families, recursive
   expressions, stack/scratch declaration preservation, and assignment
   preservation in both activation modes.
@@ -263,7 +270,7 @@ boundaries remain active work.
                 and compiler-selected switch composition, including no-match,
                 selected case/default, lexical cleanup, freshness widening,
                 and recursively measured selected-target cost.
-              - [ ] Rebuild the historical five-way fuel fixed point over
+              - [x] Rebuild the historical five-way fuel fixed point over
                 canonical body, value, statement, list, and compound
                 interfaces.
               - [x] Instantiate if, switch, and for from ordinary
@@ -274,19 +281,19 @@ boundaries remain active work.
                 - [x] Switch selection and selected body.
                 - [x] For-loop initializer/body/post composition.
               - [x] Close the exhaustive statement dispatcher.
-              - [ ] Close selected callee bodies.
+              - [x] Close selected callee bodies.
                 - [x] Package recursive list preservation as the exact
                   regular/leave/terminal function-body relation.
-                - [ ] Prove the source-syntax compiler expansion bound for the
+                - [x] Prove the source-syntax compiler expansion bound for the
                   recursive target cost and discharge the private body budget.
               - The historical `ScopedOpenResult`, observer transcript state,
                 `Nat.find`-based `requiredFuel`, replay relation, and public
                 recursive-call premise are reference material only and will
                 not be ported.
-    - [ ] Complete the recursive statement/list/body fixed point over ordinary
+    - [x] Complete the recursive statement/list/body fixed point over ordinary
       compiler decomposition. Every statement constructor and list edge is
-      checked; only the source-owned target-expansion bound and resulting body
-      attachment remain.
+      checked with the source-owned target-expansion bound and selected body
+      attachment.
     - [x] Compose independent CALL/CREATE and GAS/MSIZE providers with a
       closed-ordinary-primitive capability; no opcode dispatch occurs inside
       expression recursion.

@@ -209,7 +209,10 @@ for theorem in \
     'EvmCompiler.Structured.InteractionLoopPreservation.Loop.Stmt.openRun_for_bounded_under_of_compileStmtFuel?' \
     'EvmCompiler.Structured.InteractionBoundedOwnerPreservation.OpenOutcome.block_owner' \
     'EvmCompiler.Structured.InteractionBoundedOwnerPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_uniform' \
-    'EvmCompiler.Structured.InteractionBoundedOwnerPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_preserves'; do
+    'EvmCompiler.Structured.InteractionBoundedOwnerPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_preserves' \
+    'EvmCompiler.Structured.InteractionTerminalPreservation.OpenOutcome.PreservesUnder.outcomes' \
+    'EvmCompiler.Structured.InteractionTerminalPreservation.OpenOutcome.PreservesUnder.terminal' \
+    'EvmCompiler.Structured.InteractionTerminalPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_terminal'; do
   if ! rg -Fq "#check ${theorem}" EvmCompiler/Verification.lean; then
     printf 'Verification root is missing bounded Structured theorem %s.\n\n' \
       "$theorem" >&2
@@ -1291,6 +1294,7 @@ report_matches \
   EvmCompiler/Structured/InteractionBoundedLoopPreservation.lean \
   EvmCompiler/Structured/InteractionCallPreservation.lean \
   EvmCompiler/Structured/InteractionBoundedOwnerPreservation.lean \
+  EvmCompiler/Structured/InteractionTerminalPreservation.lean \
   EvmCompiler/Expressions/EffectSemantics.lean \
   EvmCompiler/Expressions/InteractionSemantics.lean \
   EvmCompiler/Expressions/InteractionPreservation.lean \

@@ -700,6 +700,96 @@ theorem openRunNResultWithRefinedStop_add
             Simulation.Interaction.bind,
             Simulation.Interaction.pure]
 
+def runResultOutcome : Control.Program.RunResult -> TypedCfg.Outcome
+  | .exhausted label state => .jump label state
+  | .stopped _ outcome => outcome
+
+/-- Erasing residual fuel from the result runner recovers the outcome runner. -/
+theorem map_openRunNResultWithStop_runResultOutcome
+    (stopJump : Label -> EVMState -> Bool)
+    (program : TypedCfg.Program) (fuel : Nat)
+    (label : Label) (state : EVMState) :
+    Simulation.Interaction.map runResultOutcome
+        (openRunNResultWithStop stopJump program fuel label state) =
+      openRunNWithStop stopJump program fuel label state := by
+  induction fuel generalizing label state with
+  | zero => rfl
+  | succ fuel ih =>
+      rw [openRunNResultWithStop_succ_eq_bind, openRunNWithStop_succ]
+      unfold Simulation.Interaction.map
+      rw [Simulation.Interaction.bind_assoc]
+      apply Simulation.Interaction.AllDone.bind_congr
+        (Simulation.Interaction.AllDone.trivial
+          (openStep program label state))
+      intro outcome _hDone
+      cases outcome with
+      | jump next nextState =>
+          by_cases hStop : stopJump next nextState = true
+          · simp [afterOpenStepResultWithStop, hStop,
+              Simulation.Interaction.map, runResultOutcome,
+              Simulation.Interaction.instMonad,
+              Simulation.Interaction.bind,
+              Simulation.Interaction.pure]
+          · simp [afterOpenStepResultWithStop, hStop,
+              Simulation.Interaction.map]
+            exact ih next nextState
+      | fallthrough final
+      | returnDispatch final
+      | halt kind final
+      | invalid final =>
+          rfl
+
+/-- Successful stop-aware branches are terminal exactly when they halt. -/
+def Halted : Except EVMException TypedCfg.Outcome -> Prop
+  | .ok (.halt _ _) => True
+  | _ => False
+
+/-- A stop policy is inert when every branch already halts. -/
+theorem openRunNWithStop_eq_openRunN_of_allDone_halted
+    (stopJump : Label -> EVMState -> Bool)
+    (program : TypedCfg.Program) (fuel : Nat)
+    (label : Label) (state : EVMState)
+    (hHalted : Simulation.Interaction.AllDone Halted
+      (openRunNWithStop stopJump program fuel label state)) :
+    openRunNWithStop stopJump program fuel label state =
+      openRunN program fuel label state := by
+  induction fuel generalizing label state with
+  | zero =>
+      cases hHalted with
+      | done hDone => cases hDone
+  | succ fuel ih =>
+      rw [openRunNWithStop_succ, openRunN_succ]
+      apply Simulation.Interaction.AllDone.bind_congr
+        (Simulation.Interaction.AllDone.bind_inv hHalted)
+      intro outcome hContinuation
+      cases outcome with
+      | jump next nextState =>
+          change
+            (if stopJump next nextState then
+                pure (.jump next nextState)
+              else
+                openRunNWithStop stopJump program fuel next nextState) =
+              openRunN program fuel next nextState
+          change
+            Simulation.Interaction.AllDone Halted
+              (if stopJump next nextState then
+                  pure (.jump next nextState)
+                else
+                  openRunNWithStop stopJump program fuel next nextState)
+              at hContinuation
+          by_cases hStop : stopJump next nextState = true
+          · rw [hStop] at hContinuation
+            cases hContinuation with
+            | done hDone => cases hDone
+          · rw [show stopJump next nextState = false by
+                  exact Bool.eq_false_of_not_eq_true hStop]
+              at hContinuation ⊢
+            exact ih next nextState hContinuation
+      | fallthrough final => rfl
+      | returnDispatch final => rfl
+      | halt kind final => rfl
+      | invalid final => rfl
+
 def RunResultStopped :
     Except EVMException Control.Program.RunResult → Prop
   | .error _ => True
