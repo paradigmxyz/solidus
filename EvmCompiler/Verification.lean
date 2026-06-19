@@ -1561,6 +1561,7 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.recursiveCondition
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.RecursiveListForward.ofStmt
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.forLoop
+#print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.recursiveStmtOfEarlier
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_let_none_control
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_brk_control
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_cont_control

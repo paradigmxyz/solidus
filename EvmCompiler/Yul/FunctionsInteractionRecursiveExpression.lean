@@ -115,13 +115,13 @@ theorem recursiveBoundHeads
                   omega
                 unfold FunctionsInteractionSelectedCall.BodyForwardAt
                 intro body before after fn source target hLowerBody hBodyOk
-                  hReserved hBodyBudget hRel
+                  hReserved hBodyBudget hRel hDomain
                 exact hBodies
                     (bodyFuel := bodyFuel)
                     (bodyTargetFuel :=
                       targetFuel - preRest.length - preHead.length - 2)
                     hBodyLt
-                  hLowerBody hBodyOk hReserved hBodyBudget hRel
+                  hLowerBody hBodyOk hReserved hBodyBudget hRel hDomain
               · intro bodyFuel hFuelEq
                 have hChildFuelLe : bodyFuel + 1 ≤ headFuel := by
                   omega

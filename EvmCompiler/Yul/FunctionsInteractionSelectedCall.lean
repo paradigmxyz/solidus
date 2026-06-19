@@ -33,6 +33,7 @@ def BodyForwardAt
     FunctionsInteractionStaticCost.bodyBudget
         sourceProgram body sourceFuel ≤ targetFuel →
     ScopedStateRel (fn.returns ++ fn.params) source target →
+    TargetDomainWithin before.used target.vars →
     Simulation.Interaction.ForwardRel Truncated
       (FunctionsInteractionCall.FunctionBodyDoneRel
         (fn.returns ++ fn.params))
@@ -42,6 +43,23 @@ def BodyForwardAt
         targetProgram.toFunctions
         (Functions.Source.Effectful.FunDef.bodyCtx fn)
         targetFuel fn.body target)
+
+/-- The exact compiler-selected callee frame contains only initialized returns
+and parameters, all of which are reserved by the body compiler artifact. -/
+theorem entryTargetDomain
+    {before : Fresh.State} {fn : Functions.FunDef}
+    {args : List Word} {paramStore : Locals.Source.Store}
+    (hParamStore :
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty = some paramStore)
+    (hReserved : ∀ name, name ∈ fn.returns ++ fn.params →
+      name ∈ before.used) :
+    TargetDomainWithin before.used
+      (Functions.Source.Store.initReturns fn.returns paramStore) := by
+  intro name value hLookup
+  exact hReserved name
+    (Functions.Source.Store.initReturns_insertMany_empty_apply_mem
+      hParamStore hLookup)
 
 /-- Preserve the exact ordinary compiler output for a validated one-result
 internal-call expression, assuming only the smaller-fuel selected body theorem.
@@ -245,6 +263,14 @@ theorem ofUncheckedFunctionCallLowering
                 Locals.Source.Effectful.StateModel.source,
                 Locals.Source.Effectful.StateModel.withSource]
                 using hEntry)
+            (by
+              simpa [hFnParams, hFnReturns, identNames_eq_self,
+                Functions.InteractionSemantics.stateModel,
+                Locals.InteractionSemantics.stateModel,
+                Locals.Source.Effectful.Ordinary.stateModel,
+                Locals.Source.Effectful.StateModel.source,
+                Locals.Source.Effectful.StateModel.withSource] using
+                (entryTargetDomain hParamStore hReserved))
           have hRunBody := FunctionsInteractionCall.runBodyForward
             (program := targetProgram.toFunctions)
             (targetBodyFuel := targetBodyFuel)

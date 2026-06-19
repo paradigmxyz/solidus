@@ -628,6 +628,399 @@ theorem boundPrimitive
             hLayoutBefore hLayoutAfter
             hTargetFuel
 
+/-- Exhaustive zero-result primitive statement for the ordinary unchecked
+compiler. Direct operands remain deferred in the final expression; bounded
+operands use the shared recursive argument prelude before the same statement
+leaf. -/
+theorem zeroOfLowering
+    (hPrimitive : FunctionsInteractionPrimitive.CompilerSelected)
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program}
+    {fuel targetFuel : Nat}
+    {prim : EvmYul.Operation .Yul} {args : List AstExpr}
+    {pre : List Functions.Stmt} {lower : Locals.Expr 0}
+    {before after : Fresh.State}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {layout : List Functions.Name}
+    {sourceScopes : FunctionsInteractionControlRelation.SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hLowering : Expr.UncheckedPrimitiveLowering 0
+      before prim args pre lower after)
+    (hExprOk : SolcValidation.ExprOk? profile sourceProgram.contract layout 0
+      (.Call (.inl prim) args) = true)
+    (hNested :
+      ∀ argsFuel,
+        fuel = argsFuel + 1 →
+          RecursiveBoundHeads profile sourceProgram argsFuel targetFuel
+            codeOverride program layout)
+    (hProgramBudget :
+      FunctionsInteractionStaticCost.programBudget sourceProgram fuel +
+        pre.length + 2 ≤ targetFuel)
+    (hRel : FunctionsInteractionRelation.ScopedStateRel layout source target)
+    (hDomain : FunctionsInteractionRelation.TargetDomainWithin
+      before.used target.vars)
+    (hTargetScope :
+      FunctionsInteractionControlRelation.TargetScopeWithin before.used ctx)
+    (hLayout : ∀ name, name ∈ layout → name ∈ before.used)
+    (hControl : FunctionsInteractionControlRelation.ControlContextRel
+      sourceScopes layout canBreak canContinue canLeave ctx) :
+    Simulation.Interaction.ForwardRel Truncated
+      (FunctionsInteractionControlRelation.ControlDoneRel after.used layout
+        sourceScopes canBreak canContinue canLeave)
+      (Yul.InteractionSemantics.exec fuel
+        (.ExprStmtCall (.Call (.inl prim) args)) codeOverride source)
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx targetFuel
+          { stmts := pre ++ [.expr lower] } target) := by
+  cases fuel with
+  | zero =>
+      have hTruncated :
+          Truncated
+            ({ exception := .OutOfFuel, state := source } :
+              Yul.InteractionSemantics.Failure) := by
+        trivial
+      rw [Yul.InteractionSemantics.Exec.zero]
+      exact Simulation.Interaction.ForwardRel.truncated hTruncated
+  | succ argsFuel =>
+      cases hLowering with
+      | direct hDirect hOp hArgs hSeq hOutputs =>
+          rename_i op lowerArgs seq
+          have hLowerReverse :
+              Expr.List.toLocals1? args.reverse = some lowerArgs.reverse :=
+            Expr.List.toLocals1?_reverse hArgs
+          have hDirectSeq :
+              Expr.List.toSeq? lowerArgs.reverse
+                  (Expressions.Structured.BasicOp.inputs op) = some seq := by
+            simpa [Expr.List.toStackSeq?] using hSeq
+          have hArgsRel :=
+            (FunctionsInteractionExpression.compilerDirectAt
+              codeOverride argsFuel).evalArgs
+              hLowerReverse hDirectSeq hRel.state
+          have hPrimitiveRel :=
+            FunctionsInteractionExpression.Expr.primitive_of_args
+              hPrimitive (primitiveFuel := argsFuel) hOp hOutputs hArgsRel
+          have hEval :
+              Simulation.Interaction.ForwardRel Truncated
+                (FunctionsInteractionExpression.DoneRel source 0)
+                (Yul.InteractionSemantics.evalValues
+                  (argsFuel + 1) (.Call (.inl prim) args)
+                  codeOverride source)
+                (Functions.InteractionSemantics.Expr.openEval
+                  (Expr.cast hOutputs (.prim op seq)) target) := by
+            rw [FunctionsInteractionExpression.expr_openEval_cast]
+            simpa [Yul.InteractionSemantics.evalValues,
+              Yul.Source.Canonical.evalValues,
+              Yul.Source.Effectful.evalValues,
+              Functions.InteractionSemantics.Expr.openEval,
+              Locals.InteractionSemantics.Expr.openEval,
+              Locals.Source.Effectful.Expr.Control.eval,
+              FunctionsInteractionExpression.exprSeq_openEval_seqCast]
+              using hPrimitiveRel
+          have hTailFuel : 2 ≤ targetFuel := by
+            omega
+          have hStmt := FunctionsInteractionStatement.expr_of_evalValues
+            (program := program) (ctx := ctx)
+            (targetFuel := targetFuel - 1)
+            hEval hRel hDomain hControl hTargetScope
+          have hStmt' :
+              Simulation.Interaction.ForwardRel Truncated
+                (FunctionsInteractionControlRelation.ControlDoneRel
+                  before.used layout sourceScopes
+                  canBreak canContinue canLeave)
+                (Simulation.Interaction.bind
+                  (Yul.InteractionSemantics.evalValues
+                    (argsFuel + 1) (.Call (.inl prim) args)
+                    codeOverride source)
+                  (fun result =>
+                    pure
+                      (Yul.InteractionSemantics.stateModel.multifill
+                        [] result.1 result.2)))
+                (Functions.InteractionSemantics.Stmt.openRun
+                  program ctx ((targetFuel - 2) + 1)
+                  (.expr (Expr.cast hOutputs (.prim op seq))) target) := by
+            have hStmtFuelEq :
+                targetFuel - 1 = (targetFuel - 2) + 1 := by
+              omega
+            simpa only [hStmtFuelEq] using hStmt
+          have hSingleton :=
+            FunctionsInteractionStatement.ControlDoneRel.singleton
+              (targetFuel := targetFuel - 2) hStmt'
+          rw [Yul.InteractionSemantics.Exec.expr_primitive]
+          simpa [hTailFuel] using hSingleton
+      | bound hBound hOp hArgs hSeq hOutputs =>
+          rename_i op lowerArgs seq
+          have hArgsOk :=
+            SolcValidation.exprsOk_of_exprOk_primitive hExprOk
+          have hArgsBudget :
+              FunctionsInteractionStaticCost.programBudget
+                    sourceProgram argsFuel + pre.length + 2 ≤
+                targetFuel := by
+            have hBudgetLe :
+                FunctionsInteractionStaticCost.programBudget
+                    sourceProgram argsFuel ≤
+                  FunctionsInteractionStaticCost.programBudget
+                    sourceProgram (argsFuel + 1) := by
+              unfold FunctionsInteractionStaticCost.programBudget
+              exact FunctionsInteractionFuel.executionBudgetFor_mono _ _
+                (by omega)
+            omega
+          have hPrepared :=
+            FunctionsInteractionPreparedArgs.ofUncheckedLowering
+              (ctx := ctx) hArgsOk hArgs (hNested argsFuel rfl)
+              hArgsBudget hRel hDomain hTargetScope hLayout (by omega)
+          rw [Yul.InteractionSemantics.Exec.expr_primitive,
+            Functions.InteractionSemantics.Block.openRun_append]
+          unfold Yul.InteractionSemantics.evalValues
+            Yul.Source.Canonical.evalValues
+            Yul.Source.Effectful.evalValues
+          change
+            Simulation.Interaction.ForwardRel Truncated
+              (FunctionsInteractionControlRelation.ControlDoneRel
+                after.used layout sourceScopes
+                canBreak canContinue canLeave)
+              (Simulation.Interaction.bind
+                (Simulation.Interaction.bind
+                  (Yul.InteractionSemantics.evalArgs
+                    argsFuel args.reverse codeOverride source)
+                  (fun argsResult =>
+                    Yul.InteractionSemantics.Primitive.openEval
+                      argsFuel argsResult.1 prim argsResult.2.reverse))
+                (fun result =>
+                  pure
+                    (Yul.InteractionSemantics.stateModel.multifill
+                      [] result.1 result.2)))
+              (Simulation.Interaction.bind
+                (Functions.InteractionSemantics.Block.openRun
+                  program ctx targetFuel { stmts := pre } target)
+                (fun result =>
+                  match result.1.mode with
+                  | .regular =>
+                      Functions.InteractionSemantics.Block.openRun
+                        program result.2 (targetFuel - pre.length)
+                          { stmts :=
+                            [.expr (Expr.cast hOutputs (.prim op seq))] }
+                          result.1.state
+                  | .brk | .cont | .leave | .halt _ => pure result))
+          rw [Simulation.Interaction.bind_assoc]
+          apply Simulation.Interaction.ForwardRel.bind_custom hPrepared
+          intro sourceDone targetDone hDone
+          cases hDone with
+          | error hError =>
+              exact Simulation.Interaction.ForwardRel.done (.error hError)
+          | terminal hTerminal =>
+              cases hTerminal with
+              | stop hState =>
+                  exact Simulation.Interaction.ForwardRel.done
+                    (.terminal (.stop hState))
+              | return_ hState =>
+                  exact Simulation.Interaction.ForwardRel.done
+                    (.terminal (.return_ hState))
+              | selfdestruct hState =>
+                  exact Simulation.Interaction.ForwardRel.done
+                    (.terminal (.selfdestruct hState))
+              | revert hState =>
+                  exact Simulation.Interaction.ForwardRel.done
+                    (.terminal (.revert hState))
+          | @regular sourceAfter values targetAfter ctxAfter
+              hStable hScoped hDomainAfter _hExtends hScopeExtends hSameControl
+              hTargetScopeAfter =>
+              simp only [Simulation.Interaction.bind_done_ok]
+              have hDirectSeq :
+                  Expr.List.toSeq? lowerArgs.reverse
+                      (Expressions.Structured.BasicOp.inputs op) = some seq := by
+                simpa [Expr.List.toStackSeq?] using hSeq
+              have hLength :
+                  values.length = Expressions.Structured.BasicOp.inputs op :=
+                hStable.length.trans (Expr.List.toSeq?_length hDirectSeq)
+              have hEval := hStable.exprSeq_openEval hDirectSeq
+                (FunctionsInteractionRelation.TargetExtends.refl
+                  targetAfter.vars)
+              have hControlAfter :=
+                FunctionsInteractionControlRelation.ControlContextRel.transport
+                  hControl (fun _name hName => hName) hSameControl
+                  (fun name hName =>
+                    hScopeExtends name (hControl.scope name hName))
+              have hStmt := FunctionsInteractionStatement.expr_after_args
+                hPrimitive
+                (program := program) (primitiveFuel := argsFuel)
+                (targetFuel := targetFuel - pre.length - 1)
+                hOp hOutputs hLength hEval hScoped hDomainAfter
+                hControlAfter hTargetScopeAfter
+              have hTailFuel : 2 ≤ targetFuel - pre.length := by
+                omega
+              have hStmt' :
+                  Simulation.Interaction.ForwardRel Truncated
+                    (FunctionsInteractionControlRelation.ControlDoneRel
+                      after.used layout sourceScopes
+                      canBreak canContinue canLeave)
+                    (Simulation.Interaction.bind
+                      (Yul.InteractionSemantics.Primitive.openEval
+                        argsFuel sourceAfter prim values.reverse)
+                      (fun result =>
+                        pure
+                          (Yul.InteractionSemantics.stateModel.multifill
+                            [] result.1 result.2)))
+                    (Functions.InteractionSemantics.Stmt.openRun
+                      program ctxAfter
+                        ((targetFuel - pre.length - 2) + 1)
+                        (.expr (Expr.cast hOutputs (.prim op seq)))
+                        targetAfter) := by
+                have hStmtFuelEq :
+                    targetFuel - pre.length - 1 =
+                      (targetFuel - pre.length - 2) + 1 := by
+                  omega
+                simpa only [hStmtFuelEq] using hStmt
+              have hSingleton :=
+                FunctionsInteractionStatement.ControlDoneRel.singleton
+                  (targetFuel := targetFuel - pre.length - 2) hStmt'
+              simpa [hTailFuel] using hSingleton
+
+/-- Terminal primitive statement with the ordinary compiler-generated bounded
+argument prelude. Argument recursion and terminal execution remain independent
+capabilities and meet only through the shared control-indexed result relation. -/
+theorem terminalOfLowering
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program}
+    {argsFuel targetFuel : Nat}
+    {prim : EvmYul.Operation .Yul} {args : List AstExpr}
+    {kind : Assembly.HaltKind}
+    {pre : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {seq : Locals.ExprSeq kind.argCount}
+    {before after : Fresh.State}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {layout : List Functions.Name}
+    {sourceScopes : FunctionsInteractionControlRelation.SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hTerminal : Prim.terminal? prim = some kind)
+    (hArgsLowering : Expr.List.UncheckedBoundLowering
+      before args pre lowerArgs after)
+    (hSeq : Expr.List.toStackSeq? lowerArgs kind.argCount = some seq)
+    (hArgsOk : SolcValidation.ExprsOk?
+      profile sourceProgram.contract layout args = true)
+    (hNested : RecursiveBoundHeads profile sourceProgram argsFuel targetFuel
+      codeOverride program layout)
+    (hProgramBudget :
+      FunctionsInteractionStaticCost.programBudget sourceProgram argsFuel +
+        pre.length + 2 ≤ targetFuel)
+    (hRel : FunctionsInteractionRelation.ScopedStateRel layout source target)
+    (hDomain : FunctionsInteractionRelation.TargetDomainWithin
+      before.used target.vars)
+    (hTargetScope :
+      FunctionsInteractionControlRelation.TargetScopeWithin before.used ctx)
+    (hLayout : ∀ name, name ∈ layout → name ∈ before.used) :
+    Simulation.Interaction.ForwardRel Truncated
+      (FunctionsInteractionControlRelation.ControlDoneRel after.used layout
+        sourceScopes canBreak canContinue canLeave)
+      (Yul.InteractionSemantics.exec (argsFuel + 1)
+        (.ExprStmtCall (.Call (.inl prim) args)) codeOverride source)
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx targetFuel
+          { stmts := pre ++ [.terminalArgs kind seq] } target) := by
+  have hPrepared :=
+    FunctionsInteractionPreparedArgs.ofUncheckedLowering
+      (ctx := ctx) hArgsOk hArgsLowering hNested hProgramBudget
+      hRel hDomain hTargetScope hLayout (by omega)
+  rw [Yul.InteractionSemantics.Exec.expr_primitive,
+    Functions.InteractionSemantics.Block.openRun_append]
+  unfold Yul.InteractionSemantics.evalValues
+    Yul.Source.Canonical.evalValues
+    Yul.Source.Effectful.evalValues
+  change
+    Simulation.Interaction.ForwardRel Truncated
+      (FunctionsInteractionControlRelation.ControlDoneRel after.used layout
+        sourceScopes canBreak canContinue canLeave)
+      (Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Yul.InteractionSemantics.evalArgs
+            argsFuel args.reverse codeOverride source)
+          (fun argsResult =>
+            Yul.InteractionSemantics.Primitive.openEval
+              argsFuel argsResult.1 prim argsResult.2.reverse))
+        (fun result =>
+          pure
+            (Yul.InteractionSemantics.stateModel.multifill
+              [] result.1 result.2)))
+      (Simulation.Interaction.bind
+        (Functions.InteractionSemantics.Block.openRun
+          program ctx targetFuel { stmts := pre } target)
+        (fun result =>
+          match result.1.mode with
+          | .regular =>
+              Functions.InteractionSemantics.Block.openRun
+                program result.2 (targetFuel - pre.length)
+                  { stmts := [.terminalArgs kind seq] } result.1.state
+          | .brk | .cont | .leave | .halt _ => pure result))
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.ForwardRel.bind_custom hPrepared
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ForwardRel.done (.error hError)
+  | terminal hTerminalResult =>
+      cases hTerminalResult with
+      | stop hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.stop hState))
+      | return_ hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.return_ hState))
+      | selfdestruct hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.selfdestruct hState))
+      | revert hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.revert hState))
+  | @regular sourceAfter values targetAfter ctxAfter
+      hStable hScoped hDomainAfter _hExtends _hScope _hControl
+      _hTargetScope =>
+      simp only [Simulation.Interaction.bind_done_ok]
+      have hDirectSeq :
+          Expr.List.toSeq? lowerArgs.reverse kind.argCount = some seq := by
+        simpa [Expr.List.toStackSeq?] using hSeq
+      have hLength : values.length = kind.argCount :=
+        hStable.length.trans (Expr.List.toSeq?_length hDirectSeq)
+      have hEval := hStable.exprSeq_openEval hDirectSeq
+        (FunctionsInteractionRelation.TargetExtends.refl targetAfter.vars)
+      have hStmt := FunctionsInteractionStatement.terminal_after_args_control
+        (program := program) (ctx := ctxAfter) (primitiveFuel := argsFuel)
+        (targetFuel := targetFuel - pre.length - 1)
+        (used := after.used) (sourceScopes := sourceScopes)
+        (canBreak := canBreak) (canContinue := canContinue)
+        (canLeave := canLeave)
+        hTerminal hLength hEval hScoped
+      have hTailFuel : 2 ≤ targetFuel - pre.length := by
+        omega
+      have hStmt' :
+          Simulation.Interaction.ForwardRel Truncated
+            (FunctionsInteractionControlRelation.ControlDoneRel after.used layout
+              sourceScopes canBreak canContinue canLeave)
+            (Simulation.Interaction.bind
+              (Yul.InteractionSemantics.Primitive.openEval
+                argsFuel sourceAfter prim values.reverse)
+              (fun result =>
+                pure
+                  (Yul.InteractionSemantics.stateModel.multifill
+                    [] result.1 result.2)))
+            (Functions.InteractionSemantics.Stmt.openRun
+              program ctxAfter ((targetFuel - pre.length - 2) + 1)
+              (.terminalArgs kind seq) targetAfter) := by
+        have hStmtFuelEq :
+            targetFuel - pre.length - 1 =
+              (targetFuel - pre.length - 2) + 1 := by
+          omega
+        simpa only [hStmtFuelEq] using hStmt
+      have hSingleton :=
+        FunctionsInteractionStatement.ControlDoneRel.singleton
+          (targetFuel := targetFuel - pre.length - 2) hStmt'
+      simpa [hTailFuel] using hSingleton
+
 end FunctionsInteractionPreparedPrimitive
 end Yul
 end EvmCompiler

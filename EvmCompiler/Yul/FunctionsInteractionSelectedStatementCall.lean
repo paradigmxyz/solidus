@@ -177,6 +177,15 @@ theorem selectedTargets
             Locals.Source.Effectful.StateModel.source,
             Locals.Source.Effectful.StateModel.withSource]
             using hEntry)
+        (by
+          simpa [hFnParams, hFnReturns, identNames_eq_self,
+            Functions.InteractionSemantics.stateModel,
+            Locals.InteractionSemantics.stateModel,
+            Locals.Source.Effectful.Ordinary.stateModel,
+            Locals.Source.Effectful.StateModel.source,
+            Locals.Source.Effectful.StateModel.withSource] using
+            (FunctionsInteractionSelectedCall.entryTargetDomain
+              hParamStore hReserved))
       have hRunBody := FunctionsInteractionCall.runBodyForward
         (program := targetProgram.toFunctions)
         (targetBodyFuel := targetBodyFuel)

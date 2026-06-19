@@ -76,6 +76,11 @@ def fail {α : Type} (state : State)
     (exception : EvmYul.Yul.Exception) : Open α :=
   .done (.error { exception := exception, state := state })
 
+@[simp] theorem bind_fail {α β : Type} (state : State)
+    (exception : EvmYul.Yul.Exception) (next : α → Open β) :
+    Simulation.Interaction.bind (fail state exception) next =
+      fail state exception := rfl
+
 def closedEval (fuel : Nat) (state : State)
     (op : EvmYul.Operation .Yul) (args : List Word) : Open (State × List Word) :=
   let result : Except EvmYul.Yul.Exception (State × List Word) :=
@@ -189,6 +194,18 @@ theorem eval_eq_bind
 
 namespace Call
 
+/-- An internal call with exhausted canonical meta-fuel fails before resolving
+the active source contract. -/
+theorem zero
+    (args : List Word)
+    (functionName? : Option EvmYul.Yul.Ast.YulFunctionName)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    call 0 args functionName? code state =
+      Primitive.fail state .OutOfFuel := by
+  unfold call Yul.Source.Canonical.call Yul.Source.Effectful.call
+    Yul.Source.Effectful.Control.fail Primitive.fail
+  rfl
+
 /-- Positive-fuel internal calls against an explicit active program expose
 exactly the selected source body and caller-frame restoration. -/
 theorem explicit_succ
@@ -217,6 +234,16 @@ end Call
 
 namespace EvalValues
 
+/-- Every expression exhausts canonical meta-fuel before inspection at zero. -/
+theorem zero
+    (expr : EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    evalValues 0 expr code state = Primitive.fail state .OutOfFuel := by
+  unfold evalValues Yul.Source.Canonical.evalValues
+    Yul.Source.Effectful.evalValues Yul.Source.Effectful.Control.fail
+    Primitive.fail
+  rfl
+
 /-- Positive-fuel internal value evaluation exposes ordered argument
 evaluation followed by the canonical internal call. -/
 theorem internal_succ
@@ -236,6 +263,25 @@ end EvalValues
 
 namespace EvalArgs
 
+/-- Every argument list exhausts canonical meta-fuel before inspection at
+zero. -/
+theorem zero
+    (args : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    evalArgs 0 args code state = Primitive.fail state .OutOfFuel := by
+  unfold evalArgs Yul.Source.Canonical.evalArgs
+    Yul.Source.Effectful.evalArgs Yul.Source.Effectful.Control.fail
+    Primitive.fail
+  rfl
+
+/-- An empty argument list completes without inspecting the residual positive
+fuel. -/
+theorem nil_succ
+    (fuel : Nat) (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    evalArgs (fuel + 1) [] code state = pure (state, []) := by
+  simp [evalArgs, Yul.Source.Canonical.evalArgs,
+    Yul.Source.Effectful.evalArgs]
+
 /-- One argument followed by exhausted list fuel. Adjacent compiler proofs use
 this equation without unfolding the canonical mutual evaluator. -/
 theorem one_cons
@@ -254,6 +300,17 @@ theorem one_cons
         (fun result => Primitive.fail result.1 .OutOfFuel) = _
   rw [Simulation.Interaction.bind_assoc]
   rfl
+
+/-- A nonempty argument list at fuel one fails in its head value evaluation. -/
+theorem one_nonempty
+    (args : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State)
+    (hArgs : args ≠ []) :
+    evalArgs 1 args code state = Primitive.fail state .OutOfFuel := by
+  cases args with
+  | nil => exact (hArgs rfl).elim
+  | cons head rest =>
+      rw [one_cons, EvalValues.zero, Primitive.bind_fail]
 
 /-- Positive residual list fuel exposes the head expression and exact tail. -/
 theorem succ_succ_cons
@@ -918,6 +975,102 @@ theorem expr_internal_succ
     Yul.Source.Effectful.evalValues,
     Yul.Source.Effectful.Control.multifill]
   rfl
+
+/-- Internal-call expression statements exhaust canonical meta-fuel before
+executing arguments or the callee at the first positive fuel level. -/
+theorem expr_internal_one
+    (functionName : EvmYul.Yul.Ast.YulFunctionName)
+    (args : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    exec 1 (.ExprStmtCall (.Call (.inr functionName) args)) code state =
+      Primitive.fail state .OutOfFuel := by
+  unfold exec Yul.Source.Canonical.exec Yul.Source.Effectful.exec
+  change
+    Simulation.Interaction.bind
+        (evalArgs 0 args.reverse code state)
+        (fun argsResult => Primitive.fail argsResult.1 .OutOfFuel) =
+      Primitive.fail state .OutOfFuel
+  rw [EvalArgs.zero, Primitive.bind_fail]
+
+/-- With two units of canonical meta-fuel, an internal-call expression
+statement still exhausts fuel before any argument value can complete. -/
+theorem expr_internal_two
+    (functionName : EvmYul.Yul.Ast.YulFunctionName)
+    (args : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    exec 2 (.ExprStmtCall (.Call (.inr functionName) args)) code state =
+      Primitive.fail state .OutOfFuel := by
+  rw [show 2 = 0 + 2 by omega, expr_internal_succ]
+  cases hArgs : args.reverse with
+  | nil =>
+      rw [EvalArgs.nil_succ]
+      change
+        Simulation.Interaction.bind
+            (.done (.ok (state, [])))
+            (fun argsResult =>
+              Simulation.Interaction.bind
+                (call 0 argsResult.2.reverse (some functionName)
+                  code argsResult.1) _) =
+          Primitive.fail state .OutOfFuel
+      rw [Simulation.Interaction.bind_done_ok, Call.zero,
+        Primitive.bind_fail]
+  | cons head rest =>
+      rw [EvalArgs.one_nonempty _ code state (by simp [hArgs]),
+        Primitive.bind_fail]
+
+/-- Checked declaration calls at fuel one fail before value evaluation. -/
+theorem let_internal_one
+    (names : List EvmYul.Identifier)
+    (functionName : EvmYul.Yul.Ast.YulFunctionName)
+    (args : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State)
+    (hCheck : EvmYul.Yul.checkDeclaration state names = .ok ()) :
+    exec 1 (.Let names (some (.Call (.inr functionName) args))) code state =
+      Primitive.fail state .OutOfFuel := by
+  rw [show 1 = 0 + 1 by omega,
+    let_some_succ 0 names _ code state hCheck,
+    EvalValues.zero, Primitive.bind_fail]
+
+/-- Checked declaration calls at fuel two fail in argument evaluation. -/
+theorem let_internal_two
+    (names : List EvmYul.Identifier)
+    (functionName : EvmYul.Yul.Ast.YulFunctionName)
+    (args : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State)
+    (hCheck : EvmYul.Yul.checkDeclaration state names = .ok ()) :
+    exec 2 (.Let names (some (.Call (.inr functionName) args))) code state =
+      Primitive.fail state .OutOfFuel := by
+  rw [show 2 = 1 + 1 by omega,
+    let_some_succ 1 names _ code state hCheck,
+    EvalValues.internal_succ 0, EvalArgs.zero,
+    Primitive.bind_fail, Primitive.bind_fail]
+
+/-- Checked assignment calls at fuel one fail before value evaluation. -/
+theorem assign_internal_one
+    (names : List EvmYul.Identifier)
+    (functionName : EvmYul.Yul.Ast.YulFunctionName)
+    (args : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State)
+    (hCheck : EvmYul.Yul.checkAssignment state names = .ok ()) :
+    exec 1 (.Assign names (.Call (.inr functionName) args)) code state =
+      Primitive.fail state .OutOfFuel := by
+  rw [show 1 = 0 + 1 by omega,
+    assign_succ 0 names _ code state hCheck,
+    EvalValues.zero, Primitive.bind_fail]
+
+/-- Checked assignment calls at fuel two fail in argument evaluation. -/
+theorem assign_internal_two
+    (names : List EvmYul.Identifier)
+    (functionName : EvmYul.Yul.Ast.YulFunctionName)
+    (args : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State)
+    (hCheck : EvmYul.Yul.checkAssignment state names = .ok ()) :
+    exec 2 (.Assign names (.Call (.inr functionName) args)) code state =
+      Primitive.fail state .OutOfFuel := by
+  rw [show 2 = 1 + 1 by omega,
+    assign_succ 1 names _ code state hCheck,
+    EvalValues.internal_succ 0, EvalArgs.zero,
+    Primitive.bind_fail, Primitive.bind_fail]
 
 end Exec
 

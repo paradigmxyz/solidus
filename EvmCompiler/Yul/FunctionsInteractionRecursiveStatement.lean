@@ -413,6 +413,157 @@ theorem assignOne
                       hName hNameAfter hRel hControl hTailFuel
                       hOp hSeq hOutputs hPrepared)
 
+/-- Ordinary compiler-selected nonterminal primitive expression statement.
+Direct and generated-argument lowering are discharged by the prepared primitive
+owner; this wrapper contributes only compiler decomposition and recursive budget
+selection. -/
+theorem exprPrimitive
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    {fuel targetFuel compilerFuel : Nat}
+    {functionNames layout : List Functions.Name}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {before after : Fresh.State}
+    {prim : EvmYul.Operation .Yul} {args : List AstExpr}
+    {lower : List Functions.Stmt}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {ctx : Functions.Source.Ctx}
+    (hNonterminal : Prim.terminal? prim = none)
+    (hHeads : ∀ argsFuel, argsFuel < fuel →
+      FunctionsInteractionPreparedArgs.RecursiveBoundHeads
+        profile sourceProgram argsFuel targetFuel
+        (some sourceProgram.contract) targetProgram.toFunctions layout)
+    (hOk : SolcValidation.StmtOk? profile sourceProgram.contract
+      functionNames layout canBreak canContinue canLeave
+        (.ExprStmtCall (.Call (.inl prim) args)) = true)
+    (hLower : Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+      (.ExprStmtCall (.Call (.inl prim) args)) = some (lower, after))
+    (hRel : ScopedStateRel layout source target)
+    (hDomain : TargetDomainWithin before.used target.vars)
+    (hTargetScope : TargetScopeWithin before.used ctx)
+    (hLayout : ∀ candidate, candidate ∈ layout → candidate ∈ before.used)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
+    (hTargetFuel :
+      FunctionsInteractionStaticCost.programBudget sourceProgram fuel +
+          FunctionsInteractionTargetCost.list lower + 1 < targetFuel) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel after.used layout sourceScopes
+        canBreak canContinue canLeave)
+      (Yul.InteractionSemantics.exec fuel
+        (.ExprStmtCall (.Call (.inl prim) args))
+        (some sourceProgram.contract) source)
+      (Functions.InteractionSemantics.Block.openRun
+        targetProgram.toFunctions ctx targetFuel { stmts := lower } target) := by
+  obtain ⟨pre, lowerExpr, hLowerExpr, rfl⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_expr_primitive_parts
+      hNonterminal hLower
+  have hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract layout 0
+          (.Call (.inl prim) args) = true := by
+    simpa [SolcValidation.StmtOk?] using hOk
+  have hPrimitiveLower :
+      Expr.UncheckedPrimitiveLowering 0 before prim args
+        pre lowerExpr after :=
+    Expr.uncheckedPrimitiveLowering_of_lowerUnchecked?
+      (by simpa [Expr.lower0Unchecked?] using hLowerExpr)
+  have hProgramBudget :
+      FunctionsInteractionStaticCost.programBudget sourceProgram fuel +
+          pre.length + 2 ≤ targetFuel := by
+    rw [FunctionsInteractionTargetCost.list_append] at hTargetFuel
+    simp [FunctionsInteractionTargetCost.list,
+      FunctionsInteractionTargetCost.stmt] at hTargetFuel
+    have hPreCost := FunctionsInteractionTargetCost.length_le_list pre
+    omega
+  exact FunctionsInteractionPreparedPrimitive.zeroOfLowering
+    FunctionsInteractionClosedPrimitive.compilerSelected
+    hPrimitiveLower hExprOk
+    (fun argsFuel hFuelEq => hHeads argsFuel (by omega))
+    hProgramBudget hRel hDomain hTargetScope hLayout hControl
+
+/-- Ordinary compiler-selected terminal primitive statement, including its
+generated argument prelude and control-indexed terminal result. -/
+theorem terminalPrimitive
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    {fuel targetFuel compilerFuel : Nat}
+    {functionNames layout : List Functions.Name}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {before after : Fresh.State}
+    {prim : EvmYul.Operation .Yul} {args : List AstExpr}
+    {kind : Assembly.HaltKind}
+    {lower : List Functions.Stmt}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {ctx : Functions.Source.Ctx}
+    (hTerminal : Prim.terminal? prim = some kind)
+    (hHeads : ∀ argsFuel, argsFuel < fuel →
+      FunctionsInteractionPreparedArgs.RecursiveBoundHeads
+        profile sourceProgram argsFuel targetFuel
+        (some sourceProgram.contract) targetProgram.toFunctions layout)
+    (hOk : SolcValidation.StmtOk? profile sourceProgram.contract
+      functionNames layout canBreak canContinue canLeave
+        (.ExprStmtCall (.Call (.inl prim) args)) = true)
+    (hLower : Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+      (.ExprStmtCall (.Call (.inl prim) args)) = some (lower, after))
+    (hRel : ScopedStateRel layout source target)
+    (hDomain : TargetDomainWithin before.used target.vars)
+    (hTargetScope : TargetScopeWithin before.used ctx)
+    (hLayout : ∀ candidate, candidate ∈ layout → candidate ∈ before.used)
+    (hTargetFuel :
+      FunctionsInteractionStaticCost.programBudget sourceProgram fuel +
+          FunctionsInteractionTargetCost.list lower + 1 < targetFuel) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel after.used layout sourceScopes
+        canBreak canContinue canLeave)
+      (Yul.InteractionSemantics.exec fuel
+        (.ExprStmtCall (.Call (.inl prim) args))
+        (some sourceProgram.contract) source)
+      (Functions.InteractionSemantics.Block.openRun
+        targetProgram.toFunctions ctx targetFuel { stmts := lower } target) := by
+  obtain ⟨pre, lowerArgs, seq, hArgsLowering, hSeq, rfl⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_expr_terminal_parts
+      hTerminal hLower
+  have hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract layout 0
+          (.Call (.inl prim) args) = true := by
+    simpa [SolcValidation.StmtOk?] using hOk
+  have hArgsOk := SolcValidation.exprsOk_of_exprOk_primitive hExprOk
+  cases fuel with
+  | zero =>
+      have hTruncated :
+          Truncated
+            ({ exception := .OutOfFuel, state := source } :
+              Yul.InteractionSemantics.Failure) := by
+        trivial
+      rw [Yul.InteractionSemantics.Exec.zero]
+      exact Simulation.Interaction.ForwardRel.truncated hTruncated
+  | succ argsFuel =>
+      have hProgramLe :
+          FunctionsInteractionStaticCost.programBudget sourceProgram argsFuel ≤
+            FunctionsInteractionStaticCost.programBudget sourceProgram
+              (argsFuel + 1) := by
+        unfold FunctionsInteractionStaticCost.programBudget
+        exact FunctionsInteractionFuel.executionBudgetFor_mono _ _ (by omega)
+      have hProgramBudget :
+          FunctionsInteractionStaticCost.programBudget sourceProgram argsFuel +
+              pre.length + 2 ≤ targetFuel := by
+        rw [FunctionsInteractionTargetCost.list_append] at hTargetFuel
+        simp [FunctionsInteractionTargetCost.list,
+          FunctionsInteractionTargetCost.stmt] at hTargetFuel
+        have hPreCost := FunctionsInteractionTargetCost.length_le_list pre
+        omega
+      exact FunctionsInteractionPreparedPrimitive.terminalOfLowering
+        hTerminal
+        (Expr.List.uncheckedBoundLowering_of_lowerBound1Unchecked?
+          hArgsLowering)
+        hSeq hArgsOk
+        (hHeads argsFuel (by omega)) hProgramBudget
+        hRel hDomain hTargetScope hLayout
+
 /-- Compose a checked prepared condition with the adjacent lexical-body
 theorem. The target equation is the ordinary compiler output factored by
 `PreparedCondition.run_if`; no condition evaluator is reproduced here. -/
@@ -1596,6 +1747,394 @@ theorem ofStmt
             hMiddleLayout hMidControl hTailFuel
 
 end RecursiveListForward
+
+/-- Exhaustive ordinary-compiler statement dispatcher. Every recursive child
+is supplied by a strictly smaller source-fuel statement capability; expression,
+call, and compound cases delegate to their adjacent semantic owners. -/
+theorem recursiveStmtOfEarlier
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    (hDecomposition :
+      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    {bound : Nat}
+    (hEarlier : ∀ childBound, childBound < bound →
+      RecursiveStmtForward profile sourceProgram targetProgram childBound)
+    (hBodies : ∀ {bodyFuel bodyTargetFuel : Nat}, bodyFuel < bound →
+      FunctionsInteractionSelectedCall.BodyForwardAt
+        profile sourceProgram targetProgram bodyFuel bodyTargetFuel) :
+    RecursiveStmtForward profile sourceProgram targetProgram bound := by
+  intro sourceFuel targetFuel hSourceFuel
+  intro compilerFuel functionNames layout sourceScopes canBreak canContinue
+    canLeave before after stmt lower source target ctx hOk hNames hLower hRel
+    hDomain hTargetScope hLayout hControl hTargetFuel
+  cases sourceFuel with
+  | zero =>
+      rw [Yul.InteractionSemantics.Exec.zero]
+      exact Simulation.Interaction.ForwardRel.truncated
+        (right := Functions.InteractionSemantics.Block.openRun
+          targetProgram.toFunctions ctx targetFuel { stmts := lower } target)
+        (by trivial)
+  | succ fuel =>
+      have hPrior : RecursiveStmtForward profile sourceProgram targetProgram
+          (fuel + 1) :=
+        hEarlier (fuel + 1) hSourceFuel
+      have hListsNext : RecursiveListForward
+          profile sourceProgram targetProgram (fuel + 2) :=
+        RecursiveListForward.ofStmt hPrior
+      have hListsFuel : RecursiveListForward
+          profile sourceProgram targetProgram fuel := by
+        intro childFuel childTargetFuel hChild
+        exact hListsNext (lt_trans hChild (by omega))
+      have hListsSucc : RecursiveListForward
+          profile sourceProgram targetProgram (fuel + 1) := by
+        intro childFuel childTargetFuel hChild
+        exact hListsNext (lt_trans hChild (by omega))
+      have hCondition :
+          FunctionsInteractionRecursiveExpression.ConditionForwardAt
+            profile sourceProgram targetProgram fuel targetFuel layout :=
+        FunctionsInteractionRecursiveExpression.recursiveCondition
+          hDecomposition hProgramOk fuel targetFuel layout
+          (fun hBodyLt => hBodies (by omega))
+      cases stmt with
+      | Block body =>
+          exact CompoundForward.block
+            (fun recursiveTargetFuel =>
+              hListsNext (sourceFuel := fuel)
+                (targetFuel := recursiveTargetFuel) (by omega))
+            hOk hNames hLower hRel hDomain
+            hTargetScope hLayout hControl hTargetFuel
+      | If cond body =>
+          exact CompoundForward.ifThen hCondition hListsFuel hOk hNames hLower
+            hRel hDomain hTargetScope hLayout hControl hTargetFuel
+      | Switch cond cases defaultBody =>
+          exact CompoundForward.switch hCondition hListsFuel hOk hNames hLower
+            hRel hDomain hTargetScope hLayout hControl hTargetFuel
+      | For cond post body =>
+          exact CompoundForward.forLoop
+            (hConditions := fun {_childFuel _childTargetFuel} hChild =>
+              FunctionsInteractionRecursiveExpression.recursiveCondition
+                hDecomposition hProgramOk _childFuel _childTargetFuel layout
+                (fun hBodyLt => hBodies (by omega)))
+            (hLists := hListsSucc) hOk hNames hLower hRel hDomain
+            hTargetScope hLayout hControl hTargetFuel
+      | Let names value? =>
+          cases value? with
+          | none =>
+              have hBindable :
+                  SolcValidation.bindableList? (functionNames ++ layout)
+                      (identNames names) = true := by
+                simpa [SolcValidation.StmtOk?] using hOk
+              have hBindParts := hBindable
+              simp [SolcValidation.bindableList?,
+                SolcValidation.nonemptyNames?,
+                SolcValidation.bindingNames?,
+                SolcValidation.namesNodup?,
+                SolcValidation.namesFresh?] at hBindParts
+              have hNoDup : (identNames names).Nodup := hBindParts.2.2.1
+              have hFresh : ∀ name, name ∈ identNames names →
+                  name ∉ layout := by
+                intro name hName
+                exact (hBindParts.2.2.2 name hName).2
+              have hDeclared : ∀ name, name ∈ identNames names →
+                  name ∈ before.used := by
+                intro name hName
+                exact hNames name (by
+                  simpa [Stmt.names] using hName)
+              have hLowerParts :=
+                Stmt.toFunctionsListUncheckedFuel?_let_none_parts hLower
+              have hEnough : names.length + 1 ≤ targetFuel := by
+                have hCost := hTargetFuel
+                rw [hLowerParts.1] at hCost
+                have hLength :=
+                  FunctionsInteractionTargetCost.length_le_list
+                    (Stmt.initNames (identNames names))
+                have hInitLength :
+                    (Stmt.initNames (identNames names)).length =
+                      names.length := by
+                  simp [Stmt.initNames, identNames_eq_self]
+                rw [hInitLength] at hLength
+                omega
+              simpa [SolcValidation.StmtOutVars] using
+                (FunctionsInteractionStatement.compiled_let_none_control_extra
+                  hLower hNoDup hFresh hRel hDomain hDeclared hControl
+                  hTargetScope hEnough)
+          | some value =>
+              by_cases hFunctionCall : ∃ functionName functionArgs,
+                  value = .Call (.inr functionName) functionArgs
+              · obtain ⟨functionName, functionArgs, rfl⟩ := hFunctionCall
+                cases fuel with
+                | zero =>
+                    have hCheck :
+                        EvmYul.Yul.checkDeclaration source names = .ok () := by
+                      have hOkParts := hOk
+                      simp [SolcValidation.StmtOk?] at hOkParts
+                      have hBindable := hOkParts.1
+                      simp [SolcValidation.bindableList?,
+                        SolcValidation.nonemptyNames?,
+                        SolcValidation.bindingNames?,
+                        SolcValidation.namesNodup?,
+                        SolcValidation.namesFresh?] at hBindable
+                      simpa [identNames_eq_self] using
+                        hRel.declarationCheck_many hBindable.2.2.1
+                          (fun name hName =>
+                            (hBindable.2.2.2 name hName).2)
+                    rw [Yul.InteractionSemantics.Exec.let_internal_one
+                      names functionName functionArgs
+                      (some sourceProgram.contract) source hCheck]
+                    exact Simulation.Interaction.ForwardRel.truncated
+                      (right := Functions.InteractionSemantics.Block.openRun
+                        targetProgram.toFunctions ctx targetFuel
+                        { stmts := lower } target) (by trivial)
+                | succ callFuel =>
+                    cases callFuel with
+                    | zero =>
+                        have hCheck :
+                            EvmYul.Yul.checkDeclaration source names =
+                              .ok () := by
+                          have hOkParts := hOk
+                          simp [SolcValidation.StmtOk?] at hOkParts
+                          have hBindable := hOkParts.1
+                          simp [SolcValidation.bindableList?,
+                            SolcValidation.nonemptyNames?,
+                            SolcValidation.bindingNames?,
+                            SolcValidation.namesNodup?,
+                            SolcValidation.namesFresh?] at hBindable
+                          simpa [identNames_eq_self] using
+                            hRel.declarationCheck_many hBindable.2.2.1
+                              (fun name hName =>
+                                (hBindable.2.2.2 name hName).2)
+                        rw [Yul.InteractionSemantics.Exec.let_internal_two
+                          names functionName functionArgs
+                          (some sourceProgram.contract) source hCheck]
+                        exact Simulation.Interaction.ForwardRel.truncated
+                          (right :=
+                            Functions.InteractionSemantics.Block.openRun
+                              targetProgram.toFunctions ctx targetFuel
+                              { stmts := lower } target) (by trivial)
+                    | succ bodyFuel =>
+                        have hLength :=
+                          FunctionsInteractionTargetCost.length_le_list lower
+                        have hProgramLe :
+                            FunctionsInteractionStaticCost.programBudget
+                                sourceProgram (bodyFuel + 1) ≤
+                              FunctionsInteractionStaticCost.programBudget
+                                sourceProgram (bodyFuel + 1 + 1 + 1) := by
+                          unfold FunctionsInteractionStaticCost.programBudget
+                          exact FunctionsInteractionFuel.executionBudgetFor_mono
+                            _ _ (by omega)
+                        have hTargetsUsed : ∀ name,
+                            name ∈ identNames names → name ∈ before.used := by
+                          intro name hName
+                          exact hNames name (by
+                            exact List.mem_append_left _ hName)
+                        simpa [SolcValidation.StmtOutVars] using
+                          (FunctionsInteractionSelectedStatementCall.compiledLetCall
+                            hDecomposition hProgramOk hOk hLower
+                            (fun recursiveTargetFuel =>
+                              FunctionsInteractionRecursiveExpression.recursiveBoundHeads
+                                hDecomposition hProgramOk (bodyFuel + 1)
+                                recursiveTargetFuel layout
+                                (fun hBodyLt =>
+                                  hBodies (by omega)))
+                            (fun bodyTargetFuel =>
+                              hBodies (bodyTargetFuel := bodyTargetFuel)
+                                (by omega))
+                            hRel hDomain hTargetScope hLayout hControl
+                            hTargetsUsed (by omega))
+              · have hNotFunctionCall : ∀ functionName functionArgs,
+                    value ≠ .Call (.inr functionName) functionArgs := by
+                  intro functionName functionArgs hEq
+                  exact hFunctionCall ⟨functionName, functionArgs, hEq⟩
+                obtain ⟨name, rfl⟩ :=
+                  Stmt.toFunctionsListUncheckedFuel?_let_noncall_singleton
+                    hNotFunctionCall hLower
+                exact CompoundForward.letOne hCondition hOk hNames
+                  hNotFunctionCall hLower hRel hDomain hTargetScope hLayout
+                  hControl hTargetFuel
+      | Assign names value =>
+          by_cases hFunctionCall : ∃ functionName functionArgs,
+              value = .Call (.inr functionName) functionArgs
+          · obtain ⟨functionName, functionArgs, rfl⟩ := hFunctionCall
+            cases fuel with
+            | zero =>
+                have hOkParts := hOk
+                simp [SolcValidation.StmtOk?] at hOkParts
+                have hAssignable := hOkParts.1
+                simp [SolcValidation.assignableList?,
+                  SolcValidation.nonemptyNames?, SolcValidation.namesNodup?,
+                  SolcValidation.namesIn?] at hAssignable
+                have hCheck : EvmYul.Yul.checkAssignment source names =
+                    .ok () := by
+                  simpa [identNames_eq_self] using
+                    hRel.assignmentCheck_many hAssignable.2.1
+                      hAssignable.2.2
+                rw [Yul.InteractionSemantics.Exec.assign_internal_one
+                  names functionName functionArgs
+                  (some sourceProgram.contract) source hCheck]
+                exact Simulation.Interaction.ForwardRel.truncated
+                  (right := Functions.InteractionSemantics.Block.openRun
+                    targetProgram.toFunctions ctx targetFuel
+                    { stmts := lower } target) (by trivial)
+            | succ callFuel =>
+                cases callFuel with
+                | zero =>
+                    have hOkParts := hOk
+                    simp [SolcValidation.StmtOk?] at hOkParts
+                    have hAssignable := hOkParts.1
+                    simp [SolcValidation.assignableList?,
+                      SolcValidation.nonemptyNames?,
+                      SolcValidation.namesNodup?, SolcValidation.namesIn?]
+                      at hAssignable
+                    have hCheck : EvmYul.Yul.checkAssignment source names =
+                        .ok () := by
+                      simpa [identNames_eq_self] using
+                        hRel.assignmentCheck_many hAssignable.2.1
+                          hAssignable.2.2
+                    rw [Yul.InteractionSemantics.Exec.assign_internal_two
+                      names functionName functionArgs
+                      (some sourceProgram.contract) source hCheck]
+                    exact Simulation.Interaction.ForwardRel.truncated
+                      (right := Functions.InteractionSemantics.Block.openRun
+                        targetProgram.toFunctions ctx targetFuel
+                        { stmts := lower } target) (by trivial)
+                | succ bodyFuel =>
+                    have hLength :=
+                      FunctionsInteractionTargetCost.length_le_list lower
+                    have hProgramLe :
+                        FunctionsInteractionStaticCost.programBudget
+                            sourceProgram (bodyFuel + 1) ≤
+                          FunctionsInteractionStaticCost.programBudget
+                            sourceProgram (bodyFuel + 1 + 1 + 1) := by
+                      unfold FunctionsInteractionStaticCost.programBudget
+                      exact FunctionsInteractionFuel.executionBudgetFor_mono
+                        _ _ (by omega)
+                    simpa [SolcValidation.StmtOutVars] using
+                      (FunctionsInteractionSelectedStatementCall.compiledAssignCall
+                        hDecomposition hProgramOk hOk hLower
+                        (FunctionsInteractionRecursiveExpression.recursiveBoundHeads
+                          hDecomposition hProgramOk (bodyFuel + 1) targetFuel
+                          layout (fun hBodyLt =>
+                            hBodies (by omega)))
+                        (fun bodyTargetFuel =>
+                          hBodies (bodyTargetFuel := bodyTargetFuel) (by omega))
+                        hRel hDomain hTargetScope hLayout hControl (by omega))
+          · have hNotFunctionCall : ∀ functionName functionArgs,
+                value ≠ .Call (.inr functionName) functionArgs := by
+              intro functionName functionArgs hEq
+              exact hFunctionCall ⟨functionName, functionArgs, hEq⟩
+            obtain ⟨name, rfl⟩ :=
+              Stmt.toFunctionsListUncheckedFuel?_assign_noncall_singleton
+                hNotFunctionCall hLower
+            exact CompoundForward.assignOne hCondition
+              (FunctionsInteractionRecursiveExpression.recursiveBoundHeads
+                hDecomposition hProgramOk (fuel - 1) targetFuel layout
+                (fun hBodyLt =>
+                  hBodies (by omega)))
+              hOk hNames hNotFunctionCall hLower hRel hDomain hTargetScope
+              hLayout hControl hTargetFuel
+      | ExprStmtCall value =>
+          cases value with
+          | Lit literal =>
+              simp [SolcValidation.StmtOk?, SolcValidation.ExprOk?] at hOk
+          | Var name =>
+              simp [SolcValidation.StmtOk?, SolcValidation.ExprOk?] at hOk
+          | Call callee args =>
+              cases callee with
+              | inl prim =>
+                  cases hTerminal : Prim.terminal? prim with
+                  | none =>
+                      exact CompoundForward.exprPrimitive hTerminal
+                        (fun argsFuel hArgsFuel =>
+                          FunctionsInteractionRecursiveExpression.recursiveBoundHeads
+                            hDecomposition hProgramOk argsFuel targetFuel layout
+                            (fun hBodyLt => hBodies
+                              (lt_trans hBodyLt
+                                (lt_trans hArgsFuel hSourceFuel))))
+                        hOk hLower hRel hDomain hTargetScope hLayout hControl
+                        hTargetFuel
+                  | some kind =>
+                      exact CompoundForward.terminalPrimitive hTerminal
+                        (fun argsFuel hArgsFuel =>
+                          FunctionsInteractionRecursiveExpression.recursiveBoundHeads
+                            hDecomposition hProgramOk argsFuel targetFuel layout
+                            (fun hBodyLt => hBodies
+                              (lt_trans hBodyLt
+                                (lt_trans hArgsFuel hSourceFuel))))
+                        hOk hLower hRel hDomain hTargetScope hLayout hTargetFuel
+              | inr functionName =>
+                  cases fuel with
+                  | zero =>
+                      rw [Yul.InteractionSemantics.Exec.expr_internal_one]
+                      exact Simulation.Interaction.ForwardRel.truncated
+                        (right := Functions.InteractionSemantics.Block.openRun
+                          targetProgram.toFunctions ctx targetFuel
+                          { stmts := lower } target) (by trivial)
+                  | succ callFuel =>
+                      cases callFuel with
+                      | zero =>
+                          rw [Yul.InteractionSemantics.Exec.expr_internal_two]
+                          exact Simulation.Interaction.ForwardRel.truncated
+                            (right :=
+                              Functions.InteractionSemantics.Block.openRun
+                                targetProgram.toFunctions ctx targetFuel
+                                { stmts := lower } target) (by trivial)
+                      | succ bodyFuel =>
+                          have hLength :=
+                            FunctionsInteractionTargetCost.length_le_list lower
+                          have hProgramLe :
+                              FunctionsInteractionStaticCost.programBudget
+                                  sourceProgram (bodyFuel + 2) ≤
+                                FunctionsInteractionStaticCost.programBudget
+                                  sourceProgram (bodyFuel + 1 + 1 + 1) := by
+                            unfold
+                              FunctionsInteractionStaticCost.programBudget
+                            exact
+                              FunctionsInteractionFuel.executionBudgetFor_mono
+                                _ _ (by omega)
+                          exact
+                            FunctionsInteractionSelectedStatementCall.compiledExprCall
+                              hDecomposition hProgramOk hOk hLower
+                              (FunctionsInteractionRecursiveExpression.recursiveBoundHeads
+                                hDecomposition hProgramOk (bodyFuel + 2)
+                                targetFuel layout (fun hBodyLt =>
+                                  hBodies (by omega)))
+                              (fun bodyTargetFuel =>
+                                hBodies (bodyTargetFuel := bodyTargetFuel)
+                                  (by omega))
+                              hRel hDomain hTargetScope hLayout hControl
+                              (by omega)
+      | Break =>
+          have hEnabled : canBreak = true := by
+            simpa [SolcValidation.StmtOk?] using hOk
+          have hFuelEq : targetFuel = (targetFuel - 2) + 2 := by
+            have hLength :=
+              FunctionsInteractionTargetCost.length_le_list lower
+            omega
+          rw [hFuelEq]
+          exact FunctionsInteractionStatement.compiled_brk_control
+            hLower hEnabled hControl hRel
+      | Continue =>
+          have hEnabled : canContinue = true := by
+            simpa [SolcValidation.StmtOk?] using hOk
+          have hFuelEq : targetFuel = (targetFuel - 2) + 2 := by
+            have hLength :=
+              FunctionsInteractionTargetCost.length_le_list lower
+            omega
+          rw [hFuelEq]
+          exact FunctionsInteractionStatement.compiled_cont_control
+            hLower hEnabled hControl hRel
+      | Leave =>
+          have hEnabled : canLeave = true := by
+            simpa [SolcValidation.StmtOk?] using hOk
+          have hFuelEq : targetFuel = (targetFuel - 2) + 2 := by
+            have hLength :=
+              FunctionsInteractionTargetCost.length_le_list lower
+            omega
+          rw [hFuelEq]
+          exact FunctionsInteractionStatement.compiled_leave_control
+            hLower hEnabled hControl hRel
 
 end FunctionsInteractionRecursiveStatement
 end Yul

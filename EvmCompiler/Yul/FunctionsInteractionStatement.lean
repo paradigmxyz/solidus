@@ -1027,8 +1027,315 @@ theorem terminal_after_args
           | error hError =>
               exact Simulation.Interaction.ForwardRel.done (.error hError)
           | terminal hTerminalState =>
+                  exact Simulation.Interaction.ForwardRel.done
+                    (.terminal hTerminalState)
+
+/-- Control-indexed terminal leaf after prepared arguments. Unlike the generic
+path relation, this result records that a completed terminal primitive cannot
+resume with regular or abrupt Yul control. -/
+theorem terminal_after_args_control
+    {primitiveFuel targetFuel : Nat}
+    {prim : EvmYul.Operation .Yul} {kind : Assembly.HaltKind}
+    {values : List Word} {seq : Locals.ExprSeq kind.argCount}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {used layout : List Functions.Name}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {source : Yul.InteractionSemantics.State}
+    {target targetAfter : Functions.InteractionSemantics.State}
+    (hTerminal : Prim.terminal? prim = some kind)
+    (hLength : values.length = kind.argCount)
+    (hEval :
+      Locals.InteractionSemantics.ExprSeq.openEval seq target =
+        .done (.ok (targetAfter, values)))
+    (hRel : ScopedStateRel layout source targetAfter) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel used layout sourceScopes
+        canBreak canContinue canLeave)
+      (Simulation.Interaction.bind
+        (Yul.InteractionSemantics.Primitive.openEval
+          primitiveFuel source prim values.reverse)
+        (fun result =>
+          pure
+            (Yul.InteractionSemantics.stateModel.multifill
+              [] result.1 result.2)))
+      (Functions.InteractionSemantics.Stmt.openRun
+        program ctx targetFuel (.terminalArgs kind seq) target) := by
+  unfold Functions.InteractionSemantics.Stmt.openRun
+    Functions.Source.Canonical.Stmt.run
+  simp only [Functions.Source.Effectful.Control.Stmt.run]
+  change
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel used layout sourceScopes
+        canBreak canContinue canLeave)
+      (Simulation.Interaction.bind
+        (Yul.InteractionSemantics.Primitive.openEval
+          primitiveFuel source prim values.reverse)
+        (fun result =>
+          pure
+            (Yul.InteractionSemantics.stateModel.multifill
+              [] result.1 result.2)))
+      (Simulation.Interaction.bind
+        (Locals.InteractionSemantics.ExprSeq.openEval seq target)
+        (fun argsResult =>
+          Simulation.Interaction.bind
+            (Functions.InteractionSemantics.primitiveSemantics.terminal
+              kind argsResult.1 argsResult.2)
+            (fun final =>
+              pure
+                (Functions.Source.Effectful.Outcome.halt kind final, ctx))))
+  rw [hEval, Simulation.Interaction.bind_done_ok]
+  cases primitiveFuel with
+  | zero =>
+      have hTruncated :
+          Truncated
+            ({ exception := .OutOfFuel, state := source } :
+              Yul.InteractionSemantics.Failure) := by
+        trivial
+      simpa [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.fail] using
+        (Simulation.Interaction.ForwardRel.truncated
+          (doneRel := ControlDoneRel used layout sourceScopes
+            canBreak canContinue canLeave)
+          (right :=
+            Simulation.Interaction.bind
+              (Functions.InteractionSemantics.primitiveSemantics.terminal
+                kind targetAfter values)
+              (fun final =>
+                pure
+                  (Functions.Source.Effectful.Outcome.halt kind final, ctx)))
+          hTruncated)
+  | succ fuel =>
+      cases fuel with
+      | zero =>
+          have hTruncated :
+              Truncated
+                ({ exception := .OutOfFuel, state := source } :
+                  Yul.InteractionSemantics.Failure) := by
+            trivial
+          rw [FunctionsInteractionTerminal.openEval_one_of_terminal?
+            hTerminal source values.reverse]
+          simpa [Yul.InteractionSemantics.Primitive.fail] using
+            (Simulation.Interaction.ForwardRel.truncated
+              (doneRel := ControlDoneRel used layout sourceScopes
+                canBreak canContinue canLeave)
+              (right :=
+                Simulation.Interaction.bind
+                  (Functions.InteractionSemantics.primitiveSemantics.terminal
+                    kind targetAfter values)
+                  (fun final =>
+                    pure
+                      (Functions.Source.Effectful.Outcome.halt kind final,
+                        ctx)))
+              hTruncated)
+      | succ fuel =>
+          have hSourceLength : values.reverse.length = kind.argCount := by
+            simpa [List.length_reverse] using hLength
+          have hPrimitive :=
+            FunctionsInteractionTerminal.of_terminal?
+              fuel values.reverse hTerminal hSourceLength hRel.state
+          have hPrimitive' :
+              Simulation.Interaction.ForwardRel Truncated
+                (FunctionsInteractionTerminal.PrimitiveDoneRel kind)
+                (Yul.InteractionSemantics.Primitive.openEval
+                  (fuel + 2) source prim values.reverse)
+                (Functions.InteractionSemantics.primitiveSemantics.terminal
+                  kind targetAfter values) := by
+            simpa using hPrimitive
+          apply Simulation.Interaction.ForwardRel.bind_custom hPrimitive'
+          intro sourceDone targetDone hDone
+          cases hDone with
+          | error hError =>
+              exact Simulation.Interaction.ForwardRel.done (.error hError)
+          | terminal hTerminalState =>
               exact Simulation.Interaction.ForwardRel.done
                 (.terminal hTerminalState)
+
+/-- Lift an adjacent zero-result expression relation through the Functions
+expression-statement control wrapper. -/
+theorem expr_of_evalValues
+    {fuel targetFuel : Nat}
+    {expr : AstExpr} {lower : Locals.Expr 0}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {used layout : List Functions.Name}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hEval :
+      Simulation.Interaction.ForwardRel Truncated
+        (FunctionsInteractionExpression.DoneRel source 0)
+        (Yul.InteractionSemantics.evalValues
+          fuel expr codeOverride source)
+        (Functions.InteractionSemantics.Expr.openEval lower target))
+    (hRel : ScopedStateRel layout source target)
+    (hDomain : TargetDomainWithin used target.vars)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
+    (hTargetScope : TargetScopeWithin used ctx) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel used layout sourceScopes
+        canBreak canContinue canLeave)
+      (Simulation.Interaction.bind
+        (Yul.InteractionSemantics.evalValues
+          fuel expr codeOverride source)
+        (fun result =>
+          pure
+            (Yul.InteractionSemantics.stateModel.multifill
+              [] result.1 result.2)))
+      (Functions.InteractionSemantics.Stmt.openRun
+        program ctx targetFuel (.expr lower) target) := by
+  rw [Functions.InteractionSemantics.Stmt.openRun_expr]
+  have hEvalVars := hEval.strengthen_right
+    (Locals.InteractionSemantics.Expr.openEval_vars_eq lower target)
+  apply Simulation.Interaction.ForwardRel.bind_custom hEvalVars
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hDone, hTargetVars⟩
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ForwardRel.done (.error hError)
+  | @ok sourceResult targetResult hResult =>
+      have hState := hResult.1
+      have hValues := hResult.2.1
+      have hLength := hResult.2.2.1
+      have hStore := hResult.2.2.2
+      have hSourceValues : sourceResult.2 = [] :=
+        List.eq_nil_of_length_eq_zero hLength
+      have hTargetValues : targetResult.2 = [] := by
+        rw [← hValues, hSourceValues]
+      have hTargetVarsEq : targetResult.1.vars = target.vars := by
+        simpa using hTargetVars
+      have hScopedResult := ScopedStateRel.of_state_store_eq
+        hRel hState hStore
+      have hDomainResult : TargetDomainWithin used targetResult.1.vars := by
+        simpa [hTargetVarsEq] using hDomain
+      have hMultifillNil :
+          Yul.InteractionSemantics.stateModel.multifill
+              [] sourceResult.1 [] = sourceResult.1 := by
+        cases sourceResult.1 <;> rfl
+      simp only [hSourceValues, hTargetValues,
+        Simulation.Interaction.bind_done_ok]
+      rw [hMultifillNil]
+      exact Simulation.Interaction.ForwardRel.done
+        (.regular hScopedResult hDomainResult hControl hTargetScope)
+
+/-- Final zero-result primitive statement after its compiler-owned argument
+prelude has produced the exact target values. This theorem owns only the
+Functions `.expr` leaf; construction of the argument prelude stays separate. -/
+theorem expr_after_args
+    (hPrimitive : FunctionsInteractionPrimitive.CompilerSelected)
+    {primitiveFuel targetFuel : Nat}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {values : List Word}
+    {seq : Locals.ExprSeq (Expressions.Structured.BasicOp.inputs op)}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {used layout : List Functions.Name}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {source : Yul.InteractionSemantics.State}
+    {target targetAfter : Functions.InteractionSemantics.State}
+    (hOp : Prim.toUncheckedBasicOp? prim = some op)
+    (hOutputs : Expressions.Structured.BasicOp.outputs op = 0)
+    (hLength : values.length = Expressions.Structured.BasicOp.inputs op)
+    (hEval :
+      Locals.InteractionSemantics.ExprSeq.openEval seq target =
+        .done (.ok (targetAfter, values)))
+    (hRel : ScopedStateRel layout source targetAfter)
+    (hDomain : TargetDomainWithin used targetAfter.vars)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
+    (hTargetScope : TargetScopeWithin used ctx) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel used layout sourceScopes
+        canBreak canContinue canLeave)
+      (Simulation.Interaction.bind
+        (Yul.InteractionSemantics.Primitive.openEval
+          primitiveFuel source prim values.reverse)
+        (fun result =>
+          pure
+            (Yul.InteractionSemantics.stateModel.multifill
+              [] result.1 result.2)))
+      (Functions.InteractionSemantics.Stmt.openRun
+        program ctx targetFuel
+        (.expr (Expr.cast hOutputs (.prim op seq))) target) := by
+  rw [Functions.InteractionSemantics.Stmt.openRun_expr,
+    FunctionsInteractionExpression.expr_openEval_cast]
+  unfold Functions.InteractionSemantics.Expr.openEval
+    Locals.InteractionSemantics.Expr.openEval
+    Locals.Source.Effectful.Expr.Control.eval
+  unfold Locals.InteractionSemantics.ExprSeq.openEval at hEval
+  rw [hEval]
+  simp only [Simulation.Interaction.bind_done_ok]
+  cases primitiveFuel with
+  | zero =>
+      have hTruncated :
+          Truncated
+            ({ exception := .OutOfFuel, state := source } :
+              Yul.InteractionSemantics.Failure) := by
+        trivial
+      simpa [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.fail] using
+        (Simulation.Interaction.ForwardRel.truncated
+          (doneRel := ControlDoneRel used layout sourceScopes
+            canBreak canContinue canLeave)
+          (right := Simulation.Interaction.bind
+            (Locals.InteractionSemantics.Primitive.openEval
+              op targetAfter values)
+            (fun result =>
+              pure
+                (Functions.Source.Effectful.Outcome.regular result.1, ctx)))
+          hTruncated)
+  | succ fuel =>
+      have hSourceLength :
+          values.reverse.length = Expressions.Structured.BasicOp.inputs op := by
+        simpa [List.length_reverse] using hLength
+      have hPrimitiveRel :=
+        hPrimitive (fuel := fuel) (sourceValues := values.reverse)
+          hOp hSourceLength hRel.state
+      have hPrimitiveRel' :
+          Simulation.Interaction.ForwardRel Truncated
+            (FunctionsInteractionPrimitive.PrimitiveDoneRel source op)
+            (Yul.InteractionSemantics.Primitive.openEval
+              (fuel + 1) source prim values.reverse)
+            (Locals.InteractionSemantics.Primitive.openEval
+              op targetAfter values) := by
+        simpa using hPrimitiveRel
+      have hPrimitiveRelVars :=
+        hPrimitiveRel'.strengthen_right
+          (Locals.InteractionSemantics.Primitive.openEval_vars_eq
+            op targetAfter values)
+      apply Simulation.Interaction.ForwardRel.bind_custom hPrimitiveRelVars
+      intro sourceDone targetDone hDone
+      rcases hDone with ⟨hDone, hTargetVars⟩
+      cases hDone with
+      | error hError =>
+          exact Simulation.Interaction.ForwardRel.done (.error hError)
+      | @ok sourceResult targetResult hResult =>
+          have hState := hResult.1.1
+          have hValues := hResult.1.2
+          have hResultLength := hResult.2.1
+          have hStore := hResult.2.2
+          have hSourceValues : sourceResult.2 = [] := by
+            apply List.eq_nil_of_length_eq_zero
+            exact hResultLength.trans hOutputs
+          have hTargetValues : targetResult.2 = [] := by
+            rw [← hValues, hSourceValues]
+          have hTargetVarsEq : targetResult.1.vars = targetAfter.vars := by
+            simpa using hTargetVars
+          have hScopedResult := ScopedStateRel.of_state_store_eq
+            hRel hState hStore
+          have hDomainResult : TargetDomainWithin used targetResult.1.vars := by
+            simpa [hTargetVarsEq] using hDomain
+          have hMultifillNil :
+              Yul.InteractionSemantics.stateModel.multifill
+                  [] sourceResult.1 [] = sourceResult.1 := by
+            cases sourceResult.1 <;> rfl
+          simp only [hSourceValues, hTargetValues,
+            Simulation.Interaction.bind_done_ok]
+          rw [hMultifillNil]
+          exact Simulation.Interaction.ForwardRel.done
+            (.regular hScopedResult hDomainResult hControl hTargetScope)
 
 /-- Compose any adjacent prepared-argument implementation with the terminal
 leaf. The prelude proof remains independently owned and may use declarations,
@@ -2132,6 +2439,94 @@ theorem compiled_let_none_control
           (Functions.Source.Effectful.Outcome.regular
             { shared := target.shared, vars := finalVars }, finalCtx) := by
     simpa [identNames_eq_self, finalCtx] using hTargetRun
+  rw [hTargetRun']
+  simpa [identNames_eq_self] using
+    (Simulation.Interaction.ForwardRel.done
+      (ControlDoneRel.regular hFinalRel hFinalDomain hFinalControl hFinalScope))
+
+/-- Compiler-selected uninitialized declaration at any sufficient target fuel.
+The declaration owner absorbs the unused target budget through the canonical
+`initNames` execution equation, so recursive statement proofs need not reason
+about the generated initialization list. -/
+theorem compiled_let_none_control_extra
+    {compilerFuel fuel targetFuel : Nat}
+    {before after : Fresh.State} {lower : List Functions.Stmt}
+    {names : List EvmYul.Identifier}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {layout : List Functions.Name} {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+          (.Let names none) = some (lower, after))
+    (hNoDup : (identNames names).Nodup)
+    (hFresh : ∀ name, name ∈ identNames names → name ∉ layout)
+    (hRel : ScopedStateRel layout source target)
+    (hDomain : TargetDomainWithin before.used target.vars)
+    (hNames : ∀ name, name ∈ identNames names → name ∈ before.used)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
+    (hTargetScope : TargetScopeWithin before.used ctx)
+    (hTargetFuel : names.length + 1 ≤ targetFuel) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel after.used (identNames names ++ layout) sourceScopes
+        canBreak canContinue canLeave)
+      (Yul.InteractionSemantics.exec
+        (fuel + 1) (.Let names none) codeOverride source)
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx targetFuel { stmts := lower } target) := by
+  have hExtends := Stmt.toFunctionsListUncheckedFuel?_stateExtends hLower
+  rcases Stmt.toFunctionsListUncheckedFuel?_let_none_parts hLower with
+    ⟨rfl, rfl⟩
+  have hCheck : EvmYul.Yul.checkDeclaration source names = .ok () := by
+    simpa [identNames_eq_self] using
+      ScopedStateRel.declarationCheck_many hRel hNoDup hFresh
+  let extra := targetFuel - names.length - 1
+  have hFuelEq : names.length + extra + 1 = targetFuel := by
+    dsimp [extra]
+    omega
+  obtain ⟨finalVars, hInsert, hTargetRun⟩ :=
+    InitNames.openRun_extra (identNames names) program target ctx extra
+  have hFinalRel : ScopedStateRel (identNames names ++ layout)
+      (source.zeroFill names)
+      { shared := target.shared, vars := finalVars } := by
+    simpa [identNames_eq_self] using
+      hRel.zeroFill_insertMany hNoDup hFresh hInsert
+  have hFinalDomain : TargetDomainWithin after.used finalVars :=
+    TargetDomainWithin.insertMany_used hDomain hNames hInsert
+  let finalCtx : Functions.Source.Ctx :=
+    { ctx with scope := (identNames names).reverse ++ ctx.scope }
+  have hFinalControl : ControlContextRel sourceScopes
+      (identNames names ++ layout) canBreak canContinue canLeave finalCtx := by
+    apply ControlContextRel.transport hControl
+    · intro candidate hMem
+      exact List.mem_append_right _ hMem
+    · simpa [finalCtx] using
+        (Functions.Source.Ctx.SameControl.scopeUpdate ctx
+          ((identNames names).reverse ++ ctx.scope))
+    · intro candidate hMem
+      rcases List.mem_append.mp hMem with hNames | hLayoutName
+      · exact List.mem_append_left _ (List.mem_reverse.mpr hNames)
+      · exact List.mem_append_right _
+          (hControl.scope candidate hLayoutName)
+  have hFinalScope : TargetScopeWithin after.used finalCtx := by
+    intro candidate hMem
+    rcases List.mem_append.mp hMem with hDeclared | hOuter
+    · exact hExtends candidate
+        (hNames candidate (List.mem_reverse.mp hDeclared))
+    · exact hExtends candidate (hTargetScope candidate hOuter)
+  rw [Yul.InteractionSemantics.Exec.let_none_succ
+      fuel names codeOverride source hCheck]
+  have hTargetRun' :
+      Functions.InteractionSemantics.Block.openRun
+          program ctx targetFuel
+          { stmts := Stmt.initNames (identNames names) } target =
+        pure
+          (Functions.Source.Effectful.Outcome.regular
+            { shared := target.shared, vars := finalVars }, finalCtx) := by
+    simpa [identNames_eq_self, finalCtx, hFuelEq] using hTargetRun
   rw [hTargetRun']
   simpa [identNames_eq_self] using
     (Simulation.Interaction.ForwardRel.done
