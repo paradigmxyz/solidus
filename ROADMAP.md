@@ -220,9 +220,10 @@ boundaries remain active work.
               heads by strong source-fuel induction.
     - [ ] Complete recursive statement/list proof over compiler decomposition;
       break, continue, leave, and multi-name uninitialized declaration compiler
-      cases are checked. Direct-safe one-name initialized declarations and
-      assignments are also checked; general generated-expression preludes,
-      branches, loops, terminals, and internal-call preludes remain.
+      cases are checked. Direct-safe and arbitrary prepared one-name initialized
+      declarations and assignments are checked; expression statements,
+      branches, loops, terminal composition, and direct internal-call
+      statements remain.
     - [x] Compose independent CALL/CREATE and GAS/MSIZE providers with a
       closed-ordinary-primitive capability; no opcode dispatch occurs inside
       expression recursion.

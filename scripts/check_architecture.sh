@@ -622,7 +622,8 @@ report_matches \
   EvmCompiler/Yul/FunctionsCompilerArtifact.lean \
   EvmCompiler/Yul/FunctionsInteractionCall.lean \
   EvmCompiler/Yul/FunctionsInteractionSelectedCall.lean \
-  EvmCompiler/Yul/FunctionsInteractionRecursiveExpression.lean
+  EvmCompiler/Yul/FunctionsInteractionRecursiveExpression.lean \
+  EvmCompiler/Yul/FunctionsInteractionPreparedStatement.lean
 
 report_matches \
   'The canonical Yul-to-Functions interaction boundary must not define a compiler or recursive evaluator:' \
@@ -638,7 +639,8 @@ report_matches \
   EvmCompiler/Yul/FunctionsCompilerArtifact.lean \
   EvmCompiler/Yul/FunctionsInteractionCall.lean \
   EvmCompiler/Yul/FunctionsInteractionSelectedCall.lean \
-  EvmCompiler/Yul/FunctionsInteractionRecursiveExpression.lean
+  EvmCompiler/Yul/FunctionsInteractionRecursiveExpression.lean \
+  EvmCompiler/Yul/FunctionsInteractionPreparedStatement.lean
 
 report_matches \
   'The canonical Yul-to-Functions interaction boundary must not import observer or replay modules:' \
@@ -654,7 +656,8 @@ report_matches \
   EvmCompiler/Yul/FunctionsCompilerArtifact.lean \
   EvmCompiler/Yul/FunctionsInteractionCall.lean \
   EvmCompiler/Yul/FunctionsInteractionSelectedCall.lean \
-  EvmCompiler/Yul/FunctionsInteractionRecursiveExpression.lean
+  EvmCompiler/Yul/FunctionsInteractionRecursiveExpression.lean \
+  EvmCompiler/Yul/FunctionsInteractionPreparedStatement.lean
 
 report_matches \
   'The Yul-to-Functions observer proof must not reason directly about lower pass semantics:' \
