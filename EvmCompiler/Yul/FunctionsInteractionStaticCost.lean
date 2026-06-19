@@ -1,4 +1,5 @@
 import EvmCompiler.Yul.FunctionsInteractionFuel
+import EvmYul.Yul.Interpreter
 
 namespace EvmCompiler
 namespace Yul
@@ -83,6 +84,67 @@ theorem stmtList_tail_le_stmtList
   simp only [stmtList]
   exact (Nat.le_max_right _ _).trans (Nat.le_add_right _ 1)
 
+theorem stmt_le_stmtList_of_mem
+    {candidate : AstStmt} {stmts : List AstStmt}
+    (hMem : candidate ∈ stmts) :
+    stmt candidate ≤ stmtList stmts := by
+  induction stmts with
+  | nil => simp at hMem
+  | cons head tail ih =>
+      rcases List.mem_cons.mp hMem with hHere | hTail
+      · subst candidate
+        exact stmt_head_le_stmtList head tail
+      · exact (ih hTail).trans (stmtList_tail_le_stmtList head tail)
+
+theorem case_body_le_caseList_of_mem
+    {value : Word} {body : List AstStmt}
+    {cases : List (Word × List AstStmt)}
+    (hMem : (value, body) ∈ cases) :
+    stmtList body ≤ caseList cases := by
+  induction cases with
+  | nil => simp at hMem
+  | cons head tail ih =>
+      rcases head with ⟨headValue, headBody⟩
+      simp only [List.mem_cons, Prod.mk.injEq] at hMem
+      simp only [caseList]
+      rcases hMem with hHere | hTail
+      · rcases hHere with ⟨rfl, rfl⟩
+        exact
+          (Nat.le_max_left (stmtList body) (caseList tail)).trans
+            (Nat.le_add_right _ 1)
+      · exact
+          (ih hTail).trans
+            ((Nat.le_max_right (stmtList headBody) (caseList tail)).trans
+              (Nat.le_add_right _ 1))
+
+theorem stmtList_selectSwitchCase_le_max
+    (value : Word) (defaultBody : List AstStmt)
+    (cases : List (Word × List AstStmt)) :
+    stmtList (EvmYul.Yul.selectSwitchCase value defaultBody cases) ≤
+      Nat.max (caseList cases) (stmtList defaultBody) := by
+  induction cases with
+  | nil => simp [EvmYul.Yul.selectSwitchCase, caseList]
+  | cons head tail ih =>
+      rcases head with ⟨caseValue, body⟩
+      simp only [EvmYul.Yul.selectSwitchCase, caseList]
+      by_cases hMatch : caseValue = value
+      · simp only [hMatch, ↓reduceIte]
+        exact
+          ((Nat.le_max_left (stmtList body) (caseList tail)).trans
+            (Nat.le_add_right _ 1)).trans (Nat.le_max_left _ _)
+      · simp only [hMatch, ↓reduceIte]
+        have hCases :
+            caseList tail ≤ Nat.max (stmtList body) (caseList tail) + 1 :=
+          (Nat.le_max_right _ _).trans (Nat.le_add_right _ 1)
+        have hOuter :
+            Nat.max (caseList tail) (stmtList defaultBody) ≤
+              Nat.max
+                (Nat.max (stmtList body) (caseList tail) + 1)
+                (stmtList defaultBody) :=
+          Nat.max_le.mpr
+            ⟨hCases.trans (Nat.le_max_left _ _), Nat.le_max_right _ _⟩
+        exact ih.trans hOuter
+
 theorem functionDefinition_le_functionList_of_mem
     {name : Name} {fn : AstFunctionDefinition}
     {functions : List (Name × AstFunctionDefinition)}
@@ -114,6 +176,32 @@ theorem function_le_program_of_lookup
       (stmt sourceProgram.contract.dispatcher)
       (functionList (Contract.functionEntries sourceProgram.contract))
   exact hList.trans (hMax.trans (Nat.le_add_right _ 8))
+
+theorem dispatcher_le_program (sourceProgram : Yul.Program) :
+    stmt sourceProgram.contract.dispatcher ≤ program sourceProgram := by
+  unfold program
+  exact
+    (Nat.le_max_left _ _).trans (Nat.le_add_right _ 8)
+
+theorem dispatcherList_le_program (sourceProgram : Yul.Program) :
+    stmtList [sourceProgram.contract.dispatcher] ≤
+      program sourceProgram := by
+  let dispatcherCost := stmt sourceProgram.contract.dispatcher
+  let functionCost :=
+    functionList (Contract.functionEntries sourceProgram.contract)
+  have hDispatcher :
+      dispatcherCost ≤ Nat.max dispatcherCost functionCost :=
+    Nat.le_max_left _ _
+  have hMax :
+      Nat.max dispatcherCost 1 ≤
+        Nat.max dispatcherCost functionCost + 1 :=
+    Nat.max_le.mpr
+      ⟨hDispatcher.trans (Nat.le_add_right _ 1), by omega⟩
+  simp only [stmtList]
+  unfold program
+  change Nat.max dispatcherCost 1 + 1 ≤
+    Nat.max dispatcherCost functionCost + 8
+  omega
 
 theorem function_body_le_program_of_lookup
     {sourceProgram : Yul.Program}

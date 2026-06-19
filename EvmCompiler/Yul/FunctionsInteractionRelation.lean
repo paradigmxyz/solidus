@@ -1,5 +1,6 @@
 import EvmCompiler.Functions.InteractionSemantics
 import EvmCompiler.Yul.InteractionSemantics
+import EvmCompiler.Yul.VarStoreRestriction
 
 namespace EvmCompiler
 namespace Yul
@@ -1508,6 +1509,77 @@ theorem restrictTarget
     Locals.Source.Store.restrictTo, hScope] using
     hVars name value hLookup
 
+/-- Restrict both sides to corresponding source and target control scopes.
+The source scope store contributes only its domain; values are retained from
+the current source state, exactly as Yul lexical restriction specifies. -/
+theorem restrictBoth
+    {current retained targetScope : List Functions.Name}
+    {sourceScope : EvmYul.Yul.VarStore}
+    {source : SourceState} {target : TargetState}
+    (hRel : ScopedStateRel current source target)
+    (hScopeDomain : VarsDomainWithin retained sourceScope)
+    (hScopeDefined : VarsDefinedOn retained sourceScope)
+    (hRetained : ∀ name, name ∈ retained → name ∈ current)
+    (hTargetScope : ∀ name, name ∈ retained → name ∈ targetScope) :
+    ScopedStateRel retained
+      (source.restrictStoreTo sourceScope)
+      (target.restrictTo targetScope) := by
+  rcases hRel.state with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  let restrictedSource :=
+    EvmYul.Yul.State.restrictVarStore sourceVars sourceScope
+  refine
+    { state := ?_
+      domain := ?_
+      defined := ?_ }
+  · refine ⟨sourceShared, restrictedSource, rfl, ?_, ?_⟩
+    · simpa [Locals.Source.State.restrictTo] using hShared
+    · intro name value hLookup
+      cases hScopeLookup : sourceScope.lookup name with
+      | none =>
+          have hNone := VarStoreRestriction.lookup_restrict_of_none
+            sourceVars sourceScope name hScopeLookup
+          change restrictedSource.lookup name = some value at hLookup
+          simp [restrictedSource, hNone] at hLookup
+      | some scopeValue =>
+          have hSourceLookup := VarStoreRestriction.lookup_restrict_of_some
+            sourceVars sourceScope name hScopeLookup
+          have hRetainedName : name ∈ retained :=
+            hScopeDomain name scopeValue hScopeLookup
+          have hTargetName : name ∈ targetScope :=
+            hTargetScope name hRetainedName
+          change restrictedSource.lookup name = some value at hLookup
+          change
+            (EvmYul.Yul.State.restrictVarStore
+              sourceVars sourceScope).lookup name = some value at hLookup
+          rw [hSourceLookup] at hLookup
+          simpa [Locals.Source.State.restrictTo,
+            Locals.Source.Store.restrictTo, hTargetName] using
+            hVars name value hLookup
+  · intro finalShared finalVars hFinal name value hLookup
+    cases hFinal
+    cases hScopeLookup : sourceScope.lookup name with
+    | none =>
+        have hNone := VarStoreRestriction.lookup_restrict_of_none
+          sourceVars sourceScope name hScopeLookup
+        simp [restrictedSource, hNone] at hLookup
+    | some scopeValue =>
+        exact hScopeDomain name scopeValue hScopeLookup
+  · intro finalShared finalVars hFinal name hName
+    cases hFinal
+    obtain ⟨scopeValue, hScopeLookup⟩ := hScopeDefined name hName
+    obtain ⟨sourceValue, hSourceLookup⟩ :=
+      hRel.defined sourceShared sourceVars rfl name (hRetained name hName)
+    refine ⟨sourceValue, ?_⟩
+    change restrictedSource.lookup name = some sourceValue
+    change
+      (EvmYul.Yul.State.restrictVarStore
+        sourceVars sourceScope).lookup name = some sourceValue
+    rw [VarStoreRestriction.lookup_restrict_of_some
+        sourceVars sourceScope name hScopeLookup]
+    exact hSourceLookup
+
 theorem of_state_store_eq
     {layout : List Functions.Name}
     {entry finalSource : SourceState}
@@ -2134,6 +2206,25 @@ def ModeRel (source : SourceState)
   | .Checkpoint (.Continue _ _), .cont => True
   | .Checkpoint (.Leave _ _), .leave => True
   | _, _ => False
+
+namespace ModeRel
+
+theorem target_nonregular_source_checkpoint
+    {source : SourceState}
+    {target : Functions.InteractionSemantics.Outcome}
+    (hMode : ModeRel source target)
+    (hNonregular : target.mode ≠ .regular) :
+    ∃ jump, source = .Checkpoint jump := by
+  cases source with
+  | Ok shared vars =>
+      cases hTarget : target.mode <;>
+        simp [ModeRel, hTarget] at hMode hNonregular
+  | OutOfFuel =>
+      cases hTarget : target.mode <;>
+        simp [ModeRel, hTarget] at hMode
+  | Checkpoint jump => exact ⟨jump, rfl⟩
+
+end ModeRel
 
 /-- Outcome-indexed adjacent state relation. Checkpoint payloads are revived
 only for relating their shared state and visible locals; `ModeRel` retains

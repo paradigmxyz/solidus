@@ -2,6 +2,7 @@ import EvmCompiler.Yul.CompilerStatementDecomposition
 import EvmCompiler.Yul.CompilerExpressionDecomposition
 import EvmCompiler.Yul.FunctionsInteractionExpression
 import EvmCompiler.Yul.FunctionsInteractionTerminal
+import EvmCompiler.Yul.FunctionsInteractionControlRelation
 
 namespace EvmCompiler
 namespace Yul
@@ -9,6 +10,7 @@ namespace FunctionsInteractionStatement
 
 open FunctionsInteractionPrimitive
 open FunctionsInteractionRelation
+open FunctionsInteractionControlRelation
 
 def ResultRel (ctx : Functions.Source.Ctx)
     (source : Yul.InteractionSemantics.State)
@@ -340,6 +342,126 @@ theorem cons
           cases checkpoint <;> simp [ModeRel] at hMode
 
 end PathScopedDoneRel
+
+namespace ControlDoneRel
+
+theorem nil
+    {layout : List Functions.Name} {sourceFuel targetFuel : Nat}
+    {sourceScopes : SourceScopes}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hRel : ScopedStateRel layout source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel layout sourceScopes)
+      (Yul.InteractionSemantics.execSeq
+        (sourceFuel + 1) [] codeOverride source)
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx (targetFuel + 1) { stmts := [] } target) := by
+  rw [Yul.InteractionSemantics.ExecSeq.nil_succ,
+    Functions.InteractionSemantics.Block.openRun_nil]
+  exact Simulation.Interaction.ForwardRel.done (.regular hRel)
+
+/-- Compose one compiler-owned target prefix with the residual source list.
+Regular completion continues under the dynamically returned target context;
+abrupt and terminal completion skip the unreachable suffix. -/
+theorem cons
+    {headLayout finalLayout : List Functions.Name}
+    {sourceFuel targetFuel : Nat}
+    {sourceScopes : SourceScopes}
+    {stmt : AstStmt} {rest : List AstStmt}
+    {lowerHead lowerRest : List Functions.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hHead :
+      Simulation.Interaction.ForwardRel Truncated
+        (ControlDoneRel headLayout sourceScopes)
+        (Yul.InteractionSemantics.exec
+          sourceFuel stmt codeOverride source)
+        (Functions.InteractionSemantics.Block.openRun
+          program ctx targetFuel { stmts := lowerHead } target))
+    (hTail :
+      ∀ {sourceMid : Yul.InteractionSemantics.State}
+        {targetMid : Functions.InteractionSemantics.State}
+        {ctxMid : Functions.Source.Ctx},
+        ScopedStateRel headLayout sourceMid targetMid →
+          Simulation.Interaction.ForwardRel Truncated
+            (ControlDoneRel finalLayout sourceScopes)
+            (Yul.InteractionSemantics.execSeq
+              sourceFuel rest codeOverride sourceMid)
+            (Functions.InteractionSemantics.Block.openRun
+              program ctxMid (targetFuel - lowerHead.length)
+                { stmts := lowerRest } targetMid)) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel finalLayout sourceScopes)
+      (Yul.InteractionSemantics.execSeq
+        (sourceFuel + 1) (stmt :: rest) codeOverride source)
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx targetFuel
+          { stmts := lowerHead ++ lowerRest } target) := by
+  rw [Yul.InteractionSemantics.ExecSeq.cons_succ,
+    Functions.InteractionSemantics.Block.openRun_append]
+  apply Simulation.Interaction.ForwardRel.bind_custom hHead
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ForwardRel.done (.error hError)
+  | @regular sourceMid targetMid ctxMid hState =>
+      rcases hState.state with
+        ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
+      subst sourceMid
+      simpa using hTail hState
+  | @brk sourceMid targetOutcome ctxMid scope hScope hMode hAbrupt =>
+      obtain ⟨jump, hSource⟩ :=
+        ModeRel.target_nonregular_source_checkpoint
+          hAbrupt.mode (by simpa [hMode])
+      subst sourceMid
+      simpa [hMode] using
+        (Simulation.Interaction.ForwardRel.done
+          (ControlDoneRel.brk hScope hMode hAbrupt))
+  | @cont sourceMid targetOutcome ctxMid scope hScope hMode hAbrupt =>
+      obtain ⟨jump, hSource⟩ :=
+        ModeRel.target_nonregular_source_checkpoint
+          hAbrupt.mode (by simpa [hMode])
+      subst sourceMid
+      simpa [hMode] using
+        (Simulation.Interaction.ForwardRel.done
+          (ControlDoneRel.cont hScope hMode hAbrupt))
+  | @leave sourceMid targetOutcome ctxMid scope hScope hMode hAbrupt =>
+      obtain ⟨jump, hSource⟩ :=
+        ModeRel.target_nonregular_source_checkpoint
+          hAbrupt.mode (by simpa [hMode])
+      subst sourceMid
+      simpa [hMode] using
+        (Simulation.Interaction.ForwardRel.done
+          (ControlDoneRel.leave hScope hMode hAbrupt))
+  | terminal hTerminal =>
+      cases hTerminal with
+      | stop hState =>
+          simpa using
+            (Simulation.Interaction.ForwardRel.done
+              (ControlDoneRel.terminal
+                (TerminalFailureRel.stop hState)))
+      | return_ hState =>
+          simpa using
+            (Simulation.Interaction.ForwardRel.done
+              (ControlDoneRel.terminal
+                (TerminalFailureRel.return_ hState)))
+      | selfdestruct hState =>
+          simpa using
+            (Simulation.Interaction.ForwardRel.done
+              (ControlDoneRel.terminal
+                (TerminalFailureRel.selfdestruct hState)))
+      | revert hState =>
+          simpa using
+            (Simulation.Interaction.ForwardRel.done
+              (ControlDoneRel.terminal
+                (TerminalFailureRel.revert hState)))
+
+end ControlDoneRel
 
 /-- Adjacent result interface for a compiler-owned terminal argument prelude.
 Regular completion supplies the exact typed argument-sequence result; an

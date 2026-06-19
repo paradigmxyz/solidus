@@ -614,6 +614,8 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionFuel.lean \
   EvmCompiler/Yul/FunctionsInteractionStaticCost.lean \
+  EvmCompiler/Yul/VarStoreRestriction.lean \
+  EvmCompiler/Yul/FunctionsInteractionControlRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionClosedPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionExpression.lean \
@@ -634,6 +636,8 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionFuel.lean \
   EvmCompiler/Yul/FunctionsInteractionStaticCost.lean \
+  EvmCompiler/Yul/VarStoreRestriction.lean \
+  EvmCompiler/Yul/FunctionsInteractionControlRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionClosedPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionExpression.lean \
@@ -654,6 +658,8 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionFuel.lean \
   EvmCompiler/Yul/FunctionsInteractionStaticCost.lean \
+  EvmCompiler/Yul/VarStoreRestriction.lean \
+  EvmCompiler/Yul/FunctionsInteractionControlRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionClosedPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionExpression.lean \
@@ -1248,6 +1254,8 @@ report_matches \
   EvmCompiler/Yul/EffectSemantics.lean \
   EvmCompiler/Yul/EffectRefinement/Failure.lean \
   EvmCompiler/Yul/ObserverSafety.lean \
+  EvmCompiler/Yul/VarStoreRestriction.lean \
+  EvmCompiler/Yul/FunctionsInteraction*.lean \
   EvmCompiler/Yul/FunctionsObserverExpressionBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallBackward.lean \
   EvmCompiler/Yul/FunctionsObserverListBackward.lean \

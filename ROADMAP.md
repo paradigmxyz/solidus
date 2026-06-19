@@ -223,6 +223,24 @@ boundaries remain active work.
               residual inequalities through argument and call preludes.
             - [ ] Construct the budgeted recursive statement/list fixed point
               and use it to discharge `BodyForwardAt` without a call oracle.
+              - [x] Audit the historical observer proof and classify its
+                components by architectural ownership.
+              - [x] Port source-only static-cost bounds and multi-child fuel
+                arithmetic into canonical adjacent modules.
+              - [x] Port control-scope transport as an observer-free,
+                outcome-indexed relation carrying exact Yul scope snapshots.
+              - [x] Port generic regular/abrupt/terminal list sequencing
+                without transcript state or existential execution records.
+              - [ ] Rebuild the historical five-way fuel fixed point over
+                canonical body, value, statement, list, and compound
+                interfaces.
+              - [ ] Instantiate block, if, switch, and for from ordinary
+                compiler decomposition and the canonical control relation.
+              - [ ] Close the dispatcher and selected callee bodies.
+              - The historical `ScopedOpenResult`, observer transcript state,
+                `Nat.find`-based `requiredFuel`, replay relation, and public
+                recursive-call premise are reference material only and will
+                not be ported.
     - [ ] Complete recursive statement/list proof over compiler decomposition;
       break, continue, leave, and multi-name uninitialized declaration compiler
       cases are checked. Direct-safe and arbitrary prepared one-name initialized
