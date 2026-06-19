@@ -194,6 +194,15 @@ for theorem in \
   fi
 done
 
+if ! rg -Fq \
+    '#check EvmCompiler.Structured.InteractionLoopPreservation.Loop.openRunForLoop_bounded_under' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing the source-budgeted Structured loop theorem.' \
+    >&2
+  failed=1
+fi
+
 for theorem in \
     'Stmt.openStep_brk_of_compileStmtFuel?' \
     'Stmt.openRun_brk_within_of_compileStmtFuel?' \
@@ -1262,6 +1271,9 @@ report_matches \
   EvmCompiler/Structured/InteractionLeafPreservation.lean \
   EvmCompiler/Structured/InteractionBranchPreservation.lean \
   EvmCompiler/Structured/InteractionSwitchPreservation.lean \
+  EvmCompiler/Structured/InteractionLoopPreservation.lean \
+  EvmCompiler/Structured/InteractionBoundedLoopPreservation.lean \
+  EvmCompiler/Structured/InteractionCallPreservation.lean \
   EvmCompiler/Expressions/EffectSemantics.lean \
   EvmCompiler/Expressions/InteractionSemantics.lean \
   EvmCompiler/Expressions/InteractionPreservation.lean \

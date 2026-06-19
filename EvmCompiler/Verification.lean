@@ -97,6 +97,7 @@ import EvmCompiler.Structured.InteractionLeafPreservation
 import EvmCompiler.Structured.InteractionBranchPreservation
 import EvmCompiler.Structured.InteractionSwitchPreservation
 import EvmCompiler.Structured.InteractionLoopPreservation
+import EvmCompiler.Structured.InteractionBoundedLoopPreservation
 import EvmCompiler.Structured.InteractionCallPreservation
 import EvmCompiler.Structured.InteractionOwnerPreservation
 import EvmCompiler.Structured.ObserverSemantics
@@ -912,6 +913,7 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.InteractionSwitchPreservation.Stmt.openRun_switch_exec_under_of_compileStmtFuel?
 #check EvmCompiler.Structured.InteractionSwitchPreservation.Stmt.openRun_switch_within_stop_of_compileStmtFuel?
 #check EvmCompiler.Structured.InteractionLoopPreservation.Loop.openRunForLoop_exec_under
+#check EvmCompiler.Structured.InteractionLoopPreservation.Loop.openRunForLoop_bounded_under
 #check EvmCompiler.Structured.InteractionLoopPreservation.Loop.Stmt.openRun_for_exec_under_of_compileStmtFuel?
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationInput
 #check EvmCompiler.Structured.InteractionBoundaryPreservation.OpenOutcome.StopPolicy.ActivationProtected
