@@ -219,6 +219,255 @@ theorem deferred
       | Call callee args =>
           simp [Expr.deferredBoundArgSafe?] at hSafe
 
+/-- Singleton list wrapper for a deferred argument. This isolates the two
+units of list fuel consumed around the expression evaluator. -/
+theorem deferred_arg
+    {fuel targetFuel : Nat}
+    {expr : AstExpr} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1} {before after : Fresh.State}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {layout : List Functions.Name}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hSafe : Expr.deferredBoundArgSafe? expr = true)
+    (hLower : Expr.lower1Unchecked? before expr =
+      some (pre, lower, after))
+    (hRel : FunctionsInteractionRelation.ScopedStateRel
+      layout source target)
+    (hDomain : FunctionsInteractionRelation.TargetDomainWithin
+      before.used target.vars) :
+    Simulation.Interaction.ForwardRel Truncated
+      (DoneRel layout after [lower] target)
+      (Yul.InteractionSemantics.evalArgs
+        fuel [expr] codeOverride source)
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx (targetFuel + 1) { stmts := pre } target) := by
+  obtain ⟨rfl, rfl, hDirect⟩ :=
+    Expr.lower1Unchecked?_deferred_parts hSafe hLower
+  rw [Functions.InteractionSemantics.Block.openRun_nil]
+  cases fuel with
+  | zero =>
+      have hTruncated :
+          Truncated
+            ({ exception := .OutOfFuel, state := source } :
+              Yul.InteractionSemantics.Failure) := by
+        trivial
+      simpa [Yul.InteractionSemantics.evalArgs,
+        Yul.Source.Canonical.evalArgs,
+        Yul.Source.Effectful.evalArgs,
+        Yul.InteractionSemantics.Primitive.fail,
+        Yul.Source.Effectful.Control.fail] using
+        (Simulation.Interaction.ForwardRel.truncated
+          (doneRel := DoneRel layout after [lower] target)
+          (right := pure
+            (Functions.Source.Effectful.Outcome.regular target, ctx))
+          hTruncated)
+  | succ tailFuel =>
+      cases tailFuel with
+      | zero =>
+          rw [Yul.InteractionSemantics.EvalArgs.one_cons]
+          have hHead := deferred
+            (fuel := 0) (targetFuel := targetFuel)
+            (codeOverride := codeOverride) (program := program) (ctx := ctx)
+            hSafe hLower hRel hDomain
+          rw [Functions.InteractionSemantics.Block.openRun_nil] at hHead
+          apply Simulation.Interaction.ForwardRel.bind_custom hHead
+          intro sourceDone targetDone hDone
+          cases hDone with
+          | error hError =>
+              exact Simulation.Interaction.ForwardRel.done (.error hError)
+          | @regular sourceValues values targetAfter targetCtx
+              hStable hScoped hFinalDomain hExtends =>
+              have hTruncated :
+                  Truncated
+                    ({ exception := .OutOfFuel,
+                        state := sourceValues } :
+                      Yul.InteractionSemantics.Failure) := by
+                trivial
+              simpa [Yul.InteractionSemantics.Primitive.fail] using
+                (Simulation.Interaction.ForwardRel.truncated
+                  (doneRel := DoneRel layout after [lower] target)
+                  (right := pure
+                    (Functions.Source.Effectful.Outcome.regular targetAfter,
+                      targetCtx))
+                  hTruncated)
+          | terminal hTerminal =>
+              exact Simulation.Interaction.ForwardRel.done
+                (.terminal hTerminal)
+      | succ residualFuel =>
+          rw [show residualFuel + 1 + 1 = residualFuel + 2 by omega,
+            Yul.InteractionSemantics.EvalArgs.succ_succ_cons]
+          have hHead := deferred
+            (fuel := residualFuel + 1) (targetFuel := targetFuel)
+            (codeOverride := codeOverride) (program := program) (ctx := ctx)
+            hSafe hLower hRel hDomain
+          rw [Functions.InteractionSemantics.Block.openRun_nil] at hHead
+          have hBound :
+              Simulation.Interaction.ForwardRel Truncated
+                (DoneRel layout after [lower] target)
+                (Simulation.Interaction.bind
+                  (Yul.InteractionSemantics.evalValues
+                    (residualFuel + 1) expr codeOverride source)
+                  (fun headResult =>
+                    Simulation.Interaction.bind
+                      (Yul.InteractionSemantics.evalArgs residualFuel []
+                        codeOverride headResult.1)
+                      (fun tailResult =>
+                        pure
+                          (tailResult.1,
+                            headResult.2.head! :: tailResult.2))))
+                (Simulation.Interaction.bind
+                  (pure
+                    (Functions.Source.Effectful.Outcome.regular target, ctx))
+                  pure) := by
+            apply Simulation.Interaction.ForwardRel.bind_custom hHead
+            intro sourceDone targetDone hDone
+            cases hDone with
+            | error hError =>
+                exact Simulation.Interaction.ForwardRel.done (.error hError)
+            | @regular sourceAfter values targetAfter targetCtx
+                hStable hScoped hFinalDomain hExtends =>
+                cases residualFuel with
+                | zero =>
+                    have hTruncated :
+                        Truncated
+                          ({ exception := .OutOfFuel,
+                              state := sourceAfter } :
+                            Yul.InteractionSemantics.Failure) := by
+                      trivial
+                    simpa [Yul.InteractionSemantics.evalArgs,
+                      Yul.Source.Canonical.evalArgs,
+                      Yul.Source.Effectful.evalArgs,
+                      Yul.InteractionSemantics.Primitive.fail,
+                      Yul.Source.Effectful.Control.fail] using
+                      (Simulation.Interaction.ForwardRel.truncated
+                        (doneRel := DoneRel layout after [lower] target)
+                        (right := pure
+                          (Functions.Source.Effectful.Outcome.regular
+                            targetAfter, targetCtx))
+                        hTruncated)
+                | succ fuel =>
+                    have hTail :
+                        Yul.InteractionSemantics.evalArgs (fuel + 1) []
+                            codeOverride sourceAfter =
+                          pure (sourceAfter, []) := by
+                      simp [Yul.InteractionSemantics.evalArgs,
+                        Yul.Source.Canonical.evalArgs,
+                        Yul.Source.Effectful.evalArgs]
+                    have hLength : values.length = 1 := by
+                      simpa using hStable.length
+                    obtain ⟨value, rfl⟩ :=
+                      List.length_eq_one_iff.mp hLength
+                    simpa [hTail] using
+                      (Simulation.Interaction.ForwardRel.done
+                        (truncated := Truncated)
+                        (DoneRel.regular hStable hScoped hFinalDomain
+                          hExtends))
+            | terminal hTerminal =>
+                exact Simulation.Interaction.ForwardRel.done
+                  (.terminal hTerminal)
+          simpa using hBound
+
+/-- Compose a recursively prepared tail with one compiler-deferred head.
+This is the semantic counterpart of `UncheckedBoundLowering.direct`. -/
+theorem direct
+    {fuel targetFuel : Nat}
+    {expr : AstExpr} {rest : List AstExpr}
+    {preRest preHead : List Functions.Stmt}
+    {lowerRest : List (Locals.Expr 1)} {lowerHead : Locals.Expr 1}
+    {initial stateRest stateHead : Fresh.State}
+    {entry : Functions.InteractionSemantics.State}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {layout : List Functions.Name}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hSafe : Expr.deferredBoundArgSafe? expr = true)
+    (hHead : Expr.lower1Unchecked? stateRest expr =
+      some (preHead, lowerHead, stateHead))
+    (hRest :
+      Simulation.Interaction.ForwardRel Truncated
+        (DoneRel layout stateRest lowerRest.reverse entry)
+        (Yul.InteractionSemantics.evalArgs
+          fuel rest.reverse codeOverride source)
+        (Functions.InteractionSemantics.Block.openRun
+          program ctx targetFuel { stmts := preRest } target)) :
+    Simulation.Interaction.ForwardRel Truncated
+      (DoneRel layout stateHead (lowerHead :: lowerRest).reverse entry)
+      (Yul.InteractionSemantics.evalArgs
+        fuel (expr :: rest).reverse codeOverride source)
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx targetFuel { stmts := preRest ++ preHead } target) := by
+  obtain ⟨rfl, rfl, hDirect⟩ :=
+    Expr.lower1Unchecked?_deferred_parts hSafe hHead
+  simp only [List.append_nil, List.reverse_cons]
+  rw [Yul.InteractionSemantics.EvalArgs.append]
+  have hBound :
+      Simulation.Interaction.ForwardRel Truncated
+        (DoneRel layout stateHead (lowerRest.reverse ++ [lowerHead]) entry)
+        (Simulation.Interaction.bind
+          (Yul.InteractionSemantics.evalArgs
+            fuel rest.reverse codeOverride source)
+          (fun restResult =>
+            Simulation.Interaction.bind
+              (Yul.InteractionSemantics.evalArgs
+                (fuel - 2 * rest.reverse.length) [expr]
+                codeOverride restResult.1)
+              (fun headResult =>
+                pure
+                  (headResult.1,
+                    restResult.2 ++ headResult.2))))
+        (Simulation.Interaction.bind
+          (Functions.InteractionSemantics.Block.openRun
+            program ctx targetFuel { stmts := preRest } target)
+          pure) := by
+    apply Simulation.Interaction.ForwardRel.bind_custom hRest
+    intro sourceDone targetDone hDone
+    cases hDone with
+    | error hError =>
+        exact Simulation.Interaction.ForwardRel.done (.error hError)
+    | terminal hTerminal =>
+        exact Simulation.Interaction.ForwardRel.done (.terminal hTerminal)
+    | @regular sourceRest restValues targetRest ctxRest
+        hStableRest hScopedRest hDomainRest hExtendsRest =>
+        have hHeadRel := deferred_arg
+          (fuel := fuel - 2 * rest.reverse.length)
+          (targetFuel := 0)
+          (codeOverride := codeOverride) (program := program)
+          (ctx := ctxRest)
+          hSafe hHead hScopedRest hDomainRest
+        rw [Functions.InteractionSemantics.Block.openRun_nil] at hHeadRel
+        apply Simulation.Interaction.ForwardRel.bind_custom hHeadRel
+        intro headSourceDone headTargetDone hHeadDone
+        cases hHeadDone with
+        | error hError =>
+            exact Simulation.Interaction.ForwardRel.done (.error hError)
+        | terminal hTerminal =>
+            exact Simulation.Interaction.ForwardRel.done
+              (.terminal hTerminal)
+        | @regular sourceAfter headValues targetAfter ctxAfter
+            hStableHead hScopedHead hDomainHead hExtendsHead =>
+            have hStableRest' := hStableRest.mono hExtendsHead
+            have hStableFinal := hStableRest'.append hStableHead
+            have hExtendsFinal :=
+              FunctionsInteractionRelation.TargetExtends.trans
+                hExtendsRest hExtendsHead
+            exact Simulation.Interaction.ForwardRel.done
+              (.regular
+                hStableFinal
+                hScopedHead hDomainHead hExtendsFinal)
+  have hTargetPure :
+      Simulation.Interaction.bind
+          (Functions.InteractionSemantics.Block.openRun
+            program ctx targetFuel { stmts := preRest } target)
+          (fun result => pure result) =
+        Functions.InteractionSemantics.Block.openRun
+          program ctx targetFuel { stmts := preRest } target := by
+    exact Simulation.Interaction.bind_pure _
+  rw [hTargetPure] at hBound
+  exact hBound
+
 end FunctionsInteractionPreparedArgs
 end Yul
 end EvmCompiler

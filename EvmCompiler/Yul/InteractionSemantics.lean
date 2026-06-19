@@ -211,8 +211,7 @@ theorem succ_succ_cons
 the exact residual list fuel after two units per prefix expression. -/
 theorem append
     {fuel : Nat} (left right : List EvmYul.Yul.Ast.Expr)
-    (code : Option EvmYul.Yul.Ast.YulContract) (state : State)
-    (hFuel : 2 * left.length < fuel) :
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
     evalArgs fuel (left ++ right) code state =
       Simulation.Interaction.bind
         (evalArgs fuel left code state)
@@ -225,7 +224,21 @@ theorem append
   induction left generalizing fuel state with
   | nil =>
       cases fuel with
-      | zero => omega
+      | zero =>
+          simp only [List.nil_append, List.length_nil, Nat.mul_zero,
+            Nat.sub_zero]
+          unfold evalArgs Yul.Source.Canonical.evalArgs
+            Yul.Source.Effectful.evalArgs
+          unfold Yul.Source.Effectful.Control.fail
+          change
+            Simulation.Interaction.error
+                ({ exception := .OutOfFuel, state := state } : Failure) =
+              Simulation.Interaction.bind
+                (Simulation.Interaction.error
+                  ({ exception := .OutOfFuel, state := state } : Failure)) _
+          exact
+            (Simulation.Interaction.monad_error_bind
+              ({ exception := .OutOfFuel, state := state } : Failure) _).symm
       | succ fuel =>
           simp only [List.nil_append, List.length_nil, Nat.mul_zero,
             Nat.sub_zero]
@@ -247,72 +260,99 @@ theorem append
             (Simulation.Interaction.bind_pure
               (evalArgs (fuel + 1) right code state)).symm
   | cons head rest ih =>
-      simp only [List.length_cons] at hFuel
-      obtain ⟨tailFuel, hFuelEq⟩ : ∃ tailFuel, fuel = tailFuel + 2 := by
-        refine ⟨fuel - 2, ?_⟩
-        omega
-      subst fuel
-      have hRestFuel : 2 * rest.length < tailFuel := by
-        omega
-      rw [List.cons_append, succ_succ_cons, succ_succ_cons]
-      rw [Simulation.Interaction.bind_assoc]
-      apply congrArg
-      funext headResult
-      rw [ih headResult.1 hRestFuel]
-      have hResidual :
-          tailFuel + 2 - 2 * (head :: rest).length =
-            tailFuel - 2 * rest.length := by
-        simp only [List.length_cons]
-        omega
-      rw [hResidual]
-      simp only [Simulation.Interaction.bind_assoc,
-        Simulation.Interaction.monad_pure_bind]
-      apply congrArg
-      funext restResult
-      change
-        Simulation.Interaction.bind
-            (evalArgs (tailFuel - 2 * rest.length)
-              right code restResult.1)
-            (fun rightResult =>
+      cases fuel with
+      | zero =>
+          unfold evalArgs Yul.Source.Canonical.evalArgs
+            Yul.Source.Effectful.evalArgs
+          unfold Yul.Source.Effectful.Control.fail
+          change
+            Simulation.Interaction.error
+                ({ exception := .OutOfFuel, state := state } : Failure) =
               Simulation.Interaction.bind
-                (Simulation.Interaction.done
-                  (.ok
-                    (rightResult.1,
-                      restResult.2 ++ rightResult.2)))
-                (fun tailResult =>
+                (Simulation.Interaction.error
+                  ({ exception := .OutOfFuel, state := state } : Failure)) _
+          exact
+            (Simulation.Interaction.monad_error_bind
+              ({ exception := .OutOfFuel, state := state } : Failure) _).symm
+      | succ fuel =>
+          cases fuel with
+          | zero =>
+              rw [List.cons_append, one_cons, one_cons]
+              have hZero :
+                  evalValues 0 head code state =
+                    Primitive.fail state .OutOfFuel := by
+                unfold evalValues Yul.Source.Canonical.evalValues
+                  Yul.Source.Effectful.evalValues
+                rfl
+              rw [hZero]
+              unfold Primitive.fail
+              change
+                Simulation.Interaction.error
+                    ({ exception := .OutOfFuel, state := state } : Failure) =
+                  Simulation.Interaction.error
+                    ({ exception := .OutOfFuel, state := state } : Failure)
+              rfl
+          | succ tailFuel =>
+              rw [List.cons_append, show tailFuel + 1 + 1 = tailFuel + 2 by
+                omega, succ_succ_cons, succ_succ_cons]
+              rw [Simulation.Interaction.bind_assoc]
+              apply congrArg
+              funext headResult
+              rw [ih headResult.1]
+              have hResidual :
+                  tailFuel + 2 - 2 * (head :: rest).length =
+                    tailFuel - 2 * rest.length := by
+                simp only [List.length_cons]
+                omega
+              rw [hResidual]
+              simp only [Simulation.Interaction.bind_assoc,
+                Simulation.Interaction.monad_pure_bind]
+              apply congrArg
+              funext restResult
+              change
+                Simulation.Interaction.bind
+                    (evalArgs (tailFuel - 2 * rest.length)
+                      right code restResult.1)
+                    (fun rightResult =>
+                      Simulation.Interaction.bind
+                        (Simulation.Interaction.done
+                          (.ok
+                            (rightResult.1,
+                              restResult.2 ++ rightResult.2)))
+                        (fun tailResult =>
+                          pure
+                            (tailResult.1,
+                              headResult.2.head! :: tailResult.2))) =
+                  Simulation.Interaction.bind
+                    (Simulation.Interaction.done
+                      (.ok
+                        (restResult.1,
+                          headResult.2.head! :: restResult.2)))
+                    (fun leftResult =>
+                      Simulation.Interaction.bind
+                        (evalArgs (tailFuel - 2 * rest.length)
+                          right code leftResult.1)
+                        (fun rightResult =>
+                          pure
+                            (rightResult.1,
+                              leftResult.2 ++ rightResult.2)))
+              apply congrArg
+              funext rightResult
+              change
+                Simulation.Interaction.bind
+                    (Simulation.Interaction.done
+                      (.ok
+                        (rightResult.1,
+                          restResult.2 ++ rightResult.2)))
+                    (fun tailResult =>
+                      pure
+                        (tailResult.1,
+                          headResult.2.head! :: tailResult.2)) =
                   pure
-                    (tailResult.1,
-                      headResult.2.head! :: tailResult.2))) =
-          Simulation.Interaction.bind
-            (Simulation.Interaction.done
-              (.ok
-                (restResult.1,
-                  headResult.2.head! :: restResult.2)))
-            (fun leftResult =>
-              Simulation.Interaction.bind
-                (evalArgs (tailFuel - 2 * rest.length)
-                  right code leftResult.1)
-                (fun rightResult =>
-                  pure
                     (rightResult.1,
-                      leftResult.2 ++ rightResult.2)))
-      apply congrArg
-      funext rightResult
-      change
-        Simulation.Interaction.bind
-            (Simulation.Interaction.done
-              (.ok
-                (rightResult.1,
-                  restResult.2 ++ rightResult.2)))
-            (fun tailResult =>
-              pure
-                (tailResult.1,
-                  headResult.2.head! :: tailResult.2)) =
-          pure
-            (rightResult.1,
-              (headResult.2.head! :: restResult.2) ++ rightResult.2)
-      rw [Simulation.Interaction.bind_done_ok]
-      rfl
+                      (headResult.2.head! :: restResult.2) ++ rightResult.2)
+              rw [Simulation.Interaction.bind_done_ok]
+              rfl
 
 end EvalArgs
 

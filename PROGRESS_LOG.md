@@ -38,10 +38,22 @@
   step is list-fuel sequencing with the recursively prepared tail.
 
 - 2026-06-18 19:22 PDT - semantics/yul-evalargs-append - Added the canonical
-  `EvalArgs.append` equation. Under the exact positive residual-fuel bound it
-  factors argument evaluation at any list boundary, assigns the suffix
+  `EvalArgs.append` equation. It factors argument evaluation at any list
+  boundary for every fuel, including prefix truncation, assigns the suffix
   `fuel - 2 * prefix.length`, and preserves ordered value concatenation. This
   removes custom list-evaluator reasoning from the prepared-argument owner.
+
+- 2026-06-18 19:46 PDT - proof/yul-functions-prepared-direct - Proved the
+  total-fuel deferred singleton wrapper and the pass-owned semantic constructor
+  corresponding to `UncheckedBoundLowering.direct`. It composes recursively
+  prepared prefix effects with the delayed head, preserves exact effect order,
+  propagates errors/terminal outcomes, appends stable values, and composes
+  freshness-domain/store-extension invariants without observer semantics.
+
+- 2026-06-18 18:34 PDT - compaction-resume/yul-prepared-direct-gates - Resumed
+  while gating the checked total-fuel `EvalArgs.append`, deferred singleton,
+  and `UncheckedBoundLowering.direct` constructor; next complete the gates and
+  checkpoint this layer before proving bound temporary insertion.
 
 - 2026-06-15 - compaction-resume - Resumed with the archive branch and
   narrowed observer-replay implementation intact. Final work is limited to

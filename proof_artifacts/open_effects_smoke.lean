@@ -477,6 +477,8 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.to_terminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.nil
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.deferred
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.deferred_arg
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.direct
 #print axioms EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_permitted
 #print axioms EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_static
 #print axioms EvmCompiler.Structured.Terminal.allowed_of_step
