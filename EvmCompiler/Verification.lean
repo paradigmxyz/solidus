@@ -227,6 +227,11 @@ or audit-alias corridor.
 #check EvmCompiler.Assembly.emitInstrWithTable?_eq_emitInstr?
 #check EvmCompiler.Assembly.emitExecutable?_eq_emit?
 #check EvmCompiler.Functions.AllocationLowering.lowerFunctionsFast_eq
+#check EvmCompiler.Functions.MixedAllocation.planPressure?_wellFormed
+#check EvmCompiler.Objects.Program.compilePressureFirst?_metadataValid
+#check EvmCompiler.Objects.Program.compilePressureFirst?_loweredFrom
+#check EvmCompiler.Objects.Program.compileScratchFrame?_metadataValid
+#check EvmCompiler.Objects.Program.compileScratchFrame?_loweredFrom
 #check EvmCompiler.Compiler.AllocatedTypedCfg.scopeLayoutsWitnessedFast_eq
 #check EvmCompiler.Solidity.Frontend.Bytecode.findOccurrencesFast_eq
 #check EvmCompiler.Solidity.Frontend.BridgeJson.decodeMemoryContract

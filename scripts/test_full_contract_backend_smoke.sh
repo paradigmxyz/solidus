@@ -152,6 +152,15 @@ def require_backend(name, lines):
 permit_bytes = require_backend("Permit2", permit_backend)
 aave_bytes = require_backend("Aave Pool", aave_backend)
 
+if permit_bytes >= 300_000:
+    raise SystemExit(
+        f"Permit2 pressure allocation regressed: {permit_bytes} bytes"
+    )
+if aave_bytes >= 800_000:
+    raise SystemExit(
+        f"Aave Pool pressure allocation regressed: {aave_bytes} bytes"
+    )
+
 if permit_bridge.get("frontend") != {"producer": "solc", "ast": "yulAst"}:
     raise SystemExit("Permit2 did not use the exact-text parser boundary")
 

@@ -1272,10 +1272,27 @@ if ! rg -q 'def lowerExpressions\?' EvmCompiler/Objects/Compiler.lean ||
 fi
 if ! rg -q 'MixedAllocation\.allScratchPlanner' \
       EvmCompiler/Objects/Compiler.lean ||
+    ! rg -q 'MixedAllocation\.planPressure\?' \
+      EvmCompiler/Objects/Compiler.lean ||
+    ! rg -q 'def compilePressureFirst\?' \
+      EvmCompiler/Objects/Compiler.lean ||
+    ! rg -q 'theorem compilePressureFirst\?_loweredFrom' \
+      EvmCompiler/Objects/Compiler.lean ||
     ! rg -q 'AllocationLowering\.allocationLowerer' \
       EvmCompiler/Objects/Compiler.lean; then
   printf '%s\n\n' \
     'The public scratch-frame route must use canonical scoped planning and the shared allocation-driven lowerer.' \
+    >&2
+  failed=1
+fi
+if ! rg -q 'def pressureStackSlots' \
+      EvmCompiler/Functions/MixedAllocation.lean ||
+    ! rg -q 'def returnSlots' \
+      EvmCompiler/Functions/MixedAllocation.lean ||
+    ! rg -q 'theorem planPressure\?_wellFormed' \
+      EvmCompiler/Functions/MixedAllocation.lean; then
+  printf '%s\n\n' \
+    'Pressure candidates must remain allocation-pass owned, exclude procedure returns, and pass canonical plan validation.' \
     >&2
   failed=1
 fi

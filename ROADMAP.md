@@ -545,7 +545,7 @@ completion gates unless the narrow transcript bridge actually needs them.
   implementations and keep production compilation out of `lean --run`.
 - [x] Gate both contracts from fresh pinned checkouts and retain schema, Lean,
   architecture, hole, axiom, and diff checks.
-- [ ] Select compile-validated mixed stack/scratch plans under real expression
+- [x] Select compile-validated mixed stack/scratch plans under real expression
   pressure instead of falling back to all-scratch allocation.
 - [ ] Bring emitted runtime size into a practical deployable range without
   weakening the horizontal correctness theorem or source memory premise.

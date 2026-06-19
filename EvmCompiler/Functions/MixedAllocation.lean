@@ -1141,6 +1141,84 @@ def allScratchPlanner (maxFrameWords : Nat) :
     Locals.Allocation.Planner Program :=
   planner maxFrameWords []
 
+/-!
+Pressure-aware candidate selection.
+
+Recipe slot numbers are globally unique, but stack capacity is local to each
+activation and lexical scope. `pressureStackSlots` indexes every recipe slot by
+the scopes in which it is live, then greedily retains a slot only when doing so
+keeps every affected scope below `cap`. Function return slots remain scratch
+resident because the current TypedCfg procedure-exit shape owns returned words;
+ordinary parameters and locals remain eligible.
+
+This is only a candidate generator. `planPressure?` still runs the canonical
+allocation checks, and the Objects compiler subsequently accepts a candidate
+only when the complete existing lowering pipeline succeeds.
+-/
+
+def returnSlots (recipe : AllocationSupport.AllocationRecipe) : List Nat :=
+  recipe.functionSlots.flatMap fun fn => fn.returns.map Prod.snd
+
+def addScopeSlotOccurrences (scopeIndex : Nat)
+    (env : AllocationSupport.SlotEnv)
+    (occurrences : Array (List Nat)) : Array (List Nat) :=
+  env.foldl
+    (fun result binding =>
+      result.modify binding.2 (fun scopes => scopeIndex :: scopes))
+    occurrences
+
+def slotScopeOccurrencesAux :
+    List AllocationSupport.ScopedAllocation → Nat →
+      Array (List Nat) → Array (List Nat)
+  | [], _scopeIndex, occurrences => occurrences
+  | entry :: rest, scopeIndex, occurrences =>
+      slotScopeOccurrencesAux rest (scopeIndex + 1)
+        (addScopeSlotOccurrences scopeIndex entry.state.env occurrences)
+
+def slotScopeOccurrences
+    (recipe : AllocationSupport.AllocationRecipe) : Array (List Nat) :=
+  slotScopeOccurrencesAux (AllocationRecipe.scopedStates recipe) 0
+    (Array.replicate recipe.frameWords [])
+
+def pressureStackSlots
+    (recipe : AllocationSupport.AllocationRecipe) (cap : Nat) : SlotSet :=
+  let scopeStates := AllocationRecipe.scopedStates recipe
+  let occurrences := slotScopeOccurrences recipe
+  let candidates :=
+    (List.range recipe.frameWords).filter fun slot =>
+      slot ∉ returnSlots recipe
+  let result :=
+    candidates.foldl
+      (fun result slot =>
+        let indices := occurrences.getD slot []
+        if indices.all fun index =>
+            decide (result.2.getD index 0 < cap) then
+          (slot :: result.1,
+            indices.foldl
+              (fun counts index =>
+                counts.modify index (fun count => count + 1))
+              result.2)
+        else
+          result)
+      ([], Array.replicate scopeStates.length 0)
+  result.1.reverse
+
+def planPressure? (maxFrameWords cap : Nat) (program : Program) :
+    Option Locals.Allocation.ProgramPlan := do
+  let recipe ← AllocationSupport.planRecipe? maxFrameWords program
+  planAllocation? maxFrameWords (pressureStackSlots recipe cap) program
+
+theorem planPressure?_wellFormed
+    {maxFrameWords cap : Nat} {program : Program}
+    {allocation : Locals.Allocation.ProgramPlan}
+    (hPlan : planPressure? maxFrameWords cap program = some allocation) :
+    allocation.WellFormed := by
+  unfold planPressure? at hPlan
+  cases hRecipe : AllocationSupport.planRecipe? maxFrameWords program with
+  | none => simp [hRecipe] at hPlan
+  | some recipe =>
+      exact planAllocation?_wellFormed (by simpa [hRecipe] using hPlan)
+
 namespace Examples
 
 def function : FunDef :=

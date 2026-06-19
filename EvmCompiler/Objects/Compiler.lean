@@ -567,6 +567,33 @@ theorem planScratchFrame?_source
       cases hPlan
       rfl
 
+def pressureStackCaps : List Nat :=
+  [8, 3, 1]
+
+def planPressureFrame? (config : BackendConfig) (cap : Nat)
+    (program : Program) : Option PlannedProgram := do
+  let allocation ←
+    Functions.MixedAllocation.planPressure?
+      config.scratchFrameWords cap program.toFunctions
+  some
+    { source := program.toFunctions
+      allocation := allocation }
+
+theorem planPressureFrame?_source
+    {config : BackendConfig} {cap : Nat} {program : Program}
+    {planned : PlannedProgram}
+    (hPlan : planPressureFrame? config cap program = some planned) :
+    planned.source = program.toFunctions := by
+  unfold planPressureFrame? at hPlan
+  cases hAllocation :
+      Functions.MixedAllocation.planPressure?
+        config.scratchFrameWords cap program.toFunctions with
+  | none => simp [hAllocation] at hPlan
+  | some allocation =>
+      simp [hAllocation] at hPlan
+      cases hPlan
+      rfl
+
 def compilePlannedAs? (backend : Backend)
     (planned : PlannedProgram) : Option CompileArtifact := do
   let artifact ← planned.lowerArtifact?
@@ -575,6 +602,157 @@ def compilePlannedAs? (backend : Backend)
   else
     none
 
+theorem compilePlannedAs?_metadataValid
+    {backend : Backend} {planned : PlannedProgram}
+    {artifact : CompileArtifact}
+    (hCompile : compilePlannedAs? backend planned = some artifact) :
+    artifact.metadata.backend = backend ∧
+      artifact.metadata.AllocationValid ∧
+      artifact.metadata.TypedCfgValid := by
+  unfold compilePlannedAs? at hCompile
+  cases hArtifact : planned.lowerArtifact? with
+  | none => simp [hArtifact] at hCompile
+  | some selected =>
+      by_cases hBackend : selected.metadata.backend = backend
+      · simp [hArtifact, hBackend] at hCompile
+        cases hCompile
+        exact
+          ⟨hBackend, PlannedProgram.lowerArtifact?_metadataValid hArtifact⟩
+      · simp [hArtifact, hBackend] at hCompile
+
+theorem compilePlannedAs?_loweredFrom
+    {backend : Backend} {planned : PlannedProgram}
+    {artifact : CompileArtifact}
+    (hCompile : compilePlannedAs? backend planned = some artifact) :
+    artifact.LoweredFrom planned.source := by
+  unfold compilePlannedAs? at hCompile
+  cases hArtifact : planned.lowerArtifact? with
+  | none => simp [hArtifact] at hCompile
+  | some selected =>
+      by_cases hBackend : selected.metadata.backend = backend
+      · simp [hArtifact, hBackend] at hCompile
+        cases hCompile
+        exact PlannedProgram.lowerArtifact?_loweredFrom hArtifact
+      · simp [hArtifact, hBackend] at hCompile
+
+def compilePressureFirst? (config : BackendConfig) (program : Program) :
+    List Nat → Option CompileArtifact
+  | [] => none
+  | cap :: rest =>
+      match planPressureFrame? config cap program with
+      | none => compilePressureFirst? config program rest
+      | some planned =>
+          match compilePlannedAs? .scratchFrameSpill planned with
+          | some artifact => some artifact
+          | none => compilePressureFirst? config program rest
+
+def compileScratchFrame? (config : BackendConfig) (program : Program) :
+    Option CompileArtifact :=
+  match compilePressureFirst? config program pressureStackCaps with
+  | some artifact => some artifact
+  | none =>
+      match planScratchFrame? config program with
+      | none => none
+      | some planned => compilePlannedAs? .scratchFrameSpill planned
+
+theorem compilePressureFirst?_metadataValid
+    {config : BackendConfig} {program : Program} {caps : List Nat}
+    {artifact : CompileArtifact}
+    (hCompile :
+      compilePressureFirst? config program caps = some artifact) :
+    artifact.metadata.backend = .scratchFrameSpill ∧
+      artifact.metadata.AllocationValid ∧
+      artifact.metadata.TypedCfgValid := by
+  induction caps with
+  | nil => simp [compilePressureFirst?] at hCompile
+  | cons cap rest ih =>
+      cases hPlan : planPressureFrame? config cap program with
+      | none =>
+          rw [compilePressureFirst?, hPlan] at hCompile
+          exact ih hCompile
+      | some planned =>
+          cases hCandidate :
+              compilePlannedAs? .scratchFrameSpill planned with
+          | none =>
+              simp [compilePressureFirst?, hPlan, hCandidate] at hCompile
+              exact ih hCompile
+          | some selected =>
+              simp [compilePressureFirst?, hPlan, hCandidate] at hCompile
+              cases hCompile
+              exact compilePlannedAs?_metadataValid hCandidate
+
+theorem compilePressureFirst?_loweredFrom
+    {config : BackendConfig} {program : Program} {caps : List Nat}
+    {artifact : CompileArtifact}
+    (hCompile :
+      compilePressureFirst? config program caps = some artifact) :
+    artifact.LoweredFrom program.toFunctions := by
+  induction caps with
+  | nil => simp [compilePressureFirst?] at hCompile
+  | cons cap rest ih =>
+      cases hPlan : planPressureFrame? config cap program with
+      | none =>
+          rw [compilePressureFirst?, hPlan] at hCompile
+          exact ih hCompile
+      | some planned =>
+          cases hCandidate :
+              compilePlannedAs? .scratchFrameSpill planned with
+          | none =>
+              simp [compilePressureFirst?, hPlan, hCandidate] at hCompile
+              exact ih hCompile
+          | some selected =>
+              simp [compilePressureFirst?, hPlan, hCandidate] at hCompile
+              cases hCompile
+              have hLowered := compilePlannedAs?_loweredFrom hCandidate
+              rw [planPressureFrame?_source hPlan] at hLowered
+              exact hLowered
+
+theorem compileScratchFrame?_metadataValid
+    {config : BackendConfig} {program : Program}
+    {artifact : CompileArtifact}
+    (hCompile : compileScratchFrame? config program = some artifact) :
+    artifact.metadata.backend = .scratchFrameSpill ∧
+      artifact.metadata.AllocationValid ∧
+      artifact.metadata.TypedCfgValid := by
+  cases hPressure :
+      compilePressureFirst? config program pressureStackCaps with
+  | some selected =>
+      simp [compileScratchFrame?, hPressure] at hCompile
+      cases hCompile
+      exact compilePressureFirst?_metadataValid hPressure
+  | none =>
+      cases hPlan : planScratchFrame? config program with
+      | none => simp [compileScratchFrame?, hPressure, hPlan] at hCompile
+      | some planned =>
+          have hCandidate :
+              compilePlannedAs? .scratchFrameSpill planned =
+                some artifact := by
+            simpa [compileScratchFrame?, hPressure, hPlan] using hCompile
+          exact compilePlannedAs?_metadataValid hCandidate
+
+theorem compileScratchFrame?_loweredFrom
+    {config : BackendConfig} {program : Program}
+    {artifact : CompileArtifact}
+    (hCompile : compileScratchFrame? config program = some artifact) :
+    artifact.LoweredFrom program.toFunctions := by
+  cases hPressure :
+      compilePressureFirst? config program pressureStackCaps with
+  | some selected =>
+      simp [compileScratchFrame?, hPressure] at hCompile
+      cases hCompile
+      exact compilePressureFirst?_loweredFrom hPressure
+  | none =>
+      cases hPlan : planScratchFrame? config program with
+      | none => simp [compileScratchFrame?, hPressure, hPlan] at hCompile
+      | some planned =>
+          have hCandidate :
+              compilePlannedAs? .scratchFrameSpill planned =
+                some artifact := by
+            simpa [compileScratchFrame?, hPressure, hPlan] using hCompile
+          have hLowered := compilePlannedAs?_loweredFrom hCandidate
+          rw [planScratchFrame?_source hPlan] at hLowered
+          exact hLowered
+
 def Backend.compileArtifact? (config : BackendConfig) (program : Program) :
     Backend → Option CompileArtifact
   | .inlineStack =>
@@ -582,9 +760,7 @@ def Backend.compileArtifact? (config : BackendConfig) (program : Program) :
       | none => none
       | some planned => compilePlannedAs? .inlineStack planned
   | .scratchFrameSpill =>
-      match planScratchFrame? config program with
-      | none => none
-      | some planned => compilePlannedAs? .scratchFrameSpill planned
+      compileScratchFrame? config program
 
 theorem Backend.compileArtifact?_metadataValid
     {config : BackendConfig} {program : Program} {backend : Backend}
@@ -597,43 +773,14 @@ theorem Backend.compileArtifact?_metadataValid
   | inlineStack =>
       unfold Backend.compileArtifact? at hCompile
       cases hPlan : planInlineStack? program with
-      | none =>
-          simp [hPlan] at hCompile
+      | none => simp [hPlan] at hCompile
       | some planned =>
-          simp [hPlan] at hCompile
-          unfold compilePlannedAs? at hCompile
-          cases hArtifact : planned.lowerArtifact? with
-          | none =>
-              simp [hArtifact] at hCompile
-          | some selected =>
-              by_cases hBackend :
-                  selected.metadata.backend = .inlineStack
-              · simp [hArtifact, hBackend] at hCompile
-                cases hCompile
-                exact
-                  ⟨hBackend,
-                    PlannedProgram.lowerArtifact?_metadataValid hArtifact⟩
-              · simp [hArtifact, hBackend] at hCompile
+          have hCandidate :
+              compilePlannedAs? .inlineStack planned = some artifact := by
+            simpa [hPlan] using hCompile
+          exact compilePlannedAs?_metadataValid hCandidate
   | scratchFrameSpill =>
-      unfold Backend.compileArtifact? at hCompile
-      cases hPlan : planScratchFrame? config program with
-      | none =>
-          simp [hPlan] at hCompile
-      | some planned =>
-          simp [hPlan] at hCompile
-          unfold compilePlannedAs? at hCompile
-          cases hArtifact : planned.lowerArtifact? with
-          | none =>
-              simp [hArtifact] at hCompile
-          | some selected =>
-              by_cases hBackend :
-                  selected.metadata.backend = .scratchFrameSpill
-              · simp [hArtifact, hBackend] at hCompile
-                cases hCompile
-                exact
-                  ⟨hBackend,
-                    PlannedProgram.lowerArtifact?_metadataValid hArtifact⟩
-              · simp [hArtifact, hBackend] at hCompile
+      exact compileScratchFrame?_metadataValid hCompile
 
 theorem Backend.compileArtifact?_loweredFrom
     {config : BackendConfig} {program : Program} {backend : Backend}
@@ -644,45 +791,16 @@ theorem Backend.compileArtifact?_loweredFrom
   | inlineStack =>
       unfold Backend.compileArtifact? at hCompile
       cases hPlan : planInlineStack? program with
-      | none =>
-          simp [hPlan] at hCompile
+      | none => simp [hPlan] at hCompile
       | some planned =>
-          simp [hPlan] at hCompile
-          unfold compilePlannedAs? at hCompile
-          cases hArtifact : planned.lowerArtifact? with
-          | none =>
-              simp [hArtifact] at hCompile
-          | some selected =>
-            by_cases hBackend :
-                selected.metadata.backend = .inlineStack
-            · simp [hArtifact, hBackend] at hCompile
-              cases hCompile
-              have hLowered :=
-                PlannedProgram.lowerArtifact?_loweredFrom hArtifact
-              rw [planInlineStack?_source hPlan] at hLowered
-              exact hLowered
-            · simp [hArtifact, hBackend] at hCompile
+          have hCandidate :
+              compilePlannedAs? .inlineStack planned = some artifact := by
+            simpa [hPlan] using hCompile
+          have hLowered := compilePlannedAs?_loweredFrom hCandidate
+          rw [planInlineStack?_source hPlan] at hLowered
+          exact hLowered
   | scratchFrameSpill =>
-      unfold Backend.compileArtifact? at hCompile
-      cases hPlan : planScratchFrame? config program with
-      | none =>
-          simp [hPlan] at hCompile
-      | some planned =>
-          simp [hPlan] at hCompile
-          unfold compilePlannedAs? at hCompile
-          cases hArtifact : planned.lowerArtifact? with
-          | none =>
-              simp [hArtifact] at hCompile
-          | some selected =>
-            by_cases hBackend :
-                selected.metadata.backend = .scratchFrameSpill
-            · simp [hArtifact, hBackend] at hCompile
-              cases hCompile
-              have hLowered :=
-                PlannedProgram.lowerArtifact?_loweredFrom hArtifact
-              rw [planScratchFrame?_source hPlan] at hLowered
-              exact hLowered
-            · simp [hArtifact, hBackend] at hCompile
+      exact compileScratchFrame?_loweredFrom hCompile
 
 def compileFirst? (config : BackendConfig) (program : Program) :
     List Backend → Option CompileArtifact
