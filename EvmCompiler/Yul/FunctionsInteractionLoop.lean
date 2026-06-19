@@ -45,7 +45,7 @@ inductive GuardedBodyDoneRel
 one recursively checked lexical body. The target executes under the extended
 condition context but regular cleanup returns to the original loop scope. -/
 theorem guardedBody
-    {conditionFuel targetFuel : Nat}
+    {conditionFuel bodyFuel targetFuel : Nat}
     {layout conditionUsed finalUsed bodyLayout : List Functions.Name}
     {sourceScopes : SourceScopes} {canLeave : Bool}
     {cond : AstExpr} {body : List AstStmt}
@@ -81,7 +81,7 @@ theorem guardedBody
         (ControlDoneRel finalUsed bodyLayout sourceScopes
           true true canLeave)
         (Yul.InteractionSemantics.execSeq
-          conditionFuel body codeOverride sourceAfter)
+          bodyFuel body codeOverride sourceAfter)
         (Functions.InteractionSemantics.Block.openRun
           program ctxAfter (targetFuel - pre.length - 1)
           lowerBody targetAfter)) :
@@ -96,7 +96,7 @@ theorem guardedBody
           else
             Simulation.Interaction.map Sum.inr
               (Yul.InteractionSemantics.exec
-                (conditionFuel + 1) (.Block body)
+                (bodyFuel + 1) (.Block body)
                 codeOverride result.1)))
       (Functions.InteractionSemantics.Block.openRunScoped
         program ctx

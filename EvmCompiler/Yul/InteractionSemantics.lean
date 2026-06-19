@@ -579,6 +579,111 @@ theorem loop_succ_succ
   unfold loop Yul.Source.Canonical.loop Yul.Source.Effectful.loop
   rfl
 
+/-- Factor one canonical loop iteration through the guarded condition/body
+shape used by the ordinary Yul compiler. This is specialized to a valid `Ok`
+loop entry, where the kernel's outer `overwrite?` operations are identities. -/
+theorem loop_succ_succ_guarded
+    (fuel : Nat) (cond : EvmYul.Yul.Ast.Expr)
+    (post body : List EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (entryShared : EvmYul.SharedState .Yul)
+    (entryVars : EvmYul.Yul.VarStore) :
+    loop (fuel + 1 + 1) cond post body code (.Ok entryShared entryVars) =
+      Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (evalValues fuel cond code (.Ok entryShared entryVars))
+          (fun result =>
+            if result.2.head! = EvmYul.UInt256.ofNat 0 then
+              Simulation.Interaction.pure (.inl result.1)
+            else
+              Simulation.Interaction.map Sum.inr
+                (exec fuel (.Block body) code result.1)))
+        (fun guarded =>
+          match guarded with
+          | .inl stateAfterCond => Simulation.Interaction.pure stateAfterCond
+          | .inr stateAfterBody =>
+              match stateAfterBody with
+              | .OutOfFuel => Simulation.Interaction.pure .OutOfFuel
+              | .Checkpoint (.Break shared vars) =>
+                  Simulation.Interaction.pure (.Ok shared vars)
+              | .Checkpoint (.Leave shared vars) =>
+                  Simulation.Interaction.pure
+                    (.Checkpoint (.Leave shared vars))
+              | .Checkpoint (.Continue shared vars) | .Ok shared vars =>
+                  Simulation.Interaction.bind
+                    (exec fuel (.Block post) code (.Ok shared vars))
+                    (fun stateAfterPost =>
+                      match stateAfterPost with
+                      | .OutOfFuel => Simulation.Interaction.pure .OutOfFuel
+                      | .Checkpoint (.Leave shared vars) =>
+                          Simulation.Interaction.pure
+                            (.Checkpoint (.Leave shared vars))
+                      | _ =>
+                          exec fuel (.For cond post body) code stateAfterPost)) := by
+  rw [loop_succ_succ, eval_eq_bind,
+    Simulation.Interaction.bind_assoc,
+    Simulation.Interaction.bind_assoc]
+  simp only [stateModel, id_eq, EvmYul.Yul.State.mkOk,
+    EvmYul.Yul.State.overwrite?]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (evalValues fuel cond code (.Ok entryShared entryVars)))
+  intro result _hResult
+  have pure_eq : ∀ {α : Type} (value : α),
+      (pure value : Open α) = Simulation.Interaction.pure value :=
+    fun _ => rfl
+  rw [pure_eq (result.1, result.2.head!),
+    show Simulation.Interaction.pure (result.1, result.2.head!) =
+      Simulation.Interaction.done (.ok (result.1, result.2.head!)) by rfl,
+    Simulation.Interaction.bind_done_ok]
+  by_cases hZero : result.2.head! = EvmYul.UInt256.ofNat 0
+  · simp [hZero, stateModel, pure_eq, Simulation.Interaction.pure,
+      Simulation.Interaction.bind]
+  · simp only [hZero, ↓reduceIte]
+    unfold Simulation.Interaction.map
+    rw [Simulation.Interaction.bind_assoc]
+    apply Simulation.Interaction.AllDone.bind_congr
+      (Simulation.Interaction.AllDone.trivial
+        (exec fuel (.Block body) code result.1))
+    intro stateAfterBody _hBody
+    rw [show Simulation.Interaction.pure (Sum.inr stateAfterBody) =
+        Simulation.Interaction.done (.ok (Sum.inr stateAfterBody)) by rfl,
+      Simulation.Interaction.bind_done_ok]
+    cases stateAfterBody with
+    | OutOfFuel => rfl
+    | Ok shared vars =>
+        simp [stateModel, EvmYul.Yul.State.reviveJump,
+          EvmYul.Yul.State.overwrite?, pure_eq,
+          Simulation.Interaction.bind_pure]
+        apply Simulation.Interaction.AllDone.bind_congr
+          (Simulation.Interaction.AllDone.trivial
+            (exec fuel (.Block post) code (.Ok shared vars)))
+        intro stateAfterPost _hPost
+        cases stateAfterPost with
+        | OutOfFuel => rfl
+        | Ok => rfl
+        | Checkpoint jump => cases jump <;> rfl
+    | Checkpoint jump =>
+        cases jump with
+        | Break shared vars =>
+            simp [stateModel, EvmYul.Yul.State.reviveJump,
+              EvmYul.Yul.State.revive, EvmYul.Yul.State.overwrite?, pure_eq]
+        | Leave shared vars =>
+            simp [stateModel, EvmYul.Yul.State.reviveJump,
+              EvmYul.Yul.State.revive, EvmYul.Yul.State.overwrite?, pure_eq]
+        | Continue shared vars =>
+            simp [stateModel, EvmYul.Yul.State.reviveJump,
+              EvmYul.Yul.State.revive, EvmYul.Yul.State.overwrite?,
+              pure_eq, Simulation.Interaction.bind_pure]
+            apply Simulation.Interaction.AllDone.bind_congr
+              (Simulation.Interaction.AllDone.trivial
+                (exec fuel (.Block post) code (.Ok shared vars)))
+            intro stateAfterPost _hPost
+            cases stateAfterPost with
+            | OutOfFuel => rfl
+            | Ok => rfl
+            | Checkpoint jump => cases jump <;> rfl
+
 theorem brk_zero
     (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
     exec 0 .Break code state = Primitive.fail state .OutOfFuel :=
