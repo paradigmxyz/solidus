@@ -2886,6 +2886,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         )
         selected = request["settings"]["outputSelection"]["*"]["*"]
         self.assertIn("irAst", selected)
+        self.assertIn("ir", selected)
         self.assertIn("abi", selected)
         self.assertIn("metadata", selected)
         self.assertIn("evm.bytecode.object", selected)
@@ -2907,9 +2908,72 @@ class SolidityToYulLeanTests(unittest.TestCase):
         selected = augmented["settings"]["outputSelection"]["*"]["*"]
         self.assertIn("abi", selected)
         self.assertIn("irOptimizedAst", selected)
+        self.assertIn("irOptimized", selected)
         self.assertIn("evm.bytecode.object", selected)
         self.assertTrue(augmented["settings"]["viaIR"])
         self.assertTrue(augmented["settings"]["experimental"])
+
+    def test_bridge_only_standard_json_requests_yul_without_solc_bytecode(self):
+        request = {
+            "language": "Solidity",
+            "sources": {"A.sol": {"content": "contract A {}"}},
+            "settings": {"outputSelection": {"*": {"*": []}}},
+        }
+        augmented = bridge.ensure_standard_json_frontend_outputs(
+            request,
+            optimized=True,
+            default_via_ir=True,
+            default_experimental=True,
+            require_bytecode=False,
+        )
+        selected = augmented["settings"]["outputSelection"]["*"]["*"]
+        self.assertEqual(selected, ["irOptimizedAst", "irOptimized"])
+
+    def test_recovers_missing_contract_ast_from_exact_solc_yul_text(self):
+        yul_text = 'object "A_1" { code { } }'
+        raw_ast = {
+            "nodeType": "YulObject",
+            "name": "A_1",
+            "code": {"block": {"statements": []}},
+            "subObjects": [],
+        }
+        contract_output = {"irOptimized": yul_text}
+        output = {"contracts": {"A.sol": {"A": contract_output}}}
+        captured = []
+        old_run_solc = bridge.run_solc
+        bridge.RECOVERED_YUL_AST_OUTPUTS.clear()
+        try:
+            def fake_run_solc(solc, compiler_input, solc_args=()):
+                captured.append((solc, compiler_input, tuple(solc_args)))
+                source_name = next(iter(compiler_input["sources"]))
+                return {"sources": {source_name: {"ast": raw_ast}}}
+
+            bridge.run_solc = fake_run_solc
+            recovered = bridge.recover_missing_contract_yul_asts(
+                output,
+                "A.sol",
+                "A",
+                optimized=True,
+                experimental=True,
+                solc="solc-0.8.17",
+                solc_args=("--base-path", "."),
+            )
+        finally:
+            bridge.run_solc = old_run_solc
+
+        self.assertEqual(recovered, 1)
+        self.assertIs(contract_output["irOptimizedAst"], raw_ast)
+        self.assertEqual(
+            bridge.contract_frontend_ast_output("A.sol", "A", True),
+            "yulAst",
+        )
+        self.assertEqual(captured[0][0], "solc-0.8.17")
+        self.assertEqual(captured[0][1]["language"], "Yul")
+        self.assertEqual(
+            next(iter(captured[0][1]["sources"].values()))["content"],
+            yul_text,
+        )
+        self.assertEqual(captured[0][2], ("--base-path", "."))
 
     def test_run_solc_retries_without_experimental_for_older_solc(self):
         calls = []

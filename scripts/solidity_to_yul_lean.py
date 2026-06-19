@@ -565,14 +565,30 @@ BACKEND_BLOCKING_PRIMITIVES: Set[str] = set()
 BRIDGE_JSON_SCHEMA = "evm-compiler.solc-yul-bridge.v3"
 BRIDGE_JSON_PROVENANCE_SCHEMA = "evm-compiler.bridge-json-provenance.v1"
 BRIDGE_JSON_FRONTEND_PRODUCER = "solc"
+RECOVERED_YUL_AST_OUTPUTS: Dict[Tuple[str, str], str] = {}
 
 
 def solc_yul_ast_output(optimized: bool) -> str:
     return "irOptimizedAst" if optimized else "irAst"
 
 
+def solc_yul_text_output(optimized: bool) -> str:
+    return "irOptimized" if optimized else "ir"
+
+
 def solc_standalone_yul_ast_output() -> str:
     return "yulAst"
+
+
+def contract_frontend_ast_output(
+    source_name: str,
+    contract_name: str,
+    optimized: bool,
+) -> str:
+    return RECOVERED_YUL_AST_OUTPUTS.get(
+        (source_name, contract_name),
+        solc_yul_ast_output(optimized),
+    )
 
 
 def bridge_json_frontend_metadata(ast_output: Optional[str]) -> Optional[Json]:
@@ -4793,6 +4809,7 @@ def standard_json_input(
     optimized: bool,
     experimental: bool,
     include_sources: Optional[Dict[str, str]] = None,
+    require_bytecode: bool = True,
 ) -> Json:
     settings: Json = {
         "viaIR": via_ir,
@@ -4817,6 +4834,7 @@ def standard_json_input(
         optimized=optimized,
         default_via_ir=via_ir,
         default_experimental=experimental,
+        require_bytecode=require_bytecode,
     )
     return compiler_input
 
@@ -4838,15 +4856,25 @@ def yul_standard_json_input(
     return compiler_input
 
 
-def required_contract_outputs(optimized: bool) -> List[str]:
-    return [
-        "irOptimizedAst" if optimized else "irAst",
-        "abi",
-        "metadata",
-        "evm.bytecode.object",
-        "evm.deployedBytecode.object",
-        "evm.methodIdentifiers",
+def required_contract_outputs(
+    optimized: bool,
+    require_bytecode: bool = True,
+) -> List[str]:
+    outputs = [
+        solc_yul_ast_output(optimized),
+        solc_yul_text_output(optimized),
     ]
+    if require_bytecode:
+        outputs.extend(
+            [
+                "abi",
+                "metadata",
+                "evm.bytecode.object",
+                "evm.deployedBytecode.object",
+                "evm.methodIdentifiers",
+            ]
+        )
+    return outputs
 
 
 def append_outputs(outputs: Any, required: Sequence[str], what: str) -> List[str]:
@@ -4869,6 +4897,7 @@ def ensure_standard_json_frontend_outputs(
     optimized: bool,
     default_via_ir: bool,
     default_experimental: bool,
+    require_bytecode: bool = True,
 ) -> Json:
     if not isinstance(compiler_input, dict):
         fail("Expected solc Standard JSON input to be a JSON object")
@@ -4887,7 +4916,7 @@ def ensure_standard_json_frontend_outputs(
         fail("Malformed solc Standard JSON outputSelection for source '*'")
     by_source["*"] = append_outputs(
         by_source.get("*"),
-        required_contract_outputs(optimized),
+        required_contract_outputs(optimized, require_bytecode),
         "contract '*'",
     )
     by_source[""] = append_outputs(by_source.get(""), ["ast"], "source AST")
@@ -7243,6 +7272,52 @@ def load_yul_source_ast(output: Json, source_name: Optional[str]) -> Tuple[str, 
     return candidates[0]
 
 
+def recover_missing_contract_yul_asts(
+    output: Json,
+    source_name: Optional[str],
+    contract_name: Optional[str],
+    optimized: bool,
+    experimental: bool,
+    solc: str,
+    solc_args: Sequence[str],
+) -> int:
+    ast_key = solc_yul_ast_output(optimized)
+    text_key = solc_yul_text_output(optimized)
+    recovered = 0
+    for candidate_source, candidate_contract, contract_output in contract_candidates(
+        output,
+        source_name,
+        contract_name,
+    ):
+        provenance_key = (candidate_source, candidate_contract)
+        RECOVERED_YUL_AST_OUTPUTS.pop(provenance_key, None)
+        if isinstance(contract_output.get(ast_key), dict):
+            continue
+        yul_text = contract_output.get(text_key)
+        if not isinstance(yul_text, str):
+            continue
+        yul_source_name = (
+            f"{candidate_source}:{candidate_contract}.{text_key}.yul"
+        )
+        yul_input = yul_standard_json_input(
+            yul_source_name,
+            yul_text,
+            experimental=experimental,
+        )
+        yul_output = run_solc(solc, yul_input, solc_args)
+        _parsed_source, root_ast = load_yul_source_ast(
+            yul_output,
+            yul_source_name,
+        )
+        recover_standalone_yul_data_names(root_ast, yul_text)
+        contract_output[ast_key] = root_ast
+        RECOVERED_YUL_AST_OUTPUTS[provenance_key] = (
+            solc_standalone_yul_ast_output()
+        )
+        recovered += 1
+    return recovered
+
+
 def standard_json_source_content(
     compiler_input: Json,
     source_name: str,
@@ -7295,6 +7370,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "Repeat for options with values, e.g. --solc-arg=--base-path "
             "--solc-arg ."
         ),
+    )
+    parser.add_argument(
+        "--yul-ast-solc",
+        default=os.environ.get("YUL_AST_SOLC"),
+        help=(
+            "Optional solc executable used only to parse textual ir/irOptimized "
+            "when the source solc omits irAst/irOptimizedAst. The exact Yul text "
+            "still comes from --solc. Defaults to --solc."
+        ),
+    )
+    parser.add_argument(
+        "--yul-ast-solc-arg",
+        action="append",
+        default=[],
+        metavar="ARG",
+        help="Forward an extra CLI argument to --yul-ast-solc.",
     )
     parser.add_argument("--lake", default=os.environ.get("LAKE", default_lake()))
     parser.add_argument(
@@ -8305,6 +8396,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
             check_rendered_lean(args, rendered)
             return 0
+        require_solc_bytecode = args.auto_object_layout or args.format in {
+            "bytecode-artifact",
+            "forge-artifact",
+            "standard-json-output",
+        }
         if args.input_format == "standard-json":
             if args.include_source:
                 fail("--include-source is only valid with --input-format solidity")
@@ -8358,6 +8454,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 optimized=args.optimized,
                 default_via_ir=args.via_ir,
                 default_experimental=args.experimental,
+                require_bytecode=require_solc_bytecode,
             )
             source_name: Optional[str] = args.source_name
         else:
@@ -8392,9 +8489,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 optimized=args.optimized,
                 experimental=args.experimental,
                 include_sources=include_sources,
+                require_bytecode=require_solc_bytecode,
             )
         ast_output = solc_yul_ast_output(args.optimized)
         output = run_solc(args.solc, compiler_input, args.solc_arg)
+        recover_missing_contract_yul_asts(
+            output,
+            source_name,
+            args.contract,
+            args.optimized,
+            args.experimental,
+            args.yul_ast_solc or args.solc,
+            args.yul_ast_solc_arg,
+        )
         compiler_input_linker_symbols = merged_linker_symbol_entries(
             args.linker_symbol,
             compiler_input,
@@ -8467,6 +8574,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     candidate_contract_name,
                     candidate_contract_output,
                 ) in candidates:
+                    candidate_ast_output = contract_frontend_ast_output(
+                        candidate_source_name,
+                        candidate_contract_name,
+                        args.optimized,
+                    )
                     root_ast = load_ir_ast(candidate_contract_output, args.optimized)
                     root = parse_yul_object(root_ast)
                     write_artifact_bridge_json_outputs(
@@ -8475,7 +8587,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         candidate_source_name,
                         candidate_contract_name,
                         compiler_input_linker_symbols,
-                        ast_output=ast_output,
+                        ast_output=candidate_ast_output,
                     )
                 write_bridge_json_manifest_skipped_contracts(
                     args.bridge_json_dir,
@@ -8531,6 +8643,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     candidate_contract_name,
                     candidate_contract_output,
                 ) in candidates:
+                    candidate_ast_output = contract_frontend_ast_output(
+                        candidate_source_name,
+                        candidate_contract_name,
+                        args.optimized,
+                    )
                     root_ast = load_ir_ast(candidate_contract_output, args.optimized)
                     root = parse_yul_object(root_ast)
                     if args.bridge_json_dir is not None:
@@ -8540,7 +8657,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             candidate_source_name,
                             candidate_contract_name,
                             compiler_input_linker_symbols,
-                            ast_output=ast_output,
+                            ast_output=candidate_ast_output,
                         )
                     objects_to_summarize = [("creation", root)]
                     runtime = select_object(root, "runtime")
@@ -8553,7 +8670,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 candidate_source_name,
                                 candidate_contract_name,
                                 object_selector,
-                                bridge_json_frontend_metadata(ast_output),
+                                bridge_json_frontend_metadata(candidate_ast_output),
                             )
                         )
                 if args.bridge_json_dir is not None:
@@ -8606,6 +8723,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     candidate_contract_name,
                     candidate_contract_output,
                 ) in candidates:
+                    candidate_ast_output = contract_frontend_ast_output(
+                        candidate_source_name,
+                        candidate_contract_name,
+                        args.optimized,
+                    )
                     root_ast = load_ir_ast(candidate_contract_output, args.optimized)
                     root = parse_yul_object(root_ast)
                     write_artifact_bridge_json_outputs(
@@ -8614,7 +8736,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         candidate_source_name,
                         candidate_contract_name,
                         compiler_input_linker_symbols,
-                        ast_output=ast_output,
+                        ast_output=candidate_ast_output,
                     )
                     objects_to_check = [("creation", root)]
                     runtime = select_object(root, "runtime")
@@ -8629,7 +8751,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 object_selector,
                                 args.lake,
                                 args.lake_cwd,
-                                bridge_json_frontend_metadata(ast_output),
+                                bridge_json_frontend_metadata(candidate_ast_output),
                             )
                         )
                 if args.bridge_json_dir is not None:
@@ -8675,6 +8797,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     candidate_contract_name,
                     candidate_contract_output,
                 ) in candidates:
+                    candidate_ast_output = contract_frontend_ast_output(
+                        candidate_source_name,
+                        candidate_contract_name,
+                        args.optimized,
+                    )
                     root_ast = load_ir_ast(candidate_contract_output, args.optimized)
                     root = parse_yul_object(root_ast)
                     write_artifact_bridge_json_outputs(
@@ -8683,7 +8810,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         candidate_source_name,
                         candidate_contract_name,
                         compiler_input_linker_symbols,
-                        ast_output=ast_output,
+                        ast_output=candidate_ast_output,
                     )
                     objects_to_check = [("creation", root)]
                     runtime = select_object(root, "runtime")
@@ -8699,7 +8826,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 args.lake,
                                 args.lake_cwd,
                                 linker_symbols,
-                                bridge_json_frontend_metadata(ast_output),
+                                bridge_json_frontend_metadata(candidate_ast_output),
                             )
                         )
                 if args.bridge_json_dir is not None:
@@ -8735,6 +8862,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 candidate_contract_name,
                 candidate_contract_output,
             ) in enumerate(candidates):
+                candidate_ast_output = contract_frontend_ast_output(
+                    candidate_source_name,
+                    candidate_contract_name,
+                    args.optimized,
+                )
                 root_ast = load_ir_ast(candidate_contract_output, args.optimized)
                 root = parse_yul_object(root_ast)
                 inferred_layout = (
@@ -8751,7 +8883,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     compiler_input_linker_symbols,
                     object_layout,
                     args.data_base,
-                    ast_output,
+                    candidate_ast_output,
                 )
                 artifact = compile_contract_bytecode_artifact(
                     root,
@@ -8790,6 +8922,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             output,
             source_name,
             args.contract,
+        )
+        ast_output = contract_frontend_ast_output(
+            source_name,
+            contract_name,
+            args.optimized,
         )
         root_ast = load_ir_ast(contract_output, args.optimized)
         if args.list_objects:

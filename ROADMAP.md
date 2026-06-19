@@ -347,7 +347,7 @@ repository-wide completion gates are now checked.
 
 - [x] Make resolved solc Yul validation source-complete for every primitive
   already covered by the public theorem, beginning with `gas()` and `msize()`.
-- [ ] Preserve exact old-solc Yul text while obtaining a structured AST for
+- [x] Preserve exact old-solc Yul text while obtaining a structured AST for
   compiler versions that do not emit `irOptimizedAst`.
 - [ ] Replace the all-stack/all-scratch fallback pair with a canonical
   pressure-driven mixed plan that spills only when required.

@@ -117,9 +117,9 @@ printf '%s\n' 'contract C { function f() public pure returns (uint) { return 1; 
 ```
 
 You can also hand the bridge solc's native Standard JSON input directly.  The
-bridge augments `settings.outputSelection` with the Yul AST and bytecode fields
-it needs, then invokes `solc --standard-json` unchanged apart from those output
-requests:
+bridge augments `settings.outputSelection` with the Yul representation it
+needs, plus bytecode fields only for artifact/comparison modes, then invokes
+`solc --standard-json` unchanged apart from those output requests:
 
 ```sh
 scripts/solidity_to_yul_lean.py /tmp/solc-input.json \
@@ -184,9 +184,14 @@ uses zero only because the emitted symbol is dead in this internal-library
 fixture.
 
 For Solidity input the script invokes `solc --standard-json`, requests the
-experimental `irAst` output, parses the Yul JSON AST, selects the runtime
+`irAst`/`irOptimizedAst` output and exact textual `ir`/`irOptimized`, parses the
+Yul JSON AST, selects the runtime
 `*_deployed` object by default, and emits an `EvmCompiler.Yul.Program`
-definition.  Pass `--object creation` to select the constructor object, or pass
+definition. When an older source compiler emits only textual Yul, pass
+`--yul-ast-solc` naming a newer solc: the source compiler still determines the
+exact Yul text, while the second binary only parses that immutable text as
+standalone Yul; bridge provenance records `frontend.ast = "yulAst"`. Pass
+`--object creation` to select the constructor object, or pass
 an explicit Yul object name.  Standalone Yul sources are accepted with
 `--input-format yul`; that path asks solc for the source-level Yul object AST
 (`frontend.ast = "yulAst"`) and sends the same object/function/data frontend to
