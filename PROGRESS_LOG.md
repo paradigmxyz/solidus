@@ -14,6 +14,14 @@
   boundary. The remaining producer follows `UncheckedBoundLowering` and the
   recursive Yul-to-Functions statement capability.
 
+- 2026-06-18 18:46 PDT - proof/yul-functions-stable-arguments - Added
+  canonical target-domain and target-store-extension invariants, proved that
+  fresh compiler-private insertion preserves the scoped source relation, and
+  introduced expression-owned `StableValue`/`StableArgs`. Delayed literals,
+  variables, and generated temporaries now remain exact across arbitrary
+  shared-world changes and monotone private-local growth, then convert through
+  checked `toSeq?` evidence to `PreparedArgsDoneRel`.
+
 - 2026-06-15 - compaction-resume - Resumed with the archive branch and
   narrowed observer-replay implementation intact. Final work is limited to
   consistency review, recording completed verification, and committing the

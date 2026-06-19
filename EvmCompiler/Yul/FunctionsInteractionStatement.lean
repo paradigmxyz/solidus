@@ -367,6 +367,30 @@ inductive PreparedArgsDoneRel
       FunctionsInteractionRelation.TerminalFailureRel source target →
         PreparedArgsDoneRel layout seq (.error source) (.ok (target, ctx))
 
+namespace PreparedArgsDoneRel
+
+theorem regular_of_stable
+    {layout : List Functions.Name} {results : Nat}
+    {lower : List (Locals.Expr 1)} {seq : Locals.ExprSeq results}
+    {source : Yul.InteractionSemantics.State}
+    {values : List Word}
+    {target : Functions.InteractionSemantics.State}
+    {ctx : Functions.Source.Ctx}
+    (hSeq : Expr.List.toSeq? lower results = some seq)
+    (hStable : FunctionsInteractionExpression.StableArgs
+      lower target values)
+    (hRel : FunctionsInteractionRelation.ScopedStateRel
+      layout source target) :
+    PreparedArgsDoneRel layout seq (.ok (source, values))
+      (.ok (Functions.Source.Effectful.Outcome.regular target, ctx)) := by
+  apply PreparedArgsDoneRel.regular
+  · exact hStable.length.trans (Expr.List.toSeq?_length hSeq)
+  · exact hStable.exprSeq_openEval hSeq
+      (FunctionsInteractionRelation.TargetExtends.refl target.vars)
+  · exact hRel
+
+end PreparedArgsDoneRel
+
 /-- Final terminal leaf after a compiler-owned argument prelude has produced
 the exact target values. Prelude construction and internal calls are separate
 capabilities; this theorem owns only the terminal boundary. -/

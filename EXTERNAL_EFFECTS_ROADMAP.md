@@ -1001,6 +1001,9 @@ Exit: every layer exposes one canonical open computation.
   - [x] Split generated terminal lowering into a compiler-owned prepared-args
     capability and a reusable terminal leaf; compose either regular argument
     completion or a terminal internal-call outcome without replay evidence.
+  - [x] Define canonical compiler-store domain/extension invariants and stable
+    delayed arguments; prove stability under later private-local insertion and
+    bridge stable lists to the compiler's dependent `ExprSeq` artifact.
   - [ ] Construct the prepared-args capability recursively from
     `UncheckedBoundLowering`, using the adjacent expression/statement owner
     for bound expressions and internal calls.

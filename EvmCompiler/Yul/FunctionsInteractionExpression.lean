@@ -345,6 +345,227 @@ theorem exprSeq_openEval_seqCast
   cases h
   rfl
 
+/-- A delayed one-result expression is insensitive to shared-state changes
+and to insertion of later compiler-private locals. -/
+def StableValue (expr : Locals.Expr 1)
+    (base : Functions.InteractionSemantics.State) (value : Word) : Prop :=
+  ∀ candidate,
+    FunctionsInteractionRelation.TargetExtends
+        base.vars candidate.vars →
+      Locals.InteractionSemantics.Expr.openEval expr candidate =
+        .done (.ok (candidate, [value]))
+
+inductive StableArgs :
+    List (Locals.Expr 1) → Functions.InteractionSemantics.State →
+      List Word → Prop where
+  | nil (base) : StableArgs [] base []
+  | cons {head rest base value values} :
+      StableValue head base value →
+      StableArgs rest base values →
+      StableArgs (head :: rest) base (value :: values)
+
+namespace StableValue
+
+theorem mono
+    {expr : Locals.Expr 1}
+    {base candidate : Functions.InteractionSemantics.State}
+    {value : Word}
+    (hStable : StableValue expr base value)
+    (hExtends : FunctionsInteractionRelation.TargetExtends
+      base.vars candidate.vars) :
+    StableValue expr candidate value := by
+  intro final hFinal
+  exact hStable final
+    (FunctionsInteractionRelation.TargetExtends.trans hExtends hFinal)
+
+theorem lit (base : Functions.InteractionSemantics.State) (value : Word) :
+    StableValue (.lit value) base value := by
+  intro candidate _hExtends
+  rfl
+
+theorem var
+    {base : Functions.InteractionSemantics.State}
+    {name : Functions.Name} {value : Word}
+    (hLookup : base.vars name = some value) :
+    StableValue (.var name) base value := by
+  intro candidate hExtends
+  have hCandidate := hExtends name value hLookup
+  simp [Locals.InteractionSemantics.Expr.openEval,
+    Locals.Source.Effectful.Expr.Control.eval,
+    Locals.InteractionSemantics.stateModel,
+    Locals.Source.Effectful.Ordinary.stateModel,
+    Locals.Source.Effectful.StateModel.vars, hCandidate,
+    Simulation.Interaction.pure]
+  rfl
+
+end StableValue
+
+namespace StableArgs
+
+theorem length
+    {args : List (Locals.Expr 1)}
+    {base : Functions.InteractionSemantics.State}
+    {values : List Word}
+    (hStable : StableArgs args base values) :
+    values.length = args.length := by
+  induction hStable with
+  | nil => rfl
+  | cons _hHead _hTail ih => simp [ih]
+
+theorem mono
+    {args : List (Locals.Expr 1)}
+    {base candidate : Functions.InteractionSemantics.State}
+    {values : List Word}
+    (hStable : StableArgs args base values)
+    (hExtends : FunctionsInteractionRelation.TargetExtends
+      base.vars candidate.vars) :
+    StableArgs args candidate values := by
+  induction hStable generalizing candidate with
+  | nil => exact .nil candidate
+  | cons hHead hTail ih =>
+      exact .cons (hHead.mono hExtends) (ih hExtends)
+
+theorem append
+    {left right : List (Locals.Expr 1)}
+    {base : Functions.InteractionSemantics.State}
+    {leftValues rightValues : List Word}
+    (hLeft : StableArgs left base leftValues)
+    (hRight : StableArgs right base rightValues) :
+    StableArgs (left ++ right) base (leftValues ++ rightValues) := by
+  induction hLeft generalizing right rightValues with
+  | nil => simpa using hRight
+  | cons hHead hTail ih =>
+      simpa using StableArgs.cons hHead (ih hRight)
+
+theorem openEval
+    {args : List (Locals.Expr 1)}
+    {base candidate : Functions.InteractionSemantics.State}
+    {values : List Word}
+    (hStable : StableArgs args base values)
+    (hExtends : FunctionsInteractionRelation.TargetExtends
+      base.vars candidate.vars) :
+    Functions.InteractionSemantics.ArgList.openEval args candidate =
+      .done (.ok (candidate, values)) := by
+  induction hStable generalizing candidate with
+  | nil => rfl
+  | @cons head rest base value values hHead hTail ih =>
+      have hHeadEval := hHead candidate hExtends
+      unfold Locals.InteractionSemantics.Expr.openEval at hHeadEval
+      have hHeadEval' :
+          Locals.Source.Effectful.Expr.Control.eval
+              Functions.InteractionSemantics.stateModel
+              Functions.InteractionSemantics.primitiveSemantics
+              head candidate =
+            .done (.ok (candidate, [value])) := by
+        simpa [Functions.InteractionSemantics.stateModel,
+          Functions.InteractionSemantics.primitiveSemantics] using hHeadEval
+      have hHeadOne :
+          Locals.Source.Effectful.Expr.Control.evalOne
+              Functions.InteractionSemantics.stateModel
+              Functions.InteractionSemantics.primitiveSemantics
+              head candidate =
+            .done (.ok (candidate, value)) := by
+        unfold Locals.Source.Effectful.Expr.Control.evalOne
+        change
+          Simulation.Interaction.bind
+              (Locals.Source.Effectful.Expr.Control.eval
+                Functions.InteractionSemantics.stateModel
+                Functions.InteractionSemantics.primitiveSemantics
+                head candidate)
+              (fun result =>
+                match result.2 with
+                | [actual] => pure (result.1, actual)
+                | _ => throw EvmYul.EVM.ExecutionException.InvalidInstruction) =
+            .done (.ok (candidate, value))
+        rw [hHeadEval', Simulation.Interaction.bind_done_ok]
+        rfl
+      unfold Functions.InteractionSemantics.ArgList.openEval
+        Functions.Source.Canonical.ArgList.eval
+        Functions.Source.Effectful.ArgList.Control.eval
+      have hTailEval := ih hExtends
+      unfold Functions.InteractionSemantics.ArgList.openEval
+        Functions.Source.Canonical.ArgList.eval at hTailEval
+      change
+        Simulation.Interaction.bind
+            (Locals.Source.Effectful.Expr.Control.evalOne
+              Functions.InteractionSemantics.stateModel
+              Functions.InteractionSemantics.primitiveSemantics
+              head candidate)
+            (fun headResult =>
+              Simulation.Interaction.bind
+                (Functions.Source.Effectful.ArgList.Control.eval
+                  Functions.InteractionSemantics.stateModel
+                  Functions.InteractionSemantics.primitiveSemantics
+                  rest headResult.1)
+                (fun tailResult =>
+                  pure (tailResult.1, headResult.2 :: tailResult.2))) =
+          .done (.ok (candidate, value :: values))
+      rw [hHeadOne, Simulation.Interaction.bind_done_ok,
+        hTailEval, Simulation.Interaction.bind_done_ok]
+      rfl
+
+theorem exprSeq_openEval
+    {args : List (Locals.Expr 1)} {results : Nat}
+    {seq : Locals.ExprSeq results}
+    {base candidate : Functions.InteractionSemantics.State}
+    {values : List Word}
+    (hStable : StableArgs args base values)
+    (hSeq : EvmCompiler.Yul.Expr.List.toSeq? args results = some seq)
+    (hExtends : FunctionsInteractionRelation.TargetExtends
+      base.vars candidate.vars) :
+    Locals.InteractionSemantics.ExprSeq.openEval seq candidate =
+      .done (.ok (candidate, values)) := by
+  induction hStable generalizing results seq candidate with
+  | nil =>
+      cases results with
+      | zero =>
+          simp [EvmCompiler.Yul.Expr.List.toSeq?] at hSeq
+          subst seq
+          rfl
+      | succ results =>
+          simp [EvmCompiler.Yul.Expr.List.toSeq?] at hSeq
+  | @cons head rest base value values hHead hTail ih =>
+      cases results with
+      | zero =>
+          simp [EvmCompiler.Yul.Expr.List.toSeq?] at hSeq
+      | succ tailResults =>
+          cases hTailSeq :
+              EvmCompiler.Yul.Expr.List.toSeq? rest tailResults with
+          | none =>
+              simp [EvmCompiler.Yul.Expr.List.toSeq?, hTailSeq] at hSeq
+          | some tail =>
+              simp [EvmCompiler.Yul.Expr.List.toSeq?, hTailSeq] at hSeq
+              subst seq
+              rw [exprSeq_openEval_seqCast]
+              have hHeadEval := hHead candidate hExtends
+              unfold Locals.InteractionSemantics.Expr.openEval at hHeadEval
+              unfold Locals.InteractionSemantics.ExprSeq.openEval
+                Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+              have hTailEval := ih hTailSeq hExtends
+              unfold Locals.InteractionSemantics.ExprSeq.openEval at hTailEval
+              change
+                Simulation.Interaction.bind
+                    (Locals.Source.Effectful.Expr.Control.eval
+                      Locals.InteractionSemantics.stateModel
+                      Locals.InteractionSemantics.primitiveSemantics
+                      head candidate)
+                    (fun headResult =>
+                      Simulation.Interaction.bind
+                        (Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+                          Locals.InteractionSemantics.stateModel
+                          Locals.InteractionSemantics.primitiveSemantics
+                          tail headResult.1)
+                        (fun tailResult =>
+                          pure
+                            (tailResult.1,
+                              headResult.2 ++ tailResult.2))) =
+                  .done (.ok (candidate, value :: values))
+              rw [hHeadEval, Simulation.Interaction.bind_done_ok,
+                hTailEval, Simulation.Interaction.bind_done_ok]
+              rfl
+
+end StableArgs
+
 structure DirectAt
     (hPrimitive : FunctionsInteractionPrimitive.CompilerSelected)
     (codeOverride : Option EvmYul.Yul.Ast.YulContract)

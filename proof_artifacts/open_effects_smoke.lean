@@ -463,6 +463,12 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.terminal_direct
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_terminal_direct
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PreparedArgsDoneRel
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TargetDomainWithin.lookup_none
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TargetExtends.insert_fresh
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.insert_private
+#print axioms EvmCompiler.Yul.FunctionsInteractionExpression.StableValue.mono
+#print axioms EvmCompiler.Yul.FunctionsInteractionExpression.StableArgs.exprSeq_openEval
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PreparedArgsDoneRel.regular_of_stable
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.terminal_after_args
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.terminal_of_prepared_args
 #print axioms EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_permitted

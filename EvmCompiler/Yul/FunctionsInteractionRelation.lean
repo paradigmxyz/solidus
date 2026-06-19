@@ -1193,6 +1193,72 @@ theorem insert
 
 end VarsRel
 
+/-- Every target local is tracked by the compiler freshness state. -/
+def TargetDomainWithin (used : List Functions.Name)
+    (target : Locals.Source.Store) : Prop :=
+  ∀ name value, target name = some value → name ∈ used
+
+/-- Later generated code preserves every target local already allocated. -/
+def TargetExtends (before after : Locals.Source.Store) : Prop :=
+  ∀ name value, before name = some value → after name = some value
+
+namespace TargetDomainWithin
+
+theorem lookup_none
+    {used : List Functions.Name} {target : Locals.Source.Store}
+    (hDomain : TargetDomainWithin used target)
+    {name : Functions.Name} (hFresh : name ∉ used) :
+    target name = none := by
+  cases hLookup : target name with
+  | none => rfl
+  | some value =>
+      exact False.elim (hFresh (hDomain name value hLookup))
+
+theorem insert
+    {used : List Functions.Name} {target : Locals.Source.Store}
+    (hDomain : TargetDomainWithin used target)
+    {name : Functions.Name} {value : Word}
+    (hFresh : name ∉ used) :
+    TargetDomainWithin (name :: used)
+      (Locals.Source.Store.insert target name value) := by
+  intro key result hLookup
+  by_cases hEq : key = name
+  · subst key
+    exact List.mem_cons_self
+  · rw [Locals.Source.Store.insert_of_ne hEq] at hLookup
+    exact List.mem_cons_of_mem name (hDomain key result hLookup)
+
+end TargetDomainWithin
+
+namespace TargetExtends
+
+theorem refl (target : Locals.Source.Store) :
+    TargetExtends target target := by
+  intro name value hLookup
+  exact hLookup
+
+theorem trans
+    {first second third : Locals.Source.Store}
+    (hFirst : TargetExtends first second)
+    (hSecond : TargetExtends second third) :
+    TargetExtends first third := by
+  intro name value hLookup
+  exact hSecond name value (hFirst name value hLookup)
+
+theorem insert_fresh
+    {target : Locals.Source.Store} {name : Functions.Name} {value : Word}
+    (hFresh : target name = none) :
+    TargetExtends target (Locals.Source.Store.insert target name value) := by
+  intro key result hLookup
+  have hNe : key ≠ name := by
+    intro hEq
+    subst key
+    rw [hFresh] at hLookup
+    contradiction
+  simpa [Locals.Source.Store.insert_of_ne hNe] using hLookup
+
+end TargetExtends
+
 namespace StateRel
 
 theorem lookup
@@ -1479,6 +1545,31 @@ theorem targetContains
     hRel.defined sourceShared sourceVars hSource name hName
   have hTarget : target.vars name = some value := hVars name value hLookup
   simp [Locals.Source.Store.contains, hTarget]
+
+/-- Inserting a compiler-private target local preserves the source-visible
+scoped relation when freshness excludes every source variable in the layout. -/
+theorem insert_private
+    {layout : List Functions.Name}
+    {source : SourceState} {target : TargetState}
+    (hRel : ScopedStateRel layout source target)
+    {name : Functions.Name} (hFresh : name ∉ layout)
+    (value : Word) :
+    ScopedStateRel layout source (target.insert name value) := by
+  rcases hRel.state with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  refine
+    { state := ⟨sourceShared, sourceVars, hSource, ?_, ?_⟩
+      domain := hRel.domain
+      defined := hRel.defined }
+  · simpa [Locals.Source.State.insert] using hShared
+  · intro key result hLookup
+    have hKey : key ≠ name := by
+      intro hEq
+      subst key
+      exact hFresh
+        (hRel.domain sourceShared sourceVars hSource name result hLookup)
+    simpa [Locals.Source.State.insert,
+      Locals.Source.Store.insert_of_ne hKey] using hVars key result hLookup
 
 theorem multifill_single_cons
     {layout : List Functions.Name}
