@@ -1068,11 +1068,14 @@ The script defaults to Aave v3 Core commit
 to keep the generated bridge JSON files.
 
 The full-contract backend gate compiles the actual Permit2 runtime and linked
-Aave v3 Pool runtime through checked object images. Permit2 is sourced from
-solc 0.8.17 and parsed, without changing its Yul text, by solc 0.8.26. Aave's
-old unguarded Yul receives an explicit source reservation; this remains a
-`SourceSafety` premise of the correctness theorem rather than an inferred
-compiler fact:
+Aave v3 Pool runtime through the native executable object-image path and
+separately checks solc-profile acceptance. The executable path is not yet
+proved equal to the checked canonical Yul/artifact path, so this gate is
+compilation and performance evidence rather than an instance of the public
+correctness theorem. Permit2 is sourced from solc 0.8.17 and parsed, without
+changing its Yul text, by solc 0.8.26. Aave's old unguarded Yul receives an
+explicit source reservation; this remains an undischarged `SourceSafety`
+premise of the correctness theorem rather than an inferred compiler fact:
 
 ```sh
 PYTHON=/path/to/python LAKE=/path/to/lake \

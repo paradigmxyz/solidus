@@ -538,7 +538,7 @@ completion gates unless the narrow transcript bridge actually needs them.
 ## Full Solc Contracts
 
 - [x] Parse exact pinned Permit2 Yul and compile its runtime through the native
-  canonical object-image path.
+  executable object-image path.
 - [x] Compile pinned Aave v3 Pool under an explicit source-facing scratch
   reservation, including linked library symbols.
 - [x] Remove the large-contract superlinear traversals with proved executable
@@ -547,5 +547,12 @@ completion gates unless the narrow transcript bridge actually needs them.
   architecture, hole, axiom, and diff checks.
 - [x] Select compile-validated mixed stack/scratch plans under real expression
   pressure instead of falling back to all-scratch allocation.
+- [ ] Prove that the executable Solidity object-image path refines the checked
+  `toSolcYulProgram?` -> canonical Yul lowering -> `compileArtifact?` path,
+  including the alias and lifetime rewrites. Until then the full-contract gate
+  is compilation/performance evidence, not an instance of the public theorem.
+- [ ] Discharge the explicit `SourceSafety` premise for the pinned Aave Pool,
+  or keep Aave clearly classified as compiling under a caller-supplied memory
+  reservation rather than as a proved contract instance.
 - [ ] Bring emitted runtime size into a practical deployable range without
   weakening the horizontal correctness theorem or source memory premise.
