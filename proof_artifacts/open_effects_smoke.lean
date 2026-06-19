@@ -457,6 +457,11 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionTerminal.return_
 #print axioms EvmCompiler.Yul.FunctionsInteractionTerminal.revert
 #print axioms EvmCompiler.Yul.FunctionsInteractionTerminal.selfdestruct
+#print axioms EvmCompiler.Yul.FunctionsInteractionTerminal.terminal?_cases
+#print axioms EvmCompiler.Yul.FunctionsInteractionTerminal.of_terminal?
+#print axioms EvmCompiler.Yul.Expr.lowerBound1Unchecked?_direct_parts
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.terminal_direct
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_terminal_direct
 #print axioms EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_permitted
 #print axioms EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_static
 #print axioms EvmCompiler.Structured.Terminal.allowed_of_step

@@ -197,6 +197,10 @@ boundaries remain active work.
       TypedCfg semantics reject static SELFDESTRUCT, and the Yul theorem has no
       permission premise.
     - [ ] Prove compiler-generated terminal argument preludes.
+      - [x] Compiler-selected stable literal/variable argument window, including
+        exact source/target argument reversal and low-fuel truncation.
+      - [ ] Generated temporary bindings, primitive-expression preludes, and
+        internal-call preludes.
     - [ ] Complete recursive statement/list proof over compiler decomposition;
       break, continue, leave, and multi-name uninitialized declaration compiler
       cases are checked. Direct-safe one-name initialized declarations and

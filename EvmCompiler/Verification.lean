@@ -1445,6 +1445,11 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionTerminal.return_
 #check EvmCompiler.Yul.FunctionsInteractionTerminal.revert
 #check EvmCompiler.Yul.FunctionsInteractionTerminal.selfdestruct
+#check EvmCompiler.Yul.FunctionsInteractionTerminal.terminal?_cases
+#check EvmCompiler.Yul.FunctionsInteractionTerminal.of_terminal?
+#check EvmCompiler.Yul.Expr.lowerBound1Unchecked?_direct_parts
+#check EvmCompiler.Yul.FunctionsInteractionStatement.terminal_direct
+#check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_terminal_direct
 #check EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_permitted
 #check EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_static
 #check EvmCompiler.Structured.Terminal.Allowed

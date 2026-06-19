@@ -336,6 +336,56 @@ theorem lower1Unchecked?_prelude
     Prelude pre := by
   exact lowerUnchecked?_prelude hLower
 
+/-- Stable leaf arguments within the bounded direct window emit no generated
+prelude. This is an inversion of the ordinary lowering algorithm, not an
+alternate argument compiler. -/
+theorem lowerBound1Unchecked?_direct_parts
+    {state final : Fresh.State} {args : List AstExpr}
+    {pre : List Functions.Stmt} {lower : List (Locals.Expr 1)}
+    (hLower :
+      List.lowerBound1Unchecked? state args = some (pre, lower, final))
+    (hDirect : ∀ expr, expr ∈ args → deferredBoundArgSafe? expr = true)
+    (hWindow : args.length < 5) :
+    pre = [] ∧ final = state ∧ List.toLocals1? args = some lower := by
+  induction args generalizing state pre lower final with
+  | nil =>
+      simp [List.lowerBound1Unchecked?] at hLower
+      rcases hLower with ⟨rfl, rfl, rfl⟩
+      exact ⟨rfl, rfl, rfl⟩
+  | cons expr rest ih =>
+      cases hRest : List.lowerBound1Unchecked? state rest with
+      | none =>
+          simp [List.lowerBound1Unchecked?, hRest] at hLower
+      | some restResult =>
+          rcases restResult with ⟨preRest, lowerRest, stateRest⟩
+          cases hHead : lowerUnchecked? 1 stateRest expr with
+          | none =>
+              simp [List.lowerBound1Unchecked?, hRest, hHead] at hLower
+          | some headResult =>
+              rcases headResult with ⟨preHead, lowerHead, stateHead⟩
+              have hRestParts := ih hRest
+                (fun item hMem => hDirect item (by simp [hMem]))
+                (by simp only [List.length_cons] at hWindow; omega)
+              rcases hRestParts with ⟨rfl, rfl, hRestDirect⟩
+              have hExprDirect : deferredBoundArgSafe? expr = true :=
+                hDirect expr (by simp)
+              have hHeadParts :=
+                lower1Unchecked?_deferred_parts hExprDirect
+                  (by simpa [lower1Unchecked?] using hHead)
+              rcases hHeadParts with ⟨rfl, rfl, hHeadDirect⟩
+              have hRestLength : lowerRest.length < 4 := by
+                have hLength :=
+                  List.lowerBound1Unchecked?_length_lowerArgs_eq hRest
+                rw [hLength]
+                simp only [List.length_cons] at hWindow
+                omega
+              simp [List.lowerBound1Unchecked?, hRest, hHead,
+                hExprDirect, hRestLength] at hLower
+              rcases hLower with ⟨hPreEq, hLowerEq, hFinalEq⟩
+              refine ⟨hPreEq, hFinalEq.symm, ?_⟩
+              rw [← hLowerEq]
+              simp [List.toLocals1?, hHeadDirect, hRestDirect]
+
 theorem lower1Unchecked?_append_run_cases
     {σ : Type}
     (model : Functions.Source.Effectful.StateModel σ)

@@ -134,7 +134,6 @@ theorem stop
     (fuel : Nat)
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
-    (hPerm : source.sharedState.executionEnv.perm = true)
     (hRel : FunctionsInteractionRelation.StateRel source target) :
     Simulation.Interaction.ForwardRel Truncated
       (PrimitiveDoneRel .stop)
@@ -441,6 +440,84 @@ theorem selfdestruct
     rw [hSource, hTarget]
     exact Simulation.Interaction.ForwardRel.done
       (PrimitiveDoneRel.error trivial)
+
+theorem terminal?_cases
+    {prim : EvmYul.Operation .Yul} {kind : Assembly.HaltKind}
+    (hTerminal : Prim.terminal? prim = some kind) :
+    (prim = .StopArith .STOP ∧ kind = .stop) ∨
+      (prim = .System .RETURN ∧ kind = .return) ∨
+      (prim = .System .REVERT ∧ kind = .revert) ∨
+      (prim = .System .SELFDESTRUCT ∧ kind = .selfdestruct) := by
+  cases prim <;> rename_i primitive <;> cases primitive <;>
+    simp [Prim.terminal?] at hTerminal ⊢ <;>
+    exact hTerminal.symm
+
+theorem openEval_one_of_terminal?
+    {prim : EvmYul.Operation .Yul} {kind : Assembly.HaltKind}
+    (hTerminal : Prim.terminal? prim = some kind)
+    (source : Yul.InteractionSemantics.State) (values : List Word) :
+    Yul.InteractionSemantics.Primitive.openEval 1 source prim values =
+      Yul.InteractionSemantics.Primitive.fail source .OutOfFuel := by
+  rcases terminal?_cases hTerminal with
+    ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+    simp [Yul.InteractionSemantics.Primitive.openEval,
+      Yul.InteractionSemantics.Primitive.closedEval,
+      Yul.InteractionSemantics.State.afterException,
+      EvmYul.Yul.primCall,
+      Simulation.ExternalKind.ofYulOperation?,
+      Simulation.CallKind.ofYulOperation?,
+      Simulation.CreateKind.ofYulOperation?]
+
+/-- Compiler-facing terminal dispatch in source argument order. The target
+terminal receives the reverse list because EVM pops its first operand from the
+top of the stack. -/
+theorem of_terminal?
+    {prim : EvmYul.Operation .Yul} {kind : Assembly.HaltKind}
+    (fuel : Nat) (sourceValues : List Word)
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hTerminal : Prim.terminal? prim = some kind)
+    (hLength : sourceValues.length = kind.argCount)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PrimitiveDoneRel kind)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (fuel + 2) source prim sourceValues)
+      (Functions.InteractionSemantics.primitiveSemantics.terminal
+        kind target sourceValues.reverse) := by
+  rcases terminal?_cases hTerminal with
+    ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  · have hValues : sourceValues = [] := by
+      exact List.eq_nil_of_length_eq_zero
+        (by simpa [Assembly.HaltKind.argCount] using hLength)
+    subst sourceValues
+    simpa using stop fuel hRel
+  · cases sourceValues with
+    | nil => simp [Assembly.HaltKind.argCount] at hLength
+    | cons address rest =>
+        cases rest with
+        | nil => simp [Assembly.HaltKind.argCount] at hLength
+        | cons size tail =>
+            have hTail : tail = [] :=
+              List.eq_nil_of_length_eq_zero
+                (by simpa [Assembly.HaltKind.argCount] using hLength)
+            subst tail
+            simpa using return_ fuel address size hRel
+  · cases sourceValues with
+    | nil => simp [Assembly.HaltKind.argCount] at hLength
+    | cons address rest =>
+        cases rest with
+        | nil => simp [Assembly.HaltKind.argCount] at hLength
+        | cons size tail =>
+            have hTail : tail = [] :=
+              List.eq_nil_of_length_eq_zero
+                (by simpa [Assembly.HaltKind.argCount] using hLength)
+            subst tail
+            simpa using revert fuel address size hRel
+  · obtain ⟨recipient, hValues⟩ :=
+      List.length_eq_one_iff.mp (by simpa using hLength)
+    subst sourceValues
+    simpa using selfdestruct fuel recipient hRel
 
 end FunctionsInteractionTerminal
 end Yul
