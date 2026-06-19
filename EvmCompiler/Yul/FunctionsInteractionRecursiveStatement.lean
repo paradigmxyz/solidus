@@ -797,6 +797,439 @@ theorem switch
           exact Simulation.Interaction.ForwardRel.mono hBlock
             (fun _sourceDone _targetDone hDone => hDone.monoUsed hAfter)
 
+/-- Ordinary compiler-selected `for`, assembled from the prepared condition,
+recursive body/post lists, and the generic adjacent loop kernel. -/
+theorem forLoop
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    {sourceFuel targetFuel compilerFuel : Nat}
+    {functionNames layout : List Functions.Name}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {before after : Fresh.State} {cond : AstExpr}
+    {post body : List AstStmt} {lower : List Functions.Stmt}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {ctx : Functions.Source.Ctx}
+    (hConditions :
+      ∀ {childFuel childTargetFuel : Nat}, childFuel < sourceFuel →
+        FunctionsInteractionRecursiveExpression.ConditionForwardAt
+          profile sourceProgram targetProgram childFuel childTargetFuel layout)
+    (hLists : RecursiveListForward
+      profile sourceProgram targetProgram sourceFuel)
+    (hOk : SolcValidation.StmtOk? profile sourceProgram.contract
+      functionNames layout canBreak canContinue canLeave
+        (.For cond post body) = true)
+    (hNames : ∀ name, name ∈ Stmt.names (.For cond post body) →
+      name ∈ before.used)
+    (hLower : Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+      (.For cond post body) = some (lower, after))
+    (hRel : ScopedStateRel layout source target)
+    (hDomain : TargetDomainWithin before.used target.vars)
+    (hTargetScope : TargetScopeWithin before.used ctx)
+    (hLayout : ∀ name, name ∈ layout → name ∈ before.used)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
+    (hTargetFuel :
+      FunctionsInteractionStaticCost.programBudget sourceProgram sourceFuel +
+          FunctionsInteractionTargetCost.list lower + 1 < targetFuel) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel after.used layout sourceScopes
+        canBreak canContinue canLeave)
+      (Yul.InteractionSemantics.exec sourceFuel (.For cond post body)
+        (some sourceProgram.contract) source)
+      (Functions.InteractionSemantics.Block.openRun
+        targetProgram.toFunctions ctx targetFuel { stmts := lower } target) := by
+  obtain ⟨compilerPrevious, preCond, lowerCond, afterCond,
+      lowerPost, afterPost, lowerBody, _hCompilerFuel,
+      hLowerCond, hLowerPost, hLowerBody, rfl⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_for_parts hLower
+  obtain ⟨postCompilerFuel, lowerPostStmts, _hPostCompilerFuel,
+      hLowerPostList, rfl⟩ :=
+    Stmt.List.toBlockUncheckedFuel?_parts hLowerPost
+  obtain ⟨bodyCompilerFuel, lowerBodyStmts, _hBodyCompilerFuel,
+      hLowerBodyList, rfl⟩ :=
+    Stmt.List.toBlockUncheckedFuel?_parts hLowerBody
+  have hOkParts :
+      SolcValidation.ExprOk? profile sourceProgram.contract layout 1 cond = true ∧
+        SolcValidation.StmtsOk? profile sourceProgram.contract functionNames
+            layout false false canLeave post = true ∧
+        SolcValidation.StmtsOk? profile sourceProgram.contract functionNames
+            layout true true canLeave body = true := by
+    simpa [SolcValidation.StmtOk?] using hOk
+  have hCondExtends : Fresh.Extends before afterCond :=
+    Expr.lower1Unchecked?_stateExtends hLowerCond
+  have hPostExtends : Fresh.Extends afterCond afterPost :=
+    Stmt.List.toFunctionsUncheckedFuel?_stateExtends hLowerPostList
+  have hBodyExtends : Fresh.Extends afterPost after :=
+    Stmt.List.toFunctionsUncheckedFuel?_stateExtends hLowerBodyList
+  have hFinalExtends : Fresh.Extends before after :=
+    Fresh.Extends.trans hCondExtends
+      (Fresh.Extends.trans hPostExtends hBodyExtends)
+  have hCondNames : ∀ name, name ∈ Expr.names cond → name ∈ before.used := by
+    intro name hName
+    exact hNames name (by simp [Stmt.names, hName])
+  have hPostNames : ∀ name, name ∈ Stmt.List.names post →
+      name ∈ afterCond.used := by
+    intro name hName
+    apply hCondExtends name
+    exact hNames name (by simp [Stmt.names, hName])
+  have hBodyNames : ∀ name, name ∈ Stmt.List.names body →
+      name ∈ afterPost.used := by
+    intro name hName
+    apply hPostExtends name
+    apply hCondExtends name
+    exact hNames name (by simp [Stmt.names, hName])
+  have hCondLayout : ∀ name, name ∈ layout → name ∈ afterCond.used := by
+    intro name hName
+    exact hCondExtends name (hLayout name hName)
+  have hPostLayout : ∀ name, name ∈ layout → name ∈ afterPost.used := by
+    intro name hName
+    exact hPostExtends name (hCondLayout name hName)
+  let lowerGuarded : Functions.Block :=
+    { stmts :=
+        preCond ++
+          .if_
+            (.prim .iszero (Locals.ExprSeq.cons lowerCond .nil))
+            { stmts := [.brk] } ::
+          lowerBodyStmts }
+  let lowerLoop : Functions.Stmt :=
+    .for_ { stmts := [] } (.lit (EvmYul.UInt256.ofNat 1))
+      { stmts := lowerPostStmts } lowerGuarded
+  have hKernel :
+      ∀ (iterationFuel kernelTargetFuel : Nat)
+        {sourceEntry : Yul.InteractionSemantics.State}
+        {targetEntry : Functions.InteractionSemantics.State},
+        iterationFuel ≤ sourceFuel →
+        FunctionsInteractionStaticCost.programBudget sourceProgram
+              iterationFuel +
+            FunctionsInteractionTargetCost.stmt lowerLoop < kernelTargetFuel →
+        ScopedStateRel layout sourceEntry targetEntry →
+        TargetDomainWithin before.used targetEntry.vars →
+        Simulation.Interaction.ForwardRel Truncated
+          (FunctionsInteractionLoop.KernelDoneRel
+            before.used layout sourceScopes canLeave)
+          (Yul.InteractionSemantics.exec iterationFuel
+            (.For cond post body) (some sourceProgram.contract) sourceEntry)
+          (Functions.InteractionSemantics.Stmt.openRunForLoop
+            targetProgram.toFunctions ctx.withoutLoopControl
+            (.lit (EvmYul.UInt256.ofNat 1)) ctx.withoutLoopControl
+            { stmts := lowerPostStmts }
+            (ctx.withLoopControl ctx.scope ctx.scope) lowerGuarded
+            kernelTargetFuel targetEntry) := by
+    intro iterationFuel
+    induction iterationFuel using Nat.strong_induction_on with
+    | h iterationFuel ih =>
+        intro kernelTargetFuel sourceEntry targetEntry hWithin
+          hKernelFuel hScoped hEntryDomain
+        cases iterationFuel with
+        | zero =>
+            rw [Yul.InteractionSemantics.Exec.zero]
+            exact Simulation.Interaction.ForwardRel.truncated (by trivial)
+        | succ previous =>
+            rw [Yul.InteractionSemantics.Exec.for_succ]
+            cases previous with
+            | zero =>
+                rw [Yul.InteractionSemantics.Exec.loop_zero]
+                exact Simulation.Interaction.ForwardRel.truncated (by trivial)
+            | succ loopFuel =>
+                cases loopFuel with
+                | zero =>
+                    rw [Yul.InteractionSemantics.Exec.loop_one]
+                    exact Simulation.Interaction.ForwardRel.truncated (by trivial)
+                | succ iterationFuel =>
+                    rcases hScoped.state with
+                      ⟨entryShared, entryVars, hSource, _hShared, _hVars⟩
+                    subst sourceEntry
+                    have hKernelPositive : 0 < kernelTargetFuel := by
+                      have hBudgetPositive :=
+                        FunctionsInteractionFuel.executionBudgetFor_ge_sixteen
+                          (FunctionsInteractionStaticCost.program sourceProgram)
+                          (FunctionsInteractionStaticCost.program sourceProgram)
+                          (iterationFuel + 3)
+                      unfold FunctionsInteractionStaticCost.programBudget
+                        at hKernelFuel
+                      omega
+                    obtain ⟨kernelRemaining, hKernelEq⟩ :
+                        ∃ remaining, kernelTargetFuel = remaining + 1 :=
+                      ⟨kernelTargetFuel - 1, by omega⟩
+                    have hKernelFuel' :
+                        FunctionsInteractionStaticCost.programBudget sourceProgram
+                              (iterationFuel + 3) +
+                            FunctionsInteractionTargetCost.stmt lowerLoop <
+                          kernelRemaining + 1 := by
+                      rw [← hKernelEq]
+                      simpa [Nat.add_assoc] using hKernelFuel
+                    have hChildGap :
+                        FunctionsInteractionStaticCost.programBudget sourceProgram
+                              iterationFuel + 8 ≤
+                          FunctionsInteractionStaticCost.programBudget sourceProgram
+                            (iterationFuel + 3) :=
+                      FunctionsInteractionStaticCost.programBudget_child_add_eight_le
+                        sourceProgram (by omega)
+                    have hPreLength :=
+                      FunctionsInteractionTargetCost.length_le_list preCond
+                    have hCost := hKernelFuel'
+                    dsimp [lowerLoop, lowerGuarded] at hCost
+                    simp [FunctionsInteractionTargetCost.stmt,
+                      FunctionsInteractionTargetCost.block,
+                      FunctionsInteractionTargetCost.list,
+                      FunctionsInteractionTargetCost.list_append] at hCost
+                    have hCondBudget :
+                        FunctionsInteractionStaticCost.programBudget sourceProgram
+                              iterationFuel + preCond.length + 2 ≤
+                            kernelRemaining := by
+                      omega
+                    have hGuardFuel : preCond.length + 2 < kernelRemaining := by
+                      omega
+                    have hRecurseBudget :
+                        FunctionsInteractionStaticCost.programBudget sourceProgram
+                                iterationFuel +
+                              FunctionsInteractionTargetCost.stmt lowerLoop <
+                            kernelRemaining := by
+                      dsimp [lowerLoop, lowerGuarded]
+                      dsimp [lowerLoop, lowerGuarded] at hKernelFuel'
+                      omega
+                    have hLoopTargetScope :
+                        TargetScopeWithin before.used
+                          (ctx.withLoopControl ctx.scope ctx.scope) := by
+                      simpa [Functions.Source.Ctx.withLoopControl] using
+                        hTargetScope
+                    have hCondition :=
+                      hConditions (childFuel := iterationFuel)
+                        (childTargetFuel := kernelRemaining) (by omega)
+                        hOkParts.1 hLowerCond hCondBudget hLayout
+                        (by
+                          simpa [Functions.Source.Ctx.withLoopControl] using
+                            (show ScopedStateRel layout
+                              (.Ok entryShared entryVars) targetEntry from
+                                hScoped))
+                        hEntryDomain hLoopTargetScope
+                    have hGuarded :
+                        Simulation.Interaction.ForwardRel Truncated
+                          (FunctionsInteractionLoop.GuardedBodyDoneRel
+                            before.used layout sourceScopes canLeave)
+                          (Simulation.Interaction.bind
+                            (Yul.InteractionSemantics.evalValues iterationFuel
+                              cond (some sourceProgram.contract)
+                              (.Ok entryShared entryVars))
+                            (fun result =>
+                              if result.2.head! = EvmYul.UInt256.ofNat 0 then
+                                Simulation.Interaction.pure (.inl result.1)
+                              else
+                                Simulation.Interaction.map Sum.inr
+                                  (Yul.InteractionSemantics.exec iterationFuel
+                                    (.Block body)
+                                    (some sourceProgram.contract) result.1)))
+                          (Functions.InteractionSemantics.Block.openRunScoped
+                            targetProgram.toFunctions
+                            (ctx.withLoopControl ctx.scope ctx.scope)
+                            lowerGuarded kernelRemaining targetEntry) := by
+                      cases iterationFuel with
+                      | zero =>
+                          have hTruncated : Truncated
+                              ({ exception := .OutOfFuel,
+                                  state := .Ok entryShared entryVars } :
+                                Yul.InteractionSemantics.Failure) := by
+                            trivial
+                          simpa [Yul.InteractionSemantics.evalValues,
+                            Yul.Source.Canonical.evalValues,
+                            Yul.Source.Effectful.evalValues,
+                            Yul.InteractionSemantics.Primitive.fail,
+                            Yul.Source.Effectful.Control.fail] using
+                            (Simulation.Interaction.ForwardRel.truncated
+                              (doneRel :=
+                                FunctionsInteractionLoop.GuardedBodyDoneRel
+                                  before.used layout sourceScopes canLeave)
+                              (right :=
+                                Functions.InteractionSemantics.Block.openRunScoped
+                                  targetProgram.toFunctions
+                                  (ctx.withLoopControl ctx.scope ctx.scope)
+                                  lowerGuarded kernelRemaining targetEntry)
+                              hTruncated)
+                      | succ bodyFuel =>
+                          have hBodyFuelLe :
+                              FunctionsInteractionStaticCost.programBudget
+                                    sourceProgram bodyFuel ≤
+                                FunctionsInteractionStaticCost.programBudget
+                                  sourceProgram (bodyFuel + 1) := by
+                            unfold FunctionsInteractionStaticCost.programBudget
+                            exact FunctionsInteractionFuel.executionBudgetFor_mono
+                              _ _ (by omega)
+                          have hBodyBudget :
+                              FunctionsInteractionStaticCost.programBudget
+                                      sourceProgram bodyFuel +
+                                    FunctionsInteractionTargetCost.list
+                                      lowerBodyStmts + 1 <
+                                  kernelRemaining - preCond.length - 1 := by
+                            omega
+                          exact FunctionsInteractionLoop.guardedBody
+                            (entryUsed := before.used)
+                            (conditionUsed := afterCond.used)
+                            (finalUsed := after.used)
+                            (bodyLayout :=
+                              SolcValidation.StmtsOutVars layout body)
+                            (bodyFuel := bodyFuel)
+                            (hTargetFuel := hGuardFuel)
+                            hControl hTargetScope hCondition
+                            (layoutWithinStmtsOutVars layout body)
+                            (by
+                              intro sourceAfter targetAfter ctxAfter sourceScope
+                                hBodyScoped hBodyDomain hBodyControl
+                                hBodyTargetScope
+                              exact hLists (sourceFuel := bodyFuel)
+                                (targetFuel :=
+                                  kernelRemaining - preCond.length - 1)
+                                (by omega) hOkParts.2.2 hBodyNames
+                                hLowerBodyList hBodyScoped
+                                (hBodyDomain.mono hPostExtends)
+                                (hBodyTargetScope.mono hPostExtends)
+                                hPostLayout hBodyControl hBodyBudget)
+                    have hPost :
+                        ∀ {sourceAfter : Yul.InteractionSemantics.State}
+                          {targetAfter : Functions.InteractionSemantics.State},
+                        ScopedStateRel layout sourceAfter targetAfter →
+                        TargetDomainWithin before.used targetAfter.vars →
+                        Simulation.Interaction.ForwardRel Truncated
+                          (FunctionsInteractionLoop.KernelDoneRel
+                            before.used layout sourceScopes canLeave)
+                          (Yul.InteractionSemantics.exec iterationFuel
+                            (.Block post) (some sourceProgram.contract)
+                            sourceAfter)
+                          (Functions.InteractionSemantics.Block.openRunScoped
+                            targetProgram.toFunctions ctx.withoutLoopControl
+                            { stmts := lowerPostStmts } kernelRemaining
+                            targetAfter) := by
+                      intro sourceAfter targetAfter hPostScoped hPostDomain
+                      cases iterationFuel with
+                      | zero =>
+                          rw [Yul.InteractionSemantics.Exec.zero]
+                          exact Simulation.Interaction.ForwardRel.truncated
+                            (by trivial)
+                      | succ postFuel =>
+                          have hPostFuelLe :
+                              FunctionsInteractionStaticCost.programBudget
+                                    sourceProgram postFuel ≤
+                                FunctionsInteractionStaticCost.programBudget
+                                  sourceProgram (postFuel + 1) := by
+                            unfold FunctionsInteractionStaticCost.programBudget
+                            exact FunctionsInteractionFuel.executionBudgetFor_mono
+                              _ _ (by omega)
+                          have hPostBudget :
+                              FunctionsInteractionStaticCost.programBudget
+                                      sourceProgram postFuel +
+                                    FunctionsInteractionTargetCost.list
+                                      lowerPostStmts + 1 < kernelRemaining := by
+                            omega
+                          have hPostControl :=
+                            ControlContextRel.forPost hControl
+                          have hPostTargetScope :
+                              TargetScopeWithin afterCond.used
+                                ctx.withoutLoopControl := by
+                            have hExtended := hTargetScope.mono hCondExtends
+                            simpa [Functions.Source.Ctx.withoutLoopControl] using
+                              hExtended
+                          have hPostOutputScope :
+                              TargetScopeWithin before.used
+                                ctx.withoutLoopControl := by
+                            simpa [Functions.Source.Ctx.withoutLoopControl] using
+                              hTargetScope
+                          have hPostRaw := hLists (sourceFuel := postFuel)
+                            (targetFuel := kernelRemaining) (by omega)
+                            hOkParts.2.1 hPostNames hLowerPostList hPostScoped
+                            (hPostDomain.mono hCondExtends) hPostTargetScope
+                            hCondLayout hPostControl hPostBudget
+                          exact
+                            FunctionsInteractionStatement.ControlDoneRel.blockScopedToUsed
+                              (outputUsed := before.used) hPostScoped hPostControl
+                              hPostOutputScope
+                              (layoutWithinStmtsOutVars layout post) hPostRaw
+                    have hRecurse :
+                        ∀ {sourceAfter : Yul.InteractionSemantics.State}
+                          {targetAfter : Functions.InteractionSemantics.State},
+                        ScopedStateRel layout sourceAfter targetAfter →
+                        TargetDomainWithin before.used targetAfter.vars →
+                        Simulation.Interaction.ForwardRel Truncated
+                          (FunctionsInteractionLoop.KernelDoneRel
+                            before.used layout sourceScopes canLeave)
+                          (Yul.InteractionSemantics.exec iterationFuel
+                            (.For cond post body) (some sourceProgram.contract)
+                            sourceAfter)
+                          (Functions.InteractionSemantics.Stmt.openRunForLoop
+                            targetProgram.toFunctions ctx.withoutLoopControl
+                            (.lit (EvmYul.UInt256.ofNat 1))
+                            ctx.withoutLoopControl { stmts := lowerPostStmts }
+                            (ctx.withLoopControl ctx.scope ctx.scope) lowerGuarded
+                            kernelRemaining targetAfter) := by
+                      intro sourceAfter targetAfter hRecursiveScoped
+                        hRecursiveDomain
+                      exact ih iterationFuel (by omega) kernelRemaining
+                        (by omega) hRecurseBudget hRecursiveScoped
+                        hRecursiveDomain
+                    rw [hKernelEq]
+                    exact FunctionsInteractionLoop.iteration
+                      (fuel := iterationFuel) (used := before.used)
+                      (lowerPost := { stmts := lowerPostStmts })
+                      (lowerGuarded := lowerGuarded)
+                      hGuarded hPost hRecurse
+  have hTargetPositive : 3 ≤ targetFuel := by
+    have hBudgetPositive :=
+      FunctionsInteractionFuel.executionBudgetFor_ge_sixteen
+        (FunctionsInteractionStaticCost.program sourceProgram)
+        (FunctionsInteractionStaticCost.program sourceProgram) sourceFuel
+    unfold FunctionsInteractionStaticCost.programBudget at hTargetFuel
+    omega
+  have hOuterKernelBudget :
+      FunctionsInteractionStaticCost.programBudget sourceProgram sourceFuel +
+          FunctionsInteractionTargetCost.stmt lowerLoop < targetFuel - 2 := by
+    dsimp [lowerLoop, lowerGuarded]
+    simp only [FunctionsInteractionTargetCost.list] at hTargetFuel
+    omega
+  have hKernelRel := hKernel sourceFuel (targetFuel - 2)
+    (by rfl) hOuterKernelBudget hRel hDomain
+  have hStmtRel :
+      Simulation.Interaction.ForwardRel Truncated
+        (ControlDoneRel after.used layout sourceScopes
+          canBreak canContinue canLeave)
+        (Yul.InteractionSemantics.exec sourceFuel (.For cond post body)
+          (some sourceProgram.contract) source)
+        (Functions.InteractionSemantics.Stmt.openRun
+          targetProgram.toFunctions ctx (targetFuel - 1) lowerLoop target) := by
+    rw [show targetFuel - 1 = (targetFuel - 3) + 2 by omega,
+      Functions.InteractionSemantics.Stmt.openRun_for_empty_true]
+    rw [show targetFuel - 3 + 1 = targetFuel - 2 by omega]
+    apply Simulation.Interaction.ForwardRel.bind_right hKernelRel
+    intro sourceDone targetDone hDone
+    have hClosed :=
+      (ControlOutcomeDoneRel.closeFor hControl hTargetScope hDone).monoUsed
+        hFinalExtends
+    cases targetDone with
+    | error targetError =>
+        simpa using
+          (Simulation.Interaction.ForwardRel.done
+            (truncated := Truncated) hClosed)
+    | ok targetOutcome =>
+        cases hMode : targetOutcome.mode <;>
+          simpa [hMode] using
+            (Simulation.Interaction.ForwardRel.done
+              (truncated := Truncated) hClosed)
+  have hFuelEq : targetFuel - 2 + 2 = targetFuel := by omega
+  have hStmtFuelEq : targetFuel - 2 + 1 = targetFuel - 1 := by omega
+  have hStmtRel' :
+      Simulation.Interaction.ForwardRel Truncated
+        (ControlDoneRel after.used layout sourceScopes
+          canBreak canContinue canLeave)
+        (Yul.InteractionSemantics.exec sourceFuel (.For cond post body)
+          (some sourceProgram.contract) source)
+        (Functions.InteractionSemantics.Stmt.openRun
+          targetProgram.toFunctions ctx (targetFuel - 2 + 1)
+          lowerLoop target) := by
+    rw [hStmtFuelEq]
+    exact hStmtRel
+  have hSingleton := FunctionsInteractionStatement.ControlDoneRel.singleton
+    (targetFuel := targetFuel - 2) hStmtRel'
+  simpa [lowerLoop, lowerGuarded, hFuelEq] using hSingleton
+
 end CompoundForward
 
 namespace RecursiveListForward

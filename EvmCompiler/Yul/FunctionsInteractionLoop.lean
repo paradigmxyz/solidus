@@ -86,6 +86,7 @@ theorem guardedBody
       ControlContextRel
           (ControlContextRel.forBodyScopes sourceScope outerScopes)
           layout true true canLeave ctxAfter →
+      TargetScopeWithin conditionUsed ctxAfter →
       Simulation.Interaction.ForwardRel Truncated
         (ControlDoneRel finalUsed bodyLayout
           (ControlContextRel.forBodyScopes sourceScope outerScopes)
@@ -143,7 +144,7 @@ theorem guardedBody
           exact Simulation.Interaction.ForwardRel.done
             (.terminal (.revert hState))
   | @regular sourceAfter values targetAfter truth ctxAfter value
-      hValues _hTruth hScoped hDomain hScope hSameControl =>
+      hValues _hTruth hScoped hDomain hScope hSameControl hTargetScopeAfter =>
       obtain ⟨sourceScope, hScopeStore, hScopeUsed, hScopeLayout,
           hBodyControl⟩ :=
         ControlContextRel.forBody hScoped hControl hCtxScopeUsed
@@ -179,7 +180,7 @@ theorem guardedBody
             (TargetDomainWithin.restrictTo_scope
               targetAfter hCtxScopeUsed) rfl)
       · simp only [hZero, ↓reduceIte]
-        have hBodyRaw := hBody hScoped hDomain hControlAfter
+        have hBodyRaw := hBody hScoped hDomain hControlAfter hTargetScopeAfter
         have hClosed :=
           FunctionsInteractionStatement.ControlDoneRel.blockClosedToScope
             hScoped hControlAfter hControl.scope

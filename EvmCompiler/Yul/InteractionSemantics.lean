@@ -558,6 +558,22 @@ theorem for_succ
   simp only [exec, loop, Yul.Source.Canonical.exec,
     Yul.Source.Canonical.loop, Yul.Source.Effectful.exec]
 
+theorem loop_zero
+    (cond : EvmYul.Yul.Ast.Expr)
+    (post body : List EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    loop 0 cond post body code state = Primitive.fail state .OutOfFuel := by
+  unfold loop Yul.Source.Canonical.loop Yul.Source.Effectful.loop
+  rfl
+
+theorem loop_one
+    (cond : EvmYul.Yul.Ast.Expr)
+    (post body : List EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    loop 1 cond post body code state = Primitive.fail state .OutOfFuel := by
+  unfold loop Yul.Source.Canonical.loop Yul.Source.Effectful.loop
+  rfl
+
 theorem loop_succ_succ
     (fuel : Nat) (cond : EvmYul.Yul.Ast.Expr)
     (post body : List EvmYul.Yul.Ast.Stmt)
@@ -726,6 +742,24 @@ theorem loop_succ_succ_guarded
             | OutOfFuel => rfl
             | Ok => rfl
             | Checkpoint jump => cases jump <;> rfl
+
+theorem loop_two
+    (cond : EvmYul.Yul.Ast.Expr)
+    (post body : List EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (shared : EvmYul.SharedState .Yul) (vars : EvmYul.Yul.VarStore) :
+    loop 2 cond post body code (.Ok shared vars) =
+      Primitive.fail (.Ok shared vars) .OutOfFuel := by
+  rw [show 2 = 0 + 1 + 1 by omega,
+    loop_succ_succ_guarded]
+  have hEval :
+      evalValues 0 cond code (.Ok shared vars) =
+        Primitive.fail (.Ok shared vars) .OutOfFuel := by
+    unfold evalValues Yul.Source.Canonical.evalValues
+      Yul.Source.Effectful.evalValues
+    rfl
+  rw [hEval]
+  simp [Primitive.fail, Yul.Source.Effectful.Control.fail]
 
 theorem brk_zero
     (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :

@@ -822,6 +822,46 @@ theorem blockScoped
   exact blockClosedToScope hEntry hControl hControl.scope
     (fun _targetState hDomain => hDomain.restrictTo) hBodyLayout hBody
 
+/-- Scoped lexical-block cleanup with an explicitly narrower compiler-owned
+target domain. The target scope itself remains the enclosing context scope. -/
+theorem blockScopedToUsed
+    {used outputUsed entryLayout bodyLayout : List Functions.Name}
+    {sourceFuel targetFuel : Nat}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {body : List AstStmt} {lowerBody : Functions.Block}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hEntry : ScopedStateRel entryLayout source target)
+    (hControl : ControlContextRel sourceScopes entryLayout
+      canBreak canContinue canLeave ctx)
+    (hOutputScope : TargetScopeWithin outputUsed ctx)
+    (hBodyLayout : ∀ name, name ∈ entryLayout → name ∈ bodyLayout)
+    (hBody :
+      Simulation.Interaction.ForwardRel Truncated
+        (ControlDoneRel used bodyLayout sourceScopes
+          canBreak canContinue canLeave)
+        (Yul.InteractionSemantics.execSeq
+          sourceFuel body codeOverride source)
+        (Functions.InteractionSemantics.Block.openRun
+          program ctx targetFuel lowerBody target)) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlOutcomeDoneRel outputUsed entryLayout sourceScopes
+        canBreak canContinue canLeave)
+      (Yul.InteractionSemantics.exec
+        (sourceFuel + 1) (.Block body) codeOverride source)
+      (Functions.InteractionSemantics.Block.openRunScoped
+        program ctx lowerBody targetFuel target) := by
+  unfold Functions.InteractionSemantics.Block.openRunScoped
+    Functions.Source.Canonical.Block.runScoped
+    Functions.Source.Effectful.Control.Block.runScoped
+  exact blockClosedToScope hEntry hControl hControl.scope
+    (fun targetState _hDomain =>
+      TargetDomainWithin.restrictTo_scope targetState hOutputScope)
+    hBodyLayout hBody
+
 end ControlDoneRel
 
 /-- Adjacent result interface for a compiler-owned terminal argument prelude.

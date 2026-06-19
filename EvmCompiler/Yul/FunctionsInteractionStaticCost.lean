@@ -72,6 +72,18 @@ noncomputable def programBudget
   FunctionsInteractionFuel.executionBudgetFor
     (program sourceProgram) (program sourceProgram) sourceFuel
 
+theorem programBudget_child_add_eight_le
+    (sourceProgram : Yul.Program) {childFuel parentFuel : Nat}
+    (hFuel : childFuel < parentFuel) :
+    programBudget sourceProgram childFuel + 8 ≤
+      programBudget sourceProgram parentFuel := by
+  unfold programBudget
+  exact
+    (FunctionsInteractionFuel.executionBudgetFor_add_eight_le_target_of_lt
+      (program sourceProgram) (program sourceProgram) (by rfl) hFuel).trans
+      (FunctionsInteractionFuel.targetBudgetFor_le_executionBudgetFor
+        (program sourceProgram) (program sourceProgram) parentFuel)
+
 theorem stmt_head_le_stmtList
     (head : AstStmt) (tail : List AstStmt) :
     stmt head ≤ stmtList (head :: tail) := by
