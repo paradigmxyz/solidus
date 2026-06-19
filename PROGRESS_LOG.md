@@ -63,6 +63,14 @@
   generated head expression; its honest public resource premise is
   `pre.length < targetFuel`.
 
+- 2026-06-18 18:46 PDT - proof/yul-functions-private-head-binding - Split the
+  recursive head contract into `HeadValueForward` and `BoundHeadForward`, then
+  checked the pass-owned bridge that executes the generated `let`, proves its
+  name private from freshness extension, inserts it into the target domain,
+  composes store extension, and exposes the result as a stable variable. The
+  deferred spill branch now closes directly; effectful primitive heads remain
+  with the expression/primitive owner.
+
 - 2026-06-15 - compaction-resume - Resumed with the archive branch and
   narrowed observer-replay implementation intact. Final work is limited to
   consistency review, recording completed verification, and committing the

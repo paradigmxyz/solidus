@@ -479,6 +479,9 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.deferred
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.deferred_arg
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.direct
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.deferredHeadValue
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.bindHeadValue
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.boundDeferred
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.bound
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.ofUncheckedLowering
 #print axioms EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_permitted

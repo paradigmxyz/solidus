@@ -494,6 +494,221 @@ def BoundHeadForward
           program ctx targetFuel
           { stmts := pre ++ [.let_ tmp lower] } target)
 
+/-- Adjacent expression-owner interface before the bounded-argument owner
+stores the delayed value in its compiler-private temporary. -/
+def HeadValueForward
+    (fuel targetFuel : Nat)
+    (expr : AstExpr) (pre : List Functions.Stmt)
+    (lower : Locals.Expr 1)
+    (before after : Fresh.State)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (program : Functions.Program) (layout : List Functions.Name) : Prop :=
+  Expr.lower1Unchecked? before expr = some (pre, lower, after) →
+  ∀ {source : Yul.InteractionSemantics.State}
+      {target : Functions.InteractionSemantics.State}
+      {ctx : Functions.Source.Ctx},
+    FunctionsInteractionRelation.ScopedStateRel layout source target →
+    FunctionsInteractionRelation.TargetDomainWithin
+        before.used target.vars →
+      Simulation.Interaction.ForwardRel Truncated
+        (DoneRel layout after [lower] target)
+        (Yul.InteractionSemantics.evalArgs
+          fuel [expr] codeOverride source)
+        (Functions.InteractionSemantics.Block.openRun
+          program ctx targetFuel { stmts := pre } target)
+
+/-- Deferred literals and variables satisfy the expression-owner interface
+without executing a generated prelude. -/
+theorem deferredHeadValue
+    {fuel targetFuel : Nat}
+    {expr : AstExpr} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1} {before after : Fresh.State}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {layout : List Functions.Name}
+    (hTargetFuel : 0 < targetFuel)
+    (hSafe : Expr.deferredBoundArgSafe? expr = true) :
+    HeadValueForward fuel targetFuel expr pre lower before after
+      codeOverride program layout := by
+  intro hLower source target ctx hScoped hDomain
+  cases targetFuel with
+  | zero => omega
+  | succ remaining =>
+      simpa [Nat.succ_eq_add_one] using
+        (deferred_arg
+          (fuel := fuel) (targetFuel := remaining)
+          (codeOverride := codeOverride) (program := program) (ctx := ctx)
+          hSafe hLower hScoped hDomain)
+
+/-- Store an expression owner's stable delayed value in the fresh temporary
+owned by bounded-argument lowering. -/
+theorem bindHeadValue
+    {fuel targetFuel : Nat}
+    {expr : AstExpr} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    {before after final : Fresh.State} {tmp : Functions.Name}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {layout : List Functions.Name}
+    (hLayout : ∀ name, name ∈ layout → name ∈ after.used)
+    (hTargetFuel : pre.length + 1 < targetFuel)
+    (hValue : HeadValueForward fuel targetFuel expr pre lower
+      before after codeOverride program layout) :
+    BoundHeadForward fuel targetFuel expr pre lower before after final tmp
+      codeOverride program layout := by
+  intro hLower hFresh source target ctx hScoped hDomain
+  rw [Functions.InteractionSemantics.Block.openRun_append]
+  have hValueRel := hValue hLower (ctx := ctx) hScoped hDomain
+  have hBound :
+      Simulation.Interaction.ForwardRel Truncated
+        (DoneRel layout final [.var tmp] target)
+        (Simulation.Interaction.bind
+          (Yul.InteractionSemantics.evalArgs
+            fuel [expr] codeOverride source)
+          pure)
+        (Simulation.Interaction.bind
+          (Functions.InteractionSemantics.Block.openRun
+            program ctx targetFuel { stmts := pre } target)
+          (fun result =>
+            match result.1.mode with
+            | .regular =>
+                Functions.InteractionSemantics.Block.openRun
+                  program result.2 (targetFuel - pre.length)
+                  { stmts := [.let_ tmp lower] } result.1.state
+            | .brk | .cont | .leave | .halt _ =>
+                pure result)) := by
+    apply Simulation.Interaction.ForwardRel.bind_custom hValueRel
+    intro sourceDone targetDone hDone
+    cases hDone with
+    | error hError =>
+        exact Simulation.Interaction.ForwardRel.done (.error hError)
+    | terminal hTerminal =>
+        cases hTerminal with
+        | stop hState =>
+            exact Simulation.Interaction.ForwardRel.done
+              (.terminal (.stop hState))
+        | return_ hState =>
+            exact Simulation.Interaction.ForwardRel.done
+              (.terminal (.return_ hState))
+        | selfdestruct hState =>
+            exact Simulation.Interaction.ForwardRel.done
+              (.terminal (.selfdestruct hState))
+        | revert hState =>
+            exact Simulation.Interaction.ForwardRel.done
+              (.terminal (.revert hState))
+    | @regular sourceAfter values targetAfter ctxAfter
+        hStable hScopedAfter hDomainAfter hExtendsAfter =>
+        have hLength : values.length = 1 := by
+          simpa using hStable.length
+        obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLength
+        cases hStable with
+        | cons hStableValue _hStableTail =>
+                obtain ⟨hFinalUsed, hTmpFresh⟩ :=
+                  Fresh.fresh?_components hFresh
+                have hTmpLayout : tmp ∉ layout := by
+                  intro hMem
+                  exact hTmpFresh (hLayout tmp hMem)
+                have hTmpNone : targetAfter.vars tmp = none :=
+                  hDomainAfter.lookup_none hTmpFresh
+                let targetFinal := targetAfter.insert tmp value
+                let ctxFinal := { ctxAfter with scope := tmp :: ctxAfter.scope }
+                have hResidual :
+                    ∃ remaining, targetFuel - pre.length = remaining + 2 := by
+                  refine ⟨targetFuel - pre.length - 2, ?_⟩
+                  omega
+                obtain ⟨remaining, hResidual⟩ := hResidual
+                have hEval := hStableValue targetAfter
+                  (FunctionsInteractionRelation.TargetExtends.refl
+                    targetAfter.vars)
+                have hEval' :
+                    Functions.InteractionSemantics.Expr.openEval
+                        lower targetAfter =
+                      .done (.ok (targetAfter, [value])) := by
+                  simpa [Functions.InteractionSemantics.Expr.openEval]
+                    using hEval
+                have hTargetLet :
+                    Functions.InteractionSemantics.Block.openRun
+                        program ctxAfter (targetFuel - pre.length)
+                        { stmts := [.let_ tmp lower] } targetAfter =
+                      pure
+                        (Functions.Source.Effectful.Outcome.regular
+                          targetFinal, ctxFinal) := by
+                  rw [hResidual,
+                    show remaining + 2 = (remaining + 1) + 1 by omega,
+                    Functions.InteractionSemantics.Block.openRun_cons]
+                  change
+                    Simulation.Interaction.bind
+                        (Functions.InteractionSemantics.Stmt.openRun
+                          program ctxAfter (remaining + 1)
+                          (.let_ tmp lower) targetAfter)
+                        _ = _
+                  rw [Functions.InteractionSemantics.Stmt.openRun_let,
+                    hEval', Simulation.Interaction.bind_done_ok]
+                  simp only [Simulation.Interaction.monad_pure_bind]
+                  change
+                    Functions.InteractionSemantics.Block.openRun
+                        program ctxFinal (remaining + 1)
+                        { stmts := [] } targetFinal =
+                      pure
+                        (Functions.Source.Effectful.Outcome.regular
+                          targetFinal, ctxFinal)
+                  rw [Functions.InteractionSemantics.Block.openRun_nil]
+                change
+                  Simulation.Interaction.ForwardRel Truncated
+                    (DoneRel layout final [.var tmp] target)
+                    (pure (sourceAfter, [value]))
+                    (Functions.InteractionSemantics.Block.openRun
+                      program ctxAfter (targetFuel - pre.length)
+                      { stmts := [.let_ tmp lower] } targetAfter)
+                rw [hTargetLet]
+                have hScopedFinal :=
+                  hScopedAfter.insert_private hTmpLayout value
+                have hDomainFinal :
+                    FunctionsInteractionRelation.TargetDomainWithin
+                      final.used targetFinal.vars := by
+                  rw [hFinalUsed]
+                  exact hDomainAfter.insert hTmpFresh
+                have hInsertExtends :=
+                  FunctionsInteractionRelation.TargetExtends.insert_fresh
+                    (value := value) hTmpNone
+                have hExtendsFinal :=
+                  FunctionsInteractionRelation.TargetExtends.trans
+                    hExtendsAfter hInsertExtends
+                have hLookup : targetFinal.vars tmp = some value := by
+                  simp [targetFinal, Locals.Source.State.insert,
+                    Locals.Source.Store.insert]
+                exact Simulation.Interaction.ForwardRel.done
+                  (.regular
+                    (.cons
+                      (FunctionsInteractionExpression.StableValue.var hLookup)
+                      (.nil targetFinal))
+                    hScopedFinal hDomainFinal hExtendsFinal)
+  have hSourcePure :
+      Simulation.Interaction.bind
+          (Yul.InteractionSemantics.evalArgs
+            fuel [expr] codeOverride source)
+          (fun result => pure result) =
+        Yul.InteractionSemantics.evalArgs
+          fuel [expr] codeOverride source := by
+    exact Simulation.Interaction.bind_pure _
+  rw [hSourcePure] at hBound
+  exact hBound
+
+/-- A deferred expression can still enter the compiler's spilling branch when
+the delayed argument window is full. -/
+theorem boundDeferred
+    {fuel targetFuel : Nat}
+    {expr : AstExpr} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    {before after final : Fresh.State} {tmp : Functions.Name}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {layout : List Functions.Name}
+    (hSafe : Expr.deferredBoundArgSafe? expr = true)
+    (hLayout : ∀ name, name ∈ layout → name ∈ after.used)
+    (hTargetFuel : pre.length + 1 < targetFuel) :
+    BoundHeadForward fuel targetFuel expr pre lower before after final tmp
+      codeOverride program layout :=
+  bindHeadValue hLayout hTargetFuel
+    (deferredHeadValue (by omega) hSafe)
+
 /-- Compose a recursively prepared tail with one generated, fresh-bound head.
 This is the semantic counterpart of `UncheckedBoundLowering.bound`; recursive
 expression reasoning remains behind `BoundHeadForward`. -/
@@ -635,6 +850,8 @@ theorem ofUncheckedLowering
         Expr.lower1Unchecked? stateRest expr =
             some (preHead, lowerHead, stateHead) →
           Fresh.fresh? stateHead = some (tmp, stateFresh) →
+            preHead.length + 1 < targetFuel - preRest.length →
+            (∀ name, name ∈ layout → name ∈ stateHead.used) →
             BoundHeadForward
               (fuel - 2 * rest.reverse.length)
               (targetFuel - preRest.length)
@@ -644,6 +861,7 @@ theorem ofUncheckedLowering
       layout source target)
     (hDomain : FunctionsInteractionRelation.TargetDomainWithin
       initial.used target.vars)
+    (hLayout : ∀ name, name ∈ layout → name ∈ initial.used)
     (hTargetFuel : pre.length < targetFuel) :
     Simulation.Interaction.ForwardRel Truncated
       (DoneRel layout final lowerArgs.reverse target)
@@ -675,8 +893,22 @@ theorem ofUncheckedLowering
           at hTargetFuel
         omega
       have hRestForward := ih hRestFuel
+      have hHeadFuel :
+          preHead.length + 1 < targetFuel - preRest.length := by
+        simp only [List.length_append, List.length_cons, List.length_nil]
+          at hTargetFuel
+        omega
+      have hRestExtends : Fresh.Extends initial stateRest :=
+        hRest.stateExtends (fun hExpr =>
+          Expr.lower1Unchecked?_stateExtends hExpr)
+      have hHeadExtends : Fresh.Extends stateRest stateHead :=
+        Expr.lower1Unchecked?_stateExtends hHead
+      have hHeadLayout :
+          ∀ name, name ∈ layout → name ∈ stateHead.used := by
+        intro name hMem
+        exact hHeadExtends name (hRestExtends name (hLayout name hMem))
       exact bound (initial := initial) hHead hFresh
-        (hBound hHead hFresh) hRestForward
+        (hBound hHead hFresh hHeadFuel hHeadLayout) hRestForward
 
 end FunctionsInteractionPreparedArgs
 end Yul
