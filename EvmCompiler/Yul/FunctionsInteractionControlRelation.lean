@@ -414,6 +414,55 @@ def forPostScopes (outer : SourceScopes) : SourceScopes :=
     continueScope? := none
     leaveScope? := outer.leaveScope? }
 
+/-- Construct the canonical source control snapshot corresponding to a
+Functions function body: break and continue are disabled, while leave returns
+to the exact initialized function frame. -/
+theorem functionBody
+    {used layout : List Functions.Name}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {fn : Functions.FunDef}
+    (hLayout : layout = fn.returns ++ fn.params)
+    (hState : ScopedStateRel layout source target)
+    (hUsed : ∀ name, name ∈ layout → name ∈ used) :
+    ∃ sourceScope,
+      sourceScope.store = source.store ∧
+        sourceScope.targetUsed = used ∧
+        sourceScope.layout = layout ∧
+        ControlContextRel
+          { breakScope? := none
+            continueScope? := none
+            leaveScope? := some sourceScope }
+          layout false false true
+          (Functions.Source.Effectful.FunDef.bodyCtx fn) := by
+  rcases hState.state with
+    ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
+  let sourceScope : SourceScope :=
+    { layout := layout
+      store := sourceVars
+      targetUsed := used
+      domain := hState.domain sourceShared sourceVars hSource
+      defined := hState.defined sourceShared sourceVars hSource }
+  refine ⟨sourceScope, ?_, rfl, rfl, ?_⟩
+  · simp [sourceScope, hSource, EvmYul.Yul.State.store]
+  subst layout
+  refine
+    { scope := ?_
+      breakScope := ?_
+      continueScope := ?_
+      leaveScope := ?_ }
+  · simp [LayoutWithinScope, Functions.Source.Effectful.FunDef.bodyCtx,
+      Functions.Source.Ctx.initial, Functions.Source.Ctx.withLeaveScope]
+  · simp [ScopeOptionRel, Functions.Source.Effectful.FunDef.bodyCtx,
+      Functions.Source.Ctx.initial, Functions.Source.Ctx.withLeaveScope]
+  · simp [ScopeOptionRel, Functions.Source.Effectful.FunDef.bodyCtx,
+      Functions.Source.Ctx.initial, Functions.Source.Ctx.withLeaveScope]
+  · simp [ScopeOptionRel, Functions.Source.Effectful.FunDef.bodyCtx,
+      Functions.Source.Ctx.initial, Functions.Source.Ctx.withLeaveScope,
+      sourceScope]
+    intro name hName
+    exact hUsed name (by simpa using hName)
+
 theorem forBody
     {sourceScopes : SourceScopes}
     {used layout : List Functions.Name}

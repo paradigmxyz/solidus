@@ -137,7 +137,7 @@ private theorem layoutWithinStmtOutVars
   intro name hName
   cases stmt <;> simp [SolcValidation.StmtOutVars, hName]
 
-private theorem layoutWithinStmtsOutVars
+theorem layoutWithinStmtsOutVars
     (layout : List Functions.Name) (stmts : List AstStmt) :
     ∀ name, name ∈ layout →
       name ∈ SolcValidation.StmtsOutVars layout stmts := by

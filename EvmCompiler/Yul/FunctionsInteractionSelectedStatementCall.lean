@@ -106,6 +106,13 @@ theorem selectedTargets
           (fn.returns ++ fn.params) false false true body = true := by
     rw [hFnReturns, hFnParams]
     exact SolcValidation.programOkWith_function_bodyOk hProgramOk hLookup
+  have hBodyNames : ∀ candidate,
+      candidate ∈ Stmt.List.names body → candidate ∈ before.used := by
+    intro candidate hCandidate
+    apply hPrefix candidate
+    change candidate ∈ Contract.names sourceProgram.contract
+    exact (Contract.function_names_mem_names_of_lookup hLookup).2
+      candidate (by simp [FunctionDefinition.names, hCandidate])
   have hPrepared :=
     FunctionsInteractionPreparedCall.ofUncheckedCallArgsLowering
       (fuel := argsFuel) (ctx := ctx) hArgsLowering hArgsOk hBound
@@ -161,7 +168,7 @@ theorem selectedTargets
         simpa [identNames_eq_self] using hResultCount.symm
       have hEntry := ScopedStateRel.initcall hScoped.state
         hFnSignature hParamStore
-      have hBodyRel := hBodyForward hLowerBody hBodyOk hReserved
+      have hBodyRel := hBodyForward hLowerBody hBodyOk hReserved hBodyNames
         (by
           unfold FunctionsInteractionStaticCost.bodyBudget
           exact

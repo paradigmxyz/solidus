@@ -143,6 +143,7 @@ import EvmCompiler.Yul.FunctionsInteractionRecursiveExpression
 import EvmCompiler.Yul.FunctionsInteractionPreparedStatement
 import EvmCompiler.Yul.FunctionsInteractionSelectedStatementCall
 import EvmCompiler.Yul.FunctionsInteractionRecursiveStatement
+import EvmCompiler.Yul.FunctionsInteractionRecursiveBody
 import EvmCompiler.Yul.FunctionsInteractionTerminal
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.CompilerCallDecomposition
@@ -1562,6 +1563,10 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.RecursiveListForward.ofStmt
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.forLoop
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.recursiveStmtOfEarlier
+#print axioms EvmCompiler.Yul.FunctionsInteractionRelation.ScopedStateRel.restrictSource
+#print axioms EvmCompiler.Yul.FunctionsInteractionControlRelation.ControlContextRel.functionBody
+#print axioms EvmCompiler.Yul.FunctionsInteractionCall.functionBodyOfList
+#print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveBody.ofListAt
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_let_none_control
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_brk_control
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_cont_control

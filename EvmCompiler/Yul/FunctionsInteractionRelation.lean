@@ -1554,6 +1554,67 @@ theorem restrictTargetScoped
     ScopedStateRel layout source (target.restrictTo scope) :=
   ⟨hRel.restrictTarget hSubset, hRel.domain, hRel.defined⟩
 
+/-- Source lexical cleanup may discard source-declared locals while retaining
+compiler-private target locals. This is the relation needed at raw function
+body exit, before the call owner restores the caller frame. -/
+theorem restrictSource
+    {current retained : List Functions.Name}
+    {sourceScope : EvmYul.Yul.VarStore}
+    {source : SourceState} {target : TargetState}
+    (hRel : ScopedStateRel current source target)
+    (hScopeDomain : VarsDomainWithin retained sourceScope)
+    (hScopeDefined : VarsDefinedOn retained sourceScope)
+    (hRetained : ∀ name, name ∈ retained → name ∈ current) :
+    ScopedStateRel retained (source.restrictStoreTo sourceScope) target := by
+  rcases hRel.state with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  let restrictedSource :=
+    EvmYul.Yul.State.restrictVarStore sourceVars sourceScope
+  refine
+    { state := ?_
+      domain := ?_
+      defined := ?_ }
+  · refine ⟨sourceShared, restrictedSource, rfl, hShared, ?_⟩
+    intro name value hLookup
+    cases hScopeLookup : sourceScope.lookup name with
+    | none =>
+        have hNone := VarStoreRestriction.lookup_restrict_of_none
+          sourceVars sourceScope name hScopeLookup
+        change restrictedSource.lookup name = some value at hLookup
+        simp [restrictedSource, hNone] at hLookup
+    | some scopeValue =>
+        have hSourceLookup := VarStoreRestriction.lookup_restrict_of_some
+          sourceVars sourceScope name hScopeLookup
+        change restrictedSource.lookup name = some value at hLookup
+        change
+          (EvmYul.Yul.State.restrictVarStore
+            sourceVars sourceScope).lookup name = some value at hLookup
+        rw [hSourceLookup] at hLookup
+        exact hVars name value hLookup
+  · intro finalShared finalVars hFinal name value hLookup
+    cases hFinal
+    cases hScopeLookup : sourceScope.lookup name with
+    | none =>
+        have hNone := VarStoreRestriction.lookup_restrict_of_none
+          sourceVars sourceScope name hScopeLookup
+        simp [restrictedSource, hNone] at hLookup
+    | some scopeValue =>
+        exact hScopeDomain name scopeValue hScopeLookup
+  · intro finalShared finalVars hFinal name hName
+    cases hFinal
+    obtain ⟨scopeValue, hScopeLookup⟩ := hScopeDefined name hName
+    obtain ⟨sourceValue, hSourceLookup⟩ :=
+      hRel.defined sourceShared sourceVars rfl name (hRetained name hName)
+    refine ⟨sourceValue, ?_⟩
+    change restrictedSource.lookup name = some sourceValue
+    change
+      (EvmYul.Yul.State.restrictVarStore
+        sourceVars sourceScope).lookup name = some sourceValue
+    rw [VarStoreRestriction.lookup_restrict_of_some
+      sourceVars sourceScope name hScopeLookup]
+    exact hSourceLookup
+
 /-- Restrict both sides to corresponding source and target control scopes.
 The source scope store contributes only its domain; values are retained from
 the current source state, exactly as Yul lexical restriction specifies. -/

@@ -6,6 +6,7 @@ namespace FunctionsInteractionCall
 
 open FunctionsInteractionRelation
 open FunctionsInteractionPrimitive
+open FunctionsInteractionControlRelation
 
 /-- Function-body completion excludes uncaught break/continue. Recursive
 statement preservation supplies this relation for validated function bodies. -/
@@ -25,6 +26,105 @@ inductive FunctionBodyDoneRel (layout : List Functions.Name) :
   | terminal {source target ctx} :
       TerminalFailureRel source target →
         FunctionBodyDoneRel layout (.error source) (.ok (target, ctx))
+
+/-- Package a recursively preserved statement list as one canonical function
+body. Source lexical cleanup retains the initialized function frame; the raw
+Functions body may retain compiler-private locals until caller restoration. -/
+theorem functionBodyOfList
+    {layout bodyLayout used : List Functions.Name}
+    {sourceFuel targetFuel : Nat}
+    {body : List AstStmt} {lowerBody : Functions.Block}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {fn : Functions.FunDef}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {sourceScope : SourceScope}
+    (hLayout : layout = fn.returns ++ fn.params)
+    (hEntry : ScopedStateRel layout source target)
+    (hScopeStore : sourceScope.store = source.store)
+    (hScopeLayout : sourceScope.layout = layout)
+    (hBodyLayout : ∀ name, name ∈ layout → name ∈ bodyLayout)
+    (hBody :
+      Simulation.Interaction.ForwardRel Truncated
+        (ControlDoneRel used bodyLayout
+          { breakScope? := none
+            continueScope? := none
+            leaveScope? := some sourceScope }
+          false false true)
+        (Yul.InteractionSemantics.execSeq
+          sourceFuel body codeOverride source)
+        (Functions.InteractionSemantics.Block.openRun
+          program (Functions.Source.Effectful.FunDef.bodyCtx fn)
+          targetFuel lowerBody target)) :
+    Simulation.Interaction.ForwardRel Truncated
+      (FunctionBodyDoneRel layout)
+      (Yul.InteractionSemantics.exec
+        (sourceFuel + 1) (.Block body) codeOverride source)
+      (Functions.InteractionSemantics.Block.openRun
+        program (Functions.Source.Effectful.FunDef.bodyCtx fn)
+        targetFuel lowerBody target) := by
+  rcases hEntry.state with
+    ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
+  subst source
+  rw [Yul.InteractionSemantics.Exec.block_succ]
+  have hBound :
+      Simulation.Interaction.ForwardRel Truncated
+        (FunctionBodyDoneRel layout)
+        (Simulation.Interaction.bind
+          (Yul.InteractionSemantics.execSeq sourceFuel body codeOverride
+            (.Ok sourceShared sourceVars))
+          (fun sourceAfter =>
+            pure (sourceAfter.restrictStoreTo sourceVars)))
+        (Simulation.Interaction.bind
+          (Functions.InteractionSemantics.Block.openRun program
+            (Functions.Source.Effectful.FunDef.bodyCtx fn)
+            targetFuel lowerBody target)
+          Simulation.Interaction.pure) := by
+    apply Simulation.Interaction.ForwardRel.bind_custom hBody
+    intro sourceDone targetDone hDone
+    cases hDone with
+    | error hError =>
+        exact Simulation.Interaction.ForwardRel.done (.error hError)
+    | @regular sourceAfter targetAfter ctxAfter
+        hState _hDomain _hControl _hTargetScope =>
+        have hFinal := hState.restrictSource
+          (hEntry.domain sourceShared sourceVars rfl)
+          (hEntry.defined sourceShared sourceVars rfl)
+          hBodyLayout
+        exact Simulation.Interaction.ForwardRel.done
+          (.returned (ScopedOutcomeRel.regular hFinal) (Or.inl rfl))
+    | @brk sourceAfter targetOutcome ctxAfter scope hScope _hMode _hAbrupt =>
+        simp at hScope
+    | @cont sourceAfter targetOutcome ctxAfter scope hScope _hMode _hAbrupt =>
+        simp at hScope
+    | @leave sourceAfter targetOutcome ctxAfter scope hScope hMode hAbrupt =>
+        have hScopeEq : scope = sourceScope := by
+          simpa using Option.some.inj hScope.symm
+        subst scope
+        have hOuterDefined : ∀ name, name ∈ sourceScope.layout →
+            ∃ value, sourceVars.lookup name = some value := by
+          intro name hName
+          exact hEntry.defined sourceShared sourceVars rfl name
+            (by simpa [hScopeLayout] using hName)
+        have hAbrupt' := hAbrupt.restrict_outer (by simp [hMode])
+          hOuterDefined
+        have hScoped := hAbrupt'.state
+        have hScopeStore' : sourceScope.store = sourceVars := by
+          simpa [EvmYul.Yul.State.store] using hScopeStore
+        rw [hScopeLayout, hScopeStore',
+          Yul.InteractionSemantics.State.restrictStoreTo_idem] at hScoped
+        have hOutcome : ScopedOutcomeRel layout
+            (sourceAfter.restrictStoreTo sourceVars) targetOutcome := by
+          exact
+            { outcome := ⟨hAbrupt'.mode, hScoped.state⟩
+              domain := hScoped.domain
+              defined := hScoped.defined }
+        exact Simulation.Interaction.ForwardRel.done
+          (.returned (by simpa using hOutcome) (Or.inr hMode))
+    | terminal hTerminal =>
+        exact Simulation.Interaction.ForwardRel.done (.terminal hTerminal)
+  rw [Simulation.Interaction.bind_pure] at hBound
+  simpa [EvmYul.Yul.State.store] using hBound
 
 /-- Result relation after canonical `runBody`, before the call statement writes
 returned values into its target locals. -/

@@ -30,6 +30,7 @@ def BodyForwardAt
           sourceProgram.contract).map Prod.fst)
         (fn.returns ++ fn.params) false false true body = true →
     (∀ name, name ∈ fn.returns ++ fn.params → name ∈ before.used) →
+    (∀ name, name ∈ Stmt.List.names body → name ∈ before.used) →
     FunctionsInteractionStaticCost.bodyBudget
         sourceProgram body sourceFuel ≤ targetFuel →
     ScopedStateRel (fn.returns ++ fn.params) source target →
@@ -131,6 +132,13 @@ theorem ofUncheckedFunctionCallLowering
         rw [hFnReturns, hFnParams]
         exact SolcValidation.programOkWith_function_bodyOk
           hProgramOk hLookup
+      have hBodyNames : ∀ candidate,
+          candidate ∈ Stmt.List.names body → candidate ∈ before.used := by
+        intro candidate hCandidate
+        apply hPrefix candidate
+        change candidate ∈ Contract.names sourceProgram.contract
+        exact (Contract.function_names_mem_names_of_lookup hLookup).2
+          candidate (by simp [FunctionDefinition.names, hCandidate])
       have hArgsExtends : Fresh.Extends initial argsState :=
         hArgs.stateExtends
       have hLayoutArgs :
@@ -247,7 +255,7 @@ theorem ofUncheckedFunctionCallLowering
             simp [hFnReturns, identNames_eq_self]
           have hEntry := ScopedStateRel.initcall hCallerRel.state
             hFnSignature hParamStore
-          have hBodyRel := hBodyForward hLowerBody hBodyOk hReserved
+          have hBodyRel := hBodyForward hLowerBody hBodyOk hReserved hBodyNames
             (by
               unfold FunctionsInteractionStaticCost.bodyBudget
               exact

@@ -196,7 +196,7 @@ boundaries remain active work.
       exact `StaticModeViolation` agreement. Shared Assembly, Structured, and
       TypedCfg semantics reject static SELFDESTRUCT, and the Yul theorem has no
       permission premise.
-    - [ ] Prove compiler-generated terminal argument preludes.
+    - [x] Prove compiler-generated terminal argument preludes.
       - [x] Compiler-selected stable literal/variable argument window, including
         exact source/target argument reversal and low-fuel truncation.
       - [x] Generated temporary bindings and primitive-expression preludes.
@@ -262,24 +262,27 @@ boundaries remain active work.
               - [ ] Rebuild the historical five-way fuel fixed point over
                 canonical body, value, statement, list, and compound
                 interfaces.
-              - [ ] Instantiate if, switch, and for from ordinary
+              - [x] Instantiate if, switch, and for from ordinary
                 compiler decomposition and the canonical control relation.
                 - [x] Ordinary compiler-selected `if`, with distinct
                   condition/final freshness domains and a strictly smaller
                   lexical-body list capability.
                 - [x] Switch selection and selected body.
-                - [ ] For-loop initializer/body/post composition.
-              - [ ] Close the dispatcher and selected callee bodies.
+                - [x] For-loop initializer/body/post composition.
+              - [x] Close the exhaustive statement dispatcher.
+              - [ ] Close selected callee bodies.
+                - [x] Package recursive list preservation as the exact
+                  regular/leave/terminal function-body relation.
+                - [ ] Prove the source-syntax compiler expansion bound for the
+                  recursive target cost and discharge the private body budget.
               - The historical `ScopedOpenResult`, observer transcript state,
                 `Nat.find`-based `requiredFuel`, replay relation, and public
                 recursive-call premise are reference material only and will
                 not be ported.
-    - [ ] Complete recursive statement/list proof over compiler decomposition;
-      break, continue, leave, and multi-name uninitialized declaration compiler
-      cases are checked. Direct-safe and arbitrary prepared one-name initialized
-      declarations and assignments are checked. Compiler-selected multi-result
-      declaration and assignment calls are checked; expression statements,
-      branches, loops, and terminal composition remain.
+    - [ ] Complete the recursive statement/list/body fixed point over ordinary
+      compiler decomposition. Every statement constructor and list edge is
+      checked; only the source-owned target-expansion bound and resulting body
+      attachment remain.
     - [x] Compose independent CALL/CREATE and GAS/MSIZE providers with a
       closed-ordinary-primitive capability; no opcode dispatch occurs inside
       expression recursion.
