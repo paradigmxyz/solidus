@@ -346,7 +346,7 @@ end PathScopedDoneRel
 namespace ControlDoneRel
 
 theorem nil
-    {layout : List Functions.Name} {sourceFuel targetFuel : Nat}
+    {used layout : List Functions.Name} {sourceFuel targetFuel : Nat}
     {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
     {codeOverride : Option EvmYul.Yul.Ast.YulContract}
@@ -354,10 +354,11 @@ theorem nil
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
     (hRel : ScopedStateRel layout source target)
+    (hDomain : TargetDomainWithin used target.vars)
     (hControl : ControlContextRel sourceScopes layout
       canBreak canContinue canLeave ctx) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel layout sourceScopes
+      (ControlDoneRel used layout sourceScopes
         canBreak canContinue canLeave)
       (Yul.InteractionSemantics.execSeq
         (sourceFuel + 1) [] codeOverride source)
@@ -365,10 +366,11 @@ theorem nil
         program ctx (targetFuel + 1) { stmts := [] } target) := by
   rw [Yul.InteractionSemantics.ExecSeq.nil_succ,
     Functions.InteractionSemantics.Block.openRun_nil]
-  exact Simulation.Interaction.ForwardRel.done (.regular hRel hControl)
+  exact Simulation.Interaction.ForwardRel.done
+    (.regular hRel hDomain hControl)
 
 theorem singleton
-    {layout : List Functions.Name} {targetFuel : Nat}
+    {used layout : List Functions.Name} {targetFuel : Nat}
     {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
     {sourceOpen :
@@ -379,20 +381,20 @@ theorem singleton
     {target : Functions.InteractionSemantics.State}
     (hStmt :
       Simulation.Interaction.ForwardRel Truncated
-        (ControlDoneRel layout sourceScopes
+        (ControlDoneRel used layout sourceScopes
           canBreak canContinue canLeave)
         sourceOpen
         (Functions.InteractionSemantics.Stmt.openRun
           program ctx (targetFuel + 1) stmt target)) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel layout sourceScopes
+      (ControlDoneRel used layout sourceScopes
         canBreak canContinue canLeave)
       sourceOpen
       (Functions.InteractionSemantics.Block.openRun
         program ctx (targetFuel + 2) { stmts := [stmt] } target) := by
   have hBound :
       Simulation.Interaction.ForwardRel Truncated
-        (ControlDoneRel layout sourceScopes
+        (ControlDoneRel used layout sourceScopes
           canBreak canContinue canLeave)
         (Simulation.Interaction.bind sourceOpen pure)
         (Simulation.Interaction.bind
@@ -411,11 +413,11 @@ theorem singleton
     cases hDone with
     | error hError =>
         exact Simulation.Interaction.ForwardRel.done (.error hError)
-    | regular hState hControl =>
+    | regular hState hDomain hControl =>
         simp only [Simulation.Interaction.bind_done_ok]
         rw [Functions.InteractionSemantics.Block.openRun_nil]
         exact Simulation.Interaction.ForwardRel.done
-          (.regular hState hControl)
+          (.regular hState hDomain hControl)
     | brk hScope hMode hAbrupt =>
         simpa [hMode] using
           (Simulation.Interaction.ForwardRel.done
@@ -455,7 +457,7 @@ theorem singleton
 Regular completion continues under the dynamically returned target context;
 abrupt and terminal completion skip the unreachable suffix. -/
 theorem cons
-    {headLayout finalLayout : List Functions.Name}
+    {headUsed finalUsed headLayout finalLayout : List Functions.Name}
     {sourceFuel targetFuel : Nat}
     {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
@@ -467,7 +469,7 @@ theorem cons
     {target : Functions.InteractionSemantics.State}
     (hHead :
       Simulation.Interaction.ForwardRel Truncated
-        (ControlDoneRel headLayout sourceScopes
+        (ControlDoneRel headUsed headLayout sourceScopes
           canBreak canContinue canLeave)
         (Yul.InteractionSemantics.exec
           sourceFuel stmt codeOverride source)
@@ -478,10 +480,11 @@ theorem cons
         {targetMid : Functions.InteractionSemantics.State}
         {ctxMid : Functions.Source.Ctx},
         ScopedStateRel headLayout sourceMid targetMid →
+          TargetDomainWithin headUsed targetMid.vars →
           ControlContextRel sourceScopes headLayout
               canBreak canContinue canLeave ctxMid →
           Simulation.Interaction.ForwardRel Truncated
-            (ControlDoneRel finalLayout sourceScopes
+            (ControlDoneRel finalUsed finalLayout sourceScopes
               canBreak canContinue canLeave)
             (Yul.InteractionSemantics.execSeq
               sourceFuel rest codeOverride sourceMid)
@@ -489,7 +492,7 @@ theorem cons
               program ctxMid (targetFuel - lowerHead.length)
                 { stmts := lowerRest } targetMid)) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel finalLayout sourceScopes
+      (ControlDoneRel finalUsed finalLayout sourceScopes
         canBreak canContinue canLeave)
       (Yul.InteractionSemantics.execSeq
         (sourceFuel + 1) (stmt :: rest) codeOverride source)
@@ -503,11 +506,11 @@ theorem cons
   cases hDone with
   | error hError =>
       exact Simulation.Interaction.ForwardRel.done (.error hError)
-  | @regular sourceMid targetMid ctxMid hState hControl =>
+  | @regular sourceMid targetMid ctxMid hState hDomain hControl =>
       rcases hState.state with
         ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
       subst sourceMid
-      simpa using hTail hState hControl
+      simpa using hTail hState hDomain hControl
   | @brk sourceMid targetOutcome ctxMid scope hScope hMode hAbrupt =>
       obtain ⟨jump, hSource⟩ :=
         ModeRel.target_nonregular_source_checkpoint
@@ -1323,7 +1326,7 @@ theorem brk_control
     {fuel targetFuel : Nat}
     {codeOverride : Option EvmYul.Yul.Ast.YulContract}
     {program : Functions.Program} {ctx : Functions.Source.Ctx}
-    {layout : List Functions.Name} {sourceScopes : SourceScopes}
+    {used layout : List Functions.Name} {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
@@ -1332,7 +1335,7 @@ theorem brk_control
       canBreak canContinue canLeave ctx)
     (hRel : ScopedStateRel layout source target) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel layout sourceScopes
+      (ControlDoneRel used layout sourceScopes
         canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec fuel .Break codeOverride source)
       (Functions.InteractionSemantics.Stmt.openRun
@@ -1352,7 +1355,7 @@ theorem brk_control
       rw [Yul.InteractionSemantics.Exec.brk_zero]
       simpa [Yul.InteractionSemantics.Primitive.fail] using
         (Simulation.Interaction.ForwardRel.truncated
-          (doneRel := ControlDoneRel layout sourceScopes
+          (doneRel := ControlDoneRel used layout sourceScopes
             canBreak canContinue canLeave)
           (right := Functions.InteractionSemantics.Stmt.openRun
             program ctx targetFuel .brk target)
@@ -1372,7 +1375,7 @@ theorem cont_control
     {fuel targetFuel : Nat}
     {codeOverride : Option EvmYul.Yul.Ast.YulContract}
     {program : Functions.Program} {ctx : Functions.Source.Ctx}
-    {layout : List Functions.Name} {sourceScopes : SourceScopes}
+    {used layout : List Functions.Name} {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
@@ -1381,7 +1384,7 @@ theorem cont_control
       canBreak canContinue canLeave ctx)
     (hRel : ScopedStateRel layout source target) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel layout sourceScopes
+      (ControlDoneRel used layout sourceScopes
         canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec fuel .Continue codeOverride source)
       (Functions.InteractionSemantics.Stmt.openRun
@@ -1401,7 +1404,7 @@ theorem cont_control
       rw [Yul.InteractionSemantics.Exec.zero]
       simpa [Yul.InteractionSemantics.Primitive.fail] using
         (Simulation.Interaction.ForwardRel.truncated
-          (doneRel := ControlDoneRel layout sourceScopes
+          (doneRel := ControlDoneRel used layout sourceScopes
             canBreak canContinue canLeave)
           (right := Functions.InteractionSemantics.Stmt.openRun
             program ctx targetFuel .cont target)
@@ -1421,7 +1424,7 @@ theorem leave_control
     {fuel targetFuel : Nat}
     {codeOverride : Option EvmYul.Yul.Ast.YulContract}
     {program : Functions.Program} {ctx : Functions.Source.Ctx}
-    {layout : List Functions.Name} {sourceScopes : SourceScopes}
+    {used layout : List Functions.Name} {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
@@ -1430,7 +1433,7 @@ theorem leave_control
       canBreak canContinue canLeave ctx)
     (hRel : ScopedStateRel layout source target) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel layout sourceScopes
+      (ControlDoneRel used layout sourceScopes
         canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec fuel .Leave codeOverride source)
       (Functions.InteractionSemantics.Stmt.openRun
@@ -1450,7 +1453,7 @@ theorem leave_control
       rw [Yul.InteractionSemantics.Exec.zero]
       simpa [Yul.InteractionSemantics.Primitive.fail] using
         (Simulation.Interaction.ForwardRel.truncated
-          (doneRel := ControlDoneRel layout sourceScopes
+          (doneRel := ControlDoneRel used layout sourceScopes
             canBreak canContinue canLeave)
           (right := Functions.InteractionSemantics.Stmt.openRun
             program ctx targetFuel .leave target)
@@ -1766,10 +1769,12 @@ theorem compiled_let_none_control
     (hNoDup : (identNames names).Nodup)
     (hFresh : ∀ name, name ∈ identNames names → name ∉ layout)
     (hRel : ScopedStateRel layout source target)
+    (hDomain : TargetDomainWithin before.used target.vars)
+    (hNames : ∀ name, name ∈ identNames names → name ∈ before.used)
     (hControl : ControlContextRel sourceScopes layout
       canBreak canContinue canLeave ctx) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel (identNames names ++ layout) sourceScopes
+      (ControlDoneRel after.used (identNames names ++ layout) sourceScopes
         canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec
         (fuel + 1) (.Let names none) codeOverride source)
@@ -1787,6 +1792,8 @@ theorem compiled_let_none_control
       { shared := target.shared, vars := finalVars } := by
     simpa [identNames_eq_self] using
       hRel.zeroFill_insertMany hNoDup hFresh hInsert
+  have hFinalDomain : TargetDomainWithin after.used finalVars :=
+    TargetDomainWithin.insertMany_used hDomain hNames hInsert
   let finalCtx : Functions.Source.Ctx :=
     { ctx with scope := (identNames names).reverse ++ ctx.scope }
   have hFinalControl : ControlContextRel sourceScopes
@@ -1815,7 +1822,7 @@ theorem compiled_let_none_control
   rw [hTargetRun']
   simpa [identNames_eq_self] using
     (Simulation.Interaction.ForwardRel.done
-      (ControlDoneRel.regular hFinalRel hFinalControl))
+      (ControlDoneRel.regular hFinalRel hFinalDomain hFinalControl))
 
 theorem compiled_let_one_direct
     {compilerFuel fuel targetFuel : Nat}
@@ -1986,7 +1993,7 @@ theorem compiled_brk_control
       canBreak canContinue canLeave ctx)
     (hRel : ScopedStateRel layout source target) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel layout sourceScopes
+      (ControlDoneRel after.used layout sourceScopes
         canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec fuel .Break codeOverride source)
       (Functions.InteractionSemantics.Block.openRun
@@ -2013,7 +2020,7 @@ theorem compiled_cont_control
       canBreak canContinue canLeave ctx)
     (hRel : ScopedStateRel layout source target) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel layout sourceScopes
+      (ControlDoneRel after.used layout sourceScopes
         canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec fuel .Continue codeOverride source)
       (Functions.InteractionSemantics.Block.openRun
@@ -2040,7 +2047,7 @@ theorem compiled_leave_control
       canBreak canContinue canLeave ctx)
     (hRel : ScopedStateRel layout source target) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel layout sourceScopes
+      (ControlDoneRel after.used layout sourceScopes
         canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec fuel .Leave codeOverride source)
       (Functions.InteractionSemantics.Block.openRun

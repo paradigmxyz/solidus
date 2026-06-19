@@ -297,7 +297,7 @@ theorem finishSingleForward
 writeback under a caller-supplied relation for the updated lexical domain. -/
 theorem finishManyForward
     {results : Nat} {targets : List Functions.Name}
-    {layout finalLayout : List Functions.Name}
+    {used layout finalLayout : List Functions.Name}
     {sourceCaller : Yul.InteractionSemantics.State}
     {targetCaller : Functions.InteractionSemantics.State}
     {ctx : Functions.Source.Ctx}
@@ -310,6 +310,8 @@ theorem finishManyForward
     (hTargetCount : targets.length = results)
     (hContains : ∀ name, name ∈ targets →
       targetCaller.vars.contains name = true)
+    (hDomain : TargetDomainWithin used targetCaller.vars)
+    (hTargetsUsed : ∀ name, name ∈ targets → name ∈ used)
     (hWriteback :
       ∀ {sourceAfter : Yul.InteractionSemantics.State}
         {targetAfter : Functions.InteractionSemantics.State}
@@ -329,7 +331,7 @@ theorem finishManyForward
         sourceCall targetRunBody) :
     Simulation.Interaction.ForwardRel Truncated
       (FunctionsInteractionControlRelation.ControlDoneRel
-        finalLayout sourceScopes canBreak canContinue canLeave)
+        used finalLayout sourceScopes canBreak canContinue canLeave)
       (Simulation.Interaction.bind sourceCall fun result =>
         pure (result.1.multifill targets result.2))
       (Simulation.Interaction.bind targetRunBody
@@ -355,6 +357,8 @@ theorem finishManyForward
               targetCaller.vars = some finalVars :=
         Functions.Source.Store.insertMany_of_assignMany hAssign
       have hFinal := hWriteback hScoped hInsert
+      have hFinalDomain : TargetDomainWithin used finalVars :=
+        TargetDomainWithin.insertMany_used hDomain hTargetsUsed hInsert
       have hFinish :
           Functions.InteractionSemantics.Stmt.finishCall targets ctx
               targetCaller
@@ -374,12 +378,12 @@ theorem finishManyForward
       rw [hFinish]
       exact Simulation.Interaction.ForwardRel.done
         (FunctionsInteractionControlRelation.ControlDoneRel.regular
-          hFinal hControl)
+          hFinal hFinalDomain hControl)
 
 /-- Multi-result call writeback introducing fresh source bindings. -/
 theorem finishManyFresh
     {results : Nat} {targets : List Functions.Name}
-    {layout : List Functions.Name}
+    {used layout : List Functions.Name}
     {sourceCaller : Yul.InteractionSemantics.State}
     {targetCaller : Functions.InteractionSemantics.State}
     {ctx : Functions.Source.Ctx}
@@ -394,6 +398,8 @@ theorem finishManyFresh
     (hFresh : ∀ name, name ∈ targets → name ∉ layout)
     (hContains : ∀ name, name ∈ targets →
       targetCaller.vars.contains name = true)
+    (hDomain : TargetDomainWithin used targetCaller.vars)
+    (hTargetsUsed : ∀ name, name ∈ targets → name ∈ used)
     (hControl : FunctionsInteractionControlRelation.ControlContextRel
       sourceScopes (targets ++ layout)
         canBreak canContinue canLeave ctx)
@@ -403,13 +409,13 @@ theorem finishManyFresh
         sourceCall targetRunBody) :
     Simulation.Interaction.ForwardRel Truncated
       (FunctionsInteractionControlRelation.ControlDoneRel
-        (targets ++ layout) sourceScopes canBreak canContinue canLeave)
+        used (targets ++ layout) sourceScopes canBreak canContinue canLeave)
       (Simulation.Interaction.bind sourceCall fun result =>
         pure (result.1.multifill targets result.2))
       (Simulation.Interaction.bind targetRunBody
         (Functions.InteractionSemantics.Stmt.finishCall
           targets ctx targetCaller)) :=
-  finishManyForward hTargetCount hContains
+  finishManyForward hTargetCount hContains hDomain hTargetsUsed
     (fun hScoped hInsert =>
       hScoped.multifill_insertMany hNodup hFresh hInsert)
     hControl hRunBody
@@ -417,7 +423,7 @@ theorem finishManyFresh
 /-- Multi-result call writeback updating existing source-visible bindings. -/
 theorem finishManyVisible
     {results : Nat} {targets : List Functions.Name}
-    {layout : List Functions.Name}
+    {used layout : List Functions.Name}
     {sourceCaller : Yul.InteractionSemantics.State}
     {targetCaller : Functions.InteractionSemantics.State}
     {ctx : Functions.Source.Ctx}
@@ -432,6 +438,8 @@ theorem finishManyVisible
     (hVisible : ∀ name, name ∈ targets → name ∈ layout)
     (hContains : ∀ name, name ∈ targets →
       targetCaller.vars.contains name = true)
+    (hDomain : TargetDomainWithin used targetCaller.vars)
+    (hTargetsUsed : ∀ name, name ∈ targets → name ∈ used)
     (hControl : FunctionsInteractionControlRelation.ControlContextRel
       sourceScopes layout canBreak canContinue canLeave ctx)
     (hRunBody :
@@ -440,13 +448,13 @@ theorem finishManyVisible
         sourceCall targetRunBody) :
     Simulation.Interaction.ForwardRel Truncated
       (FunctionsInteractionControlRelation.ControlDoneRel
-        layout sourceScopes canBreak canContinue canLeave)
+        used layout sourceScopes canBreak canContinue canLeave)
       (Simulation.Interaction.bind sourceCall fun result =>
         pure (result.1.multifill targets result.2))
       (Simulation.Interaction.bind targetRunBody
         (Functions.InteractionSemantics.Stmt.finishCall
           targets ctx targetCaller)) :=
-  finishManyForward hTargetCount hContains
+  finishManyForward hTargetCount hContains hDomain hTargetsUsed
     (fun hScoped hInsert =>
       hScoped.multifill_insertMany_visible hNodup hVisible hInsert)
     hControl hRunBody

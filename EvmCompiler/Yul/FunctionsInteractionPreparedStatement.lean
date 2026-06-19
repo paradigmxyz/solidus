@@ -23,6 +23,7 @@ theorem letOneOfPrepared
     {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
     (hNameFresh : identName name ∉ layout)
+    (hNameUsed : identName name ∈ fresh.used)
     (hRel : ScopedStateRel layout source target)
     (hControl : ControlContextRel sourceScopes layout
       canBreak canContinue canLeave ctx)
@@ -36,7 +37,7 @@ theorem letOneOfPrepared
         (Functions.InteractionSemantics.Block.openRun
           program ctx targetFuel { stmts := pre } target)) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel (identName name :: layout) sourceScopes
+      (ControlDoneRel fresh.used (identName name :: layout) sourceScopes
         canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec (exprFuel + 1)
         (.Let [name] (some expr)) codeOverride source)
@@ -68,7 +69,7 @@ theorem letOneOfPrepared
           exact Simulation.Interaction.ForwardRel.done
             (ControlDoneRel.terminal (.revert hState))
   | @regular sourceAfter values targetAfter ctxAfter
-      hStable hScoped _hDomain _hExtends hScopeCtx hSameCtx =>
+      hStable hScoped hDomain _hExtends hScopeCtx hSameCtx =>
       have hLength : values.length = 1 := by
         simpa using hStable.length
       obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLength
@@ -115,7 +116,7 @@ theorem letOneOfPrepared
             rw [Functions.InteractionSemantics.Block.openRun_nil]
           change
             Simulation.Interaction.ForwardRel Truncated
-              (ControlDoneRel (identName name :: layout) sourceScopes
+              (ControlDoneRel fresh.used (identName name :: layout) sourceScopes
                 canBreak canContinue canLeave)
               (pure (sourceAfter.multifill [name] [value]))
               (Functions.InteractionSemantics.Block.openRun
@@ -124,6 +125,8 @@ theorem letOneOfPrepared
           rw [hTargetLet]
           have hFinal := hScoped.multifill_single_cons
             (identName name) value
+          have hFinalDomain : TargetDomainWithin fresh.used targetFinal.vars :=
+            hDomain.insert_used hNameUsed value
           have hFinalCtx : ControlContextRel sourceScopes
               (identName name :: layout)
               canBreak canContinue canLeave ctxFinal := by
@@ -139,7 +142,7 @@ theorem letOneOfPrepared
               · exact List.mem_cons_of_mem _
                   (hScopeCtx candidate (hControl.scope candidate hTail))
           exact Simulation.Interaction.ForwardRel.done
-            (ControlDoneRel.regular hFinal hFinalCtx)
+            (ControlDoneRel.regular hFinal hFinalDomain hFinalCtx)
 
 /-- Attach the final source-visible assignment emitted after any recursively
 prepared one-result expression. -/
@@ -155,6 +158,7 @@ theorem assignOneOfPrepared
     {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
     (hName : identName name ∈ layout)
+    (hNameUsed : identName name ∈ fresh.used)
     (hRel : ScopedStateRel layout source target)
     (hControl : ControlContextRel sourceScopes layout
       canBreak canContinue canLeave ctx)
@@ -168,7 +172,7 @@ theorem assignOneOfPrepared
         (Functions.InteractionSemantics.Block.openRun
           program ctx targetFuel { stmts := pre } target)) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel layout sourceScopes
+      (ControlDoneRel fresh.used layout sourceScopes
         canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec (exprFuel + 1)
         (.Assign [name] expr) codeOverride source)
@@ -200,7 +204,7 @@ theorem assignOneOfPrepared
           exact Simulation.Interaction.ForwardRel.done
             (ControlDoneRel.terminal (.revert hState))
   | @regular sourceAfter values targetAfter ctxAfter
-      hStable hScoped _hDomain _hExtends hScopeCtx hSameCtx =>
+      hStable hScoped hDomain _hExtends hScopeCtx hSameCtx =>
       have hLength : values.length = 1 := by
         simpa using hStable.length
       obtain ⟨value, rfl⟩ := List.length_eq_one_iff.mp hLength
@@ -248,7 +252,7 @@ theorem assignOneOfPrepared
             rw [Functions.InteractionSemantics.Block.openRun_nil]
           change
             Simulation.Interaction.ForwardRel Truncated
-              (ControlDoneRel layout sourceScopes
+              (ControlDoneRel fresh.used layout sourceScopes
                 canBreak canContinue canLeave)
               (pure (sourceAfter.multifill [name] [value]))
               (Functions.InteractionSemantics.Block.openRun
@@ -256,6 +260,8 @@ theorem assignOneOfPrepared
                 { stmts := [.assign (identName name) lower] } targetAfter)
           rw [hTargetAssign]
           have hFinal := hScoped.multifill_single_visible hName value
+          have hFinalDomain : TargetDomainWithin fresh.used targetFinal.vars :=
+            hDomain.insert_used hNameUsed value
           have hFinalCtx : ControlContextRel sourceScopes layout
               canBreak canContinue canLeave ctxAfter := by
             apply ControlContextRel.transport hControl
@@ -264,7 +270,7 @@ theorem assignOneOfPrepared
             · intro candidate hMem
               exact hScopeCtx candidate (hControl.scope candidate hMem)
           exact Simulation.Interaction.ForwardRel.done
-            (ControlDoneRel.regular hFinal hFinalCtx)
+            (ControlDoneRel.regular hFinal hFinalDomain hFinalCtx)
 
 end FunctionsInteractionPreparedStatement
 end Yul

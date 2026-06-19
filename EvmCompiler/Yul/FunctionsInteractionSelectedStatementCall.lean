@@ -37,6 +37,7 @@ theorem selectedTargets
     (hTargetsNodup : targets.Nodup)
     (hTargetsReady : ∀ name, name ∈ targets →
       target.vars.contains name = true)
+    (hTargetsUsed : ∀ name, name ∈ targets → name ∈ final.used)
     (hWriteback :
       ∀ {caller : Functions.InteractionSemantics.State}
         {sourceAfter : Yul.InteractionSemantics.State}
@@ -66,7 +67,7 @@ theorem selectedTargets
     (hFinalControl : ControlContextRel sourceScopes finalLayout
       canBreak canContinue canLeave ctx) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel finalLayout sourceScopes
+      (ControlDoneRel final.used finalLayout sourceScopes
         canBreak canContinue canLeave)
       (Simulation.Interaction.bind
         (Yul.InteractionSemantics.evalArgs (sourceFuel + 1)
@@ -128,7 +129,7 @@ theorem selectedTargets
           exact Simulation.Interaction.ForwardRel.done
             (ControlDoneRel.terminal (.revert hState))
   | @regular sourceAfter reversedValues targetAfter ctxAfter
-      hStable hScoped _hDomainAfter hExtendsAfter hScopeCtx hSameCtx =>
+      hStable hScoped hDomainAfter hExtendsAfter hScopeCtx hSameCtx =>
       have hCallStable :
           FunctionsInteractionExpression.StableArgs lowerArgs targetAfter
             reversedValues.reverse := by
@@ -216,7 +217,7 @@ theorem selectedTargets
             (hFinalControl.scope candidate hMem)
       have hFinished := FunctionsInteractionCall.finishManyForward
         (results := targets.length) (ctx := ctxAfter)
-        rfl hContains
+        rfl hContains hDomainAfter hTargetsUsed
         (fun hScopedAfter hInsert => hWriteback hScopedAfter hInsert)
         hControlAfter hCallRun
       have hArgsEval := hCallStable.openEval
@@ -225,7 +226,7 @@ theorem selectedTargets
         Functions.Source.Canonical.ArgList.eval at hArgsEval
       have hStmt :
           Simulation.Interaction.ForwardRel Truncated
-            (ControlDoneRel finalLayout sourceScopes
+            (ControlDoneRel final.used finalLayout sourceScopes
               canBreak canContinue canLeave)
             (Simulation.Interaction.bind
               (Yul.InteractionSemantics.call (sourceFuel + 1)
@@ -296,7 +297,7 @@ theorem visibleTargets
     (hControl : ControlContextRel sourceScopes layout
       canBreak canContinue canLeave ctx) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel layout sourceScopes
+      (ControlDoneRel final.used layout sourceScopes
         canBreak canContinue canLeave)
       (Simulation.Interaction.bind
         (Yul.InteractionSemantics.evalArgs (sourceFuel + 1)
@@ -315,6 +316,9 @@ theorem visibleTargets
             [.call targets functionName lowerArgs] } target) :=
   selectedTargets hDecomposition hProgramOk hExprOk hTargetsNodup
     (fun name hName => hRel.targetContains (hTargetsVisible name hName))
+    (fun name hName =>
+      hArgsLowering.stateExtends
+        name (hLayout name (hTargetsVisible name hName)))
     (fun hScoped hInsert =>
       hScoped.multifill_insertMany_visible
         hTargetsNodup hTargetsVisible hInsert)
@@ -349,6 +353,7 @@ theorem freshTargets
     (hTargetsFresh : ∀ name, name ∈ targets → name ∉ layout)
     (hTargetsReady : ∀ name, name ∈ targets →
       target.vars.contains name = true)
+    (hTargetsUsed : ∀ name, name ∈ targets → name ∈ final.used)
     (hArgsLowering : Expr.UncheckedCallArgsLowering
       initial args preArgs lowerArgs final)
     (hBound : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
@@ -366,7 +371,7 @@ theorem freshTargets
     (hControl : ControlContextRel sourceScopes (targets ++ layout)
       canBreak canContinue canLeave ctx) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel (targets ++ layout) sourceScopes
+      (ControlDoneRel final.used (targets ++ layout) sourceScopes
         canBreak canContinue canLeave)
       (Simulation.Interaction.bind
         (Yul.InteractionSemantics.evalArgs (sourceFuel + 1)
@@ -384,7 +389,7 @@ theorem freshTargets
         { stmts := preArgs ++
             [.call targets functionName lowerArgs] } target) :=
   selectedTargets hDecomposition hProgramOk hExprOk hTargetsNodup
-    hTargetsReady
+    hTargetsReady hTargetsUsed
     (fun hScoped hInsert =>
       hScoped.multifill_insertMany
         hTargetsNodup hTargetsFresh hInsert)
@@ -433,7 +438,7 @@ theorem compiledAssignCall
       FunctionsInteractionStaticCost.programBudget
           sourceProgram (sourceFuel + 1) + lower.length + 1 < targetFuel) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel layout sourceScopes
+      (ControlDoneRel final.used layout sourceScopes
         canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec (sourceFuel + 3)
         (.Assign names (.Call (.inr functionName) args))
@@ -540,7 +545,7 @@ theorem compiledLetCall
       FunctionsInteractionStaticCost.programBudget
           sourceProgram (sourceFuel + 1) + lower.length + 1 < targetFuel) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel (identNames names ++ layout) sourceScopes
+      (ControlDoneRel final.used (identNames names ++ layout) sourceScopes
         canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec (sourceFuel + 3)
         (.Let names (some (.Call (.inr functionName) args)))
@@ -645,7 +650,10 @@ theorem compiledLetCall
     (targets := identNames names) (ctx := ctxInit)
     hDecomposition hProgramOk
     (by simpa [identNames_eq_self] using hOkParts.2)
-    hBindParts.1 hBindParts.2 hReady hArgsLowering
+    hBindParts.1 hBindParts.2 hReady
+    (fun name hName =>
+      hArgsLowering.stateExtends name (hTargetsUsed name hName))
+    hArgsLowering
     hHeads' (hBodies _)
     (by
       rw [hLowerEq] at hTargetFuel
@@ -667,7 +675,7 @@ theorem compiledLetCall
     Simulation.Interaction.bind_done_ok]
   change
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel (identNames names ++ layout) sourceScopes
+      (ControlDoneRel final.used (identNames names ++ layout) sourceScopes
         canBreak canContinue canLeave)
       _
       (Functions.InteractionSemantics.Block.openRun

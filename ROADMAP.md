@@ -237,6 +237,12 @@ boundaries remain active work.
               - [x] Check control-aware multi-result call writeback,
                 multi-name zero declarations, and exact scoped
                 break/continue/leave leaves.
+              - [x] Port compiler-owned target-local domain preservation into
+                the canonical control result, including prepared declarations,
+                assignments, selected multi-result calls, and exact-tail
+                sequencing.
+              - [x] Define canonical statement/list fuel interfaces and check
+                generic compiler-decomposed recursive list composition.
               - [ ] Rebuild the historical five-way fuel fixed point over
                 canonical body, value, statement, list, and compound
                 interfaces.

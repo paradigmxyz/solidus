@@ -155,7 +155,8 @@ end AbruptOutcomeRel
 Regular completion exposes the statically known outgoing lexical layout;
 abrupt completion instead uses its source scope snapshot. -/
 inductive ControlDoneRel
-    (regularLayout : List Functions.Name) (sourceScopes : SourceScopes)
+    (regularUsed regularLayout : List Functions.Name)
+    (sourceScopes : SourceScopes)
     (canBreak canContinue canLeave : Bool) :
     Except Yul.InteractionSemantics.Failure
         Yul.InteractionSemantics.State →
@@ -164,37 +165,38 @@ inductive ControlDoneRel
       Prop where
   | error {source target} :
       FunctionsInteractionPrimitive.ErrorRel source target →
-      ControlDoneRel regularLayout sourceScopes
+      ControlDoneRel regularUsed regularLayout sourceScopes
         canBreak canContinue canLeave
         (.error source) (.error target)
   | regular {source target ctx} :
       ScopedStateRel regularLayout source target →
+      TargetDomainWithin regularUsed target.vars →
       ControlContextRel sourceScopes regularLayout
         canBreak canContinue canLeave ctx →
-      ControlDoneRel regularLayout sourceScopes
+      ControlDoneRel regularUsed regularLayout sourceScopes
         canBreak canContinue canLeave (.ok source)
         (.ok (Functions.Source.Effectful.Outcome.regular target, ctx))
   | brk {source target ctx scope} :
       sourceScopes.breakScope? = some scope →
       target.mode = .brk →
       AbruptOutcomeRel scope source target →
-      ControlDoneRel regularLayout sourceScopes
+      ControlDoneRel regularUsed regularLayout sourceScopes
         canBreak canContinue canLeave (.ok source) (.ok (target, ctx))
   | cont {source target ctx scope} :
       sourceScopes.continueScope? = some scope →
       target.mode = .cont →
       AbruptOutcomeRel scope source target →
-      ControlDoneRel regularLayout sourceScopes
+      ControlDoneRel regularUsed regularLayout sourceScopes
         canBreak canContinue canLeave (.ok source) (.ok (target, ctx))
   | leave {source target ctx scope} :
       sourceScopes.leaveScope? = some scope →
       target.mode = .leave →
       AbruptOutcomeRel scope source target →
-      ControlDoneRel regularLayout sourceScopes
+      ControlDoneRel regularUsed regularLayout sourceScopes
         canBreak canContinue canLeave (.ok source) (.ok (target, ctx))
   | terminal {source target ctx} :
       FunctionsInteractionRelation.TerminalFailureRel source target →
-      ControlDoneRel regularLayout sourceScopes
+      ControlDoneRel regularUsed regularLayout sourceScopes
         canBreak canContinue canLeave
         (.error source) (.ok (target, ctx))
 
