@@ -126,6 +126,7 @@ import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 import EvmCompiler.Yul.FunctionsInteractionExpression
 import EvmCompiler.Yul.FunctionsInteractionStatement
 import EvmCompiler.Yul.FunctionsInteractionPreparedArgs
+import EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive
 import EvmCompiler.Yul.FunctionsInteractionTerminal
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.CompilerCallDecomposition
@@ -1457,6 +1458,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.nil
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.deferred
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.deferred_arg
+#check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.singletonOfValues
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.direct
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.BoundHeadForward
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.HeadValueForward
@@ -1464,7 +1466,12 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.bindHeadValue
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.boundDeferred
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.bound
+#check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.RecursiveBoundHeads
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.ofUncheckedLowering
+#check EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.afterPrepared
+#check EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.boundOfLowering
+#check EvmCompiler.Simulation.Interaction.ForwardRel.strengthen_right
+#check EvmCompiler.Yul.FunctionsInteractionExpression.expr_openEval_cast
 #check EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_permitted
 #check EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_static
 #check EvmCompiler.Structured.Terminal.Allowed

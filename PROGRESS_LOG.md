@@ -71,6 +71,17 @@
   deferred spill branch now closes directly; effectful primitive heads remain
   with the expression/primitive owner.
 
+- 2026-06-18 19:00:40 PDT - proof/yul-prepared-effectful-primitive - Added the
+  primitive-owned `afterPrepared` theorem: recursively prepared operands are
+  evaluated in source order, the existing universally quantified
+  `CompilerSelected` open-world primitive relation executes the exact
+  CALL/CREATE/resource/log effect, target locals are preserved on every
+  response branch, and the one-result value is stored in the compiler's fresh
+  local. `boundOfLowering` derives the result from the real
+  `UncheckedBoundPrimitiveLowering` artifact and a smaller-fuel private
+  `RecursiveBoundHeads` capability; no response oracle or generated evidence
+  appears at a public boundary.
+
 - 2026-06-15 - compaction-resume - Resumed with the archive branch and
   narrowed observer-replay implementation intact. Final work is limited to
   consistency review, recording completed verification, and committing the

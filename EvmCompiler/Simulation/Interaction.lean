@@ -1595,6 +1595,33 @@ inductive ForwardRel
 
 namespace ForwardRel
 
+/-- Strengthen every related target leaf with a universal target invariant.
+Source truncation remains truncation and therefore needs no target relation. -/
+theorem strengthen_right
+    {Error₁ : Type u1} {Result₁ : Type v1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    {truncated : Error₁ → Prop}
+    {doneRel :
+      Except Error₁ Result₁ → Except Error₂ Result₂ → Prop}
+    {property : Except Error₂ Result₂ → Prop}
+    {left : Interaction Error₁ Result₁}
+    {right : Interaction Error₂ Result₂}
+    (hRel : ForwardRel truncated doneRel left right)
+    (hAll : AllDone property right) :
+    ForwardRel truncated
+      (fun leftDone rightDone => doneRel leftDone rightDone ∧ property rightDone)
+      left right := by
+  induction hRel with
+  | truncated hTruncated =>
+      exact .truncated hTruncated
+  | done hDone =>
+      cases hAll with
+      | done hProperty => exact .done ⟨hDone, hProperty⟩
+  | request hResume ih =>
+      cases hAll with
+      | request hProperty =>
+          exact .request fun answer => ih answer (hProperty answer)
+
 theorem ofRel
     {Error₁ : Type u1} {Result₁ : Type v1}
     {Error₂ : Type u2} {Result₂ : Type v2}

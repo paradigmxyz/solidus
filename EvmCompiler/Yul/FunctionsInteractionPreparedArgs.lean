@@ -369,6 +369,117 @@ theorem deferred_arg
                   (.terminal hTerminal)
           simpa using hBound
 
+/-- Wrap an already proved one-result expression computation in the canonical
+singleton argument-list evaluator. This owns the list evaluator's trailing
+fuel unit and is independent of how the expression itself is compiled. -/
+theorem singletonOfValues
+    {headFuel : Nat}
+    {expr : AstExpr} {lower : Locals.Expr 1}
+    {fresh : Fresh.State}
+    {entry : Functions.InteractionSemantics.State}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {layout : List Functions.Name}
+    {source : Yul.InteractionSemantics.State}
+    {targetOpen : Functions.InteractionSemantics.Open
+      (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx)}
+    (hHead :
+      Simulation.Interaction.ForwardRel Truncated
+        (DoneRel layout fresh [lower] entry)
+        (Yul.InteractionSemantics.evalValues
+          headFuel expr codeOverride source)
+        targetOpen) :
+    Simulation.Interaction.ForwardRel Truncated
+      (DoneRel layout fresh [lower] entry)
+      (Yul.InteractionSemantics.evalArgs
+        (headFuel + 1) [expr] codeOverride source)
+      targetOpen := by
+  have hBound :
+      Simulation.Interaction.ForwardRel Truncated
+        (DoneRel layout fresh [lower] entry)
+        (Yul.InteractionSemantics.evalArgs
+          (headFuel + 1) [expr] codeOverride source)
+        (Simulation.Interaction.bind targetOpen pure) := by
+    cases headFuel with
+    | zero =>
+        rw [Yul.InteractionSemantics.EvalArgs.one_cons]
+        apply Simulation.Interaction.ForwardRel.bind_custom hHead
+        intro sourceDone targetDone hDone
+        cases hDone with
+        | error hError =>
+            exact Simulation.Interaction.ForwardRel.done (.error hError)
+        | terminal hTerminal =>
+            exact Simulation.Interaction.ForwardRel.done
+              (.terminal hTerminal)
+        | @regular sourceAfter values targetAfter ctxAfter
+            _hStable _hScoped _hDomain _hExtends =>
+            have hTruncated :
+                Truncated
+                  ({ exception := .OutOfFuel,
+                      state := sourceAfter } :
+                    Yul.InteractionSemantics.Failure) := by
+              trivial
+            simpa [Yul.InteractionSemantics.Primitive.fail] using
+              (Simulation.Interaction.ForwardRel.truncated
+                (doneRel := DoneRel layout fresh [lower] entry)
+                (right := pure
+                  (Functions.Source.Effectful.Outcome.regular
+                    targetAfter, ctxAfter))
+                hTruncated)
+    | succ tailFuel =>
+        rw [show tailFuel + 1 + 1 = tailFuel + 2 by omega,
+          Yul.InteractionSemantics.EvalArgs.succ_succ_cons]
+        apply Simulation.Interaction.ForwardRel.bind_custom hHead
+        intro sourceDone targetDone hDone
+        cases hDone with
+        | error hError =>
+            exact Simulation.Interaction.ForwardRel.done (.error hError)
+        | terminal hTerminal =>
+            exact Simulation.Interaction.ForwardRel.done
+              (.terminal hTerminal)
+        | @regular sourceAfter values targetAfter ctxAfter
+            hStable hScoped hDomain hExtends =>
+            cases tailFuel with
+            | zero =>
+                have hTruncated :
+                    Truncated
+                      ({ exception := .OutOfFuel,
+                          state := sourceAfter } :
+                        Yul.InteractionSemantics.Failure) := by
+                  trivial
+                simpa [Yul.InteractionSemantics.evalArgs,
+                  Yul.Source.Canonical.evalArgs,
+                  Yul.Source.Effectful.evalArgs,
+                  Yul.InteractionSemantics.Primitive.fail,
+                  Yul.Source.Effectful.Control.fail] using
+                  (Simulation.Interaction.ForwardRel.truncated
+                    (doneRel := DoneRel layout fresh [lower] entry)
+                    (right := pure
+                      (Functions.Source.Effectful.Outcome.regular
+                        targetAfter, ctxAfter))
+                    hTruncated)
+            | succ remaining =>
+                have hTail :
+                    Yul.InteractionSemantics.evalArgs
+                        (remaining + 1) [] codeOverride sourceAfter =
+                      pure (sourceAfter, []) := by
+                  simp [Yul.InteractionSemantics.evalArgs,
+                    Yul.Source.Canonical.evalArgs,
+                    Yul.Source.Effectful.evalArgs]
+                have hLength : values.length = 1 := by
+                  simpa using hStable.length
+                obtain ⟨value, rfl⟩ :=
+                  List.length_eq_one_iff.mp hLength
+                simpa [hTail] using
+                  (Simulation.Interaction.ForwardRel.done
+                    (truncated := Truncated)
+                    (DoneRel.regular hStable hScoped hDomain hExtends))
+  have hTargetPure :
+      Simulation.Interaction.bind targetOpen (fun result => pure result) =
+        targetOpen := by
+    exact Simulation.Interaction.bind_pure _
+  rw [hTargetPure] at hBound
+  exact hBound
+
 /-- Compose a recursively prepared tail with one compiler-deferred head.
 This is the semantic counterpart of `UncheckedBoundLowering.direct`. -/
 theorem direct
@@ -826,6 +937,29 @@ theorem bound
       rw [hTargetPure] at hHeadBound
       exact hHeadBound
 
+/-- Fuel-indexed recursive expression capability consumed privately by the
+compiler-owned bounded-argument induction. -/
+def RecursiveBoundHeads
+    (fuel targetFuel : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (program : Functions.Program) (layout : List Functions.Name) : Prop :=
+  ∀ {expr : AstExpr} {rest : List AstExpr}
+    {preRest preHead : List Functions.Stmt}
+    {lowerHead : Locals.Expr 1}
+    {stateRest stateHead stateFresh : Fresh.State}
+    {tmp : Functions.Name},
+    Expr.lower1Unchecked? stateRest expr =
+        some (preHead, lowerHead, stateHead) →
+      Fresh.fresh? stateHead = some (tmp, stateFresh) →
+        preHead.length + 1 < targetFuel - preRest.length →
+        (∀ name, name ∈ layout → name ∈ stateRest.used) →
+        (∀ name, name ∈ layout → name ∈ stateHead.used) →
+          BoundHeadForward
+            (fuel - 2 * rest.reverse.length)
+            (targetFuel - preRest.length)
+            expr preHead lowerHead stateRest stateHead stateFresh tmp
+            codeOverride program layout
+
 /-- Preservation for the complete compiler-owned bounded argument artifact.
 Only a generated, fresh-bound expression head is delegated to the recursive
 expression owner; empty and deferred branches are discharged here. -/
@@ -841,22 +975,8 @@ theorem ofUncheckedLowering
     {target : Functions.InteractionSemantics.State}
     (hLowering : Expr.List.UncheckedBoundLowering
       initial args pre lowerArgs final)
-    (hBound :
-      ∀ {expr : AstExpr} {rest : List AstExpr}
-        {preRest preHead : List Functions.Stmt}
-        {lowerHead : Locals.Expr 1}
-        {stateRest stateHead stateFresh : Fresh.State}
-        {tmp : Functions.Name},
-        Expr.lower1Unchecked? stateRest expr =
-            some (preHead, lowerHead, stateHead) →
-          Fresh.fresh? stateHead = some (tmp, stateFresh) →
-            preHead.length + 1 < targetFuel - preRest.length →
-            (∀ name, name ∈ layout → name ∈ stateHead.used) →
-            BoundHeadForward
-              (fuel - 2 * rest.reverse.length)
-              (targetFuel - preRest.length)
-              expr preHead lowerHead stateRest stateHead stateFresh tmp
-              codeOverride program layout)
+    (hBound : RecursiveBoundHeads
+      fuel targetFuel codeOverride program layout)
     (hRel : FunctionsInteractionRelation.ScopedStateRel
       layout source target)
     (hDomain : FunctionsInteractionRelation.TargetDomainWithin
@@ -903,12 +1023,17 @@ theorem ofUncheckedLowering
           Expr.lower1Unchecked?_stateExtends hExpr)
       have hHeadExtends : Fresh.Extends stateRest stateHead :=
         Expr.lower1Unchecked?_stateExtends hHead
+      have hRestLayout :
+          ∀ name, name ∈ layout → name ∈ stateRest.used := by
+        intro name hMem
+        exact hRestExtends name (hLayout name hMem)
       have hHeadLayout :
           ∀ name, name ∈ layout → name ∈ stateHead.used := by
         intro name hMem
-        exact hHeadExtends name (hRestExtends name (hLayout name hMem))
+        exact hHeadExtends name (hRestLayout name hMem)
       exact bound (initial := initial) hHead hFresh
-        (hBound hHead hFresh hHeadFuel hHeadLayout) hRestForward
+        (hBound hHead hFresh hHeadFuel hRestLayout hHeadLayout)
+        hRestForward
 
 end FunctionsInteractionPreparedArgs
 end Yul

@@ -345,6 +345,18 @@ theorem exprSeq_openEval_seqCast
   cases h
   rfl
 
+/-- Result-arity casts inserted by Yul lowering do not change canonical
+Locals expression evaluation. -/
+theorem expr_openEval_cast
+    {left right : Nat} (h : left = right)
+    (expr : Locals.Expr left)
+    (state : Functions.InteractionSemantics.State) :
+    Functions.InteractionSemantics.Expr.openEval
+        (EvmCompiler.Yul.Expr.cast h expr) state =
+      Functions.InteractionSemantics.Expr.openEval expr state := by
+  cases h
+  rfl
+
 /-- A delayed one-result expression is insensitive to shared-state changes
 and to insertion of later compiler-private locals. -/
 def StableValue (expr : Locals.Expr 1)

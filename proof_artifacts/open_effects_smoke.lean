@@ -25,6 +25,7 @@ import EvmCompiler.Structured.ObserverTerminalAdequacy
 import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.Yul.FunctionsInteractionStatement
 import EvmCompiler.Yul.FunctionsInteractionPreparedArgs
+import EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive
 import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 import EvmCompiler.Yul.FunctionsInteractionTerminal
 
@@ -478,12 +479,17 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.nil
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.deferred
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.deferred_arg
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.singletonOfValues
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.direct
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.deferredHeadValue
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.bindHeadValue
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.boundDeferred
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.bound
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.ofUncheckedLowering
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.afterPrepared
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.boundOfLowering
+#print axioms EvmCompiler.Simulation.Interaction.ForwardRel.strengthen_right
+#print axioms EvmCompiler.Yul.FunctionsInteractionExpression.expr_openEval_cast
 #print axioms EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_permitted
 #print axioms EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_static
 #print axioms EvmCompiler.Structured.Terminal.allowed_of_step
