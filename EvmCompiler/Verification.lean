@@ -923,6 +923,8 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.InteractionCallPreservation.Call.openStep_dispatch
 #check EvmCompiler.Structured.InteractionCallPreservation.Call.openRun_call_exec_under
 #check EvmCompiler.Structured.InteractionCallPreservation.Call.openRun_call_exec_under_of_compileStmtFuel?
+#check EvmCompiler.Structured.InteractionCallPreservation.Call.openRun_call_bounded_under
+#check EvmCompiler.Structured.InteractionCallPreservation.Call.openRun_call_bounded_under_of_compileStmtFuel?
 #check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.FragmentContract
 #check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.StmtContract
 #check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.BlockOwnerAt

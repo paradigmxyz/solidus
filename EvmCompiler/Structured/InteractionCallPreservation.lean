@@ -455,6 +455,7 @@ private theorem prepend_call_route
         transcript
         (.ok (.stopped tailRemaining targetOutcome))) :
     ∃ targetFuel,
+      targetFuel ≤ tailFuel + 2 ∧
       Simulation.Interaction.Executes
         (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
           policy cfg targetFuel entry target)
@@ -483,7 +484,7 @@ private theorem prepend_call_route
     have hWhole :=
       InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.prepend_step_jump
         hCallExec hProcEntryNoStop hTailAtProc
-    exact ⟨tailFuel + 1, by simpa using hWhole⟩
+    exact ⟨tailFuel + 1, by omega, by simpa using hWhole⟩
   · rcases hAdapterRoute with
       ⟨adapter, hEntry, _hInput, _hFrame,
         hAdapterCompile, hAdapterMem⟩
@@ -507,7 +508,7 @@ private theorem prepend_call_route
     have hWhole :=
       InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.prepend_step_jump
         hCallExec hProcEntryNoStop hRoute
-    exact ⟨(tailFuel + 1) + 1, by simpa using hWhole⟩
+    exact ⟨(tailFuel + 1) + 1, by omega, by simpa using hWhole⟩
 
 private theorem body_leave_elim
     {program : Structured.Program} {proc : Structured.Proc}
@@ -1015,7 +1016,7 @@ theorem openRun_call_exec_under
             (hProcExitNoStop hSplit hBodyStateRel hBodyFits
               (by simpa [callSource] using hBodyReturns))
             hDispatchExec
-        obtain ⟨targetFuel, hTargetExec⟩ :=
+        obtain ⟨targetFuel, _hRouteFuel, hTargetExec⟩ :=
           prepend_call_route (fragment := fragment) generated hCallStep'
             (hProcEntryNoStop hSplit hCallStateRel')
             (hFragmentEntryNoStop hSplit hCallStateRel')
@@ -1127,7 +1128,7 @@ theorem openRun_call_exec_under
               (hProcExitNoStop hSplit hBodyStateRel hBodyFits
                 (by simpa [callSource] using hBodyReturns))
               hDispatchExec
-          obtain ⟨targetFuel, hTargetExec⟩ :=
+          obtain ⟨targetFuel, _hRouteFuel, hTargetExec⟩ :=
             prepend_call_route (fragment := fragment) generated hCallStep'
               (hProcEntryNoStop hSplit hCallStateRel')
               (hFragmentEntryNoStop hSplit hCallStateRel')
@@ -1180,7 +1181,7 @@ theorem openRun_call_exec_under
                   InteractionControlPreservation.OpenOutcome.pushStopJump,
                   hStop])
               hTargetBodyExec (hStops hWholeRel)
-          obtain ⟨targetFuel, hTargetExec⟩ :=
+          obtain ⟨targetFuel, _hRouteFuel, hTargetExec⟩ :=
             prepend_call_route (fragment := fragment) generated hCallStep'
               (hProcEntryNoStop hSplit hCallStateRel')
               (hFragmentEntryNoStop hSplit hCallStateRel')
@@ -1188,6 +1189,381 @@ theorem openRun_call_exec_under
           exact
             ⟨targetFuel, bodyRemaining, targetBodyOutcome,
               hTargetExec, hWholeRel⟩
+
+/-- Source-budgeted preservation for one compiled internal procedure call. -/
+theorem openRun_call_bounded_under
+    {compilerFuel sourceFuel bodyBudget : Nat}
+    {sourceProgram : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (generated :
+      TypedCfgPreservation.Program.GeneratedContext
+        sourceProgram entryShapes cfg)
+    {name : Structured.Name} {proc : Structured.Proc}
+    (fragment :
+      TypedCfgPreservation.Program.ProcFragment
+        entryShapes sourceProgram.procs proc
+        generated.procBlocks generated.procCalls)
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply}
+    {entry regular : Assembly.Label}
+    {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    {source : RunState} {tokens : List Word}
+    {policy :
+      InteractionControlPreservation.OpenOutcome.StopPolicy}
+    (hLookup :
+      Structured.ProcList.lookup? name sourceProgram.procs = some proc)
+    (hProcs : ctx.procs = sourceProgram.procs)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1) (.call name)
+          ctx supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hResultCalls :
+      TypedCfgPreservation.CallsInProgram result generated.calls)
+    (hInputFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        input source.evm.stack.length)
+    (hProcWF : proc.WF)
+    (hStops :
+      forall {sourceOutcome targetOutcome},
+        InteractionControlPreservation.OpenOutcome.Rel
+            result ctx regular source.returns tokens
+            sourceOutcome targetOutcome ->
+          InteractionControlPreservation.OpenOutcome.TargetStoppedBy
+            policy targetOutcome)
+    (hProcEntryNoStop :
+      forall {args callerStack : EvmYul.Stack Word}
+          {targetState : EVMState},
+        Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
+            some (args, callerStack) ->
+          TypedCfgPreservation.StateRel
+            ((source.withEVM { source.evm with stack := args }).pushReturn
+              callerStack proc.retc)
+            (Structured.Stmt.callToken supply :: tokens) targetState ->
+          policy (ProcLabel.entry proc.name) targetState = false)
+    (hFragmentEntryNoStop :
+      forall {args callerStack : EvmYul.Stack Word}
+          {targetState : EVMState},
+        Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
+            some (args, callerStack) ->
+          TypedCfgPreservation.StateRel
+            ((source.withEVM { source.evm with stack := args }).pushReturn
+              callerStack proc.retc)
+            (Structured.Stmt.callToken supply :: tokens) targetState ->
+          policy fragment.entry targetState = false)
+    (hProcExitNoStop :
+      forall {args callerStack : EvmYul.Stack Word}
+          {bodyState : RunState} {targetState : EVMState},
+        Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
+            some (args, callerStack) ->
+          TypedCfgPreservation.StateRel bodyState
+            (Structured.Stmt.callToken supply :: tokens) targetState ->
+          TypedCfgCompiler.Shape.SourceFrameFits
+            (TypedCfgCompiler.Shape.procExit proc)
+            bodyState.evm.stack.length ->
+          bodyState.returns =
+            (((source.withEVM { source.evm with stack := args }).pushReturn
+              callerStack proc.retc).returns) ->
+          policy (ProcLabel.exit proc.name) targetState = false)
+    (hBody :
+      forall {args callerStack : EvmYul.Stack Word},
+        Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
+            some (args, callerStack) ->
+          InteractionControlPreservation.OpenOutcome.BoundedExecPreservesUnder
+            fragment.result cfg fragment.entry
+            (procContext sourceProgram proc)
+            (ProcLabel.exit proc.name)
+            ((source.withEVM { source.evm with stack := args }).pushReturn
+              callerStack proc.retc)
+            (Structured.Stmt.callToken supply :: tokens)
+            (InteractionSemantics.Block.openRun
+              sourceProgram sourceFuel proc.body
+              ((source.withEVM { source.evm with stack := args }).pushReturn
+                callerStack proc.retc))
+            bodyBudget
+            (bodyStopPolicy fragment.result sourceProgram proc
+              (((source.withEVM
+                  { source.evm with stack := args }).pushReturn
+                    callerStack proc.retc).returns)
+              (Structured.Stmt.callToken supply :: tokens) policy)) :
+    InteractionControlPreservation.OpenOutcome.BoundedExecPreservesUnder
+      result cfg entry ctx regular source tokens
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram (sourceFuel + 1) (.call name) source)
+      (bodyBudget + 3) policy := by
+  have hCompilerLookup :
+      Structured.ProcList.lookup? name ctx.procs = some proc := by
+    simpa [hProcs] using hLookup
+  rcases
+      TypedCfgCompilerFacts.Call.components_of_compileStmtFuel?_call
+        hCompilerLookup hCompile with
+    ⟨returnShape, output, hSource, hAfter, hCallType, hResult⟩
+  subst result
+  let site : TypedCfgCompiler.DispatchSite :=
+    { procName := name
+      token := Structured.Stmt.callToken supply
+      returnLabel := regular
+      caseLabel := .generated supply 10000 }
+  have hSiteMem : site ∈ generated.calls := by
+    apply hResultCalls site
+    simp [site]
+  have hName : proc.name = name :=
+    Structured.ProcList.name_of_lookup? hLookup
+  intro target hStateRel transcript sourceOutcome hSourceExec
+  cases hSplit :
+      Structured.StackFrame.splitArgs? proc.argc source.evm.stack with
+  | none =>
+      simp only [
+        InteractionSemantics.Stmt.openRun,
+        EffectSemantics.Control.Stmt.run,
+        EffectSemantics.Ordinary.runStateModel_evm,
+        hLookup, hSplit] at hSourceExec
+      cases hSourceExec
+  | some split =>
+      rcases split with ⟨args, callerStack⟩
+      let callSource : RunState :=
+        ((source.withEVM { source.evm with stack := args }).pushReturn
+          callerStack proc.retc)
+      have hCallBody :=
+        hBody (args := args) (callerStack := callerStack) hSplit
+      rcases
+          openStep_entry_of_compileStmtFuel?
+            hCompilerLookup hCompile hBlocks hStateRel hSplit hProcWF with
+        ⟨targetAtEntry, hCallStep, hCallStateRel⟩
+      have hCallStep' :
+          TypedCfg.InteractionSemantics.Program.openStep cfg entry target =
+            Simulation.Interaction.pure
+              (.jump (ProcLabel.entry proc.name) targetAtEntry) := by
+        simpa [hName] using hCallStep
+      have hCallStateRel' :
+          TypedCfgPreservation.StateRel callSource
+            (Structured.Stmt.callToken supply :: tokens)
+            targetAtEntry := by
+        simpa [callSource] using hCallStateRel
+      have finishReturned
+          {bodyState : RunState} {frame : ReturnDest}
+          {returned : RunState} {stack : EvmYul.Stack Word}
+          {bodyMode : Structured.Mode}
+          (hBodyExec :
+            Simulation.Interaction.Executes
+              (InteractionSemantics.Block.openRun
+                sourceProgram sourceFuel proc.body callSource)
+              transcript (.ok { state := bodyState, mode := bodyMode }))
+          (hPop : bodyState.popReturn? = some (frame, returned))
+          (hAttach :
+            Structured.StackFrame.attachReturns? frame bodyState.evm.stack =
+              some stack)
+          (hExit :
+            forall targetOutcome,
+              InteractionControlPreservation.OpenOutcome.Rel
+                fragment.result (procContext sourceProgram proc)
+                (ProcLabel.exit proc.name) callSource.returns
+                (Structured.Stmt.callToken supply :: tokens)
+                { state := bodyState, mode := bodyMode } targetOutcome ->
+              exists targetAtExit,
+                targetOutcome =
+                    .jump (ProcLabel.exit proc.name) targetAtExit /\
+                  TypedCfgPreservation.StateRel bodyState
+                    (Structured.Stmt.callToken supply :: tokens)
+                    targetAtExit /\
+                  TypedCfgCompiler.Shape.SourceFrameFits
+                    (TypedCfgCompiler.Shape.procExit proc)
+                    bodyState.evm.stack.length /\
+                  bodyState.returns = callSource.returns) :
+          exists targetFuel remaining targetOutcome,
+            targetFuel <= bodyBudget + 3 /\
+              Simulation.Interaction.Executes
+                (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+                  policy cfg targetFuel entry target)
+                transcript (.ok (.stopped remaining targetOutcome)) /\
+              InteractionControlPreservation.OpenOutcome.Rel
+                { blocks :=
+                    [{ label := entry
+                       input := input
+                       body :=
+                         .returnToken (Structured.Stmt.callToken supply) ::
+                           TypedCfgCompiler.sinkTopUnder proc.argc
+                       output := output
+                       term := .jump (ProcLabel.entry name) }]
+                  next := supply + 1
+                  calls := [site]
+                  fallthrough? := some returnShape }
+                ctx regular source.returns tokens
+                (.regular
+                  (returned.withEVM { bodyState.evm with stack := stack }))
+                targetOutcome := by
+        obtain
+            ⟨bodyFuel, bodyRemaining, targetBodyOutcome, hBodyFuel,
+              hTargetBodyExec, hBodyRelRaw⟩ :=
+          hCallBody targetAtEntry hCallStateRel'
+            transcript { state := bodyState, mode := bodyMode } hBodyExec
+        have hBodyRel :
+            InteractionControlPreservation.OpenOutcome.Rel
+              fragment.result (procContext sourceProgram proc)
+              (ProcLabel.exit proc.name) callSource.returns
+              (Structured.Stmt.callToken supply :: tokens)
+              { state := bodyState, mode := bodyMode } targetBodyOutcome := by
+          simpa [callSource] using hBodyRelRaw
+        obtain
+            ⟨targetAtExit, rfl, hBodyStateRel,
+              hBodyFits, hBodyReturns⟩ := hExit targetBodyOutcome hBodyRel
+        obtain ⟨hFrameEq, hReturnedReturns⟩ :=
+          popReturn_eq_of_returns_eq
+            (source := source.withEVM { source.evm with stack := args })
+            (by simpa [callSource] using hBodyReturns) hPop
+        have hFinalFits :
+            TypedCfgCompiler.Shape.SourceFrameFits returnShape stack.length :=
+          finalFrameFits hSource hAfter hInputFits hSplit hBodyFits
+            hFrameEq hAttach
+        have hSiteProc : site.procName = proc.name := by
+          simp [site, hName]
+        have hRetc : frame.retc = proc.retc := by
+          simp [hFrameEq]
+        rcases
+            openStep_dispatch generated hLookup hSiteProc hSiteMem
+              hBodyStateRel hPop hAttach hRetc with
+          ⟨targetFinal, hDispatch, hFinalStateRel⟩
+        have hWholeRel :
+            InteractionControlPreservation.OpenOutcome.Rel
+              { blocks :=
+                  [{ label := entry
+                     input := input
+                     body :=
+                       .returnToken (Structured.Stmt.callToken supply) ::
+                         TypedCfgCompiler.sinkTopUnder proc.argc
+                     output := output
+                     term := .jump (ProcLabel.entry name) }]
+                next := supply + 1
+                calls := [site]
+                fallthrough? := some returnShape }
+              ctx regular source.returns tokens
+              (.regular
+                (returned.withEVM { bodyState.evm with stack := stack }))
+              (.jump regular targetFinal) := by
+          refine ⟨?_, ?_, ?_⟩
+          · exact
+              TypedCfgPreservation.OutcomeSimulation.Rel.regular_iff.mpr
+                ⟨rfl, hFinalStateRel⟩
+          · exact ⟨returnShape, rfl, hFinalFits⟩
+          · simpa [
+              InteractionControlPreservation.OpenOutcome.ActivationRestored]
+              using hReturnedReturns
+        have hFinalStop := hStops hWholeRel
+        have hDispatchExec :
+            Simulation.Interaction.Executes
+              (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+                policy cfg 1 (ProcLabel.exit proc.name) targetAtExit)
+              [] (.ok (.stopped 0 (.jump regular targetFinal))) := by
+          change policy regular targetFinal = true at hFinalStop
+          rw [
+            TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_succ_eq_bind,
+            hDispatch]
+          simpa [
+            site,
+            Simulation.Interaction.instMonad,
+            Simulation.Interaction.bind,
+            Simulation.Interaction.pure,
+            TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+            hFinalStop] using
+            (Simulation.Interaction.Executes.done
+              (.ok
+                (TypedCfg.Control.Program.RunResult.stopped 0
+                  (TypedCfg.Outcome.jump regular targetFinal))))
+        have hBodyAndDispatch :=
+          InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.splice_refined_jump
+            (outer := policy)
+            (inner :=
+              bodyStopPolicy fragment.result sourceProgram proc
+                callSource.returns
+                (Structured.Stmt.callToken supply :: tokens) policy)
+            (hRefines := by
+              intro label state hStop
+              simp [
+                bodyStopPolicy,
+                InteractionControlPreservation.OpenOutcome.pushStopJump,
+                hStop])
+            hTargetBodyExec
+            (hProcExitNoStop hSplit hBodyStateRel hBodyFits
+              (by simpa [callSource] using hBodyReturns))
+            hDispatchExec
+        obtain ⟨targetFuel, hRouteFuel, hTargetExec⟩ :=
+          prepend_call_route (fragment := fragment) generated hCallStep'
+            (hProcEntryNoStop hSplit hCallStateRel')
+            (hFragmentEntryNoStop hSplit hCallStateRel')
+            hBodyAndDispatch
+        exact
+          ⟨targetFuel, bodyRemaining, .jump regular targetFinal,
+            by omega, by simpa using hTargetExec, hWholeRel⟩
+      rcases executes_call_cases hLookup hSplit hSourceExec with
+        hRegular | hLeaveOrHalt
+      · rcases hRegular with
+          ⟨bodyState, frame, returned, stack,
+            hBodyExec, hPop, hAttach, hSourceOutcome⟩
+        subst sourceOutcome
+        exact finishReturned hBodyExec hPop hAttach (fun targetOutcome hRel =>
+          InteractionControlPreservation.OpenOutcome.Rel.regular_elim_of_required_fallthrough
+            fragment.fallthrough hRel)
+      · rcases hLeaveOrHalt with hLeave | hHalt
+        · rcases hLeave with
+            ⟨bodyState, frame, returned, stack,
+              hBodyExec, hPop, hAttach, hSourceOutcome⟩
+          subst sourceOutcome
+          exact finishReturned hBodyExec hPop hAttach (fun _ hRel =>
+            body_leave_elim hRel)
+        · rcases hHalt with
+            ⟨bodyState, kind, hBodyExec, hSourceOutcome⟩
+          subst sourceOutcome
+          obtain
+              ⟨bodyFuel, bodyRemaining, targetBodyOutcome, hBodyFuel,
+                hTargetBodyExec, hBodyRelRaw⟩ :=
+            hCallBody targetAtEntry hCallStateRel'
+              transcript (.halt kind bodyState) hBodyExec
+          have hBodyRel :
+              InteractionControlPreservation.OpenOutcome.Rel
+                fragment.result (procContext sourceProgram proc)
+                (ProcLabel.exit proc.name) callSource.returns
+                (Structured.Stmt.callToken supply :: tokens)
+                (.halt kind bodyState) targetBodyOutcome := by
+            simpa [callSource] using hBodyRelRaw
+          have hWholeRel :
+              InteractionControlPreservation.OpenOutcome.Rel
+                { blocks :=
+                    [{ label := entry
+                       input := input
+                       body :=
+                         .returnToken (Structured.Stmt.callToken supply) ::
+                           TypedCfgCompiler.sinkTopUnder proc.argc
+                       output := output
+                       term := .jump (ProcLabel.entry name) }]
+                  next := supply + 1
+                  calls := [site]
+                  fallthrough? := some returnShape }
+                ctx regular source.returns tokens
+                (.halt kind bodyState) targetBodyOutcome :=
+            body_halt_to_call hBodyRel
+          have hTargetBodyOuter :=
+            InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.close_refined
+              (outer := policy)
+              (inner :=
+                bodyStopPolicy fragment.result sourceProgram proc
+                  callSource.returns
+                  (Structured.Stmt.callToken supply :: tokens) policy)
+              (hRefines := by
+                intro label state hStop
+                simp [
+                  bodyStopPolicy,
+                  InteractionControlPreservation.OpenOutcome.pushStopJump,
+                  hStop])
+              hTargetBodyExec (hStops hWholeRel)
+          obtain ⟨targetFuel, hRouteFuel, hTargetExec⟩ :=
+            prepend_call_route (fragment := fragment) generated hCallStep'
+              (hProcEntryNoStop hSplit hCallStateRel')
+              (hFragmentEntryNoStop hSplit hCallStateRel')
+              hTargetBodyOuter
+          exact
+            ⟨targetFuel, bodyRemaining, targetBodyOutcome,
+              by omega, hTargetExec, hWholeRel⟩
 
 /--
 Compiler-facing internal-call preservation.
@@ -1309,6 +1685,122 @@ theorem openRun_call_exec_under_of_compileStmtFuel?
     ⟨fragment, hFragmentBlocks, hFragmentCalls⟩
   exact
     openRun_call_exec_under generated fragment hLookup hProcs
+      hCompile hBlocks hResultCalls hInputFits hProcWF hStops
+      hProcEntryNoStop (hFragmentEntryNoStop fragment) hProcExitNoStop
+      (hBody fragment hFragmentBlocks hFragmentCalls)
+
+theorem openRun_call_bounded_under_of_compileStmtFuel?
+    {compilerFuel sourceFuel bodyBudget : Nat}
+    {sourceProgram : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (generated :
+      TypedCfgPreservation.Program.GeneratedContext
+        sourceProgram entryShapes cfg)
+    {name : Structured.Name} {proc : Structured.Proc}
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply}
+    {entry regular : Assembly.Label}
+    {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    {source : RunState} {tokens : List Word}
+    {policy :
+      InteractionControlPreservation.OpenOutcome.StopPolicy}
+    (hLookup :
+      Structured.ProcList.lookup? name sourceProgram.procs = some proc)
+    (hProcs : ctx.procs = sourceProgram.procs)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1) (.call name)
+          ctx supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hResultCalls :
+      TypedCfgPreservation.CallsInProgram result generated.calls)
+    (hInputFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        input source.evm.stack.length)
+    (hProcWF : proc.WF)
+    (hStops :
+      forall {sourceOutcome targetOutcome},
+        InteractionControlPreservation.OpenOutcome.Rel
+            result ctx regular source.returns tokens
+            sourceOutcome targetOutcome ->
+          InteractionControlPreservation.OpenOutcome.TargetStoppedBy
+            policy targetOutcome)
+    (hProcEntryNoStop :
+      forall {args callerStack : EvmYul.Stack Word}
+          {targetState : EVMState},
+        Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
+            some (args, callerStack) ->
+          TypedCfgPreservation.StateRel
+            ((source.withEVM { source.evm with stack := args }).pushReturn
+              callerStack proc.retc)
+            (Structured.Stmt.callToken supply :: tokens) targetState ->
+          policy (ProcLabel.entry proc.name) targetState = false)
+    (hProcExitNoStop :
+      forall {args callerStack : EvmYul.Stack Word}
+          {bodyState : RunState} {targetState : EVMState},
+        Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
+            some (args, callerStack) ->
+          TypedCfgPreservation.StateRel bodyState
+            (Structured.Stmt.callToken supply :: tokens) targetState ->
+          TypedCfgCompiler.Shape.SourceFrameFits
+            (TypedCfgCompiler.Shape.procExit proc)
+            bodyState.evm.stack.length ->
+          bodyState.returns =
+            (((source.withEVM { source.evm with stack := args }).pushReturn
+              callerStack proc.retc).returns) ->
+          policy (ProcLabel.exit proc.name) targetState = false)
+    (hFragmentEntryNoStop :
+      forall (fragment :
+          TypedCfgPreservation.Program.ProcFragment
+            entryShapes sourceProgram.procs proc
+            generated.procBlocks generated.procCalls),
+        forall {args callerStack : EvmYul.Stack Word}
+            {targetState : EVMState},
+          Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
+              some (args, callerStack) ->
+            TypedCfgPreservation.StateRel
+              ((source.withEVM { source.evm with stack := args }).pushReturn
+                callerStack proc.retc)
+              (Structured.Stmt.callToken supply :: tokens) targetState ->
+            policy fragment.entry targetState = false)
+    (hBody :
+      forall (fragment :
+          TypedCfgPreservation.Program.ProcFragment
+            entryShapes sourceProgram.procs proc
+            generated.procBlocks generated.procCalls),
+        TypedCfgPreservation.BlocksInProgram fragment.result cfg ->
+        TypedCfgPreservation.CallsInProgram
+            fragment.result generated.calls ->
+        forall {args callerStack : EvmYul.Stack Word},
+          Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
+            some (args, callerStack) ->
+          InteractionControlPreservation.OpenOutcome.BoundedExecPreservesUnder
+            fragment.result cfg fragment.entry
+            (procContext sourceProgram proc)
+            (ProcLabel.exit proc.name)
+            ((source.withEVM { source.evm with stack := args }).pushReturn
+              callerStack proc.retc)
+            (Structured.Stmt.callToken supply :: tokens)
+            (InteractionSemantics.Block.openRun
+              sourceProgram sourceFuel proc.body
+              ((source.withEVM { source.evm with stack := args }).pushReturn
+                callerStack proc.retc))
+            bodyBudget
+            (bodyStopPolicy fragment.result sourceProgram proc
+              (((source.withEVM
+                  { source.evm with stack := args }).pushReturn
+                    callerStack proc.retc).returns)
+              (Structured.Stmt.callToken supply :: tokens) policy)) :
+    InteractionControlPreservation.OpenOutcome.BoundedExecPreservesUnder
+      result cfg entry ctx regular source tokens
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram (sourceFuel + 1) (.call name) source)
+      (bodyBudget + 3) policy := by
+  rcases generated.procFragment_of_lookup? hLookup with
+    ⟨fragment, hFragmentBlocks, hFragmentCalls⟩
+  exact
+    openRun_call_bounded_under generated fragment hLookup hProcs
       hCompile hBlocks hResultCalls hInputFits hProcWF hStops
       hProcEntryNoStop (hFragmentEntryNoStop fragment) hProcExitNoStop
       (hBody fragment hFragmentBlocks hFragmentCalls)
