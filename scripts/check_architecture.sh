@@ -619,6 +619,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionPreparedArgs.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedCall.lean \
+  EvmCompiler/Yul/FunctionsCompilerArtifact.lean \
   EvmCompiler/Yul/FunctionsInteractionCall.lean
 
 report_matches \
@@ -632,6 +633,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionPreparedArgs.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedCall.lean \
+  EvmCompiler/Yul/FunctionsCompilerArtifact.lean \
   EvmCompiler/Yul/FunctionsInteractionCall.lean
 
 report_matches \
@@ -645,12 +647,14 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionPreparedArgs.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedCall.lean \
+  EvmCompiler/Yul/FunctionsCompilerArtifact.lean \
   EvmCompiler/Yul/FunctionsInteractionCall.lean
 
 report_matches \
   'The Yul-to-Functions observer proof must not reason directly about lower pass semantics:' \
   '(Locals\.(ObserverSemantics|Source\.Effectful)|TypedCfg\.|Structured\.TypedCfg|Assembly\.(Source|Compiled|Preservation))' \
   EvmCompiler/Yul/FunctionsObserverCompiler.lean \
+  EvmCompiler/Yul/FunctionsCompilerArtifact.lean \
   EvmCompiler/Yul/CompilerExpressionDecomposition.lean \
   EvmCompiler/Yul/FunctionsObserverExpressionBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallBackward.lean \

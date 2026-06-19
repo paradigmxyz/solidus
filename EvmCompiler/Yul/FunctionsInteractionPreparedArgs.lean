@@ -107,6 +107,76 @@ theorem nil
         (Simulation.Interaction.ForwardRel.done
           (truncated := Truncated) hDone)
 
+/-- A prepared computation targeting one Functions statement also targets the
+canonical singleton block around that statement. -/
+theorem singletonTarget
+    {layout : List Functions.Name} {fresh : Fresh.State}
+    {lower : List (Locals.Expr 1)}
+    {entry target : Functions.InteractionSemantics.State}
+    {targetFuel : Nat}
+    {sourceOpen :
+      Simulation.Interaction Yul.InteractionSemantics.Failure
+        (Yul.InteractionSemantics.State × List Word)}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    (hStmt :
+      Simulation.Interaction.ForwardRel Truncated
+        (DoneRel layout fresh lower entry) sourceOpen
+        (Functions.InteractionSemantics.Stmt.openRun
+          program ctx (targetFuel + 1) stmt target)) :
+    Simulation.Interaction.ForwardRel Truncated
+      (DoneRel layout fresh lower entry) sourceOpen
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx (targetFuel + 2) { stmts := [stmt] } target) := by
+  have hBound :
+      Simulation.Interaction.ForwardRel Truncated
+        (DoneRel layout fresh lower entry)
+        (Simulation.Interaction.bind sourceOpen pure)
+        (Simulation.Interaction.bind
+          (Functions.InteractionSemantics.Stmt.openRun
+            program ctx (targetFuel + 1) stmt target)
+          fun targetResult =>
+            match targetResult.1.mode with
+            | .regular =>
+                Functions.InteractionSemantics.Block.openRun
+                  program targetResult.2 (targetFuel + 1)
+                    { stmts := [] } targetResult.1.state
+            | .brk | .cont | .leave | .halt _ =>
+                pure (targetResult.1, ctx)) := by
+    apply Simulation.Interaction.ForwardRel.bind_custom hStmt
+    intro sourceDone targetDone hDone
+    cases hDone with
+    | error hError =>
+        exact Simulation.Interaction.ForwardRel.done (.error hError)
+    | regular hStable hScoped hDomain hExtends =>
+        simp only
+        rw [Functions.InteractionSemantics.Block.openRun_nil]
+        exact Simulation.Interaction.ForwardRel.done
+          (DoneRel.regular hStable hScoped hDomain hExtends)
+    | terminal hTerminal =>
+        simp only
+        cases hTerminal with
+        | stop hState =>
+            exact Simulation.Interaction.ForwardRel.done
+              (DoneRel.terminal (.stop hState))
+        | return_ hState =>
+            exact Simulation.Interaction.ForwardRel.done
+              (DoneRel.terminal (.return_ hState))
+        | selfdestruct hState =>
+            exact Simulation.Interaction.ForwardRel.done
+              (DoneRel.terminal (.selfdestruct hState))
+        | revert hState =>
+            exact Simulation.Interaction.ForwardRel.done
+              (DoneRel.terminal (.revert hState))
+  rw [show targetFuel + 2 = (targetFuel + 1) + 1 by omega,
+    Functions.InteractionSemantics.Block.openRun_cons]
+  have hSourceBind :
+      Simulation.Interaction.bind sourceOpen pure = sourceOpen :=
+    Simulation.Interaction.bind_pure sourceOpen
+  rw [hSourceBind] at hBound
+  simpa [Functions.InteractionSemantics.Stmt.openRun,
+    Functions.InteractionSemantics.Block.openRun_nil] using hBound
+
 /-- A deferred literal or variable needs no generated target prelude. Its
 source evaluation produces one stable delayed target value. -/
 theorem deferred

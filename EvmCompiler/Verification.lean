@@ -128,6 +128,7 @@ import EvmCompiler.Yul.FunctionsInteractionStatement
 import EvmCompiler.Yul.FunctionsInteractionPreparedArgs
 import EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive
 import EvmCompiler.Yul.FunctionsInteractionPreparedCall
+import EvmCompiler.Yul.FunctionsCompilerArtifact
 import EvmCompiler.Yul.FunctionsInteractionCall
 import EvmCompiler.Yul.FunctionsInteractionTerminal
 import EvmCompiler.Yul.EndToEnd
@@ -1458,6 +1459,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.DoneRel
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.to_terminal
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.nil
+#check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.singletonTarget
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.deferred
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.deferred_arg
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.singletonOfValues
@@ -1478,10 +1480,14 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.boundOfLowering
 #check EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.boundPrimitive
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCall.ofUncheckedCallArgsLowering
+#check EvmCompiler.Yul.FunctionsCompilerArtifact.decomposition_of_toObjectsWithObservers?
+#check EvmCompiler.Yul.FunctionsCompilerArtifact.Decomposition.findFunction_parts
 #check EvmCompiler.Yul.FunctionsInteractionCall.returnedBody
 #check EvmCompiler.Yul.FunctionsInteractionCall.haltedBody
 #check EvmCompiler.Yul.FunctionsInteractionCall.runBodyForward
 #check EvmCompiler.Yul.FunctionsInteractionCall.finishSingleForward
+#check EvmCompiler.Yul.FunctionsInteractionCall.callStmtForward
+#check EvmCompiler.Yul.FunctionsInteractionCall.letCallBlockForward
 #check EvmCompiler.Simulation.Interaction.ForwardRel.strengthen_right
 #check EvmCompiler.Simulation.Interaction.ForwardRel.bind_right
 #check EvmCompiler.Yul.FunctionsInteractionExpression.expr_openEval_cast

@@ -290,6 +290,121 @@ theorem finishSingleForward
           (FunctionsInteractionPreparedArgs.DoneRel.regular
             hStable hFinalScoped' hFinalDomain hFinalExtends))
 
+/-- Attach canonical argument evaluation and function lookup around one
+already-related function body, yielding the real generated call statement. -/
+theorem callStmtForward
+    {targetBodyFuel : Nat}
+    {program : Functions.Program} {fn : Functions.FunDef}
+    {functionName tmp : Functions.Name}
+    {lowerArgs : List (Locals.Expr 1)} {args : List Assembly.Word}
+    {before final : Fresh.State} {layout : List Functions.Name}
+    {entry targetBefore targetCaller :
+      Functions.InteractionSemantics.State}
+    {sourceCaller : Yul.InteractionSemantics.State}
+    {ctx : Functions.Source.Ctx}
+    {sourceCall :
+      Simulation.Interaction Yul.InteractionSemantics.Failure
+        (Yul.InteractionSemantics.State × List Assembly.Word)}
+    {targetRunBody :
+      Simulation.Interaction EVMException
+        Functions.InteractionSemantics.CallResult}
+    (hFind :
+      Functions.Source.FunList.find? functionName program.functions =
+        some fn)
+    (hStable : FunctionsInteractionExpression.StableArgs
+      lowerArgs targetCaller args)
+    (hFresh : Fresh.fresh? before = some (tmp, final))
+    (hLayout : ∀ name, name ∈ layout → name ∈ before.used)
+    (hCallerState : targetCaller =
+      targetBefore.insert tmp Functions.Source.zero)
+    (hDomain : TargetDomainWithin before.used targetBefore.vars)
+    (hExtends : TargetExtends entry.vars targetBefore.vars)
+    (hRunBody :
+      Simulation.Interaction.ForwardRel Truncated
+        (RunBodyDoneRel layout sourceCaller targetCaller 1)
+        sourceCall targetRunBody)
+    (hTargetRunBody :
+      targetRunBody =
+        Functions.InteractionSemantics.FunDef.openRunBody
+          program fn args (targetBodyFuel + 1) targetCaller) :
+    Simulation.Interaction.ForwardRel Truncated
+      (FunctionsInteractionPreparedArgs.DoneRel
+        layout final [.var tmp] entry)
+      sourceCall
+      (Functions.InteractionSemantics.Stmt.openRun program ctx
+        (targetBodyFuel + 2) (.call [tmp] functionName lowerArgs)
+        targetCaller) := by
+  subst targetRunBody
+  have hFinished := finishSingleForward (ctx := ctx)
+    hFresh hLayout hCallerState hDomain hExtends hRunBody
+  have hArgsEval := hStable.openEval
+    (TargetExtends.refl targetCaller.vars)
+  unfold Functions.InteractionSemantics.ArgList.openEval
+    Functions.Source.Canonical.ArgList.eval at hArgsEval
+  rw [show targetBodyFuel + 2 = (targetBodyFuel + 1) + 1 by omega,
+    Functions.InteractionSemantics.Stmt.openRun_call]
+  rw [hArgsEval]
+  simp only [Simulation.Interaction.bind_done_ok, hFind,
+    Option.elim_some]
+  simpa [Functions.InteractionSemantics.FunDef.openRunBody,
+    Functions.Source.Canonical.FunDef.runBody] using hFinished
+
+/-- Prefix the generated fresh-zero declaration around one related call
+statement, yielding the exact two-statement internal-call suffix. -/
+theorem letCallBlockForward
+    {targetBodyFuel : Nat}
+    {program : Functions.Program} {functionName tmp : Functions.Name}
+    {lowerArgs : List (Locals.Expr 1)}
+    {final : Fresh.State} {layout : List Functions.Name}
+    {entry targetBefore targetCaller :
+      Functions.InteractionSemantics.State}
+    {sourceCall :
+      Simulation.Interaction Yul.InteractionSemantics.Failure
+        (Yul.InteractionSemantics.State × List Assembly.Word)}
+    {ctx : Functions.Source.Ctx}
+    (hCallerState : targetCaller =
+      targetBefore.insert tmp Functions.Source.zero)
+    (hCall :
+      Simulation.Interaction.ForwardRel Truncated
+        (FunctionsInteractionPreparedArgs.DoneRel
+          layout final [.var tmp] entry)
+        sourceCall
+        (Functions.InteractionSemantics.Stmt.openRun program
+          { ctx with scope := tmp :: ctx.scope }
+          (targetBodyFuel + 2)
+          (.call [tmp] functionName lowerArgs) targetCaller)) :
+    Simulation.Interaction.ForwardRel Truncated
+      (FunctionsInteractionPreparedArgs.DoneRel
+        layout final [.var tmp] entry)
+      sourceCall
+      (Functions.InteractionSemantics.Block.openRun program ctx
+        (targetBodyFuel + 4)
+        { stmts :=
+            [.let_ tmp (.lit Functions.Source.zero),
+              .call [tmp] functionName lowerArgs] }
+        targetBefore) := by
+  have hSingleton :=
+    FunctionsInteractionPreparedArgs.singletonTarget
+      (targetFuel := targetBodyFuel + 1) hCall
+  rw [show targetBodyFuel + 4 = (targetBodyFuel + 3) + 1 by omega,
+    Functions.InteractionSemantics.Block.openRun_cons]
+  have hLet := Functions.InteractionSemantics.Stmt.openRun_let_lit
+    program ctx (targetBodyFuel + 3) tmp Functions.Source.zero targetBefore
+  unfold Functions.InteractionSemantics.Stmt.openRun
+    Functions.Source.Canonical.Stmt.run at hLet
+  rw [hLet]
+  change
+    Simulation.Interaction.ForwardRel Truncated
+      (FunctionsInteractionPreparedArgs.DoneRel
+        layout final [.var tmp] entry)
+      sourceCall
+      (Functions.InteractionSemantics.Block.openRun program
+        { ctx with scope := tmp :: ctx.scope }
+        (targetBodyFuel + 3)
+        { stmts := [.call [tmp] functionName lowerArgs] }
+        (targetBefore.insert tmp Functions.Source.zero))
+  simpa [hCallerState] using hSingleton
+
 /-- Package one related regular/leave function body through the canonical
 Functions `runBody` wrapper. Return values are read from the related source
 frame, while caller locals are restored and callee shared-world effects are

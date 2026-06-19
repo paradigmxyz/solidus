@@ -208,6 +208,8 @@ boundaries remain active work.
             regular/leave/terminal body-result lift.
           - [x] Fresh one-result temporary writeback after ordinary return,
             with error and terminal propagation.
+          - [x] Canonical generated fresh-zero declaration and call-statement
+            suffix composition around the related call body.
           - [ ] Compiler-selected lookup and source-fuel discharge of the
             recursive body premise.
     - [ ] Complete recursive statement/list proof over compiler decomposition;
