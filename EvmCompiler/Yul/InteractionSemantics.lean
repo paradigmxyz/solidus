@@ -158,6 +158,53 @@ abbrev exec :=
 abbrev loop :=
   Yul.Source.Canonical.loop stateModel primitiveSemantics
 
+namespace Call
+
+/-- Positive-fuel internal calls against an explicit active program expose
+exactly the selected source body and caller-frame restoration. -/
+theorem explicit_succ
+    (fuel : Nat) (args : List Word)
+    (functionName : EvmYul.Yul.Ast.YulFunctionName)
+    (code : EvmYul.Yul.Ast.YulContract)
+    (params returns : List EvmYul.Identifier)
+    (body : List EvmYul.Yul.Ast.Stmt) (state : State)
+    (hLookup : code.functions.lookup functionName =
+      some (.Def params returns body)) :
+    call (fuel + 1) args (some functionName) (some code) state =
+      Simulation.Interaction.bind
+        (exec fuel (.Block body) (some code)
+          (EvmYul.Yul.State.mkOk
+            (state.initcall params returns args)))
+        (fun stateAfterBody =>
+          pure
+            ((stateAfterBody.reviveJump.overwrite? state).setStore state,
+              List.map stateAfterBody.lookup! returns)) := by
+  simp only [call, Yul.Source.Canonical.call,
+    Yul.Source.Effectful.call, Yul.Source.Effectful.resolveActiveCode?_some,
+    hLookup, stateModel]
+  rfl
+
+end Call
+
+namespace EvalValues
+
+/-- Positive-fuel internal value evaluation exposes ordered argument
+evaluation followed by the canonical internal call. -/
+theorem internal_succ
+    (fuel : Nat) (functionName : EvmYul.Yul.Ast.YulFunctionName)
+    (args : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    evalValues (fuel + 1) (.Call (.inr functionName) args) code state =
+      Simulation.Interaction.bind
+        (evalArgs fuel args.reverse code state)
+        (fun result =>
+          call fuel result.2.reverse (some functionName) code result.1) := by
+  simp only [evalValues, Yul.Source.Canonical.evalValues,
+    Yul.Source.Effectful.evalValues]
+  rfl
+
+end EvalValues
+
 namespace EvalArgs
 
 /-- One argument followed by exhausted list fuel. Adjacent compiler proofs use

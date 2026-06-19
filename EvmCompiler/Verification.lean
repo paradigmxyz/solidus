@@ -130,6 +130,7 @@ import EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive
 import EvmCompiler.Yul.FunctionsInteractionPreparedCall
 import EvmCompiler.Yul.FunctionsCompilerArtifact
 import EvmCompiler.Yul.FunctionsInteractionCall
+import EvmCompiler.Yul.FunctionsInteractionSelectedCall
 import EvmCompiler.Yul.FunctionsInteractionTerminal
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.CompilerCallDecomposition
@@ -1488,6 +1489,12 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionCall.finishSingleForward
 #check EvmCompiler.Yul.FunctionsInteractionCall.callStmtForward
 #check EvmCompiler.Yul.FunctionsInteractionCall.letCallBlockForward
+#check EvmCompiler.Yul.Expr.UncheckedCallArgsLowering.length_lowerArgs_eq
+#check EvmCompiler.Yul.Expr.UncheckedCallArgsLowering.stateExtends
+#check EvmCompiler.Yul.InteractionSemantics.Call.explicit_succ
+#check EvmCompiler.Yul.InteractionSemantics.EvalValues.internal_succ
+#check EvmCompiler.Yul.FunctionsInteractionSelectedCall.BodyForwardAt
+#check EvmCompiler.Yul.FunctionsInteractionSelectedCall.ofUncheckedFunctionCallLowering
 #check EvmCompiler.Simulation.Interaction.ForwardRel.strengthen_right
 #check EvmCompiler.Simulation.Interaction.ForwardRel.bind_right
 #check EvmCompiler.Yul.FunctionsInteractionExpression.expr_openEval_cast

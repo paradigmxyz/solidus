@@ -2092,6 +2092,33 @@ inductive UncheckedCallArgsLowering :
         List.UncheckedBoundLowering state args pre lowerArgs state') :
       UncheckedCallArgsLowering state args pre lowerArgs state'
 
+namespace UncheckedCallArgsLowering
+
+theorem length_lowerArgs_eq
+    {state state' : Fresh.State} {args : List AstExpr}
+    {pre : List Functions.Stmt} {lowerArgs : List (Locals.Expr 1)}
+    (hLowering :
+      UncheckedCallArgsLowering state args pre lowerArgs state') :
+    lowerArgs.length = args.length := by
+  cases hLowering with
+  | empty => rfl
+  | bound _hNonempty hArgs =>
+      exact List.UncheckedBoundLowering.length_lowerArgs_eq hArgs
+
+theorem stateExtends
+    {state state' : Fresh.State} {args : List AstExpr}
+    {pre : List Functions.Stmt} {lowerArgs : List (Locals.Expr 1)}
+    (hLowering :
+      UncheckedCallArgsLowering state args pre lowerArgs state') :
+    Fresh.Extends state state' := by
+  cases hLowering with
+  | empty => exact Fresh.Extends.refl state
+  | bound _hNonempty hArgs =>
+      exact List.UncheckedBoundLowering.stateExtends hArgs
+        (fun hExpr => Expr.lower1Unchecked?_stateExtends hExpr)
+
+end UncheckedCallArgsLowering
+
 inductive UncheckedFunctionCallLowering :
     Fresh.State → Name → List AstExpr → List Functions.Stmt →
       Locals.Expr 1 → Fresh.State → Prop where

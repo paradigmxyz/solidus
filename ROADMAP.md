@@ -210,8 +210,11 @@ boundaries remain active work.
             with error and terminal propagation.
           - [x] Canonical generated fresh-zero declaration and call-statement
             suffix composition around the related call body.
-          - [ ] Compiler-selected lookup and source-fuel discharge of the
-            recursive body premise.
+          - [x] Compiler-selected lookup, validation, call-frame construction,
+            and exact generated-expression composition against a bounded
+            recursive-body capability.
+          - [ ] Discharge the recursive body capability by source-fuel
+            induction.
     - [ ] Complete recursive statement/list proof over compiler decomposition;
       break, continue, leave, and multi-name uninitialized declaration compiler
       cases are checked. Direct-safe one-name initialized declarations and

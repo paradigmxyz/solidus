@@ -36,21 +36,6 @@ theorem uncheckedCallArgsLowering_of_choice
           (by simp)
           (List.uncheckedBoundLowering_of_lowerBound1Unchecked? hLower)
 
-theorem UncheckedCallArgsLowering.stateExtends
-    {state final : Fresh.State} {args : List AstExpr}
-    {pre : List Functions.Stmt}
-    {lowerArgs : List (Locals.Expr 1)}
-    (hLowering :
-      UncheckedCallArgsLowering state args pre lowerArgs final) :
-    Fresh.Extends state final := by
-  cases hLowering with
-  | empty =>
-      exact Fresh.Extends.refl _
-  | bound _hNonempty hBound =>
-      exact
-        hBound.stateExtends
-          (fun hLower => lower1Unchecked?_stateExtends hLower)
-
 end Expr
 
 namespace Stmt
