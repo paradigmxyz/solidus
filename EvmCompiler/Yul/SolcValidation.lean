@@ -179,11 +179,15 @@ def primitiveAvailable? (profile : DialectProfile)
   | .StackMemFlow .TSTORE
   | .StackMemFlow .MCOPY =>
       profile.evmVersion.atLeast? .cancun
-  | .StackMemFlow .MSIZE =>
-      false
-  | .StackMemFlow .GAS =>
-      false
   | _ => true
+
+theorem primitiveAvailable_msize (profile : DialectProfile) :
+    primitiveAvailable? profile (.StackMemFlow .MSIZE) = true := by
+  rfl
+
+theorem primitiveAvailable_gas (profile : DialectProfile) :
+    primitiveAvailable? profile (.StackMemFlow .GAS) = true := by
+  rfl
 
 def hasDoubleDot? : List Char → Bool
   | [] => false

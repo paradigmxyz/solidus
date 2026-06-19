@@ -1441,6 +1441,8 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionRelation.SharedRel.withWorldAndMachine
 #check EvmCompiler.Yul.FunctionsInteractionPrimitive.Primitive.gas
 #check EvmCompiler.Yul.FunctionsInteractionPrimitive.Primitive.msize
+#check EvmCompiler.Yul.SolcValidation.primitiveAvailable_gas
+#check EvmCompiler.Yul.SolcValidation.primitiveAvailable_msize
 #check EvmCompiler.Yul.FunctionsInteractionPrimitive.Primitive.callFamily
 #check EvmCompiler.Yul.FunctionsInteractionPrimitive.Primitive.createFamily
 #check EvmCompiler.Yul.FunctionsInteractionPrimitive.Primitive.callArbitrary

@@ -343,6 +343,21 @@ repository-wide completion gates are now checked.
   pinned Permit2/Solmate/external-call/object-tree compiler smokes.
 - [x] Run all completion gates.
 
+## Full Solc Contract Track
+
+- [x] Make resolved solc Yul validation source-complete for every primitive
+  already covered by the public theorem, beginning with `gas()` and `msize()`.
+- [ ] Preserve exact old-solc Yul text while obtaining a structured AST for
+  compiler versions that do not emit `irOptimizedAst`.
+- [ ] Replace the all-stack/all-scratch fallback pair with a canonical
+  pressure-driven mixed plan that spills only when required.
+- [ ] Define and check a general source-facing memory-isolation contract for
+  spill-backed Yul without `memoryguard`; do not infer an unsafe reservation.
+- [ ] Prove the new allocation/memory boundary in the Functions-owned adjacent
+  theorem and recompose the short public Yul theorem.
+- [ ] Compile exact pinned Permit2 and linked Aave Pool through checked object
+  images; add full-contract regressions and rerun every completion gate.
+
 ## Relation To External Effects
 
 The checked theorem in this file is intentionally asymmetric because EVM
