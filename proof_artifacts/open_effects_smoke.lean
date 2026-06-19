@@ -437,6 +437,7 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.compilerSelected
 #print axioms EvmCompiler.Yul.FunctionsInteractionExpression.compilerDirectAt
 #print axioms EvmCompiler.Yul.InteractionSemantics.ExecSeq.zero
+#print axioms EvmCompiler.Yul.InteractionSemantics.EvalArgs.append
 #print axioms EvmCompiler.Yul.InteractionSemantics.ExecSeq.nil_succ
 #print axioms EvmCompiler.Yul.InteractionSemantics.ExecSeq.cons_succ
 #print axioms EvmCompiler.Yul.InteractionSemantics.Exec.block_succ

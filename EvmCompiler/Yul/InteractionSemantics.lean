@@ -207,6 +207,113 @@ theorem succ_succ_cons
   rw [Simulation.Interaction.bind_assoc]
   rfl
 
+/-- Split ordered argument evaluation at a list boundary. The suffix receives
+the exact residual list fuel after two units per prefix expression. -/
+theorem append
+    {fuel : Nat} (left right : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State)
+    (hFuel : 2 * left.length < fuel) :
+    evalArgs fuel (left ++ right) code state =
+      Simulation.Interaction.bind
+        (evalArgs fuel left code state)
+        (fun leftResult =>
+          Simulation.Interaction.bind
+            (evalArgs (fuel - 2 * left.length) right code leftResult.1)
+            (fun rightResult =>
+              pure
+                (rightResult.1, leftResult.2 ++ rightResult.2))) := by
+  induction left generalizing fuel state with
+  | nil =>
+      cases fuel with
+      | zero => omega
+      | succ fuel =>
+          simp only [List.nil_append, List.length_nil, Nat.mul_zero,
+            Nat.sub_zero]
+          rw [show
+            evalArgs (fuel + 1) [] code state = pure (state, []) by
+              simp [evalArgs, Yul.Source.Canonical.evalArgs,
+                Yul.Source.Effectful.evalArgs]]
+          change
+            evalArgs (fuel + 1) right code state =
+              Simulation.Interaction.bind
+                (Simulation.Interaction.done (.ok (state, []))) _
+          rw [Simulation.Interaction.bind_done_ok]
+          change
+            evalArgs (fuel + 1) right code state =
+              Simulation.Interaction.bind
+                (evalArgs (fuel + 1) right code state)
+                Simulation.Interaction.pure
+          exact
+            (Simulation.Interaction.bind_pure
+              (evalArgs (fuel + 1) right code state)).symm
+  | cons head rest ih =>
+      simp only [List.length_cons] at hFuel
+      obtain ⟨tailFuel, hFuelEq⟩ : ∃ tailFuel, fuel = tailFuel + 2 := by
+        refine ⟨fuel - 2, ?_⟩
+        omega
+      subst fuel
+      have hRestFuel : 2 * rest.length < tailFuel := by
+        omega
+      rw [List.cons_append, succ_succ_cons, succ_succ_cons]
+      rw [Simulation.Interaction.bind_assoc]
+      apply congrArg
+      funext headResult
+      rw [ih headResult.1 hRestFuel]
+      have hResidual :
+          tailFuel + 2 - 2 * (head :: rest).length =
+            tailFuel - 2 * rest.length := by
+        simp only [List.length_cons]
+        omega
+      rw [hResidual]
+      simp only [Simulation.Interaction.bind_assoc,
+        Simulation.Interaction.monad_pure_bind]
+      apply congrArg
+      funext restResult
+      change
+        Simulation.Interaction.bind
+            (evalArgs (tailFuel - 2 * rest.length)
+              right code restResult.1)
+            (fun rightResult =>
+              Simulation.Interaction.bind
+                (Simulation.Interaction.done
+                  (.ok
+                    (rightResult.1,
+                      restResult.2 ++ rightResult.2)))
+                (fun tailResult =>
+                  pure
+                    (tailResult.1,
+                      headResult.2.head! :: tailResult.2))) =
+          Simulation.Interaction.bind
+            (Simulation.Interaction.done
+              (.ok
+                (restResult.1,
+                  headResult.2.head! :: restResult.2)))
+            (fun leftResult =>
+              Simulation.Interaction.bind
+                (evalArgs (tailFuel - 2 * rest.length)
+                  right code leftResult.1)
+                (fun rightResult =>
+                  pure
+                    (rightResult.1,
+                      leftResult.2 ++ rightResult.2)))
+      apply congrArg
+      funext rightResult
+      change
+        Simulation.Interaction.bind
+            (Simulation.Interaction.done
+              (.ok
+                (rightResult.1,
+                  restResult.2 ++ rightResult.2)))
+            (fun tailResult =>
+              pure
+                (tailResult.1,
+                  headResult.2.head! :: tailResult.2)) =
+          pure
+            (rightResult.1,
+              (headResult.2.head! :: restResult.2) ++ rightResult.2)
+      rw [Simulation.Interaction.bind_done_ok]
+      rfl
+
 end EvalArgs
 
 namespace ExecSeq

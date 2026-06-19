@@ -1424,6 +1424,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionClosedPrimitive.compilerSelected
 #check EvmCompiler.Yul.FunctionsInteractionExpression.compilerDirectAt
 #check EvmCompiler.Yul.InteractionSemantics.ExecSeq.zero
+#check EvmCompiler.Yul.InteractionSemantics.EvalArgs.append
 #check EvmCompiler.Yul.InteractionSemantics.ExecSeq.nil_succ
 #check EvmCompiler.Yul.InteractionSemantics.ExecSeq.cons_succ
 #check EvmCompiler.Yul.InteractionSemantics.Exec.block_succ

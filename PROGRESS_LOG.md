@@ -37,6 +37,12 @@
   stable delayed value under the canonical scoped/domain invariants. The next
   step is list-fuel sequencing with the recursively prepared tail.
 
+- 2026-06-18 19:22 PDT - semantics/yul-evalargs-append - Added the canonical
+  `EvalArgs.append` equation. Under the exact positive residual-fuel bound it
+  factors argument evaluation at any list boundary, assigns the suffix
+  `fuel - 2 * prefix.length`, and preserves ordered value concatenation. This
+  removes custom list-evaluator reasoning from the prepared-argument owner.
+
 - 2026-06-15 - compaction-resume - Resumed with the archive branch and
   narrowed observer-replay implementation intact. Final work is limited to
   consistency review, recording completed verification, and committing the
