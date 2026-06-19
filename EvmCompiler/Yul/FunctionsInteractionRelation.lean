@@ -1423,6 +1423,23 @@ structure ScopedStateRel (layout : List Functions.Name)
 
 namespace ScopedStateRel
 
+/-- The scoped relation depends only on the set of visible names, not their
+list order. This is useful at call entry, where Yul and Functions initialize
+returns and parameters in opposite traversal orders. -/
+theorem relayout
+    {left right : List Functions.Name}
+    {source : SourceState} {target : TargetState}
+    (hRel : ScopedStateRel left source target)
+    (hNames : ∀ name, name ∈ left ↔ name ∈ right) :
+    ScopedStateRel right source target := by
+  refine ⟨hRel.state, ?_, ?_⟩
+  · intro sourceShared sourceVars hSource name value hLookup
+    exact (hNames name).mp
+      (hRel.domain sourceShared sourceVars hSource name value hLookup)
+  · intro sourceShared sourceVars hSource name hName
+    exact hRel.defined sourceShared sourceVars hSource name
+      ((hNames name).mpr hName)
+
 theorem restrictTarget
     {layout scope : List Functions.Name}
     {source : SourceState} {target : TargetState}
@@ -1747,6 +1764,168 @@ theorem zeroFill_insertMany
   subst source
   rw [Yul.InteractionSemantics.State.zeroFill_eq_multifill_zero]
   exact multifill_insertMany hRel hNoDup hFresh hInsert
+
+/-- Canonical Yul and Functions call-frame initialization agree for a
+duplicate-free function signature. -/
+theorem initcall
+    {source : SourceState} {target : TargetState}
+    {params returns : List Functions.Name} {args : List Word}
+    {paramStore : Locals.Source.Store}
+    (hRel : StateRel source target)
+    (hSignature : (returns ++ params).Nodup)
+    (hParams :
+      Functions.Source.Store.insertMany params args
+          Locals.Source.Store.empty = some paramStore) :
+    ScopedStateRel (returns ++ params)
+      (EvmYul.Yul.State.mkOk (source.initcall params returns args))
+      { shared := target.shared
+        vars := Functions.Source.Store.initReturns returns paramStore } := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, _hVars⟩
+  subst source
+  have hSignatureParts := List.nodup_append.mp hSignature
+  have hReturnsNodup : returns.Nodup := hSignatureParts.1
+  have hParamsNodup : params.Nodup := hSignatureParts.2.1
+  have hParamsFresh :
+      ∀ name, name ∈ params → name ∉ returns := by
+    intro name hParam hReturn
+    exact hSignatureParts.2.2 name hReturn name hParam rfl
+  let sourceEmpty : SourceState := .Ok sourceShared default
+  let targetEmpty : TargetState :=
+    { shared := target.shared, vars := Locals.Source.Store.empty }
+  have hEmpty : ScopedStateRel [] sourceEmpty targetEmpty := by
+    refine ⟨?_, ?_, ?_⟩
+    · exact ⟨sourceShared, default, rfl, by simpa [targetEmpty], VarsRel.empty⟩
+    · intro shared vars hState name value hLookup
+      simp [sourceEmpty] at hState
+      rcases hState with ⟨rfl, rfl⟩
+      change (none : Option Word) = some value at hLookup
+      contradiction
+    · intro shared vars hState name hName
+      simp at hName
+  have hReturnsInsert :
+      Functions.Source.Store.insertMany returns
+          (returns.map fun _name => Functions.Source.zero)
+          targetEmpty.vars =
+        some (Functions.Source.Store.initReturns returns
+          Locals.Source.Store.empty) := by
+    simpa [targetEmpty] using
+      (Functions.Source.Store.insertMany_zero_eq_initReturns
+        returns Locals.Source.Store.empty)
+  have hReturns := hEmpty.zeroFill_insertMany hReturnsNodup
+    (by simp) hReturnsInsert
+  have hParamsAfterReturns :
+      Functions.Source.Store.insertMany params args
+          (Functions.Source.Store.initReturns returns
+            Locals.Source.Store.empty) =
+        some (Functions.Source.Store.initReturns returns paramStore) :=
+    Functions.Source.Store.insertMany_initReturns_commute
+      hParams (by
+        intro name hReturn hParam
+        exact hSignatureParts.2.2 name hReturn name hParam rfl)
+  have hFrame := hReturns.multifill_insertMany hParamsNodup
+    (by
+      intro name hMem
+      simpa using hParamsFresh name hMem)
+    hParamsAfterReturns
+  have hFrame' := hFrame.relayout (right := returns ++ params) (by
+    intro name
+    simp [or_comm])
+  have hMkOk :
+      EvmYul.Yul.State.mkOk
+          (((.Ok sourceShared default : SourceState).zeroFill returns).multifill
+            params args) =
+        ((.Ok sourceShared default : SourceState).zeroFill returns).multifill
+          params args := by
+    rcases hFrame'.state with
+      ⟨frameShared, frameVars, hFrameSource, _hShared, _hVars⟩
+    simp [sourceEmpty] at hFrameSource
+    rw [hFrameSource]
+    rfl
+  simpa [sourceEmpty, targetEmpty, EvmYul.Yul.State.initcall,
+    EvmYul.Yul.State.setStore, hMkOk] using hFrame'
+
+/-- Return locals can be read in source order from a related function frame. -/
+theorem lookupMany
+    {layout names : List Functions.Name}
+    {source : SourceState} {target : TargetState}
+    (hRel : ScopedStateRel layout source target)
+    (hSubset : ∀ name, name ∈ names → name ∈ layout) :
+    Functions.Source.Store.lookupMany names target.vars =
+      some (names.map source.lookup!) := by
+  rcases hRel.state with
+    ⟨sourceShared, sourceVars, hSource, _hShared, hVars⟩
+  subst source
+  induction names with
+  | nil => rfl
+  | cons name rest ih =>
+      obtain ⟨value, hLookup⟩ :=
+        hRel.defined sourceShared sourceVars rfl name
+          (hSubset name (by simp))
+      have hTarget : target.vars name = some value :=
+        hVars name value hLookup
+      have hTail := ih (fun candidate hMem =>
+        hSubset candidate (by simp [hMem]))
+      simp [Functions.Source.Store.lookupMany, hTarget, hTail,
+        EvmYul.Yul.State.lookup!, EvmYul.Yul.State.lookup?, hLookup]
+
+/-- Restore caller locals after a returned function body while retaining the
+body's shared-state effects. -/
+theorem restore_call_state
+    {layout : List Functions.Name}
+    {callerSource bodySource : SourceState}
+    {callerTarget bodyTarget : TargetState}
+    (hCaller : StateRel callerSource callerTarget)
+    (hBody : ScopedStateRel layout bodySource.reviveJump bodyTarget) :
+    StateRel
+      ((bodySource.reviveJump.overwrite? callerSource).setStore callerSource)
+      { shared := bodyTarget.shared, vars := callerTarget.vars } := by
+  rcases hCaller with
+    ⟨callerShared, callerVars, hCallerSource,
+      _hCallerShared, hCallerVars⟩
+  rcases hBody.state with
+    ⟨bodyShared, bodyVars, hBodySource, hBodyShared,
+      _hBodyVars⟩
+  subst callerSource
+  refine ⟨bodyShared, callerVars, ?_, hBodyShared, hCallerVars⟩
+  simp [hBodySource, EvmYul.Yul.State.overwrite?,
+    EvmYul.Yul.State.setStore]
+
+/-- Scoped caller restoration preserves the caller's exact visible domain. -/
+theorem restore_call
+    {callerLayout bodyLayout : List Functions.Name}
+    {callerSource bodySource : SourceState}
+    {callerTarget bodyTarget : TargetState}
+    (hCaller : ScopedStateRel callerLayout callerSource callerTarget)
+    (hBody : ScopedStateRel bodyLayout bodySource.reviveJump bodyTarget) :
+    ScopedStateRel callerLayout
+      ((bodySource.reviveJump.overwrite? callerSource).setStore callerSource)
+      { shared := bodyTarget.shared, vars := callerTarget.vars } := by
+  refine ⟨restore_call_state hCaller.state hBody, ?_, ?_⟩
+  · rcases hCaller.state with
+      ⟨callerShared, callerVars, hCallerSource,
+        _hCallerShared, _hCallerVars⟩
+    rcases hBody.state with
+      ⟨bodyShared, bodyVars, hBodySource,
+        _hBodyShared, _hBodyVars⟩
+    subst callerSource
+    intro finalShared finalVars hFinal
+    simp [hBodySource, EvmYul.Yul.State.overwrite?,
+      EvmYul.Yul.State.setStore] at hFinal
+    rcases hFinal with ⟨rfl, rfl⟩
+    exact hCaller.domain callerShared callerVars rfl
+  · rcases hCaller.state with
+      ⟨callerShared, callerVars, hCallerSource,
+        _hCallerShared, _hCallerVars⟩
+    rcases hBody.state with
+      ⟨bodyShared, bodyVars, hBodySource,
+        _hBodyShared, _hBodyVars⟩
+    subst callerSource
+    intro finalShared finalVars hFinal
+    simp [hBodySource, EvmYul.Yul.State.overwrite?,
+      EvmYul.Yul.State.setStore] at hFinal
+    rcases hFinal with ⟨rfl, rfl⟩
+    exact hCaller.defined callerShared callerVars rfl
 
 end ScopedStateRel
 

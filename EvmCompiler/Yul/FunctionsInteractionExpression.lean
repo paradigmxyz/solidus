@@ -449,6 +449,20 @@ theorem append
   | cons hHead hTail ih =>
       simpa using StableArgs.cons hHead (ih hRight)
 
+/-- Stable delayed arguments can be reindexed between Yul's reverse
+evaluation order and Functions' source argument order. -/
+theorem reverse
+    {args : List (Locals.Expr 1)}
+    {base : Functions.InteractionSemantics.State}
+    {values : List Word}
+    (hStable : StableArgs args base values) :
+    StableArgs args.reverse base values.reverse := by
+  induction hStable with
+  | nil base => simpa using (StableArgs.nil base)
+  | @cons head rest base value values hHead hTail ih =>
+      simpa [List.reverse_cons] using
+        ih.append (StableArgs.cons hHead (.nil base))
+
 theorem openEval
     {args : List (Locals.Expr 1)}
     {base candidate : Functions.InteractionSemantics.State}

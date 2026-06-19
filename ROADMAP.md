@@ -199,8 +199,11 @@ boundaries remain active work.
     - [ ] Prove compiler-generated terminal argument preludes.
       - [x] Compiler-selected stable literal/variable argument window, including
         exact source/target argument reversal and low-fuel truncation.
-      - [ ] Generated temporary bindings, primitive-expression preludes, and
-        internal-call preludes.
+      - [x] Generated temporary bindings and primitive-expression preludes.
+      - [ ] Internal-call preludes.
+        - [x] Canonical call-frame initialization, return lookup, caller
+          restoration, and call-specific argument lowering.
+        - [ ] Recursive callee-body attachment and caller writeback.
     - [ ] Complete recursive statement/list proof over compiler decomposition;
       break, continue, leave, and multi-name uninitialized declaration compiler
       cases are checked. Direct-safe one-name initialized declarations and
