@@ -18,6 +18,28 @@ def Terminal : Except EVMException StepResult -> Prop
 
 namespace Terminal
 
+def SafeAt (kind : HaltKind) (state : EVMState) : Prop :=
+  exists final,
+    Target.stepInstr (.prim kind.toPrimOp) state = .ok final
+
+theorem SafeAt.of_sameRuntimeData
+    {kind : HaltKind} {target source : EVMState}
+    (hRel : SameRuntimeData target source)
+    (hSafe : SafeAt kind source) :
+    SafeAt kind target := by
+  rcases hSafe with ⟨sourceFinal, hSource⟩
+  change kind.toPrimOp.step source = .ok sourceFinal at hSource
+  have hCongruence :=
+    PrimOp.terminal_step_map_eraseRuntimeControl kind hRel
+  cases hTarget : kind.toPrimOp.step target with
+  | error error =>
+      rw [hTarget, hSource] at hCongruence
+      simp [Except.map] at hCongruence
+  | ok targetFinal =>
+      exact ⟨targetFinal, by
+        change kind.toPrimOp.step target = .ok targetFinal
+        exact hTarget⟩
+
 theorem successful
     {run : Simulation.Interaction EVMException StepResult}
     (hTerminal : Simulation.Interaction.AllDone Terminal run) :
@@ -29,6 +51,37 @@ theorem successful
   | ok result => trivial
 
 end Terminal
+
+namespace Instr
+
+@[simp] theorem classifyFlowWith_result
+    (continueTransfer : Instr -> Bool) (instr : Instr)
+    (before : EVMState) (result : StepResult) :
+    (instr.classifyFlowWith continueTransfer before result).result = result := by
+  cases result with
+  | halted halt => rfl
+  | running after =>
+      cases instr with
+      | label name | prim name | push name =>
+          simp [Assembly.Instr.classifyFlowWith, FlowStep.result]
+      | jump name =>
+          by_cases hContinue : continueTransfer (.jump name) = true <;>
+            simp [Assembly.Instr.classifyFlowWith, FlowStep.result, hContinue]
+      | jumpi target =>
+          cases hPop : before.stack.pop with
+          | none =>
+              simp [Assembly.Instr.classifyFlowWith, FlowStep.result, hPop]
+          | some pair =>
+              rcases pair with ⟨rest, cond⟩
+              by_cases hZero : cond = EvmYul.UInt256.ofNat 0
+              · simp [Assembly.Instr.classifyFlowWith, FlowStep.result,
+                  hPop, hZero]
+              · by_cases hContinue :
+                    continueTransfer (.jumpi target) = true <;>
+                  simp [Assembly.Instr.classifyFlowWith, FlowStep.result,
+                    hPop, hZero, hContinue]
+
+end Instr
 
 namespace Control
 
@@ -349,17 +402,40 @@ def openRunNResult (program : Program) (fuel : Nat)
     (state : EVMState) : OpenStepResult :=
   Assembly.Control.runNResultWith (openStepResult program) fuel state
 
-def openRunUntilTransferWithPolicy
-    (continueTransfer : Instr → Bool)
-    (program : Program) (fuel : Nat)
-    (state : EVMState) : OpenStepResult :=
-  Assembly.Source.runUntilTransferWithPolicy continueTransfer
-    (openStepResult program) program fuel state
+@[simp] theorem openRunNResult_zero
+    (program : Program) (state : EVMState) :
+    openRunNResult program 0 state =
+      Simulation.Interaction.pure (.running state) := rfl
 
-def openRunUntilTransfer (program : Program) (fuel : Nat)
-    (state : EVMState) : OpenStepResult :=
-  openRunUntilTransferWithPolicy (fun _ => false)
-    program fuel state
+theorem openRunNResult_succ
+    (program : Program) (fuel : Nat) (state : EVMState) :
+    openRunNResult program (fuel + 1) state =
+      (do
+        let result <- openStepResult program state
+        match result with
+        | .running mid => openRunNResult program fuel mid
+        | .halted halt => pure (.halted halt)) := rfl
+
+theorem openRunNResult_one
+    (program : Program) (state : EVMState) :
+    openRunNResult program 1 state = openStepResult program state := by
+  rw [show 1 = 0 + 1 by rfl, openRunNResult_succ]
+  simp only [openRunNResult_zero]
+  change Simulation.Interaction.bind
+      (openStepResult program state)
+      (fun result =>
+        match result with
+        | .running mid => Simulation.Interaction.pure (.running mid)
+        | .halted halt => Simulation.Interaction.pure (.halted halt)) =
+    openStepResult program state
+  trans Simulation.Interaction.bind
+    (openStepResult program state) Simulation.Interaction.pure
+  · apply Simulation.Interaction.AllDone.bind_congr
+      (Simulation.Interaction.AllDone.trivial
+        (openStepResult program state))
+    intro result _hDone
+    cases result <;> rfl
+  · exact Simulation.Interaction.bind_pure _
 
 theorem openRunNResult_add
     (program : Program) (first second : Nat)
@@ -376,6 +452,173 @@ theorem openRunNResult_add
     Control.openRunNResultWith_add
       (Assembly.Source.stepResultWith (openStepAtResult program) program)
       first second state
+
+/-- Once an Assembly source run halts, additional source-instruction fuel is
+inert. -/
+theorem openRunNResult_halted_add_executes
+    {program : Program} {fuel extra : Nat} {state : EVMState}
+    {transcript : Simulation.Interaction.Transcript} {halt : Halt}
+    (hExec : Simulation.Interaction.Executes
+      (openRunNResult program fuel state)
+      transcript (.ok (.halted halt))) :
+    Simulation.Interaction.Executes
+      (openRunNResult program (fuel + extra) state)
+      transcript (.ok (.halted halt)) := by
+  rw [openRunNResult_add]
+  have hCombined :=
+    Simulation.Interaction.Executes.bind_ok
+      (next := fun result =>
+        match result with
+        | .running mid => openRunNResult program extra mid
+        | .halted final => Simulation.Interaction.pure (.halted final))
+      hExec
+      (Simulation.Interaction.Executes.done
+        (.ok (StepResult.halted halt) : Except EVMException StepResult))
+  simpa using hCombined
+
+def openRunUntilTransferWithPolicy
+    (continueTransfer : Instr → Bool)
+    (program : Program) (fuel : Nat)
+    (state : EVMState) : OpenStepResult :=
+  Assembly.Source.runUntilTransferWithPolicy continueTransfer
+    (openStepResult program) program fuel state
+
+@[simp] theorem openRunUntilTransferWithPolicy_zero
+    (continueTransfer : Instr -> Bool)
+    (program : Program) (state : EVMState) :
+    openRunUntilTransferWithPolicy continueTransfer program 0 state =
+      Simulation.Interaction.pure (.running state) := rfl
+
+theorem openRunUntilTransferWithPolicy_succ
+    (continueTransfer : Instr -> Bool)
+    (program : Program) (fuel : Nat) (state : EVMState) :
+    openRunUntilTransferWithPolicy continueTransfer
+        program (fuel + 1) state =
+      (do
+        let flow <- Assembly.Source.flowStepWithPolicy
+          continueTransfer (openStepResult program) program state
+        match flow with
+        | .next mid =>
+            openRunUntilTransferWithPolicy continueTransfer
+              program fuel mid
+        | .exit result => pure result) := rfl
+
+/-- Flow classification changes only whether control continues, never the
+underlying one-instruction result. -/
+theorem map_openFlowStepWithPolicy_result
+    (continueTransfer : Instr -> Bool)
+    (program : Program) (state : EVMState) :
+    Simulation.Interaction.map FlowStep.result
+        (Assembly.Source.flowStepWithPolicy continueTransfer
+          (openStepResult program) program state) =
+      openStepResult program state := by
+  unfold Assembly.Source.flowStepWithPolicy openStepResult
+    Assembly.Source.stepResultWith
+  cases hAt : Program.instrAtPc program state.pc.toNat with
+  | none =>
+      change Simulation.Interaction.bind
+          (Simulation.Interaction.error
+            (Result := FlowStep)
+              EvmYul.EVM.ExecutionException.InvalidInstruction)
+          (fun value : FlowStep =>
+            Simulation.Interaction.pure value.result) =
+        Simulation.Interaction.error
+          (Result := StepResult)
+            EvmYul.EVM.ExecutionException.InvalidInstruction
+      rfl
+  | some current =>
+      rcases current with ⟨pc, instr⟩
+      simp only [hAt]
+      change Simulation.Interaction.bind
+          (Simulation.Interaction.bind
+            (openStepAtResult program pc instr state)
+            (fun result => Simulation.Interaction.pure
+              (instr.classifyFlowWith continueTransfer state result)))
+          (fun flow => Simulation.Interaction.pure flow.result) =
+        openStepAtResult program pc instr state
+      rw [Simulation.Interaction.bind_assoc]
+      trans Simulation.Interaction.bind
+        (openStepAtResult program pc instr state)
+        Simulation.Interaction.pure
+      · apply Simulation.Interaction.AllDone.bind_congr
+          (Simulation.Interaction.AllDone.trivial
+            (openStepAtResult program pc instr state))
+        intro result _hDone
+        change Simulation.Interaction.pure
+            ((instr.classifyFlowWith continueTransfer state result).result) =
+          Simulation.Interaction.pure result
+        rw [InteractionSemantics.Instr.classifyFlowWith_result]
+      · exact Simulation.Interaction.bind_pure _
+
+/-- Every branch of run-until-transfer is a bounded prefix of the ordinary
+Assembly source runner. -/
+theorem openRunUntilTransferWithPolicy_executes_openRunNResult_bounded
+    {continueTransfer : Instr -> Bool}
+    {program : Program} {fuel : Nat} {state : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    {result : StepResult}
+    (hExec : Simulation.Interaction.Executes
+      (openRunUntilTransferWithPolicy continueTransfer
+        program fuel state)
+      transcript (.ok result)) :
+    exists usedFuel,
+      usedFuel <= fuel /\
+        Simulation.Interaction.Executes
+          (openRunNResult program usedFuel state)
+          transcript (.ok result) := by
+  induction fuel generalizing state transcript result with
+  | zero =>
+      rw [openRunUntilTransferWithPolicy_zero] at hExec
+      cases hExec
+      refine ⟨0, Nat.le_refl 0, ?_⟩
+      rw [openRunNResult_zero]
+      exact
+        Simulation.Interaction.Executes.done
+          (.ok (StepResult.running state) : Except EVMException StepResult)
+  | succ fuel ih =>
+      rw [openRunUntilTransferWithPolicy_succ] at hExec
+      rcases Simulation.Interaction.Executes.bind_cases hExec with
+        hError | hOk
+      · rcases hError with ⟨error, hOutcome, _hFlow⟩
+        cases hOutcome
+      · rcases hOk with
+          ⟨flow, headTranscript, restTranscript,
+            hTranscript, hFlow, hRest⟩
+        subst transcript
+        have hMapped : Simulation.Interaction.Executes
+            (Simulation.Interaction.map FlowStep.result
+              (Assembly.Source.flowStepWithPolicy continueTransfer
+                (openStepResult program) program state))
+            headTranscript (.ok flow.result) := by
+          unfold Simulation.Interaction.map
+          have hPure : Simulation.Interaction.Executes
+              (Simulation.Interaction.pure
+                (Error := EVMException) flow.result)
+              [] (.ok flow.result) :=
+            Simulation.Interaction.Executes.done
+              (.ok flow.result : Except EVMException StepResult)
+          simpa using
+            (Simulation.Interaction.Executes.bind_ok
+              (next := fun nextFlow =>
+                Simulation.Interaction.pure
+                  (Error := EVMException) nextFlow.result)
+              hFlow hPure)
+        rw [map_openFlowStepWithPolicy_result] at hMapped
+        rw [← openRunNResult_one] at hMapped
+        cases flow with
+        | next mid =>
+            obtain ⟨tailFuel, hTailFuel, hTail⟩ := ih hRest
+            refine ⟨1 + tailFuel, by omega, ?_⟩
+            rw [openRunNResult_add]
+            exact Simulation.Interaction.Executes.bind_ok hMapped hTail
+        | exit exitResult =>
+            cases hRest
+            exact ⟨1, by omega, by simpa using hMapped⟩
+
+def openRunUntilTransfer (program : Program) (fuel : Nat)
+    (state : EVMState) : OpenStepResult :=
+  openRunUntilTransferWithPolicy (fun _ => false)
+    program fuel state
 
 /--
 The primitive case of the Assembly-to-resolved-instruction boundary is exact:

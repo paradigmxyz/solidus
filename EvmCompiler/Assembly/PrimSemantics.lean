@@ -2806,6 +2806,101 @@ theorem step_eq_evm_step_of_not_continuing {op : PrimOp}
     PrimOp.selfdestruct.step state = .error .StaticModeViolation := by
   simp [PrimOp.step, PrimOp.continuingStep?, hPermission]
 
+/-- Terminal primitive execution is congruent modulo compiler-owned control
+counters. -/
+theorem terminal_step_map_eraseRuntimeControl
+    (kind : HaltKind) {target source : EVMState}
+    (hRel : SameRuntimeData target source) :
+    (kind.toPrimOp.step target).map eraseRuntimeControl =
+      (kind.toPrimOp.step source).map eraseRuntimeControl := by
+  cases target with
+  | mk targetShared targetPc targetStack targetExecLength =>
+      cases source with
+      | mk sourceShared sourcePc sourceStack sourceExecLength =>
+          simp [SameRuntimeData, eraseRuntimeControl] at hRel
+          rcases hRel with ⟨rfl, rfl⟩
+          cases kind with
+          | stop => rfl
+          | «return» =>
+              cases targetStack with
+              | nil => rfl
+              | cons first rest => cases rest <;> rfl
+          | revert =>
+              cases targetStack with
+              | nil => rfl
+              | cons first rest => cases rest <;> rfl
+          | selfdestruct =>
+              cases hPermission : targetShared.executionEnv.perm with
+              | false =>
+                  change
+                    (PrimOp.selfdestruct.step
+                        { toSharedState := targetShared
+                          pc := targetPc
+                          stack := targetStack
+                          execLength := targetExecLength }).map
+                          eraseRuntimeControl =
+                      (PrimOp.selfdestruct.step
+                        { toSharedState := targetShared
+                          pc := sourcePc
+                          stack := targetStack
+                          execLength := sourceExecLength }).map
+                          eraseRuntimeControl
+                  rw [PrimOp.step_selfdestruct_of_static _ hPermission,
+                    PrimOp.step_selfdestruct_of_static _ hPermission]
+              | true =>
+                  cases targetStack with
+                  | nil =>
+                      change
+                        (PrimOp.selfdestruct.step
+                            { toSharedState := targetShared
+                              pc := targetPc
+                              stack := []
+                              execLength := targetExecLength }).map
+                              eraseRuntimeControl =
+                          (PrimOp.selfdestruct.step
+                            { toSharedState := targetShared
+                              pc := sourcePc
+                              stack := []
+                              execLength := sourceExecLength }).map
+                              eraseRuntimeControl
+                      rw [PrimOp.step_selfdestruct_of_permitted _ hPermission,
+                        PrimOp.step_selfdestruct_of_permitted _ hPermission]
+                      rfl
+                  | cons recipient tail =>
+                      let target : EVMState :=
+                        { toSharedState := targetShared
+                          pc := targetPc
+                          stack := recipient :: tail
+                          execLength := targetExecLength }
+                      let source : EVMState :=
+                        { toSharedState := targetShared
+                          pc := sourcePc
+                          stack := recipient :: tail
+                          execLength := sourceExecLength }
+                      have hTarget :
+                          EvmYul.step (τ := .EVM) .SELFDESTRUCT none target =
+                            .ok (EvmYul.EVM.selfdestructState
+                              target recipient tail) :=
+                        EvmYul.EVM.step_selfdestruct_of_stack
+                          target recipient tail rfl
+                      have hSource :
+                          EvmYul.step (τ := .EVM) .SELFDESTRUCT none source =
+                            .ok (EvmYul.EVM.selfdestructState
+                              source recipient tail) :=
+                        EvmYul.EVM.step_selfdestruct_of_stack
+                          source recipient tail rfl
+                      change
+                        (PrimOp.selfdestruct.step target).map
+                            eraseRuntimeControl =
+                          (PrimOp.selfdestruct.step source).map
+                            eraseRuntimeControl
+                      rw [PrimOp.step_selfdestruct_of_permitted
+                          target hPermission,
+                        PrimOp.step_selfdestruct_of_permitted
+                          source hPermission,
+                        hTarget, hSource]
+                      rfl
+
 /--
 Every nonterminal primitive admitted by the checked no-external-effects
 boundary is congruent modulo compiler-owned control counters. This includes

@@ -159,6 +159,40 @@ theorem runtime_left
   | ok hOutcome =>
       exact OpenOutcome.runtime_left hOutcome hSim
 
+/-- A source-safe TypedCfg halt is realized as a terminal Assembly result by
+the adjacent lowering relation. -/
+theorem terminal_of_assemblySafeHalted
+    {program : Assembly.Program}
+    {source : Except EVMException TypedCfg.Outcome}
+    {target : Assembly.Source.ExecutionOutcome}
+    (hSafe :
+      TypedCfg.InteractionSemantics.Program.AssemblySafeHalted source)
+    (hSim : RunSimulates program source target) :
+    Assembly.InteractionSemantics.Terminal target := by
+  cases source with
+  | error sourceError => cases hSafe
+  | ok sourceOutcome =>
+      cases sourceOutcome with
+      | fallthrough state => cases hSafe
+      | jump label state => cases hSafe
+      | returnDispatch state => cases hSafe
+      | invalid state => cases hSafe
+      | halt kind state =>
+          unfold RunSimulates OpenOutcome.Simulates at hSim
+          rcases hSim with ⟨simulated, hRuntime, hTarget⟩
+          obtain ⟨simulatedFinal, hStep⟩ :=
+            Assembly.InteractionSemantics.Terminal.SafeAt.of_sameRuntimeData
+              hRuntime hSafe
+          subst target
+          unfold Assembly.Target.stepInstrResult
+          rw [hStep]
+          have hKind :
+              (Assembly.TargetInstr.prim kind.toPrimOp).haltKind? =
+                some kind := by
+            cases kind <;> rfl
+          rw [hKind]
+          trivial
+
 end OpenBlock
 
 theorem runPops_source_openRunNResult
@@ -3630,6 +3664,50 @@ theorem compileCertified?_entry_openRunN_rel
       (TypedCfg.Program.lower?_entry_labelPc_zero hLower)
       hPc
       hRuntime
+
+/-- Certified entry preservation to the ordinary Assembly source runner.
+Compiler-selected block execution is eliminated internally; callers provide
+only the source-facing safety of terminal CFG outcomes. -/
+theorem compileCertified?_entry_openRunN_assembly_rel
+    {program : TypedCfg.Program}
+    {artifact : TypedCfg.Program.CertifiedArtifact}
+    {targetState sourceState : EVMState} (fuel : Nat)
+    (hCompile : program.compileCertified? = some artifact)
+    (hIndependent : program.ProgramCounterIndependent)
+    (hPc : targetState.pc = EvmYul.UInt256.ofNat 0)
+    (hRuntime :
+      Assembly.SameRuntimeData sourceState targetState.incrPC)
+    (hSafe : Simulation.Interaction.AllDone
+      TypedCfg.InteractionSemantics.Program.AssemblySafeHalted
+      (TypedCfg.InteractionSemantics.Program.openRunN
+        program fuel program.entry sourceState)) :
+    Simulation.Interaction.Rel
+      (OpenBlock.RunSimulates artifact.target)
+      (TypedCfg.InteractionSemantics.Program.openRunN
+        program fuel program.entry sourceState)
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.target
+        (fuel *
+          TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget program)
+        targetState) := by
+  have hBlocks :=
+    compileCertified?_entry_openRunN_rel fuel
+      hCompile hIndependent hPc hRuntime
+  have hBlockTerminal : Simulation.Interaction.AllDone
+      Assembly.InteractionSemantics.Terminal
+      (TypedCfg.InteractionSemantics.CompiledProgram.openRunN
+        program artifact.target fuel targetState) := by
+    have hStrong :=
+      Simulation.Interaction.Rel.strengthen_left hBlocks hSafe
+    apply Simulation.Interaction.Rel.allDone_right hStrong
+    intro sourceDone targetDone hDone
+    rcases hDone with ⟨hSim, hSafeDone⟩
+    exact OpenBlock.terminal_of_assemblySafeHalted
+      hSafeDone hSim
+  have hFlatten :=
+    TypedCfg.InteractionSemantics.CompiledProgram.openRunN_rel_source_terminal
+      hBlockTerminal
+  exact Simulation.Interaction.Rel.trans_eq_right hBlocks hFlatten
 
 end Program
 

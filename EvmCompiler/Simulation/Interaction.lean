@@ -1459,6 +1459,23 @@ theorem trans
           exact .request fun answer =>
             ih answer (hRightResume answer)
 
+/-- Compose through a representation-transparent right boundary. -/
+theorem trans_eq_right
+    {Error1 : Type u1} {Result1 : Type v1}
+    {Error2 : Type u2} {Result2 : Type v2}
+    {doneRel :
+      Except Error1 Result1 -> Except Error2 Result2 -> Prop}
+    {left : Interaction Error1 Result1}
+    {middle right : Interaction Error2 Result2}
+    (hLeft : Rel doneRel left middle)
+    (hRight : Rel Eq middle right) :
+    Rel doneRel left right := by
+  apply Rel.mono (Rel.trans hLeft hRight)
+  intro leftDone rightDone hDone
+  rcases hDone with ⟨middleDone, hRelated, hEq⟩
+  subst rightDone
+  exact hRelated
+
 theorem bind
     {Error₁ : Type u1} {Source₁ : Type v1} {Target₁ : Type w1}
     {Error₂ : Type u2} {Source₂ : Type v2} {Target₂ : Type w2}

@@ -26,6 +26,46 @@ theorem successful
 
 end SourceHalted
 
+/-- A terminal Structured-to-TypedCfg relation supplies the source-facing
+safety needed to execute the adjacent Assembly halt instruction. -/
+theorem allDone_assemblySafeHalted
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
+    {returns : List ReturnDest} {tokens : List Word}
+    {sourceRun : Simulation.Interaction EVMException Structured.Outcome}
+    {targetRun : Simulation.Interaction EVMException TypedCfg.Outcome}
+    (hRel : Simulation.Interaction.Rel
+      (OutcomeDoneRel result ctx regular returns tokens)
+      sourceRun targetRun)
+    (hSourceHalted :
+      Simulation.Interaction.AllDone SourceHalted sourceRun) :
+    Simulation.Interaction.AllDone
+      TypedCfg.InteractionSemantics.Program.AssemblySafeHalted
+      targetRun := by
+  have hStrong :=
+    Simulation.Interaction.Rel.strengthen_left hRel hSourceHalted
+  apply Simulation.Interaction.Rel.allDone_right hStrong
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hRelated, hSourceDone⟩
+  cases sourceDone with
+  | error sourceError => cases hSourceDone
+  | ok sourceOutcome =>
+      cases targetDone with
+      | error targetError => cases hRelated
+      | ok targetOutcome =>
+          cases hRelated with
+          | ok hOutcome =>
+              rcases sourceOutcome with ⟨sourceState, sourceMode⟩
+              cases sourceMode with
+              | regular | brk | cont | leave => cases hSourceDone
+              | halt kind =>
+                  obtain ⟨targetState, targetFinal, hTarget, hStep,
+                      _hFinal⟩ :=
+                    TypedCfgPreservation.OutcomeSimulation.Rel.halt_elim
+                      hOutcome.1
+                  subst targetOutcome
+                  exact ⟨targetFinal, hStep⟩
+
 namespace PreservesUnder
 
 /-- Erase the residual-fuel tag from a checked Structured fragment run. -/

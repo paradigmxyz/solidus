@@ -16,10 +16,11 @@ semantics for `gas`, `msize`, `CALL`, `CALLCODE`, `DELEGATECALL`, `STATICCALL`,
 parameterized recursive kernel shared by target, source, and emitted-block
 execution. Exact per-instruction and whole-program emitted-block open
 preservation are checked. Every higher adjacent preservation boundary is now
-checked through terminal Structured-to-TypedCfg execution. The remaining
-lower-layer proof is a uniform structural bridge from compiler-selected
-Assembly block execution to encoded-bytecode execution; the existing theorem
-currently selects target fuel separately for each concrete transcript.
+checked through terminal Structured-to-TypedCfg execution. TypedCfg compiled
+blocks are now flattened into the ordinary Assembly interpreter under a
+source-facing terminal-safety invariant, and the resulting run composes with
+uniform Assembly-to-encoded-bytecode preservation. The remaining proof work is
+the short terminal Yul-facing composition and its completion audit.
 
 ## Open-Effects Migration Status
 
@@ -36,6 +37,9 @@ currently selects target fuel separately for each concrete transcript.
   the ordinary TypedCfg runner expected by the adjacent lower pass.
 - [x] Strengthen Assembly -> encoded bytecode from concrete-branch existential
   fuel to one source-derived uniform target budget and `Interaction.Rel`.
+- [x] Flatten certified TypedCfg block execution into ordinary Assembly under
+  Structured-derived terminal safety, then compose the adjacent lower
+  boundaries through encoded bytecode.
 - [x] Functions allocation relation, primitive families, recursive
   expressions, stack/scratch declaration preservation, and assignment
   preservation in both activation modes.

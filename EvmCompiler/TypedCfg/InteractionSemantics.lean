@@ -208,6 +208,17 @@ end Terminator
 
 namespace CompiledBlock
 
+def fuelBudget (block : TypedCfg.Block) : Nat :=
+  match TypedCfg.Block.lowerBodyFrom? block.body block.input with
+  | none => 0
+  | some (bodyCode, output) =>
+      if output = block.output then
+        match block.term.lowerAt? output with
+        | none => 0
+        | some termCode => 1 + bodyCode.length + termCode.length
+      else
+        0
+
 /--
 Execute one lowered TypedCfg block through the canonical Assembly runners.
 
@@ -248,9 +259,130 @@ def openRun (block : TypedCfg.Block)
       else
         .done (.error .InvalidInstruction)
 
+/-- One compiler-selected block execution is a bounded prefix of ordinary
+Assembly source execution. -/
+theorem openRun_executes_source_bounded
+    {block : TypedCfg.Block} {program : Assembly.Program}
+    {state : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    {result : Assembly.StepResult}
+    (hExec : Simulation.Interaction.Executes
+      (openRun block program state) transcript (.ok result)) :
+    exists usedFuel,
+      usedFuel <= fuelBudget block /\
+        Simulation.Interaction.Executes
+          (Assembly.InteractionSemantics.Source.openRunNResult
+            program usedFuel state)
+          transcript (.ok result) := by
+  unfold openRun at hExec
+  cases hBody : TypedCfg.Block.lowerBodyFrom?
+      block.body block.input with
+  | none =>
+      simp only [hBody] at hExec
+      cases hExec
+  | some bodyResult =>
+      rcases bodyResult with ⟨bodyCode, output⟩
+      simp only [hBody] at hExec
+      by_cases hOutput : output = block.output
+      · rw [if_pos hOutput] at hExec
+        subst output
+        cases hTerm : block.term.lowerAt? block.output with
+        | none =>
+            simp only [hTerm] at hExec
+            cases hExec
+        | some termCode =>
+            simp only [hTerm] at hExec
+            have hBudget : fuelBudget block =
+                1 + bodyCode.length + termCode.length := by
+              simp [fuelBudget, hBody, hTerm]
+            rcases Simulation.Interaction.Executes.bind_cases hExec with
+              hLabelError | hLabelOk
+            · rcases hLabelError with
+                ⟨error, hOutcome, _hLabel⟩
+              cases hOutcome
+            · rcases hLabelOk with
+                ⟨labelResult, labelTranscript, restTranscript,
+                  hTranscript, hLabel, hRest⟩
+              subst transcript
+              cases labelResult with
+              | halted halt =>
+                  cases hRest
+                  refine ⟨1, by rw [hBudget]; omega, ?_⟩
+                  simpa using hLabel
+              | running entry =>
+                  rcases Simulation.Interaction.Executes.bind_cases hRest with
+                    hBodyError | hBodyOk
+                  · rcases hBodyError with
+                      ⟨error, hOutcome, _hBodyRun⟩
+                    cases hOutcome
+                  · rcases hBodyOk with
+                      ⟨bodyResult, bodyTranscript, termTranscript,
+                        hRestTranscript, hBodyRun, hTermRun⟩
+                    subst restTranscript
+                    cases bodyResult with
+                    | halted halt =>
+                        cases hTermRun
+                        refine
+                          ⟨1 + bodyCode.length,
+                            by rw [hBudget]; omega, ?_⟩
+                        rw [
+                          Assembly.InteractionSemantics.Source.openRunNResult_add]
+                        simpa [List.append_assoc] using
+                          Simulation.Interaction.Executes.bind_ok
+                            hLabel hBodyRun
+                    | running mid =>
+                        obtain ⟨termFuel, hTermFuel, hTermExec⟩ :=
+                          Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy_executes_openRunNResult_bounded
+                            hTermRun
+                        have hLabelBody : Simulation.Interaction.Executes
+                            (Assembly.InteractionSemantics.Source.openRunNResult
+                              program (1 + bodyCode.length) state)
+                            (labelTranscript ++ bodyTranscript)
+                            (.ok (.running mid)) := by
+                          rw [
+                            Assembly.InteractionSemantics.Source.openRunNResult_add]
+                          exact Simulation.Interaction.Executes.bind_ok
+                            hLabel hBodyRun
+                        refine
+                          ⟨1 + bodyCode.length + termFuel,
+                            by rw [hBudget]; omega, ?_⟩
+                        rw [
+                          Assembly.InteractionSemantics.Source.openRunNResult_add]
+                        simpa [List.append_assoc] using
+                          Simulation.Interaction.Executes.bind_ok
+                            hLabelBody hTermExec
+      · rw [if_neg hOutput] at hExec
+        cases hExec
+
 end CompiledBlock
 
 namespace CompiledProgram
+
+def fuelBudget (source : TypedCfg.Program) : Nat :=
+  (source.blocks.map CompiledBlock.fuelBudget).sum
+
+theorem block_fuelBudget_le_of_findBlock?
+    {source : TypedCfg.Program} {label : Label} {block : TypedCfg.Block}
+    (hFind : source.findBlock? label = some block) :
+    CompiledBlock.fuelBudget block <= fuelBudget source := by
+  have hMem : block ∈ source.blocks := by
+    exact List.mem_of_find?_eq_some hFind
+  unfold fuelBudget
+  have aux : forall blocks : List TypedCfg.Block,
+      block ∈ blocks ->
+        CompiledBlock.fuelBudget block <=
+          (blocks.map CompiledBlock.fuelBudget).sum := by
+    intro blocks hBlock
+    induction blocks with
+    | nil => simp at hBlock
+    | cons head tail ih =>
+        simp only [List.mem_cons] at hBlock
+        simp only [List.map_cons, List.sum_cons]
+        rcases hBlock with hHead | hTail
+        · subst head
+          omega
+        · exact Nat.le_trans (ih hTail) (by omega)
+  exact aux source.blocks hMem
 
 /--
 Execute one compiled TypedCfg block selected by the concrete Assembly program
@@ -294,6 +426,125 @@ theorem openRunN_succ
             openRunN source target fuel state'
         | .halted halt =>
             pure (.halted halt)) := rfl
+
+theorem openStep_executes_source_bounded
+    {source : TypedCfg.Program} {target : Assembly.Program}
+    {state : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    {result : Assembly.StepResult}
+    (hExec : Simulation.Interaction.Executes
+      (openStep source target state) transcript (.ok result)) :
+    exists usedFuel,
+      usedFuel <= fuelBudget source /\
+        Simulation.Interaction.Executes
+          (Assembly.InteractionSemantics.Source.openRunNResult
+            target usedFuel state)
+          transcript (.ok result) := by
+  unfold openStep at hExec
+  cases hAt : target.instrAtPc state.pc.toNat with
+  | none =>
+      simp only [hAt] at hExec
+      cases hExec
+  | some located =>
+      rcases located with ⟨pc, instr⟩
+      simp only [hAt] at hExec
+      cases instr with
+      | label label =>
+          cases hFind : source.findBlock? label with
+          | none =>
+              simp only [hFind] at hExec
+              cases hExec
+          | some block =>
+              simp only [hFind] at hExec
+              obtain ⟨usedFuel, hUsed, hSource⟩ :=
+                CompiledBlock.openRun_executes_source_bounded hExec
+              exact
+                ⟨usedFuel,
+                  Nat.le_trans hUsed
+                    (block_fuelBudget_le_of_findBlock? hFind),
+                  hSource⟩
+      | prim op | push op | jump op | jumpi op =>
+          cases hExec
+
+theorem openRunN_executes_source_bounded
+    {source : TypedCfg.Program} {target : Assembly.Program}
+    {fuel : Nat} {state : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    {result : Assembly.StepResult}
+    (hExec : Simulation.Interaction.Executes
+      (openRunN source target fuel state) transcript (.ok result)) :
+    exists usedFuel,
+      usedFuel <= fuel * fuelBudget source /\
+        Simulation.Interaction.Executes
+          (Assembly.InteractionSemantics.Source.openRunNResult
+            target usedFuel state)
+          transcript (.ok result) := by
+  induction fuel generalizing state transcript result with
+  | zero =>
+      rw [openRunN_zero] at hExec
+      cases hExec
+      refine ⟨0, by simp, ?_⟩
+      exact Simulation.Interaction.Executes.done
+        (.ok (Assembly.StepResult.running state) :
+          Except EVMException Assembly.StepResult)
+  | succ fuel ih =>
+      rw [openRunN_succ] at hExec
+      rcases Simulation.Interaction.Executes.bind_cases hExec with
+        hStepError | hStepOk
+      · rcases hStepError with ⟨error, hOutcome, _hStep⟩
+        cases hOutcome
+      · rcases hStepOk with
+          ⟨stepResult, headTranscript, restTranscript,
+            hTranscript, hStep, hRest⟩
+        subst transcript
+        obtain ⟨headFuel, hHeadFuel, hHead⟩ :=
+          openStep_executes_source_bounded hStep
+        cases stepResult with
+        | halted halt =>
+            cases hRest
+            refine ⟨headFuel, ?_, by simpa using hHead⟩
+            rw [Nat.add_mul]
+            omega
+        | running mid =>
+            obtain ⟨tailFuel, hTailFuel, hTail⟩ := ih hRest
+            refine ⟨headFuel + tailFuel, ?_, ?_⟩
+            · rw [Nat.add_mul]
+              omega
+            · rw [
+                Assembly.InteractionSemantics.Source.openRunNResult_add]
+              exact Simulation.Interaction.Executes.bind_ok hHead hTail
+
+/-- Universally terminal compiler-selected block execution is structurally
+related to one ordinary Assembly source run at a source-program-owned budget. -/
+theorem openRunN_rel_source_terminal
+    {source : TypedCfg.Program} {target : Assembly.Program}
+    {fuel : Nat} {state : EVMState}
+    (hTerminal : Simulation.Interaction.AllDone
+      Assembly.InteractionSemantics.Terminal
+      (openRunN source target fuel state)) :
+    Simulation.Interaction.Rel Eq
+      (openRunN source target fuel state)
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        target (fuel * fuelBudget source) state) := by
+  apply Simulation.Interaction.Rel.of_successful_executes
+    (Assembly.InteractionSemantics.Terminal.successful hTerminal)
+  intro transcript sourceResult hSourceExec
+  have hSourceTerminal :=
+    Simulation.Interaction.AllDone.property_of_executes
+      hTerminal hSourceExec
+  cases sourceResult with
+  | running sourceFinal => cases hSourceTerminal
+  | halted halt =>
+      obtain ⟨usedFuel, hUsedFuel, hAssemblyExec⟩ :=
+        openRunN_executes_source_bounded hSourceExec
+      let extra := fuel * fuelBudget source - usedFuel
+      have hFuel : usedFuel + extra = fuel * fuelBudget source :=
+        Nat.add_sub_of_le hUsedFuel
+      have hPadded :=
+        Assembly.InteractionSemantics.Source.openRunNResult_halted_add_executes
+          (extra := extra) hAssemblyExec
+      rw [hFuel] at hPadded
+      exact ⟨.ok (.halted halt), hPadded, rfl⟩
 
 end CompiledProgram
 
@@ -742,6 +993,13 @@ theorem map_openRunNResultWithStop_runResultOutcome
 /-- Successful stop-aware branches are terminal exactly when they halt. -/
 def Halted : Except EVMException TypedCfg.Outcome -> Prop
   | .ok (.halt _ _) => True
+  | _ => False
+
+/-- A TypedCfg halt whose corresponding Assembly terminal instruction is safe
+to execute. -/
+def AssemblySafeHalted : Except EVMException TypedCfg.Outcome -> Prop
+  | .ok (.halt kind state) =>
+      Assembly.InteractionSemantics.Terminal.SafeAt kind state
   | _ => False
 
 /-- A stop policy is inert when every branch already halts. -/

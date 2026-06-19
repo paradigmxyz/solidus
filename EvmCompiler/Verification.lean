@@ -1605,6 +1605,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionProgram.targetSuccessful
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToAllocatedExpressions
 #check EvmCompiler.Compiler.OpenInteractionComposition.expressionsToStructured
+#check EvmCompiler.TypedCfg.InteractionPreservation.Program.compileCertified?_entry_openRunN_assembly_rel
+#check EvmCompiler.Compiler.OpenInteractionComposition.structuredToEncodedBytecode
+#print axioms EvmCompiler.Compiler.OpenInteractionComposition.structuredToEncodedBytecode
 #check EvmCompiler.Yul.FunctionsInteractionStatement.ControlDoneRel.block
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.block
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.recursiveCondition
