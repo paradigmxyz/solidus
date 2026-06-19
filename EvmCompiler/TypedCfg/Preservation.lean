@@ -2271,6 +2271,43 @@ def RunSimulates (program : Assembly.Program) :
   | .ok sourceOutcome, outcome =>
       Outcome.Simulates program sourceOutcome outcome
 
+theorem runTermChecked_simulates_iff
+    (program : Assembly.Program) (shape : Shape)
+    (term : Terminator) (state : EVMState)
+    (outcome : Assembly.Source.ExecutionOutcome) :
+    RunSimulates program
+        (TypedCfg.Block.runTermChecked shape term state) outcome ↔
+      Outcome.Simulates program
+        (TypedCfg.Block.runTerm shape term state) outcome := by
+  cases term with
+  | halt kind =>
+      cases kind with
+      | stop | «return» | revert =>
+          simp [TypedCfg.Block.runTermChecked,
+            TypedCfg.Block.runTerm, RunSimulates]
+      | selfdestruct =>
+          cases hPermission : state.executionEnv.perm with
+          | true =>
+              simp [TypedCfg.Block.runTermChecked,
+                TypedCfg.Block.runTerm, RunSimulates, hPermission]
+          | false =>
+              have hStep :
+                  Assembly.Target.stepInstrResult
+                      (.prim .selfdestruct) state =
+                    .error .StaticModeViolation := by
+                unfold Assembly.Target.stepInstrResult
+                rw [Assembly.Target.stepInstr_prim,
+                  Assembly.PrimOp.step_selfdestruct_of_static
+                    state hPermission]
+                rfl
+              simp [TypedCfg.Block.runTermChecked,
+                TypedCfg.Block.runTerm, RunSimulates,
+                Outcome.Simulates, Assembly.HaltKind.toPrimOp,
+                hPermission, hStep]
+  | fallthrough next | jump next | jumpi next _
+  | returnDispatch _ _ | invalid =>
+      simp [TypedCfg.Block.runTermChecked, RunSimulates]
+
 theorem runBody_output_of_lowerBodyFrom?
     {body : List Instr} {shape output runOutput : Shape}
     {code : Assembly.Program} {state final : EVMState}
@@ -2691,8 +2728,14 @@ theorem lower?_eventually
                         intro current hCurrent
                         subst current
                         exact hTermRun)
+                  have hChecked :=
+                    Assembly.Source.Eventually.mono hBodyThenTerm
+                      (fun outcome hOutcome =>
+                        (runTermChecked_simulates_iff
+                          program block.output block.term mid outcome).2
+                            hOutcome)
                   simpa [RunSimulates, TypedCfg.Block.run, hRunBody,
-                    Bind.bind, Except.bind] using hBodyThenTerm
+                    Bind.bind, Except.bind] using hChecked
             have hFromLabel :
                 Assembly.Source.Eventually program state
                   (RunSimulates program (block.run entry)) :=

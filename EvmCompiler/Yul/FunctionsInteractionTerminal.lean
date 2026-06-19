@@ -113,6 +113,23 @@ private theorem sourcePrimCall_selfdestruct
   simp [EvmYul.Yul.primCall, EvmYul.Yul.State.executionEnv,
     hPerm, hStep]
 
+private theorem sourcePrimCall_selfdestruct_static
+    (fuel : Nat) (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore) (recipient : Word)
+    (hPerm : shared.executionEnv.perm = false) :
+    EvmYul.Yul.primCall (fuel + 1) (.Ok shared vars)
+        (.System .SELFDESTRUCT) [recipient] =
+      .error .StaticModeViolation := by
+  simp [EvmYul.Yul.primCall, EvmYul.Yul.State.executionEnv, hPerm,
+    MonadExcept.throw, MonadExceptOf.throw, instMonadExceptOfExcept,
+    Except.bind]
+  change
+    (Except.error .StaticModeViolation :
+      Except EvmYul.Yul.Exception
+        (EvmYul.Yul.State × List Word)) =
+      .error .StaticModeViolation
+  rfl
+
 theorem stop
     (fuel : Nat)
     {source : Yul.InteractionSemantics.State}
@@ -285,7 +302,6 @@ theorem selfdestruct
     (fuel : Nat) (recipient : Word)
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
-    (hPerm : source.sharedState.executionEnv.perm = true)
     (hRel : FunctionsInteractionRelation.StateRel source target) :
     Simulation.Interaction.ForwardRel Truncated
       (PrimitiveDoneRel .selfdestruct)
@@ -345,19 +361,19 @@ theorem selfdestruct
                   stack := [recipient]
                   execLength := 0 }
                 recipient []) := by
-        change EvmYul.step (τ := .EVM) .SELFDESTRUCT none
-            { toSharedState := target.shared
-              pc := EvmYul.UInt256.ofNat 0
-              stack := [recipient]
-              execLength := 0 } =
-          .ok
-            (EvmYul.EVM.selfdestructState
-              { toSharedState := target.shared
-                pc := EvmYul.UInt256.ofNat 0
-                stack := [recipient]
-                execLength := 0 }
-              recipient [])
-        exact EvmYul.EVM.step_selfdestruct_of_stack _ recipient [] rfl
+        let isolated : Assembly.EVMState :=
+          { toSharedState := target.shared
+            pc := EvmYul.UInt256.ofNat 0
+            stack := [recipient]
+            execLength := 0 }
+        have hRaw :
+            EvmYul.step (τ := .EVM) .SELFDESTRUCT none isolated =
+              .ok (EvmYul.EVM.selfdestructState
+                isolated recipient []) :=
+          EvmYul.EVM.step_selfdestruct_of_stack _ recipient [] rfl
+        change Assembly.PrimOp.selfdestruct.step isolated = _
+        rw [Assembly.PrimOp.step_selfdestruct_of_permitted
+          isolated hTargetPerm, hRaw]
       simp only [Functions.InteractionSemantics.primitiveSemantics,
         Locals.InteractionSemantics.primitiveSemantics,
         Locals.InteractionSemantics.Primitive.openTerminal,
@@ -380,7 +396,51 @@ theorem selfdestruct
           hShared sourceVars recipient,
         by simpa [targetFinal, targetShared,
           Locals.Source.State.withShared] using hVars⟩
-  · exact (hSourcePerm (by simpa using hPerm)).elim
+  · have hSourceStatic : sourceShared.executionEnv.perm = false := by
+      cases hPermission : sourceShared.executionEnv.perm with
+      | false => rfl
+      | true => exact (hSourcePerm hPermission).elim
+    have hTargetStatic : target.shared.executionEnv.perm = false := by
+      simpa [hSourceStatic] using hShared.executionEnv.permission.symm
+    have hSource :
+        Yul.InteractionSemantics.Primitive.openEval
+            (fuel + 2) (.Ok sourceShared sourceVars)
+              (.System .SELFDESTRUCT) [recipient] =
+          .done
+            (.error
+              { exception := .StaticModeViolation
+                state := .Ok sourceShared sourceVars }) := by
+      simp [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.closedEval,
+        Yul.InteractionSemantics.Primitive.fail,
+        Simulation.ExternalKind.ofYulOperation?,
+        Simulation.CallKind.ofYulOperation?,
+        Simulation.CreateKind.ofYulOperation?,
+        sourcePrimCall_selfdestruct_static, hSourceStatic,
+        Yul.InteractionSemantics.State.afterException]
+    have hTarget :
+        Functions.InteractionSemantics.primitiveSemantics.terminal
+            .selfdestruct target [recipient] =
+          .done (.error .StaticModeViolation) := by
+      have hStep :
+          Structured.Terminal.step .selfdestruct
+              (Locals.InteractionSemantics.Primitive.isolated
+                target [recipient]) =
+            .error .StaticModeViolation := by
+        change Assembly.PrimOp.selfdestruct.step
+            (Locals.InteractionSemantics.Primitive.isolated
+              target [recipient]) = _
+        apply Assembly.PrimOp.step_selfdestruct_of_static
+        simpa [Locals.InteractionSemantics.Primitive.isolated] using
+          hTargetStatic
+      simp only [Functions.InteractionSemantics.primitiveSemantics,
+        Locals.InteractionSemantics.primitiveSemantics,
+        Locals.InteractionSemantics.Primitive.openTerminal]
+      rw [hStep]
+      rfl
+    rw [hSource, hTarget]
+    exact Simulation.Interaction.ForwardRel.done
+      (PrimitiveDoneRel.error trivial)
 
 end FunctionsInteractionTerminal
 end Yul

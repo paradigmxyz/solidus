@@ -393,6 +393,49 @@ abbrev RuntimeOutcomeRel :
     (fun left right : EVMException => left = right)
     Outcome.RuntimeRel
 
+theorem runTermChecked_runtimeRel
+    {shape : Shape} {term : TypedCfg.Terminator}
+    {target source : EVMState}
+    (hRel : Assembly.SameRuntimeData target source) :
+    RuntimeOutcomeRel
+      (TypedCfg.Block.runTermChecked shape term target)
+      (TypedCfg.Block.runTermChecked shape term source) := by
+  cases term with
+  | halt kind =>
+      cases kind with
+      | stop | «return» | revert =>
+          exact Simulation.Interaction.ExceptRel.ok
+            (runTerm_runtimeRel hRel)
+      | selfdestruct =>
+          have hPermission :
+              target.executionEnv.perm = source.executionEnv.perm := by
+            exact congrArg (fun shared => shared.executionEnv.perm)
+              (Assembly.SameRuntimeData.shared_eq hRel)
+          cases hTarget : target.executionEnv.perm with
+          | false =>
+              have hSource : source.executionEnv.perm = false := by
+                rw [← hPermission]
+                exact hTarget
+              rw [TypedCfg.Block.runTermChecked_selfdestruct_of_static
+                  shape target hTarget,
+                TypedCfg.Block.runTermChecked_selfdestruct_of_static
+                  shape source hSource]
+              exact Simulation.Interaction.ExceptRel.error rfl
+          | true =>
+              have hSource : source.executionEnv.perm = true := by
+                rw [← hPermission]
+                exact hTarget
+              rw [TypedCfg.Block.runTermChecked_halt_of_allowed
+                  shape .selfdestruct target (by simpa using hTarget),
+                TypedCfg.Block.runTermChecked_halt_of_allowed
+                  shape .selfdestruct source (by simpa using hSource)]
+              exact Simulation.Interaction.ExceptRel.ok
+                (Outcome.RuntimeRel.halt .selfdestruct hRel)
+  | fallthrough _ | jump _ | jumpi _ _
+  | returnDispatch _ _ | invalid =>
+      exact Simulation.Interaction.ExceptRel.ok
+        (runTerm_runtimeRel hRel)
+
 theorem openRun_runtimeRel
     {program : TypedCfg.Program} {block : TypedCfg.Block}
     {target source : EVMState}
@@ -417,10 +460,15 @@ theorem openRun_runtimeRel
   change sourceOutput = block.output at hSourceOutput
   subst targetOutput
   subst sourceOutput
-  simp
-  exact
-    .done
-      (.ok (runTerm_runtimeRel hAfter))
+  simp only [↓reduceIte]
+  have hChecked := runTermChecked_runtimeRel
+    (shape := block.output) (term := block.term) hAfter
+  cases hTarget : TypedCfg.Block.runTermChecked
+      block.output block.term targetAfter <;>
+    cases hSource : TypedCfg.Block.runTermChecked
+      block.output block.term sourceAfter <;>
+    simp [hTarget, hSource] at hChecked ⊢
+  all_goals exact .done hChecked
 
 theorem openRun_admissibleProgramStep
     (block : TypedCfg.Block) (state : EVMState) :
@@ -440,27 +488,34 @@ theorem openRun_admissibleProgramStep
     by_cases hOutput : output = block.output
     · subst output
       simp only
-      apply Simulation.Interaction.AllDone.done
-      have hNoFallthrough :=
-        TypedCfg.Block.runTerm_ne_fallthrough
-          block.output block.term final
-      have hNoReturnDispatch :=
-        TypedCfg.Block.runTerm_ne_returnDispatch
-          block.output block.term final
-      cases hRun :
-          TypedCfg.Block.runTerm block.output block.term final with
-      | fallthrough fallthroughState =>
-          exact
-            (hNoFallthrough fallthroughState hRun).elim
-      | jump next jumpState =>
-          trivial
-      | returnDispatch dispatchState =>
-          exact
-            (hNoReturnDispatch dispatchState hRun).elim
-      | halt kind haltState =>
-          trivial
-      | invalid invalidState =>
-          trivial
+      cases hChecked : TypedCfg.Block.runTermChecked
+          block.output block.term final with
+      | error err =>
+          exact Simulation.Interaction.AllDone.done trivial
+      | ok outcome =>
+          apply Simulation.Interaction.AllDone.done
+          have hRun :
+              TypedCfg.Block.runTerm block.output block.term final = outcome :=
+            TypedCfg.Block.runTerm_eq_of_runTermChecked_eq_ok hChecked
+          have hNoFallthrough :=
+            TypedCfg.Block.runTerm_ne_fallthrough
+              block.output block.term final
+          have hNoReturnDispatch :=
+            TypedCfg.Block.runTerm_ne_returnDispatch
+              block.output block.term final
+          cases hOutcome : outcome with
+          | fallthrough fallthroughState =>
+              exact
+                (hNoFallthrough fallthroughState (hRun.trans hOutcome)).elim
+          | jump next jumpState =>
+              trivial
+          | returnDispatch dispatchState =>
+              exact
+                (hNoReturnDispatch dispatchState (hRun.trans hOutcome)).elim
+          | halt kind haltState =>
+              trivial
+          | invalid invalidState =>
+              trivial
     · exact
         (by
           simp only [hOutput, if_false]

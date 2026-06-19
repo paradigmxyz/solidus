@@ -39,6 +39,52 @@ def primitiveSemantics (transcript : Trace) :
     Functions.Source.Effectful.PrimitiveSemantics (State transcript) :=
   Locals.ObserverSemantics.primitiveSemantics transcript
 
+@[simp] theorem primitiveSemantics_terminal_selfdestruct_of_permitted
+    {transcript : Trace} (state : State transcript)
+    (recipient : Assembly.Word)
+    (hPermission : state.source.shared.executionEnv.perm = true) :
+    (primitiveSemantics transcript).terminal
+        .selfdestruct state [recipient] =
+      .ok
+        (state.withSource
+          (state.source.withShared
+            ((EvmYul.EVM.selfdestructState
+              { toSharedState := state.source.shared
+                pc := EvmYul.UInt256.ofNat 0
+                stack := [recipient]
+                execLength := 0 }
+              recipient []).toSharedState))) := by
+  unfold primitiveSemantics Locals.ObserverSemantics.primitiveSemantics
+  change
+    (match
+        Locals.Source.PrimitiveSemantics.structured.terminal
+          .selfdestruct state.source.shared [recipient]
+      with
+      | .ok shared =>
+          Except.ok (state.withSource (state.source.withShared shared))
+      | .error err => Except.error err) = _
+  rw [Locals.Source.PrimitiveSemantics.structured_terminal_selfdestruct_of_permitted
+    state.source.shared recipient hPermission]
+
+@[simp] theorem primitiveSemantics_terminal_selfdestruct_of_static
+    {transcript : Trace} (state : State transcript)
+    (recipient : Assembly.Word)
+    (hPermission : state.source.shared.executionEnv.perm = false) :
+    (primitiveSemantics transcript).terminal
+        .selfdestruct state [recipient] =
+      .error .StaticModeViolation := by
+  unfold primitiveSemantics Locals.ObserverSemantics.primitiveSemantics
+  change
+    (match
+        Locals.Source.PrimitiveSemantics.structured.terminal
+          .selfdestruct state.source.shared [recipient]
+      with
+      | .ok shared =>
+          Except.ok (state.withSource (state.source.withShared shared))
+      | .error err => Except.error err) = _
+  rw [Locals.Source.PrimitiveSemantics.structured_terminal_selfdestruct_of_static
+    state.source.shared recipient hPermission]
+
 mutual
   theorem expr_eval_vars_eq
       {transcript : Trace} {results : Nat}

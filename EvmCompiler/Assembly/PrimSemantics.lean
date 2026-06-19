@@ -2767,6 +2767,11 @@ def step (op : PrimOp) (state : EvmYul.EVM.State) :
       | .create | .call | .callcode | .delegatecall | .create2
       | .staticcall =>
           .error .InvalidInstruction
+      | .selfdestruct =>
+          if state.executionEnv.perm then
+            EvmYul.step op.toEVM none state
+          else
+            .error .StaticModeViolation
       | _ =>
           EvmYul.step op.toEVM none state
 
@@ -2779,11 +2784,27 @@ theorem step_eq_continuingStep_run {op : PrimOp} {step : PrimStep}
 theorem step_eq_evm_step_of_not_continuing {op : PrimOp}
     (hStep : op.continuingStep? = none)
     (hNoCallCreate : op.isCallCreate = false)
-    (state : EvmYul.EVM.State) :
+    (state : EvmYul.EVM.State)
+    (hSelfdestruct : op = .selfdestruct →
+      state.executionEnv.perm = true) :
     op.step state = EvmYul.step op.toEVM none state := by
   cases op <;>
     simp [PrimOp.step, PrimOp.continuingStep?,
-      PrimOp.isCallCreate] at hStep hNoCallCreate ⊢
+      PrimOp.isCallCreate] at hStep hNoCallCreate hSelfdestruct ⊢
+  case selfdestruct => simp [hSelfdestruct]
+
+@[simp] theorem step_selfdestruct_of_permitted
+    (state : EvmYul.EVM.State)
+    (hPermission : state.executionEnv.perm = true) :
+    PrimOp.selfdestruct.step state =
+      EvmYul.step (τ := .EVM) .SELFDESTRUCT none state := by
+  simp [PrimOp.step, PrimOp.continuingStep?, PrimOp.toEVM, hPermission]
+
+@[simp] theorem step_selfdestruct_of_static
+    (state : EvmYul.EVM.State)
+    (hPermission : state.executionEnv.perm = false) :
+    PrimOp.selfdestruct.step state = .error .StaticModeViolation := by
+  simp [PrimOp.step, PrimOp.continuingStep?, hPermission]
 
 /--
 Every nonterminal primitive admitted by the checked no-external-effects

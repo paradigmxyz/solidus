@@ -1929,8 +1929,7 @@ theorem lowerAt?_openRunUntilTransfer_rel_of_direct
     Simulation.Interaction.Rel
       (Preservation.Block.RunSimulates
         (pre ++ code ++ post))
-      (.done (.ok
-        (TypedCfg.Block.runTerm shape term state)))
+      (.done (TypedCfg.Block.runTermChecked shape term state))
       (Assembly.InteractionSemantics.Source.openRunUntilTransfer
         (pre ++ code ++ post) code.length state) := by
   cases term with
@@ -2261,6 +2260,7 @@ theorem lowerAt?_openRunUntilTransfer_rel_of_direct
               Assembly.Program).length = 1 by rfl]
           rw [hRun]
           apply Simulation.Interaction.Rel.done
+          rw [Preservation.Block.runTermChecked_simulates_iff]
           rfl
       | «return» =>
           simp [TypedCfg.Terminator.lowerAt?] at hLower
@@ -2327,6 +2327,7 @@ theorem lowerAt?_openRunUntilTransfer_rel_of_direct
               Assembly.Program).length = 1 by rfl]
           rw [hRun]
           apply Simulation.Interaction.Rel.done
+          rw [Preservation.Block.runTermChecked_simulates_iff]
           rfl
   | invalid =>
       simp [TypedCfg.Terminator.lowerAt?] at hLower
@@ -2368,7 +2369,7 @@ theorem lowerAt?_openRunUntilTransfer_rel
     (hLabels : ((pre ++ code ++ post).labels).Nodup) :
     Simulation.Interaction.Rel
       (Preservation.Block.RunSimulates (pre ++ code ++ post))
-      (.done (.ok (TypedCfg.Block.runTerm shape term state)))
+      (.done (TypedCfg.Block.runTermChecked shape term state))
       (Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
         (TypedCfg.InteractionSemantics.Terminator.assemblyFlowPolicy term)
         (pre ++ code ++ post) code.length state) := by
@@ -2824,7 +2825,9 @@ theorem lowerBodyThenTerm_openRun_rel
           TypedCfg.InteractionSemantics.Block.openRunBody
             body input state
         if actualOutput = output then
-          pure (TypedCfg.Block.runTerm output term mid)
+          match TypedCfg.Block.runTermChecked output term mid with
+          | .ok outcome => pure outcome
+          | .error err => throw err
         else
           throw .InvalidInstruction)
       (do
@@ -2911,9 +2914,10 @@ theorem lowerBodyThenTerm_openRun_rel
         (Simulation.Interaction.bind sourceBody
           (fun result =>
             if result.2 = output then
-              pure
-                (TypedCfg.Block.runTerm
-                  output term result.1)
+              match TypedCfg.Block.runTermChecked
+                  output term result.1 with
+              | .ok outcome => pure outcome
+              | .error err => throw err
             else
               throw .InvalidInstruction))
         (Simulation.Interaction.bind sourceBody
@@ -2929,8 +2933,10 @@ theorem lowerBodyThenTerm_openRun_rel
         (interaction := sourceBody)
         (leftNext := fun result =>
           if result.2 = output then
-            pure
-              (TypedCfg.Block.runTerm output term result.1)
+            match TypedCfg.Block.runTermChecked
+                output term result.1 with
+            | .ok outcome => pure outcome
+            | .error err => throw err
           else
             throw .InvalidInstruction)
         (rightNext := fun result =>
@@ -2970,7 +2976,9 @@ theorem lowerBodyThenTerm_openRun_rel
           hTerm hTermFits hMidPc
           (by simpa [program, List.append_assoc] using hResolved)
           (by simpa [program, List.append_assoc] using hLabels)
-      simpa [program] using hTermRun
+      cases hChecked : TypedCfg.Block.runTermChecked output term mid with
+      | error err => simpa [program, hChecked] using hTermRun
+      | ok outcome => simpa [program, hChecked] using hTermRun
   simpa [sourceBody] using hRel
 
 /--

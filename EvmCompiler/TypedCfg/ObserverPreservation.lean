@@ -564,6 +564,66 @@ theorem runTerm_map_eraseRuntimeControl
       simpa [TypedCfg.Block.runTerm, Outcome.eraseRuntimeControl] using
         congrArg TypedCfg.Outcome.invalid hRel
 
+theorem runTermChecked_map_eraseRuntimeControl
+    {shape : Shape} {term : TypedCfg.Terminator}
+    {target source : EVMState}
+    (hRel : Assembly.SameRuntimeData target source) :
+    (TypedCfg.Block.runTermChecked shape term target).map
+        Outcome.eraseRuntimeControl =
+      (TypedCfg.Block.runTermChecked shape term source).map
+        Outcome.eraseRuntimeControl := by
+  cases term with
+  | halt kind =>
+      cases kind with
+      | stop =>
+          simpa [Except.map] using runTerm_map_eraseRuntimeControl
+            (shape := shape) (term := .halt .stop) hRel
+      | «return» =>
+          simpa [Except.map] using runTerm_map_eraseRuntimeControl
+            (shape := shape) (term := .halt .return) hRel
+      | revert =>
+          simpa [Except.map] using runTerm_map_eraseRuntimeControl
+            (shape := shape) (term := .halt .revert) hRel
+      | selfdestruct =>
+          have hPermission :
+              target.executionEnv.perm = source.executionEnv.perm :=
+            congrArg (fun shared => shared.executionEnv.perm)
+              (Assembly.SameRuntimeData.shared_eq hRel)
+          cases hTarget : target.executionEnv.perm with
+          | false =>
+              have hSource : source.executionEnv.perm = false := by
+                rw [← hPermission]
+                exact hTarget
+              rw [TypedCfg.Block.runTermChecked_selfdestruct_of_static
+                  shape target hTarget,
+                TypedCfg.Block.runTermChecked_selfdestruct_of_static
+                  shape source hSource]
+          | true =>
+              have hSource : source.executionEnv.perm = true := by
+                rw [← hPermission]
+                exact hTarget
+              rw [TypedCfg.Block.runTermChecked_halt_of_allowed
+                  shape .selfdestruct target (by simpa using hTarget),
+                TypedCfg.Block.runTermChecked_halt_of_allowed
+                  shape .selfdestruct source (by simpa using hSource)]
+              simpa [Except.map] using runTerm_map_eraseRuntimeControl
+                (shape := shape) (term := .halt .selfdestruct) hRel
+  | fallthrough next =>
+      simpa [Except.map] using runTerm_map_eraseRuntimeControl
+        (shape := shape) (term := .fallthrough next) hRel
+  | jump next =>
+      simpa [Except.map] using runTerm_map_eraseRuntimeControl
+        (shape := shape) (term := .jump next) hRel
+  | jumpi targetLabel fallthroughLabel =>
+      simpa [Except.map] using runTerm_map_eraseRuntimeControl
+        (shape := shape) (term := .jumpi targetLabel fallthroughLabel) hRel
+  | returnDispatch returnCount sites =>
+      simpa [Except.map] using runTerm_map_eraseRuntimeControl
+        (shape := shape) (term := .returnDispatch returnCount sites) hRel
+  | invalid =>
+      simpa [Except.map] using runTerm_map_eraseRuntimeControl
+        (shape := shape) (term := .invalid) hRel
+
 /--
 One ordinary well-typed block has the same observer outcome and transcript
 from runtime-related states, modulo concrete compiler control counters.
@@ -612,14 +672,20 @@ theorem run_map_eraseRuntimeControl
           subst sourceOutput
           subst sourceTrace
           have hTerm :=
-            runTerm_map_eraseRuntimeControl
+            runTermChecked_map_eraseRuntimeControl
               (shape := targetOutput) (term := block.term) hAfter
           unfold ObserverSemantics.Block.run
           rw [hTarget, hSource]
           simp only [Bind.bind, Except.bind]
           by_cases hExpected : targetOutput = block.output
           · subst targetOutput
-            simp [Except.map, Outcome.eraseWithTrace, hTerm]
+            cases hTargetTerm : TypedCfg.Block.runTermChecked
+                block.output block.term targetAfter <;>
+              cases hSourceTerm : TypedCfg.Block.runTermChecked
+                block.output block.term sourceAfter <;>
+              simp [hTargetTerm, hSourceTerm, Except.map,
+                Outcome.eraseWithTrace] at hTerm ⊢
+            all_goals exact hTerm
           · simp [hExpected, Except.map]
 
 end Block
@@ -758,10 +824,17 @@ theorem findBlock?_exists_of_step_jump
             ⟨⟨bodyState, bodyOutput⟩, bodyTrace⟩
           by_cases hOutput : bodyOutput = block.output
           · subst bodyOutput
-            simp [hBody, Bind.bind, Except.bind] at hStep
-            exact
-              TypedCfg.Block.findBlock?_exists_of_type?_runTerm_jump
-                hBlockTyped.2 hStep.1
+            simp only [hBody, Bind.bind, Except.bind] at hStep
+            cases hChecked : TypedCfg.Block.runTermChecked
+                block.output block.term bodyState with
+            | error err => simp [hChecked] at hStep
+            | ok outcome =>
+                simp [hChecked] at hStep
+                have hRun :=
+                  TypedCfg.Block.runTerm_eq_of_runTermChecked_eq_ok hChecked
+                exact
+                  TypedCfg.Block.findBlock?_exists_of_type?_runTerm_jump
+                    hBlockTyped.2 (hRun.trans hStep.1)
           · simp [hBody, hOutput, Bind.bind, Except.bind] at hStep
 
 theorem step_ne_fallthrough
@@ -788,10 +861,18 @@ theorem step_ne_fallthrough
             ⟨⟨bodyState, bodyOutput⟩, bodyTrace⟩
           by_cases hOutput : bodyOutput = block.output
           · subst bodyOutput
-            simp [hBody, Bind.bind, Except.bind] at hStep
-            exact
-              TypedCfg.Block.runTerm_ne_fallthrough
-                block.output block.term bodyState final hStep.1
+            simp only [hBody, Bind.bind, Except.bind] at hStep
+            cases hChecked : TypedCfg.Block.runTermChecked
+                block.output block.term bodyState with
+            | error err => simp [hChecked] at hStep
+            | ok outcome =>
+                simp [hChecked] at hStep
+                have hRun :=
+                  TypedCfg.Block.runTerm_eq_of_runTermChecked_eq_ok hChecked
+                exact
+                  TypedCfg.Block.runTerm_ne_fallthrough
+                    block.output block.term bodyState final
+                    (hRun.trans hStep.1)
           · simp [hBody, hOutput, Bind.bind, Except.bind] at hStep
 
 theorem step_ne_returnDispatch
@@ -818,10 +899,18 @@ theorem step_ne_returnDispatch
             ⟨⟨bodyState, bodyOutput⟩, bodyTrace⟩
           by_cases hOutput : bodyOutput = block.output
           · subst bodyOutput
-            simp [hBody, Bind.bind, Except.bind] at hStep
-            exact
-              TypedCfg.Block.runTerm_ne_returnDispatch
-                block.output block.term bodyState final hStep.1
+            simp only [hBody, Bind.bind, Except.bind] at hStep
+            cases hChecked : TypedCfg.Block.runTermChecked
+                block.output block.term bodyState with
+            | error err => simp [hChecked] at hStep
+            | ok outcome =>
+                simp [hChecked] at hStep
+                have hRun :=
+                  TypedCfg.Block.runTerm_eq_of_runTermChecked_eq_ok hChecked
+                exact
+                  TypedCfg.Block.runTerm_ne_returnDispatch
+                    block.output block.term bodyState final
+                    (hRun.trans hStep.1)
           · simp [hBody, hOutput, Bind.bind, Except.bind] at hStep
 
 end Program
@@ -2616,6 +2705,39 @@ def RunSimulates (program : Assembly.Program) :
   | .ok (sourceOutcome, trace), outcome =>
       Outcome.Simulates program sourceOutcome trace outcome
 
+theorem runTermChecked_simulates_of
+    (program : Assembly.Program) (shape : Shape)
+    (term : Terminator) (state : EVMState) (trace : Trace)
+    {outcome : Assembly.Source.OracleExecutionOutcome}
+    (hSimulates :
+      Outcome.Simulates program
+        (TypedCfg.Block.runTerm shape term state) trace outcome) :
+    RunSimulates program
+      ((TypedCfg.Block.runTermChecked shape term state).map
+        (fun sourceOutcome => (sourceOutcome, trace)))
+      outcome := by
+  cases outcome with
+  | error err =>
+      have hOrdinary :=
+        (Preservation.Block.runTermChecked_simulates_iff
+          program shape term state (.error err)).2 hSimulates
+      cases hChecked : TypedCfg.Block.runTermChecked
+          shape term state <;>
+        simp [hChecked, RunSimulates, Preservation.Block.RunSimulates,
+          Outcome.Simulates, Except.map] at hOrdinary ⊢
+      all_goals exact hOrdinary
+  | ok pair =>
+      rcases pair with ⟨result, trace'⟩
+      rcases hSimulates with ⟨rfl, hOrdinarySimulates⟩
+      have hOrdinary :=
+        (Preservation.Block.runTermChecked_simulates_iff
+          program shape term state (.ok result)).2 hOrdinarySimulates
+      cases hChecked : TypedCfg.Block.runTermChecked
+          shape term state <;>
+        simp [hChecked, RunSimulates, Preservation.Block.RunSimulates,
+          Outcome.Simulates, Except.map] at hOrdinary ⊢
+      all_goals exact hOrdinary
+
 theorem runBody_output_of_lowerBodyFrom?
     {body : List TypedCfg.Instr} {shape output runOutput : Shape}
     {code : Assembly.Program} {state final : EVMState}
@@ -3007,9 +3129,15 @@ theorem lower?_positiveEventuallyWithOracle
                         intro current currentTrace hCurrent
                         rcases hCurrent with ⟨rfl, rfl⟩
                         exact hTermRun)
-                  simpa [RunSimulates, ObserverSemantics.Block.run,
-                    hRunBody, Bind.bind, Except.bind] using
+                  have hChecked :=
+                    Assembly.Source.EventuallyWithOracle.mono
                       hBodyThenTerm
+                      (fun outcome hOutcome =>
+                        runTermChecked_simulates_of
+                          program block.output block.term mid traceMid
+                            hOutcome)
+                  simpa [RunSimulates, ObserverSemantics.Block.run,
+                    hRunBody, Bind.bind, Except.bind] using hChecked
             rcases hAfterLabel with
               ⟨tailFuel, outcome, hTailRun, hOutcome⟩
             refine

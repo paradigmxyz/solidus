@@ -316,7 +316,8 @@ theorem Invocation.of_memorySafe
   rfl
 
 @[simp] theorem structured_terminal_selfdestruct
-    (shared : EvmYul.SharedState .EVM) (recipient : Word) :
+    (shared : EvmYul.SharedState .EVM) (recipient : Word)
+    (hPermission : shared.executionEnv.perm = true) :
     Locals.Source.PrimitiveSemantics.structured.terminal
         .selfdestruct shared [recipient] =
       .ok
@@ -325,8 +326,9 @@ theorem Invocation.of_memorySafe
             pc := EvmYul.UInt256.ofNat 0
             stack := [recipient]
             execLength := 0 }
-          recipient []).toSharedState) := by
-  rfl
+          recipient []).toSharedState) :=
+  Locals.Source.PrimitiveSemantics.structured_terminal_selfdestruct_of_permitted
+    shared recipient hPermission
 
 /--
 Canonical terminal execution preserves the allocation shared-state relation.
@@ -399,7 +401,18 @@ theorem Invocation.simulate
           ⟨hMachine, hRel.world⟩, ?_, hActiveMono, hFinalNoWrap⟩
       rfl
   | selfdestruct recipient =>
-      rw [structured_terminal_selfdestruct] at hEval
+      have hSourcePermission : sourceShared.executionEnv.perm = true := by
+        cases hPermission : sourceShared.executionEnv.perm with
+        | false =>
+            rw [Locals.Source.PrimitiveSemantics.structured_terminal_selfdestruct_of_static
+              sourceShared recipient hPermission] at hEval
+            contradiction
+        | true => rfl
+      have hTargetPermission : targetShared.executionEnv.perm = true := by
+        rw [← hRel.executionEnv_eq]
+        exact hSourcePermission
+      rw [structured_terminal_selfdestruct sourceShared recipient
+        hSourcePermission] at hEval
       cases hEval
       let sourceState : Assembly.EVMState :=
         { toSharedState := sourceShared
@@ -419,6 +432,7 @@ theorem Invocation.simulate
         ⟨targetFinal, ?_, ?_, ?_, Nat.le_refl _, ?_⟩
       · simpa [targetFinal, targetState] using
           structured_terminal_selfdestruct targetShared recipient
+            hTargetPermission
       · refine ⟨?_, ?_⟩
         · refine ⟨?_, ?_, ?_, ?_⟩
           · simpa [sourceFinal, targetFinal, sourceState, targetState,

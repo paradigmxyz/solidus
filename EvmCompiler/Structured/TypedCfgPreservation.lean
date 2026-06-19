@@ -908,7 +908,9 @@ theorem eventually_terminal_of_compileStmtFuel?
     (hCompile :
       TypedCfgCompiler.compileStmtFuel? (fuel + 1) (.terminal kind) ctx
         supply entry input regular = some result)
-    (hBlocks : BlocksInProgram result cfg) :
+    (hBlocks : BlocksInProgram result cfg)
+    (hAllowed : kind = .selfdestruct →
+      state.evm.executionEnv.perm = true) :
     cfg.Eventually entry state.evm
       (TypedCfg.Outcome.halt kind state.evm) := by
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
@@ -936,7 +938,8 @@ theorem eventually_terminal_of_compileStmtFuel?
     (block := generated)
   · simp [generated]
   · simp [generated, TypedCfg.Block.run, TypedCfg.Block.runBody,
-      TypedCfg.Block.runTerm, Bind.bind, Except.bind]
+      TypedCfg.Block.runTerm, Bind.bind, Except.bind,
+      TypedCfg.Block.runTermChecked_halt_of_allowed _ _ _ hAllowed]
 
 /--
 Compiled `break` satisfies the uniform abrupt-outcome certificate whenever the
@@ -1049,7 +1052,8 @@ theorem outcome_terminal_of_compileStmtFuel?
   refine ⟨.halt kind target, ?_, ?_⟩
   · simpa [RunState.withEVM] using
       (eventually_terminal_of_compileStmtFuel?
-        (state := source.withEVM target) hCompile hBlocks)
+        (state := source.withEVM target) hCompile hBlocks
+        (Structured.Terminal.allowed_of_step hTargetStep))
   · exact
       OutcomeSimulation.Rel.halt_iff.mpr
         ⟨rfl, targetFinal, hTargetStep, tokens, hFinalRel⟩

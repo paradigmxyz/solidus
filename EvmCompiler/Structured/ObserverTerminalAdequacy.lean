@@ -22,6 +22,7 @@ theorem terminal_of_wellTyped_halt
     (hSourceArity :
       kind.argCount ≤
         TypedCfgCompiler.Shape.sourceLength block.output)
+    (hAllowed : Terminal.Allowed kind source.source.evm)
     (hRel :
       ObserverPreservation.StateRel.At
         block.output source tokens target trace) :
@@ -38,7 +39,7 @@ theorem terminal_of_wellTyped_halt
     Nat.le_trans hSourceArity hRel.sourceStack
   obtain ⟨finalEVM, hStep⟩ :=
     Structured.Terminal.exists_step_of_argCount_le
-      kind source.source.evm hAritySource
+      kind source.source.evm hAritySource hAllowed
   exact
     ⟨finalEVM, hStep,
       Structured.EffectSemantics.Stmt.Eval.terminal hStep⟩
@@ -60,6 +61,7 @@ theorem terminal_outcome_of_wellTyped_halt
     (hSourceArity :
       kind.argCount ≤
         TypedCfgCompiler.Shape.sourceLength block.output)
+    (hAllowed : Terminal.Allowed kind source.source.evm)
     (hRel :
       ObserverPreservation.StateRel.At
         block.output source tokens target trace) :
@@ -78,7 +80,7 @@ theorem terminal_outcome_of_wellTyped_halt
             (source.source.withEVM sourceFinal))
           tokens targetFinal trace := by
   obtain ⟨sourceFinal, hSourceStep, hEval⟩ :=
-    terminal_of_wellTyped_halt hTyped hTerm hSourceArity hRel
+    terminal_of_wellTyped_halt hTyped hTerm hSourceArity hAllowed hRel
   obtain ⟨targetFinal, hTargetStep, hFinalRel⟩ :=
     ObserverPreservation.StateRel.terminal hRel.rel hSourceStep
   exact
@@ -107,6 +109,7 @@ theorem outcome_terminal_of_compileStmtFuel?
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
     (hWellTyped : cfg.WellTyped)
+    (hAllowed : Terminal.Allowed kind source.source.evm)
     (hRel :
       ObserverPreservation.StateRel.At
         input source tokens target trace) :
@@ -149,15 +152,17 @@ theorem outcome_terminal_of_compileStmtFuel?
       ⟨sourceFinal, targetFinal, _hSourceStep,
         hTargetStep, hEval, hFinalRel⟩ :=
     terminal_outcome_of_wellTyped_halt
-      (fuel := fuel) hTyped (by rfl) hSourceArity hRel
+      (fuel := fuel) hTyped (by rfl) hSourceArity hAllowed hRel
   have hRun :
       TypedCfg.ObserverSemantics.Block.run
           generated target trace =
         .ok (.halt kind target, trace) := by
     unfold TypedCfg.ObserverSemantics.Block.run
     rw [TypedCfg.ObserverSemantics.Block.runBody_nil]
-    simp [generated, TypedCfg.Block.runTerm,
-      Bind.bind, Except.bind]
+    simp only [generated, Bind.bind, Except.bind]
+    rw [TypedCfg.Block.runTermChecked_halt_of_allowed
+      input kind target (Terminal.allowed_of_step hTargetStep)]
+    simp
   have hEventually :=
     ObserverPreservation.BlocksInProgram.eventually_of_run
       hBlocks (block := generated) (by simp [generated]) hRun
@@ -168,7 +173,7 @@ theorem outcome_terminal_of_compileStmtFuel?
 /--
 Stable backward-adequacy interface for terminal statements.
 -/
-theorem adequateWithin_terminal_of_compileStmtFuel?
+theorem adequateWithin_terminal_of_compileStmtFuel?_of_allowed
     {transcript : Trace} {compilerFuel : Nat}
     {program : Structured.Program} {kind : Assembly.HaltKind}
     {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
@@ -184,7 +189,8 @@ theorem adequateWithin_terminal_of_compileStmtFuel?
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
-    (hWellTyped : cfg.WellTyped) :
+    (hWellTyped : cfg.WellTyped)
+    (hAllowed : Terminal.Allowed kind source.source.evm) :
     OutcomeSimulation.AdequateWithin
       (fun sourceFuel sourceOutcome =>
         ObserverSemantics.Stmt.Eval
@@ -197,7 +203,7 @@ theorem adequateWithin_terminal_of_compileStmtFuel?
         hTargetStep, hFinalRel⟩ :=
     outcome_terminal_of_compileStmtFuel?
       (program := program)
-      hCompile hBlocks hWellTyped hRel
+      hCompile hBlocks hWellTyped hAllowed hRel
   have hCompile' := hCompile
   obtain ⟨_hSourceWords, hResult⟩ :=
     TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_terminal
@@ -216,11 +222,13 @@ theorem adequateWithin_terminal_of_compileStmtFuel?
       TypedCfg.ObserverSemantics.Program.step
           cfg entry target trace =
         .ok (.halt kind target, trace) := by
+    have hChecked :=
+      TypedCfg.Block.runTermChecked_halt_of_allowed
+        input kind target (Terminal.allowed_of_step hTargetStep)
     unfold TypedCfg.ObserverSemantics.Program.step
-    rw [hFind]
-    simp [generated, TypedCfg.ObserverSemantics.Block.run,
+    simp [hFind, generated, TypedCfg.ObserverSemantics.Block.run,
       TypedCfg.ObserverSemantics.Block.runBody_nil,
-      TypedCfg.Block.runTerm, Bind.bind, Except.bind]
+      hChecked, Bind.bind, Except.bind]
   have hBoundary :
       OutcomeSimulation.TargetBoundary continuations
         (.halt kind target) := by
@@ -252,6 +260,81 @@ theorem adequateWithin_terminal_of_compileStmtFuel?
       hSourceEval,
       hOutcomeRel,
       trivial⟩
+
+/--
+Total terminal adequacy. A static SELFDESTRUCT cannot produce the successful
+target boundary required by `FirstReaches`; all other terminal executions use
+the successful adjacent reconstruction above.
+-/
+theorem adequateWithin_terminal_of_compileStmtFuel?
+    {transcript : Trace} {compilerFuel : Nat}
+    {program : Structured.Program} {kind : Assembly.HaltKind}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {continuations : OutcomeSimulation.Continuations}
+    {accept : TypedCfg.Outcome → Prop}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.terminal kind) ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hWellTyped : cfg.WellTyped) :
+    OutcomeSimulation.AdequateWithin
+      (fun sourceFuel sourceOutcome =>
+        ObserverSemantics.Stmt.Eval
+          program sourceFuel (.terminal kind) source sourceOutcome)
+      result ctx cfg continuations accept entry input source tokens := by
+  by_cases hAllowed : Terminal.Allowed kind source.source.evm
+  · exact adequateWithin_terminal_of_compileStmtFuel?_of_allowed
+      hCompile hBlocks hWellTyped hAllowed
+  · intro _hAccept targetFuel target trace traceFinal targetOutcome
+      hRel hReach
+    have hDenied :
+        kind = .selfdestruct ∧
+          source.source.evm.executionEnv.perm = false := by
+      cases kind <;>
+        cases hPermission : source.source.evm.executionEnv.perm <;>
+        simp_all [Terminal.Allowed]
+    rcases hDenied with ⟨rfl, hSourcePermission⟩
+    have hCompile' := hCompile
+    obtain ⟨_hSourceWords, hResult⟩ :=
+      TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_terminal
+        hCompile'
+    subst result
+    let generated : TypedCfg.Block :=
+      { label := entry
+        input := input
+        body := []
+        output := input
+        term := .halt .selfdestruct }
+    have hFind : cfg.findBlock? entry = some generated :=
+      hBlocks generated (by simp [generated])
+    rcases hRel.rel.1 with ⟨realized, _hRealize, hRuntime⟩
+    have hShared := Assembly.SameRuntimeData.shared_eq hRuntime
+    have hTargetPermission : target.executionEnv.perm = false := by
+      have hPermissionEq := congrArg
+        (fun shared : EvmYul.SharedState .EVM =>
+          shared.executionEnv.perm)
+        hShared
+      simpa using hPermissionEq.trans hSourcePermission
+    have hChecked :=
+      TypedCfg.Block.runTermChecked_selfdestruct_of_static
+        input target hTargetPermission
+    have hStep :
+        TypedCfg.ObserverSemantics.Program.step
+            cfg entry target trace =
+          .error .StaticModeViolation := by
+      unfold TypedCfg.ObserverSemantics.Program.step
+      simp [hFind, generated, TypedCfg.ObserverSemantics.Block.run,
+        TypedCfg.ObserverSemantics.Block.runBody_nil,
+        hChecked, Bind.bind, Except.bind]
+    have hRun := hReach.run
+    rw [TypedCfg.ObserverSemantics.Program.runN_succ, hStep] at hRun
+    contradiction
 
 end Stmt
 end ObserverAdequacy

@@ -408,7 +408,9 @@ private theorem selfdestruct
                   transcript).terminal
                   .selfdestruct target [recipient] =
                 .ok targetFinal := by
-            rfl
+            simpa [targetFinal] using
+              Functions.ObserverSemantics.primitiveSemantics_terminal_selfdestruct_of_permitted
+                target recipient hPermTarget
           have hTarget :
               (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
                   contract transcript).terminal

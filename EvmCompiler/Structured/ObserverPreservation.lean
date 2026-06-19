@@ -1545,6 +1545,8 @@ theorem run_jumpi_toCfg
   unfold TypedCfg.ObserverSemantics.Block.run
   rw [hTargetCode]
   simp only [Bind.bind, Except.bind, ↓reduceIte]
+  rw [TypedCfg.Block.runTermChecked_jumpi]
+  simp only
   unfold TypedCfg.Block.runTerm
   unfold Structured.Code.popCondition
     EffectSemantics.Code.popCondition
@@ -2050,10 +2052,12 @@ theorem outcome_terminal_of_compileStmtFuel?
       TypedCfg.ObserverSemantics.Block.run
           generated target trace =
         .ok (.halt kind target, trace) := by
+    have hAllowed := Structured.Terminal.allowed_of_step hTargetStep
     unfold TypedCfg.ObserverSemantics.Block.run
     rw [TypedCfg.ObserverSemantics.Block.runBody_nil]
     simp [generated, TypedCfg.Block.runTerm,
-      Bind.bind, Except.bind]
+      Bind.bind, Except.bind,
+      TypedCfg.Block.runTermChecked_halt_of_allowed _ _ _ hAllowed]
   have hEventually :=
     BlocksInProgram.eventually_of_run
       hBlocks (block := generated)

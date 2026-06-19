@@ -19,7 +19,9 @@ import EvmCompiler.Functions.AllocationInteractionCallStatementResource
 import EvmCompiler.Functions.AllocationInteractionRecursiveCallResource
 import EvmCompiler.Functions.AllocationInteractionStackRuntime
 import EvmCompiler.Functions.AllocationInteractionProgram
+import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Locals.InteractionPreservation
+import EvmCompiler.Structured.ObserverTerminalAdequacy
 import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.Yul.FunctionsInteractionStatement
 import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
@@ -322,6 +324,9 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Functions.AllocationInteractionLeaveResource.leave_of_lower_compile
 #print axioms EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.leave
 #print axioms EvmCompiler.Functions.AllocationInteractionTerminalResource.Invocation.forward_shared_allocator
+#print axioms EvmCompiler.Functions.AllocationInteractionTerminalResource.Invocation.openForward_shared_allocator
+#print axioms EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_terminal_selfdestruct_of_permitted
+#print axioms EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_terminal_selfdestruct_of_static
 #print axioms EvmCompiler.Functions.AllocationInteractionTerminalResource.terminal_of_lower_compile
 #print axioms EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.terminal
 #print axioms EvmCompiler.Functions.AllocationInteractionTerminalResource.terminalArgs_of_lower_compile
@@ -452,6 +457,14 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionTerminal.return_
 #print axioms EvmCompiler.Yul.FunctionsInteractionTerminal.revert
 #print axioms EvmCompiler.Yul.FunctionsInteractionTerminal.selfdestruct
+#print axioms EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_permitted
+#print axioms EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_static
+#print axioms EvmCompiler.Structured.Terminal.allowed_of_step
+#print axioms EvmCompiler.TypedCfg.Block.runTermChecked_halt_of_allowed
+#print axioms EvmCompiler.TypedCfg.Block.runTermChecked_selfdestruct_of_static
+#print axioms EvmCompiler.TypedCfg.Preservation.Block.runTermChecked_simulates_iff
+#print axioms EvmCompiler.Functions.AllocationInteractionTerminal.Invocation.openForward_shared
+#print axioms EvmCompiler.Structured.ObserverAdequacy.Stmt.adequateWithin_terminal_of_compileStmtFuel?
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.terminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.of_fixed
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PathScopedDoneRel.nil

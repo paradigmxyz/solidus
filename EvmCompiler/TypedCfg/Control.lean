@@ -44,7 +44,9 @@ def run {M : Type → Type}
   let (state', output) ←
     runBody runState block.body block.input state
   if output = block.output then
-    pure (TypedCfg.Block.runTerm block.output block.term state')
+    match TypedCfg.Block.runTermChecked block.output block.term state' with
+    | .ok outcome => pure outcome
+    | .error err => throw err
   else
     throw .InvalidInstruction
 

@@ -206,6 +206,90 @@ def structured : PrimitiveSemantics where
     | .ok state' => .ok state'.toSharedState
     | .error err => .error err
 
+theorem structured_terminal_selfdestruct_of_permitted
+    (shared : EvmYul.SharedState .EVM) (recipient : Word)
+    (hPermission : shared.executionEnv.perm = true) :
+    structured.terminal .selfdestruct shared [recipient] =
+      .ok
+        ((EvmYul.EVM.selfdestructState
+          { toSharedState := shared
+            pc := EvmYul.UInt256.ofNat 0
+            stack := [recipient]
+            execLength := 0 }
+          recipient []).toSharedState) := by
+  let state : EVMState :=
+    { toSharedState := shared
+      pc := EvmYul.UInt256.ofNat 0
+      stack := [recipient]
+      execLength := 0 }
+  have hRaw :
+      EvmYul.step (τ := .EVM) .SELFDESTRUCT none state =
+        .ok (EvmYul.EVM.selfdestructState state recipient []) :=
+    EvmYul.EVM.step_selfdestruct_of_stack state recipient [] rfl
+  have hStep :
+      Structured.Terminal.step .selfdestruct state =
+        .ok (EvmYul.EVM.selfdestructState state recipient []) := by
+    change Assembly.PrimOp.selfdestruct.step state = _
+    rw [Assembly.PrimOp.step_selfdestruct_of_permitted
+      state hPermission, hRaw]
+  change
+    (match Structured.Terminal.step .selfdestruct state with
+      | .ok state' => Except.ok state'.toSharedState
+      | .error err => Except.error err) = _
+  rw [hStep]
+
+theorem structured_terminal_selfdestruct_of_static
+    (shared : EvmYul.SharedState .EVM) (recipient : Word)
+    (hPermission : shared.executionEnv.perm = false) :
+    structured.terminal .selfdestruct shared [recipient] =
+      .error .StaticModeViolation := by
+  let state : EVMState :=
+    { toSharedState := shared
+      pc := EvmYul.UInt256.ofNat 0
+      stack := [recipient]
+      execLength := 0 }
+  have hStep :
+      Structured.Terminal.step .selfdestruct state =
+        .error .StaticModeViolation := by
+    change Assembly.PrimOp.selfdestruct.step state = _
+    exact Assembly.PrimOp.step_selfdestruct_of_static state hPermission
+  change
+    (match Structured.Terminal.step .selfdestruct state with
+      | .ok state' => Except.ok state'.toSharedState
+      | .error err => Except.error err) = _
+  rw [hStep]
+
+theorem structured_terminal_allowed_of_ok
+    {kind : Assembly.HaltKind} {shared : EvmYul.SharedState .EVM}
+    {values : List Word} {final : EvmYul.SharedState .EVM}
+    (hEval : structured.terminal kind shared values = .ok final) :
+    kind = .selfdestruct → shared.executionEnv.perm = true := by
+  intro hKind
+  subst kind
+  cases hPermission : shared.executionEnv.perm with
+  | false =>
+      unfold structured at hEval
+      change
+        (match Structured.Terminal.step .selfdestruct
+            { toSharedState := shared
+              pc := EvmYul.UInt256.ofNat 0
+              stack := values.reverse
+              execLength := 0 } with
+          | .ok state' => Except.ok state'.toSharedState
+          | .error err => Except.error err) = .ok final at hEval
+      have hStep :
+          Structured.Terminal.step .selfdestruct
+              { toSharedState := shared
+                pc := EvmYul.UInt256.ofNat 0
+                stack := values.reverse
+                execLength := 0 } =
+            .error .StaticModeViolation := by
+        change Assembly.PrimOp.selfdestruct.step _ = _
+        exact Assembly.PrimOp.step_selfdestruct_of_static _ hPermission
+      rw [hStep] at hEval
+      contradiction
+  | true => rfl
+
 end PrimitiveSemantics
 
 structure Ctx where

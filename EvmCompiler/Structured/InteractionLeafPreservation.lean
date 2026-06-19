@@ -57,7 +57,9 @@ private theorem target_openStep_empty_halt
             input := input
             body := []
             output := input
-            term := .halt kind }) :
+            term := .halt kind })
+    (hAllowed : kind = .selfdestruct →
+      targetState.executionEnv.perm = true) :
     TypedCfg.InteractionSemantics.Program.openStep
         cfg entry targetState =
       Simulation.Interaction.pure
@@ -74,9 +76,10 @@ private theorem target_openStep_empty_halt
           (Except.ok (targetState, input)))
         (fun result =>
           if result.2 = input then
-            Simulation.Interaction.done
-              (Except.ok
-                (TypedCfg.Outcome.halt kind result.1))
+            match TypedCfg.Block.runTermChecked
+                input (.halt kind) result.1 with
+            | .ok outcome => Simulation.Interaction.pure outcome
+            | .error err => Simulation.Interaction.error err
           else
             Simulation.Interaction.done
               (Except.error
@@ -84,7 +87,49 @@ private theorem target_openStep_empty_halt
       Simulation.Interaction.done
         (Except.ok
           (TypedCfg.Outcome.halt kind targetState))
-  simp [Simulation.Interaction.bind]
+  simp [Simulation.Interaction.bind,
+    TypedCfg.Block.runTermChecked_halt_of_allowed _ _ _ hAllowed]
+  rfl
+
+private theorem target_openStep_empty_selfdestruct_static
+    {cfg : TypedCfg.Program}
+    {entry : Assembly.Label} {input : TypedCfg.Shape}
+    {targetState : EVMState}
+    (hFind :
+      cfg.findBlock? entry =
+        some
+          { label := entry
+            input := input
+            body := []
+            output := input
+            term := .halt .selfdestruct })
+    (hPermission : targetState.executionEnv.perm = false) :
+    TypedCfg.InteractionSemantics.Program.openStep
+        cfg entry targetState =
+      .done (.error .StaticModeViolation) := by
+  simp only [
+    TypedCfg.InteractionSemantics.Program.openStep,
+    TypedCfg.Control.Program.step, hFind,
+    TypedCfg.InteractionSemantics.Block.openRun,
+    TypedCfg.Control.Block.run, TypedCfg.Control.Block.runBody,
+    TypedCfg.Block.runTerm]
+  change
+    Simulation.Interaction.bind
+        (Simulation.Interaction.done
+          (Except.ok (targetState, input)))
+        (fun result =>
+          if result.2 = input then
+            match TypedCfg.Block.runTermChecked
+                input (.halt .selfdestruct) result.1 with
+            | .ok outcome => Simulation.Interaction.pure outcome
+            | .error err => Simulation.Interaction.error err
+          else
+            Simulation.Interaction.error
+              (.InvalidInstruction : EVMException)) =
+      .done (.error .StaticModeViolation)
+  simp [Simulation.Interaction.bind,
+    TypedCfg.Block.runTermChecked_selfdestruct_of_static _ _ hPermission]
+  rfl
 
 /--
 Compiled `break` performs one effect-free TypedCfg jump while preserving the
@@ -629,9 +674,6 @@ theorem openStep_terminal_of_compileStmtFuel?
   have hStackArity :
       kind.argCount ≤ source.evm.stack.length :=
     Nat.le_trans hSourceArity hFits.1
-  obtain ⟨sourceFinal, hSourceStep⟩ :=
-    Structured.Terminal.exists_step_of_argCount_le
-      kind source.evm hStackArity
   let generated : TypedCfg.Block :=
     { label := entry
       input := input
@@ -641,16 +683,72 @@ theorem openStep_terminal_of_compileStmtFuel?
   have hFind :
       cfg.findBlock? entry = some generated := by
     exact hBlocks generated (by simp [generated])
+  by_cases hAllowed : Structured.Terminal.Allowed kind source.evm
+  swap
+  · rcases Structured.Terminal.not_allowed_iff.mp hAllowed with
+      ⟨rfl, hSourcePermission⟩
+    have hTargetShared :
+        targetState.toSharedState = source.evm.toSharedState := by
+      rcases hStateRel with ⟨_realized, _hRealize, hSame⟩
+      simpa using Assembly.SameRuntimeData.shared_eq hSame
+    have hTargetPermission :
+        targetState.executionEnv.perm = false := by
+      change targetState.toSharedState.executionEnv.perm = false
+      rw [hTargetShared]
+      exact hSourcePermission
+    have hSourceTerminal :
+        InteractionSemantics.Terminal.openStep .selfdestruct source =
+          .done (.error .StaticModeViolation) := by
+      have hPrimitive :
+          Assembly.PrimOp.selfdestruct.step source.evm =
+            .error .StaticModeViolation :=
+        Assembly.PrimOp.step_selfdestruct_of_static
+          source.evm hSourcePermission
+      unfold InteractionSemantics.Terminal.openStep
+      rw [Assembly.InteractionSemantics.PrimOp.openStep_closed
+        (by rfl) (by decide) (by decide)]
+      change
+        Simulation.Interaction.map source.withEVM
+            (.done (Assembly.PrimOp.selfdestruct.step source.evm)) = _
+      rw [hPrimitive]
+      rfl
+    have hTargetRun :
+        TypedCfg.InteractionSemantics.Program.openStep
+            cfg entry targetState =
+          .done (.error .StaticModeViolation) := by
+      apply target_openStep_empty_selfdestruct_static
+      · simpa [generated] using hFind
+      · exact hTargetPermission
+    have hDone :
+        Simulation.Interaction.Rel
+          (InteractionControlPreservation.OpenOutcome.OutcomeDoneRel
+            { blocks := [generated]
+              next := supply + 1
+              calls := []
+              fallthrough? := none }
+            ctx regular source.returns tokens)
+          (.done (.error .StaticModeViolation))
+          (.done (.error .StaticModeViolation)) :=
+      Simulation.Interaction.Rel.done
+        (Simulation.Interaction.ExceptRel.error trivial)
+    rw [hTargetRun]
+    simpa [InteractionSemantics.Stmt.openRun,
+      EffectSemantics.Control.Stmt.run,
+      InteractionSemantics.handler, hSourceTerminal, generated] using hDone
+  obtain ⟨sourceFinal, hSourceStep⟩ :=
+    Structured.Terminal.exists_step_of_argCount_le
+      kind source.evm hStackArity hAllowed
+  obtain ⟨targetFinal, hTargetStep, hFinalStateRel⟩ :=
+    TypedCfgPreservation.StateRel.terminal
+      hStateRel hSourceStep
   have hTargetRun :
       TypedCfg.InteractionSemantics.Program.openStep
           cfg entry targetState =
         Simulation.Interaction.pure
           (TypedCfg.Outcome.halt kind targetState) := by
     apply target_openStep_empty_halt
-    simpa [generated] using hFind
-  obtain ⟨targetFinal, hTargetStep, hFinalStateRel⟩ :=
-    TypedCfgPreservation.StateRel.terminal
-      hStateRel hSourceStep
+    · simpa [generated] using hFind
+    · exact Structured.Terminal.allowed_of_step hTargetStep
   have hRelated :
       InteractionControlPreservation.OpenOutcome.Rel
         { blocks := [generated]

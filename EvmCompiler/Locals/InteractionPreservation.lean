@@ -598,9 +598,58 @@ theorem openTerminal_frame
     simp [isolated,
       InteractionSemantics.Primitive.isolated,
       List.length_reverse, hLength]
+  by_cases hAllowed : Structured.Terminal.Allowed kind isolated
+  swap
+  · rcases Structured.Terminal.not_allowed_iff.mp hAllowed with
+      ⟨rfl, hSourcePermission⟩
+    have hTargetPermission :
+        target.evm.executionEnv.perm = false := by
+      change target.evm.toSharedState.executionEnv.perm = false
+      rw [hShared]
+      simpa [isolated,
+        InteractionSemantics.Primitive.isolated] using hSourcePermission
+    have hSourceStep :
+        Structured.Terminal.step .selfdestruct isolated =
+          .error .StaticModeViolation := by
+      change Assembly.PrimOp.selfdestruct.step isolated = _
+      exact Assembly.PrimOp.step_selfdestruct_of_static
+        isolated hSourcePermission
+    have hTargetStep :
+        Assembly.InteractionSemantics.PrimOp.openStep
+            .selfdestruct target.evm =
+          .done (.error .StaticModeViolation) := by
+      rw [Assembly.InteractionSemantics.PrimOp.openStep_closed
+        (by rfl) (by decide) (by decide)]
+      rw [Assembly.PrimOp.step_selfdestruct_of_static
+        target.evm hTargetPermission]
+    have hSourceRun :
+        InteractionSemantics.Primitive.openTerminal
+            .selfdestruct source values =
+          .done (.error .StaticModeViolation) := by
+      unfold InteractionSemantics.Primitive.openTerminal
+      change
+        Simulation.Interaction.map
+            (fun final => source.withShared final.toSharedState)
+            (.done (Structured.Terminal.step .selfdestruct isolated)) = _
+      rw [hSourceStep]
+      rfl
+    have hTargetRun :
+        Structured.InteractionSemantics.Terminal.openStep
+            .selfdestruct target =
+          .done (.error .StaticModeViolation) := by
+      unfold Structured.InteractionSemantics.Terminal.openStep
+      change
+        Simulation.Interaction.map target.withEVM
+            (Assembly.InteractionSemantics.PrimOp.openStep
+              .selfdestruct target.evm) = _
+      rw [hTargetStep]
+      rfl
+    rw [hSourceRun, hTargetRun]
+    exact Simulation.Interaction.Rel.done
+      (Simulation.Interaction.ExceptRel.error trivial)
   obtain ⟨isolatedFinal, hIsolated⟩ :=
     Structured.Terminal.exists_step_of_argCount_le
-      kind isolated hBound
+      kind isolated hBound hAllowed
   have hSourceEval :
       Locals.Source.PrimitiveSemantics.structured.terminal
           kind source.shared values =

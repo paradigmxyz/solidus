@@ -191,11 +191,12 @@ boundaries remain active work.
       composition, including exact abrupt suffix skipping.
     - [x] Outcome-indexed terminal representation relation and terminal-aware
       singleton/list composition for source failures versus target halts.
-    - [ ] Complete the canonical terminal primitive family; STOP, RETURN,
-      REVERT, and permitted SELFDESTRUCT are checked at the primitive boundary.
-      Repair shared target terminal semantics to reject static SELFDESTRUCT,
-      then remove the temporary source-permission premise and prove
-      compiler-generated argument preludes.
+    - [x] Complete the canonical terminal primitive family; STOP, RETURN,
+      REVERT, and SELFDESTRUCT are checked at the primitive boundary, including
+      exact `StaticModeViolation` agreement. Shared Assembly, Structured, and
+      TypedCfg semantics reject static SELFDESTRUCT, and the Yul theorem has no
+      permission premise.
+    - [ ] Prove compiler-generated terminal argument preludes.
     - [ ] Complete recursive statement/list proof over compiler decomposition;
       break, continue, leave, and multi-name uninitialized declaration compiler
       cases are checked. Direct-safe one-name initialized declarations and

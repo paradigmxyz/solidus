@@ -35,6 +35,40 @@ def step (kind : Assembly.HaltKind) (state : EVMState) :
   Assembly.Target.stepInstr
     (Assembly.TargetInstr.prim kind.toPrimOp) state
 
+def Allowed (kind : Assembly.HaltKind) (state : EVMState) : Prop :=
+  kind = .selfdestruct → state.executionEnv.perm = true
+
+theorem not_allowed_iff
+    {kind : Assembly.HaltKind} {state : EVMState} :
+    ¬Allowed kind state ↔
+      kind = .selfdestruct ∧ state.executionEnv.perm = false := by
+  cases kind <;> cases hPermission : state.executionEnv.perm <;>
+    simp [Allowed, hPermission]
+
+theorem allowed_of_shared_eq
+    {kind : Assembly.HaltKind} {source target : EVMState}
+    (hShared : source.toSharedState = target.toSharedState)
+    (hAllowed : Allowed kind source) :
+    Allowed kind target := by
+  intro hKind
+  rw [← hShared]
+  exact hAllowed hKind
+
+theorem allowed_of_step
+    {kind : Assembly.HaltKind} {state final : EVMState}
+    (hStep : step kind state = .ok final) :
+    Allowed kind state := by
+  intro hSelfdestruct
+  subst kind
+  cases hPermission : state.executionEnv.perm with
+  | false =>
+      have hStatic :=
+        Assembly.PrimOp.step_selfdestruct_of_static state hPermission
+      change Assembly.PrimOp.selfdestruct.step state = .ok final at hStep
+      rw [hStatic] at hStep
+      contradiction
+  | true => rfl
+
 /--
 Terminal execution is defined whenever the source stack contains the operands
 declared by the halt kind.
@@ -45,7 +79,8 @@ the resulting EVM state.
 -/
 theorem exists_step_of_argCount_le
     (kind : Assembly.HaltKind) (state : EVMState)
-    (hStack : kind.argCount ≤ state.stack.length) :
+    (hStack : kind.argCount ≤ state.stack.length)
+    (hAllowed : Allowed kind state) :
     ∃ final, step kind state = .ok final := by
   cases state with
   | mk shared pc stack execLength =>
@@ -77,7 +112,23 @@ theorem exists_step_of_argCount_le
           | nil =>
               simp [Assembly.HaltKind.argCount] at hStack
           | cons recipient tail =>
-              exact ⟨_, rfl⟩
+              have hPermission : shared.executionEnv.perm = true :=
+                hAllowed rfl
+              let state : EVMState :=
+                { toSharedState := shared
+                  pc := pc
+                  stack := recipient :: tail
+                  execLength := execLength }
+              have hRaw :
+                  EvmYul.step (τ := .EVM) .SELFDESTRUCT none state =
+                    .ok (EvmYul.EVM.selfdestructState
+                      state recipient tail) :=
+                EvmYul.EVM.step_selfdestruct_of_stack
+                  state recipient tail rfl
+              exact ⟨_, by
+                change Assembly.PrimOp.selfdestruct.step state = _
+                rw [Assembly.PrimOp.step_selfdestruct_of_permitted
+                  state hPermission, hRaw]⟩
 
 /--
 Terminal operations consume only their declared stack prefix. Appending a
@@ -119,11 +170,51 @@ theorem step_append_stack
                   cases hStep
                   rfl
       | selfdestruct =>
+          have hAllowed := allowed_of_step hStep
+          have hPermission : shared.executionEnv.perm = true :=
+            hAllowed rfl
           cases stack with
           | nil =>
+              change
+                Assembly.PrimOp.selfdestruct.step
+                    { toSharedState := shared
+                      pc := pc
+                      stack := []
+                      execLength := execLength } =
+                  .ok final at hStep
+              rw [Assembly.PrimOp.step_selfdestruct_of_permitted _
+                hPermission] at hStep
+              change
+                (Except.error .StackUnderflow :
+                    Except EVMException EVMState) = .ok final at hStep
               contradiction
           | cons recipient tail =>
+              let state : EVMState :=
+                { toSharedState := shared
+                  pc := pc
+                  stack := recipient :: tail
+                  execLength := execLength }
+              let framed : EVMState :=
+                { state with stack := state.stack ++ hidden }
+              have hRaw :
+                  EvmYul.step (τ := .EVM) .SELFDESTRUCT none state =
+                    .ok (EvmYul.EVM.selfdestructState
+                      state recipient tail) :=
+                EvmYul.EVM.step_selfdestruct_of_stack
+                  state recipient tail rfl
+              have hRawFramed :
+                  EvmYul.step (τ := .EVM) .SELFDESTRUCT none framed =
+                    .ok (EvmYul.EVM.selfdestructState
+                      framed recipient (tail ++ hidden)) := by
+                apply EvmYul.EVM.step_selfdestruct_of_stack
+                simp [framed, state]
+              change Assembly.PrimOp.selfdestruct.step state = .ok final at hStep
+              rw [Assembly.PrimOp.step_selfdestruct_of_permitted
+                state hPermission, hRaw] at hStep
               cases hStep
+              change Assembly.PrimOp.selfdestruct.step framed = _
+              rw [Assembly.PrimOp.step_selfdestruct_of_permitted
+                framed hPermission, hRawFramed]
               rfl
 
 /--
@@ -158,7 +249,80 @@ theorem step_map_eraseRuntimeControl
               | cons first rest =>
                   cases rest <;> rfl
           | selfdestruct =>
-              cases targetStack <;> rfl
+              cases hPermission : targetShared.executionEnv.perm with
+              | false =>
+                  change
+                    (Assembly.PrimOp.selfdestruct.step
+                        { toSharedState := targetShared
+                          pc := targetPc
+                          stack := targetStack
+                          execLength := targetExecLength }).map
+                          Assembly.eraseRuntimeControl =
+                      (Assembly.PrimOp.selfdestruct.step
+                        { toSharedState := targetShared
+                          pc := sourcePc
+                          stack := targetStack
+                          execLength := sourceExecLength }).map
+                          Assembly.eraseRuntimeControl
+                  rw [Assembly.PrimOp.step_selfdestruct_of_static _
+                      hPermission,
+                    Assembly.PrimOp.step_selfdestruct_of_static _
+                      hPermission]
+              | true =>
+                  cases targetStack with
+                  | nil =>
+                      change
+                        (Assembly.PrimOp.selfdestruct.step
+                            { toSharedState := targetShared
+                              pc := targetPc
+                              stack := []
+                              execLength := targetExecLength }).map
+                              Assembly.eraseRuntimeControl =
+                          (Assembly.PrimOp.selfdestruct.step
+                            { toSharedState := targetShared
+                              pc := sourcePc
+                              stack := []
+                              execLength := sourceExecLength }).map
+                              Assembly.eraseRuntimeControl
+                      rw [Assembly.PrimOp.step_selfdestruct_of_permitted _
+                          hPermission,
+                        Assembly.PrimOp.step_selfdestruct_of_permitted _
+                          hPermission]
+                      rfl
+                  | cons recipient tail =>
+                      let target : EVMState :=
+                        { toSharedState := targetShared
+                          pc := targetPc
+                          stack := recipient :: tail
+                          execLength := targetExecLength }
+                      let source : EVMState :=
+                        { toSharedState := targetShared
+                          pc := sourcePc
+                          stack := recipient :: tail
+                          execLength := sourceExecLength }
+                      have hTarget :
+                          EvmYul.step (τ := .EVM) .SELFDESTRUCT none target =
+                            .ok (EvmYul.EVM.selfdestructState
+                              target recipient tail) :=
+                        EvmYul.EVM.step_selfdestruct_of_stack
+                          target recipient tail rfl
+                      have hSource :
+                          EvmYul.step (τ := .EVM) .SELFDESTRUCT none source =
+                            .ok (EvmYul.EVM.selfdestructState
+                              source recipient tail) :=
+                        EvmYul.EVM.step_selfdestruct_of_stack
+                          source recipient tail rfl
+                      change
+                        (Assembly.PrimOp.selfdestruct.step target).map
+                            Assembly.eraseRuntimeControl =
+                          (Assembly.PrimOp.selfdestruct.step source).map
+                            Assembly.eraseRuntimeControl
+                      rw [Assembly.PrimOp.step_selfdestruct_of_permitted
+                          target hPermission,
+                        Assembly.PrimOp.step_selfdestruct_of_permitted
+                          source hPermission,
+                        hTarget, hSource]
+                      rfl
 
 end Terminal
 

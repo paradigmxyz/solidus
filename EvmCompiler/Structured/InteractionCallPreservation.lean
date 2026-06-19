@@ -734,32 +734,11 @@ theorem openStep_dispatch
       TypedCfg.InteractionSemantics.Program.openStep,
       TypedCfg.Control.Program.step, hBlock,
       TypedCfg.Control.Block.run]
-    change
-      (do
-        let result ←
-          TypedCfg.InteractionSemantics.Block.openRunBody
-            [] (TypedCfgCompiler.Shape.procExit proc) target
-        if result.2 = TypedCfgCompiler.Shape.procExit proc then
-          pure
-            (TypedCfg.Block.runTerm
-              (TypedCfgCompiler.Shape.procExit proc)
-              (if
-                (TypedCfgCompiler.returnSitesFor
-                    proc.name context.calls).isEmpty
-               then .invalid
-               else
-                 .returnDispatch proc.retc
-                   (TypedCfgCompiler.returnSitesFor
-                     proc.name context.calls))
-              result.1)
-        else
-          throw .InvalidInstruction) =
-        Simulation.Interaction.pure
-          (.jump site.returnLabel targetFinal)
     simp [
       TypedCfg.InteractionSemantics.Block.openRunBody,
       TypedCfg.Control.Block.runBody, hSitesNonempty,
       TypedCfg.Block.runTerm,
+      TypedCfgCompiler.dispatchBlock,
       TypedCfgCompilerFacts.Call.returnTokenDepth?_procExit,
       hToken, hFind, targetFinal,
       Simulation.Interaction.instMonad,

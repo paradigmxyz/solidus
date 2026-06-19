@@ -304,7 +304,8 @@ theorem Invocation.of_memorySafe
   rfl
 
 @[simp] theorem structured_terminal_selfdestruct
-    (shared : EvmYul.SharedState .EVM) (recipient : Word) :
+    (shared : EvmYul.SharedState .EVM) (recipient : Word)
+    (hPermission : shared.executionEnv.perm = true) :
     Locals.Source.PrimitiveSemantics.structured.terminal
         .selfdestruct shared [recipient] =
       .ok
@@ -313,14 +314,17 @@ theorem Invocation.of_memorySafe
             pc := EvmYul.UInt256.ofNat 0
             stack := [recipient]
             execLength := 0 }
-          recipient []).toSharedState) := by
-  rfl
+          recipient []).toSharedState) :=
+  Locals.Source.PrimitiveSemantics.structured_terminal_selfdestruct_of_permitted
+    shared recipient hPermission
 
 theorem Invocation.eval_exists
     {contract : MemoryContract.Contract}
     {kind : Assembly.HaltKind} {values : List Word}
     (invocation : Invocation contract kind values)
-    (shared : EvmYul.SharedState .EVM) :
+    (shared : EvmYul.SharedState .EVM)
+    (hAllowed : kind = .selfdestruct →
+      shared.executionEnv.perm = true) :
     ∃ final,
       Locals.Source.PrimitiveSemantics.structured.terminal
         kind shared values = .ok final := by
@@ -331,7 +335,8 @@ theorem Invocation.eval_exists
   | revert address size _ _ _ =>
       exact ⟨_, structured_terminal_revert shared address size⟩
   | selfdestruct recipient =>
-      exact ⟨_, structured_terminal_selfdestruct shared recipient⟩
+      exact ⟨_, structured_terminal_selfdestruct shared recipient
+        (hAllowed rfl)⟩
 
 /-- Canonical terminal execution preserves the allocation shared relation. -/
 theorem Invocation.simulate
@@ -397,7 +402,18 @@ theorem Invocation.simulate
           ⟨hMachine, hRel.world⟩, ?_, hActiveMono, hFinalNoWrap⟩
       rfl
   | selfdestruct recipient =>
-      rw [structured_terminal_selfdestruct] at hEval
+      have hSourcePermission : sourceShared.executionEnv.perm = true := by
+        cases hPermission : sourceShared.executionEnv.perm with
+        | false =>
+            rw [Locals.Source.PrimitiveSemantics.structured_terminal_selfdestruct_of_static
+              sourceShared recipient hPermission] at hEval
+            contradiction
+        | true => rfl
+      have hTargetPermission : targetShared.executionEnv.perm = true := by
+        rw [← hRel.executionEnv_eq]
+        exact hSourcePermission
+      rw [structured_terminal_selfdestruct sourceShared recipient
+        hSourcePermission] at hEval
       cases hEval
       let sourceState : Assembly.EVMState :=
         { toSharedState := sourceShared
@@ -416,6 +432,7 @@ theorem Invocation.simulate
       refine ⟨targetFinal, ?_, ?_, ?_, Nat.le_refl _, ?_⟩
       · simpa [targetFinal, targetState] using
           structured_terminal_selfdestruct targetShared recipient
+            hTargetPermission
       · refine ⟨?_, ?_⟩
         · refine ⟨?_, ?_, ?_, ?_⟩
           · simpa [sourceFinal, targetFinal, sourceState, targetState,
@@ -487,10 +504,17 @@ theorem Invocation.forward_shared
           source values).stack.length := by
     simp [Locals.InteractionSemantics.Primitive.isolated,
       List.length_reverse, invocation.values_length]
+  have hSourceAllowed :
+      Structured.Terminal.Allowed kind
+        (Locals.InteractionSemantics.Primitive.isolated source values) := by
+    intro hKind
+    simpa [Locals.InteractionSemantics.Primitive.isolated] using
+      (Locals.Source.PrimitiveSemantics.structured_terminal_allowed_of_ok
+        hEval hKind)
   obtain ⟨sourceEvmFinal, hSourceStep⟩ :=
     Structured.Terminal.exists_step_of_argCount_le
       kind (Locals.InteractionSemantics.Primitive.isolated source values)
-        hSourceBound
+        hSourceBound hSourceAllowed
   have hSourceEval' :
       sourceEvmFinal.toSharedState = sourceSharedFinal := by
     unfold Locals.Source.PrimitiveSemantics.structured at hEval
@@ -572,6 +596,101 @@ theorem Invocation.forward
           kind target = .done (.ok targetFinal) ∧
         HaltStateRel contract plan sourceFinal targetFinal := by
   exact invocation.forward_shared hRel.shared hRel.activeNoWrap hEval hStack
+
+/-- Static SELFDESTRUCT fails identically on both sides of allocation. -/
+theorem openSelfdestruct_static
+    {contract : MemoryContract.Contract}
+    {values : List Word}
+    {source : SourceState} {target : TargetState}
+    (hShared : SharedRel contract source.shared target.evm.toSharedState)
+    (hSourcePermission : source.shared.executionEnv.perm = false) :
+    Locals.InteractionSemantics.Primitive.openTerminal
+        .selfdestruct source values =
+      .done (.error .StaticModeViolation) ∧
+    Structured.InteractionSemantics.Terminal.openStep
+        .selfdestruct target =
+      .done (.error .StaticModeViolation) := by
+  have hTargetPermission : target.evm.executionEnv.perm = false := by
+    change target.evm.toSharedState.executionEnv.perm = false
+    rw [← hShared.executionEnv_eq]
+    exact hSourcePermission
+  let isolated :=
+    Locals.InteractionSemantics.Primitive.isolated source values
+  have hSourceStep :
+      Structured.Terminal.step .selfdestruct isolated =
+        .error .StaticModeViolation := by
+    change Assembly.PrimOp.selfdestruct.step isolated = _
+    apply Assembly.PrimOp.step_selfdestruct_of_static
+    simpa [isolated,
+      Locals.InteractionSemantics.Primitive.isolated] using
+        hSourcePermission
+  have hTargetStep :
+      Assembly.InteractionSemantics.PrimOp.openStep
+          .selfdestruct target.evm =
+        .done (.error .StaticModeViolation) := by
+    rw [Assembly.InteractionSemantics.PrimOp.openStep_closed
+      (by rfl) (by decide) (by decide)]
+    rw [Assembly.PrimOp.step_selfdestruct_of_static
+      target.evm hTargetPermission]
+  constructor
+  · unfold Locals.InteractionSemantics.Primitive.openTerminal
+    change
+      Simulation.Interaction.map
+          (fun final => source.withShared final.toSharedState)
+          (.done (Structured.Terminal.step .selfdestruct isolated)) = _
+    rw [hSourceStep]
+    rfl
+  · unfold Structured.InteractionSemantics.Terminal.openStep
+    change
+      Simulation.Interaction.map target.withEVM
+          (Assembly.InteractionSemantics.PrimOp.openStep
+            .selfdestruct target.evm) = _
+    rw [hTargetStep]
+    rfl
+
+abbrev OpenTerminalDoneRel
+    (contract : MemoryContract.Contract) (plan : Plan) :=
+  Simulation.Interaction.ExceptRel
+    (fun sourceError targetError : EVMException =>
+      sourceError = targetError)
+    (HaltStateRel contract plan)
+
+/-- Total adjacent terminal preservation, including static SELFDESTRUCT. -/
+theorem Invocation.openForward_shared
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {kind : Assembly.HaltKind} {values : List Word}
+    {source : SourceState} {target : TargetState}
+    {baseStack : List Word}
+    (invocation : Invocation contract kind values)
+    (hShared : SharedRel contract source.shared target.evm.toSharedState)
+    (hTargetNoWrap :
+      target.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (hStack : target.evm.stack = values.reverse ++ baseStack) :
+    Simulation.Interaction.Rel (OpenTerminalDoneRel contract plan)
+      (Locals.InteractionSemantics.Primitive.openTerminal
+        kind source values)
+      (Structured.InteractionSemantics.Terminal.openStep
+        kind target) := by
+  by_cases hAllowed :
+      kind = .selfdestruct → source.shared.executionEnv.perm = true
+  · obtain ⟨sourceSharedFinal, hSourceEval⟩ :=
+      invocation.eval_exists source.shared hAllowed
+    obtain ⟨sourceFinal, targetFinal, hSource, hTarget, hRel⟩ :=
+      invocation.forward_shared hShared hTargetNoWrap hSourceEval hStack
+    rw [hSource, hTarget]
+    exact Simulation.Interaction.Rel.done
+      (Simulation.Interaction.ExceptRel.ok hRel)
+  · have hDenied :
+        kind = .selfdestruct ∧ source.shared.executionEnv.perm = false := by
+      cases kind <;> cases hPermission : source.shared.executionEnv.perm <;>
+        simp_all
+    rcases hDenied with ⟨rfl, hSourcePermission⟩
+    obtain ⟨hSource, hTarget⟩ :=
+      openSelfdestruct_static hShared hSourcePermission
+    rw [hSource, hTarget]
+    exact Simulation.Interaction.Rel.done
+      (Simulation.Interaction.ExceptRel.error rfl)
 
 namespace TerminalLeaf
 
@@ -731,12 +850,11 @@ theorem terminalArgs_of_lower_compile
   | @ok sourceResult targetAfterArgs hArgsResult =>
       rcases sourceResult with ⟨sourceAfterArgs, values⟩
       have invocation := Invocation.of_memorySafe hSafeDone
-      obtain ⟨sourceSharedFinal, hSourceEval⟩ :=
-        invocation.eval_exists sourceAfterArgs.shared
-      obtain
-          ⟨sourceFinal, targetFinal,
-            hSourceTerminal, hTargetTerminal, hHalt⟩ :=
-        invocation.forward hArgsResult.state hSourceEval hArgsResult.stack
+      have hTerminal :=
+        invocation.openForward_shared
+          (plan := plan)
+          hArgsResult.state.shared hArgsResult.state.activeNoWrap
+          hArgsResult.stack
       change
         Simulation.Interaction.Rel _
           (Simulation.Interaction.bind
@@ -752,13 +870,19 @@ theorem terminalArgs_of_lower_compile
             (fun final =>
               Simulation.Interaction.pure
                 (Structured.EffectSemantics.Outcome.halt kind final)))
-      rw [hSourceTerminal, hTargetTerminal]
-      apply Simulation.Interaction.Rel.done
-      apply Simulation.Interaction.ExceptRel.ok
-      refine ControlResultRel.nonregular (mode := mode) (by simp)
-        (SameFrame.refl mode)
-        (Functions.Source.Ctx.SameControl.refl sourceCtx) ?_
-      exact ActivationOutcomeRel.halt kind hHalt
+      apply Simulation.Interaction.Rel.bind_custom hTerminal
+      intro sourceTerminalDone targetTerminalDone hTerminalDone
+      cases hTerminalDone with
+      | error hError =>
+          exact Simulation.Interaction.Rel.done
+            (Simulation.Interaction.ExceptRel.error hError)
+      | @ok sourceFinal targetFinal hHalt =>
+          exact Simulation.Interaction.Rel.done
+            (Simulation.Interaction.ExceptRel.ok
+              (ControlResultRel.nonregular (mode := mode) (by simp)
+                (SameFrame.refl mode)
+                (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                (ActivationOutcomeRel.halt kind hHalt)))
 
 /-- Plain terminal preservation after compiler-owned complete stack cleanup. -/
 theorem terminal_of_lower_compile
@@ -827,75 +951,43 @@ theorem terminal_of_lower_compile
             hCleanupShared]
     exact hInvariant.state.activeNoWrap
   have invocation := Invocation.of_memorySafe hMemory
-  obtain ⟨sourceSharedFinal, hSourceEval⟩ :=
-    invocation.eval_exists source.shared
-  obtain
-      ⟨sourceFinal, targetFinal,
-        hSourceTerminal, hTargetTerminal, hHalt⟩ :=
-    invocation.forward_shared
+  have hTerminal :=
+    invocation.openForward_shared
       (plan := plan) (baseStack := [])
-      hAfterShared hAfterNoWrap hSourceEval (by simpa using hAfterStack)
-  have hSource :
-      Functions.InteractionSemantics.Stmt.openRun
-          sourceProgram sourceCtx sourceFuel (.terminal kind) source =
-        .done
-          (.ok
-            (Functions.Source.Effectful.Outcome.halt kind sourceFinal,
-              sourceCtx)) := by
-    unfold Functions.InteractionSemantics.Stmt.openRun
-      Functions.Source.Canonical.Stmt.run
-    simp only [Functions.Source.Effectful.Control.Stmt.run]
-    unfold Functions.InteractionSemantics.primitiveSemantics
-    unfold Locals.InteractionSemantics.primitiveSemantics
-    change
-      Simulation.Interaction.bind
-          (Locals.InteractionSemantics.Primitive.openTerminal kind source [])
-          (fun state' =>
-            Simulation.Interaction.pure
-              (Functions.Source.Effectful.Outcome.halt kind state',
-                sourceCtx)) =
-        .done
-          (.ok
-            (Functions.Source.Effectful.Outcome.halt kind sourceFinal,
-              sourceCtx))
-    rw [hSourceTerminal]
-    rfl
-  have hTarget :
-      Expressions.InteractionSemantics.Block.openRun
-          targetProgram (targetExtra + 3)
-          { stmts := [.code localsFinal.cleanupAll, .terminal kind] }
-          target =
-        .done
-          (.ok (Structured.EffectSemantics.Outcome.halt kind targetFinal)) := by
-    rw [Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_terminal]
-    rw [hCleanupRun']
-    change
-      Simulation.Interaction.bind
-          (Structured.InteractionSemantics.Terminal.openStep
-            kind targetAfterCleanup)
-          (fun final =>
-            Simulation.Interaction.pure
-              (Structured.EffectSemantics.Outcome.halt kind final)) =
-        .done
-          (.ok (Structured.EffectSemantics.Outcome.halt kind targetFinal))
-    rw [hTargetTerminal]
-    rfl
-  have hTargetCompiled :
-      Expressions.InteractionSemantics.Block.openRun
-          targetProgram (targetExtra + 3)
-          { stmts :=
-              Locals.codeStmt localsFinal.cleanupAll ++ [.terminal kind] }
-          target =
-        .done
-          (.ok (Structured.EffectSemantics.Outcome.halt kind targetFinal)) := by
-    simpa [Locals.codeStmt] using hTarget
-  rw [hSource, hTargetCompiled]
-  apply Simulation.Interaction.Rel.done
-  apply Simulation.Interaction.ExceptRel.ok
-  refine ControlResultRel.nonregular (mode := mode) (by simp)
-    (SameFrame.refl mode)
-    (Functions.Source.Ctx.SameControl.refl sourceCtx) ?_
-  exact ActivationOutcomeRel.halt kind hHalt
+      hAfterShared hAfterNoWrap (by simpa using hAfterStack)
+  unfold Functions.InteractionSemantics.Stmt.openRun
+    Functions.Source.Canonical.Stmt.run
+  simp only [Functions.Source.Effectful.Control.Stmt.run]
+  simp only [Locals.codeStmt, List.singleton_append]
+  rw [Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_terminal]
+  rw [hCleanupRun']
+  change
+    Simulation.Interaction.Rel _
+      (Simulation.Interaction.bind
+        (Locals.InteractionSemantics.Primitive.openTerminal kind source [])
+        (fun final =>
+          Simulation.Interaction.pure
+            (Functions.Source.Effectful.Outcome.halt kind final,
+              sourceCtx)))
+      (Simulation.Interaction.bind
+        (Structured.InteractionSemantics.Terminal.openStep
+          kind targetAfterCleanup)
+        (fun final =>
+          Simulation.Interaction.pure
+            (Structured.EffectSemantics.Outcome.halt kind final)))
+  apply Simulation.Interaction.Rel.bind_custom hTerminal
+  intro sourceTerminalDone targetTerminalDone hTerminalDone
+  cases hTerminalDone with
+  | error hError =>
+      exact Simulation.Interaction.Rel.done
+        (Simulation.Interaction.ExceptRel.error hError)
+  | @ok sourceFinal targetFinal hHalt =>
+      exact Simulation.Interaction.Rel.done
+        (Simulation.Interaction.ExceptRel.ok
+          (ControlResultRel.nonregular (mode := mode) (by simp)
+            (SameFrame.refl mode)
+            (Functions.Source.Ctx.SameControl.refl sourceCtx)
+            (ActivationOutcomeRel.halt kind hHalt)))
 
 end AllocationInteractionTerminal
 end Functions

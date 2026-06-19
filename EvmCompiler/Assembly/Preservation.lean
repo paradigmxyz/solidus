@@ -733,9 +733,15 @@ theorem Target.stepInstrResult_terminal_output_eq_H_return
           rfl
       | selfdestruct =>
           change PrimOp.selfdestruct.step state = .ok final at hRun
-          unfold PrimOp.step at hRun
-          change EvmYul.step (τ := .EVM) .SELFDESTRUCT none state =
-            .ok final at hRun
+          have hPermission : state.executionEnv.perm = true := by
+            cases hPermission : state.executionEnv.perm with
+            | false =>
+                rw [PrimOp.step_selfdestruct_of_static state hPermission]
+                  at hRun
+                contradiction
+            | true => rfl
+          rw [PrimOp.step_selfdestruct_of_permitted state hPermission]
+            at hRun
           cases state with
           | mk shared pc stack execLength =>
               cases stack with

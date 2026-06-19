@@ -244,7 +244,9 @@ def run (block : TypedCfg.Block) (state : EVMState) (trace : Trace) :
   let ((state', output), trace') ←
     runBody block.body block.input state trace
   if output = block.output then
-    .ok (TypedCfg.Block.runTerm block.output block.term state', trace')
+    let outcome ←
+      TypedCfg.Block.runTermChecked block.output block.term state'
+    .ok (outcome, trace')
   else
     .error .InvalidInstruction
 
@@ -266,8 +268,12 @@ theorem run_eq_effectSemantics
       rcases result with ⟨pair, trace'⟩
       rcases pair with ⟨state', output⟩
       by_cases hOutput : output = block.output
-      · simp [hOutput]
-        rfl
+      · cases hTerm : TypedCfg.Block.runTermChecked
+            block.output block.term state' <;>
+          simp [hOutput, hTerm, Bind.bind, Except.bind,
+            StateT.bind, StateT.pure, MonadExcept.throw,
+            MonadExceptOf.throw, StateT.instMonadExceptOf,
+            instMonadExceptOfExcept, throwThe, StateT.lift]
       · simp [hOutput]
         rfl
 

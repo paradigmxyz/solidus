@@ -138,6 +138,93 @@ def runTerm (shape : Shape) (term : Terminator) (state : EVMState) : Outcome :=
   | .halt kind => .halt kind state
   | .invalid => .invalid state
 
+def runTermChecked (shape : Shape) (term : Terminator)
+    (state : EVMState) : Except EVMException Outcome :=
+  match term with
+  | .halt .selfdestruct =>
+      if state.executionEnv.perm then
+        .ok (.halt .selfdestruct state)
+      else
+        .error .StaticModeViolation
+  | _ => .ok (runTerm shape term state)
+
+theorem runTermChecked_halt_of_allowed
+    (shape : Shape) (kind : Assembly.HaltKind) (state : EVMState)
+    (hAllowed : kind = .selfdestruct →
+      state.executionEnv.perm = true) :
+    runTermChecked shape (.halt kind) state =
+      .ok (.halt kind state) := by
+  cases kind <;> simp [runTermChecked, runTerm, hAllowed]
+
+theorem runTermChecked_selfdestruct_of_static
+    (shape : Shape) (state : EVMState)
+    (hPermission : state.executionEnv.perm = false) :
+    runTermChecked shape (.halt .selfdestruct) state =
+      .error .StaticModeViolation := by
+  simp [runTermChecked, hPermission]
+
+@[simp] theorem runTermChecked_fallthrough
+    (shape : Shape) (target : Label) (state : EVMState) :
+    runTermChecked shape (.fallthrough target) state =
+      .ok (runTerm shape (.fallthrough target) state) := rfl
+
+@[simp] theorem runTermChecked_jump
+    (shape : Shape) (target : Label) (state : EVMState) :
+    runTermChecked shape (.jump target) state =
+      .ok (runTerm shape (.jump target) state) := rfl
+
+@[simp] theorem runTermChecked_jumpi
+    (shape : Shape) (target fallthrough : Label) (state : EVMState) :
+    runTermChecked shape (.jumpi target fallthrough) state =
+      .ok (runTerm shape (.jumpi target fallthrough) state) := rfl
+
+@[simp] theorem runTermChecked_returnDispatch
+    (shape : Shape) (returnCount : Nat) (sites : List ReturnSite)
+    (state : EVMState) :
+    runTermChecked shape (.returnDispatch returnCount sites) state =
+      .ok (runTerm shape (.returnDispatch returnCount sites) state) := rfl
+
+@[simp] theorem runTermChecked_invalid
+    (shape : Shape) (state : EVMState) :
+    runTermChecked shape .invalid state =
+      .ok (runTerm shape .invalid state) := rfl
+
+@[simp] theorem runTermChecked_stop
+    (shape : Shape) (state : EVMState) :
+    runTermChecked shape (.halt .stop) state =
+      .ok (.halt .stop state) := rfl
+
+@[simp] theorem runTermChecked_return
+    (shape : Shape) (state : EVMState) :
+    runTermChecked shape (.halt .return) state =
+      .ok (.halt .return state) := rfl
+
+@[simp] theorem runTermChecked_revert
+    (shape : Shape) (state : EVMState) :
+    runTermChecked shape (.halt .revert) state =
+      .ok (.halt .revert state) := rfl
+
+theorem runTerm_eq_of_runTermChecked_eq_ok
+    {shape : Shape} {term : Terminator} {state : EVMState}
+    {outcome : Outcome}
+    (hRun : runTermChecked shape term state = .ok outcome) :
+    runTerm shape term state = outcome := by
+  cases term with
+  | halt kind =>
+      cases kind with
+      | stop | «return» | revert =>
+          exact Except.ok.inj hRun
+      | selfdestruct =>
+          simp only [runTerm]
+          cases hPermission : state.executionEnv.perm with
+          | false =>
+              simp [runTermChecked, hPermission] at hRun
+          | true =>
+              simpa [runTermChecked, hPermission] using hRun
+  | fallthrough _ | jump _ | jumpi _ _
+  | returnDispatch _ _ | invalid =>
+      exact Except.ok.inj hRun
+
 theorem ReturnSite.mem_of_findTarget?_eq_some
     {token : Word} {sites : List ReturnSite} {target : Label}
     (hFind : ReturnSite.findTarget? token sites = some target) :
@@ -295,7 +382,7 @@ def run (block : Block) (state : EVMState) :
     Except EVMException Outcome := do
   let (state', output) ← runBody block.body block.input state
   if output = block.output then
-    .ok (runTerm block.output block.term state')
+    runTermChecked block.output block.term state'
   else
     .error .InvalidInstruction
 
