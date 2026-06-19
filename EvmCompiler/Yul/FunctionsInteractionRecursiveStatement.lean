@@ -153,7 +153,7 @@ theorem. The target equation is the ordinary compiler output factored by
 theorem ifFromCondition
     {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
     {conditionFuel targetFuel : Nat}
-    {layout used : List Functions.Name}
+    {layout conditionUsed finalUsed : List Functions.Name}
     {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
     {cond : AstExpr} {body : List AstStmt}
@@ -163,11 +163,13 @@ theorem ifFromCondition
     {target : Functions.InteractionSemantics.State}
     {ctx : Functions.Source.Ctx}
     (hTargetFuel : pre.length + 1 < targetFuel)
+    (hUsedSubset : ∀ name, name ∈ conditionUsed → name ∈ finalUsed)
     (hControl : ControlContextRel sourceScopes layout
       canBreak canContinue canLeave ctx)
     (hCondition :
       Simulation.Interaction.ForwardRel Truncated
-        (FunctionsInteractionPreparedCondition.DoneRel layout used ctx)
+        (FunctionsInteractionPreparedCondition.DoneRel
+          layout conditionUsed ctx)
         (Yul.InteractionSemantics.evalValues conditionFuel cond
           (some sourceProgram.contract) source)
         (FunctionsInteractionPreparedCondition.run targetProgram.toFunctions
@@ -177,11 +179,11 @@ theorem ifFromCondition
         {targetAfter : Functions.InteractionSemantics.State}
         {ctxAfter : Functions.Source.Ctx},
         ScopedStateRel layout sourceAfter targetAfter →
-        TargetDomainWithin used targetAfter.vars →
+        TargetDomainWithin conditionUsed targetAfter.vars →
         ControlContextRel sourceScopes layout
             canBreak canContinue canLeave ctxAfter →
         Simulation.Interaction.ForwardRel Truncated
-          (ControlDoneRel used layout sourceScopes
+          (ControlDoneRel finalUsed layout sourceScopes
             canBreak canContinue canLeave)
           (Yul.InteractionSemantics.exec conditionFuel (.Block body)
             (some sourceProgram.contract) sourceAfter)
@@ -189,7 +191,7 @@ theorem ifFromCondition
             targetProgram.toFunctions ctxAfter
             (targetFuel - pre.length - 2) (.block lowerBody) targetAfter)) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlDoneRel used layout sourceScopes
+      (ControlDoneRel finalUsed layout sourceScopes
         canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec (conditionFuel + 1) (.If cond body)
         (some sourceProgram.contract) source)
@@ -253,7 +255,7 @@ theorem ifFromCondition
         rw [if_pos hNonzero]
         change
           Simulation.Interaction.ForwardRel Truncated
-            (ControlDoneRel used layout sourceScopes
+            (ControlDoneRel finalUsed layout sourceScopes
               canBreak canContinue canLeave)
             (Yul.InteractionSemantics.exec conditionFuel (.Block body)
               (some sourceProgram.contract) sourceAfter)
@@ -270,7 +272,7 @@ theorem ifFromCondition
         simp only [ne_eq, not_true_eq_false, ↓reduceIte,
           Bool.false_eq_true, Simulation.Interaction.bind_done_ok]
         exact Simulation.Interaction.ForwardRel.done
-          (.regular hScoped hDomain hControlAfter)
+          (.regular hScoped (hDomain.mono hUsedSubset) hControlAfter)
 
 /-- Compiler-selected lexical block from the adjacent recursive list theorem.
 The outer source/target cleanup is owned by `ControlDoneRel.block`; this wrapper
@@ -362,6 +364,122 @@ theorem block
     FunctionsInteractionStatement.ControlDoneRel.singleton
       (targetFuel := targetFuel - 2) hBlock'
   simpa [hFuelEq, SolcValidation.StmtOutVars] using hSingleton
+
+/-- Ordinary compiler-selected `if`, assembled only from the prepared
+condition capability and the strictly smaller recursive lexical body. -/
+theorem ifThen
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    {fuel targetFuel compilerFuel : Nat}
+    {functionNames layout : List Functions.Name}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {before after : Fresh.State} {cond : AstExpr} {body : List AstStmt}
+    {lower : List Functions.Stmt}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {ctx : Functions.Source.Ctx}
+    (hCondition :
+      FunctionsInteractionRecursiveExpression.ConditionForwardAt
+        profile sourceProgram targetProgram fuel targetFuel layout)
+    (hLists : RecursiveListForward
+      profile sourceProgram targetProgram fuel)
+    (hOk : SolcValidation.StmtOk? profile sourceProgram.contract
+      functionNames layout canBreak canContinue canLeave (.If cond body) = true)
+    (hNames : ∀ name, name ∈ Stmt.names (.If cond body) →
+      name ∈ before.used)
+    (hLower : Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+      (.If cond body) = some (lower, after))
+    (hRel : ScopedStateRel layout source target)
+    (hDomain : TargetDomainWithin before.used target.vars)
+    (hLayout : ∀ name, name ∈ layout → name ∈ before.used)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
+    (hTargetFuel :
+      FunctionsInteractionStaticCost.programBudget
+          sourceProgram (fuel + 1) +
+          FunctionsInteractionTargetCost.list lower + 1 < targetFuel) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel after.used layout sourceScopes
+        canBreak canContinue canLeave)
+      (Yul.InteractionSemantics.exec (fuel + 1) (.If cond body)
+        (some sourceProgram.contract) source)
+      (Functions.InteractionSemantics.Block.openRun
+        targetProgram.toFunctions ctx targetFuel { stmts := lower } target) := by
+  obtain ⟨previous, preCond, lowerCond, middle, lowerBody,
+      rfl, hLowerCond, hLowerBody, rfl⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_if_parts hLower
+  obtain ⟨bodyCompilerFuel, lowerBodyStmts, rfl,
+      hLowerBodyList, rfl⟩ :=
+    Stmt.List.toBlockUncheckedFuel?_parts hLowerBody
+  have hOkParts :
+      SolcValidation.ExprOk? profile sourceProgram.contract layout 1 cond = true ∧
+        SolcValidation.StmtsOk? profile sourceProgram.contract functionNames
+          layout canBreak canContinue canLeave body = true := by
+    simpa [SolcValidation.StmtOk?] using hOk
+  have hCondExtends : Fresh.Extends before middle :=
+    Expr.lower1Unchecked?_stateExtends hLowerCond
+  have hBodyExtends : Fresh.Extends middle after :=
+    Stmt.List.toFunctionsUncheckedFuel?_stateExtends hLowerBodyList
+  have hBodyNames : ∀ name, name ∈ Stmt.List.names body →
+      name ∈ middle.used := by
+    intro name hName
+    apply hCondExtends name
+    exact hNames name (by simp [Stmt.names, hName])
+  have hMiddleLayout : ∀ name, name ∈ layout → name ∈ middle.used := by
+    intro name hName
+    exact hCondExtends name (hLayout name hName)
+  have hProgramCond :
+      FunctionsInteractionStaticCost.programBudget sourceProgram fuel ≤
+        FunctionsInteractionStaticCost.programBudget sourceProgram (fuel + 1) := by
+    unfold FunctionsInteractionStaticCost.programBudget
+    exact FunctionsInteractionFuel.executionBudgetFor_mono _ _ (by omega)
+  have hPreLength := FunctionsInteractionTargetCost.length_le_list preCond
+  have hCost := hTargetFuel
+  rw [FunctionsInteractionTargetCost.list_append] at hCost
+  simp [FunctionsInteractionTargetCost.list,
+    FunctionsInteractionTargetCost.stmt,
+    FunctionsInteractionTargetCost.block] at hCost
+  have hCondBudget :
+      FunctionsInteractionStaticCost.programBudget sourceProgram fuel +
+          preCond.length + 2 ≤ targetFuel := by
+    omega
+  have hPrepared := hCondition (ctx := ctx) hOkParts.1 hLowerCond hCondBudget
+    hLayout hRel hDomain
+  apply ifFromCondition
+    (conditionUsed := middle.used) (finalUsed := after.used)
+    (lowerBody := { stmts := lowerBodyStmts })
+    (hTargetFuel := by omega) hBodyExtends hControl hPrepared
+  intro sourceAfter targetAfter ctxAfter hScopedAfter hDomainAfter hControlAfter
+  cases fuel with
+  | zero =>
+      rw [Yul.InteractionSemantics.Exec.zero]
+      exact Simulation.Interaction.ForwardRel.truncated
+        (right := Functions.InteractionSemantics.Stmt.openRun
+          targetProgram.toFunctions ctxAfter
+          (targetFuel - preCond.length - 2)
+          (.block { stmts := lowerBodyStmts }) targetAfter)
+        (by trivial)
+  | succ bodyFuel =>
+      have hProgramBody :
+          FunctionsInteractionStaticCost.programBudget sourceProgram bodyFuel ≤
+            FunctionsInteractionStaticCost.programBudget sourceProgram
+              (bodyFuel + 1 + 1) := by
+        unfold FunctionsInteractionStaticCost.programBudget
+        exact FunctionsInteractionFuel.executionBudgetFor_mono _ _ (by omega)
+      have hBodyBudget :
+          FunctionsInteractionStaticCost.programBudget sourceProgram bodyFuel +
+              FunctionsInteractionTargetCost.list lowerBodyStmts + 1 <
+            targetFuel - preCond.length - 2 := by
+        omega
+      have hBodyList := hLists
+        (sourceFuel := bodyFuel)
+        (targetFuel := targetFuel - preCond.length - 2) (by omega)
+        hOkParts.2 hBodyNames hLowerBodyList hScopedAfter hDomainAfter
+        hMiddleLayout hControlAfter hBodyBudget
+      exact FunctionsInteractionStatement.ControlDoneRel.block
+        hScopedAfter hControlAfter
+        (layoutWithinStmtsOutVars layout body) hBodyList
 
 end CompoundForward
 

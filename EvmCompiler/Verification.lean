@@ -1523,6 +1523,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.ConditionForwardAt
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.recursiveCondition
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.ifFromCondition
+#check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.ifThen
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.recursiveBoundHeads
 #check EvmCompiler.Yul.FunctionsInteractionPreparedStatement.letOneOfPrepared
 #check EvmCompiler.Yul.FunctionsInteractionPreparedStatement.assignOneOfPrepared

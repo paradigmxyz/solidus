@@ -260,6 +260,11 @@ boundaries remain active work.
                 interfaces.
               - [ ] Instantiate if, switch, and for from ordinary
                 compiler decomposition and the canonical control relation.
+                - [x] Ordinary compiler-selected `if`, with distinct
+                  condition/final freshness domains and a strictly smaller
+                  lexical-body list capability.
+                - [ ] Switch selection and selected body.
+                - [ ] For-loop initializer/body/post composition.
               - [ ] Close the dispatcher and selected callee bodies.
               - The historical `ScopedOpenResult`, observer transcript state,
                 `Nat.find`-based `requiredFuel`, replay relation, and public

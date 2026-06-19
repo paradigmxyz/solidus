@@ -543,3 +543,4 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofPreparedPrimitive
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.recursiveCondition
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.ifFromCondition
+#print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.ifThen
