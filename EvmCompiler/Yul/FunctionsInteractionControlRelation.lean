@@ -82,6 +82,26 @@ theorem enabled_parts
         ∀ name, name ∈ sourceScope.layout → name ∈ targetScope := by
   simpa [ScopeOptionRel] using hRel
 
+theorem source_subset_of_some
+    {enabled : Bool} {sourceScope? : Option SourceScope}
+    {targetScope? : Option (List Functions.Name)}
+    {current : List Functions.Name} {sourceScope : SourceScope}
+    (hRel : ScopeOptionRel enabled sourceScope? targetScope? current)
+    (hSome : sourceScope? = some sourceScope) :
+    ∀ name, name ∈ sourceScope.layout → name ∈ current := by
+  cases hEnabled : enabled with
+  | false =>
+      simp [ScopeOptionRel, hEnabled] at hRel
+      rw [hRel.1] at hSome
+      simp at hSome
+  | true =>
+      obtain ⟨candidate, targetScope, hCandidate, _hTarget,
+          hCurrent, _hTargetScope⟩ := by
+        simpa [hEnabled] using hRel
+      rw [hSome] at hCandidate
+      cases hCandidate
+      exact hCurrent
+
 end ScopeOptionRel
 
 /-- Abrupt control relates the already handler-restricted target state to the
@@ -97,6 +117,36 @@ structure AbruptOutcomeRel
     ((source.restrictStoreTo scope.store).reviveJump) target.state
 
 namespace AbruptOutcomeRel
+
+theorem restrict_outer
+    {scope : SourceScope}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.Outcome}
+    {outerStore : EvmYul.Yul.VarStore}
+    (hRel : AbruptOutcomeRel scope source target)
+    (hNonregular : target.mode ≠ .regular)
+    (hOuterDefined : ∀ name, name ∈ scope.layout →
+      ∃ value, outerStore.lookup name = some value) :
+    AbruptOutcomeRel scope (source.restrictStoreTo outerStore) target := by
+  obtain ⟨jump, rfl⟩ :=
+    ModeRel.target_nonregular_source_checkpoint hRel.mode hNonregular
+  cases jump with
+  | Break shared vars | Continue shared vars | Leave shared vars =>
+      have hStores :
+          EvmYul.Yul.State.restrictVarStore
+              (EvmYul.Yul.State.restrictVarStore vars outerStore)
+              scope.store =
+            EvmYul.Yul.State.restrictVarStore vars scope.store := by
+        apply VarStoreRestriction.restrict_restrict_of_inner_defined
+        intro name value hLookup
+        exact hOuterDefined name (scope.domain name value hLookup)
+      refine ⟨?_, ?_⟩
+      · have hMode := hRel.mode
+        cases hTarget : target.mode <;>
+          simp [FunctionsInteractionRelation.ModeRel, hTarget,
+            EvmYul.Yul.State.restrictStoreTo] at hMode ⊢
+      · simpa [EvmYul.Yul.State.restrictStoreTo,
+          EvmYul.Yul.State.reviveJump, hStores] using hRel.state
 
 theorem brk
     {current targetScope : List Functions.Name}

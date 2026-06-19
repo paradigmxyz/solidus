@@ -1,4 +1,5 @@
 import EvmCompiler.Yul.FunctionsInteractionSelectedStatementCall
+import EvmCompiler.Yul.FunctionsInteractionTargetCost
 
 namespace EvmCompiler
 namespace Yul
@@ -35,7 +36,8 @@ def StmtForwardAt
     ControlContextRel sourceScopes layout
       canBreak canContinue canLeave ctx →
     FunctionsInteractionStaticCost.programBudget
-        sourceProgram sourceFuel + lower.length + 1 < targetFuel →
+        sourceProgram sourceFuel +
+          FunctionsInteractionTargetCost.list lower + 1 < targetFuel →
     Simulation.Interaction.ForwardRel Truncated
       (ControlDoneRel after.used
         (SolcValidation.StmtOutVars layout stmt) sourceScopes
@@ -79,7 +81,8 @@ def ListForwardAt
     ControlContextRel sourceScopes layout
       canBreak canContinue canLeave ctx →
     FunctionsInteractionStaticCost.programBudget
-        sourceProgram sourceFuel + lower.length + 1 < targetFuel →
+        sourceProgram sourceFuel +
+          FunctionsInteractionTargetCost.list lower + 1 < targetFuel →
     Simulation.Interaction.ForwardRel Truncated
       (ControlDoneRel after.used
         (SolcValidation.StmtsOutVars layout stmts) sourceScopes
@@ -123,6 +126,119 @@ private theorem stmtOutVarsWithin
   | Break => exact hExtends name (hLayout name hName)
   | Leave => exact hExtends name (hLayout name hName)
 
+private theorem layoutWithinStmtOutVars
+    (layout : List Functions.Name) (stmt : AstStmt) :
+    ∀ name, name ∈ layout →
+      name ∈ SolcValidation.StmtOutVars layout stmt := by
+  intro name hName
+  cases stmt <;> simp [SolcValidation.StmtOutVars, hName]
+
+private theorem layoutWithinStmtsOutVars
+    (layout : List Functions.Name) (stmts : List AstStmt) :
+    ∀ name, name ∈ layout →
+      name ∈ SolcValidation.StmtsOutVars layout stmts := by
+  induction stmts generalizing layout with
+  | nil => exact fun _name hName => hName
+  | cons head tail ih =>
+      intro name hName
+      apply ih (SolcValidation.StmtOutVars layout head)
+      exact layoutWithinStmtOutVars layout head name hName
+
+namespace CompoundForward
+
+/-- Compiler-selected lexical block from the adjacent recursive list theorem.
+The outer source/target cleanup is owned by `ControlDoneRel.block`; this wrapper
+only decomposes the ordinary Yul compiler and discharges private target fuel. -/
+theorem block
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    {fuel targetFuel compilerFuel : Nat}
+    {functionNames layout : List Functions.Name}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {before after : Fresh.State} {body : List AstStmt}
+    {lower : List Functions.Stmt}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {ctx : Functions.Source.Ctx}
+    (hLists : ∀ recursiveTargetFuel,
+      ListForwardAt profile sourceProgram targetProgram
+        fuel recursiveTargetFuel)
+    (hOk : SolcValidation.StmtOk? profile sourceProgram.contract
+      functionNames layout canBreak canContinue canLeave (.Block body) = true)
+    (hNames : ∀ name, name ∈ Stmt.names (.Block body) →
+      name ∈ before.used)
+    (hLower : Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+      (.Block body) = some (lower, after))
+    (hRel : ScopedStateRel layout source target)
+    (hDomain : TargetDomainWithin before.used target.vars)
+    (hLayout : ∀ name, name ∈ layout → name ∈ before.used)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
+    (hTargetFuel :
+      FunctionsInteractionStaticCost.programBudget
+          sourceProgram (fuel + 1) +
+          FunctionsInteractionTargetCost.list lower + 1 < targetFuel) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel after.used layout sourceScopes
+        canBreak canContinue canLeave)
+      (Yul.InteractionSemantics.exec (fuel + 1) (.Block body)
+        (some sourceProgram.contract) source)
+      (Functions.InteractionSemantics.Block.openRun
+        targetProgram.toFunctions ctx targetFuel { stmts := lower } target) := by
+  obtain ⟨previous, lowerBody, rfl, hLowerBody, rfl⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_block_parts hLower
+  obtain ⟨bodyCompilerFuel, lowerBodyStmts, rfl,
+      hLowerList, rfl⟩ :=
+    Stmt.List.toBlockUncheckedFuel?_parts hLowerBody
+  have hBodyOk : SolcValidation.StmtsOk? profile sourceProgram.contract
+      functionNames layout canBreak canContinue canLeave body = true := by
+    simpa [SolcValidation.StmtOk?] using hOk
+  have hBodyNames : ∀ name, name ∈ Stmt.List.names body →
+      name ∈ before.used := by
+    simpa [Stmt.names] using hNames
+  have hProgramMono :
+      FunctionsInteractionStaticCost.programBudget sourceProgram fuel ≤
+        FunctionsInteractionStaticCost.programBudget sourceProgram (fuel + 1) := by
+    unfold FunctionsInteractionStaticCost.programBudget
+    exact FunctionsInteractionFuel.executionBudgetFor_mono _ _ (by omega)
+  have hTargetPositive : 2 ≤ targetFuel := by
+    simp [FunctionsInteractionTargetCost.list,
+      FunctionsInteractionTargetCost.stmt,
+      FunctionsInteractionTargetCost.block] at hTargetFuel
+    omega
+  have hBodyFuel :
+      FunctionsInteractionStaticCost.programBudget sourceProgram fuel +
+          FunctionsInteractionTargetCost.list lowerBodyStmts + 1 <
+        targetFuel - 1 := by
+    simp [FunctionsInteractionTargetCost.list,
+      FunctionsInteractionTargetCost.stmt,
+      FunctionsInteractionTargetCost.block] at hTargetFuel
+    omega
+  have hBody := hLists (targetFuel - 1)
+    hBodyOk hBodyNames hLowerList hRel hDomain hLayout hControl hBodyFuel
+  have hBlock := FunctionsInteractionStatement.ControlDoneRel.block
+    hRel hControl (layoutWithinStmtsOutVars layout body) hBody
+  have hStmtFuelEq : targetFuel - 2 + 1 = targetFuel - 1 := by omega
+  have hBlock' :
+      Simulation.Interaction.ForwardRel Truncated
+        (ControlDoneRel after.used layout sourceScopes
+          canBreak canContinue canLeave)
+        (Yul.InteractionSemantics.exec (fuel + 1) (.Block body)
+          (some sourceProgram.contract) source)
+        (Functions.InteractionSemantics.Stmt.openRun
+          targetProgram.toFunctions ctx (targetFuel - 2 + 1)
+          (.block { stmts := lowerBodyStmts }) target) := by
+    rw [hStmtFuelEq]
+    exact hBlock
+  have hFuelEq : targetFuel - 2 + 2 = targetFuel := by omega
+  have hSingleton :=
+    FunctionsInteractionStatement.ControlDoneRel.singleton
+      (targetFuel := targetFuel - 2) hBlock'
+  simpa [hFuelEq, SolcValidation.StmtOutVars] using hSingleton
+
+end CompoundForward
+
 namespace RecursiveListForward
 
 /-- Generic exact-tail sequencing.  This is the list edge of the historical
@@ -157,7 +273,7 @@ theorem ofStmt
           obtain ⟨previous, rfl, rfl, rfl⟩ :=
             Stmt.List.toFunctionsUncheckedFuel?_nil_parts hLower
           have hPositive : 0 < targetFuel := by
-            simp only [List.length_nil] at hTargetFuel
+            simp only [FunctionsInteractionTargetCost.list] at hTargetFuel
             omega
           have hTargetEq : targetFuel = (targetFuel - 1) + 1 := by omega
           rw [hTargetEq]
@@ -198,15 +314,19 @@ theorem ofStmt
               _ _ (by omega)
           have hHeadFuel :
               FunctionsInteractionStaticCost.programBudget
-                    sourceProgram fuel + lowerHead.length + 1 <
+                  sourceProgram fuel +
+                    FunctionsInteractionTargetCost.list lowerHead + 1 <
                 targetFuel := by
-            simp only [List.length_append] at hTargetFuel
+            rw [FunctionsInteractionTargetCost.list_append] at hTargetFuel
             omega
           have hTailFuel :
               FunctionsInteractionStaticCost.programBudget
-                    sourceProgram fuel + lowerTail.length + 1 <
+                  sourceProgram fuel +
+                    FunctionsInteractionTargetCost.list lowerTail + 1 <
                 targetFuel - lowerHead.length := by
-            simp only [List.length_append] at hTargetFuel
+            rw [FunctionsInteractionTargetCost.list_append] at hTargetFuel
+            have hLength :=
+              FunctionsInteractionTargetCost.length_le_list lowerHead
             omega
           have hHead := hStmt (sourceFuel := fuel)
             (targetFuel := targetFuel) (by omega)

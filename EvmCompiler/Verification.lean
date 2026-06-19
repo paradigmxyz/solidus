@@ -123,6 +123,7 @@ import EvmCompiler.Yul.EffectRefinement.Failure
 import EvmCompiler.Yul.InteractionSemantics
 import EvmCompiler.Yul.FunctionsInteractionFuel
 import EvmCompiler.Yul.FunctionsInteractionStaticCost
+import EvmCompiler.Yul.FunctionsInteractionTargetCost
 import EvmCompiler.Yul.FunctionsInteractionControlRelation
 import EvmCompiler.Yul.FunctionsInteractionPrimitive
 import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
@@ -1522,6 +1523,8 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.StmtForwardAt
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.ListForwardAt
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.RecursiveListForward.ofStmt
+#check EvmCompiler.Yul.FunctionsInteractionStatement.ControlDoneRel.block
+#check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.block
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_let_none_control
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_brk_control
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_cont_control

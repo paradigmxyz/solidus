@@ -127,6 +127,28 @@ theorem lookup_restrict_of_none
       simpa using
         lookup_sdiff_of_lookup_some store (store.sdiff scope) key hInnerSome
 
+/-- Restricting first to an outer lexical store and then to an inner store is
+the same as restricting directly to the inner store when every inner key is
+defined by the outer store. -/
+theorem restrict_restrict_of_inner_defined
+    (store outer inner : EvmYul.Yul.VarStore)
+    (hDefined : ∀ key value, inner.lookup key = some value →
+      ∃ outerValue, outer.lookup key = some outerValue) :
+    EvmYul.Yul.State.restrictVarStore
+        (EvmYul.Yul.State.restrictVarStore store outer) inner =
+      EvmYul.Yul.State.restrictVarStore store inner := by
+  apply Finmap.ext_lookup
+  intro key
+  cases hInner : inner.lookup key with
+  | none =>
+      rw [lookup_restrict_of_none _ inner key hInner,
+        lookup_restrict_of_none _ inner key hInner]
+  | some value =>
+      obtain ⟨outerValue, hOuter⟩ := hDefined key value hInner
+      rw [lookup_restrict_of_some _ inner key hInner,
+        lookup_restrict_of_some _ inner key hInner,
+        lookup_restrict_of_some store outer key hOuter]
+
 end VarStoreRestriction
 end Yul
 end EvmCompiler

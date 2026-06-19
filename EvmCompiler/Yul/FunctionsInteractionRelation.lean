@@ -1271,6 +1271,19 @@ theorem insertMany_used :
         at hInsert
       exact insertMany_used hHead hTailUsed hInsert
 
+theorem restrictTo
+    {used scope : List Functions.Name}
+    {target : Functions.InteractionSemantics.State}
+    (hDomain : TargetDomainWithin used target.vars) :
+    TargetDomainWithin used (target.restrictTo scope).vars := by
+  intro name value hLookup
+  by_cases hMem : name ∈ scope
+  · apply hDomain name value
+    simpa [Locals.Source.State.restrictTo,
+      Locals.Source.Store.restrictTo, hMem] using hLookup
+  · simp [Locals.Source.State.restrictTo,
+      Locals.Source.Store.restrictTo, hMem] at hLookup
+
 end TargetDomainWithin
 
 namespace TargetExtends

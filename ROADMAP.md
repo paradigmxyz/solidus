@@ -243,10 +243,16 @@ boundaries remain active work.
                 sequencing.
               - [x] Define canonical statement/list fuel interfaces and check
                 generic compiler-decomposed recursive list composition.
+              - [x] Replace flat emitted-list fuel accounting with a private
+                recursive Functions target-cost measure that sees nested
+                lexical, branch, switch, and loop blocks.
+              - [x] Check canonical lexical-block cleanup and its ordinary
+                compiler-selected recursive wrapper, including regular,
+                abrupt, terminal, ownership, and control outcomes.
               - [ ] Rebuild the historical five-way fuel fixed point over
                 canonical body, value, statement, list, and compound
                 interfaces.
-              - [ ] Instantiate block, if, switch, and for from ordinary
+              - [ ] Instantiate if, switch, and for from ordinary
                 compiler decomposition and the canonical control relation.
               - [ ] Close the dispatcher and selected callee bodies.
               - The historical `ScopedOpenResult`, observer transcript state,

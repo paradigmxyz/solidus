@@ -558,6 +558,109 @@ theorem cons
               (ControlDoneRel.terminal
                 (TerminalFailureRel.revert hState)))
 
+/-- Close one source lexical block and the canonical Functions `.block`
+wrapper. Regular completion restores the entry lexical scope on both sides;
+abrupt completion keeps its already-selected control destination. -/
+theorem block
+    {used entryLayout bodyLayout : List Functions.Name}
+    {sourceFuel targetFuel : Nat}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {body : List AstStmt} {lowerBody : Functions.Block}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hEntry : ScopedStateRel entryLayout source target)
+    (hControl : ControlContextRel sourceScopes entryLayout
+      canBreak canContinue canLeave ctx)
+    (hBodyLayout : ∀ name, name ∈ entryLayout → name ∈ bodyLayout)
+    (hBody :
+      Simulation.Interaction.ForwardRel Truncated
+        (ControlDoneRel used bodyLayout sourceScopes
+          canBreak canContinue canLeave)
+        (Yul.InteractionSemantics.execSeq
+          sourceFuel body codeOverride source)
+        (Functions.InteractionSemantics.Block.openRun
+          program ctx targetFuel lowerBody target)) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel used entryLayout sourceScopes
+        canBreak canContinue canLeave)
+      (Yul.InteractionSemantics.exec
+        (sourceFuel + 1) (.Block body) codeOverride source)
+      (Functions.InteractionSemantics.Stmt.openRun
+        program ctx targetFuel (.block lowerBody) target) := by
+  rcases hEntry.state with
+    ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
+  subst source
+  rw [Yul.InteractionSemantics.Exec.block_succ,
+    Functions.InteractionSemantics.Stmt.openRun_block]
+  apply Simulation.Interaction.ForwardRel.bind_custom hBody
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ForwardRel.done
+        (ControlDoneRel.error hError)
+  | @regular sourceAfter targetAfter ctxAfter
+      hState hDomain _hBodyControl =>
+      have hFinal := hState.restrictBoth
+        (hEntry.domain sourceShared sourceVars rfl)
+        (hEntry.defined sourceShared sourceVars rfl)
+        hBodyLayout hControl.scope
+      simpa using
+        (Simulation.Interaction.ForwardRel.done
+          (ControlDoneRel.regular hFinal hDomain.restrictTo hControl))
+  | @brk sourceAfter targetOutcome ctxAfter scope hScope hMode hAbrupt =>
+      have hSubset := hControl.breakScope.source_subset_of_some hScope
+      have hOuterDefined : ∀ name, name ∈ scope.layout →
+          ∃ value, sourceVars.lookup name = some value := by
+        intro name hName
+        exact hEntry.defined sourceShared sourceVars rfl name
+          (hSubset name hName)
+      have hAbrupt' := hAbrupt.restrict_outer
+        (by simp [hMode]) hOuterDefined
+      simpa [hMode] using
+        (Simulation.Interaction.ForwardRel.done
+          (ControlDoneRel.brk hScope hMode hAbrupt'))
+  | @cont sourceAfter targetOutcome ctxAfter scope hScope hMode hAbrupt =>
+      have hSubset := hControl.continueScope.source_subset_of_some hScope
+      have hOuterDefined : ∀ name, name ∈ scope.layout →
+          ∃ value, sourceVars.lookup name = some value := by
+        intro name hName
+        exact hEntry.defined sourceShared sourceVars rfl name
+          (hSubset name hName)
+      have hAbrupt' := hAbrupt.restrict_outer
+        (by simp [hMode]) hOuterDefined
+      simpa [hMode] using
+        (Simulation.Interaction.ForwardRel.done
+          (ControlDoneRel.cont hScope hMode hAbrupt'))
+  | @leave sourceAfter targetOutcome ctxAfter scope hScope hMode hAbrupt =>
+      have hSubset := hControl.leaveScope.source_subset_of_some hScope
+      have hOuterDefined : ∀ name, name ∈ scope.layout →
+          ∃ value, sourceVars.lookup name = some value := by
+        intro name hName
+        exact hEntry.defined sourceShared sourceVars rfl name
+          (hSubset name hName)
+      have hAbrupt' := hAbrupt.restrict_outer
+        (by simp [hMode]) hOuterDefined
+      simpa [hMode] using
+        (Simulation.Interaction.ForwardRel.done
+          (ControlDoneRel.leave hScope hMode hAbrupt'))
+  | terminal hTerminal =>
+      cases hTerminal with
+      | stop hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (ControlDoneRel.terminal (.stop hState))
+      | return_ hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (ControlDoneRel.terminal (.return_ hState))
+      | selfdestruct hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (ControlDoneRel.terminal (.selfdestruct hState))
+      | revert hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (ControlDoneRel.terminal (.revert hState))
+
 end ControlDoneRel
 
 /-- Adjacent result interface for a compiler-owned terminal argument prelude.
