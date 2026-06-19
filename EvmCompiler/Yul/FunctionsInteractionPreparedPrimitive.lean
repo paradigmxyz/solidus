@@ -495,6 +495,7 @@ theorem boundDirectOfLowering
 head once recursively generated operand heads are available at smaller fuel. -/
 theorem boundOfLowering
     (hPrimitive : FunctionsInteractionPrimitive.CompilerSelected)
+    {profile : SolcValidation.DialectProfile} {contract : AstContract}
     {argsFuel targetFuel : Nat}
     {prim : EvmYul.Operation .Yul} {args : List AstExpr}
     {pre : List Functions.Stmt} {lower : Locals.Expr 1}
@@ -503,9 +504,11 @@ theorem boundOfLowering
     {program : Functions.Program} {layout : List Functions.Name}
     (hLowering : Expr.UncheckedBoundPrimitiveLowering
       before prim args pre lower after)
+    (hArgsOk : SolcValidation.ExprsOk?
+      profile contract layout args = true)
     (hFresh : Fresh.fresh? after = some (tmp, final))
     (hNested : RecursiveBoundHeads
-      argsFuel targetFuel codeOverride program layout)
+      profile contract argsFuel targetFuel codeOverride program layout)
     (hLayoutBefore : ∀ name, name ∈ layout → name ∈ before.used)
     (hLayoutAfter : ∀ name, name ∈ layout → name ∈ after.used)
     (hTargetFuel : pre.length + 1 < targetFuel) :
@@ -516,7 +519,7 @@ theorem boundOfLowering
   | primitive hOp hArgs hSeq hOutputs =>
       intro _hLower _hFresh source target ctx hScoped hDomain
       have hPrepared :=
-        ofUncheckedLowering (ctx := ctx) hArgs hNested hScoped hDomain
+        ofUncheckedLowering (ctx := ctx) hArgsOk hArgs hNested hScoped hDomain
           hLayoutBefore (by omega)
       have hValue :=
         afterPrepared hPrimitive (before := before) hOp hSeq hOutputs
@@ -527,6 +530,7 @@ theorem boundOfLowering
 The only recursive premise is indexed by strictly smaller operand fuel. -/
 theorem boundPrimitive
     (hPrimitive : FunctionsInteractionPrimitive.CompilerSelected)
+    {profile : SolcValidation.DialectProfile} {contract : AstContract}
     {fuel targetFuel : Nat}
     {prim : EvmYul.Operation .Yul} {args : List AstExpr}
     {pre : List Functions.Stmt} {lower : Locals.Expr 1}
@@ -535,12 +539,14 @@ theorem boundPrimitive
     {program : Functions.Program} {layout : List Functions.Name}
     (hLowering : Expr.UncheckedPrimitiveLowering 1
       before prim args pre lower after)
+    (hExprOk : SolcValidation.ExprOk? profile contract layout 1
+      (.Call (.inl prim) args) = true)
     (hFresh : Fresh.fresh? after = some (tmp, final))
     (hNested :
       ∀ argsFuel,
         fuel = argsFuel + 2 →
           RecursiveBoundHeads
-            argsFuel targetFuel codeOverride program layout)
+            profile contract argsFuel targetFuel codeOverride program layout)
     (hLayoutBefore : ∀ name, name ∈ layout → name ∈ before.used)
     (hLayoutAfter : ∀ name, name ∈ layout → name ∈ after.used)
     (hTargetFuel : pre.length + 1 < targetFuel) :
@@ -561,11 +567,14 @@ theorem boundPrimitive
               hOp hArgs hSeq hOutputs)
             hFresh hLayoutBefore (by simpa using hTargetFuel)
     | bound hBound hOp hArgs hSeq hOutputs =>
+        have hArgsOk :=
+          SolcValidation.exprsOk_of_exprOk_primitive hExprOk
         exact
           boundOfLowering hPrimitive
             (Expr.UncheckedBoundPrimitiveLowering.primitive
               hOp hArgs hSeq hOutputs)
-            hFresh (hNested argsFuel rfl) hLayoutBefore hLayoutAfter
+            hArgsOk hFresh (hNested argsFuel rfl)
+            hLayoutBefore hLayoutAfter
             hTargetFuel
 
 end FunctionsInteractionPreparedPrimitive

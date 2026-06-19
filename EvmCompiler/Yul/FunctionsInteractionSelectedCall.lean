@@ -65,6 +65,7 @@ theorem ofUncheckedFunctionCallLowering
     (hLowering : Expr.UncheckedFunctionCallLowering
       initial functionName args pre lower final)
     (hBound : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
+      profile sourceProgram.contract
       (sourceFuel + 1) (pre.length + targetBodyFuel + 2)
       (some sourceProgram.contract) targetProgram.toFunctions layout)
     (hBodyForward : BodyForwardAt profile sourceProgram targetProgram
@@ -92,6 +93,10 @@ theorem ofUncheckedFunctionCallLowering
       obtain ⟨hArgCount, hSignature, returnName, hReturnSingleton⟩ :=
         SolcValidation.programOkWith_functionCall_parts
           hProgramOk hExprOk hLookup
+      have hArgsOk :
+          SolcValidation.ExprsOk? profile sourceProgram.contract
+            layout args = true :=
+        SolcValidation.exprsOk_of_exprOk_functionCall hExprOk hLookup
       have hBodyOk :
           SolcValidation.StmtsOk? profile sourceProgram.contract
               ((Contract.functionEntries
@@ -115,7 +120,7 @@ theorem ofUncheckedFunctionCallLowering
               [Functions.Stmt.let_ tmp (.lit Functions.Source.zero),
                 Functions.Stmt.call [tmp] functionName lowerArgs]).length +
               targetBodyFuel + 2)
-          hArgs hBound hRel hDomain hLayout
+          hArgs hArgsOk hBound hRel hDomain hLayout
           (by simp; omega)
       rw [show sourceFuel + 2 = (sourceFuel + 1) + 1 by omega,
         Yul.InteractionSemantics.EvalValues.internal_succ]
@@ -263,6 +268,187 @@ theorem ofUncheckedFunctionCallLowering
             Nat.zero_add]
           rw [hResidual]
           simpa using hSuffix
+
+/-- Lift one compiler-selected internal call into the generic recursively
+prepared expression-head interface. The body uses strictly smaller source
+fuel; argument heads use the immediately smaller list fuel. -/
+theorem headValueOfUncheckedFunctionCallLowering
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    {bodyFuel targetFuel : Nat}
+    {functionName : Name} {args : List AstExpr}
+    {before after : Fresh.State} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1} {layout : List Functions.Name}
+    (hDecomposition :
+      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract layout 1
+          (.Call (.inr functionName) args) = true)
+    (hLowering : Expr.UncheckedFunctionCallLowering
+      before functionName args pre lower after)
+    (hNested : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
+      profile sourceProgram.contract (bodyFuel + 1) targetFuel
+      (some sourceProgram.contract)
+      targetProgram.toFunctions layout)
+    (hBodyForward : BodyForwardAt profile sourceProgram targetProgram
+      bodyFuel (targetFuel - pre.length - 2))
+    (hLayout : ∀ name, name ∈ layout → name ∈ before.used)
+    (hTargetFuel : pre.length + 1 < targetFuel) :
+    FunctionsInteractionPreparedArgs.HeadValueForward
+      (bodyFuel + 3) targetFuel
+      (.Call (.inr functionName) args) pre lower before after
+      (some sourceProgram.contract) targetProgram.toFunctions layout := by
+  intro _hLower source target ctx hRel hDomain
+  have hFuelEq :
+      pre.length + (targetFuel - pre.length - 2) + 2 = targetFuel := by
+    omega
+  have hNested' : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
+      profile sourceProgram.contract (bodyFuel + 1)
+      (pre.length + (targetFuel - pre.length - 2) + 2)
+      (some sourceProgram.contract) targetProgram.toFunctions layout := by
+    rw [hFuelEq]
+    exact hNested
+  have hSelected := ofUncheckedFunctionCallLowering
+    (sourceFuel := bodyFuel)
+    (targetBodyFuel := targetFuel - pre.length - 2)
+    (ctx := ctx) hDecomposition hProgramOk hExprOk hLowering
+    hNested' hBodyForward hRel hDomain hLayout
+  have hSingleton :=
+    FunctionsInteractionPreparedArgs.singletonOfValues hSelected
+  simpa [hFuelEq] using hSingleton
+
+/-- A compiler-selected call head followed by the bounded-argument owner's
+fresh spill binding. This is the call-family sibling of
+`FunctionsInteractionPreparedPrimitive.boundPrimitive`. -/
+theorem boundCall
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    {bodyFuel targetFuel : Nat}
+    {functionName : Name} {args : List AstExpr}
+    {before after final : Fresh.State} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1} {tmp : Functions.Name}
+    {layout : List Functions.Name}
+    (hDecomposition :
+      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract layout 1
+          (.Call (.inr functionName) args) = true)
+    (hLowering : Expr.UncheckedFunctionCallLowering
+      before functionName args pre lower after)
+    (hNested : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
+      profile sourceProgram.contract (bodyFuel + 1) targetFuel
+      (some sourceProgram.contract)
+      targetProgram.toFunctions layout)
+    (hBodyForward : BodyForwardAt profile sourceProgram targetProgram
+      bodyFuel (targetFuel - pre.length - 2))
+    (hLayoutBefore : ∀ name, name ∈ layout → name ∈ before.used)
+    (hLayoutAfter : ∀ name, name ∈ layout → name ∈ after.used)
+    (hTargetFuel : pre.length + 1 < targetFuel) :
+    FunctionsInteractionPreparedArgs.BoundHeadForward
+      (bodyFuel + 3) targetFuel
+      (.Call (.inr functionName) args) pre lower before after final tmp
+      (some sourceProgram.contract) targetProgram.toFunctions layout :=
+  FunctionsInteractionPreparedArgs.bindHeadValue hLayoutAfter hTargetFuel
+    (headValueOfUncheckedFunctionCallLowering
+      hDecomposition hProgramOk hExprOk hLowering hNested hBodyForward
+      hLayoutBefore hTargetFuel)
+
+/-- Internal-call singleton evaluation is source-truncated below three list
+fuel units. The `fuel = 2` case enters the expression but exhausts fuel before
+evaluating its argument list. -/
+theorem boundCall_lowFuel
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    {fuel targetFuel : Nat}
+    {functionName : Name} {args : List AstExpr}
+    {before after final : Fresh.State} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1} {tmp : Functions.Name}
+    {layout : List Functions.Name}
+    (hFuel : fuel < 3) :
+    FunctionsInteractionPreparedArgs.BoundHeadForward
+      fuel targetFuel (.Call (.inr functionName) args)
+      pre lower before after final tmp
+      (some sourceProgram.contract) targetProgram.toFunctions layout := by
+  by_cases hVeryLow : fuel < 2
+  · exact FunctionsInteractionPreparedArgs.boundHead_lowFuel hVeryLow
+  · have hFuelEq : fuel = 2 := by omega
+    subst fuel
+    intro _hLower _hFresh source target ctx _hRel _hDomain
+    rw [Yul.InteractionSemantics.EvalArgs.succ_succ_cons]
+    rw [Yul.InteractionSemantics.EvalValues.internal_succ]
+    have hArgsZero :
+        Yul.InteractionSemantics.evalArgs 0 args.reverse
+            (some sourceProgram.contract) source =
+          Yul.InteractionSemantics.Primitive.fail source .OutOfFuel := by
+      unfold Yul.InteractionSemantics.evalArgs
+        Yul.Source.Canonical.evalArgs Yul.Source.Effectful.evalArgs
+      rfl
+    rw [hArgsZero]
+    have hTruncated :
+        Truncated
+          ({ exception := .OutOfFuel, state := source } :
+            Yul.InteractionSemantics.Failure) := by
+      trivial
+    simpa [Yul.InteractionSemantics.Primitive.fail] using
+      (Simulation.Interaction.ForwardRel.truncated
+        (doneRel := FunctionsInteractionPreparedArgs.DoneRel
+          layout final [.var tmp] target)
+        (right := Functions.InteractionSemantics.Block.openRun
+          targetProgram.toFunctions ctx targetFuel
+          { stmts := pre ++ [.let_ tmp lower] } target)
+        hTruncated)
+
+/-- Exhaustive arbitrary-fuel dispatcher for a generated internal-call head.
+Recursive argument and body premises are requested only at the exact smaller
+source fuels exposed by the canonical evaluator. -/
+theorem boundCallAtFuel
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    {fuel targetFuel : Nat}
+    {functionName : Name} {args : List AstExpr}
+    {before after final : Fresh.State} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1} {tmp : Functions.Name}
+    {layout : List Functions.Name}
+    (hDecomposition :
+      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract layout 1
+          (.Call (.inr functionName) args) = true)
+    (hLowering : Expr.UncheckedFunctionCallLowering
+      before functionName args pre lower after)
+    (hNested :
+      ∀ argsFuel,
+        fuel = argsFuel + 2 →
+          FunctionsInteractionPreparedArgs.RecursiveBoundHeads
+            profile sourceProgram.contract argsFuel targetFuel
+            (some sourceProgram.contract)
+            targetProgram.toFunctions layout)
+    (hBodies :
+      ∀ bodyFuel,
+        fuel = bodyFuel + 3 →
+          BodyForwardAt profile sourceProgram targetProgram bodyFuel
+            (targetFuel - pre.length - 2))
+    (hLayoutBefore : ∀ name, name ∈ layout → name ∈ before.used)
+    (hLayoutAfter : ∀ name, name ∈ layout → name ∈ after.used)
+    (hTargetFuel : pre.length + 1 < targetFuel) :
+    FunctionsInteractionPreparedArgs.BoundHeadForward
+      fuel targetFuel (.Call (.inr functionName) args)
+      pre lower before after final tmp
+      (some sourceProgram.contract) targetProgram.toFunctions layout := by
+  by_cases hLow : fuel < 3
+  · exact boundCall_lowFuel hLow
+  · obtain ⟨bodyFuel, hFuel⟩ : ∃ bodyFuel, fuel = bodyFuel + 3 := by
+      refine ⟨fuel - 3, ?_⟩
+      omega
+    subst fuel
+    exact boundCall hDecomposition hProgramOk hExprOk hLowering
+      (hNested (bodyFuel + 1) (by omega))
+      (hBodies bodyFuel rfl) hLayoutBefore hLayoutAfter hTargetFuel
 
 end FunctionsInteractionSelectedCall
 end Yul

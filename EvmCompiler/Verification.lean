@@ -131,6 +131,7 @@ import EvmCompiler.Yul.FunctionsInteractionPreparedCall
 import EvmCompiler.Yul.FunctionsCompilerArtifact
 import EvmCompiler.Yul.FunctionsInteractionCall
 import EvmCompiler.Yul.FunctionsInteractionSelectedCall
+import EvmCompiler.Yul.FunctionsInteractionRecursiveExpression
 import EvmCompiler.Yul.FunctionsInteractionTerminal
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.CompilerCallDecomposition
@@ -1495,6 +1496,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.InteractionSemantics.EvalValues.internal_succ
 #check EvmCompiler.Yul.FunctionsInteractionSelectedCall.BodyForwardAt
 #check EvmCompiler.Yul.FunctionsInteractionSelectedCall.ofUncheckedFunctionCallLowering
+#check EvmCompiler.Yul.FunctionsInteractionSelectedCall.headValueOfUncheckedFunctionCallLowering
+#check EvmCompiler.Yul.FunctionsInteractionSelectedCall.boundCallAtFuel
+#check EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.recursiveBoundHeads
 #check EvmCompiler.Simulation.Interaction.ForwardRel.strengthen_right
 #check EvmCompiler.Simulation.Interaction.ForwardRel.bind_right
 #check EvmCompiler.Yul.FunctionsInteractionExpression.expr_openEval_cast

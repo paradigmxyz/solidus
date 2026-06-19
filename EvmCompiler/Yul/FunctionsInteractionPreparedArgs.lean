@@ -1067,7 +1067,8 @@ theorem bound
 /-- Fuel-indexed recursive expression capability consumed privately by the
 compiler-owned bounded-argument induction. -/
 def RecursiveBoundHeads
-    (fuel targetFuel : Nat)
+    (profile : SolcValidation.DialectProfile)
+    (contract : AstContract) (fuel targetFuel : Nat)
     (codeOverride : Option EvmYul.Yul.Ast.YulContract)
     (program : Functions.Program) (layout : List Functions.Name) : Prop :=
   ∀ {expr : AstExpr} {rest : List AstExpr}
@@ -1075,7 +1076,8 @@ def RecursiveBoundHeads
     {lowerHead : Locals.Expr 1}
     {stateRest stateHead stateFresh : Fresh.State}
     {tmp : Functions.Name},
-    Expr.lower1Unchecked? stateRest expr =
+    SolcValidation.ExprOk? profile contract layout 1 expr = true →
+      Expr.lower1Unchecked? stateRest expr =
         some (preHead, lowerHead, stateHead) →
       Fresh.fresh? stateHead = some (tmp, stateFresh) →
         preHead.length + 1 < targetFuel - preRest.length →
@@ -1091,6 +1093,7 @@ def RecursiveBoundHeads
 Only a generated, fresh-bound expression head is delegated to the recursive
 expression owner; empty and deferred branches are discharged here. -/
 theorem ofUncheckedLowering
+    {profile : SolcValidation.DialectProfile} {contract : AstContract}
     {fuel targetFuel : Nat}
     {args : List AstExpr} {pre : List Functions.Stmt}
     {lowerArgs : List (Locals.Expr 1)}
@@ -1100,10 +1103,12 @@ theorem ofUncheckedLowering
     {layout : List Functions.Name}
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
+    (hArgsOk : SolcValidation.ExprsOk?
+      profile contract layout args = true)
     (hLowering : Expr.List.UncheckedBoundLowering
       initial args pre lowerArgs final)
     (hBound : RecursiveBoundHeads
-      fuel targetFuel codeOverride program layout)
+      profile contract fuel targetFuel codeOverride program layout)
     (hRel : FunctionsInteractionRelation.ScopedStateRel
       layout source target)
     (hDomain : FunctionsInteractionRelation.TargetDomainWithin
@@ -1127,19 +1132,30 @@ theorem ofUncheckedLowering
               (ctx := ctx) hRel hDomain)
   | @direct stateRest stateHead expr rest preRest preHead lowerRest
       lowerHead hRest hHead hDirect ih =>
+      have hOkParts :
+          SolcValidation.ExprOk? profile contract layout 1 expr = true ∧
+            SolcValidation.ExprsOk? profile contract layout rest = true := by
+        simpa [SolcValidation.ExprsOk?] using hArgsOk
+      have hRestOk :
+          SolcValidation.ExprsOk? profile contract layout rest = true := by
+        exact hOkParts.2
       obtain ⟨rfl, rfl, _hLower⟩ :=
         Expr.lower1Unchecked?_deferred_parts hDirect.1 hHead
       have hRestFuel : preRest.length < targetFuel := by
         simpa using hTargetFuel
-      have hRestForward := ih hRestFuel
+      have hRestForward := ih hRestOk hRestFuel
       exact direct (initial := initial) hDirect.1 hHead hRestForward
   | @bound stateRest stateHead stateFresh expr rest preRest preHead
       lowerRest lowerHead tmp hRest hHead _hDirect hFresh ih =>
+      have hOkParts :
+          SolcValidation.ExprOk? profile contract layout 1 expr = true ∧
+            SolcValidation.ExprsOk? profile contract layout rest = true := by
+        simpa [SolcValidation.ExprsOk?] using hArgsOk
       have hRestFuel : preRest.length < targetFuel := by
         simp only [List.length_append, List.length_cons, List.length_nil]
           at hTargetFuel
         omega
-      have hRestForward := ih hRestFuel
+      have hRestForward := ih hOkParts.2 hRestFuel
       have hHeadFuel :
           preHead.length + 1 < targetFuel - preRest.length := by
         simp only [List.length_append, List.length_cons, List.length_nil]
@@ -1159,7 +1175,8 @@ theorem ofUncheckedLowering
         intro name hMem
         exact hHeadExtends name (hRestLayout name hMem)
       exact bound (initial := initial) hHead hFresh
-        (hBound hHead hFresh hHeadFuel hRestLayout hHeadLayout)
+        (hBound hOkParts.1 hHead hFresh hHeadFuel
+          hRestLayout hHeadLayout)
         hRestForward
 
 end FunctionsInteractionPreparedArgs

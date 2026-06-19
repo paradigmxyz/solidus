@@ -10,6 +10,7 @@ open FunctionsInteractionPreparedArgs
 ordinary Yul compiler. Nonempty calls reuse bounded-argument preservation;
 the empty-call constructor is the identity computation. -/
 theorem ofUncheckedCallArgsLowering
+    {profile : SolcValidation.DialectProfile} {contract : AstContract}
     {fuel targetFuel : Nat}
     {args : List AstExpr} {pre : List Functions.Stmt}
     {lowerArgs : List (Locals.Expr 1)}
@@ -21,8 +22,10 @@ theorem ofUncheckedCallArgsLowering
     {target : Functions.InteractionSemantics.State}
     (hLowering : Expr.UncheckedCallArgsLowering
       initial args pre lowerArgs final)
+    (hArgsOk : SolcValidation.ExprsOk?
+      profile contract layout args = true)
     (hBound : RecursiveBoundHeads
-      fuel targetFuel codeOverride program layout)
+      profile contract fuel targetFuel codeOverride program layout)
     (hRel : FunctionsInteractionRelation.ScopedStateRel
       layout source target)
     (hDomain : FunctionsInteractionRelation.TargetDomainWithin
@@ -48,7 +51,7 @@ theorem ofUncheckedCallArgsLowering
               (ctx := ctx) hRel hDomain)
   | bound _hNonempty hArgs =>
       exact FunctionsInteractionPreparedArgs.ofUncheckedLowering
-        (ctx := ctx) hArgs hBound hRel hDomain hLayout hTargetFuel
+        (ctx := ctx) hArgsOk hArgs hBound hRel hDomain hLayout hTargetFuel
 
 end FunctionsInteractionPreparedCall
 end Yul

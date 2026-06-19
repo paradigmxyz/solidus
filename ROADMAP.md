@@ -215,6 +215,9 @@ boundaries remain active work.
             recursive-body capability.
           - [ ] Discharge the recursive body capability by source-fuel
             induction.
+            - [x] Carry exact source validation through recursive prepared
+              arguments and construct all primitive/internal-call expression
+              heads by strong source-fuel induction.
     - [ ] Complete recursive statement/list proof over compiler decomposition;
       break, continue, leave, and multi-name uninitialized declaration compiler
       cases are checked. Direct-safe one-name initialized declarations and
