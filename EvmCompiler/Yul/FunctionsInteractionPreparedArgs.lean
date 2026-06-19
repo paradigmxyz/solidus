@@ -605,6 +605,63 @@ def BoundHeadForward
           program ctx targetFuel
           { stmts := pre ++ [.let_ tmp lower] } target)
 
+/-- With fewer than two list-fuel units, a singleton argument computation is
+source-truncated before any completed head result needs relating. -/
+theorem boundHead_lowFuel
+    {fuel targetFuel : Nat}
+    {expr : AstExpr} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    {before after final : Fresh.State} {tmp : Functions.Name}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {layout : List Functions.Name}
+    (hFuel : fuel < 2) :
+    BoundHeadForward fuel targetFuel expr pre lower before after final tmp
+      codeOverride program layout := by
+  intro _hLower _hFresh source target ctx _hScoped _hDomain
+  cases fuel with
+  | zero =>
+      have hTruncated :
+          Truncated
+            ({ exception := .OutOfFuel, state := source } :
+              Yul.InteractionSemantics.Failure) := by
+        trivial
+      simpa [Yul.InteractionSemantics.evalArgs,
+        Yul.Source.Canonical.evalArgs,
+        Yul.Source.Effectful.evalArgs,
+        Yul.InteractionSemantics.Primitive.fail,
+        Yul.Source.Effectful.Control.fail] using
+        (Simulation.Interaction.ForwardRel.truncated
+          (doneRel := DoneRel layout final [.var tmp] target)
+          (right := Functions.InteractionSemantics.Block.openRun
+            program ctx targetFuel
+            { stmts := pre ++ [.let_ tmp lower] } target)
+          hTruncated)
+  | succ remaining =>
+      have hRemaining : remaining = 0 := by omega
+      subst remaining
+      rw [Yul.InteractionSemantics.EvalArgs.one_cons]
+      have hEvalZero :
+          Yul.InteractionSemantics.evalValues
+              0 expr codeOverride source =
+            Yul.InteractionSemantics.Primitive.fail source .OutOfFuel := by
+        unfold Yul.InteractionSemantics.evalValues
+          Yul.Source.Canonical.evalValues
+          Yul.Source.Effectful.evalValues
+        rfl
+      rw [hEvalZero]
+      have hTruncated :
+          Truncated
+            ({ exception := .OutOfFuel, state := source } :
+              Yul.InteractionSemantics.Failure) := by
+        trivial
+      simpa [Yul.InteractionSemantics.Primitive.fail] using
+        (Simulation.Interaction.ForwardRel.truncated
+          (doneRel := DoneRel layout final [.var tmp] target)
+          (right := Functions.InteractionSemantics.Block.openRun
+            program ctx targetFuel
+            { stmts := pre ++ [.let_ tmp lower] } target)
+          hTruncated)
+
 /-- Adjacent expression-owner interface before the bounded-argument owner
 stores the delayed value in its compiler-private temporary. -/
 def HeadValueForward

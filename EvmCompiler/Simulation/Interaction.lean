@@ -1622,6 +1622,44 @@ theorem strengthen_right
       | request hProperty =>
           exact .request fun answer => ih answer (hProperty answer)
 
+/-- Sequence a target-only continuation while leaving the completed source
+result unchanged. -/
+theorem bind_right
+    {Error₁ : Type u1} {Result₁ : Type v1}
+    {Error₂ : Type u2} {Source₂ : Type v2} {Target₂ : Type w2}
+    {truncated : Error₁ → Prop}
+    {sourceDoneRel :
+      Except Error₁ Result₁ → Except Error₂ Source₂ → Prop}
+    {targetDoneRel :
+      Except Error₁ Result₁ → Except Error₂ Target₂ → Prop}
+    {left : Interaction Error₁ Result₁}
+    {right : Interaction Error₂ Source₂}
+    {rightNext : Source₂ → Interaction Error₂ Target₂}
+    (hRel : ForwardRel truncated sourceDoneRel left right)
+    (hNext :
+      ∀ leftDone rightDone,
+        sourceDoneRel leftDone rightDone →
+          ForwardRel truncated targetDoneRel
+            (.done leftDone)
+            (match rightDone with
+            | .error error => .done (.error error)
+            | .ok value => rightNext value)) :
+    ForwardRel truncated targetDoneRel left
+      (Interaction.bind right rightNext) := by
+  induction hRel with
+  | truncated hTruncated =>
+      exact .truncated hTruncated
+  | @done leftDone rightDone hDone =>
+      cases rightDone with
+      | error error =>
+          simpa [Interaction.bind] using
+            hNext leftDone (.error error) hDone
+      | ok value =>
+          simpa [Interaction.bind] using
+            hNext leftDone (.ok value) hDone
+  | request hResume ih =>
+      exact .request ih
+
 theorem ofRel
     {Error₁ : Type u1} {Result₁ : Type v1}
     {Error₂ : Type u2} {Result₂ : Type v2}

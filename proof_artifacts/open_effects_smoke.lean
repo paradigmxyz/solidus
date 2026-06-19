@@ -487,8 +487,12 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.bound
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.ofUncheckedLowering
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.afterPrepared
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.bindDirectEval
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.boundDirectOfLowering
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.boundOfLowering
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.boundPrimitive
 #print axioms EvmCompiler.Simulation.Interaction.ForwardRel.strengthen_right
+#print axioms EvmCompiler.Simulation.Interaction.ForwardRel.bind_right
 #print axioms EvmCompiler.Yul.FunctionsInteractionExpression.expr_openEval_cast
 #print axioms EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_permitted
 #print axioms EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_static

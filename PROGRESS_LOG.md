@@ -82,6 +82,15 @@
   `RecursiveBoundHeads` capability; no response oracle or generated evidence
   appears at a public boundary.
 
+- 2026-06-18 19:11:48 PDT - proof/yul-exhaustive-spilled-primitive-head - Added
+  target-only `ForwardRel.bind_right`, generic one-result fresh binding, and
+  `boundDirectOfLowering`; then checked `boundPrimitive`, which exhaustively
+  dispatches the ordinary `UncheckedPrimitiveLowering` artifact across honest
+  low-fuel truncation, direct inline operands, and recursively prepared
+  operands. CALL, CALLCODE, DELEGATECALL, STATICCALL, CREATE, and CREATE2 all
+  pass through the same compiler-selected open-world primitive theorem. The
+  remaining generated expression-head family is internal Yul function calls.
+
 - 2026-06-15 - compaction-resume - Resumed with the archive branch and
   narrowed observer-replay implementation intact. Final work is limited to
   consistency review, recording completed verification, and committing the

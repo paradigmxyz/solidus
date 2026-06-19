@@ -292,6 +292,205 @@ theorem afterPrepared
           rw [hSourcePure] at hPrimitiveBound
           exact hPrimitiveBound
 
+/-- Bind a checked one-result source/Locals expression relation into the fresh
+Functions local emitted by the bounded-argument compiler. -/
+theorem bindDirectEval
+    {targetFuel : Nat}
+    {lower : Locals.Expr 1}
+    {before final : Fresh.State} {tmp : Functions.Name}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {layout : List Functions.Name}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {sourceOpen : Yul.InteractionSemantics.Open
+      (Yul.InteractionSemantics.State × List Word)}
+    (hFresh : Fresh.fresh? before = some (tmp, final))
+    (hLayout : ∀ name, name ∈ layout → name ∈ before.used)
+    (hTargetFuel : 1 < targetFuel)
+    (hScoped : FunctionsInteractionRelation.ScopedStateRel
+      layout source target)
+    (hDomain : FunctionsInteractionRelation.TargetDomainWithin
+      before.used target.vars)
+    (hEval :
+      Simulation.Interaction.ForwardRel Truncated
+        (FunctionsInteractionExpression.DoneRel source 1)
+        sourceOpen
+        (Functions.InteractionSemantics.Expr.openEval lower target)) :
+    Simulation.Interaction.ForwardRel Truncated
+      (DoneRel layout final [.var tmp] target)
+      sourceOpen
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx targetFuel { stmts := [.let_ tmp lower] } target) := by
+  have hEvalVars := hEval.strengthen_right
+    (Locals.InteractionSemantics.Expr.openEval_vars_eq lower target)
+  have hRemaining : ∃ remaining, targetFuel = remaining + 2 := by
+    refine ⟨targetFuel - 2, ?_⟩
+    omega
+  obtain ⟨remaining, rfl⟩ := hRemaining
+  have hTargetLet :
+      Functions.InteractionSemantics.Block.openRun
+          program ctx (remaining + 2)
+          { stmts := [.let_ tmp lower] } target =
+        Simulation.Interaction.bind
+          (Functions.InteractionSemantics.Expr.openEval lower target)
+          (fun result =>
+            match result.2 with
+            | [value] =>
+                pure
+                  (Functions.Source.Effectful.Outcome.regular
+                    (result.1.insert tmp value),
+                    { ctx with scope := tmp :: ctx.scope })
+            | _ => throw .InvalidInstruction) := by
+    rw [show remaining + 2 = (remaining + 1) + 1 by omega,
+      Functions.InteractionSemantics.Block.openRun_cons]
+    change
+      Simulation.Interaction.bind
+          (Functions.InteractionSemantics.Stmt.openRun
+            program ctx (remaining + 1) (.let_ tmp lower) target)
+          _ = _
+    rw [Functions.InteractionSemantics.Stmt.openRun_let,
+      Simulation.Interaction.bind_assoc]
+    apply congrArg
+    funext result
+    cases result.2 with
+    | nil => rfl
+    | cons value rest =>
+        cases rest with
+        | nil =>
+            simp only [Simulation.Interaction.monad_pure_bind]
+            change
+              Functions.InteractionSemantics.Block.openRun
+                  program { ctx with scope := tmp :: ctx.scope }
+                  (remaining + 1) { stmts := [] }
+                  (result.1.insert tmp value) =
+                pure
+                  (Functions.Source.Effectful.Outcome.regular
+                    (result.1.insert tmp value),
+                    { ctx with scope := tmp :: ctx.scope })
+            rw [Functions.InteractionSemantics.Block.openRun_nil]
+        | cons next tail => rfl
+  rw [hTargetLet]
+  apply Simulation.Interaction.ForwardRel.bind_right hEvalVars
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hDone, hTargetVars⟩
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ForwardRel.done (.error hError)
+  | @ok sourceResult targetResult hResult =>
+      have hState := hResult.1
+      have hValues := hResult.2.1
+      have hLength := hResult.2.2.1
+      have hStore := hResult.2.2.2
+      obtain ⟨value, hSourceValues⟩ :=
+        List.length_eq_one_iff.mp hLength
+      have hTargetValues : targetResult.2 = [value] := by
+        rw [← hValues, hSourceValues]
+      simp only [hTargetValues, Simulation.Interaction.bind_done_ok]
+      obtain ⟨hFinalUsed, hTmpFresh⟩ :=
+        Fresh.fresh?_components hFresh
+      have hTmpLayout : tmp ∉ layout := by
+        intro hMem
+        exact hTmpFresh (hLayout tmp hMem)
+      have hTargetVarsEq : targetResult.1.vars = target.vars := by
+        simpa using hTargetVars
+      have hDomainResult :
+          FunctionsInteractionRelation.TargetDomainWithin
+            before.used targetResult.1.vars := by
+        simpa [hTargetVarsEq] using hDomain
+      have hTmpNone : targetResult.1.vars tmp = none :=
+        hDomainResult.lookup_none hTmpFresh
+      let targetFinal := targetResult.1.insert tmp value
+      have hScopedResult :=
+        FunctionsInteractionRelation.ScopedStateRel.of_state_store_eq
+          hScoped hState hStore
+      have hScopedFinal :=
+        hScopedResult.insert_private hTmpLayout value
+      have hDomainFinal :
+          FunctionsInteractionRelation.TargetDomainWithin
+            final.used targetFinal.vars := by
+        rw [hFinalUsed]
+        exact hDomainResult.insert hTmpFresh
+      have hTargetExtends :
+          FunctionsInteractionRelation.TargetExtends
+            target.vars targetResult.1.vars := by
+        intro name result hLookup
+        simpa [hTargetVarsEq] using hLookup
+      have hInsertExtends :=
+        FunctionsInteractionRelation.TargetExtends.insert_fresh
+          (value := value) hTmpNone
+      have hExtendsFinal :=
+        FunctionsInteractionRelation.TargetExtends.trans hTargetExtends
+          hInsertExtends
+      have hLookup : targetFinal.vars tmp = some value := by
+        simp [targetFinal, Locals.Source.State.insert,
+          Locals.Source.Store.insert]
+      have hStableFinal :
+          FunctionsInteractionExpression.StableArgs
+            [.var tmp] targetFinal sourceResult.2 := by
+        simpa [hSourceValues] using
+          (FunctionsInteractionExpression.StableArgs.cons
+            (FunctionsInteractionExpression.StableValue.var hLookup)
+            (FunctionsInteractionExpression.StableArgs.nil targetFinal))
+      exact Simulation.Interaction.ForwardRel.done
+        (.regular hStableFinal hScopedFinal hDomainFinal hExtendsFinal)
+
+/-- Direct inline operands still use the same open-world primitive theorem;
+only the outer bounded-argument result is materialized in a fresh local. -/
+theorem boundDirectOfLowering
+    (hPrimitive : FunctionsInteractionPrimitive.CompilerSelected)
+    {argsFuel targetFuel : Nat}
+    {prim : EvmYul.Operation .Yul} {args : List AstExpr}
+    {lower : Locals.Expr 1}
+    {before final : Fresh.State} {tmp : Functions.Name}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {layout : List Functions.Name}
+    (hLowering : Expr.UncheckedDirectPrimitiveLowering
+      before prim args lower)
+    (hFresh : Fresh.fresh? before = some (tmp, final))
+    (hLayout : ∀ name, name ∈ layout → name ∈ before.used)
+    (hTargetFuel : 1 < targetFuel) :
+    BoundHeadForward (argsFuel + 2) targetFuel
+      (.Call (.inl prim) args) [] lower before before final tmp
+      codeOverride program layout := by
+  cases hLowering with
+  | @primitive op lowerArgs seq hOp hArgs hSeq hOutputs =>
+      intro _hLower _hFresh source target ctx hScoped hDomain
+      have hLowerReverse :
+          Expr.List.toLocals1? args.reverse =
+            some lowerArgs.reverse :=
+        Expr.List.toLocals1?_reverse hArgs
+      have hDirectSeq :
+          Expr.List.toSeq? lowerArgs.reverse
+              (Expressions.Structured.BasicOp.inputs op) = some seq := by
+        simpa [Expr.List.toStackSeq?] using hSeq
+      have hArgsRel :=
+        (FunctionsInteractionExpression.compilerDirectAt
+          codeOverride argsFuel).evalArgs
+          hLowerReverse hDirectSeq hScoped.state
+      have hPrimitiveRel :=
+        FunctionsInteractionExpression.Expr.primitive_of_args
+          hPrimitive (primitiveFuel := argsFuel) hOp hOutputs hArgsRel
+      have hEval :
+          Simulation.Interaction.ForwardRel Truncated
+            (FunctionsInteractionExpression.DoneRel source 1)
+            (Yul.InteractionSemantics.evalValues
+              (argsFuel + 1) (.Call (.inl prim) args)
+              codeOverride source)
+            (Functions.InteractionSemantics.Expr.openEval
+              (Expr.cast hOutputs (.prim op seq)) target) := by
+        rw [FunctionsInteractionExpression.expr_openEval_cast]
+        simpa [Yul.InteractionSemantics.evalValues,
+          Yul.Source.Canonical.evalValues,
+          Yul.Source.Effectful.evalValues,
+          Functions.InteractionSemantics.Expr.openEval,
+          Locals.InteractionSemantics.Expr.openEval,
+          Locals.Source.Effectful.Expr.Control.eval,
+          FunctionsInteractionExpression.exprSeq_openEval_seqCast] using
+          hPrimitiveRel
+      have hValue := bindDirectEval (program := program) (ctx := ctx)
+        hFresh hLayout hTargetFuel hScoped hDomain hEval
+      exact singletonOfValues hValue
+
 /-- The real bounded primitive-lowering artifact supplies a complete spilled
 head once recursively generated operand heads are available at smaller fuel. -/
 theorem boundOfLowering
@@ -323,6 +522,51 @@ theorem boundOfLowering
         afterPrepared hPrimitive (before := before) hOp hSeq hOutputs
           hFresh hLayoutAfter hTargetFuel hPrepared
       exact singletonOfValues hValue
+
+/-- Exhaustive primitive-head dispatcher for the ordinary unchecked compiler.
+The only recursive premise is indexed by strictly smaller operand fuel. -/
+theorem boundPrimitive
+    (hPrimitive : FunctionsInteractionPrimitive.CompilerSelected)
+    {fuel targetFuel : Nat}
+    {prim : EvmYul.Operation .Yul} {args : List AstExpr}
+    {pre : List Functions.Stmt} {lower : Locals.Expr 1}
+    {before after final : Fresh.State} {tmp : Functions.Name}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {layout : List Functions.Name}
+    (hLowering : Expr.UncheckedPrimitiveLowering 1
+      before prim args pre lower after)
+    (hFresh : Fresh.fresh? after = some (tmp, final))
+    (hNested :
+      ∀ argsFuel,
+        fuel = argsFuel + 2 →
+          RecursiveBoundHeads
+            argsFuel targetFuel codeOverride program layout)
+    (hLayoutBefore : ∀ name, name ∈ layout → name ∈ before.used)
+    (hLayoutAfter : ∀ name, name ∈ layout → name ∈ after.used)
+    (hTargetFuel : pre.length + 1 < targetFuel) :
+    BoundHeadForward fuel targetFuel
+      (.Call (.inl prim) args) pre lower before after final tmp
+      codeOverride program layout := by
+  by_cases hLow : fuel < 2
+  · exact boundHead_lowFuel hLow
+  · obtain ⟨argsFuel, hFuel⟩ : ∃ argsFuel, fuel = argsFuel + 2 := by
+      refine ⟨fuel - 2, ?_⟩
+      omega
+    subst fuel
+    cases hLowering with
+    | direct hDirect hOp hArgs hSeq hOutputs =>
+        exact
+          boundDirectOfLowering hPrimitive
+            (Expr.UncheckedDirectPrimitiveLowering.primitive
+              hOp hArgs hSeq hOutputs)
+            hFresh hLayoutBefore (by simpa using hTargetFuel)
+    | bound hBound hOp hArgs hSeq hOutputs =>
+        exact
+          boundOfLowering hPrimitive
+            (Expr.UncheckedBoundPrimitiveLowering.primitive
+              hOp hArgs hSeq hOutputs)
+            hFresh (hNested argsFuel rfl) hLayoutBefore hLayoutAfter
+            hTargetFuel
 
 end FunctionsInteractionPreparedPrimitive
 end Yul

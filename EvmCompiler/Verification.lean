@@ -1461,6 +1461,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.singletonOfValues
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.direct
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.BoundHeadForward
+#check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.boundHead_lowFuel
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.HeadValueForward
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.deferredHeadValue
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.bindHeadValue
@@ -1469,8 +1470,12 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.RecursiveBoundHeads
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.ofUncheckedLowering
 #check EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.afterPrepared
+#check EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.bindDirectEval
+#check EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.boundDirectOfLowering
 #check EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.boundOfLowering
+#check EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive.boundPrimitive
 #check EvmCompiler.Simulation.Interaction.ForwardRel.strengthen_right
+#check EvmCompiler.Simulation.Interaction.ForwardRel.bind_right
 #check EvmCompiler.Yul.FunctionsInteractionExpression.expr_openEval_cast
 #check EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_permitted
 #check EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_static
