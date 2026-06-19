@@ -1,4 +1,5 @@
 import EvmCompiler.Yul.FunctionsInteractionFuel
+import EvmCompiler.Yul.FunctionsInteractionCompilerCost
 import EvmYul.Yul.Interpreter
 
 namespace EvmCompiler
@@ -55,17 +56,33 @@ def functionList : List (Name × AstFunctionDefinition) → Nat
   | (_name, fn) :: tail =>
       Nat.max (functionDefinition fn) (functionList tail)
 
+def expansionFunctionDefinition : AstFunctionDefinition → Nat
+  | .Def _params _returns body =>
+      FunctionsInteractionCompilerCost.stmtList body
+
+def expansionFunctionList : List (Name × AstFunctionDefinition) → Nat
+  | [] => 0
+  | (_name, fn) :: tail =>
+      Nat.max (expansionFunctionDefinition fn) (expansionFunctionList tail)
+
 noncomputable def program (sourceProgram : Yul.Program) : Nat :=
   Nat.max
       (stmt sourceProgram.contract.dispatcher)
       (functionList (Contract.functionEntries sourceProgram.contract)) +
+    Nat.max
+      (FunctionsInteractionCompilerCost.stmt
+        sourceProgram.contract.dispatcher)
+      (expansionFunctionList
+        (Contract.functionEntries sourceProgram.contract)) +
     8
 
 noncomputable def bodyBudget
     (sourceProgram : Yul.Program) (body : List AstStmt)
     (sourceFuel : Nat) : Nat :=
   FunctionsInteractionFuel.executionBudgetFor
-    (program sourceProgram) (stmtList body) sourceFuel
+    (program sourceProgram)
+      (stmtList body + FunctionsInteractionCompilerCost.stmtList body + 1)
+      sourceFuel
 
 noncomputable def programBudget
     (sourceProgram : Yul.Program) (sourceFuel : Nat) : Nat :=
@@ -83,6 +100,60 @@ theorem programBudget_child_add_eight_le
       (program sourceProgram) (program sourceProgram) (by rfl) hFuel).trans
       (FunctionsInteractionFuel.targetBudgetFor_le_executionBudgetFor
         (program sourceProgram) (program sourceProgram) parentFuel)
+
+/-- One source-fuel step in a body budget pays for the previous whole-program
+budget plus the complete source-bounded recursive cost of its generated
+Functions list. -/
+theorem programBudget_add_compilerCost_lt_bodyBudget_step
+    (sourceProgram : Yul.Program) (body : List AstStmt) (fuel : Nat) :
+    programBudget sourceProgram fuel +
+        FunctionsInteractionCompilerCost.stmtList body + 1 <
+      bodyBudget sourceProgram body (fuel + 1) := by
+  unfold programBudget bodyBudget FunctionsInteractionFuel.executionBudgetFor
+  simp only [FunctionsInteractionFuel.targetBudgetFor]
+  let p := (program sourceProgram + 1) *
+    FunctionsInteractionFuel.targetBudgetFor (program sourceProgram) fuel
+  let c := FunctionsInteractionCompilerCost.stmtList body
+  let r := stmtList body
+  change p + c + 1 < (r + c + 2) * (16 * (p + 1))
+  have hp : p ≤ (c + 2) * p := by
+    simpa using Nat.mul_le_mul_right p (show 1 ≤ c + 2 by omega)
+  have hFactor : p + c + 2 ≤ (r + c + 2) * (p + 1) := by
+    calc
+      p + c + 2 ≤ (c + 2) * p + (c + 2) := by omega
+      _ = (c + 2) * (p + 1) := by simp [Nat.mul_add]
+      _ ≤ (r + c + 2) * (p + 1) :=
+        Nat.mul_le_mul_right (p + 1) (by omega)
+  have hScaled := Nat.mul_le_mul_left 16 hFactor
+  calc
+    p + c + 1 < 16 * (p + c + 2) := by omega
+    _ ≤ 16 * ((r + c + 2) * (p + 1)) := hScaled
+    _ = (r + c + 2) * (16 * (p + 1)) := by ac_rfl
+
+/-- A source-bounded generated cost that fits the program ceiling is absorbed
+by one whole-program source-fuel step. -/
+theorem programBudget_add_cost_lt_step
+    (sourceProgram : Yul.Program) {cost fuel : Nat}
+    (hCost : cost ≤ program sourceProgram) :
+    programBudget sourceProgram fuel + cost + 1 <
+      programBudget sourceProgram (fuel + 1) := by
+  unfold programBudget FunctionsInteractionFuel.executionBudgetFor
+  simp only [FunctionsInteractionFuel.targetBudgetFor]
+  let g := program sourceProgram
+  let t := FunctionsInteractionFuel.targetBudgetFor g fuel
+  let p := (g + 1) * t
+  change p + cost + 1 < (g + 1) * (16 * (p + 1))
+  have ht : 16 ≤ t :=
+    FunctionsInteractionFuel.targetBudgetFor_ge_sixteen g fuel
+  have hScaled := Nat.mul_le_mul_left (g + 1) ht
+  have hg : g ≤ p := by
+    change g ≤ (g + 1) * t
+    omega
+  have hSmall : p + cost + 1 < 16 * (p + 1) := by omega
+  have hLarge : 16 * (p + 1) ≤ (g + 1) * (16 * (p + 1)) := by
+    simpa using
+      Nat.mul_le_mul_right (16 * (p + 1)) (show 1 ≤ g + 1 by omega)
+  exact hSmall.trans_le hLarge
 
 theorem stmt_head_le_stmtList
     (head : AstStmt) (tail : List AstStmt) :
@@ -174,6 +245,22 @@ theorem functionDefinition_le_functionList_of_mem
         exact Nat.le_max_left _ _
       · exact (ih hTail).trans (Nat.le_max_right _ _)
 
+theorem expansionFunctionDefinition_le_expansionFunctionList_of_mem
+    {name : Name} {fn : AstFunctionDefinition}
+    {functions : List (Name × AstFunctionDefinition)}
+    (hMem : (name, fn) ∈ functions) :
+    expansionFunctionDefinition fn ≤ expansionFunctionList functions := by
+  induction functions with
+  | nil => simp at hMem
+  | cons head tail ih =>
+      rcases head with ⟨headName, headFn⟩
+      simp only [List.mem_cons, Prod.mk.injEq] at hMem
+      simp only [expansionFunctionList]
+      rcases hMem with hHere | hTail
+      · rcases hHere with ⟨rfl, rfl⟩
+        exact Nat.le_max_left _ _
+      · exact (ih hTail).trans (Nat.le_max_right _ _)
+
 theorem function_le_program_of_lookup
     {sourceProgram : Yul.Program}
     {name : Name} {fn : AstFunctionDefinition}
@@ -187,13 +274,57 @@ theorem function_le_program_of_lookup
     Nat.le_max_right
       (stmt sourceProgram.contract.dispatcher)
       (functionList (Contract.functionEntries sourceProgram.contract))
-  exact hList.trans (hMax.trans (Nat.le_add_right _ 8))
+  have hRuntime := hList.trans hMax
+  exact hRuntime.trans (by
+    simpa [Nat.add_assoc] using
+      (Nat.le_add_right
+        (Nat.max
+          (stmt sourceProgram.contract.dispatcher)
+          (functionList (Contract.functionEntries sourceProgram.contract)))
+        (Nat.max
+          (FunctionsInteractionCompilerCost.stmt
+            sourceProgram.contract.dispatcher)
+          (expansionFunctionList
+            (Contract.functionEntries sourceProgram.contract)) + 8)))
 
 theorem dispatcher_le_program (sourceProgram : Yul.Program) :
     stmt sourceProgram.contract.dispatcher ≤ program sourceProgram := by
   unfold program
-  exact
-    (Nat.le_max_left _ _).trans (Nat.le_add_right _ 8)
+  have hRuntime := Nat.le_max_left
+    (stmt sourceProgram.contract.dispatcher)
+    (functionList (Contract.functionEntries sourceProgram.contract))
+  exact hRuntime.trans (by
+    simpa [Nat.add_assoc] using
+      (Nat.le_add_right
+        (Nat.max
+          (stmt sourceProgram.contract.dispatcher)
+          (functionList (Contract.functionEntries sourceProgram.contract)))
+        (Nat.max
+          (FunctionsInteractionCompilerCost.stmt
+            sourceProgram.contract.dispatcher)
+          (expansionFunctionList
+            (Contract.functionEntries sourceProgram.contract)) + 8)))
+
+theorem expansion_dispatcher_le_program (sourceProgram : Yul.Program) :
+    FunctionsInteractionCompilerCost.stmt
+        sourceProgram.contract.dispatcher ≤
+      program sourceProgram := by
+  unfold program
+  have hCompiler := Nat.le_max_left
+    (FunctionsInteractionCompilerCost.stmt
+      sourceProgram.contract.dispatcher)
+    (expansionFunctionList
+      (Contract.functionEntries sourceProgram.contract))
+  have hLeft := Nat.le_add_left
+    (Nat.max
+      (FunctionsInteractionCompilerCost.stmt
+        sourceProgram.contract.dispatcher)
+      (expansionFunctionList
+        (Contract.functionEntries sourceProgram.contract)))
+    (Nat.max
+      (stmt sourceProgram.contract.dispatcher)
+      (functionList (Contract.functionEntries sourceProgram.contract)))
+  exact hCompiler.trans (hLeft.trans (Nat.le_add_right _ 8))
 
 theorem dispatcherList_le_program (sourceProgram : Yul.Program) :
     stmtList [sourceProgram.contract.dispatcher] ≤
@@ -212,7 +343,12 @@ theorem dispatcherList_le_program (sourceProgram : Yul.Program) :
   simp only [stmtList]
   unfold program
   change Nat.max dispatcherCost 1 + 1 ≤
-    Nat.max dispatcherCost functionCost + 8
+    Nat.max dispatcherCost functionCost +
+      Nat.max
+        (FunctionsInteractionCompilerCost.stmt
+          sourceProgram.contract.dispatcher)
+        (expansionFunctionList
+          (Contract.functionEntries sourceProgram.contract)) + 8
   omega
 
 theorem function_body_le_program_of_lookup
@@ -229,6 +365,95 @@ theorem function_body_le_program_of_lookup
       (sourceProgram := sourceProgram) hLookup
   simp only [functionDefinition] at hFunction
   omega
+
+theorem expansion_function_body_le_program_of_lookup
+    {sourceProgram : Yul.Program}
+    {name : Name}
+    {params returns : List EvmYul.Identifier}
+    {body : List AstStmt}
+    (hLookup :
+      sourceProgram.contract.functions.lookup name =
+        some (.Def params returns body)) :
+    FunctionsInteractionCompilerCost.stmtList body ≤
+      program sourceProgram := by
+  have hMem := Contract.functionEntries_mem_of_lookup hLookup
+  have hList :=
+    expansionFunctionDefinition_le_expansionFunctionList_of_mem hMem
+  simp only [expansionFunctionDefinition] at hList
+  unfold program
+  have hCompiler := hList.trans (Nat.le_max_right
+    (FunctionsInteractionCompilerCost.stmt
+      sourceProgram.contract.dispatcher)
+    (expansionFunctionList
+      (Contract.functionEntries sourceProgram.contract)))
+  exact hCompiler.trans (by
+    have hLeft := Nat.le_add_left
+      (Nat.max
+        (FunctionsInteractionCompilerCost.stmt
+          sourceProgram.contract.dispatcher)
+        (expansionFunctionList
+          (Contract.functionEntries sourceProgram.contract)))
+      (Nat.max
+        (stmt sourceProgram.contract.dispatcher)
+        (functionList (Contract.functionEntries sourceProgram.contract)))
+    exact hLeft.trans (Nat.le_add_right _ 8))
+
+theorem function_body_budget_cost_le_program_of_lookup
+    {sourceProgram : Yul.Program}
+    {name : Name}
+    {params returns : List EvmYul.Identifier}
+    {body : List AstStmt}
+    (hLookup :
+      sourceProgram.contract.functions.lookup name =
+        some (.Def params returns body)) :
+    stmtList body + FunctionsInteractionCompilerCost.stmtList body + 1 ≤
+      program sourceProgram := by
+  have hRuntimeMem := Contract.functionEntries_mem_of_lookup hLookup
+  have hRuntimeList := functionDefinition_le_functionList_of_mem hRuntimeMem
+  have hCompilerList :=
+    expansionFunctionDefinition_le_expansionFunctionList_of_mem hRuntimeMem
+  simp only [functionDefinition] at hRuntimeList
+  simp only [expansionFunctionDefinition] at hCompilerList
+  unfold program
+  have hRuntime := hRuntimeList.trans (Nat.le_max_right
+    (stmt sourceProgram.contract.dispatcher)
+    (functionList (Contract.functionEntries sourceProgram.contract)))
+  have hCompiler := hCompilerList.trans (Nat.le_max_right
+    (FunctionsInteractionCompilerCost.stmt
+      sourceProgram.contract.dispatcher)
+    (expansionFunctionList
+      (Contract.functionEntries sourceProgram.contract)))
+  have hRuntimeBody : stmtList body ≤
+      Nat.max
+        (stmt sourceProgram.contract.dispatcher)
+        (functionList (Contract.functionEntries sourceProgram.contract)) := by
+    have hBodyDefinition :
+        stmtList body ≤
+          params.length + returns.length + stmtList body + 4 := by
+      omega
+    exact hBodyDefinition.trans hRuntime
+  have hSum := Nat.add_le_add hRuntimeBody hCompiler
+  calc
+    stmtList body + FunctionsInteractionCompilerCost.stmtList body + 1 ≤
+        Nat.max
+            (stmt sourceProgram.contract.dispatcher)
+            (functionList (Contract.functionEntries sourceProgram.contract)) +
+          Nat.max
+            (FunctionsInteractionCompilerCost.stmt
+              sourceProgram.contract.dispatcher)
+            (expansionFunctionList
+              (Contract.functionEntries sourceProgram.contract)) + 1 :=
+      Nat.add_le_add_right hSum 1
+    _ ≤
+        Nat.max
+            (stmt sourceProgram.contract.dispatcher)
+            (functionList (Contract.functionEntries sourceProgram.contract)) +
+          Nat.max
+            (FunctionsInteractionCompilerCost.stmt
+              sourceProgram.contract.dispatcher)
+            (expansionFunctionList
+              (Contract.functionEntries sourceProgram.contract)) + 8 := by
+      omega
 
 end FunctionsInteractionStaticCost
 end Yul

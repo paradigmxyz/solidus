@@ -70,6 +70,96 @@ theorem ofListAt
       (fn.returns ++ fn.params) body
   · simpa [hFnBody, hScopeUsed] using hBodyRel
 
+/-- Construct every selected callee body below `bound` from strictly earlier
+statement preservation. The only generated-code fact used internally is
+discharged by the compiler-owned source expansion theorem. -/
+theorem ofEarlierStatements
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    {bound bodyFuel targetFuel : Nat}
+    (hEarlier : ∀ childBound, childBound < bound →
+      RecursiveStmtForward profile sourceProgram targetProgram childBound)
+    (hBodyFuel : bodyFuel < bound) :
+    FunctionsInteractionSelectedCall.BodyForwardAt
+      profile sourceProgram targetProgram bodyFuel targetFuel := by
+  intro body before after fn source target hLower hBodyOk hReserved
+    hBodyNames hBudget hRel hDomain
+  cases bodyFuel with
+  | zero =>
+      rw [Yul.InteractionSemantics.Exec.zero]
+      exact Simulation.Interaction.ForwardRel.truncated
+        (right := Functions.InteractionSemantics.Block.openRun
+          targetProgram.toFunctions
+          (Functions.Source.Effectful.FunDef.bodyCtx fn)
+          targetFuel fn.body target)
+        (by trivial)
+  | succ listFuel =>
+      have hStatements :
+          RecursiveStmtForward profile sourceProgram targetProgram
+            (listFuel + 1) :=
+        hEarlier (listFuel + 1) hBodyFuel
+      have hLists :
+          RecursiveListForward profile sourceProgram targetProgram
+            (listFuel + 2) :=
+        RecursiveListForward.ofStmt hStatements
+      have hListAt :
+          ListForwardAt profile sourceProgram targetProgram
+            listFuel targetFuel :=
+        hLists (sourceFuel := listFuel) (targetFuel := targetFuel) (by omega)
+      have hCompiledCost :=
+        FunctionsInteractionCompilerCost.toBlockUncheckedFuel?_cost hLower
+      have hCompiledListCost :
+          FunctionsInteractionTargetCost.list fn.body.stmts ≤
+            FunctionsInteractionCompilerCost.stmtList body := by
+        simpa [FunctionsInteractionTargetCost.block] using hCompiledCost
+      have hBudgetStep :=
+        FunctionsInteractionStaticCost.programBudget_add_compilerCost_lt_bodyBudget_step
+          sourceProgram body listFuel
+      exact ofListAt hListAt hLower hBodyOk hReserved hBodyNames hRel hDomain
+        (by omega)
+
+/-- Closed strong source-fuel fixed point for all ordinary Yul statements and
+compiler-selected internal function bodies. -/
+theorem recursiveStmt
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    (hDecomposition :
+      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (bound : Nat) :
+    RecursiveStmtForward profile sourceProgram targetProgram bound := by
+  induction bound using Nat.strong_induction_on with
+  | h bound hEarlier =>
+      apply recursiveStmtOfEarlier hDecomposition hProgramOk hEarlier
+      intro bodyFuel bodyTargetFuel hBodyFuel
+      exact ofEarlierStatements hEarlier hBodyFuel
+
+/-- Statement lists inherit the closed statement/body fixed point. -/
+theorem recursiveList
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    (hDecomposition :
+      FunctionsCompilerArtifact.Decomposition sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (bound : Nat) :
+    RecursiveListForward profile sourceProgram targetProgram bound := by
+  intro sourceFuel targetFuel hSourceFuel
+  have hStatements :
+      RecursiveStmtForward profile sourceProgram targetProgram bound :=
+    recursiveStmt hDecomposition hProgramOk bound
+  have hLists :
+      RecursiveListForward profile sourceProgram targetProgram (bound + 1) :=
+    RecursiveListForward.ofStmt hStatements
+  unfold ListForwardAt
+  intro compilerFuel functionNames layout sourceScopes canBreak canContinue
+    canLeave before after stmts lower source target ctx hOk hNames hLower hRel
+    hDomain hTargetScope hLayout hControl hTargetFuel
+  exact hLists (sourceFuel := sourceFuel) (targetFuel := targetFuel)
+    (lt_trans hSourceFuel (by omega)) hOk hNames hLower hRel hDomain
+    hTargetScope hLayout hControl hTargetFuel
+
 end FunctionsInteractionRecursiveBody
 end Yul
 end EvmCompiler

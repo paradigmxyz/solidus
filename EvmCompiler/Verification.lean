@@ -144,6 +144,8 @@ import EvmCompiler.Yul.FunctionsInteractionPreparedStatement
 import EvmCompiler.Yul.FunctionsInteractionSelectedStatementCall
 import EvmCompiler.Yul.FunctionsInteractionRecursiveStatement
 import EvmCompiler.Yul.FunctionsInteractionRecursiveBody
+import EvmCompiler.Yul.FunctionsInteractionCompilerCost
+import EvmCompiler.Yul.FunctionsInteractionProgram
 import EvmCompiler.Yul.FunctionsInteractionTerminal
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.CompilerCallDecomposition
@@ -1557,6 +1559,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.StmtForwardAt
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.ListForwardAt
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.RecursiveListForward.ofStmt
+#check EvmCompiler.Yul.FunctionsInteractionCompilerCost.toFunctionsUncheckedFuel?_cost
+#check EvmCompiler.Yul.FunctionsInteractionRecursiveBody.recursiveStmt
+#check EvmCompiler.Yul.FunctionsInteractionRecursiveBody.recursiveList
+#check EvmCompiler.Yul.FunctionsInteractionProgram.dispatcherForward
 #check EvmCompiler.Yul.FunctionsInteractionStatement.ControlDoneRel.block
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.block
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.recursiveCondition
@@ -1567,6 +1573,9 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Yul.FunctionsInteractionControlRelation.ControlContextRel.functionBody
 #print axioms EvmCompiler.Yul.FunctionsInteractionCall.functionBodyOfList
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveBody.ofListAt
+#print axioms EvmCompiler.Yul.FunctionsInteractionCompilerCost.toFunctionsUncheckedFuel?_cost
+#print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveBody.recursiveStmt
+#print axioms EvmCompiler.Yul.FunctionsInteractionProgram.dispatcherForward
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_let_none_control
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_brk_control
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_cont_control

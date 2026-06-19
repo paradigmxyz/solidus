@@ -174,8 +174,9 @@ theorem selectedTargets
           exact
             (FunctionsInteractionFuel.executionBudgetFor_le_global_at
               (FunctionsInteractionStaticCost.program sourceProgram)
-              (FunctionsInteractionStaticCost.function_body_le_program_of_lookup
-                hLookup) (by omega)).trans hTargetBodyFuel)
+              (FunctionsInteractionStaticCost.function_body_budget_cost_le_program_of_lookup
+                hLookup)
+              (by omega)).trans hTargetBodyFuel)
         (by
           simpa [hFnParams, hFnReturns, identNames_eq_self,
             Functions.InteractionSemantics.stateModel,
