@@ -515,6 +515,70 @@ theorem for_succ
   simp only [exec, loop, Yul.Source.Canonical.exec,
     Yul.Source.Canonical.loop, Yul.Source.Effectful.exec]
 
+theorem loop_succ_succ
+    (fuel : Nat) (cond : EvmYul.Yul.Ast.Expr)
+    (post body : List EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    loop (fuel + 1 + 1) cond post body code state =
+      Simulation.Interaction.bind
+        (eval fuel cond code
+          (stateModel.withSource state
+            (EvmYul.Yul.State.mkOk (stateModel.source state))))
+        (fun result =>
+          if result.2 = EvmYul.UInt256.ofNat 0 then
+            pure
+              (stateModel.withSource result.1
+                ((stateModel.source result.1).overwrite?
+                  (stateModel.source state)))
+          else
+            Simulation.Interaction.bind
+              (exec fuel (.Block body) code result.1)
+              (fun stateAfterBody =>
+                let source := stateModel.source state
+                let bodySource := stateModel.source stateAfterBody
+                match bodySource with
+                | .OutOfFuel =>
+                    pure
+                      (stateModel.withSource stateAfterBody
+                        (bodySource.overwrite? source))
+                | .Checkpoint (.Break _ _) =>
+                    pure
+                      (stateModel.withSource stateAfterBody
+                        (bodySource.reviveJump.overwrite? source))
+                | .Checkpoint (.Leave _ _) =>
+                    pure
+                      (stateModel.withSource stateAfterBody
+                        (bodySource.overwrite? source))
+                | .Checkpoint (.Continue _ _) | _ =>
+                    Simulation.Interaction.bind
+                      (exec fuel (.Block post) code
+                        (stateModel.withSource stateAfterBody
+                          bodySource.reviveJump))
+                      (fun stateAfterPost =>
+                        let postSource := stateModel.source stateAfterPost
+                        let sourceAfterPost := postSource.overwrite? source
+                        match postSource with
+                        | .OutOfFuel =>
+                            pure
+                              (stateModel.withSource stateAfterPost
+                                sourceAfterPost)
+                        | .Checkpoint (.Leave _ _) =>
+                            pure
+                              (stateModel.withSource stateAfterPost
+                                sourceAfterPost)
+                        | _ =>
+                            Simulation.Interaction.bind
+                              (exec fuel (.For cond post body) code
+                                (stateModel.withSource stateAfterPost
+                                  sourceAfterPost))
+                              (fun stateAfterLoop =>
+                                pure
+                                  (stateModel.withSource stateAfterLoop
+                                    ((stateModel.source stateAfterLoop).overwrite?
+                                      source)))))) := by
+  unfold loop Yul.Source.Canonical.loop Yul.Source.Effectful.loop
+  rfl
+
 theorem brk_zero
     (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
     exec 0 .Break code state = Primitive.fail state .OutOfFuel :=

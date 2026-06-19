@@ -279,6 +279,75 @@ theorem monoUsed
 
 end ControlDoneRel
 
+/-- Control-aware completion after a canonical Functions scoped block has
+erased its lexical context from the result. This is the adjacent interface
+consumed by loop bodies and posts; it retains the same source scopes and
+outcome-indexed state relations as `ControlDoneRel`. -/
+inductive ControlOutcomeDoneRel
+    (regularUsed regularLayout : List Functions.Name)
+    (sourceScopes : SourceScopes)
+    (canBreak canContinue canLeave : Bool) :
+    Except Yul.InteractionSemantics.Failure
+        Yul.InteractionSemantics.State →
+      Except EVMException Functions.InteractionSemantics.Outcome → Prop where
+  | error {source target} :
+      FunctionsInteractionPrimitive.ErrorRel source target →
+      ControlOutcomeDoneRel regularUsed regularLayout sourceScopes
+        canBreak canContinue canLeave (.error source) (.error target)
+  | regular {source target} :
+      ScopedStateRel regularLayout source target →
+      TargetDomainWithin regularUsed target.vars →
+      ControlOutcomeDoneRel regularUsed regularLayout sourceScopes
+        canBreak canContinue canLeave (.ok source)
+        (.ok (Functions.Source.Effectful.Outcome.regular target))
+  | brk {source target scope} :
+      sourceScopes.breakScope? = some scope →
+      target.mode = .brk →
+      AbruptOutcomeRel scope source target →
+      ControlOutcomeDoneRel regularUsed regularLayout sourceScopes
+        canBreak canContinue canLeave (.ok source) (.ok target)
+  | cont {source target scope} :
+      sourceScopes.continueScope? = some scope →
+      target.mode = .cont →
+      AbruptOutcomeRel scope source target →
+      ControlOutcomeDoneRel regularUsed regularLayout sourceScopes
+        canBreak canContinue canLeave (.ok source) (.ok target)
+  | leave {source target scope} :
+      sourceScopes.leaveScope? = some scope →
+      target.mode = .leave →
+      AbruptOutcomeRel scope source target →
+      ControlOutcomeDoneRel regularUsed regularLayout sourceScopes
+        canBreak canContinue canLeave (.ok source) (.ok target)
+  | terminal {source target} :
+      FunctionsInteractionRelation.TerminalFailureRel source target →
+      ControlOutcomeDoneRel regularUsed regularLayout sourceScopes
+        canBreak canContinue canLeave (.error source) (.ok target)
+
+namespace ControlOutcomeDoneRel
+
+theorem monoUsed
+    {beforeUsed afterUsed regularLayout : List Functions.Name}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {sourceDone : Except Yul.InteractionSemantics.Failure
+      Yul.InteractionSemantics.State}
+    {targetDone : Except EVMException Functions.InteractionSemantics.Outcome}
+    (hSubset : ∀ name, name ∈ beforeUsed → name ∈ afterUsed)
+    (hRel : ControlOutcomeDoneRel beforeUsed regularLayout sourceScopes
+      canBreak canContinue canLeave sourceDone targetDone) :
+    ControlOutcomeDoneRel afterUsed regularLayout sourceScopes
+      canBreak canContinue canLeave sourceDone targetDone := by
+  cases hRel with
+  | error hError => exact .error hError
+  | regular hScoped hDomain =>
+      exact .regular hScoped (hDomain.mono hSubset)
+  | brk hScope hMode hAbrupt => exact .brk hScope hMode hAbrupt
+  | cont hScope hMode hAbrupt => exact .cont hScope hMode hAbrupt
+  | leave hScope hMode hAbrupt => exact .leave hScope hMode hAbrupt
+  | terminal hTerminal => exact .terminal hTerminal
+
+end ControlOutcomeDoneRel
+
 namespace ControlContextRel
 
 theorem transport

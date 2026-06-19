@@ -117,6 +117,25 @@ theorem openEval_closedStep
       hSourceStep)
     hGas hMsize]
 
+@[simp] theorem openEval_iszero (state : State) (value : Word) :
+    openEval .iszero state [value] =
+      Simulation.Interaction.pure
+        (state, [EvmYul.UInt256.isZero value]) := by
+  rw [openEval_closedStep
+    (step := .un EvmYul.UInt256.isZero)
+    (by simp [Expressions.Structured.BasicOp.inputs])
+    (by simp [supportsOpen,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp, Assembly.PrimOp.continuingStep?])
+    (by rfl) (by simp [Structured.BasicOp.toPrimOp])
+    (by simp [Structured.BasicOp.toPrimOp])]
+  unfold Simulation.Interaction.map
+  simp only [Assembly.PrimStep.run, isolated,
+    EvmYul.EVM.execUnOp, EvmYul.Stack.pop,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC, Simulation.Interaction.bind_done_ok]
+  rfl
+
 def openTerminal (kind : Assembly.HaltKind) (state : State)
     (values : List Word) : Open State :=
   let isolatedState : Assembly.EVMState := isolated state values

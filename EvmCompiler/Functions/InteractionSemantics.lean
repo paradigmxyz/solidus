@@ -561,6 +561,168 @@ def openRun (program : Functions.Program) (ctx : Functions.Source.Ctx)
   Functions.Source.Canonical.Stmt.run
     stateModel primitiveSemantics program ctx fuel stmt state
 
+/-- One positive-fuel recursive loop iteration, exposed from the canonical
+Functions semantics without duplicating its control interpreter. -/
+theorem openRunForLoop_succ
+    (program : Functions.Program) (loopCtx : Functions.Source.Ctx)
+    (cond : Functions.Expr 1) (postBase : Functions.Source.Ctx)
+    (post : Functions.Block) (bodyBase : Functions.Source.Ctx)
+    (body : Functions.Block) (fuel : Nat) (state : State) :
+    openRunForLoop program loopCtx cond postBase post bodyBase body
+        (fuel + 1) state =
+      Simulation.Interaction.bind (Expr.openEvalCondition cond state)
+        (fun result =>
+          if result.2 then
+            Simulation.Interaction.bind
+              (Block.openRunScoped program bodyBase body fuel result.1)
+              (fun bodyOutcome =>
+                match bodyOutcome.mode with
+                | .brk =>
+                    Simulation.Interaction.pure
+                      (Functions.Source.Effectful.Outcome.regular
+                        bodyOutcome.state)
+                | .regular | .cont =>
+                    Simulation.Interaction.bind
+                      (Block.openRunScoped program postBase post fuel
+                        bodyOutcome.state)
+                      (fun postOutcome =>
+                        match postOutcome.mode with
+                        | .regular =>
+                            openRunForLoop program loopCtx cond postBase post
+                              bodyBase body fuel postOutcome.state
+                        | .brk | .cont =>
+                            Simulation.Interaction.error .InvalidInstruction
+                        | .leave | .halt _ =>
+                            Simulation.Interaction.pure postOutcome)
+                | .leave | .halt _ =>
+                    Simulation.Interaction.pure bodyOutcome)
+          else
+            Simulation.Interaction.pure
+              (Functions.Source.Effectful.Outcome.regular
+                (result.1.restrictTo loopCtx.scope))) := by
+  unfold openRunForLoop Functions.Source.Canonical.Stmt.runForLoop
+  simp only [Functions.Source.Effectful.Control.Stmt.runForLoop]
+  rfl
+
+/-- The compiler's constant-true loop condition enters the body on every
+positive target-fuel iteration. The source-level loop condition is implemented
+by the guarded body and remains outside this semantic equation. -/
+theorem openRunForLoop_true_succ
+    (program : Functions.Program) (loopCtx : Functions.Source.Ctx)
+    (postBase : Functions.Source.Ctx) (post : Functions.Block)
+    (bodyBase : Functions.Source.Ctx) (body : Functions.Block)
+    (fuel : Nat) (state : State) :
+    openRunForLoop program loopCtx
+        (.lit (EvmYul.UInt256.ofNat 1)) postBase post bodyBase body
+        (fuel + 1) state =
+      Simulation.Interaction.bind
+        (Block.openRunScoped program bodyBase body fuel state)
+        (fun bodyOutcome =>
+          match bodyOutcome.mode with
+          | .brk =>
+              Simulation.Interaction.pure
+                (Functions.Source.Effectful.Outcome.regular
+                  bodyOutcome.state)
+          | .regular | .cont =>
+              Simulation.Interaction.bind
+                (Block.openRunScoped program postBase post fuel
+                  bodyOutcome.state)
+                (fun postOutcome =>
+                  match postOutcome.mode with
+                  | .regular =>
+                      openRunForLoop program loopCtx
+                        (.lit (EvmYul.UInt256.ofNat 1)) postBase post
+                        bodyBase body fuel postOutcome.state
+                  | .brk | .cont =>
+                      Simulation.Interaction.error .InvalidInstruction
+                  | .leave | .halt _ =>
+                      Simulation.Interaction.pure postOutcome)
+          | .leave | .halt _ =>
+              Simulation.Interaction.pure bodyOutcome) := by
+  rw [openRunForLoop_succ]
+  have hOne :
+      (EvmYul.UInt256.ofNat 1 != EvmYul.UInt256.ofNat 0) = true := by
+    decide
+  have hCondition :
+      Expr.openEvalCondition (.lit (EvmYul.UInt256.ofNat 1)) state =
+        Simulation.Interaction.pure (state, true) := by
+    unfold Expr.openEvalCondition
+      Locals.InteractionSemantics.Expr.openEvalCondition
+      Locals.Source.Effectful.Expr.Control.evalCondition
+      Locals.Source.Effectful.Expr.Control.evalOne
+      Locals.Source.Effectful.Expr.Control.eval
+    change
+      Simulation.Interaction.pure
+          (state,
+            EvmYul.UInt256.ofNat 1 != EvmYul.UInt256.ofNat 0) =
+        Simulation.Interaction.pure (state, true)
+    rw [hOne]
+  rw [hCondition]
+  rfl
+
+/-- The canonical positive-fuel `for` wrapper exposes initialization and its
+recursive loop kernel. -/
+theorem openRun_for
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (init : Functions.Block) (cond : Functions.Expr 1)
+    (post body : Functions.Block) (state : State) :
+    openRun program ctx (fuel + 1) (.for_ init cond post body) state =
+      Simulation.Interaction.bind
+        (Block.openRun program ctx.withoutLoopControl fuel init state)
+        (fun initResult =>
+          match initResult.1.mode with
+          | .regular =>
+              Simulation.Interaction.bind
+                (openRunForLoop program initResult.2 cond
+                  initResult.2.withoutLoopControl post
+                  (initResult.2.withLoopControl
+                    initResult.2.scope initResult.2.scope)
+                  body fuel initResult.1.state)
+                (fun loopOutcome =>
+                  match loopOutcome.mode with
+                  | .regular =>
+                      Simulation.Interaction.pure
+                        (Functions.Source.Effectful.Outcome.regular
+                          (loopOutcome.state.restrictTo ctx.scope), ctx)
+                  | .brk | .cont =>
+                      Simulation.Interaction.error .InvalidInstruction
+                  | .leave | .halt _ =>
+                      Simulation.Interaction.pure (loopOutcome, ctx))
+          | .brk | .cont =>
+              Simulation.Interaction.error .InvalidInstruction
+          | .leave | .halt _ =>
+              Simulation.Interaction.pure (initResult.1, ctx)) := by
+  unfold openRun Functions.Source.Canonical.Stmt.run
+  simp only [Functions.Source.Effectful.Control.Stmt.run]
+  rfl
+
+/-- The exact wrapper emitted by the Yul compiler: an empty initializer and a
+constant-true kernel. Loop-control scopes are installed only for the body. -/
+theorem openRun_for_empty_true
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (post body : Functions.Block) (state : State) :
+    openRun program ctx (fuel + 2)
+        (.for_ { stmts := [] } (.lit (EvmYul.UInt256.ofNat 1))
+          post body) state =
+      Simulation.Interaction.bind
+        (openRunForLoop program ctx.withoutLoopControl
+          (.lit (EvmYul.UInt256.ofNat 1)) ctx.withoutLoopControl post
+          (ctx.withLoopControl ctx.scope ctx.scope) body
+          (fuel + 1) state)
+        (fun loopOutcome =>
+          match loopOutcome.mode with
+          | .regular =>
+              Simulation.Interaction.pure
+                (Functions.Source.Effectful.Outcome.regular
+                  (loopOutcome.state.restrictTo ctx.scope), ctx)
+          | .brk | .cont =>
+              Simulation.Interaction.error .InvalidInstruction
+          | .leave | .halt _ =>
+              Simulation.Interaction.pure (loopOutcome, ctx)) := by
+  rw [show fuel + 2 = (fuel + 1) + 1 by omega, openRun_for,
+    Block.openRun_nil]
+  rfl
+
 theorem openRun_expr
     (program : Functions.Program) (ctx : Functions.Source.Ctx)
     (fuel : Nat) (expr : Functions.Expr 0) (state : State) :

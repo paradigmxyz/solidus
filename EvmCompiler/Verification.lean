@@ -29,6 +29,7 @@ import EvmCompiler.Functions.AllocationObserverProgram
 import EvmCompiler.Functions.AllocationObserverCall
 import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.InteractionSemantics
+import EvmCompiler.Functions.InteractionArity
 import EvmCompiler.Functions.AllocationInteractionRelation
 import EvmCompiler.Functions.AllocationInteractionExpression
 import EvmCompiler.Functions.AllocationInteractionExpressionRecursive
@@ -74,6 +75,7 @@ import EvmCompiler.Functions.ObserverSafety
 import EvmCompiler.Locals.EffectSemantics
 import EvmCompiler.Locals.InteractionCleanupPreservation
 import EvmCompiler.Locals.InteractionSemantics
+import EvmCompiler.Locals.InteractionArity
 import EvmCompiler.Locals.InteractionStatePreservation
 import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.Locals.InteractionControlPreservation
@@ -230,6 +232,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.InteractionSemantics.ExprSeq.openEval
 #check EvmCompiler.Functions.InteractionSemantics.ArgList.openEval
 #check EvmCompiler.Functions.InteractionSemantics.Block.openRun
+#check EvmCompiler.Locals.InteractionArity.Expr.openEval_length
+#check EvmCompiler.Locals.InteractionArity.Expr.openEvalOne_iszero_eq_map
+#check EvmCompiler.Functions.InteractionArity.Expr.openEvalCondition_iszero_eq_map_openEvalOne
+#check EvmCompiler.Functions.InteractionSemantics.Stmt.openRunForLoop_true_succ
+#check EvmCompiler.Functions.InteractionSemantics.Stmt.openRun_for_empty_true
 #check EvmCompiler.Structured.InteractionReturns.Block.openRun_returns
 #check EvmCompiler.Expressions.InteractionReturns.Block.openRun_returns
 #check EvmCompiler.Functions.AllocationInteractionCallResultResource.SelectedCallee.complete_body
@@ -1489,6 +1496,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.DoneRel
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.run_if
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.run_switch
+#check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.run_forGuard
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofStablePrepared
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofDirectPrimitiveLowering
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofPreparedPrimitive

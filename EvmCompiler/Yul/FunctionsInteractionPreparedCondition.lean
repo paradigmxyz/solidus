@@ -1,4 +1,5 @@
 import EvmCompiler.Yul.FunctionsInteractionPreparedArgs
+import EvmCompiler.Functions.InteractionArity
 
 namespace EvmCompiler
 namespace Yul
@@ -238,6 +239,132 @@ theorem run_switch
               Simulation.Interaction.pure,
               Simulation.Interaction.bind] <;>
             rfl
+  | brk | cont | leave | halt =>
+      simp only [hMode]
+      rfl
+
+/-- The generated loop guard evaluates the prepared condition once. A zero
+value runs the synthetic lexical `break`; a nonzero value continues with the
+lowered body at the exact residual block fuel. -/
+theorem run_forGuard
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (targetFuel : Nat) (pre : List Functions.Stmt)
+    (cond : Locals.Expr 1) (rest : List Functions.Stmt)
+    (target : Functions.InteractionSemantics.State)
+    (hFuel : pre.length + 1 < targetFuel) :
+    Functions.InteractionSemantics.Block.openRun program ctx targetFuel
+        { stmts :=
+            pre ++
+              .if_
+                (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+                { stmts := [.brk] } ::
+              rest } target =
+      Simulation.Interaction.bind
+        (run program ctx targetFuel pre cond target)
+        (fun result =>
+          match result with
+          | .value state value _truth ctxAfter =>
+              if value = EvmYul.UInt256.ofNat 0 then
+                Simulation.Interaction.bind
+                  (Functions.InteractionSemantics.Stmt.openRun
+                    program ctxAfter (targetFuel - pre.length - 2)
+                    (.block { stmts := [.brk] }) state)
+                  (fun guardResult =>
+                    match guardResult.1.mode with
+                    | .regular =>
+                        Functions.InteractionSemantics.Block.openRun
+                          program guardResult.2
+                          (targetFuel - pre.length - 1)
+                          { stmts := rest } guardResult.1.state
+                    | .brk | .cont | .leave | .halt _ =>
+                        pure (guardResult.1, ctxAfter))
+              else
+                Functions.InteractionSemantics.Block.openRun
+                  program ctxAfter (targetFuel - pre.length - 1)
+                  { stmts := rest } state
+          | .terminal outcome ctxAfter => pure (outcome, ctxAfter)) := by
+  rw [Functions.InteractionSemantics.Block.openRun_append]
+  unfold run
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx targetFuel { stmts := pre } target))
+  intro result _hResult
+  cases hMode : result.1.mode with
+  | regular =>
+      simp only [hMode]
+      have hResidual :
+          ∃ remaining, targetFuel - pre.length = remaining + 2 := by
+        refine ⟨targetFuel - pre.length - 2, ?_⟩
+        omega
+      obtain ⟨remaining, hResidual⟩ := hResidual
+      rw [hResidual,
+        show remaining + 2 = (remaining + 1) + 1 by omega,
+        Functions.InteractionSemantics.Block.openRun_cons]
+      change
+        Simulation.Interaction.bind
+            (Functions.InteractionSemantics.Stmt.openRun
+              program result.2 (remaining + 1)
+              (.if_
+                (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+                { stmts := [.brk] })
+              result.1.state)
+            _ = _
+      rw [Functions.InteractionSemantics.Stmt.openRun_if,
+        Simulation.Interaction.bind_assoc,
+        Functions.InteractionArity.Expr.openEvalCondition_iszero_eq_map_openEvalOne]
+      unfold Simulation.Interaction.map
+      rw [Simulation.Interaction.bind_assoc,
+        Simulation.Interaction.bind_assoc]
+      apply Simulation.Interaction.AllDone.bind_congr
+        (Simulation.Interaction.AllDone.trivial
+          (Functions.InteractionSemantics.Expr.openEvalOne
+            cond result.1.state))
+      intro evaluated _hEvaluated
+      rcases evaluated with ⟨evaluatedState, evaluatedValue⟩
+      by_cases hZero : evaluatedValue = EvmYul.UInt256.ofNat 0
+      · have hEqZero :
+            (evaluatedValue == EvmYul.UInt256.ofNat 0) = true := by
+          have hValue : evaluatedValue.val = 0 := by
+            have hCongruence := congrArg EvmYul.UInt256.val hZero
+            simpa [EvmYul.UInt256.ofNat, Id.run] using hCongruence
+          simpa [EvmYul.instBEqUInt256,
+            EvmYul.instBEqUInt256.beq,
+            EvmYul.UInt256.ofNat, Id.run] using hValue
+        simp only [Simulation.Interaction.pure,
+          Simulation.Interaction.bind]
+        rw [hEqZero, if_pos hZero]
+        simp only [↓reduceIte,
+          Simulation.Interaction.bind_done_ok,
+          Simulation.Interaction.monad_pure_bind,
+          Simulation.Interaction.pure, Simulation.Interaction.bind]
+        rw [show remaining + 1 + 1 - 2 = remaining by omega,
+          show remaining + 1 + 1 - 1 = remaining + 1 by omega]
+        rfl
+      · have hEqZero :
+            (evaluatedValue == EvmYul.UInt256.ofNat 0) = false := by
+          have hValue : evaluatedValue.val ≠ 0 := by
+            intro hValue
+            apply hZero
+            cases evaluatedValue with
+            | mk value =>
+                change value = 0 at hValue
+                change EvmYul.UInt256.mk value = EvmYul.UInt256.mk 0
+                exact congrArg EvmYul.UInt256.mk hValue
+          simpa [EvmYul.instBEqUInt256,
+            EvmYul.instBEqUInt256.beq,
+            EvmYul.UInt256.ofNat, Id.run] using hValue
+        simp only [Simulation.Interaction.pure,
+          Simulation.Interaction.bind]
+        rw [hEqZero, if_neg hZero]
+        simp only [Bool.false_eq_true, ↓reduceIte,
+          Simulation.Interaction.bind_done_ok,
+          Simulation.Interaction.monad_pure_bind,
+          Simulation.Interaction.pure, Simulation.Interaction.bind,
+          Functions.Source.Effectful.Outcome.regular_mode]
+        rw [show remaining + 1 + 1 - 1 = remaining + 1 by omega]
+        rfl
   | brk | cont | leave | halt =>
       simp only [hMode]
       rfl
