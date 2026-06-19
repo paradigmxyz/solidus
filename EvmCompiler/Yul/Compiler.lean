@@ -4511,6 +4511,14 @@ end FunctionDefinition
 
 namespace FunctionList
 
+def functionMap (entries : List (Name × AstFunctionDefinition)) :
+    Finmap (fun (_ : EvmYul.Yul.Ast.YulFunctionName) =>
+      AstFunctionDefinition) :=
+  entries.foldl
+    (fun acc entry => acc.insert entry.fst entry.snd)
+    (∅ : Finmap (fun (_ : EvmYul.Yul.Ast.YulFunctionName) =>
+      AstFunctionDefinition))
+
 def names : List (Name × AstFunctionDefinition) → List Name
   | [] => []
   | (name, fn) :: rest =>
@@ -5041,6 +5049,54 @@ theorem supported_of_check {contract : AstContract}
       FunctionList.supported_of_check hAnd.2⟩
 
 end Contract
+
+/-!
+Executable ordered Yul input.
+
+`AstContract` stores functions in a `Finmap`, while parsed Yul syntax and the
+compiler both need a deterministic source order.  Keeping that order as source
+data avoids choosing an order from the map and makes the ordinary lowering
+executable.  Semantic validity of the entries remains an adjacent
+Yul-to-Functions obligation; the lowering itself is exactly the same
+fuel-bounded compiler used by the canonical proof route.
+-/
+
+structure OrderedProgram where
+  program : Program
+  functionEntries : List (Name × AstFunctionDefinition)
+
+namespace OrderedProgram
+
+def RepresentsSource (ordered : OrderedProgram) : Prop :=
+  ordered.program.contract.functions =
+    FunctionList.functionMap ordered.functionEntries
+
+def FunctionNamesNodup (ordered : OrderedProgram) : Prop :=
+  (ordered.functionEntries.map Prod.fst).Nodup
+
+def names (ordered : OrderedProgram) : List Name :=
+  Stmt.names ordered.program.contract.dispatcher ++
+    FunctionList.names ordered.functionEntries
+
+def toObjects? (ordered : OrderedProgram) : Option Objects.Program := do
+  let initial := Fresh.initial ordered.names
+  let (bodyStmts, state) ←
+    Stmt.toFunctionsListUncheckedFuel?
+      (Stmt.fuel ordered.program.contract.dispatcher)
+      initial ordered.program.contract.dispatcher
+  let (functions, _state) ←
+    FunctionList.toFunDefsUncheckedFuel?
+      (FunctionList.fuel ordered.functionEntries)
+      state ordered.functionEntries
+  let functionProgram : Functions.Program :=
+    { functions := functions
+      body := { stmts := bodyStmts }
+      memoryContract := ordered.program.memoryContract }
+  some
+    { root :=
+        .mk "root" functionProgram [] [] }
+
+end OrderedProgram
 
 namespace Program
 

@@ -1310,6 +1310,27 @@ if ! rg -q 'def decodeMemoryContract' \
     >&2
   failed=1
 fi
+if ! rg -q 'structure OrderedProgram' EvmCompiler/Yul/Compiler.lean ||
+    ! rg -q 'def toObjects\? \(ordered : OrderedProgram\)' \
+      EvmCompiler/Yul/Compiler.lean ||
+    ! rg -q 'toSolcYulOrderedProgram\?' \
+      EvmCompiler/Solidity/Frontend.lean; then
+  printf '%s\n\n' \
+    'The executable Solidity path must enter the Yul-owned ordered-program compiler.' \
+    >&2
+  failed=1
+fi
+ordered_lowering="$({
+  sed -n '/def lowerCodeUnchecked?/,/def lowerCodeUncheckedWithLayout?/p' \
+    EvmCompiler/Solidity/Frontend.lean
+} || true)"
+if printf '%s\n' "$ordered_lowering" |
+    rg -q 'simplifyForUnchecked|FunctionPrep|toFunctionsUncheckedFuel|toFunDefsUncheckedFuel'; then
+  printf '%s\n\n' \
+    'Frontend executable lowering must not duplicate or preprocess the Yul-owned ordered compiler.' \
+    >&2
+  failed=1
+fi
 if ! rg -q 'semantic promise, not an' \
       scripts/solidity_to_yul_lean.py ||
     rg -q 'scratch-reservation-(base|words).*default=' \

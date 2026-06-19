@@ -237,6 +237,9 @@ or audit-alias corridor.
 #check EvmCompiler.Solidity.Frontend.BridgeJson.decodeMemoryContract
 #check EvmCompiler.Solidity.Frontend.Object.toYulProgram?_memoryContract
 #check EvmCompiler.Solidity.Frontend.Object.toSolcYulProgram?_memoryContract
+#check EvmCompiler.Yul.OrderedProgram.toObjects?
+#check EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_source
+#check EvmCompiler.Solidity.Frontend.Object.lowerCodeUnchecked?_some
 #check EvmCompiler.Compiler.MemoryRelation.MachineRel
 #check EvmCompiler.Compiler.MemoryRelation.byteAt_writeWord_of_outside
 #check EvmCompiler.Compiler.MemoryRelation.OutsideReservation.writeWord_right

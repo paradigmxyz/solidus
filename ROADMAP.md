@@ -537,22 +537,60 @@ completion gates unless the narrow transcript bridge actually needs them.
 
 ## Full Solc Contracts
 
-- [x] Parse exact pinned Permit2 Yul and compile its runtime through the native
-  executable object-image path.
-- [x] Compile pinned Aave v3 Pool under an explicit source-facing scratch
-  reservation, including linked library symbols.
-- [x] Remove the large-contract superlinear traversals with proved executable
-  implementations and keep production compilation out of `lean --run`.
-- [x] Gate both contracts from fresh pinned checkouts and retain schema, Lean,
-  architecture, hole, axiom, and diff checks.
-- [x] Select compile-validated mixed stack/scratch plans under real expression
-  pressure instead of falling back to all-scratch allocation.
-- [ ] Prove that the executable Solidity object-image path refines the checked
-  `toSolcYulProgram?` -> canonical Yul lowering -> `compileArtifact?` path,
-  including the alias and lifetime rewrites. Until then the full-contract gate
-  is compilation/performance evidence, not an instance of the public theorem.
-- [ ] Discharge the explicit `SourceSafety` premise for the pinned Aave Pool,
-  or keep Aave clearly classified as compiling under a caller-supplied memory
-  reservation rather than as a proved contract instance.
-- [ ] Bring emitted runtime size into a practical deployable range without
-  weakening the horizontal correctness theorem or source memory premise.
+Public production spine:
+
+`solc Yul object -> ordered Yul -> Functions -> allocated expressions ->`
+`Structured -> TypedCfg -> Assembly -> relocatable byte image`.
+
+### Executable Yul Boundary
+
+- [x] Remove frontend-only alias and lifetime preprocessing from production;
+  exact Permit2 and Aave compile through the ordinary root-block lowerer.
+- [x] Add Yul-owned executable `OrderedProgram` lowering with exact
+  syntax-derived fuel and preserve parser function order as source data.
+- [x] Check that frontend conversion supplies source-representing, nodup,
+  solc-valid ordered entries; keep generated compiler data out of this source
+  interface.
+- [ ] Generalize `FunctionsCompilerArtifact.Decomposition` from one arbitrary
+  `Finmap` enumeration to any valid ordered entries and compiler initial-name
+  set covering the source names.
+- [ ] Lift the adjacent Yul -> Functions open-interaction theorem and the short
+  end-to-end composition theorem to compiler-selected ordered artifacts; retain
+  the existing canonical theorem as a corollary.
+
+### Object Images
+
+- [ ] Make object compilation return one recursive checked artifact containing
+  child images, stable layout, resolved ordered Yul, core compile artifacts,
+  immutable relocations, payload, and final bytes.
+- [ ] Prove object-builtin resolution and serialization against a declarative
+  solc-Yul object relation, including metadata ordering, `datasize`,
+  `dataoffset`, `datacopy`, linker inputs, and instantiated immutables.
+- [ ] Compose the object artifact with the ordered-Yul theorem so the public
+  theorem's only compiler premise is `compile? source inputs = some artifact`.
+
+### Allocation And Memory
+
+- [x] Select only complete, checked mixed stack/scratch artifacts; no allocation
+  candidate or layout evidence appears at the public boundary.
+- [ ] Replace lexical-scope pressure with a checked backward liveness artifact
+  and next-use stack scheduler; use dead-variable erasure and rematerialization
+  to make optimized Aave/Permit2 stack-only where possible.
+- [ ] Treat Permit2's `memoryguard(size)` as its documented source promise and
+  prove the selected static spill interval is exactly `[size, ptr)`.
+- [ ] Do not claim the fixed Aave `0x100000` reservation universally: either
+  compile Aave stack-only or add an allocation-owned moving scratch arena that
+  relocates and restores compiler memory before every overlapping source
+  memory window.
+
+### Compact Encoding
+
+- [ ] Replace unconditional `PUSH32` with a checked PUSH-width family; resolve
+  labels at a compiler-selected fixed width and keep immutable relocations at
+  their required width.
+- [ ] Re-run size profiling after compact pushes, then add only generic
+  pass-owned stack scheduling and peephole improvements needed to reach
+  deployable bytecode.
+- [ ] Gate exact pinned Permit2 and Aave from fresh checkouts through the same
+  theorem-covered executable, object artifact, and final byte image; run full
+  Lean, architecture, hole, axiom, diff, and real-EVM checks.

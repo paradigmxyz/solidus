@@ -2240,10 +2240,7 @@ namespace Object
 def functionMap (entries : List (Name × AstFunctionDefinition)) :
     Finmap (fun (_ : EvmYul.Yul.Ast.YulFunctionName) =>
       AstFunctionDefinition) :=
-  entries.foldl
-    (fun acc entry => acc.insert entry.fst entry.snd)
-    (∅ : Finmap (fun (_ : EvmYul.Yul.Ast.YulFunctionName) =>
-      AstFunctionDefinition))
+  Yul.FunctionList.functionMap entries
 
 def toYulContractWithFunctionEntries? (object : Object) :
     Option (AstContract × List (Name × AstFunctionDefinition)) := do
@@ -2286,6 +2283,62 @@ def toSolcYulProgram? (object : Object) :
         memoryContract := object.memoryContract }
   else
     none
+
+def toSolcYulOrderedProgram? (object : Object) :
+    Option Yul.OrderedProgram := do
+  let (contract, functions) ← object.toYulContractWithFunctionEntries?
+  if Yul.SolcValidation.ContractOkWithEntries?
+      Yul.SolcValidation.defaultDialectProfile contract functions then
+    some
+      { program :=
+          { contract := contract
+            memoryContract := object.memoryContract }
+        functionEntries := functions }
+  else
+    none
+
+theorem toSolcYulOrderedProgram?_source
+    {object : Object} {ordered : Yul.OrderedProgram}
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    ordered.RepresentsSource ∧
+      ordered.FunctionNamesNodup ∧
+      Yul.SolcValidation.ContractOkWithEntries?
+          Yul.SolcValidation.defaultDialectProfile
+          ordered.program.contract ordered.functionEntries = true ∧
+      ordered.program.memoryContract = object.memoryContract := by
+  unfold toSolcYulOrderedProgram? at hConvert
+  cases hContract : object.toYulContractWithFunctionEntries? with
+  | none => simp [hContract] at hConvert
+  | some result =>
+      rcases result with ⟨contract, functions⟩
+      cases hValid :
+          Yul.SolcValidation.ContractOkWithEntries?
+            Yul.SolcValidation.defaultDialectProfile contract functions <;>
+        simp [hContract, hValid] at hConvert
+      subst ordered
+      refine ⟨?_, ?_, hValid, rfl⟩
+      · unfold Yul.OrderedProgram.RepresentsSource
+        unfold toYulContractWithFunctionEntries? at hContract
+        cases hDispatcher : Stmt.toYul? (.block object.dispatcher) with
+        | none => simp [hDispatcher] at hContract
+        | some dispatcher =>
+            cases hFunctions : FunctionDef.List.toYul? object.functions with
+            | none => simp [hDispatcher, hFunctions] at hContract
+            | some entries =>
+                simp [hDispatcher, hFunctions] at hContract
+                rcases hContract with ⟨rfl, rfl⟩
+                rfl
+      · unfold Yul.OrderedProgram.FunctionNamesNodup
+        have hNames :
+            Yul.SolcValidation.FunctionNamesOk?
+                (functions.map Prod.fst) = true := by
+          have hParts := hValid
+          simp [Yul.SolcValidation.ContractOkWithEntries?] at hParts
+          exact hParts.1
+        have hParts := hNames
+        simp [Yul.SolcValidation.FunctionNamesOk?,
+          Yul.SolcValidation.namesNodup?] at hParts
+        exact hParts.2
 
 theorem toSolcYulProgram?_memoryContract
     {object : Object} {program : Yul.Program}
@@ -2372,26 +2425,27 @@ theorem lowerCode?_some_solc_valid {object : Object}
 
 def lowerCodeUnchecked? (object : Object) :
     Option Functions.Program := do
-  let dispatcher ← Stmt.List.toYul? object.dispatcher
-  let dispatcher := Yul.Stmt.List.simplifyForUnchecked dispatcher
-  let functionsYul ← FunctionDef.List.toYul? object.functions
-  let functionsYul := Yul.FunctionList.simplifyForUnchecked functionsYul
-  let initial :=
-    Yul.Fresh.initial
-      (Yul.Stmt.List.names dispatcher ++
-        Yul.FunctionList.names functionsYul)
-  let fuel :=
-    Stmt.List.loweringFuel object.dispatcher +
-      FunctionDef.List.loweringFuel object.functions + 1
-  let (bodyStmts, state) ←
-    Yul.Stmt.List.toFunctionsUncheckedFuel? fuel initial dispatcher
-  let (functions, _state) ←
-    Yul.FunctionList.toFunDefsUncheckedFuel? fuel state functionsYul
-  some
-    (FunctionPrep.Program.scopeLetLifetimes
-      { functions := functions
-        body := { stmts := bodyStmts }
-        memoryContract := object.memoryContract })
+  let ordered ← object.toSolcYulOrderedProgram?
+  let lower ← ordered.toObjects?
+  some lower.root.code
+
+theorem lowerCodeUnchecked?_some
+    {object : Object} {code : Functions.Program}
+    (hLower : object.lowerCodeUnchecked? = some code) :
+    ∃ ordered : Yul.OrderedProgram, ∃ lower : Objects.Program,
+      object.toSolcYulOrderedProgram? = some ordered ∧
+        ordered.toObjects? = some lower ∧
+        lower.root.code = code := by
+  unfold lowerCodeUnchecked? at hLower
+  cases hOrdered : object.toSolcYulOrderedProgram? with
+  | none => simp [hOrdered] at hLower
+  | some ordered =>
+      cases hObjects : ordered.toObjects? with
+      | none => simp [hOrdered, hObjects] at hLower
+      | some lower =>
+          simp [hOrdered, hObjects] at hLower
+          subst code
+          exact ⟨ordered, lower, rfl, hObjects, rfl⟩
 
 def lowerCodeUncheckedWithLayout? (object : Object)
     (layout : ObjectLayout) : Option Functions.Program := do
