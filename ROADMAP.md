@@ -200,7 +200,7 @@ boundaries remain active work.
       - [x] Compiler-selected stable literal/variable argument window, including
         exact source/target argument reversal and low-fuel truncation.
       - [x] Generated temporary bindings and primitive-expression preludes.
-      - [ ] Internal-call preludes.
+      - [x] Internal-call preludes.
         - [x] Canonical call-frame initialization, return lookup, caller
           restoration, and call-specific argument lowering.
         - [ ] Recursive callee-body attachment and caller writeback.
@@ -218,12 +218,17 @@ boundaries remain active work.
             - [x] Carry exact source validation through recursive prepared
               arguments and construct all primitive/internal-call expression
               heads by strong source-fuel induction.
+            - [x] Replace the impossible all-target-fuel body premise with
+              source-owned static/dynamic target budgets and thread the exact
+              residual inequalities through argument and call preludes.
+            - [ ] Construct the budgeted recursive statement/list fixed point
+              and use it to discharge `BodyForwardAt` without a call oracle.
     - [ ] Complete recursive statement/list proof over compiler decomposition;
       break, continue, leave, and multi-name uninitialized declaration compiler
       cases are checked. Direct-safe and arbitrary prepared one-name initialized
-      declarations and assignments are checked; expression statements,
-      branches, loops, terminal composition, and direct internal-call
-      statements remain.
+      declarations and assignments are checked. Compiler-selected multi-result
+      declaration and assignment calls are checked; expression statements,
+      branches, loops, and terminal composition remain.
     - [x] Compose independent CALL/CREATE and GAS/MSIZE providers with a
       closed-ordinary-primitive capability; no opcode dispatch occurs inside
       expression recursion.

@@ -24,6 +24,8 @@ import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.Structured.ObserverTerminalAdequacy
 import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.Yul.FunctionsInteractionStatement
+import EvmCompiler.Yul.FunctionsInteractionFuel
+import EvmCompiler.Yul.FunctionsInteractionStaticCost
 import EvmCompiler.Yul.FunctionsInteractionPreparedArgs
 import EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive
 import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
@@ -524,5 +526,7 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionSelectedStatementCall.selectedTargets
 #print axioms EvmCompiler.Yul.FunctionsInteractionSelectedStatementCall.compiledAssignCall
 #print axioms EvmCompiler.Yul.FunctionsInteractionSelectedStatementCall.compiledLetCall
+#print axioms EvmCompiler.Yul.FunctionsInteractionFuel.executionBudgetFor_add_eight_le_target_of_lt
+#print axioms EvmCompiler.Yul.FunctionsInteractionStaticCost.function_body_le_program_of_lookup
 #print axioms EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive.MemoryFamily.LogFamily.closedSpec
 #print axioms EvmCompiler.Functions.AllocationInteractionPrimitiveResource.log_resourceForward

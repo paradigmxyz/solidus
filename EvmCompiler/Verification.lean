@@ -121,6 +121,8 @@ import EvmCompiler.Yul.EffectSemanticsOwnerPreservation
 import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.EffectRefinement.Failure
 import EvmCompiler.Yul.InteractionSemantics
+import EvmCompiler.Yul.FunctionsInteractionFuel
+import EvmCompiler.Yul.FunctionsInteractionStaticCost
 import EvmCompiler.Yul.FunctionsInteractionPrimitive
 import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 import EvmCompiler.Yul.FunctionsInteractionExpression
@@ -1497,6 +1499,8 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.InteractionSemantics.Call.explicit_succ
 #check EvmCompiler.Yul.InteractionSemantics.EvalValues.internal_succ
 #check EvmCompiler.Yul.FunctionsInteractionSelectedCall.BodyForwardAt
+#check EvmCompiler.Yul.FunctionsInteractionFuel.executionBudgetFor_add_eight_le_target_of_lt
+#check EvmCompiler.Yul.FunctionsInteractionStaticCost.function_body_le_program_of_lookup
 #check EvmCompiler.Yul.FunctionsInteractionSelectedCall.ofUncheckedFunctionCallLowering
 #check EvmCompiler.Yul.FunctionsInteractionSelectedCall.headValueOfUncheckedFunctionCallLowering
 #check EvmCompiler.Yul.FunctionsInteractionSelectedCall.boundCallAtFuel

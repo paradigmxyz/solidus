@@ -1,5 +1,6 @@
 import EvmCompiler.Yul.FunctionsInteractionCall
 import EvmCompiler.Yul.FunctionsCompilerArtifact
+import EvmCompiler.Yul.FunctionsInteractionStaticCost
 import EvmCompiler.Yul.SolcValidation
 
 namespace EvmCompiler
@@ -29,6 +30,8 @@ def BodyForwardAt
           sourceProgram.contract).map Prod.fst)
         (fn.returns ++ fn.params) false false true body = true →
     (∀ name, name ∈ fn.returns ++ fn.params → name ∈ before.used) →
+    FunctionsInteractionStaticCost.bodyBudget
+        sourceProgram body sourceFuel ≤ targetFuel →
     ScopedStateRel (fn.returns ++ fn.params) source target →
     Simulation.Interaction.ForwardRel Truncated
       (FunctionsInteractionCall.FunctionBodyDoneRel
@@ -65,11 +68,14 @@ theorem ofUncheckedFunctionCallLowering
     (hLowering : Expr.UncheckedFunctionCallLowering
       initial functionName args pre lower final)
     (hBound : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
-      profile sourceProgram.contract
+      profile sourceProgram
       (sourceFuel + 1) (pre.length + targetBodyFuel + 2)
       (some sourceProgram.contract) targetProgram.toFunctions layout)
     (hBodyForward : BodyForwardAt profile sourceProgram targetProgram
       sourceFuel targetBodyFuel)
+    (hTargetBodyFuel :
+      FunctionsInteractionStaticCost.programBudget
+        sourceProgram (sourceFuel + 1) ≤ targetBodyFuel)
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin initial.used target.vars)
     (hLayout : ∀ name, name ∈ layout → name ∈ initial.used) :
@@ -120,7 +126,11 @@ theorem ofUncheckedFunctionCallLowering
               [Functions.Stmt.let_ tmp (.lit Functions.Source.zero),
                 Functions.Stmt.call [tmp] functionName lowerArgs]).length +
               targetBodyFuel + 2)
-          hArgs hArgsOk hBound hRel hDomain hLayout
+          hArgs hArgsOk hBound
+          (by
+            simp only [List.length_append, List.length_cons, List.length_nil]
+            omega)
+          hRel hDomain hLayout
           (by simp; omega)
       rw [show sourceFuel + 2 = (sourceFuel + 1) + 1 by omega,
         Yul.InteractionSemantics.EvalValues.internal_succ]
@@ -218,6 +228,13 @@ theorem ofUncheckedFunctionCallLowering
             hFnSignature hParamStore
           have hBodyRel := hBodyForward hLowerBody hBodyOk hReserved
             (by
+              unfold FunctionsInteractionStaticCost.bodyBudget
+              exact
+                (FunctionsInteractionFuel.executionBudgetFor_le_global_at
+                  (FunctionsInteractionStaticCost.program sourceProgram)
+                  (FunctionsInteractionStaticCost.function_body_le_program_of_lookup
+                    hLookup) (by omega)).trans hTargetBodyFuel)
+            (by
               simpa [hFnParams, hFnReturns, identNames_eq_self,
                 Functions.InteractionSemantics.stateModel,
                 Locals.InteractionSemantics.stateModel,
@@ -289,11 +306,14 @@ theorem headValueOfUncheckedFunctionCallLowering
     (hLowering : Expr.UncheckedFunctionCallLowering
       before functionName args pre lower after)
     (hNested : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
-      profile sourceProgram.contract (bodyFuel + 1) targetFuel
+      profile sourceProgram (bodyFuel + 1) targetFuel
       (some sourceProgram.contract)
       targetProgram.toFunctions layout)
     (hBodyForward : BodyForwardAt profile sourceProgram targetProgram
       bodyFuel (targetFuel - pre.length - 2))
+    (hTargetBodyFuel :
+      FunctionsInteractionStaticCost.programBudget
+        sourceProgram (bodyFuel + 1) ≤ targetFuel - pre.length - 2)
     (hLayout : ∀ name, name ∈ layout → name ∈ before.used)
     (hTargetFuel : pre.length + 1 < targetFuel) :
     FunctionsInteractionPreparedArgs.HeadValueForward
@@ -305,7 +325,7 @@ theorem headValueOfUncheckedFunctionCallLowering
       pre.length + (targetFuel - pre.length - 2) + 2 = targetFuel := by
     omega
   have hNested' : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
-      profile sourceProgram.contract (bodyFuel + 1)
+      profile sourceProgram (bodyFuel + 1)
       (pre.length + (targetFuel - pre.length - 2) + 2)
       (some sourceProgram.contract) targetProgram.toFunctions layout := by
     rw [hFuelEq]
@@ -314,7 +334,7 @@ theorem headValueOfUncheckedFunctionCallLowering
     (sourceFuel := bodyFuel)
     (targetBodyFuel := targetFuel - pre.length - 2)
     (ctx := ctx) hDecomposition hProgramOk hExprOk hLowering
-    hNested' hBodyForward hRel hDomain hLayout
+    hNested' hBodyForward hTargetBodyFuel hRel hDomain hLayout
   have hSingleton :=
     FunctionsInteractionPreparedArgs.singletonOfValues hSelected
   simpa [hFuelEq] using hSingleton
@@ -340,11 +360,14 @@ theorem boundCall
     (hLowering : Expr.UncheckedFunctionCallLowering
       before functionName args pre lower after)
     (hNested : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
-      profile sourceProgram.contract (bodyFuel + 1) targetFuel
+      profile sourceProgram (bodyFuel + 1) targetFuel
       (some sourceProgram.contract)
       targetProgram.toFunctions layout)
     (hBodyForward : BodyForwardAt profile sourceProgram targetProgram
       bodyFuel (targetFuel - pre.length - 2))
+    (hTargetBodyFuel :
+      FunctionsInteractionStaticCost.programBudget
+        sourceProgram (bodyFuel + 1) ≤ targetFuel - pre.length - 2)
     (hLayoutBefore : ∀ name, name ∈ layout → name ∈ before.used)
     (hLayoutAfter : ∀ name, name ∈ layout → name ∈ after.used)
     (hTargetFuel : pre.length + 1 < targetFuel) :
@@ -355,7 +378,7 @@ theorem boundCall
   FunctionsInteractionPreparedArgs.bindHeadValue hLayoutAfter hTargetFuel
     (headValueOfUncheckedFunctionCallLowering
       hDecomposition hProgramOk hExprOk hLowering hNested hBodyForward
-      hLayoutBefore hTargetFuel)
+      hTargetBodyFuel hLayoutBefore hTargetFuel)
 
 /-- Internal-call singleton evaluation is source-truncated below three list
 fuel units. The `fuel = 2` case enters the expression but exhausts fuel before
@@ -425,7 +448,7 @@ theorem boundCallAtFuel
       ∀ argsFuel,
         fuel = argsFuel + 2 →
           FunctionsInteractionPreparedArgs.RecursiveBoundHeads
-            profile sourceProgram.contract argsFuel targetFuel
+            profile sourceProgram argsFuel targetFuel
             (some sourceProgram.contract)
             targetProgram.toFunctions layout)
     (hBodies :
@@ -433,6 +456,11 @@ theorem boundCallAtFuel
         fuel = bodyFuel + 3 →
           BodyForwardAt profile sourceProgram targetProgram bodyFuel
             (targetFuel - pre.length - 2))
+    (hBodyFuel :
+      ∀ bodyFuel,
+        fuel = bodyFuel + 3 →
+          FunctionsInteractionStaticCost.programBudget
+            sourceProgram (bodyFuel + 1) ≤ targetFuel - pre.length - 2)
     (hLayoutBefore : ∀ name, name ∈ layout → name ∈ before.used)
     (hLayoutAfter : ∀ name, name ∈ layout → name ∈ after.used)
     (hTargetFuel : pre.length + 1 < targetFuel) :
@@ -448,7 +476,8 @@ theorem boundCallAtFuel
     subst fuel
     exact boundCall hDecomposition hProgramOk hExprOk hLowering
       (hNested (bodyFuel + 1) (by omega))
-      (hBodies bodyFuel rfl) hLayoutBefore hLayoutAfter hTargetFuel
+      (hBodies bodyFuel rfl) (hBodyFuel bodyFuel rfl)
+      hLayoutBefore hLayoutAfter hTargetFuel
 
 end FunctionsInteractionSelectedCall
 end Yul

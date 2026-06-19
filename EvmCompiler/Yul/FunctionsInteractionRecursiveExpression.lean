@@ -23,7 +23,7 @@ theorem recursiveBoundHeads
           FunctionsInteractionSelectedCall.BodyForwardAt
             profile sourceProgram targetProgram bodyFuel bodyTargetFuel) →
       FunctionsInteractionPreparedArgs.RecursiveBoundHeads
-        profile sourceProgram.contract fuel targetFuel
+        profile sourceProgram fuel targetFuel
         (some sourceProgram.contract) targetProgram.toFunctions layout := by
   intro fuel
   induction fuel using Nat.strong_induction_on with
@@ -31,7 +31,7 @@ theorem recursiveBoundHeads
       intro targetFuel layout hBodies
       intro expr rest preRest preHead lowerHead stateRest stateHead
         stateFresh tmp hExprOk hLower hFresh hTargetFuel
-        hLayoutRest hLayoutHead
+        hLayoutRest hLayoutHead hHeadBudget
       let headFuel := fuel - 2 * rest.reverse.length
       have hHeadFuelLe : headFuel ≤ fuel := by
         simp [headFuel]
@@ -62,6 +62,7 @@ theorem recursiveBoundHeads
                   (targetFuel - preRest.length) layout
                 intro bodyFuel bodyTargetFuel hBodyLt
                 exact hBodies (lt_trans hBodyLt hArgsLt)
+              · omega
               · exact hLayoutRest
               · exact hLayoutHead
               · exact hTargetFuel
@@ -84,13 +85,26 @@ theorem recursiveBoundHeads
                   omega
                 unfold FunctionsInteractionSelectedCall.BodyForwardAt
                 intro body before after fn source target hLowerBody hBodyOk
-                  hReserved hRel
+                  hReserved hBodyBudget hRel
                 exact hBodies
                     (bodyFuel := bodyFuel)
                     (bodyTargetFuel :=
                       targetFuel - preRest.length - preHead.length - 2)
                     hBodyLt
-                  hLowerBody hBodyOk hReserved hRel
+                  hLowerBody hBodyOk hReserved hBodyBudget hRel
+              · intro bodyFuel hFuelEq
+                have hChildFuelLe : bodyFuel + 1 ≤ headFuel := by
+                  omega
+                have hProgramLe :
+                    FunctionsInteractionStaticCost.programBudget sourceProgram
+                        (bodyFuel + 1) ≤
+                      FunctionsInteractionStaticCost.programBudget sourceProgram
+                        headFuel := by
+                  unfold FunctionsInteractionStaticCost.programBudget
+                  exact FunctionsInteractionFuel.executionBudgetFor_mono
+                    _ _ hChildFuelLe
+                dsimp [headFuel] at hProgramLe
+                omega
               · exact hLayoutRest
               · exact hLayoutHead
               · exact hTargetFuel

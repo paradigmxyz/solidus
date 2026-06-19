@@ -495,7 +495,8 @@ theorem boundDirectOfLowering
 head once recursively generated operand heads are available at smaller fuel. -/
 theorem boundOfLowering
     (hPrimitive : FunctionsInteractionPrimitive.CompilerSelected)
-    {profile : SolcValidation.DialectProfile} {contract : AstContract}
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program}
     {argsFuel targetFuel : Nat}
     {prim : EvmYul.Operation .Yul} {args : List AstExpr}
     {pre : List Functions.Stmt} {lower : Locals.Expr 1}
@@ -505,10 +506,13 @@ theorem boundOfLowering
     (hLowering : Expr.UncheckedBoundPrimitiveLowering
       before prim args pre lower after)
     (hArgsOk : SolcValidation.ExprsOk?
-      profile contract layout args = true)
+      profile sourceProgram.contract layout args = true)
     (hFresh : Fresh.fresh? after = some (tmp, final))
     (hNested : RecursiveBoundHeads
-      profile contract argsFuel targetFuel codeOverride program layout)
+      profile sourceProgram argsFuel targetFuel codeOverride program layout)
+    (hProgramBudget :
+      FunctionsInteractionStaticCost.programBudget sourceProgram argsFuel +
+        pre.length + 2 ≤ targetFuel)
     (hLayoutBefore : ∀ name, name ∈ layout → name ∈ before.used)
     (hLayoutAfter : ∀ name, name ∈ layout → name ∈ after.used)
     (hTargetFuel : pre.length + 1 < targetFuel) :
@@ -519,8 +523,8 @@ theorem boundOfLowering
   | primitive hOp hArgs hSeq hOutputs =>
       intro _hLower _hFresh source target ctx hScoped hDomain
       have hPrepared :=
-        ofUncheckedLowering (ctx := ctx) hArgsOk hArgs hNested hScoped hDomain
-          hLayoutBefore (by omega)
+        ofUncheckedLowering (ctx := ctx) hArgsOk hArgs hNested hProgramBudget
+          hScoped hDomain hLayoutBefore (by omega)
       have hValue :=
         afterPrepared hPrimitive (before := before) hOp hSeq hOutputs
           hFresh hLayoutAfter hTargetFuel hPrepared
@@ -530,7 +534,8 @@ theorem boundOfLowering
 The only recursive premise is indexed by strictly smaller operand fuel. -/
 theorem boundPrimitive
     (hPrimitive : FunctionsInteractionPrimitive.CompilerSelected)
-    {profile : SolcValidation.DialectProfile} {contract : AstContract}
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program}
     {fuel targetFuel : Nat}
     {prim : EvmYul.Operation .Yul} {args : List AstExpr}
     {pre : List Functions.Stmt} {lower : Locals.Expr 1}
@@ -539,14 +544,17 @@ theorem boundPrimitive
     {program : Functions.Program} {layout : List Functions.Name}
     (hLowering : Expr.UncheckedPrimitiveLowering 1
       before prim args pre lower after)
-    (hExprOk : SolcValidation.ExprOk? profile contract layout 1
+    (hExprOk : SolcValidation.ExprOk? profile sourceProgram.contract layout 1
       (.Call (.inl prim) args) = true)
     (hFresh : Fresh.fresh? after = some (tmp, final))
     (hNested :
       ∀ argsFuel,
         fuel = argsFuel + 2 →
           RecursiveBoundHeads
-            profile contract argsFuel targetFuel codeOverride program layout)
+            profile sourceProgram argsFuel targetFuel codeOverride program layout)
+    (hProgramBudget :
+      FunctionsInteractionStaticCost.programBudget sourceProgram fuel +
+        pre.length + 2 ≤ targetFuel)
     (hLayoutBefore : ∀ name, name ∈ layout → name ∈ before.used)
     (hLayoutAfter : ∀ name, name ∈ layout → name ∈ after.used)
     (hTargetFuel : pre.length + 1 < targetFuel) :
@@ -569,11 +577,22 @@ theorem boundPrimitive
     | bound hBound hOp hArgs hSeq hOutputs =>
         have hArgsOk :=
           SolcValidation.exprsOk_of_exprOk_primitive hExprOk
+        have hArgsBudget :
+            FunctionsInteractionStaticCost.programBudget sourceProgram argsFuel +
+                pre.length + 2 ≤ targetFuel := by
+          have hFuelLe : argsFuel ≤ argsFuel + 2 := by omega
+          have hBudgetLe :
+              FunctionsInteractionStaticCost.programBudget sourceProgram argsFuel ≤
+                FunctionsInteractionStaticCost.programBudget sourceProgram
+                  (argsFuel + 2) := by
+            unfold FunctionsInteractionStaticCost.programBudget
+            exact FunctionsInteractionFuel.executionBudgetFor_mono _ _ hFuelLe
+          omega
         exact
           boundOfLowering hPrimitive
             (Expr.UncheckedBoundPrimitiveLowering.primitive
               hOp hArgs hSeq hOutputs)
-            hArgsOk hFresh (hNested argsFuel rfl)
+            hArgsOk hFresh (hNested argsFuel rfl) hArgsBudget
             hLayoutBefore hLayoutAfter
             hTargetFuel
 

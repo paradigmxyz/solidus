@@ -1,4 +1,5 @@
 import EvmCompiler.Yul.FunctionsInteractionStatement
+import EvmCompiler.Yul.FunctionsInteractionStaticCost
 
 namespace EvmCompiler
 namespace Yul
@@ -1068,7 +1069,7 @@ theorem bound
 compiler-owned bounded-argument induction. -/
 def RecursiveBoundHeads
     (profile : SolcValidation.DialectProfile)
-    (contract : AstContract) (fuel targetFuel : Nat)
+    (sourceProgram : Yul.Program) (fuel targetFuel : Nat)
     (codeOverride : Option EvmYul.Yul.Ast.YulContract)
     (program : Functions.Program) (layout : List Functions.Name) : Prop :=
   ∀ {expr : AstExpr} {rest : List AstExpr}
@@ -1076,13 +1077,16 @@ def RecursiveBoundHeads
     {lowerHead : Locals.Expr 1}
     {stateRest stateHead stateFresh : Fresh.State}
     {tmp : Functions.Name},
-    SolcValidation.ExprOk? profile contract layout 1 expr = true →
+    SolcValidation.ExprOk? profile sourceProgram.contract layout 1 expr = true →
       Expr.lower1Unchecked? stateRest expr =
         some (preHead, lowerHead, stateHead) →
       Fresh.fresh? stateHead = some (tmp, stateFresh) →
         preHead.length + 1 < targetFuel - preRest.length →
         (∀ name, name ∈ layout → name ∈ stateRest.used) →
         (∀ name, name ∈ layout → name ∈ stateHead.used) →
+        FunctionsInteractionStaticCost.programBudget sourceProgram
+              (fuel - 2 * rest.reverse.length) +
+            preRest.length + preHead.length + 2 ≤ targetFuel →
           BoundHeadForward
             (fuel - 2 * rest.reverse.length)
             (targetFuel - preRest.length)
@@ -1093,7 +1097,8 @@ def RecursiveBoundHeads
 Only a generated, fresh-bound expression head is delegated to the recursive
 expression owner; empty and deferred branches are discharged here. -/
 theorem ofUncheckedLowering
-    {profile : SolcValidation.DialectProfile} {contract : AstContract}
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program}
     {fuel targetFuel : Nat}
     {args : List AstExpr} {pre : List Functions.Stmt}
     {lowerArgs : List (Locals.Expr 1)}
@@ -1104,11 +1109,14 @@ theorem ofUncheckedLowering
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
     (hArgsOk : SolcValidation.ExprsOk?
-      profile contract layout args = true)
+      profile sourceProgram.contract layout args = true)
     (hLowering : Expr.List.UncheckedBoundLowering
       initial args pre lowerArgs final)
     (hBound : RecursiveBoundHeads
-      profile contract fuel targetFuel codeOverride program layout)
+      profile sourceProgram fuel targetFuel codeOverride program layout)
+    (hProgramBudget :
+      FunctionsInteractionStaticCost.programBudget sourceProgram fuel +
+        pre.length + 2 ≤ targetFuel)
     (hRel : FunctionsInteractionRelation.ScopedStateRel
       layout source target)
     (hDomain : FunctionsInteractionRelation.TargetDomainWithin
@@ -1133,29 +1141,39 @@ theorem ofUncheckedLowering
   | @direct stateRest stateHead expr rest preRest preHead lowerRest
       lowerHead hRest hHead hDirect ih =>
       have hOkParts :
-          SolcValidation.ExprOk? profile contract layout 1 expr = true ∧
-            SolcValidation.ExprsOk? profile contract layout rest = true := by
+          SolcValidation.ExprOk? profile sourceProgram.contract layout 1 expr = true ∧
+            SolcValidation.ExprsOk? profile sourceProgram.contract layout rest = true := by
         simpa [SolcValidation.ExprsOk?] using hArgsOk
       have hRestOk :
-          SolcValidation.ExprsOk? profile contract layout rest = true := by
+          SolcValidation.ExprsOk? profile sourceProgram.contract layout rest = true := by
         exact hOkParts.2
       obtain ⟨rfl, rfl, _hLower⟩ :=
         Expr.lower1Unchecked?_deferred_parts hDirect.1 hHead
       have hRestFuel : preRest.length < targetFuel := by
         simpa using hTargetFuel
-      have hRestForward := ih hRestOk hRestFuel
+      have hRestBudget :
+          FunctionsInteractionStaticCost.programBudget sourceProgram fuel +
+              preRest.length + 2 ≤ targetFuel := by
+        simpa using hProgramBudget
+      have hRestForward := ih hRestOk hRestBudget hRestFuel
       exact direct (initial := initial) hDirect.1 hHead hRestForward
   | @bound stateRest stateHead stateFresh expr rest preRest preHead
       lowerRest lowerHead tmp hRest hHead _hDirect hFresh ih =>
       have hOkParts :
-          SolcValidation.ExprOk? profile contract layout 1 expr = true ∧
-            SolcValidation.ExprsOk? profile contract layout rest = true := by
+          SolcValidation.ExprOk? profile sourceProgram.contract layout 1 expr = true ∧
+            SolcValidation.ExprsOk? profile sourceProgram.contract layout rest = true := by
         simpa [SolcValidation.ExprsOk?] using hArgsOk
       have hRestFuel : preRest.length < targetFuel := by
         simp only [List.length_append, List.length_cons, List.length_nil]
           at hTargetFuel
         omega
-      have hRestForward := ih hOkParts.2 hRestFuel
+      have hRestBudget :
+          FunctionsInteractionStaticCost.programBudget sourceProgram fuel +
+              preRest.length + 2 ≤ targetFuel := by
+        simp only [List.length_append, List.length_cons, List.length_nil]
+          at hProgramBudget
+        omega
+      have hRestForward := ih hOkParts.2 hRestBudget hRestFuel
       have hHeadFuel :
           preHead.length + 1 < targetFuel - preRest.length := by
         simp only [List.length_append, List.length_cons, List.length_nil]
@@ -1174,9 +1192,24 @@ theorem ofUncheckedLowering
           ∀ name, name ∈ layout → name ∈ stateHead.used := by
         intro name hMem
         exact hHeadExtends name (hRestLayout name hMem)
+      have hHeadFuelLe : fuel - 2 * rest.reverse.length ≤ fuel := by
+        omega
+      have hHeadProgramLe :
+          FunctionsInteractionStaticCost.programBudget sourceProgram
+              (fuel - 2 * rest.reverse.length) ≤
+            FunctionsInteractionStaticCost.programBudget sourceProgram fuel := by
+        unfold FunctionsInteractionStaticCost.programBudget
+        exact FunctionsInteractionFuel.executionBudgetFor_mono _ _ hHeadFuelLe
+      have hHeadBudget :
+          FunctionsInteractionStaticCost.programBudget sourceProgram
+                (fuel - 2 * rest.reverse.length) +
+              preRest.length + preHead.length + 2 ≤ targetFuel := by
+        simp only [List.length_append, List.length_cons, List.length_nil]
+          at hProgramBudget
+        omega
       exact bound (initial := initial) hHead hFresh
         (hBound hOkParts.1 hHead hFresh hHeadFuel
-          hRestLayout hHeadLayout)
+          hRestLayout hHeadLayout hHeadBudget)
         hRestForward
 
 end FunctionsInteractionPreparedArgs

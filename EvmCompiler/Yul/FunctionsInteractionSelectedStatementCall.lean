@@ -49,11 +49,14 @@ theorem selectedTargets
     (hArgsLowering : Expr.UncheckedCallArgsLowering
       initial args preArgs lowerArgs final)
     (hBound : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
-      profile sourceProgram.contract (sourceFuel + 1)
+      profile sourceProgram (sourceFuel + 1)
       (preArgs.length + targetBodyFuel + 3)
       (some sourceProgram.contract) targetProgram.toFunctions layout)
     (hBodyForward : FunctionsInteractionSelectedCall.BodyForwardAt
       profile sourceProgram targetProgram sourceFuel targetBodyFuel)
+    (hTargetBodyFuel :
+      FunctionsInteractionStaticCost.programBudget
+        sourceProgram (sourceFuel + 1) ≤ targetBodyFuel)
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin initial.used target.vars)
     (hLayout : ∀ name, name ∈ layout → name ∈ initial.used) :
@@ -94,7 +97,8 @@ theorem selectedTargets
     exact SolcValidation.programOkWith_function_bodyOk hProgramOk hLookup
   have hPrepared :=
     FunctionsInteractionPreparedCall.ofUncheckedCallArgsLowering
-      (ctx := ctx) hArgsLowering hArgsOk hBound hRel hDomain hLayout
+      (ctx := ctx) hArgsLowering hArgsOk hBound
+      (by omega) hRel hDomain hLayout
       (by omega)
   rw [Functions.InteractionSemantics.Block.openRun_append]
   apply Simulation.Interaction.ForwardRel.bind_custom hPrepared
@@ -145,6 +149,13 @@ theorem selectedTargets
       have hEntry := ScopedStateRel.initcall hScoped.state
         hFnSignature hParamStore
       have hBodyRel := hBodyForward hLowerBody hBodyOk hReserved
+        (by
+          unfold FunctionsInteractionStaticCost.bodyBudget
+          exact
+            (FunctionsInteractionFuel.executionBudgetFor_le_global_at
+              (FunctionsInteractionStaticCost.program sourceProgram)
+              (FunctionsInteractionStaticCost.function_body_le_program_of_lookup
+                hLookup) (by omega)).trans hTargetBodyFuel)
         (by
           simpa [hFnParams, hFnReturns, identNames_eq_self,
             Functions.InteractionSemantics.stateModel,
@@ -253,11 +264,14 @@ theorem visibleTargets
     (hArgsLowering : Expr.UncheckedCallArgsLowering
       initial args preArgs lowerArgs final)
     (hBound : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
-      profile sourceProgram.contract (sourceFuel + 1)
+      profile sourceProgram (sourceFuel + 1)
       (preArgs.length + targetBodyFuel + 3)
       (some sourceProgram.contract) targetProgram.toFunctions layout)
     (hBodyForward : FunctionsInteractionSelectedCall.BodyForwardAt
       profile sourceProgram targetProgram sourceFuel targetBodyFuel)
+    (hTargetBodyFuel :
+      FunctionsInteractionStaticCost.programBudget
+        sourceProgram (sourceFuel + 1) ≤ targetBodyFuel)
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin initial.used target.vars)
     (hLayout : ∀ name, name ∈ layout → name ∈ initial.used) :
@@ -283,7 +297,7 @@ theorem visibleTargets
     (fun hScoped hInsert =>
       hScoped.multifill_insertMany_visible
         hTargetsNodup hTargetsVisible hInsert)
-    hArgsLowering hBound hBodyForward hRel hDomain hLayout
+    hArgsLowering hBound hBodyForward hTargetBodyFuel hRel hDomain hLayout
 
 /-- Fresh-target specialization used after the compiler's declaration
 initialization prefix. -/
@@ -314,11 +328,14 @@ theorem freshTargets
     (hArgsLowering : Expr.UncheckedCallArgsLowering
       initial args preArgs lowerArgs final)
     (hBound : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
-      profile sourceProgram.contract (sourceFuel + 1)
+      profile sourceProgram (sourceFuel + 1)
       (preArgs.length + targetBodyFuel + 3)
       (some sourceProgram.contract) targetProgram.toFunctions layout)
     (hBodyForward : FunctionsInteractionSelectedCall.BodyForwardAt
       profile sourceProgram targetProgram sourceFuel targetBodyFuel)
+    (hTargetBodyFuel :
+      FunctionsInteractionStaticCost.programBudget
+        sourceProgram (sourceFuel + 1) ≤ targetBodyFuel)
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin initial.used target.vars)
     (hLayout : ∀ name, name ∈ layout → name ∈ initial.used) :
@@ -344,7 +361,7 @@ theorem freshTargets
     (fun hScoped hInsert =>
       hScoped.multifill_insertMany
         hTargetsNodup hTargetsFresh hInsert)
-    hArgsLowering hBound hBodyForward hRel hDomain hLayout
+    hArgsLowering hBound hBodyForward hTargetBodyFuel hRel hDomain hLayout
 
 /-- Ordinary compiler-selected assignment call, with all generated argument
 preludes and multi-result writeback discharged internally. -/
@@ -373,7 +390,7 @@ theorem compiledAssignCall
           (.Assign names (.Call (.inr functionName) args)) =
         some (lower, final))
     (hHeads : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
-      profile sourceProgram.contract (sourceFuel + 1) targetFuel
+      profile sourceProgram (sourceFuel + 1) targetFuel
       (some sourceProgram.contract) targetProgram.toFunctions layout)
     (hBodies : ∀ bodyTargetFuel,
       FunctionsInteractionSelectedCall.BodyForwardAt
@@ -381,7 +398,9 @@ theorem compiledAssignCall
     (hRel : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin initial.used target.vars)
     (hLayout : ∀ name, name ∈ layout → name ∈ initial.used)
-    (hTargetFuel : lower.length + 1 < targetFuel) :
+    (hTargetFuel :
+      FunctionsInteractionStaticCost.programBudget
+          sourceProgram (sourceFuel + 1) + lower.length + 1 < targetFuel) :
     Simulation.Interaction.ForwardRel Truncated
       (FunctionsInteractionStatement.PathScopedDoneRel layout)
       (Yul.InteractionSemantics.exec (sourceFuel + 3)
@@ -411,7 +430,7 @@ theorem compiledAssignCall
       at hTargetFuel
     omega
   have hHeads' : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
-      profile sourceProgram.contract (sourceFuel + 1)
+      profile sourceProgram (sourceFuel + 1)
       (preArgs.length + (targetFuel - preArgs.length - 3) + 3)
       (some sourceProgram.contract) targetProgram.toFunctions layout := by
     rw [hFuelEq]
@@ -423,7 +442,13 @@ theorem compiledAssignCall
     hDecomposition hProgramOk
     (by simpa [identNames_eq_self] using hOkParts.2)
     hAssignParts.1 hAssignParts.2 hArgsLowering hHeads'
-    (hBodies _) hRel hDomain hLayout
+    (hBodies _)
+    (by
+      rw [hLowerEq] at hTargetFuel
+      simp only [List.length_append, List.length_cons, List.length_nil]
+        at hTargetFuel
+      omega)
+    hRel hDomain hLayout
   have hCheck := hRel.assignmentCheck_many
     hAssignParts.1 hAssignParts.2
   have hCheck' : EvmYul.Yul.checkAssignment source names = .ok () := by
@@ -465,7 +490,7 @@ theorem compiledLetCall
         some (lower, final))
     (hHeads : ∀ recursiveTargetFuel,
       FunctionsInteractionPreparedArgs.RecursiveBoundHeads
-        profile sourceProgram.contract (sourceFuel + 1)
+        profile sourceProgram (sourceFuel + 1)
         recursiveTargetFuel (some sourceProgram.contract)
         targetProgram.toFunctions layout)
     (hBodies : ∀ bodyTargetFuel,
@@ -476,7 +501,9 @@ theorem compiledLetCall
     (hLayout : ∀ name, name ∈ layout → name ∈ initial.used)
     (hTargetsUsed : ∀ name, name ∈ identNames names →
       name ∈ initial.used)
-    (hTargetFuel : lower.length + 1 < targetFuel) :
+    (hTargetFuel :
+      FunctionsInteractionStaticCost.programBudget
+          sourceProgram (sourceFuel + 1) + lower.length + 1 < targetFuel) :
     Simulation.Interaction.ForwardRel Truncated
       (FunctionsInteractionStatement.PathScopedDoneRel
         (identNames names ++ layout))
@@ -557,7 +584,7 @@ theorem compiledLetCall
     simp [Stmt.initNames] at hTargetFuel
     omega
   have hHeads' : FunctionsInteractionPreparedArgs.RecursiveBoundHeads
-      profile sourceProgram.contract (sourceFuel + 1)
+      profile sourceProgram (sourceFuel + 1)
       (preArgs.length +
         (targetFuel - (identNames names).length - preArgs.length - 3) + 3)
       (some sourceProgram.contract) targetProgram.toFunctions layout := by
@@ -571,8 +598,12 @@ theorem compiledLetCall
     hDecomposition hProgramOk
     (by simpa [identNames_eq_self] using hOkParts.2)
     hBindParts.1 hBindParts.2 hReady hArgsLowering
-    hHeads'
-    (hBodies _) hRelInit hDomainInit hLayout
+    hHeads' (hBodies _)
+    (by
+      rw [hLowerEq] at hTargetFuel
+      simp [Stmt.initNames] at hTargetFuel
+      omega)
+    hRelInit hDomainInit hLayout
   have hCheck := hRel.declarationCheck_many hBindParts.1 hBindParts.2
   have hCheck' : EvmYul.Yul.checkDeclaration source names = .ok () := by
     simpa [identNames_eq_self] using hCheck
