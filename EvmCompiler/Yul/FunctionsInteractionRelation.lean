@@ -1399,6 +1399,15 @@ theorem multifill_single
 
 end StateRel
 
+/-- Reviving an abrupt Yul checkpoint exposes the same local lookup payload. -/
+theorem lookupBang_reviveJump
+    (source : SourceState) (name : Functions.Name) :
+    source.reviveJump.lookup! name = source.lookup! name := by
+  cases source with
+  | Ok shared vars => rfl
+  | OutOfFuel => rfl
+  | Checkpoint jump => cases jump <;> rfl
+
 def VarsDomainWithin (layout : List Functions.Name)
     (source : EvmYul.Yul.VarStore) : Prop :=
   ∀ name value, source.lookup name = some value → name ∈ layout
@@ -2003,6 +2012,16 @@ structure ScopedOutcomeRel (layout : List Functions.Name)
         VarsDefinedOn layout sourceVars
 
 namespace ScopedOutcomeRel
+
+/-- Forget the control tag while retaining the exact revived function-frame
+state and lexical domain. -/
+theorem revived_state
+    {layout : List Functions.Name}
+    {source : SourceState}
+    {target : Functions.InteractionSemantics.Outcome}
+    (hRel : ScopedOutcomeRel layout source target) :
+    ScopedStateRel layout source.reviveJump target.state :=
+  ⟨hRel.outcome.state, hRel.domain, hRel.defined⟩
 
 /-- A related regular Functions outcome exposes the scoped Yul state needed
 by the next statement in a source block. -/

@@ -380,6 +380,126 @@ theorem successful_openRunBody_parts
         Simulation.Interaction.bind_done_ok] at hSuccess
       exact Simulation.Interaction.Successful.bind_left hSuccess
 
+/-- Construct a canonical open returned function result from parameter
+initialization, one completed body, and exact return lookup. -/
+theorem openRunBody_returned_of_parts
+    {program : Functions.Program} {fn : Functions.FunDef}
+    {args : List Word} {fuel : Nat} {state returnedState : State}
+    {returnValues : List Word} {paramStore : Functions.Source.Store}
+    {bodyOutcome : Outcome} {bodyCtx' : Functions.Source.Ctx}
+    (hParams :
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty = some paramStore)
+    (hBody :
+      Block.openRun program
+          (Functions.Source.Effectful.FunDef.bodyCtx fn) fuel fn.body
+          (stateModel.withSource state
+            { shared := (stateModel.source state).shared
+              vars := Functions.Source.Store.initReturns
+                fn.returns paramStore }) =
+        .done (.ok (bodyOutcome, bodyCtx')))
+    (hMode : bodyOutcome.mode = .regular ∨ bodyOutcome.mode = .leave)
+    (hReturns :
+      Functions.Source.Store.lookupMany fn.returns
+          (stateModel.vars bodyOutcome.state) = some returnValues)
+    (hState : bodyOutcome.state = returnedState) :
+    openRunBody program fn args (fuel + 1) state =
+      .done (.ok
+        (Functions.Source.Effectful.CallResult.returned
+          returnedState returnValues)) := by
+  have hBody' :
+      Functions.Source.Effectful.Control.Block.runOpen
+          stateModel primitiveSemantics program
+          { Functions.Source.Ctx.initial.withLeaveScope
+              (fn.returns ++ fn.params) with
+            scope := fn.returns ++ fn.params }
+          fuel fn.body
+          (stateModel.withSource state
+            { shared := (stateModel.source state).shared
+              vars := Functions.Source.Store.initReturns
+                fn.returns paramStore }) =
+        .done (.ok (bodyOutcome, bodyCtx')) := by
+    simpa [Functions.Source.Effectful.FunDef.bodyCtx] using hBody
+  unfold openRunBody Functions.Source.Canonical.FunDef.runBody
+    Functions.Source.Effectful.Control.FunDef.runBody
+  rw [hParams]
+  change
+    Simulation.Interaction.bind
+        (Functions.Source.Effectful.Control.Block.runOpen
+          stateModel primitiveSemantics program
+          { Functions.Source.Ctx.initial.withLeaveScope
+              (fn.returns ++ fn.params) with
+            scope := fn.returns ++ fn.params }
+          fuel fn.body
+          (stateModel.withSource state
+            { shared := (stateModel.source state).shared
+              vars := Functions.Source.Store.initReturns
+                fn.returns paramStore })) _ = _
+  rw [hBody']
+  rw [Simulation.Interaction.bind_done_ok]
+  simp only
+  rcases hMode with hMode | hMode
+  · rw [hMode, hReturns, hState]
+    rfl
+  · rw [hMode, hReturns, hState]
+    rfl
+
+/-- Construct a canonical open halting function result from parameter
+initialization and the actual open body execution. -/
+theorem openRunBody_halted_of_parts
+    {program : Functions.Program} {fn : Functions.FunDef}
+    {args : List Word} {fuel : Nat} {state haltedState : State}
+    {kind : Assembly.HaltKind} {paramStore : Functions.Source.Store}
+    {bodyCtx' : Functions.Source.Ctx}
+    (hParams :
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty = some paramStore)
+    (hBody :
+      Block.openRun program
+          (Functions.Source.Effectful.FunDef.bodyCtx fn) fuel fn.body
+          (stateModel.withSource state
+            { shared := (stateModel.source state).shared
+              vars := Functions.Source.Store.initReturns
+                fn.returns paramStore }) =
+        .done (.ok
+          (Functions.Source.Effectful.Outcome.halt kind haltedState,
+            bodyCtx'))) :
+    openRunBody program fn args (fuel + 1) state =
+      .done (.ok
+        (Functions.Source.Effectful.CallResult.halted kind haltedState)) := by
+  have hBody' :
+      Functions.Source.Effectful.Control.Block.runOpen
+          stateModel primitiveSemantics program
+          { Functions.Source.Ctx.initial.withLeaveScope
+              (fn.returns ++ fn.params) with
+            scope := fn.returns ++ fn.params }
+          fuel fn.body
+          (stateModel.withSource state
+            { shared := (stateModel.source state).shared
+              vars := Functions.Source.Store.initReturns
+                fn.returns paramStore }) =
+        .done (.ok
+          (Functions.Source.Effectful.Outcome.halt kind haltedState,
+            bodyCtx')) := by
+    simpa [Functions.Source.Effectful.FunDef.bodyCtx] using hBody
+  unfold openRunBody Functions.Source.Canonical.FunDef.runBody
+    Functions.Source.Effectful.Control.FunDef.runBody
+  rw [hParams]
+  change
+    Simulation.Interaction.bind
+        (Functions.Source.Effectful.Control.Block.runOpen
+          stateModel primitiveSemantics program
+          { Functions.Source.Ctx.initial.withLeaveScope
+              (fn.returns ++ fn.params) with
+            scope := fn.returns ++ fn.params }
+          fuel fn.body
+          (stateModel.withSource state
+            { shared := (stateModel.source state).shared
+              vars := Functions.Source.Store.initReturns
+                fn.returns paramStore })) _ = _
+  rw [hBody']
+  rfl
+
 end FunDef
 
 namespace Stmt
