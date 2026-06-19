@@ -55,6 +55,14 @@
   and `UncheckedBoundLowering.direct` constructor; next complete the gates and
   checkpoint this layer before proving bound temporary insertion.
 
+- 2026-06-18 18:40 PDT - proof/yul-functions-prepared-bound - Added the stable
+  `BoundHeadForward` adjacent-owner capability, proved exact sequencing for
+  `UncheckedBoundLowering.bound`, and proved preservation by induction over the
+  complete compiler-owned bounded-argument artifact. The list owner now
+  discharges nil/direct/spill composition and delegates only one recursively
+  generated head expression; its honest public resource premise is
+  `pre.length < targetFuel`.
+
 - 2026-06-15 - compaction-resume - Resumed with the archive branch and
   narrowed observer-replay implementation intact. Final work is limited to
   consistency review, recording completed verification, and committing the

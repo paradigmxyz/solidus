@@ -468,6 +468,216 @@ theorem direct
   rw [hTargetPure] at hBound
   exact hBound
 
+/-- Recursive capability needed by the spilling branch of bounded argument
+lowering. The expression owner proves this for one generated head; the list
+owner only sequences it after the already prepared tail. -/
+def BoundHeadForward
+    (fuel targetFuel : Nat)
+    (expr : AstExpr) (pre : List Functions.Stmt)
+    (lower : Locals.Expr 1)
+    (before after final : Fresh.State) (tmp : Functions.Name)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (program : Functions.Program) (layout : List Functions.Name) : Prop :=
+  Expr.lower1Unchecked? before expr = some (pre, lower, after) →
+  Fresh.fresh? after = some (tmp, final) →
+  ∀ {source : Yul.InteractionSemantics.State}
+      {target : Functions.InteractionSemantics.State}
+      {ctx : Functions.Source.Ctx},
+    FunctionsInteractionRelation.ScopedStateRel layout source target →
+    FunctionsInteractionRelation.TargetDomainWithin
+        before.used target.vars →
+      Simulation.Interaction.ForwardRel Truncated
+        (DoneRel layout final [.var tmp] target)
+        (Yul.InteractionSemantics.evalArgs
+          fuel [expr] codeOverride source)
+        (Functions.InteractionSemantics.Block.openRun
+          program ctx targetFuel
+          { stmts := pre ++ [.let_ tmp lower] } target)
+
+/-- Compose a recursively prepared tail with one generated, fresh-bound head.
+This is the semantic counterpart of `UncheckedBoundLowering.bound`; recursive
+expression reasoning remains behind `BoundHeadForward`. -/
+theorem bound
+    {fuel targetFuel : Nat}
+    {expr : AstExpr} {rest : List AstExpr}
+    {preRest preHead : List Functions.Stmt}
+    {lowerRest : List (Locals.Expr 1)} {lowerHead : Locals.Expr 1}
+    {initial stateRest stateHead stateFresh : Fresh.State}
+    {tmp : Functions.Name}
+    {entry : Functions.InteractionSemantics.State}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {layout : List Functions.Name}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hHead : Expr.lower1Unchecked? stateRest expr =
+      some (preHead, lowerHead, stateHead))
+    (hFresh : Fresh.fresh? stateHead = some (tmp, stateFresh))
+    (hHeadForward : BoundHeadForward
+      (fuel - 2 * rest.reverse.length)
+      (targetFuel - preRest.length)
+      expr preHead lowerHead stateRest stateHead stateFresh tmp
+      codeOverride program layout)
+    (hRest :
+      Simulation.Interaction.ForwardRel Truncated
+        (DoneRel layout stateRest lowerRest.reverse entry)
+        (Yul.InteractionSemantics.evalArgs
+          fuel rest.reverse codeOverride source)
+        (Functions.InteractionSemantics.Block.openRun
+          program ctx targetFuel { stmts := preRest } target)) :
+    Simulation.Interaction.ForwardRel Truncated
+      (DoneRel layout stateFresh (.var tmp :: lowerRest).reverse entry)
+      (Yul.InteractionSemantics.evalArgs
+        fuel (expr :: rest).reverse codeOverride source)
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx targetFuel
+        { stmts := preRest ++ preHead ++ [.let_ tmp lowerHead] } target) := by
+  simp only [List.reverse_cons]
+  rw [Yul.InteractionSemantics.EvalArgs.append,
+    List.append_assoc,
+    Functions.InteractionSemantics.Block.openRun_append]
+  apply Simulation.Interaction.ForwardRel.bind_custom hRest
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ForwardRel.done (.error hError)
+  | terminal hTerminal =>
+      cases hTerminal with
+      | stop hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.stop hState))
+      | return_ hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.return_ hState))
+      | selfdestruct hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.selfdestruct hState))
+      | revert hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.revert hState))
+  | @regular sourceRest restValues targetRest ctxRest
+      hStableRest hScopedRest hDomainRest hExtendsRest =>
+      have hHeadRel :=
+        hHeadForward hHead hFresh (ctx := ctxRest)
+          hScopedRest hDomainRest
+      have hHeadBound :
+          Simulation.Interaction.ForwardRel Truncated
+            (DoneRel layout stateFresh
+              (lowerRest.reverse ++ [.var tmp]) entry)
+            (Simulation.Interaction.bind
+              (Yul.InteractionSemantics.evalArgs
+                (fuel - 2 * rest.reverse.length) [expr]
+                codeOverride sourceRest)
+              (fun headResult =>
+                pure
+                  (headResult.1,
+                    restValues ++ headResult.2)))
+            (Simulation.Interaction.bind
+              (Functions.InteractionSemantics.Block.openRun
+                program ctxRest (targetFuel - preRest.length)
+                { stmts := preHead ++ [.let_ tmp lowerHead] }
+                targetRest)
+              pure) := by
+        apply Simulation.Interaction.ForwardRel.bind_custom hHeadRel
+        intro headSourceDone headTargetDone hHeadDone
+        cases hHeadDone with
+        | error hError =>
+            exact Simulation.Interaction.ForwardRel.done (.error hError)
+        | terminal hTerminal =>
+            exact Simulation.Interaction.ForwardRel.done
+              (.terminal hTerminal)
+        | @regular sourceAfter headValues targetAfter ctxAfter
+            hStableHead hScopedHead hDomainHead hExtendsHead =>
+            have hStableRest' := hStableRest.mono hExtendsHead
+            have hStableFinal := hStableRest'.append hStableHead
+            have hExtendsFinal :=
+              FunctionsInteractionRelation.TargetExtends.trans
+                hExtendsRest hExtendsHead
+            exact Simulation.Interaction.ForwardRel.done
+              (.regular
+                hStableFinal hScopedHead hDomainHead hExtendsFinal)
+      have hTargetPure :
+          Simulation.Interaction.bind
+              (Functions.InteractionSemantics.Block.openRun
+                program ctxRest (targetFuel - preRest.length)
+                { stmts := preHead ++ [.let_ tmp lowerHead] }
+                targetRest)
+              (fun result => pure result) =
+            Functions.InteractionSemantics.Block.openRun
+              program ctxRest (targetFuel - preRest.length)
+              { stmts := preHead ++ [.let_ tmp lowerHead] }
+              targetRest := by
+        exact Simulation.Interaction.bind_pure _
+      rw [hTargetPure] at hHeadBound
+      exact hHeadBound
+
+/-- Preservation for the complete compiler-owned bounded argument artifact.
+Only a generated, fresh-bound expression head is delegated to the recursive
+expression owner; empty and deferred branches are discharged here. -/
+theorem ofUncheckedLowering
+    {fuel targetFuel : Nat}
+    {args : List AstExpr} {pre : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {initial final : Fresh.State}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {layout : List Functions.Name}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hLowering : Expr.List.UncheckedBoundLowering
+      initial args pre lowerArgs final)
+    (hBound :
+      ∀ {expr : AstExpr} {rest : List AstExpr}
+        {preRest preHead : List Functions.Stmt}
+        {lowerHead : Locals.Expr 1}
+        {stateRest stateHead stateFresh : Fresh.State}
+        {tmp : Functions.Name},
+        Expr.lower1Unchecked? stateRest expr =
+            some (preHead, lowerHead, stateHead) →
+          Fresh.fresh? stateHead = some (tmp, stateFresh) →
+            BoundHeadForward
+              (fuel - 2 * rest.reverse.length)
+              (targetFuel - preRest.length)
+              expr preHead lowerHead stateRest stateHead stateFresh tmp
+              codeOverride program layout)
+    (hRel : FunctionsInteractionRelation.ScopedStateRel
+      layout source target)
+    (hDomain : FunctionsInteractionRelation.TargetDomainWithin
+      initial.used target.vars)
+    (hTargetFuel : pre.length < targetFuel) :
+    Simulation.Interaction.ForwardRel Truncated
+      (DoneRel layout final lowerArgs.reverse target)
+      (Yul.InteractionSemantics.evalArgs
+        fuel args.reverse codeOverride source)
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx targetFuel { stmts := pre } target) := by
+  induction hLowering with
+  | nil =>
+      cases targetFuel with
+      | zero => simp at hTargetFuel
+      | succ remaining =>
+          simpa using
+            (nil (fuel := fuel) (targetFuel := remaining)
+              (codeOverride := codeOverride) (program := program)
+              (ctx := ctx) hRel hDomain)
+  | @direct stateRest stateHead expr rest preRest preHead lowerRest
+      lowerHead hRest hHead hDirect ih =>
+      obtain ⟨rfl, rfl, _hLower⟩ :=
+        Expr.lower1Unchecked?_deferred_parts hDirect.1 hHead
+      have hRestFuel : preRest.length < targetFuel := by
+        simpa using hTargetFuel
+      have hRestForward := ih hRestFuel
+      exact direct (initial := initial) hDirect.1 hHead hRestForward
+  | @bound stateRest stateHead stateFresh expr rest preRest preHead
+      lowerRest lowerHead tmp hRest hHead _hDirect hFresh ih =>
+      have hRestFuel : preRest.length < targetFuel := by
+        simp only [List.length_append, List.length_cons, List.length_nil]
+          at hTargetFuel
+        omega
+      have hRestForward := ih hRestFuel
+      exact bound (initial := initial) hHead hFresh
+        (hBound hHead hFresh) hRestForward
+
 end FunctionsInteractionPreparedArgs
 end Yul
 end EvmCompiler

@@ -1458,6 +1458,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.deferred
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.deferred_arg
 #check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.direct
+#check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.BoundHeadForward
+#check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.bound
+#check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.ofUncheckedLowering
 #check EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_permitted
 #check EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_static
 #check EvmCompiler.Structured.Terminal.Allowed
