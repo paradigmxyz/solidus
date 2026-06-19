@@ -112,6 +112,73 @@ theorem run_let
       simp only [hMode]
       rfl
 
+/-- With no generated prelude, a visible assignment factors through the same
+exact-value computation. The destination check remains before expression
+evaluation, justified by the source/target scope relation at statement entry. -/
+theorem run_assign_nil
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (targetFuel : Nat) (name : Functions.Name)
+    (valueExpr : Locals.Expr 1)
+    (target : Functions.InteractionSemantics.State)
+    (hFuel : 1 < targetFuel)
+    (hContains : target.vars.contains name = true) :
+    Functions.InteractionSemantics.Block.openRun program ctx targetFuel
+        { stmts := [.assign name valueExpr] } target =
+      Simulation.Interaction.bind
+        (run program ctx targetFuel [] valueExpr target)
+        (fun result =>
+          match result with
+          | .value state value _truth ctxAfter =>
+              pure
+                (Functions.Source.Effectful.Outcome.regular
+                  (state.insert name value), ctxAfter)
+          | .terminal outcome ctxAfter => pure (outcome, ctxAfter)) := by
+  obtain ⟨remaining, rfl⟩ : ∃ remaining, targetFuel = remaining + 2 :=
+    ⟨targetFuel - 2, by omega⟩
+  have hRun :
+      run program ctx (remaining + 2) [] valueExpr target =
+        Simulation.Interaction.map
+          (fun evaluated => TargetResult.value evaluated.1 evaluated.2
+            (evaluated.2 != EvmYul.UInt256.ofNat 0) ctx)
+          (Functions.InteractionSemantics.Expr.openEvalOne valueExpr target) := by
+    unfold run
+    rw [Functions.InteractionSemantics.Block.openRun_nil]
+    rfl
+  rw [hRun]
+  rw [show remaining + 2 = (remaining + 1) + 1 by omega,
+    Functions.InteractionSemantics.Block.openRun_cons]
+  change
+    Simulation.Interaction.bind
+        (Functions.InteractionSemantics.Stmt.openRun
+          program ctx (remaining + 1) (.assign name valueExpr) target)
+        _ = _
+  rw [Functions.InteractionSemantics.Stmt.openRun_assign
+    program ctx (remaining + 1) name valueExpr target hContains]
+  unfold Functions.InteractionSemantics.Expr.openEvalOne
+  rw [Locals.InteractionSemantics.Expr.openEvalOne_eq_bind]
+  unfold Simulation.Interaction.map
+  conv_lhs => rw [Simulation.Interaction.bind_assoc]
+  conv_rhs => rw [Simulation.Interaction.bind_assoc,
+    Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Functions.InteractionSemantics.Expr.openEval valueExpr target))
+  intro evaluated _hEvaluated
+  cases hValues : evaluated.2 with
+  | nil => rfl
+  | cons value rest =>
+      cases rest with
+      | nil =>
+          simp only [Simulation.Interaction.bind_done_ok,
+            Simulation.Interaction.monad_pure_bind]
+          change
+            Functions.InteractionSemantics.Block.openRun
+                program ctx (remaining + 1) { stmts := [] }
+                (evaluated.1.insert name value) = _
+          rw [Functions.InteractionSemantics.Block.openRun_nil]
+          rfl
+      | cons next tail => rfl
+
 /-- The ordinary generated `pre ++ [if]` block factors through `run`.  The
 true continuation is exactly the singleton lexical body at the residual fuel;
 the false continuation is the regular identity. -/
