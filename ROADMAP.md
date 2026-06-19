@@ -255,6 +255,10 @@ boundaries remain active work.
               - [x] Check generic `if` composition from the prepared condition
                 and adjacent lexical-body capability, including exact target
                 residual fuel and all regular/abrupt/terminal outcomes.
+              - [x] Check exact-value prepared switch execution plus generic
+                and compiler-selected switch composition, including no-match,
+                selected case/default, lexical cleanup, freshness widening,
+                and recursively measured selected-target cost.
               - [ ] Rebuild the historical five-way fuel fixed point over
                 canonical body, value, statement, list, and compound
                 interfaces.
@@ -263,7 +267,7 @@ boundaries remain active work.
                 - [x] Ordinary compiler-selected `if`, with distinct
                   condition/final freshness domains and a strictly smaller
                   lexical-body list capability.
-                - [ ] Switch selection and selected body.
+                - [x] Switch selection and selected body.
                 - [ ] For-loop initializer/body/post composition.
               - [ ] Close the dispatcher and selected callee bodies.
               - The historical `ScopedOpenResult`, observer transcript state,

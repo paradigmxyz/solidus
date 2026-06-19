@@ -1,4 +1,4 @@
-import EvmCompiler.Functions.Syntax
+import EvmCompiler.Functions.SourceSemantics
 
 namespace EvmCompiler
 namespace Yul
@@ -90,6 +90,40 @@ theorem nested_if_lt_singleton
     block body < list [.if_ cond body] := by
   simp [list, stmt]
   omega
+
+/-- The recursively measured cost of the branch selected by the ordinary
+Functions switch semantics is bounded by the cost already charged to the
+whole switch table. -/
+theorem block_le_switchBranches_of_select_eq_some
+    {value : Functions.Word}
+    {cases : List (Functions.Word × Functions.Block)}
+    {defaultBody : Option Functions.Block}
+    {body : Functions.Block}
+    (hSelect :
+      Functions.Source.Switch.select value cases defaultBody = some body) :
+    block body ≤ caseList cases + optionBlock defaultBody := by
+  induction cases generalizing body with
+  | nil =>
+      cases defaultBody with
+      | none => simp [Functions.Source.Switch.select] at hSelect
+      | some defaultBlock =>
+          simp [Functions.Source.Switch.select] at hSelect
+          subst body
+          simp [caseList, optionBlock]
+  | cons head tail ih =>
+      rcases head with ⟨caseValue, caseBody⟩
+      by_cases hMatch : caseValue = value
+      · simp [Functions.Source.Switch.select, hMatch] at hSelect
+        subst body
+        simp [caseList]
+        omega
+      · have hTail :
+            Functions.Source.Switch.select value tail defaultBody =
+              some body := by
+          simpa [Functions.Source.Switch.select, hMatch] using hSelect
+        have hBound := ih hTail
+        simp only [caseList]
+        omega
 
 end FunctionsInteractionTargetCost
 end Yul

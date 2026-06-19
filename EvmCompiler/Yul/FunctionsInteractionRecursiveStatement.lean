@@ -274,6 +274,115 @@ theorem ifFromCondition
         exact Simulation.Interaction.ForwardRel.done
           (.regular hScoped (hDomain.mono hUsedSubset) hControlAfter)
 
+/-- Compose a checked prepared scrutinee with one adjacent selected-body
+capability. Selection remains owned by the ordinary source and target
+semantics; the caller only proves that the two selected branches are related. -/
+theorem switchFromCondition
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    {conditionFuel targetFuel : Nat}
+    {layout conditionUsed finalUsed : List Functions.Name}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {cond : AstExpr} {cases : List (Word × List AstStmt)}
+    {defaultBody : List AstStmt}
+    {pre : List Functions.Stmt} {lowerCond : Locals.Expr 1}
+    {lowerCases : List (Word × Functions.Block)}
+    {lowerDefault : Option Functions.Block}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {ctx : Functions.Source.Ctx}
+    (hTargetFuel : pre.length + 1 < targetFuel)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
+    (hCondition :
+      Simulation.Interaction.ForwardRel Truncated
+        (FunctionsInteractionPreparedCondition.DoneRel
+          layout conditionUsed ctx)
+        (Yul.InteractionSemantics.evalValues conditionFuel cond
+          (some sourceProgram.contract) source)
+        (FunctionsInteractionPreparedCondition.run targetProgram.toFunctions
+          ctx targetFuel pre lowerCond target))
+    (hSelected :
+      ∀ (value : Word)
+        {sourceAfter : Yul.InteractionSemantics.State}
+        {targetAfter : Functions.InteractionSemantics.State}
+        {ctxAfter : Functions.Source.Ctx},
+        ScopedStateRel layout sourceAfter targetAfter →
+        TargetDomainWithin conditionUsed targetAfter.vars →
+        ControlContextRel sourceScopes layout
+            canBreak canContinue canLeave ctxAfter →
+        Simulation.Interaction.ForwardRel Truncated
+          (ControlDoneRel finalUsed layout sourceScopes
+            canBreak canContinue canLeave)
+          (Yul.InteractionSemantics.exec conditionFuel
+            (.Block
+              (EvmYul.Yul.selectSwitchCase value defaultBody cases))
+            (some sourceProgram.contract) sourceAfter)
+          (match Functions.Source.Switch.select
+              value lowerCases lowerDefault with
+            | some body =>
+                Functions.InteractionSemantics.Stmt.openRun
+                  targetProgram.toFunctions ctxAfter
+                  (targetFuel - pre.length - 2) (.block body) targetAfter
+            | none =>
+                Simulation.Interaction.pure
+                  (Functions.Source.Effectful.Outcome.regular targetAfter,
+                    ctxAfter))) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel finalUsed layout sourceScopes
+        canBreak canContinue canLeave)
+      (Yul.InteractionSemantics.exec (conditionFuel + 1)
+        (.Switch cond cases defaultBody)
+        (some sourceProgram.contract) source)
+      (Functions.InteractionSemantics.Block.openRun
+        targetProgram.toFunctions ctx targetFuel
+        { stmts := pre ++
+            [.switch lowerCond lowerCases lowerDefault] } target) := by
+  rw [Yul.InteractionSemantics.Exec.switch_succ]
+  rw [Yul.InteractionSemantics.eval_eq_bind,
+    Simulation.Interaction.bind_assoc]
+  rw [FunctionsInteractionPreparedCondition.run_switch
+    targetProgram.toFunctions ctx targetFuel pre lowerCond lowerCases
+    lowerDefault target hTargetFuel]
+  apply Simulation.Interaction.ForwardRel.bind_custom hCondition
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ForwardRel.done (.error hError)
+  | terminal hTerminal =>
+      cases hTerminal with
+      | stop hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.stop hState))
+      | return_ hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.return_ hState))
+      | selfdestruct hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.selfdestruct hState))
+      | revert hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.revert hState))
+  | @regular sourceAfter values targetAfter truth ctxAfter value
+      hValues _hTruth hScoped hDomain hScope hSameControl =>
+      have hControlAfter : ControlContextRel sourceScopes layout
+          canBreak canContinue canLeave ctxAfter := by
+        apply ControlContextRel.transport hControl
+        · exact fun _name hName => hName
+        · exact hSameControl
+        · intro name hName
+          exact hScope name (hControl.scope name hName)
+      subst values
+      simp only [List.head!_cons, Simulation.Interaction.bind_done_ok]
+      rw [show
+        (pure (sourceAfter, value) :
+            Yul.InteractionSemantics.Open
+              (Yul.InteractionSemantics.State × Word)) =
+          Simulation.Interaction.pure (sourceAfter, value) by rfl]
+      unfold Simulation.Interaction.pure
+      rw [Simulation.Interaction.bind_done_ok]
+      exact hSelected value hScoped hDomain hControlAfter
+
 /-- Compiler-selected lexical block from the adjacent recursive list theorem.
 The outer source/target cleanup is owned by `ControlDoneRel.block`; this wrapper
 only decomposes the ordinary Yul compiler and discharges private target fuel. -/
@@ -444,6 +553,10 @@ theorem ifThen
       FunctionsInteractionStaticCost.programBudget sourceProgram fuel +
           preCond.length + 2 ≤ targetFuel := by
     omega
+  have hTargetSplit :
+      targetFuel =
+        (targetFuel - preCond.length - 2) + preCond.length + 2 := by
+    omega
   have hPrepared := hCondition (ctx := ctx) hOkParts.1 hLowerCond hCondBudget
     hLayout hRel hDomain
   apply ifFromCondition
@@ -480,6 +593,192 @@ theorem ifThen
       exact FunctionsInteractionStatement.ControlDoneRel.block
         hScopedAfter hControlAfter
         (layoutWithinStmtsOutVars layout body) hBodyList
+
+/-- Ordinary compiler-selected switch. The prepared scrutinee exposes its
+exact value, the compiler-owned selection artifact identifies the same source
+and target branch, and only that strictly smaller branch uses recursion. -/
+theorem switch
+    {profile : SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    {fuel targetFuel compilerFuel : Nat}
+    {functionNames layout : List Functions.Name}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {before after : Fresh.State} {cond : AstExpr}
+    {cases : List (Word × List AstStmt)} {defaultBody : List AstStmt}
+    {lower : List Functions.Stmt}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {ctx : Functions.Source.Ctx}
+    (hCondition :
+      FunctionsInteractionRecursiveExpression.ConditionForwardAt
+        profile sourceProgram targetProgram fuel targetFuel layout)
+    (hLists : RecursiveListForward
+      profile sourceProgram targetProgram fuel)
+    (hOk : SolcValidation.StmtOk? profile sourceProgram.contract
+      functionNames layout canBreak canContinue canLeave
+        (.Switch cond cases defaultBody) = true)
+    (hNames : ∀ name,
+      name ∈ Stmt.names (.Switch cond cases defaultBody) →
+        name ∈ before.used)
+    (hLower : Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+      (.Switch cond cases defaultBody) = some (lower, after))
+    (hRel : ScopedStateRel layout source target)
+    (hDomain : TargetDomainWithin before.used target.vars)
+    (hLayout : ∀ name, name ∈ layout → name ∈ before.used)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
+    (hTargetFuel :
+      FunctionsInteractionStaticCost.programBudget
+          sourceProgram (fuel + 1) +
+          FunctionsInteractionTargetCost.list lower + 1 < targetFuel) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel after.used layout sourceScopes
+        canBreak canContinue canLeave)
+      (Yul.InteractionSemantics.exec (fuel + 1)
+        (.Switch cond cases defaultBody)
+        (some sourceProgram.contract) source)
+      (Functions.InteractionSemantics.Block.openRun
+        targetProgram.toFunctions ctx targetFuel { stmts := lower } target) := by
+  obtain ⟨previous, preCond, lowerCond, afterCond,
+      lowerCases, afterCases, lowerDefault, rfl,
+      hLowerCond, hLowerCases, hLowerDefault, rfl⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_switch_parts hLower
+  have hOkParts := hOk
+  simp [SolcValidation.StmtOk?] at hOkParts
+  have hCondExtends : Fresh.Extends before afterCond :=
+    Expr.lower1Unchecked?_stateExtends hLowerCond
+  have hProgramCond :
+      FunctionsInteractionStaticCost.programBudget sourceProgram fuel ≤
+        FunctionsInteractionStaticCost.programBudget sourceProgram (fuel + 1) := by
+    unfold FunctionsInteractionStaticCost.programBudget
+    exact FunctionsInteractionFuel.executionBudgetFor_mono _ _ (by omega)
+  have hPreLength := FunctionsInteractionTargetCost.length_le_list preCond
+  have hCost := hTargetFuel
+  rw [FunctionsInteractionTargetCost.list_append] at hCost
+  simp [FunctionsInteractionTargetCost.list,
+    FunctionsInteractionTargetCost.stmt,
+    FunctionsInteractionTargetCost.block] at hCost
+  have hCondBudget :
+      FunctionsInteractionStaticCost.programBudget sourceProgram fuel +
+          preCond.length + 2 ≤ targetFuel := by
+    omega
+  have hPrepared := hCondition (ctx := ctx) hOkParts.1 hLowerCond hCondBudget
+    hLayout hRel hDomain
+  apply switchFromCondition
+    (conditionUsed := afterCond.used) (finalUsed := after.used)
+    (hTargetFuel := by omega) hControl hPrepared
+  intro value sourceAfter targetAfter ctxAfter
+    hScopedAfter hDomainAfter hControlAfter
+  have hSelection :=
+    Stmt.SwitchSelectionLowering.of_compilers
+      (value := value) hLowerCases hLowerDefault
+  cases hSelection with
+  | none hSourceSelection hTargetSelection hFresh =>
+      rw [hSourceSelection, hTargetSelection]
+      cases fuel with
+      | zero =>
+          rw [Yul.InteractionSemantics.Exec.zero]
+          exact Simulation.Interaction.ForwardRel.truncated (by trivial)
+      | succ previous =>
+          rw [Yul.InteractionSemantics.Exec.block_succ]
+          cases previous with
+          | zero =>
+              rw [Yul.InteractionSemantics.ExecSeq.zero]
+              exact Simulation.Interaction.ForwardRel.truncated (by trivial)
+          | succ bodyFuel =>
+              rw [Yul.InteractionSemantics.ExecSeq.nil_succ]
+              simp only [Simulation.Interaction.bind_done_ok]
+              rcases hScopedAfter.state with
+                ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
+              subst sourceAfter
+              have hRestricted :
+                  ScopedStateRel layout
+                    ((EvmYul.Yul.State.Ok sourceShared sourceVars).restrictStoreTo
+                      sourceVars)
+                    targetAfter := by
+                simpa [EvmYul.Yul.State.restrictStoreTo,
+                  VarStoreRestriction.restrict_self] using hScopedAfter
+              exact Simulation.Interaction.ForwardRel.done
+                (.regular hRestricted (hDomainAfter.mono hFresh)
+                  hControlAfter)
+  | @some sourceBody lowerBody bodyCompilerFuel bodyBefore bodyAfter
+      hSourceSelection hTargetSelection hLowerBody hBefore hAfter =>
+      rw [hSourceSelection, hTargetSelection]
+      cases fuel with
+      | zero =>
+          rw [Yul.InteractionSemantics.Exec.zero]
+          exact Simulation.Interaction.ForwardRel.truncated (by trivial)
+      | succ bodyFuel =>
+          obtain ⟨listCompilerFuel, lowerBodyStmts, rfl,
+              hLowerBodyList, rfl⟩ :=
+            Stmt.List.toBlockUncheckedFuel?_parts hLowerBody
+          have hSelectedOk :
+              SolcValidation.StmtsOk? profile sourceProgram.contract
+                  functionNames layout canBreak canContinue canLeave
+                  sourceBody = true := by
+            rw [← hSourceSelection]
+            exact Stmt.stmtsOk_selectSwitchCase
+              hOkParts.2.2.1 hOkParts.2.2.2
+          have hSelectedNamesBefore :
+              ∀ name, name ∈ Stmt.List.names sourceBody →
+                name ∈ before.used := by
+            intro name hName
+            apply hNames name
+            have hCanonical :
+                name ∈ Stmt.List.names
+                  (EvmYul.Yul.selectSwitchCase
+                    value defaultBody cases) := by
+              rw [hSourceSelection]
+              exact hName
+            simpa [Stmt.names] using
+              List.mem_append_right (Expr.names cond)
+                (Stmt.selectedSwitchNames name hCanonical)
+          have hSelectedFresh : Fresh.Extends before bodyBefore :=
+            Fresh.Extends.trans hCondExtends hBefore
+          have hSelectedNames :
+              ∀ name, name ∈ Stmt.List.names sourceBody →
+                name ∈ bodyBefore.used := by
+            intro name hName
+            exact hSelectedFresh name (hSelectedNamesBefore name hName)
+          have hSelectedLayout :
+              ∀ name, name ∈ layout → name ∈ bodyBefore.used := by
+            intro name hName
+            exact hSelectedFresh name (hLayout name hName)
+          have hProgramBody :
+              FunctionsInteractionStaticCost.programBudget
+                  sourceProgram bodyFuel ≤
+                FunctionsInteractionStaticCost.programBudget
+                  sourceProgram (bodyFuel + 1 + 1) := by
+            unfold FunctionsInteractionStaticCost.programBudget
+            exact FunctionsInteractionFuel.executionBudgetFor_mono
+              _ _ (by omega)
+          have hSelectedTargetCost :=
+            FunctionsInteractionTargetCost.block_le_switchBranches_of_select_eq_some
+              hTargetSelection
+          have hSelectedListCost :
+              FunctionsInteractionTargetCost.list lowerBodyStmts ≤
+                FunctionsInteractionTargetCost.caseList lowerCases +
+                  FunctionsInteractionTargetCost.optionBlock lowerDefault := by
+            simpa [FunctionsInteractionTargetCost.block] using
+              hSelectedTargetCost
+          have hBodyBudget :
+              FunctionsInteractionStaticCost.programBudget
+                    sourceProgram bodyFuel +
+                  FunctionsInteractionTargetCost.list lowerBodyStmts + 1 <
+                targetFuel - preCond.length - 2 := by
+            omega
+          have hBodyList := hLists
+            (sourceFuel := bodyFuel)
+            (targetFuel := targetFuel - preCond.length - 2) (by omega)
+            hSelectedOk hSelectedNames hLowerBodyList hScopedAfter
+            (hDomainAfter.mono hBefore) hSelectedLayout hControlAfter
+            hBodyBudget
+          have hBlock := FunctionsInteractionStatement.ControlDoneRel.block
+            hScopedAfter hControlAfter
+            (layoutWithinStmtsOutVars layout sourceBody) hBodyList
+          exact Simulation.Interaction.ForwardRel.mono hBlock
+            (fun _sourceDone _targetDone hDone => hDone.monoUsed hAfter)
 
 end CompoundForward
 

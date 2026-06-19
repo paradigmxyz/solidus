@@ -1488,6 +1488,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.TargetResult
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.DoneRel
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.run_if
+#check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.run_switch
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofStablePrepared
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofDirectPrimitiveLowering
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofPreparedPrimitive
@@ -1524,6 +1525,8 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.recursiveCondition
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.ifFromCondition
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.ifThen
+#check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.switchFromCondition
+#check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.switch
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.recursiveBoundHeads
 #check EvmCompiler.Yul.FunctionsInteractionPreparedStatement.letOneOfPrepared
 #check EvmCompiler.Yul.FunctionsInteractionPreparedStatement.assignOneOfPrepared

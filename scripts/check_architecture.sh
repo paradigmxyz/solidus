@@ -614,6 +614,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionFuel.lean \
   EvmCompiler/Yul/FunctionsInteractionStaticCost.lean \
+  EvmCompiler/Yul/FunctionsInteractionTargetCost.lean \
   EvmCompiler/Yul/VarStoreRestriction.lean \
   EvmCompiler/Yul/FunctionsInteractionControlRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionPrimitive.lean \
@@ -638,6 +639,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionFuel.lean \
   EvmCompiler/Yul/FunctionsInteractionStaticCost.lean \
+  EvmCompiler/Yul/FunctionsInteractionTargetCost.lean \
   EvmCompiler/Yul/VarStoreRestriction.lean \
   EvmCompiler/Yul/FunctionsInteractionControlRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionPrimitive.lean \
@@ -662,6 +664,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionFuel.lean \
   EvmCompiler/Yul/FunctionsInteractionStaticCost.lean \
+  EvmCompiler/Yul/FunctionsInteractionTargetCost.lean \
   EvmCompiler/Yul/VarStoreRestriction.lean \
   EvmCompiler/Yul/FunctionsInteractionControlRelation.lean \
   EvmCompiler/Yul/FunctionsInteractionPrimitive.lean \

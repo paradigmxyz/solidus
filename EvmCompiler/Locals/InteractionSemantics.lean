@@ -330,6 +330,18 @@ def openEvalCondition (expr : Locals.Expr 1)
   Locals.Source.Effectful.Expr.Control.evalCondition
     stateModel primitiveSemantics expr state
 
+theorem openEvalCondition_eq_map_openEvalOne
+    (expr : Locals.Expr 1) (state : State) :
+    openEvalCondition expr state =
+      Simulation.Interaction.map
+        (fun result => (result.1,
+          result.2 != EvmYul.UInt256.ofNat 0))
+        (openEvalOne expr state) := by
+  unfold openEvalCondition
+    Locals.Source.Effectful.Expr.Control.evalCondition
+    Simulation.Interaction.map
+  rfl
+
 theorem openEvalCondition_eq_bind (expr : Locals.Expr 1) (state : State) :
     openEvalCondition expr state =
       Simulation.Interaction.bind (openEval expr state) fun result =>

@@ -9,7 +9,7 @@ open FunctionsInteractionRelation
 
 inductive TargetResult where
   | value (state : Functions.InteractionSemantics.State)
-      (truth : Bool) (ctx : Functions.Source.Ctx)
+      (value : Word) (truth : Bool) (ctx : Functions.Source.Ctx)
   | terminal (outcome : Functions.InteractionSemantics.Outcome)
       (ctx : Functions.Source.Ctx)
 
@@ -29,9 +29,9 @@ def run
       match result.1.mode with
       | .regular =>
           Simulation.Interaction.map
-            (fun condition => TargetResult.value
-              condition.1 condition.2 result.2)
-            (Functions.InteractionSemantics.Expr.openEvalCondition
+            (fun evaluated => TargetResult.value evaluated.1 evaluated.2
+              (evaluated.2 != EvmYul.UInt256.ofNat 0) result.2)
+            (Functions.InteractionSemantics.Expr.openEvalOne
               lower result.1.state)
       | .brk | .cont | .leave | .halt _ =>
           pure (.terminal result.1 result.2)
@@ -51,7 +51,7 @@ theorem run_if
         (run program ctx targetFuel pre cond target)
         (fun result =>
           match result with
-          | .value state truth ctxAfter =>
+          | .value state _value truth ctxAfter =>
               if truth then
                 Functions.InteractionSemantics.Stmt.openRun
                   program ctxAfter (targetFuel - pre.length - 2)
@@ -88,14 +88,17 @@ theorem run_if
             _ = _
       rw [Functions.InteractionSemantics.Stmt.openRun_if,
         Simulation.Interaction.bind_assoc]
+      unfold Functions.InteractionSemantics.Expr.openEvalCondition
+      rw [Locals.InteractionSemantics.Expr.openEvalCondition_eq_map_openEvalOne]
       unfold Simulation.Interaction.map
-      rw [Simulation.Interaction.bind_assoc]
+      rw [Simulation.Interaction.bind_assoc,
+        Simulation.Interaction.bind_assoc]
       apply Simulation.Interaction.AllDone.bind_congr
         (Simulation.Interaction.AllDone.trivial
-          (Functions.InteractionSemantics.Expr.openEvalCondition
+          (Functions.InteractionSemantics.Expr.openEvalOne
             cond result.1.state))
-      intro condition _hCondition
-      cases hTruth : condition.2 with
+      intro evaluated _hEvaluated
+      cases hTruth : evaluated.2 != EvmYul.UInt256.ofNat 0 with
       | false =>
           simp only [hTruth, Bool.false_eq_true, ↓reduceIte,
             Simulation.Interaction.bind_done_ok,
@@ -103,7 +106,7 @@ theorem run_if
           change
             Functions.InteractionSemantics.Block.openRun
                 program result.2 (remaining + 1) { stmts := [] }
-                condition.1 = _
+                evaluated.1 = _
           rw [Functions.InteractionSemantics.Block.openRun_nil]
           rfl
       | true =>
@@ -113,16 +116,121 @@ theorem run_if
           change
             Simulation.Interaction.bind
                 (Functions.InteractionSemantics.Stmt.openRun
-                  program result.2 remaining (.block body) condition.1)
+                  program result.2 remaining (.block body) evaluated.1)
                 _ =
               Functions.InteractionSemantics.Stmt.openRun
-                program result.2 remaining (.block body) condition.1
+                program result.2 remaining (.block body) evaluated.1
           rw [Functions.InteractionSemantics.Stmt.openRun_block,
             Simulation.Interaction.bind_assoc]
           apply Simulation.Interaction.AllDone.bind_congr
             (Simulation.Interaction.AllDone.trivial
               (Functions.InteractionSemantics.Block.openRun
-                program result.2 remaining body condition.1))
+                program result.2 remaining body evaluated.1))
+          intro bodyResult _hBody
+          cases hBodyMode : bodyResult.1.mode <;>
+            simp [hBodyMode,
+              Functions.Source.Effectful.Control.Block.runOpen,
+              Simulation.Interaction.pure,
+              Simulation.Interaction.bind] <;>
+            rfl
+  | brk | cont | leave | halt =>
+      simp only [hMode]
+      rfl
+
+/-- The ordinary generated `pre ++ [switch]` block factors through the same
+value-rich prepared result. The exact scrutinee selects either one lexical body
+or the regular identity. -/
+theorem run_switch
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (targetFuel : Nat) (pre : List Functions.Stmt)
+    (scrutinee : Locals.Expr 1)
+    (cases : List (Word × Functions.Block))
+    (defaultBody : Option Functions.Block)
+    (target : Functions.InteractionSemantics.State)
+    (hFuel : pre.length + 1 < targetFuel) :
+    Functions.InteractionSemantics.Block.openRun program ctx targetFuel
+        { stmts := pre ++ [.switch scrutinee cases defaultBody] } target =
+      Simulation.Interaction.bind
+        (run program ctx targetFuel pre scrutinee target)
+        (fun result =>
+          match result with
+          | .value state value _truth ctxAfter =>
+              match Functions.Source.Switch.select value cases defaultBody with
+              | some body =>
+                  Functions.InteractionSemantics.Stmt.openRun
+                    program ctxAfter (targetFuel - pre.length - 2)
+                    (.block body) state
+              | none =>
+                  pure
+                    (Functions.Source.Effectful.Outcome.regular state,
+                      ctxAfter)
+          | .terminal outcome ctxAfter => pure (outcome, ctxAfter)) := by
+  rw [Functions.InteractionSemantics.Block.openRun_append]
+  unfold run
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx targetFuel { stmts := pre } target))
+  intro result _hResult
+  cases hMode : result.1.mode with
+  | regular =>
+      simp only [hMode]
+      have hResidual :
+          ∃ remaining, targetFuel - pre.length = remaining + 2 := by
+        refine ⟨targetFuel - pre.length - 2, ?_⟩
+        omega
+      obtain ⟨remaining, hResidual⟩ := hResidual
+      rw [hResidual,
+        show remaining + 2 = (remaining + 1) + 1 by omega,
+        Functions.InteractionSemantics.Block.openRun_cons]
+      change
+        Simulation.Interaction.bind
+            (Functions.InteractionSemantics.Stmt.openRun
+              program result.2 (remaining + 1)
+              (.switch scrutinee cases defaultBody) result.1.state)
+            _ = _
+      rw [Functions.InteractionSemantics.Stmt.openRun_switch,
+        Simulation.Interaction.bind_assoc]
+      unfold Simulation.Interaction.map
+      rw [Simulation.Interaction.bind_assoc]
+      apply Simulation.Interaction.AllDone.bind_congr
+        (Simulation.Interaction.AllDone.trivial
+          (Functions.InteractionSemantics.Expr.openEvalOne
+            scrutinee result.1.state))
+      intro evaluated _hEvaluated
+      cases hSelected :
+          Functions.Source.Switch.select evaluated.2 cases defaultBody with
+      | none =>
+          simp only [hSelected]
+          dsimp only [Simulation.Interaction.pure,
+            Simulation.Interaction.bind]
+          rw [hSelected]
+          change
+            Functions.InteractionSemantics.Block.openRun
+                program result.2 (remaining + 1) { stmts := [] }
+                evaluated.1 = _
+          rw [Functions.InteractionSemantics.Block.openRun_nil]
+      | some selectedBody =>
+          simp only [hSelected]
+          dsimp only [Simulation.Interaction.pure,
+            Simulation.Interaction.bind]
+          rw [hSelected]
+          rw [show remaining + 1 + 1 - 2 = remaining by omega]
+          change
+            Simulation.Interaction.bind
+                (Functions.InteractionSemantics.Stmt.openRun
+                  program result.2 remaining (.block selectedBody)
+                  evaluated.1)
+                _ =
+              Functions.InteractionSemantics.Stmt.openRun
+                program result.2 remaining (.block selectedBody) evaluated.1
+          rw [Functions.InteractionSemantics.Stmt.openRun_block,
+            Simulation.Interaction.bind_assoc]
+          apply Simulation.Interaction.AllDone.bind_congr
+            (Simulation.Interaction.AllDone.trivial
+              (Functions.InteractionSemantics.Block.openRun
+                program result.2 remaining selectedBody evaluated.1))
           intro bodyResult _hBody
           cases hBodyMode : bodyResult.1.mode <;>
             simp [hBodyMode,
@@ -150,7 +258,7 @@ inductive DoneRel
       Functions.Source.Ctx.ScopeExtends entryCtx ctx →
       Functions.Source.Ctx.SameControl entryCtx ctx →
       DoneRel layout used entryCtx (.ok (source, values))
-        (.ok (.value target truth ctx))
+        (.ok (.value target value truth ctx))
   | terminal {source target ctx} :
       TerminalFailureRel source target →
         DoneRel layout used entryCtx (.error source)
@@ -250,14 +358,12 @@ theorem ofStablePrepared
         | cons hValue _hNil =>
             have hEval := hValue targetAfter
               (TargetExtends.refl targetAfter.vars)
-            have hCondition :
-                Functions.InteractionSemantics.Expr.openEvalCondition
+            have hOne :
+                Functions.InteractionSemantics.Expr.openEvalOne
                     lower targetAfter =
-                  .done (.ok
-                    (targetAfter, value != EvmYul.UInt256.ofNat 0)) := by
-              unfold Functions.InteractionSemantics.Expr.openEvalCondition
-                Locals.InteractionSemantics.Expr.openEvalCondition
-                Locals.Source.Effectful.Expr.Control.evalCondition
+                  .done (.ok (targetAfter, value)) := by
+              unfold Functions.InteractionSemantics.Expr.openEvalOne
+                Locals.InteractionSemantics.Expr.openEvalOne
                 Locals.Source.Effectful.Expr.Control.evalOne
               unfold Locals.InteractionSemantics.Expr.openEval at hEval
               rw [hEval]
@@ -269,11 +375,11 @@ theorem ofStablePrepared
                 (DoneRel layout final.used ctx)
                 (pure (sourceAfter, [value]))
                 (Simulation.Interaction.map
-                  (fun condition => TargetResult.value
-                    condition.1 condition.2 ctxAfter)
-                  (Functions.InteractionSemantics.Expr.openEvalCondition
+                  (fun evaluated => TargetResult.value evaluated.1 evaluated.2
+                    (evaluated.2 != EvmYul.UInt256.ofNat 0) ctxAfter)
+                  (Functions.InteractionSemantics.Expr.openEvalOne
                     lower targetAfter))
-            rw [hCondition]
+            rw [hOne]
             simp only [Simulation.Interaction.map,
               Simulation.Interaction.bind_done_ok,
               Simulation.Interaction.monad_pure_bind]
@@ -309,13 +415,13 @@ theorem ofOpenExpression
     Simulation.Interaction.ForwardRel Truncated
       (DoneRel layout used ctx) sourceOpen
       (Simulation.Interaction.map
-        (fun condition => TargetResult.value
-          condition.1 condition.2 ctx)
-        (Functions.InteractionSemantics.Expr.openEvalCondition
+        (fun evaluated => TargetResult.value evaluated.1 evaluated.2
+          (evaluated.2 != EvmYul.UInt256.ofNat 0) ctx)
+        (Functions.InteractionSemantics.Expr.openEvalOne
           lower target)) := by
   unfold Simulation.Interaction.map
-  unfold Functions.InteractionSemantics.Expr.openEvalCondition
-  rw [Locals.InteractionSemantics.Expr.openEvalCondition_eq_bind,
+  unfold Functions.InteractionSemantics.Expr.openEvalOne
+  rw [Locals.InteractionSemantics.Expr.openEvalOne_eq_bind,
     Simulation.Interaction.bind_assoc]
   have hEvalVars := hEval.strengthen_right
     (Locals.InteractionSemantics.Expr.openEval_vars_eq lower target)
@@ -510,9 +616,9 @@ theorem ofPreparedPrimitive
               (doneRel := DoneRel layout final.used ctx)
               (right :=
                 Simulation.Interaction.map
-                  (fun condition => TargetResult.value
-                    condition.1 condition.2 ctxAfter)
-                  (Functions.InteractionSemantics.Expr.openEvalCondition
+                  (fun evaluated => TargetResult.value evaluated.1 evaluated.2
+                    (evaluated.2 != EvmYul.UInt256.ofNat 0) ctxAfter)
+                  (Functions.InteractionSemantics.Expr.openEvalOne
                     (Expr.cast hOutputs (.prim op seq)) targetAfter))
               hTruncated)
       | succ primitiveFuel =>

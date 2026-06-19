@@ -537,6 +537,7 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Yul.InteractionSemantics.eval_eq_bind
 #print axioms EvmCompiler.Yul.FunctionsInteractionRelation.TargetDomainWithin.mono
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedCondition.run_if
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedCondition.run_switch
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofStablePrepared
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofOpenExpression
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofDirectPrimitiveLowering
@@ -544,3 +545,5 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.recursiveCondition
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.ifFromCondition
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.ifThen
+#print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.switchFromCondition
+#print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.switch

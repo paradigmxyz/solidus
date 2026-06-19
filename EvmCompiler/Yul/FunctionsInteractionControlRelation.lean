@@ -250,6 +250,35 @@ inductive ControlDoneRel
         canBreak canContinue canLeave
         (.error source) (.ok (target, ctx))
 
+namespace ControlDoneRel
+
+/-- Later compiler phases may reserve additional private locals even when the
+selected control path does not execute their lowering. Only regular outcomes
+carry the target-domain obligation; abrupt and terminal outcomes are unchanged. -/
+theorem monoUsed
+    {beforeUsed afterUsed regularLayout : List Functions.Name}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {sourceDone : Except Yul.InteractionSemantics.Failure
+      Yul.InteractionSemantics.State}
+    {targetDone : Except EVMException
+      (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx)}
+    (hSubset : ∀ name, name ∈ beforeUsed → name ∈ afterUsed)
+    (hRel : ControlDoneRel beforeUsed regularLayout sourceScopes
+      canBreak canContinue canLeave sourceDone targetDone) :
+    ControlDoneRel afterUsed regularLayout sourceScopes
+      canBreak canContinue canLeave sourceDone targetDone := by
+  cases hRel with
+  | error hError => exact .error hError
+  | regular hScoped hDomain hControl =>
+      exact .regular hScoped (hDomain.mono hSubset) hControl
+  | brk hScope hMode hAbrupt => exact .brk hScope hMode hAbrupt
+  | cont hScope hMode hAbrupt => exact .cont hScope hMode hAbrupt
+  | leave hScope hMode hAbrupt => exact .leave hScope hMode hAbrupt
+  | terminal hTerminal => exact .terminal hTerminal
+
+end ControlDoneRel
+
 namespace ControlContextRel
 
 theorem transport
