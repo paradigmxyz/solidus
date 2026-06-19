@@ -12,6 +12,7 @@ snapshot used by Yul's later `restrictStoreTo`. -/
 structure SourceScope where
   layout : List Functions.Name
   store : EvmYul.Yul.VarStore
+  targetUsed : List Functions.Name
   domain : VarsDomainWithin layout store
   defined : VarsDefinedOn layout store
 
@@ -35,7 +36,8 @@ def ScopeOptionRel (enabled : Bool)
       sourceScope? = some sourceScope ∧
         targetScope? = some targetScope ∧
         (∀ name, name ∈ sourceScope.layout → name ∈ current) ∧
-        ∀ name, name ∈ sourceScope.layout → name ∈ targetScope
+        (∀ name, name ∈ sourceScope.layout → name ∈ targetScope) ∧
+        ∀ name, name ∈ targetScope → name ∈ sourceScope.targetUsed
   else
     sourceScope? = none ∧ targetScope? = none
 
@@ -64,9 +66,10 @@ theorem mono
   by_cases hEnabled : enabled = true
   · simp [ScopeOptionRel, hEnabled] at hRel ⊢
     obtain ⟨sourceScope, targetScope, hSource, hTarget,
-      hCurrent, hTargetScope⟩ := hRel
+      hCurrent, hTargetScope, hTargetUsed⟩ := hRel
     exact ⟨sourceScope, targetScope, hSource, hTarget,
-      fun name hName => hSubset name (hCurrent name hName), hTargetScope⟩
+      fun name hName => hSubset name (hCurrent name hName), hTargetScope,
+      hTargetUsed⟩
   · simp [ScopeOptionRel, hEnabled] at hRel ⊢
     exact hRel
 
@@ -79,7 +82,8 @@ theorem enabled_parts
       sourceScope? = some sourceScope ∧
         targetScope? = some targetScope ∧
         (∀ name, name ∈ sourceScope.layout → name ∈ current) ∧
-        ∀ name, name ∈ sourceScope.layout → name ∈ targetScope := by
+        (∀ name, name ∈ sourceScope.layout → name ∈ targetScope) ∧
+        ∀ name, name ∈ targetScope → name ∈ sourceScope.targetUsed := by
   simpa [ScopeOptionRel] using hRel
 
 theorem source_subset_of_some
@@ -96,7 +100,7 @@ theorem source_subset_of_some
       simp at hSome
   | true =>
       obtain ⟨candidate, targetScope, hCandidate, _hTarget,
-          hCurrent, _hTargetScope⟩ := by
+          hCurrent, _hTargetScope, _hTargetUsed⟩ := by
         simpa [hEnabled] using hRel
       rw [hSome] at hCandidate
       cases hCandidate
@@ -115,6 +119,7 @@ structure AbruptOutcomeRel
   mode : FunctionsInteractionRelation.ModeRel source target
   state : ScopedStateRel scope.layout
     ((source.restrictStoreTo scope.store).reviveJump) target.state
+  targetDomain : TargetDomainWithin scope.targetUsed target.state.vars
 
 namespace AbruptOutcomeRel
 
@@ -140,7 +145,7 @@ theorem restrict_outer
         apply VarStoreRestriction.restrict_restrict_of_inner_defined
         intro name value hLookup
         exact hOuterDefined name (scope.domain name value hLookup)
-      refine ⟨?_, ?_⟩
+      refine ⟨?_, ?_, hRel.targetDomain⟩
       · have hMode := hRel.mode
         cases hTarget : target.mode <;>
           simp [FunctionsInteractionRelation.ModeRel, hTarget,
@@ -156,12 +161,14 @@ theorem brk
     {target : Functions.InteractionSemantics.State}
     (hRel : ScopedStateRel current (.Ok sourceShared sourceVars) target)
     (hCurrent : ∀ name, name ∈ scope.layout → name ∈ current)
-    (hTarget : ∀ name, name ∈ scope.layout → name ∈ targetScope) :
+    (hTarget : ∀ name, name ∈ scope.layout → name ∈ targetScope)
+    (hTargetUsed : ∀ name, name ∈ targetScope → name ∈ scope.targetUsed) :
     AbruptOutcomeRel scope
       (.Checkpoint (.Break sourceShared sourceVars))
       (Functions.Source.Effectful.Outcome.brk
         (target.restrictTo targetScope)) := by
-  refine ⟨by simp [FunctionsInteractionRelation.ModeRel], ?_⟩
+  refine ⟨by simp [FunctionsInteractionRelation.ModeRel], ?_,
+    TargetDomainWithin.restrictTo_scope target hTargetUsed⟩
   simpa [EvmYul.Yul.State.restrictStoreTo] using
     hRel.restrictBoth scope.domain scope.defined hCurrent hTarget
 
@@ -173,12 +180,14 @@ theorem cont
     {target : Functions.InteractionSemantics.State}
     (hRel : ScopedStateRel current (.Ok sourceShared sourceVars) target)
     (hCurrent : ∀ name, name ∈ scope.layout → name ∈ current)
-    (hTarget : ∀ name, name ∈ scope.layout → name ∈ targetScope) :
+    (hTarget : ∀ name, name ∈ scope.layout → name ∈ targetScope)
+    (hTargetUsed : ∀ name, name ∈ targetScope → name ∈ scope.targetUsed) :
     AbruptOutcomeRel scope
       (.Checkpoint (.Continue sourceShared sourceVars))
       (Functions.Source.Effectful.Outcome.cont
         (target.restrictTo targetScope)) := by
-  refine ⟨by simp [FunctionsInteractionRelation.ModeRel], ?_⟩
+  refine ⟨by simp [FunctionsInteractionRelation.ModeRel], ?_,
+    TargetDomainWithin.restrictTo_scope target hTargetUsed⟩
   simpa [EvmYul.Yul.State.restrictStoreTo] using
     hRel.restrictBoth scope.domain scope.defined hCurrent hTarget
 
@@ -190,12 +199,14 @@ theorem leave
     {target : Functions.InteractionSemantics.State}
     (hRel : ScopedStateRel current (.Ok sourceShared sourceVars) target)
     (hCurrent : ∀ name, name ∈ scope.layout → name ∈ current)
-    (hTarget : ∀ name, name ∈ scope.layout → name ∈ targetScope) :
+    (hTarget : ∀ name, name ∈ scope.layout → name ∈ targetScope)
+    (hTargetUsed : ∀ name, name ∈ targetScope → name ∈ scope.targetUsed) :
     AbruptOutcomeRel scope
       (.Checkpoint (.Leave sourceShared sourceVars))
       (Functions.Source.Effectful.Outcome.leave
         (target.restrictTo targetScope)) := by
-  refine ⟨by simp [FunctionsInteractionRelation.ModeRel], ?_⟩
+  refine ⟨by simp [FunctionsInteractionRelation.ModeRel], ?_,
+    TargetDomainWithin.restrictTo_scope target hTargetUsed⟩
   simpa [EvmYul.Yul.State.restrictStoreTo] using
     hRel.restrictBoth scope.domain scope.defined hCurrent hTarget
 
@@ -387,15 +398,19 @@ def forPostScopes (outer : SourceScopes) : SourceScopes :=
 
 theorem forBody
     {sourceScopes : SourceScopes}
-    {layout : List Functions.Name}
+    {used layout : List Functions.Name}
     {canBreak canContinue canLeave : Bool}
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
     {ctx : Functions.Source.Ctx}
     (hState : ScopedStateRel layout source target)
     (hRel : ControlContextRel sourceScopes layout
-      canBreak canContinue canLeave ctx) :
+      canBreak canContinue canLeave ctx)
+    (hTargetScope : ∀ name, name ∈ ctx.scope → name ∈ used) :
     ∃ sourceScope,
+      sourceScope.store = source.store ∧
+      sourceScope.targetUsed = used ∧
+      sourceScope.layout = layout ∧
       ControlContextRel (forBodyScopes sourceScope sourceScopes) layout
         true true canLeave
         (ctx.withLoopControl ctx.scope ctx.scope) := by
@@ -404,9 +419,13 @@ theorem forBody
   let sourceScope : SourceScope :=
     { layout := layout
       store := sourceVars
+      targetUsed := used
       domain := hState.domain sourceShared sourceVars hSource
       defined := hState.defined sourceShared sourceVars hSource }
-  refine ⟨sourceScope, ?_⟩
+  refine ⟨sourceScope, ?_, ?_, ?_, ?_⟩
+  · simp [sourceScope, hSource, EvmYul.Yul.State.store]
+  · rfl
+  · rfl
   refine
     { scope := ?_
       breakScope := ?_
@@ -415,10 +434,10 @@ theorem forBody
   · simpa [Functions.Source.Ctx.withLoopControl] using hRel.scope
   · simp [ScopeOptionRel, forBodyScopes,
       Functions.Source.Ctx.withLoopControl, sourceScope]
-    exact hRel.scope
+    exact ⟨hRel.scope, hTargetScope⟩
   · simp [ScopeOptionRel, forBodyScopes,
       Functions.Source.Ctx.withLoopControl, sourceScope]
-    exact hRel.scope
+    exact ⟨hRel.scope, hTargetScope⟩
   · simpa [forBodyScopes, Functions.Source.Ctx.withLoopControl] using
       hRel.leaveScope
 

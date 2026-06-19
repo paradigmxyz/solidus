@@ -1500,8 +1500,12 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.run_forGuard
 #check EvmCompiler.Yul.FunctionsInteractionLoop.GuardedBodyDoneRel
 #check EvmCompiler.Yul.FunctionsInteractionLoop.guardedBody
+#check EvmCompiler.Yul.FunctionsInteractionLoop.KernelDoneRel
+#check EvmCompiler.Yul.FunctionsInteractionLoop.iteration
 #check EvmCompiler.Yul.InteractionSemantics.Exec.loop_succ_succ_guarded
+#check EvmCompiler.Yul.InteractionSemantics.Exec.block_allDone_restricted
 #print axioms EvmCompiler.Yul.FunctionsInteractionLoop.guardedBody
+#print axioms EvmCompiler.Yul.FunctionsInteractionLoop.iteration
 #print axioms EvmCompiler.Yul.InteractionSemantics.Exec.loop_succ_succ_guarded
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofStablePrepared
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofDirectPrimitiveLowering

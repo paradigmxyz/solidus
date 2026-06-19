@@ -1,6 +1,7 @@
 import EvmCompiler.Simulation.Interaction
 import EvmCompiler.Yul.EffectSemantics
 import EvmCompiler.Yul.Primitive
+import EvmCompiler.Yul.VarStoreRestriction
 
 namespace EvmCompiler
 namespace Yul
@@ -22,6 +23,25 @@ def stateModel : Yul.Source.Canonical.StateModel State where
   withSource := fun _ source => source
 
 namespace State
+
+theorem restrictStoreTo_idem (state : State)
+    (scope : EvmYul.Yul.VarStore) :
+    (state.restrictStoreTo scope).restrictStoreTo scope =
+      state.restrictStoreTo scope := by
+  have hVars (vars : EvmYul.Yul.VarStore) :
+      EvmYul.Yul.State.restrictVarStore
+          (EvmYul.Yul.State.restrictVarStore vars scope) scope =
+        EvmYul.Yul.State.restrictVarStore vars scope := by
+    rw [VarStoreRestriction.restrict_restrict_of_inner_defined]
+    intro key value hLookup
+    exact ⟨value, hLookup⟩
+  cases state with
+  | OutOfFuel => rfl
+  | Ok shared vars => simpa [EvmYul.Yul.State.restrictStoreTo] using hVars vars
+  | Checkpoint jump =>
+      cases jump with
+      | Break shared vars | Continue shared vars | Leave shared vars =>
+          simpa [EvmYul.Yul.State.restrictStoreTo] using hVars vars
 
 theorem zeroFill_eq_multifill_zero
     (shared : EvmYul.SharedState .Yul)
@@ -448,6 +468,11 @@ end ExecSeq
 
 namespace Exec
 
+def DoneRestrictedTo (scope : EvmYul.Yul.VarStore) :
+    Except Failure State → Prop
+  | .error _ => True
+  | .ok state => state.restrictStoreTo scope = state
+
 theorem zero
     (stmt : EvmYul.Yul.Ast.Stmt)
     (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
@@ -473,6 +498,24 @@ theorem block_succ
   simp only [exec, execSeq, Yul.Source.Canonical.exec,
     Yul.Source.Canonical.execSeq, Yul.Source.Effectful.exec]
   rfl
+
+/-- Every successful result of a lexical block has already been restricted to
+the block-entry store. This is the source-side invariant needed when an outer
+loop catches a `break` or routes a `continue` through its post block. -/
+theorem block_allDone_restricted
+    (fuel : Nat) (body : List EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    Simulation.Interaction.AllDone (DoneRestrictedTo state.store)
+      (exec (fuel + 1) (.Block body) code state) := by
+  rw [block_succ]
+  apply Simulation.Interaction.AllDone.bind
+    (Simulation.Interaction.AllDone.trivial
+      (execSeq fuel body code state))
+  · intro _error _hTrivial
+    trivial
+  · intro stateAfterBody _hTrivial
+    exact Simulation.Interaction.AllDone.done
+      (State.restrictStoreTo_idem stateAfterBody state.store)
 
 theorem if_succ
     (fuel : Nat) (cond : EvmYul.Yul.Ast.Expr)

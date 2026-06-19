@@ -1293,6 +1293,19 @@ theorem restrictTo
   · simp [Locals.Source.State.restrictTo,
       Locals.Source.Store.restrictTo, hMem] at hLookup
 
+/-- Restriction itself bounds the target domain by the retained scope, without
+requiring a domain fact about the pre-restriction store. -/
+theorem restrictTo_scope
+    {used scope : List Functions.Name}
+    (target : Functions.InteractionSemantics.State)
+    (hScope : ∀ name, name ∈ scope → name ∈ used) :
+    TargetDomainWithin used (target.restrictTo scope).vars := by
+  intro name value hLookup
+  by_cases hMem : name ∈ scope
+  · exact hScope name hMem
+  · simp [Locals.Source.State.restrictTo,
+      Locals.Source.Store.restrictTo, hMem] at hLookup
+
 end TargetDomainWithin
 
 namespace TargetExtends

@@ -666,7 +666,7 @@ while cleaning regular target completion to an explicitly supplied enclosing
 scope. This is the reusable form needed when a generated condition prelude has
 extended `ctx.scope` but the surrounding loop still owns cleanup. -/
 theorem blockClosedToScope
-    {used entryLayout bodyLayout : List Functions.Name}
+    {used outputUsed entryLayout bodyLayout : List Functions.Name}
     {targetScope : List Functions.Name}
     {sourceFuel targetFuel : Nat}
     {sourceScopes : SourceScopes}
@@ -680,6 +680,10 @@ theorem blockClosedToScope
     (hControl : ControlContextRel sourceScopes entryLayout
       canBreak canContinue canLeave ctx)
     (hTargetScope : ∀ name, name ∈ entryLayout → name ∈ targetScope)
+    (hOutputDomain : ∀ (targetState : Functions.InteractionSemantics.State),
+      TargetDomainWithin used targetState.vars →
+        TargetDomainWithin outputUsed
+          (targetState.restrictTo targetScope).vars)
     (hBodyLayout : ∀ name, name ∈ entryLayout → name ∈ bodyLayout)
     (hBody :
       Simulation.Interaction.ForwardRel Truncated
@@ -690,7 +694,7 @@ theorem blockClosedToScope
         (Functions.InteractionSemantics.Block.openRun
           program ctx targetFuel lowerBody target)) :
     Simulation.Interaction.ForwardRel Truncated
-      (ControlOutcomeDoneRel used entryLayout sourceScopes
+      (ControlOutcomeDoneRel outputUsed entryLayout sourceScopes
         canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec
         (sourceFuel + 1) (.Block body) codeOverride source)
@@ -723,7 +727,8 @@ theorem blockClosedToScope
         hBodyLayout hTargetScope
       simpa using
         (Simulation.Interaction.ForwardRel.done
-          (ControlOutcomeDoneRel.regular hFinal hDomain.restrictTo))
+          (ControlOutcomeDoneRel.regular hFinal
+            (hOutputDomain targetAfter hDomain)))
   | @brk sourceAfter targetOutcome ctxAfter scope hScope hMode hAbrupt =>
       have hSubset := hControl.breakScope.source_subset_of_some hScope
       have hOuterDefined : ∀ name, name ∈ scope.layout →
@@ -810,7 +815,8 @@ theorem blockScoped
   unfold Functions.InteractionSemantics.Block.openRunScoped
     Functions.Source.Canonical.Block.runScoped
     Functions.Source.Effectful.Control.Block.runScoped
-  exact blockClosedToScope hEntry hControl hControl.scope hBodyLayout hBody
+  exact blockClosedToScope hEntry hControl hControl.scope
+    (fun _targetState hDomain => hDomain.restrictTo) hBodyLayout hBody
 
 end ControlDoneRel
 
@@ -1598,7 +1604,7 @@ theorem brk_control
       ctx.breakScope? layout := by
     simpa [hEnabled] using hControl.breakScope
   obtain ⟨sourceScope, targetScope, hSourceScope, hTargetScope,
-      hCurrent, hTarget⟩ := ScopeOptionRel.enabled_parts hBreakRel
+      hCurrent, hTarget, hTargetUsed⟩ := ScopeOptionRel.enabled_parts hBreakRel
   cases fuel with
   | zero =>
       have hTruncated :
@@ -1618,7 +1624,7 @@ theorem brk_control
       rcases hRel.state with
         ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
       subst source
-      have hAbrupt := AbruptOutcomeRel.brk hRel hCurrent hTarget
+      have hAbrupt := AbruptOutcomeRel.brk hRel hCurrent hTarget hTargetUsed
       rw [Yul.InteractionSemantics.Exec.brk_succ,
         Functions.InteractionSemantics.Stmt.openRun_brk
           program ctx targetFuel target hTargetScope]
@@ -1647,7 +1653,8 @@ theorem cont_control
       ctx.continueScope? layout := by
     simpa [hEnabled] using hControl.continueScope
   obtain ⟨sourceScope, targetScope, hSourceScope, hTargetScope,
-      hCurrent, hTarget⟩ := ScopeOptionRel.enabled_parts hContinueRel
+      hCurrent, hTarget, hTargetUsed⟩ :=
+    ScopeOptionRel.enabled_parts hContinueRel
   cases fuel with
   | zero =>
       have hTruncated :
@@ -1667,7 +1674,7 @@ theorem cont_control
       rcases hRel.state with
         ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
       subst source
-      have hAbrupt := AbruptOutcomeRel.cont hRel hCurrent hTarget
+      have hAbrupt := AbruptOutcomeRel.cont hRel hCurrent hTarget hTargetUsed
       rw [Yul.InteractionSemantics.Exec.cont_succ,
         Functions.InteractionSemantics.Stmt.openRun_cont
           program ctx targetFuel target hTargetScope]
@@ -1696,7 +1703,7 @@ theorem leave_control
       ctx.leaveScope? layout := by
     simpa [hEnabled] using hControl.leaveScope
   obtain ⟨sourceScope, targetScope, hSourceScope, hTargetScope,
-      hCurrent, hTarget⟩ := ScopeOptionRel.enabled_parts hLeaveRel
+      hCurrent, hTarget, hTargetUsed⟩ := ScopeOptionRel.enabled_parts hLeaveRel
   cases fuel with
   | zero =>
       have hTruncated :
@@ -1716,7 +1723,7 @@ theorem leave_control
       rcases hRel.state with
         ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
       subst source
-      have hAbrupt := AbruptOutcomeRel.leave hRel hCurrent hTarget
+      have hAbrupt := AbruptOutcomeRel.leave hRel hCurrent hTarget hTargetUsed
       rw [Yul.InteractionSemantics.Exec.leave_succ,
         Functions.InteractionSemantics.Stmt.openRun_leave
           program ctx targetFuel target hTargetScope]
