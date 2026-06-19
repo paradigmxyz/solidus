@@ -133,6 +133,7 @@ import EvmCompiler.Yul.FunctionsInteractionExpression
 import EvmCompiler.Yul.FunctionsInteractionStatement
 import EvmCompiler.Yul.FunctionsInteractionPreparedArgs
 import EvmCompiler.Yul.FunctionsInteractionPreparedCondition
+import EvmCompiler.Yul.FunctionsInteractionLoop
 import EvmCompiler.Yul.FunctionsInteractionPreparedPrimitive
 import EvmCompiler.Yul.FunctionsInteractionPreparedCall
 import EvmCompiler.Yul.FunctionsCompilerArtifact
@@ -1497,6 +1498,8 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.run_if
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.run_switch
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.run_forGuard
+#check EvmCompiler.Yul.FunctionsInteractionLoop.GuardedBodyDoneRel
+#check EvmCompiler.Yul.FunctionsInteractionLoop.guardedBody
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofStablePrepared
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofDirectPrimitiveLowering
 #check EvmCompiler.Yul.FunctionsInteractionPreparedCondition.ofPreparedPrimitive

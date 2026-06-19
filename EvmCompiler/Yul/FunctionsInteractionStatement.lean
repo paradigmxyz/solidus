@@ -661,11 +661,13 @@ theorem block
           exact Simulation.Interaction.ForwardRel.done
             (ControlDoneRel.terminal (.revert hState))
 
-/-- Close one source lexical block against canonical Functions scoped-block
-execution. Unlike `block`, the target result no longer carries a context; this
-is the compositional boundary used by loop body and post semantics. -/
-theorem blockScoped
+/-- Close a source lexical block after running its target body under `ctx`,
+while cleaning regular target completion to an explicitly supplied enclosing
+scope. This is the reusable form needed when a generated condition prelude has
+extended `ctx.scope` but the surrounding loop still owns cleanup. -/
+theorem blockClosedToScope
     {used entryLayout bodyLayout : List Functions.Name}
+    {targetScope : List Functions.Name}
     {sourceFuel targetFuel : Nat}
     {sourceScopes : SourceScopes}
     {canBreak canContinue canLeave : Bool}
@@ -677,6 +679,7 @@ theorem blockScoped
     (hEntry : ScopedStateRel entryLayout source target)
     (hControl : ControlContextRel sourceScopes entryLayout
       canBreak canContinue canLeave ctx)
+    (hTargetScope : ∀ name, name ∈ entryLayout → name ∈ targetScope)
     (hBodyLayout : ∀ name, name ∈ entryLayout → name ∈ bodyLayout)
     (hBody :
       Simulation.Interaction.ForwardRel Truncated
@@ -691,15 +694,21 @@ theorem blockScoped
         canBreak canContinue canLeave)
       (Yul.InteractionSemantics.exec
         (sourceFuel + 1) (.Block body) codeOverride source)
-      (Functions.InteractionSemantics.Block.openRunScoped
-        program ctx lowerBody targetFuel target) := by
+      (Simulation.Interaction.bind
+        (Functions.InteractionSemantics.Block.openRun
+          program ctx targetFuel lowerBody target)
+        (fun result =>
+          match result.1.mode with
+          | .regular =>
+              Simulation.Interaction.pure
+                (Functions.Source.Effectful.Outcome.regular
+                  (result.1.state.restrictTo targetScope))
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure result.1)) := by
   rcases hEntry.state with
     ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
   subst source
   rw [Yul.InteractionSemantics.Exec.block_succ]
-  unfold Functions.InteractionSemantics.Block.openRunScoped
-    Functions.Source.Canonical.Block.runScoped
-    Functions.Source.Effectful.Control.Block.runScoped
   apply Simulation.Interaction.ForwardRel.bind_custom hBody
   intro sourceDone targetDone hDone
   cases hDone with
@@ -711,7 +720,7 @@ theorem blockScoped
       have hFinal := hState.restrictBoth
         (hEntry.domain sourceShared sourceVars rfl)
         (hEntry.defined sourceShared sourceVars rfl)
-        hBodyLayout hControl.scope
+        hBodyLayout hTargetScope
       simpa using
         (Simulation.Interaction.ForwardRel.done
           (ControlOutcomeDoneRel.regular hFinal hDomain.restrictTo))
@@ -765,6 +774,43 @@ theorem blockScoped
       | revert hState =>
           exact Simulation.Interaction.ForwardRel.done
             (ControlOutcomeDoneRel.terminal (.revert hState))
+
+/-- Close one source lexical block against canonical Functions scoped-block
+execution. Unlike `block`, the target result no longer carries a context; this
+is the compositional boundary used by loop body and post semantics. -/
+theorem blockScoped
+    {used entryLayout bodyLayout : List Functions.Name}
+    {sourceFuel targetFuel : Nat}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {body : List AstStmt} {lowerBody : Functions.Block}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hEntry : ScopedStateRel entryLayout source target)
+    (hControl : ControlContextRel sourceScopes entryLayout
+      canBreak canContinue canLeave ctx)
+    (hBodyLayout : ∀ name, name ∈ entryLayout → name ∈ bodyLayout)
+    (hBody :
+      Simulation.Interaction.ForwardRel Truncated
+        (ControlDoneRel used bodyLayout sourceScopes
+          canBreak canContinue canLeave)
+        (Yul.InteractionSemantics.execSeq
+          sourceFuel body codeOverride source)
+        (Functions.InteractionSemantics.Block.openRun
+          program ctx targetFuel lowerBody target)) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlOutcomeDoneRel used entryLayout sourceScopes
+        canBreak canContinue canLeave)
+      (Yul.InteractionSemantics.exec
+        (sourceFuel + 1) (.Block body) codeOverride source)
+      (Functions.InteractionSemantics.Block.openRunScoped
+        program ctx lowerBody targetFuel target) := by
+  unfold Functions.InteractionSemantics.Block.openRunScoped
+    Functions.Source.Canonical.Block.runScoped
+    Functions.Source.Effectful.Control.Block.runScoped
+  exact blockClosedToScope hEntry hControl hControl.scope hBodyLayout hBody
 
 end ControlDoneRel
 

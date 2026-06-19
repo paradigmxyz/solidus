@@ -105,6 +105,25 @@ def openRunScoped (program : Functions.Program)
   Functions.Source.Canonical.Block.runScoped
     stateModel primitiveSemantics program ctx block fuel state
 
+theorem openRunScoped_eq_bind
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (block : Functions.Block) (fuel : Nat) (state : State) :
+    openRunScoped program ctx block fuel state =
+      Simulation.Interaction.bind
+        (openRun program ctx fuel block state)
+        (fun result =>
+          match result.1.mode with
+          | .regular =>
+              Simulation.Interaction.pure
+                (Functions.Source.Effectful.Outcome.regular
+                  (result.1.state.restrictTo ctx.scope))
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure result.1) := by
+  unfold openRunScoped openRun Functions.Source.Canonical.Block.runScoped
+    Functions.Source.Canonical.Block.runOpen
+    Functions.Source.Effectful.Control.Block.runScoped
+  rfl
+
 /-- Successful canonical block execution always has positive meta-fuel. -/
 theorem successful_openRun_fuel_pos
     {program : Functions.Program} {ctx : Functions.Source.Ctx}
@@ -972,6 +991,25 @@ theorem openRun_block
         stateModel primitiveSemantics program ctx fuel body state))
   intro result _
   cases hMode : result.1.mode <;> rfl
+
+/-- A positive-fuel lexical singleton break returns the handler-restricted
+break outcome. This is the exact synthetic body emitted by the Yul loop guard. -/
+theorem openRun_block_brk
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (state : State) {scope : List Functions.Name}
+    (hScope : ctx.breakScope? = some scope) :
+    openRun program ctx (fuel + 1) (.block { stmts := [.brk] }) state =
+      Simulation.Interaction.pure
+        (Functions.Source.Effectful.Outcome.brk
+          (state.restrictTo scope), ctx) := by
+  unfold openRun Functions.Source.Canonical.Stmt.run
+  simp [Functions.Source.Effectful.Control.Stmt.run,
+    Functions.Source.Effectful.Control.Block.runScoped,
+    Functions.Source.Effectful.Control.Block.runOpen, hScope, stateModel,
+    Locals.InteractionSemantics.stateModel,
+    Locals.Source.Effectful.Ordinary.stateModel,
+    Locals.Source.Effectful.StateModel.restrictTo]
+  rfl
 
 /-- A positive-fuel conditional exposes condition evaluation and one branch. -/
 theorem openRun_if

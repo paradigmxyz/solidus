@@ -446,6 +446,62 @@ theorem forPost
 
 end ControlContextRel
 
+namespace ControlOutcomeDoneRel
+
+/-- Close the loop kernel back into its enclosing statement. The post context
+has no break/continue destinations, so those two nominal result constructors
+are impossible; regular completion performs the compiler's outer lexical
+cleanup while leave and terminal outcomes propagate unchanged. -/
+theorem closeFor
+    {used layout : List Functions.Name}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {ctx : Functions.Source.Ctx}
+    {sourceDone : Except Yul.InteractionSemantics.Failure
+      Yul.InteractionSemantics.State}
+    {targetDone : Except EVMException Functions.InteractionSemantics.Outcome}
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
+    (hRel : ControlOutcomeDoneRel used layout
+      (ControlContextRel.forPostScopes sourceScopes)
+      false false canLeave sourceDone targetDone) :
+    ControlDoneRel used layout sourceScopes
+      canBreak canContinue canLeave sourceDone
+      (match targetDone with
+      | .error targetError => .error targetError
+      | .ok targetOutcome =>
+          match targetOutcome.mode with
+          | .regular =>
+              .ok
+                (Functions.Source.Effectful.Outcome.regular
+                  (targetOutcome.state.restrictTo ctx.scope), ctx)
+          | .brk | .cont => .error .InvalidInstruction
+          | .leave | .halt _ => .ok (targetOutcome, ctx)) := by
+  cases hRel with
+  | error hError => exact .error hError
+  | regular hScoped hDomain =>
+      simp only [Functions.Source.Effectful.Outcome.regular_mode]
+      exact .regular
+        (hScoped.restrictTargetScoped hControl.scope)
+        hDomain.restrictTo hControl
+  | brk hScope hMode hAbrupt =>
+      simp [ControlContextRel.forPostScopes] at hScope
+  | cont hScope hMode hAbrupt =>
+      simp [ControlContextRel.forPostScopes] at hScope
+  | @leave source target scope hScope hMode hAbrupt =>
+      have hOuterScope : sourceScopes.leaveScope? = some scope := by
+        simpa [ControlContextRel.forPostScopes] using hScope
+      simp only [hMode]
+      exact .leave hOuterScope hMode hAbrupt
+  | terminal hTerminal =>
+      cases hTerminal with
+      | stop hState => exact .terminal (.stop hState)
+      | return_ hState => exact .terminal (.return_ hState)
+      | selfdestruct hState => exact .terminal (.selfdestruct hState)
+      | revert hState => exact .terminal (.revert hState)
+
+end ControlOutcomeDoneRel
+
 end FunctionsInteractionControlRelation
 end Yul
 end EvmCompiler

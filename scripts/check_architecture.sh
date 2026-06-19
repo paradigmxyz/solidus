@@ -623,6 +623,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionStatement.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedArgs.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedCondition.lean \
+  EvmCompiler/Yul/FunctionsInteractionLoop.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedCall.lean \
   EvmCompiler/Yul/FunctionsCompilerArtifact.lean \
@@ -648,6 +649,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionStatement.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedArgs.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedCondition.lean \
+  EvmCompiler/Yul/FunctionsInteractionLoop.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedCall.lean \
   EvmCompiler/Yul/FunctionsCompilerArtifact.lean \
@@ -673,6 +675,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionStatement.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedArgs.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedCondition.lean \
+  EvmCompiler/Yul/FunctionsInteractionLoop.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedPrimitive.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedCall.lean \
   EvmCompiler/Yul/FunctionsCompilerArtifact.lean \

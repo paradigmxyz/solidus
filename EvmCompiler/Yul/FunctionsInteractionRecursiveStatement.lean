@@ -1,4 +1,5 @@
 import EvmCompiler.Yul.FunctionsInteractionRecursiveExpression
+import EvmCompiler.Yul.FunctionsInteractionLoop
 import EvmCompiler.Yul.FunctionsInteractionSelectedStatementCall
 import EvmCompiler.Yul.FunctionsInteractionTargetCost
 

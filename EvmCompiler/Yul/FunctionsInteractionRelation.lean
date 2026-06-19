@@ -1531,6 +1531,16 @@ theorem restrictTarget
     Locals.Source.Store.restrictTo, hScope] using
     hVars name value hLookup
 
+/-- Target lexical cleanup preserves the same source-visible scoped relation
+when every visible source name belongs to the retained target scope. -/
+theorem restrictTargetScoped
+    {layout scope : List Functions.Name}
+    {source : SourceState} {target : TargetState}
+    (hRel : ScopedStateRel layout source target)
+    (hSubset : ∀ name, name ∈ layout → name ∈ scope) :
+    ScopedStateRel layout source (target.restrictTo scope) :=
+  ⟨hRel.restrictTarget hSubset, hRel.domain, hRel.defined⟩
+
 /-- Restrict both sides to corresponding source and target control scopes.
 The source scope store contributes only its domain; values are retained from
 the current source state, exactly as Yul lexical restriction specifies. -/
