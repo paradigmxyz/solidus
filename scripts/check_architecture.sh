@@ -167,6 +167,9 @@ fi
 
 for theorem in \
     'OpenOutcome.target_allStopped' \
+    'OpenOutcome.BoundedExecPreservesUnder.uniform' \
+    'OpenOutcome.BoundedExecPreservesUnder.sequence' \
+    'OpenOutcome.UniformExecPreservesUnder.preserves' \
     'OpenOutcome.PreservesWithin.sequence' \
     'OpenOutcome.PreservesWithin.ignore_tail_of_no_fallthrough' \
     'OpenOutcome.PreservesWithin.pad_stop' \
@@ -178,6 +181,8 @@ for theorem in \
     'Stmt.openRun_code_within_resume_of_compileStmtFuel?' \
     'Stmt.openRun_code_of_compileStmtFuel?' \
     'Block.openRun_nil_of_compileStmtListFuel?' \
+    'Block.openRun_nil_bounded_under_of_compileStmtListFuel?' \
+    'Block.openRun_cons_bounded_under_of_compileStmtListFuel?' \
     'Block.openRun_cons_within_of_compileStmtListFuel?' \
     'Block.openRun_code_cons_within_of_compileStmtListFuel?'; do
   if ! rg -Fq \
@@ -1251,7 +1256,9 @@ report_matches \
   EvmCompiler/Structured/InteractionSemantics.lean \
   EvmCompiler/Structured/InteractionPrimitivePreservation.lean \
   EvmCompiler/Structured/InteractionPreservation.lean \
+  EvmCompiler/Structured/InteractionStaticCost.lean \
   EvmCompiler/Structured/InteractionControlPreservation.lean \
+  EvmCompiler/Structured/InteractionBoundedBlockPreservation.lean \
   EvmCompiler/Structured/InteractionLeafPreservation.lean \
   EvmCompiler/Structured/InteractionBranchPreservation.lean \
   EvmCompiler/Structured/InteractionSwitchPreservation.lean \

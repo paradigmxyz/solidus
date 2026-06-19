@@ -1198,6 +1198,48 @@ theorem bind_cases
 
 end Executes
 
+namespace AllDone
+
+/-- Select one concrete branch witnessing a universal terminal property. -/
+theorem exists_executes
+    {Error : Type u1} {Result : Type v1}
+    {property : Except Error Result -> Prop}
+    {interaction : Interaction Error Result}
+    (hAll : AllDone property interaction) :
+    exists transcript outcome,
+      Executes interaction transcript outcome /\ property outcome := by
+  induction hAll with
+  | done hProperty =>
+      exact ⟨[], _, Executes.done _, hProperty⟩
+  | @request query resume hResume ih =>
+      obtain ⟨transcript, outcome, hExec, hProperty⟩ :=
+        ih query.defaultAnswer
+      exact
+        ⟨{ query := query, answer := query.defaultAnswer } :: transcript,
+          outcome, Executes.request query.defaultAnswer hExec, hProperty⟩
+
+end AllDone
+
+namespace Executes
+
+/-- Invert one concrete execution of a request at its first exchange. -/
+theorem request_inv
+    {Error : Type u1} {Result : Type v1}
+    {query : Query}
+    {resume : Answer query -> Interaction Error Result}
+    {exchange : Exchange} {transcript : Transcript}
+    {outcome : Except Error Result}
+    (hExec :
+      Executes (.request query resume) (exchange :: transcript) outcome) :
+    exists answer,
+      exchange = { query := query, answer := answer } /\
+        Executes (resume answer) transcript outcome := by
+  cases hExec with
+  | request answer tail =>
+      exact ⟨answer, rfl, tail⟩
+
+end Executes
+
 inductive ExceptRel
     {Error₁ : Type u1} {Result₁ : Type v1}
     {Error₂ : Type u2} {Result₂ : Type v2}
@@ -1528,6 +1570,88 @@ theorem request_left
       exact ⟨_, rfl, hResume⟩
 
 /--
+Reconstruct a structural open-world relation from exact preservation of every
+successful concrete branch. Universal source success rules out the only missing
+case: a source error leaf, for which the branch premise intentionally has no
+obligation.
+-/
+theorem of_successful_executes
+    {Error1 : Type u1} {Result1 : Type v1}
+    {Error2 : Type u2} {Result2 : Type v2}
+    {doneRel :
+      Except Error1 Result1 -> Except Error2 Result2 -> Prop}
+    {left : Interaction Error1 Result1}
+    {right : Interaction Error2 Result2}
+    (hSuccessful : Successful left)
+    (hExec :
+      forall transcript leftResult,
+        Executes left transcript (.ok leftResult) ->
+          exists rightDone,
+            Executes right transcript rightDone /\
+              doneRel (.ok leftResult) rightDone) :
+    Rel doneRel left right := by
+  induction left generalizing right with
+  | done leftDone =>
+      cases leftDone with
+      | error err =>
+          exact False.elim (Successful.error_false err hSuccessful)
+      | ok value =>
+          obtain ⟨rightDone, hRightExec, hDone⟩ :=
+            hExec [] value (Executes.done (.ok value))
+          cases hRightExec with
+          | done => exact .done hDone
+  | request query resume ih =>
+      cases hSuccessful with
+      | request hResumeSuccessful =>
+          cases right with
+          | done rightDone =>
+              obtain
+                  ⟨tailTranscript, leftDone, hLeftTail, hLeftSuccess⟩ :=
+                AllDone.exists_executes
+                  (hResumeSuccessful query.defaultAnswer)
+              cases leftDone with
+              | error err => exact False.elim hLeftSuccess
+              | ok value =>
+                  obtain ⟨targetDone, hTargetExec, _hDone⟩ :=
+                    hExec
+                      ({ query := query, answer := query.defaultAnswer } ::
+                        tailTranscript)
+                      value
+                      (Executes.request query.defaultAnswer hLeftTail)
+                  cases hTargetExec
+          | request targetQuery targetResume =>
+              obtain
+                  ⟨tailTranscript, leftDone, hLeftTail, hLeftSuccess⟩ :=
+                AllDone.exists_executes
+                  (hResumeSuccessful query.defaultAnswer)
+              cases leftDone with
+              | error err => exact False.elim hLeftSuccess
+              | ok value =>
+                  obtain ⟨targetDone, hTargetExec, _hDone⟩ :=
+                    hExec
+                      ({ query := query, answer := query.defaultAnswer } ::
+                        tailTranscript)
+                      value
+                      (Executes.request query.defaultAnswer hLeftTail)
+                  obtain ⟨targetAnswer, hExchange, _hTargetTail⟩ :=
+                    Executes.request_inv hTargetExec
+                  have hQuery : query = targetQuery :=
+                    congrArg Exchange.query hExchange
+                  subst targetQuery
+                  exact .request fun answer => by
+                    apply ih answer (hResumeSuccessful answer)
+                    intro transcript leftResult hLeftExec
+                    obtain ⟨rightDone, hRightExec, hDone⟩ :=
+                      hExec
+                        ({ query := query, answer := answer } :: transcript)
+                        leftResult
+                        (Executes.request answer hLeftExec)
+                    obtain ⟨rightAnswer, hHead, hRightTail⟩ :=
+                      Executes.request_inv hRightExec
+                    cases hHead
+                    exact ⟨rightDone, hRightTail, hDone⟩
+
+/--
 Structural open equivalence transports every concrete external-world branch
 with the exact same ordered transcript.
 -/
@@ -1762,6 +1886,30 @@ theorem successful_right
       | request hSource =>
           exact .request fun answer =>
             ih answer (hSource answer)
+
+/-- A universally successful source cannot reach the truncation constructor,
+so a forward refinement becomes a full structural open-world relation. -/
+theorem rel_of_successful
+    {Error1 : Type u1} {Result1 : Type v1}
+    {Error2 : Type u2} {Result2 : Type v2}
+    {truncated : Error1 -> Prop}
+    {doneRel :
+      Except Error1 Result1 -> Except Error2 Result2 -> Prop}
+    {left : Interaction Error1 Result1}
+    {right : Interaction Error2 Result2}
+    (hRel : ForwardRel truncated doneRel left right)
+    (hSuccessful : Successful left) :
+    Rel doneRel left right := by
+  induction hRel with
+  | truncated hTruncated =>
+      cases hSuccessful with
+      | done hSource => exact False.elim hSource
+  | done hDone =>
+      exact .done hDone
+  | request hResume ih =>
+      cases hSuccessful with
+      | request hSource =>
+          exact .request fun answer => ih answer (hSource answer)
 
 /-- Strengthen a forward simulation with a source-side invariant that holds at
 every terminal leaf. Source truncation remains source truncation and therefore
