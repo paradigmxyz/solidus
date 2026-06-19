@@ -341,6 +341,241 @@ theorem cons
 
 end PathScopedDoneRel
 
+/-- Adjacent result interface for a compiler-owned terminal argument prelude.
+Regular completion supplies the exact typed argument-sequence result; an
+internal call may instead propagate a related terminal outcome. -/
+inductive PreparedArgsDoneRel
+    (layout : List Functions.Name) {results : Nat}
+    (seq : Locals.ExprSeq results) :
+    Except Yul.InteractionSemantics.Failure
+        (Yul.InteractionSemantics.State × List Word) →
+      Except EVMException
+        (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx) →
+      Prop where
+  | error {source target} :
+      ErrorRel source target →
+        PreparedArgsDoneRel layout seq (.error source) (.error target)
+  | regular {source values target targetAfter ctx} :
+      values.length = results →
+      Locals.InteractionSemantics.ExprSeq.openEval seq target =
+        .done (.ok (targetAfter, values)) →
+      FunctionsInteractionRelation.ScopedStateRel
+        layout source targetAfter →
+      PreparedArgsDoneRel layout seq (.ok (source, values))
+        (.ok (Functions.Source.Effectful.Outcome.regular target, ctx))
+  | terminal {source target ctx} :
+      FunctionsInteractionRelation.TerminalFailureRel source target →
+        PreparedArgsDoneRel layout seq (.error source) (.ok (target, ctx))
+
+/-- Final terminal leaf after a compiler-owned argument prelude has produced
+the exact target values. Prelude construction and internal calls are separate
+capabilities; this theorem owns only the terminal boundary. -/
+theorem terminal_after_args
+    {primitiveFuel targetFuel : Nat}
+    {prim : EvmYul.Operation .Yul} {kind : Assembly.HaltKind}
+    {values : List Word} {seq : Locals.ExprSeq kind.argCount}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {layout : List Functions.Name}
+    {source : Yul.InteractionSemantics.State}
+    {target targetAfter : Functions.InteractionSemantics.State}
+    (hTerminal : Prim.terminal? prim = some kind)
+    (hLength : values.length = kind.argCount)
+    (hEval :
+      Locals.InteractionSemantics.ExprSeq.openEval seq target =
+        .done (.ok (targetAfter, values)))
+    (hRel : FunctionsInteractionRelation.ScopedStateRel
+      layout source targetAfter) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PathScopedDoneRel layout)
+      (Simulation.Interaction.bind
+        (Yul.InteractionSemantics.Primitive.openEval
+          primitiveFuel source prim values.reverse)
+        (fun result =>
+          pure
+            (Yul.InteractionSemantics.stateModel.multifill
+              [] result.1 result.2)))
+      (Functions.InteractionSemantics.Stmt.openRun
+        program ctx targetFuel (.terminalArgs kind seq) target) := by
+  unfold Functions.InteractionSemantics.Stmt.openRun
+    Functions.Source.Canonical.Stmt.run
+  simp only [Functions.Source.Effectful.Control.Stmt.run]
+  change
+    Simulation.Interaction.ForwardRel Truncated
+      (PathScopedDoneRel layout)
+      (Simulation.Interaction.bind
+        (Yul.InteractionSemantics.Primitive.openEval
+          primitiveFuel source prim values.reverse)
+        (fun result =>
+          pure
+            (Yul.InteractionSemantics.stateModel.multifill
+              [] result.1 result.2)))
+      (Simulation.Interaction.bind
+        (Locals.InteractionSemantics.ExprSeq.openEval seq target)
+        (fun argsResult =>
+          Simulation.Interaction.bind
+            (Functions.InteractionSemantics.primitiveSemantics.terminal
+              kind argsResult.1 argsResult.2)
+            (fun final =>
+              pure
+                (Functions.Source.Effectful.Outcome.halt kind final, ctx))))
+  rw [hEval, Simulation.Interaction.bind_done_ok]
+  cases primitiveFuel with
+  | zero =>
+      have hTruncated :
+          Truncated
+            ({ exception := .OutOfFuel, state := source } :
+              Yul.InteractionSemantics.Failure) := by
+        trivial
+      simpa [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.fail] using
+        (Simulation.Interaction.ForwardRel.truncated
+          (doneRel := PathScopedDoneRel layout)
+          (right :=
+            Simulation.Interaction.bind
+              (Functions.InteractionSemantics.primitiveSemantics.terminal
+                kind targetAfter values)
+              (fun final =>
+                pure
+                  (Functions.Source.Effectful.Outcome.halt kind final, ctx)))
+          hTruncated)
+  | succ fuel =>
+      cases fuel with
+      | zero =>
+          have hTruncated :
+              Truncated
+                ({ exception := .OutOfFuel, state := source } :
+                  Yul.InteractionSemantics.Failure) := by
+            trivial
+          rw [FunctionsInteractionTerminal.openEval_one_of_terminal?
+            hTerminal source values.reverse]
+          simpa [Yul.InteractionSemantics.Primitive.fail] using
+            (Simulation.Interaction.ForwardRel.truncated
+              (doneRel := PathScopedDoneRel layout)
+              (right :=
+                Simulation.Interaction.bind
+                  (Functions.InteractionSemantics.primitiveSemantics.terminal
+                    kind targetAfter values)
+                  (fun final =>
+                    pure
+                      (Functions.Source.Effectful.Outcome.halt kind final,
+                        ctx)))
+              hTruncated)
+      | succ fuel =>
+          have hSourceLength : values.reverse.length = kind.argCount := by
+            simpa [List.length_reverse] using hLength
+          have hPrimitive :=
+            FunctionsInteractionTerminal.of_terminal?
+              fuel values.reverse hTerminal hSourceLength hRel.state
+          have hPrimitive' :
+              Simulation.Interaction.ForwardRel Truncated
+                (FunctionsInteractionTerminal.PrimitiveDoneRel kind)
+                (Yul.InteractionSemantics.Primitive.openEval
+                  (fuel + 2) source prim values.reverse)
+                (Functions.InteractionSemantics.primitiveSemantics.terminal
+                  kind targetAfter values) := by
+            simpa using hPrimitive
+          apply Simulation.Interaction.ForwardRel.bind_custom hPrimitive'
+          intro sourceDone targetDone hDone
+          cases hDone with
+          | error hError =>
+              exact Simulation.Interaction.ForwardRel.done (.error hError)
+          | terminal hTerminalState =>
+              exact Simulation.Interaction.ForwardRel.done
+                (.terminal hTerminalState)
+
+/-- Compose any adjacent prepared-argument implementation with the terminal
+leaf. The prelude proof remains independently owned and may use declarations,
+primitive expressions, or internal calls. -/
+theorem terminal_of_prepared_args
+    {argsFuel targetFuel : Nat}
+    {prim : EvmYul.Operation .Yul} {args : List AstExpr}
+    {kind : Assembly.HaltKind}
+    {preArgs : List Functions.Stmt}
+    {seq : Locals.ExprSeq kind.argCount}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {layout : List Functions.Name}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hTerminal : Prim.terminal? prim = some kind)
+    (hTailFuel : 2 ≤ targetFuel - preArgs.length)
+    (hPrepared :
+      Simulation.Interaction.ForwardRel Truncated
+        (PreparedArgsDoneRel layout seq)
+        (Yul.InteractionSemantics.evalArgs
+          argsFuel args.reverse codeOverride source)
+        (Functions.InteractionSemantics.Block.openRun
+          program ctx targetFuel { stmts := preArgs } target)) :
+    Simulation.Interaction.ForwardRel Truncated
+      (PathScopedDoneRel layout)
+      (Yul.InteractionSemantics.exec (argsFuel + 1)
+        (.ExprStmtCall (.Call (.inl prim) args)) codeOverride source)
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx targetFuel
+          { stmts := preArgs ++ [.terminalArgs kind seq] } target) := by
+  rw [Yul.InteractionSemantics.Exec.expr_primitive,
+    Functions.InteractionSemantics.Block.openRun_append]
+  unfold Yul.InteractionSemantics.evalValues
+    Yul.Source.Canonical.evalValues
+    Yul.Source.Effectful.evalValues
+  change
+    Simulation.Interaction.ForwardRel Truncated
+      (PathScopedDoneRel layout)
+      (Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Yul.InteractionSemantics.evalArgs
+            argsFuel args.reverse codeOverride source)
+          (fun argsResult =>
+            Yul.InteractionSemantics.Primitive.openEval
+              argsFuel argsResult.1 prim argsResult.2.reverse))
+        (fun result =>
+          pure
+            (Yul.InteractionSemantics.stateModel.multifill
+              [] result.1 result.2)))
+      (Simulation.Interaction.bind
+        (Functions.InteractionSemantics.Block.openRun
+          program ctx targetFuel { stmts := preArgs } target)
+        (fun result =>
+          match result.1.mode with
+          | .regular =>
+              Functions.InteractionSemantics.Block.openRun
+                program result.2 (targetFuel - preArgs.length)
+                  { stmts := [.terminalArgs kind seq] } result.1.state
+          | .brk | .cont | .leave | .halt _ => pure result))
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.ForwardRel.bind_custom hPrepared
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ForwardRel.done (.error hError)
+  | @terminal sourceFailure targetOutcome targetCtx hTerminalState =>
+      cases hTerminalState with
+      | stop hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.stop hState))
+      | return_ hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.return_ hState))
+      | selfdestruct hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.selfdestruct hState))
+      | revert hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.revert hState))
+  | @regular sourceAfter values targetAfterPre targetAfter ctxAfter
+      hLength hEval hRel =>
+      simp only [Simulation.Interaction.bind_done_ok]
+      have hStmt :=
+        terminal_after_args
+          (primitiveFuel := argsFuel)
+          (targetFuel := (targetFuel - preArgs.length - 2) + 1)
+          (program := program) (ctx := ctxAfter)
+          hTerminal hLength hEval hRel
+      have hSingleton :=
+        PathScopedDoneRel.singleton
+          (targetFuel := targetFuel - preArgs.length - 2) hStmt
+      simpa [hTailFuel] using hSingleton
+
 namespace InitNames
 
 theorem openRun

@@ -462,6 +462,9 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Yul.Expr.lowerBound1Unchecked?_direct_parts
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.terminal_direct
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.compiled_terminal_direct
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PreparedArgsDoneRel
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.terminal_after_args
+#print axioms EvmCompiler.Yul.FunctionsInteractionStatement.terminal_of_prepared_args
 #print axioms EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_permitted
 #print axioms EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_static
 #print axioms EvmCompiler.Structured.Terminal.allowed_of_step

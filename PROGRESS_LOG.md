@@ -1,5 +1,19 @@
 # Progress Log
 
+- 2026-06-18 18:00 PDT - compaction-resume/generated-terminal-arguments -
+  Resumed after the checked direct terminal theorem and `terminal_after_args`;
+  the active boundary is the horizontal prepared-argument composition theorem,
+  followed by its compiler-owned recursive producer for generated preludes and
+  internal calls.
+
+- 2026-06-18 18:18 PDT - proof/yul-functions-terminal-composition - Added a
+  checked `PreparedArgsDoneRel` and `terminal_of_prepared_args`: generated
+  terminal lowering now composes a pass-owned argument prelude with the common
+  terminal leaf, including terminal propagation from internal calls. No
+  observer compiler, replay certificate, or lower-pass reasoning enters the
+  boundary. The remaining producer follows `UncheckedBoundLowering` and the
+  recursive Yul-to-Functions statement capability.
+
 - 2026-06-15 - compaction-resume - Resumed with the archive branch and
   narrowed observer-replay implementation intact. Final work is limited to
   consistency review, recording completed verification, and committing the

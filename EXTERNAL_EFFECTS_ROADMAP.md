@@ -995,6 +995,17 @@ Exit: every layer exposes one canonical open computation.
   - [x] Compose selected internal callees and publish the whole-program
     adjacent theorem.
 - [ ] Yul -> Functions.
+  - [x] Relate all source/target terminal primitives, including static-mode
+    `SELFDESTRUCT`, through one outcome-indexed terminal relation.
+  - [x] Prove direct terminal statements from ordinary compiler artifacts.
+  - [x] Split generated terminal lowering into a compiler-owned prepared-args
+    capability and a reusable terminal leaf; compose either regular argument
+    completion or a terminal internal-call outcome without replay evidence.
+  - [ ] Construct the prepared-args capability recursively from
+    `UncheckedBoundLowering`, using the adjacent expression/statement owner
+    for bound expressions and internal calls.
+  - [ ] Complete recursive statements, blocks, internal calls, and the
+    whole-program Yul-to-Functions theorem.
 
 Every boundary proves exact query equality and universal continuation
 before source fuel truncation. Boundaries whose lowering changes control-step
