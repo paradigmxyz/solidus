@@ -24,6 +24,7 @@ import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.Structured.ObserverTerminalAdequacy
 import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.Yul.FunctionsInteractionStatement
+import EvmCompiler.Yul.FunctionsInteractionPreparedArgs
 import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 import EvmCompiler.Yul.FunctionsInteractionTerminal
 
@@ -471,6 +472,9 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.PreparedArgsDoneRel.regular_of_stable
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.terminal_after_args
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatement.terminal_of_prepared_args
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.DoneRel
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.to_terminal
+#print axioms EvmCompiler.Yul.FunctionsInteractionPreparedArgs.nil
 #print axioms EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_permitted
 #print axioms EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_static
 #print axioms EvmCompiler.Structured.Terminal.allowed_of_step

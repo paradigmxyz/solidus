@@ -125,6 +125,7 @@ import EvmCompiler.Yul.FunctionsInteractionPrimitive
 import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 import EvmCompiler.Yul.FunctionsInteractionExpression
 import EvmCompiler.Yul.FunctionsInteractionStatement
+import EvmCompiler.Yul.FunctionsInteractionPreparedArgs
 import EvmCompiler.Yul.FunctionsInteractionTerminal
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.CompilerCallDecomposition
@@ -1450,6 +1451,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Expr.lowerBound1Unchecked?_direct_parts
 #check EvmCompiler.Yul.FunctionsInteractionStatement.terminal_direct
 #check EvmCompiler.Yul.FunctionsInteractionStatement.compiled_terminal_direct
+#check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.DoneRel
+#check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.to_terminal
+#check EvmCompiler.Yul.FunctionsInteractionPreparedArgs.nil
 #check EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_permitted
 #check EvmCompiler.Assembly.PrimOp.step_selfdestruct_of_static
 #check EvmCompiler.Structured.Terminal.Allowed

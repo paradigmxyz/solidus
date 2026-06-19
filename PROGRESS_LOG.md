@@ -22,6 +22,14 @@
   shared-world changes and monotone private-local growth, then convert through
   checked `toSeq?` evidence to `PreparedArgsDoneRel`.
 
+- 2026-06-18 18:57 PDT - proof/yul-functions-prepared-owner - Split the
+  recursive generated-argument proof into `FunctionsInteractionPreparedArgs`.
+  Its pass-owned `DoneRel` tracks stable delayed values, scoped state,
+  freshness-domain coverage, and monotone target-store growth; the checked
+  empty-lowering constructor and typed terminal adapter are complete. The
+  active induction frontier is `UncheckedBoundLowering.direct`, followed by
+  `.bound` using the same statement/internal-call callback.
+
 - 2026-06-15 - compaction-resume - Resumed with the archive branch and
   narrowed observer-replay implementation intact. Final work is limited to
   consistency review, recording completed verification, and committing the
