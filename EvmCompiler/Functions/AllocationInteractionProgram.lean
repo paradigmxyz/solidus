@@ -67,6 +67,25 @@ structure InitialRel
     target.evm.activeWords.toNat * MemoryContract.wordBytes <
       EvmYul.UInt256.size
 
+namespace InitialRel
+
+theorem targetCodeImage
+    {contract : MemoryContract.Contract}
+    {source : Functions.InteractionSemantics.State}
+    {target : Expressions.InteractionSemantics.RunState}
+    {image : ByteArray}
+    (hRel : InitialRel contract source target)
+    (hSource : source.shared.executionEnv.codeBytes = image) :
+    target.evm.executionEnv.codeBytes = image := by
+  have hEnv := hRel.shared.executionEnv_eq
+  have hCodeBytes :
+      source.shared.executionEnv.codeBytes =
+        target.evm.executionEnv.codeBytes := by
+    exact congrArg (fun env => env.codeBytes) hEnv
+  exact hCodeBytes.symm.trans hSource
+
+end InitialRel
+
 /-- Observable state relation after the distinguished program activation has
 ended and compiler-owned locals are no longer live. -/
 structure FinalStateRel

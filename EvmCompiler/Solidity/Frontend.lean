@@ -3257,6 +3257,108 @@ theorem compileObjectArtifactWithLinkerSymbols?_decodingCorrect
   exact compileOrderedCodeArtifactIn?_decodingCorrect hCode plan.payload
 
 mutual
+  inductive CompiledObjectArtifact.ValidFor
+      (linkerSymbols : List (Name × Word)) :
+      Object -> CompiledObjectArtifact -> Prop where
+    | intro
+        {object : Object} {artifact : CompiledObjectArtifact}
+        {childArtifacts : List CompiledObjectArtifact}
+        {plan : ObjectArtifactPlan}
+        (children : CompiledObjectArtifact.ListValidFor linkerSymbols
+          object.objects childArtifacts)
+        (planned : object.planObjectArtifactFromChildren?
+          linkerSymbols childArtifacts = some plan)
+        (finished : object.finishObjectArtifact? childArtifacts plan =
+          some artifact) :
+        CompiledObjectArtifact.ValidFor linkerSymbols object artifact
+
+  inductive CompiledObjectArtifact.ListValidFor
+      (linkerSymbols : List (Name × Word)) :
+      List Object -> List CompiledObjectArtifact -> Prop where
+    | nil : CompiledObjectArtifact.ListValidFor linkerSymbols [] []
+    | cons
+        {object : Object} {objects : List Object}
+        {artifact : CompiledObjectArtifact}
+        {artifacts : List CompiledObjectArtifact}
+        (head : CompiledObjectArtifact.ValidFor
+          linkerSymbols object artifact)
+        (tail : CompiledObjectArtifact.ListValidFor
+          linkerSymbols objects artifacts) :
+        CompiledObjectArtifact.ListValidFor linkerSymbols
+          (object :: objects) (artifact :: artifacts)
+end
+
+mutual
+  theorem compileObjectArtifactWithLinkerSymbols?_valid
+      (object : Object) (linkerSymbols : List (Name × Word))
+      (artifact : CompiledObjectArtifact)
+      (hCompile :
+        object.compileObjectArtifactWithLinkerSymbols? linkerSymbols =
+          some artifact) :
+      CompiledObjectArtifact.ValidFor linkerSymbols object artifact := by
+    unfold compileObjectArtifactWithLinkerSymbols? at hCompile
+    cases hChildren :
+        List.compileObjectArtifactsWithLinkerSymbols?
+          object.objects linkerSymbols with
+    | none => simp [hChildren] at hCompile
+    | some childArtifacts =>
+        cases hPlan : object.planObjectArtifactFromChildren?
+            linkerSymbols childArtifacts with
+        | none => simp [hChildren, hPlan] at hCompile
+        | some plan =>
+            have hFinish :
+                object.finishObjectArtifact? childArtifacts plan =
+                  some artifact := by
+              simpa [hChildren, hPlan] using hCompile
+            exact .intro
+              (List.compileObjectArtifactsWithLinkerSymbols?_valid
+                object.objects linkerSymbols childArtifacts hChildren)
+              hPlan hFinish
+  termination_by 2 * sizeOf object
+  decreasing_by
+    simp_wf
+    cases object
+    simp_wf
+    omega
+
+  theorem List.compileObjectArtifactsWithLinkerSymbols?_valid
+      (objects : List Object) (linkerSymbols : List (Name × Word))
+      (artifacts : List CompiledObjectArtifact)
+      (hCompile :
+        List.compileObjectArtifactsWithLinkerSymbols?
+            objects linkerSymbols = some artifacts) :
+      CompiledObjectArtifact.ListValidFor linkerSymbols objects artifacts := by
+    cases objects with
+    | nil =>
+        simp [List.compileObjectArtifactsWithLinkerSymbols?] at hCompile
+        subst artifacts
+        exact .nil
+    | cons object rest =>
+        unfold List.compileObjectArtifactsWithLinkerSymbols? at hCompile
+        cases hHead :
+            object.compileObjectArtifactWithLinkerSymbols? linkerSymbols with
+        | none => simp [hHead] at hCompile
+        | some artifact =>
+            cases hTail :
+                List.compileObjectArtifactsWithLinkerSymbols?
+                  rest linkerSymbols with
+            | none => simp [hHead, hTail] at hCompile
+            | some tail =>
+                simp [hHead, hTail] at hCompile
+                subst artifacts
+                exact .cons
+                  (compileObjectArtifactWithLinkerSymbols?_valid
+                    object linkerSymbols artifact hHead)
+                  (List.compileObjectArtifactsWithLinkerSymbols?_valid
+                    rest linkerSymbols tail hTail)
+  termination_by 2 * sizeOf objects + 1
+  decreasing_by
+    all_goals simp_all
+    all_goals simp_wf
+    all_goals omega
+end
+
+mutual
   noncomputable def computedImageCheckedWithLinkerSymbols?
       (object : Object) (linkerSymbols : List (Name × Word)) :
       Option (ObjectComputedObjectData × ObjectImage) := do

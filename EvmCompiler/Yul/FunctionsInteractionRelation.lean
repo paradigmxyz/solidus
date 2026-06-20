@@ -1510,6 +1510,22 @@ structure ScopedStateRel (layout : List Functions.Name)
 
 namespace ScopedStateRel
 
+theorem targetCodeImage
+    {layout : List Functions.Name}
+    {source : SourceState} {target : TargetState} {image : ByteArray}
+    (hRel : ScopedStateRel layout source target)
+    (hInstalled :
+      InteractionSemantics.State.CodeImageInstalled source image) :
+    target.shared.executionEnv.codeBytes = image := by
+  rcases hRel.state with
+    ⟨sourceShared, sourceVars, hSource, hShared, _hVars⟩
+  rw [hSource] at hInstalled
+  calc
+    target.shared.executionEnv.codeBytes =
+        sourceShared.executionEnv.codeBytes :=
+      hShared.executionEnv.codeBytes.symm
+    _ = image := hInstalled
+
 /-- The scoped relation depends only on the set of visible names, not their
 list order. This is useful at call entry, where Yul and Functions initialize
 returns and parameters in opposite traversal orders. -/

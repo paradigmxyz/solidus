@@ -1,5 +1,6 @@
 import EvmCompiler.Simulation.Interaction
 import EvmCompiler.Yul.EffectSemantics
+import EvmCompiler.Yul.Installation
 import EvmCompiler.Yul.Primitive
 import EvmCompiler.Yul.VarStoreRestriction
 
@@ -23,6 +24,25 @@ def stateModel : Yul.Source.Canonical.StateModel State where
   withSource := fun _ source => source
 
 namespace State
+
+/-- Source-facing assertion that the active Yul frame observes a particular
+byte image through `codesize` and `codecopy`. -/
+def CodeImageInstalled (state : State) (image : ByteArray) : Prop :=
+  match state with
+  | .Ok shared _ => shared.executionEnv.codeBytes = image
+  | _ => False
+
+theorem installContractWithCodeImage_codeImageInstalled
+    (contract : AstContract) (image : ByteArray)
+    (shared : EvmYul.SharedState .Yul)
+    (store : EvmYul.Yul.VarStore) :
+    CodeImageInstalled
+      (.Ok
+        (Source.Installation.installContractWithCodeImage
+          contract image shared)
+        store)
+      image := by
+  rfl
 
 theorem restrictStoreTo_idem (state : State)
     (scope : EvmYul.Yul.VarStore) :

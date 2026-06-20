@@ -1068,6 +1068,8 @@ theorem compiledObjectRootToBytecode
       Functions.AllocationInteractionProgram.InitialRel
         objectArtifact.codeArtifact.lower.toFunctions.memoryContract
         functionsState expressionsState)
+    (hCodeImage : Yul.InteractionSemantics.State.CodeImageInstalled source
+      (Assembly.Bytecode.ofList objectArtifact.image.bytes))
     (hTerminal : Simulation.Interaction.AllDone
       Yul.FunctionsInteractionProgram.SourceTerminal
       (Yul.InteractionSemantics.exec (sourceFuel + 1)
@@ -1078,16 +1080,26 @@ theorem compiledObjectRootToBytecode
         (.Block [objectArtifact.codeArtifact.ordered.program.contract.dispatcher])
         (some objectArtifact.codeArtifact.ordered.program.contract) source)
       transcript sourceDone) :
-    exists targetFuel targetDone,
-      Simulation.Interaction.Executes
-        (Assembly.Bytecode.InteractionSemantics.openRunNResult
-          (Assembly.Bytecode.ofList objectArtifact.image.bytes)
-          targetFuel
-          { expressionsState.evm with
-            pc := EvmYul.UInt256.ofNat 0 })
-        transcript targetDone /\
-      CompiledBytecodeDoneRel objectArtifact.codeArtifact.lower
-        objectArtifact.codeArtifact.compiled sourceDone targetDone := by
+    Solidity.Frontend.Object.CompiledObjectArtifact.ValidFor
+        linkerSymbols object objectArtifact /\
+      expressionsState.evm.executionEnv.codeBytes =
+          Assembly.Bytecode.ofList objectArtifact.image.bytes /\
+        exists targetFuel targetDone,
+        Simulation.Interaction.Executes
+          (Assembly.Bytecode.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList objectArtifact.image.bytes)
+            targetFuel
+            { expressionsState.evm with
+              pc := EvmYul.UInt256.ofNat 0 })
+          transcript targetDone /\
+        CompiledBytecodeDoneRel objectArtifact.codeArtifact.lower
+          objectArtifact.codeArtifact.compiled sourceDone targetDone := by
+  have hValid :=
+    Solidity.Frontend.Object.compileObjectArtifactWithLinkerSymbols?_valid
+      object linkerSymbols objectArtifact hObject
+  have hFunctionsCodeImage := hYulInitial.targetCodeImage hCodeImage
+  refine ⟨hValid,
+    hAllocationInitial.targetCodeImage hFunctionsCodeImage, ?_⟩
   have hCompiled := compiledObjectRootToAssemblyTarget
     hObject hScoped hSafety hResourceSafe hFrameSafe hYulInitial hYulDomain
     hAllocationInitial hTerminal
