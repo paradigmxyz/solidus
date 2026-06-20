@@ -14,6 +14,7 @@ import EvmCompiler.Expressions.InteractionPreservation
 import EvmCompiler.Expressions.ObserverPreservation
 import EvmCompiler.Functions.AllocationLowering
 import EvmCompiler.Functions.AllocationLiveness
+import EvmCompiler.Functions.AllocationLayout
 import EvmCompiler.Functions.AllocationObserverRelation
 import EvmCompiler.Functions.AllocationObserverSafety
 import EvmCompiler.Functions.AllocationObserverPreservation
@@ -2896,3 +2897,5 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLiveness.Examples.callWithDormantValue_result
 #check EvmCompiler.Functions.AllocationLiveness.Examples.loopWithContinue_result
 #check EvmCompiler.Functions.AllocationLiveness.Examples.terminalCutsOffTail_result
+#check EvmCompiler.Functions.AllocationLayout.build_run
+#check EvmCompiler.Functions.AllocationLayout.scheduleRetain?_sound

@@ -18,6 +18,18 @@ for theorem in \
   fi
 done
 
+for theorem in \
+    'build_run' \
+    'scheduleRetain?_sound'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.Functions.AllocationLayout.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing Functions layout theorem %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
 report_matches() {
   local title="$1"
   shift
@@ -1433,6 +1445,11 @@ report_matches \
   EvmCompiler/Functions/AllocationLiveness.lean
 
 report_matches \
+  'Functions allocation layout must remain an adjacent symbolic-stack owner:' \
+  '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|Interaction|EffectSemantics|TypedCfg|Assembly\.(Assembler|Compiler))' \
+  EvmCompiler/Functions/AllocationLayout.lean
+
+report_matches \
   'Canonical Expressions semantics must interpret Expressions syntax directly, not compile through Structured:' \
   '\b(toStructured|compile)\b' \
   EvmCompiler/Expressions/EffectSemantics.lean \
@@ -1491,6 +1508,7 @@ report_matches \
   EvmCompiler/Locals/InteractionPreservation.lean \
   EvmCompiler/Functions/AllocationInteraction*.lean \
   EvmCompiler/Functions/AllocationLiveness.lean \
+  EvmCompiler/Functions/AllocationLayout.lean \
   EvmCompiler/Functions/AllocationObserverRelation.lean \
   EvmCompiler/Functions/ObserverSafety.lean \
   EvmCompiler/Functions/AllocationObserverSafety.lean \

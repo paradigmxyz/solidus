@@ -85,11 +85,14 @@ short composition module.
 ### 3. Layout and Shuffle Owner
 
 - [ ] Track a symbolic stack layout at each allocation program point.
-- [ ] Pop dead values promptly and choose live-value order by next use.
+- [ ] Invoke the checked retain schedule at each program point so dead values
+  are popped promptly; next-use ordering remains open.
 - [ ] Compute canonical layouts at branch, switch, loop, and call-return joins.
-- [ ] Generate only checked `DUP`, `SWAP`, and `POP` transitions.
-- [ ] Prove each transition preserves the environment/layout relation and
-  respects EVM depth/top-16 limits.
+- [x] Generate a checked symbolic retain transition using only accessible
+  promotions and one suffix cleanup; inaccessible shuffles are rejected.
+- [x] Prove the retain artifact executes to its recorded promoted layout,
+  preserves the canonical relative order of survivors, and satisfies its
+  target-suffix/depth checks. Expression `DUP` checks remain part of lowering.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls
