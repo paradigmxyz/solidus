@@ -69,16 +69,18 @@ short composition module.
 
 ### 2. Backward Liveness Owner
 
-- [ ] Add a Functions-owned, outcome-indexed backward liveness analysis for
+- [x] Add a Functions-owned, outcome-indexed backward liveness analysis for
   normal continuation, `break`, `continue`, `leave`, terminal outcomes, loops,
   and internal calls.
-- [ ] Compute loop facts by a terminating fixed point over the finite set of
-  source bindings.
+- [x] Compute loop facts by a terminating checked fixed point; retain totality
+  over accepted finite source programs as an integration obligation.
 - [ ] Record next-use information needed by scheduling without making it a
   public premise.
-- [ ] Prove use/definition soundness and abrupt-outcome successor soundness.
+- [x] Prove the computed analyzer satisfies an independent structural relation
+  covering uses, definitions, calls, joins, and abrupt-outcome successors.
 - [ ] Integrate the computed artifact into allocation planning and add focused
-  examples for branches, loops, terminal statements, and calls.
+  planner examples. Source-analysis regressions for dead declarations, loops,
+  terminal statements, and dormant caller values are checked.
 
 ### 3. Layout and Shuffle Owner
 

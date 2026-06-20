@@ -1415,6 +1415,23 @@ report_matches \
   EvmCompiler/Objects.lean \
   EvmCompiler/Yul.lean
 
+for theorem in \
+    'Close.run_sound' \
+    'analyzeBlock?_sound'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.Functions.AllocationLiveness.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing Functions liveness theorem %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
+report_matches \
+  'Functions allocation liveness must remain a source-owned analysis:' \
+  '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|Interaction|EffectSemantics|Structured|TypedCfg|Assembly\.(Assembler|Compiler))' \
+  EvmCompiler/Functions/AllocationLiveness.lean
+
 report_matches \
   'Canonical Expressions semantics must interpret Expressions syntax directly, not compile through Structured:' \
   '\b(toStructured|compile)\b' \
@@ -1473,6 +1490,7 @@ report_matches \
   EvmCompiler/Locals/InteractionStatePreservation.lean \
   EvmCompiler/Locals/InteractionPreservation.lean \
   EvmCompiler/Functions/AllocationInteraction*.lean \
+  EvmCompiler/Functions/AllocationLiveness.lean \
   EvmCompiler/Functions/AllocationObserverRelation.lean \
   EvmCompiler/Functions/ObserverSafety.lean \
   EvmCompiler/Functions/AllocationObserverSafety.lean \

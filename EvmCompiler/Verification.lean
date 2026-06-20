@@ -13,6 +13,7 @@ import EvmCompiler.Assembly.InteractionConcreteResources
 import EvmCompiler.Expressions.InteractionPreservation
 import EvmCompiler.Expressions.ObserverPreservation
 import EvmCompiler.Functions.AllocationLowering
+import EvmCompiler.Functions.AllocationLiveness
 import EvmCompiler.Functions.AllocationObserverRelation
 import EvmCompiler.Functions.AllocationObserverSafety
 import EvmCompiler.Functions.AllocationObserverPreservation
@@ -2889,3 +2890,9 @@ or audit-alias corridor.
 #check EvmCompiler.Assembly.Source.runNResultWithOracle_compare_halted
 #check EvmCompiler.Assembly.Preservation.assemble_terminal_target_run_source_exists
 #check EvmCompiler.Assembly.Preservation.compile_terminal_target_run_source_exists
+#check EvmCompiler.Functions.AllocationLiveness.Close.run_sound
+#check EvmCompiler.Functions.AllocationLiveness.analyzeBlock?_sound
+#check EvmCompiler.Functions.AllocationLiveness.Examples.deadDeclaration_result
+#check EvmCompiler.Functions.AllocationLiveness.Examples.callWithDormantValue_result
+#check EvmCompiler.Functions.AllocationLiveness.Examples.loopWithContinue_result
+#check EvmCompiler.Functions.AllocationLiveness.Examples.terminalCutsOffTail_result
