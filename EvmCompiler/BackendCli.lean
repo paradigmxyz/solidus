@@ -120,32 +120,32 @@ def run (config : Config) : IO Unit := do
   let decodeFinish ← IO.monoMsNow
   IO.println ("timing\tdecode\t" ++ toString (decodeFinish - decodeStart))
   let compileStart ← IO.monoMsNow
-  let computedAndImage? :=
-    program.object.computedImageUncheckedWithLinkerSymbols?
+  let compiledObject? :=
+    program.object.compileObjectArtifactWithLinkerSymbols?
       config.linkerSymbols
   let byteLength :=
-    match computedAndImage? with
-    | some pair => pair.snd.bytes.length
+    match compiledObject? with
+    | some artifact => artifact.image.bytes.length
     | none => 0
   let compileFinish ← IO.monoMsNow
   IO.println
     ("timing\tobject_image\t" ++ toString (compileFinish - compileStart) ++
       "\tbytes=" ++ toString byteLength)
-  match computedAndImage? with
+  match compiledObject? with
   | none =>
       match config.mode with
       | .check => printCheck program none false
       | .image | .summary =>
           throw (IO.userError "unchecked object-image generation returned none")
-  | some (computed, image) =>
+  | some artifact =>
       match config.mode with
-      | .image | .summary => printImage config.mode image
+      | .image | .summary => printImage config.mode artifact.image
       | .check =>
           let solcOk :=
-            match resolveForSolcValidation? program.object computed with
+            match resolveForSolcValidation? program.object artifact.computed with
             | some resolved => resolved.toSolcYulProgram?.isSome
             | none => false
-          printCheck program (some image) solcOk
+          printCheck program (some artifact.image) solcOk
 
 def usage : String :=
   "usage: evm-compiler-backend (image|summary|check) BRIDGE_JSON [NAME=DECIMAL ...]"

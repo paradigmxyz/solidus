@@ -1331,6 +1331,15 @@ if printf '%s\n' "$ordered_lowering" |
     >&2
   failed=1
 fi
+if ! rg -q 'compileObjectArtifactWithLinkerSymbols\?' \
+      EvmCompiler/BackendCli.lean ||
+    rg -q 'computedImageUncheckedWithLinkerSymbols\?' \
+      EvmCompiler/BackendCli.lean; then
+  printf '%s\n\n' \
+    'The native object-image backend must retain the recursive checked compiler artifact.' \
+    >&2
+  failed=1
+fi
 if ! rg -q 'semantic promise, not an' \
       scripts/solidity_to_yul_lean.py ||
     rg -q 'scratch-reservation-(base|words).*default=' \

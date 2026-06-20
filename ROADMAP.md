@@ -562,14 +562,16 @@ Public production spine:
 
 - [x] Return an executable per-object code artifact retaining ordered Yul,
   exact lowering, checked lower-pass compilation, and emitted code bytes.
-- [ ] Make object compilation return one recursive checked artifact containing
+- [x] Make object compilation return one recursive checked artifact containing
   child images, stable layout, resolved ordered Yul, core compile artifacts,
   immutable relocations, payload, and final bytes.
 - [ ] Prove object-builtin resolution and serialization against a declarative
   solc-Yul object relation, including metadata ordering, `datasize`,
   `dataoffset`, `datacopy`, linker inputs, and instantiated immutables.
-- [ ] Compose the object artifact with the ordered-Yul theorem so the public
+- [x] Compose the object artifact with the ordered-Yul theorem so the public
   theorem's only compiler premise is `compile? source inputs = some artifact`.
+- [x] Prove payload-aware decoding and exact-transcript execution for the final
+  raw object bytes through the imported EVM decoder.
 
 ### Allocation And Memory
 

@@ -2,7 +2,7 @@ import EvmCompiler.Yul.FunctionsInteractionProgram
 import EvmCompiler.Functions.AllocationInteractionProgram
 import EvmCompiler.Structured.InteractionTerminalPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
-import EvmCompiler.Assembly.InteractionPreservation
+import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Solidity.Frontend
 
 namespace EvmCompiler
@@ -310,6 +310,30 @@ def StructuredBytecodeDoneRel
         TypedCfg.InteractionPreservation.OpenBlock.RunSimulates
           assembly cfgDone targetDone
 
+theorem StructuredBytecodeDoneRel.targetTerminal
+    {source : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {generated : Structured.TypedCfgPreservation.Program.GeneratedContext
+      source entryShapes cfg}
+    {assembly : Assembly.Program}
+    {returns : List Structured.ReturnDest}
+    {sourceDone : Except Structured.EVMException Structured.Outcome}
+    {targetDone : Assembly.Source.ExecutionOutcome}
+    (hSourceHalted :
+      Structured.InteractionTerminalPreservation.OpenOutcome.SourceHalted
+        sourceDone)
+    (hRel : StructuredBytecodeDoneRel source entryShapes cfg generated
+      assembly returns sourceDone targetDone) :
+    Assembly.InteractionSemantics.Terminal targetDone := by
+  rcases hRel with ⟨cfgDone, hStructured, hAssembly⟩
+  have hSafe :=
+    Structured.InteractionTerminalPreservation.OpenOutcome.assemblySafeHalted_of_related
+      hStructured hSourceHalted
+  exact
+    TypedCfg.InteractionPreservation.OpenBlock.terminal_of_assemblySafeHalted
+      hSafe hAssembly
+
 /-- Compose the checked terminal Structured lowering through certified
 TypedCfg lowering and Assembly encoding. This module only composes adjacent
 pass-owned theorems; generated compiler context remains an output. -/
@@ -427,6 +451,33 @@ def YulBytecodeDoneRel
       YulExpressionsDoneRel contract sourceDone structuredDone /\
         StructuredBytecodeDoneRel structured entryShapes cfg generated
           assembly [] structuredDone targetDone
+
+theorem YulBytecodeDoneRel.targetTerminal
+    {contract : MemoryContract.Contract}
+    {structured : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {generated : Structured.TypedCfgPreservation.Program.GeneratedContext
+      structured entryShapes cfg}
+    {assembly : Assembly.Program}
+    {sourceDone : Except Yul.InteractionSemantics.Failure
+      Yul.InteractionSemantics.State}
+    {targetDone : Assembly.Source.ExecutionOutcome}
+    (hSourceTerminal :
+      Yul.FunctionsInteractionProgram.SourceTerminal sourceDone)
+    (hRel : YulBytecodeDoneRel contract structured entryShapes cfg generated
+      assembly sourceDone targetDone) :
+    Assembly.InteractionSemantics.Terminal targetDone := by
+  rcases hRel with
+    ⟨structuredDone, ⟨functionsDone, hYul, hAllocation⟩, hStructured⟩
+  have hFunctionsHalted :=
+    Yul.FunctionsInteractionProgram.DoneRel.targetHalted_of_sourceTerminal
+      hYul hSourceTerminal
+  have hStructuredHalted :=
+    Functions.AllocationInteractionProgram.OpenOutcomeRel.targetHalted_of_sourceHalted
+      hAllocation hFunctionsHalted
+  exact StructuredBytecodeDoneRel.targetTerminal
+    hStructuredHalted hStructured
 
 /-- Checked terminal Yul-to-encoded-bytecode preservation. All semantic
 reasoning is delegated to the horizontally composed upper and lower endpoints;
@@ -573,6 +624,86 @@ def CompiledOpenWorldRel
                         compiledArtifact.metadata.typedCfg))
                   { expressionsState.evm with
                     pc := EvmYul.UInt256.ofNat 0 })
+
+/-- Terminal outcome relation exposed by the raw-byte branch theorem. All
+compiler-owned witnesses remain existential outputs of checked compilation. -/
+def CompiledBytecodeDoneRel
+    (objects : Objects.Program)
+    (compiledArtifact : Objects.Program.CompileArtifact) :
+    Except Yul.InteractionSemantics.Failure
+        Yul.InteractionSemantics.State ->
+      Assembly.Source.ExecutionOutcome -> Prop :=
+  fun sourceDone targetDone =>
+    exists expressions : Expressions.Program,
+      exists entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes,
+        exists cfgArtifact : TypedCfg.Program.CertifiedArtifact,
+          exists generated :
+              Structured.TypedCfgPreservation.Program.GeneratedContext
+                expressions.toStructured entryShapes
+                compiledArtifact.metadata.typedCfg,
+            YulBytecodeDoneRel
+              objects.toFunctions.memoryContract
+              expressions.toStructured entryShapes
+              compiledArtifact.metadata.typedCfg generated
+              cfgArtifact.target sourceDone targetDone
+
+theorem CompiledOpenWorldRel.bytecodeExecutes
+    {sourceProgram : Yul.Program} {objects : Objects.Program}
+    {compiledArtifact : Objects.Program.CompileArtifact}
+    {sourceFuel : Nat} {source : Yul.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    {bytes : ByteArray}
+    {transcript : Simulation.Interaction.Transcript}
+    {sourceDone : Except Yul.InteractionSemantics.Failure
+      Yul.InteractionSemantics.State}
+    (hCompiled : CompiledOpenWorldRel sourceProgram objects compiledArtifact
+      sourceFuel source expressionsState)
+    (hDecoding : Assembly.Bytecode.DecodingCorrect compiledArtifact.target
+      bytes)
+    (hTerminal : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceTerminal
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [sourceProgram.contract.dispatcher])
+        (some sourceProgram.contract) source))
+    (hSourceExec : Simulation.Interaction.Executes
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [sourceProgram.contract.dispatcher])
+        (some sourceProgram.contract) source)
+      transcript sourceDone) :
+    exists targetFuel targetDone,
+      Simulation.Interaction.Executes
+        (Assembly.Bytecode.InteractionSemantics.openRunNResult
+          bytes targetFuel
+          { expressionsState.evm with
+            pc := EvmYul.UInt256.ofNat 0 })
+        transcript targetDone /\
+      CompiledBytecodeDoneRel objects compiledArtifact
+        sourceDone targetDone := by
+  rcases hCompiled with
+    ⟨expressions, entryShapes, cfgArtifact, structuredFuel,
+      _hAccepted, generated, hRel⟩
+  obtain ⟨targetDone, hTargetExec, hDone⟩ :=
+    Simulation.Interaction.Rel.executes hRel hSourceExec
+  have hSourceTerminal :=
+    Simulation.Interaction.AllDone.property_of_executes
+      hTerminal hSourceExec
+  have hTargetTerminal :=
+    YulBytecodeDoneRel.targetTerminal hSourceTerminal hDone
+  cases targetDone with
+  | error error => cases hTargetTerminal
+  | ok result =>
+      let targetFuel :=
+        2 *
+          (Structured.InteractionStaticCost.blockBudget
+              expressions.toStructured structuredFuel
+              expressions.toStructured.body *
+            TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+              compiledArtifact.metadata.typedCfg)
+      refine ⟨targetFuel, .ok result, ?_, ?_⟩
+      · exact
+          Assembly.Bytecode.target_openRunNResult_executes_of_decoding
+            hDecoding hTargetExec
+      · exact ⟨expressions, entryShapes, cfgArtifact, generated, hDone⟩
 
 /-- Artifact-facing terminal Yul correctness. Every intermediate compiler
 artifact is recovered from ordinary top-level lowering and compilation; the
@@ -832,7 +963,7 @@ theorem compiledFrontendCodeToAssemblyTarget
         (some codeArtifact.ordered.program.contract) source)) :
     CompiledOpenWorldRel codeArtifact.ordered.program codeArtifact.lower
       codeArtifact.compiled sourceFuel source expressionsState := by
-  obtain ⟨hResolved, hOrdered, hLower, hCompile, _hBytes⟩ :=
+  obtain ⟨hResolved, hOrdered, hLower, hCompile, _hBridge, _hBytes⟩ :=
     Solidity.Frontend.Object.compileOrderedCodeArtifactIn?_parts hCode
   have hSource :=
     Solidity.Frontend.Object.toSolcYulOrderedProgram?_source hOrdered
@@ -843,6 +974,128 @@ theorem compiledFrontendCodeToAssemblyTarget
     hLower hSource.1 hSource.2.1 hCompile hProgramOk hScoped hSafety
     hResourceSafe hFrameSafe hYulInitial hYulDomain hAllocationInitial
     hTerminal
+
+/-- The root code retained by the recursive object-image artifact satisfies the
+same ordered Yul-to-Assembly theorem. Child layout, payload, marker, and image
+construction remain owned by the frontend artifact compiler. -/
+theorem compiledObjectRootToAssemblyTarget
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List (Solidity.Frontend.Name ×
+      Solidity.Frontend.Word)}
+    {objectArtifact : Solidity.Frontend.Object.CompiledObjectArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hObject : object.compileObjectArtifactWithLinkerSymbols?
+      linkerSymbols = some objectArtifact)
+    (hScoped : objectArtifact.codeArtifact.lower.toFunctions.Scoped)
+    (hSafety : Functions.AllocationInteractionSafety.SourceSafety
+      objectArtifact.codeArtifact.lower.toFunctions.memoryContract)
+    (hResourceSafe : Functions.AllocationInteractionProgram.ResourceSafe
+      objectArtifact.codeArtifact.compiled.metadata.allocation
+      objectArtifact.codeArtifact.lower.toFunctions
+      (Yul.FunctionsInteractionStaticCost.programBudget
+        objectArtifact.codeArtifact.ordered.program (sourceFuel + 1)))
+    (hFrameSafe :
+      Functions.AllocationInteractionProgram.StructuredFrameSafe
+        objectArtifact.codeArtifact.compiled.metadata.allocation
+        objectArtifact.codeArtifact.lower.toFunctions)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial
+        (Yul.Contract.names
+          objectArtifact.codeArtifact.ordered.program.contract)).used
+      functionsState.vars)
+    (hAllocationInitial :
+      Functions.AllocationInteractionProgram.InitialRel
+        objectArtifact.codeArtifact.lower.toFunctions.memoryContract
+        functionsState expressionsState)
+    (hTerminal : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceTerminal
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [objectArtifact.codeArtifact.ordered.program.contract.dispatcher])
+        (some objectArtifact.codeArtifact.ordered.program.contract) source)) :
+    CompiledOpenWorldRel objectArtifact.codeArtifact.ordered.program
+      objectArtifact.codeArtifact.lower objectArtifact.codeArtifact.compiled
+      sourceFuel source expressionsState := by
+  obtain ⟨childArtifacts, plan, hChildren, hPlan, hFinish, hCode,
+      hArtifactChildren, hContext, hChildImages, hPayload, hImage⟩ :=
+    Solidity.Frontend.Object.compileObjectArtifactWithLinkerSymbols?_parts
+      hObject
+  exact compiledFrontendCodeToAssemblyTarget hCode hScoped hSafety
+    hResourceSafe hFrameSafe hYulInitial hYulDomain hAllocationInitial
+    hTerminal
+
+/-- Every concrete terminal branch of a recursively compiled Solidity object
+executes on its exact raw object image with the same ordered open-world
+transcript and a related terminal outcome. -/
+theorem compiledObjectRootToBytecode
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List (Solidity.Frontend.Name ×
+      Solidity.Frontend.Word)}
+    {objectArtifact : Solidity.Frontend.Object.CompiledObjectArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    {transcript : Simulation.Interaction.Transcript}
+    {sourceDone : Except Yul.InteractionSemantics.Failure
+      Yul.InteractionSemantics.State}
+    (hObject : object.compileObjectArtifactWithLinkerSymbols?
+      linkerSymbols = some objectArtifact)
+    (hScoped : objectArtifact.codeArtifact.lower.toFunctions.Scoped)
+    (hSafety : Functions.AllocationInteractionSafety.SourceSafety
+      objectArtifact.codeArtifact.lower.toFunctions.memoryContract)
+    (hResourceSafe : Functions.AllocationInteractionProgram.ResourceSafe
+      objectArtifact.codeArtifact.compiled.metadata.allocation
+      objectArtifact.codeArtifact.lower.toFunctions
+      (Yul.FunctionsInteractionStaticCost.programBudget
+        objectArtifact.codeArtifact.ordered.program (sourceFuel + 1)))
+    (hFrameSafe :
+      Functions.AllocationInteractionProgram.StructuredFrameSafe
+        objectArtifact.codeArtifact.compiled.metadata.allocation
+        objectArtifact.codeArtifact.lower.toFunctions)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial
+        (Yul.Contract.names
+          objectArtifact.codeArtifact.ordered.program.contract)).used
+      functionsState.vars)
+    (hAllocationInitial :
+      Functions.AllocationInteractionProgram.InitialRel
+        objectArtifact.codeArtifact.lower.toFunctions.memoryContract
+        functionsState expressionsState)
+    (hTerminal : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceTerminal
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [objectArtifact.codeArtifact.ordered.program.contract.dispatcher])
+        (some objectArtifact.codeArtifact.ordered.program.contract) source))
+    (hSourceExec : Simulation.Interaction.Executes
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [objectArtifact.codeArtifact.ordered.program.contract.dispatcher])
+        (some objectArtifact.codeArtifact.ordered.program.contract) source)
+      transcript sourceDone) :
+    exists targetFuel targetDone,
+      Simulation.Interaction.Executes
+        (Assembly.Bytecode.InteractionSemantics.openRunNResult
+          (Assembly.Bytecode.ofList objectArtifact.image.bytes)
+          targetFuel
+          { expressionsState.evm with
+            pc := EvmYul.UInt256.ofNat 0 })
+        transcript targetDone /\
+      CompiledBytecodeDoneRel objectArtifact.codeArtifact.lower
+        objectArtifact.codeArtifact.compiled sourceDone targetDone := by
+  have hCompiled := compiledObjectRootToAssemblyTarget
+    hObject hScoped hSafety hResourceSafe hFrameSafe hYulInitial hYulDomain
+    hAllocationInitial hTerminal
+  have hDecoding :=
+    Solidity.Frontend.Object.compileObjectArtifactWithLinkerSymbols?_decodingCorrect
+      hObject
+  exact hCompiled.bytecodeExecutes
+    hDecoding hTerminal hSourceExec
 
 /-- Public proposition for open-world terminal compiler correctness. Its
 premises are source-facing; all lowering artifacts are hidden inside

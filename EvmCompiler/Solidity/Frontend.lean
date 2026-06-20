@@ -2483,7 +2483,10 @@ def compileOrderedCodeArtifactIn? (object : Object)
   let lower ← ordered.toObjects?
   let compiled ← Objects.Program.compileArtifact? lower
   let bytes := (Assembly.Bytecode.encodeTarget compiled.target).toList
-  some { resolved, ordered, lower, compiled, bytes }
+  if Assembly.Bytecode.targetFitsDecodeWindow? compiled.target then
+    some { resolved, ordered, lower, compiled, bytes }
+  else
+    none
 
 theorem compileOrderedCodeArtifactIn?_parts
     {object : Object} {context : ObjectBuiltinContext}
@@ -2495,6 +2498,8 @@ theorem compileOrderedCodeArtifactIn?_parts
       artifact.ordered.toObjects? = some artifact.lower ∧
       Objects.Program.compileArtifact? artifact.lower =
         some artifact.compiled ∧
+      Assembly.Bytecode.targetFitsDecodeWindow?
+          artifact.compiled.target = true ∧
       artifact.bytes =
         (Assembly.Bytecode.encodeTarget artifact.compiled.target).toList := by
   unfold compileOrderedCodeArtifactIn? at hCompile
@@ -2511,14 +2516,58 @@ theorem compileOrderedCodeArtifactIn?_parts
               | none =>
                   simp [hResolved, hOrdered, hLower, hCompiled] at hCompile
               | some compiled =>
-                  simp [hResolved, hOrdered, hLower, hCompiled] at hCompile
-                  subst artifact
-                  refine ⟨?_, ?_, ?_, ?_, ?_⟩
-                  · simpa using hResolved
-                  · simpa using hOrdered
-                  · simpa using hLower
-                  · simpa using hCompiled
-                  · simp
+                  cases hBridge :
+                      Assembly.Bytecode.targetFitsDecodeWindow?
+                        compiled.target with
+                  | false =>
+                      simp [hResolved, hOrdered, hLower, hCompiled,
+                        hBridge] at hCompile
+                  | true =>
+                      simp [hResolved, hOrdered, hLower, hCompiled,
+                        hBridge] at hCompile
+                      subst artifact
+                      refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+                      · simpa using hResolved
+                      · simpa using hOrdered
+                      · simpa using hLower
+                      · simpa using hCompiled
+                      · exact hBridge
+                      · simp
+
+theorem compileOrderedCodeArtifactIn?_decodingCorrect
+    {object : Object} {context : ObjectBuiltinContext}
+    {artifact : CompiledCodeArtifact}
+    (hCompile : object.compileOrderedCodeArtifactIn? context =
+      some artifact)
+    (suffix : List UInt8) :
+    Assembly.Bytecode.DecodingCorrect artifact.compiled.target
+      (Assembly.Bytecode.ofList (artifact.bytes ++ suffix)) := by
+  obtain ⟨_hResolved, _hOrdered, _hLower, hArtifact, hBridge, hBytes⟩ :=
+    compileOrderedCodeArtifactIn?_parts hCompile
+  have hCompileWithPolicy :
+      Objects.Program.compileArtifactWithPolicy?
+          Objects.Program.defaultBackendPolicy artifact.lower =
+        some artifact.compiled := by
+    simpa [Objects.Program.compileArtifact?] using hArtifact
+  have hLowered :
+      artifact.compiled.LoweredFrom artifact.lower.toFunctions :=
+    (Objects.Program.compileArtifactWithPolicy?_valid
+      hCompileWithPolicy).2
+  rcases hLowered with
+    ⟨_expressions, compiled, _hCompatible, _hMemoryAuthorized,
+      _hExpressions, _hStructuredWF, _hCfg, _hAllocated,
+      hExecutable, _hCertificate⟩
+  have hAssemblyCompile :
+      Assembly.compile? compiled.target = some artifact.compiled.target := by
+    rw [← Assembly.compileExecutable?_eq_compile?]
+    exact hExecutable
+  have hDecodeSafety :
+    Assembly.Bytecode.DecodeSafety artifact.compiled.target :=
+    Assembly.Bytecode.compile_decodeSafety hAssemblyCompile
+      (Assembly.Bytecode.targetFitsDecodeWindow_of_check hBridge)
+  rw [hBytes]
+  exact Assembly.Bytecode.compile_decodingCorrect_with_suffix
+    hAssemblyCompile hDecodeSafety suffix
 
 def compileCodeUncheckedIn? (object : Object)
     (context : ObjectBuiltinContext) : Option Assembly.TargetProgram := do
@@ -2907,6 +2956,305 @@ mutual
     all_goals simp_wf
     all_goals omega
 end
+
+inductive CompiledObjectArtifact where
+  | mk
+      (computed : ObjectComputedObjectData)
+      (image : ObjectImage)
+      (codeArtifact : CompiledCodeArtifact)
+      (children : List CompiledObjectArtifact)
+
+namespace CompiledObjectArtifact
+
+def computed : CompiledObjectArtifact → ObjectComputedObjectData
+  | .mk computed _image _codeArtifact _children => computed
+
+def image : CompiledObjectArtifact → ObjectImage
+  | .mk _computed image _codeArtifact _children => image
+
+def codeArtifact : CompiledObjectArtifact → CompiledCodeArtifact
+  | .mk _computed _image codeArtifact _children => codeArtifact
+
+def children : CompiledObjectArtifact → List CompiledObjectArtifact
+  | .mk _computed _image _codeArtifact children => children
+
+end CompiledObjectArtifact
+
+structure ObjectArtifactPlan where
+  childImages : List ObjectImage
+  immutableNames : List Name
+  markerImmutableValues : List (Name × Word)
+  items : List ObjectItemRef
+  dataSizes : List (Name × Word)
+  dataOffsets : List (Name × Word)
+  payload : List UInt8
+  codeBase : Nat
+  layout : List ObjectLayout.Entry
+  context : ObjectBuiltinContext
+
+def planObjectArtifactFromChildren? (object : Object)
+    (linkerSymbols : List (Name × Word))
+    (childArtifacts : List CompiledObjectArtifact) :
+    Option ObjectArtifactPlan := do
+    let childImages :=
+      childArtifacts.map CompiledObjectArtifact.image
+    let childImmutableReferences :=
+      ObjectImage.immutableReferenceEntries childImages
+    let immutableNames := object.loadImmutableNames
+    let zeroImmutableValues :=
+      ImmutableReference.zeroEntries immutableNames
+    let markerImmutableValues :=
+      ImmutableReference.markerEntriesFromNat 0 immutableNames
+    let items ← object.payloadItems? childImages
+    let dataSizes ←
+      ObjectItemRef.List.dataSizeEntries? object.data childImages items
+    let layout0 ←
+      ObjectItemRef.List.objectLayoutEntriesFromNat?
+        object.data childImages 0 items
+    let dataOffsets0 ←
+      ObjectItemRef.List.dataOffsetEntriesFromNat?
+        object.data childImages 0 items
+    let payload ←
+      ObjectItemRef.List.payloadBytes? object.data childImages items
+    let placeholderContext : ObjectBuiltinContext :=
+      { layout := { entries := layout0 }
+        dataSizes := dataSizes
+        dataOffsets := dataOffsets0
+        linkerSymbols := linkerSymbols
+        immutableValues := zeroImmutableValues
+        immutableReferences := childImmutableReferences
+        selfSize? := some (object.name, EvmYul.UInt256.ofNat 0) }
+    if !placeholderContext.objectDataNamesUnique? then
+      none
+    else
+    let placeholderArtifact ←
+      object.compileOrderedCodeArtifactIn? placeholderContext
+    let codeBase := placeholderArtifact.bytes.length
+    let selfSize := EvmYul.UInt256.ofNat (codeBase + payload.length)
+    let layout ←
+      ObjectItemRef.List.objectLayoutEntriesFromNat?
+        object.data childImages codeBase items
+    let dataOffsets ←
+      ObjectItemRef.List.dataOffsetEntriesFromNat?
+        object.data childImages codeBase items
+    let context : ObjectBuiltinContext :=
+      { layout := { entries := layout }
+        dataSizes := dataSizes
+        dataOffsets := dataOffsets
+        linkerSymbols := linkerSymbols
+        immutableValues := zeroImmutableValues
+        immutableReferences := childImmutableReferences
+        selfSize? := some (object.name, selfSize) }
+    if !context.objectDataNamesUnique? then
+      none
+    else
+    some
+      { childImages := childImages
+        immutableNames := immutableNames
+        markerImmutableValues := markerImmutableValues
+        items := items
+        dataSizes := dataSizes
+        dataOffsets := dataOffsets
+        payload := payload
+        codeBase := codeBase
+        layout := layout
+        context := context }
+
+def compileMarkerCodeArtifact? (object : Object)
+    (plan : ObjectArtifactPlan) (codeArtifact : CompiledCodeArtifact) :
+    Option CompiledCodeArtifact :=
+  match plan.immutableNames with
+  | [] => some codeArtifact
+  | _ :: _ =>
+      let markerContext : ObjectBuiltinContext :=
+        { plan.context with
+          immutableValues := plan.markerImmutableValues }
+      object.compileOrderedCodeArtifactIn? markerContext
+
+def finishObjectArtifact? (object : Object)
+    (childArtifacts : List CompiledObjectArtifact)
+    (plan : ObjectArtifactPlan) : Option CompiledObjectArtifact := do
+    let codeArtifact ←
+      object.compileOrderedCodeArtifactIn? plan.context
+    if codeArtifact.bytes.length == plan.codeBase then
+    let markerArtifact ←
+      object.compileMarkerCodeArtifact? plan codeArtifact
+    if markerArtifact.bytes.length == plan.codeBase then
+    let ownImmutableReferences :=
+      Bytecode.immutableReferenceEntriesFromCodes
+        codeArtifact.bytes markerArtifact.bytes plan.markerImmutableValues
+    let payloadImmutableReferences ←
+      ObjectItemRef.List.immutableReferenceEntriesFromNat?
+        object.data plan.childImages plan.codeBase plan.items
+    let immutableReferences :=
+      ownImmutableReferences ++ payloadImmutableReferences
+    let computed : ObjectComputedObjectData :=
+      { childImages := plan.childImages
+        items := plan.items
+        dataSizes := plan.dataSizes
+        dataOffsets := plan.dataOffsets
+        payload := plan.payload
+        codeBase := plan.codeBase
+        context := plan.context
+        code := codeArtifact.bytes
+        markerCode := markerArtifact.bytes }
+    let image : ObjectImage :=
+      { name := object.name
+        bytes := codeArtifact.bytes ++ plan.payload
+        immutableReferences := immutableReferences
+        layoutEntries := plan.layout
+        dataSizeEntries := plan.dataSizes
+        dataOffsetEntries := plan.dataOffsets }
+    some (.mk computed image codeArtifact childArtifacts)
+    else
+      none
+    else
+      none
+
+theorem finishObjectArtifact?_parts
+    {object : Object} {plan : ObjectArtifactPlan}
+    {childArtifacts : List CompiledObjectArtifact}
+    {artifact : CompiledObjectArtifact}
+    (hFinish : object.finishObjectArtifact? childArtifacts plan =
+      some artifact) :
+    object.compileOrderedCodeArtifactIn? plan.context =
+        some artifact.codeArtifact ∧
+      artifact.children = childArtifacts ∧
+      artifact.computed.context = plan.context ∧
+      artifact.computed.childImages = plan.childImages ∧
+      artifact.computed.payload = plan.payload ∧
+      artifact.computed.code = artifact.codeArtifact.bytes ∧
+      artifact.image.bytes = artifact.codeArtifact.bytes ++ plan.payload := by
+  unfold finishObjectArtifact? at hFinish
+  cases hCode : object.compileOrderedCodeArtifactIn? plan.context with
+  | none => simp [hCode] at hFinish
+  | some codeArtifact =>
+      cases hCodeLength : codeArtifact.bytes.length == plan.codeBase with
+      | false =>
+          have hCodeNe : codeArtifact.bytes.length ≠ plan.codeBase := by
+            simpa using hCodeLength
+          simp [hCode, hCodeNe] at hFinish
+      | true =>
+          have hCodeEq : codeArtifact.bytes.length = plan.codeBase := by
+            simpa using hCodeLength
+          cases hMarker :
+              object.compileMarkerCodeArtifact? plan codeArtifact with
+          | none => simp [hCode, hCodeEq, hMarker] at hFinish
+          | some markerArtifact =>
+              cases hMarkerLength :
+                  markerArtifact.bytes.length == plan.codeBase with
+              | false =>
+                  have hMarkerNe :
+                      markerArtifact.bytes.length ≠ plan.codeBase := by
+                    simpa using hMarkerLength
+                  simp [hCode, hCodeEq, hMarker, hMarkerNe] at hFinish
+              | true =>
+                  have hMarkerEq :
+                      markerArtifact.bytes.length = plan.codeBase := by
+                    simpa using hMarkerLength
+                  cases hPayloadReferences :
+                      ObjectItemRef.List.immutableReferenceEntriesFromNat?
+                        object.data plan.childImages plan.codeBase plan.items with
+                  | none =>
+                      simp [hCode, hCodeEq, hMarker, hMarkerEq,
+                        hPayloadReferences] at hFinish
+                  | some payloadReferences =>
+                      simp [hCode, hCodeEq, hMarker, hMarkerEq,
+                        hPayloadReferences] at hFinish
+                      subst artifact
+                      refine ⟨?_, rfl, rfl, rfl, rfl, rfl, rfl⟩
+                      rfl
+
+mutual
+  def compileObjectArtifactWithLinkerSymbols?
+      (object : Object) (linkerSymbols : List (Name × Word)) :
+      Option CompiledObjectArtifact := do
+    let childArtifacts ←
+      List.compileObjectArtifactsWithLinkerSymbols?
+        object.objects linkerSymbols
+    let plan ←
+      object.planObjectArtifactFromChildren? linkerSymbols childArtifacts
+    object.finishObjectArtifact? childArtifacts plan
+  termination_by sizeOf object
+  decreasing_by
+    simp_wf
+    cases object
+    simp_wf
+    omega
+
+  def List.compileObjectArtifactsWithLinkerSymbols?
+      (objects : List Object) (linkerSymbols : List (Name × Word)) :
+      Option (List CompiledObjectArtifact) :=
+    match objects with
+    | [] => some []
+    | object :: rest => do
+        let head ←
+          Object.compileObjectArtifactWithLinkerSymbols?
+            object linkerSymbols
+        let tail ←
+          List.compileObjectArtifactsWithLinkerSymbols?
+            rest linkerSymbols
+        some (head :: tail)
+  termination_by sizeOf objects
+  decreasing_by
+    all_goals simp_wf
+    all_goals omega
+end
+
+theorem compileObjectArtifactWithLinkerSymbols?_parts
+    {object : Object} {linkerSymbols : List (Name × Word)}
+    {artifact : CompiledObjectArtifact}
+    (hCompile :
+      object.compileObjectArtifactWithLinkerSymbols? linkerSymbols =
+        some artifact) :
+    ∃ childArtifacts plan,
+      List.compileObjectArtifactsWithLinkerSymbols?
+          object.objects linkerSymbols = some childArtifacts ∧
+      object.planObjectArtifactFromChildren?
+          linkerSymbols childArtifacts = some plan ∧
+      object.finishObjectArtifact? childArtifacts plan = some artifact ∧
+      object.compileOrderedCodeArtifactIn? plan.context =
+        some artifact.codeArtifact ∧
+      artifact.children = childArtifacts ∧
+      artifact.computed.context = plan.context ∧
+      artifact.computed.childImages = plan.childImages ∧
+      artifact.computed.payload = plan.payload ∧
+      artifact.image.bytes = artifact.codeArtifact.bytes ++ plan.payload := by
+  unfold compileObjectArtifactWithLinkerSymbols? at hCompile
+  cases hChildren :
+      List.compileObjectArtifactsWithLinkerSymbols?
+        object.objects linkerSymbols with
+  | none => simp [hChildren] at hCompile
+  | some childArtifacts =>
+      cases hPlan :
+          object.planObjectArtifactFromChildren?
+            linkerSymbols childArtifacts with
+      | none => simp [hChildren, hPlan] at hCompile
+      | some plan =>
+          have hFinish :
+              object.finishObjectArtifact? childArtifacts plan =
+                some artifact := by
+            simpa [hChildren, hPlan] using hCompile
+          have hParts := finishObjectArtifact?_parts hFinish
+          refine
+            ⟨childArtifacts, plan, rfl, hPlan, hFinish, hParts.1,
+              hParts.2.1, hParts.2.2.1, ?_, hParts.2.2.2.2.1,
+              hParts.2.2.2.2.2.2⟩
+          exact hParts.2.2.2.1
+
+theorem compileObjectArtifactWithLinkerSymbols?_decodingCorrect
+    {object : Object} {linkerSymbols : List (Name × Word)}
+    {artifact : CompiledObjectArtifact}
+    (hCompile :
+      object.compileObjectArtifactWithLinkerSymbols? linkerSymbols =
+        some artifact) :
+    Assembly.Bytecode.DecodingCorrect artifact.codeArtifact.compiled.target
+      (Assembly.Bytecode.ofList artifact.image.bytes) := by
+  obtain ⟨_childArtifacts, plan, _hChildren, _hPlan, _hFinish, hCode,
+      _hArtifactChildren, _hContext, _hChildImages, _hPayload, hImage⟩ :=
+    compileObjectArtifactWithLinkerSymbols?_parts hCompile
+  rw [hImage]
+  exact compileOrderedCodeArtifactIn?_decodingCorrect hCode plan.payload
 
 mutual
   noncomputable def computedImageCheckedWithLinkerSymbols?

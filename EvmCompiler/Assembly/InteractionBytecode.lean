@@ -35,13 +35,13 @@ end InteractionSemantics
 theorem openStepResult_eq_target_of_fetch
     {target : TargetProgram} {bytes : ByteArray}
     {state : EVMState} {instr : TargetInstr}
-    (hEncoding : EncodingCorrect target bytes)
+    (hDecoding : DecodingCorrect target bytes)
     (hFetch : target.fetch state.pc.toNat = some instr) :
     InteractionSemantics.openStepResult bytes state =
       Assembly.InteractionSemantics.Target.openStepResult target state := by
   obtain ⟨located, hMem, hPc, hInstr⟩ :=
     TargetProgram.exists_located_of_fetch hFetch
-  have hDecode := hEncoding.decodes located hMem
+  have hDecode := hDecoding.decodes located hMem
   unfold decodeAt at hDecode
   have hPcWord :
       EvmYul.UInt256.ofNat located.pc = state.pc := by
@@ -87,12 +87,12 @@ theorem target_openStepResult_executes_fetch
 Every successful fetched-target branch is executed by the encoded bytecode
 with the same instruction fuel, dependent interaction transcript, and result.
 -/
-theorem target_openRunNResult_executes
+theorem target_openRunNResult_executes_of_decoding
     {target : TargetProgram} {bytes : ByteArray}
     {fuel : Nat} {state : EVMState}
     {transcript : Simulation.Interaction.Transcript}
     {result : StepResult}
-    (hEncoding : EncodingCorrect target bytes)
+    (hDecoding : DecodingCorrect target bytes)
     (hExec :
       Simulation.Interaction.Executes
         (Assembly.InteractionSemantics.Target.openRunNResult
@@ -135,7 +135,7 @@ theorem target_openRunNResult_executes
             Simulation.Interaction.Executes
               (InteractionSemantics.openStepResult bytes state)
               headTranscript (.ok stepResult) := by
-          rw [openStepResult_eq_target_of_fetch hEncoding hFetch]
+          rw [openStepResult_eq_target_of_fetch hDecoding hFetch]
           exact hStep
         subst transcript
         change
@@ -158,6 +158,23 @@ theorem target_openRunNResult_executes
             exact
               Simulation.Interaction.Executes.bind_ok
                 hByteStep hRest
+
+theorem target_openRunNResult_executes
+    {target : TargetProgram} {bytes : ByteArray}
+    {fuel : Nat} {state : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    {result : StepResult}
+    (hEncoding : EncodingCorrect target bytes)
+    (hExec :
+      Simulation.Interaction.Executes
+        (Assembly.InteractionSemantics.Target.openRunNResult
+          target fuel state)
+        transcript (.ok result)) :
+    Simulation.Interaction.Executes
+      (InteractionSemantics.openRunNResult bytes fuel state)
+      transcript (.ok result) :=
+  target_openRunNResult_executes_of_decoding
+    hEncoding.decodingCorrect hExec
 
 /--
 Assembly-to-bytecode open-effects theorem.

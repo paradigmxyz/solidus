@@ -26,6 +26,34 @@ theorem successful
 
 end SourceHalted
 
+theorem assemblySafeHalted_of_related
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
+    {returns : List ReturnDest} {tokens : List Word}
+    {source : Except EVMException Structured.Outcome}
+    {target : Except EVMException TypedCfg.Outcome}
+    (hRel : OutcomeDoneRel result ctx regular returns tokens source target)
+    (hSourceHalted : SourceHalted source) :
+    TypedCfg.InteractionSemantics.Program.AssemblySafeHalted target := by
+  cases source with
+  | error sourceError => cases hSourceHalted
+  | ok sourceOutcome =>
+      cases target with
+      | error targetError => cases hRel
+      | ok targetOutcome =>
+          cases hRel with
+          | ok hOutcome =>
+              rcases sourceOutcome with ⟨sourceState, sourceMode⟩
+              cases sourceMode with
+              | regular | brk | cont | leave => cases hSourceHalted
+              | halt kind =>
+                  obtain ⟨targetState, targetFinal, hTarget, hStep,
+                      _hFinal⟩ :=
+                    TypedCfgPreservation.OutcomeSimulation.Rel.halt_elim
+                      hOutcome.1
+                  subst targetOutcome
+                  exact ⟨targetFinal, hStep⟩
+
 /-- A terminal Structured-to-TypedCfg relation supplies the source-facing
 safety needed to execute the adjacent Assembly halt instruction. -/
 theorem allDone_assemblySafeHalted
@@ -47,24 +75,7 @@ theorem allDone_assemblySafeHalted
   apply Simulation.Interaction.Rel.allDone_right hStrong
   intro sourceDone targetDone hDone
   rcases hDone with ⟨hRelated, hSourceDone⟩
-  cases sourceDone with
-  | error sourceError => cases hSourceDone
-  | ok sourceOutcome =>
-      cases targetDone with
-      | error targetError => cases hRelated
-      | ok targetOutcome =>
-          cases hRelated with
-          | ok hOutcome =>
-              rcases sourceOutcome with ⟨sourceState, sourceMode⟩
-              cases sourceMode with
-              | regular | brk | cont | leave => cases hSourceDone
-              | halt kind =>
-                  obtain ⟨targetState, targetFinal, hTarget, hStep,
-                      _hFinal⟩ :=
-                    TypedCfgPreservation.OutcomeSimulation.Rel.halt_elim
-                      hOutcome.1
-                  subst targetOutcome
-                  exact ⟨targetFinal, hStep⟩
+  exact assemblySafeHalted_of_related hRelated hSourceDone
 
 namespace PreservesUnder
 

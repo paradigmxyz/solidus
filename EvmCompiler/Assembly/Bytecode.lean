@@ -97,6 +97,20 @@ structure EncodingCorrect (target : TargetProgram) (bytes : ByteArray) : Prop wh
         located.instr = TargetInstr.jumpdest →
           jumpdestListed bytes located.pc
 
+/-- The byte-level fact needed by instruction execution. Unlike
+`EncodingCorrect`, this permits an object/data payload after the encoded code
+prefix. -/
+structure DecodingCorrect (target : TargetProgram) (bytes : ByteArray) : Prop where
+  decodes :
+    ∀ located, located ∈ target.code →
+      decodeAt bytes located.pc located.instr
+
+theorem EncodingCorrect.decodingCorrect
+    {target : TargetProgram} {bytes : ByteArray}
+    (hCorrect : EncodingCorrect target bytes) :
+    DecodingCorrect target bytes where
+  decodes := hCorrect.decodes
+
 structure DecodeSafety (target : TargetProgram) : Prop where
   pcNoWrap :
     ∀ located, located ∈ target.code →
@@ -912,6 +926,22 @@ theorem codeLayout_decodes {code : List LocatedTarget}
   simpa using
     codeLayout_decodeAt_with_prefix (code := code) (pre := []) (suffix := [])
       (base := 0) hLayout rfl hPc hStart hEnd located hMem
+
+theorem compile_decodingCorrect_with_suffix
+    {program : Program} {target : TargetProgram}
+    (hCompile : compile? program = some target)
+    (hSafety : DecodeSafety target)
+    (suffix : List UInt8) :
+    DecodingCorrect target
+      (ofList ((encodeTarget target).toList ++ suffix)) where
+  decodes := by
+    intro located hMem
+    have hDecoded :=
+      codeLayout_decodeAt_with_prefix
+        (code := target.code) (pre := []) (suffix := suffix) (base := 0)
+        (compile_layout hCompile) rfl hSafety.pcNoWrap
+        hSafety.extractStartSmall hSafety.extractEndSmall located hMem
+    simpa [encodeTarget, ofList] using hDecoded
 
 theorem compile_decode_correct {program : Program} {target : TargetProgram}
     (hCompile : compile? program = some target)
