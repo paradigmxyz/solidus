@@ -560,6 +560,8 @@ Public production spine:
 
 ### Object Images
 
+- [x] Return an executable per-object code artifact retaining ordered Yul,
+  exact lowering, checked lower-pass compilation, and emitted code bytes.
 - [ ] Make object compilation return one recursive checked artifact containing
   child images, stable layout, resolved ordered Yul, core compile artifacts,
   immutable relocations, payload, and final bytes.

@@ -2340,6 +2340,14 @@ theorem toSolcYulOrderedProgram?_source
           Yul.SolcValidation.namesNodup?] at hParts
         exact hParts.2
 
+theorem toSolcYulOrderedProgram?_programOkWithEntries
+    {object : Object} {ordered : Yul.OrderedProgram}
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    Yul.SolcValidation.ProgramOkWithEntries?
+        Yul.SolcValidation.defaultDialectProfile ordered.program
+        ordered.functionEntries = true := by
+  exact (toSolcYulOrderedProgram?_source hConvert).2.2.1
+
 theorem toSolcYulProgram?_memoryContract
     {object : Object} {program : Yul.Program}
     (hConvert : object.toSolcYulProgram? = some program) :
@@ -2457,17 +2465,70 @@ def lowerCodeUncheckedWithLocalDataBase? (object : Object)
   let resolved ← object.resolveObjectBuiltinsWithLocalDataBase? layout base
   resolved.lowerCodeUnchecked?
 
+/-- Executable, theorem-facing artifact for one resolved object code body.
+Unlike the legacy unchecked entrypoint, this retains the ordered Yul source,
+the exact Yul-to-Functions result, and the checked lower-pass artifact that
+produced the emitted bytes. -/
+structure CompiledCodeArtifact where
+  resolved : Object
+  ordered : Yul.OrderedProgram
+  lower : Objects.Program
+  compiled : Objects.Program.CompileArtifact
+  bytes : List UInt8
+
+def compileOrderedCodeArtifactIn? (object : Object)
+    (context : ObjectBuiltinContext) : Option CompiledCodeArtifact := do
+  let resolved ← object.resolveObjectBuiltinsIn? context
+  let ordered ← resolved.toSolcYulOrderedProgram?
+  let lower ← ordered.toObjects?
+  let compiled ← Objects.Program.compileArtifact? lower
+  let bytes := (Assembly.Bytecode.encodeTarget compiled.target).toList
+  some { resolved, ordered, lower, compiled, bytes }
+
+theorem compileOrderedCodeArtifactIn?_parts
+    {object : Object} {context : ObjectBuiltinContext}
+    {artifact : CompiledCodeArtifact}
+    (hCompile : object.compileOrderedCodeArtifactIn? context =
+      some artifact) :
+    object.resolveObjectBuiltinsIn? context = some artifact.resolved ∧
+      artifact.resolved.toSolcYulOrderedProgram? = some artifact.ordered ∧
+      artifact.ordered.toObjects? = some artifact.lower ∧
+      Objects.Program.compileArtifact? artifact.lower =
+        some artifact.compiled ∧
+      artifact.bytes =
+        (Assembly.Bytecode.encodeTarget artifact.compiled.target).toList := by
+  unfold compileOrderedCodeArtifactIn? at hCompile
+  cases hResolved : object.resolveObjectBuiltinsIn? context with
+  | none => simp [hResolved] at hCompile
+  | some resolved =>
+      cases hOrdered : resolved.toSolcYulOrderedProgram? with
+      | none => simp [hResolved, hOrdered] at hCompile
+      | some ordered =>
+          cases hLower : ordered.toObjects? with
+          | none => simp [hResolved, hOrdered, hLower] at hCompile
+          | some lower =>
+              cases hCompiled : Objects.Program.compileArtifact? lower with
+              | none =>
+                  simp [hResolved, hOrdered, hLower, hCompiled] at hCompile
+              | some compiled =>
+                  simp [hResolved, hOrdered, hLower, hCompiled] at hCompile
+                  subst artifact
+                  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+                  · simpa using hResolved
+                  · simpa using hOrdered
+                  · simpa using hLower
+                  · simpa using hCompiled
+                  · simp
+
 def compileCodeUncheckedIn? (object : Object)
     (context : ObjectBuiltinContext) : Option Assembly.TargetProgram := do
-  let resolved ← object.resolveObjectBuiltinsIn? context
-  let code ← resolved.lowerCodeUnchecked?
-  Objects.Program.compile?
-    { root := Objects.Object.mk resolved.name code [] [] }
+  let artifact ← object.compileOrderedCodeArtifactIn? context
+  some artifact.compiled.target
 
 def codeBytesUncheckedIn? (object : Object)
     (context : ObjectBuiltinContext) : Option (List UInt8) := do
-  let target ← object.compileCodeUncheckedIn? context
-  some (Assembly.Bytecode.encodeTarget target).toList
+  let artifact ← object.compileOrderedCodeArtifactIn? context
+  some artifact.bytes
 
 noncomputable def compileCodeArtifactIn? (object : Object)
     (context : ObjectBuiltinContext) :

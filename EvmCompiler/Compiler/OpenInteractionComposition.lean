@@ -3,6 +3,7 @@ import EvmCompiler.Functions.AllocationInteractionProgram
 import EvmCompiler.Structured.InteractionTerminalPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.Assembly.InteractionPreservation
+import EvmCompiler.Solidity.Frontend
 
 namespace EvmCompiler
 namespace Compiler
@@ -38,7 +39,8 @@ theorem yulToAllocatedExpressions
     (hDecomposition :
       Yul.FunctionsCompilerArtifact.PassDecomposition sourceProgram objects)
     (hProgramOk :
-      Yul.SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      Yul.SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (hLower :
       Functions.AllocationLowering.lowerExpressionsFromAllocation?
         allocation objects.toFunctions = some expressions)
@@ -98,7 +100,8 @@ theorem yulToAllocatedExpressionsTerminal
     (hDecomposition :
       Yul.FunctionsCompilerArtifact.PassDecomposition sourceProgram objects)
     (hProgramOk :
-      Yul.SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      Yul.SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (hLower :
       Functions.AllocationLowering.lowerExpressionsFromAllocation?
         allocation objects.toFunctions = some expressions)
@@ -216,7 +219,8 @@ theorem yulToStructuredTerminal
     (hDecomposition :
       Yul.FunctionsCompilerArtifact.PassDecomposition sourceProgram objects)
     (hProgramOk :
-      Yul.SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      Yul.SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (hLower :
       Functions.AllocationLowering.lowerExpressionsFromAllocation?
         allocation objects.toFunctions = some expressions)
@@ -443,7 +447,8 @@ theorem yulToEncodedBytecode
     (hDecomposition :
       Yul.FunctionsCompilerArtifact.PassDecomposition sourceProgram objects)
     (hProgramOk :
-      Yul.SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      Yul.SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (hLower :
       Functions.AllocationLowering.lowerExpressionsFromAllocation?
         allocation objects.toFunctions = some expressions)
@@ -586,7 +591,8 @@ theorem compiledWithPassToEncodedBytecode
     (hCompile :
       Objects.Program.compileArtifact? objects = some compiledArtifact)
     (hProgramOk :
-      Yul.SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      Yul.SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (hScoped : objects.toFunctions.Scoped)
     (hSafety : Functions.AllocationInteractionSafety.SourceSafety
       objects.toFunctions.memoryContract)
@@ -710,10 +716,19 @@ theorem compiledYulToEncodedBytecode
         (some sourceProgram.contract) source)) :
     CompiledOpenWorldRel sourceProgram objects compiledArtifact
       sourceFuel source expressionsState := by
-  exact compiledWithPassToEncodedBytecode
-    (Yul.FunctionsCompilerArtifact.passDecomposition_of_toObjectsCanonical?
-      hObjects)
-    hCompile hProgramOk hScoped hSafety hResourceSafe hFrameSafe
+  let decomposition :=
+    Yul.FunctionsCompilerArtifact.passDecomposition_of_toObjectsCanonical?
+      hObjects
+  have hEntriesOk :
+      Yul.SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        decomposition.functionEntries = true := by
+    simpa [decomposition,
+      Yul.FunctionsCompilerArtifact.passDecomposition_of_toObjectsCanonical?,
+      Yul.SolcValidation.ProgramOkWithEntries?,
+      Yul.SolcValidation.ProgramOkWith?,
+      Yul.SolcValidation.ContractOkWith?] using hProgramOk
+  exact compiledWithPassToEncodedBytecode decomposition
+    hCompile hEntriesOk hScoped hSafety hResourceSafe hFrameSafe
     hYulInitial hYulDomain hAllocationInitial hTerminal
 
 /-- Executable ordered Yul lowering composes through every adjacent pass to
@@ -733,7 +748,8 @@ theorem compiledOrderedYulToEncodedBytecode
     (hCompile :
       Objects.Program.compileArtifact? objects = some compiledArtifact)
     (hProgramOk :
-      Yul.SolcValidation.ProgramOkWith? profile ordered.program = true)
+      Yul.SolcValidation.ProgramOkWithEntries? profile ordered.program
+        ordered.functionEntries = true)
     (hScoped : objects.toFunctions.Scoped)
     (hSafety : Functions.AllocationInteractionSafety.SourceSafety
       objects.toFunctions.memoryContract)
@@ -760,11 +776,73 @@ theorem compiledOrderedYulToEncodedBytecode
         (some ordered.program.contract) source)) :
     CompiledOpenWorldRel ordered.program objects compiledArtifact
       sourceFuel source expressionsState := by
-  exact compiledWithPassToEncodedBytecode
-    (Yul.FunctionsCompilerArtifact.passDecomposition_of_ordered_toObjects?
-      hObjects hRepresents hNames)
-    hCompile hProgramOk hScoped hSafety hResourceSafe hFrameSafe
+  let decomposition :=
+    Yul.FunctionsCompilerArtifact.passDecomposition_of_ordered_toObjects?
+      hObjects hRepresents hNames
+  have hEntriesOk :
+      Yul.SolcValidation.ProgramOkWithEntries? profile ordered.program
+        decomposition.functionEntries = true := by
+    simpa [decomposition,
+      Yul.FunctionsCompilerArtifact.passDecomposition_of_ordered_toObjects?]
+      using hProgramOk
+  exact compiledWithPassToEncodedBytecode decomposition
+    hCompile hEntriesOk hScoped hSafety hResourceSafe hFrameSafe
     hYulInitial hYulDomain hAllocationInitial hTerminal
+
+/-- One executable Solidity-frontend object code artifact reaches the resolved
+Assembly target through the ordered Yul theorem. Conversion, ordered
+acceptance, Yul lowering, and lower-pass compilation are all recovered from
+the compiler result rather than supplied as public evidence. -/
+theorem compiledFrontendCodeToAssemblyTarget
+    {object : Solidity.Frontend.Object}
+    {context : Solidity.Frontend.ObjectBuiltinContext}
+    {codeArtifact : Solidity.Frontend.Object.CompiledCodeArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hCode : object.compileOrderedCodeArtifactIn? context =
+      some codeArtifact)
+    (hScoped : codeArtifact.lower.toFunctions.Scoped)
+    (hSafety : Functions.AllocationInteractionSafety.SourceSafety
+      codeArtifact.lower.toFunctions.memoryContract)
+    (hResourceSafe : Functions.AllocationInteractionProgram.ResourceSafe
+      codeArtifact.compiled.metadata.allocation
+      codeArtifact.lower.toFunctions
+      (Yul.FunctionsInteractionStaticCost.programBudget
+        codeArtifact.ordered.program (sourceFuel + 1)))
+    (hFrameSafe :
+      Functions.AllocationInteractionProgram.StructuredFrameSafe
+        codeArtifact.compiled.metadata.allocation
+        codeArtifact.lower.toFunctions)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial
+        (Yul.Contract.names codeArtifact.ordered.program.contract)).used
+      functionsState.vars)
+    (hAllocationInitial :
+      Functions.AllocationInteractionProgram.InitialRel
+        codeArtifact.lower.toFunctions.memoryContract
+        functionsState expressionsState)
+    (hTerminal : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceTerminal
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [codeArtifact.ordered.program.contract.dispatcher])
+        (some codeArtifact.ordered.program.contract) source)) :
+    CompiledOpenWorldRel codeArtifact.ordered.program codeArtifact.lower
+      codeArtifact.compiled sourceFuel source expressionsState := by
+  obtain ⟨hResolved, hOrdered, hLower, hCompile, _hBytes⟩ :=
+    Solidity.Frontend.Object.compileOrderedCodeArtifactIn?_parts hCode
+  have hSource :=
+    Solidity.Frontend.Object.toSolcYulOrderedProgram?_source hOrdered
+  have hProgramOk :=
+    Solidity.Frontend.Object.toSolcYulOrderedProgram?_programOkWithEntries
+      hOrdered
+  exact compiledOrderedYulToEncodedBytecode
+    hLower hSource.1 hSource.2.1 hCompile hProgramOk hScoped hSafety
+    hResourceSafe hFrameSafe hYulInitial hYulDomain hAllocationInitial
+    hTerminal
 
 /-- Public proposition for open-world terminal compiler correctness. Its
 premises are source-facing; all lowering artifacts are hidden inside

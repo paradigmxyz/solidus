@@ -30,7 +30,8 @@ theorem selectedTargets
     (hDecomposition :
       FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (hExprOk :
       SolcValidation.ExprOk? profile sourceProgram.contract layout
           targets.length (.Call (.inr functionName) args) = true)
@@ -94,18 +95,19 @@ theorem selectedTargets
       hFnParams, hFnReturns, hLowerBody, hReserved⟩ :=
     hDecomposition.findFunction_parts hLookup
   obtain ⟨hResultCount, hArgCount, hSignature⟩ :=
-    SolcValidation.programOkWith_functionCall_partsN
-      hProgramOk hExprOk hLookup
+    SolcValidation.contractOkWithEntries_functionCall_partsN
+      hProgramOk hExprOk hLookup (hDecomposition.lookup_mem hLookup)
   have hArgsOk :
       SolcValidation.ExprsOk? profile sourceProgram.contract layout args =
         true :=
     SolcValidation.exprsOk_of_exprOk_functionCall hExprOk hLookup
   have hBodyOk :
       SolcValidation.StmtsOk? profile sourceProgram.contract
-          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          (hDecomposition.functionEntries.map Prod.fst)
           (fn.returns ++ fn.params) false false true body = true := by
     rw [hFnReturns, hFnParams]
-    exact SolcValidation.programOkWith_function_bodyOk hProgramOk hLookup
+    exact SolcValidation.contractOkWithEntries_function_bodyOk_of_mem
+      hProgramOk (hDecomposition.lookup_mem hLookup)
   have hBodyNames : ∀ candidate,
       candidate ∈ Stmt.List.names body → candidate ∈ before.used := by
     intro candidate hCandidate
@@ -296,7 +298,8 @@ theorem visibleTargets
     (hDecomposition :
       FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (hExprOk :
       SolcValidation.ExprOk? profile sourceProgram.contract layout
           targets.length (.Call (.inr functionName) args) = true)
@@ -373,7 +376,8 @@ theorem freshTargets
     (hDecomposition :
       FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (hExprOk :
       SolcValidation.ExprOk? profile sourceProgram.contract layout
           targets.length (.Call (.inr functionName) args) = true)
@@ -445,7 +449,8 @@ theorem compiledExprCall
     (hDecomposition :
       FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (hStmtOk :
       SolcValidation.StmtOk? profile sourceProgram.contract
         functionNames layout canBreak canContinue canLeave
@@ -549,7 +554,8 @@ theorem compiledAssignCall
     (hDecomposition :
       FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (hStmtOk :
       SolcValidation.StmtOk? profile sourceProgram.contract
         functionNames layout canBreak canContinue canLeave
@@ -659,7 +665,8 @@ theorem compiledLetCall
     (hDecomposition :
       FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (hStmtOk :
       SolcValidation.StmtOk? profile sourceProgram.contract
         functionNames layout canBreak canContinue canLeave

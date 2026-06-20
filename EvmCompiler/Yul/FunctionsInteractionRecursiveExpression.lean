@@ -46,7 +46,8 @@ theorem recursiveBoundHeads
     (hDecomposition :
       FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true) :
+      SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true) :
     ∀ (fuel targetFuel : Nat) (layout : List Functions.Name),
       (∀ {bodyFuel bodyTargetFuel : Nat},
         bodyFuel < fuel →
@@ -115,7 +116,7 @@ theorem recursiveBoundHeads
                   omega
                 unfold FunctionsInteractionSelectedCall.BodyForwardAt
                 intro body before after fn source target compilerFuel
-                  hLowerBody hBodyOk
+                  functionNames hLowerBody hBodyOk
                   hReserved hBodyNames hBodyBudget hRel hDomain
                 exact hBodies
                     (bodyFuel := bodyFuel)
@@ -149,7 +150,8 @@ theorem recursiveCondition
     (hDecomposition :
       FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true) :
+      SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true) :
     ∀ (fuel targetFuel : Nat) (layout : List Functions.Name),
       (∀ {bodyFuel bodyTargetFuel : Nat},
         bodyFuel < fuel →

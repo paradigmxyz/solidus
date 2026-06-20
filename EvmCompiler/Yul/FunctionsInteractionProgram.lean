@@ -162,7 +162,8 @@ theorem dispatcherForward
     (hDecomposition :
       FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (hRel : ScopedStateRel [] source target)
     (hDomain : TargetDomainWithin
       (Fresh.initial (Contract.names sourceProgram.contract)).used
@@ -176,7 +177,6 @@ theorem dispatcherForward
         (FunctionsInteractionStaticCost.programBudget
           sourceProgram (sourceFuel + 1))
         targetProgram.toFunctions target) := by
-  have hCompiler := hDecomposition
   obtain ⟨bodyStmts, afterBody, functions, afterFunctions,
       hLowerBody, _hLowerFunctions, hTargetProgram⟩ :=
     hDecomposition.compiler
@@ -192,16 +192,12 @@ theorem dispatcherForward
       hLowerBody
   have hDispatcherOk :
       SolcValidation.StmtOk? profile sourceProgram.contract
-          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          (hDecomposition.functionEntries.map Prod.fst)
           [] false false false sourceProgram.contract.dispatcher = true := by
-    have hParts := hProgramOk
-    simp [SolcValidation.ProgramOkWith?,
-      SolcValidation.ContractOkWith?,
-      SolcValidation.ContractOkWithEntries?] at hParts
-    exact hParts.2.1
+    exact SolcValidation.contractOkWithEntries_dispatcherOk hProgramOk
   have hListOk :
       SolcValidation.StmtsOk? profile sourceProgram.contract
-          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          (hDecomposition.functionEntries.map Prod.fst)
           [] false false false
           [sourceProgram.contract.dispatcher] = true := by
     simpa [SolcValidation.StmtsOk?, SolcValidation.StmtOutVars] using
@@ -263,7 +259,7 @@ theorem dispatcherForward
       RecursiveListForward profile sourceProgram targetProgram
         (sourceFuel + 1) :=
     FunctionsInteractionRecursiveBody.recursiveList
-      hCompiler hProgramOk (sourceFuel + 1)
+      hDecomposition hProgramOk (sourceFuel + 1)
   have hListAt :
       ListForwardAt profile sourceProgram targetProgram sourceFuel
         (FunctionsInteractionStaticCost.programBudget
@@ -302,7 +298,8 @@ theorem dispatcherForward_of_ordered_toObjects?
     (hRepresents : ordered.RepresentsSource)
     (hNames : ordered.FunctionNamesNodup)
     (hProgramOk :
-      SolcValidation.ProgramOkWith? profile ordered.program = true)
+      SolcValidation.ProgramOkWithEntries? profile ordered.program
+        ordered.functionEntries = true)
     (hRel : ScopedStateRel [] source target)
     (hDomain : TargetDomainWithin
       (Fresh.initial (Contract.names ordered.program.contract)).used

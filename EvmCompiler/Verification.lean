@@ -239,7 +239,9 @@ or audit-alias corridor.
 #check EvmCompiler.Solidity.Frontend.Object.toSolcYulProgram?_memoryContract
 #check EvmCompiler.Yul.OrderedProgram.toObjects?
 #check EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_source
+#check EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_programOkWithEntries
 #check EvmCompiler.Solidity.Frontend.Object.lowerCodeUnchecked?_some
+#check EvmCompiler.Solidity.Frontend.Object.compileOrderedCodeArtifactIn?_parts
 #check EvmCompiler.Compiler.MemoryRelation.MachineRel
 #check EvmCompiler.Compiler.MemoryRelation.byteAt_writeWord_of_outside
 #check EvmCompiler.Compiler.MemoryRelation.OutsideReservation.writeWord_right
@@ -1653,6 +1655,8 @@ or audit-alias corridor.
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledWithPassToEncodedBytecode
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledOrderedYulToEncodedBytecode
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledOrderedYulToEncodedBytecode
+#check EvmCompiler.Compiler.OpenInteractionComposition.compiledFrontendCodeToAssemblyTarget
+#print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledFrontendCodeToAssemblyTarget
 #check EvmCompiler.Compiler.OpenInteractionComposition.openWorldTerminalCorrect
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.openWorldTerminalCorrect
 #check EvmCompiler.Yul.FunctionsInteractionStatement.ControlDoneRel.block

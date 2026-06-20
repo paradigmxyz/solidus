@@ -1757,7 +1757,8 @@ theorem recursiveStmtOfEarlier
     (hDecomposition :
       FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     {bound : Nat}
     (hEarlier : ∀ childBound, childBound < bound →
       RecursiveStmtForward profile sourceProgram targetProgram childBound)

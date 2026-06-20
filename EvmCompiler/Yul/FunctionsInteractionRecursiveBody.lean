@@ -16,7 +16,7 @@ theorem ofListAt
     {profile : SolcValidation.DialectProfile}
     {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
     {listFuel targetFuel : Nat}
-    {compilerFuel : Nat}
+    {compilerFuel : Nat} {functionNames : List Name}
     {body : List AstStmt} {before after : Fresh.State}
     {fn : Functions.FunDef}
     {source : Yul.InteractionSemantics.State}
@@ -27,7 +27,7 @@ theorem ofListAt
       compilerFuel
       before body = some (fn.body, after))
     (hBodyOk : SolcValidation.StmtsOk? profile sourceProgram.contract
-      ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+      functionNames
       (fn.returns ++ fn.params) false false true body = true)
     (hReserved : ∀ name, name ∈ fn.returns ++ fn.params →
       name ∈ before.used)
@@ -83,7 +83,8 @@ theorem ofEarlierStatements
     (hBodyFuel : bodyFuel < bound) :
     FunctionsInteractionSelectedCall.BodyForwardAt
       profile sourceProgram targetProgram bodyFuel targetFuel := by
-  intro body before after fn source target compilerFuel hLower hBodyOk hReserved
+  intro body before after fn source target compilerFuel functionNames hLower
+    hBodyOk hReserved
     hBodyNames hBudget hRel hDomain
   cases bodyFuel with
   | zero =>
@@ -127,7 +128,8 @@ theorem recursiveStmt
     (hDecomposition :
       FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (bound : Nat) :
     RecursiveStmtForward profile sourceProgram targetProgram bound := by
   induction bound using Nat.strong_induction_on with
@@ -143,7 +145,8 @@ theorem recursiveList
     (hDecomposition :
       FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (bound : Nat) :
     RecursiveListForward profile sourceProgram targetProgram bound := by
   intro sourceFuel targetFuel hSourceFuel

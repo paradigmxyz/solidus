@@ -21,13 +21,11 @@ def BodyForwardAt
     {fn : Functions.FunDef}
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State},
-    ∀ {compilerFuel : Nat},
+    ∀ {compilerFuel : Nat} {functionNames : List Name},
     Stmt.List.toBlockUncheckedFuel?
         compilerFuel
         before body = some (fn.body, after) →
-    SolcValidation.StmtsOk? profile sourceProgram.contract
-        ((Contract.functionEntries
-          sourceProgram.contract).map Prod.fst)
+    SolcValidation.StmtsOk? profile sourceProgram.contract functionNames
         (fn.returns ++ fn.params) false false true body = true →
     (∀ name, name ∈ fn.returns ++ fn.params → name ∈ before.used) →
     (∀ name, name ∈ Stmt.List.names body → name ∈ before.used) →
@@ -80,7 +78,8 @@ theorem ofUncheckedFunctionCallLowering
     (hDecomposition :
       FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (hExprOk :
       SolcValidation.ExprOk? profile sourceProgram.contract layout 1
           (.Call (.inr functionName) args) = true)
@@ -118,20 +117,20 @@ theorem ofUncheckedFunctionCallLowering
           hFnParams, hFnReturns, hLowerBody, hReserved⟩ :=
         hDecomposition.findFunction_parts hLookup
       obtain ⟨hArgCount, hSignature, returnName, hReturnSingleton⟩ :=
-        SolcValidation.programOkWith_functionCall_parts
+        SolcValidation.contractOkWithEntries_functionCall_parts
           hProgramOk hExprOk hLookup
+          (hDecomposition.lookup_mem hLookup)
       have hArgsOk :
           SolcValidation.ExprsOk? profile sourceProgram.contract
             layout args = true :=
         SolcValidation.exprsOk_of_exprOk_functionCall hExprOk hLookup
       have hBodyOk :
           SolcValidation.StmtsOk? profile sourceProgram.contract
-              ((Contract.functionEntries
-                sourceProgram.contract).map Prod.fst)
+              (hDecomposition.functionEntries.map Prod.fst)
               (fn.returns ++ fn.params) false false true body = true := by
         rw [hFnReturns, hFnParams]
-        exact SolcValidation.programOkWith_function_bodyOk
-          hProgramOk hLookup
+        exact SolcValidation.contractOkWithEntries_function_bodyOk_of_mem
+          hProgramOk (hDecomposition.lookup_mem hLookup)
       have hBodyNames : ∀ candidate,
           candidate ∈ Stmt.List.names body → candidate ∈ before.used := by
         intro candidate hCandidate
@@ -360,7 +359,8 @@ theorem headValueOfUncheckedFunctionCallLowering
     (hDecomposition :
       FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (hExprOk :
       SolcValidation.ExprOk? profile sourceProgram.contract layout 1
           (.Call (.inr functionName) args) = true)
@@ -414,7 +414,8 @@ theorem boundCall
     (hDecomposition :
       FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (hExprOk :
       SolcValidation.ExprOk? profile sourceProgram.contract layout 1
           (.Call (.inr functionName) args) = true)
@@ -499,7 +500,8 @@ theorem boundCallAtFuel
     (hDecomposition :
       FunctionsCompilerArtifact.PassDecomposition sourceProgram targetProgram)
     (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+      SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
     (hExprOk :
       SolcValidation.ExprOk? profile sourceProgram.contract layout 1
           (.Call (.inr functionName) args) = true)
