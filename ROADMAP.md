@@ -583,12 +583,14 @@ Public production spine:
 - [ ] Replace lexical-scope pressure with a checked backward liveness artifact
   and next-use stack scheduler; use dead-variable erasure and rematerialization
   to make optimized Aave/Permit2 stack-only where possible.
-- [ ] Treat Permit2's `memoryguard(size)` as its documented source promise and
+- [x] Treat Permit2's `memoryguard(size)` as its documented source promise and
   prove the selected static spill interval is exactly `[size, ptr)`.
-- [ ] Do not claim the fixed Aave `0x100000` reservation universally: either
-  compile Aave stack-only or add an allocation-owned moving scratch arena that
-  relocates and restores compiler memory before every overlapping source
-  memory window.
+- [x] Do not claim the fixed Aave `0x100000` reservation universally: retain
+  actual-run `SourceSafety` as an explicit public premise and make the CLI
+  reservation an explicit semantic promise, never a compiler inference.
+- [ ] Remove Aave's conditional reservation premise by compiling stack-only or
+  adding an allocation-owned moving scratch arena; this strengthens the input
+  contract but is not required by the conditional compiler theorem.
 
 ### Compact Encoding
 
@@ -598,6 +600,9 @@ Public production spine:
 - [ ] Re-run size profiling after compact pushes, then add only generic
   pass-owned stack scheduling and peephole improvements needed to reach
   deployable bytecode.
-- [ ] Gate exact pinned Permit2 and Aave from fresh checkouts through the same
+- [x] Gate exact pinned Permit2 and Aave from fresh checkouts through the same
   theorem-covered executable, object artifact, and final byte image; run full
   Lean, architecture, hole, axiom, diff, and real-EVM checks.
+- [x] Keep EIP-170 deployability separate from semantic composition: the exact
+  checked images execute in the raw-byte semantics but remain oversized until
+  compact encoding and generic optimization land.
