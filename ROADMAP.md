@@ -1,608 +1,174 @@
-# Full Resource-Observer Proof Roadmap
+# Verified Stack Allocation Roadmap
 
-External CALL/CREATE support is planned separately in
-`EXTERNAL_EFFECTS_ROADMAP.md`. That migration does not turn CALL/CREATE into
-another concrete replay transcript. It introduces one ordered open interaction
-tree over one code-erased source/target world. External nodes expose the same
-pre-world and request and quantify over every exact shared response and
-post-world, while resource nodes are resolved from a concrete EVM run only for
-`gas()`/`msize()`. The migration preserves adjacent pass ownership and short
-end-to-end composition. Concrete linked-world adequacy is not a compiler
-completion requirement.
+## Objective
 
-The shared `OpenWorld`/`Interaction` core and the Assembly-owned primitive
-semantics for `gas`, `msize`, `CALL`, `CALLCODE`, `DELEGATECALL`, `STATICCALL`,
-`CREATE`, and `CREATE2` are now checked. Target bytecode control now uses one
-parameterized recursive kernel shared by target, source, and emitted-block
-execution. Exact per-instruction and whole-program emitted-block open
-preservation are checked. Every higher adjacent preservation boundary is now
-checked through terminal Structured-to-TypedCfg execution. TypedCfg compiled
-blocks are now flattened into the ordinary Assembly interpreter under a
-source-facing terminal-safety invariant, and the resulting run composes with
-uniform Assembly-to-encoded-bytecode preservation. The public theorem and its
-repository-wide completion gates are now checked.
+Build a general, horizontally proved Functions-to-Locals/Expressions allocator
+that compiles the exact pinned Permit2 and linked Aave Pool efficiently through
+the checked Yul-to-bytecode artifact path.
 
-## Open-Effects Migration Status
+Aave must use stack-only allocation. Permit2 may spill only into a reservation
+derived from its checked `memoryguard(size)` and the allocator's computed spill
+plan. Without `memoryguard`, compilation either succeeds without compiler memory
+accesses or honestly rejects the program.
 
-- [x] Shared ordered `Interaction` semantics and code-erased `OpenWorld`.
-- [x] Assembly/bytecode and lower control-pass preservation for all shared
-  effects, including CALL-family, CREATE-family, logs, storage, `gas()`, and
-  `msize()`.
-- [x] Source-budgeted Structured -> TypedCfg preservation for every statement,
-  recursive loop, internal call, statement list, and generated main program;
-  one checked theorem pads all successful open branches to a uniform target
-  fuel without a call oracle or generated public premise.
-- [x] Erase Structured compiler residual-fuel tags and prove that its internal
-  stop policy is inert on universally halting open-world executions, yielding
-  the ordinary TypedCfg runner expected by the adjacent lower pass.
-- [x] Strengthen Assembly -> encoded bytecode from concrete-branch existential
-  fuel to one source-derived uniform target budget and `Interaction.Rel`.
-- [x] Flatten certified TypedCfg block execution into ordinary Assembly under
-  Structured-derived terminal safety, then compose the adjacent lower
-  boundaries through encoded bytecode.
-- [x] Functions allocation relation, primitive families, recursive
-  expressions, stack/scratch declaration preservation, and assignment
-  preservation in both activation modes.
-- [x] Complete Functions statement and program preservation: statement-list
-  composition, scoped control, loops, terminal outcomes,
-  internal calls, activation setup/cleanup, and whole program.
-  - [x] outcome-indexed regular/abrupt result relation and generic real-block
-    `nil`/`cons` composition laws;
-  - [x] expression, assignment, and stack/scratch declaration leaf adapters;
-  - [x] outcome-indexed `break`/`continue` cleanup in both activation modes;
-  - [x] ordered return-value emission and frame-cleaning `leave` preservation;
-  - [x] plain and argument-bearing terminal preservation under source-facing
-    terminal memory safety;
-  - [x] canonical compiler-owned root/cursor and exact head/tail decomposition;
-  - [x] pass-owned live-slot, stack-order, stack/scratch-location, and sibling
-    cursor agreement facts;
-  - [x] canonical post-declaration activation context and mode transition for
-    stack and scratch placement;
-  - [x] shared lexical cursor construction and exact lexical-block/`if`
-    decomposition;
-  - [x] common and selected-branch `switch` cursor decomposition with exact
-    outer-tail retention;
-  - [x] exact `for` initializer/condition/post/body/cleanup cursor
-    decomposition;
-  - [x] recursive interaction base case and generic exact-tail sequencing;
-  - [x] arbitrary-fuel expression/assignment/declaration heads and preserved
-    compiler-frame capacity;
-  - [x] arbitrary-fuel `break`/`continue`/`leave` and terminal cursor heads;
-  - [x] observer-free compiler-selected internal-callee artifact constructed
-    from canonical lookup and whole-program lowering;
-  - [x] compiler-selected callee prelude, stack/scratch body mode, and canonical
-    body compiler context constructed without observer proof machinery;
-  - [x] compiler-selected callee body packaged as an ordinary pass-owned root
-    and recursive cursor;
-  - [x] real call-code decomposition and canonical stack/scratch callee-entry
-    realization, including parameter spill-store transitions;
-  - [x] silent entry-marker execution and one compiler-selected scratch
-    parameter lowering/compilation/execution step;
-  - [x] recursive all-stack and mixed stack/scratch parameter-prelude
-    preservation under the pass-owned compiler context;
-  - [x] construct parameter placement, recursive context, and stack/scratch
-    execution wrappers from the selected compiler artifact;
-  - [x] complete compiler-selected stack/scratch return initialization with
-    checked placement/context construction and open execution;
-  - [x] compose entry markers and both preludes into the callee body invariant;
-  - [x] prefix exact setup to the fuel-decreasing canonical callee-body
-    preservation interface;
-  - [x] decouple canonical source scope order from compiler live-list order
-    through pass-owned extensional cursor and invariant transport;
-  - [x] prove canonical non-halting return-stack preservation and complete a
-    compiler-selected callee through emitted return values and cleanup;
-  - [x] attach the completed callee through the canonical source and target
-    call wrappers, including exact return-frame pop and value attachment;
-  - [x] define the uniform recursive target budget and checked empty,
-    head/tail-composition, expression, assignment, and stack/scratch
-    declaration cursor constructors;
-  - [x] lift plain/argument terminals and ordered function `leave` into the
-    uniform recursive cursor interface;
-  - [x] lift `break` and `continue` with compiler-owned loop cleanup into the
-    uniform recursive cursor interface;
-  - [x] retain entry-to-result frame continuity in the shared control relation
-    and compose it through recursive sequencing;
-  - [x] prove pass-owned lexical-block cleanup and its recursive cursor lift;
-  - [x] prove canonical condition truth/stack restoration plus pass-owned and
-    recursive `if` preservation;
-  - [x] expose canonical source/target switch equations and prove exact
-    one-value scrutinee preservation with incoming-stack restoration;
-  - [x] prove pass-owned exact switch selection and recursive selected-branch
-    preservation with lexical cleanup and exact tail composition;
-  - [x] correct the loop theorem boundary with shared open-world
-    `Interaction.Successful` and generic bind inversion, excluding source
-    meta-fuel exhaustion without duplicating loop semantics;
-  - [x] strengthen caught `break`/`continue` outcomes with destination
-    definedness, stack length, mode/live agreement, and frame continuity;
-  - [x] exact recursive loop core and compiler-owned `for` wrapper;
-  - [x] canonical source/target internal-call equations and compiler-owned
-    caller call decomposition;
-  - [x] canonical open-world argument-list safety and arbitrary-length
-    stack/scratch argument preservation;
-  - [x] compiler-selected all-stack callee source initialization, exact target
-    split/return-frame entry, and recursive-body entry relation;
-  - [x] orthogonal allocator-cell readiness/depth and suspended-prefix effect
-    interfaces plus exact canonical scratch-frame acquire execution;
-  - [x] canonical scratch-frame acquire resource preservation, including
-    machine relation, allocator depth, frame materialization, and protected
-    suspended prefixes;
-  - [x] compiler-selected scratch-callee entry from exact acquire, canonical
-    arguments, allocation artifacts, and an orthogonal argument-resource
-    effect;
-  - [x] derive the canonical argument-resource effect and check exact
-    scratch-frame release for nested calls;
-  - [x] pass-owned caller return writeback through the exact emitted
-    stack/scratch target code, including deeper-callee bounded effects;
-  - [x] strengthen the recursive target budget with a checked whole-program
-    procedure-body stride and expose exact caller-chosen selected-callee fuel;
-  - [x] expose successful canonical call/body inversion, open argument local
-    preservation, and the related suspended caller after argument stack removal;
-  - [x] restore outcome-indexed allocator effects across statements, scoped
-    blocks, loops, and selected callees, so a halting scratch-backed nested call
-    protects caller frames without falsely requiring unreachable frame release;
-  - [x] construct identical continuation-ready stack/scratch selected-callee
-    invocations from canonical arguments, including suspended caller prefixes,
-    exact recursive calls, return writeback, and optional scratch release;
-  - [x] orthogonal recursive allocator companion over the same Interaction
-    tree, including all statement/control forms, stack/scratch call setup,
-    selected-callee recursion, return writeback, scratch release, and exact
-    successful-tail composition;
-  - [x] compose caller arguments, selected-callee recursion, return writeback,
-    scratch release, and the exact successful tail;
-  - [x] define an execution-indexed source reservation-safety interface over
-    scoped canonical expressions and terminal memory windows;
-  - [x] retain successful continuation evidence through generic sequence,
-    `if`, `switch`, and loop owners instead of requiring unreachable branches;
-  - [x] construct and preserve the source/compiler control-destination
-    invariant needed by the recursive statement dispatcher;
-  - [x] recursive compiler-cursor statement-list theorem;
-    - [x] successful head/tail fixed-point interface and source-derived safety;
-    - [x] expression, assignment, declaration, abrupt control, terminal, and
-      lexical-block dispatcher cases;
-    - [x] replace the false arbitrary-extra target budget with a checked
-      nested-code reserve, exact compiled suffixes, and procedure-table bounds;
-    - [x] selected-body fixed-point cases for `if` and `switch`;
-    - [x] loop capacity, selected internal-call dispatcher, and whole-block
-      fixed point.
-  - [x] construct the compiler-selected main artifact and check exact scratch
-    allocator/frame setup plus recursive main-body preservation.
-  - [x] thread the existing resource-mode interface through stack-only
-    recursion, then compose source prelude, main body, and cleanup into the
-    public adjacent theorem without an allocator premise for stack-only code.
-    - [x] exact empty main setup, stack runtime boundary, and target-fuel
-      adapter;
-    - [x] compiler proof that every selected callee is stack-backed and a
-      resource-free function-return epilogue;
-    - [x] resource-free internal-call attachment, caller writeback, exact
-      successful-tail composition, and compiler-selected all-stack CALL head;
-    - [x] successful stack recursion for expression, assignment, declaration,
-      abrupt control, terminal, lexical block, conditional, switch, and call
-      constructors;
-    - [x] stack-only `for` init/body/post recursion and the thirteen-constructor
-      source-fuel fixed point.
-    - [x] compiler-derived stack-only main setup and recursive main-body
-      preservation, with no public all-stack certificate.
-    - [x] outcome-indexed top-level cleanup for regular, abrupt, and terminal
-      results, with allocation representation erased only after program exit.
-    - [x] canonical source append/scoped-append laws, compiler-owned no-variable
-      prelude preservation, and flat target setup fuel transport.
-    - [x] selected stack/scratch setup, recursive body, and cleanup composition
-      with allocator/frame evidence kept internal.
-  - [x] public compiler-selected `AllocationInteractionProgram.mainForward`
-      from ordinary lowering and source-facing safety/resource premises only.
-- [x] Canonical Yul control is one monad-polymorphic evaluator with an explicit
-  immutable active contract and a shared open-`Interaction` specialization for
-  resources and all CALL/CREATE families.
-- [x] Prove the adjacent Yul -> Functions open-interaction theorem.
-  - [x] Exact code-erased state relation and arbitrary post-world transport.
-  - [x] GAS/MSIZE plus all CALL/CREATE primitive-family preservation.
-  - [x] Recursive statements, internal calls, and whole program.
-    - [x] Source-truncation-aware direct literals, variables, primitive calls,
-      and arbitrary argument lists under one compiler-selected capability.
-    - [x] Concrete same-observation expression theorem with the complete
-      primitive capability, plus source-owner equations for statement lists,
-      blocks, conditionals, switches, and loops.
-    - [x] Path-sensitive scoped result interface and generic nil/singleton/cons
-      composition, including exact abrupt suffix skipping.
-    - [x] Outcome-indexed terminal representation relation and terminal-aware
-      singleton/list composition for source failures versus target halts.
-    - [x] Complete the canonical terminal primitive family; STOP, RETURN,
-      REVERT, and SELFDESTRUCT are checked at the primitive boundary, including
-      exact `StaticModeViolation` agreement. Shared Assembly, Structured, and
-      TypedCfg semantics reject static SELFDESTRUCT, and the Yul theorem has no
-      permission premise.
-    - [x] Prove compiler-generated terminal argument preludes.
-      - [x] Compiler-selected stable literal/variable argument window, including
-        exact source/target argument reversal and low-fuel truncation.
-      - [x] Generated temporary bindings and primitive-expression preludes.
-      - [x] Internal-call preludes.
-        - [x] Canonical call-frame initialization, return lookup, caller
-          restoration, and call-specific argument lowering.
-        - [x] Recursive callee-body attachment and caller writeback.
-          - [x] Canonical open `runBody` equations and structural
-            regular/leave/terminal body-result lift.
-          - [x] Fresh one-result temporary writeback after ordinary return,
-            with error and terminal propagation.
-          - [x] Canonical generated fresh-zero declaration and call-statement
-            suffix composition around the related call body.
-          - [x] Compiler-selected lookup, validation, call-frame construction,
-            and exact generated-expression composition against a bounded
-            recursive-body capability.
-          - [x] Discharge the recursive body capability by source-fuel
-            induction.
-            - [x] Carry exact source validation through recursive prepared
-              arguments and construct all primitive/internal-call expression
-              heads by strong source-fuel induction.
-            - [x] Replace the impossible all-target-fuel body premise with
-              source-owned static/dynamic target budgets and thread the exact
-              residual inequalities through argument and call preludes.
-            - [x] Construct the budgeted recursive statement/list fixed point
-              and use it to discharge `BodyForwardAt` without a call oracle.
-              - [x] Audit the historical observer proof and classify its
-                components by architectural ownership.
-              - [x] Port source-only static-cost bounds and multi-child fuel
-                arithmetic into canonical adjacent modules.
-              - [x] Port control-scope transport as an observer-free,
-                outcome-indexed relation carrying exact Yul scope snapshots.
-              - [x] Port generic regular/abrupt/terminal list sequencing
-                without transcript state or existential execution records.
-              - [x] Thread pass-owned monotone-scope and same-control laws
-                through generated argument, primitive, and internal-call
-                preludes.
-              - [x] Check control-aware multi-result call writeback,
-                multi-name zero declarations, and exact scoped
-                break/continue/leave leaves.
-              - [x] Port compiler-owned target-local domain preservation into
-                the canonical control result, including prepared declarations,
-                assignments, selected multi-result calls, and exact-tail
-                sequencing.
-              - [x] Define canonical statement/list fuel interfaces and check
-                generic compiler-decomposed recursive list composition.
-              - [x] Replace flat emitted-list fuel accounting with a private
-                recursive Functions target-cost measure that sees nested
-                lexical, branch, switch, and loop blocks.
-              - [x] Check canonical lexical-block cleanup and its ordinary
-                compiler-selected recursive wrapper, including regular,
-                abrupt, terminal, ownership, and control outcomes.
-              - [x] Define the canonical prepared-condition interface and
-                exhaustively dispatch literals, variables, direct/prepared
-                primitives, and selected internal calls into it.
-              - [x] Check generic `if` composition from the prepared condition
-                and adjacent lexical-body capability, including exact target
-                residual fuel and all regular/abrupt/terminal outcomes.
-              - [x] Check exact-value prepared switch execution plus generic
-                and compiler-selected switch composition, including no-match,
-                selected case/default, lexical cleanup, freshness widening,
-                and recursively measured selected-target cost.
-              - [x] Rebuild the historical five-way fuel fixed point over
-                canonical body, value, statement, list, and compound
-                interfaces.
-              - [x] Instantiate if, switch, and for from ordinary
-                compiler decomposition and the canonical control relation.
-                - [x] Ordinary compiler-selected `if`, with distinct
-                  condition/final freshness domains and a strictly smaller
-                  lexical-body list capability.
-                - [x] Switch selection and selected body.
-                - [x] For-loop initializer/body/post composition.
-              - [x] Close the exhaustive statement dispatcher.
-              - [x] Close selected callee bodies.
-                - [x] Package recursive list preservation as the exact
-                  regular/leave/terminal function-body relation.
-                - [x] Prove the source-syntax compiler expansion bound for the
-                  recursive target cost and discharge the private body budget.
-              - The historical `ScopedOpenResult`, observer transcript state,
-                `Nat.find`-based `requiredFuel`, replay relation, and public
-                recursive-call premise are reference material only and will
-                not be ported.
-    - [x] Complete the recursive statement/list/body fixed point over ordinary
-      compiler decomposition. Every statement constructor and list edge is
-      checked with the source-owned target-expansion bound and selected body
-      attachment.
-    - [x] Compose independent CALL/CREATE and GAS/MSIZE providers with a
-      closed-ordinary-primitive capability; no opcode dispatch occurs inside
-      expression recursion.
-    - [x] Discharge the closed ordinary primitive capability over canonical
-      code-erased state.
-      - [x] Pure binary, unary, and ternary arithmetic/comparison/bitwise
-        families through one reusable `PureSpec` forward theorem.
-      - [x] Machine families through one reusable `MachineSpec` theorem:
-        MSTORE, MSTORE8, MCOPY, MLOAD, KECCAK256, RETURNDATASIZE, and POP.
-      - [x] Environment families through one reusable `EnvironmentSpec`
-        theorem: active-frame reads and BLOBHASH are related over the shared
-        code-erased execution-environment relation.
-      - [x] Code-erased world-read interface and immutable reads: COINBASE,
-        TIMESTAMP, NUMBER, GASLIMIT, CHAINID, SELFBALANCE, CALLDATALOAD, and
-        BLOCKHASH.
-      - [x] Repair canonical Yul EXTCODEHASH semantics to decide external
-        account emptiness from the executable byte image rather than a
-        compatibility Yul AST; prove exact agreement with EVM semantics.
-      - [x] World-access transitions through reusable `WorldSpec`: BALANCE,
-        EXTCODESIZE, EXTCODEHASH, SLOAD, and TLOAD, including exact account and
-        storage warming in the shared open-world substate.
-      - [x] World-write transitions through reusable `WorldWriteSpec`: SSTORE
-        and TSTORE, including refunds, warm storage, exact account updates,
-        and matching static-mode failure.
-      - [x] Copy families.
-        - [x] Deterministic shared-state copies through reusable `SharedSpec`:
-          CALLDATACOPY and CODECOPY over related calldata/code byte images.
-        - [x] RETURNDATACOPY success and exact bounds failure.
-        - [x] EXTCODECOPY over code-erased account bytes with identical account
-          warming and machine updates.
-      - [x] LOG0-LOG4 through reusable `SharedWriteSpec`, including exact
-        address/topic/data ordering, active-memory growth, and matching
-        static-mode failure.
-      - [x] Invalid family and concrete `ClosedSelected` theorem; compose the
-        complete `CompilerSelected` capability with CALL/CREATE and GAS/MSIZE.
-    - [x] Define the code-erased outcome-indexed relation and source-owned
-      exact lexical-domain invariant; check direct expression, one-name
-      declaration, and one-name assignment statements plus `break`,
-      `continue`, and `leave` with exact Functions scope restriction.
-- [x] Compose the short public Yul end-to-end theorem and reconnect the
-  source-facing reservation/resource assumptions.
-- [x] Run representative interleaving/reentrancy/static/zero-window tests and
-  pinned Permit2/Solmate/external-call/object-tree compiler smokes.
-- [x] Run all completion gates.
-
-## Full Solc Contract Track
-
-- [x] Make resolved solc Yul validation source-complete for every primitive
-  already covered by the public theorem, beginning with `gas()` and `msize()`.
-- [x] Preserve exact old-solc Yul text while obtaining a structured AST for
-  compiler versions that do not emit `irOptimizedAst`.
-- [ ] Replace the all-stack/all-scratch fallback pair with a canonical
-  pressure-driven mixed plan that spills only when required.
-- [ ] Define and check a general source-facing memory-isolation contract for
-  spill-backed Yul without `memoryguard`; do not infer an unsafe reservation.
-- [ ] Prove the new allocation/memory boundary in the Functions-owned adjacent
-  theorem and recompose the short public Yul theorem.
-- [ ] Compile exact pinned Permit2 and linked Aave Pool through checked object
-  images; add full-contract regressions and rerun every completion gate.
-
-## Relation To External Effects
-
-The checked theorem in this file is intentionally asymmetric because EVM
-resource values have no intrinsic Yul source meaning.
-
-The external-effects theorem has a different public shape:
-
-- no terminal target run or external-event trace is a premise;
-- source and target expose related open computations;
-- every exact shared CALL/CREATE response and post-world has a related
-  continuation;
-- interpreting those computations with any one shared external strategy yields
-  equivalent behavior sets;
-- the generic strategy may return arbitrary world mutations, including for
-  static requests; concrete EVM legality is proved only by a strategy adapter;
-- the active Yul program is immutable evaluator input, while arbitrary
-  external accounts contain only observable byte images and world state;
-- target-to-source reasoning is limited to observable-node reflection and does
-  not restore generic pass-by-pass backward adequacy.
+The archived general-memory-virtualization research is preserved at
+`codex/archive-general-memory-virtualization` commit `be87c07d`. This branch is
+based on the last green pre-virtualization checkpoint `7cad5a87`.
 
 ## Public Spine
 
-Accepted Yul
--> Functions
--> allocated Locals/Expressions
--> Structured
--> TypedCfg
--> Assembly
--> bytecode observer execution
+The primary compiler-correctness result remains forward preservation through
+the existing adjacent passes:
 
-The primary compiler-correctness result is whole-program forward preservation.
-Reverse reasoning is limited to the exact bridge needed to align a concrete
-terminal target `gas()`/`msize()` transcript with a canonical source replay.
-`Yul.EndToEnd` remains a short composition module.
+```
+Yul -> Functions -> allocated Locals/Expressions -> Structured
+    -> TypedCfg -> Assembly -> bytecode
+```
 
-## Checked Boundaries
+The allocation boundary computes liveness, layouts, shuffles,
+rematerialization choices, and any guarded spill plan. Its public theorem takes
+accepted source, related initial states, source execution/resource premises,
+and compiler success; it does not take generated schedules, layouts,
+certificates, or preservation oracles as premises. `Yul.EndToEnd` remains a
+short composition module.
 
-- [x] Yul -> Functions whole-program forward preservation.
-- [x] Yul -> Functions exact observer replay from source-safe execution,
-  forward preservation, semantic uniqueness, and concrete target transcript
-  exhaustion.
-- [x] Functions -> allocated Expressions whole-main forward preservation for
-  compiler-selected stack-only and scratch allocation.
-- [x] Functions -> bytecode compiler-selected terminal composition under an
-  explicit source-run resource bound.
-- [x] Expressions -> Structured transparent forward/backward interface.
-- [x] Structured -> TypedCfg terminal backward adequacy.
-- [x] TypedCfg -> Assembly terminal backward adequacy.
-- [x] Assembly -> bytecode terminal backward adequacy.
-- [x] Stack-only end-to-end exact observer replay.
-- [x] Compiler-selected lower composition under an explicit Functions resource
-  bound.
-- [x] Narrow target-to-source transcript bridge through
-  `FunctionsObserverTraceAdequacy.compileProgramTraceAdequate`.
-- [x] Compiler-selected stack/scratch public theorem with explicit source
-  execution and reservation safety.
+## Semantic Invariants
 
-## Active Proof Work
+- `msize()` executes honest EVM `MSIZE`; its exact value and ordering are
+  preserved through the established resource-observer replay.
+- `gas()`, logs, CALL-family, and CREATE-family effects retain the existing
+  ordered open-world semantics.
+- Rematerialization duplicates only expressions proved effect-free and stable.
+  It never duplicates resource observations, memory/storage reads, logs,
+  calls, creates, or other observable/effectful operations.
+- Every emitted EVM stack operation is checked for total depth and top-16
+  accessibility.
+- Dormant caller values survive internal calls and the caller's canonical
+  return layout is restored.
+- Compiler memory accesses are absent without a valid `memoryguard`.
+- With `memoryguard(size)`, the compiler may reserve exactly `[size, ptr)`,
+  where `ptr` and the size increase are derived from the checked spill plan.
+- Allocation and proof code contain no Permit2/Aave names, hashes, paths,
+  fixture addresses, or contract-specific branches.
 
-- [x] Prove pass-owned reservation-capacity lemmas:
-  - [x] canonical recipe planning exposes its configured frame bound;
-  - [x] validated mixed allocation preserves that frame bound;
-  - [x] `(fuel + 1) * frameWords` source reservation capacity implies
-    scratch `FuelSafe fuel`;
-  - [x] compiler-selected main setup depth is at most one frame.
-- [x] Strengthen Yul -> Functions whole-program forward preservation with a
-  checked source-derived upper bound on the existential Functions execution
-  fuel.
-  - [x] canonical Functions open-block composition exposes explicit additive,
-    `max + 1`, singleton-wrapper, and unreachable-suffix fuel bounds;
-  - [x] Yul expression preparation and scoped open results expose least
-    sufficient target fuel with pass-owned composition lemmas;
-  - [x] define a dynamic source-fuel amplifier that absorbs up to eight
-    strictly smaller recursive budgets plus compiler wrapper overhead;
-  - [x] correct the bound with a separate source-derived static expansion
-    factor: source fuel alone cannot bound multi-name declarations or wide
-    generated argument preambles;
-  - [x] carry bounded argument preparation and returned function bodies through
-    visible-target calls;
-  - [x] reuse the same bounded call execution for fresh declaration targets;
-  - [x] prove bounded recursive statement-list composition from a bounded
-    statement capability;
-  - [x] expose the exact `names.length + 1` target-fuel bound for
-    uninitialized declarations and lift it into the corrected execution
-    budget;
-  - [x] define a source-AST static-expansion measure whose program bound covers
-    the dispatcher and every function body reached through canonical lookup;
-  - [x] expose exact fuel composition for initialized values, visible
-    assignments, and `break`/`continue`/`leave`;
-  - [x] lift prepared single-value declarations and assignments into the
-    source-static/dynamic bounded forward interface;
-  - [x] bound direct and spill-bound expression argument preparation,
-    including compiler-selected primitive calls, by exact source-AST cost;
-  - [x] bound one-result internal function-call expressions by argument
-    runtime cost plus the compiler-selected callee body cost;
-  - [x] close recursive expression/value preservation under the call-aware
-    runtime cost and derive exact bounded function bodies from bounded lists;
-  - [x] identify and repair the nested-call theorem boundary: add a checked
-    program-global/local-static two-dimensional budget whose source-fuel step
-    absorbs recursive children bounded by the whole program;
-  - [x] migrate recursive expression, call, statement, and body capabilities
-    to the program-indexed budget;
-    - [x] argument preparation and primitive expression evaluation;
-    - [x] internal function calls and recursive expression capability;
-    - [x] list sequencing and returned-body packaging;
-    - [x] leaf statements;
-    - [x] compound statements and loops;
-    - [x] recursive-family fixed point and dispatcher packaging;
-  - [x] retire the provisional one-level call-expanded runtime measure;
-  - [x] cover terminal outcomes with the same program-indexed budget;
-    - [x] expose least sufficient fuel for terminal statement, function-body,
-      and loop results;
-    - [x] prove exact quantitative composition for regular prefixes,
-      unreachable suffixes, lexical blocks, and loop wrappers;
-    - [x] lift recursive terminal statement-list sequencing and function-body
-      packaging to the program-indexed budget;
-    - [x] bound recursive terminal argument-list evaluation for direct and
-      spill-bound unchecked lowering;
-    - [x] bound the emitted terminal primitive after a regular, bounded
-      argument prelude;
-    - [x] lift compiler-selected primitive expression failure into the
-      recursive program-indexed terminal family;
-    - [x] lift internal-call argument and callee-body failure into the
-      recursive program-indexed terminal expression family;
-    - [x] lift nonterminal primitive-expression statements, terminal
-      primitive statements, and initialized single-value declarations and
-      assignments into the recursive program-indexed statement family;
-    - [x] lift call-valued declaration, assignment, and expression statements
-      into the recursive program-indexed statement family;
-    - [x] lift compound terminal control through the recursive
-      program-indexed family;
-      - [x] lexical blocks, conditionals, and switches;
-      - [x] loops;
-  - [x] expose the bounded regular whole-program forward theorem;
-  - [x] expose the bounded whole-program terminal forward theorem.
-- [x] Define an honest source-facing scratch execution/reservation-safety
-  interface using that checked bound, without exposing compiler-generated
-  evidence.
-- [x] Generalize `Yul.EndToEnd.ClosedResourceCorrect`:
-  - [x] remove the stack-only field from `ClosedArtifact`;
-  - [x] derive the compiler-selected `FuelSafe` fact from the source-facing
-    safety premise;
-  - [x] compose through
-    `Public.ObserverComposition.terminalWithResourceSafety`;
-  - [x] retain exact transcript consumption and terminal outcome relation.
-- [x] Audit the public theorem for generated artifact evidence, replay
-  certificates, call oracles, and cross-pass proof reasoning.
+## Work Plan
 
-## Retained Local Inversions
+### 1. Baseline and Measurements
 
-These checked backward theorems remain reusable local facts. They are not
-completion gates unless the narrow transcript bridge actually needs them.
+- [x] Preserve all virtualization work on the archive branch.
+- [x] Verify `7cad5a87` as the green checkpoint immediately before general
+  memory virtualization.
+- [x] Re-run the 1,411-job verification root at the baseline.
+- [x] Re-run the exact pinned Permit2/Aave smoke gate and record its current
+  fixture reservation as evidence, not completion.
+- [x] Audit the current monotone-slot allocator and Solidity's legacy and SSA
+  stack-allocation strategies.
+- [ ] Add allocation diagnostics that report peak live values, shuffle cost,
+  rematerializations, spill words, compile time, and output bytes without
+  changing compiler semantics.
 
-- [x] compiler-selected primitive families;
-- [x] direct and bound expressions;
-- [x] internal calls and regular leaf statements;
-- [x] recursive statement lists;
-- [x] lexical blocks;
-- [x] nonterminal `if`;
-- [x] nonterminal `switch`.
-- [x] terminal primitive replay.
-- [x] terminal primitive-expression suffix replay after regular arguments.
-- [x] No general terminal call/list/control backward campaign is required.
+### 2. Backward Liveness Owner
+
+- [ ] Add a Functions-owned, outcome-indexed backward liveness analysis for
+  normal continuation, `break`, `continue`, `leave`, terminal outcomes, loops,
+  and internal calls.
+- [ ] Compute loop facts by a terminating fixed point over the finite set of
+  source bindings.
+- [ ] Record next-use information needed by scheduling without making it a
+  public premise.
+- [ ] Prove use/definition soundness and abrupt-outcome successor soundness.
+- [ ] Integrate the computed artifact into allocation planning and add focused
+  examples for branches, loops, terminal statements, and calls.
+
+### 3. Layout and Shuffle Owner
+
+- [ ] Track a symbolic stack layout at each allocation program point.
+- [ ] Pop dead values promptly and choose live-value order by next use.
+- [ ] Compute canonical layouts at branch, switch, loop, and call-return joins.
+- [ ] Generate only checked `DUP`, `SWAP`, and `POP` transitions.
+- [ ] Prove each transition preserves the environment/layout relation and
+  respects EVM depth/top-16 limits.
+- [ ] Prove statement-list and structured-control layout composition.
+
+### 4. Internal Calls
+
+- [ ] Extend the existing allocation call decomposition rather than adding a
+  second call interpreter.
+- [ ] Preserve dormant caller frames across calls.
+- [ ] Prove parameter entry, return-value placement, and exact caller-layout
+  restoration for recursive and non-recursive call graphs.
+- [ ] Keep call artifacts compiler-owned and absent from public theorem
+  premises.
+
+### 5. Rematerialization Owner
+
+- [ ] Define a conservative `StableEffectFree` predicate over Functions
+  expressions.
+- [ ] Compute candidate cost and next-use benefit.
+- [ ] Prove expression rematerialization preserves value, state, transcript,
+  and outcome.
+- [ ] Integrate rematerialization only when it relieves an otherwise
+  inaccessible/deep live value.
+
+### 6. Guarded Spill Fallback
+
+- [ ] Compute the minimal spill set only after stack scheduling and
+  rematerialization fail.
+- [ ] Reject memory spilling when no consistent source `memoryguard(size)` is
+  present.
+- [ ] Derive spill words and returned pointer from the checked plan; remove
+  frontend/fixture scratch addresses and the fixed `8193`-word default from
+  the production path.
+- [ ] Reuse the existing memory-contract relation to prove spill bounds,
+  non-aliasing, and frame preservation.
+- [ ] Preserve honest `MSIZE` observation; do not virtualize compiler memory.
+
+### 7. Horizontal Composition
+
+- [ ] Make the public allocation compiler compute and discharge all liveness,
+  layout, shuffle, rematerialization, and spill obligations.
+- [ ] Re-establish Functions-to-Locals/Expressions forward preservation for
+  all source outcomes and ordered effects.
+- [ ] Compose through existing lower pass theorems without recursive compiler
+  reasoning in `Yul.EndToEnd`.
+- [ ] Add architecture guards against generated public evidence,
+  observer-specific compilers, cross-layer corridors, and contract-specific
+  allocator code.
+
+### 8. Exact Contracts and Scalability
+
+- [ ] Exact pinned Aave compiles stack-only with no reservation or source
+  non-alias premise.
+- [ ] Exact pinned Permit2 compiles stack-only or uses only its checked,
+  plan-sized `memoryguard` reservation.
+- [ ] Both compile through `CompiledObjectArtifact` to exact raw bytecode under
+  the full open-world/resource-observer theorem.
+- [ ] Profile all analysis and compilation stages; remove algorithmic
+  superlinearity on the exact contracts.
+- [ ] Record compile time, peak memory, allocation statistics, and output size.
+
+### 9. Optional Code Density
+
+- [ ] If deployable output still requires it, implement compact `PUSH` encoding
+  as a separate Assembly-owned pass with decoding and execution preservation.
+  It must not be mixed into allocation correctness.
 
 ## Completion Gates
 
-- [x] Every adjacent boundary used by the public spine has checked forward
-  preservation owned by that compiler pass.
-- [x] Concrete target transcript exhaustion yields an exact source replay
-  without reconstructing arbitrary intermediate target executions.
-- [x] Public theorem accepts only source validation, related initial states,
-  source-facing execution/resource safety, and a concrete terminal target run.
-- [x] No observer-specific compiler, duplicate control interpreter, replay
-  certificate, call oracle, or vertical Yul-to-bytecode proof corridor.
-- [x] Focused Lean builds, full verification root, architecture checks, hole
-  scan, axiom audit, proof aggregate, and `git diff --check` pass.
+At each completed boundary:
 
-## Full Solc Contracts
+- focused Lean build;
+- `lake build EvmCompiler.Verification`;
+- `scripts/verify_layer.sh proofs`;
+- `scripts/check_architecture.sh`;
+- repository hole, `unsafe`, and new-axiom scans;
+- `#print axioms` for new public theorems;
+- Python/frontend regressions;
+- exact pinned Permit2/Aave gate where executable;
+- `git diff --check`;
+- a green git checkpoint.
 
-Public production spine:
-
-`solc Yul object -> ordered Yul -> Functions -> allocated expressions ->`
-`Structured -> TypedCfg -> Assembly -> relocatable byte image`.
-
-### Executable Yul Boundary
-
-- [x] Remove frontend-only alias and lifetime preprocessing from production;
-  exact Permit2 and Aave compile through the ordinary root-block lowerer.
-- [x] Add Yul-owned executable `OrderedProgram` lowering with exact
-  syntax-derived fuel and preserve parser function order as source data.
-- [x] Check that frontend conversion supplies source-representing, nodup,
-  solc-valid ordered entries; keep generated compiler data out of this source
-  interface.
-- [x] Generalize `FunctionsCompilerArtifact.Decomposition` from one arbitrary
-  `Finmap` enumeration to any valid ordered entries and compiler initial-name
-  set covering the source names.
-- [x] Lift the adjacent Yul -> Functions open-interaction theorem and the short
-  end-to-end composition theorem to compiler-selected ordered artifacts; retain
-  the existing canonical theorem as a corollary.
-
-### Object Images
-
-- [x] Return an executable per-object code artifact retaining ordered Yul,
-  exact lowering, checked lower-pass compilation, and emitted code bytes.
-- [x] Make object compilation return one recursive checked artifact containing
-  child images, stable layout, resolved ordered Yul, core compile artifacts,
-  immutable relocations, payload, and final bytes.
-- [ ] Prove object-builtin resolution and serialization against a declarative
-  solc-Yul object relation, including metadata ordering, `datasize`,
-  `dataoffset`, `datacopy`, linker inputs, and instantiated immutables.
-- [x] Compose the object artifact with the ordered-Yul theorem so the public
-  theorem's only compiler premise is `compile? source inputs = some artifact`.
-- [x] Prove payload-aware decoding and exact-transcript execution for the final
-  raw object bytes through the imported EVM decoder.
-- [x] Compute concrete `gas`/`msize` observations while retaining universally
-  open CALL/CREATE-family effects, preserve their exact interleaving in one
-  transcript, and replay every target branch to a related source outcome.
-
-### Allocation And Memory
-
-- [x] Select only complete, checked mixed stack/scratch artifacts; no allocation
-  candidate or layout evidence appears at the public boundary.
-- [ ] Replace lexical-scope pressure with a checked backward liveness artifact
-  and next-use stack scheduler; use dead-variable erasure and rematerialization
-  to make optimized Aave/Permit2 stack-only where possible.
-- [x] Treat Permit2's `memoryguard(size)` as its documented source promise and
-  prove the selected static spill interval is exactly `[size, ptr)`.
-- [x] Do not claim the fixed Aave `0x100000` reservation universally: retain
-  actual-run `SourceSafety` as an explicit public premise and make the CLI
-  reservation an explicit semantic promise, never a compiler inference.
-- [ ] Remove Aave's conditional reservation premise by compiling stack-only or
-  adding an allocation-owned moving scratch arena; this strengthens the input
-  contract but is not required by the conditional compiler theorem.
-
-### Compact Encoding
-
-- [ ] Replace unconditional `PUSH32` with a checked PUSH-width family; resolve
-  labels at a compiler-selected fixed width and keep immutable relocations at
-  their required width.
-- [ ] Re-run size profiling after compact pushes, then add only generic
-  pass-owned stack scheduling and peephole improvements needed to reach
-  deployable bytecode.
-- [x] Gate exact pinned Permit2 and Aave from fresh checkouts through the same
-  theorem-covered executable, object artifact, and final byte image; run full
-  Lean, architecture, hole, axiom, diff, and real-EVM checks.
-- [x] Keep EIP-170 deployability separate from semantic composition: the exact
-  checked images execute in the raw-byte semantics but remain oversized until
-  compact encoding and generic optimization land.
+The goal is incomplete while Aave needs compiler scratch memory, while a
+fixture provides spill storage, while generated allocation evidence appears at
+the public boundary, or while any new adjacent boundary lacks a checked
+preservation theorem.
