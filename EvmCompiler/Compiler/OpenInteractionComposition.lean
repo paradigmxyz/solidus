@@ -3,6 +3,7 @@ import EvmCompiler.Functions.AllocationInteractionProgram
 import EvmCompiler.Structured.InteractionTerminalPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.Assembly.InteractionBytecode
+import EvmCompiler.Assembly.InteractionConcreteResources
 import EvmCompiler.Solidity.Frontend
 
 namespace EvmCompiler
@@ -647,6 +648,128 @@ def CompiledBytecodeDoneRel
               compiledArtifact.metadata.typedCfg generated
               cfgArtifact.target sourceDone targetDone
 
+theorem CompiledOpenWorldRel.rawBytecodeRel
+    {sourceProgram : Yul.Program} {objects : Objects.Program}
+    {compiledArtifact : Objects.Program.CompileArtifact}
+    {sourceFuel : Nat} {source : Yul.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    {bytes : ByteArray}
+    (hCompiled : CompiledOpenWorldRel sourceProgram objects compiledArtifact
+      sourceFuel source expressionsState)
+    (hDecoding : Assembly.Bytecode.DecodingCorrect compiledArtifact.target
+      bytes)
+    (hTerminal : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceTerminal
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [sourceProgram.contract.dispatcher])
+        (some sourceProgram.contract) source)) :
+    exists targetFuel,
+      Simulation.Interaction.Rel
+        (CompiledBytecodeDoneRel objects compiledArtifact)
+        (Yul.InteractionSemantics.exec (sourceFuel + 1)
+          (.Block [sourceProgram.contract.dispatcher])
+          (some sourceProgram.contract) source)
+        (Assembly.Bytecode.InteractionSemantics.openRunNResult
+          bytes targetFuel
+          { expressionsState.evm with
+            pc := EvmYul.UInt256.ofNat 0 }) := by
+  rcases hCompiled with
+    ⟨expressions, entryShapes, cfgArtifact, structuredFuel,
+      _hAccepted, generated, hRel⟩
+  let targetFuel :=
+    2 *
+      (Structured.InteractionStaticCost.blockBudget
+          expressions.toStructured structuredFuel
+          expressions.toStructured.body *
+        TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+          compiledArtifact.metadata.typedCfg)
+  have hStrong :=
+    Simulation.Interaction.Rel.strengthen_left hRel hTerminal
+  have hTargetTerminal : Simulation.Interaction.AllDone
+      Assembly.InteractionSemantics.Terminal
+      (Assembly.InteractionSemantics.Target.openRunNResult
+        compiledArtifact.target targetFuel
+        { expressionsState.evm with
+          pc := EvmYul.UInt256.ofNat 0 }) := by
+    apply Simulation.Interaction.Rel.allDone_right hStrong
+    intro sourceDone targetDone hDone
+    exact YulBytecodeDoneRel.targetTerminal hDone.2 hDone.1
+  have hRawEq :=
+    Assembly.Bytecode.openRunNResult_eq_target_of_decoding_terminal
+      hDecoding hTargetTerminal
+  have hPublic : Simulation.Interaction.Rel
+      (CompiledBytecodeDoneRel objects compiledArtifact)
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [sourceProgram.contract.dispatcher])
+        (some sourceProgram.contract) source)
+      (Assembly.InteractionSemantics.Target.openRunNResult
+        compiledArtifact.target targetFuel
+        { expressionsState.evm with
+          pc := EvmYul.UInt256.ofNat 0 }) := by
+    apply Simulation.Interaction.Rel.mono hRel
+    intro sourceDone targetDone hDone
+    exact ⟨expressions, entryShapes, cfgArtifact, generated, hDone⟩
+  refine ⟨targetFuel, ?_⟩
+  rw [hRawEq]
+  exact hPublic
+
+/-- Concrete `gas`/`msize` observations combined with universally open
+CALL/CREATE-family effects. Every branch of the target observer computation
+expands to one exact interleaved transcript, executes on the raw byte image,
+and replays to a related source terminal leaf. -/
+theorem CompiledOpenWorldRel.observedBytecodeReplay
+    {sourceProgram : Yul.Program} {objects : Objects.Program}
+    {compiledArtifact : Objects.Program.CompileArtifact}
+    {sourceFuel : Nat} {source : Yul.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    {bytes : ByteArray}
+    (hCompiled : CompiledOpenWorldRel sourceProgram objects compiledArtifact
+      sourceFuel source expressionsState)
+    (hDecoding : Assembly.Bytecode.DecodingCorrect compiledArtifact.target
+      bytes)
+    (hTerminal : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceTerminal
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [sourceProgram.contract.dispatcher])
+        (some sourceProgram.contract) source)) :
+    exists targetFuel,
+      Simulation.Interaction.Rel
+          (CompiledBytecodeDoneRel objects compiledArtifact)
+          (Yul.InteractionSemantics.exec (sourceFuel + 1)
+            (.Block [sourceProgram.contract.dispatcher])
+            (some sourceProgram.contract) source)
+          (Assembly.Bytecode.InteractionSemantics.openRunNResult
+            bytes targetFuel
+            { expressionsState.evm with
+              pc := EvmYul.UInt256.ofNat 0 }) /\
+        ∀ {externalTranscript fullTranscript targetResult},
+          Simulation.Interaction.Executes
+            (Assembly.InteractionConcreteResources.openRunNResult
+              compiledArtifact.target targetFuel
+              { expressionsState.evm with
+                pc := EvmYul.UInt256.ofNat 0 })
+            externalTranscript (.ok (targetResult, fullTranscript)) ->
+          ∃ sourceDone,
+            Simulation.Interaction.Executes
+              (Yul.InteractionSemantics.exec (sourceFuel + 1)
+                (.Block [sourceProgram.contract.dispatcher])
+                (some sourceProgram.contract) source)
+              fullTranscript sourceDone /\
+            CompiledBytecodeDoneRel objects compiledArtifact
+              sourceDone (.ok targetResult) := by
+  obtain ⟨targetFuel, hRawRel⟩ :=
+    hCompiled.rawBytecodeRel hDecoding hTerminal
+  refine ⟨targetFuel, hRawRel, ?_⟩
+  intro externalTranscript fullTranscript targetResult hObserved
+  have hTarget :=
+    Assembly.InteractionConcreteResources.openRunNResult_executes hObserved
+  have hRaw :=
+    Assembly.Bytecode.target_openRunNResult_executes_of_decoding
+      hDecoding hTarget
+  obtain ⟨sourceDone, hSource, hDone⟩ :=
+    Simulation.Interaction.Rel.executes hRawRel.symm hRaw
+  exact ⟨sourceDone, hSource, hDone⟩
+
 theorem CompiledOpenWorldRel.bytecodeExecutes
     {sourceProgram : Yul.Program} {objects : Objects.Program}
     {compiledArtifact : Objects.Program.CompileArtifact}
@@ -1028,9 +1151,9 @@ theorem compiledObjectRootToAssemblyTarget
     hResourceSafe hFrameSafe hYulInitial hYulDomain hAllocationInitial
     hTerminal
 
-/-- Every concrete terminal branch of a recursively compiled Solidity object
-executes on its exact raw object image with the same ordered open-world
-transcript and a related terminal outcome. -/
+/-- A recursively compiled Solidity object is structurally related to its
+exact raw image for every ordered resource/external answer sequence. The
+relation may be used in either direction to select a concrete branch. -/
 theorem compiledObjectRootToBytecode
     {object : Solidity.Frontend.Object}
     {linkerSymbols : List (Solidity.Frontend.Name ×
@@ -1040,9 +1163,6 @@ theorem compiledObjectRootToBytecode
     {source : Yul.InteractionSemantics.State}
     {functionsState : Functions.InteractionSemantics.State}
     {expressionsState : Expressions.InteractionSemantics.RunState}
-    {transcript : Simulation.Interaction.Transcript}
-    {sourceDone : Except Yul.InteractionSemantics.Failure
-      Yul.InteractionSemantics.State}
     (hObject : object.compileObjectArtifactWithLinkerSymbols?
       linkerSymbols = some objectArtifact)
     (hScoped : objectArtifact.codeArtifact.lower.toFunctions.Scoped)
@@ -1074,26 +1194,44 @@ theorem compiledObjectRootToBytecode
       Yul.FunctionsInteractionProgram.SourceTerminal
       (Yul.InteractionSemantics.exec (sourceFuel + 1)
         (.Block [objectArtifact.codeArtifact.ordered.program.contract.dispatcher])
-        (some objectArtifact.codeArtifact.ordered.program.contract) source))
-    (hSourceExec : Simulation.Interaction.Executes
-      (Yul.InteractionSemantics.exec (sourceFuel + 1)
-        (.Block [objectArtifact.codeArtifact.ordered.program.contract.dispatcher])
-        (some objectArtifact.codeArtifact.ordered.program.contract) source)
-      transcript sourceDone) :
+        (some objectArtifact.codeArtifact.ordered.program.contract) source)) :
     Solidity.Frontend.Object.CompiledObjectArtifact.ValidFor
         linkerSymbols object objectArtifact /\
       expressionsState.evm.executionEnv.codeBytes =
           Assembly.Bytecode.ofList objectArtifact.image.bytes /\
-        exists targetFuel targetDone,
-        Simulation.Interaction.Executes
-          (Assembly.Bytecode.InteractionSemantics.openRunNResult
-            (Assembly.Bytecode.ofList objectArtifact.image.bytes)
-            targetFuel
-            { expressionsState.evm with
-              pc := EvmYul.UInt256.ofNat 0 })
-          transcript targetDone /\
-        CompiledBytecodeDoneRel objectArtifact.codeArtifact.lower
-          objectArtifact.codeArtifact.compiled sourceDone targetDone := by
+        exists targetFuel,
+          Simulation.Interaction.Rel
+              (CompiledBytecodeDoneRel objectArtifact.codeArtifact.lower
+                objectArtifact.codeArtifact.compiled)
+              (Yul.InteractionSemantics.exec (sourceFuel + 1)
+                (.Block
+                  [objectArtifact.codeArtifact.ordered.program.contract.dispatcher])
+                (some objectArtifact.codeArtifact.ordered.program.contract)
+                source)
+              (Assembly.Bytecode.InteractionSemantics.openRunNResult
+                (Assembly.Bytecode.ofList objectArtifact.image.bytes)
+                targetFuel
+                { expressionsState.evm with
+                  pc := EvmYul.UInt256.ofNat 0 }) /\
+            ∀ {externalTranscript fullTranscript targetResult},
+              Simulation.Interaction.Executes
+                (Assembly.InteractionConcreteResources.openRunNResult
+                  objectArtifact.codeArtifact.compiled.target targetFuel
+                  { expressionsState.evm with
+                    pc := EvmYul.UInt256.ofNat 0 })
+                externalTranscript (.ok (targetResult, fullTranscript)) ->
+              ∃ sourceDone,
+                Simulation.Interaction.Executes
+                  (Yul.InteractionSemantics.exec (sourceFuel + 1)
+                    (.Block
+                      [objectArtifact.codeArtifact.ordered.program.contract.dispatcher])
+                    (some
+                      objectArtifact.codeArtifact.ordered.program.contract)
+                    source)
+                  fullTranscript sourceDone /\
+                CompiledBytecodeDoneRel objectArtifact.codeArtifact.lower
+                  objectArtifact.codeArtifact.compiled
+                  sourceDone (.ok targetResult) := by
   have hValid :=
     Solidity.Frontend.Object.compileObjectArtifactWithLinkerSymbols?_valid
       object linkerSymbols objectArtifact hObject
@@ -1106,8 +1244,7 @@ theorem compiledObjectRootToBytecode
   have hDecoding :=
     Solidity.Frontend.Object.compileObjectArtifactWithLinkerSymbols?_decodingCorrect
       hObject
-  exact hCompiled.bytecodeExecutes
-    hDecoding hTerminal hSourceExec
+  exact hCompiled.observedBytecodeReplay hDecoding hTerminal
 
 /-- Public proposition for open-world terminal compiler correctness. Its
 premises are source-facing; all lowering artifacts are hidden inside

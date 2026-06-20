@@ -83,6 +83,74 @@ theorem target_openStepResult_executes_fetch
       rw [hFetch] at hExec
       exact ⟨instr, rfl, hExec⟩
 
+theorem target_openStepResult_fetch_of_successful
+    {target : TargetProgram} {state : EVMState}
+    (hSuccessful : Simulation.Interaction.Successful
+      (Assembly.InteractionSemantics.Target.openStepResult target state)) :
+    ∃ instr, target.fetch state.pc.toNat = some instr := by
+  obtain ⟨transcript, outcome, hExec, hOutcome⟩ :=
+    Simulation.Interaction.AllDone.exists_executes hSuccessful
+  cases outcome with
+  | error error => cases hOutcome
+  | ok result =>
+      obtain ⟨instr, hFetch, _hInstr⟩ :=
+        target_openStepResult_executes_fetch hExec
+      exact ⟨instr, hFetch⟩
+
+/-- On a universally terminal compiler-produced run, payload-aware byte
+decoding is not merely forward executable: the raw byte and retained Assembly
+interaction trees are equal. This is the final adjacent reverse fact needed
+for concrete resource replay, not a cross-pass backward-adequacy theorem. -/
+theorem openRunNResult_eq_target_of_decoding_terminal
+    {target : TargetProgram} {bytes : ByteArray}
+    {fuel : Nat} {state : EVMState}
+    (hDecoding : DecodingCorrect target bytes)
+    (hTerminal : Simulation.Interaction.AllDone
+      Assembly.InteractionSemantics.Terminal
+      (Assembly.InteractionSemantics.Target.openRunNResult
+        target fuel state)) :
+    InteractionSemantics.openRunNResult bytes fuel state =
+      Assembly.InteractionSemantics.Target.openRunNResult
+        target fuel state := by
+  induction fuel generalizing state with
+  | zero => rfl
+  | succ fuel ih =>
+      change
+        Simulation.Interaction.bind
+            (InteractionSemantics.openStepResult bytes state)
+            (fun result =>
+              match result with
+              | .running mid =>
+                  InteractionSemantics.openRunNResult bytes fuel mid
+              | .halted halt =>
+                  Simulation.Interaction.pure (.halted halt)) =
+          Simulation.Interaction.bind
+            (Assembly.InteractionSemantics.Target.openStepResult target state)
+            (fun result =>
+              match result with
+              | .running mid =>
+                  Assembly.InteractionSemantics.Target.openRunNResult
+                    target fuel mid
+              | .halted halt =>
+                  Simulation.Interaction.pure (.halted halt))
+      have hStep := Simulation.Interaction.AllDone.bind_inv hTerminal
+      have hStepSuccessful : Simulation.Interaction.Successful
+          (Assembly.InteractionSemantics.Target.openStepResult
+            target state) := by
+        apply Simulation.Interaction.AllDone.mono hStep
+        intro outcome hOutcome
+        cases outcome with
+        | error error => exact hOutcome
+        | ok result => trivial
+      obtain ⟨instr, hFetch⟩ :=
+        target_openStepResult_fetch_of_successful hStepSuccessful
+      rw [openStepResult_eq_target_of_fetch hDecoding hFetch]
+      apply Simulation.Interaction.AllDone.bind_congr hStep
+      intro result hResult
+      cases result with
+      | running mid => exact ih hResult
+      | halted halt => rfl
+
 /--
 Every successful fetched-target branch is executed by the encoded bytecode
 with the same instruction fuel, dependent interaction transcript, and result.

@@ -380,6 +380,12 @@ only a short alias of the designated horizontal composition theorem. -/
 theorem openWorldTerminalCorrect : OpenWorldTerminalCorrect :=
   Compiler.OpenInteractionComposition.openWorldTerminalCorrect
 
+/-- Exact recursive-object/raw-byte correctness with concrete resource
+observations and universally open external effects. All proof work remains in
+the horizontally composed compiler module. -/
+abbrev compiledObjectRootToBytecode :=
+  @Compiler.OpenInteractionComposition.compiledObjectRootToBytecode
+
 end EndToEnd
 end Yul
 end EvmCompiler

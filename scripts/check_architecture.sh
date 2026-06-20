@@ -706,6 +706,26 @@ report_matches \
   EvmCompiler/Compiler/OpenInteractionComposition.lean
 
 report_matches \
+  'Concrete-resource/open-external target semantics must remain Assembly-owned:' \
+  '^import EvmCompiler\.(Functions|Locals|Expressions|Structured|TypedCfg|Objects|Yul|Public)' \
+  EvmCompiler/Assembly/InteractionConcreteResources.lean
+
+report_matches \
+  'Concrete-resource/open-external target semantics must not define a compiler:' \
+  '^[[:space:]]*(partial[[:space:]]+)?def[[:space:]]+.*(compile|lower|emit|assemble)[^:]*[:=]' \
+  EvmCompiler/Assembly/InteractionConcreteResources.lean
+
+if ! rg -q 'InteractionConcreteResources\.openRunNResult' \
+      EvmCompiler/Compiler/OpenInteractionComposition.lean ||
+    ! rg -q 'CodeImageInstalled' \
+      EvmCompiler/Compiler/OpenInteractionComposition.lean; then
+  printf '%s\n\n' \
+    'Raw object composition must retain concrete resource replay and exact source code-image installation.' \
+    >&2
+  failed=1
+fi
+
+report_matches \
   'The canonical Yul-to-Functions interaction boundary must not define a compiler or recursive evaluator:' \
   '^[[:space:]]*(partial[[:space:]]+)?def[[:space:]]+.*(compile|lower|emit|assemble|evalTail|evalArgs|evalValues|execSeq|loop)[^:]*[:=]' \
   EvmCompiler/Yul/FunctionsInteractionRelation.lean \
@@ -1427,6 +1447,7 @@ report_matches \
   EvmCompiler/Assembly/InteractionSemantics.lean \
   EvmCompiler/Assembly/InteractionPreservation.lean \
   EvmCompiler/Assembly/InteractionBytecode.lean \
+  EvmCompiler/Assembly/InteractionConcreteResources.lean \
   EvmCompiler/Structured/InteractionSemantics.lean \
   EvmCompiler/Structured/InteractionPrimitivePreservation.lean \
   EvmCompiler/Structured/InteractionPreservation.lean \

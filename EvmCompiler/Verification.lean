@@ -9,6 +9,7 @@ import EvmCompiler.Solidity.BridgeJson
 import EvmCompiler.Assembly.InteractionSemantics
 import EvmCompiler.Assembly.InteractionPreservation
 import EvmCompiler.Assembly.InteractionBytecode
+import EvmCompiler.Assembly.InteractionConcreteResources
 import EvmCompiler.Expressions.InteractionPreservation
 import EvmCompiler.Expressions.ObserverPreservation
 import EvmCompiler.Functions.AllocationLowering
@@ -998,6 +999,8 @@ or audit-alias corridor.
 #check EvmCompiler.Assembly.Bytecode.InteractionSemantics.openRunNResult
 #check EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes
 #check EvmCompiler.Assembly.Bytecode.compile_openRunNResult_executes
+#check EvmCompiler.Assembly.InteractionConcreteResources.openRunNResult
+#check EvmCompiler.Assembly.InteractionConcreteResources.openRunNResult_executes
 #check EvmCompiler.Functions.AllocationObserverContext.ExprContext
 #check EvmCompiler.Functions.AllocationObserverContext.classify_var
 #check EvmCompiler.Functions.AllocationObserverContext.classify_let_transition
@@ -1655,6 +1658,8 @@ or audit-alias corridor.
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledWithPassToEncodedBytecode
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledOrderedYulToEncodedBytecode
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledOrderedYulToEncodedBytecode
+#check EvmCompiler.Compiler.OpenInteractionComposition.compiledObjectRootToBytecode
+#print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledObjectRootToBytecode
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledFrontendCodeToAssemblyTarget
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledFrontendCodeToAssemblyTarget
 #check EvmCompiler.Compiler.OpenInteractionComposition.openWorldTerminalCorrect
@@ -1983,6 +1988,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.EndToEnd.ClosedResourceCorrect
 #check EvmCompiler.Yul.EndToEnd.closedResourceCorrect
 #check EvmCompiler.Yul.EndToEnd.OpenWorldTerminalCorrect
+#check EvmCompiler.Yul.EndToEnd.compiledObjectRootToBytecode
 #check EvmCompiler.Yul.EndToEnd.openWorldTerminalCorrect
 #print axioms EvmCompiler.Yul.EndToEnd.openWorldTerminalCorrect
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate

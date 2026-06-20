@@ -572,6 +572,9 @@ Public production spine:
   theorem's only compiler premise is `compile? source inputs = some artifact`.
 - [x] Prove payload-aware decoding and exact-transcript execution for the final
   raw object bytes through the imported EVM decoder.
+- [x] Compute concrete `gas`/`msize` observations while retaining universally
+  open CALL/CREATE-family effects, preserve their exact interleaving in one
+  transcript, and replay every target branch to a related source outcome.
 
 ### Allocation And Memory
 
