@@ -30,6 +30,14 @@ for theorem in \
   fi
 done
 
+if ! rg -Fq \
+    '#check EvmCompiler.Functions.AllocationLayoutLowering.Schedule.compile' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing checked Functions layout lowering.' >&2
+  failed=1
+fi
+
 report_matches() {
   local title="$1"
   shift
@@ -1450,6 +1458,11 @@ report_matches \
   EvmCompiler/Functions/AllocationLayout.lean
 
 report_matches \
+  'Functions layout lowering may import only its owner and adjacent Locals compiler:' \
+  '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|Interaction|EffectSemantics|TypedCfg|Assembly\.(Assembler|Compiler))' \
+  EvmCompiler/Functions/AllocationLayoutLowering.lean
+
+report_matches \
   'Canonical Expressions semantics must interpret Expressions syntax directly, not compile through Structured:' \
   '\b(toStructured|compile)\b' \
   EvmCompiler/Expressions/EffectSemantics.lean \
@@ -1509,6 +1522,7 @@ report_matches \
   EvmCompiler/Functions/AllocationInteraction*.lean \
   EvmCompiler/Functions/AllocationLiveness.lean \
   EvmCompiler/Functions/AllocationLayout.lean \
+  EvmCompiler/Functions/AllocationLayoutLowering.lean \
   EvmCompiler/Functions/AllocationObserverRelation.lean \
   EvmCompiler/Functions/ObserverSafety.lean \
   EvmCompiler/Functions/AllocationObserverSafety.lean \

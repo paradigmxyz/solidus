@@ -93,6 +93,8 @@ short composition module.
 - [x] Prove the retain artifact executes to its recorded promoted layout,
   preserves the canonical relative order of survivors, and satisfies its
   target-suffix/depth checks. Expression `DUP` checks remain part of lowering.
+- [x] Prove the ordinary adjacent Locals compiler realizes every checked retain
+  schedule and finishes in its recorded target layout.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls
