@@ -1184,6 +1184,41 @@ for theorem in \
   fi
 done
 
+for theorem in \
+    'compiledVerifiedStackCodeToRawBytecode'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.Compiler.OpenInteractionComposition.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing checked stack-artifact theorem %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
+if sed -n \
+    '/^theorem compiledVerifiedStackCodeToRawBytecode/,/:= by$/p' \
+    EvmCompiler/Compiler/OpenInteractionComposition.lean | \
+    rg -q 'hSupported|hFrameSafe|Certificate|Schedule|Layout|Evidence|Oracle'; then
+  printf '%s\n\n' \
+    'Checked stack-artifact theorem exposes compiler-generated semantic evidence.' >&2
+  failed=1
+fi
+
+report_matches \
+  'Functions open-support checking must remain a semantic-owner check:' \
+  '^import EvmCompiler\..*(Compiler|Yul|Solidity|Objects|Observer|Replay|Oracle|TypedCfg|Assembly\.(Assembler|Compiler))' \
+  EvmCompiler/Functions/OpenSupportCheck.lean
+
+report_matches \
+  'The production stack artifact must not depend on frontend or observer corridors:' \
+  '^import EvmCompiler\..*(Yul|Solidity|Objects|Observer|Replay|Oracle)' \
+  EvmCompiler/Compiler/StackArtifact.lean
+
+report_matches \
+  'The production stack artifact must not define source or target interpreters:' \
+  '^[[:space:]]*(partial[[:space:]]+)?def[[:space:]]+.*(eval|exec|run|step|replay)[^:]*[:=]' \
+  EvmCompiler/Compiler/StackArtifact.lean
+
 report_matches \
   'Concrete-resource/open-external target semantics must remain Assembly-owned:' \
   '^import EvmCompiler\.(Functions|Locals|Expressions|Structured|TypedCfg|Objects|Yul|Public)' \

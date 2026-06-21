@@ -971,6 +971,100 @@ theorem stackEncodedToRawBytecode
     hDecoding hTargetTerminal]
   exact hRel
 
+/-- A checked frontend stack-code artifact reaches its exact encoded raw
+bytes. All compiler equations, frame-safety facts, and lower certificates are
+recovered from adjacent pass-owned theorems. -/
+theorem compiledVerifiedStackCodeToRawBytecode
+    {object : Solidity.Frontend.Object}
+    {context : Solidity.Frontend.ObjectBuiltinContext}
+    {codeArtifact : Solidity.Frontend.Object.VerifiedStackCodeArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hCode : object.compileVerifiedStackCodeArtifactIn? context =
+      some codeArtifact)
+    (hWF : codeArtifact.lower.toFunctions.WF)
+    (hScoped : codeArtifact.lower.toFunctions.Scoped)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial
+        (Yul.Contract.names codeArtifact.ordered.program.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState)
+    (hTerminal : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceTerminal
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [codeArtifact.ordered.program.contract.dispatcher])
+        (some codeArtifact.ordered.program.contract) source)) :
+    ∃ structuredFuel,
+      Assembly.Accepted codeArtifact.compiled.certified.target ∧
+        ∃ generated :
+            Structured.TypedCfgPreservation.Program.GeneratedContext
+              codeArtifact.compiled.expressions.toStructured
+              codeArtifact.compiled.entryShapes codeArtifact.compiled.cfg,
+          Simulation.Interaction.Rel
+            (YulStackBytecodeDoneRel
+              codeArtifact.compiled.expressions.toStructured
+              codeArtifact.compiled.entryShapes codeArtifact.compiled.cfg
+              generated codeArtifact.compiled.certified.target)
+            (Yul.InteractionSemantics.exec (sourceFuel + 1)
+              (.Block [codeArtifact.ordered.program.contract.dispatcher])
+              (some codeArtifact.ordered.program.contract) source)
+            (Assembly.Bytecode.InteractionSemantics.openRunNResult
+              (Assembly.Bytecode.ofList codeArtifact.bytes)
+              (2 *
+                (Structured.InteractionStaticCost.blockBudget
+                    codeArtifact.compiled.expressions.toStructured
+                    structuredFuel
+                    codeArtifact.compiled.expressions.toStructured.body *
+                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                    codeArtifact.compiled.cfg))
+              { expressionsState.evm with
+                pc := EvmYul.UInt256.ofNat 0 }) := by
+  obtain ⟨_hResolved, hOrdered, hLower, hStackArtifact, _hBytes⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts hCode
+  have hSource :=
+    Solidity.Frontend.Object.toSolcYulOrderedProgram?_source hOrdered
+  let decomposition :=
+    Yul.FunctionsCompilerArtifact.passDecomposition_of_ordered_toObjects?
+      hLower hSource.1 hSource.2.1
+  have hProgramOk :
+      Yul.SolcValidation.ProgramOkWithEntries?
+          Yul.SolcValidation.defaultDialectProfile
+          codeArtifact.ordered.program decomposition.functionEntries = true := by
+    simpa [decomposition,
+      Yul.FunctionsCompilerArtifact.passDecomposition_of_ordered_toObjects?]
+      using
+        Solidity.Frontend.Object.toSolcYulOrderedProgram?_programOkWithEntries
+          hOrdered
+  obtain ⟨hSupported, hStackLower, hExpressions, hStructuredWF, _hShapes,
+      hGenerate, _hWellTyped, hIndependent, hCertified, _hTarget,
+      hWindow⟩ :=
+    Compiler.StackArtifact.compile?_parts hStackArtifact
+  have hAssembly := Compiler.StackArtifact.compile?_assembly hStackArtifact
+  have hFrameSafe :=
+    Compiler.StackArtifact.compile?_frameSafe hStackArtifact
+  have hByteLength :
+      Assembly.Program.byteLength codeArtifact.compiled.certified.target <
+        EvmYul.UInt256.size :=
+    (TypedCfg.Program.compileCertified?_pcFits hCertified).byteLength_lt
+  obtain ⟨structuredFuel, hAccepted, generated, hEncoded⟩ :=
+    yulStackToEncodedBytecode decomposition hProgramOk hWF hScoped hSupported
+      hStackLower hExpressions hYulInitial hYulDomain hStackInitial hGenerate
+      hCertified hStructuredWF hFrameSafe hIndependent hAssembly hByteLength
+      hTerminal
+  have hDecoding :
+      Assembly.Bytecode.DecodingCorrect codeArtifact.compiled.target
+        (Assembly.Bytecode.ofList codeArtifact.bytes) := by
+    simpa using
+      Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_decodingCorrect
+        hCode []
+  refine ⟨structuredFuel, hAccepted, generated, ?_⟩
+  exact stackEncodedToRawBytecode hEncoded hDecoding hTerminal
+
 /-- The end-to-end relation for a successfully compiled artifact. Intermediate
 compiler witnesses are existential and fixed across the whole interaction
 tree. -/

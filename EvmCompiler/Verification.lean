@@ -51,6 +51,7 @@ import EvmCompiler.Functions.AllocationObserverProgram
 import EvmCompiler.Functions.AllocationObserverCall
 import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.InteractionSemantics
+import EvmCompiler.Functions.OpenSupportCheck
 import EvmCompiler.Functions.InteractionArity
 import EvmCompiler.Functions.AllocationInteractionRelation
 import EvmCompiler.Functions.AllocationInteractionExpression
@@ -175,6 +176,7 @@ import EvmCompiler.Yul.FunctionsInteractionRecursiveStatement
 import EvmCompiler.Yul.FunctionsInteractionRecursiveBody
 import EvmCompiler.Yul.FunctionsInteractionCompilerCost
 import EvmCompiler.Yul.FunctionsInteractionProgram
+import EvmCompiler.Compiler.StackArtifact
 import EvmCompiler.Compiler.OpenInteractionComposition
 import EvmCompiler.Simulation.InteractionRegression
 import EvmCompiler.Yul.FunctionsInteractionTerminal
@@ -3301,6 +3303,17 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyOpenAt
 #check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
 #check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyTerminal
+#check EvmCompiler.Functions.OpenSupportCheck.Program.openSupported_of_check
+#check EvmCompiler.Assembly.PrimStep.run_execLength
+#check EvmCompiler.Assembly.PrimOp.step_append_stack_of_stackArity_le
+#check EvmCompiler.Structured.BasicInstr.step_append_stack
+#check EvmCompiler.Structured.Code.frameSafe
+#check EvmCompiler.Structured.Program.frameSafe
+#check EvmCompiler.Compiler.StackArtifact.compile?_openSupported
+#check EvmCompiler.Compiler.StackArtifact.compile?_frameSafe
+#check EvmCompiler.Compiler.StackArtifact.compile?_decodingCorrect
+#check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_decodingCorrect
+#check EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackCodeToRawBytecode
 #check EvmCompiler.Functions.StackStatementPreservation.ControlPointPreservesAt
 #check EvmCompiler.Functions.StackStatementPreservation.CompiledControlPointAt
 #check EvmCompiler.Functions.StackStatementPreservation.CompiledControlPoint.at
@@ -3365,6 +3378,11 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyOpenAt
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyTerminal
+#print axioms EvmCompiler.Functions.OpenSupportCheck.Program.openSupported_of_check
+#print axioms EvmCompiler.Structured.Program.frameSafe
+#print axioms EvmCompiler.Compiler.StackArtifact.compile?_openSupported
+#print axioms EvmCompiler.Compiler.StackArtifact.compile?_frameSafe
+#print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackCodeToRawBytecode
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_optionalReturn
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_optionalReturn_of_bodyRun
 #print axioms EvmCompiler.Functions.StackCallPreservation.FunctionLookup.of_compilers

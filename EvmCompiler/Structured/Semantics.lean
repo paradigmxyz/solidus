@@ -53,6 +53,93 @@ def FrameSafe (code : Code) : Prop :=
 
 end Code
 
+namespace BasicInstr
+
+/-- One ordinary Structured instruction preserves a hidden stack suffix. -/
+theorem step_append_stack
+    (instr : BasicInstr) (state final : EVMState)
+    (hidden : EvmYul.Stack Word)
+    (hStep : instr.step state = .ok final) :
+    instr.step { state with stack := state.stack ++ hidden } =
+      .ok { final with stack := final.stack ++ hidden } := by
+  cases instr with
+  | push value =>
+      cases hStep
+      simp [BasicInstr.step, Assembly.Target.stepInstr,
+        Assembly.Target.stepInstrWith,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC, EvmYul.Stack.push]
+  | op op =>
+      change op.toPrimOp.step state = .ok final at hStep
+      change
+        op.toPrimOp.step { state with stack := state.stack ++ hidden } =
+          .ok { final with stack := final.stack ++ hidden }
+      cases hArity : op.toPrimOp.stackArity? with
+      | none =>
+          cases op <;>
+            simp [BasicOp.toPrimOp, Assembly.PrimOp.stackArity?,
+              Assembly.PrimOp.toEVM, EvmYul.EVM.δ, EvmYul.EVM.α,
+              Assembly.PrimOp.step, Assembly.PrimOp.continuingStep?,
+              Assembly.PrimStep.run] at hArity hStep
+      | some arity =>
+          rcases arity with ⟨input, output⟩
+          exact
+            Assembly.PrimOp.step_append_stack_of_stackArity_le
+              hidden hArity
+              (Assembly.PrimOp.input_le_of_step_stackArity hArity hStep)
+              hStep
+  | bindLocals offset names =>
+      cases hStep
+      rfl
+  | bindScratch baseDepth name slot =>
+      cases hStep
+      rfl
+
+end BasicInstr
+
+namespace Code
+
+@[simp] theorem run_single (instr : BasicInstr) (state : EVMState) :
+    run [instr] state = instr.step state := by
+  cases hStep : instr.step state <;>
+    simp [Code.run, EffectSemantics.Code.run,
+      EffectSemantics.Control.Code.run,
+      EffectSemantics.Control.Handler.ofLegacy, hStep,
+      Bind.bind, Except.bind]
+
+theorem run_cons (instr : BasicInstr) (rest : Code) (state : EVMState) :
+    run (instr :: rest) state =
+      (instr.step state).bind (fun next => run rest next) := by
+  cases hStep : instr.step state <;>
+    simp [Code.run, EffectSemantics.Code.run,
+      EffectSemantics.Control.Code.run,
+      EffectSemantics.Control.Handler.ofLegacy, hStep,
+      Bind.bind, Except.bind]
+
+/-- Every straight-line Structured code sequence is frame safe. -/
+theorem frameSafe (code : Code) : FrameSafe code := by
+  intro state final hidden hRun
+  induction code generalizing state final with
+  | nil =>
+      change Except.ok state = Except.ok final at hRun
+      cases hRun
+      rfl
+  | cons instr rest ih =>
+      rw [run_cons] at hRun
+      cases hStep : instr.step state with
+      | error err =>
+          simp [hStep, Bind.bind, Except.bind] at hRun
+      | ok next =>
+          have hTail : Code.run rest next = .ok final := by
+            simpa [hStep, Bind.bind, Except.bind] using hRun
+          have hInstr :=
+            BasicInstr.step_append_stack instr state next hidden hStep
+          have hRest := ih next final hTail
+          rw [run_cons]
+          simp [hInstr, hRest, Bind.bind, Except.bind]
+
+end Code
+
 namespace Switch
 
 theorem wf_of_select {canBreak canContinue canLeave : Bool}
@@ -1118,10 +1205,57 @@ mutual
     | terminal {kind : Assembly.HaltKind} : Stmt.FrameSafe (.terminal kind)
 end
 
+namespace Block
+
+/-- Frame safety is structural for every Structured block. -/
+theorem frameSafe (block : Block) : block.FrameSafe := by
+  exact
+    Block.rec
+      (motive_1 := fun block => block.FrameSafe)
+      (motive_2 := fun stmt => stmt.FrameSafe)
+      (motive_3 := fun stmts =>
+        Block.FrameSafe { stmts := stmts })
+      (motive_4 := fun cases =>
+        ∀ value body, (value, body) ∈ cases → body.FrameSafe)
+      (motive_5 := fun defaultBody =>
+        ∀ body, defaultBody = some body → body.FrameSafe)
+      (motive_6 := fun pair => pair.2.FrameSafe)
+      (fun _ hStmts => hStmts)
+      (fun code => .code (Code.frameSafe code))
+      (fun cond _ hBody => .if_ (Code.frameSafe cond) hBody)
+      (fun scrutinee _ _ hCases hDefault =>
+        .switch (Code.frameSafe scrutinee) hCases hDefault)
+      (fun _ cond _ _ hInit hPost hBody =>
+        .for_ hInit (Code.frameSafe cond) hPost hBody)
+      .brk
+      .cont
+      .leave
+      (fun _ => .call)
+      (fun _ => .terminal)
+      .nil
+      (fun _ _ hHead hTail => .cons hHead hTail)
+      (fun _ _ hMem => by simp at hMem)
+      (fun head rest hHead hRest value body hMem => by
+        rcases List.mem_cons.mp hMem with hFirst | hTail
+        · cases hFirst
+          exact hHead
+        · exact hRest value body hTail)
+      (fun _ hSome => by simp at hSome)
+      (fun _ hBody _ hEq => by
+        cases hEq
+        exact hBody)
+      (fun _ _ hBody => hBody)
+      block
+
+end Block
+
 namespace Proc
 
 def FrameSafe (proc : Proc) : Prop :=
   proc.body.FrameSafe
+
+theorem frameSafe (proc : Proc) : proc.FrameSafe :=
+  Block.frameSafe proc.body
 
 end Proc
 
@@ -1130,6 +1264,10 @@ namespace ProcList
 def FrameSafe : List Proc → Prop
   | [] => True
   | proc :: rest => proc.FrameSafe ∧ FrameSafe rest
+
+theorem frameSafe : ∀ procs : List Proc, FrameSafe procs
+  | [] => by trivial
+  | proc :: rest => ⟨proc.frameSafe, frameSafe rest⟩
 
 theorem FrameSafe_of_lookup?
     {procs : List Proc} {name : Name} {proc : Proc}
@@ -1154,6 +1292,9 @@ namespace Program
 
 def FrameSafe (program : Program) : Prop :=
   ProcList.FrameSafe program.procs ∧ program.body.FrameSafe
+
+theorem frameSafe (program : Program) : program.FrameSafe :=
+  ⟨ProcList.frameSafe program.procs, Block.frameSafe program.body⟩
 
 theorem procFrameSafe_of_lookup?
     {program : Program} {name : Name} {proc : Proc}

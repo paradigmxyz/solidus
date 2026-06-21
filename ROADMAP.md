@@ -222,19 +222,21 @@ elimination are not prerequisites for Permit2 or Aave.
   layout, shuffle, rematerialization, and spill obligations.
 - [x] Re-establish Functions-to-Locals/Expressions forward preservation for
   all source outcomes and ordered effects.
-- [ ] Compose through existing lower pass theorems without recursive compiler
-  reasoning in `Yul.EndToEnd`.
-- [ ] Add architecture guards against generated public evidence,
+- [x] Compose the checked root-code artifact through existing lower pass
+  theorems to exact raw bytecode without recursive compiler reasoning in
+  `Yul.EndToEnd`; recursive Solidity object-image composition remains in the
+  exact-contract gate below.
+- [x] Add architecture guards against generated public evidence,
   observer-specific compilers, cross-layer corridors, and contract-specific
   allocator code.
 
 ### 8. Exact Contracts and Scalability
 
 - [x] Exact pinned Aave compiles stack-only with no reservation or source
-  non-alias premise through the checked executable stack-lowering path;
-  theorem composition into `CompiledObjectArtifact` remains open.
-- [x] Exact pinned Permit2 compiles stack-only through the checked executable
-  stack-lowering path; theorem composition into `CompiledObjectArtifact`
+  non-alias premise through the checked root-code artifact and raw-bytecode
+  theorem; recursive object-image composition remains open.
+- [x] Exact pinned Permit2 compiles stack-only through the checked root-code
+  artifact and raw-bytecode theorem; recursive object-image composition
   remains open.
 - [ ] Both compile through `CompiledObjectArtifact` to exact raw bytecode under
   the full open-world/resource-observer theorem.

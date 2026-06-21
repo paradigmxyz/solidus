@@ -2,6 +2,7 @@ import EvmCompiler.Yul.Compiler
 import EvmCompiler.Yul.SolcValidation
 import EvmCompiler.Objects.Layout
 import EvmCompiler.Objects.Compiler
+import EvmCompiler.Compiler.StackArtifact
 import EvmCompiler.Assembly.Bytecode
 
 namespace EvmCompiler
@@ -2475,6 +2476,76 @@ structure CompiledCodeArtifact where
   lower : Objects.Program
   compiled : Objects.Program.CompileArtifact
   bytes : List UInt8
+
+/-- Resolved frontend code compiled by the checked stack allocator. This is a
+parallel migration artifact until recursive object-image construction has been
+moved off the legacy allocation metadata. -/
+structure VerifiedStackCodeArtifact where
+  resolved : Object
+  ordered : Yul.OrderedProgram
+  lower : Objects.Program
+  compiled : Compiler.StackArtifact.Artifact
+  bytes : List UInt8
+
+def compileVerifiedStackCodeArtifactIn? (object : Object)
+    (context : ObjectBuiltinContext) : Option VerifiedStackCodeArtifact := do
+  let resolved ← object.resolveObjectBuiltinsIn? context
+  let ordered ← resolved.toSolcYulOrderedProgram?
+  let lower ← ordered.toObjects?
+  let compiled ← Compiler.StackArtifact.compile? lower.toFunctions
+  let bytes := (Assembly.Bytecode.encodeTarget compiled.target).toList
+  some { resolved, ordered, lower, compiled, bytes }
+
+theorem compileVerifiedStackCodeArtifactIn?_parts
+    {object : Object} {context : ObjectBuiltinContext}
+    {artifact : VerifiedStackCodeArtifact}
+    (hCompile : object.compileVerifiedStackCodeArtifactIn? context =
+      some artifact) :
+    object.resolveObjectBuiltinsIn? context = some artifact.resolved ∧
+      artifact.resolved.toSolcYulOrderedProgram? = some artifact.ordered ∧
+      artifact.ordered.toObjects? = some artifact.lower ∧
+      Compiler.StackArtifact.compile? artifact.lower.toFunctions =
+        some artifact.compiled ∧
+      artifact.bytes =
+        (Assembly.Bytecode.encodeTarget artifact.compiled.target).toList := by
+  unfold compileVerifiedStackCodeArtifactIn? at hCompile
+  cases hResolved : object.resolveObjectBuiltinsIn? context with
+  | none => simp [hResolved] at hCompile
+  | some resolved =>
+      cases hOrdered : resolved.toSolcYulOrderedProgram? with
+      | none => simp [hResolved, hOrdered] at hCompile
+      | some ordered =>
+          cases hLower : ordered.toObjects? with
+          | none => simp [hResolved, hOrdered, hLower] at hCompile
+          | some lower =>
+              cases hCompiled :
+                  Compiler.StackArtifact.compile? lower.toFunctions with
+              | none =>
+                  simp [hResolved, hOrdered, hLower, hCompiled] at hCompile
+              | some compiled =>
+                  simp [hResolved, hOrdered, hLower, hCompiled] at hCompile
+                  subst artifact
+                  exact
+                    ⟨by simpa using hResolved, by simpa using hOrdered,
+                      by simpa using hLower, by simpa using hCompiled, by simp⟩
+
+theorem compileVerifiedStackCodeArtifactIn?_decodingCorrect
+    {object : Object} {context : ObjectBuiltinContext}
+    {artifact : VerifiedStackCodeArtifact}
+    (hCompile : object.compileVerifiedStackCodeArtifactIn? context =
+      some artifact)
+    (suffix : List UInt8) :
+    Assembly.Bytecode.DecodingCorrect artifact.compiled.target
+      (Assembly.Bytecode.ofList (artifact.bytes ++ suffix)) := by
+  obtain ⟨_hResolved, _hOrdered, _hLower, hArtifact, hBytes⟩ :=
+    compileVerifiedStackCodeArtifactIn?_parts hCompile
+  have hAssembly := Compiler.StackArtifact.compile?_assembly hArtifact
+  obtain ⟨_hSupported, _hStackLower, _hExpressions, _hSourceWF, _hShapes, _hGenerate,
+      _hWellTyped, _hIndependent, _hCertified, _hTarget, hWindow⟩ :=
+    Compiler.StackArtifact.compile?_parts hArtifact
+  rw [hBytes]
+  exact Assembly.Bytecode.compile_decodingCorrect_with_suffix hAssembly
+    (Assembly.Bytecode.compile_decodeSafety hAssembly hWindow) suffix
 
 def compileOrderedCodeArtifactIn? (object : Object)
     (context : ObjectBuiltinContext) : Option CompiledCodeArtifact := do

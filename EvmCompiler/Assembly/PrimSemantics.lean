@@ -643,6 +643,37 @@ theorem run_pc {step : PrimStep}
     cases hRun
     rfl
 
+theorem run_execLength {step : PrimStep}
+    {state final : EvmYul.EVM.State}
+    (hRun : step.run state = .ok final) :
+    final.execLength = state.execLength := by
+  cases step <;>
+    simp [PrimStep.run, EvmYul.EVM.execBinOp,
+      EvmYul.EVM.execUnOp, EvmYul.EVM.execTriOp,
+      EvmYul.EVM.executionEnvOp, EvmYul.EVM.unaryExecutionEnvOp,
+      EvmYul.EVM.machineStateOp, EvmYul.EVM.binaryMachineStateOp,
+      EvmYul.EVM.binaryMachineStateOp',
+      EvmYul.EVM.ternaryMachineStateOp, EvmYul.EVM.stateOp,
+      EvmYul.EVM.unaryStateOp, EvmYul.EVM.binaryStateOp,
+      EvmYul.EVM.ternaryCopyOp, EvmYul.EVM.quaternaryCopyOp,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] at hRun ⊢
+  all_goals
+    try
+      cases hRun
+      rfl
+  all_goals
+    try
+      simp [EvmYul.dup, EvmYul.swap,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC] at hRun
+    repeat' split at hRun
+  all_goals
+    try simp_all
+  all_goals
+    cases hRun
+    rfl
+
 abbrev isoState (shared : EvmYul.SharedState .EVM)
     (stack : EvmYul.Stack Word) : EvmYul.EVM.State :=
   { toSharedState := shared,
@@ -2973,6 +3004,44 @@ theorem step_pc_of_stackArity
             Except.ok final at hRun
         cases hRun
 
+theorem step_execLength_of_stackArity
+    {op : PrimOp} {input output : Nat}
+    {state final : EvmYul.EVM.State}
+    (hArity : op.stackArity? = some (input, output))
+    (hRun : op.step state = .ok final) :
+    final.execLength = state.execLength := by
+  cases hCont : op.continuingStep? with
+  | some step =>
+      rw [step_eq_continuingStep_run hCont] at hRun
+      exact PrimStep.run_execLength hRun
+  | none =>
+      cases op <;>
+        simp [PrimOp.continuingStep?] at hCont
+      case stop | «return» | revert | selfdestruct =>
+        simp [PrimOp.stackArity?] at hArity
+      case pc =>
+        change
+          Except.ok
+              (state.replaceStackAndIncrPC
+                (state.stack.push state.pc)) =
+            Except.ok final at hRun
+        cases hRun
+        rfl
+      case gas =>
+        change
+          Except.ok
+              (state.replaceStackAndIncrPC
+                (state.stack.push state.gasAvailable)) =
+            Except.ok final at hRun
+        cases hRun
+        rfl
+      case create | call | callcode | delegatecall | create2 | staticcall =>
+        change
+          (Except.error EvmYul.EVM.ExecutionException.InvalidInstruction :
+            Except EvmYul.EVM.ExecutionException EvmYul.EVM.State) =
+            Except.ok final at hRun
+        cases hRun
+
 /--
 Successful `stackArity?` lookup exposes the EVM delta/alpha pair used to define
 the declaration.
@@ -2986,6 +3055,32 @@ theorem stackArity_values
     simp [PrimOp.stackArity?, PrimOp.toEVM,
       EvmYul.EVM.δ, EvmYul.EVM.α] at hArity ⊢ <;>
     omega
+
+theorem input_le_of_step_stackArity
+    {op : PrimOp} {input output : Nat}
+    {state final : EvmYul.EVM.State}
+    (hArity : op.stackArity? = some (input, output))
+    (hRun : op.step state = .ok final) :
+    input ≤ state.stack.length := by
+  cases hCont : op.continuingStep? with
+  | some step =>
+      have hInput : input = PrimStep.inputArity step := by
+        rcases stackArity_values hArity with ⟨hDeclared, _⟩
+        rcases continuingStep?_delta_alpha hCont with ⟨hStep, _⟩
+        exact hDeclared.trans hStep
+      rw [step_eq_continuingStep_run hCont] at hRun
+      simpa [hInput] using PrimStep.run_inputArity_le hRun
+  | none =>
+      cases op <;>
+        simp [PrimOp.continuingStep?, PrimOp.stackArity?, PrimOp.toEVM,
+          EvmYul.EVM.δ, EvmYul.EVM.α] at hCont hArity
+      case pc | gas => omega
+      case create | call | callcode | delegatecall | create2 | staticcall =>
+        change
+          (Except.error EvmYul.EVM.ExecutionException.InvalidInstruction :
+            Except EvmYul.EVM.ExecutionException EvmYul.EVM.State) =
+            Except.ok final at hRun
+        cases hRun
 
 /--
 A primitive whose declared operands fit in the visible prefix cannot succeed
@@ -3113,6 +3208,41 @@ theorem step_append_stack_rel_of_stackArity_le
         simp [SameRuntimeData, eraseRuntimeControl,
           EvmYul.EVM.State.replaceStackAndIncrPC,
           EvmYul.EVM.State.incrPC, EvmYul.Stack.push]
+
+/--
+Successful nonterminal primitive execution preserves an appended hidden stack
+suffix exactly when every operand lies in the visible prefix.
+-/
+theorem step_append_stack_of_stackArity_le
+    {op : PrimOp} {input output : Nat}
+    {state final : EvmYul.EVM.State}
+    (hidden : EvmYul.Stack Word)
+    (hArity : op.stackArity? = some (input, output))
+    (hBound : input ≤ state.stack.length)
+    (hRun : op.step state = .ok final) :
+    op.step { state with stack := state.stack ++ hidden } =
+      .ok { final with stack := final.stack ++ hidden } := by
+  obtain ⟨framedFinal, hFramed⟩ :=
+    exists_append_step_of_stackArity_le_of_step
+      (hidden := hidden) hArity hBound hRun
+  have hData :=
+    step_append_stack_rel_of_stackArity_le
+      hArity hBound hRun hFramed
+  have hPc : framedFinal.pc = final.pc := by
+    rw [step_pc_of_stackArity hArity hFramed,
+      step_pc_of_stackArity hArity hRun]
+  have hExec : framedFinal.execLength = final.execLength := by
+    rw [step_execLength_of_stackArity hArity hFramed,
+      step_execLength_of_stackArity hArity hRun]
+  have hEq :
+      framedFinal = { final with stack := final.stack ++ hidden } := by
+    cases framedFinal with
+    | mk framedShared framedPc framedStack framedExec =>
+        cases final with
+        | mk finalShared finalPc finalStack finalExec =>
+            simp [SameRuntimeData, eraseRuntimeControl] at hData hPc hExec ⊢
+            exact ⟨hData.1, hPc, hData.2, hExec⟩
+  simpa [hEq] using hFramed
 
 /--
 Every successful nonterminal primitive realizes its declared symbolic stack

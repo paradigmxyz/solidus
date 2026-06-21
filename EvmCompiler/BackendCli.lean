@@ -1,6 +1,7 @@
 import EvmCompiler.Solidity.BridgeJson
 import EvmCompiler.Assembly.Bytecode
 import EvmCompiler.Functions.StackDiagnostics
+import EvmCompiler.Compiler.StackArtifact
 import EvmCompiler.Objects.Compiler
 
 namespace EvmCompiler.BackendCli
@@ -107,6 +108,22 @@ def functionsForStackDiagnostics?
           object.loadImmutableNames }
   let resolved ← object.resolveObjectBuiltinsIn? context
   resolved.lowerCodeUnchecked?
+
+def verifiedStackCodeArtifact?
+    (object : Solidity.Frontend.Object)
+    (linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)) :
+    Option Solidity.Frontend.Object.VerifiedStackCodeArtifact := do
+  let layout : Solidity.Frontend.ObjectLayout := { entries := [] }
+  let context :=
+    object.builtinContextWithLocalDataBaseAndLinkerSymbols
+      layout 0 linkerSymbols
+  let context :=
+    { context with
+      immutableValues :=
+        Solidity.Frontend.ImmutableReference.zeroEntries
+          object.loadImmutableNames }
+  object.compileVerifiedStackCodeArtifactIn? context
 
 def boolString (value : Bool) : String :=
   if value then "true" else "false"
@@ -376,6 +393,7 @@ def printStackDiagnostics
     (source : String) (contract objectName : String)
     (functions : Functions.Program) : IO Unit := do
   let compileStart ← IO.monoMsNow
+  let stackArtifact? := Compiler.StackArtifact.compile? functions
   let lowered? := Functions.StackLowering.lowerProgram? functions
   let expressions? := lowered?.bind Locals.Program.toExpressions?
   let structured? := expressions?.map Expressions.Program.toStructured
@@ -386,6 +404,11 @@ def printStackDiagnostics
   let compiled? := certified?.bind fun artifact =>
     Assembly.compileExecutable? artifact.target
   let assemblyInstrs := compiled?.map (·.code.length) |>.getD 0
+  let stackBytes :=
+    stackArtifact?.map
+      (fun artifact =>
+        (Assembly.Bytecode.encodeTarget artifact.target).size)
+      |>.getD 0
   let compileFinish ← IO.monoMsNow
   let reports := Functions.StackDiagnostics.programReports functions
   let summary := Functions.StackDiagnostics.summarize reports
@@ -393,6 +416,8 @@ def printStackDiagnostics
   IO.println ("source=" ++ source)
   IO.println ("contract=" ++ contract)
   IO.println ("object=" ++ objectName)
+  IO.println
+    ("stack_program_artifact=" ++ boolString stackArtifact?.isSome)
   IO.println ("stack_program_lowering=" ++ boolString lowered?.isSome)
   IO.println
     ("stack_program_to_expressions=" ++ boolString expressions?.isSome)
@@ -403,6 +428,7 @@ def printStackDiagnostics
     ("stack_program_assembly_generated=" ++ boolString certified?.isSome)
   IO.println ("stack_program_compilation=" ++ boolString compiled?.isSome)
   IO.println ("stack_program_assembly_instrs=" ++ toString assemblyInstrs)
+  IO.println ("stack_program_bytecode_bytes=" ++ toString stackBytes)
   IO.println
     ("timing\tstack_program\t" ++ toString (compileFinish - compileStart))
   match lowered? with
@@ -507,6 +533,10 @@ def printStackDiagnostics
 
 def runStackDiagnostics (config : Config)
     (program : Solidity.Frontend.Program) : IO Unit := do
+  let frontendArtifact? :=
+    verifiedStackCodeArtifact? program.object config.linkerSymbols
+  IO.println
+    ("stack_frontend_code_artifact=" ++ boolString frontendArtifact?.isSome)
   match functionsForStackDiagnostics? program.object config.linkerSymbols with
   | none =>
       throw
