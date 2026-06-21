@@ -111,6 +111,8 @@ short composition module.
   using the dynamic layout relation and the canonical silent binding marker.
 - [x] Prove assignment updates exactly its unique symbolic stack slot and
   preserves the dynamic layout and dormant suffix under open semantics.
+- [x] Prove zero-result expression statements preserve the dynamic layout and
+  inherit their complete ordered open-effect tree from expression semantics.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls

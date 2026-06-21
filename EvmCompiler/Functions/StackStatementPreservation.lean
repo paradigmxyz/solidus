@@ -43,6 +43,62 @@ abbrev RegularOutcomeRel (targetCtx : Locals.Ctx)
     (fun (_ : EVMException) (_ : EVMException) => True)
     (RegularResultRel targetCtx suffix returns)
 
+theorem openRun_expr_generated
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
+    (fuel : Nat) (expr : Locals.Expr 0)
+    {code : Structured.Code} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hCtx : CtxCovers sourceCtx targetCtx)
+    (hScoped : Locals.Scope.ExprScoped targetCtx.layout expr)
+    (hSupported : Locals.InteractionSemantics.Expr.OpenSupported expr)
+    (hCompile : Locals.Expr.compileCode targetCtx 0 expr = some code)
+    (hInitial :
+      StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (RegularOutcomeRel targetCtx suffix returns)
+      (Locals.InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx fuel (.expr expr) source)
+      (Expressions.InteractionSemantics.Stmt.openRun
+        targetProgram fuel (.code code) target) := by
+  have hExpr :=
+    StackExpressionPreservation.openEvalZero_compileCode
+      expr targetCtx hScoped hSupported hCompile hInitial
+  have hWrapped :
+      Simulation.Interaction.Rel
+        (RegularOutcomeRel targetCtx suffix returns)
+        (Simulation.Interaction.bind
+          (Locals.InteractionSemantics.Expr.openEval expr source)
+          (fun result =>
+            Simulation.Interaction.pure
+              (Locals.Source.Effectful.Outcome.regular result.1,
+               sourceCtx)))
+        (Simulation.Interaction.bind
+          (Structured.InteractionSemantics.Code.openRun code target)
+          (fun final =>
+            Simulation.Interaction.pure
+              (Structured.Outcome.regular final))) := by
+    apply Simulation.Interaction.Rel.bind hExpr
+    intro sourceFinal targetFinal hFinal
+    apply Simulation.Interaction.Rel.done
+    apply Simulation.Interaction.ExceptRel.ok
+    exact
+      { sourceMode := rfl
+        targetMode := rfl
+        context := hCtx
+        state := hFinal }
+  unfold Locals.InteractionSemantics.Expr.openEval
+    Structured.InteractionSemantics.Code.openRun at hWrapped
+  unfold Locals.InteractionSemantics.Stmt.openRun
+    Expressions.InteractionSemantics.Stmt.openRun
+    Locals.InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+  simp only [Locals.Source.Effectful.Control.Stmt.run,
+    Expressions.EffectSemantics.Control.Stmt.run]
+  exact hWrapped
+
 theorem openRun_let_generated
     (sourceProgram : Locals.Program)
     (targetProgram : Expressions.Program)

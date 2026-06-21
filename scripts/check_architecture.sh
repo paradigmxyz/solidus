@@ -51,6 +51,7 @@ if ! rg -Fq \
 fi
 
 for theorem in \
+    'openRun_expr_generated' \
     'openRun_let_generated' \
     'openRun_assign_generated'; do
   if ! rg -Fq \
