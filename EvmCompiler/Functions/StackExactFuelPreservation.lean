@@ -501,6 +501,7 @@ theorem compiledGrowingRegionAt_of_compilers
     (targetProgram : Expressions.Program)
     (lowerCtx : StackLowering.Ctx)
     (targets : StackSchedule.ControlTargets)
+    (pinned : AllocationLiveness.LiveSet)
     (scheduleFuel lowerFuel sourceFuel : Nat)
     (body : Functions.Block)
     (bodyFacts : AllocationLivenessFacts.Region)
@@ -511,8 +512,7 @@ theorem compiledGrowingRegionAt_of_compilers
     (regionCode : List Expressions.Stmt)
     (hSchedule :
       StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
-          (StackSchedule.layoutSet targetCtx.layout) targetCtx.layout
-          body bodyFacts = some rawRegion)
+          pinned targetCtx.layout body bodyFacts = some rawRegion)
     (hLower :
       StackLowering.lowerBlockFuel (lowerFuel - 1) lowerCtx body rawRegion =
         some loweredBody)

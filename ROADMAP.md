@@ -188,7 +188,7 @@ elimination are not prerequisites for Permit2 or Aave.
   Locals procedure compiler equations.
 - [x] Attach the scheduler's post-call retain transition and restore the
   caller's retained symbolic layout through compiler-owned point equations.
-- [ ] Discharge the private callee-body premise by source-fuel recursion for
+- [x] Discharge the private callee-body premise by source-fuel recursion for
   recursive and non-recursive call graphs.
 - [ ] Keep call artifacts compiler-owned and absent from public theorem
   premises.

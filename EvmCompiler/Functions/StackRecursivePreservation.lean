@@ -980,6 +980,276 @@ private theorem compiledListAt_of_callees
                                   hNodup hScoped.1 hSupported.1 hSchedule hLower
                                   hCompile
 
+private theorem compilerCalleePreservesAt
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerProcs : List Locals.Proc)
+    (hProgramWF : sourceProgram.WF)
+    (hProgramScoped : sourceProgram.Scoped)
+    (hProgramSupported :
+      Functions.InteractionSemantics.Program.OpenSupported sourceProgram)
+    (hLowerFunctions :
+      StackLowering.lowerFunctions? sourceProgram.functions
+          sourceProgram.functions = some lowerProcs)
+    (hCompileFunctions :
+      Locals.ProcList.toExpressions? lowerProcs = some targetProgram.procs) :
+    ∀ sourceFuel, CalleePreservesAt sourceProgram targetProgram sourceFuel := by
+  intro sourceFuel
+  induction sourceFuel using Nat.strong_induction_on with
+  | h sourceFuel ih =>
+      intro functionName args callCtx fn hFind targetFuel suffix returns source
+        sourceAfterArgs target targetAfterArgs argValues hInitial hArgResult
+        hProcFuel
+      cases sourceFuel with
+      | zero =>
+          unfold Functions.InteractionSemantics.FunDef.openRunBody
+            Functions.Source.Canonical.FunDef.runBody
+            Functions.Source.Effectful.Control.FunDef.runBody
+          exact Simulation.Interaction.ForwardRel.truncated rfl
+      | succ bodyFuel =>
+          -- Normalize nested block records once so dependent WF hypotheses and
+          -- the statement-list theorem share the same syntactic block.
+          rcases fn with ⟨fnName, fnParams, fnReturns, ⟨fnBodyStmts⟩⟩
+          let fn : Functions.FunDef :=
+            { name := fnName, params := fnParams, returns := fnReturns,
+              body := { stmts := fnBodyStmts } }
+          change Functions.Source.FunList.find? functionName
+              sourceProgram.functions = some fn at hFind
+          have hMem :=
+            Functions.Source.FunList.mem_of_find?_eq_some hFind
+          have hFnWF := Functions.FunList.wf_of_mem hProgramWF.1 hMem
+          have hFnScoped :=
+            Functions.FunList.scoped_of_mem hProgramScoped.1 hMem
+          have hFnSupported := hProgramSupported.1 fn hMem
+          have hName :=
+            Functions.Source.FunList.name_eq_of_find?_eq_some hFind
+          obtain ⟨localProc, targetProc, hFnLower, hProcCompile, hLookup⟩ :=
+            StackCallPreservation.FunctionLookup.of_compilers
+              sourceProgram.functions functionName hLowerFunctions
+              hCompileFunctions hFind
+          obtain ⟨facts, schedule, localsBody, targetBody, finalCtx,
+              returnPreludeCode, returnCode?, cleanup, hFacts, hSchedule,
+              hLowerBody, hReturnAccess, hReturnPreludeCompile, hBodyCompile,
+              hReturnPhase, hCleanup, hTargetProc⟩ :=
+            StackLoweringCompilation.lowerFunction?_toExpressions?_components
+              hFnLower hProcCompile
+          rcases targetBody with ⟨targetBodyStmts⟩
+          let targetBody : Expressions.Block := { stmts := targetBodyStmts }
+          have hProcName : targetProc.name = fn.name := by
+            rw [hTargetProc]
+          have hProcArgc : targetProc.argc = fn.params.length := by
+            rw [hTargetProc]
+          have hProcRetc : targetProc.retc = fn.returns.length := by
+            rw [hTargetProc]
+          have hProcBody :
+              targetProc.body =
+                { stmts :=
+                    [.code [.bindLocals 0 fn.params.reverse]] ++
+                      (returnPreludeCode ++
+                        (targetBody.stmts ++
+                          (StackLoweringCompilation.returnCodeStmts
+                              returnCode? ++
+                            [.code cleanup]))) } := by
+            rw [hTargetProc]
+          have hLookupByProcName :
+              Expressions.EffectSemantics.ProcList.lookup? targetProc.name
+                  targetProgram.procs = some targetProc := by
+            rw [hProcName, hName]
+            exact hLookup
+          have hFullFuel := hProcFuel hLookup
+          rw [hProcBody] at hFullFuel
+          have hAfterMarker :=
+            Expressions.TargetFuel.Covers.tail_after_succ_append hFullFuel
+          have hSuffixFuel :=
+            Expressions.TargetFuel.Covers.tail_after_append hAfterMarker
+          have hPreludeLength :=
+            StackLoweringCompilation.initReturns_compileOpen_length
+              fn.returns
+              (Locals.Ctx.procEntryWithLayoutAndRetc
+                fn.params.reverse fn.returns.length)
+              (Locals.Ctx.procEntryWithLayoutAndRetc
+                (StackLowering.functionBodyLayout fn) fn.returns.length)
+              returnPreludeCode hReturnPreludeCompile
+          let calleeTargetFuel :=
+            targetFuel - 1 - 1 - returnPreludeCode.length
+          have hSuffixFuel' :
+              Expressions.TargetFuel.Covers targetProgram bodyFuel
+                calleeTargetFuel
+                (targetBody.stmts ++
+                  (StackLoweringCompilation.returnCodeStmts returnCode? ++
+                    [.code cleanup])) := by
+            simpa [calleeTargetFuel] using hSuffixFuel
+          have hTargetPositive : 0 < calleeTargetFuel := by
+            have hLength := hSuffixFuel'.length_lt
+            simp only [List.length_append, List.length_cons, List.length_nil,
+              Nat.add_zero] at hLength
+            omega
+          have hFullLength := hFullFuel.length_lt
+          simp only [List.length_append, List.length_cons, List.length_nil,
+            Nat.add_zero] at hFullLength
+          have hTargetFuelEq :
+              calleeTargetFuel + fn.returns.length + 2 = targetFuel := by
+            dsimp [calleeTargetFuel]
+            rw [hPreludeLength] at hFullLength
+            omega
+          cases hInsert :
+              Functions.Source.Store.insertMany fn.params argValues
+                Locals.Source.Store.empty with
+          | none =>
+              unfold Functions.InteractionSemantics.FunDef.openRunBody
+                Functions.Source.Canonical.FunDef.runBody
+                Functions.Source.Effectful.Control.FunDef.runBody
+              rw [hInsert]
+              exact Simulation.Interaction.ForwardRel.truncated rfl
+          | some paramStore =>
+              let bodyCtx :=
+                Locals.Ctx.procEntryWithLayoutAndRetc
+                  (StackLowering.functionBodyLayout fn) fn.returns.length
+              have hBodyCtxNodup : bodyCtx.layout.Nodup := by
+                simpa [bodyCtx, Locals.Ctx.procEntryWithLayoutAndRetc,
+                  Locals.Ctx.procEntryWithLayout] using
+                  StackLowering.functionBodyLayout_nodup
+                    (Functions.FunDef.signatureNodup hFnScoped)
+              have hScheduleRaw :
+                  StackSchedule.scheduleBlockFuelWithTargets {}
+                      (AllocationLiveness.analysisFuel fn.body) ∅
+                      bodyCtx.layout fn.body facts = some schedule := by
+                simpa [StackSchedule.scheduleBlock?,
+                  StackSchedule.scheduleBlockFuel, bodyCtx,
+                  Locals.Ctx.procEntryWithLayoutAndRetc,
+                  Locals.Ctx.procEntryWithLayout] using hSchedule
+              have hLowerRaw :
+                  StackLowering.lowerBlockFuel
+                      (AllocationLiveness.analysisFuel fn.body)
+                      { functions := sourceProgram.functions,
+                        returns := fn.returns }
+                      fn.body schedule = some localsBody := by
+                simpa [StackLowering.lowerScheduledBlock?] using hLowerBody
+              obtain ⟨grownFinalCtx, hGrowing, _hGrowingNodup,
+                  hGrowingLayout, hFinalCtx, _hEntrySource⟩ :=
+                compiledGrowingRegionAt_of_compilers fn.returns sourceProgram
+                  targetProgram
+                  { functions := sourceProgram.functions,
+                    returns := fn.returns }
+                  {} ∅ (AllocationLiveness.analysisFuel fn.body + 1)
+                  (AllocationLiveness.analysisFuel fn.body + 1) bodyFuel
+                  fn.body facts schedule bodyCtx finalCtx hBodyCtxNodup
+                  localsBody targetBody.stmts
+                  (by simpa using hScheduleRaw)
+                  (by simpa using hLowerRaw) hBodyCompile
+                  (by
+                    intro bodyLowered bodyCode bodyFinalCtx hListLower
+                      hListCompile hEntryNodup
+                    have hListSchedule :=
+                      StackSchedule.scheduleBlockFuelWithTargets_statementList
+                        hScheduleRaw
+                    exact compiledListAt_of_callees fn.returns sourceProgram
+                      targetProgram
+                      { functions := sourceProgram.functions,
+                        returns := fn.returns }
+                      {} ∅
+                      (AllocationLiveness.analysisFuel fn.body - 1)
+                      (AllocationLiveness.analysisFuel fn.body - 1)
+                      bodyFuel
+                      (canBreak := false) (canContinue := false)
+                      (inFunction := true) rfl
+                      (fun calleeFuel hLt => ih calleeFuel (by omega))
+                      hFnWF
+                      (blockScopedStmts
+                        (Functions.FunDef.bodyScoped hFnScoped))
+                      (blockSupportedStmts hFnSupported)
+                      ((StackLoweringCompilation.ControlCtxAgrees.procEntryWithLayoutAndRetc
+                          (StackLowering.functionBodyLayout fn)
+                          fn.returns.length).withLayout schedule.entry.target)
+                      rfl
+                      (by simpa [Locals.Ctx.withLayout] using hListSchedule)
+                      hListLower hListCompile hEntryNodup)
+              subst grownFinalCtx
+              have hArgLength : argValues.length = fn.params.length :=
+                (Functions.Source.Store.insertMany_length hInsert)
+              have hSplit :
+                  Structured.StackFrame.splitArgs? targetProc.argc
+                      targetAfterArgs.evm.stack =
+                    some (argValues.reverse, target.evm.stack) := by
+                have hArgResult' :
+                    Locals.InteractionPreservation.Expr.ResultRel
+                      argValues.length source target
+                      (sourceAfterArgs, argValues) targetAfterArgs := by
+                  simpa [hArgResult.length] using hArgResult
+                apply StackCallPreservation.splitArgs_of_argResult hArgResult'
+                rw [hProcArgc]
+                exact hArgLength
+              have hExactBodyRun :
+                  ∀ {targetAfterPrelude : Structured.RunState},
+                    StateRel (StackLowering.functionBodyLayout fn) []
+                        ({ callerStack := target.evm.stack,
+                           retc := fn.returns.length } ::
+                          targetAfterArgs.returns)
+                        (StackCallPreservation.CalleeEntry.sourceState
+                          sourceAfterArgs fn paramStore)
+                        targetAfterPrelude →
+                    Simulation.Interaction.ForwardRel
+                      FuelTruncated
+                      (ControlOpenOutcomeRel {} fn.returns finalCtx []
+                        ({ callerStack := target.evm.stack,
+                           retc := fn.returns.length } ::
+                          targetAfterArgs.returns))
+                      (Functions.InteractionSemantics.Block.openRun sourceProgram
+                        (Functions.Source.Effectful.FunDef.bodyCtx fn) bodyFuel
+                        fn.body
+                        (StackCallPreservation.CalleeEntry.sourceState
+                          sourceAfterArgs fn paramStore))
+                      (Expressions.InteractionSemantics.Block.openRun
+                        targetProgram calleeTargetFuel targetBody
+                        targetAfterPrelude) := by
+                intro targetAfterPrelude hBodyInitial
+                have hRuntime :=
+                  StackCallPreservation.CalleeEntry.runtimeCtx fn
+                    { callerStack := target.evm.stack,
+                      retc := fn.returns.length }
+                    targetAfterArgs.returns
+                exact hGrowing
+                  (Functions.Source.Effectful.FunDef.bodyCtx fn)
+                  calleeTargetFuel hSuffixFuel'.head_of_append hRuntime
+                  (by simpa [bodyCtx,
+                    Locals.Ctx.procEntryWithLayoutAndRetc,
+                    Locals.Ctx.procEntryWithLayout] using hBodyInitial)
+              have hAttached :
+                  Simulation.Interaction.ForwardRel
+                    FuelTruncated
+                    (StackCallPreservation.OpenAttachedCallResultRel
+                      targetProc.retc target.evm.stack
+                      targetAfterArgs.returns)
+                    (Functions.InteractionSemantics.FunDef.openRunBody
+                      sourceProgram fn argValues (bodyFuel + 1)
+                      sourceAfterArgs)
+                    (Expressions.InteractionSemantics.Stmt.openRun
+                      targetProgram
+                      (calleeTargetFuel + fn.returns.length + 2)
+                      (.call targetProc.name) targetAfterArgs) := by
+                apply
+                  StackCallPreservation.Function.openRunBody_attached_of_optionalReturn_of_bodyRun
+                    sourceProgram targetProgram fn targetProc argValues
+                    paramStore sourceAfterArgs bodyFuel calleeTargetFuel
+                    finalCtx returnPreludeCode targetBody returnCode? cleanup
+                    (callerTarget := targetAfterArgs)
+                    (callerStack := target.evm.stack)
+                    hTargetPositive
+                    (Functions.FunDef.signatureNodup hFnScoped) hInsert
+                    hLookupByProcName hSplit hProcRetc hArgResult.shared
+                    hProcBody hReturnPreludeCompile
+                · exact hExactBodyRun
+                · cases returnCode? <;> exact hReturnPhase
+                · rw [hGrowingLayout]
+                  exact hReturnAccess
+                · exact hCleanup
+                · exact hSuffixFuel'
+              rw [hTargetFuelEq] at hAttached
+              have hCallerReturns : targetAfterArgs.returns = returns :=
+                hArgResult.returns.trans hInitial.returns
+              simpa only [hProcRetc, hProcName, hName, hCallerReturns] using
+                hAttached
+
 end StackRecursivePreservation
 end Functions
 end EvmCompiler
