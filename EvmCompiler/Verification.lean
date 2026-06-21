@@ -3281,6 +3281,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackExactFuelPreservation.letConsAt_of_compilers
 #check EvmCompiler.Functions.StackExactFuelPreservation.assignConsAt_of_compilers
 #check EvmCompiler.Functions.StackExactFuelPreservation.controlListAtZero
+#check EvmCompiler.Functions.StackExactFuelPreservation.blockPointAt_of_compilers
+#check EvmCompiler.Functions.StackExactFuelPreservation.blockConsAt_of_compilers
 #check EvmCompiler.Functions.StackStatementPreservation.ControlPointPreservesAt
 #check EvmCompiler.Functions.StackStatementPreservation.CompiledControlPointAt
 #check EvmCompiler.Functions.StackStatementPreservation.CompiledControlPoint.at
@@ -3338,6 +3340,7 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackBlockPreservation.callConsAtOne_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.callConsAtSucc_of_compilers
 #print axioms EvmCompiler.Functions.StackExactFuelPreservation.assignConsAt_of_compilers
+#print axioms EvmCompiler.Functions.StackExactFuelPreservation.blockConsAt_of_compilers
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_optionalReturn
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_optionalReturn_of_bodyRun
 #print axioms EvmCompiler.Functions.StackCallPreservation.FunctionLookup.of_compilers
