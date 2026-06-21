@@ -2923,7 +2923,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackSchedule.scheduleBlockFuel_entry_sound
 #check EvmCompiler.Functions.StackSchedule.scheduleBlock?_entry_sound
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_cons_components
+#check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_cons_nonempty
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_nil_components
+#check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_expr_components
+#check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_let_components
+#check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_assign_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuel_expr_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuel_let_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuel_assign_components
@@ -2960,6 +2964,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackBlockPreservation.regularCons
 #check EvmCompiler.Functions.StackBlockPreservation.regularConsOfPoint
 #check EvmCompiler.Functions.StackBlockPreservation.regularEmpty
+#check EvmCompiler.Functions.StackBlockPreservation.regularLeafTargetCost
 #check EvmCompiler.Functions.StackTransitionPreservation.Promotion.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.Cleanup.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.PromotionCodes.openRun
@@ -2977,6 +2982,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackLowering.Examples.controlProgram_lowers
 #check EvmCompiler.Functions.StackLowering.lowerStmtListFuel_cons_components
 #check EvmCompiler.Functions.StackLowering.lowerStmtListFuel_nil_components
+#check EvmCompiler.Functions.StackLowering.lowerStmtListFuel_expr_components
+#check EvmCompiler.Functions.StackLowering.lowerStmtListFuel_let_components
+#check EvmCompiler.Functions.StackLowering.lowerStmtListFuel_assign_components
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_expr_components
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_let_components
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_assign_components

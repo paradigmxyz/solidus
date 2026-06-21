@@ -14,6 +14,13 @@ namespace StackBlockPreservation
 open StackRelation
 open StackStatementPreservation
 
+def regularLeafTargetCost : List StackSchedule.Point → Nat
+  | [] => 0
+  | point :: points =>
+      (match point.retain? with
+       | some transition => transition.schedule.promotions.length + 2
+       | none => 0) + regularLeafTargetCost points
+
 theorem regularEmpty
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)

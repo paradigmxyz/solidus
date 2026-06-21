@@ -326,6 +326,24 @@ theorem scheduleStmtListFuel_cons_components
   · rw [if_neg hCover] at hSchedule
     contradiction
 
+theorem scheduleStmtListFuel_cons_nonempty
+    {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
+    {stmt : Stmt} {rest : List Stmt}
+    {facts : AllocationLivenessFacts.Point}
+    {restFacts : List AllocationLivenessFacts.Point}
+    {scheduledPoints : List Point} {finalLayout : Locals.Layout}
+    (hSchedule :
+      scheduleStmtListFuel fuel pinned layout (stmt :: rest)
+          (facts :: restFacts) = some (scheduledPoints, finalLayout)) :
+    ∃ point points, scheduledPoints = point :: points := by
+  obtain ⟨rawPoint, _hRaw, hRegular | hAbrupt⟩ :=
+    scheduleStmtListFuel_cons_components hSchedule
+  · obtain ⟨_hFalls, retain, tail, _tailFinal,
+        _hRetain, _hTail, hPoints, _hFinal⟩ := hRegular
+    exact ⟨{ rawPoint with retain? := some retain }, tail, hPoints⟩
+  · exact
+      ⟨{ rawPoint with retain? := none }, [], hAbrupt.2.1⟩
+
 theorem scheduleStmtListFuel_nil_components
     {fuel : Nat} {pinned : LiveSet} {layout finalLayout : Locals.Layout}
     {scheduledPoints : List Point}
@@ -389,6 +407,129 @@ theorem scheduleStmtFuel_assign_components
       simp [scheduleStmtFuel, alwaysExits] at hSchedule
       subst point
       simp
+
+theorem scheduleStmtListFuel_expr_components
+    {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
+    {expr : Expr 0} {rest : List Stmt}
+    {facts : AllocationLivenessFacts.Point}
+    {restFacts : List AllocationLivenessFacts.Point}
+    {point : Point} {points : List Point} {finalLayout : Locals.Layout}
+    (hSchedule :
+      scheduleStmtListFuel fuel pinned layout (.expr expr :: rest)
+          (facts :: restFacts) = some (point :: points, finalLayout)) :
+    ∃ retain tailFinal,
+      point.beforeLayout = layout ∧
+        point.statementLayout = layout ∧
+        point.retain? = some retain ∧ point.regions = [] ∧
+        point.fallsThrough = true ∧
+        Transition.build? layout
+            (required pinned (nextLive facts.liveAfter rest restFacts)) =
+          some retain ∧
+        scheduleStmtListFuel fuel pinned retain.target rest restFacts =
+          some (points, tailFinal) ∧
+        finalLayout = tailFinal := by
+  obtain ⟨rawPoint, hRaw, hCases⟩ :=
+    scheduleStmtListFuel_cons_components hSchedule
+  have hShape := scheduleStmtFuel_expr_components hRaw
+  rcases hShape with
+    ⟨hBefore, hStatement, _hNoRetain, hRegions, hFalls⟩
+  rcases hCases with hRegular | hAbrupt
+  · obtain ⟨_hFalls, retain, tail, tailFinal,
+        hRetain, hTail, hPoints, hFinal⟩ := hRegular
+    injection hPoints with hPoint hTailPoints
+    subst point
+    subst tail
+    refine
+      ⟨retain, tailFinal, ?_, ?_, rfl, ?_, by simpa using hFalls,
+        ?_, hTail, hFinal⟩
+    · simpa using hBefore
+    · simpa using hStatement
+    · simpa using hRegions
+    · simpa [hStatement] using hRetain
+  · rw [hFalls] at hAbrupt
+    exact Bool.noConfusion hAbrupt.1
+
+theorem scheduleStmtListFuel_let_components
+    {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
+    {name : Name} {value : Expr 1} {rest : List Stmt}
+    {facts : AllocationLivenessFacts.Point}
+    {restFacts : List AllocationLivenessFacts.Point}
+    {point : Point} {points : List Point} {finalLayout : Locals.Layout}
+    (hSchedule :
+      scheduleStmtListFuel fuel pinned layout (.let_ name value :: rest)
+          (facts :: restFacts) = some (point :: points, finalLayout)) :
+    ∃ retain tailFinal,
+      name ∉ layout ∧ point.beforeLayout = layout ∧
+        point.statementLayout = name :: layout ∧
+        point.retain? = some retain ∧ point.regions = [] ∧
+        point.fallsThrough = true ∧
+        Transition.build? (name :: layout)
+            (required pinned (nextLive facts.liveAfter rest restFacts)) =
+          some retain ∧
+        scheduleStmtListFuel fuel pinned retain.target rest restFacts =
+          some (points, tailFinal) ∧
+        finalLayout = tailFinal := by
+  obtain ⟨rawPoint, hRaw, hCases⟩ :=
+    scheduleStmtListFuel_cons_components hSchedule
+  have hShape := scheduleStmtFuel_let_components hRaw
+  rcases hShape with
+    ⟨hFresh, hBefore, hStatement, _hNoRetain, hRegions, hFalls⟩
+  rcases hCases with hRegular | hAbrupt
+  · obtain ⟨_hFalls, retain, tail, tailFinal,
+        hRetain, hTail, hPoints, hFinal⟩ := hRegular
+    injection hPoints with hPoint hTailPoints
+    subst point
+    subst tail
+    refine
+      ⟨retain, tailFinal, hFresh, ?_, ?_, rfl, ?_,
+        by simpa using hFalls, ?_, hTail, hFinal⟩
+    · simpa using hBefore
+    · simpa using hStatement
+    · simpa using hRegions
+    · simpa [hStatement] using hRetain
+  · rw [hFalls] at hAbrupt
+    exact Bool.noConfusion hAbrupt.1
+
+theorem scheduleStmtListFuel_assign_components
+    {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
+    {name : Name} {value : Expr 1} {rest : List Stmt}
+    {facts : AllocationLivenessFacts.Point}
+    {restFacts : List AllocationLivenessFacts.Point}
+    {point : Point} {points : List Point} {finalLayout : Locals.Layout}
+    (hSchedule :
+      scheduleStmtListFuel fuel pinned layout (.assign name value :: rest)
+          (facts :: restFacts) = some (point :: points, finalLayout)) :
+    ∃ retain tailFinal,
+      point.beforeLayout = layout ∧
+        point.statementLayout = layout ∧
+        point.retain? = some retain ∧ point.regions = [] ∧
+        point.fallsThrough = true ∧
+        Transition.build? layout
+            (required pinned (nextLive facts.liveAfter rest restFacts)) =
+          some retain ∧
+        scheduleStmtListFuel fuel pinned retain.target rest restFacts =
+          some (points, tailFinal) ∧
+        finalLayout = tailFinal := by
+  obtain ⟨rawPoint, hRaw, hCases⟩ :=
+    scheduleStmtListFuel_cons_components hSchedule
+  have hShape := scheduleStmtFuel_assign_components hRaw
+  rcases hShape with
+    ⟨hBefore, hStatement, _hNoRetain, hRegions, hFalls⟩
+  rcases hCases with hRegular | hAbrupt
+  · obtain ⟨_hFalls, retain, tail, tailFinal,
+        hRetain, hTail, hPoints, hFinal⟩ := hRegular
+    injection hPoints with hPoint hTailPoints
+    subst point
+    subst tail
+    refine
+      ⟨retain, tailFinal, ?_, ?_, rfl, ?_, by simpa using hFalls,
+        ?_, hTail, hFinal⟩
+    · simpa using hBefore
+    · simpa using hStatement
+    · simpa using hRegions
+    · simpa [hStatement] using hRetain
+  · rw [hFalls] at hAbrupt
+    exact Bool.noConfusion hAbrupt.1
 
 namespace Examples
 

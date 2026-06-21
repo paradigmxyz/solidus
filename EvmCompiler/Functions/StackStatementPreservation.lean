@@ -653,12 +653,13 @@ theorem compiledExprPoint
     (sourceFuel targetFuel : Nat) (expr : Functions.Expr 0)
     (transition : AllocationLayout.Transition)
     (lowered : List Locals.Stmt)
+    {sourceEnv : List Name}
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hSource : targetCtx.layout = transition.source)
     (hFuel : transition.schedule.promotions.length + 2 < targetFuel)
     (hCtx : CtxCovers sourceCtx targetCtx)
-    (hScoped : Functions.Scope.ExprScoped sourceCtx.scope expr)
+    (hScoped : Functions.Scope.ExprScoped sourceEnv expr)
     (hSupported : Locals.InteractionSemantics.Expr.OpenSupported expr)
     (hAccess : StackAccess.Expr.check? targetCtx.layout 0 expr = some ())
     (hLowered :
@@ -713,13 +714,14 @@ theorem compiledLetPoint
     (value : Functions.Expr 1)
     (transition : AllocationLayout.Transition)
     (lowered : List Locals.Stmt)
+    {sourceEnv : List Name}
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hSource : name :: targetCtx.layout = transition.source)
     (hFuel : transition.schedule.promotions.length + 2 < targetFuel)
     (hCtx : CtxCovers sourceCtx targetCtx)
     (hFresh : name ∉ targetCtx.layout)
-    (hScoped : Functions.Scope.ExprScoped sourceCtx.scope value)
+    (hScoped : Functions.Scope.ExprScoped sourceEnv value)
     (hSupported : Locals.InteractionSemantics.Expr.OpenSupported value)
     (hAccess : StackAccess.Expr.check? targetCtx.layout 0 value = some ())
     (hLowered :
@@ -787,13 +789,14 @@ theorem compiledAssignPoint
     (value : Functions.Expr 1)
     (transition : AllocationLayout.Transition)
     (lowered : List Locals.Stmt)
+    {sourceEnv : List Name}
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hSource : targetCtx.layout = transition.source)
     (hFuel : transition.schedule.promotions.length + 2 < targetFuel)
     (hCtx : CtxCovers sourceCtx targetCtx)
     (hNodup : targetCtx.layout.Nodup)
-    (hScoped : Functions.Scope.ExprScoped sourceCtx.scope value)
+    (hScoped : Functions.Scope.ExprScoped sourceEnv value)
     (hSupported : Locals.InteractionSemantics.Expr.OpenSupported value)
     (hAccess : StackAccess.assign? targetCtx.layout name value = some ())
     (hLowered :

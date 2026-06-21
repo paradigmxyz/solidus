@@ -354,6 +354,81 @@ theorem lowerPointFuel_assign_components
           · rw [if_neg hFalls] at hLower
             contradiction
 
+theorem lowerStmtListFuel_expr_components
+    {fuel : Nat} {ctx : Ctx} {expr : Expr 0} {rest : List Stmt}
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {lowered : List Locals.Stmt}
+    (hLower :
+      lowerStmtListFuel fuel ctx (.expr expr :: rest) (point :: points) =
+        some lowered) :
+    ∃ retain tail,
+      pointAccess? ctx (.expr expr) point = some () ∧
+        point.retain? = some retain ∧
+        lowerStmtListFuel fuel ctx rest points = some tail ∧
+        lowered =
+          ([.expr expr] ++ transitionStmts retain) ++ tail := by
+  obtain ⟨head, hHead, hCases⟩ :=
+    lowerStmtListFuel_cons_components hLower
+  obtain ⟨retain, hAccess, hFalls, _hRegions, hRetain, hHeadEq⟩ :=
+    lowerPointFuel_expr_components hHead
+  rcases hCases with hRegular | hAbrupt
+  · obtain ⟨_hFalls, tail, hTail, hLowered⟩ := hRegular
+    exact
+      ⟨retain, tail, hAccess, hRetain, hTail,
+        by simpa [hHeadEq] using hLowered⟩
+  · rw [hFalls] at hAbrupt
+    exact Bool.noConfusion hAbrupt.1
+
+theorem lowerStmtListFuel_let_components
+    {fuel : Nat} {ctx : Ctx} {name : Name} {value : Expr 1}
+    {rest : List Stmt} {point : StackSchedule.Point}
+    {points : List StackSchedule.Point} {lowered : List Locals.Stmt}
+    (hLower :
+      lowerStmtListFuel fuel ctx (.let_ name value :: rest)
+          (point :: points) = some lowered) :
+    ∃ retain tail,
+      pointAccess? ctx (.let_ name value) point = some () ∧
+        point.retain? = some retain ∧
+        lowerStmtListFuel fuel ctx rest points = some tail ∧
+        lowered =
+          ([.let_ name value] ++ transitionStmts retain) ++ tail := by
+  obtain ⟨head, hHead, hCases⟩ :=
+    lowerStmtListFuel_cons_components hLower
+  obtain ⟨retain, hAccess, hFalls, _hRegions, hRetain, hHeadEq⟩ :=
+    lowerPointFuel_let_components hHead
+  rcases hCases with hRegular | hAbrupt
+  · obtain ⟨_hFalls, tail, hTail, hLowered⟩ := hRegular
+    exact
+      ⟨retain, tail, hAccess, hRetain, hTail,
+        by simpa [hHeadEq] using hLowered⟩
+  · rw [hFalls] at hAbrupt
+    exact Bool.noConfusion hAbrupt.1
+
+theorem lowerStmtListFuel_assign_components
+    {fuel : Nat} {ctx : Ctx} {name : Name} {value : Expr 1}
+    {rest : List Stmt} {point : StackSchedule.Point}
+    {points : List StackSchedule.Point} {lowered : List Locals.Stmt}
+    (hLower :
+      lowerStmtListFuel fuel ctx (.assign name value :: rest)
+          (point :: points) = some lowered) :
+    ∃ retain tail,
+      pointAccess? ctx (.assign name value) point = some () ∧
+        point.retain? = some retain ∧
+        lowerStmtListFuel fuel ctx rest points = some tail ∧
+        lowered =
+          ([.assign name value] ++ transitionStmts retain) ++ tail := by
+  obtain ⟨head, hHead, hCases⟩ :=
+    lowerStmtListFuel_cons_components hLower
+  obtain ⟨retain, hAccess, hFalls, _hRegions, hRetain, hHeadEq⟩ :=
+    lowerPointFuel_assign_components hHead
+  rcases hCases with hRegular | hAbrupt
+  · obtain ⟨_hFalls, tail, hTail, hLowered⟩ := hRegular
+    exact
+      ⟨retain, tail, hAccess, hRetain, hTail,
+        by simpa [hHeadEq] using hLowered⟩
+  · rw [hFalls] at hAbrupt
+    exact Bool.noConfusion hAbrupt.1
+
 def lowerScheduledBlock? (ctx : Ctx) (source : Block)
     (schedule : StackSchedule.Region) : Option Locals.Block :=
   lowerBlockFuel (AllocationLiveness.analysisFuel source)

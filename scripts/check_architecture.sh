@@ -18,7 +18,11 @@ for theorem in \
   fi
 done
 
-for theorem in 'regularEmpty' 'regularCons' 'regularConsOfPoint'; do
+for theorem in \
+    'regularEmpty' \
+    'regularCons' \
+    'regularConsOfPoint' \
+    'regularLeafTargetCost'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.StackBlockPreservation.${theorem}" \
       EvmCompiler/Verification.lean; then
@@ -39,6 +43,9 @@ fi
 for theorem in \
     'lowerStmtListFuel_cons_components' \
     'lowerStmtListFuel_nil_components' \
+    'lowerStmtListFuel_expr_components' \
+    'lowerStmtListFuel_let_components' \
+    'lowerStmtListFuel_assign_components' \
     'lowerPointFuel_expr_components' \
     'lowerPointFuel_let_components' \
     'lowerPointFuel_assign_components'; do
@@ -144,7 +151,11 @@ for theorem in \
     'scheduleBlockFuel_entry_sound' \
     'scheduleBlock?_entry_sound' \
     'scheduleStmtListFuel_cons_components' \
+    'scheduleStmtListFuel_cons_nonempty' \
     'scheduleStmtListFuel_nil_components' \
+    'scheduleStmtListFuel_expr_components' \
+    'scheduleStmtListFuel_let_components' \
+    'scheduleStmtListFuel_assign_components' \
     'scheduleStmtFuel_expr_components' \
     'scheduleStmtFuel_let_components' \
     'scheduleStmtFuel_assign_components'; do
