@@ -14,6 +14,44 @@ namespace StackBlockPreservation
 open StackRelation
 open StackStatementPreservation
 
+theorem regularEmpty
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hSourceFuel : 1 ≤ sourceFuel)
+    (hTargetFuel : 1 ≤ targetFuel)
+    (hCtx : CtxCovers sourceCtx targetCtx)
+    (hInitial :
+      StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (RegularOutcomeRel targetCtx suffix returns)
+      (Locals.InteractionSemantics.Block.openRun
+        sourceProgram sourceCtx sourceFuel { stmts := [] } source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := [] } target) := by
+  cases sourceFuel with
+  | zero => omega
+  | succ sourceFuel =>
+      cases targetFuel with
+      | zero => omega
+      | succ targetFuel =>
+          unfold Locals.InteractionSemantics.Block.openRun
+            Expressions.InteractionSemantics.Block.openRun
+            Locals.InteractionSemantics.stateModel
+            Locals.Source.Effectful.Ordinary.stateModel
+          simp only [Locals.Source.Effectful.Control.Block.runOpen,
+            Expressions.EffectSemantics.Control.Block.run]
+          apply Simulation.Interaction.Rel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact
+            { sourceMode := rfl
+              targetMode := rfl
+              context := hCtx
+              state := hInitial }
+
 theorem regularCons
     (sourceProgram : Locals.Program)
     (targetProgram : Expressions.Program)

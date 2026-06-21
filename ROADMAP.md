@@ -119,6 +119,8 @@ short composition module.
   under independent source/target fuel, without exposing the generated artifact.
 - [x] Add a block-owned generic regular-head/recursive-tail composition theorem
   over the dynamic relation and exact target fuel subtraction.
+- [x] Prove the nonzero-fuel empty-block base case directly under the dynamic
+  context/layout relation.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls

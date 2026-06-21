@@ -18,13 +18,15 @@ for theorem in \
   fi
 done
 
-if ! rg -Fq \
-    '#check EvmCompiler.Functions.StackBlockPreservation.regularCons' \
-    EvmCompiler/Verification.lean; then
-  printf '%s\n\n' \
-    'Verification root is missing dynamic-layout block composition.' >&2
-  failed=1
-fi
+for theorem in 'regularEmpty' 'regularCons'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.Functions.StackBlockPreservation.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing dynamic-layout block theorem %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
 
 if ! rg -Fq \
     '#check EvmCompiler.Functions.StackLowering.lowerBlock?_components' \

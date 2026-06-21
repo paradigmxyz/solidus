@@ -2943,6 +2943,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_let_generated
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_assign_generated
 #check EvmCompiler.Functions.StackBlockPreservation.regularCons
+#check EvmCompiler.Functions.StackBlockPreservation.regularEmpty
 #check EvmCompiler.Functions.StackTransitionPreservation.Promotion.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.Cleanup.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.PromotionCodes.openRun
