@@ -183,6 +183,12 @@ end Control
 
 namespace Target
 
+abbrev stepPushWith {Result : Type}
+    (pureState : EVMState -> Result)
+    (width : Nat) (value : Word) (state : EVMState) : Result :=
+  pureState <| state.replaceStackAndIncrPC
+    (state.stack.push value) (pcΔ := width + 1)
+
 abbrev stepInstrWith {Result : Type}
     (pureState : EVMState → Result)
     (throwState : EVMException → Result)
@@ -190,8 +196,7 @@ abbrev stepInstrWith {Result : Type}
     (instr : TargetInstr) (state : EVMState) : Result :=
   match instr with
   | .push32 value =>
-      pureState <| state.replaceStackAndIncrPC
-        (state.stack.push value) (pcΔ := 33)
+      stepPushWith pureState 32 value state
   | .jump =>
     match state.stack.pop with
     | some (stack, dest) =>

@@ -299,6 +299,15 @@ end PrimOp
 
 namespace Target
 
+def openStepPush (width : Nat) (value : Word) (state : EVMState) : OpenStep :=
+  Assembly.Target.stepPushWith
+    (fun next => .done (.ok next)) width value state
+
+def openStepPushResult (width : Nat) (value : Word)
+    (state : EVMState) : OpenStepResult :=
+  Simulation.Interaction.map StepResult.running
+    (openStepPush width value state)
+
 def openStepInstr (instr : TargetInstr) (state : EVMState) : OpenStep :=
   Assembly.Target.stepInstrWith
     (fun next => .done (.ok next))

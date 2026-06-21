@@ -3315,6 +3315,8 @@ or audit-alias corridor.
 #check EvmCompiler.Compiler.StackArtifact.compile?_frameSafe
 #check EvmCompiler.Compiler.StackArtifact.compile?_decodingCorrect
 #check EvmCompiler.Assembly.Compact.compile?_valid
+#check EvmCompiler.Assembly.Compact.compile?_decodingCorrect
+#check EvmCompiler.Assembly.Compact.openStepResultEqInstrOfDecodeAt
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_decodingCorrect
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
@@ -3390,6 +3392,8 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Compiler.StackArtifact.compile?_openSupported
 #print axioms EvmCompiler.Compiler.StackArtifact.compile?_frameSafe
 #print axioms EvmCompiler.Assembly.Compact.compile?_valid
+#print axioms EvmCompiler.Assembly.Compact.compile?_decodingCorrect
+#print axioms EvmCompiler.Assembly.Compact.openStepResultEqInstrOfDecodeAt
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackCodeToRawBytecode

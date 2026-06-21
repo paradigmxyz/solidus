@@ -257,9 +257,11 @@ elimination are not prerequisites for Permit2 or Aave.
   It must not be mixed into allocation correctness.
 - [x] Executable viability: minimum-width constants, bounded two-name
   growth-point lookahead, adjacent-fallthrough jump elision, and unreferenced
-  label pruning produce 23303-byte Permit2 and 43933-byte Aave root code.
-- [ ] Prove compact layout/relocation, preprocessing, decoding, and open-run
-  preservation; integrate the checked bytes into recursive object planning.
+  label pruning produce 22855-byte Permit2 and 43933-byte Aave root code.
+- [x] Prove exact variable-width byte decoding and connect decoded instructions
+  to the shared Assembly open-step kernels.
+- [ ] Prove PC-relocated preprocessing and open-run preservation, then integrate
+  the checked bytes into recursive object planning.
 
 ## Completion Gates
 
