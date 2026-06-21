@@ -247,11 +247,13 @@ theorem Artifact.blockOpenRun
     {suffix : List StackRelation.Word}
     {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
+    (fuel : Nat)
+    (hFuel : artifact.promotionCodes.length + 1 < fuel)
     (hRel :
       StackRelation.StateRel ctx.layout suffix returns source target) :
     ∃ final,
       Expressions.InteractionSemantics.Block.openRun program
-          (artifact.promotionCodes.length + 2)
+          fuel
           { stmts :=
               artifact.promotionCodes.map Expressions.Stmt.code ++
                 [Expressions.Stmt.code artifact.cleanup] }
@@ -261,7 +263,7 @@ theorem Artifact.blockOpenRun
         source final := by
   obtain ⟨middle, hPromotionRun, hMiddleRel⟩ :=
     PromotionCodes.openBlockRun program artifact.codes hRel
-      (artifact.promotionCodes.length + 2) (by omega)
+      fuel (by omega)
   obtain ⟨final, hCleanupRun, hFinalRel⟩ :=
     StackTransitionPreservation.Cleanup.openRun
       rfl transition.valid.2.2 artifact.cleanupEq hMiddleRel
@@ -270,7 +272,8 @@ theorem Artifact.blockOpenRun
     hPromotionRun, Simulation.Interaction.bind_done_ok]
   have hCleanupBlock :=
     Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
-      program 2 artifact.cleanup middle final (by omega) hCleanupRun
+      program (fuel - artifact.promotionCodes.length)
+        artifact.cleanup middle final (by omega) hCleanupRun
   simpa using hCleanupBlock
 
 theorem Transition.compiledBlockOpenRun
@@ -301,7 +304,8 @@ theorem Transition.compiledBlockOpenRun
           source final := by
   obtain ⟨artifact⟩ := Transition.compileArtifact transition hSource
   obtain ⟨final, hRun, hFinalRel⟩ :=
-    artifact.blockOpenRun program hRel
+    artifact.blockOpenRun program (artifact.promotionCodes.length + 2)
+      (by omega) hRel
   exact ⟨artifact, final, artifact.compileEq, hRun, hFinalRel⟩
 
 end StackTransitionCompilation

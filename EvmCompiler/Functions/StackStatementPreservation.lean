@@ -147,6 +147,7 @@ def RegularPointPreserves
         (Locals.Source.Effectful.Outcome Locals.Source.State ×
           Functions.Source.Ctx))
     (head : Expressions.Stmt)
+    (targetFuel : Nat)
     (suffix : List Word) (returns : List Structured.ReturnDest)
     (target : Structured.RunState) : Prop :=
   ∃ artifact : StackTransitionCompilation.Artifact targetCtx transition,
@@ -162,7 +163,7 @@ def RegularPointPreserves
         suffix returns)
       sourceRun
       (Expressions.InteractionSemantics.Block.openRun targetProgram
-        (artifact.promotionCodes.length + 3)
+        targetFuel
         { stmts :=
             head ::
               (artifact.promotionCodes.map Expressions.Stmt.code ++
@@ -178,9 +179,11 @@ theorem regularThenTransition
         (Locals.Source.Effectful.Outcome Locals.Source.State ×
           Functions.Source.Ctx))
     (head : Expressions.Stmt)
+    (targetFuel : Nat)
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {target : Structured.RunState}
     (hSource : targetCtx.layout = transition.source)
+    (hFuel : transition.schedule.promotions.length + 2 < targetFuel)
     (hHead : ∀ targetFuel,
       Simulation.Interaction.Rel
         (RegularOutcomeRel targetCtx suffix returns)
@@ -188,11 +191,18 @@ theorem regularThenTransition
         (Expressions.InteractionSemantics.Stmt.openRun
           targetProgram targetFuel head target)) :
     RegularPointPreserves targetProgram targetCtx transition sourceRun
-      head suffix returns target := by
+      head targetFuel suffix returns target := by
   unfold RegularPointPreserves
   obtain ⟨artifact⟩ :=
     StackTransitionCompilation.Transition.compileArtifact
       transition hSource
+  have hCodeLength :
+      artifact.promotionCodes.length =
+        transition.schedule.promotions.length :=
+    artifact.codes.code_length
+  have hCodeFuel : artifact.promotionCodes.length + 2 < targetFuel := by
+    rw [hCodeLength]
+    exact hFuel
   refine ⟨artifact, artifact.compileEq, ?_⟩
   change
     Simulation.Interaction.Rel
@@ -201,25 +211,24 @@ theorem regularThenTransition
         suffix returns)
       sourceRun
       (Expressions.InteractionSemantics.Block.openRun targetProgram
-        (artifact.promotionCodes.length + 3)
+        targetFuel
         { stmts := [head] ++
             (artifact.promotionCodes.map Expressions.Stmt.code ++
               [Expressions.Stmt.code artifact.cleanup]) }
         target)
   rw [Expressions.InteractionSemantics.Block.openRun_append]
   rw [Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_stmt_of_fuel
-    targetProgram (artifact.promotionCodes.length + 3) head target (by omega)]
-  have hFuel : artifact.promotionCodes.length + 3 - 1 =
-      artifact.promotionCodes.length + 2 := by omega
+    targetProgram targetFuel head target (by omega)]
   rw [← Simulation.Interaction.bind_pure sourceRun]
   apply Simulation.Interaction.Rel.bind
-    (hHead (artifact.promotionCodes.length + 2))
+    (hHead (targetFuel - 1))
   intro sourceResult targetResult hResult
   simp only [hResult.targetMode, List.length_cons, List.length_nil,
     Nat.add_zero]
   obtain ⟨final, hRun, hFinalRel⟩ :=
-    artifact.blockOpenRun targetProgram hResult.state
-  rw [hFuel, hRun]
+    artifact.blockOpenRun targetProgram (targetFuel - 1) (by omega)
+      hResult.state
+  rw [hRun]
   apply Simulation.Interaction.Rel.done
   apply Simulation.Interaction.ExceptRel.ok
   exact
@@ -496,12 +505,13 @@ theorem exprThenTransition
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
-    (sourceFuel : Nat) (expr : Functions.Expr 0)
+    (sourceFuel targetFuel : Nat) (expr : Functions.Expr 0)
     (transition : AllocationLayout.Transition)
     {code : Structured.Code} {suffix : List Word}
     {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hSource : targetCtx.layout = transition.source)
+    (hFuel : transition.schedule.promotions.length + 2 < targetFuel)
     (hCtx : CtxCovers sourceCtx targetCtx)
     (hScoped : Locals.Scope.ExprScoped targetCtx.layout expr)
     (hSupported : Locals.InteractionSemantics.Expr.OpenSupported expr)
@@ -510,22 +520,25 @@ theorem exprThenTransition
     RegularPointPreserves targetProgram targetCtx transition
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel (.expr expr) source)
-      (.code code) suffix returns target := by
-  apply regularThenTransition targetProgram targetCtx transition _ _ hSource
-  intro targetFuel
+      (.code code) targetFuel suffix returns target := by
+  apply regularThenTransition targetProgram targetCtx transition _ _
+    targetFuel hSource hFuel
+  intro leafFuel
   exact openRun_expr_generated sourceProgram targetProgram sourceCtx targetCtx
-    sourceFuel targetFuel expr hCtx hScoped hSupported hCompile hInitial
+    sourceFuel leafFuel expr hCtx hScoped hSupported hCompile hInitial
 
 theorem letThenTransition
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
-    (sourceFuel : Nat) {name : Name} (valueExpr : Functions.Expr 1)
+    (sourceFuel targetFuel : Nat)
+    {name : Name} (valueExpr : Functions.Expr 1)
     (transition : AllocationLayout.Transition)
     {valueCode : Structured.Code} {suffix : List Word}
     {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hSource : name :: targetCtx.layout = transition.source)
+    (hFuel : transition.schedule.promotions.length + 2 < targetFuel)
     (hCtx : CtxCovers sourceCtx targetCtx)
     (hFresh : name ∉ targetCtx.layout)
     (hScoped : Locals.Scope.ExprScoped targetCtx.layout valueExpr)
@@ -538,26 +551,28 @@ theorem letThenTransition
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel (.let_ name valueExpr) source)
       (.code (valueCode ++ Locals.bindLocals 0 (name :: targetCtx.layout)))
-      suffix returns target := by
+      targetFuel suffix returns target := by
   apply regularThenTransition targetProgram
-    (targetCtx.withLayout (name :: targetCtx.layout)) transition _ _
-      (by simpa [Locals.Ctx.withLayout] using hSource)
-  intro targetFuel
+    (targetCtx.withLayout (name :: targetCtx.layout)) transition _ _ targetFuel
+      (by simpa [Locals.Ctx.withLayout] using hSource) hFuel
+  intro leafFuel
   exact openRun_let_generated sourceProgram targetProgram sourceCtx targetCtx
-    sourceFuel targetFuel valueExpr hCtx hFresh hScoped hSupported hCompile
+    sourceFuel leafFuel valueExpr hCtx hFresh hScoped hSupported hCompile
     hInitial
 
 theorem assignThenTransition
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
-    (sourceFuel : Nat) {name : Name} (valueExpr : Functions.Expr 1)
+    (sourceFuel targetFuel : Nat)
+    {name : Name} (valueExpr : Functions.Expr 1)
     (transition : AllocationLayout.Transition)
     {depth : Nat} {valueCode : Structured.Code}
     {swapOp : Structured.BasicOp} {suffix : List Word}
     {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hSource : targetCtx.layout = transition.source)
+    (hFuel : transition.schedule.promotions.length + 2 < targetFuel)
     (hCtx : CtxCovers sourceCtx targetCtx)
     (hNodup : targetCtx.layout.Nodup)
     (hDepth :
@@ -574,11 +589,12 @@ theorem assignThenTransition
       (.code
         (valueCode ++ [.op swapOp, .op .pop] ++
           Locals.bindLocals 0 targetCtx.layout))
-      suffix returns target := by
-  apply regularThenTransition targetProgram targetCtx transition _ _ hSource
-  intro targetFuel
+      targetFuel suffix returns target := by
+  apply regularThenTransition targetProgram targetCtx transition _ _
+    targetFuel hSource hFuel
+  intro leafFuel
   exact openRun_assign_generated sourceProgram targetProgram sourceCtx
-    targetCtx sourceFuel targetFuel valueExpr hCtx hNodup hDepth hScoped
+    targetCtx sourceFuel leafFuel valueExpr hCtx hNodup hDepth hScoped
     hSupported hCompile hSwap hInitial
 
 end StackStatementPreservation

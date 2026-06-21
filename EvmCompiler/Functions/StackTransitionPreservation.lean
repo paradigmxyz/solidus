@@ -178,6 +178,15 @@ inductive PromotionCodes :
 
 namespace PromotionCodes
 
+theorem code_length
+    {layout finalLayout : Locals.Layout}
+    {promotions : List Promotion} {codes : List Structured.Code}
+    (hCodes : PromotionCodes layout promotions codes finalLayout) :
+    codes.length = promotions.length := by
+  induction hCodes with
+  | nil => rfl
+  | cons _ _ hTail ih => simp [ih]
+
 theorem openRun
     {layout finalLayout : Locals.Layout}
     {promotions : List Promotion} {codes : List Structured.Code}

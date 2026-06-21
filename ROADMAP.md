@@ -128,6 +128,10 @@ short composition module.
   expression, declaration, and assignment points followed by checked retention.
 - [x] Expose syntax-generic lowering-owner equations for empty and nonempty
   scheduled statement lists, including fallthrough-tail versus abrupt-head.
+- [x] Expose scheduler-owner inversion for list heads and regular leaf shapes,
+  including the exact checked retain transition and recursive next layout.
+- [x] Prove transition and regular-point execution at arbitrary sufficient
+  target fuel so nonempty tails compose without a minimal-fuel shortcut.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls

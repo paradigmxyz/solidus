@@ -267,6 +267,129 @@ theorem scheduleBlock?_entry_sound
         (required pinned (blockEntryLive source facts)) :=
   scheduleBlockFuel_entry_sound hSchedule
 
+theorem scheduleStmtListFuel_cons_components
+    {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
+    {stmt : Stmt} {rest : List Stmt}
+    {facts : AllocationLivenessFacts.Point}
+    {restFacts : List AllocationLivenessFacts.Point}
+    {scheduledPoints : List Point} {finalLayout : Locals.Layout}
+    (hSchedule :
+      scheduleStmtListFuel fuel pinned layout (stmt :: rest)
+          (facts :: restFacts) = some (scheduledPoints, finalLayout)) :
+    ∃ rawPoint,
+      scheduleStmtFuel fuel pinned layout stmt facts = some rawPoint ∧
+        ((rawPoint.fallsThrough = true ∧
+            ∃ retain tail tailFinal,
+              Transition.build? rawPoint.statementLayout
+                  (required pinned
+                    (nextLive facts.liveAfter rest restFacts)) =
+                some retain ∧
+              scheduleStmtListFuel fuel pinned retain.target rest restFacts =
+                some (tail, tailFinal) ∧
+              scheduledPoints =
+                { rawPoint with retain? := some retain } :: tail ∧
+              finalLayout = tailFinal) ∨
+          (rawPoint.fallsThrough = false ∧
+            scheduledPoints = [{ rawPoint with retain? := none }] ∧
+            finalLayout = rawPoint.statementLayout)) := by
+  simp only [scheduleStmtListFuel] at hSchedule
+  by_cases hCover : covers layout (residentBefore stmt facts)
+  · rw [if_pos hCover] at hSchedule
+    obtain ⟨rawPoint, hPoint, hAfterPoint⟩ :=
+      Option.bind_eq_some_iff.mp hSchedule
+    refine ⟨rawPoint, hPoint, ?_⟩
+    cases hFalls : rawPoint.fallsThrough with
+    | false =>
+        rw [hFalls] at hAfterPoint
+        have hResult := Option.some.inj hAfterPoint
+        injection hResult with hPoints hFinal
+        exact .inr ⟨rfl, hPoints.symm, hFinal.symm⟩
+    | true =>
+        rw [hFalls] at hAfterPoint
+        by_cases hAfterCover :
+            covers rawPoint.statementLayout
+              (required pinned
+                (nextLive facts.liveAfter rest restFacts))
+        · rw [if_pos hAfterCover] at hAfterPoint
+          obtain ⟨retain, hRetain, hAfterRetain⟩ :=
+            Option.bind_eq_some_iff.mp hAfterPoint
+          obtain ⟨result, hTail, hResult⟩ :=
+            Option.bind_eq_some_iff.mp hAfterRetain
+          rcases result with ⟨tail, tailFinal⟩
+          have hPair := Option.some.inj hResult
+          injection hPair with hPoints hFinal
+          exact
+            .inl ⟨rfl, retain, tail, tailFinal, hRetain, hTail,
+              hPoints.symm, hFinal.symm⟩
+        · rw [if_neg hAfterCover] at hAfterPoint
+          contradiction
+  · rw [if_neg hCover] at hSchedule
+    contradiction
+
+theorem scheduleStmtListFuel_nil_components
+    {fuel : Nat} {pinned : LiveSet} {layout finalLayout : Locals.Layout}
+    {scheduledPoints : List Point}
+    (hSchedule :
+      scheduleStmtListFuel fuel pinned layout [] [] =
+        some (scheduledPoints, finalLayout)) :
+    scheduledPoints = [] ∧ finalLayout = layout := by
+  simp [scheduleStmtListFuel] at hSchedule
+  exact ⟨hSchedule.1, hSchedule.2.symm⟩
+
+theorem scheduleStmtFuel_expr_components
+    {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
+    {expr : Expr 0} {facts : AllocationLivenessFacts.Point} {point : Point}
+    (hSchedule :
+      scheduleStmtFuel fuel pinned layout (.expr expr) facts = some point) :
+    point.beforeLayout = layout ∧
+      point.statementLayout = layout ∧
+      point.retain? = none ∧ point.regions = [] ∧
+      point.fallsThrough = true := by
+  cases fuel with
+  | zero => simp [scheduleStmtFuel] at hSchedule
+  | succ fuel =>
+      simp [scheduleStmtFuel, alwaysExits] at hSchedule
+      subst point
+      simp
+
+theorem scheduleStmtFuel_let_components
+    {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
+    {name : Name} {value : Expr 1}
+    {facts : AllocationLivenessFacts.Point} {point : Point}
+    (hSchedule :
+      scheduleStmtFuel fuel pinned layout (.let_ name value) facts =
+        some point) :
+    name ∉ layout ∧ point.beforeLayout = layout ∧
+      point.statementLayout = name :: layout ∧
+      point.retain? = none ∧ point.regions = [] ∧
+      point.fallsThrough = true := by
+  cases fuel with
+  | zero => simp [scheduleStmtFuel] at hSchedule
+  | succ fuel =>
+      by_cases hMem : name ∈ layout
+      · simp [scheduleStmtFuel, hMem] at hSchedule
+      · simp [scheduleStmtFuel, hMem] at hSchedule
+        subst point
+        exact ⟨hMem, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem scheduleStmtFuel_assign_components
+    {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
+    {name : Name} {value : Expr 1}
+    {facts : AllocationLivenessFacts.Point} {point : Point}
+    (hSchedule :
+      scheduleStmtFuel fuel pinned layout (.assign name value) facts =
+        some point) :
+    point.beforeLayout = layout ∧
+      point.statementLayout = layout ∧
+      point.retain? = none ∧ point.regions = [] ∧
+      point.fallsThrough = true := by
+  cases fuel with
+  | zero => simp [scheduleStmtFuel] at hSchedule
+  | succ fuel =>
+      simp [scheduleStmtFuel, alwaysExits] at hSchedule
+      subst point
+      simp
+
 namespace Examples
 
 def sequentialDeadSource : Block :=

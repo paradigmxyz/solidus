@@ -2921,6 +2921,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLayoutLowering.Transition.compile
 #check EvmCompiler.Functions.StackSchedule.scheduleBlockFuel_entry_sound
 #check EvmCompiler.Functions.StackSchedule.scheduleBlock?_entry_sound
+#check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_cons_components
+#check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_nil_components
+#check EvmCompiler.Functions.StackSchedule.scheduleStmtFuel_expr_components
+#check EvmCompiler.Functions.StackSchedule.scheduleStmtFuel_let_components
+#check EvmCompiler.Functions.StackSchedule.scheduleStmtFuel_assign_components
 #check EvmCompiler.Functions.StackSchedule.Examples.sequentialDead_stackOnly
 #check EvmCompiler.Functions.StackSchedule.Examples.dormantCall_schedule_succeeds
 #check EvmCompiler.Functions.StackAccessLowering.Expr.compileCode_of_check
@@ -2950,6 +2955,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackTransitionPreservation.Promotion.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.Cleanup.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.PromotionCodes.openRun
+#check EvmCompiler.Functions.StackTransitionPreservation.PromotionCodes.code_length
 #check EvmCompiler.Functions.StackTransitionPreservation.Schedule.openRun
 #check EvmCompiler.Functions.StackTransitionCompilation.compilePromotions
 #check EvmCompiler.Functions.StackTransitionCompilation.Transition.compileArtifact

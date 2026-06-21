@@ -122,7 +122,12 @@ fi
 
 for theorem in \
     'scheduleBlockFuel_entry_sound' \
-    'scheduleBlock?_entry_sound'; do
+    'scheduleBlock?_entry_sound' \
+    'scheduleStmtListFuel_cons_components' \
+    'scheduleStmtListFuel_nil_components' \
+    'scheduleStmtFuel_expr_components' \
+    'scheduleStmtFuel_let_components' \
+    'scheduleStmtFuel_assign_components'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.StackSchedule.${theorem}" \
       EvmCompiler/Verification.lean; then
