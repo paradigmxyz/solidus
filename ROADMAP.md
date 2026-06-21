@@ -107,6 +107,8 @@ short composition module.
   relation under open semantics without generated public evidence.
 - [x] Lift the dynamic relation through the existing Locals-owned open
   expression preservation theorem, including zero-result statement expressions.
+- [x] Prove fresh local binding against the ordinary open statement semantics
+  using the dynamic layout relation and the canonical silent binding marker.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls

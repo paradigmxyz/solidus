@@ -50,6 +50,14 @@ if ! rg -Fq \
   failed=1
 fi
 
+if ! rg -Fq \
+    '#check EvmCompiler.Functions.StackStatementPreservation.openRun_let_generated' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing dynamic-layout open statement preservation.' >&2
+  failed=1
+fi
+
 for theorem in \
     'build_run' \
     'scheduleRetain?_sound' \
@@ -1551,6 +1559,11 @@ report_matches \
   EvmCompiler/Functions/StackExpressionPreservation.lean
 
 report_matches \
+  'Functions stack-statement preservation must remain an adjacent open-semantics proof:' \
+  '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|TypedCfg|Assembly\.(Assembler|Compiler)|Locals\.Compiler)' \
+  EvmCompiler/Functions/StackStatementPreservation.lean
+
+report_matches \
   'Functions stack-transition compilation must remain an adjacent compiler bridge:' \
   '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|TypedCfg|Assembly\.(Assembler|Compiler))' \
   EvmCompiler/Functions/StackTransitionCompilation.lean
@@ -1632,6 +1645,7 @@ report_matches \
   EvmCompiler/Functions/StackAccessLowering.lean \
   EvmCompiler/Functions/StackRelation.lean \
   EvmCompiler/Functions/StackExpressionPreservation.lean \
+  EvmCompiler/Functions/StackStatementPreservation.lean \
   EvmCompiler/Functions/StackTransitionPreservation.lean \
   EvmCompiler/Functions/StackTransitionCompilation.lean \
   EvmCompiler/Functions/StackLowering.lean \
