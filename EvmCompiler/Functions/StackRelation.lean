@@ -68,6 +68,24 @@ theorem values_promoteAt
   simp [values, Locals.Layout.promoteAt, hAt, List.map_take,
     List.map_drop]
 
+theorem values_insert_fresh
+    {source : Locals.Source.State} {layout : Locals.Layout}
+    {name : Name} {value : Word}
+    (hFresh : name ∉ layout) :
+    values (source.insert name value) (name :: layout) =
+      value :: values source layout := by
+  unfold values
+  simp only [List.map_cons, Locals.Source.State.insert,
+    Locals.Source.Store.insert_self, Option.getD_some]
+  congr 1
+  apply List.map_congr_left
+  intro candidate hCandidate
+  have hNe : candidate ≠ name := by
+    intro hEq
+    subst candidate
+    exact hFresh hCandidate
+  simp [Locals.Source.State.insert, Locals.Source.Store.insert, hNe]
+
 theorem mem_of_mem_promoteAt
     {layout : Locals.Layout} {index : Nat} {name candidate : Name}
     (hAt : layout[index]? = some name)
@@ -135,6 +153,43 @@ theorem ofExprResultZero
     refine ⟨value, ?_⟩
     rw [hResult.vars]
     exact hValue
+
+theorem ofExprResultOneInsert
+    {layout : Locals.Layout} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {initialSource finalSource : Locals.Source.State}
+    {value : Word} {initialTarget finalTarget : Structured.RunState}
+    {name : Name}
+    (hFresh : name ∉ layout)
+    (hInitial :
+      StateRel layout suffix returns initialSource initialTarget)
+    (hResult :
+      Locals.InteractionPreservation.Expr.ResultRel 1
+        initialSource initialTarget (finalSource, [value]) finalTarget) :
+    StateRel (name :: layout) suffix returns
+      (finalSource.insert name value) finalTarget := by
+  constructor
+  · exact hResult.shared
+  · exact hResult.returns.trans hInitial.returns
+  · rw [hResult.stack, hInitial.stack,
+      values_insert_fresh hFresh]
+    unfold values
+    rw [hResult.vars]
+    simp [List.append_assoc]
+  · intro candidate hCandidate
+    rcases List.mem_cons.mp hCandidate with hName | hTail
+    · subst candidate
+      exact ⟨value, Locals.Source.Store.insert_self _ _ _⟩
+    · obtain ⟨oldValue, hOldValue⟩ := hInitial.defined hTail
+      have hNe : candidate ≠ name := by
+        intro hEq
+        subst candidate
+        exact hFresh hTail
+      refine ⟨oldValue, ?_⟩
+      simp [Locals.Source.State.insert,
+        Locals.Source.Store.insert, hNe]
+      rw [hResult.vars]
+      exact hOldValue
 
 end StateRel
 

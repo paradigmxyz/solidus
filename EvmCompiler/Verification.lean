@@ -2932,6 +2932,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackRelation.values_promoteAt
 #check EvmCompiler.Functions.StackRelation.StateRel.expr
 #check EvmCompiler.Functions.StackExpressionPreservation.openEvalZero_compileCode
+#check EvmCompiler.Functions.StackExpressionPreservation.openEvalOne_fresh_compileCode
 #check EvmCompiler.Functions.StackTransitionPreservation.Promotion.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.Cleanup.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.PromotionCodes.openRun
