@@ -659,6 +659,46 @@ theorem scheduleStmtFuelWithTargets_expr_components
       subst point
       simp
 
+theorem scheduleStmtFuelWithTargets_let_components
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout : Locals.Layout} {name : Name} {value : Expr 1}
+    {facts : AllocationLivenessFacts.Point} {point : Point}
+    (hSchedule :
+      scheduleStmtFuelWithTargets targets fuel pinned layout (.let_ name value)
+          facts = some point) :
+    name ∉ layout ∧ point.beforeLayout = layout ∧
+      point.statementLayout = name :: layout ∧
+      point.retain? = none ∧ point.regions = [] ∧
+      point.fallsThrough = true := by
+  cases fuel with
+  | zero =>
+      simp [scheduleStmtFuelWithTargets] at hSchedule
+  | succ fuel =>
+      by_cases hMem : name ∈ layout
+      · simp [scheduleStmtFuelWithTargets, hMem] at hSchedule
+      · simp [scheduleStmtFuelWithTargets, hMem] at hSchedule
+        subst point
+        exact ⟨hMem, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem scheduleStmtFuelWithTargets_assign_components
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout : Locals.Layout} {name : Name} {value : Expr 1}
+    {facts : AllocationLivenessFacts.Point} {point : Point}
+    (hSchedule :
+      scheduleStmtFuelWithTargets targets fuel pinned layout
+          (.assign name value) facts = some point) :
+    point.beforeLayout = layout ∧
+      point.statementLayout = layout ∧
+      point.retain? = none ∧ point.regions = [] ∧
+      point.fallsThrough = true := by
+  cases fuel with
+  | zero =>
+      simp [scheduleStmtFuelWithTargets] at hSchedule
+  | succ fuel =>
+      simp [scheduleStmtFuelWithTargets, alwaysExits] at hSchedule
+      subst point
+      simp
+
 theorem scheduleStmtFuel_let_components
     {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
     {name : Name} {value : Expr 1}

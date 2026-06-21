@@ -2956,6 +2956,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_assign_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuel_expr_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_expr_components
+#check EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_let_components
+#check EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_assign_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuel_let_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuel_assign_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuel_terminal_components
@@ -3036,6 +3038,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackStatementPreservation.compiledExprControlPointOfEquations
 #check EvmCompiler.Functions.StackStatementPreservation.compiledLetPointOfEquations
 #check EvmCompiler.Functions.StackStatementPreservation.compiledAssignPointOfEquations
+#check EvmCompiler.Functions.StackStatementPreservation.compiledLetControlPointOfEquations
+#check EvmCompiler.Functions.StackStatementPreservation.compiledAssignControlPointOfEquations
 #check EvmCompiler.Functions.StackBlockPreservation.regularCons
 #check EvmCompiler.Functions.StackBlockPreservation.regularConsOfPoint
 #check EvmCompiler.Functions.StackBlockPreservation.regularEmpty
@@ -3062,6 +3066,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackBlockPreservation.blockCons_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.ifCons_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.exprCons_of_compilers
+#check EvmCompiler.Functions.StackBlockPreservation.letCons_of_compilers
+#check EvmCompiler.Functions.StackBlockPreservation.assignCons_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.brkList_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.contList_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.RegularListPreserves.toOpenList
@@ -3136,3 +3142,5 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackBlockPreservation.blockCons_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.ifCons_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.exprCons_of_compilers
+#print axioms EvmCompiler.Functions.StackBlockPreservation.letCons_of_compilers
+#print axioms EvmCompiler.Functions.StackBlockPreservation.assignCons_of_compilers

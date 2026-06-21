@@ -431,6 +431,66 @@ theorem openRun_expr_controlCtx
   · intro _result _hTrivial
     exact .done hCtx
 
+theorem openRun_let_controlCtx
+    (sourceProgram : Functions.Program)
+    (sourceCtx : Functions.Source.Ctx) (sourceFuel : Nat)
+    (name : Name) (value : Functions.Expr 1)
+    (source : Locals.Source.State)
+    (targets : StackSchedule.ControlTargets) (finalCtx : Locals.Ctx)
+    (hCtx :
+      ControlCtxCovers
+        { sourceCtx with scope := name :: sourceCtx.scope }
+        finalCtx targets) :
+    Simulation.Interaction.AllDone
+      (fun result =>
+        match result with
+        | .error _ => True
+        | .ok sourceResult =>
+            ControlCtxCovers sourceResult.2 finalCtx targets)
+      (Functions.InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel (.let_ name value) source) := by
+  unfold Functions.InteractionSemantics.Stmt.openRun
+    Functions.Source.Canonical.Stmt.run
+    Functions.Source.Effectful.Control.Stmt.run
+  apply Simulation.Interaction.AllDone.bind
+    (Simulation.Interaction.AllDone.trivial
+      (Locals.InteractionSemantics.Expr.openEvalOne value source))
+  · intro _error _hTrivial
+    trivial
+  · intro _result _hTrivial
+    exact .done hCtx
+
+theorem openRun_assign_controlCtx
+    (sourceProgram : Functions.Program)
+    (sourceCtx : Functions.Source.Ctx) (sourceFuel : Nat)
+    (name : Name) (value : Functions.Expr 1)
+    (source : Locals.Source.State)
+    (targets : StackSchedule.ControlTargets) (finalCtx : Locals.Ctx)
+    (hCtx : ControlCtxCovers sourceCtx finalCtx targets) :
+    Simulation.Interaction.AllDone
+      (fun result =>
+        match result with
+        | .error _ => True
+        | .ok sourceResult =>
+            ControlCtxCovers sourceResult.2 finalCtx targets)
+      (Functions.InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel (.assign name value) source) := by
+  unfold Functions.InteractionSemantics.Stmt.openRun
+    Functions.Source.Canonical.Stmt.run
+    Functions.Source.Effectful.Control.Stmt.run
+  by_cases hContains :
+      (Functions.InteractionSemantics.stateModel.vars source).contains name
+  · simp only [hContains, Bool.true_eq, ↓reduceIte]
+    apply Simulation.Interaction.AllDone.bind
+      (Simulation.Interaction.AllDone.trivial
+        (Locals.InteractionSemantics.Expr.openEvalOne value source))
+    · intro _error _hTrivial
+      trivial
+    · intro _result _hTrivial
+      exact .done hCtx
+  · simp [hContains]
+    exact .done trivial
+
 theorem controlThenTransition
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
@@ -2344,6 +2404,52 @@ theorem compiledLetPointOfEquations
       pointCtx.withLayout transition.schedule.target at hRuntimeCtxEq
     simpa [hRuntimeCodeEq, hRuntimeCtxEq, pointCtx] using hRun
 
+theorem compiledLetControlPointOfEquations
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx middleCtx : Locals.Ctx)
+    (name : Name) (value : Functions.Expr 1)
+    (transition : AllocationLayout.Transition)
+    (lowered : List Locals.Stmt) (headCode : List Expressions.Stmt)
+    {sourceEnv : List Name}
+    (hSource : name :: targetCtx.layout = transition.source)
+    (hFresh : name ∉ targetCtx.layout)
+    (hScoped : Functions.Scope.ExprScoped sourceEnv value)
+    (hSupported : Locals.InteractionSemantics.Expr.OpenSupported value)
+    (hAccess : StackAccess.Expr.check? targetCtx.layout 0 value = some ())
+    (hLowered :
+      lowered = [.let_ name value] ++
+        StackLowering.transitionStmts transition)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (headCode, middleCtx)) :
+    CompiledControlPoint sourceProgram targetProgram targets targetCtx middleCtx
+      (.let_ name value) headCode transition.schedule.target := by
+  obtain ⟨hMiddle, hLength, hForward⟩ :=
+    compiledLetPointOfEquations sourceProgram targetProgram targetCtx middleCtx
+      name value transition lowered headCode hSource hFresh hScoped hSupported
+      hAccess hLowered hCompile
+  refine ⟨?_, ?_⟩
+  · rw [hMiddle]
+    rfl
+  unfold ControlPointPreserves
+  intro sourceCtx sourceFuel targetFuel suffix returns source target hFuel
+    hCtx hInitial
+  have hCodeLength := Expressions.TargetFuel.Covers.length_lt hFuel
+  have hNumericFuel :
+      transition.schedule.promotions.length + 2 < targetFuel := by
+    rw [← hLength]
+    exact hCodeLength
+  have hRegular :=
+    hForward sourceCtx sourceFuel targetFuel hNumericFuel hCtx.context hInitial
+  apply regularRelToControl hRegular
+  apply openRun_let_controlCtx sourceProgram sourceCtx sourceFuel name value
+    source targets middleCtx
+  rw [hMiddle]
+  exact (hCtx.prepend name).afterTransition transition
+    (by simpa [Locals.Ctx.withLayout] using hSource)
+
 theorem compiledAssignPointOfEquations
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
@@ -2451,6 +2557,51 @@ theorem compiledAssignPointOfEquations
     change middleCtx =
       targetCtx.withLayout transition.schedule.target at hRuntimeCtxEq
     simpa [hRuntimeCodeEq, hRuntimeCtxEq] using hRun
+
+theorem compiledAssignControlPointOfEquations
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx middleCtx : Locals.Ctx)
+    (name : Name) (value : Functions.Expr 1)
+    (transition : AllocationLayout.Transition)
+    (lowered : List Locals.Stmt) (headCode : List Expressions.Stmt)
+    {sourceEnv : List Name}
+    (hSource : targetCtx.layout = transition.source)
+    (hNodup : targetCtx.layout.Nodup)
+    (hScoped : Functions.Scope.ExprScoped sourceEnv value)
+    (hSupported : Locals.InteractionSemantics.Expr.OpenSupported value)
+    (hAccess : StackAccess.assign? targetCtx.layout name value = some ())
+    (hLowered :
+      lowered = [.assign name value] ++
+        StackLowering.transitionStmts transition)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (headCode, middleCtx)) :
+    CompiledControlPoint sourceProgram targetProgram targets targetCtx middleCtx
+      (.assign name value) headCode transition.schedule.target := by
+  obtain ⟨hMiddle, hLength, hForward⟩ :=
+    compiledAssignPointOfEquations sourceProgram targetProgram targetCtx
+      middleCtx name value transition lowered headCode hSource hNodup hScoped
+      hSupported hAccess hLowered hCompile
+  refine ⟨?_, ?_⟩
+  · rw [hMiddle]
+    rfl
+  unfold ControlPointPreserves
+  intro sourceCtx sourceFuel targetFuel suffix returns source target hFuel
+    hCtx hInitial
+  have hCodeLength := Expressions.TargetFuel.Covers.length_lt hFuel
+  have hNumericFuel :
+      transition.schedule.promotions.length + 2 < targetFuel := by
+    rw [← hLength]
+    exact hCodeLength
+  have hRegular :=
+    hForward sourceCtx sourceFuel targetFuel hNumericFuel hCtx.context hInitial
+  apply regularRelToControl hRegular
+  apply openRun_assign_controlCtx sourceProgram sourceCtx sourceFuel name value
+    source targets middleCtx
+  rw [hMiddle]
+  exact hCtx.afterTransition transition hSource
 
 end StackStatementPreservation
 end Functions
