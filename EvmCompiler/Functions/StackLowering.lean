@@ -1,4 +1,5 @@
 import EvmCompiler.Functions.LoweringCore
+import EvmCompiler.Functions.StackAccess
 import EvmCompiler.Functions.StackSchedule
 
 /-!
@@ -44,6 +45,26 @@ def pushWordReturns : List Name → List Locals.Stmt
   | [] => []
   | name :: rest => [.exprs (returnWords (name :: rest))]
 
+theorem returnWord_eval
+    {name : Name} {state : Locals.Source.State} {value : Word}
+    (hValue : state.vars name = some value) :
+    Locals.Source.Expr.eval Locals.Source.PrimitiveSemantics.structured
+        (returnWord name) state = .ok (state, [value]) := by
+  cases value with
+  | mk val =>
+      simp [returnWord, Locals.Source.Expr.eval,
+        Locals.Source.Expr.ExprSeq.eval,
+        Locals.Source.PrimitiveSemantics.structured,
+        Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+        Expressions.Structured.BasicOp.inputs,
+        Structured.BasicOp.toPrimOp,
+        Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+        EvmYul.EVM.execBinOp, EvmYul.Stack.pop2, EvmYul.Stack.push,
+        hValue, Lower.zero, EvmYul.UInt256.add,
+        EvmYul.UInt256.ofNat,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC, Locals.Source.State.withShared, Id.run]
+
 def callStmts? (ctx : Ctx) (targets : List Name)
     (functionName : Name) (args : List (Expr 1)) :
     Option (List Locals.Stmt) := do
@@ -54,6 +75,29 @@ def callStmts? (ctx : Ctx) (targets : List Name)
   some
     ([.exprs (Lower.argExprs args), .call functionName] ++
       Lower.assignReturnedTops targets)
+
+def pointAccess? (ctx : Ctx) (source : Stmt)
+    (point : StackSchedule.Point) : Option Unit :=
+  match source, point.regions with
+  | .expr expr, _ => StackAccess.Expr.check? point.beforeLayout 0 expr
+  | .let_ _ value, _ =>
+      StackAccess.Expr.check? point.beforeLayout 0 value
+  | .assign name value, _ =>
+      StackAccess.assign? point.beforeLayout name value
+  | .if_ condition _, _ =>
+      StackAccess.Expr.check? point.beforeLayout 0 condition
+  | .switch scrutinee _ _, _ =>
+      StackAccess.Expr.check? point.beforeLayout 0 scrutinee
+  | .for_ _ condition _ _, initRegion :: _ =>
+      StackAccess.Expr.check? initRegion.finalLayout 0 condition
+  | .leave, _ =>
+      StackAccess.ExprSeq.check? point.beforeLayout 0
+        (returnWords ctx.returns)
+  | .call targets _ args, _ =>
+      StackAccess.call? point.beforeLayout targets args
+  | .terminalArgs _ args, _ =>
+      StackAccess.ExprSeq.check? point.beforeLayout 0 args
+  | _, _ => some ()
 
 mutual
   def lowerBlockFuel (fuel : Nat) (ctx : Ctx)
@@ -106,6 +150,7 @@ mutual
     match fuel with
     | 0 => none
     | fuel + 1 => do
+        let _ ← pointAccess? ctx source point
         if point.fallsThrough = !StackSchedule.alwaysExits source then
           pure ()
         else
@@ -195,10 +240,15 @@ def lowerFunction? (functions : List FunDef) (fn : FunDef) :
     Option Locals.Proc := do
   let entryLayout := fn.params.reverse
   let bodyLayout := functionBodyLayout fn
-  let body ←
-    lowerBlock?
-      { functions, returns := fn.returns }
-      (functionDemand fn) ∅ bodyLayout fn.body
+  let ctx : Ctx := { functions, returns := fn.returns }
+  let facts ←
+    AllocationLivenessFacts.annotateBlock? (functionDemand fn) fn.body
+  let schedule ←
+    StackSchedule.scheduleBlock? ∅ bodyLayout fn.body facts
+  let body ← lowerScheduledBlock? ctx fn.body schedule
+  let _ ←
+    StackAccess.ExprSeq.check? schedule.finalLayout 0
+      (returnWords fn.returns)
   some
     { name := fn.name
       argc := fn.params.length

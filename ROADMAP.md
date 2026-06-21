@@ -99,6 +99,9 @@ short composition module.
   target-suffix/depth checks. Expression `DUP` checks remain part of lowering.
 - [x] Prove the ordinary adjacent Locals compiler realizes every checked retain
   schedule and finishes in its recorded target layout.
+- [x] Check expression `DUP`, assignment `SWAP`, call-argument, returned-target,
+  and function-return accessibility and prove successful checks compile through
+  the ordinary adjacent Locals compiler.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls

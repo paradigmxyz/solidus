@@ -26,6 +26,14 @@ if ! rg -Fq \
   failed=1
 fi
 
+if ! rg -Fq \
+    '#check EvmCompiler.Functions.StackAccessLowering.callSequence_compile_of_check' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing checked Functions stack-access lowering.' >&2
+  failed=1
+fi
+
 for theorem in \
     'build_run' \
     'scheduleRetain?_sound' \
@@ -1502,6 +1510,16 @@ report_matches \
   EvmCompiler/Functions/StackSchedule.lean
 
 report_matches \
+  'Functions stack accessibility must remain a compiler-free symbolic owner:' \
+  '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|Interaction|EffectSemantics|TypedCfg|Assembly\.(Assembler|Compiler)|Locals\.Compiler)' \
+  EvmCompiler/Functions/StackAccess.lean
+
+report_matches \
+  'Functions stack-access lowering may import only its owner and adjacent Locals compiler:' \
+  '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|Interaction|EffectSemantics|TypedCfg|Assembly\.(Assembler|Compiler))' \
+  EvmCompiler/Functions/StackAccessLowering.lean
+
+report_matches \
   'Functions stack lowering must remain a syntax-only adjacent pass:' \
   '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|Interaction|EffectSemantics|TypedCfg|Assembly\.(Assembler|Compiler)|Locals\.Compiler)' \
   EvmCompiler/Functions/StackLowering.lean
@@ -1574,6 +1592,8 @@ report_matches \
   EvmCompiler/Functions/AllocationLayout.lean \
   EvmCompiler/Functions/AllocationLayoutLowering.lean \
   EvmCompiler/Functions/StackSchedule.lean \
+  EvmCompiler/Functions/StackAccess.lean \
+  EvmCompiler/Functions/StackAccessLowering.lean \
   EvmCompiler/Functions/StackLowering.lean \
   EvmCompiler/Functions/StackLoweringCompilation.lean \
   EvmCompiler/Functions/AllocationObserverRelation.lean \
