@@ -334,6 +334,14 @@ theorem build?_endpoints
           exact ⟨rfl, rfl⟩
         · contradiction
 
+theorem target_nodup (join : Join) (hSource : join.source.Nodup) :
+    join.target.Nodup := by
+  rw [← join.orderTarget]
+  apply join.order.target_nodup
+  rw [join.orderSource]
+  apply join.retain.target_nodup
+  rwa [join.retainSource]
+
 def statements (join : Join) : List Locals.Stmt :=
   (join.retain.schedule.promotions.map fun promotion =>
       Locals.Stmt.promoteName promotion.name) ++
