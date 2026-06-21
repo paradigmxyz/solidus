@@ -87,6 +87,14 @@ if ! rg -Fq \
 fi
 
 if ! rg -Fq \
+    '#check EvmCompiler.Functions.StackTransitionCompilation.Ordering.compiledOpenRun' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing generated-evidence-free ordering preservation.' >&2
+  failed=1
+fi
+
+if ! rg -Fq \
     '#check EvmCompiler.Functions.StackTransitionCompilation.Transition.compiledBlockOpenRun' \
     EvmCompiler/Verification.lean; then
   printf '%s\n\n' \
@@ -198,6 +206,14 @@ if ! rg -Fq \
     EvmCompiler/Verification.lean; then
   printf '%s\n\n' \
     'Verification root is missing checked Functions layout lowering.' >&2
+  failed=1
+fi
+
+if ! rg -Fq \
+    '#check EvmCompiler.Functions.AllocationLayoutLowering.Ordering.compile' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing checked next-use ordering lowering.' >&2
   failed=1
 fi
 

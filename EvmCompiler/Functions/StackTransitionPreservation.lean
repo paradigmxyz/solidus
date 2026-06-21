@@ -214,6 +214,19 @@ theorem openRun
 
 end PromotionCodes
 
+theorem Ordering.openRun
+    {ordering : AllocationLayout.Ordering} {codes : List Structured.Code}
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hCodes :
+      PromotionCodes ordering.source ordering.promotions codes ordering.target)
+    (hRel : StateRel ordering.source suffix returns source target) :
+    ∃ final,
+      Structured.InteractionSemantics.Code.openRun codes.flatten target =
+          .done (.ok final) ∧
+        StateRel ordering.target suffix returns source final := by
+  exact PromotionCodes.openRun hCodes hRel
+
 theorem Schedule.openRun
     {layout : Locals.Layout} {schedule : Schedule}
     {codes : List Structured.Code} {cleanup : Structured.Code}

@@ -89,6 +89,39 @@ theorem compilePromotions
             cases ctx
             rfl
 
+theorem Ordering.compiledOpenRun
+    {ctx : Locals.Ctx} (ordering : AllocationLayout.Ordering)
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hSource : ctx.layout = ordering.source)
+    (hRel :
+      StackRelation.StateRel ctx.layout suffix returns source target) :
+    ∃ codes : List Structured.Code, ∃ final,
+      Locals.Block.compileOpen ctx { stmts := ordering.statements } =
+          some (codes.map Expressions.Stmt.code,
+            ctx.withLayout ordering.target) ∧
+        Structured.InteractionSemantics.Code.openRun codes.flatten target =
+          .done (.ok final) ∧
+        StackRelation.StateRel ordering.target suffix returns source final := by
+  have hRun :
+      AllocationLayout.run ctx.layout ordering.promotions =
+        some ordering.target := by
+    simpa [hSource] using ordering.valid
+  obtain ⟨codes, finalCtx, hCodes, hCompile, hFinalCtx⟩ :=
+    compilePromotions hRun
+  have hRel' :
+      StackRelation.StateRel ordering.source suffix returns source target := by
+    simpa [hSource] using hRel
+  have hCodes' :
+      PromotionCodes ordering.source ordering.promotions codes ordering.target := by
+    simpa [hSource] using hCodes
+  obtain ⟨final, hOpen, hFinalRel⟩ :=
+    StackTransitionPreservation.Ordering.openRun hCodes' hRel'
+  subst finalCtx
+  exact ⟨codes, final, by simpa [Ordering.statements] using hCompile,
+    hOpen, hFinalRel⟩
+
 structure Artifact (ctx : Locals.Ctx) (transition : Transition) where
   promotionCodes : List Structured.Code
   cleanup : Structured.Code

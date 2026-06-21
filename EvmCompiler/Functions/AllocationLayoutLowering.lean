@@ -85,6 +85,18 @@ theorem compilePromotions
             ⟨headCode ++ tailCode, tailCtx, ?_, hFinalCtx⟩
           · simp [Locals.Block.compileOpen, hHead, hTail]
 
+theorem Ordering.compile
+    {ctx : Locals.Ctx} (ordering : AllocationLayout.Ordering)
+    (hSource : ctx.layout = ordering.source) :
+    ∃ code finalCtx,
+      Locals.Block.compileOpen ctx
+          { stmts := ordering.statements } = some (code, finalCtx) ∧
+      finalCtx = ctx.withLayout ordering.target := by
+  have hRun :
+      run ctx.layout ordering.promotions = some ordering.target := by
+    simpa [hSource] using ordering.valid
+  simpa [Ordering.statements] using compilePromotions hRun
+
 theorem cleanup_compile
     {ctx : Locals.Ctx} {target : Locals.Layout}
     (hSuffix :
