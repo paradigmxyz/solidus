@@ -227,6 +227,47 @@ theorem Transition.compiledOpenRun
   exact
     ⟨artifact, final, artifact.compileEq, hRun, hFinalRel⟩
 
+theorem Join.compiledOpenRun
+    {ctx : Locals.Ctx} (join : AllocationLayout.Join)
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hSource : ctx.layout = join.source)
+    (hRel :
+      StackRelation.StateRel ctx.layout suffix returns source target) :
+    ∃ retainArtifact : Artifact ctx join.retain,
+      ∃ orderCodes : List Structured.Code, ∃ final,
+        Locals.Block.compileOpen ctx { stmts := join.statements } =
+          some
+            (retainArtifact.promotionCodes.map Expressions.Stmt.code ++
+              [Expressions.Stmt.code retainArtifact.cleanup] ++
+              orderCodes.map Expressions.Stmt.code,
+             ctx.withLayout join.target) ∧
+        Structured.InteractionSemantics.Code.openRun
+            (retainArtifact.promotionCodes.flatten ++
+              retainArtifact.cleanup ++ orderCodes.flatten) target =
+          .done (.ok final) ∧
+        StackRelation.StateRel join.target suffix returns source final := by
+  have hRetainSource : ctx.layout = join.retain.source := by
+    rw [join.retainSource, hSource]
+  obtain ⟨retainArtifact, middle, hRetainCompile,
+      hRetainRun, hMiddleRel⟩ :=
+    Transition.compiledOpenRun join.retain hRetainSource hRel
+  let orderCtx := ctx.withLayout join.retain.target
+  have hOrderSource : orderCtx.layout = join.order.source := by
+    simpa [orderCtx, Locals.Ctx.withLayout] using join.orderSource.symm
+  obtain ⟨orderCodes, final, hOrderCompile, hOrderRun, hFinalRel⟩ :=
+    Ordering.compiledOpenRun (ctx := orderCtx) join.order
+      hOrderSource hMiddleRel
+  refine ⟨retainArtifact, orderCodes, final, ?_, ?_, ?_⟩
+  · have hAppend :=
+      Locals.Block.compileOpen_append hRetainCompile hOrderCompile
+    simpa [Join.statements, Schedule.statements, Ordering.statements,
+      orderCtx, join.orderTarget] using hAppend
+  · rw [Structured.InteractionSemantics.Code.openRun_append, hRetainRun]
+    exact hOrderRun
+  · simpa [join.orderTarget] using hFinalRel
+
 theorem PromotionCodes.openBlockRun
     (program : Expressions.Program)
     {layout finalLayout : Locals.Layout}

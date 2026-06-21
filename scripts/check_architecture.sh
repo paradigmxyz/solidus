@@ -95,6 +95,14 @@ if ! rg -Fq \
 fi
 
 if ! rg -Fq \
+    '#check EvmCompiler.Functions.StackTransitionCompilation.Join.compiledOpenRun' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing generated-evidence-free canonical join preservation.' >&2
+  failed=1
+fi
+
+if ! rg -Fq \
     '#check EvmCompiler.Functions.StackTransitionCompilation.Transition.compiledBlockOpenRun' \
     EvmCompiler/Verification.lean; then
   printf '%s\n\n' \
@@ -167,7 +175,8 @@ for theorem in \
     'Transition.build?_sound' \
     'Transition.target_nodup' \
     'Ordering.build?' \
-    'Ordering.valid'; do
+    'Ordering.valid' \
+    'Join.build?'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.AllocationLayout.${theorem}" \
       EvmCompiler/Verification.lean; then
@@ -214,6 +223,14 @@ if ! rg -Fq \
     EvmCompiler/Verification.lean; then
   printf '%s\n\n' \
     'Verification root is missing checked next-use ordering lowering.' >&2
+  failed=1
+fi
+
+if ! rg -Fq \
+    '#check EvmCompiler.Functions.AllocationLayoutLowering.Join.compile' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing checked canonical join lowering.' >&2
   failed=1
 fi
 

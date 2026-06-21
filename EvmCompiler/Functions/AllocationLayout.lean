@@ -211,6 +211,64 @@ def statements (ordering : Ordering) : List Locals.Stmt :=
 
 end Ordering
 
+def commonPrefixLength : Locals.Layout → Locals.Layout → Nat
+  | left :: leftRest, right :: rightRest =>
+      if left = right then
+        1 + commonPrefixLength leftRest rightRest
+      else
+        0
+  | _, _ => 0
+
+def commonSuffixLength (left right : Locals.Layout) : Nat :=
+  commonPrefixLength left.reverse right.reverse
+
+/-- Checked restoration of a canonical control-flow layout. Child-local values
+are removed first; only the differing top prefix is then reordered, leaving an
+already-equal dormant suffix untouched. -/
+structure Join where
+  source : Locals.Layout
+  target : Locals.Layout
+  retain : Transition
+  order : Ordering
+  retainSource : retain.source = source
+  orderSource : order.source = retain.target
+  orderTarget : order.target = target
+
+namespace Join
+
+def build? (source target : Locals.Layout) : Option Join := do
+  match hRetain : Transition.build? source target.toFinset with
+  | none => none
+  | some retain =>
+      let common := commonSuffixLength retain.target target
+      let desiredPrefix := target.take (target.length - common)
+      match hOrder : build retain.target desiredPrefix.reverse with
+      | none => none
+      | some (promotions, ordered) =>
+          if hTarget : ordered = target then
+            some
+              { source
+                target
+                retain
+                order :=
+                  { source := retain.target
+                    promotions
+                    target := ordered
+                    valid := build_run hOrder }
+                retainSource := (Transition.build?_sound hRetain).1
+                orderSource := rfl
+                orderTarget := hTarget }
+          else
+            none
+
+def statements (join : Join) : List Locals.Stmt :=
+  (join.retain.schedule.promotions.map fun promotion =>
+      Locals.Stmt.promoteName promotion.name) ++
+    [Locals.Stmt.cleanupTo join.retain.schedule.target] ++
+    join.order.statements
+
+end Join
+
 def Schedule.statements (schedule : Schedule) : List Locals.Stmt :=
   (schedule.promotions.map fun promotion =>
       Locals.Stmt.promoteName promotion.name) ++

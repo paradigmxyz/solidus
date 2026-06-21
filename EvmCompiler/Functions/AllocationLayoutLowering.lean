@@ -167,6 +167,29 @@ theorem Transition.compile
     simpa [hSource] using transition.valid
   simpa [Transition.target] using Schedule.compile hValid
 
+theorem Join.compile
+    {ctx : Locals.Ctx} (join : Join)
+    (hSource : ctx.layout = join.source) :
+    ∃ code finalCtx,
+      Locals.Block.compileOpen ctx { stmts := join.statements } =
+        some (code, finalCtx) ∧
+      finalCtx = ctx.withLayout join.target := by
+  have hRetainSource : ctx.layout = join.retain.source := by
+    rw [join.retainSource, hSource]
+  obtain ⟨retainCode, retainCtx, hRetain, hRetainCtx⟩ :=
+    Transition.compile join.retain hRetainSource
+  have hOrderSource : retainCtx.layout = join.order.source := by
+    rw [hRetainCtx]
+    simpa [Locals.Ctx.withLayout] using join.orderSource.symm
+  obtain ⟨orderCode, orderCtx, hOrder, hOrderCtx⟩ :=
+    Ordering.compile join.order hOrderSource
+  refine ⟨retainCode ++ orderCode, orderCtx, ?_, ?_⟩
+  · simpa [Join.statements, Schedule.statements, Ordering.statements] using
+      Locals.Block.compileOpen_append hRetain hOrder
+  · rw [hOrderCtx, join.orderTarget, hRetainCtx]
+    cases ctx
+    rfl
+
 end AllocationLayoutLowering
 end Functions
 end EvmCompiler
