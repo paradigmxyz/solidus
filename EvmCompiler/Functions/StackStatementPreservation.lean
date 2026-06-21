@@ -66,6 +66,309 @@ abbrev RegularOutcomeRel (targetCtx : Locals.Ctx)
     (fun (_ : EVMException) (_ : EVMException) => True)
     (RegularResultRel targetCtx suffix returns)
 
+inductive OpenResultRel (finalCtx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest) :
+    (Locals.Source.Effectful.Outcome Locals.Source.State ×
+      Functions.Source.Ctx) →
+    Structured.Outcome → Prop
+  | regular {source sourceCtx target} :
+      CtxCovers sourceCtx finalCtx →
+      StateRel finalCtx.layout suffix returns source target →
+      OpenResultRel finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.regular source, sourceCtx)
+        (Structured.Outcome.regular target)
+  | brk {source sourceCtx target layout} :
+      StateRel layout suffix returns source target →
+      OpenResultRel finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.brk source, sourceCtx)
+        (Structured.Outcome.brk target)
+  | cont {source sourceCtx target layout} :
+      StateRel layout suffix returns source target →
+      OpenResultRel finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.cont source, sourceCtx)
+        (Structured.Outcome.cont target)
+  | leave {source sourceCtx target layout} :
+      StateRel layout suffix returns source target →
+      OpenResultRel finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.leave source, sourceCtx)
+        (Structured.Outcome.leave target)
+  | halt {kind source sourceCtx target} :
+      source.shared = target.evm.toSharedState →
+      target.returns = returns →
+      OpenResultRel finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.halt kind source, sourceCtx)
+        (Structured.Outcome.halt kind target)
+
+abbrev OpenOutcomeRel (finalCtx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest) :=
+  Simulation.Interaction.ExceptRel
+    (fun (_ : EVMException) (_ : EVMException) => True)
+    (OpenResultRel finalCtx suffix returns)
+
+theorem RegularResultRel.toOpen
+    {targetCtx : Locals.Ctx} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source :
+      Locals.Source.Effectful.Outcome Locals.Source.State ×
+        Functions.Source.Ctx}
+    {target : Structured.Outcome}
+    (hRel : RegularResultRel targetCtx suffix returns source target) :
+    OpenResultRel targetCtx suffix returns source target := by
+  rcases source with ⟨⟨sourceState, sourceMode⟩, sourceCtx⟩
+  rcases target with ⟨targetState, targetMode⟩
+  cases hRel.sourceMode
+  cases hRel.targetMode
+  exact .regular hRel.context hRel.state
+
+theorem openRun_terminal_generated
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceFuel : Nat) (kind : Assembly.HaltKind)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hArgCount : kind.argCount = 0)
+    (hInitial : StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (OpenOutcomeRel targetCtx suffix returns)
+      (Functions.InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel (.terminal kind) source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram 3
+        { stmts :=
+            Locals.codeStmt targetCtx.cleanupAll ++
+              [Expressions.Stmt.terminal kind] }
+        target) := by
+  have hCleanup :
+      targetCtx.cleanupTo? 0 = some targetCtx.cleanupAll := by
+    simp [Locals.Ctx.cleanupTo?, Locals.Ctx.cleanupAll]
+  obtain ⟨afterCleanup, hCleanupRun, hCleanupRel⟩ :=
+    StackTransitionPreservation.Cleanup.openRun
+      (ctx := targetCtx) (targetLayout := []) rfl (by simp)
+      hCleanup hInitial
+  have hLength : ([] : List Word).length = kind.argCount := by
+    simpa [hArgCount]
+  have hCleanupStack :
+      afterCleanup.evm.stack = ([] : List Word).reverse ++ suffix := by
+    simpa [StackRelation.values] using hCleanupRel.stack
+  have hTerminal :=
+    Locals.InteractionPreservation.Primitive.openTerminal_frame
+      (source := source) hLength hCleanupRel.shared hCleanupStack
+  have hWrapped :
+      Simulation.Interaction.Rel
+        (OpenOutcomeRel targetCtx suffix returns)
+        (Simulation.Interaction.bind
+          (Locals.InteractionSemantics.Primitive.openTerminal
+            kind source [])
+          (fun final =>
+            Simulation.Interaction.pure
+              (Locals.Source.Effectful.Outcome.halt kind final,
+                sourceCtx)))
+        (Simulation.Interaction.bind
+          (Structured.InteractionSemantics.Terminal.openStep
+            kind afterCleanup)
+          (fun final =>
+            Simulation.Interaction.pure
+              (Structured.Outcome.halt kind final))) := by
+    apply Simulation.Interaction.Rel.bind hTerminal
+    intro sourceFinal targetFinal hTerminalResult
+    apply Simulation.Interaction.Rel.done
+    apply Simulation.Interaction.ExceptRel.ok
+    exact .halt hTerminalResult.1
+      (hTerminalResult.2.trans hCleanupRel.returns)
+  unfold Functions.InteractionSemantics.Stmt.openRun
+    Functions.Source.Canonical.Stmt.run
+    Functions.Source.Effectful.Control.Stmt.run
+    Functions.InteractionSemantics.primitiveSemantics
+  rw [show
+      Expressions.InteractionSemantics.Block.openRun targetProgram 3
+          { stmts :=
+              Locals.codeStmt targetCtx.cleanupAll ++
+                [Expressions.Stmt.terminal kind] }
+          target =
+        Simulation.Interaction.bind
+          (Structured.InteractionSemantics.Code.openRun
+            targetCtx.cleanupAll target)
+          (fun afterCode =>
+            Simulation.Interaction.bind
+              (Structured.InteractionSemantics.Terminal.openStep
+                kind afterCode)
+              (fun final =>
+                Simulation.Interaction.pure
+                  (Structured.Outcome.halt kind final))) by
+      simpa [Locals.codeStmt] using
+        Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_terminal
+          targetProgram 0 targetCtx.cleanupAll kind target]
+  rw [hCleanupRun]
+  exact hWrapped
+
+theorem compiledTerminalPointOfEquations
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (kind : Assembly.HaltKind)
+    (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
+    (hArgCount : kind.argCount = 0)
+    (hLowered : lowered = [.terminal kind])
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    finalCtx = targetCtx ∧
+      code =
+        Locals.codeStmt targetCtx.cleanupAll ++
+          [Expressions.Stmt.terminal kind] ∧
+      ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel : Nat)
+        {suffix : List Word} {returns : List Structured.ReturnDest}
+        {source : Locals.Source.State} {target : Structured.RunState},
+        StateRel targetCtx.layout suffix returns source target →
+        Simulation.Interaction.Rel
+          (OpenOutcomeRel finalCtx suffix returns)
+          (Functions.InteractionSemantics.Stmt.openRun
+            sourceProgram sourceCtx sourceFuel (.terminal kind) source)
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            (code.length + 1) { stmts := code } target) := by
+  rw [hLowered] at hCompile
+  have hStmtCompile :=
+    Locals.Block.compileOpen_single_components hCompile
+  obtain ⟨hCode, hFinal⟩ :=
+    Locals.Stmt.compile_terminal_components hStmtCompile
+  refine ⟨hFinal, hCode, ?_⟩
+  intro sourceCtx sourceFuel suffix returns source target hInitial
+  have hRun :=
+    openRun_terminal_generated sourceProgram targetProgram sourceCtx
+      targetCtx sourceFuel kind hArgCount hInitial
+  simpa [hCode, hFinal, Locals.codeStmt] using hRun
+
+theorem openRun_terminalArgs_generated
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceFuel : Nat) (kind : Assembly.HaltKind)
+    (args : Locals.ExprSeq kind.argCount)
+    {argsCode : Structured.Code}
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hScoped : Locals.Scope.ExprSeqScoped targetCtx.layout args)
+    (hSupported : Locals.InteractionSemantics.ExprSeq.OpenSupported args)
+    (hCompile :
+      Locals.ExprSeq.compileCode targetCtx 0 args = some argsCode)
+    (hInitial : StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (OpenOutcomeRel targetCtx suffix returns)
+      (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
+        sourceFuel (.terminalArgs kind args) source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram 3
+        { stmts :=
+            Locals.codeStmt argsCode ++
+              [Expressions.Stmt.terminal kind] }
+        target) := by
+  have hArgs :=
+    StackExpressionPreservation.openEvalSeq_compileCode args targetCtx
+      hScoped hSupported hCompile hInitial
+  have hCore :
+      Simulation.Interaction.Rel
+        (OpenOutcomeRel targetCtx suffix returns)
+        (Simulation.Interaction.bind
+          (Locals.InteractionSemantics.ExprSeq.openEval args source)
+          (fun result =>
+            Simulation.Interaction.bind
+              (Locals.InteractionSemantics.Primitive.openTerminal
+                kind result.1 result.2)
+              (fun final =>
+                Simulation.Interaction.pure
+                  (Locals.Source.Effectful.Outcome.halt kind final,
+                    sourceCtx))))
+        (Simulation.Interaction.bind
+          (Structured.InteractionSemantics.Code.openRun argsCode target)
+          (fun afterArgs =>
+            Simulation.Interaction.bind
+              (Structured.InteractionSemantics.Terminal.openStep
+                kind afterArgs)
+              (fun final =>
+                Simulation.Interaction.pure
+                  (Structured.Outcome.halt kind final)))) := by
+    apply Simulation.Interaction.Rel.bind hArgs
+    intro sourceAfterArgs targetAfterArgs hArgsResult
+    rcases sourceAfterArgs with ⟨sourceAfterArgs, values⟩
+    have hTerminal :=
+      Locals.InteractionPreservation.Primitive.openTerminal_frame
+        hArgsResult.length hArgsResult.shared hArgsResult.stack
+    apply Simulation.Interaction.Rel.bind hTerminal
+    intro sourceFinal targetFinal hTerminalResult
+    apply Simulation.Interaction.Rel.done
+    apply Simulation.Interaction.ExceptRel.ok
+    exact .halt hTerminalResult.1
+      (hTerminalResult.2.trans
+        (hArgsResult.returns.trans hInitial.returns))
+  unfold Functions.InteractionSemantics.Stmt.openRun
+    Functions.Source.Canonical.Stmt.run
+    Functions.Source.Effectful.Control.Stmt.run
+    Functions.InteractionSemantics.primitiveSemantics
+  rw [show
+      Expressions.InteractionSemantics.Block.openRun targetProgram 3
+          { stmts :=
+              Locals.codeStmt argsCode ++
+                [Expressions.Stmt.terminal kind] }
+          target =
+        Simulation.Interaction.bind
+          (Structured.InteractionSemantics.Code.openRun argsCode target)
+          (fun afterCode =>
+            Simulation.Interaction.bind
+              (Structured.InteractionSemantics.Terminal.openStep
+                kind afterCode)
+              (fun final =>
+                Simulation.Interaction.pure
+                  (Structured.Outcome.halt kind final))) by
+      simpa [Locals.codeStmt] using
+        Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_terminal
+          targetProgram 0 argsCode kind target]
+  exact hCore
+
+theorem compiledTerminalArgsPointOfEquations
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (kind : Assembly.HaltKind) (args : Locals.ExprSeq kind.argCount)
+    (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
+    {sourceEnv : List Name}
+    (hScoped : Functions.Scope.ExprSeqScoped sourceEnv args)
+    (hSupported : Locals.InteractionSemantics.ExprSeq.OpenSupported args)
+    (hAccess : StackAccess.ExprSeq.check? targetCtx.layout 0 args = some ())
+    (hLowered : lowered = [.terminalArgs kind args])
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    finalCtx = targetCtx ∧
+      ∃ argsCode,
+        Locals.ExprSeq.compileCode targetCtx 0 args = some argsCode ∧
+          code =
+            Locals.codeStmt argsCode ++
+              [Expressions.Stmt.terminal kind] ∧
+          ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel : Nat)
+            {suffix : List Word} {returns : List Structured.ReturnDest}
+            {source : Locals.Source.State} {target : Structured.RunState},
+            StateRel targetCtx.layout suffix returns source target →
+            Simulation.Interaction.Rel
+              (OpenOutcomeRel finalCtx suffix returns)
+              (Functions.InteractionSemantics.Stmt.openRun
+                sourceProgram sourceCtx sourceFuel
+                  (.terminalArgs kind args) source)
+              (Expressions.InteractionSemantics.Block.openRun targetProgram
+                (code.length + 1) { stmts := code } target) := by
+  rw [hLowered] at hCompile
+  have hStmtCompile :=
+    Locals.Block.compileOpen_single_components hCompile
+  obtain ⟨argsCode, hArgsCompile, hCode, hFinal⟩ :=
+    Locals.Stmt.compile_terminalArgs_components hStmtCompile
+  have hTargetScoped :=
+    StackAccess.ExprSeq.scoped_of_check hAccess hScoped
+  refine ⟨hFinal, argsCode, hArgsCompile, hCode, ?_⟩
+  intro sourceCtx sourceFuel suffix returns source target hInitial
+  have hRun :=
+    openRun_terminalArgs_generated sourceProgram targetProgram sourceCtx
+      targetCtx sourceFuel kind args hTargetScoped hSupported hArgsCompile
+      hInitial
+  simpa [hCode, hFinal, Locals.codeStmt] using hRun
+
 theorem openRun_transition_generated
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
     (transition : AllocationLayout.Transition)

@@ -354,6 +354,85 @@ theorem lowerPointFuel_assign_components
           · rw [if_neg hFalls] at hLower
             contradiction
 
+theorem lowerPointFuel_terminal_components
+    {fuel : Nat} {ctx : Ctx} {kind : Assembly.HaltKind}
+    {point : StackSchedule.Point} {lowered : List Locals.Stmt}
+    (hLower :
+      lowerPointFuel fuel ctx (.terminal kind) point = some lowered) :
+    pointAccess? ctx (.terminal kind) point = some () ∧
+      point.fallsThrough = false ∧ point.regions = [] ∧
+      point.retain? = none ∧ lowered = [.terminal kind] := by
+  cases fuel with
+  | zero => simp [lowerPointFuel] at hLower
+  | succ fuel =>
+      simp only [lowerPointFuel] at hLower
+      cases hAccess : pointAccess? ctx (.terminal kind) point with
+      | none => simp [hAccess] at hLower
+      | some unit =>
+          cases unit
+          rw [hAccess] at hLower
+          by_cases hFalls :
+              point.fallsThrough =
+                !StackSchedule.alwaysExits (.terminal kind)
+          · rw [if_pos hFalls] at hLower
+            cases hRegions : point.regions with
+            | nil =>
+                rw [hRegions] at hLower
+                have hFallsFalse : point.fallsThrough = false := by
+                  simpa [StackSchedule.alwaysExits] using hFalls
+                rw [hFallsFalse] at hLower
+                cases hRetain : point.retain? with
+                | none =>
+                    rw [hRetain] at hLower
+                    exact
+                      ⟨rfl, hFallsFalse, rfl, rfl,
+                        by simpa using hLower.symm⟩
+                | some retain => simp [hRetain] at hLower
+            | cons region regions => simp [hRegions] at hLower
+          · rw [if_neg hFalls] at hLower
+            contradiction
+
+theorem lowerPointFuel_terminalArgs_components
+    {fuel : Nat} {ctx : Ctx} {kind : Assembly.HaltKind}
+    {args : Locals.ExprSeq kind.argCount}
+    {point : StackSchedule.Point} {lowered : List Locals.Stmt}
+    (hLower :
+      lowerPointFuel fuel ctx (.terminalArgs kind args) point =
+        some lowered) :
+    pointAccess? ctx (.terminalArgs kind args) point = some () ∧
+      point.fallsThrough = false ∧ point.regions = [] ∧
+      point.retain? = none ∧
+      lowered = [.terminalArgs kind args] := by
+  cases fuel with
+  | zero => simp [lowerPointFuel] at hLower
+  | succ fuel =>
+      simp only [lowerPointFuel] at hLower
+      cases hAccess : pointAccess? ctx (.terminalArgs kind args) point with
+      | none => simp [hAccess] at hLower
+      | some unit =>
+          cases unit
+          rw [hAccess] at hLower
+          by_cases hFalls :
+              point.fallsThrough =
+                !StackSchedule.alwaysExits (.terminalArgs kind args)
+          · rw [if_pos hFalls] at hLower
+            cases hRegions : point.regions with
+            | nil =>
+                rw [hRegions] at hLower
+                have hFallsFalse : point.fallsThrough = false := by
+                  simpa [StackSchedule.alwaysExits] using hFalls
+                rw [hFallsFalse] at hLower
+                cases hRetain : point.retain? with
+                | none =>
+                    rw [hRetain] at hLower
+                    exact
+                      ⟨rfl, hFallsFalse, rfl, rfl,
+                        by simpa using hLower.symm⟩
+                | some retain => simp [hRetain] at hLower
+            | cons region regions => simp [hRegions] at hLower
+          · rw [if_neg hFalls] at hLower
+            contradiction
+
 theorem lowerStmtListFuel_expr_components
     {fuel : Nat} {ctx : Ctx} {expr : Expr 0} {rest : List Stmt}
     {point : StackSchedule.Point} {points : List StackSchedule.Point}
@@ -428,6 +507,44 @@ theorem lowerStmtListFuel_assign_components
         by simpa [hHeadEq] using hLowered⟩
   · rw [hFalls] at hAbrupt
     exact Bool.noConfusion hAbrupt.1
+
+theorem lowerStmtListFuel_terminal_components
+    {fuel : Nat} {ctx : Ctx} {kind : Assembly.HaltKind}
+    {rest : List Stmt} {point : StackSchedule.Point}
+    {points : List StackSchedule.Point} {lowered : List Locals.Stmt}
+    (hLower :
+      lowerStmtListFuel fuel ctx (.terminal kind :: rest)
+          (point :: points) = some lowered) :
+    pointAccess? ctx (.terminal kind) point = some () ∧
+      point.retain? = none ∧ lowered = [.terminal kind] := by
+  obtain ⟨head, hHead, hCases⟩ :=
+    lowerStmtListFuel_cons_components hLower
+  obtain ⟨hAccess, hFalls, _hRegions, hRetain, hHeadEq⟩ :=
+    lowerPointFuel_terminal_components hHead
+  rcases hCases with hRegular | hAbrupt
+  · rw [hFalls] at hRegular
+    exact Bool.noConfusion hRegular.1
+  · exact ⟨hAccess, hRetain, by simpa [hHeadEq] using hAbrupt.2⟩
+
+theorem lowerStmtListFuel_terminalArgs_components
+    {fuel : Nat} {ctx : Ctx} {kind : Assembly.HaltKind}
+    {args : Locals.ExprSeq kind.argCount} {rest : List Stmt}
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {lowered : List Locals.Stmt}
+    (hLower :
+      lowerStmtListFuel fuel ctx (.terminalArgs kind args :: rest)
+          (point :: points) = some lowered) :
+    pointAccess? ctx (.terminalArgs kind args) point = some () ∧
+      point.retain? = none ∧
+      lowered = [.terminalArgs kind args] := by
+  obtain ⟨head, hHead, hCases⟩ :=
+    lowerStmtListFuel_cons_components hLower
+  obtain ⟨hAccess, hFalls, _hRegions, hRetain, hHeadEq⟩ :=
+    lowerPointFuel_terminalArgs_components hHead
+  rcases hCases with hRegular | hAbrupt
+  · rw [hFalls] at hRegular
+    exact Bool.noConfusion hRegular.1
+  · exact ⟨hAccess, hRetain, by simpa [hHeadEq] using hAbrupt.2⟩
 
 def lowerScheduledBlock? (ctx : Ctx) (source : Block)
     (schedule : StackSchedule.Region) : Option Locals.Block :=

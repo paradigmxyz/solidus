@@ -43,6 +43,26 @@ def RegularListPreserves
         (Expressions.InteractionSemantics.Block.openRun targetProgram
           (regularLeafTargetCost points + 1) { stmts := code } target)
 
+def OpenListPreserves
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (stmts : List Functions.Stmt)
+    (finalLayout : Locals.Layout)
+    (code : List Expressions.Stmt) : Prop :=
+  finalCtx.layout = finalLayout ∧
+    ∀ (sourceCtx : Functions.Source.Ctx)
+      {suffix : List Word} {returns : List Structured.ReturnDest}
+      {source : Locals.Source.State} {target : Structured.RunState},
+      CtxCovers sourceCtx targetCtx →
+      StateRel targetCtx.layout suffix returns source target →
+      Simulation.Interaction.Rel
+        (OpenOutcomeRel finalCtx suffix returns)
+        (Functions.InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx (stmts.length + 1) { stmts } source)
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          (code.length + 1) { stmts := code } target)
+
 theorem regularEmpty
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
@@ -506,6 +526,121 @@ theorem regularLeafList_of_compilers
               finalCtx (.assign name value) rest point tailPoints retain
               finalLayout tailFinal headCode tailCode code hPointRetain
               hMiddle hHeadLength hHeadForward hTailResult hFinal hCode
+
+theorem RegularListPreserves.toOpenList
+    {sourceProgram : Functions.Program}
+    {targetProgram : Expressions.Program}
+    {targetCtx finalCtx : Locals.Ctx}
+    {stmts : List Functions.Stmt}
+    {points : List StackSchedule.Point}
+    {finalLayout : Locals.Layout}
+    {code : List Expressions.Stmt}
+    (hPreserves :
+      RegularListPreserves sourceProgram targetProgram targetCtx finalCtx
+        stmts points finalLayout code) :
+    OpenListPreserves sourceProgram targetProgram targetCtx finalCtx
+      stmts finalLayout code := by
+  rcases hPreserves with ⟨hFinal, hLength, hForward⟩
+  refine ⟨hFinal, ?_⟩
+  intro sourceCtx suffix returns source target hCtx hInitial
+  have hRun := hForward sourceCtx hCtx hInitial
+  rw [hLength]
+  apply Simulation.Interaction.Rel.mono hRun
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error _ => exact Simulation.Interaction.ExceptRel.error trivial
+  | ok hResult =>
+      exact Simulation.Interaction.ExceptRel.ok hResult.toOpen
+
+theorem terminalList_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel : Nat)
+    (kind : Assembly.HaltKind) (rest : List Functions.Stmt)
+    (fact : AllocationLivenessFacts.Point)
+    (restFacts : List AllocationLivenessFacts.Point)
+    {points : List StackSchedule.Point}
+    {finalLayout : Locals.Layout} {lowered : List Locals.Stmt}
+    {targetCtx finalCtx : Locals.Ctx} {code : List Expressions.Stmt}
+    (hArgCount : kind.argCount = 0)
+    (hSchedule :
+      StackSchedule.scheduleStmtListFuel scheduleFuel pinned targetCtx.layout
+          (.terminal kind :: rest) (fact :: restFacts) =
+        some (points, finalLayout))
+    (hLower :
+      StackLowering.lowerStmtListFuel lowerFuel lowerCtx
+          (.terminal kind :: rest) points = some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    OpenListPreserves sourceProgram targetProgram targetCtx finalCtx
+      (.terminal kind :: rest) finalLayout code := by
+  obtain
+      ⟨point, hPoints, _hBefore, _hStatement, _hRetain, _hRegions,
+        _hFalls, hFinalLayout⟩ :=
+    StackSchedule.scheduleStmtListFuel_terminal_components hSchedule
+  subst points
+  obtain ⟨_pointAccess, _hPointRetain, hLowered⟩ :=
+    StackLowering.lowerStmtListFuel_terminal_components hLower
+  obtain ⟨hFinalCtx, hCode, hForward⟩ :=
+    compiledTerminalPointOfEquations sourceProgram targetProgram targetCtx
+      finalCtx kind lowered code hArgCount hLowered hCompile
+  refine ⟨?_, ?_⟩
+  · rw [hFinalCtx, hFinalLayout]
+  · intro sourceCtx suffix returns source target _hCtx hInitial
+    have hHead := hForward sourceCtx (rest.length + 1) hInitial
+    rw [Functions.InteractionSemantics.Block.openRun_terminal_cons]
+    simpa [Functions.InteractionSemantics.Stmt.openRun] using hHead
+
+theorem terminalArgsList_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel : Nat)
+    (kind : Assembly.HaltKind) (args : Locals.ExprSeq kind.argCount)
+    (rest : List Functions.Stmt)
+    (fact : AllocationLivenessFacts.Point)
+    (restFacts : List AllocationLivenessFacts.Point)
+    {sourceEnv : List Name} {points : List StackSchedule.Point}
+    {finalLayout : Locals.Layout} {lowered : List Locals.Stmt}
+    {targetCtx finalCtx : Locals.Ctx} {code : List Expressions.Stmt}
+    (hScoped : Functions.Scope.ExprSeqScoped sourceEnv args)
+    (hSupported : Locals.InteractionSemantics.ExprSeq.OpenSupported args)
+    (hSchedule :
+      StackSchedule.scheduleStmtListFuel scheduleFuel pinned targetCtx.layout
+          (.terminalArgs kind args :: rest) (fact :: restFacts) =
+        some (points, finalLayout))
+    (hLower :
+      StackLowering.lowerStmtListFuel lowerFuel lowerCtx
+          (.terminalArgs kind args :: rest) points = some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    OpenListPreserves sourceProgram targetProgram targetCtx finalCtx
+      (.terminalArgs kind args :: rest) finalLayout code := by
+  obtain
+      ⟨point, hPoints, hBefore, _hStatement, _hRetain, _hRegions,
+        _hFalls, hFinalLayout⟩ :=
+    StackSchedule.scheduleStmtListFuel_terminalArgs_components hSchedule
+  subst points
+  obtain ⟨hPointAccess, _hPointRetain, hLowered⟩ :=
+    StackLowering.lowerStmtListFuel_terminalArgs_components hLower
+  have hAccess :
+      StackAccess.ExprSeq.check? targetCtx.layout 0 args = some () := by
+    simpa [StackLowering.pointAccess?, hBefore] using hPointAccess
+  obtain ⟨hFinalCtx, argsCode, hArgsCompile, hCode, hForward⟩ :=
+    compiledTerminalArgsPointOfEquations sourceProgram targetProgram
+      targetCtx finalCtx kind args lowered code hScoped hSupported hAccess
+      hLowered hCompile
+  refine ⟨?_, ?_⟩
+  · rw [hFinalCtx, hFinalLayout]
+  · intro sourceCtx suffix returns source target _hCtx hInitial
+    have hHead := hForward sourceCtx (rest.length + 1) hInitial
+    rw [Functions.InteractionSemantics.Block.openRun_terminalArgs_cons]
+    simpa [Functions.InteractionSemantics.Stmt.openRun] using hHead
 
 end StackBlockPreservation
 end Functions

@@ -105,6 +105,100 @@ def openRunScoped (program : Functions.Program)
   Functions.Source.Canonical.Block.runScoped
     stateModel primitiveSemantics program ctx block fuel state
 
+theorem openRun_terminal_cons
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (kind : Assembly.HaltKind)
+    (rest : List Functions.Stmt) (state : State) :
+    openRun program ctx (fuel + 1)
+        { stmts := .terminal kind :: rest } state =
+      Functions.Source.Canonical.Stmt.run stateModel primitiveSemantics
+        program ctx fuel (.terminal kind) state := by
+  unfold openRun Functions.Source.Canonical.Block.runOpen
+    Functions.Source.Canonical.Stmt.run
+    Functions.Source.Effectful.Control.Block.runOpen
+    Functions.Source.Effectful.Control.Stmt.run
+  change
+    Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (primitiveSemantics.terminal kind state [])
+          (fun final =>
+            Simulation.Interaction.pure
+              (Functions.Source.Effectful.Outcome.halt kind final, ctx)))
+        (fun result =>
+          match result.1.mode with
+          | .regular =>
+              Functions.Source.Effectful.Control.Block.runOpen stateModel
+                primitiveSemantics program result.2 fuel
+                { stmts := rest } result.1.state
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure (result.1, ctx)) =
+      Simulation.Interaction.bind
+        (primitiveSemantics.terminal kind state [])
+        (fun final =>
+          Simulation.Interaction.pure
+            (Functions.Source.Effectful.Outcome.halt kind final, ctx))
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (primitiveSemantics.terminal kind state []))
+  intro final _
+  rfl
+
+theorem openRun_terminalArgs_cons
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (kind : Assembly.HaltKind)
+    (args : Locals.ExprSeq kind.argCount)
+    (rest : List Functions.Stmt) (state : State) :
+    openRun program ctx (fuel + 1)
+        { stmts := .terminalArgs kind args :: rest } state =
+      Functions.Source.Canonical.Stmt.run stateModel primitiveSemantics
+        program ctx fuel (.terminalArgs kind args) state := by
+  unfold openRun Functions.Source.Canonical.Block.runOpen
+    Functions.Source.Canonical.Stmt.run
+    Functions.Source.Effectful.Control.Block.runOpen
+    Functions.Source.Effectful.Control.Stmt.run
+  change
+    Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Locals.Source.Effectful.Expr.Control.ExprSeq.eval stateModel
+            primitiveSemantics args state)
+          (fun result =>
+            Simulation.Interaction.bind
+              (primitiveSemantics.terminal kind result.1 result.2)
+              (fun final =>
+                Simulation.Interaction.pure
+                  (Functions.Source.Effectful.Outcome.halt kind final,
+                    ctx))))
+        (fun result =>
+          match result.1.mode with
+          | .regular =>
+              Functions.Source.Effectful.Control.Block.runOpen stateModel
+                primitiveSemantics program result.2 fuel
+                { stmts := rest } result.1.state
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure (result.1, ctx)) =
+      Simulation.Interaction.bind
+        (Locals.Source.Effectful.Expr.Control.ExprSeq.eval stateModel
+          primitiveSemantics args state)
+        (fun result =>
+          Simulation.Interaction.bind
+            (primitiveSemantics.terminal kind result.1 result.2)
+            (fun final =>
+              Simulation.Interaction.pure
+                (Functions.Source.Effectful.Outcome.halt kind final, ctx)))
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Locals.Source.Effectful.Expr.Control.ExprSeq.eval stateModel
+        primitiveSemantics args state))
+  intro result _
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (primitiveSemantics.terminal kind result.1 result.2))
+  intro final _
+  rfl
+
 theorem openRunScoped_eq_bind
     (program : Functions.Program) (ctx : Functions.Source.Ctx)
     (block : Functions.Block) (fuel : Nat) (state : State) :

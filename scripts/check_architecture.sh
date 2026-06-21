@@ -26,7 +26,11 @@ for theorem in \
     'RegularListPreserves' \
     'regularConsResult' \
     'RegularLeafList' \
-    'regularLeafList_of_compilers'; do
+    'regularLeafList_of_compilers' \
+    'OpenListPreserves' \
+    'RegularListPreserves.toOpenList' \
+    'terminalList_of_compilers' \
+    'terminalArgsList_of_compilers'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.StackBlockPreservation.${theorem}" \
       EvmCompiler/Verification.lean; then
@@ -50,9 +54,13 @@ for theorem in \
     'lowerStmtListFuel_expr_components' \
     'lowerStmtListFuel_let_components' \
     'lowerStmtListFuel_assign_components' \
+    'lowerStmtListFuel_terminal_components' \
+    'lowerStmtListFuel_terminalArgs_components' \
     'lowerPointFuel_expr_components' \
     'lowerPointFuel_let_components' \
-    'lowerPointFuel_assign_components'; do
+    'lowerPointFuel_assign_components' \
+    'lowerPointFuel_terminal_components' \
+    'lowerPointFuel_terminalArgs_components'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.StackLowering.${theorem}" \
       EvmCompiler/Verification.lean; then
@@ -94,7 +102,32 @@ if ! rg -Fq \
   failed=1
 fi
 
+if ! rg -Fq \
+    '#check EvmCompiler.Functions.StackExpressionPreservation.openEvalSeq_compileCode' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing dynamic-layout open expression-sequence preservation.' >&2
+  failed=1
+fi
+
 for theorem in \
+    'Block.openRun_terminal_cons' \
+    'Block.openRun_terminalArgs_cons'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.Functions.InteractionSemantics.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing canonical Functions semantic equation %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
+for theorem in \
+    'OpenResultRel' \
+    'openRun_terminal_generated' \
+    'compiledTerminalPointOfEquations' \
+    'openRun_terminalArgs_generated' \
+    'compiledTerminalArgsPointOfEquations' \
     'openRun_expr_generated' \
     'openRun_transition_generated' \
     'openRun_transition_block_generated' \
@@ -163,9 +196,13 @@ for theorem in \
     'scheduleStmtListFuel_expr_components' \
     'scheduleStmtListFuel_let_components' \
     'scheduleStmtListFuel_assign_components' \
+    'scheduleStmtListFuel_terminal_components' \
+    'scheduleStmtListFuel_terminalArgs_components' \
     'scheduleStmtFuel_expr_components' \
     'scheduleStmtFuel_let_components' \
-    'scheduleStmtFuel_assign_components'; do
+    'scheduleStmtFuel_assign_components' \
+    'scheduleStmtFuel_terminal_components' \
+    'scheduleStmtFuel_terminalArgs_components'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.StackSchedule.${theorem}" \
       EvmCompiler/Verification.lean; then

@@ -95,6 +95,24 @@ theorem openEvalOne_fresh_compileCode
   | error => exact .error trivial
   | ok hOk => exact .ok (hRel.ofExprResultOneInsert hFresh hOk)
 
+theorem openEvalSeq_compileCode
+    {results : Nat} (exprs : Locals.ExprSeq results)
+    (ctx : Locals.Ctx)
+    {code : Structured.Code} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hScoped : Locals.Scope.ExprSeqScoped ctx.layout exprs)
+    (hSupported : Locals.InteractionSemantics.ExprSeq.OpenSupported exprs)
+    (hCompile : Locals.ExprSeq.compileCode ctx 0 exprs = some code)
+    (hRel : StateRel ctx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (Locals.InteractionPreservation.Expr.OutcomeRel results source target)
+      (Locals.InteractionSemantics.ExprSeq.openEval exprs source)
+      (Structured.InteractionSemantics.Code.openRun code target) := by
+  exact
+    Locals.InteractionPreservation.Expr.openEvalSeq_compileCode
+      exprs ctx 0 hScoped hSupported hCompile hRel.expr
+
 end StackExpressionPreservation
 end Functions
 end EvmCompiler
