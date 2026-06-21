@@ -100,7 +100,12 @@ for theorem in \
     'lowerPointFuel_let_components' \
     'lowerPointFuel_assign_components' \
     'lowerPointFuel_terminal_components' \
-    'lowerPointFuel_terminalArgs_components'; do
+    'lowerPointFuel_terminalArgs_components' \
+    'lowerPointFuel_switch_components' \
+    'lowerCasesFuel_nil_components' \
+    'lowerCasesFuel_cons_components' \
+    'lowerDefaultFuel_none_components' \
+    'lowerDefaultFuel_some_components'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.StackLowering.${theorem}" \
       EvmCompiler/Verification.lean; then
@@ -306,6 +311,11 @@ for theorem in \
     'scheduleStmtFuelWithTargets_cont_components' \
     'scheduleStmtFuelWithTargets_block_components' \
     'scheduleStmtFuelWithTargets_if_components' \
+    'scheduleStmtFuelWithTargets_switch_components' \
+    'scheduleCaseRegionsFuelWithTargets_nil_components' \
+    'scheduleCaseRegionsFuelWithTargets_cons_components' \
+    'scheduleDefaultRegionFuelWithTargets_none_components' \
+    'scheduleDefaultRegionFuelWithTargets_some_components' \
     'scheduleBlockFuelWithTargets_components' \
     'scheduleStmtListFuelWithTargets_brk_components' \
     'scheduleStmtListFuelWithTargets_cont_components'; do

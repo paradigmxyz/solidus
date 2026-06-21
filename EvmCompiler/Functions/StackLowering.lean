@@ -512,6 +512,126 @@ theorem lowerPointFuel_terminalArgs_components
           · rw [if_neg hFalls] at hLower
             contradiction
 
+theorem lowerPointFuel_switch_components
+    {fuel : Nat} {ctx : Ctx} {scrutinee : Expr 1}
+    {cases : List (Word × Block)} {defaultBody : Option Block}
+    {point : StackSchedule.Point} {lowered : List Locals.Stmt}
+    (hLower :
+      lowerPointFuel fuel ctx (.switch scrutinee cases defaultBody) point =
+        some lowered) :
+    ∃ loweredCases loweredDefault retain,
+      pointAccess? ctx (.switch scrutinee cases defaultBody) point = some () ∧
+        point.fallsThrough = true ∧
+        lowerCasesFuel (fuel - 1) ctx cases
+            (point.regions.take cases.length) = some loweredCases ∧
+        lowerDefaultFuel (fuel - 1) ctx defaultBody
+            (point.regions.drop cases.length) = some loweredDefault ∧
+        point.retain? = some retain ∧
+        lowered =
+          [.switch scrutinee loweredCases loweredDefault] ++
+            transitionStmts retain := by
+  cases fuel with
+  | zero => simp [lowerPointFuel] at hLower
+  | succ fuel =>
+      simp only [lowerPointFuel] at hLower
+      cases hAccess :
+          pointAccess? ctx (.switch scrutinee cases defaultBody) point with
+      | none => simp [hAccess] at hLower
+      | some unit =>
+          cases unit
+          rw [hAccess] at hLower
+          by_cases hFalls :
+              point.fallsThrough =
+                !StackSchedule.alwaysExits
+                  (.switch scrutinee cases defaultBody)
+          · rw [if_pos hFalls] at hLower
+            have hFallsTrue : point.fallsThrough = true := by
+              simpa [StackSchedule.alwaysExits] using hFalls
+            rw [hFallsTrue] at hLower
+            change
+              (do
+                let loweredCases ←
+                  lowerCasesFuel fuel ctx cases
+                    (point.regions.take cases.length)
+                let loweredDefault ←
+                  lowerDefaultFuel fuel ctx defaultBody
+                    (point.regions.drop cases.length)
+                match point.retain? with
+                | some retain =>
+                    some
+                      ([.switch scrutinee loweredCases loweredDefault] ++
+                        transitionStmts retain)
+                | none => none) = some lowered at hLower
+            obtain ⟨loweredCases, hCases, hAfterCases⟩ :=
+              Option.bind_eq_some_iff.mp hLower
+            obtain ⟨loweredDefault, hDefault, hAfterDefault⟩ :=
+              Option.bind_eq_some_iff.mp hAfterCases
+            cases hRetain : point.retain? with
+            | none => simp [hRetain] at hAfterDefault
+            | some retain =>
+                rw [hRetain] at hAfterDefault
+                exact ⟨loweredCases, loweredDefault, retain, rfl,
+                  hFallsTrue, by simpa using hCases,
+                  by simpa using hDefault, rfl,
+                  by simpa using hAfterDefault.symm⟩
+          · rw [if_neg hFalls] at hLower
+            contradiction
+
+theorem lowerCasesFuel_nil_components
+    {fuel : Nat} {ctx : Ctx} {lowered : List (Word × Locals.Block)}
+    (hLower : lowerCasesFuel fuel ctx [] [] = some lowered) :
+    lowered = [] := by
+  simpa [lowerCasesFuel] using hLower.symm
+
+theorem lowerCasesFuel_cons_components
+    {fuel : Nat} {ctx : Ctx} {value : Word} {body : Block}
+    {rest : List (Word × Block)} {region : StackSchedule.Region}
+    {regions : List StackSchedule.Region} {loweredBody : Locals.Block}
+    {loweredRest : List (Word × Locals.Block)}
+    (hLower :
+      lowerCasesFuel fuel ctx ((value, body) :: rest) (region :: regions) =
+        some ((value, loweredBody) :: loweredRest)) :
+    lowerBlockFuel fuel ctx body region = some loweredBody ∧
+      lowerCasesFuel fuel ctx rest regions = some loweredRest := by
+  cases fuel with
+  | zero => simp [lowerCasesFuel, lowerBlockFuel] at hLower
+  | succ fuel =>
+      simp only [lowerCasesFuel] at hLower
+      obtain ⟨actualBody, hBody, hAfterBody⟩ :=
+        Option.bind_eq_some_iff.mp hLower
+      obtain ⟨actualRest, hRest, hResult⟩ :=
+        Option.bind_eq_some_iff.mp hAfterBody
+      have hList := Option.some.inj hResult
+      injection hList with hBodyEq hRestEq
+      have hActualBody : actualBody = loweredBody := congrArg Prod.snd hBodyEq
+      subst actualBody
+      subst actualRest
+      exact ⟨hBody, hRest⟩
+
+theorem lowerDefaultFuel_none_components
+    {fuel : Nat} {ctx : Ctx} {lowered : Option Locals.Block}
+    (hLower : lowerDefaultFuel fuel ctx none [] = some lowered) :
+    lowered = none := by
+  simpa [lowerDefaultFuel] using hLower.symm
+
+theorem lowerDefaultFuel_some_components
+    {fuel : Nat} {ctx : Ctx} {body : Block}
+    {region : StackSchedule.Region} {loweredBody : Locals.Block}
+    (hLower :
+      lowerDefaultFuel fuel ctx (some body) [region] =
+        some (some loweredBody)) :
+    lowerBlockFuel fuel ctx body region = some loweredBody := by
+  cases fuel with
+  | zero => simp [lowerDefaultFuel, lowerBlockFuel] at hLower
+  | succ fuel =>
+      simp only [lowerDefaultFuel] at hLower
+      obtain ⟨actualBody, hBody, hResult⟩ :=
+        Option.bind_eq_some_iff.mp hLower
+      have hSome := Option.some.inj hResult
+      injection hSome with hBodyEq
+      subst actualBody
+      exact hBody
+
 theorem lowerPointFuel_brk_components
     {fuel : Nat} {ctx : Ctx}
     {point : StackSchedule.Point} {lowered : List Locals.Stmt}
