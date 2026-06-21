@@ -175,6 +175,8 @@ elimination are not prerequisites for Permit2 or Aave.
 - [x] Prove canonical parameter entry, zero-return initialization, checked
   return-vector placement, and the scheduled callee body/epilogue relation at
   arbitrary sufficient target fuel.
+- [x] Compose the real call-created frame, entry-layout marker, return prelude,
+  scheduled body, epilogue, ordinary proc lookup, and target call attachment.
 - [x] Attach the real target return frame through ordinary procedure lookup,
   argument splitting, frame popping, and return-value attachment; terminal
   halt ignores only now-irrelevant compiler return-frame metadata.
