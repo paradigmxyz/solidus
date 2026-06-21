@@ -69,6 +69,66 @@ theorem openEvalOne_compileCode
     Locals.InteractionPreservation.Expr.openEvalOne_compileCode
       expr ctx 0 hScoped hSupported hCompile hRel.expr
 
+structure ConditionResultRel
+    (layout : Locals.Layout) (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (source : Locals.Source.State × Bool)
+    (target : Structured.RunState × Bool) : Prop where
+  condition : source.2 = target.2
+  state : StateRel layout suffix returns source.1 target.1
+
+abbrev ConditionOutcomeRel
+    (layout : Locals.Layout) (suffix : List Word)
+    (returns : List Structured.ReturnDest) :=
+  Simulation.Interaction.ExceptRel
+    (fun (_ : EVMException) (_ : EVMException) => True)
+    (ConditionResultRel layout suffix returns)
+
+theorem openEvalCondition_compileCode
+    (expr : Locals.Expr 1) (ctx : Locals.Ctx)
+    {code : Structured.Code} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hScoped : Locals.Scope.ExprScoped ctx.layout expr)
+    (hSupported : Locals.InteractionSemantics.Expr.OpenSupported expr)
+    (hCompile : Locals.Expr.compileCode ctx 0 expr = some code)
+    (hInitial : StateRel ctx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (ConditionOutcomeRel ctx.layout suffix returns)
+      (Locals.InteractionSemantics.Expr.openEvalCondition expr source)
+      (Expressions.InteractionSemantics.Expr.openRunCondition (.code code) target) := by
+  have hOne :=
+    openEvalOne_compileCode expr ctx hScoped hSupported hCompile hInitial
+  unfold Locals.InteractionSemantics.Expr.openEvalCondition
+    Locals.Source.Effectful.Expr.Control.evalCondition
+  unfold Expressions.InteractionSemantics.Expr.openRunCondition
+    Expressions.EffectSemantics.Control.Expr.runCondition
+    Expressions.EffectSemantics.Control.Expr.run
+  apply Simulation.Interaction.Rel.bind hOne
+  intro sourceResult targetAfterExpr hResult
+  rcases sourceResult with ⟨sourceFinal, value⟩
+  let targetFinal :=
+    targetAfterExpr.withEVM
+      { targetAfterExpr.evm with stack := target.evm.stack }
+  have hTargetStack :
+      targetAfterExpr.evm.stack = value :: target.evm.stack := by
+    simpa using hResult.stack
+  have hPop :
+      Structured.EffectSemantics.Control.Code.popCondition
+          (M := Simulation.Interaction EVMException)
+          Structured.EffectSemantics.Ordinary.runStateModel targetAfterExpr =
+        Simulation.Interaction.pure
+          (targetFinal, value != EvmYul.UInt256.ofNat 0) := by
+    unfold Structured.EffectSemantics.Control.Code.popCondition
+    rw [Structured.EffectSemantics.Ordinary.runStateModel_evm, hTargetStack]
+    rfl
+  rw [hPop]
+  apply Simulation.Interaction.Rel.done
+  apply Simulation.Interaction.ExceptRel.ok
+  exact
+    { condition := rfl
+      state := StateRel.ofExprResultOnePop hInitial hResult }
+
 theorem openEvalOne_fresh_compileCode
     (expr : Locals.Expr 1) (ctx : Locals.Ctx) (name : Name)
     {code : Structured.Code} {suffix : List Word}

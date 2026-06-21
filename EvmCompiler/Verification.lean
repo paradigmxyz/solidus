@@ -2951,6 +2951,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_brk_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_cont_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_block_components
+#check EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_if_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuelWithTargets_brk_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuelWithTargets_cont_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_terminal_components
@@ -2972,8 +2973,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackRelation.values_promoteAt
 #check EvmCompiler.Functions.StackRelation.StateRel.expr
 #check EvmCompiler.Functions.StackRelation.StateRel.restrictTo
+#check EvmCompiler.Functions.StackRelation.StateRel.ofExprResultOnePop
 #check EvmCompiler.Functions.StackExpressionPreservation.openEvalZero_compileCode
 #check EvmCompiler.Functions.StackExpressionPreservation.openEvalOne_compileCode
+#check EvmCompiler.Functions.StackExpressionPreservation.openEvalCondition_compileCode
 #check EvmCompiler.Functions.StackExpressionPreservation.openEvalOne_fresh_compileCode
 #check EvmCompiler.Functions.StackExpressionPreservation.openEvalSeq_compileCode
 #check EvmCompiler.Functions.InteractionSemantics.Block.openRun_terminal_cons
@@ -2992,6 +2995,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackStatementPreservation.controlThenTransitionForward
 #check EvmCompiler.Functions.StackStatementPreservation.controlAppendEmptyCode
 #check EvmCompiler.Functions.StackStatementPreservation.controlAppendEmptyCodeForward
+#check EvmCompiler.Functions.StackStatementPreservation.controlIf
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_brk_join_generated
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_cont_join_generated
 #check EvmCompiler.Functions.StackStatementPreservation.compiledBrkJoinPointOfEquations
@@ -3079,6 +3083,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_brk_components
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_cont_components
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_block_components
+#check EvmCompiler.Functions.StackLowering.lowerPointFuel_if_components
 #check EvmCompiler.Functions.StackLowering.lowerBlock?_components
 #check EvmCompiler.Functions.StackLoweringCompilation.Examples.deadProgram_compiles
 #check EvmCompiler.Functions.StackLoweringCompilation.Examples.dormantCallProgram_compiles

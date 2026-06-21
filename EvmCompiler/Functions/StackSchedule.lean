@@ -776,6 +776,54 @@ theorem scheduleStmtFuelWithTargets_block_components
                         ⟨bodyFacts, rawRegion, exit, rfl, by simpa using hRegion,
                           hExit, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
+theorem scheduleStmtFuelWithTargets_if_components
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout : Locals.Layout} {cond : Expr 1} {body : Block}
+    {facts : AllocationLivenessFacts.Point} {point : Point}
+    (hSchedule :
+      scheduleStmtFuelWithTargets targets fuel pinned layout (.if_ cond body)
+          facts = some point) :
+    ∃ bodyFacts rawRegion exit,
+      facts.regions = [bodyFacts] ∧
+        scheduleBlockFuelWithTargets targets (fuel - 1) (layoutSet layout)
+            layout body bodyFacts = some rawRegion ∧
+        Join.build? rawRegion.finalLayout layout = some exit ∧
+        point.beforeLayout = layout ∧ point.statementLayout = layout ∧
+        point.exit? = none ∧ point.retain? = none ∧
+        point.regions =
+          [{ rawRegion with exit? := some exit, finalLayout := layout }] ∧
+        point.fallsThrough = true := by
+  cases fuel with
+  | zero =>
+      simp [scheduleStmtFuelWithTargets] at hSchedule
+  | succ fuel =>
+      cases hRegions : facts.regions with
+      | nil =>
+          simp [scheduleStmtFuelWithTargets, hRegions] at hSchedule
+      | cons bodyFacts rest =>
+          cases rest with
+          | cons next tail =>
+              simp [scheduleStmtFuelWithTargets, hRegions] at hSchedule
+          | nil =>
+              cases hRegion :
+                  scheduleBlockFuelWithTargets targets fuel
+                    (layoutSet layout) layout body bodyFacts with
+              | none =>
+                  simp [scheduleStmtFuelWithTargets, hRegions, hRegion]
+                    at hSchedule
+              | some rawRegion =>
+                  cases hExit : Join.build? rawRegion.finalLayout layout with
+                  | none =>
+                      simp [scheduleStmtFuelWithTargets, hRegions, hRegion,
+                        hExit] at hSchedule
+                  | some exit =>
+                      simp [scheduleStmtFuelWithTargets, hRegions, hRegion,
+                        hExit] at hSchedule
+                      subst point
+                      exact
+                        ⟨bodyFacts, rawRegion, exit, rfl, by simpa using hRegion,
+                          hExit, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
 theorem scheduleStmtListFuelWithTargets_brk_components
     {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
     {layout target : Locals.Layout} {rest : List Stmt}

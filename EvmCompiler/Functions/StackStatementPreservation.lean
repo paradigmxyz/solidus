@@ -657,6 +657,60 @@ theorem controlAppendEmptyCodeForward
           apply Simulation.Interaction.ExceptRel.ok
           exact .halt hShared hReturns
 
+theorem controlIf
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    (cond : Functions.Expr 1) (body : Functions.Block)
+    (condCode : Structured.Code) (targetBody : Expressions.Block)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hTargetFuel : 2 ≤ targetFuel)
+    (hCtx : ControlCtxCovers sourceCtx targetCtx targets)
+    (hCondScoped : Locals.Scope.ExprScoped targetCtx.layout cond)
+    (hCondSupported : Locals.InteractionSemantics.Expr.OpenSupported cond)
+    (hCondCompile :
+      Locals.Expr.compileCode targetCtx 0 cond = some condCode)
+    (hInitial : StateRel targetCtx.layout suffix returns source target)
+    (hBody :
+      ∀ {sourceAfter : Locals.Source.State}
+        {targetAfter : Structured.RunState},
+        StateRel targetCtx.layout suffix returns sourceAfter targetAfter →
+          Simulation.Interaction.ForwardRel FuelTruncated
+            (ControlOpenOutcomeRel targets targetCtx suffix returns)
+            (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
+              sourceFuel (.block body) sourceAfter)
+            (Expressions.InteractionSemantics.Block.openRun targetProgram
+              (targetFuel - 2) targetBody targetAfter)) :
+    Simulation.Interaction.ForwardRel FuelTruncated
+      (ControlOpenOutcomeRel targets targetCtx suffix returns)
+      (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
+        (sourceFuel + 1) (.if_ cond body) source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
+        { stmts := [.if_ (.code condCode) targetBody] } target) := by
+  have hTargetFuelEq : targetFuel = (targetFuel - 2) + 2 := by omega
+  rw [hTargetFuelEq,
+    Expressions.InteractionSemantics.Block.openRun_single_if]
+  rw [Functions.InteractionSemantics.Stmt.openRun_if]
+  have hCond :=
+    StackExpressionPreservation.openEvalCondition_compileCode
+      cond targetCtx hCondScoped hCondSupported hCondCompile hInitial
+  apply Simulation.Interaction.ForwardRel.bind
+    (Simulation.Interaction.ForwardRel.ofRel hCond)
+  intro sourceResult targetResult hResult
+  rcases sourceResult with ⟨sourceAfter, sourceCond⟩
+  rcases targetResult with ⟨targetAfter, targetCond⟩
+  cases hResult.condition
+  cases sourceCond with
+  | false =>
+      apply Simulation.Interaction.ForwardRel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .regular hCtx hResult.state
+  | true =>
+      exact hBody hResult.state
+
 theorem openRun_brk_join_generated
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)

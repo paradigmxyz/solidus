@@ -260,6 +260,32 @@ theorem ofExprResultOneInsert
       rw [hResult.vars]
       exact hOldValue
 
+theorem ofExprResultOnePop
+    {layout : Locals.Layout} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {initialSource finalSource : Locals.Source.State}
+    {value : Word} {initialTarget targetAfterExpr : Structured.RunState}
+    (hInitial :
+      StateRel layout suffix returns initialSource initialTarget)
+    (hResult :
+      Locals.InteractionPreservation.Expr.ResultRel 1
+        initialSource initialTarget (finalSource, [value]) targetAfterExpr) :
+    StateRel layout suffix returns finalSource
+      (targetAfterExpr.withEVM
+        { targetAfterExpr.evm with stack := initialTarget.evm.stack }) := by
+  have hValues : values finalSource layout = values initialSource layout := by
+    unfold values
+    rw [hResult.vars]
+  constructor
+  · simpa using hResult.shared
+  · exact hResult.returns.trans hInitial.returns
+  · simpa [hValues] using hInitial.stack
+  · intro name hName
+    obtain ⟨oldValue, hOldValue⟩ := hInitial.defined hName
+    refine ⟨oldValue, ?_⟩
+    rw [hResult.vars]
+    exact hOldValue
+
 theorem ofExprResultOneAssign
     {layout : Locals.Layout} {suffix : List Word}
     {returns : List Structured.ReturnDest}

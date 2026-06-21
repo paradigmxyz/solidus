@@ -164,6 +164,7 @@ for theorem in \
     'compiledAssignPointOfEquations' \
     'controlThenTransitionForward' \
     'controlAppendEmptyCodeForward' \
+    'controlIf' \
     'openRun_let_generated' \
     'openRun_assign_generated'; do
   if ! rg -Fq \
@@ -260,6 +261,7 @@ for theorem in \
     'scheduleStmtFuelWithTargets_brk_components' \
     'scheduleStmtFuelWithTargets_cont_components' \
     'scheduleStmtFuelWithTargets_block_components' \
+    'scheduleStmtFuelWithTargets_if_components' \
     'scheduleBlockFuelWithTargets_components' \
     'scheduleStmtListFuelWithTargets_brk_components' \
     'scheduleStmtListFuelWithTargets_cont_components'; do
