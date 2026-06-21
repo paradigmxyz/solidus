@@ -113,6 +113,8 @@ short composition module.
   preserves the dynamic layout and dormant suffix under open semantics.
 - [x] Prove zero-result expression statements preserve the dynamic layout and
   inherit their complete ordered open-effect tree from expression semantics.
+- [x] Compute each post-statement retain artifact internally and prove its
+  emitted shuffle/cleanup code establishes the next regular statement relation.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls

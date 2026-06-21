@@ -43,6 +43,14 @@ if ! rg -Fq \
 fi
 
 if ! rg -Fq \
+    '#check EvmCompiler.Functions.StackTransitionCompilation.Transition.compiledBlockOpenRun' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing target-block stack transition preservation.' >&2
+  failed=1
+fi
+
+if ! rg -Fq \
     '#check EvmCompiler.Functions.StackExpressionPreservation.openEvalZero_compileCode' \
     EvmCompiler/Verification.lean; then
   printf '%s\n\n' \
@@ -52,6 +60,8 @@ fi
 
 for theorem in \
     'openRun_expr_generated' \
+    'openRun_transition_generated' \
+    'openRun_transition_block_generated' \
     'openRun_let_generated' \
     'openRun_assign_generated'; do
   if ! rg -Fq \

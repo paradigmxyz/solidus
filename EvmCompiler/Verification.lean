@@ -2936,6 +2936,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackExpressionPreservation.openEvalOne_compileCode
 #check EvmCompiler.Functions.StackExpressionPreservation.openEvalOne_fresh_compileCode
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_expr_generated
+#check EvmCompiler.Functions.StackStatementPreservation.openRun_transition_generated
+#check EvmCompiler.Functions.StackStatementPreservation.openRun_transition_block_generated
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_let_generated
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_assign_generated
 #check EvmCompiler.Functions.StackTransitionPreservation.Promotion.openRun
@@ -2945,6 +2947,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackTransitionCompilation.compilePromotions
 #check EvmCompiler.Functions.StackTransitionCompilation.Transition.compileArtifact
 #check EvmCompiler.Functions.StackTransitionCompilation.Transition.compiledOpenRun
+#check EvmCompiler.Functions.StackTransitionCompilation.PromotionCodes.openBlockRun
+#check EvmCompiler.Functions.StackTransitionCompilation.Transition.compiledBlockOpenRun
 #check EvmCompiler.Functions.StackLowering.Examples.deadProgram_lowers
 #check EvmCompiler.Functions.StackLowering.returnWord_eval
 #check EvmCompiler.Functions.StackLowering.Examples.dormantCallProgram_lowers

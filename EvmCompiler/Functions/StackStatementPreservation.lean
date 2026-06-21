@@ -1,4 +1,5 @@
 import EvmCompiler.Functions.StackExpressionPreservation
+import EvmCompiler.Functions.StackTransitionCompilation
 
 namespace EvmCompiler
 namespace Functions
@@ -23,6 +24,25 @@ theorem prepend
   · exact List.mem_cons.mpr (.inl hName)
   · exact List.mem_cons.mpr (.inr (hCtx.scope hTail))
 
+theorem afterTransition
+    {source : Locals.Source.Ctx} {target : Locals.Ctx}
+    (hCtx : CtxCovers source target)
+    (transition : AllocationLayout.Transition)
+    (hSource : target.layout = transition.source) :
+    CtxCovers source
+      (target.withLayout transition.schedule.target) := by
+  constructor
+  intro name hName
+  have hTarget : name ∈ transition.schedule.target := by
+    simpa [Locals.Ctx.withLayout] using hName
+  have hRetained :
+      name ∈ AllocationLayout.retained transition.source transition.live := by
+    rwa [← transition.valid.2.1]
+  have hOriginal : name ∈ transition.source :=
+    (List.mem_filter.mp hRetained).1
+  apply hCtx.scope
+  rwa [hSource]
+
 end CtxCovers
 
 structure RegularResultRel (targetCtx : Locals.Ctx)
@@ -42,6 +62,81 @@ abbrev RegularOutcomeRel (targetCtx : Locals.Ctx)
   Simulation.Interaction.ExceptRel
     (fun (_ : EVMException) (_ : EVMException) => True)
     (RegularResultRel targetCtx suffix returns)
+
+theorem openRun_transition_generated
+    (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
+    (transition : AllocationLayout.Transition)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hSource : targetCtx.layout = transition.source)
+    (hCtx : CtxCovers sourceCtx targetCtx)
+    (hInitial :
+      StateRel targetCtx.layout suffix returns source target) :
+    ∃ artifact : StackTransitionCompilation.Artifact targetCtx transition,
+      ∃ final,
+        Locals.Block.compileOpen targetCtx
+            { stmts := transition.schedule.statements } =
+          some
+            (artifact.promotionCodes.map Expressions.Stmt.code ++
+              [Expressions.Stmt.code artifact.cleanup],
+             targetCtx.withLayout transition.schedule.target) ∧
+        Structured.InteractionSemantics.Code.openRun
+            (artifact.promotionCodes.flatten ++ artifact.cleanup) target =
+          .done (.ok final) ∧
+        RegularResultRel
+          (targetCtx.withLayout transition.schedule.target)
+          suffix returns
+          (Locals.Source.Effectful.Outcome.regular source, sourceCtx)
+          (Structured.Outcome.regular final) := by
+  obtain ⟨artifact, final, hCompile, hRun, hFinal⟩ :=
+    StackTransitionCompilation.Transition.compiledOpenRun
+      transition hSource hInitial
+  exact
+    ⟨artifact, final, hCompile, hRun,
+      { sourceMode := rfl
+        targetMode := rfl
+        context := hCtx.afterTransition transition hSource
+        state := hFinal }⟩
+
+theorem openRun_transition_block_generated
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
+    (transition : AllocationLayout.Transition)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hSource : targetCtx.layout = transition.source)
+    (hCtx : CtxCovers sourceCtx targetCtx)
+    (hInitial :
+      StateRel targetCtx.layout suffix returns source target) :
+    ∃ artifact : StackTransitionCompilation.Artifact targetCtx transition,
+      ∃ final,
+        Locals.Block.compileOpen targetCtx
+            { stmts := transition.schedule.statements } =
+          some
+            (artifact.promotionCodes.map Expressions.Stmt.code ++
+              [Expressions.Stmt.code artifact.cleanup],
+             targetCtx.withLayout transition.schedule.target) ∧
+        Expressions.InteractionSemantics.Block.openRun targetProgram
+            (artifact.promotionCodes.length + 2)
+            { stmts :=
+                artifact.promotionCodes.map Expressions.Stmt.code ++
+                  [Expressions.Stmt.code artifact.cleanup] }
+            target =
+          .done (.ok (Structured.Outcome.regular final)) ∧
+        RegularResultRel
+          (targetCtx.withLayout transition.schedule.target)
+          suffix returns
+          (Locals.Source.Effectful.Outcome.regular source, sourceCtx)
+          (Structured.Outcome.regular final) := by
+  obtain ⟨artifact, final, hCompile, hRun, hFinal⟩ :=
+    StackTransitionCompilation.Transition.compiledBlockOpenRun
+      targetProgram transition hSource hInitial
+  exact
+    ⟨artifact, final, hCompile, hRun,
+      { sourceMode := rfl
+        targetMode := rfl
+        context := hCtx.afterTransition transition hSource
+        state := hFinal }⟩
 
 theorem openRun_expr_generated
     (sourceProgram : Locals.Program)

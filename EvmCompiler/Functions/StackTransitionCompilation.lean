@@ -194,6 +194,94 @@ theorem Transition.compiledOpenRun
   exact
     ⟨artifact, final, artifact.compileEq, hRun, hFinalRel⟩
 
+theorem PromotionCodes.openBlockRun
+    (program : Expressions.Program)
+    {layout finalLayout : Locals.Layout}
+    {promotions : List Promotion} {codes : List Structured.Code}
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hCodes : PromotionCodes layout promotions codes finalLayout)
+    (hRel : StackRelation.StateRel layout suffix returns source target)
+    (fuel : Nat) (hFuel : codes.length < fuel) :
+    ∃ final,
+      Expressions.InteractionSemantics.Block.openRun program
+          fuel
+          { stmts := codes.map Expressions.Stmt.code } target =
+        .done (.ok (Structured.Outcome.regular final)) ∧
+      StackRelation.StateRel finalLayout suffix returns source final := by
+  induction hCodes generalizing target fuel with
+  | nil layout =>
+      refine ⟨target, ?_, hRel⟩
+      cases fuel with
+      | zero => simp at hFuel
+      | succ fuel =>
+          simp only [List.map_nil]
+          rw [Expressions.InteractionSemantics.Block.openRun_nil]
+          rfl
+  | @cons layout promoted finalLayout promotion rest head tail
+      hApply hCode hTail ih =>
+      obtain ⟨middle, hHeadRun, hMiddleRel⟩ :=
+        StackTransitionPreservation.Promotion.openRun
+          hApply hCode hRel
+      obtain ⟨final, hTailRun, hFinalRel⟩ :=
+        ih hMiddleRel (fuel := fuel - 1) (by simp at hFuel ⊢; omega)
+      refine ⟨final, ?_, hFinalRel⟩
+      change
+        Expressions.InteractionSemantics.Block.openRun program
+            fuel
+            { stmts := [.code head] ++
+                tail.map Expressions.Stmt.code } target =
+          .done (.ok (Structured.Outcome.regular final))
+      rw [Expressions.InteractionSemantics.Block.openRun_append]
+      have hHeadBlock :=
+        Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+          program fuel head target middle
+          (by simp at hFuel; omega) hHeadRun
+      rw [hHeadBlock, Simulation.Interaction.bind_done_ok]
+      simpa using hTailRun
+
+theorem Transition.compiledBlockOpenRun
+    (program : Expressions.Program) {ctx : Locals.Ctx}
+    (transition : Transition)
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hSource : ctx.layout = transition.source)
+    (hRel :
+      StackRelation.StateRel ctx.layout suffix returns source target) :
+    ∃ artifact : Artifact ctx transition,
+      ∃ final,
+        Locals.Block.compileOpen ctx
+            { stmts := transition.schedule.statements } =
+          some
+            (artifact.promotionCodes.map Expressions.Stmt.code ++
+              [Expressions.Stmt.code artifact.cleanup],
+             ctx.withLayout transition.schedule.target) ∧
+        Expressions.InteractionSemantics.Block.openRun program
+            (artifact.promotionCodes.length + 2)
+            { stmts :=
+                artifact.promotionCodes.map Expressions.Stmt.code ++
+                  [Expressions.Stmt.code artifact.cleanup] }
+            target =
+          .done (.ok (Structured.Outcome.regular final)) ∧
+        StackRelation.StateRel transition.schedule.target suffix returns
+          source final := by
+  obtain ⟨artifact⟩ := Transition.compileArtifact transition hSource
+  obtain ⟨middle, hPromotionRun, hMiddleRel⟩ :=
+    PromotionCodes.openBlockRun program artifact.codes hRel
+      (artifact.promotionCodes.length + 2) (by omega)
+  obtain ⟨final, hCleanupRun, hFinalRel⟩ :=
+    StackTransitionPreservation.Cleanup.openRun
+      rfl transition.valid.2.2 artifact.cleanupEq hMiddleRel
+  refine ⟨artifact, final, artifact.compileEq, ?_, hFinalRel⟩
+  rw [Expressions.InteractionSemantics.Block.openRun_append,
+    hPromotionRun, Simulation.Interaction.bind_done_ok]
+  have hCleanupBlock :=
+    Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+      program 2 artifact.cleanup middle final (by omega) hCleanupRun
+  simpa using hCleanupBlock
+
 end StackTransitionCompilation
 end Functions
 end EvmCompiler
