@@ -893,6 +893,45 @@ def ControlPointPreserves
       (Expressions.InteractionSemantics.Block.openRun targetProgram
         targetFuel { stmts := code } target)
 
+/-- Exact-source-fuel form used by recursive internal-call dispatch. It keeps
+the ordinary outcome and target-fuel interfaces unchanged while exposing the
+strict source-fuel decrease across a call. -/
+def ControlPointPreservesAt
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
+    (targetCtx finalCtx : Locals.Ctx)
+    (stmt : Functions.Stmt) (code : List Expressions.Stmt)
+    (sourceFuel : Nat) : Prop :=
+  ∀ (sourceCtx : Functions.Source.Ctx) (targetFuel : Nat)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState},
+    Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel code →
+    RuntimeCtxCovers sourceCtx targetCtx targets returnNames returns →
+    StateRel targetCtx.layout suffix returns source target →
+    Simulation.Interaction.ForwardRel FuelTruncated
+      (ControlOpenOutcomeRel targets returnNames finalCtx suffix returns)
+      (Functions.InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel stmt source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        targetFuel { stmts := code } target)
+
+theorem ControlPointPreserves.at
+    {sourceProgram : Functions.Program}
+    {targetProgram : Expressions.Program}
+    {targets : StackSchedule.ControlTargets}
+    {returnNames : List Name}
+    {targetCtx finalCtx : Locals.Ctx}
+    {stmt : Functions.Stmt} {code : List Expressions.Stmt}
+    (h : ControlPointPreserves sourceProgram targetProgram targets returnNames
+      targetCtx finalCtx stmt code)
+    (sourceFuel : Nat) :
+    ControlPointPreservesAt sourceProgram targetProgram targets returnNames
+      targetCtx finalCtx stmt code sourceFuel := by
+  intro sourceCtx targetFuel suffix returns source target hFuel hCtx hInitial
+  exact h sourceCtx sourceFuel targetFuel hFuel hCtx hInitial
+
 structure CompiledControlPoint
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
@@ -905,6 +944,19 @@ structure CompiledControlPoint
   preserves :
     ControlPointPreserves sourceProgram targetProgram targets returnNames
       targetCtx finalCtx stmt code
+
+structure CompiledControlPointAt
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
+    (targetCtx finalCtx : Locals.Ctx)
+    (stmt : Functions.Stmt) (code : List Expressions.Stmt)
+    (finalLayout : Locals.Layout) (sourceFuel : Nat) : Prop where
+  layout : finalCtx.layout = finalLayout
+  preserves :
+    ControlPointPreservesAt sourceProgram targetProgram targets returnNames
+      targetCtx finalCtx stmt code sourceFuel
 
 /-- Ordinary `leave` with an emitted return vector. Return expressions are
 evaluated once, their exact values are preserved while the active local layout
@@ -2151,6 +2203,75 @@ theorem compiledControlThenTransition
       Expressions.TargetFuel.Covers.head_of_append hFuel'
     have hCoreRun :=
       hCore sourceCtx sourceFuel targetFuel hCoreFuel hRuntime hInitial
+    have hLength := Expressions.TargetFuel.Covers.length_lt hFuel'
+    have hNumericFuel :
+        coreCode.length + transition.schedule.promotions.length + 1 <
+          targetFuel := by
+      rw [List.length_append, ← hArtifactCode,
+        List.length_append, List.length_map, List.length_cons,
+        List.length_nil, Nat.add_zero, artifact.codes.code_length] at hLength
+      omega
+    obtain ⟨runtimeArtifact, hRun⟩ :=
+      controlThenTransitionForward targetProgram targets returnNames targetCtx
+        transition targetFuel hSource hNumericFuel hCoreRun
+    have hRuntimePair :=
+      Option.some.inj (runtimeArtifact.compileEq.symm.trans artifact.compileEq)
+    have hRuntimeCode :
+        runtimeArtifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code runtimeArtifact.cleanup] =
+          artifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code artifact.cleanup] :=
+      congrArg Prod.fst hRuntimePair
+    rw [hCode, ← hArtifactCode]
+    simpa [hRuntimeCode] using hRun
+
+/-- Exact-source-fuel counterpart of `compiledControlThenTransition`. -/
+theorem compiledControlThenTransitionAt
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
+    (targetCtx finalCtx : Locals.Ctx)
+    (stmt : Functions.Stmt)
+    (transition : AllocationLayout.Transition)
+    (coreCode transitionCode code : List Expressions.Stmt)
+    (sourceFuel : Nat)
+    (hSource : targetCtx.layout = transition.source)
+    (hTransitionCompile :
+      Locals.Block.compileOpen targetCtx
+          { stmts := StackLowering.transitionStmts transition } =
+        some (transitionCode, finalCtx))
+    (hCode : code = coreCode ++ transitionCode)
+    (hCore :
+      ControlPointPreservesAt sourceProgram targetProgram targets returnNames
+        targetCtx targetCtx stmt coreCode sourceFuel) :
+    CompiledControlPointAt sourceProgram targetProgram targets returnNames
+      targetCtx finalCtx stmt code transition.schedule.target sourceFuel := by
+  obtain ⟨artifact⟩ :=
+    StackTransitionCompilation.Transition.compileArtifact transition hSource
+  have hPair :=
+    Option.some.inj (artifact.compileEq.symm.trans hTransitionCompile)
+  have hArtifactCode :
+      artifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code artifact.cleanup] = transitionCode :=
+    congrArg Prod.fst hPair
+  have hFinalCtx :
+      targetCtx.withLayout transition.schedule.target = finalCtx :=
+    congrArg Prod.snd hPair
+  refine ⟨?_, ?_⟩
+  · rw [← hFinalCtx]
+    rfl
+  · intro sourceCtx targetFuel suffix returns source target hFuel hRuntime
+      hInitial
+    rw [← hFinalCtx]
+    have hFuel' :
+        Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
+          (coreCode ++ transitionCode) := by
+      simpa [hCode] using hFuel
+    have hCoreFuel :=
+      Expressions.TargetFuel.Covers.head_of_append hFuel'
+    have hCoreRun :=
+      hCore sourceCtx targetFuel hCoreFuel hRuntime hInitial
     have hLength := Expressions.TargetFuel.Covers.length_lt hFuel'
     have hNumericFuel :
         coreCode.length + transition.schedule.promotions.length + 1 <

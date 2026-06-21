@@ -3129,11 +3129,17 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackBlockPreservation.BreakListPreserves
 #check EvmCompiler.Functions.StackBlockPreservation.ContinueListPreserves
 #check EvmCompiler.Functions.StackBlockPreservation.ControlScheduledListPreserves
+#check EvmCompiler.Functions.StackBlockPreservation.ControlScheduledListPreservesAt
 #check EvmCompiler.Functions.StackBlockPreservation.controlOrdering
+#check EvmCompiler.Functions.StackBlockPreservation.controlOrderingAt
 #check EvmCompiler.Functions.StackBlockPreservation.controlNil
+#check EvmCompiler.Functions.StackBlockPreservation.controlNilAt
 #check EvmCompiler.Functions.StackBlockPreservation.controlCons
+#check EvmCompiler.Functions.StackBlockPreservation.controlConsAt
 #check EvmCompiler.Functions.StackBlockPreservation.controlOrderedCons
+#check EvmCompiler.Functions.StackBlockPreservation.controlOrderedConsAt
 #check EvmCompiler.Functions.StackBlockPreservation.controlFallthroughCons_of_compilers
+#check EvmCompiler.Functions.StackBlockPreservation.controlFallthroughConsAt_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.compiledNonfallPoint_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.controlNonfallPointToList
 #check EvmCompiler.Functions.StackBlockPreservation.controlScopedBodyThenJoin
@@ -3268,6 +3274,15 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackCallPreservation.CallPoint.corePreserves
 #check EvmCompiler.Functions.StackCallPreservation.CallPoint.compiledOfCompilers
 #check EvmCompiler.Functions.StackBlockPreservation.callCons_of_compilers
+#check EvmCompiler.Functions.StackBlockPreservation.callConsAtOne_of_compilers
+#check EvmCompiler.Functions.StackBlockPreservation.callConsAtSucc_of_compilers
+#check EvmCompiler.Functions.StackStatementPreservation.ControlPointPreservesAt
+#check EvmCompiler.Functions.StackStatementPreservation.CompiledControlPointAt
+#check EvmCompiler.Functions.StackStatementPreservation.compiledControlThenTransitionAt
+#check EvmCompiler.Functions.StackCallPreservation.CallPoint.corePreservesAtZero
+#check EvmCompiler.Functions.StackCallPreservation.CallPoint.corePreservesAtSucc
+#check EvmCompiler.Functions.StackCallPreservation.CallPoint.compiledOfCompilersAtZero
+#check EvmCompiler.Functions.StackCallPreservation.CallPoint.compiledOfCompilersAtSucc
 #check EvmCompiler.Functions.StackCallPreservation.ReturnEpilogue.openRun_noReturns
 #check EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_afterPrelude_noReturns
 #check EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_afterPrelude_noReturns_of_run
@@ -3314,6 +3329,8 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackLoweringCompilation.lowerProgram?_toExpressions?_components
 #print axioms EvmCompiler.Functions.StackCallPreservation.CallPoint.compiledOfCompilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.callCons_of_compilers
+#print axioms EvmCompiler.Functions.StackBlockPreservation.callConsAtOne_of_compilers
+#print axioms EvmCompiler.Functions.StackBlockPreservation.callConsAtSucc_of_compilers
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_optionalReturn
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_optionalReturn_of_bodyRun
 #print axioms EvmCompiler.Functions.StackCallPreservation.FunctionLookup.of_compilers

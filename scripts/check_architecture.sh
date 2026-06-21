@@ -56,11 +56,17 @@ for theorem in \
     'regularLeafList_of_compilers' \
     'OpenListPreserves' \
     'ControlScheduledListPreserves' \
+    'ControlScheduledListPreservesAt' \
     'controlOrdering' \
+    'controlOrderingAt' \
     'controlNil' \
+    'controlNilAt' \
     'controlCons' \
+    'controlConsAt' \
     'controlOrderedCons' \
+    'controlOrderedConsAt' \
     'controlFallthroughCons_of_compilers' \
+    'controlFallthroughConsAt_of_compilers' \
     'compiledNonfallPoint_of_compilers' \
     'controlNonfallPointToList' \
     'controlScheduledRegion' \
@@ -87,6 +93,8 @@ for theorem in \
     'exprCons_of_compilers' \
     'letCons_of_compilers' \
     'assignCons_of_compilers' \
+    'callConsAtOne_of_compilers' \
+    'callConsAtSucc_of_compilers' \
     'brkControlList_of_compilers' \
     'contControlList_of_compilers' \
     'leaveControlList_of_compilers' \
