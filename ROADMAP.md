@@ -175,9 +175,11 @@ elimination are not prerequisites for Permit2 or Aave.
 - [x] Prove canonical parameter entry, zero-return initialization, checked
   return-vector placement, and the scheduled callee body/epilogue relation at
   arbitrary sufficient target fuel.
-- [ ] Attach the real target return frame, perform caller target writeback, and
-  restore the caller's retained symbolic layout; terminal halt may ignore the
-  now-irrelevant callee return-frame metadata.
+- [x] Attach the real target return frame through ordinary procedure lookup,
+  argument splitting, frame popping, and return-value attachment; terminal
+  halt ignores only now-irrelevant compiler return-frame metadata.
+- [ ] Perform caller target writeback and restore the caller's retained
+  symbolic layout.
 - [ ] Discharge the private callee-body premise by source-fuel recursion for
   recursive and non-recursive call graphs.
 - [ ] Keep call artifacts compiler-owned and absent from public theorem

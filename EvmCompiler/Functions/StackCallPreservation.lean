@@ -489,7 +489,6 @@ inductive CallResultRel
   | halt {kind : Assembly.HaltKind} {source : Locals.Source.State}
       {target : Structured.RunState} :
       target.evm.toSharedState = source.shared →
-      target.returns = frame :: callerReturns →
       CallResultRel frame callerReturns
         (.halted kind source) (.halt kind target)
 
@@ -499,6 +498,33 @@ abbrev OpenCallResultRel
   Simulation.Interaction.ExceptRel
     (fun (_ : EVMException) (_ : EVMException) => True)
     (CallResultRel frame callerReturns)
+
+/-- Semantic internal-call result after the ordinary Expressions call wrapper
+restores the dormant caller stack. Return-frame metadata is relevant only for
+the nonterminal result. -/
+inductive AttachedCallResultRel
+    (callerStack : List Word)
+    (callerReturns : List Structured.ReturnDest) :
+    Functions.InteractionSemantics.CallResult → Structured.Outcome → Prop
+  | returned {source : Locals.Source.State} {values : List Word}
+      {target : Structured.RunState} :
+      target.evm.toSharedState = source.shared →
+      target.evm.stack = values.reverse ++ callerStack →
+      target.returns = callerReturns →
+      AttachedCallResultRel callerStack callerReturns
+        (.returned source values) (.regular target)
+  | halt {kind : Assembly.HaltKind} {source : Locals.Source.State}
+      {target : Structured.RunState} :
+      target.evm.toSharedState = source.shared →
+      AttachedCallResultRel callerStack callerReturns
+        (.halted kind source) (.halt kind target)
+
+abbrev OpenAttachedCallResultRel
+    (callerStack : List Word)
+    (callerReturns : List Structured.ReturnDest) :=
+  Simulation.Interaction.ExceptRel
+    (fun (_ : EVMException) (_ : EVMException) => True)
+    (AttachedCallResultRel callerStack callerReturns)
 
 namespace CallResultRel
 
@@ -547,6 +573,132 @@ theorem leave_of_stateRel
     exact Functions.Source.Store.lookupMany_length hLookup
 
 end CallResultRel
+
+namespace CallAttachment
+
+/-- Attach one already-related callee run through the real Expressions call
+wrapper. Procedure lookup, argument splitting, return-frame removal, and return
+value attachment are all the ordinary target operations. -/
+theorem of_body
+    {targetProgram : Expressions.Program}
+    {name : Expressions.Name} {proc : Expressions.Proc}
+    {sourceRun :
+      Simulation.Interaction EVMException
+        Functions.InteractionSemantics.CallResult}
+    {targetFuel : Nat}
+    {callArgs callerStack : List Word}
+    {targetCaller : Structured.RunState}
+    (hLookup :
+      Expressions.EffectSemantics.ProcList.lookup?
+          name targetProgram.procs = some proc)
+    (hSplit :
+      Structured.StackFrame.splitArgs? proc.argc targetCaller.evm.stack =
+        some (callArgs, callerStack))
+    (hBody :
+      Simulation.Interaction.ForwardRel
+        StackStatementPreservation.FuelTruncated
+        (OpenCallResultRel
+          { callerStack := callerStack, retc := proc.retc }
+          targetCaller.returns)
+        sourceRun
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          targetFuel proc.body
+          (CalleeEntry.targetState targetCaller callArgs callerStack
+            proc.retc))) :
+    Simulation.Interaction.ForwardRel
+      StackStatementPreservation.FuelTruncated
+      (OpenAttachedCallResultRel callerStack targetCaller.returns)
+      sourceRun
+      (Expressions.InteractionSemantics.Stmt.openRun targetProgram
+        (targetFuel + 1) (.call name) targetCaller) := by
+  rw [Expressions.InteractionSemantics.Stmt.openRun_call]
+  simp only [hLookup, hSplit]
+  change
+    Simulation.Interaction.ForwardRel
+      StackStatementPreservation.FuelTruncated
+      (OpenAttachedCallResultRel callerStack targetCaller.returns)
+      sourceRun
+      (Simulation.Interaction.bind
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          targetFuel proc.body
+          (CalleeEntry.targetState targetCaller callArgs callerStack
+            proc.retc)) _)
+  rw [← Simulation.Interaction.bind_pure sourceRun]
+  apply Simulation.Interaction.ForwardRel.bind hBody
+  intro sourceResult targetResult hResult
+  cases hResult with
+  | @regular source values target hShared hStack hReturns hLength =>
+      have hPop :
+          target.popReturn? =
+            some
+              ({ callerStack := callerStack, retc := proc.retc },
+                { target with returns := targetCaller.returns }) := by
+        unfold Structured.RunState.popReturn?
+        rw [hReturns]
+      have hAttach :
+          Structured.StackFrame.attachReturns?
+              { callerStack := callerStack, retc := proc.retc }
+              target.evm.stack =
+            some (values.reverse ++ callerStack) := by
+        rw [hStack]
+        exact Structured.StackFrame.attachReturns?_eq_some (by simpa using hLength)
+      let attached : Structured.RunState :=
+        ({ target with returns := targetCaller.returns }).withEVM
+          { target.evm with stack := values.reverse ++ callerStack }
+      simp only [Simulation.Interaction.pure,
+        Structured.Outcome.regular_mode, Structured.Outcome.regular_state,
+        Structured.EffectSemantics.Ordinary.runStateModel_evm,
+        Structured.EffectSemantics.Ordinary.runStateModel_withEVM,
+        Structured.EffectSemantics.Ordinary.runStateModel_popReturn?]
+      rw [hPop]
+      simp only [Structured.OutcomeT.state]
+      rw [hAttach]
+      apply Simulation.Interaction.ForwardRel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact AttachedCallResultRel.returned
+        (by simpa [attached] using hShared)
+        (by simp [attached])
+        (by simp [attached])
+  | @leave source values target hShared hStack hReturns hLength =>
+      have hPop :
+          target.popReturn? =
+            some
+              ({ callerStack := callerStack, retc := proc.retc },
+                { target with returns := targetCaller.returns }) := by
+        unfold Structured.RunState.popReturn?
+        rw [hReturns]
+      have hAttach :
+          Structured.StackFrame.attachReturns?
+              { callerStack := callerStack, retc := proc.retc }
+              target.evm.stack =
+            some (values.reverse ++ callerStack) := by
+        rw [hStack]
+        exact Structured.StackFrame.attachReturns?_eq_some (by simpa using hLength)
+      let attached : Structured.RunState :=
+        ({ target with returns := targetCaller.returns }).withEVM
+          { target.evm with stack := values.reverse ++ callerStack }
+      simp only [Simulation.Interaction.pure,
+        Structured.Outcome.leave_mode, Structured.Outcome.leave_state,
+        Structured.EffectSemantics.Ordinary.runStateModel_evm,
+        Structured.EffectSemantics.Ordinary.runStateModel_withEVM,
+        Structured.EffectSemantics.Ordinary.runStateModel_popReturn?]
+      rw [hPop]
+      simp only [Structured.OutcomeT.state]
+      rw [hAttach]
+      apply Simulation.Interaction.ForwardRel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact AttachedCallResultRel.returned
+        (by simpa [attached] using hShared)
+        (by simp [attached])
+        (by simp [attached])
+  | @halt kind source target hShared =>
+      simp only [Simulation.Interaction.pure,
+        Structured.Outcome.halt_mode, Structured.Outcome.halt_state]
+      apply Simulation.Interaction.ForwardRel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact AttachedCallResultRel.halt hShared
+
+end CallAttachment
 
 namespace ReturnEpilogue
 
@@ -790,13 +942,13 @@ theorem openRunBody_afterPrelude
       apply Simulation.Interaction.ForwardRel.done
       apply Simulation.Interaction.ExceptRel.ok
       exact CallResultRel.leave_of_stateRel hFrameRetc hLookup hState
-  | @halt kind source _sourceCtx targetAfter hShared hReturns =>
+  | @halt kind source _sourceCtx targetAfter hShared =>
       simp only [Locals.Source.Effectful.Outcome.halt,
         Structured.Outcome.halt_mode,
         Structured.Outcome.halt_state]
       apply Simulation.Interaction.ForwardRel.done
       apply Simulation.Interaction.ExceptRel.ok
-      exact CallResultRel.halt hShared.symm hReturns
+      exact CallResultRel.halt hShared.symm
 
 end Function
 

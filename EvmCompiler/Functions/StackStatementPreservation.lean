@@ -676,7 +676,6 @@ inductive OpenResultRel (finalCtx : Locals.Ctx)
         (Structured.Outcome.leave target)
   | halt {kind source sourceCtx target} :
       source.shared = target.evm.toSharedState →
-      target.returns = returns →
       OpenResultRel finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.halt kind source, sourceCtx)
         (Structured.Outcome.halt kind target)
@@ -719,7 +718,6 @@ inductive ControlOpenResultRel (targets : StackSchedule.ControlTargets)
         (Structured.Outcome.leave target)
   | halt {kind source sourceCtx target} :
       source.shared = target.evm.toSharedState →
-      target.returns = returns →
       ControlOpenResultRel targets returnNames finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.halt kind source, sourceCtx)
         (Structured.Outcome.halt kind target)
@@ -864,7 +862,6 @@ inductive ForCoreResultRel (sourceCtx : Functions.Source.Ctx)
         (Structured.Outcome.leave target)
   | halt {kind source target} :
       source.shared = target.evm.toSharedState →
-      target.returns = returns →
       ForCoreResultRel sourceCtx returnNames loopTargetCtx suffix returns
         (Locals.Source.Effectful.Outcome.halt kind source, sourceCtx)
         (Structured.Outcome.halt kind target)
@@ -1478,8 +1475,8 @@ theorem controlForLoop
             | cont hNoTarget _hPostState => simp at hNoTarget
             | leave hPostState =>
                 exact .done (.ok (.leave hPostState))
-            | halt hShared hReturns =>
-                exact .done (.ok (.halt hShared hReturns))
+            | halt hShared =>
+                exact .done (.ok (.halt hShared))
           cases hBodyResult with
           | regular _hBodyCtx hBodyState =>
               apply continueAfterBody
@@ -1494,8 +1491,8 @@ theorem controlForLoop
               apply continueAfterBody hBodyState
           | leave hBodyState =>
               exact .done (.ok (.leave hBodyState))
-          | halt hShared hReturns =>
-              exact .done (.ok (.halt hShared hReturns))
+          | halt hShared =>
+              exact .done (.ok (.halt hShared))
 
 /-- The outer `for` wrapper composes initializer execution with the recursive
 loop kernel. Its regular result deliberately retains a pre-restriction source
@@ -1609,14 +1606,14 @@ theorem controlForCore
           | cont hNoTarget _hLoopState => simp at hNoTarget
           | leave hLoopState =>
               exact .done (.ok (.leave hLoopState))
-          | halt hShared hReturns =>
-              exact .done (.ok (.halt hShared hReturns))
+          | halt hShared =>
+              exact .done (.ok (.halt hShared))
       | brk hNoTarget _hInitState => simp at hNoTarget
       | cont hNoTarget _hInitState => simp at hNoTarget
       | leave hInitState =>
           exact .done (.ok (.leave hInitState))
-      | halt hShared hReturns =>
-          exact .done (.ok (.halt hShared hReturns))
+      | halt hShared =>
+          exact .done (.ok (.halt hShared))
 
 /-- Discharge the compiler's lexical cleanup after a complete `for`, removing
 initializer locals and restoring the enclosing runtime context. -/
@@ -1736,10 +1733,10 @@ theorem controlFor
           simp only [Structured.Outcome.leave,
             Structured.OutcomeT.leave]
           exact .done (.ok (.leave hState))
-      | halt hShared hReturns =>
+      | halt hShared =>
           simp only [Structured.Outcome.halt,
             Structured.OutcomeT.halt]
-          exact .done (.ok (.halt hShared hReturns))
+          exact .done (.ok (.halt hShared))
 
 theorem RegularResultRel.toOpen
     {targetCtx : Locals.Ctx} {suffix : List Word}
@@ -1839,7 +1836,7 @@ theorem openRelToControl
       | brk _hState => exact False.elim hSourceControl
       | cont _hState => exact False.elim hSourceControl
       | leave _hState => exact False.elim hSourceControl
-      | halt hShared hReturns => exact .halt hShared hReturns
+      | halt hShared => exact .halt hShared
 
 theorem openRun_expr_controlCtx
     (sourceProgram : Functions.Program)
@@ -2010,12 +2007,12 @@ theorem controlThenTransition
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
       exact .leave hState
-  | halt hShared hReturns =>
+  | halt hShared =>
       simp only [Locals.Source.Effectful.Outcome.halt,
         Structured.Outcome.halt, Structured.OutcomeT.halt]
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
-      exact .halt hShared hReturns
+      exact .halt hShared
 
 theorem controlThenTransitionForward
     (targetProgram : Expressions.Program)
@@ -2098,12 +2095,12 @@ theorem controlThenTransitionForward
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
           exact .leave hState
-      | halt hShared hReturns =>
+      | halt hShared =>
           simp only [Locals.Source.Effectful.Outcome.halt,
             Structured.Outcome.halt, Structured.OutcomeT.halt]
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
-          exact .halt hShared hReturns
+          exact .halt hShared
 
 theorem controlAppendEmptyCode
     (targetProgram : Expressions.Program)
@@ -2164,12 +2161,12 @@ theorem controlAppendEmptyCode
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
       exact .leave hState
-  | halt hShared hReturns =>
+  | halt hShared =>
       simp only [Locals.Source.Effectful.Outcome.halt,
         Structured.Outcome.halt, Structured.OutcomeT.halt]
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
-      exact .halt hShared hReturns
+      exact .halt hShared
 
 theorem controlAppendEmptyCodeForward
     (targetProgram : Expressions.Program)
@@ -2234,12 +2231,12 @@ theorem controlAppendEmptyCodeForward
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
           exact .leave hState
-      | halt hShared hReturns =>
+      | halt hShared =>
           simp only [Locals.Source.Effectful.Outcome.halt,
             Structured.Outcome.halt, Structured.OutcomeT.halt]
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
-          exact .halt hShared hReturns
+          exact .halt hShared
 
 theorem controlIf
     (sourceProgram : Functions.Program)
@@ -2864,7 +2861,6 @@ theorem openRun_terminal_generated
     apply Simulation.Interaction.Rel.done
     apply Simulation.Interaction.ExceptRel.ok
     exact .halt hTerminalResult.1
-      (hTerminalResult.2.trans hCleanupRel.returns)
   unfold Functions.InteractionSemantics.Stmt.openRun
     Functions.Source.Canonical.Stmt.run
     Functions.Source.Effectful.Control.Stmt.run
@@ -3043,8 +3039,6 @@ theorem openRun_terminalArgs_generated
     apply Simulation.Interaction.Rel.done
     apply Simulation.Interaction.ExceptRel.ok
     exact .halt hTerminalResult.1
-      (hTerminalResult.2.trans
-        (hArgsResult.returns.trans hInitial.returns))
   unfold Functions.InteractionSemantics.Stmt.openRun
     Functions.Source.Canonical.Stmt.run
     Functions.Source.Effectful.Control.Stmt.run

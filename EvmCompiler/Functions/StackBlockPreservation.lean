@@ -282,10 +282,10 @@ theorem controlCons
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
           exact .leave hState
-      | halt hShared hReturns =>
+      | halt hShared =>
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
-          exact .halt hShared hReturns
+          exact .halt hShared
 
 theorem controlOrderedCons
     (sourceProgram : Functions.Program)
@@ -425,12 +425,12 @@ theorem controlScopedBodyThenJoin
       apply Simulation.Interaction.ForwardRel.done
       apply Simulation.Interaction.ExceptRel.ok
       exact .leave hState
-  | halt hShared hReturns =>
+  | halt hShared =>
       simp only [Locals.Source.Effectful.Outcome.halt,
         Structured.Outcome.halt, Structured.OutcomeT.halt]
       apply Simulation.Interaction.ForwardRel.done
       apply Simulation.Interaction.ExceptRel.ok
-      exact .halt hShared hReturns
+      exact .halt hShared
 
 theorem controlScheduledRegion
     (sourceProgram : Functions.Program)
@@ -807,9 +807,9 @@ theorem controlOpenRegionAsBlock
       | leave hState =>
           simp only [Structured.Outcome.leave, Structured.OutcomeT.leave]
           exact .done (.ok (.leave hState))
-      | halt hShared hReturns =>
+      | halt hShared =>
           simp only [Structured.Outcome.halt, Structured.OutcomeT.halt]
-          exact .done (.ok (.halt hShared hReturns))
+          exact .done (.ok (.halt hShared))
 
 theorem compiledOpenRegion_of_compilers
     (sourceProgram : Functions.Program)
