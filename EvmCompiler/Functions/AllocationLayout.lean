@@ -41,6 +41,38 @@ def run : Locals.Layout → List Promotion → Option Locals.Layout
       let promoted ← promotion.apply? layout
       run promoted rest
 
+theorem Promotion.apply?_perm
+    {layout promoted : Locals.Layout} {promotion : Promotion}
+    (hApply : promotion.apply? layout = some promoted) :
+    promoted.Perm layout := by
+  unfold Promotion.apply? at hApply
+  cases hDepth : Locals.Layout.lookupDepth? promotion.name layout with
+  | none => simp [hDepth] at hApply
+  | some depth =>
+      by_cases hAllowed :
+          depth = promotion.depth ∧ depth ≤ 17
+      · simp [hDepth, hAllowed] at hApply
+        rw [← hApply.2]
+        exact Locals.Layout.promoteAt_perm _ _
+      · simp [hDepth, hAllowed] at hApply
+
+theorem run_perm
+    {layout finalLayout : Locals.Layout} {promotions : List Promotion}
+    (hRun : run layout promotions = some finalLayout) :
+    finalLayout.Perm layout := by
+  induction promotions generalizing layout with
+  | nil =>
+      simp [run] at hRun
+      subst finalLayout
+      exact List.Perm.refl _
+  | cons promotion rest ih =>
+      unfold run at hRun
+      cases hApply : promotion.apply? layout with
+      | none => simp [hApply] at hRun
+      | some promoted =>
+          rw [hApply] at hRun
+          exact (ih hRun).trans (promotion.apply?_perm hApply)
+
 def build : Locals.Layout → List Name → Option (List Promotion × Locals.Layout)
   | layout, [] => some ([], layout)
   | layout, name :: rest => do
@@ -204,6 +236,29 @@ def build? (layout : Locals.Layout) (topFirst : List Name) : Option Ordering :=
           promotions
           target
           valid := build_run hBuild }
+
+theorem build?_source
+    {layout : Locals.Layout} {topFirst : List Name} {ordering : Ordering}
+    (hBuild : build? layout topFirst = some ordering) :
+    ordering.source = layout := by
+  unfold build? at hBuild
+  split at hBuild
+  · contradiction
+  · cases hBuild
+    rfl
+
+theorem target_perm (ordering : Ordering) :
+    ordering.target.Perm ordering.source :=
+  run_perm ordering.valid
+
+theorem target_nodup (ordering : Ordering)
+    (hSource : ordering.source.Nodup) :
+    ordering.target.Nodup :=
+  ordering.target_perm.nodup_iff.mpr hSource
+
+theorem target_mem_iff (ordering : Ordering) {name : Name} :
+    name ∈ ordering.target ↔ name ∈ ordering.source :=
+  ordering.target_perm.mem_iff
 
 def statements (ordering : Ordering) : List Locals.Stmt :=
   ordering.promotions.map fun promotion =>

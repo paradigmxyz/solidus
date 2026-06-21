@@ -83,6 +83,27 @@ theorem Promotion.openRun
           exact hRel.defined (mem_of_mem_promoteAt hAt hCandidate)
       · simp [hDepth, hAllowed] at hApply
 
+theorem Promotion.openRunWithBind
+    {promotion : Promotion} {layout promoted : Locals.Layout}
+    {shuffle : Structured.Code} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hApply : promotion.apply? layout = some promoted)
+    (hCode :
+      Locals.Ctx.swapRestoreUpTo? (promotion.depth - 1) = some shuffle)
+    (hRel : StateRel layout suffix returns source target) :
+    ∃ final,
+      Structured.InteractionSemantics.Code.openRun
+          (shuffle ++ Locals.bindLocals 0 promoted) target =
+        .done (.ok final) ∧
+      StateRel promoted suffix returns source final := by
+  obtain ⟨final, hRun, hFinal⟩ := Promotion.openRun hApply hCode hRel
+  refine ⟨final, ?_, hFinal⟩
+  rw [Structured.InteractionSemantics.Code.openRun_append, hRun,
+    Simulation.Interaction.bind_done_ok]
+  simpa [Locals.bindLocals] using
+    Locals.InteractionPreservation.Code.openRun_bindLocals 0 promoted final
+
 theorem Cleanup.openRun
     {promoted targetLayout : Locals.Layout}
     {ctx : Locals.Ctx} {code : Structured.Code}
@@ -169,10 +190,11 @@ inductive PromotionCodes :
   | cons
       {layout promoted final : Locals.Layout}
       {promotion : Promotion} {rest : List Promotion}
-      {head : Structured.Code} {tail : List Structured.Code}
+      {shuffle head : Structured.Code} {tail : List Structured.Code}
       (apply : promotion.apply? layout = some promoted)
       (code :
-        Locals.Ctx.swapRestoreUpTo? (promotion.depth - 1) = some head)
+        Locals.Ctx.swapRestoreUpTo? (promotion.depth - 1) = some shuffle)
+      (headEq : head = shuffle ++ Locals.bindLocals 0 promoted)
       (tailCodes : PromotionCodes promoted rest tail final) :
       PromotionCodes layout (promotion :: rest) (head :: tail) final
 
@@ -185,7 +207,7 @@ theorem code_length
     codes.length = promotions.length := by
   induction hCodes with
   | nil => rfl
-  | cons _ _ hTail ih => simp [ih]
+  | cons _ _ _ hTail ih => simp [ih]
 
 theorem openRun
     {layout finalLayout : Locals.Layout}
@@ -200,15 +222,17 @@ theorem openRun
         StateRel finalLayout suffix returns source final := by
   induction hCodes generalizing target with
   | nil layout => exact ⟨target, rfl, hRel⟩
-  | @cons layout promoted finalLayout promotion rest head tail
-      hApply hCode hTail ih =>
+  | @cons layout promoted finalLayout promotion rest shuffle head tail
+      hApply hCode hHead hTail ih =>
       obtain ⟨middle, hHeadRun, hMiddleRel⟩ :=
-        Promotion.openRun hApply hCode hRel
+        Promotion.openRunWithBind hApply hCode hRel
       obtain ⟨final, hTailRun, hFinalRel⟩ := ih hMiddleRel
       refine ⟨final, ?_, hFinalRel⟩
+      rw [hHead]
       change
         Structured.InteractionSemantics.Code.openRun
-            (head ++ tail.flatten) target = .done (.ok final)
+            ((shuffle ++ Locals.bindLocals 0 promoted) ++ tail.flatten)
+              target = .done (.ok final)
       rw [Structured.InteractionSemantics.Code.openRun_append, hHeadRun]
       exact hTailRun
 

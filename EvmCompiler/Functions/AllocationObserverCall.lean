@@ -1828,6 +1828,16 @@ theorem scratch_step_of_lowerScratchParam
         hPopRun, _hWholeRun, hFinalRel, hStackLength, hFinalMachine⟩ :=
     scratch_step_code hRel hWF hFresh hLocation hStackOrder hSlot
       hReservation hNameOp' hFrameOp' hPromote'
+  let promoteWithBind : Structured.Code :=
+    promoteCode ++ Locals.bindLocals 0 (name :: (above ++ suffix))
+  have hPromoteWithBindRun :
+      Structured.ObserverSemantics.Code.run promoteWithBind written =
+        .ok promoted := by
+    rw [show promoteWithBind =
+        promoteCode ++ Locals.bindLocals 0 (name :: (above ++ suffix)) by
+      rfl]
+    rw [Structured.ObserverSemantics.Code.run_append, hPromoteRun]
+    rfl
   let compiled : Expressions.Block :=
     { stmts :=
         [ Expressions.Stmt.code
@@ -1837,10 +1847,11 @@ theorem scratch_step_of_lowerScratchParam
                   (AllocationSupport.slotOffset slot),
                 Structured.BasicInstr.op .add,
                 Structured.BasicInstr.op .mstore ]),
-          Expressions.Stmt.code promoteCode,
+          Expressions.Stmt.code promoteWithBind,
           Expressions.Stmt.code [Structured.BasicInstr.op .pop] ] }
   refine
-    ⟨compiled.stmts, final, by simpa [compiled] using hCompile, ?_,
+    ⟨compiled.stmts, final,
+      by simpa [compiled, promoteWithBind] using hCompile, ?_,
       hFinalRel, hStackLength, ?_⟩
   change
     Structured.ObserverSemantics.Block.Eval targetProgram 4
@@ -1852,7 +1863,7 @@ theorem scratch_step_of_lowerScratchParam
                     (AllocationSupport.slotOffset slot),
                   Structured.BasicInstr.op .add,
                   Structured.BasicInstr.op .mstore ]),
-            Structured.Stmt.code promoteCode,
+            Structured.Stmt.code promoteWithBind,
             Structured.Stmt.code [Structured.BasicInstr.op .pop] ] }
       target
       (Structured.EffectSemantics.Outcome.regular final)
@@ -1860,7 +1871,7 @@ theorem scratch_step_of_lowerScratchParam
     Structured.EffectSemantics.Block.Eval.cons_regular
       (Structured.EffectSemantics.Stmt.Eval.code hStoreRun)
       (Structured.EffectSemantics.Block.Eval.cons_regular
-        (Structured.EffectSemantics.Stmt.Eval.code hPromoteRun)
+        (Structured.EffectSemantics.Stmt.Eval.code hPromoteWithBindRun)
         (Structured.EffectSemantics.Block.Eval.cons_regular
           (Structured.EffectSemantics.Stmt.Eval.code hPopRun)
           Structured.EffectSemantics.Block.Eval.nil))

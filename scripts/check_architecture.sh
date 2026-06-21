@@ -249,7 +249,9 @@ for theorem in \
     'scheduleStmtFuel_let_components' \
     'scheduleStmtFuel_assign_components' \
     'scheduleStmtFuel_terminal_components' \
-    'scheduleStmtFuel_terminalArgs_components'; do
+    'scheduleStmtFuel_terminalArgs_components' \
+    'scheduleStmtFuelWithTargets_brk_components' \
+    'scheduleStmtFuelWithTargets_cont_components'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.StackSchedule.${theorem}" \
       EvmCompiler/Verification.lean; then
@@ -1698,7 +1700,7 @@ report_matches \
 
 report_matches \
   'Functions stack scheduling must remain owned by liveness and symbolic layout:' \
-  '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|Interaction|EffectSemantics|TypedCfg|Assembly\.(Assembler|Compiler)|Locals\.Compiler)' \
+  '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|StackDiagnostics|Interaction|EffectSemantics|TypedCfg|Assembly\.(Assembler|Compiler)|Locals\.Compiler)' \
   EvmCompiler/Functions/StackSchedule.lean
 
 report_matches \

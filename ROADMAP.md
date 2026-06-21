@@ -97,7 +97,7 @@ elimination are not prerequisites for Permit2 or Aave.
   and internal calls.
 - [x] Compute loop facts by a terminating checked fixed point; retain totality
   over accepted finite source programs as an integration obligation.
-- [ ] Record next-use information needed by scheduling without making it a
+- [x] Record next-use information needed by scheduling without making it a
   public premise.
 - [x] Prove the computed analyzer satisfies an independent structural relation
   covering uses, definitions, calls, joins, and abrupt-outcome successors.
@@ -112,9 +112,10 @@ elimination are not prerequisites for Permit2 or Aave.
 - [x] Track a symbolic stack layout alongside the checked liveness point at
   each allocation program point.
 - [x] Invoke the checked retain schedule at each program point so dead values
-  are popped promptly; exact-contract diagnostics establish the required
-  next-use policy, whose production artifact/proof integration remains open.
-- [x] Compute canonical layouts at branch, switch, and loop joins; exact
+  are popped promptly, and integrate stable next-use ordering as a
+  compiler-owned checked artifact.
+- [x] Compute canonical layouts at branch, switch, and loop joins, including
+  outcome-indexed restoration before nested `break` and `continue`; exact
   internal-call return restoration remains in the call boundary.
 - [x] Generate a checked symbolic retain transition using only accessible
   promotions and one suffix cleanup; inaccessible shuffles are rejected.
@@ -210,10 +211,12 @@ elimination are not prerequisites for Permit2 or Aave.
 
 ### 8. Exact Contracts and Scalability
 
-- [ ] Exact pinned Aave compiles stack-only with no reservation or source
-  non-alias premise.
-- [ ] Exact pinned Permit2 compiles stack-only or uses only its checked,
-  plan-sized `memoryguard` reservation.
+- [x] Exact pinned Aave compiles stack-only with no reservation or source
+  non-alias premise through the checked executable stack-lowering path;
+  theorem composition into `CompiledObjectArtifact` remains open.
+- [x] Exact pinned Permit2 compiles stack-only through the checked executable
+  stack-lowering path; theorem composition into `CompiledObjectArtifact`
+  remains open.
 - [ ] Both compile through `CompiledObjectArtifact` to exact raw bytecode under
   the full open-world/resource-observer theorem.
 - [ ] Profile all analysis and compilation stages; remove algorithmic

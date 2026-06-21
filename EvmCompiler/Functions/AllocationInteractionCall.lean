@@ -1359,6 +1359,19 @@ theorem scratch_step_of_lowerScratchParam
         _hWholeRun, hFinalRel, hStackLength, hFinalMachine⟩ :=
     scratch_step_code hRel hWF hLocation hStackOrder hSlot
       hReservation hNameOp' hFrameOp' hPromote'
+  let promoteWithBind : Structured.Code :=
+    promoteCode ++ Locals.bindLocals 0 (name :: (above ++ suffix))
+  have hPromoteWithBindRun :
+      Structured.InteractionSemantics.Code.openRun
+          promoteWithBind written = .done (.ok promoted) := by
+    rw [show promoteWithBind =
+        promoteCode ++ Locals.bindLocals 0 (name :: (above ++ suffix)) by
+      rfl]
+    rw [Structured.InteractionSemantics.Code.openRun_append, hPromoteRun,
+      Simulation.Interaction.bind_done_ok]
+    simpa [Locals.bindLocals] using
+      Locals.InteractionPreservation.Code.openRun_bindLocals 0
+        (name :: (above ++ suffix)) promoted
   let compiled : List Expressions.Stmt :=
     [.code
       ([.op nameOp] ++
@@ -1366,10 +1379,12 @@ theorem scratch_step_of_lowerScratchParam
          .push (AllocationSupport.slotOffset slot),
          .op .add,
          .op .mstore]),
-     .code promoteCode,
+     .code promoteWithBind,
      .code [.op .pop]]
   refine
-    ⟨compiled, final, by simpa [compiled] using hCompile, by simp [compiled],
+    ⟨compiled, final,
+      by simpa [compiled, promoteWithBind] using hCompile,
+      by simp [compiled],
       ?_, hFinalRel, hStackLength, hFinalMachine⟩
   intro targetExtra
   let storeCode : Structured.Code :=
@@ -1397,16 +1412,16 @@ theorem scratch_step_of_lowerScratchParam
   have hPromoteStmt :
       Expressions.InteractionSemantics.Stmt.openRun targetProgram
           (targetExtra + 2)
-          (.code promoteCode) written =
+          (.code promoteWithBind) written =
         .done (.ok (Structured.Outcome.regular promoted)) := by
     unfold Expressions.InteractionSemantics.Stmt.openRun
     simp only [Expressions.EffectSemantics.Control.Stmt.run]
     change
       Simulation.Interaction.bind
-          (Structured.InteractionSemantics.Code.openRun promoteCode written)
+          (Structured.InteractionSemantics.Code.openRun promoteWithBind written)
           _ =
         .done (.ok (Structured.Outcome.regular promoted))
-    rw [hPromoteRun]
+    rw [hPromoteWithBindRun]
     rfl
   have hPopStmt :
       Expressions.InteractionSemantics.Stmt.openRun targetProgram
@@ -1430,14 +1445,14 @@ theorem scratch_step_of_lowerScratchParam
     Expressions.InteractionSemantics.Block.openRun targetProgram
         ((targetExtra + 3) + 1)
         { stmts :=
-            [.code storeCode, .code promoteCode, .code [.op .pop]] }
+            [.code storeCode, .code promoteWithBind, .code [.op .pop]] }
         target =
       .done (.ok (Structured.Outcome.regular final))
   rw [Expressions.InteractionSemantics.Block.openRun_cons, hStoreStmt]
   change
     Expressions.InteractionSemantics.Block.openRun targetProgram
         ((targetExtra + 2) + 1)
-        { stmts := [.code promoteCode, .code [.op .pop]] } written =
+        { stmts := [.code promoteWithBind, .code [.op .pop]] } written =
       .done (.ok (Structured.Outcome.regular final))
   rw [Expressions.InteractionSemantics.Block.openRun_cons, hPromoteStmt]
   change

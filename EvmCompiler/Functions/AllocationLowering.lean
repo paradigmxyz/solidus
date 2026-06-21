@@ -612,7 +612,9 @@ theorem lowerScratchParam_compileOpen
                     (AllocationSupport.slotOffset slot),
                   Structured.BasicInstr.op .add,
                   Structured.BasicInstr.op .mstore ]),
-           Expressions.Stmt.code promoteCode,
+           Expressions.Stmt.code
+             (promoteCode ++
+               Locals.bindLocals 0 (name :: above ++ suffix)),
            Expressions.Stmt.code [Structured.BasicInstr.op .pop] ],
          localsCtx.withLayout (above ++ suffix)) := by
   have hNameDepth :
@@ -678,7 +680,9 @@ theorem lowerScratchParam_compileOpen
   have hPromoteStmt :
       Locals.Stmt.compile localsCtx (.promoteName name) =
         some
-          ([Expressions.Stmt.code promoteCode],
+          ([Expressions.Stmt.code
+              (promoteCode ++
+                Locals.bindLocals 0 (name :: above ++ suffix))],
            localsCtx.withLayout (name :: above ++ suffix)) := by
     simp [Locals.Stmt.compile, hPromoteCtx, Locals.codeStmt]
   have hCleanupStmt :

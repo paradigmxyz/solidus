@@ -46,6 +46,21 @@ theorem afterTransition
   apply hCtx.scope
   rwa [hSource]
 
+theorem afterOrdering
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    (hCtx : CtxCovers source target)
+    (ordering : AllocationLayout.Ordering)
+    (hSource : target.layout = ordering.source) :
+    CtxCovers source (target.withLayout ordering.target) := by
+  constructor
+  intro name hName
+  apply hCtx.scope
+  have hTarget : name ∈ ordering.target := by
+    simpa [Locals.Ctx.withLayout] using hName
+  have hOrderingSource : name ∈ ordering.source :=
+    ordering.target_mem_iff.mp hTarget
+  rwa [← hSource] at hOrderingSource
+
 end CtxCovers
 
 structure RegularResultRel (targetCtx : Locals.Ctx)

@@ -2921,7 +2921,13 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLayout.Transition.target_nodup
 #check EvmCompiler.Functions.AllocationLayout.Ordering.build?
 #check EvmCompiler.Functions.AllocationLayout.Ordering.valid
+#check EvmCompiler.Functions.AllocationLayout.Ordering.target_perm
+#check EvmCompiler.Functions.AllocationLayout.Ordering.target_nodup
+#check EvmCompiler.Functions.AllocationLayout.Ordering.target_mem_iff
 #check EvmCompiler.Functions.AllocationLayout.Join.build?
+#check EvmCompiler.Locals.Layout.promoteAt_perm
+#check EvmCompiler.Functions.AllocationLivenessFacts.Point.nextUse
+#check EvmCompiler.Functions.AllocationLivenessFacts.Stmt.nextUse
 #check EvmCompiler.Functions.AllocationLayoutLowering.Schedule.compile
 #check EvmCompiler.Functions.AllocationLayoutLowering.Transition.compile
 #check EvmCompiler.Functions.AllocationLayoutLowering.Ordering.compile
@@ -2939,6 +2945,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuel_assign_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuel_terminal_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuel_terminalArgs_components
+#check EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_brk_components
+#check EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_cont_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_terminal_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_terminalArgs_components
 #check EvmCompiler.Functions.StackSchedule.Examples.sequentialDead_stackOnly
@@ -3007,6 +3015,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackTransitionCompilation.Transition.compiledOpenRun
 #check EvmCompiler.Functions.StackTransitionCompilation.Ordering.compiledOpenRun
 #check EvmCompiler.Functions.StackTransitionCompilation.Join.compiledOpenRun
+#check EvmCompiler.Functions.StackTransitionCompilation.OrderingArtifact.thenBlock
 #check EvmCompiler.Functions.StackTransitionCompilation.PromotionCodes.openBlockRun
 #check EvmCompiler.Functions.StackTransitionCompilation.Artifact.blockOpenRun
 #check EvmCompiler.Functions.StackTransitionCompilation.Transition.compiledBlockOpenRun
@@ -3026,9 +3035,16 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_assign_components
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_terminal_components
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_terminalArgs_components
+#check EvmCompiler.Functions.StackLowering.lowerPointFuel_brk_components
+#check EvmCompiler.Functions.StackLowering.lowerPointFuel_cont_components
 #check EvmCompiler.Functions.StackLowering.lowerBlock?_components
 #check EvmCompiler.Functions.StackLoweringCompilation.Examples.deadProgram_compiles
 #check EvmCompiler.Functions.StackLoweringCompilation.Examples.dormantCallProgram_compiles
 #check EvmCompiler.Functions.StackLoweringCompilation.Examples.controlProgram_compiles
 #check EvmCompiler.Functions.StackLoweringCompilation.compileBlock?_sound
 #check EvmCompiler.Functions.StackLoweringCompilation.Examples.controlMainBlock_layout_checked
+
+#print axioms EvmCompiler.Functions.StackTransitionCompilation.Join.compiledOpenRun
+#print axioms EvmCompiler.Functions.StackTransitionCompilation.OrderingArtifact.thenBlock
+#print axioms EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_brk_components
+#print axioms EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_cont_components

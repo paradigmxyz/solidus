@@ -17,6 +17,9 @@ open StackStatementPreservation
 def regularLeafTargetCost : List StackSchedule.Point → Nat
   | [] => 0
   | point :: points =>
+      (match point.order? with
+       | some order => order.promotions.length
+       | none => 0) +
       (match point.retain? with
        | some transition => transition.schedule.promotions.length + 2
        | none => 0) + regularLeafTargetCost points
@@ -225,20 +228,24 @@ theorem regularConsResult
     (targetCtx middleCtx finalCtx : Locals.Ctx)
     (stmt : Functions.Stmt) (rest : List Functions.Stmt)
     (point : StackSchedule.Point) (points : List StackSchedule.Point)
+    (order : AllocationLayout.Ordering)
     (transition : AllocationLayout.Transition)
     (finalLayout tailFinal : Locals.Layout)
     (headCode tailCode code : List Expressions.Stmt)
+    (hOrder : point.order? = some order)
     (hRetain : point.retain? = some transition)
     (hMiddle :
       middleCtx = targetCtx.withLayout transition.schedule.target)
     (hHeadLength :
-      headCode.length = transition.schedule.promotions.length + 2)
+      headCode.length =
+        order.promotions.length + transition.schedule.promotions.length + 2)
     (hHead :
       ∀ (sourceCtx : Functions.Source.Ctx)
         (sourceFuel targetFuel : Nat)
         {suffix : List Word} {returns : List Structured.ReturnDest}
         {source : Locals.Source.State} {target : Structured.RunState},
-        transition.schedule.promotions.length + 2 < targetFuel →
+        order.promotions.length +
+            transition.schedule.promotions.length + 2 < targetFuel →
         CtxCovers sourceCtx targetCtx →
         StateRel targetCtx.layout suffix returns source target →
         Simulation.Interaction.Rel
@@ -259,12 +266,13 @@ theorem regularConsResult
   · rw [hFinal]
     exact hTailFinal
   · rw [hCode, List.length_append, hHeadLength, hTailLength]
-    simp [regularLeafTargetCost, hRetain]
+    simp [regularLeafTargetCost, hOrder, hRetain]
+    omega
   · intro sourceCtx suffix returns source target hCtx hInitial
     have hHeadFuel :
-        transition.schedule.promotions.length + 2 <
+        order.promotions.length + transition.schedule.promotions.length + 2 <
           regularLeafTargetCost (point :: points) + 1 := by
-      simp [regularLeafTargetCost, hRetain]
+      simp [regularLeafTargetCost, hOrder, hRetain]
       omega
     have hHeadRun :=
       hHead sourceCtx (rest.length + 1)
@@ -273,7 +281,7 @@ theorem regularConsResult
     have hTailFuel :
         regularLeafTargetCost (point :: points) + 1 - headCode.length =
           regularLeafTargetCost points + 1 := by
-      simp [regularLeafTargetCost, hRetain, hHeadLength]
+      simp [regularLeafTargetCost, hOrder, hRetain, hHeadLength]
       omega
     have hComposed :=
       regularCons sourceProgram targetProgram sourceCtx middleCtx finalCtx
@@ -344,45 +352,119 @@ theorem regularLeafList_of_compilers
             regularEmpty sourceProgram targetProgram sourceCtx targetCtx
               1 1 (by omega) (by omega) hCtx hInitial
       | cons fact restFacts =>
-          simp [StackSchedule.scheduleStmtListFuel] at hSchedule
+          simp [StackSchedule.scheduleStmtListFuel,
+            StackSchedule.scheduleStmtListFuelWithTargets] at hSchedule
   | @expr rest expr hTailLeaves ih =>
       cases facts with
       | nil =>
-          simp [StackSchedule.scheduleStmtListFuel] at hSchedule
+          simp [StackSchedule.scheduleStmtListFuel,
+            StackSchedule.scheduleStmtListFuelWithTargets] at hSchedule
       | cons fact restFacts =>
           obtain ⟨point, tailPoints, hPoints⟩ :=
             StackSchedule.scheduleStmtListFuel_cons_nonempty hSchedule
           subst points
           obtain
-              ⟨retain, tailFinal, hBefore, _hStatement, hPointRetain,
-                _hRegions, _hFalls, hBuild, hTailSchedule, hFinal⟩ :=
+              ⟨order, retain, tailFinal, hOrderBuild, hPointOrder,
+                hBefore, _hStatement, hPointRetain, _hRegions, _hFalls,
+                hBuild, hTailSchedule, hFinal⟩ :=
             StackSchedule.scheduleStmtListFuel_expr_components hSchedule
           obtain
-              ⟨lowerRetain, tailLowered, hPointAccess, hLowerRetain,
-                hTailLower, hLowered⟩ :=
+              ⟨lowerOrder, lowerRetain, tailLowered, hLowerOrder,
+                hPointAccess, hLowerRetain, hTailLower, hLowered⟩ :=
             StackLowering.lowerStmtListFuel_expr_components hLower
+          have hOrderEq : lowerOrder = order :=
+            Option.some.inj (hLowerOrder.symm.trans hPointOrder)
+          subst lowerOrder
           have hRetainEq : lowerRetain = retain :=
             Option.some.inj (hLowerRetain.symm.trans hPointRetain)
           subst lowerRetain
+          have hOrderSource : targetCtx.layout = order.source :=
+            (AllocationLayout.Ordering.build?_source hOrderBuild).symm
           have hAccess :
-              StackAccess.Expr.check? targetCtx.layout 0 expr = some () := by
+              StackAccess.Expr.check? order.target 0 expr = some () := by
             simpa [StackLowering.pointAccess?, hBefore] using hPointAccess
-          have hSource : targetCtx.layout = retain.source :=
+          have hSource : order.target = retain.source :=
             (AllocationLayout.Transition.build?_sound hBuild).1.symm
           rw [hLowered] at hCompile
           obtain
               ⟨headCode, middleCtx, tailCode,
                 hHeadCompile, hTailCompile, hCode⟩ :=
             Locals.Block.compileOpen_append_components hCompile
+          have hHeadCompile' :
+              Locals.Block.compileOpen targetCtx
+                  { stmts :=
+                      order.statements ++
+                        ([.expr expr] ++
+                          StackLowering.transitionStmts retain) } =
+                some (headCode, middleCtx) := by
+            simpa [List.append_assoc] using hHeadCompile
+          obtain
+              ⟨orderCode, orderedCtx, bodyCode, hOrderCompile,
+                hBodyCompile, hHeadCode⟩ :=
+            Locals.Block.compileOpen_append_components hHeadCompile'
+          obtain ⟨orderArtifact⟩ :=
+            StackTransitionCompilation.Ordering.compileArtifact order
+              hOrderSource
+          have hOrderPair :=
+            Option.some.inj
+              (orderArtifact.compileEq.symm.trans hOrderCompile)
+          have hOrderCode :
+              orderArtifact.promotionCodes.map Expressions.Stmt.code =
+                orderCode :=
+            congrArg Prod.fst hOrderPair
+          have hOrderedCtx :
+              targetCtx.withLayout order.target = orderedCtx :=
+            congrArg Prod.snd hOrderPair
+          rw [← hOrderCode] at hHeadCode
+          rw [← hOrderedCtx] at hBodyCompile
           obtain ⟨hMiddle, hHeadLength, hHeadForward⟩ :=
             compiledExprPointOfEquations sourceProgram targetProgram
-              targetCtx middleCtx expr retain
+              (targetCtx.withLayout order.target) middleCtx expr retain
               ([.expr expr] ++ StackLowering.transitionStmts retain)
-              headCode hSource hScoped.1 hSupported.1 hAccess rfl
-              hHeadCompile
+              bodyCode (by simpa [Locals.Ctx.withLayout] using hSource)
+              hScoped.1 hSupported.1 hAccess rfl hBodyCompile
+          have hOrderLength :
+              orderArtifact.promotionCodes.length = order.promotions.length :=
+            orderArtifact.codes.code_length
+          have hWholeLength :
+              headCode.length =
+                order.promotions.length +
+                  retain.schedule.promotions.length + 2 := by
+            rw [hHeadCode, List.length_append, List.length_map,
+              hHeadLength, hOrderLength]
+            omega
+          have hWholeForward :
+              ∀ (sourceCtx : Functions.Source.Ctx)
+                (sourceFuel targetFuel : Nat)
+                {suffix : List Word}
+                {returns : List Structured.ReturnDest}
+                {source : Locals.Source.State}
+                {target : Structured.RunState},
+                order.promotions.length +
+                    retain.schedule.promotions.length + 2 < targetFuel →
+                CtxCovers sourceCtx targetCtx →
+                StateRel targetCtx.layout suffix returns source target →
+                Simulation.Interaction.Rel
+                  (RegularOutcomeRel middleCtx suffix returns)
+                  (Functions.InteractionSemantics.Stmt.openRun
+                    sourceProgram sourceCtx sourceFuel (.expr expr) source)
+                  (Expressions.InteractionSemantics.Block.openRun
+                    targetProgram targetFuel
+                    { stmts := headCode } target) := by
+            intro sourceCtx sourceFuel targetFuel suffix returns source target
+              hFuel hCtx hInitial
+            rw [hHeadCode]
+            apply orderArtifact.thenBlock targetProgram targetFuel
+                (by rw [hOrderLength]; omega) hInitial
+            intro orderedTarget hOrderedRel
+            exact
+              hHeadForward sourceCtx sourceFuel
+                (targetFuel - orderArtifact.promotionCodes.length)
+                (by rw [hOrderLength]; omega)
+                (hCtx.afterOrdering order hOrderSource) hOrderedRel
           have hRetainSourceNodup : retain.source.Nodup := by
             rw [← hSource]
-            exact hNodup
+            exact order.target_nodup (by simpa [hOrderSource] using hNodup)
           have hMiddleNodup : middleCtx.layout.Nodup := by
             rw [hMiddle]
             simpa [Locals.Ctx.withLayout] using
@@ -402,48 +484,123 @@ theorem regularLeafList_of_compilers
               hMiddleNodup
           exact
             regularConsResult sourceProgram targetProgram targetCtx middleCtx
-              finalCtx (.expr expr) rest point tailPoints retain finalLayout
-              tailFinal headCode tailCode code hPointRetain hMiddle
-              hHeadLength hHeadForward hTailResult hFinal hCode
+              finalCtx (.expr expr) rest point tailPoints order retain
+              finalLayout tailFinal headCode tailCode code hPointOrder
+              hPointRetain hMiddle hWholeLength hWholeForward hTailResult
+              hFinal hCode
   | @let_ rest name value hTailLeaves ih =>
       cases facts with
       | nil =>
-          simp [StackSchedule.scheduleStmtListFuel] at hSchedule
+          simp [StackSchedule.scheduleStmtListFuel,
+            StackSchedule.scheduleStmtListFuelWithTargets] at hSchedule
       | cons fact restFacts =>
           obtain ⟨point, tailPoints, hPoints⟩ :=
             StackSchedule.scheduleStmtListFuel_cons_nonempty hSchedule
           subst points
           obtain
-              ⟨retain, tailFinal, hFresh, hBefore, _hStatement,
-                hPointRetain, _hRegions, _hFalls, hBuild, hTailSchedule,
-                hFinal⟩ :=
+              ⟨order, retain, tailFinal, hOrderBuild, hPointOrder, hFresh,
+                hBefore, _hStatement, hPointRetain, _hRegions, _hFalls,
+                hBuild, hTailSchedule, hFinal⟩ :=
             StackSchedule.scheduleStmtListFuel_let_components hSchedule
           obtain
-              ⟨lowerRetain, tailLowered, hPointAccess, hLowerRetain,
-                hTailLower, hLowered⟩ :=
+              ⟨lowerOrder, lowerRetain, tailLowered, hLowerOrder,
+                hPointAccess, hLowerRetain, hTailLower, hLowered⟩ :=
             StackLowering.lowerStmtListFuel_let_components hLower
+          have hOrderEq : lowerOrder = order :=
+            Option.some.inj (hLowerOrder.symm.trans hPointOrder)
+          subst lowerOrder
           have hRetainEq : lowerRetain = retain :=
             Option.some.inj (hLowerRetain.symm.trans hPointRetain)
           subst lowerRetain
+          have hOrderSource : targetCtx.layout = order.source :=
+            (AllocationLayout.Ordering.build?_source hOrderBuild).symm
           have hAccess :
-              StackAccess.Expr.check? targetCtx.layout 0 value = some () := by
+              StackAccess.Expr.check? order.target 0 value = some () := by
             simpa [StackLowering.pointAccess?, hBefore] using hPointAccess
-          have hSource : name :: targetCtx.layout = retain.source :=
+          have hSource : name :: order.target = retain.source :=
             (AllocationLayout.Transition.build?_sound hBuild).1.symm
           rw [hLowered] at hCompile
           obtain
               ⟨headCode, middleCtx, tailCode,
                 hHeadCompile, hTailCompile, hCode⟩ :=
             Locals.Block.compileOpen_append_components hCompile
+          have hHeadCompile' :
+              Locals.Block.compileOpen targetCtx
+                  { stmts :=
+                      order.statements ++
+                        ([.let_ name value] ++
+                          StackLowering.transitionStmts retain) } =
+                some (headCode, middleCtx) := by
+            simpa [List.append_assoc] using hHeadCompile
+          obtain
+              ⟨orderCode, orderedCtx, bodyCode, hOrderCompile,
+                hBodyCompile, hHeadCode⟩ :=
+            Locals.Block.compileOpen_append_components hHeadCompile'
+          obtain ⟨orderArtifact⟩ :=
+            StackTransitionCompilation.Ordering.compileArtifact order
+              hOrderSource
+          have hOrderPair :=
+            Option.some.inj
+              (orderArtifact.compileEq.symm.trans hOrderCompile)
+          have hOrderCode :
+              orderArtifact.promotionCodes.map Expressions.Stmt.code =
+                orderCode :=
+            congrArg Prod.fst hOrderPair
+          have hOrderedCtx :
+              targetCtx.withLayout order.target = orderedCtx :=
+            congrArg Prod.snd hOrderPair
+          rw [← hOrderCode] at hHeadCode
+          rw [← hOrderedCtx] at hBodyCompile
           obtain ⟨hMiddle, hHeadLength, hHeadForward⟩ :=
             compiledLetPointOfEquations sourceProgram targetProgram
-              targetCtx middleCtx name value retain
+              (targetCtx.withLayout order.target) middleCtx name value retain
               ([.let_ name value] ++ StackLowering.transitionStmts retain)
-              headCode hSource hFresh hScoped.1.2 hSupported.1 hAccess rfl
-              hHeadCompile
+              bodyCode (by simpa [Locals.Ctx.withLayout] using hSource)
+              hFresh hScoped.1.2 hSupported.1 hAccess rfl hBodyCompile
+          have hOrderLength :
+              orderArtifact.promotionCodes.length = order.promotions.length :=
+            orderArtifact.codes.code_length
+          have hWholeLength :
+              headCode.length =
+                order.promotions.length +
+                  retain.schedule.promotions.length + 2 := by
+            rw [hHeadCode, List.length_append, List.length_map,
+              hHeadLength, hOrderLength]
+            omega
+          have hWholeForward :
+              ∀ (sourceCtx : Functions.Source.Ctx)
+                (sourceFuel targetFuel : Nat)
+                {suffix : List Word}
+                {returns : List Structured.ReturnDest}
+                {source : Locals.Source.State}
+                {target : Structured.RunState},
+                order.promotions.length +
+                    retain.schedule.promotions.length + 2 < targetFuel →
+                CtxCovers sourceCtx targetCtx →
+                StateRel targetCtx.layout suffix returns source target →
+                Simulation.Interaction.Rel
+                  (RegularOutcomeRel middleCtx suffix returns)
+                  (Functions.InteractionSemantics.Stmt.openRun sourceProgram
+                    sourceCtx sourceFuel (.let_ name value) source)
+                  (Expressions.InteractionSemantics.Block.openRun
+                    targetProgram targetFuel
+                    { stmts := headCode } target) := by
+            intro sourceCtx sourceFuel targetFuel suffix returns source target
+              hFuel hCtx hInitial
+            rw [hHeadCode]
+            apply orderArtifact.thenBlock targetProgram targetFuel
+                (by rw [hOrderLength]; omega) hInitial
+            intro orderedTarget hOrderedRel
+            exact
+              hHeadForward sourceCtx sourceFuel
+                (targetFuel - orderArtifact.promotionCodes.length)
+                (by rw [hOrderLength]; omega)
+                (hCtx.afterOrdering order hOrderSource) hOrderedRel
           have hRetainSourceNodup : retain.source.Nodup := by
             rw [← hSource]
-            exact List.nodup_cons.mpr ⟨hFresh, hNodup⟩
+            exact List.nodup_cons.mpr
+              ⟨hFresh,
+                order.target_nodup (by simpa [hOrderSource] using hNodup)⟩
           have hMiddleNodup : middleCtx.layout.Nodup := by
             rw [hMiddle]
             simpa [Locals.Ctx.withLayout] using
@@ -463,47 +620,122 @@ theorem regularLeafList_of_compilers
               hMiddleNodup
           exact
             regularConsResult sourceProgram targetProgram targetCtx middleCtx
-              finalCtx (.let_ name value) rest point tailPoints retain
-              finalLayout tailFinal headCode tailCode code hPointRetain
-              hMiddle hHeadLength hHeadForward hTailResult hFinal hCode
+              finalCtx (.let_ name value) rest point tailPoints order retain
+              finalLayout tailFinal headCode tailCode code hPointOrder
+              hPointRetain hMiddle hWholeLength hWholeForward hTailResult
+              hFinal hCode
   | @assign rest name value hTailLeaves ih =>
       cases facts with
       | nil =>
-          simp [StackSchedule.scheduleStmtListFuel] at hSchedule
+          simp [StackSchedule.scheduleStmtListFuel,
+            StackSchedule.scheduleStmtListFuelWithTargets] at hSchedule
       | cons fact restFacts =>
           obtain ⟨point, tailPoints, hPoints⟩ :=
             StackSchedule.scheduleStmtListFuel_cons_nonempty hSchedule
           subst points
           obtain
-              ⟨retain, tailFinal, hBefore, _hStatement, hPointRetain,
-                _hRegions, _hFalls, hBuild, hTailSchedule, hFinal⟩ :=
+              ⟨order, retain, tailFinal, hOrderBuild, hPointOrder,
+                hBefore, _hStatement, hPointRetain, _hRegions, _hFalls,
+                hBuild, hTailSchedule, hFinal⟩ :=
             StackSchedule.scheduleStmtListFuel_assign_components hSchedule
           obtain
-              ⟨lowerRetain, tailLowered, hPointAccess, hLowerRetain,
-                hTailLower, hLowered⟩ :=
+              ⟨lowerOrder, lowerRetain, tailLowered, hLowerOrder,
+                hPointAccess, hLowerRetain, hTailLower, hLowered⟩ :=
             StackLowering.lowerStmtListFuel_assign_components hLower
+          have hOrderEq : lowerOrder = order :=
+            Option.some.inj (hLowerOrder.symm.trans hPointOrder)
+          subst lowerOrder
           have hRetainEq : lowerRetain = retain :=
             Option.some.inj (hLowerRetain.symm.trans hPointRetain)
           subst lowerRetain
+          have hOrderSource : targetCtx.layout = order.source :=
+            (AllocationLayout.Ordering.build?_source hOrderBuild).symm
           have hAccess :
-              StackAccess.assign? targetCtx.layout name value = some () := by
+              StackAccess.assign? order.target name value = some () := by
             simpa [StackLowering.pointAccess?, hBefore] using hPointAccess
-          have hSource : targetCtx.layout = retain.source :=
+          have hSource : order.target = retain.source :=
             (AllocationLayout.Transition.build?_sound hBuild).1.symm
           rw [hLowered] at hCompile
           obtain
               ⟨headCode, middleCtx, tailCode,
                 hHeadCompile, hTailCompile, hCode⟩ :=
             Locals.Block.compileOpen_append_components hCompile
+          have hHeadCompile' :
+              Locals.Block.compileOpen targetCtx
+                  { stmts :=
+                      order.statements ++
+                        ([.assign name value] ++
+                          StackLowering.transitionStmts retain) } =
+                some (headCode, middleCtx) := by
+            simpa [List.append_assoc] using hHeadCompile
+          obtain
+              ⟨orderCode, orderedCtx, bodyCode, hOrderCompile,
+                hBodyCompile, hHeadCode⟩ :=
+            Locals.Block.compileOpen_append_components hHeadCompile'
+          obtain ⟨orderArtifact⟩ :=
+            StackTransitionCompilation.Ordering.compileArtifact order
+              hOrderSource
+          have hOrderPair :=
+            Option.some.inj
+              (orderArtifact.compileEq.symm.trans hOrderCompile)
+          have hOrderCode :
+              orderArtifact.promotionCodes.map Expressions.Stmt.code =
+                orderCode :=
+            congrArg Prod.fst hOrderPair
+          have hOrderedCtx :
+              targetCtx.withLayout order.target = orderedCtx :=
+            congrArg Prod.snd hOrderPair
+          rw [← hOrderCode] at hHeadCode
+          rw [← hOrderedCtx] at hBodyCompile
           obtain ⟨hMiddle, hHeadLength, hHeadForward⟩ :=
             compiledAssignPointOfEquations sourceProgram targetProgram
-              targetCtx middleCtx name value retain
+              (targetCtx.withLayout order.target) middleCtx name value retain
               ([.assign name value] ++ StackLowering.transitionStmts retain)
-              headCode hSource hNodup hScoped.1.2 hSupported.1 hAccess rfl
-              hHeadCompile
+              bodyCode (by simpa [Locals.Ctx.withLayout] using hSource)
+              (order.target_nodup (by simpa [hOrderSource] using hNodup))
+              hScoped.1.2 hSupported.1 hAccess rfl hBodyCompile
+          have hOrderLength :
+              orderArtifact.promotionCodes.length = order.promotions.length :=
+            orderArtifact.codes.code_length
+          have hWholeLength :
+              headCode.length =
+                order.promotions.length +
+                  retain.schedule.promotions.length + 2 := by
+            rw [hHeadCode, List.length_append, List.length_map,
+              hHeadLength, hOrderLength]
+            omega
+          have hWholeForward :
+              ∀ (sourceCtx : Functions.Source.Ctx)
+                (sourceFuel targetFuel : Nat)
+                {suffix : List Word}
+                {returns : List Structured.ReturnDest}
+                {source : Locals.Source.State}
+                {target : Structured.RunState},
+                order.promotions.length +
+                    retain.schedule.promotions.length + 2 < targetFuel →
+                CtxCovers sourceCtx targetCtx →
+                StateRel targetCtx.layout suffix returns source target →
+                Simulation.Interaction.Rel
+                  (RegularOutcomeRel middleCtx suffix returns)
+                  (Functions.InteractionSemantics.Stmt.openRun sourceProgram
+                    sourceCtx sourceFuel (.assign name value) source)
+                  (Expressions.InteractionSemantics.Block.openRun
+                    targetProgram targetFuel
+                    { stmts := headCode } target) := by
+            intro sourceCtx sourceFuel targetFuel suffix returns source target
+              hFuel hCtx hInitial
+            rw [hHeadCode]
+            apply orderArtifact.thenBlock targetProgram targetFuel
+                (by rw [hOrderLength]; omega) hInitial
+            intro orderedTarget hOrderedRel
+            exact
+              hHeadForward sourceCtx sourceFuel
+                (targetFuel - orderArtifact.promotionCodes.length)
+                (by rw [hOrderLength]; omega)
+                (hCtx.afterOrdering order hOrderSource) hOrderedRel
           have hRetainSourceNodup : retain.source.Nodup := by
             rw [← hSource]
-            exact hNodup
+            exact order.target_nodup (by simpa [hOrderSource] using hNodup)
           have hMiddleNodup : middleCtx.layout.Nodup := by
             rw [hMiddle]
             simpa [Locals.Ctx.withLayout] using
@@ -523,9 +755,10 @@ theorem regularLeafList_of_compilers
               hMiddleNodup
           exact
             regularConsResult sourceProgram targetProgram targetCtx middleCtx
-              finalCtx (.assign name value) rest point tailPoints retain
-              finalLayout tailFinal headCode tailCode code hPointRetain
-              hMiddle hHeadLength hHeadForward hTailResult hFinal hCode
+              finalCtx (.assign name value) rest point tailPoints order retain
+              finalLayout tailFinal headCode tailCode code hPointOrder
+              hPointRetain hMiddle hWholeLength hWholeForward hTailResult
+              hFinal hCode
 
 theorem RegularListPreserves.toOpenList
     {sourceProgram : Functions.Program}
@@ -578,19 +811,77 @@ theorem terminalList_of_compilers
     OpenListPreserves sourceProgram targetProgram targetCtx finalCtx
       (.terminal kind :: rest) finalLayout code := by
   obtain
-      ⟨point, hPoints, _hBefore, _hStatement, _hRetain, _hRegions,
-        _hFalls, hFinalLayout⟩ :=
+      ⟨order, point, hOrderBuild, hPoints, hPointOrder, _hBefore,
+        _hStatement, _hRetain, _hRegions, _hFalls, hFinalLayout⟩ :=
     StackSchedule.scheduleStmtListFuel_terminal_components hSchedule
   subst points
-  obtain ⟨_pointAccess, _hPointRetain, hLowered⟩ :=
+  obtain
+      ⟨lowerOrder, hLowerOrder, _pointAccess, _hPointRetain, hLowered⟩ :=
     StackLowering.lowerStmtListFuel_terminal_components hLower
-  obtain ⟨hFinalCtx, hCode, hForward⟩ :=
-    compiledTerminalPointOfEquations sourceProgram targetProgram targetCtx
-      finalCtx kind lowered code hArgCount hLowered hCompile
+  have hOrderEq : lowerOrder = order :=
+    Option.some.inj (hLowerOrder.symm.trans hPointOrder)
+  subst lowerOrder
+  have hOrderSource : targetCtx.layout = order.source :=
+    (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+  rw [hLowered] at hCompile
+  obtain
+      ⟨orderCode, orderedCtx, bodyCode, hOrderCompile, hBodyCompile,
+        hWholeCode⟩ :=
+    Locals.Block.compileOpen_append_components hCompile
+  obtain ⟨orderArtifact⟩ :=
+    StackTransitionCompilation.Ordering.compileArtifact order hOrderSource
+  have hOrderPair :=
+    Option.some.inj (orderArtifact.compileEq.symm.trans hOrderCompile)
+  have hOrderCode :
+      orderArtifact.promotionCodes.map Expressions.Stmt.code = orderCode :=
+    congrArg Prod.fst hOrderPair
+  have hOrderedCtx :
+      targetCtx.withLayout order.target = orderedCtx :=
+    congrArg Prod.snd hOrderPair
+  rw [← hOrderCode] at hWholeCode
+  rw [← hOrderedCtx] at hBodyCompile
+  obtain ⟨hFinalCtx, hBodyCode, hForward⟩ :=
+    compiledTerminalPointOfEquations sourceProgram targetProgram
+      (targetCtx.withLayout order.target) finalCtx kind [.terminal kind]
+      bodyCode hArgCount rfl hBodyCompile
   refine ⟨?_, ?_⟩
   · rw [hFinalCtx, hFinalLayout]
+    simp [Locals.Ctx.withLayout]
   · intro sourceCtx suffix returns source target _hCtx hInitial
-    have hHead := hForward sourceCtx (rest.length + 1) hInitial
+    have hWholeFuel :
+        orderArtifact.promotionCodes.length < code.length + 1 := by
+      rw [hWholeCode, List.length_append, List.length_map]
+      omega
+    have hPrefixed :
+        Simulation.Interaction.Rel
+          (OpenOutcomeRel finalCtx suffix returns)
+          (Functions.InteractionSemantics.Stmt.openRun sourceProgram
+            sourceCtx (rest.length + 1) (.terminal kind) source)
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            (code.length + 1)
+            { stmts :=
+                orderArtifact.promotionCodes.map Expressions.Stmt.code ++
+                  bodyCode }
+            target) := by
+      apply orderArtifact.thenBlock targetProgram (code.length + 1)
+          hWholeFuel hInitial
+      intro orderedTarget hOrderedRel
+      have hBody := hForward sourceCtx (rest.length + 1) hOrderedRel
+      have hTailFuel :
+          code.length + 1 - orderArtifact.promotionCodes.length =
+            bodyCode.length + 1 := by
+        rw [hWholeCode, List.length_append, List.length_map]
+        omega
+      rw [hTailFuel]
+      exact hBody
+    have hHead :
+        Simulation.Interaction.Rel
+          (OpenOutcomeRel finalCtx suffix returns)
+          (Functions.InteractionSemantics.Stmt.openRun sourceProgram
+            sourceCtx (rest.length + 1) (.terminal kind) source)
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            (code.length + 1) { stmts := code } target) := by
+      simpa [hWholeCode] using hPrefixed
     rw [Functions.InteractionSemantics.Block.openRun_terminal_cons]
     simpa [Functions.InteractionSemantics.Stmt.openRun] using hHead
 
@@ -622,23 +913,81 @@ theorem terminalArgsList_of_compilers
     OpenListPreserves sourceProgram targetProgram targetCtx finalCtx
       (.terminalArgs kind args :: rest) finalLayout code := by
   obtain
-      ⟨point, hPoints, hBefore, _hStatement, _hRetain, _hRegions,
-        _hFalls, hFinalLayout⟩ :=
+      ⟨order, point, hOrderBuild, hPoints, hPointOrder, hBefore,
+        _hStatement, _hRetain, _hRegions, _hFalls, hFinalLayout⟩ :=
     StackSchedule.scheduleStmtListFuel_terminalArgs_components hSchedule
   subst points
-  obtain ⟨hPointAccess, _hPointRetain, hLowered⟩ :=
+  obtain
+      ⟨lowerOrder, hLowerOrder, hPointAccess, _hPointRetain, hLowered⟩ :=
     StackLowering.lowerStmtListFuel_terminalArgs_components hLower
+  have hOrderEq : lowerOrder = order :=
+    Option.some.inj (hLowerOrder.symm.trans hPointOrder)
+  subst lowerOrder
+  have hOrderSource : targetCtx.layout = order.source :=
+    (AllocationLayout.Ordering.build?_source hOrderBuild).symm
   have hAccess :
-      StackAccess.ExprSeq.check? targetCtx.layout 0 args = some () := by
+      StackAccess.ExprSeq.check? order.target 0 args = some () := by
     simpa [StackLowering.pointAccess?, hBefore] using hPointAccess
+  rw [hLowered] at hCompile
+  obtain
+      ⟨orderCode, orderedCtx, bodyCode, hOrderCompile, hBodyCompile,
+        hWholeCode⟩ :=
+    Locals.Block.compileOpen_append_components hCompile
+  obtain ⟨orderArtifact⟩ :=
+    StackTransitionCompilation.Ordering.compileArtifact order hOrderSource
+  have hOrderPair :=
+    Option.some.inj (orderArtifact.compileEq.symm.trans hOrderCompile)
+  have hOrderCode :
+      orderArtifact.promotionCodes.map Expressions.Stmt.code = orderCode :=
+    congrArg Prod.fst hOrderPair
+  have hOrderedCtx :
+      targetCtx.withLayout order.target = orderedCtx :=
+    congrArg Prod.snd hOrderPair
+  rw [← hOrderCode] at hWholeCode
+  rw [← hOrderedCtx] at hBodyCompile
   obtain ⟨hFinalCtx, argsCode, hArgsCompile, hCode, hForward⟩ :=
     compiledTerminalArgsPointOfEquations sourceProgram targetProgram
-      targetCtx finalCtx kind args lowered code hScoped hSupported hAccess
-      hLowered hCompile
+      (targetCtx.withLayout order.target) finalCtx kind args
+      [.terminalArgs kind args] bodyCode hScoped hSupported hAccess rfl
+      hBodyCompile
   refine ⟨?_, ?_⟩
   · rw [hFinalCtx, hFinalLayout]
+    simp [Locals.Ctx.withLayout]
   · intro sourceCtx suffix returns source target _hCtx hInitial
-    have hHead := hForward sourceCtx (rest.length + 1) hInitial
+    have hWholeFuel :
+        orderArtifact.promotionCodes.length < code.length + 1 := by
+      rw [hWholeCode, List.length_append, List.length_map]
+      omega
+    have hPrefixed :
+        Simulation.Interaction.Rel
+          (OpenOutcomeRel finalCtx suffix returns)
+          (Functions.InteractionSemantics.Stmt.openRun sourceProgram
+            sourceCtx (rest.length + 1) (.terminalArgs kind args) source)
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            (code.length + 1)
+            { stmts :=
+                orderArtifact.promotionCodes.map Expressions.Stmt.code ++
+                  bodyCode }
+            target) := by
+      apply orderArtifact.thenBlock targetProgram (code.length + 1)
+          hWholeFuel hInitial
+      intro orderedTarget hOrderedRel
+      have hBody := hForward sourceCtx (rest.length + 1) hOrderedRel
+      have hTailFuel :
+          code.length + 1 - orderArtifact.promotionCodes.length =
+            bodyCode.length + 1 := by
+        rw [hWholeCode, List.length_append, List.length_map]
+        omega
+      rw [hTailFuel]
+      exact hBody
+    have hHead :
+        Simulation.Interaction.Rel
+          (OpenOutcomeRel finalCtx suffix returns)
+          (Functions.InteractionSemantics.Stmt.openRun sourceProgram
+            sourceCtx (rest.length + 1) (.terminalArgs kind args) source)
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            (code.length + 1) { stmts := code } target) := by
+      simpa [hWholeCode] using hPrefixed
     rw [Functions.InteractionSemantics.Block.openRun_terminalArgs_cons]
     simpa [Functions.InteractionSemantics.Stmt.openRun] using hHead
 

@@ -34,10 +34,55 @@ mutual
   structure Point where
     liveBefore : LiveSet
     liveAfter : LiveSet
+    nextUse : List Name := []
     regions : List Region := []
     call? : Option CallFacts := none
     loop? : Option LoopFacts := none
 end
+
+def insertUnique (name : Name) : List Name → List Name
+  | [] => [name]
+  | head :: rest =>
+      if name = head then head :: rest else head :: insertUnique name rest
+
+def stableUnique (names : List Name) : List Name :=
+  names.foldl (fun result name => insertUnique name result) []
+
+mutual
+  def Expr.nextUse {results : Nat} : Functions.Expr results → List Name
+    | .lit _ | .code _ => []
+    | .var name => [name]
+    | .prim _ args => ExprSeq.nextUse args
+
+  def ExprSeq.nextUse {results : Nat} : Locals.ExprSeq results → List Name
+    | .nil => []
+    | .cons head tail => ExprSeq.nextUse tail ++ Expr.nextUse head
+
+  def ExprList.nextUse : List (Functions.Expr 1) → List Name
+    | [] => []
+    | head :: tail => ExprList.nextUse tail ++ Expr.nextUse head
+end
+
+def Stmt.nextUse : Stmt → List Name
+  | .expr expr | .let_ _ expr => Expr.nextUse expr
+  | .assign name expr => Expr.nextUse expr ++ [name]
+  | .if_ condition _ | .for_ _ condition _ _ => Expr.nextUse condition
+  | .switch scrutinee _ _ => Expr.nextUse scrutinee
+  | .call targets _ args => ExprList.nextUse args ++ targets.reverse
+  | .terminalArgs _ args => ExprSeq.nextUse args
+  | .block _ | .brk | .cont | .leave | .terminal _ => []
+
+def regionsNextUse : List Region → List Name
+  | [] => []
+  | region :: rest =>
+      (region.points.head?.map Point.nextUse |>.getD []) ++
+        regionsNextUse rest
+
+def pointNextUse (stmt : Stmt) (regions : List Region) (tail : List Point)
+    (liveBefore : LiveSet) : List Name :=
+  let future := tail.head?.map Point.nextUse |>.getD []
+  (stableUnique (Stmt.nextUse stmt ++ regionsNextUse regions ++ future)).filter
+    fun name => decide (name ∈ liveBefore)
 
 mutual
   def annotateBlockFuel
@@ -55,8 +100,13 @@ mutual
         | [] => some { liveIn := demand.normal, points := [] }
         | stmt :: rest => do
             let tail ← annotateStmtListFuel fuel demand rest
-            let point ←
+            let rawPoint ←
               annotateStmtFuel fuel (demand.withNormal tail.liveIn) stmt
+            let point :=
+              { rawPoint with
+                nextUse :=
+                  pointNextUse stmt rawPoint.regions tail.points
+                    rawPoint.liveBefore }
             some
               { liveIn := point.liveBefore
                 points := point :: tail.points }
@@ -199,16 +249,13 @@ theorem annotateStmtListFuel_liveIn
             Option.bind_eq_some_iff.mp hFacts
           obtain ⟨point, hPoint, hResult⟩ :=
             Option.bind_eq_some_iff.mp hAfterTail
-          have hFactsEq :
-              ({ liveIn := point.liveBefore
-                 points := point :: tail.points } : Region) = facts := by
-            simpa only [Option.some.injEq] using hResult
-          subst facts
+          have hLiveIn : point.liveBefore = facts.liveIn := by
+            exact congrArg Region.liveIn (Option.some.inj hResult)
           have hTailLive := annotateStmtListFuel_liveIn hTail
           have hPointLive := annotateStmtFuel_liveBefore hPoint
           simp only [analyzeStmtListFuel]
           rw [hTailLive]
-          exact hPointLive
+          simpa [hPointLive, hLiveIn]
 
 theorem annotateStmtFuel_liveBefore
     {fuel : Nat} {demand : Demand} {stmt : Stmt} {facts : Point}
@@ -373,6 +420,17 @@ def dormantCallLiveAcross? : Option LiveSet := do
 theorem dormantCallLiveAcross_result :
     dormantCallLiveAcross? = some {"callerLive", "result", "sink"} := by
   decide
+
+def dormantCallNextUse? : Option (List (List Name)) := do
+  let region ←
+    annotateBlock? { normal := ∅ }
+      AllocationLiveness.Examples.callWithDormantValue
+  some (region.points.map Point.nextUse)
+
+theorem dormantCallNextUse_result :
+    dormantCallNextUse? =
+      some [["result", "callerLive", "sink"], ["callerLive", "sink"]] := by
+  native_decide
 
 def loopHead? : Option LiveSet := do
   let region ←

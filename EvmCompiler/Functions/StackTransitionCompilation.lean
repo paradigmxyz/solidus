@@ -17,8 +17,9 @@ theorem Promotion.compileCode
     {ctx : Locals.Ctx} {promotion : Promotion}
     {promoted : Locals.Layout}
     (hApply : promotion.apply? ctx.layout = some promoted) :
-    ∃ code,
-      Locals.Ctx.swapRestoreUpTo? (promotion.depth - 1) = some code ∧
+    ∃ shuffle code,
+      Locals.Ctx.swapRestoreUpTo? (promotion.depth - 1) = some shuffle ∧
+      code = shuffle ++ Locals.bindLocals 0 promoted ∧
       Locals.Stmt.compile ctx (.promoteName promotion.name) =
         some (Locals.codeStmt code, ctx.withLayout promoted) := by
   unfold Promotion.apply? at hApply
@@ -43,7 +44,10 @@ theorem Promotion.compileCode
           unfold Locals.Ctx.promoteNameStackOnly?
           simp [hDepth, hAllowed.1, hIndex, hPromotionBound, hCode]
         exact
-          ⟨code, hCode,
+          ⟨code, code ++ Locals.bindLocals 0
+              (Locals.Layout.promoteAt
+                (promotion.depth - 1) ctx.layout),
+            hCode, rfl,
             by simp [Locals.Stmt.compile, hPromote]⟩
       · simp [hDepth, hAllowed] at hApply
 
@@ -74,7 +78,7 @@ theorem compilePromotions
           have hTailRun :
               AllocationLayout.run promoted rest = some finalLayout := by
             simpa [hApply] using hRun
-          obtain ⟨headCode, hHeadRaw, hHeadCompile⟩ :=
+          obtain ⟨headShuffle, headCode, hHeadRaw, hHeadEq, hHeadCompile⟩ :=
             Promotion.compileCode hApply
           obtain
               ⟨tailCodes, tailCtx, hTailCodes,
@@ -82,7 +86,7 @@ theorem compilePromotions
             ih (ctx := ctx.withLayout promoted) hTailRun
           refine
             ⟨headCode :: tailCodes, tailCtx,
-              .cons hApply hHeadRaw hTailCodes, ?_, ?_⟩
+              .cons hApply hHeadRaw hHeadEq hTailCodes, ?_, ?_⟩
           · simp [Locals.Block.compileOpen, hHeadCompile, hTailCompile,
               Locals.codeStmt]
           · rw [hTailCtx]
@@ -121,6 +125,30 @@ theorem Ordering.compiledOpenRun
   subst finalCtx
   exact ⟨codes, final, by simpa [Ordering.statements] using hCompile,
     hOpen, hFinalRel⟩
+
+structure OrderingArtifact (ctx : Locals.Ctx)
+    (ordering : AllocationLayout.Ordering) where
+  promotionCodes : List Structured.Code
+  codes :
+    PromotionCodes ctx.layout ordering.promotions promotionCodes
+      ordering.target
+  compileEq :
+    Locals.Block.compileOpen ctx { stmts := ordering.statements } =
+      some (promotionCodes.map Expressions.Stmt.code,
+        ctx.withLayout ordering.target)
+
+theorem Ordering.compileArtifact
+    {ctx : Locals.Ctx} (ordering : AllocationLayout.Ordering)
+    (hSource : ctx.layout = ordering.source) :
+    Nonempty (OrderingArtifact ctx ordering) := by
+  have hRun :
+      AllocationLayout.run ctx.layout ordering.promotions =
+        some ordering.target := by
+    simpa [hSource] using ordering.valid
+  obtain ⟨codes, finalCtx, hCodes, hCompile, hFinalCtx⟩ :=
+    compilePromotions hRun
+  subst finalCtx
+  exact ⟨{ promotionCodes := codes, codes := hCodes, compileEq := hCompile }⟩
 
 structure Artifact (ctx : Locals.Ctx) (transition : Transition) where
   promotionCodes : List Structured.Code
@@ -293,11 +321,15 @@ theorem PromotionCodes.openBlockRun
           simp only [List.map_nil]
           rw [Expressions.InteractionSemantics.Block.openRun_nil]
           rfl
-  | @cons layout promoted finalLayout promotion rest head tail
-      hApply hCode hTail ih =>
+  | @cons layout promoted finalLayout promotion rest shuffle head tail
+      hApply hCode hHead hTail ih =>
       obtain ⟨middle, hHeadRun, hMiddleRel⟩ :=
-        StackTransitionPreservation.Promotion.openRun
+        StackTransitionPreservation.Promotion.openRunWithBind
           hApply hCode hRel
+      have hHeadRun' :
+          Structured.InteractionSemantics.Code.openRun head target =
+            .done (.ok middle) := by
+        simpa [hHead] using hHeadRun
       obtain ⟨final, hTailRun, hFinalRel⟩ :=
         ih hMiddleRel (fuel := fuel - 1) (by simp at hFuel ⊢; omega)
       refine ⟨final, ?_, hFinalRel⟩
@@ -311,9 +343,61 @@ theorem PromotionCodes.openBlockRun
       have hHeadBlock :=
         Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
           program fuel head target middle
-          (by simp at hFuel; omega) hHeadRun
+          (by simp at hFuel; omega) hHeadRun'
       rw [hHeadBlock, Simulation.Interaction.bind_done_ok]
       simpa using hTailRun
+
+theorem OrderingArtifact.blockOpenRun
+    (program : Expressions.Program) {ctx : Locals.Ctx}
+    {ordering : AllocationLayout.Ordering}
+    (artifact : OrderingArtifact ctx ordering)
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (fuel : Nat) (hFuel : artifact.promotionCodes.length < fuel)
+    (hRel :
+      StackRelation.StateRel ctx.layout suffix returns source target) :
+    ∃ final,
+      Expressions.InteractionSemantics.Block.openRun program fuel
+          { stmts :=
+              artifact.promotionCodes.map Expressions.Stmt.code } target =
+        .done (.ok (Structured.Outcome.regular final)) ∧
+      StackRelation.StateRel ordering.target suffix returns source final := by
+  exact PromotionCodes.openBlockRun program artifact.codes hRel fuel hFuel
+
+theorem OrderingArtifact.thenBlock
+    (program : Expressions.Program) {ctx : Locals.Ctx}
+    {ordering : AllocationLayout.Ordering}
+    (artifact : OrderingArtifact ctx ordering)
+    {α : Type}
+    {resultRel :
+      Except EVMException α → Except EVMException Structured.Outcome → Prop}
+    {sourceRun : Simulation.Interaction EVMException α}
+    {body : List Expressions.Stmt}
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (fuel : Nat) (hFuel : artifact.promotionCodes.length < fuel)
+    (hInitial :
+      StackRelation.StateRel ctx.layout suffix returns source target)
+    (hBody :
+      ∀ {orderedTarget : Structured.RunState},
+        StackRelation.StateRel ordering.target suffix returns
+            source orderedTarget →
+        Simulation.Interaction.Rel resultRel sourceRun
+          (Expressions.InteractionSemantics.Block.openRun program
+            (fuel - artifact.promotionCodes.length)
+            { stmts := body } orderedTarget)) :
+    Simulation.Interaction.Rel resultRel sourceRun
+      (Expressions.InteractionSemantics.Block.openRun program fuel
+        { stmts :=
+            artifact.promotionCodes.map Expressions.Stmt.code ++ body }
+        target) := by
+  obtain ⟨orderedTarget, hOrderRun, hOrderedRel⟩ :=
+    artifact.blockOpenRun program fuel hFuel hInitial
+  rw [Expressions.InteractionSemantics.Block.openRun_append,
+    hOrderRun, Simulation.Interaction.bind_done_ok]
+  simpa using hBody hOrderedRel
 
 theorem Artifact.blockOpenRun
     (program : Expressions.Program) {ctx : Locals.Ctx}

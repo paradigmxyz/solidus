@@ -111,15 +111,348 @@ def functionsForStackDiagnostics?
 def boolString (value : Bool) : String :=
   if value then "true" else "false"
 
+def structuredStmtKind : Structured.Stmt → String
+  | .code _ => "code"
+  | .if_ _ _ => "if"
+  | .switch _ _ _ => "switch"
+  | .for_ _ _ _ _ => "for"
+  | .brk => "break"
+  | .cont => "continue"
+  | .leave => "leave"
+  | .call name => "call:" ++ name
+  | .terminal _ => "terminal"
+
+def firstCfgPrefixFailureFrom?
+    (proc : Structured.Proc) (ctx : Structured.TypedCfgCompiler.Context)
+    (count : Nat) : Option Nat :=
+  if count > proc.body.stmts.length then
+    none
+  else
+    let prefixBlock : Structured.Block :=
+      { stmts := proc.body.stmts.take count }
+    if (Structured.TypedCfgCompiler.compileBlock? prefixBlock ctx 0
+        (Structured.ProcLabel.entry proc.name)
+        (Structured.TypedCfgCompiler.Shape.procEntry proc)
+        (Structured.ProcLabel.exit proc.name)).isNone then
+      some count
+    else
+      firstCfgPrefixFailureFrom? proc ctx (count + 1)
+termination_by proc.body.stmts.length + 1 - count
+
+def firstCfgPrefixFailure?
+    (allProcs : List Structured.Proc) (proc : Structured.Proc) : Option Nat :=
+  let ctx : Structured.TypedCfgCompiler.Context :=
+    { procs := allProcs
+      leaveLabel? := some (Structured.ProcLabel.exit proc.name)
+      leaveShape? := some (Structured.TypedCfgCompiler.Shape.procExit proc) }
+  firstCfgPrefixFailureFrom? proc ctx 0
+
+def firstBlockPrefixFailureFrom?
+    (block : Structured.Block) (ctx : Structured.TypedCfgCompiler.Context)
+    (supply : Nat) (entry : Assembly.Label) (input : TypedCfg.Shape)
+    (regular : Assembly.Label) (count : Nat) : Option (Nat × String) :=
+  if count > block.stmts.length then
+    none
+  else
+    let prefixBlock : Structured.Block :=
+      { stmts := block.stmts.take count }
+    if (Structured.TypedCfgCompiler.compileBlock? prefixBlock ctx supply entry
+        input regular).isNone then
+      let kind :=
+        block.stmts[count - 1]?.map structuredStmtKind |>.getD "unknown"
+      some (count, kind)
+    else
+      firstBlockPrefixFailureFrom? block ctx supply entry input regular
+        (count + 1)
+termination_by block.stmts.length + 1 - count
+
+def firstBlockPrefixFailure?
+    (block : Structured.Block) (ctx : Structured.TypedCfgCompiler.Context)
+    (supply : Nat) (entry : Assembly.Label) (input : TypedCfg.Shape)
+    (regular : Assembly.Label) : Option (Nat × String) :=
+  firstBlockPrefixFailureFrom? block ctx supply entry input regular 0
+
+def firstBlockFailureContext?
+    (block : Structured.Block) (ctx : Structured.TypedCfgCompiler.Context)
+    (supply : Nat) (entry : Assembly.Label) (input : TypedCfg.Shape)
+    (regular : Assembly.Label) :
+    Option (Nat × Structured.Stmt × Nat × TypedCfg.Shape) := do
+  let (count, _) ←
+    firstBlockPrefixFailure? block ctx supply entry input regular
+  let stmt ← block.stmts[count - 1]?
+  let prefixBlock : Structured.Block :=
+    { stmts := block.stmts.take (count - 1) }
+  let before ←
+    Structured.TypedCfgCompiler.compileBlock? prefixBlock ctx supply entry
+      input regular
+  let stmtInput ← before.fallthrough?
+  some (count, stmt, before.next, stmtInput)
+
+def blockFailureLabel
+    (block : Structured.Block) (ctx : Structured.TypedCfgCompiler.Context)
+    (supply : Nat) (entry : Assembly.Label) (input : TypedCfg.Shape)
+    (regular : Assembly.Label) (fallback : String) : String :=
+  match firstBlockPrefixFailure? block ctx supply entry input regular with
+  | none => fallback
+  | some (count, kind) => fallback ++ "[" ++ toString count ++ "]:" ++ kind
+
+def firstSwitchCaseFailure?
+    (cases : List (Structured.Word × Structured.Block))
+    (ctx : Structured.TypedCfgCompiler.Context) (bodyShape : TypedCfg.Shape)
+    (regular : Assembly.Label) (index : Nat := 0) : Option String :=
+  match cases with
+  | [] => none
+  | (_, body) :: rest =>
+      let supply := 100000 + index * 1000
+      let entry := Assembly.Label.generated supply 1
+      match Structured.TypedCfgCompiler.compileBlock? body ctx supply entry
+          bodyShape regular with
+      | none =>
+          some
+            (blockFailureLabel body ctx supply entry bodyShape regular
+              ("switch-case[" ++ toString index ++ "]"))
+      | some result =>
+          if result.requireFallthrough? bodyShape |>.isNone then
+            some ("switch-case[" ++ toString index ++ "]-fallthrough")
+          else
+            firstSwitchCaseFailure? rest ctx bodyShape regular (index + 1)
+
+def cfgStmtFailurePhaseFuel
+    (depth : Nat) (stmt : Structured.Stmt)
+    (ctx : Structured.TypedCfgCompiler.Context)
+    (supply : Nat) (input : TypedCfg.Shape) : String :=
+  if hDepth : depth = 0 then
+    "diagnostic-fuel"
+  else (
+  let fuel := Structured.TypedCfgCompiler.stmtFuel stmt + 1
+  let entry := Assembly.Label.generated supply 90000
+  let regular := Assembly.Label.generated supply 90001
+  match stmt with
+  | .if_ cond body =>
+      let bodyLabel := Structured.LabelSupply.label supply 0
+      match Structured.TypedCfgCompiler.mkCodeBlock? entry input cond
+          (.jumpi bodyLabel regular) with
+      | none => "if-condition-code"
+      | some head =>
+          let condOutput := head.output
+          match Structured.TypedCfgCompiler.Shape.requireSourceWords?
+              1 condOutput with
+          | none => "if-condition-result"
+          | some _ =>
+              let branchInput :=
+                { condOutput with slots := condOutput.slots.tail }
+              match Structured.TypedCfgCompiler.compileBlockFuel? fuel body ctx
+                  (supply + 1) bodyLabel branchInput regular with
+              | none =>
+                  match firstBlockFailureContext? body ctx (supply + 1)
+                      bodyLabel branchInput regular with
+                  | none => "if-body"
+                  | some (count, nested, nestedSupply, nestedInput) =>
+                      "if-body[" ++ toString count ++ "]/" ++
+                        cfgStmtFailurePhaseFuel (depth - 1) nested ctx
+                          nestedSupply nestedInput
+              | some bodyResult =>
+                  if bodyResult.requireFallthrough? branchInput |>.isNone then
+                    "if-body-fallthrough"
+                  else
+                    "if-unknown"
+  | .switch scrutinee cases defaultBody =>
+      let defaultLabel := Structured.LabelSupply.label supply 1
+      let firstTest :=
+        match cases with
+        | [] => defaultLabel
+        | _ => Structured.TypedCfgCompiler.switchTestLabel supply 0
+      match Structured.TypedCfgCompiler.mkCodeBlock? entry input scrutinee
+          (.jump firstTest) with
+      | none => "switch-scrutinee-code"
+      | some head =>
+          let valueShape := head.output
+          match Structured.TypedCfgCompiler.Shape.requireSourceWords?
+              1 valueShape with
+          | none => "switch-scrutinee-result"
+          | some _ =>
+              let bodyShape :=
+                { valueShape with slots := valueShape.slots.tail }
+              match Structured.TypedCfgCompiler.compileCasesFuel? fuel cases
+                  ctx supply (supply + 1) 0 valueShape bodyShape regular with
+              | none =>
+                  (firstSwitchCaseFailure? cases ctx bodyShape regular).getD
+                    "switch-cases"
+              | some caseResult =>
+                  match Structured.TypedCfgCompiler.compileDefaultFuel? fuel
+                      defaultBody ctx caseResult.next defaultLabel valueShape
+                      bodyShape regular with
+                  | none => "switch-default"
+                  | some _ => "switch-unknown"
+  | .for_ init cond post body =>
+      let loopLabel := Structured.LabelSupply.label supply 0
+      let bodyLabel := Structured.LabelSupply.label supply 1
+      let postLabel := Structured.LabelSupply.label supply 2
+      let outerCtx :=
+        { ctx with
+          breakLabel? := none
+          breakShape? := none
+          continueLabel? := none
+          continueShape? := none }
+      match Structured.TypedCfgCompiler.compileBlockFuel? fuel init outerCtx
+          (supply + 1) entry input loopLabel with
+      | none => "for-init"
+      | some initResult =>
+          match initResult.fallthrough? with
+          | none => "for-init-fallthrough"
+          | some loopInput =>
+              match Structured.TypedCfgCompiler.mkCodeBlock? loopLabel
+                  loopInput cond (.jumpi bodyLabel regular) with
+              | none => "for-condition-code"
+              | some loopBlock =>
+                  let condOutput := loopBlock.output
+                  match Structured.TypedCfgCompiler.Shape.requireSourceWords?
+                      1 condOutput with
+                  | none => "for-condition-result"
+                  | some _ =>
+                      let branchInput :=
+                        { condOutput with slots := condOutput.slots.tail }
+                      let bodyCtx :=
+                        { ctx with
+                          breakLabel? := some regular
+                          breakShape? := some branchInput
+                          continueLabel? := some postLabel
+                          continueShape? := some branchInput }
+                      match Structured.TypedCfgCompiler.compileBlockFuel? fuel
+                          body bodyCtx initResult.next bodyLabel branchInput
+                          postLabel with
+                      | none =>
+                          match firstBlockFailureContext? body bodyCtx
+                              initResult.next bodyLabel branchInput postLabel with
+                          | none => "for-body"
+                          | some (count, nested, nestedSupply, nestedInput) =>
+                              "for-body[" ++ toString count ++ "]/" ++
+                                cfgStmtFailurePhaseFuel (depth - 1) nested
+                                  bodyCtx nestedSupply nestedInput
+                      | some bodyResult =>
+                          match bodyResult.requireFallthrough? branchInput with
+                          | none => "for-body-fallthrough"
+                          | some _ =>
+                              match
+                                  Structured.TypedCfgCompiler.compileBlockFuel?
+                                    fuel post outerCtx bodyResult.next postLabel
+                                    branchInput loopLabel with
+                              | none => "for-post"
+                              | some postResult =>
+                                  match postResult.requireFallthrough? loopInput with
+                                  | none => "for-post-fallthrough"
+                                  | some _ => "for-unknown"
+  | _ => structuredStmtKind stmt)
+termination_by depth
+decreasing_by
+  all_goals
+    exact Nat.sub_lt (Nat.zero_lt_of_ne_zero hDepth) (by omega)
+
+def cfgStmtFailurePhase
+    (stmt : Structured.Stmt) (ctx : Structured.TypedCfgCompiler.Context)
+    (supply : Nat) (input : TypedCfg.Shape) : String :=
+  cfgStmtFailurePhaseFuel
+    (Structured.TypedCfgCompiler.stmtFuel stmt + 1) stmt ctx supply input
+
+def firstCfgFailurePhase?
+    (allProcs : List Structured.Proc) (proc : Structured.Proc)
+    (count : Nat) : Option String := do
+  let stmt ← proc.body.stmts[count - 1]?
+  let ctx : Structured.TypedCfgCompiler.Context :=
+    { procs := allProcs
+      leaveLabel? := some (Structured.ProcLabel.exit proc.name)
+      leaveShape? := some (Structured.TypedCfgCompiler.Shape.procExit proc) }
+  let prefixBlock : Structured.Block :=
+    { stmts := proc.body.stmts.take (count - 1) }
+  let prefixResult ←
+    Structured.TypedCfgCompiler.compileBlock? prefixBlock ctx 0
+      (Structured.ProcLabel.entry proc.name)
+      (Structured.TypedCfgCompiler.Shape.procEntry proc)
+      (Structured.ProcLabel.exit proc.name)
+  let input ← prefixResult.fallthrough?
+  some (cfgStmtFailurePhase stmt ctx prefixResult.next input)
+
 def printStackDiagnostics
     (source : String) (contract objectName : String)
     (functions : Functions.Program) : IO Unit := do
+  let compileStart ← IO.monoMsNow
+  let lowered? := Functions.StackLowering.lowerProgram? functions
+  let expressions? := lowered?.bind Locals.Program.toExpressions?
+  let structured? := expressions?.map Expressions.Program.toStructured
+  let cfgGenerated? :=
+    structured?.bind Structured.TypedCfgCompiler.generate?
+  let cfg? := structured?.bind Structured.TypedCfgCompiler.compile?
+  let certified? := cfg?.bind TypedCfg.Program.compileCertified?
+  let compiled? := certified?.bind fun artifact =>
+    Assembly.compileExecutable? artifact.target
+  let assemblyInstrs := compiled?.map (·.code.length) |>.getD 0
+  let compileFinish ← IO.monoMsNow
   let reports := Functions.StackDiagnostics.programReports functions
   let summary := Functions.StackDiagnostics.summarize reports
   IO.println "stack_diagnostics=complete"
   IO.println ("source=" ++ source)
   IO.println ("contract=" ++ contract)
   IO.println ("object=" ++ objectName)
+  IO.println ("stack_program_lowering=" ++ boolString lowered?.isSome)
+  IO.println
+    ("stack_program_to_expressions=" ++ boolString expressions?.isSome)
+  IO.println
+    ("stack_program_cfg_generated=" ++ boolString cfgGenerated?.isSome)
+  IO.println ("stack_program_cfg_checked=" ++ boolString cfg?.isSome)
+  IO.println
+    ("stack_program_assembly_generated=" ++ boolString certified?.isSome)
+  IO.println ("stack_program_compilation=" ++ boolString compiled?.isSome)
+  IO.println ("stack_program_assembly_instrs=" ++ toString assemblyInstrs)
+  IO.println
+    ("timing\tstack_program\t" ++ toString (compileFinish - compileStart))
+  match lowered? with
+  | none => pure ()
+  | some lowered =>
+      match lowered.procs.find? fun proc => proc.toExpressions?.isNone with
+      | some proc =>
+          IO.println ("stack_program_first_proc_failure=" ++ proc.name)
+      | none =>
+          if (Locals.Block.compile Locals.Ctx.initial lowered.body).isNone then
+            IO.println "stack_program_first_proc_failure=program-body"
+          else
+            pure ()
+  match structured? with
+  | none => pure ()
+  | some structured =>
+      match structured.procs.find? fun proc =>
+          (Structured.TypedCfgCompiler.compileProcBodies?
+            structured.procs [proc] 0).isNone with
+      | some proc =>
+          IO.println ("stack_program_first_cfg_proc_failure=" ++ proc.name)
+          IO.println
+            ("stack_program_first_cfg_proc_statements=" ++
+              toString proc.body.stmts.length)
+          match firstCfgPrefixFailure? structured.procs proc with
+          | none =>
+              IO.println "stack_program_first_cfg_prefix_failure=fallthrough"
+          | some count =>
+              IO.println
+                ("stack_program_first_cfg_prefix_failure=" ++ toString count)
+              match proc.body.stmts[count - 1]? with
+              | none => pure ()
+              | some stmt =>
+                  IO.println
+                    ("stack_program_first_cfg_statement_kind=" ++
+                      structuredStmtKind stmt)
+              match firstCfgFailurePhase? structured.procs proc count with
+              | none => pure ()
+              | some phase =>
+                  IO.println
+                    ("stack_program_first_cfg_failure_phase=" ++ phase)
+      | none =>
+          let mainCtx : Structured.TypedCfgCompiler.Context :=
+            { procs := structured.procs }
+          if (Structured.TypedCfgCompiler.compileBlock? structured.body
+              mainCtx 0 Structured.TypedCfgCompiler.entryLabel
+              TypedCfg.Shape.caller Structured.ProcLabel.programEnd).isNone then
+            IO.println "stack_program_first_cfg_proc_failure=program-body"
+          else
+            pure ()
   IO.println ("units=" ++ toString summary.units)
   IO.println ("liveness_ok=" ++ toString summary.livenessOk)
   IO.println ("schedule_ok=" ++ toString summary.scheduleOk)

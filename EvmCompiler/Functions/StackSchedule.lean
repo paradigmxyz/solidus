@@ -22,15 +22,22 @@ mutual
   structure Region where
     entry : Transition
     points : List Point
+    exit? : Option Join := none
     finalLayout : Locals.Layout
 
   structure Point where
+    order? : Option AllocationLayout.Ordering := none
     beforeLayout : Locals.Layout
     statementLayout : Locals.Layout
+    exit? : Option Join := none
     retain? : Option Transition
     regions : List Region := []
     fallsThrough : Bool := true
 end
+
+structure ControlTargets where
+  brk? : Option Locals.Layout := none
+  cont? : Option Locals.Layout := none
 
 def layoutSet (layout : Locals.Layout) : LiveSet :=
   layout.toFinset
@@ -59,6 +66,22 @@ def nextLive (fallback : LiveSet) :
   | stmt :: _, point :: _ => residentBefore stmt point
   | _, _ => fallback
 
+def accessible (layout : Locals.Layout) (name : Name) : Bool :=
+  match Locals.Layout.lookupDepth? name layout with
+  | some depth => depth ≤ 17
+  | none => false
+
+def orderPriority (layout : Locals.Layout) (stmt : Stmt)
+    (facts : AllocationLivenessFacts.Point) : List Name :=
+  let dying :=
+    layout.filter fun name => decide (name ∉ facts.liveAfter)
+  let immediate :=
+    AllocationLivenessFacts.Stmt.nextUse stmt ++ dying
+  let accessibleFuture := facts.nextUse.filter (accessible layout)
+  ((AllocationLivenessFacts.stableUnique
+      (immediate ++ accessibleFuture)).filter
+        fun name => decide (name ∈ layout)).take 16
+
 def covers (layout : Locals.Layout) (live : LiveSet) : Prop :=
   live ⊆ layoutSet layout
 
@@ -72,8 +95,9 @@ def alwaysExits : Stmt → Bool
   | _ => false
 
 mutual
-  def scheduleBlockFuel
-      (fuel : Nat) (pinned : LiveSet) (layout : Locals.Layout)
+  def scheduleBlockFuelWithTargets
+      (targets : ControlTargets) (fuel : Nat)
+      (pinned : LiveSet) (layout : Locals.Layout)
       (source : Block) (facts : AllocationLivenessFacts.Region) :
       Option Region :=
     match fuel with
@@ -83,20 +107,26 @@ mutual
         if covers layout entryDemand then
         let entry ← Transition.build? layout entryDemand
         let (points, finalLayout) ←
-          scheduleStmtListFuel fuel pinned entry.target
+          scheduleStmtListFuelWithTargets targets fuel pinned entry.target
             source.stmts facts.points
         some { entry, points, finalLayout }
         else
           none
 
-  def scheduleStmtListFuel
-      (fuel : Nat) (pinned : LiveSet) (layout : Locals.Layout) :
+  def scheduleStmtListFuelWithTargets
+      (targets : ControlTargets) (fuel : Nat)
+      (pinned : LiveSet) (layout : Locals.Layout) :
       List Stmt → List AllocationLivenessFacts.Point →
         Option (List Point × Locals.Layout)
     | [], [] => some ([], layout)
     | stmt :: rest, facts :: restFacts => do
-        if covers layout (residentBefore stmt facts) then
-        let point ← scheduleStmtFuel fuel pinned layout stmt facts
+        let order ← Ordering.build? layout (orderPriority layout stmt facts)
+        let orderedLayout := order.target
+        if covers orderedLayout (residentBefore stmt facts) then
+        let point ←
+          scheduleStmtFuelWithTargets targets fuel pinned orderedLayout
+            stmt facts
+        let point := { point with order? := some order }
         if point.fallsThrough then
           let afterDemand :=
             required pinned (nextLive facts.liveAfter rest restFacts)
@@ -104,7 +134,8 @@ mutual
           let retain ← Transition.build? point.statementLayout afterDemand
           let point := { point with retain? := some retain }
           let (tail, finalLayout) ←
-            scheduleStmtListFuel fuel pinned retain.target rest restFacts
+            scheduleStmtListFuelWithTargets targets fuel pinned retain.target
+              rest restFacts
           some (point :: tail, finalLayout)
           else
             none
@@ -114,30 +145,41 @@ mutual
           none
     | _, _ => none
 
-  def scheduleCaseRegionsFuel
-      (fuel : Nat) (pinned : LiveSet) (layout : Locals.Layout) :
+  def scheduleCaseRegionsFuelWithTargets
+      (targets : ControlTargets) (fuel : Nat)
+      (pinned : LiveSet) (layout : Locals.Layout) :
       List (Word × Block) → List AllocationLivenessFacts.Region →
         Option (List Region)
     | [], [] => some []
     | (_, body) :: rest, facts :: restFacts => do
-        let head ← scheduleBlockFuel fuel pinned layout body facts
+        let head ←
+          scheduleBlockFuelWithTargets targets fuel pinned layout body facts
+        let exit ← Join.build? head.finalLayout layout
+        let head := { head with exit? := some exit, finalLayout := layout }
         let tail ←
-          scheduleCaseRegionsFuel fuel pinned layout rest restFacts
+          scheduleCaseRegionsFuelWithTargets targets fuel pinned layout
+            rest restFacts
         some (head :: tail)
     | _, _ => none
 
-  def scheduleDefaultRegionFuel
-      (fuel : Nat) (pinned : LiveSet) (layout : Locals.Layout) :
+  def scheduleDefaultRegionFuelWithTargets
+      (targets : ControlTargets) (fuel : Nat)
+      (pinned : LiveSet) (layout : Locals.Layout) :
       Option Block → List AllocationLivenessFacts.Region →
         Option (List Region)
     | none, [] => some []
     | some body, [facts] => do
-        let region ← scheduleBlockFuel fuel pinned layout body facts
+        let region ←
+          scheduleBlockFuelWithTargets targets fuel pinned layout body facts
+        let exit ← Join.build? region.finalLayout layout
+        let region :=
+          { region with exit? := some exit, finalLayout := layout }
         some [region]
     | _, _ => none
 
-  def scheduleStmtFuel
-      (fuel : Nat) (pinned : LiveSet) (layout : Locals.Layout)
+  def scheduleStmtFuelWithTargets
+      (targets : ControlTargets) (fuel : Nat)
+      (pinned : LiveSet) (layout : Locals.Layout)
       (stmt : Stmt) (facts : AllocationLivenessFacts.Point) : Option Point :=
     match fuel with
     | 0 => none
@@ -148,17 +190,23 @@ mutual
               none
             else
               some
-                { beforeLayout := layout
+                { order? := none
+                  beforeLayout := layout
                   statementLayout := name :: layout
                   retain? := none }
         | .block body =>
             match facts.regions with
             | [bodyFacts] => do
                 let region ←
-                  scheduleBlockFuel fuel (layoutSet layout) layout
+                  scheduleBlockFuelWithTargets targets fuel
+                    (layoutSet layout) layout
                     body bodyFacts
+                let exit ← Join.build? region.finalLayout layout
+                let region :=
+                  { region with exit? := some exit, finalLayout := layout }
                 some
-                  { beforeLayout := layout
+                  { order? := none
+                    beforeLayout := layout
                     statementLayout := layout
                     retain? := none
                     regions := [region] }
@@ -167,10 +215,15 @@ mutual
             match facts.regions with
             | [bodyFacts] => do
                 let region ←
-                  scheduleBlockFuel fuel (layoutSet layout) layout
+                  scheduleBlockFuelWithTargets targets fuel
+                    (layoutSet layout) layout
                     body bodyFacts
+                let exit ← Join.build? region.finalLayout layout
+                let region :=
+                  { region with exit? := some exit, finalLayout := layout }
                 some
-                  { beforeLayout := layout
+                  { order? := none
+                    beforeLayout := layout
                     statementLayout := layout
                     retain? := none
                     regions := [region] }
@@ -181,13 +234,16 @@ mutual
             let defaultFacts := facts.regions.drop caseCount
             let branchProtected := layoutSet layout
             let caseRegions ←
-              scheduleCaseRegionsFuel fuel branchProtected layout
+              scheduleCaseRegionsFuelWithTargets targets fuel
+                branchProtected layout
                 cases caseFacts
             let defaultRegions ←
-              scheduleDefaultRegionFuel fuel branchProtected layout
+              scheduleDefaultRegionFuelWithTargets targets fuel
+                branchProtected layout
                 defaultBody defaultFacts
             some
-              { beforeLayout := layout
+              { order? := none
+                beforeLayout := layout
                 statementLayout := layout
                 retain? := none
                 regions := caseRegions ++ defaultRegions }
@@ -196,26 +252,96 @@ mutual
             | [initFacts, postFacts, bodyFacts], some _loop => do
                 let outerProtected := layoutSet layout
                 let initRegion ←
-                  scheduleBlockFuel fuel outerProtected layout init initFacts
+                  scheduleBlockFuelWithTargets targets fuel outerProtected
+                    layout init initFacts
                 let baseline := initRegion.finalLayout
                 let loopProtected := layoutSet baseline
+                let loopTargets : ControlTargets :=
+                  { targets with
+                    brk? := some baseline
+                    cont? := some baseline }
                 let postRegion ←
-                  scheduleBlockFuel fuel loopProtected baseline post postFacts
+                  scheduleBlockFuelWithTargets loopTargets fuel loopProtected
+                    baseline post postFacts
                 let bodyRegion ←
-                  scheduleBlockFuel fuel loopProtected baseline body bodyFacts
+                  scheduleBlockFuelWithTargets loopTargets fuel loopProtected
+                    baseline body bodyFacts
+                let postExit ← Join.build? postRegion.finalLayout baseline
+                let bodyExit ← Join.build? bodyRegion.finalLayout baseline
+                let postRegion :=
+                  { postRegion with
+                      exit? := some postExit, finalLayout := baseline }
+                let bodyRegion :=
+                  { bodyRegion with
+                      exit? := some bodyExit, finalLayout := baseline }
                 some
-                  { beforeLayout := layout
+                  { order? := none
+                    beforeLayout := layout
                     statementLayout := layout
                     retain? := none
                     regions := [initRegion, postRegion, bodyRegion] }
             | _, _ => none
+        | .brk =>
+            match targets.brk? with
+            | none =>
+                some
+                  { order? := none
+                    beforeLayout := layout
+                    statementLayout := layout
+                    retain? := none
+                    fallsThrough := false }
+            | some target => do
+                let exit ← Join.build? layout target
+                some
+                  { order? := none
+                    beforeLayout := layout
+                    statementLayout := target
+                    exit? := some exit
+                    retain? := none
+                    fallsThrough := false }
+        | .cont =>
+            match targets.cont? with
+            | none =>
+                some
+                  { order? := none
+                    beforeLayout := layout
+                    statementLayout := layout
+                    retain? := none
+                    fallsThrough := false }
+            | some target => do
+                let exit ← Join.build? layout target
+                some
+                  { order? := none
+                    beforeLayout := layout
+                    statementLayout := target
+                    exit? := some exit
+                    retain? := none
+                    fallsThrough := false }
         | _ =>
             some
-              { beforeLayout := layout
+              { order? := none
+                beforeLayout := layout
                 statementLayout := layout
                 retain? := none
                 fallsThrough := !alwaysExits stmt }
 end
+
+def scheduleBlockFuel
+    (fuel : Nat) (pinned : LiveSet) (layout : Locals.Layout)
+    (source : Block) (facts : AllocationLivenessFacts.Region) :
+    Option Region :=
+  scheduleBlockFuelWithTargets {} fuel pinned layout source facts
+
+def scheduleStmtListFuel
+    (fuel : Nat) (pinned : LiveSet) (layout : Locals.Layout)
+    (stmts : List Stmt) (facts : List AllocationLivenessFacts.Point) :
+    Option (List Point × Locals.Layout) :=
+  scheduleStmtListFuelWithTargets {} fuel pinned layout stmts facts
+
+def scheduleStmtFuel
+    (fuel : Nat) (pinned : LiveSet) (layout : Locals.Layout)
+    (stmt : Stmt) (facts : AllocationLivenessFacts.Point) : Option Point :=
+  scheduleStmtFuelWithTargets {} fuel pinned layout stmt facts
 
 def scheduleBlock?
     (pinned : LiveSet) (layout : Locals.Layout)
@@ -235,9 +361,10 @@ theorem scheduleBlockFuel_entry_sound
       region.entry.schedule.ValidFor layout
         (required pinned (blockEntryLive source facts)) := by
   cases fuel with
-  | zero => simp [scheduleBlockFuel] at hSchedule
+  | zero =>
+      simp [scheduleBlockFuel, scheduleBlockFuelWithTargets] at hSchedule
   | succ fuel =>
-      simp only [scheduleBlockFuel] at hSchedule
+      simp only [scheduleBlockFuel, scheduleBlockFuelWithTargets] at hSchedule
       by_cases hCover :
           covers layout (required pinned (blockEntryLive source facts))
       · rw [if_pos hCover] at hSchedule
@@ -276,8 +403,9 @@ theorem scheduleStmtListFuel_cons_components
     (hSchedule :
       scheduleStmtListFuel fuel pinned layout (stmt :: rest)
           (facts :: restFacts) = some (scheduledPoints, finalLayout)) :
-    ∃ rawPoint,
-      scheduleStmtFuel fuel pinned layout stmt facts = some rawPoint ∧
+    ∃ order rawPoint,
+      Ordering.build? layout (orderPriority layout stmt facts) = some order ∧
+      scheduleStmtFuel fuel pinned order.target stmt facts = some rawPoint ∧
         ((rawPoint.fallsThrough = true ∧
             ∃ retain tail tailFinal,
               Transition.build? rawPoint.statementLayout
@@ -287,17 +415,21 @@ theorem scheduleStmtListFuel_cons_components
               scheduleStmtListFuel fuel pinned retain.target rest restFacts =
                 some (tail, tailFinal) ∧
               scheduledPoints =
-                { rawPoint with retain? := some retain } :: tail ∧
+                { rawPoint with order? := some order, retain? := some retain } ::
+                  tail ∧
               finalLayout = tailFinal) ∨
           (rawPoint.fallsThrough = false ∧
-            scheduledPoints = [{ rawPoint with retain? := none }] ∧
+            scheduledPoints =
+              [{ rawPoint with order? := some order, retain? := none }] ∧
             finalLayout = rawPoint.statementLayout)) := by
-  simp only [scheduleStmtListFuel] at hSchedule
-  by_cases hCover : covers layout (residentBefore stmt facts)
-  · rw [if_pos hCover] at hSchedule
+  simp only [scheduleStmtListFuel, scheduleStmtListFuelWithTargets] at hSchedule
+  obtain ⟨order, hOrder, hAfterOrder⟩ :=
+    Option.bind_eq_some_iff.mp hSchedule
+  by_cases hCover : covers order.target (residentBefore stmt facts)
+  · rw [if_pos hCover] at hAfterOrder
     obtain ⟨rawPoint, hPoint, hAfterPoint⟩ :=
-      Option.bind_eq_some_iff.mp hSchedule
-    refine ⟨rawPoint, hPoint, ?_⟩
+      Option.bind_eq_some_iff.mp hAfterOrder
+    refine ⟨order, rawPoint, hOrder, hPoint, ?_⟩
     cases hFalls : rawPoint.fallsThrough with
     | false =>
         rw [hFalls] at hAfterPoint
@@ -323,7 +455,7 @@ theorem scheduleStmtListFuel_cons_components
               hPoints.symm, hFinal.symm⟩
         · rw [if_neg hAfterCover] at hAfterPoint
           contradiction
-  · rw [if_neg hCover] at hSchedule
+  · rw [if_neg hCover] at hAfterOrder
     contradiction
 
 theorem scheduleStmtListFuel_cons_nonempty
@@ -336,13 +468,27 @@ theorem scheduleStmtListFuel_cons_nonempty
       scheduleStmtListFuel fuel pinned layout (stmt :: rest)
           (facts :: restFacts) = some (scheduledPoints, finalLayout)) :
     ∃ point points, scheduledPoints = point :: points := by
-  obtain ⟨rawPoint, _hRaw, hRegular | hAbrupt⟩ :=
+  obtain ⟨order, rawPoint, _hOrder, _hRaw, hCases⟩ :=
     scheduleStmtListFuel_cons_components hSchedule
-  · obtain ⟨_hFalls, retain, tail, _tailFinal,
-        _hRetain, _hTail, hPoints, _hFinal⟩ := hRegular
-    exact ⟨{ rawPoint with retain? := some retain }, tail, hPoints⟩
-  · exact
-      ⟨{ rawPoint with retain? := none }, [], hAbrupt.2.1⟩
+  cases hFalls : rawPoint.fallsThrough with
+  | false =>
+      have hAbrupt := hCases.resolve_left (by
+        intro hRegular
+        rw [hFalls] at hRegular
+        exact Bool.noConfusion hRegular.1)
+      exact
+        ⟨{ rawPoint with order? := some order, retain? := none },
+          [], hAbrupt.2.1⟩
+  | true =>
+      have hRegular := hCases.resolve_right (by
+        intro hAbrupt
+        rw [hFalls] at hAbrupt
+        exact Bool.noConfusion hAbrupt.1)
+      obtain ⟨_hFalls, retain, tail, _tailFinal,
+          _hRetain, _hTail, hPoints, _hFinal⟩ := hRegular
+      exact
+        ⟨{ rawPoint with order? := some order, retain? := some retain },
+          tail, hPoints⟩
 
 theorem scheduleStmtListFuel_nil_components
     {fuel : Nat} {pinned : LiveSet} {layout finalLayout : Locals.Layout}
@@ -351,7 +497,7 @@ theorem scheduleStmtListFuel_nil_components
       scheduleStmtListFuel fuel pinned layout [] [] =
         some (scheduledPoints, finalLayout)) :
     scheduledPoints = [] ∧ finalLayout = layout := by
-  simp [scheduleStmtListFuel] at hSchedule
+  simp [scheduleStmtListFuel, scheduleStmtListFuelWithTargets] at hSchedule
   exact ⟨hSchedule.1, hSchedule.2.symm⟩
 
 theorem scheduleStmtFuel_expr_components
@@ -364,9 +510,11 @@ theorem scheduleStmtFuel_expr_components
       point.retain? = none ∧ point.regions = [] ∧
       point.fallsThrough = true := by
   cases fuel with
-  | zero => simp [scheduleStmtFuel] at hSchedule
+  | zero =>
+      simp [scheduleStmtFuel, scheduleStmtFuelWithTargets] at hSchedule
   | succ fuel =>
-      simp [scheduleStmtFuel, alwaysExits] at hSchedule
+      simp [scheduleStmtFuel, scheduleStmtFuelWithTargets, alwaysExits]
+        at hSchedule
       subst point
       simp
 
@@ -382,11 +530,12 @@ theorem scheduleStmtFuel_let_components
       point.retain? = none ∧ point.regions = [] ∧
       point.fallsThrough = true := by
   cases fuel with
-  | zero => simp [scheduleStmtFuel] at hSchedule
+  | zero =>
+      simp [scheduleStmtFuel, scheduleStmtFuelWithTargets] at hSchedule
   | succ fuel =>
       by_cases hMem : name ∈ layout
-      · simp [scheduleStmtFuel, hMem] at hSchedule
-      · simp [scheduleStmtFuel, hMem] at hSchedule
+      · simp [scheduleStmtFuel, scheduleStmtFuelWithTargets, hMem] at hSchedule
+      · simp [scheduleStmtFuel, scheduleStmtFuelWithTargets, hMem] at hSchedule
         subst point
         exact ⟨hMem, rfl, rfl, rfl, rfl, rfl⟩
 
@@ -402,9 +551,11 @@ theorem scheduleStmtFuel_assign_components
       point.retain? = none ∧ point.regions = [] ∧
       point.fallsThrough = true := by
   cases fuel with
-  | zero => simp [scheduleStmtFuel] at hSchedule
+  | zero =>
+      simp [scheduleStmtFuel, scheduleStmtFuelWithTargets] at hSchedule
   | succ fuel =>
-      simp [scheduleStmtFuel, alwaysExits] at hSchedule
+      simp [scheduleStmtFuel, scheduleStmtFuelWithTargets, alwaysExits]
+        at hSchedule
       subst point
       simp
 
@@ -420,9 +571,11 @@ theorem scheduleStmtFuel_terminal_components
       point.retain? = none ∧ point.regions = [] ∧
       point.fallsThrough = false := by
   cases fuel with
-  | zero => simp [scheduleStmtFuel] at hSchedule
+  | zero =>
+      simp [scheduleStmtFuel, scheduleStmtFuelWithTargets] at hSchedule
   | succ fuel =>
-      simp [scheduleStmtFuel, alwaysExits] at hSchedule
+      simp [scheduleStmtFuel, scheduleStmtFuelWithTargets, alwaysExits]
+        at hSchedule
       subst point
       simp
 
@@ -438,11 +591,65 @@ theorem scheduleStmtFuel_terminalArgs_components
       point.retain? = none ∧ point.regions = [] ∧
       point.fallsThrough = false := by
   cases fuel with
-  | zero => simp [scheduleStmtFuel] at hSchedule
+  | zero =>
+      simp [scheduleStmtFuel, scheduleStmtFuelWithTargets] at hSchedule
   | succ fuel =>
-      simp [scheduleStmtFuel, alwaysExits] at hSchedule
+      simp [scheduleStmtFuel, scheduleStmtFuelWithTargets, alwaysExits]
+        at hSchedule
       subst point
       simp
+
+theorem scheduleStmtFuelWithTargets_brk_components
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout target : Locals.Layout}
+    {facts : AllocationLivenessFacts.Point} {point : Point}
+    (hTarget : targets.brk? = some target)
+    (hSchedule :
+      scheduleStmtFuelWithTargets targets fuel pinned layout .brk facts =
+        some point) :
+    ∃ exit,
+      Join.build? layout target = some exit ∧
+        point.beforeLayout = layout ∧
+        point.statementLayout = target ∧
+        point.exit? = some exit ∧ point.retain? = none ∧
+        point.regions = [] ∧ point.fallsThrough = false := by
+  cases fuel with
+  | zero =>
+      simp [scheduleStmtFuelWithTargets] at hSchedule
+  | succ fuel =>
+      cases hExit : Join.build? layout target with
+      | none =>
+          simp [scheduleStmtFuelWithTargets, hTarget, hExit] at hSchedule
+      | some exit =>
+          simp [scheduleStmtFuelWithTargets, hTarget, hExit] at hSchedule
+          subst point
+          exact ⟨exit, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem scheduleStmtFuelWithTargets_cont_components
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout target : Locals.Layout}
+    {facts : AllocationLivenessFacts.Point} {point : Point}
+    (hTarget : targets.cont? = some target)
+    (hSchedule :
+      scheduleStmtFuelWithTargets targets fuel pinned layout .cont facts =
+        some point) :
+    ∃ exit,
+      Join.build? layout target = some exit ∧
+        point.beforeLayout = layout ∧
+        point.statementLayout = target ∧
+        point.exit? = some exit ∧ point.retain? = none ∧
+        point.regions = [] ∧ point.fallsThrough = false := by
+  cases fuel with
+  | zero =>
+      simp [scheduleStmtFuelWithTargets] at hSchedule
+  | succ fuel =>
+      cases hExit : Join.build? layout target with
+      | none =>
+          simp [scheduleStmtFuelWithTargets, hTarget, hExit] at hSchedule
+      | some exit =>
+          simp [scheduleStmtFuelWithTargets, hTarget, hExit] at hSchedule
+          subst point
+          exact ⟨exit, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 theorem scheduleStmtListFuel_expr_components
     {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
@@ -453,37 +660,42 @@ theorem scheduleStmtListFuel_expr_components
     (hSchedule :
       scheduleStmtListFuel fuel pinned layout (.expr expr :: rest)
           (facts :: restFacts) = some (point :: points, finalLayout)) :
-    ∃ retain tailFinal,
-      point.beforeLayout = layout ∧
-        point.statementLayout = layout ∧
+    ∃ order retain tailFinal,
+      Ordering.build? layout (orderPriority layout (.expr expr) facts) =
+          some order ∧
+        point.order? = some order ∧
+        point.beforeLayout = order.target ∧
+        point.statementLayout = order.target ∧
         point.retain? = some retain ∧ point.regions = [] ∧
         point.fallsThrough = true ∧
-        Transition.build? layout
+        Transition.build? order.target
             (required pinned (nextLive facts.liveAfter rest restFacts)) =
           some retain ∧
         scheduleStmtListFuel fuel pinned retain.target rest restFacts =
           some (points, tailFinal) ∧
         finalLayout = tailFinal := by
-  obtain ⟨rawPoint, hRaw, hCases⟩ :=
+  obtain ⟨order, rawPoint, hOrder, hRaw, hCases⟩ :=
     scheduleStmtListFuel_cons_components hSchedule
   have hShape := scheduleStmtFuel_expr_components hRaw
   rcases hShape with
     ⟨hBefore, hStatement, _hNoRetain, hRegions, hFalls⟩
-  rcases hCases with hRegular | hAbrupt
-  · obtain ⟨_hFalls, retain, tail, tailFinal,
-        hRetain, hTail, hPoints, hFinal⟩ := hRegular
-    injection hPoints with hPoint hTailPoints
-    subst point
-    subst tail
-    refine
-      ⟨retain, tailFinal, ?_, ?_, rfl, ?_, by simpa using hFalls,
-        ?_, hTail, hFinal⟩
-    · simpa using hBefore
-    · simpa using hStatement
-    · simpa using hRegions
-    · simpa [hStatement] using hRetain
-  · rw [hFalls] at hAbrupt
-    exact Bool.noConfusion hAbrupt.1
+  have hRegular := hCases.resolve_right (by
+    intro hAbrupt
+    rw [hFalls] at hAbrupt
+    exact Bool.noConfusion hAbrupt.1)
+  obtain ⟨_hFalls, retain, tail, tailFinal,
+      hRetain, hTail, hPoints, hFinal⟩ := hRegular
+  injection hPoints with hPoint hTailPoints
+  subst point
+  subst tail
+  refine
+    ⟨order, retain, tailFinal, hOrder, rfl, ?_, ?_, rfl, ?_,
+      by simpa using hFalls,
+      ?_, hTail, hFinal⟩
+  · simpa using hBefore
+  · simpa using hStatement
+  · simpa using hRegions
+  · simpa [hStatement] using hRetain
 
 theorem scheduleStmtListFuel_let_components
     {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
@@ -494,37 +706,41 @@ theorem scheduleStmtListFuel_let_components
     (hSchedule :
       scheduleStmtListFuel fuel pinned layout (.let_ name value :: rest)
           (facts :: restFacts) = some (point :: points, finalLayout)) :
-    ∃ retain tailFinal,
-      name ∉ layout ∧ point.beforeLayout = layout ∧
-        point.statementLayout = name :: layout ∧
+    ∃ order retain tailFinal,
+      Ordering.build? layout (orderPriority layout (.let_ name value) facts) =
+          some order ∧
+        point.order? = some order ∧
+        name ∉ order.target ∧ point.beforeLayout = order.target ∧
+        point.statementLayout = name :: order.target ∧
         point.retain? = some retain ∧ point.regions = [] ∧
         point.fallsThrough = true ∧
-        Transition.build? (name :: layout)
+        Transition.build? (name :: order.target)
             (required pinned (nextLive facts.liveAfter rest restFacts)) =
           some retain ∧
         scheduleStmtListFuel fuel pinned retain.target rest restFacts =
           some (points, tailFinal) ∧
         finalLayout = tailFinal := by
-  obtain ⟨rawPoint, hRaw, hCases⟩ :=
+  obtain ⟨order, rawPoint, hOrder, hRaw, hCases⟩ :=
     scheduleStmtListFuel_cons_components hSchedule
   have hShape := scheduleStmtFuel_let_components hRaw
   rcases hShape with
     ⟨hFresh, hBefore, hStatement, _hNoRetain, hRegions, hFalls⟩
-  rcases hCases with hRegular | hAbrupt
-  · obtain ⟨_hFalls, retain, tail, tailFinal,
-        hRetain, hTail, hPoints, hFinal⟩ := hRegular
-    injection hPoints with hPoint hTailPoints
-    subst point
-    subst tail
-    refine
-      ⟨retain, tailFinal, hFresh, ?_, ?_, rfl, ?_,
-        by simpa using hFalls, ?_, hTail, hFinal⟩
-    · simpa using hBefore
-    · simpa using hStatement
-    · simpa using hRegions
-    · simpa [hStatement] using hRetain
-  · rw [hFalls] at hAbrupt
-    exact Bool.noConfusion hAbrupt.1
+  have hRegular := hCases.resolve_right (by
+    intro hAbrupt
+    rw [hFalls] at hAbrupt
+    exact Bool.noConfusion hAbrupt.1)
+  obtain ⟨_hFalls, retain, tail, tailFinal,
+      hRetain, hTail, hPoints, hFinal⟩ := hRegular
+  injection hPoints with hPoint hTailPoints
+  subst point
+  subst tail
+  refine
+    ⟨order, retain, tailFinal, hOrder, rfl, hFresh, ?_, ?_, rfl, ?_,
+      by simpa using hFalls, ?_, hTail, hFinal⟩
+  · simpa using hBefore
+  · simpa using hStatement
+  · simpa using hRegions
+  · simpa [hStatement] using hRetain
 
 theorem scheduleStmtListFuel_assign_components
     {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
@@ -535,37 +751,42 @@ theorem scheduleStmtListFuel_assign_components
     (hSchedule :
       scheduleStmtListFuel fuel pinned layout (.assign name value :: rest)
           (facts :: restFacts) = some (point :: points, finalLayout)) :
-    ∃ retain tailFinal,
-      point.beforeLayout = layout ∧
-        point.statementLayout = layout ∧
+    ∃ order retain tailFinal,
+      Ordering.build? layout (orderPriority layout (.assign name value) facts) =
+          some order ∧
+        point.order? = some order ∧
+        point.beforeLayout = order.target ∧
+        point.statementLayout = order.target ∧
         point.retain? = some retain ∧ point.regions = [] ∧
         point.fallsThrough = true ∧
-        Transition.build? layout
+        Transition.build? order.target
             (required pinned (nextLive facts.liveAfter rest restFacts)) =
           some retain ∧
         scheduleStmtListFuel fuel pinned retain.target rest restFacts =
           some (points, tailFinal) ∧
         finalLayout = tailFinal := by
-  obtain ⟨rawPoint, hRaw, hCases⟩ :=
+  obtain ⟨order, rawPoint, hOrder, hRaw, hCases⟩ :=
     scheduleStmtListFuel_cons_components hSchedule
   have hShape := scheduleStmtFuel_assign_components hRaw
   rcases hShape with
     ⟨hBefore, hStatement, _hNoRetain, hRegions, hFalls⟩
-  rcases hCases with hRegular | hAbrupt
-  · obtain ⟨_hFalls, retain, tail, tailFinal,
-        hRetain, hTail, hPoints, hFinal⟩ := hRegular
-    injection hPoints with hPoint hTailPoints
-    subst point
-    subst tail
-    refine
-      ⟨retain, tailFinal, ?_, ?_, rfl, ?_, by simpa using hFalls,
-        ?_, hTail, hFinal⟩
-    · simpa using hBefore
-    · simpa using hStatement
-    · simpa using hRegions
-    · simpa [hStatement] using hRetain
-  · rw [hFalls] at hAbrupt
-    exact Bool.noConfusion hAbrupt.1
+  have hRegular := hCases.resolve_right (by
+    intro hAbrupt
+    rw [hFalls] at hAbrupt
+    exact Bool.noConfusion hAbrupt.1)
+  obtain ⟨_hFalls, retain, tail, tailFinal,
+      hRetain, hTail, hPoints, hFinal⟩ := hRegular
+  injection hPoints with hPoint hTailPoints
+  subst point
+  subst tail
+  refine
+    ⟨order, retain, tailFinal, hOrder, rfl, ?_, ?_, rfl, ?_,
+      by simpa using hFalls,
+      ?_, hTail, hFinal⟩
+  · simpa using hBefore
+  · simpa using hStatement
+  · simpa using hRegions
+  · simpa [hStatement] using hRetain
 
 theorem scheduleStmtListFuel_terminal_components
     {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
@@ -576,26 +797,30 @@ theorem scheduleStmtListFuel_terminal_components
     (hSchedule :
       scheduleStmtListFuel fuel pinned layout (.terminal kind :: rest)
           (facts :: restFacts) = some (scheduledPoints, finalLayout)) :
-    ∃ point,
-      scheduledPoints = [point] ∧ point.beforeLayout = layout ∧
-        point.statementLayout = layout ∧ point.retain? = none ∧
+    ∃ order point,
+      Ordering.build? layout (orderPriority layout (.terminal kind) facts) =
+          some order ∧
+        scheduledPoints = [point] ∧ point.order? = some order ∧
+        point.beforeLayout = order.target ∧
+        point.statementLayout = order.target ∧ point.retain? = none ∧
         point.regions = [] ∧ point.fallsThrough = false ∧
-        finalLayout = layout := by
-  obtain ⟨rawPoint, hRaw, hCases⟩ :=
+        finalLayout = order.target := by
+  obtain ⟨order, rawPoint, hOrder, hRaw, hCases⟩ :=
     scheduleStmtListFuel_cons_components hSchedule
   obtain ⟨hBefore, hStatement, _hNoRetain, hRegions, hFalls⟩ :=
     scheduleStmtFuel_terminal_components hRaw
-  rcases hCases with hRegular | hAbrupt
-  · rw [hFalls] at hRegular
-    exact Bool.noConfusion hRegular.1
-  · obtain ⟨_hFalls, hPoints, hFinal⟩ := hAbrupt
-    let point := { rawPoint with retain? := none }
-    refine ⟨point, hPoints, ?_, ?_, rfl, ?_, ?_, ?_⟩
-    · simpa [point] using hBefore
-    · simpa [point] using hStatement
-    · simpa [point] using hRegions
-    · simpa [point] using hFalls
-    · simpa [hStatement] using hFinal
+  have hAbrupt := hCases.resolve_left (by
+    intro hRegular
+    rw [hFalls] at hRegular
+    exact Bool.noConfusion hRegular.1)
+  obtain ⟨_hFalls, hPoints, hFinal⟩ := hAbrupt
+  let point := { rawPoint with order? := some order, retain? := none }
+  refine ⟨order, point, hOrder, hPoints, rfl, ?_, ?_, rfl, ?_, ?_, ?_⟩
+  · simpa [point] using hBefore
+  · simpa [point] using hStatement
+  · simpa [point] using hRegions
+  · simpa [point] using hFalls
+  · simpa [hStatement] using hFinal
 
 theorem scheduleStmtListFuel_terminalArgs_components
     {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
@@ -607,26 +832,30 @@ theorem scheduleStmtListFuel_terminalArgs_components
       scheduleStmtListFuel fuel pinned layout
           (.terminalArgs kind args :: rest) (facts :: restFacts) =
         some (scheduledPoints, finalLayout)) :
-    ∃ point,
-      scheduledPoints = [point] ∧ point.beforeLayout = layout ∧
-        point.statementLayout = layout ∧ point.retain? = none ∧
+    ∃ order point,
+      Ordering.build? layout
+          (orderPriority layout (.terminalArgs kind args) facts) = some order ∧
+        scheduledPoints = [point] ∧ point.order? = some order ∧
+        point.beforeLayout = order.target ∧
+        point.statementLayout = order.target ∧ point.retain? = none ∧
         point.regions = [] ∧ point.fallsThrough = false ∧
-        finalLayout = layout := by
-  obtain ⟨rawPoint, hRaw, hCases⟩ :=
+        finalLayout = order.target := by
+  obtain ⟨order, rawPoint, hOrder, hRaw, hCases⟩ :=
     scheduleStmtListFuel_cons_components hSchedule
   obtain ⟨hBefore, hStatement, _hNoRetain, hRegions, hFalls⟩ :=
     scheduleStmtFuel_terminalArgs_components hRaw
-  rcases hCases with hRegular | hAbrupt
-  · rw [hFalls] at hRegular
-    exact Bool.noConfusion hRegular.1
-  · obtain ⟨_hFalls, hPoints, hFinal⟩ := hAbrupt
-    let point := { rawPoint with retain? := none }
-    refine ⟨point, hPoints, ?_, ?_, rfl, ?_, ?_, ?_⟩
-    · simpa [point] using hBefore
-    · simpa [point] using hStatement
-    · simpa [point] using hRegions
-    · simpa [point] using hFalls
-    · simpa [hStatement] using hFinal
+  have hAbrupt := hCases.resolve_left (by
+    intro hRegular
+    rw [hFalls] at hRegular
+    exact Bool.noConfusion hRegular.1)
+  obtain ⟨_hFalls, hPoints, hFinal⟩ := hAbrupt
+  let point := { rawPoint with order? := some order, retain? := none }
+  refine ⟨order, point, hOrder, hPoints, rfl, ?_, ?_, rfl, ?_, ?_, ?_⟩
+  · simpa [point] using hBefore
+  · simpa [point] using hStatement
+  · simpa [point] using hRegions
+  · simpa [point] using hFalls
+  · simpa [hStatement] using hFinal
 
 namespace Examples
 

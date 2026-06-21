@@ -218,7 +218,9 @@ mutual
         some (codeStmt (code ++ bindLocals offset ctx.layout), ctx)
     | .promoteName name => do
         let (code, promoted) ← ctx.promoteNameStackOnly? name
-        some (codeStmt code, ctx.withLayout promoted)
+        some
+          (codeStmt (code ++ bindLocals 0 promoted),
+            ctx.withLayout promoted)
     | .cleanupTo targetLayout => do
         if targetLayout =
             ctx.layout.drop (ctx.layout.length - targetLayout.length) then
@@ -2370,8 +2372,11 @@ mutual
             rcases promoteResult with ⟨promoteCode, promoted⟩
             simp [hPromote] at hCompile
             rcases hCompile with ⟨rfl, rfl⟩
+            have hPromoteNo :=
+              Ctx.promoteNameStackOnly?_noCallCreate hPromote
             exact codeStmt_noCallCreate
-              (Ctx.promoteNameStackOnly?_noCallCreate hPromote)
+              (Structured.Code.usesCallCreate_append_eq_false hPromoteNo
+                (bindLocals_noCallCreate 0 promoted))
     | cleanupTo targetLayout =>
         by_cases hTarget :
             targetLayout =

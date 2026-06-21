@@ -203,6 +203,27 @@ def promoteAt (idx : Nat) (layout : Layout) : Layout :=
   | none => layout
   | some name => name :: layout.take idx ++ layout.drop (idx + 1)
 
+theorem promoteAt_perm (idx : Nat) (layout : Layout) :
+    (promoteAt idx layout).Perm layout := by
+  induction idx generalizing layout with
+  | zero =>
+      cases layout <;> simp [promoteAt]
+  | succ idx ih =>
+      cases layout with
+      | nil => simp [promoteAt]
+      | cons head tail =>
+          cases hAt : tail[idx]? with
+          | none => simp [promoteAt, hAt]
+          | some name =>
+              have hTail := ih tail
+              rw [promoteAt, hAt] at hTail
+              have hSwap :
+                  (name :: head :: tail.take idx ++ tail.drop (idx + 1)).Perm
+                    (head :: name :: tail.take idx ++ tail.drop (idx + 1)) :=
+                List.Perm.swap head name _
+              simpa [promoteAt, hAt, Nat.add_assoc] using
+                hSwap.trans (List.Perm.cons head hTail)
+
 end Layout
 
 namespace StackOp

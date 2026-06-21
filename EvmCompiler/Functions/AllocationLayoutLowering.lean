@@ -45,7 +45,10 @@ theorem Promotion.compile
           unfold Locals.Ctx.promoteNameStackOnly?
           simp [hDepth, hAllowed.1, hIndex, hPromotionBound, hShuffle]
         exact
-          ⟨Locals.codeStmt shuffle,
+          ⟨Locals.codeStmt
+              (shuffle ++ Locals.bindLocals 0
+                (Locals.Layout.promoteAt
+                  (promotion.depth - 1) ctx.layout)),
             by simp [Locals.Stmt.compile, hPromote]⟩
       · simp [hDepth, hAllowed] at hApply
 
