@@ -2722,6 +2722,7 @@ theorem controlFallthroughConsAt_of_compilers
         {tailCode : List Expressions.Stmt},
         middleCtx.layout = tailLayout →
         middleCtx.layout.Nodup →
+        Locals.Ctx.SameControl targetCtx middleCtx →
         StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
             tailLayout rest restFacts = some (points, tailFinal) →
         StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =
@@ -2776,8 +2777,11 @@ theorem controlFallthroughConsAt_of_compilers
     Locals.Block.compileOpen_append_components hRestCompile
   obtain ⟨hPointCompiled, hMiddleNodup⟩ :=
     hPoint hOrderBuild hRawSchedule hRetainBuild hPointLower hPointCompile
+  have hMiddleControl : Locals.Ctx.SameControl targetCtx middleCtx :=
+    (Locals.Ctx.SameControl.withLayout targetCtx order.target).trans
+      (Locals.Block.compileOpen_sameControl hPointCompile)
   have hTailPreserves :=
-    hTail hPointCompiled.layout hMiddleNodup hTailSchedule hTailLower
+    hTail hPointCompiled.layout hMiddleNodup hMiddleControl hTailSchedule hTailLower
       hTailCompile
   have hTailPreserves' :
       ControlScheduledListPreservesAt sourceProgram targetProgram targets
@@ -3741,6 +3745,7 @@ theorem callConsAtSucc_of_compilers
         {tailCode : List Expressions.Stmt},
         middleCtx.layout = tailLayout →
         middleCtx.layout.Nodup →
+        Locals.Ctx.SameControl targetCtx middleCtx →
         StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
             tailLayout rest restFacts = some (points, tailFinal) →
         StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =
@@ -3860,6 +3865,7 @@ theorem callConsAtOne_of_compilers
         {tailCode : List Expressions.Stmt},
         middleCtx.layout = tailLayout →
         middleCtx.layout.Nodup →
+        Locals.Ctx.SameControl targetCtx middleCtx →
         StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
             tailLayout rest restFacts = some (points, tailFinal) →
         StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =

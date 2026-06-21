@@ -71,6 +71,7 @@ theorem exprConsAt_of_compilers
         {tailCode : List Expressions.Stmt},
         middleCtx.layout = tailLayout →
         middleCtx.layout.Nodup →
+        Locals.Ctx.SameControl targetCtx middleCtx →
         StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
             tailLayout rest restFacts = some (points, tailFinal) →
         StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =
@@ -159,6 +160,7 @@ theorem letConsAt_of_compilers
         {tailCode : List Expressions.Stmt},
         middleCtx.layout = tailLayout →
         middleCtx.layout.Nodup →
+        Locals.Ctx.SameControl targetCtx middleCtx →
         StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
             tailLayout rest restFacts = some (points, tailFinal) →
         StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =
@@ -248,6 +250,7 @@ theorem assignConsAt_of_compilers
         {tailCode : List Expressions.Stmt},
         middleCtx.layout = tailLayout →
         middleCtx.layout.Nodup →
+        Locals.Ctx.SameControl targetCtx middleCtx →
         StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
             tailLayout rest restFacts = some (points, tailFinal) →
         StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =
@@ -780,6 +783,129 @@ inductive SwitchBranchRelAt
         SwitchBranchRelAt returnNames sourceProgram targetProgram targets
           targetCtx sourceFuel (some sourceBody) (some targetBody)
 
+/-- A block selected by the recursive switch compiler came from the source
+case list, rather than from an unconstrained callback. -/
+inductive CaseChild : List (Word × Functions.Block) → Functions.Block → Prop
+  | head {value body rest} : CaseChild ((value, body) :: rest) body
+  | tail {value headBody rest body} :
+      CaseChild rest body → CaseChild ((value, headBody) :: rest) body
+
+inductive DefaultChild : Option Functions.Block → Functions.Block → Prop
+  | some {body} : DefaultChild (some body) body
+
+inductive SwitchChild
+    (cases : List (Word × Functions.Block))
+    (defaultBody : Option Functions.Block) : Functions.Block → Prop
+  | case {body} : CaseChild cases body → SwitchChild cases defaultBody body
+  | default {body} :
+      DefaultChild defaultBody body → SwitchChild cases defaultBody body
+
+namespace CaseChild
+
+theorem scopePreserved
+    {env : List Name} {cases : List (Word × Functions.Block)}
+    {body : Functions.Block}
+    (hChild : CaseChild cases body)
+    (hScoped : Functions.Scope.CaseList.Scoped env cases) :
+    Functions.Scope.Block.Scoped env body := by
+  induction hChild with
+  | head => exact hScoped.1
+  | tail _ ih => exact ih hScoped.2
+
+theorem supported
+    {cases : List (Word × Functions.Block)} {body : Functions.Block}
+    (hChild : CaseChild cases body)
+    (hSupported :
+      Functions.InteractionSemantics.CaseList.OpenSupported cases) :
+    Functions.InteractionSemantics.Block.OpenSupported body := by
+  induction hChild with
+  | head => exact hSupported.1
+  | tail _ ih => exact ih hSupported.2
+
+theorem wf
+    {canBreak canContinue inFunction : Bool}
+    {cases : List (Word × Functions.Block)} {body : Functions.Block}
+    (hChild : CaseChild cases body)
+    (hWF : Functions.CaseList.WF canBreak canContinue inFunction cases) :
+    Functions.Block.WF canBreak canContinue inFunction body := by
+  induction hChild with
+  | head => cases hWF; assumption
+  | tail _ ih => cases hWF; apply ih; assumption
+
+end CaseChild
+
+namespace DefaultChild
+
+theorem scopePreserved
+    {env : List Name} {defaultBody : Option Functions.Block}
+    {body : Functions.Block}
+    (hChild : DefaultChild defaultBody body)
+    (hScoped : Functions.Scope.Default.Scoped env defaultBody) :
+    Functions.Scope.Block.Scoped env body := by
+  cases hChild
+  exact hScoped
+
+theorem supported
+    {defaultBody : Option Functions.Block} {body : Functions.Block}
+    (hChild : DefaultChild defaultBody body)
+    (hSupported :
+      Functions.InteractionSemantics.Default.OpenSupported defaultBody) :
+    Functions.InteractionSemantics.Block.OpenSupported body := by
+  cases hChild
+  exact hSupported
+
+theorem wf
+    {canBreak canContinue inFunction : Bool}
+    {defaultBody : Option Functions.Block} {body : Functions.Block}
+    (hChild : DefaultChild defaultBody body)
+    (hWF : Functions.Default.WF canBreak canContinue inFunction defaultBody) :
+    Functions.Block.WF canBreak canContinue inFunction body := by
+  cases hChild
+  cases hWF
+  assumption
+
+end DefaultChild
+
+namespace SwitchChild
+
+theorem scopePreserved
+    {env : List Name} {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block} {body : Functions.Block}
+    (hChild : SwitchChild cases defaultBody body)
+    (hCases : Functions.Scope.CaseList.Scoped env cases)
+    (hDefault : Functions.Scope.Default.Scoped env defaultBody) :
+    Functions.Scope.Block.Scoped env body := by
+  cases hChild with
+  | case hCase => exact hCase.scopePreserved hCases
+  | default hBody => exact hBody.scopePreserved hDefault
+
+theorem supported
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block} {body : Functions.Block}
+    (hChild : SwitchChild cases defaultBody body)
+    (hCases : Functions.InteractionSemantics.CaseList.OpenSupported cases)
+    (hDefault :
+      Functions.InteractionSemantics.Default.OpenSupported defaultBody) :
+    Functions.InteractionSemantics.Block.OpenSupported body := by
+  cases hChild with
+  | case hCase => exact hCase.supported hCases
+  | default hBody => exact hBody.supported hDefault
+
+theorem wf
+    {canBreak canContinue inFunction : Bool}
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block} {body : Functions.Block}
+    (hChild : SwitchChild cases defaultBody body)
+    (hCases : Functions.CaseList.WF canBreak canContinue inFunction cases)
+    (hDefault :
+      Functions.Default.WF canBreak canContinue inFunction defaultBody) :
+    Functions.Block.WF canBreak canContinue inFunction body := by
+  cases hChild with
+  | case hCase => exact hCase.wf hCases
+  | default hBody => exact hBody.wf hDefault
+
+end SwitchChild
+
 theorem ControlSwitchBranchPreservesAt.toPoint
     {sourceProgram : Functions.Program}
     {targetProgram : Expressions.Program}
@@ -972,6 +1098,7 @@ theorem switchDefaultRelAt_of_compilers
       Locals.Default.compile targetCtx loweredDefault = some compiledDefault)
     (hBody :
       ∀ {body bodyFacts rawRegion bodyLowered bodyCode bodyFinalCtx},
+        DefaultChild defaultBody body →
         StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
             (StackSchedule.layoutSet targetCtx.layout) targetCtx.layout
             body bodyFacts = some rawRegion →
@@ -1023,7 +1150,7 @@ theorem switchDefaultRelAt_of_compilers
         hExitBuild hBodyLower hRegionCompile hFinish
       intro bodyLowered bodyCode bodyFinalCtx hBodyLowered hBodyCompile
         hChildNodup
-      exact hBody hBodySchedule hBodyLowered hBodyCompile hChildNodup
+      exact hBody .some hBodySchedule hBodyLowered hBodyCompile hChildNodup
 
 
 theorem switchCasesRelAt_of_compilers
@@ -1052,6 +1179,7 @@ theorem switchCasesRelAt_of_compilers
       Locals.CaseList.compile targetCtx loweredCases = some compiledCases)
     (hBody :
       ∀ {body bodyFacts rawRegion bodyLowered bodyCode bodyFinalCtx},
+        CaseChild cases body →
         StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
             (StackSchedule.layoutSet targetCtx.layout) targetCtx.layout
             body bodyFacts = some rawRegion →
@@ -1118,11 +1246,15 @@ theorem switchCasesRelAt_of_compilers
           hRegionCompile hFinish
         intro bodyLowered bodyCode bodyFinalCtx hBodyLowered hBodyCompile
           hChildNodup
-        exact hBody hBodySchedule hBodyLowered hBodyCompile hChildNodup
+        exact hBody .head hBodySchedule hBodyLowered hBodyCompile hChildNodup
       intro value
       have hTail :=
         ih restFacts restRegions loweredRest compiledRest hRestSchedule
-          hRestLower hRestCompile value
+          hRestLower hRestCompile
+          (fun hChild hChildSchedule hChildLower hChildCompile hChildNodup =>
+            hBody (.tail hChild) hChildSchedule hChildLower hChildCompile
+              hChildNodup)
+          value
       by_cases hMatch : caseValue = value
       · simpa [Functions.Source.Switch.select,
           Expressions.EffectSemantics.Switch.select, hMatch] using hHead
@@ -1223,6 +1355,7 @@ theorem switchPointAtSucc_of_compilers
         some (code, finalCtx))
     (hBody :
       ∀ {body bodyFacts rawRegion bodyLowered bodyCode bodyFinalCtx},
+        SwitchChild cases defaultBody body →
         StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
             (StackSchedule.layoutSet targetCtx.layout) targetCtx.layout
             body bodyFacts = some rawRegion →
@@ -1280,16 +1413,18 @@ theorem switchPointAtSucc_of_compilers
       lowerCtx targets scheduleFuel lowerFuel sourceFuel targetCtx hNodup defaultBody
       (fact.regions.drop cases.length) defaultRegions loweredDefault
       compiledDefault hDefaultSchedule hDefaultLower hDefaultCompile
-      (fun hChildSchedule hChildLower hChildCompile hChildNodup =>
-        hBody hChildSchedule hChildLower hChildCompile hChildNodup)
+      (fun hChild hChildSchedule hChildLower hChildCompile hChildNodup =>
+        hBody (.default hChild) hChildSchedule hChildLower hChildCompile
+          hChildNodup)
   have hBranches :=
     switchCasesRelAt_of_compilers returnNames sourceProgram targetProgram
       lowerCtx targets scheduleFuel lowerFuel sourceFuel targetCtx hNodup cases
       defaultBody
       (fact.regions.take cases.length) caseRegions loweredCases compiledCases
       compiledDefault hCaseSchedule hCaseLower hCasesCompile
-      (fun hChildSchedule hChildLower hChildCompile hChildNodup =>
-        hBody hChildSchedule hChildLower hChildCompile hChildNodup)
+      (fun hChild hChildSchedule hChildLower hChildCompile hChildNodup =>
+        hBody (.case hChild) hChildSchedule hChildLower hChildCompile
+          hChildNodup)
       hDefaultRel
   obtain ⟨compiledRetainArtifact⟩ :=
     StackTransitionCompilation.Transition.compileArtifact retain hRetainSource
@@ -1390,6 +1525,7 @@ theorem switchPointAtZero_of_compilers
         some (code, finalCtx))
     (hBody :
       ∀ {body bodyFacts rawRegion bodyLowered bodyCode bodyFinalCtx},
+        SwitchChild cases defaultBody body →
         StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
             (StackSchedule.layoutSet targetCtx.layout) targetCtx.layout
             body bodyFacts = some rawRegion →
@@ -1454,6 +1590,7 @@ theorem switchConsAtSucc_of_compilers
     (hBody :
       ∀ {body : Functions.Block} {childCtx : Locals.Ctx}
         {bodyFacts rawRegion bodyLowered bodyCode bodyFinalCtx},
+        SwitchChild cases defaultBody body →
         StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
             (StackSchedule.layoutSet childCtx.layout) childCtx.layout
             body bodyFacts = some rawRegion →
@@ -1472,6 +1609,7 @@ theorem switchConsAtSucc_of_compilers
         {tailCode : List Expressions.Stmt},
         middleCtx.layout = tailLayout →
         middleCtx.layout.Nodup →
+        Locals.Ctx.SameControl targetCtx middleCtx →
         StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
             tailLayout rest restFacts = some (points, tailFinal) →
         StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =
@@ -1518,8 +1656,8 @@ theorem switchConsAtSucc_of_compilers
         pointCode hScoped hSupported hRawSchedule
         (by simpa [Locals.Ctx.withLayout] using hRawBefore)
         (by simpa using hRawRegions) rfl hRetainSource hPointLower hPointCompile
-        (fun hChildSchedule hChildLower hChildCompile hChildNodup =>
-          hBody hChildSchedule hChildLower hChildCompile hChildNodup)
+        (fun hChild hChildSchedule hChildLower hChildCompile hChildNodup =>
+          hBody hChild hChildSchedule hChildLower hChildCompile hChildNodup)
     refine ⟨hCompiled, ?_⟩
     rw [hCompiled.layout]
     apply AllocationLayout.Transition.target_nodup retain
@@ -1562,6 +1700,7 @@ theorem switchConsAtOne_of_compilers
     (hBody :
       ∀ {body : Functions.Block} {childCtx : Locals.Ctx}
         {bodyFacts rawRegion bodyLowered bodyCode bodyFinalCtx},
+        SwitchChild cases defaultBody body →
         StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
             (StackSchedule.layoutSet childCtx.layout) childCtx.layout
             body bodyFacts = some rawRegion →
@@ -1580,6 +1719,7 @@ theorem switchConsAtOne_of_compilers
         {tailCode : List Expressions.Stmt},
         middleCtx.layout = tailLayout →
         middleCtx.layout.Nodup →
+        Locals.Ctx.SameControl targetCtx middleCtx →
         StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
             tailLayout rest restFacts = some (points, tailFinal) →
         StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =
@@ -1626,8 +1766,8 @@ theorem switchConsAtOne_of_compilers
         pointCode hScoped hSupported hRawSchedule
         (by simpa [Locals.Ctx.withLayout] using hRawBefore)
         (by simpa using hRawRegions) rfl hRetainSource hPointLower hPointCompile
-        (fun hChildSchedule hChildLower hChildCompile hChildNodup =>
-          hBody hChildSchedule hChildLower hChildCompile hChildNodup)
+        (fun hChild hChildSchedule hChildLower hChildCompile hChildNodup =>
+          hBody hChild hChildSchedule hChildLower hChildCompile hChildNodup)
     refine ⟨hCompiled, ?_⟩
     rw [hCompiled.layout]
     apply AllocationLayout.Transition.target_nodup retain
@@ -1935,6 +2075,7 @@ theorem ifConsAtSucc_of_compilers
         {tailCode : List Expressions.Stmt},
         middleCtx.layout = tailLayout →
         middleCtx.layout.Nodup →
+        Locals.Ctx.SameControl targetCtx middleCtx →
         StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
             tailLayout rest restFacts = some (points, tailFinal) →
         StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =
@@ -2040,6 +2181,7 @@ theorem ifConsAtOne_of_compilers
         {tailCode : List Expressions.Stmt},
         middleCtx.layout = tailLayout →
         middleCtx.layout.Nodup →
+        Locals.Ctx.SameControl targetCtx middleCtx →
         StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
             tailLayout rest restFacts = some (points, tailFinal) →
         StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =
@@ -2096,6 +2238,83 @@ theorem ifConsAtOne_of_compilers
     simpa [Locals.Ctx.withLayout] using hOrderedNodup
   · exact hTail
 
+/-- Exact source origin and compiler context for one recursively lowered loop
+region. The witness rules out arbitrary child blocks and records the context
+construction owned by the `for` lowering. -/
+inductive ForChild
+    (outerCtx initCtx : Locals.Ctx)
+    (init post body : Functions.Block) :
+    StackSchedule.ControlTargets → Locals.Ctx → Functions.Block → Prop
+  | init : ForChild outerCtx initCtx init post body {}
+      outerCtx.withoutLoopControl init
+  | post : ForChild outerCtx initCtx init post body {}
+      initCtx.withoutLoopControl post
+  | body : ForChild outerCtx initCtx init post body
+      { brk? := some initCtx.layout, cont? := some initCtx.layout }
+      (initCtx.withLoopControl initCtx.layout.length) body
+
+namespace ForChild
+
+theorem scopePreserved
+    {outerCtx initCtx : Locals.Ctx} {init post body child : Functions.Block}
+    {childTargets : StackSchedule.ControlTargets} {childCtx : Locals.Ctx}
+    {sourceEnv : List Name}
+    (hChild :
+      ForChild outerCtx initCtx init post body childTargets childCtx child)
+    (hInit : Functions.Scope.Block.Scoped sourceEnv init)
+    (hPost :
+      Functions.Scope.Block.Scoped
+        (Functions.Scope.Block.outEnv sourceEnv init) post)
+    (hBody :
+      Functions.Scope.Block.Scoped
+        (Functions.Scope.Block.outEnv sourceEnv init) body) :
+    ∃ childEnv, Functions.Scope.Block.Scoped childEnv child := by
+  cases hChild with
+  | init => exact ⟨sourceEnv, hInit⟩
+  | post => exact ⟨Functions.Scope.Block.outEnv sourceEnv init, hPost⟩
+  | body => exact ⟨Functions.Scope.Block.outEnv sourceEnv init, hBody⟩
+
+theorem supported
+    {outerCtx initCtx : Locals.Ctx} {init post body child : Functions.Block}
+    {childTargets : StackSchedule.ControlTargets} {childCtx : Locals.Ctx}
+    (hChild :
+      ForChild outerCtx initCtx init post body childTargets childCtx child)
+    (hInit : Functions.InteractionSemantics.Block.OpenSupported init)
+    (hPost : Functions.InteractionSemantics.Block.OpenSupported post)
+    (hBody : Functions.InteractionSemantics.Block.OpenSupported body) :
+    Functions.InteractionSemantics.Block.OpenSupported child := by
+  cases hChild with
+  | init => exact hInit
+  | post => exact hPost
+  | body => exact hBody
+
+theorem wfAndControl
+    {outerCtx initCtx : Locals.Ctx} {init post body child : Functions.Block}
+    {childTargets : StackSchedule.ControlTargets} {childCtx : Locals.Ctx}
+    {inFunction : Bool}
+    (hChild :
+      ForChild outerCtx initCtx init post body childTargets childCtx child)
+    (hInit : Functions.Block.WF false false inFunction init)
+    (hPost : Functions.Block.WF false false inFunction post)
+    (hBody : Functions.Block.WF true true inFunction body) :
+    ∃ canBreak canContinue,
+      Functions.Block.WF canBreak canContinue inFunction child ∧
+        StackLoweringCompilation.ControlCtxAgrees canBreak canContinue
+          childTargets childCtx := by
+  cases hChild with
+  | init =>
+      exact ⟨false, false, hInit,
+        StackLoweringCompilation.ControlCtxAgrees.withoutLoopControl outerCtx⟩
+  | post =>
+      exact ⟨false, false, hPost,
+        StackLoweringCompilation.ControlCtxAgrees.withoutLoopControl initCtx⟩
+  | body =>
+      exact ⟨true, true, hBody,
+        StackLoweringCompilation.ControlCtxAgrees.withLoopControl initCtx
+          initCtx.layout⟩
+
+end ForChild
+
 theorem forPointAtSucc_of_compilers
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
@@ -2129,9 +2348,12 @@ theorem forPointAtSucc_of_compilers
         some (code, finalCtx))
     (hChild :
       ∀ childFuel, childFuel ≤ sourceFuel →
-        ∀ {childTargets : StackSchedule.ControlTargets}
+        ∀ {loopInitCtx : Locals.Ctx}
+          {childTargets : StackSchedule.ControlTargets}
           {child : Functions.Block} {childCtx : Locals.Ctx}
           {childFacts rawRegion childLowered childCode childFinalCtx},
+          ForChild targetCtx loopInitCtx init post body childTargets childCtx
+              child →
           StackSchedule.scheduleBlockFuelWithTargets childTargets
               (scheduleFuel - 1) (StackSchedule.layoutSet childCtx.layout)
               childCtx.layout child childFacts = some rawRegion →
@@ -2215,7 +2437,9 @@ theorem forPointAtSucc_of_compilers
       hInitExit' (by simpa [hInitExitTarget] using hLowerInit) hInitCompile
       (fun hChildLower hChildCompile hChildNodup =>
         hChild sourceFuel (by omega) (childTargets := {})
+          (loopInitCtx := initCtx)
           (childCtx := targetCtx.withoutLoopControl)
+          .init
           (by simpa [Locals.Ctx.withoutLoopControl] using hInitSchedule)
           hChildLower hChildCompile hChildNodup)
   rw [← hInitFinal] at hInitPreserves
@@ -2261,7 +2485,7 @@ theorem forPointAtSucc_of_compilers
       (fun childFuel hChildFuel bodyLowered bodyCode bodyFinalCtx
           hChildLower hChildCompile hChildNodup =>
         (hChild childFuel (Nat.le_of_lt hChildFuel) (childTargets := {})
-          (childCtx := initCtx.withoutLoopControl) hPostSchedule'
+          (childCtx := initCtx.withoutLoopControl) .post hPostSchedule'
           hChildLower hChildCompile hChildNodup).1)
   have hPostPoint := hPostBranch
   have hBodySchedule' :
@@ -2295,7 +2519,7 @@ theorem forPointAtSucc_of_compilers
           (childTargets :=
             { brk? := some initCtx.layout, cont? := some initCtx.layout })
           (childCtx := initCtx.withLoopControl initCtx.layout.length)
-          hBodySchedule' hChildLower hChildCompile hChildNodup).1)
+          .body hBodySchedule' hChildLower hChildCompile hChildNodup).1)
   have hBodyPoint := hBodyBranch
   have hOuterLayout : ∃ pre, initCtx.layout = pre ++ targetCtx.layout := by
     rw [hInitLayout]
@@ -2394,9 +2618,12 @@ theorem forPointAtZero_of_compilers
         some (code, finalCtx))
     (hChild :
       ∀ childFuel, childFuel ≤ 0 →
-        ∀ {childTargets : StackSchedule.ControlTargets}
+        ∀ {loopOuterCtx loopInitCtx : Locals.Ctx}
+          {childTargets : StackSchedule.ControlTargets}
           {child : Functions.Block} {childCtx : Locals.Ctx}
           {childFacts rawRegion childLowered childCode childFinalCtx},
+          ForChild loopOuterCtx loopInitCtx init post body childTargets childCtx
+              child →
           StackSchedule.scheduleBlockFuelWithTargets childTargets
               (scheduleFuel - 1) (StackSchedule.layoutSet childCtx.layout)
               childCtx.layout child childFacts = some rawRegion →
@@ -2419,7 +2646,16 @@ theorem forPointAtZero_of_compilers
       targets pinned scheduleFuel lowerFuel 0 init cond post body fact rawPoint
       point retain targetCtx finalCtx hNodup lowered code hScoped hSupported
       hSchedule hPointBefore hPointRegions hPointRetain hRetainSource hLower
-      hCompile hChild
+      hCompile
+      (fun childFuel hFuel {loopInitCtx childTargets child childCtx childFacts
+          rawRegion childLowered childCode childFinalCtx} hOrigin hChildSchedule
+          hChildLower hChildCompile hChildNodup =>
+        hChild childFuel hFuel (loopOuterCtx := targetCtx)
+          (loopInitCtx := loopInitCtx) (childTargets := childTargets)
+          (child := child) (childCtx := childCtx) (childFacts := childFacts)
+          (rawRegion := rawRegion) (childLowered := childLowered)
+          (childCode := childCode) (childFinalCtx := childFinalCtx) hOrigin
+          hChildSchedule hChildLower hChildCompile hChildNodup)
   refine ⟨hLayout.layout, ?_⟩
   intro sourceCtx targetFuel suffix returns source target hFuel hRuntime
     hInitial
@@ -2459,9 +2695,12 @@ theorem forConsAtSucc_of_compilers
         some (code, finalCtx))
     (hChild :
       ∀ childFuel, childFuel ≤ sourceFuel →
-        ∀ {childTargets : StackSchedule.ControlTargets}
+        ∀ {loopOuterCtx loopInitCtx : Locals.Ctx}
+          {childTargets : StackSchedule.ControlTargets}
           {child : Functions.Block} {childCtx : Locals.Ctx}
           {childFacts rawRegion childLowered childCode childFinalCtx},
+          ForChild loopOuterCtx loopInitCtx init post body childTargets childCtx
+              child →
           StackSchedule.scheduleBlockFuelWithTargets childTargets
               (scheduleFuel - 1) (StackSchedule.layoutSet childCtx.layout)
               childCtx.layout child childFacts = some rawRegion →
@@ -2482,6 +2721,7 @@ theorem forConsAtSucc_of_compilers
         {tailCode : List Expressions.Stmt},
         middleCtx.layout = tailLayout →
         middleCtx.layout.Nodup →
+        Locals.Ctx.SameControl targetCtx middleCtx →
         StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
             tailLayout rest restFacts = some (points, tailFinal) →
         StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =
@@ -2533,7 +2773,17 @@ theorem forConsAtSucc_of_compilers
         pointCode hScoped hSupported hRawSchedule
         (by simpa [Locals.Ctx.withLayout] using hRawBefore)
         (by simpa using hRawRegions) rfl hRetainSource hPointLower
-        hPointCompile hChild
+        hPointCompile
+        (fun childFuel hFuel {loopInitCtx childTargets child childCtx childFacts
+            rawRegion childLowered childCode childFinalCtx} hOrigin
+            hChildSchedule hChildLower hChildCompile hChildNodup =>
+          hChild childFuel hFuel
+            (loopOuterCtx := targetCtx.withLayout order.target)
+            (loopInitCtx := loopInitCtx) (childTargets := childTargets)
+            (child := child) (childCtx := childCtx) (childFacts := childFacts)
+            (rawRegion := rawRegion) (childLowered := childLowered)
+            (childCode := childCode) (childFinalCtx := childFinalCtx) hOrigin
+            hChildSchedule hChildLower hChildCompile hChildNodup)
     refine ⟨hCompiled, ?_⟩
     rw [hCompiled.layout]
     apply AllocationLayout.Transition.target_nodup retain
@@ -2572,9 +2822,12 @@ theorem forConsAtOne_of_compilers
         some (code, finalCtx))
     (hChild :
       ∀ childFuel, childFuel ≤ 0 →
-        ∀ {childTargets : StackSchedule.ControlTargets}
+        ∀ {loopOuterCtx loopInitCtx : Locals.Ctx}
+          {childTargets : StackSchedule.ControlTargets}
           {child : Functions.Block} {childCtx : Locals.Ctx}
           {childFacts rawRegion childLowered childCode childFinalCtx},
+          ForChild loopOuterCtx loopInitCtx init post body childTargets childCtx
+              child →
           StackSchedule.scheduleBlockFuelWithTargets childTargets
               (scheduleFuel - 1) (StackSchedule.layoutSet childCtx.layout)
               childCtx.layout child childFacts = some rawRegion →
@@ -2595,6 +2848,7 @@ theorem forConsAtOne_of_compilers
         {tailCode : List Expressions.Stmt},
         middleCtx.layout = tailLayout →
         middleCtx.layout.Nodup →
+        Locals.Ctx.SameControl targetCtx middleCtx →
         StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
             tailLayout rest restFacts = some (points, tailFinal) →
         StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =
@@ -2646,7 +2900,17 @@ theorem forConsAtOne_of_compilers
         pointCode hScoped hSupported hRawSchedule
         (by simpa [Locals.Ctx.withLayout] using hRawBefore)
         (by simpa using hRawRegions) rfl hRetainSource hPointLower
-        hPointCompile hChild
+        hPointCompile
+        (fun childFuel hFuel {loopOuterCtx loopInitCtx childTargets child childCtx
+            childFacts rawRegion childLowered childCode childFinalCtx} hOrigin
+            hChildSchedule hChildLower hChildCompile hChildNodup =>
+          hChild childFuel hFuel
+            (loopOuterCtx := loopOuterCtx)
+            (loopInitCtx := loopInitCtx) (childTargets := childTargets)
+            (child := child) (childCtx := childCtx) (childFacts := childFacts)
+            (rawRegion := rawRegion) (childLowered := childLowered)
+            (childCode := childCode) (childFinalCtx := childFinalCtx) hOrigin
+            hChildSchedule hChildLower hChildCompile hChildNodup)
     refine ⟨hCompiled, ?_⟩
     rw [hCompiled.layout]
     apply AllocationLayout.Transition.target_nodup retain
@@ -2791,7 +3055,7 @@ theorem controlNonfallPointToListAt
   rw [hSource sourceCtx source returns hCtx]
   exact hPoint.preserves sourceCtx targetFuel hPointFuel hCtx hInitial
 
-theorem brkControlListAt_of_compilers
+theorem brkControlListAt_of_target
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (lowerCtx : StackLowering.Ctx)
@@ -2904,7 +3168,49 @@ theorem brkControlListAt_of_compilers
   simp [result]
   rfl
 
-theorem contControlListAt_of_compilers
+/-- Compiler-context form used by recursive dispatch. Source WF proves that
+`break` is allowed; the private context agreement supplies the matching
+scheduler layout and Locals cleanup depth. -/
+theorem brkControlListAt_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel sourceFuel : Nat)
+    (rest : List Functions.Stmt)
+    (fact : AllocationLivenessFacts.Point)
+    (restFacts : List AllocationLivenessFacts.Point)
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {finalLayout : Locals.Layout} {lowered : List Locals.Stmt}
+    {targetCtx finalCtx : Locals.Ctx} {code : List Expressions.Stmt}
+    {canBreak canContinue : Bool}
+    (hNodup : targetCtx.layout.Nodup)
+    (hControl :
+      StackLoweringCompilation.ControlCtxAgrees canBreak canContinue
+        targets targetCtx)
+    (hAllowed : canBreak = true)
+    (hSchedule :
+      StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
+          targetCtx.layout (.brk :: rest) (fact :: restFacts) =
+        some (point :: points, finalLayout))
+    (hLower :
+      StackLowering.lowerStmtListFuel lowerFuel lowerCtx
+          (.brk :: rest) (point :: points) = some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    ControlScheduledListPreservesAt sourceProgram targetProgram targets
+        returnNames targetCtx finalCtx (.brk :: rest) finalLayout code
+        (sourceFuel + 1) ∧
+      finalCtx.layout.Nodup := by
+  obtain ⟨targetLayout, hTarget, hTargetDepth⟩ :=
+    hControl.breakAllowed hAllowed
+  exact brkControlListAt_of_target returnNames sourceProgram targetProgram
+    lowerCtx targets pinned scheduleFuel lowerFuel sourceFuel rest fact
+    restFacts hNodup hTarget hTargetDepth hSchedule hLower hCompile
+
+theorem contControlListAt_of_target
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (lowerCtx : StackLowering.Ctx)
@@ -3016,6 +3322,47 @@ theorem contControlListAt_of_compilers
   rw [Simulation.Interaction.bind_done_ok]
   simp [result]
   rfl
+
+/-- Compiler-context form used by recursive dispatch. Source WF proves that
+`continue` is allowed; context agreement supplies the matching target. -/
+theorem contControlListAt_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel sourceFuel : Nat)
+    (rest : List Functions.Stmt)
+    (fact : AllocationLivenessFacts.Point)
+    (restFacts : List AllocationLivenessFacts.Point)
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {finalLayout : Locals.Layout} {lowered : List Locals.Stmt}
+    {targetCtx finalCtx : Locals.Ctx} {code : List Expressions.Stmt}
+    {canBreak canContinue : Bool}
+    (hNodup : targetCtx.layout.Nodup)
+    (hControl :
+      StackLoweringCompilation.ControlCtxAgrees canBreak canContinue
+        targets targetCtx)
+    (hAllowed : canContinue = true)
+    (hSchedule :
+      StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
+          targetCtx.layout (.cont :: rest) (fact :: restFacts) =
+        some (point :: points, finalLayout))
+    (hLower :
+      StackLowering.lowerStmtListFuel lowerFuel lowerCtx
+          (.cont :: rest) (point :: points) = some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    ControlScheduledListPreservesAt sourceProgram targetProgram targets
+        returnNames targetCtx finalCtx (.cont :: rest) finalLayout code
+        (sourceFuel + 1) ∧
+      finalCtx.layout.Nodup := by
+  obtain ⟨targetLayout, hTarget, hTargetDepth⟩ :=
+    hControl.continueAllowed hAllowed
+  exact contControlListAt_of_target returnNames sourceProgram targetProgram
+    lowerCtx targets pinned scheduleFuel lowerFuel sourceFuel rest fact
+    restFacts hNodup hTarget hTargetDepth hSchedule hLower hCompile
 
 theorem leaveControlListAt_of_compilers
     (sourceProgram : Functions.Program)
@@ -3564,6 +3911,7 @@ theorem blockConsAt_of_compilers
         {tailCode : List Expressions.Stmt},
         middleCtx.layout = tailLayout →
         middleCtx.layout.Nodup →
+        Locals.Ctx.SameControl targetCtx middleCtx →
         StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
             tailLayout rest restFacts = some (points, tailFinal) →
         StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =

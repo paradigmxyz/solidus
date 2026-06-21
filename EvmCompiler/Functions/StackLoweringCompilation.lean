@@ -15,6 +15,109 @@ namespace StackLoweringCompilation
 
 open AllocationLiveness
 
+/-- Compile-time agreement between the scheduler's symbolic control targets
+and the ordinary Locals compiler's concrete cleanup depths. The recursive
+allocation proof carries this privately; entry and loop constructors discharge
+it from compiler-owned contexts. -/
+structure ControlCtxAgrees
+    (canBreak canContinue : Bool)
+    (targets : StackSchedule.ControlTargets) (ctx : Locals.Ctx) : Prop where
+  breakAllowed :
+    canBreak = true →
+      ∃ layout, targets.brk? = some layout ∧
+        ctx.breakDepth? = some layout.length
+  breakForbidden :
+    canBreak = false → targets.brk? = none ∧ ctx.breakDepth? = none
+  continueAllowed :
+    canContinue = true →
+      ∃ layout, targets.cont? = some layout ∧
+        ctx.continueDepth? = some layout.length
+  continueForbidden :
+    canContinue = false → targets.cont? = none ∧ ctx.continueDepth? = none
+
+namespace ControlCtxAgrees
+
+theorem empty (ctx : Locals.Ctx)
+    (hBreak : ctx.breakDepth? = none)
+    (hContinue : ctx.continueDepth? = none) :
+    ControlCtxAgrees false false {} ctx := by
+  constructor
+  · simp
+  · intro _
+    exact ⟨rfl, hBreak⟩
+  · simp
+  · intro _
+    exact ⟨rfl, hContinue⟩
+
+theorem initial : ControlCtxAgrees false false {} Locals.Ctx.initial :=
+  empty Locals.Ctx.initial rfl rfl
+
+theorem procEntryWithLayoutAndRetc (layout : Locals.Layout) (retc : Nat) :
+    ControlCtxAgrees false false {}
+      (Locals.Ctx.procEntryWithLayoutAndRetc layout retc) :=
+  empty _ rfl rfl
+
+theorem withLayout
+    {canBreak canContinue : Bool}
+    {targets : StackSchedule.ControlTargets} {ctx : Locals.Ctx}
+    (hAgree : ControlCtxAgrees canBreak canContinue targets ctx)
+    (layout : Locals.Layout) :
+    ControlCtxAgrees canBreak canContinue targets (ctx.withLayout layout) := by
+  constructor
+  · intro hAllowed
+    obtain ⟨target, hTarget, hDepth⟩ := hAgree.breakAllowed hAllowed
+    exact ⟨target, hTarget, by simpa [Locals.Ctx.withLayout] using hDepth⟩
+  · intro hForbidden
+    exact ⟨(hAgree.breakForbidden hForbidden).1,
+      by simpa [Locals.Ctx.withLayout] using
+        (hAgree.breakForbidden hForbidden).2⟩
+  · intro hAllowed
+    obtain ⟨target, hTarget, hDepth⟩ := hAgree.continueAllowed hAllowed
+    exact ⟨target, hTarget, by simpa [Locals.Ctx.withLayout] using hDepth⟩
+  · intro hForbidden
+    exact ⟨(hAgree.continueForbidden hForbidden).1,
+      by simpa [Locals.Ctx.withLayout] using
+        (hAgree.continueForbidden hForbidden).2⟩
+
+theorem afterSameControl
+    {canBreak canContinue : Bool}
+    {targets : StackSchedule.ControlTargets} {before after : Locals.Ctx}
+    (hAgree : ControlCtxAgrees canBreak canContinue targets before)
+    (hControl : Locals.Ctx.SameControl before after) :
+    ControlCtxAgrees canBreak canContinue targets after := by
+  constructor
+  · intro hAllowed
+    obtain ⟨layout, hTarget, hDepth⟩ := hAgree.breakAllowed hAllowed
+    exact ⟨layout, hTarget, by rw [← hControl.breakDepth]; exact hDepth⟩
+  · intro hForbidden
+    obtain ⟨hTarget, hDepth⟩ := hAgree.breakForbidden hForbidden
+    exact ⟨hTarget, by rw [← hControl.breakDepth]; exact hDepth⟩
+  · intro hAllowed
+    obtain ⟨layout, hTarget, hDepth⟩ :=
+      hAgree.continueAllowed hAllowed
+    exact ⟨layout, hTarget, by rw [← hControl.continueDepth]; exact hDepth⟩
+  · intro hForbidden
+    obtain ⟨hTarget, hDepth⟩ := hAgree.continueForbidden hForbidden
+    exact ⟨hTarget, by rw [← hControl.continueDepth]; exact hDepth⟩
+
+theorem withoutLoopControl (ctx : Locals.Ctx) :
+    ControlCtxAgrees false false {} ctx.withoutLoopControl :=
+  empty _ rfl rfl
+
+theorem withLoopControl (ctx : Locals.Ctx) (layout : Locals.Layout) :
+    ControlCtxAgrees true true
+      { brk? := some layout, cont? := some layout }
+      (ctx.withLoopControl layout.length) := by
+  constructor
+  · intro _
+    exact ⟨layout, rfl, rfl⟩
+  · simp
+  · intro _
+    exact ⟨layout, rfl, rfl⟩
+  · simp
+
+end ControlCtxAgrees
+
 structure BlockArtifact
     (sourceCtx : StackLowering.Ctx) (demand : Demand)
     (pinned : LiveSet) (initial : Locals.Ctx) (source : Block) where
