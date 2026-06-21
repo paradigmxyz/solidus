@@ -2709,13 +2709,15 @@ theorem controlFallthroughConsAt_of_compilers
         Locals.Block.compileOpen (targetCtx.withLayout order.target)
             { stmts := pointLowered } = some (pointCode, middleCtx) →
         CompiledControlPointAt sourceProgram targetProgram targets returnNames
-          (targetCtx.withLayout order.target) middleCtx stmt pointCode
-          retain.schedule.target sourceFuel)
+            (targetCtx.withLayout order.target) middleCtx stmt pointCode
+            retain.schedule.target sourceFuel ∧
+          middleCtx.layout.Nodup)
     (hTail :
       ∀ {tailLayout : Locals.Layout} {tailFinal : Locals.Layout}
         {tailLowered : List Locals.Stmt} {middleCtx tailFinalCtx : Locals.Ctx}
         {tailCode : List Expressions.Stmt},
         middleCtx.layout = tailLayout →
+        middleCtx.layout.Nodup →
         StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
             tailLayout rest restFacts = some (points, tailFinal) →
         StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =
@@ -2768,10 +2770,11 @@ theorem controlFallthroughConsAt_of_compilers
   obtain ⟨pointCode, middleCtx, tailCode, hPointCompile, hTailCompile,
       hRestCode⟩ :=
     Locals.Block.compileOpen_append_components hRestCompile
-  have hPointCompiled :=
+  obtain ⟨hPointCompiled, hMiddleNodup⟩ :=
     hPoint hOrderBuild hRawSchedule hRetainBuild hPointLower hPointCompile
   have hTailPreserves :=
-    hTail hPointCompiled.layout hTailSchedule hTailLower hTailCompile
+    hTail hPointCompiled.layout hMiddleNodup hTailSchedule hTailLower
+      hTailCompile
   have hTailPreserves' :
       ControlScheduledListPreservesAt sourceProgram targetProgram targets
         returnNames middleCtx finalCtx rest finalLayout tailCode sourceFuel := by
@@ -3733,6 +3736,7 @@ theorem callConsAtSucc_of_compilers
         {tailLowered : List Locals.Stmt} {middleCtx tailFinalCtx : Locals.Ctx}
         {tailCode : List Expressions.Stmt},
         middleCtx.layout = tailLayout →
+        middleCtx.layout.Nodup →
         StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
             tailLayout rest restFacts = some (points, tailFinal) →
         StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =
@@ -3811,7 +3815,11 @@ theorem callConsAtSucc_of_compilers
     have hCompiledRetainEq : compiledRetain = retain :=
       Option.some.inj (hCompiledRetain.symm.trans rfl)
     subst compiledRetain
-    exact hCompiled
+    refine ⟨hCompiled, ?_⟩
+    rw [hCompiled.layout]
+    apply AllocationLayout.Transition.target_nodup retain
+    rw [← hRetainSource]
+    simpa [Locals.Ctx.withLayout] using hOrderedNodup
   · exact hTail
 
 theorem callConsAtOne_of_compilers
@@ -3829,6 +3837,7 @@ theorem callConsAtOne_of_compilers
     {point : StackSchedule.Point} {points : List StackSchedule.Point}
     {finalLayout : Locals.Layout} {lowered : List Locals.Stmt}
     {targetCtx finalCtx : Locals.Ctx} {code : List Expressions.Stmt}
+    (hNodup : targetCtx.layout.Nodup)
     (hSchedule :
       StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
           targetCtx.layout (.call callTargets functionName args :: rest)
@@ -3846,6 +3855,7 @@ theorem callConsAtOne_of_compilers
         {tailLowered : List Locals.Stmt} {middleCtx tailFinalCtx : Locals.Ctx}
         {tailCode : List Expressions.Stmt},
         middleCtx.layout = tailLayout →
+        middleCtx.layout.Nodup →
         StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
             tailLayout rest restFacts = some (points, tailFinal) →
         StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =
@@ -3882,6 +3892,10 @@ theorem callConsAtOne_of_compilers
         (AllocationLayout.Transition.build?_sound hRetainBuild).1.symm
       simpa [Locals.Ctx.withLayout] using
         hRawStatement.symm.trans hBuiltSource
+    have hOrderSource : targetCtx.layout = order.source :=
+      (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+    have hOrderedNodup : order.target.Nodup :=
+      order.target_nodup (by rw [← hOrderSource]; exact hNodup)
     obtain ⟨compiledRetain, hCompiledRetain, hCompiled⟩ :=
       StackCallPreservation.CallPoint.compiledOfCompilersAtZero sourceProgram
         targetProgram lowerCtx targets returnNames callTargets functionName
@@ -3898,7 +3912,11 @@ theorem callConsAtOne_of_compilers
     have hCompiledRetainEq : compiledRetain = retain :=
       Option.some.inj (hCompiledRetain.symm.trans rfl)
     subst compiledRetain
-    exact hCompiled
+    refine ⟨hCompiled, ?_⟩
+    rw [hCompiled.layout]
+    apply AllocationLayout.Transition.target_nodup retain
+    rw [← hRetainSource]
+    simpa [Locals.Ctx.withLayout] using hOrderedNodup
   · exact hTail
 
 theorem brkControlList_of_compilers

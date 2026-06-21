@@ -20,6 +20,20 @@ for theorem in \
 done
 
 for theorem in \
+    'controlListAtZero' \
+    'exprConsAt_of_compilers' \
+    'letConsAt_of_compilers' \
+    'assignConsAt_of_compilers'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.Functions.StackExactFuelPreservation.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing exact-fuel stack theorem %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
+for theorem in \
     'programStride' \
     'proc_body_size_add_length_add_eight_le_programStride' \
     'Covers' \

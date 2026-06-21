@@ -958,6 +958,21 @@ structure CompiledControlPointAt
     ControlPointPreservesAt sourceProgram targetProgram targets returnNames
       targetCtx finalCtx stmt code sourceFuel
 
+theorem CompiledControlPoint.at
+    {sourceProgram : Functions.Program}
+    {targetProgram : Expressions.Program}
+    {targets : StackSchedule.ControlTargets}
+    {returnNames : List Name}
+    {targetCtx finalCtx : Locals.Ctx}
+    {stmt : Functions.Stmt} {code : List Expressions.Stmt}
+    {finalLayout : Locals.Layout}
+    (h : CompiledControlPoint sourceProgram targetProgram targets returnNames
+      targetCtx finalCtx stmt code finalLayout)
+    (sourceFuel : Nat) :
+    CompiledControlPointAt sourceProgram targetProgram targets returnNames
+      targetCtx finalCtx stmt code finalLayout sourceFuel :=
+  ⟨h.layout, h.preserves.at sourceFuel⟩
+
 /-- Ordinary `leave` with an emitted return vector. Return expressions are
 evaluated once, their exact values are preserved while the active local layout
 is removed, and the resulting stack prefix is related to the source return
