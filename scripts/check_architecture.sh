@@ -50,6 +50,8 @@ for theorem in \
     'controlCons' \
     'controlOrderedCons' \
     'controlFallthroughCons_of_compilers' \
+    'compiledNonfallPoint_of_compilers' \
+    'controlNonfallPointToList' \
     'controlScheduledRegion' \
     'controlScheduledRegionAsBlock' \
     'compiledScheduledRegion_of_compilers' \
@@ -60,6 +62,10 @@ for theorem in \
     'exprCons_of_compilers' \
     'letCons_of_compilers' \
     'assignCons_of_compilers' \
+    'brkControlList_of_compilers' \
+    'contControlList_of_compilers' \
+    'terminalControlList_of_compilers' \
+    'terminalArgsControlList_of_compilers' \
     'RegularListPreserves.toOpenList' \
     'terminalList_of_compilers' \
     'terminalArgsList_of_compilers'; do
@@ -83,6 +89,7 @@ fi
 for theorem in \
     'lowerStmtListFuel_cons_components' \
     'lowerStmtListFuel_cons_fallsThrough_components' \
+    'lowerStmtListFuel_cons_nonfallthrough_components' \
     'lowerStmtListFuel_nil_components' \
     'lowerStmtListFuel_expr_components' \
     'lowerStmtListFuel_let_components' \

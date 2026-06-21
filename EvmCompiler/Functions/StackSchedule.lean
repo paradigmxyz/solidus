@@ -548,6 +548,40 @@ theorem scheduleStmtListFuelWithTargets_cons_fallsThrough_components
   exact ⟨order, rawPoint, retain, tailFinal, hOrder, hRaw, hRawFalls,
     hRetain, rfl, hTail, hFinal⟩
 
+theorem scheduleStmtListFuelWithTargets_cons_nonfallthrough_components
+    {targets : ControlTargets} {fuel : Nat}
+    {pinned : LiveSet} {layout : Locals.Layout}
+    {stmt : Stmt} {rest : List Stmt}
+    {facts : AllocationLivenessFacts.Point}
+    {restFacts : List AllocationLivenessFacts.Point}
+    {point : Point} {points : List Point} {finalLayout : Locals.Layout}
+    (hSchedule :
+      scheduleStmtListFuelWithTargets targets fuel pinned layout (stmt :: rest)
+          (facts :: restFacts) = some (point :: points, finalLayout))
+    (hFalls :
+      ∀ {before rawPoint},
+        scheduleStmtFuelWithTargets targets fuel pinned before stmt facts =
+            some rawPoint →
+          rawPoint.fallsThrough = false) :
+    ∃ order rawPoint,
+      Ordering.build? layout (orderPriority layout stmt facts) = some order ∧
+        scheduleStmtFuelWithTargets targets fuel pinned order.target stmt facts =
+          some rawPoint ∧
+        rawPoint.fallsThrough = false ∧
+        point = { rawPoint with order? := some order, retain? := none } ∧
+        points = [] ∧ finalLayout = rawPoint.statementLayout := by
+  obtain ⟨order, rawPoint, hOrder, hRaw, hCases⟩ :=
+    scheduleStmtListFuelWithTargets_cons_components hSchedule
+  have hRawFalls : rawPoint.fallsThrough = false := hFalls hRaw
+  have hAbrupt := hCases.resolve_left (by
+    intro hRegular
+    rw [hRegular.1] at hRawFalls
+    exact Bool.noConfusion hRawFalls)
+  obtain ⟨_hFalls, hScheduled, hFinal⟩ := hAbrupt
+  injection hScheduled with hPoint hPoints
+  exact ⟨order, rawPoint, hOrder, hRaw, hRawFalls, hPoint,
+    hPoints, hFinal⟩
+
 theorem scheduleStmtListFuel_cons_components
     {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
     {stmt : Stmt} {rest : List Stmt}
@@ -691,6 +725,45 @@ theorem scheduleStmtFuelWithTargets_assign_components
       point.statementLayout = layout ∧
       point.retain? = none ∧ point.regions = [] ∧
       point.fallsThrough = true := by
+  cases fuel with
+  | zero =>
+      simp [scheduleStmtFuelWithTargets] at hSchedule
+  | succ fuel =>
+      simp [scheduleStmtFuelWithTargets, alwaysExits] at hSchedule
+      subst point
+      simp
+
+theorem scheduleStmtFuelWithTargets_terminal_components
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout : Locals.Layout} {kind : Assembly.HaltKind}
+    {facts : AllocationLivenessFacts.Point} {point : Point}
+    (hSchedule :
+      scheduleStmtFuelWithTargets targets fuel pinned layout (.terminal kind)
+          facts = some point) :
+    point.beforeLayout = layout ∧
+      point.statementLayout = layout ∧
+      point.retain? = none ∧ point.regions = [] ∧
+      point.fallsThrough = false := by
+  cases fuel with
+  | zero =>
+      simp [scheduleStmtFuelWithTargets] at hSchedule
+  | succ fuel =>
+      simp [scheduleStmtFuelWithTargets, alwaysExits] at hSchedule
+      subst point
+      simp
+
+theorem scheduleStmtFuelWithTargets_terminalArgs_components
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout : Locals.Layout} {kind : Assembly.HaltKind}
+    {args : Locals.ExprSeq kind.argCount}
+    {facts : AllocationLivenessFacts.Point} {point : Point}
+    (hSchedule :
+      scheduleStmtFuelWithTargets targets fuel pinned layout
+          (.terminalArgs kind args) facts = some point) :
+    point.beforeLayout = layout ∧
+      point.statementLayout = layout ∧
+      point.retain? = none ∧ point.regions = [] ∧
+      point.fallsThrough = false := by
   cases fuel with
   | zero =>
       simp [scheduleStmtFuelWithTargets] at hSchedule

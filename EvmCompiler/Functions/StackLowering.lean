@@ -288,6 +288,27 @@ theorem lowerStmtListFuel_cons_fallsThrough_components
   obtain ⟨_hFalls, tail, hTail, hLowered⟩ := hRegular
   exact ⟨order, head, tail, hOrder, hHead, hTail, hLowered⟩
 
+theorem lowerStmtListFuel_cons_nonfallthrough_components
+    {fuel : Nat} {ctx : Ctx}
+    {stmt : Stmt} {rest : List Stmt}
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {lowered : List Locals.Stmt}
+    (hLower :
+      lowerStmtListFuel fuel ctx (stmt :: rest) (point :: points) =
+        some lowered)
+    (hFalls : point.fallsThrough = false) :
+    ∃ order head,
+      point.order? = some order ∧
+        lowerPointFuel fuel ctx stmt point = some head ∧
+        lowered = order.statements ++ head := by
+  obtain ⟨order, head, hOrder, hHead, hCases⟩ :=
+    lowerStmtListFuel_cons_components hLower
+  have hAbrupt := hCases.resolve_left (by
+    intro hRegular
+    rw [hRegular.1] at hFalls
+    exact Bool.noConfusion hFalls)
+  exact ⟨order, head, hOrder, hHead, hAbrupt.2⟩
+
 theorem lowerStmtListFuel_nil_components
     {fuel : Nat} {ctx : Ctx} {lowered : List Locals.Stmt}
     (hLower : lowerStmtListFuel fuel ctx [] [] = some lowered) :

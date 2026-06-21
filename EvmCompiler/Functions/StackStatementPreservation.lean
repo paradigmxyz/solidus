@@ -405,6 +405,48 @@ theorem regularRelToControl
       exact Simulation.Interaction.ExceptRel.ok
         (.regular hSourceControl hResult.state)
 
+theorem openRelToControl
+    {targets : StackSchedule.ControlTargets}
+    {finalCtx : Locals.Ctx} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {sourceRun :
+      Simulation.Interaction EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State ×
+          Functions.Source.Ctx)}
+    {targetRun : Simulation.Interaction EVMException Structured.Outcome}
+    (hRun :
+      Simulation.Interaction.Rel
+        (OpenOutcomeRel finalCtx suffix returns) sourceRun targetRun)
+    (hControl :
+      Simulation.Interaction.AllDone
+        (fun result =>
+          match result with
+          | .error _ => True
+          | .ok sourceResult =>
+              match sourceResult.1.mode with
+              | .regular =>
+                  ControlCtxCovers sourceResult.2 finalCtx targets
+              | .brk | .cont | .leave | .halt _ => True)
+        sourceRun) :
+    Simulation.Interaction.ForwardRel FuelTruncated
+      (ControlOpenOutcomeRel targets finalCtx suffix returns)
+      sourceRun targetRun := by
+  apply Simulation.Interaction.ForwardRel.ofRel
+  apply Simulation.Interaction.Rel.mono
+    (Simulation.Interaction.Rel.strengthen_left hRun hControl)
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hOpen, hSourceControl⟩
+  cases hOpen with
+  | error hError => exact Simulation.Interaction.ExceptRel.error hError
+  | ok hResult =>
+      apply Simulation.Interaction.ExceptRel.ok
+      cases hResult with
+      | regular _hContext hState => exact .regular hSourceControl hState
+      | brk hState => exact .brk hState
+      | cont hState => exact .cont hState
+      | leave hState => exact .leave hState
+      | halt hShared hReturns => exact .halt hShared hReturns
+
 theorem openRun_expr_controlCtx
     (sourceProgram : Functions.Program)
     (sourceCtx : Functions.Source.Ctx) (sourceFuel : Nat)
@@ -853,7 +895,7 @@ theorem openRun_brk_join_generated
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
-    (sourceFuel : Nat) (join : AllocationLayout.Join)
+    (sourceFuel targetFuel : Nat) (join : AllocationLayout.Join)
     (artifact : StackTransitionCompilation.JoinArtifact targetCtx join)
     {scope : List Name} {suffix : List Word}
     {returns : List Structured.ReturnDest}
@@ -861,15 +903,16 @@ theorem openRun_brk_join_generated
     (hScope : sourceCtx.breakScope? = some scope)
     (hScopeCovers :
       ∀ {name : Name}, name ∈ join.target → name ∈ scope)
+    (hFuel :
+      artifact.retainArtifact.promotionCodes.length + 1 +
+          artifact.orderArtifact.promotionCodes.length + 2 < targetFuel)
     (hInitial :
       StateRel targetCtx.layout suffix returns source target) :
     Simulation.Interaction.Rel
       (OpenOutcomeRel (targetCtx.withLayout join.target) suffix returns)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel .brk source)
-      (Expressions.InteractionSemantics.Block.openRun targetProgram
-        (artifact.retainArtifact.promotionCodes.length + 1 +
-          artifact.orderArtifact.promotionCodes.length + 3)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
         { stmts :=
             artifact.retainArtifact.promotionCodes.map
                 Expressions.Stmt.code ++
@@ -880,17 +923,19 @@ theorem openRun_brk_join_generated
   let joinLength :=
     artifact.retainArtifact.promotionCodes.length + 1 +
       artifact.orderArtifact.promotionCodes.length
-  apply artifact.thenBlock targetProgram (joinLength + 3)
-      (by simp [joinLength]) hInitial
+  apply artifact.thenBlock targetProgram targetFuel
+      (by omega) hInitial
   intro joinedTarget hJoinedRel
+  let tailExtra := targetFuel - joinLength - 3
   have hTarget :=
     Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_brk
-      targetProgram 0 [] joinedTarget joinedTarget (by rfl)
+      targetProgram tailExtra [] joinedTarget joinedTarget (by rfl)
   rw [show
-      joinLength + 3 -
+      targetFuel -
           (artifact.retainArtifact.promotionCodes.length + 1 +
-            artifact.orderArtifact.promotionCodes.length) = 3 by
-      simp [joinLength]]
+            artifact.orderArtifact.promotionCodes.length) = tailExtra + 3 by
+      simp only [joinLength, tailExtra]
+      omega]
   rw [Functions.InteractionSemantics.Stmt.openRun_brk
     sourceProgram sourceCtx sourceFuel source hScope]
   rw [hTarget]
@@ -902,7 +947,7 @@ theorem openRun_cont_join_generated
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
-    (sourceFuel : Nat) (join : AllocationLayout.Join)
+    (sourceFuel targetFuel : Nat) (join : AllocationLayout.Join)
     (artifact : StackTransitionCompilation.JoinArtifact targetCtx join)
     {scope : List Name} {suffix : List Word}
     {returns : List Structured.ReturnDest}
@@ -910,15 +955,16 @@ theorem openRun_cont_join_generated
     (hScope : sourceCtx.continueScope? = some scope)
     (hScopeCovers :
       ∀ {name : Name}, name ∈ join.target → name ∈ scope)
+    (hFuel :
+      artifact.retainArtifact.promotionCodes.length + 1 +
+          artifact.orderArtifact.promotionCodes.length + 2 < targetFuel)
     (hInitial :
       StateRel targetCtx.layout suffix returns source target) :
     Simulation.Interaction.Rel
       (OpenOutcomeRel (targetCtx.withLayout join.target) suffix returns)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel .cont source)
-      (Expressions.InteractionSemantics.Block.openRun targetProgram
-        (artifact.retainArtifact.promotionCodes.length + 1 +
-          artifact.orderArtifact.promotionCodes.length + 3)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
         { stmts :=
             artifact.retainArtifact.promotionCodes.map
                 Expressions.Stmt.code ++
@@ -929,17 +975,19 @@ theorem openRun_cont_join_generated
   let joinLength :=
     artifact.retainArtifact.promotionCodes.length + 1 +
       artifact.orderArtifact.promotionCodes.length
-  apply artifact.thenBlock targetProgram (joinLength + 3)
-      (by simp [joinLength]) hInitial
+  apply artifact.thenBlock targetProgram targetFuel
+      (by omega) hInitial
   intro joinedTarget hJoinedRel
+  let tailExtra := targetFuel - joinLength - 3
   have hTarget :=
     Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_cont
-      targetProgram 0 [] joinedTarget joinedTarget (by rfl)
+      targetProgram tailExtra [] joinedTarget joinedTarget (by rfl)
   rw [show
-      joinLength + 3 -
+      targetFuel -
           (artifact.retainArtifact.promotionCodes.length + 1 +
-            artifact.orderArtifact.promotionCodes.length) = 3 by
-      simp [joinLength]]
+            artifact.orderArtifact.promotionCodes.length) = tailExtra + 3 by
+      simp only [joinLength, tailExtra]
+      omega]
   rw [Functions.InteractionSemantics.Stmt.openRun_cont
     sourceProgram sourceCtx sourceFuel source hScope]
   rw [hTarget]
@@ -966,10 +1014,11 @@ theorem compiledBrkJoinPointOfEquations
           [Expressions.Stmt.code artifact.retainArtifact.cleanup] ++
           artifact.orderArtifact.promotionCodes.map Expressions.Stmt.code ++
           [.code [], .brk] ∧
-      ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel : Nat)
+      ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel targetFuel : Nat)
         {scope : List Name} {suffix : List Word}
         {returns : List Structured.ReturnDest}
         {source : Locals.Source.State} {target : Structured.RunState},
+        code.length < targetFuel →
         sourceCtx.breakScope? = some scope →
         (∀ {name : Name}, name ∈ join.target → name ∈ scope) →
         StateRel targetCtx.layout suffix returns source target →
@@ -978,7 +1027,7 @@ theorem compiledBrkJoinPointOfEquations
           (Functions.InteractionSemantics.Stmt.openRun
             sourceProgram sourceCtx sourceFuel .brk source)
           (Expressions.InteractionSemantics.Block.openRun targetProgram
-            (code.length + 1) { stmts := code } target) := by
+            targetFuel { stmts := code } target) := by
   rw [hLowered] at hCompile
   obtain ⟨joinCode, joinedCtx, brkCode, hJoinCompile, hBrkCompile,
       hWholeCode⟩ :=
@@ -1022,11 +1071,8 @@ theorem compiledBrkJoinPointOfEquations
     simp [Locals.codeStmt, List.append_assoc]
   refine ⟨artifact, ?_, hCode, ?_⟩
   · exact hFinalCtx
-  · intro sourceCtx sourceFuel scope suffix returns source target
-      hScope hScopeCovers hInitial
-    have hRun :=
-      openRun_brk_join_generated sourceProgram targetProgram sourceCtx
-        targetCtx sourceFuel join artifact hScope hScopeCovers hInitial
+  · intro sourceCtx sourceFuel targetFuel scope suffix returns source target
+      hTargetFuel hScope hScopeCovers hInitial
     have hFuelEq :
         code.length + 1 =
           artifact.retainArtifact.promotionCodes.length + 1 +
@@ -1034,8 +1080,59 @@ theorem compiledBrkJoinPointOfEquations
       rw [hCode]
       simp only [List.length_append, List.length_map,
         List.length_cons, List.length_nil]
-    rw [hFuelEq, hCode, hFinalCtx]
-    simpa [List.append_assoc] using hRun
+    have hRun :=
+      openRun_brk_join_generated sourceProgram targetProgram sourceCtx
+        targetCtx sourceFuel targetFuel join artifact hScope
+        hScopeCovers (by omega) hInitial
+    rw [hFinalCtx]
+    have hBlock :
+        ({ stmts := code } : Expressions.Block) =
+          { stmts :=
+              artifact.retainArtifact.promotionCodes.map
+                  Expressions.Stmt.code ++
+                [Expressions.Stmt.code artifact.retainArtifact.cleanup] ++
+                artifact.orderArtifact.promotionCodes.map
+                  Expressions.Stmt.code ++
+                [.code [], .brk] } :=
+      congrArg (fun stmts => ({ stmts } : Expressions.Block)) hCode
+    rw [hBlock]
+    exact hRun
+
+theorem compiledBrkControlPointOfEquations
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx finalCtx : Locals.Ctx)
+    (join : AllocationLayout.Join)
+    (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
+    (hTarget : targets.brk? = some join.target)
+    (hSource : targetCtx.layout = join.source)
+    (hTargetDepth : targetCtx.breakDepth? = some join.target.length)
+    (hLowered : lowered = join.statements ++ [.brk])
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    CompiledControlPoint sourceProgram targetProgram targets targetCtx finalCtx
+      .brk code join.target := by
+  obtain ⟨_artifact, hFinal, _hCode, hForward⟩ :=
+    compiledBrkJoinPointOfEquations sourceProgram targetProgram targetCtx
+      finalCtx join lowered code hSource hTargetDepth hLowered hCompile
+  refine ⟨?_, ?_⟩
+  · rw [hFinal]
+    rfl
+  unfold ControlPointPreserves
+  intro sourceCtx sourceFuel targetFuel suffix returns source target hFuel
+    hCtx hInitial
+  obtain ⟨scope, hScope, hScopeCovers⟩ :=
+    (hCtx.breakTarget hTarget).sourceCovers
+  have hRun :=
+    hForward sourceCtx sourceFuel targetFuel
+      (Expressions.TargetFuel.Covers.length_lt hFuel) hScope hScopeCovers
+      hInitial
+  apply openRelToControl hRun
+  rw [Functions.InteractionSemantics.Stmt.openRun_brk sourceProgram sourceCtx
+    sourceFuel source hScope]
+  exact .done trivial
 
 theorem compiledContJoinPointOfEquations
     (sourceProgram : Functions.Program)
@@ -1056,10 +1153,11 @@ theorem compiledContJoinPointOfEquations
           [Expressions.Stmt.code artifact.retainArtifact.cleanup] ++
           artifact.orderArtifact.promotionCodes.map Expressions.Stmt.code ++
           [.code [], .cont] ∧
-      ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel : Nat)
+      ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel targetFuel : Nat)
         {scope : List Name} {suffix : List Word}
         {returns : List Structured.ReturnDest}
         {source : Locals.Source.State} {target : Structured.RunState},
+        code.length < targetFuel →
         sourceCtx.continueScope? = some scope →
         (∀ {name : Name}, name ∈ join.target → name ∈ scope) →
         StateRel targetCtx.layout suffix returns source target →
@@ -1068,7 +1166,7 @@ theorem compiledContJoinPointOfEquations
           (Functions.InteractionSemantics.Stmt.openRun
             sourceProgram sourceCtx sourceFuel .cont source)
           (Expressions.InteractionSemantics.Block.openRun targetProgram
-            (code.length + 1) { stmts := code } target) := by
+            targetFuel { stmts := code } target) := by
   rw [hLowered] at hCompile
   obtain ⟨joinCode, joinedCtx, contCode, hJoinCompile, hContCompile,
       hWholeCode⟩ :=
@@ -1111,11 +1209,8 @@ theorem compiledContJoinPointOfEquations
     rw [hWholeCode, ← hJoinCode, hContCode]
     simp [Locals.codeStmt, List.append_assoc]
   refine ⟨artifact, hFinalCtx, hCode, ?_⟩
-  intro sourceCtx sourceFuel scope suffix returns source target
-    hScope hScopeCovers hInitial
-  have hRun :=
-    openRun_cont_join_generated sourceProgram targetProgram sourceCtx
-      targetCtx sourceFuel join artifact hScope hScopeCovers hInitial
+  intro sourceCtx sourceFuel targetFuel scope suffix returns source target
+    hTargetFuel hScope hScopeCovers hInitial
   have hFuelEq :
       code.length + 1 =
         artifact.retainArtifact.promotionCodes.length + 1 +
@@ -1123,23 +1218,75 @@ theorem compiledContJoinPointOfEquations
     rw [hCode]
     simp only [List.length_append, List.length_map,
       List.length_cons, List.length_nil]
-  rw [hFuelEq, hCode, hFinalCtx]
-  simpa [List.append_assoc] using hRun
+  have hRun :=
+    openRun_cont_join_generated sourceProgram targetProgram sourceCtx
+      targetCtx sourceFuel targetFuel join artifact hScope
+      hScopeCovers (by omega) hInitial
+  rw [hFinalCtx]
+  have hBlock :
+      ({ stmts := code } : Expressions.Block) =
+        { stmts :=
+            artifact.retainArtifact.promotionCodes.map
+                Expressions.Stmt.code ++
+              [Expressions.Stmt.code artifact.retainArtifact.cleanup] ++
+              artifact.orderArtifact.promotionCodes.map
+                Expressions.Stmt.code ++
+              [.code [], .cont] } :=
+    congrArg (fun stmts => ({ stmts } : Expressions.Block)) hCode
+  rw [hBlock]
+  exact hRun
+
+theorem compiledContControlPointOfEquations
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx finalCtx : Locals.Ctx)
+    (join : AllocationLayout.Join)
+    (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
+    (hTarget : targets.cont? = some join.target)
+    (hSource : targetCtx.layout = join.source)
+    (hTargetDepth : targetCtx.continueDepth? = some join.target.length)
+    (hLowered : lowered = join.statements ++ [.cont])
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    CompiledControlPoint sourceProgram targetProgram targets targetCtx finalCtx
+      .cont code join.target := by
+  obtain ⟨_artifact, hFinal, _hCode, hForward⟩ :=
+    compiledContJoinPointOfEquations sourceProgram targetProgram targetCtx
+      finalCtx join lowered code hSource hTargetDepth hLowered hCompile
+  refine ⟨?_, ?_⟩
+  · rw [hFinal]
+    rfl
+  unfold ControlPointPreserves
+  intro sourceCtx sourceFuel targetFuel suffix returns source target hFuel
+    hCtx hInitial
+  obtain ⟨scope, hScope, hScopeCovers⟩ :=
+    (hCtx.continueTarget hTarget).sourceCovers
+  have hRun :=
+    hForward sourceCtx sourceFuel targetFuel
+      (Expressions.TargetFuel.Covers.length_lt hFuel) hScope hScopeCovers
+      hInitial
+  apply openRelToControl hRun
+  rw [Functions.InteractionSemantics.Stmt.openRun_cont sourceProgram sourceCtx
+    sourceFuel source hScope]
+  exact .done trivial
 
 theorem openRun_terminal_generated
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
-    (sourceFuel : Nat) (kind : Assembly.HaltKind)
+    (sourceFuel targetFuel : Nat) (kind : Assembly.HaltKind)
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hArgCount : kind.argCount = 0)
+    (hFuel : 2 < targetFuel)
     (hInitial : StateRel targetCtx.layout suffix returns source target) :
     Simulation.Interaction.Rel
       (OpenOutcomeRel targetCtx suffix returns)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel (.terminal kind) source)
-      (Expressions.InteractionSemantics.Block.openRun targetProgram 3
+      (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
         { stmts :=
             Locals.codeStmt targetCtx.cleanupAll ++
               [Expressions.Stmt.terminal kind] }
@@ -1185,8 +1332,12 @@ theorem openRun_terminal_generated
     Functions.Source.Canonical.Stmt.run
     Functions.Source.Effectful.Control.Stmt.run
     Functions.InteractionSemantics.primitiveSemantics
+  let extra := targetFuel - 3
+  have hTargetFuel : targetFuel = extra + 3 := by
+    simp only [extra]
+    omega
   rw [show
-      Expressions.InteractionSemantics.Block.openRun targetProgram 3
+      Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
           { stmts :=
               Locals.codeStmt targetCtx.cleanupAll ++
                 [Expressions.Stmt.terminal kind] }
@@ -1201,9 +1352,10 @@ theorem openRun_terminal_generated
               (fun final =>
                 Simulation.Interaction.pure
                   (Structured.Outcome.halt kind final))) by
+      rw [hTargetFuel]
       simpa [Locals.codeStmt] using
         Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_terminal
-          targetProgram 0 targetCtx.cleanupAll kind target]
+          targetProgram extra targetCtx.cleanupAll kind target]
   rw [hCleanupRun]
   exact hWrapped
 
@@ -1222,33 +1374,82 @@ theorem compiledTerminalPointOfEquations
       code =
         Locals.codeStmt targetCtx.cleanupAll ++
           [Expressions.Stmt.terminal kind] ∧
-      ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel : Nat)
+      ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel targetFuel : Nat)
         {suffix : List Word} {returns : List Structured.ReturnDest}
         {source : Locals.Source.State} {target : Structured.RunState},
+        code.length < targetFuel →
         StateRel targetCtx.layout suffix returns source target →
         Simulation.Interaction.Rel
           (OpenOutcomeRel finalCtx suffix returns)
           (Functions.InteractionSemantics.Stmt.openRun
             sourceProgram sourceCtx sourceFuel (.terminal kind) source)
           (Expressions.InteractionSemantics.Block.openRun targetProgram
-            (code.length + 1) { stmts := code } target) := by
+            targetFuel { stmts := code } target) := by
   rw [hLowered] at hCompile
   have hStmtCompile :=
     Locals.Block.compileOpen_single_components hCompile
   obtain ⟨hCode, hFinal⟩ :=
     Locals.Stmt.compile_terminal_components hStmtCompile
   refine ⟨hFinal, hCode, ?_⟩
-  intro sourceCtx sourceFuel suffix returns source target hInitial
+  intro sourceCtx sourceFuel targetFuel suffix returns source target
+    hTargetFuel hInitial
   have hRun :=
     openRun_terminal_generated sourceProgram targetProgram sourceCtx
-      targetCtx sourceFuel kind hArgCount hInitial
-  simpa [hCode, hFinal, Locals.codeStmt] using hRun
+      targetCtx sourceFuel targetFuel kind hArgCount
+      (by simpa [hCode, Locals.codeStmt] using hTargetFuel) hInitial
+  rw [hFinal]
+  have hBlock :
+      ({ stmts := code } : Expressions.Block) =
+        { stmts :=
+            Locals.codeStmt targetCtx.cleanupAll ++
+              [Expressions.Stmt.terminal kind] } :=
+    congrArg (fun stmts => ({ stmts } : Expressions.Block)) hCode
+  rw [hBlock]
+  exact hRun
+
+theorem compiledTerminalControlPointOfEquations
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx finalCtx : Locals.Ctx)
+    (kind : Assembly.HaltKind)
+    (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
+    (hArgCount : kind.argCount = 0)
+    (hLowered : lowered = [.terminal kind])
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    CompiledControlPoint sourceProgram targetProgram targets targetCtx finalCtx
+      (.terminal kind) code targetCtx.layout := by
+  obtain ⟨hFinal, _hCode, hForward⟩ :=
+    compiledTerminalPointOfEquations sourceProgram targetProgram targetCtx
+      finalCtx kind lowered code hArgCount hLowered hCompile
+  refine ⟨?_, ?_⟩
+  · rw [hFinal]
+  unfold ControlPointPreserves
+  intro sourceCtx sourceFuel targetFuel suffix returns source target hFuel
+    _hCtx hInitial
+  have hRun :=
+    hForward sourceCtx sourceFuel targetFuel
+      (Expressions.TargetFuel.Covers.length_lt hFuel) hInitial
+  apply openRelToControl hRun
+  unfold Functions.InteractionSemantics.Stmt.openRun
+    Functions.Source.Canonical.Stmt.run
+    Functions.Source.Effectful.Control.Stmt.run
+    Functions.InteractionSemantics.primitiveSemantics
+  apply Simulation.Interaction.AllDone.bind
+    (Simulation.Interaction.AllDone.trivial
+      (Locals.InteractionSemantics.Primitive.openTerminal kind source []))
+  · intro _error _hTrivial
+    trivial
+  · intro _result _hTrivial
+    exact .done trivial
 
 theorem openRun_terminalArgs_generated
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
-    (sourceFuel : Nat) (kind : Assembly.HaltKind)
+    (sourceFuel targetFuel : Nat) (kind : Assembly.HaltKind)
     (args : Locals.ExprSeq kind.argCount)
     {argsCode : Structured.Code}
     {suffix : List Word} {returns : List Structured.ReturnDest}
@@ -1257,12 +1458,13 @@ theorem openRun_terminalArgs_generated
     (hSupported : Locals.InteractionSemantics.ExprSeq.OpenSupported args)
     (hCompile :
       Locals.ExprSeq.compileCode targetCtx 0 args = some argsCode)
+    (hFuel : 2 < targetFuel)
     (hInitial : StateRel targetCtx.layout suffix returns source target) :
     Simulation.Interaction.Rel
       (OpenOutcomeRel targetCtx suffix returns)
       (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
         sourceFuel (.terminalArgs kind args) source)
-      (Expressions.InteractionSemantics.Block.openRun targetProgram 3
+      (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
         { stmts :=
             Locals.codeStmt argsCode ++
               [Expressions.Stmt.terminal kind] }
@@ -1309,8 +1511,12 @@ theorem openRun_terminalArgs_generated
     Functions.Source.Canonical.Stmt.run
     Functions.Source.Effectful.Control.Stmt.run
     Functions.InteractionSemantics.primitiveSemantics
+  let extra := targetFuel - 3
+  have hTargetFuel : targetFuel = extra + 3 := by
+    simp only [extra]
+    omega
   rw [show
-      Expressions.InteractionSemantics.Block.openRun targetProgram 3
+      Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
           { stmts :=
               Locals.codeStmt argsCode ++
                 [Expressions.Stmt.terminal kind] }
@@ -1324,9 +1530,10 @@ theorem openRun_terminalArgs_generated
               (fun final =>
                 Simulation.Interaction.pure
                   (Structured.Outcome.halt kind final))) by
+      rw [hTargetFuel]
       simpa [Locals.codeStmt] using
         Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_terminal
-          targetProgram 0 argsCode kind target]
+          targetProgram extra argsCode kind target]
   exact hCore
 
 theorem compiledTerminalArgsPointOfEquations
@@ -1349,9 +1556,10 @@ theorem compiledTerminalArgsPointOfEquations
           code =
             Locals.codeStmt argsCode ++
               [Expressions.Stmt.terminal kind] ∧
-          ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel : Nat)
+          ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel targetFuel : Nat)
             {suffix : List Word} {returns : List Structured.ReturnDest}
             {source : Locals.Source.State} {target : Structured.RunState},
+            code.length < targetFuel →
             StateRel targetCtx.layout suffix returns source target →
             Simulation.Interaction.Rel
               (OpenOutcomeRel finalCtx suffix returns)
@@ -1359,7 +1567,7 @@ theorem compiledTerminalArgsPointOfEquations
                 sourceProgram sourceCtx sourceFuel
                   (.terminalArgs kind args) source)
               (Expressions.InteractionSemantics.Block.openRun targetProgram
-                (code.length + 1) { stmts := code } target) := by
+                targetFuel { stmts := code } target) := by
   rw [hLowered] at hCompile
   have hStmtCompile :=
     Locals.Block.compileOpen_single_components hCompile
@@ -1368,12 +1576,71 @@ theorem compiledTerminalArgsPointOfEquations
   have hTargetScoped :=
     StackAccess.ExprSeq.scoped_of_check hAccess hScoped
   refine ⟨hFinal, argsCode, hArgsCompile, hCode, ?_⟩
-  intro sourceCtx sourceFuel suffix returns source target hInitial
+  intro sourceCtx sourceFuel targetFuel suffix returns source target
+    hTargetFuel hInitial
   have hRun :=
     openRun_terminalArgs_generated sourceProgram targetProgram sourceCtx
-      targetCtx sourceFuel kind args hTargetScoped hSupported hArgsCompile
+      targetCtx sourceFuel targetFuel kind args hTargetScoped hSupported
+      hArgsCompile (by simpa [hCode, Locals.codeStmt] using hTargetFuel)
       hInitial
-  simpa [hCode, hFinal, Locals.codeStmt] using hRun
+  rw [hFinal]
+  have hBlock :
+      ({ stmts := code } : Expressions.Block) =
+        { stmts :=
+            Locals.codeStmt argsCode ++
+              [Expressions.Stmt.terminal kind] } :=
+    congrArg (fun stmts => ({ stmts } : Expressions.Block)) hCode
+  rw [hBlock]
+  exact hRun
+
+theorem compiledTerminalArgsControlPointOfEquations
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx finalCtx : Locals.Ctx)
+    (kind : Assembly.HaltKind) (args : Locals.ExprSeq kind.argCount)
+    (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
+    {sourceEnv : List Name}
+    (hScoped : Functions.Scope.ExprSeqScoped sourceEnv args)
+    (hSupported : Locals.InteractionSemantics.ExprSeq.OpenSupported args)
+    (hAccess : StackAccess.ExprSeq.check? targetCtx.layout 0 args = some ())
+    (hLowered : lowered = [.terminalArgs kind args])
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    CompiledControlPoint sourceProgram targetProgram targets targetCtx finalCtx
+      (.terminalArgs kind args) code targetCtx.layout := by
+  obtain ⟨hFinal, _argsCode, _hArgsCompile, _hCode, hForward⟩ :=
+    compiledTerminalArgsPointOfEquations sourceProgram targetProgram targetCtx
+      finalCtx kind args lowered code hScoped hSupported hAccess hLowered
+      hCompile
+  refine ⟨?_, ?_⟩
+  · rw [hFinal]
+  unfold ControlPointPreserves
+  intro sourceCtx sourceFuel targetFuel suffix returns source target hFuel
+    _hCtx hInitial
+  have hRun :=
+    hForward sourceCtx sourceFuel targetFuel
+      (Expressions.TargetFuel.Covers.length_lt hFuel) hInitial
+  apply openRelToControl hRun
+  unfold Functions.InteractionSemantics.Stmt.openRun
+    Functions.Source.Canonical.Stmt.run
+    Functions.Source.Effectful.Control.Stmt.run
+    Functions.InteractionSemantics.primitiveSemantics
+  apply Simulation.Interaction.AllDone.bind
+    (Simulation.Interaction.AllDone.trivial
+      (Locals.InteractionSemantics.ExprSeq.openEval args source))
+  · intro _error _hTrivial
+    trivial
+  · intro result _hTrivial
+    apply Simulation.Interaction.AllDone.bind
+      (Simulation.Interaction.AllDone.trivial
+        (Locals.InteractionSemantics.Primitive.openTerminal
+          kind result.1 result.2))
+    · intro _error _hTerminal
+      trivial
+    · intro _final _hTerminal
+      exact .done trivial
 
 theorem openRun_transition_generated
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
