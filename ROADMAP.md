@@ -105,6 +105,8 @@ short composition module.
 - [x] Prove the ordinary compiler constructs each checked retain transition
   internally and that its promotion/cleanup code preserves the dynamic layout
   relation under open semantics without generated public evidence.
+- [x] Lift the dynamic relation through the existing Locals-owned open
+  expression preservation theorem, including zero-result statement expressions.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls

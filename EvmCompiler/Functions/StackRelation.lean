@@ -82,6 +82,62 @@ theorem mem_of_mem_promoteAt
     · exact List.mem_of_mem_take hTake
     · exact List.mem_of_mem_drop hDrop
 
+namespace StateRel
+
+theorem expr
+    {layout : Locals.Layout} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hRel : StateRel layout suffix returns source target) :
+    Locals.InteractionPreservation.Expr.StateRel layout 0 source target := by
+  constructor
+  · exact hRel.shared
+  · intro name depth hDepth
+    have hAt : layout[depth]? = some name :=
+      Locals.Layout.getElem?_eq_some_of_lookupDepth?_eq_some hDepth
+    obtain ⟨value, hValue⟩ :=
+      hRel.defined (List.mem_of_getElem? hAt)
+    refine ⟨value, hValue, ?_⟩
+    rw [hRel.stack]
+    have hValuesAt : (values source layout)[depth]? = some value := by
+      simp [values, List.getElem?_map, hAt, hValue]
+    have hDepthBound : depth < (values source layout).length :=
+      (List.getElem?_eq_some_iff.mp hValuesAt).1
+    simp only [Nat.zero_add]
+    rw [List.getElem?_append_left hDepthBound]
+    simpa using hValuesAt
+
+theorem ofExprResultZero
+    {layout : Locals.Layout} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {initialSource finalSource : Locals.Source.State}
+    {resultValues : List Word}
+    {initialTarget finalTarget : Structured.RunState}
+    (hInitial :
+      StateRel layout suffix returns initialSource initialTarget)
+    (hResult :
+      Locals.InteractionPreservation.Expr.ResultRel 0
+        initialSource initialTarget (finalSource, resultValues) finalTarget) :
+    StateRel layout suffix returns finalSource finalTarget := by
+  have hValues : resultValues = [] := by
+    simpa using hResult.length
+  subst resultValues
+  constructor
+  · exact hResult.shared
+  · exact hResult.returns.trans hInitial.returns
+  · rw [hResult.stack]
+    simp only [List.reverse_nil, List.nil_append]
+    rw [hInitial.stack]
+    unfold values
+    rw [hResult.vars]
+  · intro name hName
+    obtain ⟨value, hValue⟩ := hInitial.defined hName
+    refine ⟨value, ?_⟩
+    rw [hResult.vars]
+    exact hValue
+
+end StateRel
+
 end StackRelation
 end Functions
 end EvmCompiler

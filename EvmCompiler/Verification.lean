@@ -21,6 +21,7 @@ import EvmCompiler.Functions.StackSchedule
 import EvmCompiler.Functions.StackAccess
 import EvmCompiler.Functions.StackAccessLowering
 import EvmCompiler.Functions.StackRelation
+import EvmCompiler.Functions.StackExpressionPreservation
 import EvmCompiler.Functions.StackTransitionPreservation
 import EvmCompiler.Functions.StackTransitionCompilation
 import EvmCompiler.Functions.StackLowering
@@ -2929,6 +2930,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackAccess.Examples.top16_accessible
 #check EvmCompiler.Functions.StackAccess.Examples.below_top16_rejected
 #check EvmCompiler.Functions.StackRelation.values_promoteAt
+#check EvmCompiler.Functions.StackRelation.StateRel.expr
+#check EvmCompiler.Functions.StackExpressionPreservation.openEvalZero_compileCode
 #check EvmCompiler.Functions.StackTransitionPreservation.Promotion.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.Cleanup.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.PromotionCodes.openRun
