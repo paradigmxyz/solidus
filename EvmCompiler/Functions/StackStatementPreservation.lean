@@ -712,8 +712,8 @@ inductive ControlOpenResultRel (targets : StackSchedule.ControlTargets)
       ControlOpenResultRel targets returnNames finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.cont source, sourceCtx)
         (Structured.Outcome.cont target)
-  | leave {source sourceCtx target layout} :
-      StateRel layout suffix returns source target →
+  | leave {source sourceCtx target} :
+      StateRel returnNames.reverse suffix returns source target →
       ControlOpenResultRel targets returnNames finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.leave source, sourceCtx)
         (Structured.Outcome.leave target)
@@ -846,7 +846,7 @@ def ControlBlockPreserves
         targetBody target)
 
 inductive ForCoreResultRel (sourceCtx : Functions.Source.Ctx)
-    (loopTargetCtx : Locals.Ctx)
+    (returnNames : List Name) (loopTargetCtx : Locals.Ctx)
     (suffix : List Word) (returns : List Structured.ReturnDest) :
     (Locals.Source.Effectful.Outcome Locals.Source.State ×
       Functions.Source.Ctx) →
@@ -854,27 +854,27 @@ inductive ForCoreResultRel (sourceCtx : Functions.Source.Ctx)
   | regular {sourceBefore sourceAfter target} :
       sourceAfter = sourceBefore.restrictTo sourceCtx.scope →
       StateRel loopTargetCtx.layout suffix returns sourceBefore target →
-      ForCoreResultRel sourceCtx loopTargetCtx suffix returns
+      ForCoreResultRel sourceCtx returnNames loopTargetCtx suffix returns
         (Locals.Source.Effectful.Outcome.regular sourceAfter, sourceCtx)
         (Structured.Outcome.regular target)
-  | leave {source target layout} :
-      StateRel layout suffix returns source target →
-      ForCoreResultRel sourceCtx loopTargetCtx suffix returns
+  | leave {source target} :
+      StateRel returnNames.reverse suffix returns source target →
+      ForCoreResultRel sourceCtx returnNames loopTargetCtx suffix returns
         (Locals.Source.Effectful.Outcome.leave source, sourceCtx)
         (Structured.Outcome.leave target)
   | halt {kind source target} :
       source.shared = target.evm.toSharedState →
       target.returns = returns →
-      ForCoreResultRel sourceCtx loopTargetCtx suffix returns
+      ForCoreResultRel sourceCtx returnNames loopTargetCtx suffix returns
         (Locals.Source.Effectful.Outcome.halt kind source, sourceCtx)
         (Structured.Outcome.halt kind target)
 
 abbrev ForCoreOutcomeRel (sourceCtx : Functions.Source.Ctx)
-    (loopTargetCtx : Locals.Ctx)
+    (returnNames : List Name) (loopTargetCtx : Locals.Ctx)
     (suffix : List Word) (returns : List Structured.ReturnDest) :=
   Simulation.Interaction.ExceptRel
     (fun (_ : EVMException) (_ : EVMException) => True)
-    (ForCoreResultRel sourceCtx loopTargetCtx suffix returns)
+    (ForCoreResultRel sourceCtx returnNames loopTargetCtx suffix returns)
 
 def ControlPointPreserves
     (sourceProgram : Functions.Program)
@@ -1539,7 +1539,7 @@ theorem controlForCore
       RuntimeCtxCovers sourceCtx targetCtx targets returnNames returns →
       StateRel targetCtx.layout suffix returns source target →
       Simulation.Interaction.ForwardRel FuelTruncated
-        (ForCoreOutcomeRel sourceCtx loopTargetCtx suffix returns)
+        (ForCoreOutcomeRel sourceCtx returnNames loopTargetCtx suffix returns)
         (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
           sourceFuel (.for_ init cond post body) source)
         (Expressions.InteractionSemantics.Stmt.openRun targetProgram targetFuel
@@ -1592,7 +1592,7 @@ theorem controlForCore
               targetBody hCondScoped hCondSupported hCondCompile hBody hPost
               fuel (targetFuel - 1) hLoopFuel hLoopCtx hInitState
           change Simulation.Interaction.ForwardRel FuelTruncated
-            (ForCoreOutcomeRel sourceCtx loopTargetCtx suffix returns) _
+            (ForCoreOutcomeRel sourceCtx returnNames loopTargetCtx suffix returns) _
             (Expressions.InteractionSemantics.Stmt.openRunForLoop targetProgram
               (targetFuel - 1) (.code condCode) targetPost targetBody
               _targetAfterInit)
@@ -1819,7 +1819,8 @@ theorem openRelToControl
               | .regular =>
                   RuntimeCtxCovers sourceResult.2 finalCtx targets returnNames returns
               | .brk | .cont => False
-              | .leave | .halt _ => True)
+              | .leave => False
+              | .halt _ => True)
         sourceRun) :
     Simulation.Interaction.ForwardRel FuelTruncated
       (ControlOpenOutcomeRel targets returnNames finalCtx suffix returns)
@@ -1837,7 +1838,7 @@ theorem openRelToControl
       | regular _hContext hState => exact .regular hSourceControl hState
       | brk _hState => exact False.elim hSourceControl
       | cont _hState => exact False.elim hSourceControl
-      | leave hState => exact .leave hState
+      | leave _hState => exact False.elim hSourceControl
       | halt hShared hReturns => exact .halt hShared hReturns
 
 theorem openRun_expr_controlCtx

@@ -24,6 +24,7 @@ import EvmCompiler.Functions.StackAccessLowering
 import EvmCompiler.Functions.StackRelation
 import EvmCompiler.Functions.StackExpressionPreservation
 import EvmCompiler.Functions.StackStatementPreservation
+import EvmCompiler.Functions.StackCallPreservation
 import EvmCompiler.Functions.StackBlockPreservation
 import EvmCompiler.Functions.StackTransitionPreservation
 import EvmCompiler.Functions.StackTransitionCompilation
@@ -3214,6 +3215,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_brk_components
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_cont_components
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_leave_components
+#check EvmCompiler.Functions.StackLowering.lowerPointFuel_call_components
+#check EvmCompiler.Functions.StackLowering.lowerFunction?_components
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_block_components
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_if_components
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_switch_components
@@ -3232,6 +3235,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackLoweringCompilation.Examples.controlProgram_compiles
 #check EvmCompiler.Functions.StackLoweringCompilation.compileBlock?_sound
 #check EvmCompiler.Functions.StackLoweringCompilation.Examples.controlMainBlock_layout_checked
+#check EvmCompiler.Functions.StackCallPreservation.argExprs_openEval
+#check EvmCompiler.Functions.StackCallPreservation.CalleeEntry.stateRel
+#check EvmCompiler.Functions.StackCallPreservation.CalleeEntry.runtimeCtx
+#check EvmCompiler.Functions.StackCallPreservation.ReturnPrelude.compileOpenRun_of_fuel
+#check EvmCompiler.Functions.StackCallPreservation.ReturnEpilogue.openRun
+#check EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_afterPrelude
 
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.Join.compiledOpenRun
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.OrderingArtifact.thenBlock
@@ -3258,6 +3267,9 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackStatementPreservation.controlFor
 #print axioms EvmCompiler.Functions.StackStatementPreservation.compiledLeaveControlPointOfEquations
 #print axioms EvmCompiler.Functions.StackStatementPreservation.returnWord_openEval
+#print axioms EvmCompiler.Functions.StackCallPreservation.argExprs_openEval
+#print axioms EvmCompiler.Functions.StackCallPreservation.ReturnPrelude.compileOpenRun_of_fuel
+#print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_afterPrelude
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.JoinArtifact.thenBlock
 #print axioms EvmCompiler.Expressions.TargetFuel.Covers.if_body_after_two
 #print axioms EvmCompiler.Functions.StackBlockPreservation.brkList_of_compilers

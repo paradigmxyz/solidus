@@ -169,11 +169,17 @@ elimination are not prerequisites for Permit2 or Aave.
 
 ### 4. Internal Calls
 
-- [ ] Extend the existing allocation call decomposition rather than adding a
-  second call interpreter.
-- [ ] Preserve dormant caller frames across calls.
-- [ ] Prove parameter entry, return-value placement, and exact caller-layout
-  restoration for recursive and non-recursive call graphs.
+- [x] Bridge canonical ordered argument evaluation to `Lower.argExprs`, prove
+  exact target splitting, and reuse the existing Functions/Expressions call
+  interpreters without defining a second call semantics.
+- [x] Prove canonical parameter entry, zero-return initialization, checked
+  return-vector placement, and the scheduled callee body/epilogue relation at
+  arbitrary sufficient target fuel.
+- [ ] Attach the real target return frame, perform caller target writeback, and
+  restore the caller's retained symbolic layout; terminal halt may ignore the
+  now-irrelevant callee return-frame metadata.
+- [ ] Discharge the private callee-body premise by source-fuel recursion for
+  recursive and non-recursive call graphs.
 - [ ] Keep call artifacts compiler-owned and absent from public theorem
   premises.
 

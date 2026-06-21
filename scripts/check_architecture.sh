@@ -1890,6 +1890,11 @@ report_matches \
   EvmCompiler/Functions/StackStatementPreservation.lean
 
 report_matches \
+  'Functions stack-call preservation must remain an adjacent open-semantics proof:' \
+  '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|TypedCfg|Assembly\.(Assembler|Compiler)|Locals\.Compiler)' \
+  EvmCompiler/Functions/StackCallPreservation.lean
+
+report_matches \
   'Functions stack-block preservation must compose only adjacent statement proofs:' \
   '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|TypedCfg|Assembly\.(Assembler|Compiler)|Locals\.Compiler)' \
   EvmCompiler/Functions/StackBlockPreservation.lean
@@ -1898,6 +1903,7 @@ report_matches \
   'Dynamic Functions preservation must use canonical Functions source semantics:' \
   'CtxCovers \(source : Locals\.Source\.Ctx\)|sourceProgram : Locals\.Program|Locals\.InteractionSemantics\.(Stmt|Block)\.openRun' \
   EvmCompiler/Functions/StackStatementPreservation.lean \
+  EvmCompiler/Functions/StackCallPreservation.lean \
   EvmCompiler/Functions/StackBlockPreservation.lean
 
 report_matches \
@@ -1988,6 +1994,7 @@ report_matches \
   EvmCompiler/Functions/StackRelation.lean \
   EvmCompiler/Functions/StackExpressionPreservation.lean \
   EvmCompiler/Functions/StackStatementPreservation.lean \
+  EvmCompiler/Functions/StackCallPreservation.lean \
   EvmCompiler/Functions/StackBlockPreservation.lean \
   EvmCompiler/Functions/StackTransitionPreservation.lean \
   EvmCompiler/Functions/StackTransitionCompilation.lean \

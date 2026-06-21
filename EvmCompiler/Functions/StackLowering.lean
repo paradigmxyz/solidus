@@ -164,6 +164,33 @@ def callStmts? (ctx : Ctx) (targets : List Name)
     ([.exprs (Lower.argExprs args), .call functionName] ++
       Lower.assignReturnedTops targets)
 
+theorem callStmts?_components
+    {ctx : Ctx} {targets : List Name} {functionName : Name}
+    {args : List (Expr 1)} {lowered : List Locals.Stmt}
+    (hLower : callStmts? ctx targets functionName args = some lowered) :
+    ∃ fn,
+      FunList.find? functionName ctx.functions = some fn ∧
+        args.length = fn.params.length ∧
+        targets.length = fn.returns.length ∧
+        targets.Nodup ∧
+        lowered =
+          [.exprs (Lower.argExprs args), .call functionName] ++
+            Lower.assignReturnedTops targets := by
+  unfold callStmts? at hLower
+  obtain ⟨fn, hFind, hAfterFind⟩ := Option.bind_eq_some_iff.mp hLower
+  split at hAfterFind
+  next hNodup =>
+    simp only [pure_bind] at hAfterFind
+    split at hAfterFind
+    next hArgs =>
+      split at hAfterFind
+      next hTargets =>
+        have hLowered := Option.some.inj hAfterFind
+        exact ⟨fn, hFind, hArgs, hTargets, hNodup, hLowered.symm⟩
+      next hTargets => simp at hAfterFind
+    next hArgs => simp at hAfterFind
+  next hNodup => simp at hAfterFind
+
 def pointAccess? (ctx : Ctx) (source : Stmt)
     (point : StackSchedule.Point) : Option Unit :=
   match source, point.regions with
@@ -513,6 +540,69 @@ theorem lowerPointFuel_assign_components
                     exact
                       ⟨retain, rfl, hFallsTrue, rfl, rfl,
                         by simpa using hLower.symm⟩
+            | cons region regions => simp [hRegions] at hLower
+          · rw [if_neg hFalls] at hLower
+            contradiction
+
+theorem lowerPointFuel_call_components
+    {fuel : Nat} {ctx : Ctx} {targets : List Name}
+    {functionName : Name} {args : List (Expr 1)}
+    {point : StackSchedule.Point} {lowered : List Locals.Stmt}
+    (hLower :
+      lowerPointFuel fuel ctx (.call targets functionName args) point =
+        some lowered) :
+    ∃ fn retain,
+      FunList.find? functionName ctx.functions = some fn ∧
+      args.length = fn.params.length ∧
+      targets.length = fn.returns.length ∧
+      targets.Nodup ∧
+      pointAccess? ctx (.call targets functionName args) point = some () ∧
+      point.fallsThrough = true ∧ point.regions = [] ∧
+      point.retain? = some retain ∧
+      lowered =
+        ([.exprs (Lower.argExprs args), .call functionName] ++
+          Lower.assignReturnedTops targets) ++ transitionStmts retain := by
+  cases fuel with
+  | zero => simp [lowerPointFuel] at hLower
+  | succ fuel =>
+      simp only [lowerPointFuel] at hLower
+      cases hAccess : pointAccess? ctx (.call targets functionName args) point with
+      | none => simp [hAccess] at hLower
+      | some unit =>
+          cases unit
+          rw [hAccess] at hLower
+          by_cases hFalls :
+              point.fallsThrough =
+                !StackSchedule.alwaysExits (.call targets functionName args)
+          · rw [if_pos hFalls] at hLower
+            cases hRegions : point.regions with
+            | nil =>
+                rw [hRegions] at hLower
+                change
+                  (callStmts? ctx targets functionName args).bind
+                      (fun core =>
+                        if point.fallsThrough then
+                          match point.retain? with
+                          | some retain =>
+                              some (core ++ transitionStmts retain)
+                          | none => none
+                        else if point.retain?.isNone then some core else none) =
+                    some lowered at hLower
+                obtain ⟨core, hCore, hAfterCore⟩ :=
+                  Option.bind_eq_some_iff.mp hLower
+                obtain ⟨fn, hFind, hArgs, hTargets, hNodup, hCoreEq⟩ :=
+                  callStmts?_components hCore
+                have hFallsTrue : point.fallsThrough = true := by
+                  simpa [StackSchedule.alwaysExits] using hFalls
+                rw [hFallsTrue] at hAfterCore
+                cases hRetain : point.retain? with
+                | none => simp [hRetain] at hAfterCore
+                | some retain =>
+                    rw [hRetain] at hAfterCore
+                    exact
+                      ⟨fn, retain, hFind, hArgs, hTargets, hNodup, rfl,
+                        hFallsTrue, rfl, rfl,
+                        by simpa [hCoreEq] using hAfterCore.symm⟩
             | cons region regions => simp [hRegions] at hLower
           · rw [if_neg hFalls] at hLower
             contradiction
@@ -1295,6 +1385,40 @@ def lowerFunction? (functions : List FunDef) (fn : FunDef) :
               Lower.initReturns fn.returns ++
               body.stmts ++
               pushWordReturns fn.returns } }
+
+theorem lowerFunction?_components
+    {functions : List FunDef} {fn : FunDef} {proc : Locals.Proc}
+    (hLower : lowerFunction? functions fn = some proc) :
+    ∃ facts schedule body,
+      AllocationLivenessFacts.annotateBlock? (functionDemand fn) fn.body =
+          some facts ∧
+      StackSchedule.scheduleBlock? ∅ (functionBodyLayout fn) fn.body facts =
+          some schedule ∧
+      lowerScheduledBlock?
+          { functions, returns := fn.returns } fn.body schedule = some body ∧
+      StackAccess.ExprSeq.check? schedule.finalLayout 0
+          (returnWords fn.returns) = some () ∧
+      proc =
+        { name := fn.name
+          argc := fn.params.length
+          retc := fn.returns.length
+          entryLayout := fn.params.reverse
+          body :=
+            { stmts :=
+                [Lower.bindEntryLayout fn.params.reverse] ++
+                  Lower.initReturns fn.returns ++
+                  body.stmts ++ pushWordReturns fn.returns } } := by
+  unfold lowerFunction? at hLower
+  obtain ⟨facts, hFacts, hAfterFacts⟩ :=
+    Option.bind_eq_some_iff.mp hLower
+  obtain ⟨schedule, hSchedule, hAfterSchedule⟩ :=
+    Option.bind_eq_some_iff.mp hAfterFacts
+  obtain ⟨body, hBody, hAfterBody⟩ :=
+    Option.bind_eq_some_iff.mp hAfterSchedule
+  obtain ⟨_unit, hAccess, hProc⟩ :=
+    Option.bind_eq_some_iff.mp hAfterBody
+  exact ⟨facts, schedule, body, hFacts, hSchedule, hBody, hAccess,
+    Option.some.inj hProc |>.symm⟩
 
 def lowerFunctions? (allFunctions : List FunDef) :
     List FunDef → Option (List Locals.Proc)

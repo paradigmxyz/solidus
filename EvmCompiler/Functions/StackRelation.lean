@@ -316,6 +316,35 @@ theorem ofExprResultOneInsert
       rw [hResult.vars]
       exact hOldValue
 
+/-- A compiler-owned push may expose an already-defined source binding as a
+fresh symbolic stack slot without changing the source state. -/
+theorem afterPushExisting
+    {layout : Locals.Layout} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    {name : Name} {value : Word}
+    (hFresh : name ∉ layout)
+    (hValue : source.vars name = some value)
+    (hInitial : StateRel layout suffix returns source target) :
+    StateRel (name :: layout) suffix returns source
+      (target.withEVM
+        (target.evm.replaceStackAndIncrPC
+          (value :: target.evm.stack) (pcΔ := 33))) := by
+  constructor
+  · simpa using hInitial.shared
+  · exact hInitial.returns
+  · rw [hInitial.stack]
+    unfold values
+    simp only [List.map_cons, hValue, Option.getD_some]
+    simp [Structured.RunState.withEVM,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC]
+  · intro candidate hCandidate
+    rcases List.mem_cons.mp hCandidate with hName | hTail
+    · subst candidate
+      exact ⟨value, hValue⟩
+    · exact hInitial.defined hTail
+
 theorem ofExprResultOnePop
     {layout : Locals.Layout} {suffix : List Word}
     {returns : List Structured.ReturnDest}
