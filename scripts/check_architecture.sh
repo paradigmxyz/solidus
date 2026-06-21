@@ -73,6 +73,9 @@ for theorem in \
     'openRun_transition_generated' \
     'openRun_transition_block_generated' \
     'regularThenTransition' \
+    'exprThenTransition' \
+    'letThenTransition' \
+    'assignThenTransition' \
     'openRun_let_generated' \
     'openRun_assign_generated'; do
   if ! rg -Fq \

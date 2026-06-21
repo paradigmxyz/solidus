@@ -2940,6 +2940,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_transition_generated
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_transition_block_generated
 #check EvmCompiler.Functions.StackStatementPreservation.regularThenTransition
+#check EvmCompiler.Functions.StackStatementPreservation.exprThenTransition
+#check EvmCompiler.Functions.StackStatementPreservation.letThenTransition
+#check EvmCompiler.Functions.StackStatementPreservation.assignThenTransition
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_let_generated
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_assign_generated
 #check EvmCompiler.Functions.StackBlockPreservation.regularCons

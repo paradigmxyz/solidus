@@ -124,6 +124,8 @@ short composition module.
 - [x] Make canonical Functions semantics and `Functions.Source.Ctx` the actual
   source of every dynamic leaf and block theorem; Locals is only the adjacent
   lowering/target layer.
+- [x] Instantiate one compiler-owned `RegularPointPreserves` interface for
+  expression, declaration, and assignment points followed by checked retention.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls
