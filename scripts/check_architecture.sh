@@ -38,7 +38,10 @@ fi
 
 for theorem in \
     'lowerStmtListFuel_cons_components' \
-    'lowerStmtListFuel_nil_components'; do
+    'lowerStmtListFuel_nil_components' \
+    'lowerPointFuel_expr_components' \
+    'lowerPointFuel_let_components' \
+    'lowerPointFuel_assign_components'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.StackLowering.${theorem}" \
       EvmCompiler/Verification.lean; then
@@ -88,6 +91,10 @@ for theorem in \
     'exprThenTransition' \
     'letThenTransition' \
     'assignThenTransition' \
+    'RegularPointPreserves.compiledLowered' \
+    'compiledExprPoint' \
+    'compiledLetPoint' \
+    'compiledAssignPoint' \
     'openRun_let_generated' \
     'openRun_assign_generated'; do
   if ! rg -Fq \
@@ -102,11 +109,24 @@ done
 for theorem in \
     'build_run' \
     'scheduleRetain?_sound' \
-    'Transition.build?_sound'; do
+    'Transition.build?_sound' \
+    'Transition.target_nodup'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.AllocationLayout.${theorem}" \
       EvmCompiler/Verification.lean; then
     printf 'Verification root is missing Functions layout theorem %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
+for theorem in \
+    'Expr.scoped_of_check' \
+    'assign_components'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.Functions.StackAccess.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing stack-access theorem %s.\n\n' \
       "$theorem" >&2
     failed=1
   fi

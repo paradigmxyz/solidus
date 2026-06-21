@@ -236,6 +236,124 @@ theorem lowerStmtListFuel_nil_components
     lowered = [] := by
   simpa [lowerStmtListFuel] using hLower
 
+theorem lowerPointFuel_expr_components
+    {fuel : Nat} {ctx : Ctx} {expr : Expr 0}
+    {point : StackSchedule.Point} {lowered : List Locals.Stmt}
+    (hLower : lowerPointFuel fuel ctx (.expr expr) point = some lowered) :
+    ∃ retain,
+      pointAccess? ctx (.expr expr) point = some () ∧
+      point.fallsThrough = true ∧ point.regions = [] ∧
+      point.retain? = some retain ∧
+      lowered = [.expr expr] ++ transitionStmts retain := by
+  cases fuel with
+  | zero => simp [lowerPointFuel] at hLower
+  | succ fuel =>
+      simp only [lowerPointFuel] at hLower
+      cases hAccess : pointAccess? ctx (.expr expr) point with
+      | none => simp [hAccess] at hLower
+      | some unit =>
+          cases unit
+          rw [hAccess] at hLower
+          by_cases hFalls :
+              point.fallsThrough =
+                !StackSchedule.alwaysExits (.expr expr)
+          · rw [if_pos hFalls] at hLower
+            cases hRegions : point.regions with
+            | nil =>
+                rw [hRegions] at hLower
+                have hFallsTrue : point.fallsThrough = true := by
+                  simpa [StackSchedule.alwaysExits] using hFalls
+                rw [hFallsTrue] at hLower
+                cases hRetain : point.retain? with
+                | none => simp [hRetain] at hLower
+                | some retain =>
+                    rw [hRetain] at hLower
+                    exact
+                      ⟨retain, rfl, hFallsTrue, rfl, rfl,
+                        by simpa using hLower.symm⟩
+            | cons region regions => simp [hRegions] at hLower
+          · rw [if_neg hFalls] at hLower
+            contradiction
+
+theorem lowerPointFuel_let_components
+    {fuel : Nat} {ctx : Ctx} {name : Name} {value : Expr 1}
+    {point : StackSchedule.Point} {lowered : List Locals.Stmt}
+    (hLower : lowerPointFuel fuel ctx (.let_ name value) point = some lowered) :
+    ∃ retain,
+      pointAccess? ctx (.let_ name value) point = some () ∧
+      point.fallsThrough = true ∧ point.regions = [] ∧
+      point.retain? = some retain ∧
+      lowered = [.let_ name value] ++ transitionStmts retain := by
+  cases fuel with
+  | zero => simp [lowerPointFuel] at hLower
+  | succ fuel =>
+      simp only [lowerPointFuel] at hLower
+      cases hAccess : pointAccess? ctx (.let_ name value) point with
+      | none => simp [hAccess] at hLower
+      | some unit =>
+          cases unit
+          rw [hAccess] at hLower
+          by_cases hFalls :
+              point.fallsThrough =
+                !StackSchedule.alwaysExits (.let_ name value)
+          · rw [if_pos hFalls] at hLower
+            cases hRegions : point.regions with
+            | nil =>
+                rw [hRegions] at hLower
+                have hFallsTrue : point.fallsThrough = true := by
+                  simpa [StackSchedule.alwaysExits] using hFalls
+                rw [hFallsTrue] at hLower
+                cases hRetain : point.retain? with
+                | none => simp [hRetain] at hLower
+                | some retain =>
+                    rw [hRetain] at hLower
+                    exact
+                      ⟨retain, rfl, hFallsTrue, rfl, rfl,
+                        by simpa using hLower.symm⟩
+            | cons region regions => simp [hRegions] at hLower
+          · rw [if_neg hFalls] at hLower
+            contradiction
+
+theorem lowerPointFuel_assign_components
+    {fuel : Nat} {ctx : Ctx} {name : Name} {value : Expr 1}
+    {point : StackSchedule.Point} {lowered : List Locals.Stmt}
+    (hLower :
+      lowerPointFuel fuel ctx (.assign name value) point = some lowered) :
+    ∃ retain,
+      pointAccess? ctx (.assign name value) point = some () ∧
+      point.fallsThrough = true ∧ point.regions = [] ∧
+      point.retain? = some retain ∧
+      lowered = [.assign name value] ++ transitionStmts retain := by
+  cases fuel with
+  | zero => simp [lowerPointFuel] at hLower
+  | succ fuel =>
+      simp only [lowerPointFuel] at hLower
+      cases hAccess : pointAccess? ctx (.assign name value) point with
+      | none => simp [hAccess] at hLower
+      | some unit =>
+          cases unit
+          rw [hAccess] at hLower
+          by_cases hFalls :
+              point.fallsThrough =
+                !StackSchedule.alwaysExits (.assign name value)
+          · rw [if_pos hFalls] at hLower
+            cases hRegions : point.regions with
+            | nil =>
+                rw [hRegions] at hLower
+                have hFallsTrue : point.fallsThrough = true := by
+                  simpa [StackSchedule.alwaysExits] using hFalls
+                rw [hFallsTrue] at hLower
+                cases hRetain : point.retain? with
+                | none => simp [hRetain] at hLower
+                | some retain =>
+                    rw [hRetain] at hLower
+                    exact
+                      ⟨retain, rfl, hFallsTrue, rfl, rfl,
+                        by simpa using hLower.symm⟩
+            | cons region regions => simp [hRegions] at hLower
+          · rw [if_neg hFalls] at hLower
+            contradiction
+
 def lowerScheduledBlock? (ctx : Ctx) (source : Block)
     (schedule : StackSchedule.Region) : Option Locals.Block :=
   lowerBlockFuel (AllocationLiveness.analysisFuel source)

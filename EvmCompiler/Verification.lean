@@ -2917,6 +2917,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLayout.build_run
 #check EvmCompiler.Functions.AllocationLayout.scheduleRetain?_sound
 #check EvmCompiler.Functions.AllocationLayout.Transition.build?_sound
+#check EvmCompiler.Functions.AllocationLayout.Transition.target_nodup
 #check EvmCompiler.Functions.AllocationLayoutLowering.Schedule.compile
 #check EvmCompiler.Functions.AllocationLayoutLowering.Transition.compile
 #check EvmCompiler.Functions.StackSchedule.scheduleBlockFuel_entry_sound
@@ -2934,6 +2935,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackAccessLowering.assignTopWithOffset_compile_of_check
 #check EvmCompiler.Functions.StackAccessLowering.returnedTargets_compile_of_check
 #check EvmCompiler.Functions.StackAccessLowering.callSequence_compile_of_check
+#check EvmCompiler.Functions.StackAccess.Expr.scoped_of_check
+#check EvmCompiler.Functions.StackAccess.assign_components
 #check EvmCompiler.Functions.StackAccess.Examples.top16_accessible
 #check EvmCompiler.Functions.StackAccess.Examples.below_top16_rejected
 #check EvmCompiler.Functions.StackRelation.values_promoteAt
@@ -2950,6 +2953,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackStatementPreservation.assignThenTransition
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_let_generated
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_assign_generated
+#check EvmCompiler.Functions.StackStatementPreservation.RegularPointPreserves.compiledLowered
+#check EvmCompiler.Functions.StackStatementPreservation.compiledExprPoint
+#check EvmCompiler.Functions.StackStatementPreservation.compiledLetPoint
+#check EvmCompiler.Functions.StackStatementPreservation.compiledAssignPoint
 #check EvmCompiler.Functions.StackBlockPreservation.regularCons
 #check EvmCompiler.Functions.StackBlockPreservation.regularConsOfPoint
 #check EvmCompiler.Functions.StackBlockPreservation.regularEmpty
@@ -2970,6 +2977,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackLowering.Examples.controlProgram_lowers
 #check EvmCompiler.Functions.StackLowering.lowerStmtListFuel_cons_components
 #check EvmCompiler.Functions.StackLowering.lowerStmtListFuel_nil_components
+#check EvmCompiler.Functions.StackLowering.lowerPointFuel_expr_components
+#check EvmCompiler.Functions.StackLowering.lowerPointFuel_let_components
+#check EvmCompiler.Functions.StackLowering.lowerPointFuel_assign_components
 #check EvmCompiler.Functions.StackLowering.lowerBlock?_components
 #check EvmCompiler.Functions.StackLoweringCompilation.Examples.deadProgram_compiles
 #check EvmCompiler.Functions.StackLoweringCompilation.Examples.dormantCallProgram_compiles

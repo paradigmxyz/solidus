@@ -176,6 +176,13 @@ theorem build?_sound
     subst transition
     exact ⟨rfl, rfl, scheduleRetain?_sound hSchedule⟩
 
+theorem target_nodup
+    (transition : Transition)
+    (hSource : transition.source.Nodup) :
+    transition.schedule.target.Nodup := by
+  rw [transition.valid.2.1]
+  exact hSource.filter _
+
 end Transition
 
 def Schedule.statements (schedule : Schedule) : List Locals.Stmt :=
