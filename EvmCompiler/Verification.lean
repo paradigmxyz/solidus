@@ -3042,6 +3042,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackBlockPreservation.BreakListPreserves
 #check EvmCompiler.Functions.StackBlockPreservation.ContinueListPreserves
 #check EvmCompiler.Functions.StackBlockPreservation.ControlScheduledListPreserves
+#check EvmCompiler.Functions.StackBlockPreservation.controlOrdering
+#check EvmCompiler.Functions.StackBlockPreservation.controlNil
 #check EvmCompiler.Functions.StackBlockPreservation.controlCons
 #check EvmCompiler.Functions.StackBlockPreservation.controlScopedBodyThenJoin
 #check EvmCompiler.Functions.StackBlockPreservation.controlScheduledRegion
@@ -3069,6 +3071,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackTransitionCompilation.JoinArtifact.blockOpenRun
 #check EvmCompiler.Functions.StackTransitionCompilation.JoinArtifact.thenBlock
 #check EvmCompiler.Functions.StackTransitionCompilation.OrderingArtifact.thenBlock
+#check EvmCompiler.Functions.StackTransitionCompilation.OrderingArtifact.thenBlockForward
 #check EvmCompiler.Functions.StackTransitionCompilation.PromotionCodes.openBlockRun
 #check EvmCompiler.Functions.StackTransitionCompilation.Artifact.blockOpenRun
 #check EvmCompiler.Functions.StackTransitionCompilation.Artifact.thenBlock
@@ -3106,6 +3109,7 @@ or audit-alias corridor.
 
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.Join.compiledOpenRun
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.OrderingArtifact.thenBlock
+#print axioms EvmCompiler.Functions.StackTransitionCompilation.OrderingArtifact.thenBlockForward
 #print axioms EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_brk_components
 #print axioms EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_cont_components
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.JoinArtifact.thenBlock
@@ -3113,6 +3117,7 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackBlockPreservation.brkList_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.contList_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.controlCons
+#print axioms EvmCompiler.Functions.StackBlockPreservation.controlOrdering
 #print axioms EvmCompiler.Functions.StackBlockPreservation.controlScheduledRegion
 #print axioms EvmCompiler.Functions.StackBlockPreservation.blockPoint_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.ifPoint_of_compilers

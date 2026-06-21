@@ -432,6 +432,41 @@ theorem OrderingArtifact.thenBlock
     hOrderRun, Simulation.Interaction.bind_done_ok]
   simpa using hBody hOrderedRel
 
+theorem OrderingArtifact.thenBlockForward
+    (program : Expressions.Program) {ctx : Locals.Ctx}
+    {ordering : AllocationLayout.Ordering}
+    (artifact : OrderingArtifact ctx ordering)
+    {Error : Type} {α : Type}
+    {truncated : Error → Prop}
+    {resultRel :
+      Except Error α → Except EVMException Structured.Outcome → Prop}
+    {sourceRun : Simulation.Interaction Error α}
+    {body : List Expressions.Stmt}
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (fuel : Nat) (hFuel : artifact.promotionCodes.length < fuel)
+    (hInitial :
+      StackRelation.StateRel ctx.layout suffix returns source target)
+    (hBody :
+      ∀ {orderedTarget : Structured.RunState},
+        StackRelation.StateRel ordering.target suffix returns
+            source orderedTarget →
+        Simulation.Interaction.ForwardRel truncated resultRel sourceRun
+          (Expressions.InteractionSemantics.Block.openRun program
+            (fuel - artifact.promotionCodes.length)
+            { stmts := body } orderedTarget)) :
+    Simulation.Interaction.ForwardRel truncated resultRel sourceRun
+      (Expressions.InteractionSemantics.Block.openRun program fuel
+        { stmts :=
+            artifact.promotionCodes.map Expressions.Stmt.code ++ body }
+        target) := by
+  obtain ⟨orderedTarget, hOrderRun, hOrderedRel⟩ :=
+    artifact.blockOpenRun program fuel hFuel hInitial
+  rw [Expressions.InteractionSemantics.Block.openRun_append,
+    hOrderRun, Simulation.Interaction.bind_done_ok]
+  simpa using hBody hOrderedRel
+
 theorem Artifact.blockOpenRun
     (program : Expressions.Program) {ctx : Locals.Ctx}
     {transition : Transition} (artifact : Artifact ctx transition)

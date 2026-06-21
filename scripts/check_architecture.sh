@@ -45,6 +45,8 @@ for theorem in \
     'regularLeafList_of_compilers' \
     'OpenListPreserves' \
     'ControlScheduledListPreserves' \
+    'controlOrdering' \
+    'controlNil' \
     'controlCons' \
     'controlScheduledRegion' \
     'controlScheduledRegionAsBlock' \

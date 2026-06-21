@@ -149,6 +149,76 @@ def ControlScheduledListPreserves
         (Expressions.InteractionSemantics.Block.openRun targetProgram
           targetFuel { stmts := code } target)
 
+theorem controlOrdering
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx finalCtx : Locals.Ctx)
+    (stmt : Functions.Stmt) (bodyCode : List Expressions.Stmt)
+    (order : AllocationLayout.Ordering)
+    (hSource : targetCtx.layout = order.source)
+    (hBody :
+      ControlPointPreserves sourceProgram targetProgram targets
+        (targetCtx.withLayout order.target) finalCtx stmt bodyCode) :
+    ∃ artifact :
+        StackTransitionCompilation.OrderingArtifact targetCtx order,
+      Locals.Block.compileOpen targetCtx { stmts := order.statements } =
+          some
+            (artifact.promotionCodes.map Expressions.Stmt.code,
+             targetCtx.withLayout order.target) ∧
+        ControlPointPreserves sourceProgram targetProgram targets targetCtx
+          finalCtx stmt
+          (artifact.promotionCodes.map Expressions.Stmt.code ++ bodyCode) := by
+  obtain ⟨artifact⟩ :=
+    StackTransitionCompilation.Ordering.compileArtifact order hSource
+  refine ⟨artifact, artifact.compileEq, ?_⟩
+  unfold ControlPointPreserves at hBody ⊢
+  intro sourceCtx sourceFuel targetFuel suffix returns source target hFuel
+    hCtx hInitial
+  have hLength := Expressions.TargetFuel.Covers.length_lt hFuel
+  have hBodyFuel := Expressions.TargetFuel.Covers.tail_after_append hFuel
+  apply artifact.thenBlockForward targetProgram targetFuel
+      (by
+        simp only [List.length_append, List.length_map] at hLength
+        omega) hInitial
+  intro orderedTarget hOrdered
+  apply hBody sourceCtx sourceFuel
+    (targetFuel - artifact.promotionCodes.length)
+  · simpa using hBodyFuel
+  · exact hCtx.afterOrdering order hSource
+  · exact hOrdered
+
+theorem controlNil
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx : Locals.Ctx) :
+    ControlScheduledListPreserves sourceProgram targetProgram targets
+      targetCtx targetCtx [] targetCtx.layout [] := by
+  refine ⟨rfl, ?_⟩
+  intro sourceCtx sourceFuel targetFuel suffix returns source target hFuel
+    hCtx hInitial
+  cases sourceFuel with
+  | zero =>
+      unfold Functions.InteractionSemantics.Block.openRun
+        Functions.InteractionSemantics.stateModel
+      simp only [Functions.Source.Effectful.Control.Block.runOpen]
+      exact Simulation.Interaction.ForwardRel.truncated rfl
+  | succ sourceFuel =>
+      have hTargetFuel : 0 < targetFuel :=
+        Expressions.TargetFuel.Covers.length_lt hFuel
+      cases targetFuel with
+      | zero => omega
+      | succ targetFuel =>
+          unfold Functions.InteractionSemantics.Block.openRun
+            Functions.InteractionSemantics.stateModel
+            Expressions.InteractionSemantics.Block.openRun
+          simp only [Functions.Source.Effectful.Control.Block.runOpen,
+            Expressions.EffectSemantics.Control.Block.run]
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact .regular hCtx hInitial
+
 theorem controlCons
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
