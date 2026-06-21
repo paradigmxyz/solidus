@@ -22,7 +22,11 @@ for theorem in \
     'regularEmpty' \
     'regularCons' \
     'regularConsOfPoint' \
-    'regularLeafTargetCost'; do
+    'regularLeafTargetCost' \
+    'RegularListPreserves' \
+    'regularConsResult' \
+    'RegularLeafList' \
+    'regularLeafList_of_compilers'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.StackBlockPreservation.${theorem}" \
       EvmCompiler/Verification.lean; then
@@ -102,6 +106,9 @@ for theorem in \
     'compiledExprPoint' \
     'compiledLetPoint' \
     'compiledAssignPoint' \
+    'compiledExprPointOfEquations' \
+    'compiledLetPointOfEquations' \
+    'compiledAssignPointOfEquations' \
     'openRun_let_generated' \
     'openRun_assign_generated'; do
   if ! rg -Fq \

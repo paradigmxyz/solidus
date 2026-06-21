@@ -860,6 +860,306 @@ theorem compiledAssignPoint
       lowered targetFuel suffix returns target hLowered hCoreCompile hPreserves
   exact ⟨valueCode, swap, artifact, hWhole, hRun⟩
 
+theorem compiledExprPointOfEquations
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx middleCtx : Locals.Ctx)
+    (expr : Functions.Expr 0)
+    (transition : AllocationLayout.Transition)
+    (lowered : List Locals.Stmt) (headCode : List Expressions.Stmt)
+    {sourceEnv : List Name}
+    (hSource : targetCtx.layout = transition.source)
+    (hScoped : Functions.Scope.ExprScoped sourceEnv expr)
+    (hSupported : Locals.InteractionSemantics.Expr.OpenSupported expr)
+    (hAccess : StackAccess.Expr.check? targetCtx.layout 0 expr = some ())
+    (hLowered :
+      lowered = [.expr expr] ++ StackLowering.transitionStmts transition)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (headCode, middleCtx)) :
+    middleCtx = targetCtx.withLayout transition.schedule.target ∧
+      headCode.length = transition.schedule.promotions.length + 2 ∧
+      ∀ (sourceCtx : Functions.Source.Ctx)
+        (sourceFuel targetFuel : Nat)
+        {suffix : List Word} {returns : List Structured.ReturnDest}
+        {source : Locals.Source.State} {target : Structured.RunState},
+        transition.schedule.promotions.length + 2 < targetFuel →
+        CtxCovers sourceCtx targetCtx →
+        StateRel targetCtx.layout suffix returns source target →
+        Simulation.Interaction.Rel
+          (RegularOutcomeRel middleCtx suffix returns)
+          (Functions.InteractionSemantics.Stmt.openRun
+            sourceProgram sourceCtx sourceFuel (.expr expr) source)
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            targetFuel { stmts := headCode } target) := by
+  obtain ⟨exprCode, hExprCompile⟩ :=
+    StackAccessLowering.Expr.compileCode_of_check hAccess targetCtx rfl
+  obtain ⟨artifact⟩ :=
+    StackTransitionCompilation.Transition.compileArtifact transition hSource
+  have hCoreCompile :
+      Locals.Stmt.compile targetCtx (.expr expr) =
+        some ([.code exprCode], targetCtx) := by
+    simp [Locals.Stmt.compile, hExprCompile, Locals.codeStmt]
+  have hCoreBlock :
+      Locals.Block.compileOpen targetCtx { stmts := [.expr expr] } =
+        some ([.code exprCode], targetCtx) := by
+    simpa [Locals.Block.compileOpen] using hCoreCompile
+  have hGenerated :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some
+          ((.code exprCode) ::
+            (artifact.promotionCodes.map Expressions.Stmt.code ++
+              [Expressions.Stmt.code artifact.cleanup]),
+           targetCtx.withLayout transition.schedule.target) := by
+    rw [hLowered]
+    simpa using
+      Locals.Block.compileOpen_append hCoreBlock artifact.compileEq
+  have hPair := Option.some.inj (hCompile.symm.trans hGenerated)
+  have hCodeEq := congrArg Prod.fst hPair
+  have hCtxEq := congrArg Prod.snd hPair
+  change
+    headCode =
+      (.code exprCode) ::
+        (artifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code artifact.cleanup]) at hCodeEq
+  change
+    middleCtx = targetCtx.withLayout transition.schedule.target at hCtxEq
+  refine ⟨hCtxEq, ?_, ?_⟩
+  · rw [hCodeEq]
+    simp [artifact.codes.code_length]
+  · intro sourceCtx sourceFuel targetFuel suffix returns source target
+      hFuel hCtx hInitial
+    obtain ⟨_runtimeCode, runtimeArtifact, hRuntimeCompile, hRun⟩ :=
+      compiledExprPoint sourceProgram targetProgram sourceCtx targetCtx
+        sourceFuel targetFuel expr transition lowered hSource hFuel hCtx
+        hScoped hSupported hAccess hLowered hInitial
+    have hRuntimePair :=
+      Option.some.inj (hCompile.symm.trans hRuntimeCompile)
+    have hRuntimeCodeEq := congrArg Prod.fst hRuntimePair
+    have hRuntimeCtxEq := congrArg Prod.snd hRuntimePair
+    change
+      headCode =
+        (.code _runtimeCode) ::
+          (runtimeArtifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code runtimeArtifact.cleanup]) at hRuntimeCodeEq
+    change middleCtx =
+      targetCtx.withLayout transition.schedule.target at hRuntimeCtxEq
+    simpa [hRuntimeCodeEq, hRuntimeCtxEq] using hRun
+
+theorem compiledLetPointOfEquations
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx middleCtx : Locals.Ctx)
+    (name : Name) (value : Functions.Expr 1)
+    (transition : AllocationLayout.Transition)
+    (lowered : List Locals.Stmt) (headCode : List Expressions.Stmt)
+    {sourceEnv : List Name}
+    (hSource : name :: targetCtx.layout = transition.source)
+    (hFresh : name ∉ targetCtx.layout)
+    (hScoped : Functions.Scope.ExprScoped sourceEnv value)
+    (hSupported : Locals.InteractionSemantics.Expr.OpenSupported value)
+    (hAccess : StackAccess.Expr.check? targetCtx.layout 0 value = some ())
+    (hLowered :
+      lowered = [.let_ name value] ++
+        StackLowering.transitionStmts transition)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (headCode, middleCtx)) :
+    middleCtx =
+        (targetCtx.withLayout (name :: targetCtx.layout)).withLayout
+          transition.schedule.target ∧
+      headCode.length = transition.schedule.promotions.length + 2 ∧
+      ∀ (sourceCtx : Functions.Source.Ctx)
+        (sourceFuel targetFuel : Nat)
+        {suffix : List Word} {returns : List Structured.ReturnDest}
+        {source : Locals.Source.State} {target : Structured.RunState},
+        transition.schedule.promotions.length + 2 < targetFuel →
+        CtxCovers sourceCtx targetCtx →
+        StateRel targetCtx.layout suffix returns source target →
+        Simulation.Interaction.Rel
+          (RegularOutcomeRel middleCtx suffix returns)
+          (Functions.InteractionSemantics.Stmt.openRun
+            sourceProgram sourceCtx sourceFuel (.let_ name value) source)
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            targetFuel { stmts := headCode } target) := by
+  obtain ⟨valueCode, hValueCompile⟩ :=
+    StackAccessLowering.Expr.compileCode_of_check hAccess targetCtx rfl
+  let pointCtx := targetCtx.withLayout (name :: targetCtx.layout)
+  obtain ⟨artifact⟩ :=
+    StackTransitionCompilation.Transition.compileArtifact transition
+      (ctx := pointCtx) (by simpa [pointCtx, Locals.Ctx.withLayout] using hSource)
+  have hCoreCompile :
+      Locals.Stmt.compile targetCtx (.let_ name value) =
+        some
+          ([.code
+              (valueCode ++
+                Locals.bindLocals 0 (name :: targetCtx.layout))],
+           pointCtx) := by
+    simp [Locals.Stmt.compile, hValueCompile, Locals.codeStmt, pointCtx]
+  have hCoreBlock :
+      Locals.Block.compileOpen targetCtx { stmts := [.let_ name value] } =
+        some
+          ([.code
+              (valueCode ++
+                Locals.bindLocals 0 (name :: targetCtx.layout))],
+           pointCtx) := by
+    simpa [Locals.Block.compileOpen] using hCoreCompile
+  have hGenerated :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some
+          ((.code
+              (valueCode ++
+                Locals.bindLocals 0 (name :: targetCtx.layout))) ::
+            (artifact.promotionCodes.map Expressions.Stmt.code ++
+              [Expressions.Stmt.code artifact.cleanup]),
+           pointCtx.withLayout transition.schedule.target) := by
+    rw [hLowered]
+    simpa using
+      Locals.Block.compileOpen_append hCoreBlock artifact.compileEq
+  have hPair := Option.some.inj (hCompile.symm.trans hGenerated)
+  have hCodeEq := congrArg Prod.fst hPair
+  have hCtxEq := congrArg Prod.snd hPair
+  change
+    headCode =
+      (.code
+          (valueCode ++
+            Locals.bindLocals 0 (name :: targetCtx.layout))) ::
+        (artifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code artifact.cleanup]) at hCodeEq
+  change middleCtx =
+    pointCtx.withLayout transition.schedule.target at hCtxEq
+  refine ⟨by simpa [pointCtx] using hCtxEq, ?_, ?_⟩
+  · rw [hCodeEq]
+    simp [artifact.codes.code_length]
+  · intro sourceCtx sourceFuel targetFuel suffix returns source target
+      hFuel hCtx hInitial
+    obtain ⟨_runtimeCode, runtimeArtifact, hRuntimeCompile, hRun⟩ :=
+      compiledLetPoint sourceProgram targetProgram sourceCtx targetCtx
+        sourceFuel targetFuel name value transition lowered hSource hFuel hCtx
+        hFresh hScoped hSupported hAccess hLowered hInitial
+    have hRuntimePair :=
+      Option.some.inj (hCompile.symm.trans hRuntimeCompile)
+    have hRuntimeCodeEq := congrArg Prod.fst hRuntimePair
+    have hRuntimeCtxEq := congrArg Prod.snd hRuntimePair
+    change
+      headCode =
+        (.code
+            (_runtimeCode ++
+              Locals.bindLocals 0 (name :: targetCtx.layout))) ::
+          (runtimeArtifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code runtimeArtifact.cleanup]) at hRuntimeCodeEq
+    change middleCtx =
+      pointCtx.withLayout transition.schedule.target at hRuntimeCtxEq
+    simpa [hRuntimeCodeEq, hRuntimeCtxEq, pointCtx] using hRun
+
+theorem compiledAssignPointOfEquations
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx middleCtx : Locals.Ctx)
+    (name : Name) (value : Functions.Expr 1)
+    (transition : AllocationLayout.Transition)
+    (lowered : List Locals.Stmt) (headCode : List Expressions.Stmt)
+    {sourceEnv : List Name}
+    (hSource : targetCtx.layout = transition.source)
+    (hNodup : targetCtx.layout.Nodup)
+    (hScoped : Functions.Scope.ExprScoped sourceEnv value)
+    (hSupported : Locals.InteractionSemantics.Expr.OpenSupported value)
+    (hAccess : StackAccess.assign? targetCtx.layout name value = some ())
+    (hLowered :
+      lowered = [.assign name value] ++
+        StackLowering.transitionStmts transition)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (headCode, middleCtx)) :
+    middleCtx = targetCtx.withLayout transition.schedule.target ∧
+      headCode.length = transition.schedule.promotions.length + 2 ∧
+      ∀ (sourceCtx : Functions.Source.Ctx)
+        (sourceFuel targetFuel : Nat)
+        {suffix : List Word} {returns : List Structured.ReturnDest}
+        {source : Locals.Source.State} {target : Structured.RunState},
+        transition.schedule.promotions.length + 2 < targetFuel →
+        CtxCovers sourceCtx targetCtx →
+        StateRel targetCtx.layout suffix returns source target →
+        Simulation.Interaction.Rel
+          (RegularOutcomeRel middleCtx suffix returns)
+          (Functions.InteractionSemantics.Stmt.openRun
+            sourceProgram sourceCtx sourceFuel (.assign name value) source)
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            targetFuel { stmts := headCode } target) := by
+  obtain ⟨depth, swap, hValueAccess, hDepth, hSwap⟩ :=
+    StackAccess.assign_components hAccess
+  obtain ⟨valueCode, hValueCompile⟩ :=
+    StackAccessLowering.Expr.compileCode_of_check
+      hValueAccess targetCtx rfl
+  obtain ⟨artifact⟩ :=
+    StackTransitionCompilation.Transition.compileArtifact transition hSource
+  have hCoreCompile :
+      Locals.Stmt.compile targetCtx (.assign name value) =
+        some
+          ([.code
+              (valueCode ++ [.op swap, .op .pop] ++
+                Locals.bindLocals 0 targetCtx.layout)],
+           targetCtx) := by
+    simp [Locals.Stmt.compile, hDepth, hValueCompile, hSwap,
+      Locals.codeStmt]
+  have hCoreBlock :
+      Locals.Block.compileOpen targetCtx { stmts := [.assign name value] } =
+        some
+          ([.code
+              (valueCode ++ [.op swap, .op .pop] ++
+                Locals.bindLocals 0 targetCtx.layout)],
+           targetCtx) := by
+    simpa [Locals.Block.compileOpen] using hCoreCompile
+  have hGenerated :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some
+          ((.code
+              (valueCode ++ [.op swap, .op .pop] ++
+                Locals.bindLocals 0 targetCtx.layout)) ::
+            (artifact.promotionCodes.map Expressions.Stmt.code ++
+              [Expressions.Stmt.code artifact.cleanup]),
+           targetCtx.withLayout transition.schedule.target) := by
+    rw [hLowered]
+    simpa using
+      Locals.Block.compileOpen_append hCoreBlock artifact.compileEq
+  have hPair := Option.some.inj (hCompile.symm.trans hGenerated)
+  have hCodeEq := congrArg Prod.fst hPair
+  have hCtxEq := congrArg Prod.snd hPair
+  change
+    headCode =
+      (.code
+          (valueCode ++ [.op swap, .op .pop] ++
+            Locals.bindLocals 0 targetCtx.layout)) ::
+        (artifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code artifact.cleanup]) at hCodeEq
+  change middleCtx =
+    targetCtx.withLayout transition.schedule.target at hCtxEq
+  refine ⟨hCtxEq, ?_, ?_⟩
+  · rw [hCodeEq]
+    simp [artifact.codes.code_length]
+  · intro sourceCtx sourceFuel targetFuel suffix returns source target
+      hFuel hCtx hInitial
+    obtain
+        ⟨_runtimeValueCode, _runtimeSwap, runtimeArtifact,
+          hRuntimeCompile, hRun⟩ :=
+      compiledAssignPoint sourceProgram targetProgram sourceCtx targetCtx
+        sourceFuel targetFuel name value transition lowered hSource hFuel hCtx
+        hNodup hScoped hSupported hAccess hLowered hInitial
+    have hRuntimePair :=
+      Option.some.inj (hCompile.symm.trans hRuntimeCompile)
+    have hRuntimeCodeEq := congrArg Prod.fst hRuntimePair
+    have hRuntimeCtxEq := congrArg Prod.snd hRuntimePair
+    change
+      headCode =
+        (.code
+            (_runtimeValueCode ++ [.op _runtimeSwap, .op .pop] ++
+              Locals.bindLocals 0 targetCtx.layout)) ::
+          (runtimeArtifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code runtimeArtifact.cleanup]) at hRuntimeCodeEq
+    change middleCtx =
+      targetCtx.withLayout transition.schedule.target at hRuntimeCtxEq
+    simpa [hRuntimeCodeEq, hRuntimeCtxEq] using hRun
+
 end StackStatementPreservation
 end Functions
 end EvmCompiler

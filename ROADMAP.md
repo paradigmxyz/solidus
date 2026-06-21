@@ -134,6 +134,9 @@ short composition module.
   target fuel so nonempty tails compose without a minimal-fuel shortcut.
 - [x] Compose one regular scheduled point with an arbitrary recursive tail,
   expressing residual fuel only through the source schedule's promotion count.
+- [x] Prove compiler-equation-driven recursive composition for arbitrary
+  expression/declaration/assignment lists with computed target fuel and no
+  generated semantic premise.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls

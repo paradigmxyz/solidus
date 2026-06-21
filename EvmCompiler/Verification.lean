@@ -2961,10 +2961,17 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackStatementPreservation.compiledExprPoint
 #check EvmCompiler.Functions.StackStatementPreservation.compiledLetPoint
 #check EvmCompiler.Functions.StackStatementPreservation.compiledAssignPoint
+#check EvmCompiler.Functions.StackStatementPreservation.compiledExprPointOfEquations
+#check EvmCompiler.Functions.StackStatementPreservation.compiledLetPointOfEquations
+#check EvmCompiler.Functions.StackStatementPreservation.compiledAssignPointOfEquations
 #check EvmCompiler.Functions.StackBlockPreservation.regularCons
 #check EvmCompiler.Functions.StackBlockPreservation.regularConsOfPoint
 #check EvmCompiler.Functions.StackBlockPreservation.regularEmpty
 #check EvmCompiler.Functions.StackBlockPreservation.regularLeafTargetCost
+#check EvmCompiler.Functions.StackBlockPreservation.RegularListPreserves
+#check EvmCompiler.Functions.StackBlockPreservation.regularConsResult
+#check EvmCompiler.Functions.StackBlockPreservation.RegularLeafList
+#check EvmCompiler.Functions.StackBlockPreservation.regularLeafList_of_compilers
 #check EvmCompiler.Functions.StackTransitionPreservation.Promotion.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.Cleanup.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.PromotionCodes.openRun
