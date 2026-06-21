@@ -2938,6 +2938,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_expr_generated
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_transition_generated
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_transition_block_generated
+#check EvmCompiler.Functions.StackStatementPreservation.regularThenTransition
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_let_generated
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_assign_generated
 #check EvmCompiler.Functions.StackTransitionPreservation.Promotion.openRun
@@ -2948,6 +2949,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackTransitionCompilation.Transition.compileArtifact
 #check EvmCompiler.Functions.StackTransitionCompilation.Transition.compiledOpenRun
 #check EvmCompiler.Functions.StackTransitionCompilation.PromotionCodes.openBlockRun
+#check EvmCompiler.Functions.StackTransitionCompilation.Artifact.blockOpenRun
 #check EvmCompiler.Functions.StackTransitionCompilation.Transition.compiledBlockOpenRun
 #check EvmCompiler.Functions.StackLowering.Examples.deadProgram_lowers
 #check EvmCompiler.Functions.StackLowering.returnWord_eval

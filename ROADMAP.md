@@ -115,6 +115,8 @@ short composition module.
   inherit their complete ordered open-effect tree from expression semantics.
 - [x] Compute each post-statement retain artifact internally and prove its
   emitted shuffle/cleanup code establishes the next regular statement relation.
+- [x] Compose any regular statement theorem with any checked retain transition
+  under independent source/target fuel, without exposing the generated artifact.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls

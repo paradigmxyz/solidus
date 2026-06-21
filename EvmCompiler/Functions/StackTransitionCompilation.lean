@@ -241,6 +241,38 @@ theorem PromotionCodes.openBlockRun
       rw [hHeadBlock, Simulation.Interaction.bind_done_ok]
       simpa using hTailRun
 
+theorem Artifact.blockOpenRun
+    (program : Expressions.Program) {ctx : Locals.Ctx}
+    {transition : Transition} (artifact : Artifact ctx transition)
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hRel :
+      StackRelation.StateRel ctx.layout suffix returns source target) :
+    ∃ final,
+      Expressions.InteractionSemantics.Block.openRun program
+          (artifact.promotionCodes.length + 2)
+          { stmts :=
+              artifact.promotionCodes.map Expressions.Stmt.code ++
+                [Expressions.Stmt.code artifact.cleanup] }
+          target =
+        .done (.ok (Structured.Outcome.regular final)) ∧
+      StackRelation.StateRel transition.schedule.target suffix returns
+        source final := by
+  obtain ⟨middle, hPromotionRun, hMiddleRel⟩ :=
+    PromotionCodes.openBlockRun program artifact.codes hRel
+      (artifact.promotionCodes.length + 2) (by omega)
+  obtain ⟨final, hCleanupRun, hFinalRel⟩ :=
+    StackTransitionPreservation.Cleanup.openRun
+      rfl transition.valid.2.2 artifact.cleanupEq hMiddleRel
+  refine ⟨final, ?_, hFinalRel⟩
+  rw [Expressions.InteractionSemantics.Block.openRun_append,
+    hPromotionRun, Simulation.Interaction.bind_done_ok]
+  have hCleanupBlock :=
+    Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+      program 2 artifact.cleanup middle final (by omega) hCleanupRun
+  simpa using hCleanupBlock
+
 theorem Transition.compiledBlockOpenRun
     (program : Expressions.Program) {ctx : Locals.Ctx}
     (transition : Transition)
@@ -268,19 +300,9 @@ theorem Transition.compiledBlockOpenRun
         StackRelation.StateRel transition.schedule.target suffix returns
           source final := by
   obtain ⟨artifact⟩ := Transition.compileArtifact transition hSource
-  obtain ⟨middle, hPromotionRun, hMiddleRel⟩ :=
-    PromotionCodes.openBlockRun program artifact.codes hRel
-      (artifact.promotionCodes.length + 2) (by omega)
-  obtain ⟨final, hCleanupRun, hFinalRel⟩ :=
-    StackTransitionPreservation.Cleanup.openRun
-      rfl transition.valid.2.2 artifact.cleanupEq hMiddleRel
-  refine ⟨artifact, final, artifact.compileEq, ?_, hFinalRel⟩
-  rw [Expressions.InteractionSemantics.Block.openRun_append,
-    hPromotionRun, Simulation.Interaction.bind_done_ok]
-  have hCleanupBlock :=
-    Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
-      program 2 artifact.cleanup middle final (by omega) hCleanupRun
-  simpa using hCleanupBlock
+  obtain ⟨final, hRun, hFinalRel⟩ :=
+    artifact.blockOpenRun program hRel
+  exact ⟨artifact, final, artifact.compileEq, hRun, hFinalRel⟩
 
 end StackTransitionCompilation
 end Functions

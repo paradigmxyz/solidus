@@ -138,11 +138,86 @@ theorem openRun_transition_block_generated
         context := hCtx.afterTransition transition hSource
         state := hFinal }⟩
 
+theorem regularThenTransition
+    (targetProgram : Expressions.Program)
+    (targetCtx : Locals.Ctx)
+    (transition : AllocationLayout.Transition)
+    (sourceRun :
+      Simulation.Interaction EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State ×
+          Locals.Source.Ctx))
+    (head : Expressions.Stmt)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {target : Structured.RunState}
+    (hSource : targetCtx.layout = transition.source)
+    (hHead : ∀ targetFuel,
+      Simulation.Interaction.Rel
+        (RegularOutcomeRel targetCtx suffix returns)
+        sourceRun
+        (Expressions.InteractionSemantics.Stmt.openRun
+          targetProgram targetFuel head target)) :
+    ∃ artifact : StackTransitionCompilation.Artifact targetCtx transition,
+      Locals.Block.compileOpen targetCtx
+          { stmts := transition.schedule.statements } =
+        some
+          (artifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code artifact.cleanup],
+           targetCtx.withLayout transition.schedule.target) ∧
+      Simulation.Interaction.Rel
+        (RegularOutcomeRel
+          (targetCtx.withLayout transition.schedule.target)
+          suffix returns)
+        sourceRun
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          (artifact.promotionCodes.length + 3)
+          { stmts :=
+              head ::
+                (artifact.promotionCodes.map Expressions.Stmt.code ++
+                  [Expressions.Stmt.code artifact.cleanup]) }
+          target) := by
+  obtain ⟨artifact⟩ :=
+    StackTransitionCompilation.Transition.compileArtifact
+      transition hSource
+  refine ⟨artifact, artifact.compileEq, ?_⟩
+  change
+    Simulation.Interaction.Rel
+      (RegularOutcomeRel
+        (targetCtx.withLayout transition.schedule.target)
+        suffix returns)
+      sourceRun
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        (artifact.promotionCodes.length + 3)
+        { stmts := [head] ++
+            (artifact.promotionCodes.map Expressions.Stmt.code ++
+              [Expressions.Stmt.code artifact.cleanup]) }
+        target)
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  rw [Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_stmt_of_fuel
+    targetProgram (artifact.promotionCodes.length + 3) head target (by omega)]
+  have hFuel : artifact.promotionCodes.length + 3 - 1 =
+      artifact.promotionCodes.length + 2 := by omega
+  rw [← Simulation.Interaction.bind_pure sourceRun]
+  apply Simulation.Interaction.Rel.bind
+    (hHead (artifact.promotionCodes.length + 2))
+  intro sourceResult targetResult hResult
+  simp only [hResult.targetMode, List.length_cons, List.length_nil,
+    Nat.add_zero]
+  obtain ⟨final, hRun, hFinalRel⟩ :=
+    artifact.blockOpenRun targetProgram hResult.state
+  rw [hFuel, hRun]
+  apply Simulation.Interaction.Rel.done
+  apply Simulation.Interaction.ExceptRel.ok
+  exact
+    { sourceMode := hResult.sourceMode
+      targetMode := rfl
+      context := hResult.context.afterTransition transition hSource
+      state := hFinalRel }
+
 theorem openRun_expr_generated
     (sourceProgram : Locals.Program)
     (targetProgram : Expressions.Program)
     (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
-    (fuel : Nat) (expr : Locals.Expr 0)
+    (sourceFuel targetFuel : Nat) (expr : Locals.Expr 0)
     {code : Structured.Code} {suffix : List Word}
     {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
@@ -155,9 +230,9 @@ theorem openRun_expr_generated
     Simulation.Interaction.Rel
       (RegularOutcomeRel targetCtx suffix returns)
       (Locals.InteractionSemantics.Stmt.openRun
-        sourceProgram sourceCtx fuel (.expr expr) source)
+        sourceProgram sourceCtx sourceFuel (.expr expr) source)
       (Expressions.InteractionSemantics.Stmt.openRun
-        targetProgram fuel (.code code) target) := by
+        targetProgram targetFuel (.code code) target) := by
   have hExpr :=
     StackExpressionPreservation.openEvalZero_compileCode
       expr targetCtx hScoped hSupported hCompile hInitial
@@ -198,7 +273,8 @@ theorem openRun_let_generated
     (sourceProgram : Locals.Program)
     (targetProgram : Expressions.Program)
     (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
-    (fuel : Nat) {name : Name} (valueExpr : Locals.Expr 1)
+    (sourceFuel targetFuel : Nat)
+    {name : Name} (valueExpr : Locals.Expr 1)
     {valueCode : Structured.Code} {suffix : List Word}
     {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
@@ -215,9 +291,9 @@ theorem openRun_let_generated
       (RegularOutcomeRel
         (targetCtx.withLayout (name :: targetCtx.layout)) suffix returns)
       (Locals.InteractionSemantics.Stmt.openRun
-        sourceProgram sourceCtx fuel (.let_ name valueExpr) source)
+        sourceProgram sourceCtx sourceFuel (.let_ name valueExpr) source)
       (Expressions.InteractionSemantics.Stmt.openRun
-        targetProgram fuel
+        targetProgram targetFuel
         (.code
           (valueCode ++ Locals.bindLocals 0 (name :: targetCtx.layout)))
         target) := by
@@ -287,7 +363,8 @@ theorem openRun_assign_generated
     (sourceProgram : Locals.Program)
     (targetProgram : Expressions.Program)
     (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
-    (fuel : Nat) {name : Name} (valueExpr : Locals.Expr 1)
+    (sourceFuel targetFuel : Nat)
+    {name : Name} (valueExpr : Locals.Expr 1)
     {depth : Nat} {valueCode : Structured.Code}
     {swapOp : Structured.BasicOp} {suffix : List Word}
     {returns : List Structured.ReturnDest}
@@ -307,9 +384,9 @@ theorem openRun_assign_generated
     Simulation.Interaction.Rel
       (RegularOutcomeRel targetCtx suffix returns)
       (Locals.InteractionSemantics.Stmt.openRun
-        sourceProgram sourceCtx fuel (.assign name valueExpr) source)
+        sourceProgram sourceCtx sourceFuel (.assign name valueExpr) source)
       (Expressions.InteractionSemantics.Stmt.openRun
-        targetProgram fuel
+        targetProgram targetFuel
         (.code
           (valueCode ++ [.op swapOp, .op .pop] ++
             Locals.bindLocals 0 targetCtx.layout))
