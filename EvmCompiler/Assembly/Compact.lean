@@ -97,6 +97,10 @@ def PCIndependent : Instr -> Prop
   | .prim .pc => False
   | _ => True
 
+def Sequential : Instr -> Prop
+  | .jump | .jumpi => False
+  | _ => True
+
 def decoded? : Instr -> Option (Prod EVMOp (Option (Prod Word Nat)))
   | .push width value => do
       let op <- pushOp? width
@@ -185,6 +189,14 @@ namespace Program
 def codeByteLength : List Located -> Nat
   | [] => 0
   | located :: rest => located.instr.byteSize + codeByteLength rest
+
+theorem codeByteLength_append (left right : List Located) :
+    codeByteLength (left ++ right) =
+      codeByteLength left + codeByteLength right := by
+  induction left with
+  | nil => simp [codeByteLength]
+  | cons located rest ih =>
+      simp [codeByteLength, ih, Nat.add_assoc]
 
 def fetch (program : Program) (pc : Nat) : Option Instr :=
   (program.code.find? fun located => located.pc == pc).map Located.instr
@@ -382,6 +394,29 @@ def emitBlocks? (source : Assembly.Program) (branchWidth : Nat)
 def blocksCode (blocks : List SourceBlock) : List Located :=
   blocks.flatMap SourceBlock.code
 
+def blockLabelConsistent? (table : LabelTable) (block : SourceBlock) : Bool :=
+  match block.sourceInstr with
+  | .label name => lookupLabel? table name == some block.compactPc
+  | _ => true
+
+def labelsConsistent? (blocks : List SourceBlock) (table : LabelTable) : Bool :=
+  blocks.all (blockLabelConsistent? table)
+
+def LabelsConsistent (blocks : List SourceBlock) (table : LabelTable) : Prop :=
+  ∀ block, block ∈ blocks -> ∀ name,
+    block.sourceInstr = .label name ->
+      lookupLabel? table name = some block.compactPc
+
+theorem labelsConsistent_of_check
+    {blocks : List SourceBlock} {table : LabelTable}
+    (hCheck : labelsConsistent? blocks table = true) :
+    LabelsConsistent blocks table := by
+  intro block hMem name hInstr
+  have hBlock := (List.all_eq_true.mp hCheck) block hMem
+  unfold blockLabelConsistent? at hBlock
+  rw [hInstr] at hBlock
+  simpa using hBlock
+
 inductive BlocksValidFrom (branchWidth : Nat) (table : LabelTable) :
     Assembly.Program -> Nat -> Nat -> List SourceBlock -> Prop
   | nil (sourcePc compactPc : Nat) :
@@ -443,6 +478,125 @@ theorem emitBlocks?_valid
     (hEmit : emitBlocks? source branchWidth table = some blocks) :
     BlocksValidFrom branchWidth table source 0 0 blocks := by
   exact emitBlocksFrom?_valid hEmit
+
+theorem emitSourceBlock?_codeByteLength
+    {branchWidth compactPc compactSize : Nat} {table : LabelTable}
+    {instr : Assembly.Instr} {code : List Located}
+    (hSize : sourceInstrSize? branchWidth instr = some compactSize)
+    (hCode : emitSourceBlock? branchWidth compactPc table instr = some code) :
+    Program.codeByteLength code = compactSize := by
+  cases instr with
+  | label name | prim name =>
+      simp [sourceInstrSize?, emitSourceBlock?, emitInstrRev?] at hSize hCode
+      subst compactSize
+      subst code
+      rfl
+  | push value =>
+      cases hWidth : widthForWord? value with
+      | none => simp [sourceInstrSize?, hWidth] at hSize
+      | some width =>
+          simp [sourceInstrSize?, hWidth, emitSourceBlock?, emitInstrRev?]
+            at hSize hCode
+          subst compactSize
+          subst code
+          rfl
+  | jump target | jumpi target =>
+      cases hDest : lookupLabel? table target with
+      | none => simp [emitSourceBlock?, emitInstrRev?, hDest] at hCode
+      | some dest =>
+          by_cases hFits : fitsWidth? branchWidth dest = true
+          · simp [sourceInstrSize?, emitSourceBlock?, emitInstrRev?,
+              hDest, hFits] at hSize hCode
+            subst compactSize
+            subst code
+            simp [Program.codeByteLength, Instr.byteSize, Nat.add_assoc]
+          · simp [emitSourceBlock?, emitInstrRev?, hDest, hFits] at hCode
+
+def BoundaryPair (blocks : List SourceBlock)
+    (sourceEnd compactEnd sourcePc compactPc : Nat) : Prop :=
+  (∃ block,
+    block ∈ blocks ∧ block.sourcePc = sourcePc ∧
+      block.compactPc = compactPc) ∨
+  (sourcePc = sourceEnd ∧ compactPc = compactEnd)
+
+theorem BlocksValidFrom.next_boundary
+    {branchWidth : Nat} {table : LabelTable}
+    {source : Assembly.Program} {sourcePc compactPc : Nat}
+    {blocks : List SourceBlock}
+    (hValid : BlocksValidFrom branchWidth table source
+      sourcePc compactPc blocks) :
+    forall {block : SourceBlock}, block ∈ blocks ->
+      ∀ {compactSize : Nat},
+        sourceInstrSize? branchWidth block.sourceInstr = some compactSize ->
+        BoundaryPair blocks
+          (sourcePc + source.byteLength)
+          (compactPc + Program.codeByteLength (blocksCode blocks))
+          (block.sourcePc + block.sourceInstr.byteSize)
+          (block.compactPc + compactSize) := by
+  intro block hMem compactSize hSize
+  induction hValid generalizing block compactSize with
+  | nil => simp at hMem
+  | @cons instr rest sourcePc compactPc headSize code blocks
+      hHeadSize hCode hRest ih =>
+      simp at hMem
+      cases hMem with
+      | inl hHead =>
+          subst block
+          have hSizeEq : compactSize = headSize := by
+            rw [hHeadSize] at hSize
+            exact (Option.some.inj hSize).symm
+          subst compactSize
+          cases hRest with
+          | nil =>
+              right
+              constructor
+              · simp [Assembly.Program.byteLength, Assembly.Instr.byteSize_pos]
+              · have hCodeLength :=
+                    emitSourceBlock?_codeByteLength hHeadSize hCode
+                simp [blocksCode, Program.codeByteLength, hCodeLength]
+          | @cons next rest' _ _ nextSize nextCode
+              nextBlocks hNextSize hNextCode hNextRest =>
+              left
+              refine
+                ⟨{ sourcePc := sourcePc + instr.byteSize
+                   compactPc := compactPc + headSize
+                   sourceInstr := next
+                   code := nextCode }, ?_, ?_, ?_⟩
+              · simp
+              · rfl
+              · rfl
+      | inr hTail =>
+          have hTailBoundary := ih hTail hSize
+          have hHeadCodeLength :=
+            emitSourceBlock?_codeByteLength hHeadSize hCode
+          rcases hTailBoundary with hNext | hEnd
+          · left
+            rcases hNext with ⟨next, hNextMem, hSource, hCompact⟩
+            exact ⟨next, by simp [hNextMem], hSource, hCompact⟩
+          · right
+            rcases hEnd with ⟨hSourceEnd, hCompactEnd⟩
+            constructor
+            · simpa [Assembly.Program.byteLength_cons,
+                Nat.add_assoc] using hSourceEnd
+            · simpa [blocksCode, Program.codeByteLength_append,
+                hHeadCodeLength, Nat.add_assoc] using hCompactEnd
+
+theorem BlocksValidFrom.initial_boundary
+    {branchWidth : Nat} {table : LabelTable}
+    {source : Assembly.Program} {blocks : List SourceBlock}
+    (hValid : BlocksValidFrom branchWidth table source 0 0 blocks) :
+    BoundaryPair blocks source.byteLength
+      (Program.codeByteLength (blocksCode blocks)) 0 0 := by
+  cases hValid with
+  | nil => exact Or.inr ⟨rfl, rfl⟩
+  | @cons instr rest sourcePc compactPc compactSize code blocks
+      hSize hCode hRest =>
+      exact
+        Or.inl
+          ⟨{ sourcePc := 0
+             compactPc := 0
+             sourceInstr := instr
+             code := code }, by simp⟩
 
 theorem BlocksValidFrom.block_emit_of_mem
     {branchWidth : Nat} {table : LabelTable}
@@ -918,15 +1072,18 @@ def compile? (source : Assembly.Program) : Option Artifact := do
   let program <- emit? physicalSource branchWidth labels
   let blocks <- emitBlocks? physicalSource branchWidth labels
   if blocksCode blocks = program.code then
-    if program.wellFormed? then
-      some
-        { physicalSource := physicalSource
-          branchWidth := branchWidth
-          labels := labels
-          codeLength := codeLength
-          blocks := blocks
-          program := program
-          bytes := encode program }
+    if labelsConsistent? blocks labels then
+      if program.wellFormed? then
+        some
+          { physicalSource := physicalSource
+            branchWidth := branchWidth
+            labels := labels
+            codeLength := codeLength
+            blocks := blocks
+            program := program
+            bytes := encode program }
+      else
+        none
     else
       none
   else
@@ -944,6 +1101,7 @@ structure Artifact.ValidFor (artifact : Artifact)
   blocks : emitBlocks? artifact.physicalSource artifact.branchWidth
     artifact.labels = some artifact.blocks
   blockCode : blocksCode artifact.blocks = artifact.program.code
+  labelsConsistent : LabelsConsistent artifact.blocks artifact.labels
   wellFormed : artifact.program.Valid ∧
     Program.codeLayoutFrom artifact.program.code 0 ∧
       Program.codeByteLength artifact.program.code < 18446744073709551616 ∧
@@ -976,14 +1134,19 @@ theorem compile?_valid {source : Assembly.Program} {artifact : Artifact}
                       simp [hBlocks] at hCompile
                       by_cases hCode : blocksCode blocks = program.code
                       · simp [hCode] at hCompile
-                        by_cases hWellFormed : program.wellFormed? = true
-                        · simp [hWellFormed] at hCompile
-                          cases hCompile
-                          exact
-                            Artifact.ValidFor.mk hPhysical.symm hWidth hLayout
-                              hEmit hBlocks hCode
-                              (Program.wellFormed_of_check hWellFormed) rfl
-                        · simp [hWellFormed] at hCompile
+                        by_cases hLabels :
+                            labelsConsistent? blocks labels = true
+                        · simp [hLabels] at hCompile
+                          by_cases hWellFormed : program.wellFormed? = true
+                          · simp [hWellFormed] at hCompile
+                            cases hCompile
+                            exact
+                              Artifact.ValidFor.mk hPhysical.symm hWidth hLayout
+                                hEmit hBlocks hCode
+                                (labelsConsistent_of_check hLabels)
+                                (Program.wellFormed_of_check hWellFormed) rfl
+                          · simp [hWellFormed] at hCompile
+                        · simp [hLabels] at hCompile
                       · simp [hCode] at hCompile
 
 theorem Artifact.ValidFor.mem_program_of_mem_block
@@ -1033,6 +1196,124 @@ theorem compile?_block_of_instrAtPc
   exact
     ⟨block, compactSize, hMem, hBlockPc, hInstr, hSize, hCode⟩
 
+theorem compile?_initial_boundary
+    {source : Assembly.Program} {artifact : Artifact}
+    (hCompile : compile? source = some artifact) :
+    BoundaryPair artifact.blocks artifact.physicalSource.byteLength
+      (Program.codeByteLength artifact.program.code) 0 0 := by
+  have hArtifact := compile?_valid hCompile
+  have hBoundary := (compile?_blocksValid hCompile).initial_boundary
+  rw [hArtifact.blockCode] at hBoundary
+  exact hBoundary
+
+theorem compile?_label_boundary
+    {source : Assembly.Program} {artifact : Artifact}
+    {label : Label} {sourceDest compactDest : Nat}
+    (hCompile : compile? source = some artifact)
+    (hSource : artifact.physicalSource.labelPc label = some sourceDest)
+    (hCompact : lookupLabel? artifact.labels label = some compactDest) :
+    BoundaryPair artifact.blocks artifact.physicalSource.byteLength
+      (Program.codeByteLength artifact.program.code)
+      sourceDest compactDest := by
+  have hArtifact := compile?_valid hCompile
+  have hBlocks := compile?_blocksValid hCompile
+  have hAt := Assembly.Program.instrAtPc_of_labelPc hSource
+  obtain ⟨block, hMem, hBlockPc, hInstr⟩ :=
+    hBlocks.block_of_instrAtPc hAt
+  have hLabel :=
+    hArtifact.labelsConsistent block hMem label hInstr
+  rw [hCompact] at hLabel
+  have hCompactPc : compactDest = block.compactPc :=
+    Option.some.inj hLabel
+  exact Or.inl ⟨block, hMem, hBlockPc, hCompactPc.symm⟩
+
+def StepResultRuntimeRel : StepResult -> StepResult -> Prop
+  | .running target, .running source => SameRuntimeData target source
+  | .halted target, .halted source =>
+      target.kind = source.kind ∧
+        SameRuntimeData target.state source.state ∧
+          target.output = source.output
+  | _, _ => False
+
+abbrev RuntimeOutcomeRel :
+    Except EVMException StepResult -> Except EVMException StepResult -> Prop :=
+  Simulation.Interaction.ExceptRel
+    (fun targetError sourceError => targetError = sourceError)
+    StepResultRuntimeRel
+
+def BoundaryStateRel (artifact : Artifact)
+    (target source : EVMState) : Prop :=
+  ∃ sourcePc compactPc,
+    BoundaryPair artifact.blocks artifact.physicalSource.byteLength
+        (Program.codeByteLength artifact.program.code) sourcePc compactPc ∧
+      source.pc = EvmYul.UInt256.ofNat sourcePc ∧
+      target.pc = EvmYul.UInt256.ofNat compactPc ∧
+      SameRuntimeData target source
+
+def BoundaryStepResultRel (artifact : Artifact) :
+    StepResult -> StepResult -> Prop
+  | .running target, .running source => BoundaryStateRel artifact target source
+  | .halted target, .halted source =>
+      target.kind = source.kind ∧
+        SameRuntimeData target.state source.state ∧
+          target.output = source.output
+  | _, _ => False
+
+abbrev BoundaryOutcomeRel (artifact : Artifact) :
+    Except EVMException StepResult -> Except EVMException StepResult -> Prop :=
+  Simulation.Interaction.ExceptRel
+    (fun targetError sourceError => targetError = sourceError)
+    (BoundaryStepResultRel artifact)
+
+def RunningAt (pc : Word) : Except EVMException StepResult -> Prop
+  | .ok (.running state) => state.pc = pc
+  | _ => True
+
+theorem runtimeRel_to_boundaryRel
+    {artifact : Artifact} {targetRun sourceRun :
+      Assembly.InteractionSemantics.OpenStepResult}
+    {sourcePc compactPc : Nat}
+    (hBoundary : BoundaryPair artifact.blocks
+      artifact.physicalSource.byteLength
+      (Program.codeByteLength artifact.program.code) sourcePc compactPc)
+    (hRel : Simulation.Interaction.Rel RuntimeOutcomeRel
+      targetRun sourceRun)
+    (hTargetPc : Simulation.Interaction.AllDone
+      (RunningAt (EvmYul.UInt256.ofNat compactPc)) targetRun)
+    (hSourcePc : Simulation.Interaction.AllDone
+      (RunningAt (EvmYul.UInt256.ofNat sourcePc)) sourceRun) :
+    Simulation.Interaction.Rel (BoundaryOutcomeRel artifact)
+      targetRun sourceRun := by
+  have hTarget := Simulation.Interaction.Rel.strengthen_left hRel hTargetPc
+  have hBoth :=
+    Simulation.Interaction.Rel.strengthen_right hTarget hSourcePc
+  apply Simulation.Interaction.Rel.mono hBoth
+  intro targetDone sourceDone hDone
+  rcases hDone with ⟨⟨hRuntime, hTargetAt⟩, hSourceAt⟩
+  cases hRuntime with
+  | error hError => exact .error hError
+  | ok hResult =>
+      rename_i targetResult sourceResult
+      cases targetResult with
+      | running target =>
+          cases sourceResult with
+          | running source =>
+              apply Simulation.Interaction.ExceptRel.ok
+              change target.pc = EvmYul.UInt256.ofNat compactPc at hTargetAt
+              change source.pc = EvmYul.UInt256.ofNat sourcePc at hSourceAt
+              exact
+                ⟨sourcePc, compactPc, hBoundary,
+                  hSourceAt, hTargetAt, hResult⟩
+          | halted source =>
+              simp [StepResultRuntimeRel] at hResult
+      | halted target =>
+          cases sourceResult with
+          | running source =>
+              simp [StepResultRuntimeRel] at hResult
+          | halted source =>
+              apply Simulation.Interaction.ExceptRel.ok
+              exact hResult
+
 namespace Instr
 
 def toLogical : Instr -> TargetInstr
@@ -1071,20 +1352,6 @@ def openStepResult (instr : Instr) (state : EVMState) :
   | none => pure (.running state')
 
 end Instr
-
-def StepResultRuntimeRel : StepResult -> StepResult -> Prop
-  | .running target, .running source => SameRuntimeData target source
-  | .halted target, .halted source =>
-      target.kind = source.kind ∧
-        SameRuntimeData target.state source.state ∧
-          target.output = source.output
-  | _, _ => False
-
-abbrev RuntimeOutcomeRel :
-    Except EVMException StepResult -> Except EVMException StepResult -> Prop :=
-  Simulation.Interaction.ExceptRel
-    (fun targetError sourceError => targetError = sourceError)
-    StepResultRuntimeRel
 
 theorem haltOutput_eq_of_sameRuntimeData
     {target source : EVMState} (kind : HaltKind)
@@ -1203,6 +1470,62 @@ theorem openStepResult_runtimeRel
         ⟨rfl, hFinal,
           haltOutput_eq_of_sameRuntimeData kind hFinal⟩
 
+theorem openStepResult_runningAt_next
+    {instr : Instr} {state : EVMState}
+    (hSequential : instr.Sequential) :
+    Simulation.Interaction.AllDone
+      (RunningAt
+        (state.pc + EvmYul.UInt256.ofNat instr.byteSize))
+      (instr.openStepResult state) := by
+  cases instr with
+  | push width value =>
+      exact .done rfl
+  | jump => cases hSequential
+  | jumpi => cases hSequential
+  | jumpdest =>
+      exact .done rfl
+  | prim op =>
+      by_cases hArity : ∃ arity, op.stackArity? = some arity
+      · rcases hArity with ⟨⟨input, output⟩, hArity⟩
+        have hAdvances :=
+          Assembly.InteractionPreservation.PrimOp.openStep_advancesPC
+            (state := state) hArity
+        unfold openStepResult openStep
+        apply Simulation.Interaction.AllDone.bind hAdvances
+        · intro err _hError
+          trivial
+        · intro final hFinal
+          have hKind : (Instr.prim op).haltKind? = none := by
+            cases op <;>
+              simp [Assembly.PrimOp.stackArity?,
+                Assembly.PrimOp.haltKind?, Instr.haltKind?]
+                at hArity ⊢
+          rw [hKind]
+          apply Simulation.Interaction.AllDone.done
+          change final.pc = state.pc + EvmYul.UInt256.ofNat 1
+          exact hFinal
+      · by_cases hTerminal : ∃ kind, op.haltKind? = some kind
+        · rcases hTerminal with ⟨kind, hKind⟩
+          unfold openStepResult openStep
+          apply Simulation.Interaction.AllDone.bind
+            (Simulation.Interaction.AllDone.trivial
+              (Assembly.InteractionSemantics.PrimOp.openStep op state))
+          · intro err _hError
+            trivial
+          · intro final _hFinal
+            have hCompactKind : (Instr.prim op).haltKind? = some kind := by
+              simpa [Instr.haltKind?] using hKind
+            rw [hCompactKind]
+            exact .done trivial
+        · have hInvalid : op = .invalid := by
+            cases op <;>
+              simp [Assembly.PrimOp.stackArity?, Assembly.PrimOp.haltKind?]
+                at hArity hTerminal ⊢
+          subst op
+          change Simulation.Interaction.AllDone _
+            (.done (.error EvmYul.EVM.ExecutionException.InvalidInstruction))
+          exact .done trivial
+
 end Instr
 
 namespace InteractionSemantics
@@ -1222,6 +1545,33 @@ theorem SimpleSourceInstrRel.openStepResult_eq
       Assembly.InteractionSemantics.Target.openStepInstrResult
         compactInstr.toLogical state := by
   cases hInstr <;> rfl
+
+theorem SimpleSourceInstrRel.source_runningAt_next
+    {sourceInstr : Assembly.Instr} {compactInstr : Instr}
+    (hInstr : SimpleSourceInstrRel sourceInstr compactInstr)
+    (program : Assembly.Program) (pc : Nat) (state : EVMState) :
+    Simulation.Interaction.AllDone
+      (RunningAt
+        (state.pc + EvmYul.UInt256.ofNat sourceInstr.byteSize))
+      (Assembly.InteractionSemantics.Source.openStepAtResult
+        program pc sourceInstr state) := by
+  cases hInstr with
+  | label name =>
+      exact Instr.openStepResult_runningAt_next
+        (instr := Instr.jumpdest) (state := state) trivial
+  | prim op =>
+      exact Instr.openStepResult_runningAt_next
+        (instr := Instr.prim op) (state := state) trivial
+  | push width value =>
+      simpa [Assembly.Instr.byteSize, Instr.byteSize] using
+        (Instr.openStepResult_runningAt_next
+          (instr := Instr.push 32 value) (state := state) trivial)
+
+theorem SimpleSourceInstrRel.compactSequential
+    {sourceInstr : Assembly.Instr} {compactInstr : Instr}
+    (hInstr : SimpleSourceInstrRel sourceInstr compactInstr) :
+    compactInstr.Sequential := by
+  cases hInstr <;> trivial
 
 /-- Actual compact-byte execution. Decoding is imported from EVMYulLean and
 instruction effects reuse the Assembly target kernels. -/
@@ -1271,6 +1621,49 @@ theorem openStepResultEqInstrOfFetch
       (by simpa [hLocatedPc] using hPc)
 
 namespace InteractionSemantics
+
+theorem openRunNResult_one_eq_instr
+    {bytes : ByteArray} {pc : Nat} {instr : Instr} {state : EVMState}
+    (hValid : instr.Valid)
+    (hDecode : decodeAt bytes pc instr)
+    (hPc : state.pc = EvmYul.UInt256.ofNat pc) :
+    openRunNResult bytes 1 state = instr.openStepResult state := by
+  unfold openRunNResult Assembly.Control.runNResultWith
+  rw [openStepResultEqInstrOfDecodeAt hValid hDecode hPc]
+  simp only [Assembly.Control.runNResultWith]
+  have hContinuation :
+      (fun result : StepResult =>
+        match result with
+        | .running state' =>
+            Simulation.Interaction.pure (StepResult.running state')
+        | .halted halt =>
+            Simulation.Interaction.pure (StepResult.halted halt)) =
+      (Simulation.Interaction.pure : StepResult ->
+        Assembly.InteractionSemantics.OpenStepResult) := by
+    funext result
+    cases result <;> rfl
+  change Simulation.Interaction.bind (instr.openStepResult state)
+    (fun result =>
+      match result with
+      | .running state' =>
+          Simulation.Interaction.pure (StepResult.running state')
+      | .halted halt =>
+          Simulation.Interaction.pure (StepResult.halted halt)) = _
+  rw [hContinuation, Simulation.Interaction.bind_pure]
+
+theorem openRunNResult_one_runningAt_next
+    {bytes : ByteArray} {pc : Nat} {instr : Instr} {state : EVMState}
+    (hValid : instr.Valid)
+    (hSequential : instr.Sequential)
+    (hDecode : decodeAt bytes pc instr)
+    (hPc : state.pc = EvmYul.UInt256.ofNat pc) :
+    Simulation.Interaction.AllDone
+      (RunningAt (EvmYul.UInt256.ofNat (pc + instr.byteSize)))
+      (openRunNResult bytes 1 state) := by
+  rw [openRunNResult_one_eq_instr hValid hDecode hPc]
+  simpa [hPc, UInt256_ofNat_add] using
+    (Instr.openStepResult_runningAt_next
+      (instr := instr) (state := state) hSequential)
 
 theorem openRunNResult_one_runtimeRel
     {bytes : ByteArray} {pc : Nat} {instr : Instr}
@@ -1329,6 +1722,34 @@ theorem openRunNResult_one_source_rel
   exact
     openRunNResult_one_runtimeRel
       hValid hIndependent hDecode hPc hRel
+
+theorem openRunNResult_one_source_boundary_rel
+    {artifact : Artifact} {sourcePc compactPc : Nat}
+    {sourceInstr : Assembly.Instr} {compactInstr : Instr}
+    {target source : EVMState}
+    (hBoundary : BoundaryPair artifact.blocks
+      artifact.physicalSource.byteLength
+      (Program.codeByteLength artifact.program.code)
+      (sourcePc + sourceInstr.byteSize)
+      (compactPc + compactInstr.byteSize))
+    (hInstr : SimpleSourceInstrRel sourceInstr compactInstr)
+    (hValid : compactInstr.Valid)
+    (hIndependent : compactInstr.PCIndependent)
+    (hDecode : decodeAt artifact.bytes compactPc compactInstr)
+    (hPc : target.pc = EvmYul.UInt256.ofNat compactPc)
+    (hSourcePc : source.pc = EvmYul.UInt256.ofNat sourcePc)
+    (hRel : SameRuntimeData target source) :
+    Simulation.Interaction.Rel (BoundaryOutcomeRel artifact)
+      (openRunNResult artifact.bytes 1 target)
+      (Assembly.InteractionSemantics.Source.openStepAtResult
+        artifact.physicalSource sourcePc sourceInstr source) := by
+  apply runtimeRel_to_boundaryRel hBoundary
+    (openRunNResult_one_source_rel hInstr hValid hIndependent
+      hDecode hPc hRel)
+  · exact openRunNResult_one_runningAt_next
+      hValid hInstr.compactSequential hDecode hPc
+  · simpa [hSourcePc, UInt256_ofNat_add] using
+      hInstr.source_runningAt_next artifact.physicalSource sourcePc source
 
 theorem openRunNResult_push_jump
     {bytes : ByteArray} {pc width : Nat} {dest : Word}
@@ -1445,6 +1866,35 @@ theorem openRunNResult_push_jump_source_rel
     SameRuntimeData.with_pc_right (EvmYul.UInt256.ofNat sourceDest)
       (SameRuntimeData.with_pc_left compactDest hRel)
 
+theorem openRunNResult_push_jump_source_boundary_rel
+    {artifact : Artifact} {sourcePc sourceDest compactPc compactDest width : Nat}
+    {label : Label} {targetState sourceState : EVMState}
+    (hBoundary : BoundaryPair artifact.blocks
+      artifact.physicalSource.byteLength
+      (Program.codeByteLength artifact.program.code)
+      sourceDest compactDest)
+    (hSourceDest : artifact.physicalSource.labelPc label = some sourceDest)
+    (hFits : FitsWidth width (EvmYul.UInt256.ofNat compactDest).toNat)
+    (hPushDecode : decodeAt artifact.bytes compactPc
+      (.push width (EvmYul.UInt256.ofNat compactDest)))
+    (hJumpDecode : decodeAt artifact.bytes (compactPc + width + 1) .jump)
+    (hTargetPc : targetState.pc = EvmYul.UInt256.ofNat compactPc)
+    (hRel : SameRuntimeData targetState sourceState) :
+    Simulation.Interaction.Rel (BoundaryOutcomeRel artifact)
+      (openRunNResult artifact.bytes 2 targetState)
+      (Assembly.InteractionSemantics.Source.openStepAtResult
+        artifact.physicalSource sourcePc (.jump label) sourceState) := by
+  apply runtimeRel_to_boundaryRel hBoundary
+    (openRunNResult_push_jump_source_rel hSourceDest hFits
+      hPushDecode hJumpDecode hTargetPc hRel)
+  · rw [openRunNResult_push_jump hFits hPushDecode hJumpDecode hTargetPc]
+    exact .done rfl
+  · unfold Assembly.InteractionSemantics.Source.openStepAtResult
+      Assembly.InteractionSemantics.Source.openStepAt Assembly.Source.stepAt
+    simp [hSourceDest, Assembly.Source.jumpPc, Assembly.Instr.haltKind?,
+      Simulation.Interaction.bind]
+    exact .done rfl
+
 theorem openRunNResult_push_jumpi_source_rel
     {sourceProgram : Assembly.Program} {sourcePc sourceDest : Nat}
     {label : Label} {bytes : ByteArray} {compactPc width : Nat}
@@ -1486,6 +1936,68 @@ theorem openRunNResult_push_jumpi_source_rel
             (SameRuntimeData.replaceStack
               (targetStack := stack) (sourceStack := stack) hRel rfl))
 
+theorem openRunNResult_push_jumpi_source_boundary_rel
+    {artifact : Artifact} {sourcePc sourceDest compactPc compactDest width : Nat}
+    {label : Label} {targetState sourceState : EVMState}
+    (hTakenBoundary : BoundaryPair artifact.blocks
+      artifact.physicalSource.byteLength
+      (Program.codeByteLength artifact.program.code)
+      sourceDest compactDest)
+    (hNextBoundary : BoundaryPair artifact.blocks
+      artifact.physicalSource.byteLength
+      (Program.codeByteLength artifact.program.code)
+      (sourcePc + (Assembly.Instr.jumpi label).byteSize)
+      (compactPc + width + 2))
+    (hSourceDest : artifact.physicalSource.labelPc label = some sourceDest)
+    (hFits : FitsWidth width (EvmYul.UInt256.ofNat compactDest).toNat)
+    (hPushDecode : decodeAt artifact.bytes compactPc
+      (.push width (EvmYul.UInt256.ofNat compactDest)))
+    (hJumpDecode : decodeAt artifact.bytes (compactPc + width + 1) .jumpi)
+    (hTargetPc : targetState.pc = EvmYul.UInt256.ofNat compactPc)
+    (hSourcePc : sourceState.pc = EvmYul.UInt256.ofNat sourcePc)
+    (hRel : SameRuntimeData targetState sourceState) :
+    Simulation.Interaction.Rel (BoundaryOutcomeRel artifact)
+      (openRunNResult artifact.bytes 2 targetState)
+      (Assembly.InteractionSemantics.Source.openStepAtResult
+        artifact.physicalSource sourcePc (.jumpi label) sourceState) := by
+  have hRuntime := openRunNResult_push_jumpi_source_rel
+    (sourcePc := sourcePc) hSourceDest hFits hPushDecode hJumpDecode
+    hTargetPc hRel
+  have hStack := SameRuntimeData.stack_eq hRel
+  cases hSourceStack : sourceState.stack with
+  | nil =>
+      apply runtimeRel_to_boundaryRel hNextBoundary hRuntime
+      · rw [openRunNResult_push_jumpi hFits hPushDecode hJumpDecode hTargetPc]
+        rw [hStack, hSourceStack]
+        exact .done trivial
+      · unfold Assembly.InteractionSemantics.Source.openStepAtResult
+          Assembly.InteractionSemantics.Source.openStepAt Assembly.Source.stepAt
+        simp [hSourceDest, hSourceStack, Assembly.Instr.haltKind?]
+        exact .done trivial
+  | cons cond stack =>
+      by_cases hCond : (cond != EvmYul.UInt256.ofNat 0) = true
+      · apply runtimeRel_to_boundaryRel hTakenBoundary hRuntime
+        · rw [openRunNResult_push_jumpi hFits hPushDecode hJumpDecode hTargetPc]
+          rw [hStack, hSourceStack]
+          exact .done (by simp [RunningAt, EvmYul.Stack.pop, hCond])
+        · unfold Assembly.InteractionSemantics.Source.openStepAtResult
+            Assembly.InteractionSemantics.Source.openStepAt Assembly.Source.stepAt
+          simp [hSourceDest, hSourceStack, hCond,
+            Assembly.Instr.haltKind?]
+          exact .done (by simp [RunningAt, EvmYul.Stack.pop, hCond])
+      · apply runtimeRel_to_boundaryRel hNextBoundary hRuntime
+        · rw [openRunNResult_push_jumpi hFits hPushDecode hJumpDecode hTargetPc]
+          rw [hStack, hSourceStack]
+          exact .done (by simp [RunningAt, EvmYul.Stack.pop, hCond])
+        · unfold Assembly.InteractionSemantics.Source.openStepAtResult
+            Assembly.InteractionSemantics.Source.openStepAt Assembly.Source.stepAt
+          simp [hSourceDest, hSourceStack, hCond,
+            Assembly.Source.jumpiFallthroughPc, Assembly.Instr.byteSize,
+            Assembly.Instr.jumpSize, Assembly.Instr.push32Size,
+            Assembly.Instr.haltKind?, hSourcePc,
+            UInt256_ofNat_add, UInt256_add_assoc, Nat.add_assoc]
+          exact .done (by simp [RunningAt, hCond])
+
 /-- Compiler-selected one-source-instruction compact execution. Every block,
 width, destination, and decoder fact is recovered from the checked artifact. -/
 theorem compile?_sourceBlock_open_rel
@@ -1495,9 +2007,10 @@ theorem compile?_sourceBlock_open_rel
     (hAccepted : Assembly.Accepted artifact.physicalSource)
     (hBlock : block ∈ artifact.blocks)
     (hTargetPc : targetState.pc = EvmYul.UInt256.ofNat block.compactPc)
+    (hSourcePc : sourceState.pc = EvmYul.UInt256.ofNat block.sourcePc)
     (hRel : SameRuntimeData targetState sourceState) :
     ∃ targetFuel,
-      Simulation.Interaction.Rel RuntimeOutcomeRel
+      Simulation.Interaction.Rel (BoundaryOutcomeRel artifact)
         (openRunNResult artifact.bytes targetFuel targetState)
         (Assembly.InteractionSemantics.Source.openStepAtResult
           artifact.physicalSource block.sourcePc block.sourceInstr
@@ -1507,53 +2020,68 @@ theorem compile?_sourceBlock_open_rel
   have hDecoding := compile?_decodingCorrect hCompile
   obtain ⟨compactSize, hSize, hCode⟩ :=
     hBlocks.block_emit_of_mem hBlock
+  have hNextBoundary := hBlocks.next_boundary hBlock hSize
+  rw [(compile?_valid hCompile).blockCode] at hNextBoundary
   have hSourceMem : block.sourceInstr ∈ artifact.physicalSource :=
     hBlocks.sourceInstr_mem_of_block_mem hBlock
   rcases block with ⟨sourcePc, compactPc, sourceInstr, code⟩
   cases sourceInstr with
   | label name =>
-      simp [sourceInstrSize?, emitSourceBlock?, emitInstrRev?] at hCode
+      simp [sourceInstrSize?, emitSourceBlock?, emitInstrRev?] at hSize hCode
+      subst compactSize
       subst code
       let located : Located := { pc := compactPc, instr := .jumpdest }
       have hMem : located ∈ artifact.program.code :=
         hArtifact.mem_program_of_mem_block hBlock (by simp [located])
       exact
-        ⟨1, openRunNResult_one_source_rel
+        ⟨1, openRunNResult_one_source_boundary_rel
+          (sourcePc := sourcePc) (compactPc := compactPc)
+          (sourceInstr := .label name) (compactInstr := .jumpdest)
+          (by simpa using hNextBoundary)
           (SimpleSourceInstrRel.label name) trivial
           ((List.forall_iff_forall_mem.mp
             hArtifact.wellFormed.2.2.2) located hMem)
-          (hDecoding.decodes located hMem) hTargetPc hRel⟩
+          (hDecoding.decodes located hMem) hTargetPc hSourcePc hRel⟩
   | prim op =>
-      simp [sourceInstrSize?, emitSourceBlock?, emitInstrRev?] at hCode
+      simp [sourceInstrSize?, emitSourceBlock?, emitInstrRev?] at hSize hCode
+      subst compactSize
       subst code
       let located : Located := { pc := compactPc, instr := .prim op }
       have hMem : located ∈ artifact.program.code :=
         hArtifact.mem_program_of_mem_block hBlock (by simp [located])
       exact
-        ⟨1, openRunNResult_one_source_rel
+        ⟨1, openRunNResult_one_source_boundary_rel
+          (sourcePc := sourcePc) (compactPc := compactPc)
+          (sourceInstr := .prim op) (compactInstr := .prim op)
+          (by simpa using hNextBoundary)
           (SimpleSourceInstrRel.prim op) trivial
           ((List.forall_iff_forall_mem.mp
             hArtifact.wellFormed.2.2.2) located hMem)
-          (hDecoding.decodes located hMem) hTargetPc hRel⟩
+          (hDecoding.decodes located hMem) hTargetPc hSourcePc hRel⟩
   | push value =>
       cases hWidth : widthForWord? value with
       | none => simp [sourceInstrSize?, hWidth] at hSize
       | some width =>
           simp [sourceInstrSize?, hWidth, emitSourceBlock?, emitInstrRev?]
-            at hCode
+            at hSize hCode
+          subst compactSize
           subst code
           let located : Located :=
             { pc := compactPc, instr := .push width value }
           have hMem : located ∈ artifact.program.code :=
             hArtifact.mem_program_of_mem_block hBlock (by simp [located])
           exact
-            ⟨1, openRunNResult_one_source_rel
+            ⟨1, openRunNResult_one_source_boundary_rel
+              (sourcePc := sourcePc) (compactPc := compactPc)
+              (sourceInstr := .push value)
+              (compactInstr := .push width value)
+              (by simpa using hNextBoundary)
               (SimpleSourceInstrRel.push width value)
               ((List.forall_iff_forall_mem.mp
                 hArtifact.wellFormed.1) located hMem)
               ((List.forall_iff_forall_mem.mp
                 hArtifact.wellFormed.2.2.2) located hMem)
-              (hDecoding.decodes located hMem) hTargetPc hRel⟩
+              (hDecoding.decodes located hMem) hTargetPc hSourcePc hRel⟩
   | jump target =>
       cases hDest : lookupLabel? artifact.labels target with
       | none =>
@@ -1561,7 +2089,9 @@ theorem compile?_sourceBlock_open_rel
       | some compactDest =>
           by_cases hFitsBool :
               fitsWidth? artifact.branchWidth compactDest = true
-          · simp [emitSourceBlock?, emitInstrRev?, hDest, hFitsBool] at hCode
+          · simp [sourceInstrSize?, emitSourceBlock?, emitInstrRev?,
+              hDest, hFitsBool] at hSize hCode
+            subst compactSize
             subst code
             obtain ⟨sourceDest, hSourceDest⟩ :=
               Assembly.Program.target_resolves_of_accepted
@@ -1581,8 +2111,11 @@ theorem compile?_sourceBlock_open_rel
             have hJumpMem : jumpLocated ∈ artifact.program.code :=
               hArtifact.mem_program_of_mem_block hBlock
                 (by simp [pushLocated, jumpLocated])
+            have hLabelBoundary :=
+              compile?_label_boundary hCompile hSourceDest hDest
             exact
-              ⟨2, openRunNResult_push_jump_source_rel hSourceDest
+              ⟨2, openRunNResult_push_jump_source_boundary_rel
+                hLabelBoundary hSourceDest
                 ((List.forall_iff_forall_mem.mp
                   hArtifact.wellFormed.1) pushLocated hPushMem)
                 (hDecoding.decodes pushLocated hPushMem)
@@ -1596,7 +2129,9 @@ theorem compile?_sourceBlock_open_rel
       | some compactDest =>
           by_cases hFitsBool :
               fitsWidth? artifact.branchWidth compactDest = true
-          · simp [emitSourceBlock?, emitInstrRev?, hDest, hFitsBool] at hCode
+          · simp [sourceInstrSize?, emitSourceBlock?, emitInstrRev?,
+              hDest, hFitsBool] at hSize hCode
+            subst compactSize
             subst code
             obtain ⟨sourceDest, hSourceDest⟩ :=
               Assembly.Program.target_resolves_of_accepted
@@ -1616,13 +2151,19 @@ theorem compile?_sourceBlock_open_rel
             have hJumpMem : jumpLocated ∈ artifact.program.code :=
               hArtifact.mem_program_of_mem_block hBlock
                 (by simp [pushLocated, jumpLocated])
+            have hLabelBoundary :=
+              compile?_label_boundary hCompile hSourceDest hDest
             exact
-              ⟨2, openRunNResult_push_jumpi_source_rel hSourceDest
+              ⟨2, openRunNResult_push_jumpi_source_boundary_rel
+                hLabelBoundary
+                (by simpa [Assembly.Instr.byteSize, Assembly.Instr.jumpSize,
+                    Nat.add_assoc] using hNextBoundary)
+                hSourceDest
                 ((List.forall_iff_forall_mem.mp
                   hArtifact.wellFormed.1) pushLocated hPushMem)
                 (hDecoding.decodes pushLocated hPushMem)
                 (hDecoding.decodes jumpLocated hJumpMem)
-                hTargetPc hRel⟩
+                hTargetPc hSourcePc hRel⟩
           · simp [emitSourceBlock?, emitInstrRev?, hDest, hFitsBool] at hCode
 
 end InteractionSemantics
