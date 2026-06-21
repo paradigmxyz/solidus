@@ -1086,6 +1086,21 @@ theorem openRun_block
   intro result _
   cases hMode : result.1.mode <;> rfl
 
+theorem openRun_block_eq_scoped_pair
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (body : Functions.Block) (state : State) :
+    openRun program ctx fuel (.block body) state =
+      Simulation.Interaction.bind
+        (Block.openRunScoped program ctx body fuel state)
+        (fun outcome => Simulation.Interaction.pure (outcome, ctx)) := by
+  rw [openRun_block, Block.openRunScoped_eq_bind,
+    Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Block.openRun program ctx fuel body state))
+  intro result _
+  cases hMode : result.1.mode <;> rfl
+
 /-- A positive-fuel lexical singleton break returns the handler-restricted
 break outcome. This is the exact synthetic body emitted by the Yul loop guard. -/
 theorem openRun_block_brk

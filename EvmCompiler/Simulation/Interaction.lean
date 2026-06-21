@@ -1856,6 +1856,43 @@ theorem mono
   | request hResume ih =>
       exact .request ih
 
+/-- Remove a pure administrative map from the source side of a forward
+simulation while preserving source truncation. -/
+theorem bind_pure_left_inv
+    {Error₁ : Type u1} {Source₁ : Type v1} {Target₁ : Type w1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    {truncated : Error₁ → Prop}
+    {doneRel :
+      Except Error₁ Target₁ → Except Error₂ Result₂ → Prop}
+    {left : Interaction Error₁ Source₁}
+    {right : Interaction Error₂ Result₂}
+    {f : Source₁ → Target₁}
+    (hRel :
+      ForwardRel truncated doneRel
+        (Interaction.bind left
+          (fun value => Interaction.pure (f value)))
+        right) :
+    ForwardRel truncated
+      (fun leftDone rightDone =>
+        match leftDone with
+        | .error err => doneRel (.error err) rightDone
+        | .ok value => doneRel (.ok (f value)) rightDone)
+      left right := by
+  induction left generalizing right with
+  | done outcome =>
+      cases outcome with
+      | error error =>
+          cases hRel with
+          | truncated hTruncated => exact .truncated hTruncated
+          | done hDone => exact .done hDone
+      | ok value =>
+          cases hRel with
+          | done hDone => exact .done hDone
+  | request query resume ih =>
+      cases hRel with
+      | request hResume =>
+          exact .request fun answer => ih answer (hResume answer)
+
 /-- A forward simulation followed by an exact open-world relation composes
 without replaying or interpreting either interaction tree. -/
 theorem trans_rel

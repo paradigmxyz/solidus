@@ -399,6 +399,71 @@ theorem budget_switch_selected_add_two_le
   simp only [stmtListSize, stmtSize, blockSize] at hSelected ⊢
   nlinarith
 
+theorem budget_for_init_add_two_le
+    (program : Expressions.Program) (sourceFuel : Nat)
+    (init : Expressions.Block) (cond : Expressions.Expr 1)
+    (post body : Expressions.Block) (rest : List Expressions.Stmt) :
+    budget program sourceFuel init.stmts + 2 ≤
+      budget program (sourceFuel + 1)
+        (.for_ init cond post body :: rest) := by
+  have hStride := eight_le_programStride program
+  rcases init with ⟨initStmts⟩
+  rcases post with ⟨postStmts⟩
+  rcases body with ⟨bodyStmts⟩
+  unfold budget
+  simp only [stmtListSize, stmtSize, blockSize]
+  nlinarith
+
+theorem budget_for_loop_add_two_le
+    (program : Expressions.Program) (sourceFuel : Nat)
+    (init : Expressions.Block) (cond : Expressions.Expr 1)
+    (post body : Expressions.Block) (rest : List Expressions.Stmt) :
+    budget program sourceFuel [.for_ init cond post body] + 2 ≤
+      budget program (sourceFuel + 1)
+        (.for_ init cond post body :: rest) := by
+  have hStride := eight_le_programStride program
+  unfold budget
+  simp only [stmtListSize, stmtSize, blockSize]
+  nlinarith
+
+theorem budget_for_post_add_one_le
+    (program : Expressions.Program) (sourceFuel : Nat)
+    (init : Expressions.Block) (cond : Expressions.Expr 1)
+    (post body : Expressions.Block) :
+    budget program sourceFuel post.stmts + 1 ≤
+      budget program (sourceFuel + 1) [.for_ init cond post body] := by
+  have hStride := eight_le_programStride program
+  rcases init with ⟨initStmts⟩
+  rcases post with ⟨postStmts⟩
+  rcases body with ⟨bodyStmts⟩
+  unfold budget
+  simp only [stmtListSize, stmtSize, blockSize]
+  nlinarith
+
+theorem budget_for_body_add_one_le
+    (program : Expressions.Program) (sourceFuel : Nat)
+    (init : Expressions.Block) (cond : Expressions.Expr 1)
+    (post body : Expressions.Block) :
+    budget program sourceFuel body.stmts + 1 ≤
+      budget program (sourceFuel + 1) [.for_ init cond post body] := by
+  have hStride := eight_le_programStride program
+  rcases init with ⟨initStmts⟩
+  rcases post with ⟨postStmts⟩
+  rcases body with ⟨bodyStmts⟩
+  unfold budget
+  simp only [stmtListSize, stmtSize, blockSize]
+  nlinarith
+
+theorem budget_for_loop_add_one_le
+    (program : Expressions.Program) (sourceFuel : Nat)
+    (init : Expressions.Block) (cond : Expressions.Expr 1)
+    (post body : Expressions.Block) :
+    budget program sourceFuel [.for_ init cond post body] + 1 ≤
+      budget program (sourceFuel + 1) [.for_ init cond post body] := by
+  have hStride := eight_le_programStride program
+  unfold budget
+  nlinarith
+
 namespace Covers
 
 theorem length_lt {program : Expressions.Program} {sourceFuel targetFuel : Nat}
@@ -463,6 +528,60 @@ theorem switch_selected_after_two {program : Expressions.Program}
     (budget_switch_selected_add_two_le program sourceFuel scrutinee cases
       defaultBody rest value selected hSelect) h
   exact Nat.le_sub_of_add_le hBody
+
+theorem for_init_after_two {program : Expressions.Program}
+    {sourceFuel targetFuel : Nat} {init : Expressions.Block}
+    {cond : Expressions.Expr 1} {post body : Expressions.Block}
+    {rest : List Expressions.Stmt}
+    (h : TargetFuel.Covers program (sourceFuel + 1) targetFuel
+      (.for_ init cond post body :: rest)) :
+    TargetFuel.Covers program sourceFuel (targetFuel - 2) init.stmts := by
+  have hInit := le_trans
+    (budget_for_init_add_two_le program sourceFuel init cond post body rest) h
+  exact Nat.le_sub_of_add_le hInit
+
+theorem for_loop_after_two {program : Expressions.Program}
+    {sourceFuel targetFuel : Nat} {init : Expressions.Block}
+    {cond : Expressions.Expr 1} {post body : Expressions.Block}
+    {rest : List Expressions.Stmt}
+    (h : TargetFuel.Covers program (sourceFuel + 1) targetFuel
+      (.for_ init cond post body :: rest)) :
+    TargetFuel.Covers program sourceFuel (targetFuel - 2)
+      [.for_ init cond post body] := by
+  have hLoop := le_trans
+    (budget_for_loop_add_two_le program sourceFuel init cond post body rest) h
+  exact Nat.le_sub_of_add_le hLoop
+
+theorem for_post_after_one {program : Expressions.Program}
+    {sourceFuel targetFuel : Nat} {init : Expressions.Block}
+    {cond : Expressions.Expr 1} {post body : Expressions.Block}
+    (h : TargetFuel.Covers program (sourceFuel + 1) targetFuel
+      [.for_ init cond post body]) :
+    TargetFuel.Covers program sourceFuel (targetFuel - 1) post.stmts := by
+  have hPost := le_trans
+    (budget_for_post_add_one_le program sourceFuel init cond post body) h
+  exact Nat.le_sub_of_add_le hPost
+
+theorem for_body_after_one {program : Expressions.Program}
+    {sourceFuel targetFuel : Nat} {init : Expressions.Block}
+    {cond : Expressions.Expr 1} {post body : Expressions.Block}
+    (h : TargetFuel.Covers program (sourceFuel + 1) targetFuel
+      [.for_ init cond post body]) :
+    TargetFuel.Covers program sourceFuel (targetFuel - 1) body.stmts := by
+  have hBody := le_trans
+    (budget_for_body_add_one_le program sourceFuel init cond post body) h
+  exact Nat.le_sub_of_add_le hBody
+
+theorem for_loop_after_one {program : Expressions.Program}
+    {sourceFuel targetFuel : Nat} {init : Expressions.Block}
+    {cond : Expressions.Expr 1} {post body : Expressions.Block}
+    (h : TargetFuel.Covers program (sourceFuel + 1) targetFuel
+      [.for_ init cond post body]) :
+    TargetFuel.Covers program sourceFuel (targetFuel - 1)
+      [.for_ init cond post body] := by
+  have hLoop := le_trans
+    (budget_for_loop_add_one_le program sourceFuel init cond post body) h
+  exact Nat.le_sub_of_add_le hLoop
 
 end Covers
 

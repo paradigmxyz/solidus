@@ -10,7 +10,8 @@ failed=0
 for theorem in \
     '#check EvmCompiler.Simulation.Interaction.Successful' \
     '#check EvmCompiler.Simulation.Interaction.Successful.bind_inv' \
-    '#check EvmCompiler.Simulation.Interaction.Rel.bind_pure_left_inv'; do
+    '#check EvmCompiler.Simulation.Interaction.Rel.bind_pure_left_inv' \
+    '#check EvmCompiler.Simulation.Interaction.ForwardRel.bind_pure_left_inv'; do
   if ! rg -Fq "$theorem" EvmCompiler/Verification.lean; then
     printf 'Verification root is missing shared interaction-safety interface: %s\n\n' \
       "$theorem" >&2
@@ -24,7 +25,12 @@ for theorem in \
     'Covers.length_lt' \
     'Covers.head_of_succ_append' \
     'Covers.tail_after_succ_append' \
-    'Covers.if_body_after_two'; do
+    'Covers.if_body_after_two' \
+    'Covers.for_init_after_two' \
+    'Covers.for_loop_after_two' \
+    'Covers.for_post_after_one' \
+    'Covers.for_body_after_one' \
+    'Covers.for_loop_after_one'; do
   if ! rg -Fq \
       "#check EvmCompiler.Expressions.TargetFuel.${theorem}" \
       EvmCompiler/Verification.lean; then
@@ -202,7 +208,9 @@ fi
 
 for theorem in \
     'Block.openRun_terminal_cons' \
-    'Block.openRun_terminalArgs_cons'; do
+    'Block.openRun_terminalArgs_cons' \
+    'Stmt.openRunForLoop_succ' \
+    'Stmt.openRun_block_eq_scoped_pair'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.InteractionSemantics.${theorem}" \
       EvmCompiler/Verification.lean; then
@@ -211,6 +219,14 @@ for theorem in \
     failed=1
   fi
 done
+
+if ! rg -Fq \
+    '#check EvmCompiler.Expressions.InteractionSemantics.Stmt.openRunForLoop_succ' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing the Expressions-owned loop equation.' >&2
+  failed=1
+fi
 
 for theorem in \
     'OpenResultRel' \
@@ -237,6 +253,10 @@ for theorem in \
     'controlIf' \
     'SwitchBranchesPreserve' \
     'controlSwitch' \
+    'ControlScopedOutcomeRel' \
+    'controlBlockToScoped' \
+    'controlBlockToScopedBlock' \
+    'controlForLoop' \
     'RuntimeCtxCovers.withoutLoopControl' \
     'RuntimeCtxCovers.withLoopControl' \
     'openRun_let_generated' \

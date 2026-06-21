@@ -226,6 +226,7 @@ import EvmCompiler.Yul.StateRelation
 #check EvmCompiler.Simulation.Interaction.Successful.bind_inv
 #check EvmCompiler.Simulation.Interaction.Successful.bind_left
 #check EvmCompiler.Simulation.Interaction.Rel.bind_pure_left_inv
+#check EvmCompiler.Simulation.Interaction.ForwardRel.bind_pure_left_inv
 
 /-!
 Stable verification aggregate.
@@ -2459,6 +2460,16 @@ or audit-alias corridor.
 #check EvmCompiler.Expressions.TargetFuel.Covers.if_body_after_two
 #check EvmCompiler.Expressions.TargetFuel.budget_switch_selected_add_two_le
 #check EvmCompiler.Expressions.TargetFuel.Covers.switch_selected_after_two
+#check EvmCompiler.Expressions.TargetFuel.budget_for_init_add_two_le
+#check EvmCompiler.Expressions.TargetFuel.budget_for_loop_add_two_le
+#check EvmCompiler.Expressions.TargetFuel.budget_for_post_add_one_le
+#check EvmCompiler.Expressions.TargetFuel.budget_for_body_add_one_le
+#check EvmCompiler.Expressions.TargetFuel.budget_for_loop_add_one_le
+#check EvmCompiler.Expressions.TargetFuel.Covers.for_init_after_two
+#check EvmCompiler.Expressions.TargetFuel.Covers.for_loop_after_two
+#check EvmCompiler.Expressions.TargetFuel.Covers.for_post_after_one
+#check EvmCompiler.Expressions.TargetFuel.Covers.for_body_after_one
+#check EvmCompiler.Expressions.TargetFuel.Covers.for_loop_after_one
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationMode
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationExprResultRel
@@ -3012,6 +3023,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackExpressionPreservation.openEvalSeq_compileCode
 #check EvmCompiler.Functions.InteractionSemantics.Block.openRun_terminal_cons
 #check EvmCompiler.Functions.InteractionSemantics.Block.openRun_terminalArgs_cons
+#check EvmCompiler.Functions.InteractionSemantics.Stmt.openRunForLoop_succ
+#check EvmCompiler.Functions.InteractionSemantics.Stmt.openRun_block_eq_scoped_pair
+#check EvmCompiler.Expressions.InteractionSemantics.Stmt.openRunForLoop_succ
 #check EvmCompiler.Functions.StackStatementPreservation.OpenResultRel
 #check EvmCompiler.Functions.StackStatementPreservation.BreakCtxCovers
 #check EvmCompiler.Functions.StackStatementPreservation.ContinueCtxCovers
@@ -3027,8 +3041,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.withoutLoopControl
 #check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.withLoopControl
 #check EvmCompiler.Functions.StackStatementPreservation.ControlOpenResultRel
+#check EvmCompiler.Functions.StackStatementPreservation.ControlScopedOutcomeRel
 #check EvmCompiler.Functions.StackStatementPreservation.ControlPointPreserves
 #check EvmCompiler.Functions.StackStatementPreservation.CompiledControlPoint
+#check EvmCompiler.Functions.StackStatementPreservation.controlBlockToScoped
+#check EvmCompiler.Functions.StackStatementPreservation.controlBlockToScopedBlock
+#check EvmCompiler.Functions.StackStatementPreservation.controlForLoop
 #check EvmCompiler.Functions.StackStatementPreservation.regularRelToControl
 #check EvmCompiler.Functions.StackStatementPreservation.openRelToControl
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_expr_controlCtx
@@ -3189,11 +3207,17 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackLowering.lowerPointFuel_switch_components
 #print axioms EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_for_components
 #print axioms EvmCompiler.Functions.StackLowering.lowerPointFuel_for_components
+#print axioms EvmCompiler.Expressions.TargetFuel.Covers.for_init_after_two
+#print axioms EvmCompiler.Expressions.TargetFuel.Covers.for_loop_after_two
+#print axioms EvmCompiler.Expressions.TargetFuel.Covers.for_post_after_one
+#print axioms EvmCompiler.Expressions.TargetFuel.Covers.for_body_after_one
+#print axioms EvmCompiler.Expressions.TargetFuel.Covers.for_loop_after_one
 #print axioms EvmCompiler.Expressions.TargetFuel.Covers.switch_selected_after_two
 #print axioms EvmCompiler.Functions.StackExpressionPreservation.openEvalOnePop_compileCode
 #print axioms EvmCompiler.Functions.StackStatementPreservation.controlSwitch
 #print axioms EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.withoutLoopControl
 #print axioms EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.withLoopControl
+#print axioms EvmCompiler.Functions.StackStatementPreservation.controlForLoop
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.JoinArtifact.thenBlock
 #print axioms EvmCompiler.Expressions.TargetFuel.Covers.if_body_after_two
 #print axioms EvmCompiler.Functions.StackBlockPreservation.brkList_of_compilers

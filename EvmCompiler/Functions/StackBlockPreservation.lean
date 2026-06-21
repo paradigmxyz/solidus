@@ -267,14 +267,14 @@ theorem controlCons
           exact
             hTailForward _ sourceFuel (targetFuel - headCode.length)
               hTailFuel hMiddleCtx hMiddleState
-      | brk hState =>
+      | brk hTarget hState =>
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
-          exact .brk hState
-      | cont hState =>
+          exact .brk hTarget hState
+      | cont hTarget hState =>
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
-          exact .cont hState
+          exact .cont hTarget hState
       | leave hState =>
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
@@ -404,18 +404,18 @@ theorem controlScopedBodyThenJoin
       apply Simulation.Interaction.ForwardRel.done
       apply Simulation.Interaction.ExceptRel.ok
       exact .regular hFinalCtx (hFinalState.restrictTo hScopeCovers)
-  | brk hState =>
+  | brk hTarget hState =>
       simp only [Locals.Source.Effectful.Outcome.brk,
         Structured.Outcome.brk, Structured.OutcomeT.brk]
       apply Simulation.Interaction.ForwardRel.done
       apply Simulation.Interaction.ExceptRel.ok
-      exact .brk hState
-  | cont hState =>
+      exact .brk hTarget hState
+  | cont hTarget hState =>
       simp only [Locals.Source.Effectful.Outcome.cont,
         Structured.Outcome.cont, Structured.OutcomeT.cont]
       apply Simulation.Interaction.ForwardRel.done
       apply Simulation.Interaction.ExceptRel.ok
-      exact .cont hState
+      exact .cont hTarget hState
   | leave hState =>
       simp only [Locals.Source.Effectful.Outcome.leave,
         Structured.Outcome.leave, Structured.OutcomeT.leave]

@@ -363,13 +363,13 @@ inductive OpenResultRel (finalCtx : Locals.Ctx)
       OpenResultRel finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.regular source, sourceCtx)
         (Structured.Outcome.regular target)
-  | brk {source sourceCtx target layout} :
-      StateRel layout suffix returns source target →
+  | brk {source sourceCtx target} :
+      StateRel finalCtx.layout suffix returns source target →
       OpenResultRel finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.brk source, sourceCtx)
         (Structured.Outcome.brk target)
-  | cont {source sourceCtx target layout} :
-      StateRel layout suffix returns source target →
+  | cont {source sourceCtx target} :
+      StateRel finalCtx.layout suffix returns source target →
       OpenResultRel finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.cont source, sourceCtx)
         (Structured.Outcome.cont target)
@@ -404,11 +404,13 @@ inductive ControlOpenResultRel (targets : StackSchedule.ControlTargets)
         (Locals.Source.Effectful.Outcome.regular source, sourceCtx)
         (Structured.Outcome.regular target)
   | brk {source sourceCtx target layout} :
+      targets.brk? = some layout →
       StateRel layout suffix returns source target →
       ControlOpenResultRel targets finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.brk source, sourceCtx)
         (Structured.Outcome.brk target)
   | cont {source sourceCtx target layout} :
+      targets.cont? = some layout →
       StateRel layout suffix returns source target →
       ControlOpenResultRel targets finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.cont source, sourceCtx)
@@ -431,6 +433,94 @@ abbrev ControlOpenOutcomeRel (targets : StackSchedule.ControlTargets)
   Simulation.Interaction.ExceptRel
     (fun (_ : EVMException) (_ : EVMException) => True)
     (ControlOpenResultRel targets finalCtx suffix returns)
+
+abbrev ControlScopedOutcomeRel (targets : StackSchedule.ControlTargets)
+    (finalCtx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest)
+    (sourceCtx : Functions.Source.Ctx) :=
+  Simulation.Interaction.ExceptRel
+    (fun (_ : EVMException) (_ : EVMException) => True)
+    (fun sourceOutcome targetOutcome =>
+      ControlOpenResultRel targets finalCtx suffix returns
+        (sourceOutcome, sourceCtx) targetOutcome)
+
+/-- Re-expose a compiled lexical block over the canonical scoped-block
+semantics used by recursive source control. -/
+theorem controlBlockToScoped
+    {sourceProgram : Functions.Program}
+    {targetProgram : Expressions.Program}
+    {targets : StackSchedule.ControlTargets}
+    {sourceCtx : Functions.Source.Ctx}
+    {sourceFuel targetFuel : Nat}
+    {body : Functions.Block}
+    {code : List Expressions.Stmt}
+    {finalCtx : Locals.Ctx}
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hRun :
+      Simulation.Interaction.ForwardRel FuelTruncated
+        (ControlOpenOutcomeRel targets finalCtx suffix returns)
+        (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
+          sourceFuel (.block body) source)
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          targetFuel { stmts := code } target)) :
+    Simulation.Interaction.ForwardRel FuelTruncated
+      (ControlScopedOutcomeRel targets finalCtx suffix returns sourceCtx)
+      (Functions.InteractionSemantics.Block.openRunScoped sourceProgram
+        sourceCtx body sourceFuel source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        targetFuel { stmts := code } target) := by
+  rw [Functions.InteractionSemantics.Stmt.openRun_block_eq_scoped_pair] at hRun
+  apply Simulation.Interaction.ForwardRel.mono
+    (Simulation.Interaction.ForwardRel.bind_pure_left_inv hRun)
+  intro sourceDone targetDone hDone
+  cases sourceDone with
+  | error _ =>
+      cases targetDone with
+      | error _ =>
+          change ControlOpenOutcomeRel targets finalCtx suffix returns
+            (.error _) (.error _) at hDone
+          cases hDone with
+          | error hError => exact .error hError
+      | ok _ => cases hDone
+  | ok _ =>
+      cases targetDone with
+      | error _ => cases hDone
+      | ok _ =>
+          change ControlOpenOutcomeRel targets finalCtx suffix returns
+            (.ok (_, sourceCtx)) (.ok _) at hDone
+          cases hDone with
+          | ok hResult => exact .ok hResult
+
+theorem controlBlockToScopedBlock
+    {sourceProgram : Functions.Program}
+    {targetProgram : Expressions.Program}
+    {targets : StackSchedule.ControlTargets}
+    {sourceCtx : Functions.Source.Ctx}
+    {sourceFuel targetFuel : Nat}
+    {body : Functions.Block}
+    {code : List Expressions.Stmt}
+    {targetBody : Expressions.Block}
+    {finalCtx : Locals.Ctx}
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hCode : code = targetBody.stmts)
+    (hRun :
+      Simulation.Interaction.ForwardRel FuelTruncated
+        (ControlOpenOutcomeRel targets finalCtx suffix returns)
+        (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
+          sourceFuel (.block body) source)
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          targetFuel { stmts := code } target)) :
+    Simulation.Interaction.ForwardRel FuelTruncated
+      (ControlScopedOutcomeRel targets finalCtx suffix returns sourceCtx)
+      (Functions.InteractionSemantics.Block.openRunScoped sourceProgram
+        sourceCtx body sourceFuel source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        targetFuel targetBody target) := by
+  subst code
+  cases targetBody
+  exact controlBlockToScoped hRun
 
 def ControlPointPreserves
     (sourceProgram : Functions.Program)
@@ -463,23 +553,233 @@ structure CompiledControlPoint
     ControlPointPreserves sourceProgram targetProgram targets targetCtx finalCtx
       stmt code
 
-theorem ControlOpenResultRel.toOpen
-    {targets : StackSchedule.ControlTargets}
-    {finalCtx : Locals.Ctx} {suffix : List Word}
-    {returns : List Structured.ReturnDest}
-    {source :
-      Locals.Source.Effectful.Outcome Locals.Source.State ×
-        Functions.Source.Ctx}
-    {target : Structured.Outcome}
-    (hRel :
-      ControlOpenResultRel targets finalCtx suffix returns source target) :
-    OpenResultRel finalCtx suffix returns source target := by
-  cases hRel with
-  | regular hCtx hState => exact .regular hCtx.context hState
-  | brk hState => exact .brk hState
-  | cont hState => exact .cont hState
-  | leave hState => exact .leave hState
-  | halt hShared hReturns => exact .halt hShared hReturns
+/-- The semantic loop kernel composes the condition, scoped body, scoped post,
+and the smaller recursive iteration. Compiler-owned scheduling and lowering
+remain outside this statement-owner theorem. -/
+theorem controlForLoop
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (sourceLoopCtx : Functions.Source.Ctx)
+    (targetLoopCtx : Locals.Ctx)
+    (cond : Functions.Expr 1) (condCode : Structured.Code)
+    (post body : Functions.Block)
+    (targetInit targetPost targetBody : Expressions.Block)
+    (hCondScoped : Locals.Scope.ExprScoped targetLoopCtx.layout cond)
+    (hCondSupported : Locals.InteractionSemantics.Expr.OpenSupported cond)
+    (hCondCompile :
+      Locals.Expr.compileCode targetLoopCtx 0 cond = some condCode)
+    (hBody :
+      ControlPointPreserves sourceProgram targetProgram
+        { brk? := some targetLoopCtx.layout,
+          cont? := some targetLoopCtx.layout }
+        (targetLoopCtx.withLoopControl targetLoopCtx.layout.length)
+        (targetLoopCtx.withLoopControl targetLoopCtx.layout.length)
+        (.block body) targetBody.stmts)
+    (hPost :
+      ControlPointPreserves sourceProgram targetProgram {}
+        targetLoopCtx.withoutLoopControl
+        targetLoopCtx.withoutLoopControl
+        (.block post) targetPost.stmts) :
+    ∀ (sourceFuel targetFuel : Nat)
+      {suffix : List Word} {returns : List Structured.ReturnDest}
+      {source : Locals.Source.State} {target : Structured.RunState},
+      Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
+        [.for_ targetInit (.code condCode) targetPost targetBody] →
+      RuntimeCtxCovers sourceLoopCtx targetLoopCtx {} returns →
+      StateRel targetLoopCtx.layout suffix returns source target →
+      Simulation.Interaction.ForwardRel FuelTruncated
+        (ControlScopedOutcomeRel {} targetLoopCtx suffix returns sourceLoopCtx)
+        (Functions.InteractionSemantics.Stmt.openRunForLoop sourceProgram
+          sourceLoopCtx cond sourceLoopCtx.withoutLoopControl post
+          (sourceLoopCtx.withLoopControl sourceLoopCtx.scope
+            sourceLoopCtx.scope)
+          body sourceFuel source)
+        (Expressions.InteractionSemantics.Stmt.openRunForLoop targetProgram
+          targetFuel (.code condCode) targetPost targetBody target) := by
+  intro sourceFuel
+  induction sourceFuel with
+  | zero =>
+      intro targetFuel suffix returns source target hFuel hCtx hInitial
+      unfold Functions.InteractionSemantics.Stmt.openRunForLoop
+        Functions.Source.Canonical.Stmt.runForLoop
+        Functions.Source.Effectful.Control.Stmt.runForLoop
+      exact .truncated rfl
+  | succ fuel ih =>
+      intro targetFuel suffix returns source target hFuel hCtx hInitial
+      have hTargetLength := hFuel.length_lt
+      have hTargetEq : targetFuel = (targetFuel - 1) + 1 := by omega
+      rw [Functions.InteractionSemantics.Stmt.openRunForLoop_succ,
+        hTargetEq,
+        Expressions.InteractionSemantics.Stmt.openRunForLoop_succ]
+      have hCondition :=
+        StackExpressionPreservation.openEvalCondition_compileCode cond
+          targetLoopCtx hCondScoped hCondSupported hCondCompile hInitial
+      apply Simulation.Interaction.ForwardRel.bind
+        (Simulation.Interaction.ForwardRel.ofRel hCondition)
+      intro sourceCondition targetCondition hConditionResult
+      rcases sourceCondition with ⟨sourceAfterCondition, sourceTrue⟩
+      rcases targetCondition with ⟨targetAfterCondition, targetTrue⟩
+      cases hConditionResult.condition
+      cases sourceTrue with
+      | false =>
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact .regular hCtx
+            (hConditionResult.state.restrictTo hCtx.context.scope)
+      | true =>
+          simp only [Prod.snd, if_true, Prod.fst]
+          have hBodyFuel :=
+            Expressions.TargetFuel.Covers.for_body_after_one hFuel
+          have hPostFuel :=
+            Expressions.TargetFuel.Covers.for_post_after_one hFuel
+          have hLoopFuel :=
+            Expressions.TargetFuel.Covers.for_loop_after_one hFuel
+          have hBodyCtx := hCtx.withLoopControl
+          have hBodyInitial :
+              StateRel
+                (targetLoopCtx.withLoopControl
+                  targetLoopCtx.layout.length).layout
+                suffix returns sourceAfterCondition targetAfterCondition := by
+            simpa [Locals.Ctx.withLoopControl] using hConditionResult.state
+          have hBodyRun :=
+            controlBlockToScopedBlock (targetBody := targetBody)
+              rfl
+              (hBody
+                (sourceLoopCtx.withLoopControl sourceLoopCtx.scope
+                  sourceLoopCtx.scope)
+                fuel (targetFuel - 1) hBodyFuel hBodyCtx hBodyInitial)
+          apply Simulation.Interaction.ForwardRel.bind
+            (targetRel := fun sourceOutcome targetOutcome =>
+              ControlOpenResultRel {} targetLoopCtx suffix returns
+                (sourceOutcome, sourceLoopCtx) targetOutcome)
+            (leftNext := fun bodyOutcome =>
+              match bodyOutcome.mode with
+              | .brk =>
+                  Simulation.Interaction.pure
+                    (Locals.Source.Effectful.Outcome.regular
+                      bodyOutcome.state)
+              | .regular | .cont =>
+                  Simulation.Interaction.bind
+                    (Functions.InteractionSemantics.Block.openRunScoped
+                      sourceProgram sourceLoopCtx.withoutLoopControl post fuel
+                      bodyOutcome.state)
+                    (fun postOutcome =>
+                      match postOutcome.mode with
+                      | .regular =>
+                          Functions.InteractionSemantics.Stmt.openRunForLoop
+                            sourceProgram sourceLoopCtx cond
+                            sourceLoopCtx.withoutLoopControl post
+                            (sourceLoopCtx.withLoopControl sourceLoopCtx.scope
+                              sourceLoopCtx.scope)
+                            body fuel postOutcome.state
+                      | .brk | .cont =>
+                          Simulation.Interaction.error .InvalidInstruction
+                      | .leave | .halt _ =>
+                          Simulation.Interaction.pure postOutcome)
+              | .leave | .halt _ =>
+                  Simulation.Interaction.pure bodyOutcome)
+            (rightNext := fun bodyOutcome =>
+              match bodyOutcome.mode with
+              | .brk =>
+                  Simulation.Interaction.pure
+                    (Structured.Outcome.regular bodyOutcome.state)
+              | .regular | .cont =>
+                  Simulation.Interaction.bind
+                    (Expressions.InteractionSemantics.Block.openRun
+                      targetProgram (targetFuel - 1) targetPost
+                      bodyOutcome.state)
+                    (fun postOutcome =>
+                      match postOutcome.mode with
+                      | .regular =>
+                          Expressions.InteractionSemantics.Stmt.openRunForLoop
+                            targetProgram (targetFuel - 1) (.code condCode)
+                            targetPost targetBody postOutcome.state
+                      | .brk | .cont =>
+                          Simulation.Interaction.error .InvalidInstruction
+                      | .leave | .halt _ =>
+                          Simulation.Interaction.pure postOutcome)
+              | .leave | .halt _ =>
+                  Simulation.Interaction.pure bodyOutcome)
+            hBodyRun
+          intro sourceBody targetBodyOutcome hBodyResult
+          have continueAfterBody :
+              ∀ {sourceAfterBody : Locals.Source.State}
+                {targetAfterBody : Structured.RunState},
+                StateRel targetLoopCtx.layout suffix returns
+                  sourceAfterBody targetAfterBody →
+                Simulation.Interaction.ForwardRel FuelTruncated
+                  (ControlScopedOutcomeRel {} targetLoopCtx suffix returns
+                    sourceLoopCtx)
+                  (Simulation.Interaction.bind
+                    (Functions.InteractionSemantics.Block.openRunScoped
+                      sourceProgram sourceLoopCtx.withoutLoopControl post fuel
+                      sourceAfterBody)
+                    (fun postOutcome =>
+                      match postOutcome.mode with
+                      | .regular =>
+                          Functions.InteractionSemantics.Stmt.openRunForLoop
+                            sourceProgram sourceLoopCtx cond
+                            sourceLoopCtx.withoutLoopControl post
+                            (sourceLoopCtx.withLoopControl sourceLoopCtx.scope
+                              sourceLoopCtx.scope)
+                            body fuel postOutcome.state
+                      | .brk | .cont =>
+                          Simulation.Interaction.error .InvalidInstruction
+                      | .leave | .halt _ =>
+                          Simulation.Interaction.pure postOutcome))
+                  (Simulation.Interaction.bind
+                    (Expressions.InteractionSemantics.Block.openRun
+                      targetProgram (targetFuel - 1) targetPost
+                      targetAfterBody)
+                    (fun postOutcome =>
+                      match postOutcome.mode with
+                      | .regular =>
+                          Expressions.InteractionSemantics.Stmt.openRunForLoop
+                            targetProgram (targetFuel - 1) (.code condCode)
+                            targetPost targetBody postOutcome.state
+                      | .brk | .cont =>
+                          Simulation.Interaction.error .InvalidInstruction
+                      | .leave | .halt _ =>
+                          Simulation.Interaction.pure postOutcome)) := by
+            intro sourceAfterBody targetAfterBody hAfterBody
+            have hPostCtx := hCtx.withoutLoopControl
+            have hPostInitial :
+                StateRel targetLoopCtx.withoutLoopControl.layout suffix returns
+                  sourceAfterBody targetAfterBody := by
+              simpa [Locals.Ctx.withoutLoopControl] using hAfterBody
+            have hPostRun :=
+              controlBlockToScopedBlock (targetBody := targetPost)
+                rfl
+                (hPost sourceLoopCtx.withoutLoopControl fuel
+                  (targetFuel - 1) hPostFuel hPostCtx hPostInitial)
+            apply Simulation.Interaction.ForwardRel.bind hPostRun
+            intro sourcePost targetPostOutcome hPostResult
+            cases hPostResult with
+            | regular _hPostCtx hPostState =>
+                apply ih (targetFuel - 1) hLoopFuel hCtx
+                simpa [Locals.Ctx.withoutLoopControl] using hPostState
+            | brk hNoTarget _hPostState => simp at hNoTarget
+            | cont hNoTarget _hPostState => simp at hNoTarget
+            | leave hPostState =>
+                exact .done (.ok (.leave hPostState))
+            | halt hShared hReturns =>
+                exact .done (.ok (.halt hShared hReturns))
+          cases hBodyResult with
+          | regular _hBodyCtx hBodyState =>
+              apply continueAfterBody
+              simpa [Locals.Ctx.withLoopControl] using hBodyState
+          | brk hBreakTarget hBodyState =>
+              have hLayout := Option.some.inj hBreakTarget
+              subst hLayout
+              exact .done (.ok (.regular hCtx hBodyState))
+          | cont hContinueTarget hBodyState =>
+              have hLayout := Option.some.inj hContinueTarget
+              subst hLayout
+              apply continueAfterBody hBodyState
+          | leave hBodyState =>
+              exact .done (.ok (.leave hBodyState))
+          | halt hShared hReturns =>
+              exact .done (.ok (.halt hShared hReturns))
 
 theorem RegularResultRel.toOpen
     {targetCtx : Locals.Ctx} {suffix : List Word}
@@ -556,7 +856,8 @@ theorem openRelToControl
               match sourceResult.1.mode with
               | .regular =>
                   RuntimeCtxCovers sourceResult.2 finalCtx targets returns
-              | .brk | .cont | .leave | .halt _ => True)
+              | .brk | .cont => False
+              | .leave | .halt _ => True)
         sourceRun) :
     Simulation.Interaction.ForwardRel FuelTruncated
       (ControlOpenOutcomeRel targets finalCtx suffix returns)
@@ -572,8 +873,8 @@ theorem openRelToControl
       apply Simulation.Interaction.ExceptRel.ok
       cases hResult with
       | regular _hContext hState => exact .regular hSourceControl hState
-      | brk hState => exact .brk hState
-      | cont hState => exact .cont hState
+      | brk _hState => exact False.elim hSourceControl
+      | cont _hState => exact False.elim hSourceControl
       | leave hState => exact .leave hState
       | halt hShared hReturns => exact .halt hShared hReturns
 
@@ -724,18 +1025,18 @@ theorem controlThenTransition
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
       exact .regular (hCtx.afterTransition transition hSource) hFinalState
-  | brk hState =>
+  | brk hTarget hState =>
       simp only [Locals.Source.Effectful.Outcome.brk,
         Structured.Outcome.brk, Structured.OutcomeT.brk]
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
-      exact .brk hState
-  | cont hState =>
+      exact .brk hTarget hState
+  | cont hTarget hState =>
       simp only [Locals.Source.Effectful.Outcome.cont,
         Structured.Outcome.cont, Structured.OutcomeT.cont]
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
-      exact .cont hState
+      exact .cont hTarget hState
   | leave hState =>
       simp only [Locals.Source.Effectful.Outcome.leave,
         Structured.Outcome.leave, Structured.OutcomeT.leave]
@@ -811,18 +1112,18 @@ theorem controlThenTransitionForward
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
           exact .regular (hCtx.afterTransition transition hSource) hFinalState
-      | brk hState =>
+      | brk hTarget hState =>
           simp only [Locals.Source.Effectful.Outcome.brk,
             Structured.Outcome.brk, Structured.OutcomeT.brk]
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
-          exact .brk hState
-      | cont hState =>
+          exact .brk hTarget hState
+      | cont hTarget hState =>
           simp only [Locals.Source.Effectful.Outcome.cont,
             Structured.Outcome.cont, Structured.OutcomeT.cont]
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
-          exact .cont hState
+          exact .cont hTarget hState
       | leave hState =>
           simp only [Locals.Source.Effectful.Outcome.leave,
             Structured.Outcome.leave, Structured.OutcomeT.leave]
@@ -876,18 +1177,18 @@ theorem controlAppendEmptyCode
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
       exact .regular hCtx hState
-  | brk hState =>
+  | brk hTarget hState =>
       simp only [Locals.Source.Effectful.Outcome.brk,
         Structured.Outcome.brk, Structured.OutcomeT.brk]
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
-      exact .brk hState
-  | cont hState =>
+      exact .brk hTarget hState
+  | cont hTarget hState =>
       simp only [Locals.Source.Effectful.Outcome.cont,
         Structured.Outcome.cont, Structured.OutcomeT.cont]
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
-      exact .cont hState
+      exact .cont hTarget hState
   | leave hState =>
       simp only [Locals.Source.Effectful.Outcome.leave,
         Structured.Outcome.leave, Structured.OutcomeT.leave]
@@ -945,18 +1246,18 @@ theorem controlAppendEmptyCodeForward
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
           exact .regular hCtx hState
-      | brk hState =>
+      | brk hTarget hState =>
           simp only [Locals.Source.Effectful.Outcome.brk,
             Structured.Outcome.brk, Structured.OutcomeT.brk]
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
-          exact .brk hState
-      | cont hState =>
+          exact .brk hTarget hState
+      | cont hTarget hState =>
           simp only [Locals.Source.Effectful.Outcome.cont,
             Structured.Outcome.cont, Structured.OutcomeT.cont]
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
-          exact .cont hState
+          exact .cont hTarget hState
       | leave hState =>
           simp only [Locals.Source.Effectful.Outcome.leave,
             Structured.Outcome.leave, Structured.OutcomeT.leave]
@@ -1366,10 +1667,22 @@ theorem compiledBrkControlPointOfEquations
     hForward sourceCtx sourceFuel targetFuel
       (Expressions.TargetFuel.Covers.length_lt hFuel) hScope hScopeCovers
       hInitial
-  apply openRelToControl hRun
+  rw [Functions.InteractionSemantics.Stmt.openRun_brk sourceProgram sourceCtx
+    sourceFuel source hScope] at hRun
+  obtain ⟨targetDone, hTargetDone, hDone⟩ :=
+    Simulation.Interaction.Rel.done_left hRun
+  rw [hTargetDone]
   rw [Functions.InteractionSemantics.Stmt.openRun_brk sourceProgram sourceCtx
     sourceFuel source hScope]
-  exact .done trivial
+  apply Simulation.Interaction.ForwardRel.done
+  cases hDone with
+  | ok hResult =>
+      apply Simulation.Interaction.ExceptRel.ok
+      cases hResult with
+      | brk hState =>
+          exact .brk (by
+            rw [hFinal]
+            simpa [Locals.Ctx.withLayout] using hTarget) hState
 
 theorem compiledContJoinPointOfEquations
     (sourceProgram : Functions.Program)
@@ -1504,10 +1817,22 @@ theorem compiledContControlPointOfEquations
     hForward sourceCtx sourceFuel targetFuel
       (Expressions.TargetFuel.Covers.length_lt hFuel) hScope hScopeCovers
       hInitial
-  apply openRelToControl hRun
+  rw [Functions.InteractionSemantics.Stmt.openRun_cont sourceProgram sourceCtx
+    sourceFuel source hScope] at hRun
+  obtain ⟨targetDone, hTargetDone, hDone⟩ :=
+    Simulation.Interaction.Rel.done_left hRun
+  rw [hTargetDone]
   rw [Functions.InteractionSemantics.Stmt.openRun_cont sourceProgram sourceCtx
     sourceFuel source hScope]
-  exact .done trivial
+  apply Simulation.Interaction.ForwardRel.done
+  cases hDone with
+  | ok hResult =>
+      apply Simulation.Interaction.ExceptRel.ok
+      cases hResult with
+      | cont hState =>
+          exact .cont (by
+            rw [hFinal]
+            simpa [Locals.Ctx.withLayout] using hTarget) hState
 
 theorem openRun_terminal_generated
     (sourceProgram : Functions.Program)

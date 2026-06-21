@@ -365,6 +365,42 @@ def openRun (program : Expressions.Program) (fuel : Nat)
     Structured.InteractionSemantics.handler
     program fuel stmt state
 
+/-- One positive-fuel loop iteration, exposed without duplicating the
+Expressions control interpreter in an adjacent preservation proof. -/
+theorem openRunForLoop_succ
+    (program : Expressions.Program) (fuel : Nat)
+    (cond : Expressions.Expr 1) (post body : Expressions.Block)
+    (state : RunState) :
+    openRunForLoop program (fuel + 1) cond post body state =
+      Simulation.Interaction.bind (Expr.openRunCondition cond state)
+        (fun result =>
+          if result.2 then
+            Simulation.Interaction.bind
+              (Block.openRun program fuel body result.1)
+              (fun bodyOutcome =>
+                match bodyOutcome.mode with
+                | .brk =>
+                    Simulation.Interaction.pure
+                      (Structured.Outcome.regular bodyOutcome.state)
+                | .regular | .cont =>
+                    Simulation.Interaction.bind
+                      (Block.openRun program fuel post bodyOutcome.state)
+                      (fun postOutcome =>
+                        match postOutcome.mode with
+                        | .regular =>
+                            openRunForLoop program fuel cond post body
+                              postOutcome.state
+                        | .brk | .cont =>
+                            Simulation.Interaction.error .InvalidInstruction
+                        | .leave | .halt _ =>
+                            Simulation.Interaction.pure postOutcome)
+                | .leave | .halt _ =>
+                    Simulation.Interaction.pure bodyOutcome)
+          else
+            Simulation.Interaction.pure
+              (Structured.Outcome.regular result.1)) := by
+  rfl
+
 /-- A positive-fuel procedure call exposes stack splitting and its body run. -/
 theorem openRun_call
     (program : Expressions.Program) (fuel : Nat)
