@@ -642,6 +642,53 @@ theorem BlocksValidFrom.sourceInstr_mem_of_block_mem
       | inr hTail =>
           simp [ih hTail]
 
+theorem BlocksValidFrom.decompose_of_block_mem
+    {branchWidth : Nat} {table : LabelTable}
+    {source : Assembly.Program} {sourcePc compactPc : Nat}
+    {blocks : List SourceBlock}
+    (hValid : BlocksValidFrom branchWidth table source
+      sourcePc compactPc blocks) :
+    ∀ {block : SourceBlock}, block ∈ blocks ->
+      ∃ pre post,
+        source = pre ++ block.sourceInstr :: post ∧
+          block.sourcePc = sourcePc + pre.byteLength := by
+  intro block hMem
+  induction hValid with
+  | nil => simp at hMem
+  | @cons instr rest sourcePc compactPc compactSize code blocks
+      hSize hCode hRest ih =>
+      simp at hMem
+      cases hMem with
+      | inl hHead =>
+          subst block
+          exact ⟨[], rest, rfl, by simp⟩
+      | inr hTail =>
+          obtain ⟨pre, post, hRest, hPc⟩ := ih hTail
+          subst rest
+          refine ⟨instr :: pre, post, by simp, ?_⟩
+          simpa [Assembly.Program.byteLength_cons, Nat.add_assoc] using hPc
+
+theorem instrAtPcFrom_end_eq_none
+    (program : Assembly.Program) (base : Nat) :
+    Assembly.Program.instrAtPcFrom program base
+      (base + program.byteLength) = none := by
+  induction program generalizing base with
+  | nil => simp [Assembly.Program.instrAtPcFrom]
+  | cons instr rest ih =>
+      unfold Assembly.Program.instrAtPcFrom
+      have hNe :
+          base + Assembly.Program.byteLength (instr :: rest) ≠ base := by
+        have hPositive := Assembly.Program.byteLength_pos_of_cons instr rest
+        omega
+      rw [if_neg hNe]
+      simpa [Assembly.Program.byteLength_cons, Nat.add_assoc] using
+        (ih (base + instr.byteSize))
+
+theorem instrAtPc_end_eq_none (program : Assembly.Program) :
+    program.instrAtPc program.byteLength = none := by
+  simpa [Assembly.Program.instrAtPc] using
+    instrAtPcFrom_end_eq_none program 0
+
 theorem BlocksValidFrom.block_of_instrAtPcFrom
     {branchWidth : Nat} {table : LabelTable}
     {source : Assembly.Program} {sourcePc compactPc query pc : Nat}
@@ -1149,6 +1196,22 @@ theorem compile?_valid {source : Assembly.Program} {artifact : Artifact}
                         · simp [hLabels] at hCompile
                       · simp [hCode] at hCompile
 
+theorem Artifact.ValidFor.physicalSourcePCFits
+    {artifact : Artifact} {source : Assembly.Program}
+    (hValid : artifact.ValidFor source) :
+    artifact.physicalSource.PCFits := by
+  have hWidth := widthForNat?_fits hValid.branchWidth
+  have hPow : 256 ^ artifact.branchWidth <= 256 ^ 32 :=
+    Nat.pow_le_pow_right (by omega) hWidth.2.1
+  have hBound : artifact.physicalSource.byteLength < EvmYul.UInt256.size := by
+    calc
+      artifact.physicalSource.byteLength < 256 ^ artifact.branchWidth :=
+        hWidth.2.2
+      _ <= 256 ^ 32 := hPow
+      _ = EvmYul.UInt256.size := by norm_num [EvmYul.UInt256.size]
+  unfold Assembly.Program.PCFits Assembly.Program.pcAfter
+  exact EvmYul.UInt256.toNat_ofNat_of_lt hBound
+
 theorem Artifact.ValidFor.mem_program_of_mem_block
     {artifact : Artifact} {source : Assembly.Program}
     (hValid : artifact.ValidFor source)
@@ -1227,6 +1290,30 @@ theorem compile?_label_boundary
     Option.some.inj hLabel
   exact Or.inl ⟨block, hMem, hBlockPc, hCompactPc.symm⟩
 
+theorem compile?_source_openStepResult_eq_block
+    {source : Assembly.Program} {artifact : Artifact}
+    {block : SourceBlock} {state : EVMState}
+    (hCompile : compile? source = some artifact)
+    (hBlock : block ∈ artifact.blocks)
+    (hPc : state.pc = EvmYul.UInt256.ofNat block.sourcePc) :
+    Assembly.InteractionSemantics.Source.openStepResult
+        artifact.physicalSource state =
+      Assembly.InteractionSemantics.Source.openStepAtResult
+        artifact.physicalSource block.sourcePc block.sourceInstr state := by
+  have hArtifact := compile?_valid hCompile
+  have hBlocks := compile?_blocksValid hCompile
+  obtain ⟨pre, post, hSource, hBlockPc⟩ :=
+    hBlocks.decompose_of_block_mem hBlock
+  have hWholeFits := hArtifact.physicalSourcePCFits
+  rw [hSource] at hWholeFits ⊢
+  have hPreFits :=
+    (Assembly.Program.PCFitsFrom.of_append
+      (pre := pre) (code := block.sourceInstr :: post) (post := [])
+      (by simpa using hWholeFits)).start
+  apply Assembly.InteractionPreservation.source_openStepResult_at_boundary
+    hPreFits
+  simpa [Assembly.Program.pcAfter, hBlockPc] using hPc
+
 def StepResultRuntimeRel : StepResult -> StepResult -> Prop
   | .running target, .running source => SameRuntimeData target source
   | .halted target, .halted source =>
@@ -1249,6 +1336,46 @@ def BoundaryStateRel (artifact : Artifact)
       source.pc = EvmYul.UInt256.ofNat sourcePc ∧
       target.pc = EvmYul.UInt256.ofNat compactPc ∧
       SameRuntimeData target source
+
+theorem BoundaryStateRel.active_of_terminal_succ
+    {input : Assembly.Program} {artifact : Artifact}
+    {target source : EVMState} {fuel : Nat}
+    (hCompile : compile? input = some artifact)
+    (hBoundary : BoundaryStateRel artifact target source)
+    (hTerminal : Simulation.Interaction.AllDone
+      Assembly.InteractionSemantics.Terminal
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.physicalSource (fuel + 1) source)) :
+    ∃ block,
+      block ∈ artifact.blocks ∧
+        source.pc = EvmYul.UInt256.ofNat block.sourcePc ∧
+          target.pc = EvmYul.UInt256.ofNat block.compactPc ∧
+            SameRuntimeData target source := by
+  rcases hBoundary with
+    ⟨sourcePc, compactPc, hPair, hSourcePc, hTargetPc, hRel⟩
+  rcases hPair with hBlock | hEnd
+  · rcases hBlock with ⟨block, hMem, hBlockSource, hBlockCompact⟩
+    exact
+      ⟨block, hMem, by simpa [hBlockSource] using hSourcePc,
+        by simpa [hBlockCompact] using hTargetPc, hRel⟩
+  · rcases hEnd with ⟨hSourceEnd, _hCompactEnd⟩
+    have hArtifact := compile?_valid hCompile
+    have hToNat : source.pc.toNat = artifact.physicalSource.byteLength := by
+      rw [hSourcePc, hSourceEnd]
+      exact hArtifact.physicalSourcePCFits
+    have hStep :
+        Assembly.InteractionSemantics.Source.openStepResult
+            artifact.physicalSource source =
+          .done (.error EvmYul.EVM.ExecutionException.InvalidInstruction) := by
+      unfold Assembly.InteractionSemantics.Source.openStepResult
+        Assembly.Source.stepResultWith
+      rw [hToNat, instrAtPc_end_eq_none]
+      rfl
+    rw [Assembly.InteractionSemantics.Source.openRunNResult_succ] at hTerminal
+    have hPrefix := Simulation.Interaction.AllDone.bind_inv hTerminal
+    rw [hStep] at hPrefix
+    cases hPrefix with
+    | done hDone => exact False.elim hDone
 
 def BoundaryStepResultRel (artifact : Artifact) :
     StepResult -> StepResult -> Prop
@@ -1587,6 +1714,17 @@ def openStepResult (bytes : ByteArray) (state : EVMState) :
 def openRunNResult (bytes : ByteArray) (fuel : Nat) (state : EVMState) :
     Assembly.InteractionSemantics.OpenStepResult :=
   Assembly.Control.runNResultWith (openStepResult bytes) fuel state
+
+theorem openRunNResult_add (bytes : ByteArray) (first second : Nat)
+    (state : EVMState) :
+    openRunNResult bytes (first + second) state =
+      (do
+        let result <- openRunNResult bytes first state
+        match result with
+        | .running mid => openRunNResult bytes second mid
+        | .halted halt => Simulation.Interaction.pure (.halted halt)) := by
+  exact Assembly.InteractionSemantics.Control.openRunNResultWith_add
+    (openStepResult bytes) first second state
 
 end InteractionSemantics
 
@@ -2010,11 +2148,12 @@ theorem compile?_sourceBlock_open_rel
     (hSourcePc : sourceState.pc = EvmYul.UInt256.ofNat block.sourcePc)
     (hRel : SameRuntimeData targetState sourceState) :
     ∃ targetFuel,
-      Simulation.Interaction.Rel (BoundaryOutcomeRel artifact)
-        (openRunNResult artifact.bytes targetFuel targetState)
-        (Assembly.InteractionSemantics.Source.openStepAtResult
-          artifact.physicalSource block.sourcePc block.sourceInstr
-          sourceState) := by
+      targetFuel <= 2 ∧
+        Simulation.Interaction.Rel (BoundaryOutcomeRel artifact)
+          (openRunNResult artifact.bytes targetFuel targetState)
+          (Assembly.InteractionSemantics.Source.openStepAtResult
+            artifact.physicalSource block.sourcePc block.sourceInstr
+            sourceState) := by
   have hArtifact := compile?_valid hCompile
   have hBlocks := compile?_blocksValid hCompile
   have hDecoding := compile?_decodingCorrect hCompile
@@ -2034,7 +2173,7 @@ theorem compile?_sourceBlock_open_rel
       have hMem : located ∈ artifact.program.code :=
         hArtifact.mem_program_of_mem_block hBlock (by simp [located])
       exact
-        ⟨1, openRunNResult_one_source_boundary_rel
+        ⟨1, by omega, openRunNResult_one_source_boundary_rel
           (sourcePc := sourcePc) (compactPc := compactPc)
           (sourceInstr := .label name) (compactInstr := .jumpdest)
           (by simpa using hNextBoundary)
@@ -2050,7 +2189,7 @@ theorem compile?_sourceBlock_open_rel
       have hMem : located ∈ artifact.program.code :=
         hArtifact.mem_program_of_mem_block hBlock (by simp [located])
       exact
-        ⟨1, openRunNResult_one_source_boundary_rel
+        ⟨1, by omega, openRunNResult_one_source_boundary_rel
           (sourcePc := sourcePc) (compactPc := compactPc)
           (sourceInstr := .prim op) (compactInstr := .prim op)
           (by simpa using hNextBoundary)
@@ -2071,7 +2210,7 @@ theorem compile?_sourceBlock_open_rel
           have hMem : located ∈ artifact.program.code :=
             hArtifact.mem_program_of_mem_block hBlock (by simp [located])
           exact
-            ⟨1, openRunNResult_one_source_boundary_rel
+            ⟨1, by omega, openRunNResult_one_source_boundary_rel
               (sourcePc := sourcePc) (compactPc := compactPc)
               (sourceInstr := .push value)
               (compactInstr := .push width value)
@@ -2114,7 +2253,7 @@ theorem compile?_sourceBlock_open_rel
             have hLabelBoundary :=
               compile?_label_boundary hCompile hSourceDest hDest
             exact
-              ⟨2, openRunNResult_push_jump_source_boundary_rel
+              ⟨2, by omega, openRunNResult_push_jump_source_boundary_rel
                 hLabelBoundary hSourceDest
                 ((List.forall_iff_forall_mem.mp
                   hArtifact.wellFormed.1) pushLocated hPushMem)
@@ -2154,7 +2293,7 @@ theorem compile?_sourceBlock_open_rel
             have hLabelBoundary :=
               compile?_label_boundary hCompile hSourceDest hDest
             exact
-              ⟨2, openRunNResult_push_jumpi_source_boundary_rel
+              ⟨2, by omega, openRunNResult_push_jumpi_source_boundary_rel
                 hLabelBoundary
                 (by simpa [Assembly.Instr.byteSize, Assembly.Instr.jumpSize,
                     Nat.add_assoc] using hNextBoundary)
@@ -2165,6 +2304,89 @@ theorem compile?_sourceBlock_open_rel
                 (hDecoding.decodes jumpLocated hJumpMem)
                 hTargetPc hSourcePc hRel⟩
           · simp [emitSourceBlock?, emitInstrRev?, hDest, hFitsBool] at hCode
+
+/-- A terminal wide-Assembly run is simulated by actual compact bytes with a
+uniform two-opcode budget per source instruction. The extra budget is useful
+for composition: one-opcode blocks leave one unit that is inert once every
+open-world branch has halted. -/
+theorem compile?_openRunNResult_terminal_rel
+    {input : Assembly.Program} {artifact : Artifact}
+    (hCompile : compile? input = some artifact)
+    (hAccepted : Assembly.Accepted artifact.physicalSource)
+    (fuel extra : Nat) {target source : EVMState}
+    (hBoundary : BoundaryStateRel artifact target source)
+    (hTerminal : Simulation.Interaction.AllDone
+      Assembly.InteractionSemantics.Terminal
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.physicalSource fuel source)) :
+    Simulation.Interaction.Rel RuntimeOutcomeRel
+      (openRunNResult artifact.bytes (2 * fuel + extra) target)
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.physicalSource fuel source) := by
+  induction fuel generalizing target source extra with
+  | zero =>
+      change Simulation.Interaction.AllDone
+        Assembly.InteractionSemantics.Terminal
+        (.done (.ok (.running source))) at hTerminal
+      cases hTerminal with
+      | done hDone => exact False.elim hDone
+  | succ fuel ih =>
+      have hTerminalSucc : Simulation.Interaction.AllDone
+          Assembly.InteractionSemantics.Terminal
+          (Assembly.InteractionSemantics.Source.openRunNResult
+            artifact.physicalSource (fuel + 1) source) := by
+        simpa [Nat.succ_eq_add_one] using hTerminal
+      obtain ⟨block, hBlock, hSourcePc, hTargetPc, hRuntime⟩ :=
+        hBoundary.active_of_terminal_succ hCompile hTerminalSucc
+      obtain ⟨stepFuel, hStepFuel, hStep⟩ :=
+        compile?_sourceBlock_open_rel hCompile hAccepted hBlock
+          hTargetPc hSourcePc hRuntime
+      have hSourceStep :=
+        compile?_source_openStepResult_eq_block hCompile hBlock hSourcePc
+      have hTerminalExpanded := hTerminalSucc
+      rw [Assembly.InteractionSemantics.Source.openRunNResult_succ,
+        hSourceStep] at hTerminalExpanded
+      have hStepTerminal :=
+        Simulation.Interaction.AllDone.bind_inv hTerminalExpanded
+      have hStepStrong :=
+        Simulation.Interaction.Rel.strengthen_right hStep hStepTerminal
+      let remaining := 2 * fuel + (extra + (2 - stepFuel))
+      have hFuel : 2 * Nat.succ fuel + extra = stepFuel + remaining := by
+        dsimp [remaining]
+        omega
+      rw [hFuel, openRunNResult_add]
+      rw [Assembly.InteractionSemantics.Source.openRunNResult_succ,
+        hSourceStep]
+      apply Simulation.Interaction.Rel.bind_custom hStepStrong
+      intro targetDone sourceDone hDone
+      rcases hDone with ⟨hRelated, hContinuationTerminal⟩
+      cases hRelated with
+      | error hError =>
+          exact False.elim hContinuationTerminal
+      | ok hResult =>
+          rename_i targetResult sourceResult
+          cases targetResult with
+          | running targetMid =>
+              cases sourceResult with
+              | running sourceMid =>
+                  change BoundaryStateRel artifact targetMid sourceMid at hResult
+                  change Simulation.Interaction.AllDone
+                    Assembly.InteractionSemantics.Terminal
+                    (Assembly.InteractionSemantics.Source.openRunNResult
+                      artifact.physicalSource fuel sourceMid) at hContinuationTerminal
+                  exact ih (extra + (2 - stepFuel)) hResult
+                    hContinuationTerminal
+              | halted sourceHalt =>
+                  simp [BoundaryStepResultRel] at hResult
+          | halted targetHalt =>
+              cases sourceResult with
+              | running sourceMid =>
+                  simp [BoundaryStepResultRel] at hResult
+              | halted sourceHalt =>
+                  change targetHalt.kind = sourceHalt.kind ∧
+                    SameRuntimeData targetHalt.state sourceHalt.state ∧
+                      targetHalt.output = sourceHalt.output at hResult
+                  exact .done (.ok hResult)
 
 end InteractionSemantics
 
