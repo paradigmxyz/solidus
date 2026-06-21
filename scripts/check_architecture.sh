@@ -31,6 +31,7 @@ for theorem in \
     'ControlScheduledListPreserves' \
     'controlCons' \
     'controlScheduledRegion' \
+    'compiledScheduledRegion_of_compilers' \
     'blockPoint_of_compilers' \
     'RegularListPreserves.toOpenList' \
     'terminalList_of_compilers' \

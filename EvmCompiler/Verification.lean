@@ -3035,6 +3035,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackBlockPreservation.controlCons
 #check EvmCompiler.Functions.StackBlockPreservation.controlScopedBodyThenJoin
 #check EvmCompiler.Functions.StackBlockPreservation.controlScheduledRegion
+#check EvmCompiler.Functions.StackBlockPreservation.compiledScheduledRegion_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.blockPoint_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.brkList_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.contList_of_compilers
