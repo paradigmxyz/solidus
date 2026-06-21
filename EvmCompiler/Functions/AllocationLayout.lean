@@ -140,6 +140,44 @@ theorem scheduleRetain?_sound
       · rw [if_neg hSuffix] at hSchedule
         contradiction
 
+/-- A retain transition together with the proof computed by its owner. -/
+structure Transition where
+  source : Locals.Layout
+  live : LiveSet
+  schedule : Schedule
+  valid : schedule.ValidFor source live
+
+namespace Transition
+
+def build? (layout : Locals.Layout) (live : LiveSet) : Option Transition :=
+  match hSchedule : scheduleRetain? layout live with
+  | none => none
+  | some schedule =>
+      some
+        { source := layout
+          live
+          schedule
+          valid := scheduleRetain?_sound hSchedule }
+
+def target (transition : Transition) : Locals.Layout :=
+  transition.schedule.target
+
+theorem build?_sound
+    {layout : Locals.Layout} {live : LiveSet} {transition : Transition}
+    (hBuild : build? layout live = some transition) :
+    transition.source = layout ∧
+      transition.live = live ∧
+      transition.schedule.ValidFor layout live := by
+  unfold build? at hBuild
+  split at hBuild
+  · simp_all
+  · rename_i schedule hSchedule
+    simp only [Option.some.injEq] at hBuild
+    subst transition
+    exact ⟨rfl, rfl, scheduleRetain?_sound hSchedule⟩
+
+end Transition
+
 def Schedule.statements (schedule : Schedule) : List Locals.Stmt :=
   (schedule.promotions.map fun promotion =>
       Locals.Stmt.promoteName promotion.name) ++

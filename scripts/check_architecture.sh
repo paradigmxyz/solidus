@@ -20,7 +20,8 @@ done
 
 for theorem in \
     'build_run' \
-    'scheduleRetain?_sound'; do
+    'scheduleRetain?_sound' \
+    'Transition.build?_sound'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.AllocationLayout.${theorem}" \
       EvmCompiler/Verification.lean; then
@@ -37,6 +38,18 @@ if ! rg -Fq \
     'Verification root is missing checked Functions layout lowering.' >&2
   failed=1
 fi
+
+for theorem in \
+    'scheduleBlockFuel_entry_sound' \
+    'scheduleBlock?_entry_sound'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.Functions.StackSchedule.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing Functions stack scheduler theorem %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
 
 report_matches() {
   local title="$1"
@@ -1476,6 +1489,11 @@ report_matches \
   EvmCompiler/Functions/AllocationLayoutLowering.lean
 
 report_matches \
+  'Functions stack scheduling must remain owned by liveness and symbolic layout:' \
+  '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|Interaction|EffectSemantics|TypedCfg|Assembly\.(Assembler|Compiler)|Locals\.Compiler)' \
+  EvmCompiler/Functions/StackSchedule.lean
+
+report_matches \
   'Canonical Expressions semantics must interpret Expressions syntax directly, not compile through Structured:' \
   '\b(toStructured|compile)\b' \
   EvmCompiler/Expressions/EffectSemantics.lean \
@@ -1537,6 +1555,7 @@ report_matches \
   EvmCompiler/Functions/AllocationLivenessFacts.lean \
   EvmCompiler/Functions/AllocationLayout.lean \
   EvmCompiler/Functions/AllocationLayoutLowering.lean \
+  EvmCompiler/Functions/StackSchedule.lean \
   EvmCompiler/Functions/AllocationObserverRelation.lean \
   EvmCompiler/Functions/ObserverSafety.lean \
   EvmCompiler/Functions/AllocationObserverSafety.lean \

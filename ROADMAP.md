@@ -86,11 +86,12 @@ short composition module.
 
 ### 3. Layout and Shuffle Owner
 
-- [ ] Track a symbolic stack layout alongside the checked liveness point at
+- [x] Track a symbolic stack layout alongside the checked liveness point at
   each allocation program point.
-- [ ] Invoke the checked retain schedule at each program point so dead values
+- [x] Invoke the checked retain schedule at each program point so dead values
   are popped promptly; next-use ordering remains open.
-- [ ] Compute canonical layouts at branch, switch, loop, and call-return joins.
+- [x] Compute canonical layouts at branch, switch, and loop joins; exact
+  internal-call return restoration remains in the call boundary.
 - [x] Generate a checked symbolic retain transition using only accessible
   promotions and one suffix cleanup; inaccessible shuffles are rejected.
 - [x] Prove the retain artifact executes to its recorded promoted layout,
