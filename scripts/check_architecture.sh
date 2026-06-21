@@ -21,9 +21,12 @@ done
 
 for theorem in \
     'programStride' \
+    'proc_body_size_add_length_add_eight_le_programStride' \
     'Covers' \
     'Covers.length_lt' \
+    'Covers.weaken_source' \
     'Covers.weaken_target' \
+    'Covers.proc_body_after_three' \
     'Covers.head_after_one_append' \
     'Covers.head_of_succ_append' \
     'Covers.tail_after_succ_append' \

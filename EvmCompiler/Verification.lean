@@ -2454,9 +2454,12 @@ or audit-alias corridor.
 #check EvmCompiler.Expressions.TargetFuel.stmtListNestedSize_append
 #check EvmCompiler.Expressions.TargetFuel.selected_block_size_le
 #check EvmCompiler.Expressions.TargetFuel.programStride
+#check EvmCompiler.Expressions.TargetFuel.proc_body_size_add_length_add_eight_le_programStride
 #check EvmCompiler.Expressions.TargetFuel.Covers
 #check EvmCompiler.Expressions.TargetFuel.Covers.length_lt
+#check EvmCompiler.Expressions.TargetFuel.Covers.weaken_source
 #check EvmCompiler.Expressions.TargetFuel.Covers.weaken_target
+#check EvmCompiler.Expressions.TargetFuel.Covers.proc_body_after_three
 #check EvmCompiler.Expressions.TargetFuel.Covers.head_after_one_append
 #check EvmCompiler.Expressions.TargetFuel.Covers.head_of_succ_append
 #check EvmCompiler.Expressions.TargetFuel.Covers.tail_after_succ_append
@@ -3290,6 +3293,7 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Expressions.TargetFuel.Covers.for_body_after_one
 #print axioms EvmCompiler.Expressions.TargetFuel.Covers.for_loop_after_one
 #print axioms EvmCompiler.Expressions.TargetFuel.Covers.switch_selected_after_two
+#print axioms EvmCompiler.Expressions.TargetFuel.Covers.proc_body_after_three
 #print axioms EvmCompiler.Functions.StackExpressionPreservation.openEvalOnePop_compileCode
 #print axioms EvmCompiler.Functions.StackStatementPreservation.controlSwitch
 #print axioms EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.withoutLoopControl

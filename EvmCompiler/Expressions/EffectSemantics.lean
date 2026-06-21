@@ -19,6 +19,21 @@ def lookup? (name : Name) : List Proc → Option Proc
       else
         lookup? name rest
 
+theorem mem_of_lookup?
+    {name : Name} {procs : List Proc} {proc : Proc}
+    (hLookup : lookup? name procs = some proc) :
+    proc ∈ procs := by
+  induction procs with
+  | nil => simp [lookup?] at hLookup
+  | cons head rest ih =>
+      by_cases hName : head.name = name
+      · simp [lookup?, hName] at hLookup
+        subst proc
+        simp
+      · have hTail : lookup? name rest = some proc := by
+          simpa [lookup?, hName] using hLookup
+        exact List.mem_cons_of_mem head (ih hTail)
+
 end ProcList
 
 namespace Switch

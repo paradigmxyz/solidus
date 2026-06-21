@@ -3241,6 +3241,11 @@ theorem callCons_of_compilers
           StateRel callCtx.layout suffix returns source target →
           Locals.InteractionPreservation.Expr.ResultRel args.length
               source target (sourceAfterArgs, argValues) targetAfterArgs →
+          (∀ {proc : Expressions.Proc},
+            Expressions.EffectSemantics.ProcList.lookup? functionName
+                targetProgram.procs = some proc →
+            Expressions.TargetFuel.Covers targetProgram sourceFuel
+              (targetFuel - 1) proc.body.stmts) →
           Simulation.Interaction.ForwardRel
             FuelTruncated
             (StackCallPreservation.OpenAttachedCallResultRel fn.returns.length

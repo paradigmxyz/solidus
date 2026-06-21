@@ -157,6 +157,14 @@ theorem stmtListSize_toStructured (stmts : List Expressions.Stmt) :
   have h := blockSize_toStructured ({ stmts := stmts } : Expressions.Block)
   simpa [Expressions.Block.toStructured, structuredBlockSize, blockSize] using h
 
+private theorem stmtList_toStructured_length
+    (stmts : List Expressions.Stmt) :
+    (Expressions.StmtList.toStructured stmts).length = stmts.length := by
+  induction stmts with
+  | nil => rfl
+  | cons stmt rest ih =>
+      simp [Expressions.StmtList.toStructured, ih]
+
 private theorem structured_block_size_le_sum
     {proc : Structured.Proc} {procs : List Structured.Proc}
     (hMem : proc ∈ procs) :
@@ -282,6 +290,63 @@ def programStride (program : Expressions.Program) : Nat :=
 
 theorem eight_le_programStride (program : Expressions.Program) :
     8 ≤ programStride program := by
+  unfold programStride
+  omega
+
+private theorem structured_body_length_le_sum
+    {proc : Structured.Proc} {procs : List Structured.Proc}
+    (hMem : proc ∈ procs) :
+    proc.body.stmts.length ≤
+      (procs.map fun candidate => candidate.body.stmts.length).sum := by
+  induction procs with
+  | nil => simp at hMem
+  | cons head tail ih =>
+      simp only [List.mem_cons] at hMem
+      simp only [List.map_cons, List.sum_cons]
+      rcases hMem with rfl | hTail
+      · omega
+      · have hBound := ih hTail
+        omega
+
+theorem proc_body_size_add_length_add_eight_le_programStride
+    {program : Expressions.Program} {name : Expressions.Name}
+    {proc : Expressions.Proc}
+    (hLookup :
+      Expressions.EffectSemantics.ProcList.lookup? name program.procs =
+        some proc) :
+    stmtListSize proc.body.stmts + proc.body.stmts.length + 8 ≤
+      programStride program := by
+  have hMem : proc ∈ program.procs :=
+    Expressions.EffectSemantics.ProcList.mem_of_lookup? hLookup
+  have hStructuredMem :
+      proc.toStructured ∈ program.toStructured.procs :=
+    Expressions.ProcList.mem_toStructured hMem
+  have hLength := structured_body_length_le_sum hStructuredMem
+  have hSize := structured_block_size_le_sum hStructuredMem
+  have hProcBody : proc.toStructured.body = proc.body.toStructured := rfl
+  rw [hProcBody] at hLength hSize
+  have hBlockStmts :
+      proc.body.toStructured.stmts =
+        Expressions.StmtList.toStructured proc.body.stmts := by
+    cases proc.body
+    rfl
+  rw [hBlockStmts] at hLength
+  have hLengthEq :
+      (Expressions.StmtList.toStructured proc.body.stmts).length =
+        proc.body.stmts.length :=
+    stmtList_toStructured_length proc.body.stmts
+  rw [hLengthEq] at hLength
+  rw [blockSize_toStructured proc.body] at hSize
+  have hBlockSize :
+      blockSize proc.body = stmtListSize proc.body.stmts := by
+    cases proc.body
+    rfl
+  rw [hBlockSize] at hSize
+  have hStmtSize :
+      stmtListSize proc.body.stmts ≤
+        (program.toStructured.procs.map fun candidate =>
+          structuredBlockSize candidate.body).sum := by
+    exact hSize
   unfold programStride
   omega
 
@@ -465,6 +530,38 @@ theorem budget_for_loop_add_one_le
   nlinarith
 
 namespace Covers
+
+theorem weaken_source {program : Expressions.Program}
+    {smaller larger targetFuel : Nat} {stmts : List Expressions.Stmt}
+    (h : TargetFuel.Covers program larger targetFuel stmts)
+    (hLe : smaller ≤ larger) :
+    TargetFuel.Covers program smaller targetFuel stmts := by
+  unfold TargetFuel.Covers TargetFuel.budget at h ⊢
+  have hStride := eight_le_programStride program
+  nlinarith
+
+theorem proc_body_after_three {program : Expressions.Program}
+    {sourceFuel targetFuel : Nat} {callerCode : List Expressions.Stmt}
+    {name : Expressions.Name} {proc : Expressions.Proc}
+    (hCaller :
+      TargetFuel.Covers program (sourceFuel + 1) targetFuel callerCode)
+    (hLookup :
+      Expressions.EffectSemantics.ProcList.lookup? name program.procs =
+        some proc) :
+    TargetFuel.Covers program sourceFuel (targetFuel - 3)
+      proc.body.stmts := by
+  have hProc :=
+    proc_body_size_add_length_add_eight_le_programStride hLookup
+  have hCallerSize := length_le_stmtListSize callerCode
+  unfold TargetFuel.Covers TargetFuel.budget at hCaller ⊢
+  have hStride := eight_le_programStride program
+  have hBound :
+      stmtListSize proc.body.stmts +
+          programStride program * (sourceFuel + 1) + 3 ≤
+        stmtListSize callerCode +
+          programStride program * (sourceFuel + 1 + 1) := by
+    nlinarith
+  omega
 
 theorem weaken_target {program : Expressions.Program}
     {sourceFuel smaller larger : Nat} {stmts : List Expressions.Stmt}

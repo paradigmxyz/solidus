@@ -1552,6 +1552,11 @@ theorem corePreserves
         StateRel ctx.layout suffix returns source target →
         Locals.InteractionPreservation.Expr.ResultRel args.length
             source target (sourceAfterArgs, argValues) targetAfterArgs →
+        (∀ {proc : Expressions.Proc},
+          Expressions.EffectSemantics.ProcList.lookup? functionName
+              targetProgram.procs = some proc →
+          Expressions.TargetFuel.Covers targetProgram sourceFuel
+            (targetFuel - 1) proc.body.stmts) →
         Simulation.Interaction.ForwardRel
           StackStatementPreservation.FuelTruncated
           (OpenAttachedCallResultRel fn.returns.length
@@ -1596,7 +1601,12 @@ theorem corePreserves
           hTargetsLength hTargetsLayout hArgScoped hArgSupported hArgCompile
           hWritebackCompile hInitial (fun hArgResult =>
             hCallee sourceFuel
-              (targetExtra + targets.length + 1) hInitial hArgResult)
+              (targetExtra + targets.length + 1) hInitial hArgResult
+              (fun {proc} hLookup => by
+                have hProcFuel :=
+                  Expressions.TargetFuel.Covers.proc_body_after_three
+                    hFuel hLookup
+                convert hProcFuel using 1 <;> omega))
       simpa [hTargetEq] using hCore
 
 /-- Build a complete retained call point from the actual scheduler/lowerer and
@@ -1644,6 +1654,11 @@ theorem compiledOfCompilers
           StateRel targetCtx.layout suffix returns source target →
           Locals.InteractionPreservation.Expr.ResultRel args.length
               source target (sourceAfterArgs, argValues) targetAfterArgs →
+          (∀ {proc : Expressions.Proc},
+            Expressions.EffectSemantics.ProcList.lookup? functionName
+                targetProgram.procs = some proc →
+            Expressions.TargetFuel.Covers targetProgram sourceFuel
+              (targetFuel - 1) proc.body.stmts) →
           Simulation.Interaction.ForwardRel
             StackStatementPreservation.FuelTruncated
             (OpenAttachedCallResultRel fn.returns.length
