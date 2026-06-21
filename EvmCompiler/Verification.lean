@@ -3242,6 +3242,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackCallPreservation.ReturnEpilogue.openRun
 #check EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_afterPrelude
 #check EvmCompiler.Functions.StackCallPreservation.CallAttachment.of_body
+#check EvmCompiler.Functions.StackCallPreservation.callerStateRel_of_argResult
+#check EvmCompiler.Functions.StackCallPreservation.CallerWriteback.compileOpenRun
+#check EvmCompiler.Functions.StackCallPreservation.CallerWriteback.returned
+#check EvmCompiler.Functions.StackCallPreservation.CallerWriteback.afterCall
+#check EvmCompiler.Functions.StackCallPreservation.CallPoint.core
 
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.Join.compiledOpenRun
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.OrderingArtifact.thenBlock
@@ -3272,6 +3277,8 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackCallPreservation.ReturnPrelude.compileOpenRun_of_fuel
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_afterPrelude
 #print axioms EvmCompiler.Functions.StackCallPreservation.CallAttachment.of_body
+#print axioms EvmCompiler.Functions.StackCallPreservation.CallerWriteback.compileOpenRun
+#print axioms EvmCompiler.Functions.StackCallPreservation.CallPoint.core
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.JoinArtifact.thenBlock
 #print axioms EvmCompiler.Expressions.TargetFuel.Covers.if_body_after_two
 #print axioms EvmCompiler.Functions.StackBlockPreservation.brkList_of_compilers

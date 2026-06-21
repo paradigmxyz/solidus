@@ -190,6 +190,96 @@ theorem splitArgs_of_argResult
     Structured.StackFrame.splitArgs?_append args.reverse
       targetInitial.evm.stack
 
+/-- After ordered arguments are evaluated, removing their temporary stack
+prefix recovers the caller layout with the argument effects already reflected
+in shared state. -/
+theorem callerStateRel_of_argResult
+    {ctx : Locals.Ctx} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {arity : Nat}
+    {sourceInitial sourceAfterArgs : Locals.Source.State}
+    {targetInitial targetAfterArgs : Structured.RunState}
+    {args : List Word}
+    (hInitial :
+      StateRel ctx.layout suffix returns sourceInitial targetInitial)
+    (hResult :
+      Locals.InteractionPreservation.Expr.ResultRel arity
+        sourceInitial targetInitial (sourceAfterArgs, args) targetAfterArgs) :
+    StateRel ctx.layout suffix returns sourceAfterArgs
+      (targetAfterArgs.withEVM
+        { targetAfterArgs.evm with stack := targetInitial.evm.stack }) := by
+  have hValues :
+      StackRelation.values sourceAfterArgs ctx.layout =
+        StackRelation.values sourceInitial ctx.layout := by
+    unfold StackRelation.values
+    rw [hResult.vars]
+  constructor
+  · simpa using hResult.shared
+  · simpa using hResult.returns.trans hInitial.returns
+  · simp only [Structured.RunState.withEVM]
+    rw [hInitial.stack, hValues]
+  · intro name hName
+    obtain ⟨value, hValue⟩ := hInitial.defined hName
+    exact ⟨value, by rw [hResult.vars]; exact hValue⟩
+
+inductive ArgBlockResultRel
+    (arity : Nat) (sourceInitial : Locals.Source.State)
+    (targetInitial : Structured.RunState) :
+    (Locals.Source.State × List Word) → Structured.Outcome → Prop
+  | regular {sourceFinal : Locals.Source.State} {values : List Word}
+      {targetFinal : Structured.RunState} :
+      Locals.InteractionPreservation.Expr.ResultRel arity
+        sourceInitial targetInitial (sourceFinal, values) targetFinal →
+      ArgBlockResultRel arity sourceInitial targetInitial
+        (sourceFinal, values) (.regular targetFinal)
+
+abbrev OpenArgBlockResultRel
+    (arity : Nat) (sourceInitial : Locals.Source.State)
+    (targetInitial : Structured.RunState) :=
+  Simulation.Interaction.ExceptRel
+    (fun (_ : EVMException) (_ : EVMException) => True)
+    (ArgBlockResultRel arity sourceInitial targetInitial)
+
+theorem openEvalArgs_compileBlock
+    (targetProgram : Expressions.Program) (targetFuel : Nat)
+    (args : List (Functions.Expr 1)) (ctx : Locals.Ctx)
+    {code : Structured.Code} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hFuel : 2 ≤ targetFuel)
+    (hScoped :
+      Locals.Scope.ExprSeqScoped ctx.layout (Lower.argExprs args))
+    (hSupported :
+      Functions.InteractionSemantics.ArgList.OpenSupported args)
+    (hCompile :
+      Locals.ExprSeq.compileCode ctx 0 (Lower.argExprs args) = some code)
+    (hInitial : StateRel ctx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (OpenArgBlockResultRel args.length source target)
+      (Functions.InteractionSemantics.ArgList.openEval args source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        targetFuel { stmts := [.code code] } target) := by
+  have hArgs :=
+    openEvalArgs_compileCode args ctx hScoped hSupported hCompile hInitial
+  rw [Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_stmt_of_fuel
+    targetProgram targetFuel (.code code) target hFuel]
+  unfold Expressions.InteractionSemantics.Stmt.openRun
+    Expressions.EffectSemantics.Control.Stmt.run
+  change
+    Simulation.Interaction.Rel
+      (OpenArgBlockResultRel args.length source target)
+      (Functions.InteractionSemantics.ArgList.openEval args source)
+      (Simulation.Interaction.bind
+        (Structured.InteractionSemantics.Code.openRun code target)
+        (fun final =>
+          Simulation.Interaction.pure (Structured.Outcome.regular final)))
+  rw [← Simulation.Interaction.bind_pure
+    (Functions.InteractionSemantics.ArgList.openEval args source)]
+  apply Simulation.Interaction.Rel.bind hArgs
+  intro sourceResult targetResult hResult
+  exact Simulation.Interaction.Rel.done
+    (Simulation.Interaction.ExceptRel.ok (.regular hResult))
+
 namespace CalleeEntry
 
 def sourceState (sourceAfterArgs : Locals.Source.State)
@@ -503,7 +593,7 @@ abbrev OpenCallResultRel
 restores the dormant caller stack. Return-frame metadata is relevant only for
 the nonterminal result. -/
 inductive AttachedCallResultRel
-    (callerStack : List Word)
+    (retc : Nat) (callerStack : List Word)
     (callerReturns : List Structured.ReturnDest) :
     Functions.InteractionSemantics.CallResult → Structured.Outcome → Prop
   | returned {source : Locals.Source.State} {values : List Word}
@@ -511,20 +601,21 @@ inductive AttachedCallResultRel
       target.evm.toSharedState = source.shared →
       target.evm.stack = values.reverse ++ callerStack →
       target.returns = callerReturns →
-      AttachedCallResultRel callerStack callerReturns
+      values.length = retc →
+      AttachedCallResultRel retc callerStack callerReturns
         (.returned source values) (.regular target)
   | halt {kind : Assembly.HaltKind} {source : Locals.Source.State}
       {target : Structured.RunState} :
       target.evm.toSharedState = source.shared →
-      AttachedCallResultRel callerStack callerReturns
+      AttachedCallResultRel retc callerStack callerReturns
         (.halted kind source) (.halt kind target)
 
 abbrev OpenAttachedCallResultRel
-    (callerStack : List Word)
+    (retc : Nat) (callerStack : List Word)
     (callerReturns : List Structured.ReturnDest) :=
   Simulation.Interaction.ExceptRel
     (fun (_ : EVMException) (_ : EVMException) => True)
-    (AttachedCallResultRel callerStack callerReturns)
+    (AttachedCallResultRel retc callerStack callerReturns)
 
 namespace CallResultRel
 
@@ -607,7 +698,7 @@ theorem of_body
             proc.retc))) :
     Simulation.Interaction.ForwardRel
       StackStatementPreservation.FuelTruncated
-      (OpenAttachedCallResultRel callerStack targetCaller.returns)
+      (OpenAttachedCallResultRel proc.retc callerStack targetCaller.returns)
       sourceRun
       (Expressions.InteractionSemantics.Stmt.openRun targetProgram
         (targetFuel + 1) (.call name) targetCaller) := by
@@ -616,7 +707,7 @@ theorem of_body
   change
     Simulation.Interaction.ForwardRel
       StackStatementPreservation.FuelTruncated
-      (OpenAttachedCallResultRel callerStack targetCaller.returns)
+      (OpenAttachedCallResultRel proc.retc callerStack targetCaller.returns)
       sourceRun
       (Simulation.Interaction.bind
         (Expressions.InteractionSemantics.Block.openRun targetProgram
@@ -659,6 +750,7 @@ theorem of_body
         (by simpa [attached] using hShared)
         (by simp [attached])
         (by simp [attached])
+        hLength
   | @leave source values target hShared hStack hReturns hLength =>
       have hPop :
           target.popReturn? =
@@ -691,6 +783,7 @@ theorem of_body
         (by simpa [attached] using hShared)
         (by simp [attached])
         (by simp [attached])
+        hLength
   | @halt kind source target hShared =>
       simp only [Simulation.Interaction.pure,
         Structured.Outcome.halt_mode, Structured.Outcome.halt_state]
@@ -699,6 +792,642 @@ theorem of_body
       exact AttachedCallResultRel.halt hShared
 
 end CallAttachment
+
+namespace CallerWriteback
+
+structure PendingRel
+    (layout : Locals.Layout) (suffix : List Word)
+    (returns : List Structured.ReturnDest) (pending : List Word)
+    (source : Locals.Source.State) (target : Structured.RunState) : Prop where
+  shared : target.evm.toSharedState = source.shared
+  returnsEq : target.returns = returns
+  stack :
+    target.evm.stack =
+      pending ++ StackRelation.values source layout ++ suffix
+  defined : ∀ name, name ∈ layout → ∃ value, source.vars name = some value
+
+private theorem set_append_offset
+    {α : Type} (above suffix : List α) (depth : Nat) (value : α) :
+    (above ++ suffix).set (above.length + depth) value =
+      above ++ suffix.set depth value := by
+  induction above with
+  | nil => simp
+  | cons head tail ih => simp [Nat.succ_add, ih]
+
+private theorem compile_assignTopWithOffset_components
+    {ctx finalCtx : Locals.Ctx} {offset : Nat} {name : Name}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Locals.Stmt.compile ctx (.assignTopWithOffset offset name) =
+        some (code, finalCtx)) :
+    ∃ depth op,
+      Locals.Layout.lookupDepth? name ctx.layout = some (depth + 1) ∧
+      Locals.StackOp.swap? (offset + (depth + 1)) = some op ∧
+      code =
+        Locals.codeStmt
+          ([Structured.BasicInstr.op op, Structured.BasicInstr.op .pop] ++
+            Locals.bindLocals offset ctx.layout) ∧
+      finalCtx = ctx := by
+  cases hDepth : Locals.Layout.lookupDepth? name ctx.layout with
+  | none => simp [Locals.Stmt.compile, hDepth] at hCompile
+  | some rawDepth =>
+      have hMem : name ∈ ctx.layout :=
+        Locals.Layout.mem_of_lookupDepth?_eq_some hDepth
+      obtain ⟨depth, hDepth'⟩ :=
+        Locals.Layout.exists_lookupDepth?_eq_some_of_mem hMem
+      have hRaw : rawDepth = depth + 1 := by
+        exact Option.some.inj (hDepth.symm.trans hDepth')
+      subst rawDepth
+      cases hSwap : Locals.StackOp.swap? (offset + (depth + 1)) with
+      | none => simp [Locals.Stmt.compile, hDepth, hSwap] at hCompile
+      | some op =>
+          simp [Locals.Stmt.compile, hDepth, hSwap] at hCompile
+          rcases hCompile with ⟨rfl, rfl⟩
+          exact ⟨depth, op, rfl, hSwap, rfl, rfl⟩
+
+private theorem PendingRel.assignTopWithOffset
+    (targetProgram : Expressions.Program)
+    (targetFuel : Nat)
+    {ctx : Locals.Ctx} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {name : Name} {value : Word} {remaining : List Word}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    {code : List Expressions.Stmt} {finalCtx : Locals.Ctx}
+    (hNodup : ctx.layout.Nodup)
+    (hFuel : 2 ≤ targetFuel)
+    (hCompile :
+      Locals.Stmt.compile ctx
+          (.assignTopWithOffset remaining.length name) =
+        some (code, finalCtx))
+    (hPending :
+      PendingRel ctx.layout suffix returns (value :: remaining)
+        source target) :
+    ∃ finalTarget,
+      Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
+          { stmts := code } target =
+        Simulation.Interaction.pure
+          (Structured.Outcome.regular finalTarget) ∧
+      PendingRel ctx.layout suffix returns remaining
+        (source.insert name value) finalTarget ∧
+      finalCtx = ctx := by
+  obtain ⟨depth, op, hDepth, hSwap, hCode, hFinalCtx⟩ :=
+    compile_assignTopWithOffset_components hCompile
+  subst code
+  have hAt : ctx.layout[depth]? = some name :=
+    Locals.Layout.getElem?_eq_some_of_lookupDepth?_eq_some hDepth
+  obtain ⟨old, hOld⟩ :=
+    hPending.defined name (List.mem_of_getElem? hAt)
+  have hValueAt :
+      (StackRelation.values source ctx.layout)[depth]? = some old := by
+    simp [StackRelation.values, List.getElem?_map, hAt, hOld]
+  have hDepthBound :
+      depth < (StackRelation.values source ctx.layout).length :=
+    List.getElem?_eq_some_iff.mp hValueAt |>.1
+  have hRestGet :
+      ((remaining ++ StackRelation.values source ctx.layout ++ suffix)[remaining.length + depth]?) =
+        some old := by
+    rw [List.append_assoc]
+    rw [List.getElem?_append_right]
+    · rw [show remaining.length + depth - remaining.length = depth by omega]
+      rw [List.getElem?_append_left hDepthBound]
+      simpa using hValueAt
+    · simp
+  have hSwap' :
+      Locals.StackOp.swap? (remaining.length + depth + 1) = some op := by
+    simpa [Nat.add_assoc] using hSwap
+  obtain ⟨afterSwapPop, hSwapRun, hFinalStack,
+      hFinalShared, hFinalReturns⟩ :=
+    Locals.InteractionPreservation.Code.openRun_swap_pop
+      hSwap' hRestGet hPending.stack
+  have hCodeRun :
+      Structured.InteractionSemantics.Code.openRun
+          ([Structured.BasicInstr.op op, Structured.BasicInstr.op .pop] ++
+            Locals.bindLocals remaining.length ctx.layout)
+          target = .done (.ok afterSwapPop) := by
+    rw [Structured.InteractionSemantics.Code.openRun_append, hSwapRun]
+    simp only [Simulation.Interaction.bind_done_ok]
+    rw [show Locals.bindLocals remaining.length ctx.layout =
+        [.bindLocals remaining.length ctx.layout] by rfl,
+      Locals.InteractionPreservation.Code.openRun_bindLocals]
+  have hBlockRun :
+      Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
+          { stmts :=
+              Locals.codeStmt
+                ([Structured.BasicInstr.op op,
+                    Structured.BasicInstr.op .pop] ++
+                  Locals.bindLocals remaining.length ctx.layout) }
+          target =
+        Simulation.Interaction.pure
+          (Structured.Outcome.regular afterSwapPop) := by
+    simpa [Locals.codeStmt] using
+      Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+        targetProgram targetFuel _ target afterSwapPop hFuel hCodeRun
+  refine ⟨afterSwapPop, hBlockRun, ?_, hFinalCtx⟩
+  constructor
+  · rw [hFinalShared]
+    simpa [Locals.Source.State.insert] using hPending.shared
+  · exact hFinalReturns.trans hPending.returnsEq
+  · rw [hFinalStack]
+    rw [show remaining ++ StackRelation.values source ctx.layout ++ suffix =
+        remaining ++ (StackRelation.values source ctx.layout ++ suffix) by
+      simp [List.append_assoc]]
+    rw [set_append_offset,
+      List.set_append_left depth value hDepthBound,
+      ← StackRelation.values_insert_existing hNodup hAt]
+    simp [List.append_assoc]
+  · intro candidate hCandidate
+    by_cases hName : candidate = name
+    · subst candidate
+      exact ⟨value, Locals.Source.Store.insert_self _ _ _⟩
+    · obtain ⟨oldValue, hOldValue⟩ := hPending.defined candidate hCandidate
+      exact
+        ⟨oldValue, by
+          simpa [Locals.Source.State.insert,
+            Locals.Source.Store.insert, hName] using hOldValue⟩
+
+theorem compileOpenRunRev :
+    ∀ (targetProgram : Expressions.Program) (targetExtra : Nat)
+      (ctx : Locals.Ctx)
+      (suffix : List Word) (returns : List Structured.ReturnDest)
+      (names : List Name) (values : List Word)
+      (source : Locals.Source.State) (target : Structured.RunState)
+      (finalStore : Functions.Source.Store)
+      (code : List Expressions.Stmt),
+      ctx.layout.Nodup →
+      Functions.Source.Store.assignMany names values source.vars =
+        some finalStore →
+      Locals.Block.compileOpen ctx
+          { stmts := Lower.assignReturnedTopsRev names } =
+        some (code, ctx) →
+      PendingRel ctx.layout suffix returns values source target →
+      ∃ finalTarget,
+        Expressions.InteractionSemantics.Block.openRun targetProgram
+            (targetExtra + names.length + 1) { stmts := code } target =
+          Simulation.Interaction.pure
+            (Structured.Outcome.regular finalTarget) ∧
+        StateRel ctx.layout suffix returns
+          (source.withVars finalStore) finalTarget
+  | targetProgram, targetExtra, ctx, suffix, returns, [], values, source, target,
+      finalStore, code, _hNodup, hAssign, hCompile, hPending => by
+      cases values with
+      | cons value values =>
+          simp [Functions.Source.Store.assignMany] at hAssign
+      | nil =>
+          simp [Functions.Source.Store.assignMany] at hAssign
+          subst finalStore
+          simp [Lower.assignReturnedTopsRev,
+            Locals.Block.compileOpen] at hCompile
+          rcases hCompile with ⟨rfl, rfl⟩
+          refine ⟨target, ?_, ?_⟩
+          · simpa using
+              Expressions.InteractionSemantics.Block.openRun_nil
+                targetProgram targetExtra target
+          · constructor
+            · simpa [Locals.Source.State.withVars] using hPending.shared
+            · exact hPending.returnsEq
+            · simpa [Locals.Source.State.withVars] using hPending.stack
+            · intro name hName
+              simpa [Locals.Source.State.withVars] using
+                hPending.defined name hName
+  | targetProgram, targetExtra, ctx, suffix, returns, name :: names, values,
+      source, target, finalStore, code, hNodup, hAssign, hCompile,
+      hPending => by
+      cases values with
+      | nil =>
+          simp [Functions.Source.Store.assignMany] at hAssign
+      | cons value values =>
+          have hLength : values.length = names.length := by
+            have hWholeLength :=
+              Functions.Source.Store.assignMany_length hAssign
+            simpa using hWholeLength
+          have hContains : source.vars.contains name := by
+            by_contra hNotContains
+            simp [Functions.Source.Store.assignMany, hNotContains] at hAssign
+          have hTailAssign :
+              Functions.Source.Store.assignMany names values
+                  (source.insert name value).vars = some finalStore := by
+            simpa [Functions.Source.Store.assignMany, hContains,
+              Locals.Source.State.insert] using hAssign
+          change
+            Locals.Block.compileOpen ctx
+                { stmts :=
+                    .assignTopWithOffset names.length name ::
+                      Lower.assignReturnedTopsRev names } =
+              some (code, ctx) at hCompile
+          obtain ⟨headCode, middleCtx, tailCode, hHeadCompile,
+              hTailCompile, hCode⟩ :=
+            Locals.Block.compileOpen_cons_components hCompile
+          obtain ⟨_depth, _op, _hDepth, _hSwap,
+              hHeadCode, hMiddleCtx⟩ :=
+            compile_assignTopWithOffset_components hHeadCompile
+          subst middleCtx
+          subst headCode
+          subst code
+          have hHeadCompile' :
+              Locals.Stmt.compile ctx
+                  (.assignTopWithOffset values.length name) =
+                some
+                  (Locals.codeStmt
+                    ([Structured.BasicInstr.op _op,
+                        Structured.BasicInstr.op .pop] ++
+                      Locals.bindLocals values.length ctx.layout),
+                   ctx) := by
+            simpa [hLength] using hHeadCompile
+          obtain ⟨targetAfterHead, hHeadRun, hAfterHead, _hCtx⟩ :=
+            PendingRel.assignTopWithOffset targetProgram
+              (targetExtra + names.length + 2) hNodup (by omega)
+              hHeadCompile' hPending
+          have hHeadRun' :
+              Expressions.InteractionSemantics.Block.openRun targetProgram
+                  (targetExtra + names.length + 2)
+                  { stmts :=
+                      Locals.codeStmt
+                        ([Structured.BasicInstr.op _op,
+                            Structured.BasicInstr.op .pop] ++
+                          Locals.bindLocals names.length ctx.layout) }
+                  target =
+                Simulation.Interaction.pure
+                  (Structured.Outcome.regular targetAfterHead) := by
+            simpa [hLength] using hHeadRun
+          obtain ⟨finalTarget, hTailRun, hFinalRel⟩ :=
+            compileOpenRunRev targetProgram targetExtra ctx suffix returns
+              names values (source.insert name value) targetAfterHead
+              finalStore tailCode hNodup hTailAssign hTailCompile hAfterHead
+          refine ⟨finalTarget, ?_, hFinalRel⟩
+          rw [Expressions.InteractionSemantics.Block.openRun_append]
+          simp only [List.length_cons]
+          rw [show targetExtra + (names.length + 1) + 1 =
+              targetExtra + names.length + 2 by omega]
+          rw [hHeadRun']
+          simp only [Simulation.Interaction.bind_done_ok,
+            Structured.Outcome.regular_mode,
+            Structured.Outcome.regular_state, Locals.codeStmt,
+            List.length_cons, List.length_nil, Nat.add_zero]
+          simpa using hTailRun
+
+/-- Execute the compiler's caller writeback order. The checked source store
+assignment is reversed exactly once to match the top-first target stack. -/
+theorem compileOpenRun
+    (targetProgram : Expressions.Program) (targetExtra : Nat)
+    (ctx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest)
+    (targets : List Name) (values : List Word)
+    (source : Locals.Source.State) (target : Structured.RunState)
+    (finalStore : Functions.Source.Store)
+    (code : List Expressions.Stmt)
+    (hLayoutNodup : ctx.layout.Nodup)
+    (hTargetsNodup : targets.Nodup)
+    (hAssign :
+      Functions.Source.Store.assignMany targets values source.vars =
+        some finalStore)
+    (hCompile :
+      Locals.Block.compileOpen ctx
+          { stmts := Lower.assignReturnedTops targets } =
+        some (code, ctx))
+    (hPending :
+      PendingRel ctx.layout suffix returns values.reverse source target) :
+    ∃ finalTarget,
+      Expressions.InteractionSemantics.Block.openRun targetProgram
+          (targetExtra + targets.length + 1) { stmts := code } target =
+        Simulation.Interaction.pure
+          (Structured.Outcome.regular finalTarget) ∧
+      StateRel ctx.layout suffix returns
+        (source.withVars finalStore) finalTarget := by
+  have hReverse :
+      Functions.Source.Store.assignMany targets.reverse values.reverse
+          source.vars = some finalStore :=
+    Functions.Source.Store.assignMany_reverse_of_run hAssign hTargetsNodup
+  have hRun :=
+    compileOpenRunRev targetProgram targetExtra ctx suffix returns
+      targets.reverse values.reverse source target finalStore code hLayoutNodup
+      hReverse (by simpa [Lower.assignReturnedTops] using hCompile) hPending
+  simpa using hRun
+
+/-- A returned internal call has enough checked arity and caller-layout
+information to construct source `assignMany` and run the emitted target
+writeback without accepting assignment evidence as a premise. -/
+theorem returned
+    (targetProgram : Expressions.Program)
+    (targetExtra : Nat)
+    (sourceCtx : Functions.Source.Ctx)
+    (controlTargets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
+    (ctx : Locals.Ctx) (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (targets : List Name) (retc : Nat)
+    (sourceAfterArgs sourceReturned : Locals.Source.State)
+    (callerTarget targetAfterCall : Structured.RunState)
+    (values : List Word) (code : List Expressions.Stmt)
+    (hRuntime :
+      StackStatementPreservation.RuntimeCtxCovers sourceCtx ctx
+        controlTargets returnNames returns)
+    (hLayoutNodup : ctx.layout.Nodup)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsLength : targets.length = retc)
+    (hTargetsLayout : ∀ name, name ∈ targets → name ∈ ctx.layout)
+    (hCaller :
+      StateRel ctx.layout suffix returns sourceAfterArgs callerTarget)
+    (hAttached :
+      AttachedCallResultRel retc callerTarget.evm.stack returns
+        (.returned sourceReturned values) (.regular targetAfterCall))
+    (hCompile :
+      Locals.Block.compileOpen ctx
+          { stmts := Lower.assignReturnedTops targets } =
+        some (code, ctx)) :
+    Simulation.Interaction.Rel
+      (StackStatementPreservation.ControlOpenOutcomeRel controlTargets
+        returnNames ctx suffix returns)
+      (Functions.InteractionSemantics.Stmt.finishCall targets sourceCtx
+        sourceAfterArgs (.returned sourceReturned values))
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        (targetExtra + targets.length + 1) { stmts := code }
+        targetAfterCall) := by
+  cases hAttached with
+  | returned hShared hStack hReturns hValuesLength =>
+      have hLength : values.length = targets.length := by
+        omega
+      have hContains :
+          ∀ name, name ∈ targets →
+            sourceAfterArgs.vars.contains name = true := by
+        intro name hName
+        obtain ⟨value, hValue⟩ :=
+          hCaller.defined (hTargetsLayout name hName)
+        simp [Locals.Source.Store.contains, hValue]
+      obtain ⟨finalStore, hAssign⟩ :=
+        Functions.Source.Store.assignMany_exists_of_length_of_contains
+          hLength hContains
+      let writeSource := sourceReturned.withVars sourceAfterArgs.vars
+      have hPending :
+          PendingRel ctx.layout suffix returns values.reverse
+            writeSource targetAfterCall := by
+        constructor
+        · simpa [writeSource, Locals.Source.State.withVars] using hShared
+        · exact hReturns
+        · rw [hStack, hCaller.stack]
+          simp [writeSource, StackRelation.values,
+            Locals.Source.State.withVars]
+        · intro name hName
+          obtain ⟨value, hValue⟩ := hCaller.defined hName
+          exact
+            ⟨value, by
+              simpa [writeSource, Locals.Source.State.withVars] using hValue⟩
+      have hAssignWrite :
+          Functions.Source.Store.assignMany targets values
+              writeSource.vars = some finalStore := by
+        simpa [writeSource, Locals.Source.State.withVars] using hAssign
+      obtain ⟨finalTarget, hTargetRun, hFinalRel⟩ :=
+        compileOpenRun targetProgram targetExtra ctx suffix returns targets
+          values writeSource targetAfterCall finalStore code hLayoutNodup
+          hTargetsNodup hAssignWrite hCompile hPending
+      have hSourceRun :
+          Functions.InteractionSemantics.Stmt.finishCall targets sourceCtx
+              sourceAfterArgs (.returned sourceReturned values) =
+            Simulation.Interaction.pure
+              (Locals.Source.Effectful.Outcome.regular
+                (sourceReturned.withVars finalStore), sourceCtx) := by
+        simp [Functions.InteractionSemantics.Stmt.finishCall, hAssign,
+          Functions.InteractionSemantics.stateModel,
+          Locals.InteractionSemantics.stateModel,
+          Locals.Source.Effectful.Ordinary.stateModel,
+          Locals.Source.Effectful.StateModel.vars,
+          Locals.Source.Effectful.StateModel.source,
+          Locals.Source.Effectful.StateModel.withSource,
+          Locals.Source.State.withVars,
+          Simulation.Interaction.pure, Simulation.Interaction.bind,
+          Simulation.Interaction.monad_pure_bind]
+        rfl
+      rw [hSourceRun, hTargetRun]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      apply StackStatementPreservation.ControlOpenResultRel.regular hRuntime
+      simpa [writeSource, Locals.Source.State.withVars] using hFinalRel
+
+theorem halted
+    (sourceCtx : Functions.Source.Ctx)
+    (controlTargets : StackSchedule.ControlTargets)
+    (returnNames : List Name) (ctx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest)
+    (targets : List Name) (retc : Nat)
+    (sourceAfterArgs sourceHalted : Locals.Source.State)
+    (callerStack : List Word) (targetHalted : Structured.RunState)
+    (kind : Assembly.HaltKind)
+    (hAttached :
+      AttachedCallResultRel retc callerStack returns
+        (.halted kind sourceHalted) (.halt kind targetHalted)) :
+    Simulation.Interaction.Rel
+      (StackStatementPreservation.ControlOpenOutcomeRel controlTargets
+        returnNames ctx suffix returns)
+      (Functions.InteractionSemantics.Stmt.finishCall targets sourceCtx
+        sourceAfterArgs (.halted kind sourceHalted))
+      (Simulation.Interaction.pure
+        (Structured.Outcome.halt kind targetHalted)) := by
+  cases hAttached with
+  | halt hShared =>
+      simp only [Functions.InteractionSemantics.Stmt.finishCall,
+        Simulation.Interaction.pure]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact StackStatementPreservation.ControlOpenResultRel.halt hShared.symm
+
+/-- Compose any already-attached call run with canonical source `finishCall`
+and the compiler-owned target writeback block. -/
+theorem afterCall
+    (targetProgram : Expressions.Program) (targetExtra : Nat)
+    (sourceCtx : Functions.Source.Ctx)
+    (controlTargets : StackSchedule.ControlTargets)
+    (returnNames : List Name) (ctx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest)
+    (targets : List Name) (retc : Nat)
+    (sourceAfterArgs : Locals.Source.State)
+    (callerTarget : Structured.RunState)
+    (code : List Expressions.Stmt)
+    {sourceRun :
+      Simulation.Interaction EVMException
+        Functions.InteractionSemantics.CallResult}
+    {targetRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    (hRuntime :
+      StackStatementPreservation.RuntimeCtxCovers sourceCtx ctx
+        controlTargets returnNames returns)
+    (hLayoutNodup : ctx.layout.Nodup)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsLength : targets.length = retc)
+    (hTargetsLayout : ∀ name, name ∈ targets → name ∈ ctx.layout)
+    (hCaller :
+      StateRel ctx.layout suffix returns sourceAfterArgs callerTarget)
+    (hCompile :
+      Locals.Block.compileOpen ctx
+          { stmts := Lower.assignReturnedTops targets } =
+        some (code, ctx))
+    (hCall :
+      Simulation.Interaction.ForwardRel
+        StackStatementPreservation.FuelTruncated
+        (OpenAttachedCallResultRel retc callerTarget.evm.stack returns)
+        sourceRun targetRun) :
+    Simulation.Interaction.ForwardRel
+      StackStatementPreservation.FuelTruncated
+      (StackStatementPreservation.ControlOpenOutcomeRel controlTargets
+        returnNames ctx suffix returns)
+      (Simulation.Interaction.bind sourceRun
+        (Functions.InteractionSemantics.Stmt.finishCall targets sourceCtx
+          sourceAfterArgs))
+      (Simulation.Interaction.bind targetRun
+        (fun outcome =>
+          match outcome.mode with
+          | .regular =>
+              Expressions.InteractionSemantics.Block.openRun targetProgram
+                (targetExtra + targets.length + 1) { stmts := code }
+                outcome.state
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure outcome)) := by
+  apply Simulation.Interaction.ForwardRel.bind hCall
+  intro sourceResult targetResult hAttached
+  cases hAttached with
+  | @returned sourceReturned values targetAfterCall
+      hShared hStack hReturns hValuesLength =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      simpa only [Structured.Outcome.regular_mode,
+        Structured.Outcome.regular_state] using
+        returned targetProgram targetExtra sourceCtx controlTargets
+          returnNames ctx suffix returns targets retc sourceAfterArgs
+          sourceReturned callerTarget targetAfterCall values code hRuntime
+          hLayoutNodup hTargetsNodup hTargetsLength hTargetsLayout hCaller
+          (.returned hShared hStack hReturns hValuesLength) hCompile
+  | @halt kind sourceHalted targetHalted hShared =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      simpa only [Structured.Outcome.halt_mode,
+        Structured.Outcome.halt_state] using
+        halted sourceCtx controlTargets returnNames ctx suffix returns targets
+          retc sourceAfterArgs sourceHalted callerTarget.evm.stack
+          targetHalted kind (.halt hShared)
+
+end CallerWriteback
+
+namespace CallPoint
+
+/-- Preserve the complete call core before the scheduler's post-call retain
+transition. The callee capability is deliberately private proof plumbing; the
+program dispatcher discharges it by source fuel. -/
+theorem core
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Functions.Source.Ctx)
+    (controlTargets : StackSchedule.ControlTargets)
+    (returnNames : List Name) (ctx : Locals.Ctx)
+    (sourceFuel targetExtra : Nat)
+    (targets : List Name) (functionName : Name)
+    (args : List (Functions.Expr 1)) (fn : Functions.FunDef)
+    (argCode : Structured.Code) (writebackCode : List Expressions.Stmt)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hFind :
+      Functions.Source.FunList.find? functionName sourceProgram.functions =
+        some fn)
+    (hRuntime :
+      StackStatementPreservation.RuntimeCtxCovers sourceCtx ctx
+        controlTargets returnNames returns)
+    (hLayoutNodup : ctx.layout.Nodup)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsLength : targets.length = fn.returns.length)
+    (hTargetsLayout : ∀ name, name ∈ targets → name ∈ ctx.layout)
+    (hArgScoped :
+      Locals.Scope.ExprSeqScoped ctx.layout (Lower.argExprs args))
+    (hArgSupported :
+      Functions.InteractionSemantics.ArgList.OpenSupported args)
+    (hArgCompile :
+      Locals.ExprSeq.compileCode ctx 0 (Lower.argExprs args) =
+        some argCode)
+    (hWritebackCompile :
+      Locals.Block.compileOpen ctx
+          { stmts := Lower.assignReturnedTops targets } =
+        some (writebackCode, ctx))
+    (hInitial : StateRel ctx.layout suffix returns source target)
+    (hCallee :
+      ∀ {sourceAfterArgs : Locals.Source.State}
+        {argValues : List Word} {targetAfterArgs : Structured.RunState},
+        Locals.InteractionPreservation.Expr.ResultRel args.length
+            source target (sourceAfterArgs, argValues) targetAfterArgs →
+          Simulation.Interaction.ForwardRel
+            StackStatementPreservation.FuelTruncated
+            (OpenAttachedCallResultRel fn.returns.length
+              target.evm.stack returns)
+            (Functions.InteractionSemantics.FunDef.openRunBody sourceProgram
+              fn argValues sourceFuel sourceAfterArgs)
+            (Expressions.InteractionSemantics.Stmt.openRun targetProgram
+              (targetExtra + targets.length + 1) (.call functionName)
+              targetAfterArgs)) :
+    Simulation.Interaction.ForwardRel
+      StackStatementPreservation.FuelTruncated
+      (StackStatementPreservation.ControlOpenOutcomeRel controlTargets
+        returnNames ctx suffix returns)
+      (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
+        (sourceFuel + 1) (.call targets functionName args) source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        (targetExtra + targets.length + 3)
+        { stmts :=
+            [.code argCode] ++ (.call functionName :: writebackCode) }
+        target) := by
+  rw [Functions.InteractionSemantics.Stmt.openRun_call]
+  simp only [hTargetsNodup, if_pos]
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  have hArgs :=
+    openEvalArgs_compileBlock targetProgram
+      (targetExtra + targets.length + 3) args ctx (by omega)
+      hArgScoped hArgSupported hArgCompile hInitial
+  apply Simulation.Interaction.ForwardRel.bind
+    (Simulation.Interaction.ForwardRel.ofRel hArgs)
+  intro sourceResult targetResult hArgResult
+  cases hArgResult with
+  | @regular sourceAfterArgs argValues targetAfterArgs hArg =>
+      simp only [hFind, Option.elim_some,
+        Simulation.Interaction.bind_done_ok,
+        Simulation.Interaction.monad_pure_bind]
+      let callerTarget :=
+        targetAfterArgs.withEVM
+          { targetAfterArgs.evm with stack := target.evm.stack }
+      have hCaller :
+          StateRel ctx.layout suffix returns sourceAfterArgs callerTarget := by
+        exact callerStateRel_of_argResult hInitial hArg
+      have hAttached := hCallee hArg
+      have hAttached' :
+          Simulation.Interaction.ForwardRel
+            StackStatementPreservation.FuelTruncated
+            (OpenAttachedCallResultRel fn.returns.length
+              callerTarget.evm.stack returns)
+            (Functions.InteractionSemantics.FunDef.openRunBody sourceProgram
+              fn argValues sourceFuel sourceAfterArgs)
+            (Expressions.InteractionSemantics.Stmt.openRun targetProgram
+              (targetExtra + targets.length + 1) (.call functionName)
+              targetAfterArgs) := by
+        simpa [callerTarget, Structured.RunState.withEVM] using hAttached
+      have hAfterCall :=
+        CallerWriteback.afterCall targetProgram targetExtra sourceCtx
+          controlTargets returnNames ctx suffix returns targets
+          fn.returns.length sourceAfterArgs callerTarget writebackCode hRuntime
+          hLayoutNodup hTargetsNodup hTargetsLength hTargetsLayout hCaller
+          hWritebackCompile hAttached'
+      have hFuelEq :
+          targetExtra + targets.length + 3 - 1 =
+            targetExtra + targets.length + 2 := by
+        omega
+      simp only [Structured.Outcome.regular_mode,
+        Structured.Outcome.regular_state, List.length_cons,
+        List.length_nil, Nat.add_zero]
+      rw [hFuelEq]
+      rw [Expressions.InteractionSemantics.Block.openRun_cons]
+      change
+        Simulation.Interaction.ForwardRel
+          StackStatementPreservation.FuelTruncated
+          (StackStatementPreservation.ControlOpenOutcomeRel controlTargets
+            returnNames ctx suffix returns)
+          _
+          (Simulation.Interaction.bind
+            (Expressions.InteractionSemantics.Stmt.openRun targetProgram
+              (targetExtra + targets.length + 1) (.call functionName)
+              targetAfterArgs) _)
+      simpa using hAfterCall
+
+end CallPoint
 
 namespace ReturnEpilogue
 

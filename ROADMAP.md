@@ -178,8 +178,11 @@ elimination are not prerequisites for Permit2 or Aave.
 - [x] Attach the real target return frame through ordinary procedure lookup,
   argument splitting, frame popping, and return-value attachment; terminal
   halt ignores only now-irrelevant compiler return-frame metadata.
-- [ ] Perform caller target writeback and restore the caller's retained
-  symbolic layout.
+- [x] Perform checked caller target writeback in source `assignMany` order,
+  deriving assignment success from arity and the caller layout rather than a
+  generated premise.
+- [ ] Attach the scheduler's post-call retain transition and restore the
+  caller's retained symbolic layout through compiler-owned point equations.
 - [ ] Discharge the private callee-body premise by source-fuel recursion for
   recursive and non-recursive call graphs.
 - [ ] Keep call artifacts compiler-owned and absent from public theorem
