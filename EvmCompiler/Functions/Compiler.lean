@@ -238,7 +238,7 @@ mutual
     | .cont => canContinue
     | .leave => inFunction
     | .call _targets _functionName _args => true
-    | .terminal _kind => true
+    | .terminal kind => kind.argCount == 0
     | .terminalArgs _kind _args => true
 
   def StmtList.wf? (canBreak canContinue inFunction : Bool) :
@@ -349,6 +349,7 @@ mutual
         exact Functions.Stmt.WF.call
     | terminal kind =>
         exact Functions.Stmt.WF.terminal
+          (by simpa [Stmt.wf?] using hCheck)
     | terminalArgs kind args =>
         exact Functions.Stmt.WF.terminalArgs
 

@@ -19,6 +19,14 @@ for theorem in \
   fi
 done
 
+if ! rg -Fq \
+    '#check EvmCompiler.Functions.StackRecursivePreservation.compiledListAtOne' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing compiler-owned recursive stack preservation.' >&2
+  failed=1
+fi
+
 for theorem in \
     'controlListAtZero' \
     'blockPointAt_of_compilers' \
@@ -1927,11 +1935,18 @@ report_matches \
   EvmCompiler/Functions/StackBlockPreservation.lean
 
 report_matches \
+  'Functions recursive stack preservation must remain inside the adjacent allocation boundary:' \
+  '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|TypedCfg|Assembly\.(Assembler|Compiler)|Locals\.Compiler|Yul)' \
+  EvmCompiler/Functions/StackRecursivePreservation.lean
+
+report_matches \
   'Dynamic Functions preservation must use canonical Functions source semantics:' \
   'CtxCovers \(source : Locals\.Source\.Ctx\)|sourceProgram : Locals\.Program|Locals\.InteractionSemantics\.(Stmt|Block)\.openRun' \
   EvmCompiler/Functions/StackStatementPreservation.lean \
   EvmCompiler/Functions/StackCallPreservation.lean \
-  EvmCompiler/Functions/StackBlockPreservation.lean
+  EvmCompiler/Functions/StackBlockPreservation.lean \
+  EvmCompiler/Functions/StackExactFuelPreservation.lean \
+  EvmCompiler/Functions/StackRecursivePreservation.lean
 
 report_matches \
   'Functions stack-transition compilation must remain an adjacent compiler bridge:' \
@@ -2023,6 +2038,8 @@ report_matches \
   EvmCompiler/Functions/StackStatementPreservation.lean \
   EvmCompiler/Functions/StackCallPreservation.lean \
   EvmCompiler/Functions/StackBlockPreservation.lean \
+  EvmCompiler/Functions/StackExactFuelPreservation.lean \
+  EvmCompiler/Functions/StackRecursivePreservation.lean \
   EvmCompiler/Functions/StackTransitionPreservation.lean \
   EvmCompiler/Functions/StackTransitionCompilation.lean \
   EvmCompiler/Functions/StackLowering.lean \

@@ -108,7 +108,7 @@ mutual
         Stmt.WF canBreak canContinue inFunction
           (.call targets functionName args)
     | terminal {canBreak canContinue inFunction : Bool}
-        {kind : Assembly.HaltKind} :
+        {kind : Assembly.HaltKind} (hArgCount : kind.argCount = 0) :
         Stmt.WF canBreak canContinue inFunction (.terminal kind)
     | terminalArgs {canBreak canContinue inFunction : Bool}
         {kind : Assembly.HaltKind} {args : Locals.ExprSeq kind.argCount} :

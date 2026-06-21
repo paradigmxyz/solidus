@@ -406,6 +406,25 @@ theorem scheduleBlockFuelWithTargets_components
       · rw [if_neg hCover] at hSchedule
         contradiction
 
+/-- A successful block schedule owns the exact statement-list schedule after
+its checked entry transition. Recursive semantic proofs consume this adjacent
+projection instead of unfolding the scheduler. -/
+theorem scheduleBlockFuelWithTargets_statementList
+    {targets : ControlTargets} {fuel : Nat}
+    {pinned : LiveSet} {layout : Locals.Layout}
+    {source : Block} {facts : AllocationLivenessFacts.Region}
+    {region : Region}
+    (hSchedule :
+      scheduleBlockFuelWithTargets targets fuel pinned layout source facts =
+        some region) :
+    scheduleStmtListFuelWithTargets targets (fuel - 1) pinned
+        region.entry.target source.stmts facts.points =
+      some (region.points, region.finalLayout) := by
+  obtain ⟨entry, points, finalLayout, _hEntry, hPoints, hRegionEntry,
+      hRegionPoints, _hExit, hRegionFinal⟩ :=
+    scheduleBlockFuelWithTargets_components hSchedule
+  simpa [hRegionEntry, hRegionPoints, hRegionFinal] using hPoints
+
 theorem scheduleBlockFuel_entry_sound
     {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
     {source : Block} {facts : AllocationLivenessFacts.Region}
@@ -1367,6 +1386,151 @@ theorem scheduleStmtFuelWithTargets_if_components
                       exact
                         ⟨bodyFacts, rawRegion, exit, rfl, by simpa using hRegion,
                           hExit, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- Every successful statement schedule preserves duplicate-free symbolic
+layouts. Structured statements restore their enclosing layout; declarations
+add one checked-fresh name; and abrupt loop exits use a checked join. -/
+theorem scheduleStmtFuelWithTargets_statementLayout_nodup
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout : Locals.Layout} {stmt : Stmt}
+    {facts : AllocationLivenessFacts.Point} {point : Point}
+    (hNodup : layout.Nodup)
+    (hSchedule :
+      scheduleStmtFuelWithTargets targets fuel pinned layout stmt facts =
+        some point) :
+    point.statementLayout.Nodup := by
+  cases stmt with
+  | expr expr =>
+      rw [(scheduleStmtFuelWithTargets_expr_components hSchedule).2.1]
+      exact hNodup
+  | let_ name value =>
+      obtain ⟨hFresh, _hBefore, hStatement, _hRetain, _hRegions, _hFalls⟩ :=
+        scheduleStmtFuelWithTargets_let_components hSchedule
+      rw [hStatement]
+      exact List.nodup_cons.mpr ⟨hFresh, hNodup⟩
+  | assign name value =>
+      rw [(scheduleStmtFuelWithTargets_assign_components hSchedule).2.1]
+      exact hNodup
+  | block body =>
+      obtain ⟨_bodyFacts, _rawRegion, _exit, _hFacts, _hRegion, _hExit,
+          _hBefore, hStatement, _hPointExit, _hRetain, _hRegions, _hFalls⟩ :=
+        scheduleStmtFuelWithTargets_block_components hSchedule
+      rw [hStatement]
+      exact hNodup
+  | if_ cond body =>
+      obtain ⟨_bodyFacts, _rawRegion, _exit, _hFacts, _hRegion, _hExit,
+          _hBefore, hStatement, _hPointExit, _hRetain, _hRegions, _hFalls⟩ :=
+        scheduleStmtFuelWithTargets_if_components hSchedule
+      rw [hStatement]
+      exact hNodup
+  | switch scrutinee cases defaultBody =>
+      obtain ⟨_caseRegions, _defaultRegions, _hCases, _hDefault, _hBefore,
+          hStatement, _hRetain, _hRegions, _hFalls⟩ :=
+        scheduleStmtFuelWithTargets_switch_components hSchedule
+      rw [hStatement]
+      exact hNodup
+  | for_ init cond post body =>
+      obtain ⟨_initFacts, _postFacts, _bodyFacts, _loopFacts, _rawInit,
+          _rawPost, _rawBody, _initExit, _postExit, _bodyExit, _hFacts,
+          _hLoop, _hInit, _hInitExit, _hPost, _hBody, _hPostExit,
+          _hBodyExit, _hBefore, hStatement, _hRetain, _hRegions, _hFalls⟩ :=
+        scheduleStmtFuelWithTargets_for_components hSchedule
+      rw [hStatement]
+      exact hNodup
+  | brk =>
+      cases hTarget : targets.brk? with
+      | none =>
+          cases fuel with
+          | zero => simp [scheduleStmtFuelWithTargets] at hSchedule
+          | succ fuel =>
+              simp [scheduleStmtFuelWithTargets, hTarget] at hSchedule
+              subst point
+              exact hNodup
+      | some target =>
+          obtain ⟨exit, hExit, _hBefore, hStatement, _hPointExit,
+              _hRetain, _hRegions, _hFalls⟩ :=
+            scheduleStmtFuelWithTargets_brk_components hTarget hSchedule
+          rw [hStatement, ← (Join.build?_endpoints hExit).2]
+          exact exit.target_nodup (by
+            rw [(Join.build?_endpoints hExit).1]
+            exact hNodup)
+  | cont =>
+      cases hTarget : targets.cont? with
+      | none =>
+          cases fuel with
+          | zero => simp [scheduleStmtFuelWithTargets] at hSchedule
+          | succ fuel =>
+              simp [scheduleStmtFuelWithTargets, hTarget] at hSchedule
+              subst point
+              exact hNodup
+      | some target =>
+          obtain ⟨exit, hExit, _hBefore, hStatement, _hPointExit,
+              _hRetain, _hRegions, _hFalls⟩ :=
+            scheduleStmtFuelWithTargets_cont_components hTarget hSchedule
+          rw [hStatement, ← (Join.build?_endpoints hExit).2]
+          exact exit.target_nodup (by
+            rw [(Join.build?_endpoints hExit).1]
+            exact hNodup)
+  | leave =>
+      rw [(scheduleStmtFuelWithTargets_leave_components hSchedule).2.1]
+      exact hNodup
+  | call targets functionName args =>
+      rw [(scheduleStmtFuelWithTargets_call_components hSchedule).2.1]
+      exact hNodup
+  | terminal kind =>
+      rw [(scheduleStmtFuelWithTargets_terminal_components hSchedule).2.1]
+      exact hNodup
+  | terminalArgs kind args =>
+      rw [(scheduleStmtFuelWithTargets_terminalArgs_components hSchedule).2.1]
+      exact hNodup
+
+/-- Successful list scheduling preserves symbolic layout uniqueness. This is a
+pure scheduler invariant; semantic preservation consumes it but does not own
+or recompute it. -/
+theorem scheduleStmtListFuelWithTargets_finalLayout_nodup
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout : Locals.Layout} {stmts : List Stmt}
+    {facts : List AllocationLivenessFacts.Point}
+    {points : List Point} {finalLayout : Locals.Layout}
+    (hNodup : layout.Nodup)
+    (hSchedule :
+      scheduleStmtListFuelWithTargets targets fuel pinned layout stmts facts =
+        some (points, finalLayout)) :
+    finalLayout.Nodup := by
+  induction stmts generalizing facts layout points finalLayout with
+  | nil =>
+      cases facts with
+      | nil =>
+          simp [scheduleStmtListFuelWithTargets] at hSchedule
+          rw [← hSchedule.2]
+          exact hNodup
+      | cons fact restFacts =>
+          simp [scheduleStmtListFuelWithTargets] at hSchedule
+  | cons stmt rest ih =>
+      cases facts with
+      | nil =>
+          simp [scheduleStmtListFuelWithTargets] at hSchedule
+      | cons fact restFacts =>
+          obtain ⟨order, rawPoint, hOrder, hPoint, hCases⟩ :=
+            scheduleStmtListFuelWithTargets_cons_components hSchedule
+          have hOrderedNodup : order.target.Nodup :=
+            order.target_nodup (by
+              rw [Ordering.build?_source hOrder]
+              exact hNodup)
+          have hPointNodup : rawPoint.statementLayout.Nodup :=
+            scheduleStmtFuelWithTargets_statementLayout_nodup hOrderedNodup
+              hPoint
+          rcases hCases with hFalls | hStops
+          · obtain ⟨_hFalls, retain, tail, tailFinal, hRetain, hTail,
+                _hPoints, hFinal⟩ := hFalls
+            have hRetainedNodup : retain.target.Nodup :=
+              retain.target_nodup (by
+                rw [(Transition.build?_sound hRetain).1]
+                exact hPointNodup)
+            rw [hFinal]
+            exact ih hRetainedNodup hTail
+          · rw [hStops.2.2]
+            exact hPointNodup
 
 theorem scheduleStmtListFuelWithTargets_brk_components
     {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}

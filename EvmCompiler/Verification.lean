@@ -27,6 +27,7 @@ import EvmCompiler.Functions.StackStatementPreservation
 import EvmCompiler.Functions.StackCallPreservation
 import EvmCompiler.Functions.StackBlockPreservation
 import EvmCompiler.Functions.StackExactFuelPreservation
+import EvmCompiler.Functions.StackRecursivePreservation
 import EvmCompiler.Functions.StackTransitionPreservation
 import EvmCompiler.Functions.StackTransitionCompilation
 import EvmCompiler.Functions.StackLowering
@@ -3283,6 +3284,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackExactFuelPreservation.controlListAtZero
 #check EvmCompiler.Functions.StackExactFuelPreservation.blockPointAt_of_compilers
 #check EvmCompiler.Functions.StackExactFuelPreservation.blockConsAt_of_compilers
+#check EvmCompiler.Functions.StackRecursivePreservation.compiledListAtOne
 #check EvmCompiler.Functions.StackStatementPreservation.ControlPointPreservesAt
 #check EvmCompiler.Functions.StackStatementPreservation.CompiledControlPointAt
 #check EvmCompiler.Functions.StackStatementPreservation.CompiledControlPoint.at
@@ -3341,6 +3343,7 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackBlockPreservation.callConsAtSucc_of_compilers
 #print axioms EvmCompiler.Functions.StackExactFuelPreservation.assignConsAt_of_compilers
 #print axioms EvmCompiler.Functions.StackExactFuelPreservation.blockConsAt_of_compilers
+#print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledListAtOne
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_optionalReturn
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_optionalReturn_of_bodyRun
 #print axioms EvmCompiler.Functions.StackCallPreservation.FunctionLookup.of_compilers

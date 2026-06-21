@@ -1591,6 +1591,7 @@ theorem switchConsAtSucc_of_compilers
       ∀ {body : Functions.Block} {childCtx : Locals.Ctx}
         {bodyFacts rawRegion bodyLowered bodyCode bodyFinalCtx},
         SwitchChild cases defaultBody body →
+        Locals.Ctx.SameControl targetCtx childCtx →
         StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
             (StackSchedule.layoutSet childCtx.layout) childCtx.layout
             body bodyFacts = some rawRegion →
@@ -1657,7 +1658,8 @@ theorem switchConsAtSucc_of_compilers
         (by simpa [Locals.Ctx.withLayout] using hRawBefore)
         (by simpa using hRawRegions) rfl hRetainSource hPointLower hPointCompile
         (fun hChild hChildSchedule hChildLower hChildCompile hChildNodup =>
-          hBody hChild hChildSchedule hChildLower hChildCompile hChildNodup)
+          hBody hChild (Locals.Ctx.SameControl.withLayout targetCtx order.target)
+            hChildSchedule hChildLower hChildCompile hChildNodup)
     refine ⟨hCompiled, ?_⟩
     rw [hCompiled.layout]
     apply AllocationLayout.Transition.target_nodup retain
@@ -1701,6 +1703,7 @@ theorem switchConsAtOne_of_compilers
       ∀ {body : Functions.Block} {childCtx : Locals.Ctx}
         {bodyFacts rawRegion bodyLowered bodyCode bodyFinalCtx},
         SwitchChild cases defaultBody body →
+        Locals.Ctx.SameControl targetCtx childCtx →
         StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
             (StackSchedule.layoutSet childCtx.layout) childCtx.layout
             body bodyFacts = some rawRegion →
@@ -1767,7 +1770,8 @@ theorem switchConsAtOne_of_compilers
         (by simpa [Locals.Ctx.withLayout] using hRawBefore)
         (by simpa using hRawRegions) rfl hRetainSource hPointLower hPointCompile
         (fun hChild hChildSchedule hChildLower hChildCompile hChildNodup =>
-          hBody hChild hChildSchedule hChildLower hChildCompile hChildNodup)
+          hBody hChild (Locals.Ctx.SameControl.withLayout targetCtx order.target)
+            hChildSchedule hChildLower hChildCompile hChildNodup)
     refine ⟨hCompiled, ?_⟩
     rw [hCompiled.layout]
     apply AllocationLayout.Transition.target_nodup retain
@@ -2057,6 +2061,7 @@ theorem ifConsAtSucc_of_compilers
     (hBody :
       ∀ {childCtx : Locals.Ctx}
         {bodyFacts rawRegion bodyLowered bodyCode bodyFinalCtx},
+        Locals.Ctx.SameControl targetCtx childCtx →
         StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
             (StackSchedule.layoutSet childCtx.layout) childCtx.layout
             body bodyFacts = some rawRegion →
@@ -2124,7 +2129,8 @@ theorem ifConsAtSucc_of_compilers
         (by simpa [Locals.Ctx.withLayout] using hRawBefore)
         (by simpa using hRawRegions) rfl hRetainSource hPointLower hPointCompile
         (fun hChildSchedule hChildLower hChildCompile hChildNodup =>
-          hBody hChildSchedule hChildLower hChildCompile hChildNodup)
+          hBody (Locals.Ctx.SameControl.withLayout targetCtx order.target)
+            hChildSchedule hChildLower hChildCompile hChildNodup)
     refine ⟨hCompiled, ?_⟩
     rw [hCompiled.layout]
     apply AllocationLayout.Transition.target_nodup retain
@@ -2163,6 +2169,7 @@ theorem ifConsAtOne_of_compilers
     (hBody :
       ∀ {childCtx : Locals.Ctx}
         {bodyFacts rawRegion bodyLowered bodyCode bodyFinalCtx},
+        Locals.Ctx.SameControl targetCtx childCtx →
         StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
             (StackSchedule.layoutSet childCtx.layout) childCtx.layout
             body bodyFacts = some rawRegion →
@@ -2230,7 +2237,8 @@ theorem ifConsAtOne_of_compilers
         (by simpa [Locals.Ctx.withLayout] using hRawBefore)
         (by simpa using hRawRegions) rfl hRetainSource hPointLower hPointCompile
         (fun hChildSchedule hChildLower hChildCompile hChildNodup =>
-          hBody hChildSchedule hChildLower hChildCompile hChildNodup)
+          hBody (Locals.Ctx.SameControl.withLayout targetCtx order.target)
+            hChildSchedule hChildLower hChildCompile hChildNodup)
     refine ⟨hCompiled, ?_⟩
     rw [hCompiled.layout]
     apply AllocationLayout.Transition.target_nodup retain
@@ -3893,6 +3901,7 @@ theorem blockConsAt_of_compilers
     (hBody :
       ∀ {childCtx : Locals.Ctx}
         {bodyFacts rawRegion bodyLowered bodyCode bodyFinalCtx},
+        Locals.Ctx.SameControl targetCtx childCtx →
         StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
             (StackSchedule.layoutSet childCtx.layout) childCtx.layout
             body bodyFacts = some rawRegion →
@@ -3958,7 +3967,8 @@ theorem blockConsAt_of_compilers
         hRawSchedule (by simpa using hRawRegions) rfl hRetainSource
         hPointLower hPointCompile
         (fun hChildSchedule hChildLower hChildCompile hChildNodup =>
-          hBody hChildSchedule hChildLower hChildCompile hChildNodup)
+          hBody (Locals.Ctx.SameControl.withLayout targetCtx order.target)
+            hChildSchedule hChildLower hChildCompile hChildNodup)
     refine ⟨hCompiled, ?_⟩
     rw [hCompiled.layout]
     apply AllocationLayout.Transition.target_nodup retain
