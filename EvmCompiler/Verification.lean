@@ -3006,6 +3006,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackStatementPreservation.ControlCtxCovers.afterTransition
 #check EvmCompiler.Functions.StackStatementPreservation.ControlCtxCovers.ofSameControlLayout
 #check EvmCompiler.Functions.StackStatementPreservation.ControlCtxCovers.prepend
+#check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers
+#check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.afterOrdering
+#check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.afterTransition
+#check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.prepend
 #check EvmCompiler.Functions.StackStatementPreservation.ControlOpenResultRel
 #check EvmCompiler.Functions.StackStatementPreservation.ControlPointPreserves
 #check EvmCompiler.Functions.StackStatementPreservation.CompiledControlPoint

@@ -204,6 +204,84 @@ theorem prepend
 
 end ControlCtxCovers
 
+structure RuntimeCtxCovers (source : Functions.Source.Ctx)
+    (target : Locals.Ctx) (targets : StackSchedule.ControlTargets)
+    (returns : List Structured.ReturnDest) : Prop where
+  control : ControlCtxCovers source target targets
+  leaveReady : source.leaveScope?.isSome → returns ≠ []
+
+namespace RuntimeCtxCovers
+
+theorem context
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {targets : StackSchedule.ControlTargets}
+    {returns : List Structured.ReturnDest}
+    (hCtx : RuntimeCtxCovers source target targets returns) :
+    CtxCovers source target :=
+  hCtx.control.context
+
+theorem breakTarget
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {targets : StackSchedule.ControlTargets}
+    {returns : List Structured.ReturnDest}
+    (hCtx : RuntimeCtxCovers source target targets returns)
+    {layout : Locals.Layout} (hTarget : targets.brk? = some layout) :
+    BreakCtxCovers source target layout :=
+  hCtx.control.breakTarget hTarget
+
+theorem continueTarget
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {targets : StackSchedule.ControlTargets}
+    {returns : List Structured.ReturnDest}
+    (hCtx : RuntimeCtxCovers source target targets returns)
+    {layout : Locals.Layout} (hTarget : targets.cont? = some layout) :
+    ContinueCtxCovers source target layout :=
+  hCtx.control.continueTarget hTarget
+
+theorem afterOrdering
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {targets : StackSchedule.ControlTargets}
+    {returns : List Structured.ReturnDest}
+    (hCtx : RuntimeCtxCovers source target targets returns)
+    (ordering : AllocationLayout.Ordering)
+    (hSource : target.layout = ordering.source) :
+    RuntimeCtxCovers source (target.withLayout ordering.target) targets
+      returns :=
+  ⟨hCtx.control.afterOrdering ordering hSource, hCtx.leaveReady⟩
+
+theorem afterTransition
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {targets : StackSchedule.ControlTargets}
+    {returns : List Structured.ReturnDest}
+    (hCtx : RuntimeCtxCovers source target targets returns)
+    (transition : AllocationLayout.Transition)
+    (hSource : target.layout = transition.source) :
+    RuntimeCtxCovers source
+      (target.withLayout transition.schedule.target) targets returns :=
+  ⟨hCtx.control.afterTransition transition hSource, hCtx.leaveReady⟩
+
+theorem ofSameControlLayout
+    {source : Functions.Source.Ctx} {before after : Locals.Ctx}
+    {targets : StackSchedule.ControlTargets}
+    {returns : List Structured.ReturnDest}
+    (hCtx : RuntimeCtxCovers source before targets returns)
+    (hControl : Locals.Ctx.SameControl before after)
+    (hLayout : after.layout = before.layout) :
+    RuntimeCtxCovers source after targets returns :=
+  ⟨hCtx.control.ofSameControlLayout hControl hLayout, hCtx.leaveReady⟩
+
+theorem prepend
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {targets : StackSchedule.ControlTargets}
+    {returns : List Structured.ReturnDest}
+    (hCtx : RuntimeCtxCovers source target targets returns) (name : Name) :
+    RuntimeCtxCovers { source with scope := name :: source.scope }
+      (target.withLayout (name :: target.layout)) targets returns := by
+  refine ⟨hCtx.control.prepend name, ?_⟩
+  simpa using hCtx.leaveReady
+
+end RuntimeCtxCovers
+
 structure RegularResultRel (targetCtx : Locals.Ctx)
     (suffix : List Word) (returns : List Structured.ReturnDest)
     (source :
@@ -268,7 +346,7 @@ inductive ControlOpenResultRel (targets : StackSchedule.ControlTargets)
       Functions.Source.Ctx) →
     Structured.Outcome → Prop
   | regular {source sourceCtx target} :
-      ControlCtxCovers sourceCtx finalCtx targets →
+      RuntimeCtxCovers sourceCtx finalCtx targets returns →
       StateRel finalCtx.layout suffix returns source target →
       ControlOpenResultRel targets finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.regular source, sourceCtx)
@@ -312,7 +390,7 @@ def ControlPointPreserves
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState},
     Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel code →
-    ControlCtxCovers sourceCtx targetCtx targets →
+    RuntimeCtxCovers sourceCtx targetCtx targets returns →
     StateRel targetCtx.layout suffix returns source target →
     Simulation.Interaction.ForwardRel FuelTruncated
       (ControlOpenOutcomeRel targets finalCtx suffix returns)
@@ -384,7 +462,7 @@ theorem regularRelToControl
           match result with
           | .error _ => True
           | .ok sourceResult =>
-              ControlCtxCovers sourceResult.2 finalCtx targets)
+              RuntimeCtxCovers sourceResult.2 finalCtx targets returns)
         sourceRun) :
     Simulation.Interaction.ForwardRel FuelTruncated
       (ControlOpenOutcomeRel targets finalCtx suffix returns)
@@ -425,7 +503,7 @@ theorem openRelToControl
           | .ok sourceResult =>
               match sourceResult.1.mode with
               | .regular =>
-                  ControlCtxCovers sourceResult.2 finalCtx targets
+                  RuntimeCtxCovers sourceResult.2 finalCtx targets returns
               | .brk | .cont | .leave | .halt _ => True)
         sourceRun) :
     Simulation.Interaction.ForwardRel FuelTruncated
@@ -452,13 +530,14 @@ theorem openRun_expr_controlCtx
     (sourceCtx : Functions.Source.Ctx) (sourceFuel : Nat)
     (expr : Functions.Expr 0) (source : Locals.Source.State)
     (targets : StackSchedule.ControlTargets) (finalCtx : Locals.Ctx)
-    (hCtx : ControlCtxCovers sourceCtx finalCtx targets) :
+    {returns : List Structured.ReturnDest}
+    (hCtx : RuntimeCtxCovers sourceCtx finalCtx targets returns) :
     Simulation.Interaction.AllDone
       (fun result =>
         match result with
         | .error _ => True
         | .ok sourceResult =>
-            ControlCtxCovers sourceResult.2 finalCtx targets)
+            RuntimeCtxCovers sourceResult.2 finalCtx targets returns)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel (.expr expr) source) := by
   unfold Functions.InteractionSemantics.Stmt.openRun
@@ -479,16 +558,17 @@ theorem openRun_let_controlCtx
     (name : Name) (value : Functions.Expr 1)
     (source : Locals.Source.State)
     (targets : StackSchedule.ControlTargets) (finalCtx : Locals.Ctx)
+    {returns : List Structured.ReturnDest}
     (hCtx :
-      ControlCtxCovers
+      RuntimeCtxCovers
         { sourceCtx with scope := name :: sourceCtx.scope }
-        finalCtx targets) :
+        finalCtx targets returns) :
     Simulation.Interaction.AllDone
       (fun result =>
         match result with
         | .error _ => True
         | .ok sourceResult =>
-            ControlCtxCovers sourceResult.2 finalCtx targets)
+            RuntimeCtxCovers sourceResult.2 finalCtx targets returns)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel (.let_ name value) source) := by
   unfold Functions.InteractionSemantics.Stmt.openRun
@@ -508,13 +588,14 @@ theorem openRun_assign_controlCtx
     (name : Name) (value : Functions.Expr 1)
     (source : Locals.Source.State)
     (targets : StackSchedule.ControlTargets) (finalCtx : Locals.Ctx)
-    (hCtx : ControlCtxCovers sourceCtx finalCtx targets) :
+    {returns : List Structured.ReturnDest}
+    (hCtx : RuntimeCtxCovers sourceCtx finalCtx targets returns) :
     Simulation.Interaction.AllDone
       (fun result =>
         match result with
         | .error _ => True
         | .ok sourceResult =>
-            ControlCtxCovers sourceResult.2 finalCtx targets)
+            RuntimeCtxCovers sourceResult.2 finalCtx targets returns)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel (.assign name value) source) := by
   unfold Functions.InteractionSemantics.Stmt.openRun
@@ -848,7 +929,7 @@ theorem controlIf
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hTargetFuel : 2 ≤ targetFuel)
-    (hCtx : ControlCtxCovers sourceCtx targetCtx targets)
+    (hCtx : RuntimeCtxCovers sourceCtx targetCtx targets returns)
     (hCondScoped : Locals.Scope.ExprScoped targetCtx.layout cond)
     (hCondSupported : Locals.InteractionSemantics.Expr.OpenSupported cond)
     (hCondCompile :

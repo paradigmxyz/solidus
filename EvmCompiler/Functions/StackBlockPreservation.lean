@@ -140,7 +140,7 @@ def ControlScheduledListPreserves
       {suffix : List Word} {returns : List Structured.ReturnDest}
       {source : Locals.Source.State} {target : Structured.RunState},
       Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel code →
-      ControlCtxCovers sourceCtx targetCtx targets →
+      RuntimeCtxCovers sourceCtx targetCtx targets returns →
       StateRel targetCtx.layout suffix returns source target →
       Simulation.Interaction.ForwardRel FuelTruncated
         (ControlOpenOutcomeRel targets finalCtx suffix returns)
@@ -337,10 +337,10 @@ theorem controlScopedBodyThenJoin
     (hBody :
       ControlScheduledListPreserves sourceProgram targetProgram targets
         bodyCtx bodyFinalCtx source.stmts bodyFinalCtx.layout bodyCode)
-    (hBodyCtx : ControlCtxCovers sourceCtx bodyCtx targets)
+    (hBodyCtx : RuntimeCtxCovers sourceCtx bodyCtx targets returns)
     (hFinalCtx :
-      ControlCtxCovers sourceCtx
-        (bodyFinalCtx.withLayout exit.target) targets)
+      RuntimeCtxCovers sourceCtx
+        (bodyFinalCtx.withLayout exit.target) targets returns)
     (hScopeCovers :
       ∀ {name : Name}, name ∈ exit.target → name ∈ sourceCtx.scope)
     (hFuel :
@@ -450,11 +450,11 @@ theorem controlScheduledRegion
       ControlScheduledListPreserves sourceProgram targetProgram targets
         (targetCtx.withLayout entry.target) bodyFinalCtx source.stmts
         bodyFinalCtx.layout bodyCode)
-    (hCtx : ControlCtxCovers sourceCtx targetCtx targets)
+    (hCtx : RuntimeCtxCovers sourceCtx targetCtx targets returns)
     (hEntrySource : targetCtx.layout = entry.source)
     (hFinalCtx :
-      ControlCtxCovers sourceCtx
-        (bodyFinalCtx.withLayout exit.target) targets)
+      RuntimeCtxCovers sourceCtx
+        (bodyFinalCtx.withLayout exit.target) targets returns)
     (hScopeCovers :
       ∀ {name : Name}, name ∈ exit.target → name ∈ sourceCtx.scope)
     (hFuel :
@@ -571,11 +571,11 @@ theorem controlScheduledRegionAsBlock
       ControlScheduledListPreserves sourceProgram targetProgram targets
         (targetCtx.withLayout entry.target) bodyFinalCtx source.stmts
         bodyFinalCtx.layout bodyCode)
-    (hCtx : ControlCtxCovers sourceCtx targetCtx targets)
+    (hCtx : RuntimeCtxCovers sourceCtx targetCtx targets returns)
     (hEntrySource : targetCtx.layout = entry.source)
     (hFinalCtx :
-      ControlCtxCovers sourceCtx
-        (bodyFinalCtx.withLayout exit.target) targets)
+      RuntimeCtxCovers sourceCtx
+        (bodyFinalCtx.withLayout exit.target) targets returns)
     (hScopeCovers :
       ∀ {name : Name}, name ∈ exit.target → name ∈ sourceCtx.scope)
     (hTargetBody :
@@ -965,8 +965,8 @@ theorem blockPoint_of_compilers
     hCtx hInitial
   have hCodeLength := Expressions.TargetFuel.Covers.length_lt hFuel
   have hFinalControl :
-      ControlCtxCovers sourceCtx
-        (bodyFinalCtx.withLayout exit.target) targets :=
+      RuntimeCtxCovers sourceCtx
+        (bodyFinalCtx.withLayout exit.target) targets returns :=
     hCtx.ofSameControlLayout hControl hRestoredLayout
   have hScopeCovers :
       ∀ {name : Name}, name ∈ exit.target → name ∈ sourceCtx.scope := by
@@ -1180,8 +1180,8 @@ theorem ifPoint_of_compilers
       have hTargetBodyFuel :=
         Expressions.TargetFuel.Covers.if_body_after_two hFuel'
       have hFinalControl :
-          ControlCtxCovers sourceCtx
-            (bodyFinalCtx.withLayout exit.target) targets := by
+          RuntimeCtxCovers sourceCtx
+            (bodyFinalCtx.withLayout exit.target) targets returns := by
         rw [hRestoredCtx]
         exact hCtx
       have hScopeCovers :
@@ -1459,8 +1459,9 @@ theorem controlNonfallPointToList
         stmt code finalLayout)
     (hSource :
       ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel : Nat)
-        (source : Locals.Source.State),
-        ControlCtxCovers sourceCtx targetCtx targets →
+        (source : Locals.Source.State)
+        (returns : List Structured.ReturnDest),
+        RuntimeCtxCovers sourceCtx targetCtx targets returns →
         Functions.InteractionSemantics.Block.openRun sourceProgram sourceCtx
             (sourceFuel + 1) { stmts := stmt :: rest } source =
           Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
@@ -1483,7 +1484,7 @@ theorem controlNonfallPointToList
         apply Expressions.TargetFuel.Covers.head_of_succ_append
           (left := code) (right := [])
         simpa [Nat.succ_eq_add_one] using hFuel
-      rw [hSource sourceCtx sourceFuel source hCtx]
+      rw [hSource sourceCtx sourceFuel source returns hCtx]
       exact hPoint.preserves sourceCtx sourceFuel targetFuel hPointFuel hCtx
         hInitial
 
@@ -1967,7 +1968,7 @@ theorem brkControlList_of_compilers
       simpa [hRawStatement, hExitTarget] using hPointCompiled
   apply controlNonfallPointToList sourceProgram targetProgram targets targetCtx
     finalCtx .brk rest code finalLayout hCompiled
-  intro sourceCtx sourceFuel source hCtx
+  intro sourceCtx sourceFuel source returns hCtx
   obtain ⟨scope, hSourceScope, _hScopeCovers⟩ :=
     (hCtx.breakTarget hTarget).sourceCovers
   rw [Functions.InteractionSemantics.Block.openRun_cons]
@@ -2066,7 +2067,7 @@ theorem contControlList_of_compilers
       simpa [hRawStatement, hExitTarget] using hPointCompiled
   apply controlNonfallPointToList sourceProgram targetProgram targets targetCtx
     finalCtx .cont rest code finalLayout hCompiled
-  intro sourceCtx sourceFuel source hCtx
+  intro sourceCtx sourceFuel source returns hCtx
   obtain ⟨scope, hSourceScope, _hScopeCovers⟩ :=
     (hCtx.continueTarget hTarget).sourceCovers
   rw [Functions.InteractionSemantics.Block.openRun_cons]
@@ -2145,7 +2146,7 @@ theorem terminalControlList_of_compilers
       simpa [hRawStatement, Locals.Ctx.withLayout] using hPointCompiled
   apply controlNonfallPointToList sourceProgram targetProgram targets targetCtx
     finalCtx (.terminal kind) rest code finalLayout hCompiled
-  intro sourceCtx sourceFuel source _hCtx
+  intro sourceCtx sourceFuel source returns _hCtx
   simpa [Functions.InteractionSemantics.Stmt.openRun] using
     Functions.InteractionSemantics.Block.openRun_terminal_cons sourceProgram
       sourceCtx sourceFuel kind rest source
@@ -2210,7 +2211,7 @@ theorem terminalArgsControlList_of_compilers
       simpa [hRawStatement, Locals.Ctx.withLayout] using hPointCompiled
   apply controlNonfallPointToList sourceProgram targetProgram targets targetCtx
     finalCtx (.terminalArgs kind args) rest code finalLayout hCompiled
-  intro sourceCtx sourceFuel source _hCtx
+  intro sourceCtx sourceFuel source returns _hCtx
   simpa [Functions.InteractionSemantics.Stmt.openRun] using
     Functions.InteractionSemantics.Block.openRun_terminalArgs_cons
       sourceProgram sourceCtx sourceFuel kind args rest source
