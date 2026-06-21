@@ -549,8 +549,9 @@ theorem controlScopedBodyThenJoin
     {initialTarget : Structured.RunState}
     (sourceFuel targetFuel : Nat)
     (hBody :
-      ControlScheduledListPreserves sourceProgram targetProgram targets returnNames
-        bodyCtx bodyFinalCtx source.stmts bodyFinalCtx.layout bodyCode)
+      ControlScheduledListPreservesAt sourceProgram targetProgram targets
+        returnNames bodyCtx bodyFinalCtx source.stmts bodyFinalCtx.layout
+        bodyCode sourceFuel)
     (hBodyCtx : RuntimeCtxCovers sourceCtx bodyCtx targets returnNames returns)
     (hFinalCtx :
       RuntimeCtxCovers sourceCtx
@@ -595,7 +596,7 @@ theorem controlScopedBodyThenJoin
   have hBodyFuel :=
     Expressions.TargetFuel.Covers.head_of_append hFuel
   have hBodyRun :=
-    hBodyForward sourceCtx sourceFuel targetFuel hBodyFuel hBodyCtx hInitial
+    hBodyForward sourceCtx targetFuel hBodyFuel hBodyCtx hInitial
   rw [Expressions.InteractionSemantics.Block.openRun_append]
   apply Simulation.Interaction.ForwardRel.bind hBodyRun
   intro sourceResult targetResult hResult
@@ -661,9 +662,9 @@ theorem controlScheduledRegion
     {initialTarget : Structured.RunState}
     (sourceFuel targetFuel : Nat)
     (hBody :
-      ControlScheduledListPreserves sourceProgram targetProgram targets returnNames
-        (targetCtx.withLayout entry.target) bodyFinalCtx source.stmts
-        bodyFinalCtx.layout bodyCode)
+      ControlScheduledListPreservesAt sourceProgram targetProgram targets
+        returnNames (targetCtx.withLayout entry.target) bodyFinalCtx
+        source.stmts bodyFinalCtx.layout bodyCode sourceFuel)
     (hCtx : RuntimeCtxCovers sourceCtx targetCtx targets returnNames returns)
     (hEntrySource : targetCtx.layout = entry.source)
     (hFinalCtx :
@@ -782,9 +783,9 @@ theorem controlScheduledRegionAsBlock
     {initialTarget : Structured.RunState}
     (sourceFuel targetFuel : Nat)
     (hBody :
-      ControlScheduledListPreserves sourceProgram targetProgram targets returnNames
-        (targetCtx.withLayout entry.target) bodyFinalCtx source.stmts
-        bodyFinalCtx.layout bodyCode)
+      ControlScheduledListPreservesAt sourceProgram targetProgram targets
+        returnNames (targetCtx.withLayout entry.target) bodyFinalCtx
+        source.stmts bodyFinalCtx.layout bodyCode sourceFuel)
     (hCtx : RuntimeCtxCovers sourceCtx targetCtx targets returnNames returns)
     (hEntrySource : targetCtx.layout = entry.source)
     (hFinalCtx :
@@ -1440,7 +1441,8 @@ theorem compiledSwitchBranch_of_compilers
   have hRun :=
     controlScheduledRegionAsBlock returnNames sourceProgram targetProgram targets sourceCtx
       targetCtx bodyFinalCtx body bodyCode rawRegion.entry entryArtifact exit
-      exitArtifact targetBody sourceFuel targetFuel hBodyPreservesSelf hCtx
+      exitArtifact targetBody sourceFuel targetFuel
+      (hBodyPreservesSelf.at sourceFuel) hCtx
       hEntrySource hFinalControl hScopeCovers hTargetBodyCode hFuel hInitial
   rw [hRestoredCtx] at hRun
   exact hRun
@@ -1888,7 +1890,8 @@ theorem blockPoint_of_compilers
   have hRegionRun :=
     controlScheduledRegion returnNames sourceProgram targetProgram targets sourceCtx
       targetCtx bodyFinalCtx body bodyCode rawRegion.entry entryArtifact exit
-      exitArtifact sourceFuel targetFuel hBodyPreservesSelf hCtx hEntrySource
+      exitArtifact sourceFuel targetFuel (hBodyPreservesSelf.at sourceFuel)
+      hCtx hEntrySource
       hFinalControl hScopeCovers
       (by simpa [List.append_assoc] using hRegionFuel) hInitial
   have hRegionEmptyFuel :
@@ -2100,7 +2103,8 @@ theorem ifPoint_of_compilers
               controlScheduledRegionAsBlock returnNames sourceProgram targetProgram targets
                 sourceCtx targetCtx bodyFinalCtx body bodyCode rawRegion.entry
                 entryArtifact exit exitArtifact targetBody sourceFuel
-                (targetFuel - 2) hBodyPreservesSelf hCtx hEntrySource
+                (targetFuel - 2) (hBodyPreservesSelf.at sourceFuel) hCtx
+                hEntrySource
                 hFinalControl hScopeCovers hTargetBodyCode hTargetBodyFuel hAfter
             rw [hRestoredCtx] at hBlockRun
             exact hBlockRun)
