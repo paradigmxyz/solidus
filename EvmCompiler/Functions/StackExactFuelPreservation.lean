@@ -458,6 +458,467 @@ theorem compiledScheduledRegionAt_of_compilers
   rw [hRegionCode, ← hEntryCode, hRestCode, ← hExitCode]
   simp [List.append_assoc]
 
+theorem ifPointAtSucc_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel sourceFuel : Nat)
+    (cond : Functions.Expr 1) (body : Functions.Block)
+    (fact : AllocationLivenessFacts.Point)
+    (rawPoint point : StackSchedule.Point)
+    (retain : AllocationLayout.Transition)
+    (targetCtx finalCtx : Locals.Ctx)
+    (hNodup : targetCtx.layout.Nodup)
+    (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
+    {sourceEnv : List Name}
+    (hScoped : Functions.Scope.ExprScoped sourceEnv cond)
+    (hSupported : Locals.InteractionSemantics.Expr.OpenSupported cond)
+    (hSchedule :
+      StackSchedule.scheduleStmtFuelWithTargets targets scheduleFuel pinned
+          targetCtx.layout (.if_ cond body) fact = some rawPoint)
+    (hPointBefore : point.beforeLayout = targetCtx.layout)
+    (hPointRegions : point.regions = rawPoint.regions)
+    (hPointRetain : point.retain? = some retain)
+    (hRetainSource : targetCtx.layout = retain.source)
+    (hLower :
+      StackLowering.lowerPointFuel lowerFuel lowerCtx (.if_ cond body) point =
+        some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx))
+    (hBody :
+      ∀ {bodyFacts rawRegion bodyLowered bodyCode bodyFinalCtx},
+        StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
+            (StackSchedule.layoutSet targetCtx.layout) targetCtx.layout
+            body bodyFacts = some rawRegion →
+        StackLowering.lowerStmtListFuel ((lowerFuel - 1) - 1) lowerCtx
+            body.stmts rawRegion.points = some bodyLowered →
+        Locals.Block.compileOpen
+            (targetCtx.withLayout rawRegion.entry.target)
+            { stmts := bodyLowered } = some (bodyCode, bodyFinalCtx) →
+        (targetCtx.withLayout rawRegion.entry.target).layout.Nodup →
+        ControlScheduledListPreservesAt sourceProgram targetProgram targets
+          returnNames (targetCtx.withLayout rawRegion.entry.target) bodyFinalCtx
+          body.stmts rawRegion.finalLayout bodyCode sourceFuel) :
+    CompiledControlPointAt sourceProgram targetProgram targets returnNames
+      targetCtx finalCtx (.if_ cond body) code retain.schedule.target
+      (sourceFuel + 1) := by
+  obtain ⟨bodyFacts, rawRegion, exit, _hFacts, hChildSchedule, hExitBuild,
+      _hBefore, _hStatement, _hRawExit, _hRawRetain, hRawRegions,
+      _hFalls⟩ :=
+    StackSchedule.scheduleStmtFuelWithTargets_if_components hSchedule
+  obtain ⟨region, loweredBody, lowerRetain, hAccess, _hLowerFalls,
+      hLowerRegions, hLowerBody, hLowerRetain, hLowered⟩ :=
+    StackLowering.lowerPointFuel_if_components hLower
+  have hRegionList :
+      [region] =
+        [{ rawRegion with exit? := some exit, finalLayout := targetCtx.layout }] :=
+    hLowerRegions.symm.trans (hPointRegions.trans hRawRegions)
+  injection hRegionList with hRegion
+  subst region
+  have hRetainEq : lowerRetain = retain :=
+    Option.some.inj (hLowerRetain.symm.trans hPointRetain)
+  subst lowerRetain
+  have hCondAccess :
+      StackAccess.Expr.check? targetCtx.layout 0 cond = some () := by
+    simpa [StackLowering.pointAccess?, hPointBefore] using hAccess
+  have hCondScoped :=
+    StackAccess.Expr.scoped_of_check hCondAccess hScoped
+  rw [hLowered] at hCompile
+  obtain ⟨ifCode, ifFinalCtx, retainCode, hIfCompile,
+      hRetainCompile, hCode⟩ :=
+    Locals.Block.compileOpen_append_components hCompile
+  have hIfStmtCompile :=
+    Locals.Block.compileOpen_single_components hIfCompile
+  obtain ⟨condCode, regionCode, regionFinalCtx, targetBody,
+      hCondCompile, hRegionCompile, hFinish, hIfCode, hIfFinal⟩ :=
+    Locals.Stmt.compile_if_components hIfStmtCompile
+  subst ifFinalCtx
+  obtain ⟨bodyCode, bodyFinalCtx, entryArtifact, exitArtifact,
+      hBodyPreserves, hRegionCode, hRegionFinal, hRestoredCtx,
+      hEntrySource⟩ :=
+    compiledScheduledRegionAt_of_compilers returnNames sourceProgram targetProgram
+      lowerCtx targets scheduleFuel lowerFuel sourceFuel body bodyFacts rawRegion
+      exit targetCtx regionFinalCtx hNodup loweredBody regionCode hChildSchedule
+      hExitBuild hLowerBody hRegionCompile
+      (fun hBodyLower hBodyCompile hChildNodup =>
+        hBody hChildSchedule hBodyLower hBodyCompile hChildNodup)
+  obtain ⟨cleanup, hCleanup, hTargetBody⟩ :=
+    Locals.finishScoped_components hFinish
+  have hBodyPreservesSelf :
+      ControlScheduledListPreservesAt sourceProgram targetProgram targets
+        returnNames (targetCtx.withLayout rawRegion.entry.target) bodyFinalCtx
+        body.stmts bodyFinalCtx.layout bodyCode sourceFuel :=
+    ⟨rfl, hBodyPreserves.2⟩
+  have hRegionCtx : regionFinalCtx = targetCtx :=
+    hRegionFinal.trans hRestoredCtx
+  have hCleanupEmpty : cleanup = [] := by
+    rw [hRegionCtx] at hCleanup
+    simpa [Locals.Ctx.cleanupTo?] using hCleanup
+  subst cleanup
+  have hTargetBodyCode :
+      targetBody.stmts =
+        ((entryArtifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code entryArtifact.cleanup]) ++
+          (bodyCode ++
+            (exitArtifact.retainArtifact.promotionCodes.map
+                  Expressions.Stmt.code ++
+              [Expressions.Stmt.code exitArtifact.retainArtifact.cleanup] ++
+              exitArtifact.orderArtifact.promotionCodes.map
+                Expressions.Stmt.code))) ++ [.code []] := by
+    rw [hTargetBody, hRegionCode]
+    simp [Locals.codeStmt, List.append_assoc]
+  have hExitTarget : exit.target = targetCtx.layout := by
+    have h := congrArg Locals.Ctx.layout hRestoredCtx
+    simpa [Locals.Ctx.withLayout] using h
+  obtain ⟨compiledRetainArtifact⟩ :=
+    StackTransitionCompilation.Transition.compileArtifact retain hRetainSource
+  have hCompiledRetainPair :=
+    Option.some.inj
+      (compiledRetainArtifact.compileEq.symm.trans hRetainCompile)
+  have hCompiledRetainCode :
+      compiledRetainArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code compiledRetainArtifact.cleanup] = retainCode :=
+    congrArg Prod.fst hCompiledRetainPair
+  have hCompiledFinalCtx :
+      targetCtx.withLayout retain.schedule.target = finalCtx :=
+    congrArg Prod.snd hCompiledRetainPair
+  refine ⟨?_, ?_⟩
+  · rw [← hCompiledFinalCtx]
+    rfl
+  unfold ControlPointPreservesAt
+  intro sourceCtx targetFuel suffix returns source target hFuel hCtx hInitial
+  have hFuel' :
+      Expressions.TargetFuel.Covers targetProgram (sourceFuel + 1)
+        targetFuel (.if_ (.code condCode) targetBody :: retainCode) := by
+    have h := hFuel
+    rw [hCode, hIfCode] at h
+    simpa [Nat.succ_eq_add_one] using h
+  have hTargetFuel : 2 ≤ targetFuel := by
+    have hLength := Expressions.TargetFuel.Covers.length_lt hFuel'
+    simp only [List.length_cons] at hLength
+    omega
+  have hTargetBodyFuel :=
+    Expressions.TargetFuel.Covers.if_body_after_two hFuel'
+  have hFinalControl :
+      RuntimeCtxCovers sourceCtx
+        (bodyFinalCtx.withLayout exit.target) targets returnNames returns := by
+    rw [hRestoredCtx]
+    exact hCtx
+  have hScopeCovers :
+      ∀ {name : Name}, name ∈ exit.target → name ∈ sourceCtx.scope := by
+    intro name hName
+    apply hCtx.context.scope
+    rwa [hExitTarget] at hName
+  have hIfRun :=
+    controlIf sourceProgram targetProgram targets returnNames sourceCtx targetCtx
+      sourceFuel targetFuel cond body condCode targetBody hTargetFuel hCtx
+      hCondScoped hSupported hCondCompile hInitial (by
+        intro sourceAfter targetAfter hAfter
+        have hBlockRun :=
+          controlScheduledRegionAsBlock returnNames sourceProgram targetProgram targets
+            sourceCtx targetCtx bodyFinalCtx body bodyCode rawRegion.entry
+            entryArtifact exit exitArtifact targetBody sourceFuel
+            (targetFuel - 2) hBodyPreservesSelf hCtx
+            hEntrySource
+            hFinalControl hScopeCovers hTargetBodyCode hTargetBodyFuel hAfter
+        rw [hRestoredCtx] at hBlockRun
+        exact hBlockRun)
+  have hCodeLength := Expressions.TargetFuel.Covers.length_lt hFuel'
+  have hWholeFuel :
+      [Expressions.Stmt.if_ (.code condCode) targetBody].length +
+          retain.schedule.promotions.length + 1 < targetFuel := by
+    rw [← hCompiledRetainCode] at hCodeLength
+    simp only [List.length_cons, List.length_append, List.length_map,
+      List.length_nil] at hCodeLength ⊢
+    rw [compiledRetainArtifact.codes.code_length] at hCodeLength
+    omega
+  obtain ⟨retainArtifact, hWholeRun⟩ :=
+    controlThenTransitionForward targetProgram targets returnNames targetCtx retain
+      targetFuel hRetainSource hWholeFuel hIfRun
+  have hRetainPair :=
+    Option.some.inj (retainArtifact.compileEq.symm.trans hRetainCompile)
+  have hRetainCode :
+      retainArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code retainArtifact.cleanup] = retainCode :=
+    congrArg Prod.fst hRetainPair
+  have hFinalCtx :
+      targetCtx.withLayout retain.schedule.target = finalCtx :=
+    congrArg Prod.snd hRetainPair
+  rw [← hFinalCtx]
+  simpa [hCode, hIfCode, hRetainCode] using hWholeRun
+
+theorem ifPointAtZero_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel : Nat)
+    (cond : Functions.Expr 1) (body : Functions.Block)
+    (fact : AllocationLivenessFacts.Point)
+    (rawPoint point : StackSchedule.Point)
+    (retain : AllocationLayout.Transition)
+    (targetCtx finalCtx : Locals.Ctx)
+    (hNodup : targetCtx.layout.Nodup)
+    (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
+    {sourceEnv : List Name}
+    (hScoped : Functions.Scope.ExprScoped sourceEnv cond)
+    (hSupported : Locals.InteractionSemantics.Expr.OpenSupported cond)
+    (hSchedule :
+      StackSchedule.scheduleStmtFuelWithTargets targets scheduleFuel pinned
+          targetCtx.layout (.if_ cond body) fact = some rawPoint)
+    (hPointBefore : point.beforeLayout = targetCtx.layout)
+    (hPointRegions : point.regions = rawPoint.regions)
+    (hPointRetain : point.retain? = some retain)
+    (hRetainSource : targetCtx.layout = retain.source)
+    (hLower :
+      StackLowering.lowerPointFuel lowerFuel lowerCtx (.if_ cond body) point =
+        some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx))
+    (hBody :
+      ∀ {bodyFacts rawRegion bodyLowered bodyCode bodyFinalCtx},
+        StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
+            (StackSchedule.layoutSet targetCtx.layout) targetCtx.layout
+            body bodyFacts = some rawRegion →
+        StackLowering.lowerStmtListFuel ((lowerFuel - 1) - 1) lowerCtx
+            body.stmts rawRegion.points = some bodyLowered →
+        Locals.Block.compileOpen
+            (targetCtx.withLayout rawRegion.entry.target)
+            { stmts := bodyLowered } = some (bodyCode, bodyFinalCtx) →
+        (targetCtx.withLayout rawRegion.entry.target).layout.Nodup →
+        ControlScheduledListPreservesAt sourceProgram targetProgram targets
+          returnNames (targetCtx.withLayout rawRegion.entry.target) bodyFinalCtx
+          body.stmts rawRegion.finalLayout bodyCode 0) :
+    CompiledControlPointAt sourceProgram targetProgram targets returnNames
+      targetCtx finalCtx (.if_ cond body) code retain.schedule.target 0 := by
+  have hLayout :=
+    ifPointAtSucc_of_compilers returnNames sourceProgram targetProgram lowerCtx
+      targets pinned scheduleFuel lowerFuel 0 cond body fact rawPoint point
+      retain targetCtx finalCtx hNodup lowered code hScoped hSupported hSchedule
+      hPointBefore hPointRegions hPointRetain hRetainSource hLower hCompile hBody
+  refine ⟨hLayout.layout, ?_⟩
+  intro sourceCtx targetFuel suffix returns source target hFuel hRuntime
+    hInitial
+  unfold Functions.InteractionSemantics.Stmt.openRun
+    Functions.Source.Canonical.Stmt.run
+    Functions.Source.Effectful.Control.Stmt.run
+  exact Simulation.Interaction.ForwardRel.truncated rfl
+
+theorem ifConsAtSucc_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel sourceFuel : Nat)
+    (cond : Functions.Expr 1) (body : Functions.Block)
+    (rest : List Functions.Stmt)
+    (fact : AllocationLivenessFacts.Point)
+    (restFacts : List AllocationLivenessFacts.Point)
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {finalLayout : Locals.Layout} {lowered : List Locals.Stmt}
+    {targetCtx finalCtx : Locals.Ctx} {code : List Expressions.Stmt}
+    {sourceEnv : List Name}
+    (hNodup : targetCtx.layout.Nodup)
+    (hScoped : Functions.Scope.ExprScoped sourceEnv cond)
+    (hSupported : Locals.InteractionSemantics.Expr.OpenSupported cond)
+    (hSchedule :
+      StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
+          targetCtx.layout (.if_ cond body :: rest) (fact :: restFacts) =
+        some (point :: points, finalLayout))
+    (hLower :
+      StackLowering.lowerStmtListFuel lowerFuel lowerCtx
+          (.if_ cond body :: rest) (point :: points) = some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx))
+    (hBody :
+      ∀ {childCtx : Locals.Ctx}
+        {bodyFacts rawRegion bodyLowered bodyCode bodyFinalCtx},
+        StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
+            (StackSchedule.layoutSet childCtx.layout) childCtx.layout
+            body bodyFacts = some rawRegion →
+        StackLowering.lowerStmtListFuel ((lowerFuel - 1) - 1) lowerCtx
+            body.stmts rawRegion.points = some bodyLowered →
+        Locals.Block.compileOpen
+            (childCtx.withLayout rawRegion.entry.target)
+            { stmts := bodyLowered } = some (bodyCode, bodyFinalCtx) →
+        (childCtx.withLayout rawRegion.entry.target).layout.Nodup →
+        ControlScheduledListPreservesAt sourceProgram targetProgram targets
+          returnNames (childCtx.withLayout rawRegion.entry.target) bodyFinalCtx
+          body.stmts rawRegion.finalLayout bodyCode sourceFuel)
+    (hTail :
+      ∀ {tailLayout : Locals.Layout} {tailFinal : Locals.Layout}
+        {tailLowered : List Locals.Stmt} {middleCtx tailFinalCtx : Locals.Ctx}
+        {tailCode : List Expressions.Stmt},
+        middleCtx.layout = tailLayout →
+        middleCtx.layout.Nodup →
+        StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
+            tailLayout rest restFacts = some (points, tailFinal) →
+        StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =
+          some tailLowered →
+        Locals.Block.compileOpen middleCtx { stmts := tailLowered } =
+          some (tailCode, tailFinalCtx) →
+        ControlScheduledListPreservesAt sourceProgram targetProgram targets
+          returnNames middleCtx tailFinalCtx rest tailFinal tailCode
+          (sourceFuel + 1)) :
+    ControlScheduledListPreservesAt sourceProgram targetProgram targets
+      returnNames targetCtx finalCtx (.if_ cond body :: rest) finalLayout code
+      ((sourceFuel + 1) + 1) := by
+  apply controlFallthroughConsAt_of_compilers returnNames sourceProgram
+    targetProgram lowerCtx targets pinned scheduleFuel lowerFuel
+    (sourceFuel + 1) (.if_ cond body) rest fact restFacts hSchedule hLower
+    hCompile
+  · intro before rawPoint hRaw
+    obtain ⟨_bodyFacts, _rawRegion, _exit, _hFacts, _hChild,
+        _hExit, _hBefore, _hStatement, _hRawExit, _hRawRetain,
+        _hRegions, hFalls⟩ :=
+      StackSchedule.scheduleStmtFuelWithTargets_if_components hRaw
+    exact hFalls
+  · intro order rawPoint retain pointLowered pointCode middleCtx hOrderBuild
+      hRawSchedule hRetainBuild hPointLower hPointCompile
+    obtain ⟨_bodyFacts, _rawRegion, _exit, _hFacts, _hChild,
+        _hExit, hRawBefore, hRawStatement, _hRawExit, _hRawRetain,
+        hRawRegions, _hFalls⟩ :=
+      StackSchedule.scheduleStmtFuelWithTargets_if_components hRawSchedule
+    have hRetainSource :
+        (targetCtx.withLayout order.target).layout = retain.source := by
+      have hBuiltSource : rawPoint.statementLayout = retain.source :=
+        (AllocationLayout.Transition.build?_sound hRetainBuild).1.symm
+      simpa [Locals.Ctx.withLayout] using
+        hRawStatement.symm.trans hBuiltSource
+    have hOrderSource : targetCtx.layout = order.source :=
+      (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+    have hOrderedNodup : order.target.Nodup :=
+      order.target_nodup (by rw [← hOrderSource]; exact hNodup)
+    have hCompiled :=
+      ifPointAtSucc_of_compilers returnNames sourceProgram targetProgram
+        lowerCtx targets pinned scheduleFuel lowerFuel sourceFuel cond body fact
+        rawPoint { rawPoint with order? := some order, retain? := some retain }
+        retain (targetCtx.withLayout order.target) middleCtx
+        (by simpa [Locals.Ctx.withLayout] using hOrderedNodup) pointLowered
+        pointCode hScoped hSupported hRawSchedule
+        (by simpa [Locals.Ctx.withLayout] using hRawBefore)
+        (by simpa using hRawRegions) rfl hRetainSource hPointLower hPointCompile
+        (fun hChildSchedule hChildLower hChildCompile hChildNodup =>
+          hBody hChildSchedule hChildLower hChildCompile hChildNodup)
+    refine ⟨hCompiled, ?_⟩
+    rw [hCompiled.layout]
+    apply AllocationLayout.Transition.target_nodup retain
+    rw [← hRetainSource]
+    simpa [Locals.Ctx.withLayout] using hOrderedNodup
+  · exact hTail
+
+theorem ifConsAtOne_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel : Nat)
+    (cond : Functions.Expr 1) (body : Functions.Block)
+    (rest : List Functions.Stmt)
+    (fact : AllocationLivenessFacts.Point)
+    (restFacts : List AllocationLivenessFacts.Point)
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {finalLayout : Locals.Layout} {lowered : List Locals.Stmt}
+    {targetCtx finalCtx : Locals.Ctx} {code : List Expressions.Stmt}
+    {sourceEnv : List Name}
+    (hNodup : targetCtx.layout.Nodup)
+    (hScoped : Functions.Scope.ExprScoped sourceEnv cond)
+    (hSupported : Locals.InteractionSemantics.Expr.OpenSupported cond)
+    (hSchedule :
+      StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
+          targetCtx.layout (.if_ cond body :: rest) (fact :: restFacts) =
+        some (point :: points, finalLayout))
+    (hLower :
+      StackLowering.lowerStmtListFuel lowerFuel lowerCtx
+          (.if_ cond body :: rest) (point :: points) = some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx))
+    (hBody :
+      ∀ {childCtx : Locals.Ctx}
+        {bodyFacts rawRegion bodyLowered bodyCode bodyFinalCtx},
+        StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
+            (StackSchedule.layoutSet childCtx.layout) childCtx.layout
+            body bodyFacts = some rawRegion →
+        StackLowering.lowerStmtListFuel ((lowerFuel - 1) - 1) lowerCtx
+            body.stmts rawRegion.points = some bodyLowered →
+        Locals.Block.compileOpen
+            (childCtx.withLayout rawRegion.entry.target)
+            { stmts := bodyLowered } = some (bodyCode, bodyFinalCtx) →
+        (childCtx.withLayout rawRegion.entry.target).layout.Nodup →
+        ControlScheduledListPreservesAt sourceProgram targetProgram targets
+          returnNames (childCtx.withLayout rawRegion.entry.target) bodyFinalCtx
+          body.stmts rawRegion.finalLayout bodyCode 0)
+    (hTail :
+      ∀ {tailLayout : Locals.Layout} {tailFinal : Locals.Layout}
+        {tailLowered : List Locals.Stmt} {middleCtx tailFinalCtx : Locals.Ctx}
+        {tailCode : List Expressions.Stmt},
+        middleCtx.layout = tailLayout →
+        middleCtx.layout.Nodup →
+        StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
+            tailLayout rest restFacts = some (points, tailFinal) →
+        StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =
+          some tailLowered →
+        Locals.Block.compileOpen middleCtx { stmts := tailLowered } =
+          some (tailCode, tailFinalCtx) →
+        ControlScheduledListPreservesAt sourceProgram targetProgram targets
+          returnNames middleCtx tailFinalCtx rest tailFinal tailCode
+          0) :
+    ControlScheduledListPreservesAt sourceProgram targetProgram targets
+      returnNames targetCtx finalCtx (.if_ cond body :: rest) finalLayout code
+      1 := by
+  apply controlFallthroughConsAt_of_compilers returnNames sourceProgram
+    targetProgram lowerCtx targets pinned scheduleFuel lowerFuel
+    0 (.if_ cond body) rest fact restFacts hSchedule hLower
+    hCompile
+  · intro before rawPoint hRaw
+    obtain ⟨_bodyFacts, _rawRegion, _exit, _hFacts, _hChild,
+        _hExit, _hBefore, _hStatement, _hRawExit, _hRawRetain,
+        _hRegions, hFalls⟩ :=
+      StackSchedule.scheduleStmtFuelWithTargets_if_components hRaw
+    exact hFalls
+  · intro order rawPoint retain pointLowered pointCode middleCtx hOrderBuild
+      hRawSchedule hRetainBuild hPointLower hPointCompile
+    obtain ⟨_bodyFacts, _rawRegion, _exit, _hFacts, _hChild,
+        _hExit, hRawBefore, hRawStatement, _hRawExit, _hRawRetain,
+        hRawRegions, _hFalls⟩ :=
+      StackSchedule.scheduleStmtFuelWithTargets_if_components hRawSchedule
+    have hRetainSource :
+        (targetCtx.withLayout order.target).layout = retain.source := by
+      have hBuiltSource : rawPoint.statementLayout = retain.source :=
+        (AllocationLayout.Transition.build?_sound hRetainBuild).1.symm
+      simpa [Locals.Ctx.withLayout] using
+        hRawStatement.symm.trans hBuiltSource
+    have hOrderSource : targetCtx.layout = order.source :=
+      (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+    have hOrderedNodup : order.target.Nodup :=
+      order.target_nodup (by rw [← hOrderSource]; exact hNodup)
+    have hCompiled :=
+      ifPointAtZero_of_compilers returnNames sourceProgram targetProgram
+        lowerCtx targets pinned scheduleFuel lowerFuel cond body fact
+        rawPoint { rawPoint with order? := some order, retain? := some retain }
+        retain (targetCtx.withLayout order.target) middleCtx
+        (by simpa [Locals.Ctx.withLayout] using hOrderedNodup) pointLowered
+        pointCode hScoped hSupported hRawSchedule
+        (by simpa [Locals.Ctx.withLayout] using hRawBefore)
+        (by simpa using hRawRegions) rfl hRetainSource hPointLower hPointCompile
+        (fun hChildSchedule hChildLower hChildCompile hChildNodup =>
+          hBody hChildSchedule hChildLower hChildCompile hChildNodup)
+    refine ⟨hCompiled, ?_⟩
+    rw [hCompiled.layout]
+    apply AllocationLayout.Transition.target_nodup retain
+    rw [← hRetainSource]
+    simpa [Locals.Ctx.withLayout] using hOrderedNodup
+  · exact hTail
+
 theorem blockPointAt_of_compilers
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
