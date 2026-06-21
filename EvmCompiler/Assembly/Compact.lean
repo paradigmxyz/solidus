@@ -348,6 +348,102 @@ def emit? (source : Assembly.Program) (branchWidth : Nat)
   let code <- emitRev? branchWidth table source 0 []
   some { code := code }
 
+structure SourceBlock where
+  sourcePc : Nat
+  compactPc : Nat
+  sourceInstr : Assembly.Instr
+  code : List Located
+  deriving DecidableEq, Repr
+
+def emitSourceBlock? (branchWidth compactPc : Nat) (table : LabelTable)
+    (instr : Assembly.Instr) : Option (List Located) := do
+  let reversed <- emitInstrRev? branchWidth compactPc table instr []
+  some reversed.reverse
+
+def emitBlocksFrom? (branchWidth : Nat) (table : LabelTable) :
+    Assembly.Program -> Nat -> Nat -> Option (List SourceBlock)
+  | [], _sourcePc, _compactPc => some []
+  | instr :: rest, sourcePc, compactPc => do
+      let compactSize <- sourceInstrSize? branchWidth instr
+      let code <- emitSourceBlock? branchWidth compactPc table instr
+      let blocks <-
+        emitBlocksFrom? branchWidth table rest
+          (sourcePc + instr.byteSize) (compactPc + compactSize)
+      some
+        ({ sourcePc := sourcePc
+           compactPc := compactPc
+           sourceInstr := instr
+           code := code } :: blocks)
+
+def emitBlocks? (source : Assembly.Program) (branchWidth : Nat)
+    (table : LabelTable) : Option (List SourceBlock) :=
+  emitBlocksFrom? branchWidth table source 0 0
+
+def blocksCode (blocks : List SourceBlock) : List Located :=
+  blocks.flatMap SourceBlock.code
+
+inductive BlocksValidFrom (branchWidth : Nat) (table : LabelTable) :
+    Assembly.Program -> Nat -> Nat -> List SourceBlock -> Prop
+  | nil (sourcePc compactPc : Nat) :
+      BlocksValidFrom branchWidth table [] sourcePc compactPc []
+  | cons (instr : Assembly.Instr) (rest : Assembly.Program)
+      (sourcePc compactPc compactSize : Nat)
+      (code : List Located) (blocks : List SourceBlock)
+      (hSize : sourceInstrSize? branchWidth instr = some compactSize)
+      (hCode :
+        emitSourceBlock? branchWidth compactPc table instr = some code)
+      (hRest : BlocksValidFrom branchWidth table rest
+        (sourcePc + instr.byteSize) (compactPc + compactSize) blocks) :
+      BlocksValidFrom branchWidth table (instr :: rest) sourcePc compactPc
+        ({ sourcePc := sourcePc
+           compactPc := compactPc
+           sourceInstr := instr
+           code := code } :: blocks)
+
+theorem emitBlocksFrom?_valid
+    {branchWidth : Nat} {table : LabelTable} :
+    forall {source : Assembly.Program} {sourcePc compactPc : Nat}
+      {blocks : List SourceBlock},
+      emitBlocksFrom? branchWidth table source sourcePc compactPc =
+          some blocks ->
+        BlocksValidFrom branchWidth table source sourcePc compactPc blocks := by
+  intro source
+  induction source with
+  | nil =>
+      intro sourcePc compactPc blocks hEmit
+      simp [emitBlocksFrom?] at hEmit
+      subst blocks
+      exact .nil sourcePc compactPc
+  | cons instr rest ih =>
+      intro sourcePc compactPc blocks hEmit
+      unfold emitBlocksFrom? at hEmit
+      cases hSize : sourceInstrSize? branchWidth instr with
+      | none => simp [hSize] at hEmit
+      | some compactSize =>
+          simp [hSize] at hEmit
+          cases hCode :
+              emitSourceBlock? branchWidth compactPc table instr with
+          | none => simp [hCode] at hEmit
+          | some code =>
+              simp [hCode] at hEmit
+              cases hRest :
+                  emitBlocksFrom? branchWidth table rest
+                    (sourcePc + instr.byteSize)
+                    (compactPc + compactSize) with
+              | none => simp [hRest] at hEmit
+              | some restBlocks =>
+                  simp [hRest] at hEmit
+                  subst blocks
+                  exact .cons instr rest sourcePc compactPc compactSize
+                    code restBlocks hSize hCode (ih hRest)
+
+theorem emitBlocks?_valid
+    {source : Assembly.Program} {branchWidth : Nat} {table : LabelTable}
+    {blocks : List SourceBlock}
+    (hEmit : emitBlocks? source branchWidth table = some blocks) :
+    BlocksValidFrom branchWidth table source 0 0 blocks := by
+  exact emitBlocksFrom?_valid hEmit
+
 def encodePush (width : Nat) (value : Word) : List UInt8 :=
   UInt8.ofNat (0x5f + width) ::
     (Bytecode.toBytesLE width value.toNat).reverse
@@ -677,6 +773,7 @@ structure Artifact where
   branchWidth : Nat
   labels : LabelTable
   codeLength : Nat
+  blocks : List SourceBlock
   program : Program
   bytes : ByteArray
   deriving Repr
@@ -737,14 +834,19 @@ def compile? (source : Assembly.Program) : Option Artifact := do
   let branchWidth <- widthForNat? physicalSource.byteLength
   let (labels, codeLength) <- layout? physicalSource branchWidth
   let program <- emit? physicalSource branchWidth labels
-  if program.wellFormed? then
-    some
-      { physicalSource := physicalSource
-        branchWidth := branchWidth
-        labels := labels
-        codeLength := codeLength
-        program := program
-        bytes := encode program }
+  let blocks <- emitBlocks? physicalSource branchWidth labels
+  if blocksCode blocks = program.code then
+    if program.wellFormed? then
+      some
+        { physicalSource := physicalSource
+          branchWidth := branchWidth
+          labels := labels
+          codeLength := codeLength
+          blocks := blocks
+          program := program
+          bytes := encode program }
+    else
+      none
   else
     none
 
@@ -757,6 +859,9 @@ structure Artifact.ValidFor (artifact : Artifact)
     some (artifact.labels, artifact.codeLength)
   emitted : emit? artifact.physicalSource artifact.branchWidth artifact.labels =
     some artifact.program
+  blocks : emitBlocks? artifact.physicalSource artifact.branchWidth
+    artifact.labels = some artifact.blocks
+  blockCode : blocksCode artifact.blocks = artifact.program.code
   wellFormed : artifact.program.Valid ∧
     Program.codeLayoutFrom artifact.program.code 0 ∧
       Program.codeByteLength artifact.program.code < 18446744073709551616 ∧
@@ -782,13 +887,22 @@ theorem compile?_valid {source : Assembly.Program} {artifact : Artifact}
               | none => simp [hEmit] at hCompile
               | some program =>
                   simp [hEmit] at hCompile
-                  by_cases hWellFormed : program.wellFormed? = true
-                  · simp [hWellFormed] at hCompile
-                    cases hCompile
-                    exact
-                      Artifact.ValidFor.mk hPhysical.symm hWidth hLayout hEmit
-                        (Program.wellFormed_of_check hWellFormed) rfl
-                  · simp [hWellFormed] at hCompile
+                  cases hBlocks :
+                      emitBlocks? physicalSource branchWidth labels with
+                  | none => simp [hBlocks] at hCompile
+                  | some blocks =>
+                      simp [hBlocks] at hCompile
+                      by_cases hCode : blocksCode blocks = program.code
+                      · simp [hCode] at hCompile
+                        by_cases hWellFormed : program.wellFormed? = true
+                        · simp [hWellFormed] at hCompile
+                          cases hCompile
+                          exact
+                            Artifact.ValidFor.mk hPhysical.symm hWidth hLayout
+                              hEmit hBlocks hCode
+                              (Program.wellFormed_of_check hWellFormed) rfl
+                        · simp [hWellFormed] at hCompile
+                      · simp [hCode] at hCompile
 
 theorem compile?_decodingCorrect
     {source : Assembly.Program} {artifact : Artifact}
@@ -799,6 +913,13 @@ theorem compile?_decodingCorrect
   exact
     decodingCorrectOfWellFormed
       hValid.wellFormed.1 hValid.wellFormed.2.1 hValid.wellFormed.2.2.1
+
+theorem compile?_blocksValid
+    {source : Assembly.Program} {artifact : Artifact}
+    (hCompile : compile? source = some artifact) :
+    BlocksValidFrom artifact.branchWidth artifact.labels
+      artifact.physicalSource 0 0 artifact.blocks := by
+  exact emitBlocks?_valid (compile?_valid hCompile).blocks
 
 namespace Instr
 
@@ -1002,6 +1123,24 @@ theorem openStepResultEqInstrOfDecodeAt
   unfold InteractionSemantics.openStepResult
   rw [hPc, hBytes]
   simp [Instr.ofDecoded?_of_decoded? hValid hInstr]
+
+theorem openStepResultEqInstrOfFetch
+    {program : Program} {bytes : ByteArray} {pc : Nat}
+    {instr : Instr} {state : EVMState}
+    (hValid : program.Valid)
+    (hDecode : DecodingCorrect program bytes)
+    (hFetch : program.fetch pc = some instr)
+    (hPc : state.pc = EvmYul.UInt256.ofNat pc) :
+    InteractionSemantics.openStepResult bytes state =
+      instr.openStepResult state := by
+  rcases Program.existsLocatedOfFetch hFetch with
+    ⟨located, hMem, hLocatedPc, hInstr⟩
+  subst instr
+  exact
+    openStepResultEqInstrOfDecodeAt
+      ((List.forall_iff_forall_mem.mp hValid) located hMem)
+      (hDecode.decodes located hMem)
+      (by simpa [hLocatedPc] using hPc)
 
 end Compact
 end Assembly
