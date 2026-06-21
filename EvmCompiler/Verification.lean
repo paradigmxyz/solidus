@@ -2961,6 +2961,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackLowering.returnWord_eval
 #check EvmCompiler.Functions.StackLowering.Examples.dormantCallProgram_lowers
 #check EvmCompiler.Functions.StackLowering.Examples.controlProgram_lowers
+#check EvmCompiler.Functions.StackLowering.lowerStmtListFuel_cons_components
+#check EvmCompiler.Functions.StackLowering.lowerStmtListFuel_nil_components
 #check EvmCompiler.Functions.StackLowering.lowerBlock?_components
 #check EvmCompiler.Functions.StackLoweringCompilation.Examples.deadProgram_compiles
 #check EvmCompiler.Functions.StackLoweringCompilation.Examples.dormantCallProgram_compiles

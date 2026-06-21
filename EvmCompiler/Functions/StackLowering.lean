@@ -201,6 +201,41 @@ mutual
           none
 end
 
+theorem lowerStmtListFuel_cons_components
+    {fuel : Nat} {ctx : Ctx}
+    {stmt : Stmt} {rest : List Stmt}
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {lowered : List Locals.Stmt}
+    (hLower :
+      lowerStmtListFuel fuel ctx (stmt :: rest) (point :: points) =
+        some lowered) :
+    ∃ head,
+      lowerPointFuel fuel ctx stmt point = some head ∧
+        ((point.fallsThrough = true ∧
+            ∃ tail,
+              lowerStmtListFuel fuel ctx rest points = some tail ∧
+              lowered = head ++ tail) ∨
+          (point.fallsThrough = false ∧ lowered = head)) := by
+  simp only [lowerStmtListFuel] at hLower
+  obtain ⟨head, hHead, hAfterHead⟩ :=
+    Option.bind_eq_some_iff.mp hLower
+  refine ⟨head, hHead, ?_⟩
+  cases hFalls : point.fallsThrough with
+  | false =>
+      rw [hFalls] at hAfterHead
+      exact .inr ⟨rfl, (Option.some.inj hAfterHead).symm⟩
+  | true =>
+      rw [hFalls] at hAfterHead
+      obtain ⟨tail, hTail, hResult⟩ :=
+        Option.bind_eq_some_iff.mp hAfterHead
+      exact .inl ⟨rfl, tail, hTail, (Option.some.inj hResult).symm⟩
+
+theorem lowerStmtListFuel_nil_components
+    {fuel : Nat} {ctx : Ctx} {lowered : List Locals.Stmt}
+    (hLower : lowerStmtListFuel fuel ctx [] [] = some lowered) :
+    lowered = [] := by
+  simpa [lowerStmtListFuel] using hLower
+
 def lowerScheduledBlock? (ctx : Ctx) (source : Block)
     (schedule : StackSchedule.Region) : Option Locals.Block :=
   lowerBlockFuel (AllocationLiveness.analysisFuel source)

@@ -126,6 +126,8 @@ short composition module.
   lowering/target layer.
 - [x] Instantiate one compiler-owned `RegularPointPreserves` interface for
   expression, declaration, and assignment points followed by checked retention.
+- [x] Expose syntax-generic lowering-owner equations for empty and nonempty
+  scheduled statement lists, including fallthrough-tail versus abrupt-head.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls

@@ -36,6 +36,18 @@ if ! rg -Fq \
   failed=1
 fi
 
+for theorem in \
+    'lowerStmtListFuel_cons_components' \
+    'lowerStmtListFuel_nil_components'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.Functions.StackLowering.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing stack-lowering decomposition %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
 if ! rg -Fq \
     '#check EvmCompiler.Functions.StackAccessLowering.callSequence_compile_of_check' \
     EvmCompiler/Verification.lean; then
