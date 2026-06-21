@@ -15,9 +15,9 @@ open StackRelation
 open StackStatementPreservation
 
 theorem regularEmpty
-    (sourceProgram : Locals.Program)
+    (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
-    (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
     (sourceFuel targetFuel : Nat)
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
@@ -28,7 +28,7 @@ theorem regularEmpty
       StateRel targetCtx.layout suffix returns source target) :
     Simulation.Interaction.Rel
       (RegularOutcomeRel targetCtx suffix returns)
-      (Locals.InteractionSemantics.Block.openRun
+      (Functions.InteractionSemantics.Block.openRun
         sourceProgram sourceCtx sourceFuel { stmts := [] } source)
       (Expressions.InteractionSemantics.Block.openRun
         targetProgram targetFuel { stmts := [] } target) := by
@@ -38,11 +38,11 @@ theorem regularEmpty
       cases targetFuel with
       | zero => omega
       | succ targetFuel =>
-          unfold Locals.InteractionSemantics.Block.openRun
+          unfold Functions.InteractionSemantics.Block.openRun
+            Functions.Source.Canonical.Block.runOpen
             Expressions.InteractionSemantics.Block.openRun
-            Locals.InteractionSemantics.stateModel
-            Locals.Source.Effectful.Ordinary.stateModel
-          simp only [Locals.Source.Effectful.Control.Block.runOpen,
+            Functions.InteractionSemantics.stateModel
+          simp only [Functions.Source.Effectful.Control.Block.runOpen,
             Expressions.EffectSemantics.Control.Block.run]
           apply Simulation.Interaction.Rel.done
           apply Simulation.Interaction.ExceptRel.ok
@@ -53,31 +53,31 @@ theorem regularEmpty
               state := hInitial }
 
 theorem regularCons
-    (sourceProgram : Locals.Program)
+    (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
-    (sourceCtx : Locals.Source.Ctx)
+    (sourceCtx : Functions.Source.Ctx)
     (middleCtx finalCtx : Locals.Ctx)
     (sourceFuel targetFuel : Nat)
-    (stmt : Locals.Stmt) (rest : List Locals.Stmt)
+    (stmt : Functions.Stmt) (rest : List Functions.Stmt)
     (headCode tailCode : List Expressions.Stmt)
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hHead :
       Simulation.Interaction.Rel
         (RegularOutcomeRel middleCtx suffix returns)
-        (Locals.InteractionSemantics.Stmt.openRun
+      (Functions.InteractionSemantics.Stmt.openRun
           sourceProgram sourceCtx sourceFuel stmt source)
         (Expressions.InteractionSemantics.Block.openRun
           targetProgram targetFuel { stmts := headCode } target))
     (hTail :
       ∀ {sourceMid : Locals.Source.State}
         {targetMid : Structured.RunState}
-        {sourceMidCtx : Locals.Source.Ctx},
+        {sourceMidCtx : Functions.Source.Ctx},
         CtxCovers sourceMidCtx middleCtx →
         StateRel middleCtx.layout suffix returns sourceMid targetMid →
         Simulation.Interaction.Rel
           (RegularOutcomeRel finalCtx suffix returns)
-          (Locals.InteractionSemantics.Block.openRun
+          (Functions.InteractionSemantics.Block.openRun
             sourceProgram sourceMidCtx sourceFuel
               { stmts := rest } sourceMid)
           (Expressions.InteractionSemantics.Block.openRun
@@ -85,17 +85,17 @@ theorem regularCons
               { stmts := tailCode } targetMid)) :
     Simulation.Interaction.Rel
       (RegularOutcomeRel finalCtx suffix returns)
-      (Locals.InteractionSemantics.Block.openRun
+      (Functions.InteractionSemantics.Block.openRun
         sourceProgram sourceCtx (sourceFuel + 1)
           { stmts := stmt :: rest } source)
       (Expressions.InteractionSemantics.Block.openRun
         targetProgram targetFuel
           { stmts := headCode ++ tailCode } target) := by
   rw [Expressions.InteractionSemantics.Block.openRun_append]
-  unfold Locals.InteractionSemantics.Block.openRun
-    Locals.InteractionSemantics.stateModel
-    Locals.Source.Effectful.Ordinary.stateModel
-  simp only [Locals.Source.Effectful.Control.Block.runOpen]
+  unfold Functions.InteractionSemantics.Block.openRun
+    Functions.Source.Canonical.Block.runOpen
+    Functions.InteractionSemantics.stateModel
+  simp only [Functions.Source.Effectful.Control.Block.runOpen]
   apply Simulation.Interaction.Rel.bind hHead
   intro sourceResult targetResult hResult
   simp only [hResult.sourceMode, hResult.targetMode]

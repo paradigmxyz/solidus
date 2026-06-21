@@ -1595,6 +1595,12 @@ report_matches \
   EvmCompiler/Functions/StackBlockPreservation.lean
 
 report_matches \
+  'Dynamic Functions preservation must use canonical Functions source semantics:' \
+  'CtxCovers \(source : Locals\.Source\.Ctx\)|sourceProgram : Locals\.Program|Locals\.InteractionSemantics\.(Stmt|Block)\.openRun' \
+  EvmCompiler/Functions/StackStatementPreservation.lean \
+  EvmCompiler/Functions/StackBlockPreservation.lean
+
+report_matches \
   'Functions stack-transition compilation must remain an adjacent compiler bridge:' \
   '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|TypedCfg|Assembly\.(Assembler|Compiler))' \
   EvmCompiler/Functions/StackTransitionCompilation.lean

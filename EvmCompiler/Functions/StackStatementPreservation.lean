@@ -1,5 +1,6 @@
 import EvmCompiler.Functions.StackExpressionPreservation
 import EvmCompiler.Functions.StackTransitionCompilation
+import EvmCompiler.Functions.InteractionSemantics
 
 namespace EvmCompiler
 namespace Functions
@@ -7,14 +8,14 @@ namespace StackStatementPreservation
 
 open StackRelation
 
-structure CtxCovers (source : Locals.Source.Ctx)
+structure CtxCovers (source : Functions.Source.Ctx)
     (target : Locals.Ctx) : Prop where
   scope : ∀ {name : Name}, name ∈ target.layout → name ∈ source.scope
 
 namespace CtxCovers
 
 theorem prepend
-    {source : Locals.Source.Ctx} {target : Locals.Ctx}
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
     (hCtx : CtxCovers source target) (name : Name) :
     CtxCovers { source with scope := name :: source.scope }
       (target.withLayout (name :: target.layout)) := by
@@ -25,7 +26,7 @@ theorem prepend
   · exact List.mem_cons.mpr (.inr (hCtx.scope hTail))
 
 theorem afterTransition
-    {source : Locals.Source.Ctx} {target : Locals.Ctx}
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
     (hCtx : CtxCovers source target)
     (transition : AllocationLayout.Transition)
     (hSource : target.layout = transition.source) :
@@ -49,7 +50,7 @@ structure RegularResultRel (targetCtx : Locals.Ctx)
     (suffix : List Word) (returns : List Structured.ReturnDest)
     (source :
       Locals.Source.Effectful.Outcome Locals.Source.State ×
-        Locals.Source.Ctx)
+        Functions.Source.Ctx)
     (target : Structured.Outcome) : Prop where
   sourceMode : source.1.mode = .regular
   targetMode : target.mode = .regular
@@ -64,7 +65,7 @@ abbrev RegularOutcomeRel (targetCtx : Locals.Ctx)
     (RegularResultRel targetCtx suffix returns)
 
 theorem openRun_transition_generated
-    (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
     (transition : AllocationLayout.Transition)
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
@@ -100,7 +101,7 @@ theorem openRun_transition_generated
 
 theorem openRun_transition_block_generated
     (targetProgram : Expressions.Program)
-    (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
     (transition : AllocationLayout.Transition)
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
@@ -145,7 +146,7 @@ theorem regularThenTransition
     (sourceRun :
       Simulation.Interaction EVMException
         (Locals.Source.Effectful.Outcome Locals.Source.State ×
-          Locals.Source.Ctx))
+          Functions.Source.Ctx))
     (head : Expressions.Stmt)
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {target : Structured.RunState}
@@ -214,9 +215,9 @@ theorem regularThenTransition
       state := hFinalRel }
 
 theorem openRun_expr_generated
-    (sourceProgram : Locals.Program)
+    (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
-    (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
     (sourceFuel targetFuel : Nat) (expr : Locals.Expr 0)
     {code : Structured.Code} {suffix : List Word}
     {returns : List Structured.ReturnDest}
@@ -229,7 +230,7 @@ theorem openRun_expr_generated
       StateRel targetCtx.layout suffix returns source target) :
     Simulation.Interaction.Rel
       (RegularOutcomeRel targetCtx suffix returns)
-      (Locals.InteractionSemantics.Stmt.openRun
+      (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel (.expr expr) source)
       (Expressions.InteractionSemantics.Stmt.openRun
         targetProgram targetFuel (.code code) target) := by
@@ -261,18 +262,18 @@ theorem openRun_expr_generated
         state := hFinal }
   unfold Locals.InteractionSemantics.Expr.openEval
     Structured.InteractionSemantics.Code.openRun at hWrapped
-  unfold Locals.InteractionSemantics.Stmt.openRun
+  unfold Functions.InteractionSemantics.Stmt.openRun
+    Functions.Source.Canonical.Stmt.run
+    Functions.Source.Effectful.Control.Stmt.run
     Expressions.InteractionSemantics.Stmt.openRun
-    Locals.InteractionSemantics.stateModel
-    Locals.Source.Effectful.Ordinary.stateModel
-  simp only [Locals.Source.Effectful.Control.Stmt.run,
-    Expressions.EffectSemantics.Control.Stmt.run]
+    Functions.InteractionSemantics.stateModel
+  simp only [Expressions.EffectSemantics.Control.Stmt.run]
   exact hWrapped
 
 theorem openRun_let_generated
-    (sourceProgram : Locals.Program)
+    (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
-    (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
     (sourceFuel targetFuel : Nat)
     {name : Name} (valueExpr : Locals.Expr 1)
     {valueCode : Structured.Code} {suffix : List Word}
@@ -290,7 +291,7 @@ theorem openRun_let_generated
     Simulation.Interaction.Rel
       (RegularOutcomeRel
         (targetCtx.withLayout (name :: targetCtx.layout)) suffix returns)
-      (Locals.InteractionSemantics.Stmt.openRun
+      (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel (.let_ name valueExpr) source)
       (Expressions.InteractionSemantics.Stmt.openRun
         targetProgram targetFuel
@@ -338,12 +339,12 @@ theorem openRun_let_generated
   unfold Locals.InteractionSemantics.Expr.openEvalOne
     Locals.InteractionSemantics.stateModel
     Locals.Source.Effectful.Ordinary.stateModel at hCore
-  unfold Locals.InteractionSemantics.Stmt.openRun
+  unfold Functions.InteractionSemantics.Stmt.openRun
+    Functions.Source.Canonical.Stmt.run
+    Functions.Source.Effectful.Control.Stmt.run
     Expressions.InteractionSemantics.Stmt.openRun
-    Locals.InteractionSemantics.stateModel
-    Locals.Source.Effectful.Ordinary.stateModel
-  simp only [Locals.Source.Effectful.Control.Stmt.run,
-    Locals.Source.Effectful.StateModel.insert,
+    Functions.InteractionSemantics.stateModel
+  simp only [Locals.Source.Effectful.StateModel.insert,
     Expressions.EffectSemantics.Control.Stmt.run]
   change
     Simulation.Interaction.Rel
@@ -360,9 +361,9 @@ theorem openRun_let_generated
   simpa [Simulation.Interaction.bind_assoc] using hCore
 
 theorem openRun_assign_generated
-    (sourceProgram : Locals.Program)
+    (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
-    (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
     (sourceFuel targetFuel : Nat)
     {name : Name} (valueExpr : Locals.Expr 1)
     {depth : Nat} {valueCode : Structured.Code}
@@ -383,7 +384,7 @@ theorem openRun_assign_generated
       StateRel targetCtx.layout suffix returns source target) :
     Simulation.Interaction.Rel
       (RegularOutcomeRel targetCtx suffix returns)
-      (Locals.InteractionSemantics.Stmt.openRun
+      (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel (.assign name valueExpr) source)
       (Expressions.InteractionSemantics.Stmt.openRun
         targetProgram targetFuel
@@ -402,6 +403,11 @@ theorem openRun_assign_generated
   obtain ⟨old, hOld⟩ := hInitial.defined hMem
   have hContains : source.vars.contains name = true := by
     simp [Locals.Source.Store.contains, hOld]
+  have hContains' :
+      (Locals.InteractionSemantics.stateModel.source source).vars.contains
+          name = true := by
+    simpa [Locals.InteractionSemantics.stateModel,
+      Locals.Source.Effectful.Ordinary.stateModel] using hContains
   have hOldStack : target.evm.stack[depth]? = some old := by
     rw [hInitial.stack]
     have hValuesAt := values_getElem?_eq_some (source := source) hAt
@@ -460,15 +466,14 @@ theorem openRun_assign_generated
     Locals.InteractionSemantics.stateModel
     Locals.Source.Effectful.Ordinary.stateModel at hCore
   simp only [Locals.Source.State.insert] at hCore
-  unfold Locals.InteractionSemantics.Stmt.openRun
+  unfold Functions.InteractionSemantics.Stmt.openRun
+    Functions.Source.Canonical.Stmt.run
+    Functions.Source.Effectful.Control.Stmt.run
     Expressions.InteractionSemantics.Stmt.openRun
-    Locals.InteractionSemantics.stateModel
-    Locals.Source.Effectful.Ordinary.stateModel
-  simp only [Locals.Source.Effectful.Control.Stmt.run,
-    Locals.Source.Effectful.StateModel.vars,
+    Functions.InteractionSemantics.stateModel
+  simp only [Locals.Source.Effectful.StateModel.vars,
     Expressions.EffectSemantics.Control.Stmt.run]
-  dsimp only [id]
-  rw [hContains]
+  rw [hContains']
   simp only [Locals.Source.Effectful.StateModel.withVars,
     if_true, Locals.Source.State.withVars]
   simpa [Simulation.Interaction.bind_assoc] using hCore

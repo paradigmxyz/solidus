@@ -121,6 +121,9 @@ short composition module.
   over the dynamic relation and exact target fuel subtraction.
 - [x] Prove the nonzero-fuel empty-block base case directly under the dynamic
   context/layout relation.
+- [x] Make canonical Functions semantics and `Functions.Source.Ctx` the actual
+  source of every dynamic leaf and block theorem; Locals is only the adjacent
+  lowering/target layer.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls
