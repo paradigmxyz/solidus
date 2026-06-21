@@ -284,6 +284,134 @@ theorem lowerFunction?_toExpressions?_components
             simp [targetBody, returnCodeStmts, Locals.codeStmt,
               List.append_assoc]
 
+theorem assignReturnedTopsRev_compileOpen_final :
+    ∀ {ctx final : Locals.Ctx} {names : List Name}
+      {code : List Expressions.Stmt},
+      Locals.Block.compileOpen ctx
+          { stmts := Lower.assignReturnedTopsRev names } =
+        some (code, final) →
+      final = ctx
+  | ctx, final, [], code, hCompile => by
+      simp [Lower.assignReturnedTopsRev, Locals.Block.compileOpen]
+          at hCompile
+      exact hCompile.2.symm
+  | ctx, final, name :: rest, code, hCompile => by
+      obtain ⟨headCode, middle, tailCode, hHead, hTail, _hCode⟩ :=
+        Locals.Block.compileOpen_cons_components hCompile
+      obtain ⟨_depth, _op, _hDepth, _hSwap, _hHeadCode, hMiddle⟩ :=
+        Locals.Stmt.compile_assignTopWithOffset_components hHead
+      subst middle
+      exact assignReturnedTopsRev_compileOpen_final hTail
+
+theorem assignReturnedTops_compileOpen_final
+    {ctx final : Locals.Ctx} {targets : List Name}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Locals.Block.compileOpen ctx
+          { stmts := Lower.assignReturnedTops targets } =
+        some (code, final)) :
+    final = ctx := by
+  exact assignReturnedTopsRev_compileOpen_final
+    (by simpa [Lower.assignReturnedTops] using hCompile)
+
+/-- Actual call-point lowering and ordinary Locals compilation expose argument
+evaluation, the real target call, caller writeback, and the scheduler's retain
+transition as adjacent compiler-owned phases. -/
+theorem callPoint_components
+    {fuel : Nat} {lowerCtx : StackLowering.Ctx}
+    {targets : List Name} {functionName : Name}
+    {args : List (Expr 1)} {point : StackSchedule.Point}
+    {lowered : List Locals.Stmt} {targetCtx finalCtx : Locals.Ctx}
+    {code : List Expressions.Stmt}
+    (hLower :
+      StackLowering.lowerPointFuel fuel lowerCtx
+          (.call targets functionName args) point = some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    ∃ fn retain argCode writebackCode transitionCode,
+      FunList.find? functionName lowerCtx.functions = some fn ∧
+      args.length = fn.params.length ∧
+      targets.length = fn.returns.length ∧
+      targets.Nodup ∧
+      StackLowering.pointAccess? lowerCtx
+          (.call targets functionName args) point = some () ∧
+      point.fallsThrough = true ∧
+      point.regions = [] ∧
+      point.retain? = some retain ∧
+      Locals.ExprSeq.compileCode targetCtx 0 (Lower.argExprs args) =
+        some argCode ∧
+      Locals.Block.compileOpen targetCtx
+          { stmts := Lower.assignReturnedTops targets } =
+        some (writebackCode, targetCtx) ∧
+      Locals.Block.compileOpen targetCtx
+          { stmts := StackLowering.transitionStmts retain } =
+        some (transitionCode, finalCtx) ∧
+      code =
+        [.code argCode] ++
+          ((.call functionName :: writebackCode) ++ transitionCode) := by
+  obtain ⟨fn, retain, hFind, hArgs, hTargets, hNodup, hAccess,
+      hFalls, hRegions, hRetain, hLowered⟩ :=
+    StackLowering.lowerPointFuel_call_components hLower
+  rw [hLowered] at hCompile
+  have hCompile' :
+      Locals.Block.compileOpen targetCtx
+          { stmts :=
+              ([.exprs (Lower.argExprs args), .call functionName] ++
+                Lower.assignReturnedTops targets) ++
+                StackLowering.transitionStmts retain } =
+        some (code, finalCtx) := by
+    simpa using hCompile
+  obtain ⟨coreCode, afterCore, transitionCode, hCore, hTransition,
+      hCode⟩ :=
+    Locals.Block.compileOpen_append_components hCompile'
+  have hCore' :
+      Locals.Block.compileOpen targetCtx
+          { stmts :=
+              [.exprs (Lower.argExprs args)] ++
+                (.call functionName ::
+                  Lower.assignReturnedTops targets) } =
+        some (coreCode, afterCore) := by
+    simpa [List.append_assoc] using hCore
+  obtain ⟨argStmtCode, afterArgs, restCode, hArgStmt, hRest, hCoreCode⟩ :=
+    Locals.Block.compileOpen_append_components hCore'
+  have hArgSingle := Locals.Block.compileOpen_single_components hArgStmt
+  cases hArgCode :
+      Locals.ExprSeq.compileCode targetCtx 0 (Lower.argExprs args) with
+  | none =>
+      simp [Locals.Stmt.compile, hArgCode] at hArgSingle
+  | some argCode =>
+      simp [Locals.Stmt.compile, hArgCode] at hArgSingle
+      rcases hArgSingle with ⟨rfl, rfl⟩
+      have hRest' :
+          Locals.Block.compileOpen targetCtx
+              { stmts := [.call functionName] ++
+                  Lower.assignReturnedTops targets } =
+            some (restCode, afterCore) := by
+        simpa using hRest
+      obtain ⟨callCode, afterCall, writebackCode, hCall, hWriteback,
+          hRestCode⟩ :=
+        Locals.Block.compileOpen_append_components hRest'
+      have hCallExpected :
+          Locals.Block.compileOpen targetCtx
+              { stmts := [.call functionName] } =
+            some ([.call functionName], targetCtx) := by
+        simp [Locals.Block.compileOpen, Locals.Stmt.compile]
+      have hCallPair := Option.some.inj (hCallExpected.symm.trans hCall)
+      have hCallCode : callCode = [.call functionName] :=
+        (congrArg Prod.fst hCallPair).symm
+      have hAfterCall : afterCall = targetCtx :=
+        (congrArg Prod.snd hCallPair).symm
+      subst callCode
+      subst afterCall
+      have hAfterCore := assignReturnedTops_compileOpen_final hWriteback
+      subst afterCore
+      refine ⟨fn, retain, argCode, writebackCode, transitionCode,
+        hFind, hArgs, hTargets, hNodup, hAccess, hFalls, hRegions,
+        hRetain, rfl, hWriteback, hTransition, ?_⟩
+      rw [hCode, hCoreCode, hRestCode]
+      simp [Locals.codeStmt, List.append_assoc]
+
 namespace Examples
 
 def deadProgramCompiles? : Option Assembly.TargetProgram := do

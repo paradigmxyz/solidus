@@ -1,5 +1,6 @@
 import EvmCompiler.Functions.StackExpressionPreservation
 import EvmCompiler.Functions.StackAccessLowering
+import EvmCompiler.Functions.StackLoweringCompilation
 import EvmCompiler.Functions.InteractionSemantics
 import EvmCompiler.Functions.StackStatementPreservation
 import EvmCompiler.Locals.InteractionArity
@@ -814,37 +815,6 @@ private theorem set_append_offset
   | nil => simp
   | cons head tail ih => simp [Nat.succ_add, ih]
 
-private theorem compile_assignTopWithOffset_components
-    {ctx finalCtx : Locals.Ctx} {offset : Nat} {name : Name}
-    {code : List Expressions.Stmt}
-    (hCompile :
-      Locals.Stmt.compile ctx (.assignTopWithOffset offset name) =
-        some (code, finalCtx)) :
-    ∃ depth op,
-      Locals.Layout.lookupDepth? name ctx.layout = some (depth + 1) ∧
-      Locals.StackOp.swap? (offset + (depth + 1)) = some op ∧
-      code =
-        Locals.codeStmt
-          ([Structured.BasicInstr.op op, Structured.BasicInstr.op .pop] ++
-            Locals.bindLocals offset ctx.layout) ∧
-      finalCtx = ctx := by
-  cases hDepth : Locals.Layout.lookupDepth? name ctx.layout with
-  | none => simp [Locals.Stmt.compile, hDepth] at hCompile
-  | some rawDepth =>
-      have hMem : name ∈ ctx.layout :=
-        Locals.Layout.mem_of_lookupDepth?_eq_some hDepth
-      obtain ⟨depth, hDepth'⟩ :=
-        Locals.Layout.exists_lookupDepth?_eq_some_of_mem hMem
-      have hRaw : rawDepth = depth + 1 := by
-        exact Option.some.inj (hDepth.symm.trans hDepth')
-      subst rawDepth
-      cases hSwap : Locals.StackOp.swap? (offset + (depth + 1)) with
-      | none => simp [Locals.Stmt.compile, hDepth, hSwap] at hCompile
-      | some op =>
-          simp [Locals.Stmt.compile, hDepth, hSwap] at hCompile
-          rcases hCompile with ⟨rfl, rfl⟩
-          exact ⟨depth, op, rfl, hSwap, rfl, rfl⟩
-
 private theorem PendingRel.assignTopWithOffset
     (targetProgram : Expressions.Program)
     (targetFuel : Nat)
@@ -871,7 +841,7 @@ private theorem PendingRel.assignTopWithOffset
         (source.insert name value) finalTarget ∧
       finalCtx = ctx := by
   obtain ⟨depth, op, hDepth, hSwap, hCode, hFinalCtx⟩ :=
-    compile_assignTopWithOffset_components hCompile
+    Locals.Stmt.compile_assignTopWithOffset_components hCompile
   subst code
   have hAt : ctx.layout[depth]? = some name :=
     Locals.Layout.getElem?_eq_some_of_lookupDepth?_eq_some hDepth
@@ -1019,7 +989,7 @@ theorem compileOpenRunRev :
             Locals.Block.compileOpen_cons_components hCompile
           obtain ⟨_depth, _op, _hDepth, _hSwap,
               hHeadCode, hMiddleCtx⟩ :=
-            compile_assignTopWithOffset_components hHeadCompile
+            Locals.Stmt.compile_assignTopWithOffset_components hHeadCompile
           subst middleCtx
           subst headCode
           subst code
@@ -1087,7 +1057,7 @@ theorem compileOpenRev_length :
       obtain ⟨headCode, middleCtx, tailCode, hHead, hTail, hCode⟩ :=
         Locals.Block.compileOpen_cons_components hCompile
       obtain ⟨_depth, _op, _hDepth, _hSwap, hHeadCode, hMiddle⟩ :=
-        compile_assignTopWithOffset_components hHead
+        Locals.Stmt.compile_assignTopWithOffset_components hHead
       subst middleCtx
       subst headCode
       subst code
@@ -1467,6 +1437,177 @@ theorem core
               (targetExtra + targets.length + 1) (.call functionName)
               targetAfterArgs) _)
       simpa using hAfterCall
+
+/-- The complete compiled call core preserves one canonical Functions call at
+arbitrary sufficient target fuel. The callee capability is fuel-indexed private
+plumbing for the recursive dispatcher, not a public compiler premise. -/
+theorem corePreserves
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (controlTargets : StackSchedule.ControlTargets)
+    (returnNames : List Name) (ctx : Locals.Ctx)
+    (targets : List Name) (functionName : Name)
+    (args : List (Functions.Expr 1)) (fn : Functions.FunDef)
+    (argCode : Structured.Code) (writebackCode : List Expressions.Stmt)
+    (hFind :
+      Functions.Source.FunList.find? functionName sourceProgram.functions =
+        some fn)
+    (hLayoutNodup : ctx.layout.Nodup)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsLength : targets.length = fn.returns.length)
+    (hTargetsLayout : ∀ name, name ∈ targets → name ∈ ctx.layout)
+    (hArgScoped :
+      Locals.Scope.ExprSeqScoped ctx.layout (Lower.argExprs args))
+    (hArgSupported :
+      Functions.InteractionSemantics.ArgList.OpenSupported args)
+    (hArgCompile :
+      Locals.ExprSeq.compileCode ctx 0 (Lower.argExprs args) = some argCode)
+    (hWritebackCompile :
+      Locals.Block.compileOpen ctx
+          { stmts := Lower.assignReturnedTops targets } =
+        some (writebackCode, ctx))
+    (hCallee :
+      ∀ (sourceFuel targetFuel : Nat)
+        {suffix : List Word} {returns : List Structured.ReturnDest}
+        {source sourceAfterArgs : Locals.Source.State}
+        {target targetAfterArgs : Structured.RunState}
+        {argValues : List Word},
+        StateRel ctx.layout suffix returns source target →
+        Locals.InteractionPreservation.Expr.ResultRel args.length
+            source target (sourceAfterArgs, argValues) targetAfterArgs →
+        Simulation.Interaction.ForwardRel
+          StackStatementPreservation.FuelTruncated
+          (OpenAttachedCallResultRel fn.returns.length
+            target.evm.stack returns)
+          (Functions.InteractionSemantics.FunDef.openRunBody sourceProgram
+            fn argValues sourceFuel sourceAfterArgs)
+          (Expressions.InteractionSemantics.Stmt.openRun targetProgram
+            targetFuel (.call functionName) targetAfterArgs)) :
+    StackStatementPreservation.ControlPointPreserves sourceProgram
+      targetProgram controlTargets returnNames ctx ctx
+      (.call targets functionName args)
+      ([.code argCode] ++ (.call functionName :: writebackCode)) := by
+  unfold StackStatementPreservation.ControlPointPreserves
+  intro sourceCtx sourceFuel targetFuel suffix returns source target hFuel
+    hRuntime hInitial
+  cases sourceFuel with
+  | zero =>
+      unfold Functions.InteractionSemantics.Stmt.openRun
+        Functions.Source.Canonical.Stmt.run
+        Functions.Source.Effectful.Control.Stmt.run
+      exact Simulation.Interaction.ForwardRel.truncated rfl
+  | succ sourceFuel =>
+      have hWritebackLength :=
+        CallerWriteback.compileOpen_length ctx targets writebackCode
+          hWritebackCompile
+      have hCodeLength :
+          ([Expressions.Stmt.code argCode] ++
+            (Expressions.Stmt.call functionName :: writebackCode)).length =
+            targets.length + 2 := by
+        simp [hWritebackLength]
+      have hLength := Expressions.TargetFuel.Covers.length_lt hFuel
+      rw [hCodeLength] at hLength
+      let targetExtra := targetFuel - targets.length - 3
+      have hTargetEq :
+          targetExtra + targets.length + 3 = targetFuel := by
+        dsimp [targetExtra]
+        omega
+      have hCore :=
+        core sourceProgram targetProgram sourceCtx controlTargets returnNames
+          ctx sourceFuel targetExtra targets functionName args fn argCode
+          writebackCode hFind hRuntime hLayoutNodup hTargetsNodup
+          hTargetsLength hTargetsLayout hArgScoped hArgSupported hArgCompile
+          hWritebackCompile hInitial (fun hArgResult =>
+            hCallee sourceFuel
+              (targetExtra + targets.length + 1) hInitial hArgResult)
+      simpa [hTargetEq] using hCore
+
+/-- Build a complete retained call point from the actual scheduler/lowerer and
+ordinary Locals compiler equations. The returned retain artifact is computed by
+the compiler and remains an existential conclusion. -/
+theorem compiledOfCompilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (controlTargets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
+    (targets : List Name) (functionName : Name)
+    (args : List (Functions.Expr 1))
+    (point : StackSchedule.Point)
+    (lowered : List Locals.Stmt)
+    (targetCtx finalCtx : Locals.Ctx)
+    (code : List Expressions.Stmt)
+    (lowerFuel : Nat)
+    (hFunctions : lowerCtx.functions = sourceProgram.functions)
+    (hLayoutNodup : targetCtx.layout.Nodup)
+    (hTargetsLayout : ∀ name, name ∈ targets → name ∈ targetCtx.layout)
+    (hArgScoped :
+      Locals.Scope.ExprSeqScoped targetCtx.layout (Lower.argExprs args))
+    (hArgSupported :
+      Functions.InteractionSemantics.ArgList.OpenSupported args)
+    (hRetainSource :
+      ∀ {retain : AllocationLayout.Transition},
+        point.retain? = some retain →
+        targetCtx.layout = retain.source)
+    (hLower :
+      StackLowering.lowerPointFuel lowerFuel lowerCtx
+          (.call targets functionName args) point = some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx))
+    (hCallee :
+      ∀ (fn : Functions.FunDef),
+        Functions.Source.FunList.find? functionName sourceProgram.functions =
+            some fn →
+        ∀ (sourceFuel targetFuel : Nat)
+          {suffix : List Word} {returns : List Structured.ReturnDest}
+          {source sourceAfterArgs : Locals.Source.State}
+          {target targetAfterArgs : Structured.RunState}
+          {argValues : List Word},
+          StateRel targetCtx.layout suffix returns source target →
+          Locals.InteractionPreservation.Expr.ResultRel args.length
+              source target (sourceAfterArgs, argValues) targetAfterArgs →
+          Simulation.Interaction.ForwardRel
+            StackStatementPreservation.FuelTruncated
+            (OpenAttachedCallResultRel fn.returns.length
+              target.evm.stack returns)
+            (Functions.InteractionSemantics.FunDef.openRunBody sourceProgram
+              fn argValues sourceFuel sourceAfterArgs)
+            (Expressions.InteractionSemantics.Stmt.openRun targetProgram
+              targetFuel (.call functionName) targetAfterArgs)) :
+    ∃ retain,
+      point.retain? = some retain ∧
+      StackStatementPreservation.CompiledControlPoint sourceProgram
+        targetProgram controlTargets returnNames targetCtx finalCtx
+        (.call targets functionName args) code retain.schedule.target := by
+  obtain ⟨fn, retain, argCode, writebackCode, transitionCode, hFind,
+      _hArgsLength, hTargetsLength, hTargetsNodup, _hAccess, _hFalls,
+      _hRegions, hRetain, hArgCompile, hWritebackCompile,
+      hTransitionCompile, hCode⟩ :=
+    StackLoweringCompilation.callPoint_components hLower hCompile
+  have hFind' :
+      Functions.Source.FunList.find? functionName sourceProgram.functions =
+        some fn := by
+    rw [← hFunctions]
+    exact hFind
+  have hCore :=
+    corePreserves sourceProgram targetProgram controlTargets returnNames
+      targetCtx targets functionName args fn argCode writebackCode hFind'
+      hLayoutNodup hTargetsNodup hTargetsLength hTargetsLayout hArgScoped
+      hArgSupported hArgCompile hWritebackCompile (hCallee fn hFind')
+  have hSource := hRetainSource hRetain
+  have hCode' :
+      code =
+        ([.code argCode] ++ (.call functionName :: writebackCode)) ++
+          transitionCode := by
+    simpa [List.append_assoc] using hCode
+  refine ⟨retain, hRetain, ?_⟩
+  exact
+    StackStatementPreservation.compiledControlThenTransition
+      sourceProgram targetProgram controlTargets returnNames targetCtx
+      finalCtx (.call targets functionName args) retain
+      ([.code argCode] ++ (.call functionName :: writebackCode))
+      transitionCode code hSource hTransitionCompile hCode' hCore
 
 end CallPoint
 

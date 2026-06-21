@@ -371,6 +371,39 @@ end Default
 
 namespace Stmt
 
+/-- Successful top-with-offset assignment compilation exposes the checked
+stack depth, emitted shuffle/pop code, and unchanged compiler context. -/
+theorem compile_assignTopWithOffset_components
+    {ctx finalCtx : Ctx} {offset : Nat} {name : Name}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Stmt.compile ctx (.assignTopWithOffset offset name) =
+        some (code, finalCtx)) :
+    ∃ depth op,
+      Layout.lookupDepth? name ctx.layout = some (depth + 1) ∧
+      StackOp.swap? (offset + (depth + 1)) = some op ∧
+      code =
+        codeStmt
+          ([Structured.BasicInstr.op op, Structured.BasicInstr.op .pop] ++
+            bindLocals offset ctx.layout) ∧
+      finalCtx = ctx := by
+  cases hDepth : Layout.lookupDepth? name ctx.layout with
+  | none => simp [Stmt.compile, hDepth] at hCompile
+  | some rawDepth =>
+      have hMem : name ∈ ctx.layout :=
+        Layout.mem_of_lookupDepth?_eq_some hDepth
+      obtain ⟨depth, hDepth'⟩ :=
+        Layout.exists_lookupDepth?_eq_some_of_mem hMem
+      have hRaw : rawDepth = depth + 1 :=
+        Option.some.inj (hDepth.symm.trans hDepth')
+      subst rawDepth
+      cases hSwap : StackOp.swap? (offset + (depth + 1)) with
+      | none => simp [Stmt.compile, hDepth, hSwap] at hCompile
+      | some op =>
+          simp [Stmt.compile, hDepth, hSwap] at hCompile
+          rcases hCompile with ⟨rfl, rfl⟩
+          exact ⟨depth, op, rfl, hSwap, rfl, rfl⟩
+
 /--
 Successful compilation of a Locals lexical block exposes the adjacent open
 block compiler and scoped cleanup owned by this pass.

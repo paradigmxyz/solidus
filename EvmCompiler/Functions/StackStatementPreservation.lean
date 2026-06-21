@@ -2102,6 +2102,77 @@ theorem controlThenTransitionForward
           apply Simulation.Interaction.ExceptRel.ok
           exact .halt hShared
 
+/-- Attach an actually compiled scheduler transition to any already-preserved
+control point. This is the common semantic boundary used by ordinary leaves,
+structured control, and internal calls. -/
+theorem compiledControlThenTransition
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
+    (targetCtx finalCtx : Locals.Ctx)
+    (stmt : Functions.Stmt)
+    (transition : AllocationLayout.Transition)
+    (coreCode transitionCode code : List Expressions.Stmt)
+    (hSource : targetCtx.layout = transition.source)
+    (hTransitionCompile :
+      Locals.Block.compileOpen targetCtx
+          { stmts := StackLowering.transitionStmts transition } =
+        some (transitionCode, finalCtx))
+    (hCode : code = coreCode ++ transitionCode)
+    (hCore :
+      ControlPointPreserves sourceProgram targetProgram targets returnNames
+        targetCtx targetCtx stmt coreCode) :
+    CompiledControlPoint sourceProgram targetProgram targets returnNames
+      targetCtx finalCtx stmt code transition.schedule.target := by
+  obtain ⟨artifact⟩ :=
+    StackTransitionCompilation.Transition.compileArtifact transition hSource
+  have hPair :=
+    Option.some.inj (artifact.compileEq.symm.trans hTransitionCompile)
+  have hArtifactCode :
+      artifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code artifact.cleanup] = transitionCode :=
+    congrArg Prod.fst hPair
+  have hFinalCtx :
+      targetCtx.withLayout transition.schedule.target = finalCtx :=
+    congrArg Prod.snd hPair
+  refine ⟨?_, ?_⟩
+  · rw [← hFinalCtx]
+    rfl
+  · unfold ControlPointPreserves
+    intro sourceCtx sourceFuel targetFuel suffix returns source target hFuel
+      hRuntime hInitial
+    rw [← hFinalCtx]
+    have hFuel' :
+        Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
+          (coreCode ++ transitionCode) := by
+      simpa [hCode] using hFuel
+    have hCoreFuel :=
+      Expressions.TargetFuel.Covers.head_of_append hFuel'
+    have hCoreRun :=
+      hCore sourceCtx sourceFuel targetFuel hCoreFuel hRuntime hInitial
+    have hLength := Expressions.TargetFuel.Covers.length_lt hFuel'
+    have hNumericFuel :
+        coreCode.length + transition.schedule.promotions.length + 1 <
+          targetFuel := by
+      rw [List.length_append, ← hArtifactCode,
+        List.length_append, List.length_map, List.length_cons,
+        List.length_nil, Nat.add_zero, artifact.codes.code_length] at hLength
+      omega
+    obtain ⟨runtimeArtifact, hRun⟩ :=
+      controlThenTransitionForward targetProgram targets returnNames targetCtx
+        transition targetFuel hSource hNumericFuel hCoreRun
+    have hRuntimePair :=
+      Option.some.inj (runtimeArtifact.compileEq.symm.trans artifact.compileEq)
+    have hRuntimeCode :
+        runtimeArtifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code runtimeArtifact.cleanup] =
+          artifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code artifact.cleanup] :=
+      congrArg Prod.fst hRuntimePair
+    rw [hCode, ← hArtifactCode]
+    simpa [hRuntimeCode] using hRun
+
 theorem controlAppendEmptyCode
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)

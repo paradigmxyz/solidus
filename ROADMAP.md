@@ -186,7 +186,7 @@ elimination are not prerequisites for Permit2 or Aave.
 - [x] Recover the exact entry marker, return prelude, scheduled body, return
   vector, and preserving cleanup from the actual `lowerFunction?` and ordinary
   Locals procedure compiler equations.
-- [ ] Attach the scheduler's post-call retain transition and restore the
+- [x] Attach the scheduler's post-call retain transition and restore the
   caller's retained symbolic layout through compiler-owned point equations.
 - [ ] Discharge the private callee-body premise by source-fuel recursion for
   recursive and non-recursive call graphs.
