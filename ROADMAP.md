@@ -132,6 +132,8 @@ short composition module.
   including the exact checked retain transition and recursive next layout.
 - [x] Prove transition and regular-point execution at arbitrary sufficient
   target fuel so nonempty tails compose without a minimal-fuel shortcut.
+- [x] Compose one regular scheduled point with an arbitrary recursive tail,
+  expressing residual fuel only through the source schedule's promotion count.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls

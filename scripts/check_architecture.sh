@@ -18,7 +18,7 @@ for theorem in \
   fi
 done
 
-for theorem in 'regularEmpty' 'regularCons'; do
+for theorem in 'regularEmpty' 'regularCons' 'regularConsOfPoint'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.StackBlockPreservation.${theorem}" \
       EvmCompiler/Verification.lean; then

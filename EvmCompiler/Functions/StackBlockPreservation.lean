@@ -101,6 +101,75 @@ theorem regularCons
   simp only [hResult.sourceMode, hResult.targetMode]
   exact hTail hResult.context hResult.state
 
+theorem regularConsOfPoint
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Functions.Source.Ctx)
+    (targetCtx finalCtx : Locals.Ctx)
+    (transition : AllocationLayout.Transition)
+    (sourceFuel targetFuel : Nat)
+    (stmt : Functions.Stmt) (rest : List Functions.Stmt)
+    (head : Expressions.Stmt) (tailCode : List Expressions.Stmt)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hPoint :
+      RegularPointPreserves targetProgram targetCtx transition
+        (Functions.InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx sourceFuel stmt source)
+        head targetFuel suffix returns target)
+    (hTail :
+      ∀ {sourceMid : Locals.Source.State}
+        {targetMid : Structured.RunState}
+        {sourceMidCtx : Functions.Source.Ctx},
+        CtxCovers sourceMidCtx
+          (targetCtx.withLayout transition.schedule.target) →
+        StateRel transition.schedule.target suffix returns
+          sourceMid targetMid →
+        Simulation.Interaction.Rel
+          (RegularOutcomeRel finalCtx suffix returns)
+          (Functions.InteractionSemantics.Block.openRun
+            sourceProgram sourceMidCtx sourceFuel
+              { stmts := rest } sourceMid)
+          (Expressions.InteractionSemantics.Block.openRun
+            targetProgram
+              (targetFuel - (transition.schedule.promotions.length + 2))
+              { stmts := tailCode } targetMid)) :
+    ∃ artifact : StackTransitionCompilation.Artifact targetCtx transition,
+      Locals.Block.compileOpen targetCtx
+          { stmts := transition.schedule.statements } =
+        some
+          (artifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code artifact.cleanup],
+           targetCtx.withLayout transition.schedule.target) ∧
+      Simulation.Interaction.Rel
+        (RegularOutcomeRel finalCtx suffix returns)
+        (Functions.InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx (sourceFuel + 1)
+            { stmts := stmt :: rest } source)
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          targetFuel
+          { stmts :=
+              (head ::
+                (artifact.promotionCodes.map Expressions.Stmt.code ++
+                  [Expressions.Stmt.code artifact.cleanup])) ++ tailCode }
+          target) := by
+  unfold RegularPointPreserves at hPoint
+  obtain ⟨artifact, hCompile, hHead⟩ := hPoint
+  have hCodeLength :
+      artifact.promotionCodes.length =
+        transition.schedule.promotions.length :=
+    artifact.codes.code_length
+  refine ⟨artifact, hCompile, ?_⟩
+  apply regularCons sourceProgram targetProgram sourceCtx
+    (targetCtx.withLayout transition.schedule.target) finalCtx
+    sourceFuel targetFuel stmt rest
+    (head ::
+      (artifact.promotionCodes.map Expressions.Stmt.code ++
+        [Expressions.Stmt.code artifact.cleanup])) tailCode hHead
+  intro sourceMid targetMid sourceMidCtx hCtx hState
+  have hTail' := hTail hCtx hState
+  simpa [hCodeLength] using hTail'
+
 end StackBlockPreservation
 end Functions
 end EvmCompiler
