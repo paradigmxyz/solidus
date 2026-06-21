@@ -694,6 +694,85 @@ theorem lowerDefaultFuel_some_shape
           subst lowered
           exact ⟨region, loweredBody, rfl, rfl, hBody⟩
 
+theorem lowerPointFuel_for_components
+    {fuel : Nat} {ctx : Ctx} {init post body : Block} {cond : Expr 1}
+    {point : StackSchedule.Point} {lowered : List Locals.Stmt}
+    (hLower :
+      lowerPointFuel fuel ctx (.for_ init cond post body) point =
+        some lowered) :
+    ∃ initRegion postRegion bodyRegion loweredInit loweredPost loweredBody retain,
+      pointAccess? ctx (.for_ init cond post body) point = some () ∧
+        point.fallsThrough = true ∧
+        point.regions = [initRegion, postRegion, bodyRegion] ∧
+        lowerBlockFuel (fuel - 1) ctx init initRegion = some loweredInit ∧
+        lowerBlockFuel (fuel - 1) ctx post postRegion = some loweredPost ∧
+        lowerBlockFuel (fuel - 1) ctx body bodyRegion = some loweredBody ∧
+        point.retain? = some retain ∧
+        lowered =
+          [.for_ loweredInit cond loweredPost loweredBody] ++
+            transitionStmts retain := by
+  cases fuel with
+  | zero => simp [lowerPointFuel] at hLower
+  | succ fuel =>
+      simp only [lowerPointFuel] at hLower
+      cases hAccess : pointAccess? ctx (.for_ init cond post body) point with
+      | none => simp [hAccess] at hLower
+      | some unit =>
+          cases unit
+          rw [hAccess] at hLower
+          by_cases hFalls :
+              point.fallsThrough =
+                !StackSchedule.alwaysExits (.for_ init cond post body)
+          · rw [if_pos hFalls] at hLower
+            have hFallsTrue : point.fallsThrough = true := by
+              simpa [StackSchedule.alwaysExits] using hFalls
+            rw [hFallsTrue] at hLower
+            cases hRegions : point.regions with
+            | nil => simp [hRegions] at hLower
+            | cons initRegion rest =>
+                cases rest with
+                | nil => simp [hRegions] at hLower
+                | cons postRegion rest =>
+                    cases rest with
+                    | nil => simp [hRegions] at hLower
+                    | cons bodyRegion rest =>
+                        cases rest with
+                        | cons extra tail => simp [hRegions] at hLower
+                        | nil =>
+                            rw [hRegions] at hLower
+                            change
+                              (do
+                                let loweredInit ←
+                                  lowerBlockFuel fuel ctx init initRegion
+                                let loweredPost ←
+                                  lowerBlockFuel fuel ctx post postRegion
+                                let loweredBody ←
+                                  lowerBlockFuel fuel ctx body bodyRegion
+                                match point.retain? with
+                                | some retain =>
+                                    some
+                                      ([.for_ loweredInit cond loweredPost
+                                          loweredBody] ++
+                                        transitionStmts retain)
+                                | none => none) = some lowered at hLower
+                            obtain ⟨loweredInit, hInit, hAfterInit⟩ :=
+                              Option.bind_eq_some_iff.mp hLower
+                            obtain ⟨loweredPost, hPost, hAfterPost⟩ :=
+                              Option.bind_eq_some_iff.mp hAfterInit
+                            obtain ⟨loweredBody, hBody, hAfterBody⟩ :=
+                              Option.bind_eq_some_iff.mp hAfterPost
+                            cases hRetain : point.retain? with
+                            | none => simp [hRetain] at hAfterBody
+                            | some retain =>
+                                rw [hRetain] at hAfterBody
+                                exact ⟨initRegion, postRegion, bodyRegion,
+                                  loweredInit, loweredPost, loweredBody, retain,
+                                  rfl, hFallsTrue, rfl, by simpa using hInit,
+                                  by simpa using hPost, by simpa using hBody,
+                                  rfl, by simpa using hAfterBody.symm⟩
+          · rw [if_neg hFalls] at hLower
+            contradiction
+
 theorem lowerPointFuel_brk_components
     {fuel : Nat} {ctx : Ctx}
     {point : StackSchedule.Point} {lowered : List Locals.Stmt}

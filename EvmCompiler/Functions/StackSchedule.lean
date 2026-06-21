@@ -1001,6 +1001,84 @@ theorem scheduleDefaultRegionFuelWithTargets_some_shape
             { rawRegion with exit? := some exit, finalLayout := layout },
             rfl, rfl, hBody, hExit, rfl⟩
 
+theorem scheduleStmtFuelWithTargets_for_components
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout : Locals.Layout} {init post body : Block} {cond : Expr 1}
+    {facts : AllocationLivenessFacts.Point} {point : Point}
+    (hSchedule :
+      scheduleStmtFuelWithTargets targets fuel pinned layout
+          (.for_ init cond post body) facts = some point) :
+    ∃ initFacts postFacts bodyFacts loopFacts initRegion rawPostRegion
+        rawBodyRegion postExit bodyExit,
+      facts.regions = [initFacts, postFacts, bodyFacts] ∧
+        facts.loop? = some loopFacts ∧
+        scheduleBlockFuelWithTargets targets (fuel - 1) (layoutSet layout)
+            layout init initFacts = some initRegion ∧
+        scheduleBlockFuelWithTargets
+            { targets with
+              brk? := some initRegion.finalLayout
+              cont? := some initRegion.finalLayout }
+            (fuel - 1) (layoutSet initRegion.finalLayout)
+            initRegion.finalLayout post postFacts = some rawPostRegion ∧
+        scheduleBlockFuelWithTargets
+            { targets with
+              brk? := some initRegion.finalLayout
+              cont? := some initRegion.finalLayout }
+            (fuel - 1) (layoutSet initRegion.finalLayout)
+            initRegion.finalLayout body bodyFacts = some rawBodyRegion ∧
+        Join.build? rawPostRegion.finalLayout initRegion.finalLayout =
+          some postExit ∧
+        Join.build? rawBodyRegion.finalLayout initRegion.finalLayout =
+          some bodyExit ∧
+        point.beforeLayout = layout ∧ point.statementLayout = layout ∧
+        point.retain? = none ∧
+        point.regions =
+          [initRegion,
+           { rawPostRegion with
+              exit? := some postExit,
+              finalLayout := initRegion.finalLayout },
+           { rawBodyRegion with
+              exit? := some bodyExit,
+              finalLayout := initRegion.finalLayout }] ∧
+        point.fallsThrough = true := by
+  cases fuel with
+  | zero => simp [scheduleStmtFuelWithTargets] at hSchedule
+  | succ fuel =>
+      simp only [scheduleStmtFuelWithTargets] at hSchedule
+      cases hRegions : facts.regions with
+      | nil => simp [hRegions] at hSchedule
+      | cons initFacts rest =>
+          cases rest with
+          | nil => simp [hRegions] at hSchedule
+          | cons postFacts rest =>
+              cases rest with
+              | nil => simp [hRegions] at hSchedule
+              | cons bodyFacts rest =>
+                  cases rest with
+                  | cons extra tail => simp [hRegions] at hSchedule
+                  | nil =>
+                      cases hLoop : facts.loop? with
+                      | none => simp [hRegions, hLoop] at hSchedule
+                      | some loopFacts =>
+                          rw [hRegions, hLoop] at hSchedule
+                          obtain ⟨initRegion, hInit, hAfterInit⟩ :=
+                            Option.bind_eq_some_iff.mp hSchedule
+                          obtain ⟨rawPostRegion, hPost, hAfterPost⟩ :=
+                            Option.bind_eq_some_iff.mp hAfterInit
+                          obtain ⟨rawBodyRegion, hBody, hAfterBody⟩ :=
+                            Option.bind_eq_some_iff.mp hAfterPost
+                          obtain ⟨postExit, hPostExit, hAfterPostExit⟩ :=
+                            Option.bind_eq_some_iff.mp hAfterBody
+                          obtain ⟨bodyExit, hBodyExit, hPoint⟩ :=
+                            Option.bind_eq_some_iff.mp hAfterPostExit
+                          have hPointEq := Option.some.inj hPoint
+                          subst point
+                          exact ⟨initFacts, postFacts, bodyFacts, loopFacts,
+                            initRegion, rawPostRegion, rawBodyRegion, postExit,
+                            bodyExit, rfl, rfl, by simpa using hInit,
+                            by simpa using hPost, by simpa using hBody,
+                            hPostExit, hBodyExit, rfl, rfl, rfl, rfl, rfl⟩
+
 theorem scheduleStmtFuel_let_components
     {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
     {name : Name} {value : Expr 1}

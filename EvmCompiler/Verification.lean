@@ -2981,6 +2981,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackSchedule.scheduleDefaultRegionFuelWithTargets_some_components
 #check EvmCompiler.Functions.StackSchedule.scheduleDefaultRegionFuelWithTargets_none_shape
 #check EvmCompiler.Functions.StackSchedule.scheduleDefaultRegionFuelWithTargets_some_shape
+#check EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_for_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuelWithTargets_brk_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuelWithTargets_cont_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_terminal_components
@@ -3169,6 +3170,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackLowering.lowerDefaultFuel_some_components
 #check EvmCompiler.Functions.StackLowering.lowerDefaultFuel_none_shape
 #check EvmCompiler.Functions.StackLowering.lowerDefaultFuel_some_shape
+#check EvmCompiler.Functions.StackLowering.lowerPointFuel_for_components
 #check EvmCompiler.Functions.StackLowering.lowerBlock?_components
 #check EvmCompiler.Functions.StackLoweringCompilation.Examples.deadProgram_compiles
 #check EvmCompiler.Functions.StackLoweringCompilation.Examples.dormantCallProgram_compiles
@@ -3183,6 +3185,8 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_cont_components
 #print axioms EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_switch_components
 #print axioms EvmCompiler.Functions.StackLowering.lowerPointFuel_switch_components
+#print axioms EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_for_components
+#print axioms EvmCompiler.Functions.StackLowering.lowerPointFuel_for_components
 #print axioms EvmCompiler.Expressions.TargetFuel.Covers.switch_selected_after_two
 #print axioms EvmCompiler.Functions.StackExpressionPreservation.openEvalOnePop_compileCode
 #print axioms EvmCompiler.Functions.StackStatementPreservation.controlSwitch

@@ -117,7 +117,8 @@ for theorem in \
     'lowerDefaultFuel_none_components' \
     'lowerDefaultFuel_some_components' \
     'lowerDefaultFuel_none_shape' \
-    'lowerDefaultFuel_some_shape'; do
+    'lowerDefaultFuel_some_shape' \
+    'lowerPointFuel_for_components'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.StackLowering.${theorem}" \
       EvmCompiler/Verification.lean; then
@@ -343,6 +344,7 @@ for theorem in \
     'scheduleDefaultRegionFuelWithTargets_some_components' \
     'scheduleDefaultRegionFuelWithTargets_none_shape' \
     'scheduleDefaultRegionFuelWithTargets_some_shape' \
+    'scheduleStmtFuelWithTargets_for_components' \
     'scheduleBlockFuelWithTargets_components' \
     'scheduleStmtListFuelWithTargets_brk_components' \
     'scheduleStmtListFuelWithTargets_cont_components'; do
