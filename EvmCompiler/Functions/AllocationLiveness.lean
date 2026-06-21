@@ -101,7 +101,7 @@ mutual
           (Expr.uses value ∪ demand.normal.erase name)
     | assign :
         Stmt.Valid demand (.assign name value)
-          (Expr.uses value ∪ demand.normal.erase name)
+          ((Expr.uses value ∪ demand.normal.erase name) ∪ {name})
     | block
         (hBody : Block.Valid demand body liveIn) :
         Stmt.Valid demand (.block body) liveIn
@@ -132,7 +132,9 @@ mutual
     | leave : Stmt.Valid demand .leave demand.leave
     | call :
         Stmt.Valid demand (.call targets functionName args)
-          (ExprList.uses args ∪ LiveSet.eraseMany targets demand.normal)
+          ((ExprList.uses args ∪
+              LiveSet.eraseMany targets demand.normal) ∪
+            targets.toFinset)
     | terminal : Stmt.Valid demand (.terminal kind) ∅
     | terminalArgs :
         Stmt.Valid demand (.terminalArgs kind args) (ExprSeq.uses args)
@@ -249,7 +251,7 @@ mutual
         | .let_ name value =>
             some (Expr.uses value ∪ demand.normal.erase name)
         | .assign name value =>
-            some (Expr.uses value ∪ demand.normal.erase name)
+            some ((Expr.uses value ∪ demand.normal.erase name) ∪ {name})
         | .block body => analyzeBlockFuel fuel demand body
         | .if_ cond body =>
             (analyzeBlockFuel fuel demand body).bind fun bodyLive =>
@@ -267,8 +269,9 @@ mutual
         | .leave => some demand.leave
         | .call targets _ args =>
             some
-              (ExprList.uses args ∪
-                LiveSet.eraseMany targets demand.normal)
+              ((ExprList.uses args ∪
+                  LiveSet.eraseMany targets demand.normal) ∪
+                targets.toFinset)
         | .terminal _ => some ∅
         | .terminalArgs _ args => some (ExprSeq.uses args)
 
@@ -408,7 +411,8 @@ mutual
             exact .let_
         | assign name value =>
             have hEq :
-                Expr.uses value ∪ demand.normal.erase name = liveIn := by
+                (Expr.uses value ∪ demand.normal.erase name) ∪ {name} =
+                  liveIn := by
               simpa only [analyzeStmtFuel, Option.some.injEq] using hAnalyze
             subst liveIn
             exact .assign
@@ -466,8 +470,9 @@ mutual
             exact .leave
         | call targets functionName args =>
             have hEq :
-                ExprList.uses args ∪
-                    LiveSet.eraseMany targets demand.normal = liveIn := by
+                (ExprList.uses args ∪
+                    LiveSet.eraseMany targets demand.normal) ∪
+                  targets.toFinset = liveIn := by
               simpa only [analyzeStmtFuel, Option.some.injEq] using hAnalyze
             subst liveIn
             exact .call
@@ -584,7 +589,7 @@ def callWithDormantValue : Block :=
 
 theorem callWithDormantValue_result :
     analyzeBlock? { normal := ∅ } callWithDormantValue =
-      some {"callerLive"} := by
+      some {"callerLive", "result", "sink"} := by
   decide
 
 def loopWithContinue : Block :=

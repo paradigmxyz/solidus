@@ -38,6 +38,27 @@ def layoutSet (layout : Locals.Layout) : LiveSet :=
 def required (pinned live : LiveSet) : LiveSet :=
   pinned ∪ live
 
+/-- Mutable definitions do not read their old value, but stack lowering still
+needs the destination slot resident until the write has executed. -/
+def residentBefore (stmt : Stmt)
+    (facts : AllocationLivenessFacts.Point) : LiveSet :=
+  facts.liveBefore ∪
+    match stmt with
+    | .assign name _ => {name}
+    | .call targets _ _ => targets.toFinset
+    | _ => ∅
+
+def blockEntryLive (source : Block)
+    (facts : AllocationLivenessFacts.Region) : LiveSet :=
+  match source.stmts, facts.points with
+  | stmt :: _, point :: _ => residentBefore stmt point
+  | _, _ => facts.liveIn
+
+def nextLive (fallback : LiveSet) :
+    List Stmt → List AllocationLivenessFacts.Point → LiveSet
+  | stmt :: _, point :: _ => residentBefore stmt point
+  | _, _ => fallback
+
 def covers (layout : Locals.Layout) (live : LiveSet) : Prop :=
   live ⊆ layoutSet layout
 
@@ -58,7 +79,7 @@ mutual
     match fuel with
     | 0 => none
     | fuel + 1 => do
-        let entryDemand := required pinned facts.liveIn
+        let entryDemand := required pinned (blockEntryLive source facts)
         if covers layout entryDemand then
         let entry ← Transition.build? layout entryDemand
         let (points, finalLayout) ←
@@ -74,10 +95,11 @@ mutual
         Option (List Point × Locals.Layout)
     | [], [] => some ([], layout)
     | stmt :: rest, facts :: restFacts => do
-        if covers layout facts.liveBefore then
+        if covers layout (residentBefore stmt facts) then
         let point ← scheduleStmtFuel fuel pinned layout stmt facts
         if point.fallsThrough then
-          let afterDemand := required pinned facts.liveAfter
+          let afterDemand :=
+            required pinned (nextLive facts.liveAfter rest restFacts)
           if covers point.statementLayout afterDemand then
           let retain ← Transition.build? point.statementLayout afterDemand
           let point := { point with retain? := some retain }
@@ -209,14 +231,15 @@ theorem scheduleBlockFuel_entry_sound
     (hSchedule :
       scheduleBlockFuel fuel pinned layout source facts = some region) :
     region.entry.source = layout ∧
-      region.entry.live = required pinned facts.liveIn ∧
+      region.entry.live = required pinned (blockEntryLive source facts) ∧
       region.entry.schedule.ValidFor layout
-        (required pinned facts.liveIn) := by
+        (required pinned (blockEntryLive source facts)) := by
   cases fuel with
   | zero => simp [scheduleBlockFuel] at hSchedule
   | succ fuel =>
       simp only [scheduleBlockFuel] at hSchedule
-      by_cases hCover : covers layout (required pinned facts.liveIn)
+      by_cases hCover :
+          covers layout (required pinned (blockEntryLive source facts))
       · rw [if_pos hCover] at hSchedule
         obtain ⟨entry, hEntry, hAfterEntry⟩ :=
           Option.bind_eq_some_iff.mp hSchedule
@@ -239,9 +262,9 @@ theorem scheduleBlock?_entry_sound
     {region : Region}
     (hSchedule : scheduleBlock? pinned layout source facts = some region) :
     region.entry.source = layout ∧
-      region.entry.live = required pinned facts.liveIn ∧
+      region.entry.live = required pinned (blockEntryLive source facts) ∧
       region.entry.schedule.ValidFor layout
-        (required pinned facts.liveIn) :=
+        (required pinned (blockEntryLive source facts)) :=
   scheduleBlockFuel_entry_sound hSchedule
 
 namespace Examples

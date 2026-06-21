@@ -12,6 +12,11 @@ end FunList
 
 namespace Lower
 
+def bindEntryLayout (layout : Locals.Layout) : Locals.Stmt :=
+  .expr
+    (Locals.Expr.code (results := 0)
+      [Structured.BasicInstr.bindLocals 0 layout])
+
 def zero : Word :=
   EvmYul.UInt256.ofNat 0
 

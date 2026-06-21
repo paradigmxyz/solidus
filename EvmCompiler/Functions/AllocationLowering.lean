@@ -213,10 +213,8 @@ theorem promoteAt_append_name
   rw [List.getElem?_append_right (Nat.le_refl above.length)]
   simp
 
-def bindEntryLayout (layout : Locals.Layout) : Locals.Stmt :=
-  .expr
-    (Locals.Expr.code (results := 0)
-      [Structured.BasicInstr.bindLocals 0 layout])
+abbrev bindEntryLayout : Locals.Layout → Locals.Stmt :=
+  Lower.bindEntryLayout
 
 def bindScratchBindings (baseDepth : Nat)
     (bindings : List (Name × Nat)) : Locals.Stmt :=
@@ -252,7 +250,7 @@ theorem entryMarkers_compileOpen
             [],
          localsCtx) := by
   cases needsFrame <;>
-    simp [bindEntryLayout, bindScratchBindings,
+    simp [bindEntryLayout, Lower.bindEntryLayout, bindScratchBindings,
       Locals.Block.compileOpen, Locals.Stmt.compile,
       Locals.Expr.compileCode, Locals.codeStmt]
 

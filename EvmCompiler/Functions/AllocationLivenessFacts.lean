@@ -127,7 +127,8 @@ mutual
                     { targets
                       functionName
                       liveAcross :=
-                        LiveSet.eraseMany targets demand.normal } }
+                        LiveSet.eraseMany targets demand.normal ∪
+                          targets.toFinset } }
         | _ => do
             let before ← analyzeStmtFuel (fuel + 1) demand stmt
             some
@@ -370,7 +371,7 @@ def dormantCallLiveAcross? : Option LiveSet := do
   some call.liveAcross
 
 theorem dormantCallLiveAcross_result :
-    dormantCallLiveAcross? = some {"callerLive"} := by
+    dormantCallLiveAcross? = some {"callerLive", "result", "sink"} := by
   decide
 
 def loopHead? : Option LiveSet := do

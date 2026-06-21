@@ -18,6 +18,8 @@ import EvmCompiler.Functions.AllocationLivenessFacts
 import EvmCompiler.Functions.AllocationLayout
 import EvmCompiler.Functions.AllocationLayoutLowering
 import EvmCompiler.Functions.StackSchedule
+import EvmCompiler.Functions.StackLowering
+import EvmCompiler.Functions.StackLoweringCompilation
 import EvmCompiler.Functions.AllocationObserverRelation
 import EvmCompiler.Functions.AllocationObserverSafety
 import EvmCompiler.Functions.AllocationObserverPreservation
@@ -2908,7 +2910,15 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLayout.scheduleRetain?_sound
 #check EvmCompiler.Functions.AllocationLayout.Transition.build?_sound
 #check EvmCompiler.Functions.AllocationLayoutLowering.Schedule.compile
+#check EvmCompiler.Functions.AllocationLayoutLowering.Transition.compile
 #check EvmCompiler.Functions.StackSchedule.scheduleBlockFuel_entry_sound
 #check EvmCompiler.Functions.StackSchedule.scheduleBlock?_entry_sound
 #check EvmCompiler.Functions.StackSchedule.Examples.sequentialDead_stackOnly
 #check EvmCompiler.Functions.StackSchedule.Examples.dormantCall_schedule_succeeds
+#check EvmCompiler.Functions.StackLowering.Examples.deadProgram_lowers
+#check EvmCompiler.Functions.StackLowering.Examples.dormantCallProgram_lowers
+#check EvmCompiler.Functions.StackLowering.Examples.controlProgram_lowers
+#check EvmCompiler.Functions.StackLowering.lowerBlock?_components
+#check EvmCompiler.Functions.StackLoweringCompilation.Examples.deadProgram_compiles
+#check EvmCompiler.Functions.StackLoweringCompilation.Examples.dormantCallProgram_compiles
+#check EvmCompiler.Functions.StackLoweringCompilation.Examples.controlProgram_compiles

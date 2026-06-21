@@ -142,6 +142,19 @@ theorem Schedule.compile
   · cases ctx
     rfl
 
+theorem Transition.compile
+    {ctx : Locals.Ctx} (transition : Transition)
+    (hSource : ctx.layout = transition.source) :
+    ∃ code finalCtx,
+      Locals.Block.compileOpen ctx
+          { stmts := transition.schedule.statements } =
+        some (code, finalCtx) ∧
+      finalCtx = ctx.withLayout transition.target := by
+  have hValid :
+      transition.schedule.ValidFor ctx.layout transition.live := by
+    simpa [hSource] using transition.valid
+  simpa [Transition.target] using Schedule.compile hValid
+
 end AllocationLayoutLowering
 end Functions
 end EvmCompiler
