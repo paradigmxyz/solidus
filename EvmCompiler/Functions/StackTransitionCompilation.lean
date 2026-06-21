@@ -296,6 +296,39 @@ theorem Join.compiledOpenRun
     exact hOrderRun
   · simpa [join.orderTarget] using hFinalRel
 
+structure JoinArtifact (ctx : Locals.Ctx)
+    (join : AllocationLayout.Join) where
+  retainArtifact : Artifact ctx join.retain
+  orderArtifact :
+    OrderingArtifact (ctx.withLayout join.retain.target) join.order
+  compileEq :
+    Locals.Block.compileOpen ctx { stmts := join.statements } =
+      some
+        (retainArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code retainArtifact.cleanup] ++
+          orderArtifact.promotionCodes.map Expressions.Stmt.code,
+         ctx.withLayout join.target)
+
+theorem Join.compileArtifact
+    {ctx : Locals.Ctx} (join : AllocationLayout.Join)
+    (hSource : ctx.layout = join.source) :
+    Nonempty (JoinArtifact ctx join) := by
+  have hRetainSource : ctx.layout = join.retain.source := by
+    rw [join.retainSource, hSource]
+  obtain ⟨retainArtifact⟩ :=
+    Transition.compileArtifact join.retain hRetainSource
+  let orderCtx := ctx.withLayout join.retain.target
+  have hOrderSource : orderCtx.layout = join.order.source := by
+    simpa [orderCtx, Locals.Ctx.withLayout] using join.orderSource.symm
+  obtain ⟨orderArtifact⟩ :=
+    Ordering.compileArtifact (ctx := orderCtx) join.order hOrderSource
+  refine ⟨{ retainArtifact, orderArtifact, compileEq := ?_ }⟩
+  have hAppend :=
+    Locals.Block.compileOpen_append retainArtifact.compileEq
+      orderArtifact.compileEq
+  simpa [Join.statements, Schedule.statements, Ordering.statements,
+    orderCtx, join.orderTarget] using hAppend
+
 theorem PromotionCodes.openBlockRun
     (program : Expressions.Program)
     {layout finalLayout : Locals.Layout}
@@ -433,6 +466,109 @@ theorem Artifact.blockOpenRun
       program (fuel - artifact.promotionCodes.length)
         artifact.cleanup middle final (by omega) hCleanupRun
   simpa using hCleanupBlock
+
+theorem JoinArtifact.blockOpenRun
+    (program : Expressions.Program) {ctx : Locals.Ctx}
+    {join : AllocationLayout.Join}
+    (artifact : JoinArtifact ctx join)
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (fuel : Nat)
+    (hFuel :
+      artifact.retainArtifact.promotionCodes.length + 1 +
+          artifact.orderArtifact.promotionCodes.length < fuel)
+    (hRel :
+      StackRelation.StateRel ctx.layout suffix returns source target) :
+    ∃ final,
+      Expressions.InteractionSemantics.Block.openRun program fuel
+          { stmts :=
+              artifact.retainArtifact.promotionCodes.map
+                  Expressions.Stmt.code ++
+                [Expressions.Stmt.code artifact.retainArtifact.cleanup] ++
+                artifact.orderArtifact.promotionCodes.map
+                  Expressions.Stmt.code }
+          target =
+        .done (.ok (Structured.Outcome.regular final)) ∧
+      StackRelation.StateRel join.target suffix returns source final := by
+  let retainLength := artifact.retainArtifact.promotionCodes.length + 1
+  obtain ⟨middle, hRetainRun, hMiddleRel⟩ :=
+    artifact.retainArtifact.blockOpenRun program fuel (by omega) hRel
+  have hMiddleRel' :
+      StackRelation.StateRel
+        (ctx.withLayout join.retain.target).layout suffix returns source
+        middle := by
+    simpa [Locals.Ctx.withLayout] using hMiddleRel
+  obtain ⟨final, hOrderRun, hFinalRel⟩ :=
+    artifact.orderArtifact.blockOpenRun program (fuel - retainLength)
+      (by simp [retainLength] at hFuel ⊢; omega) hMiddleRel'
+  refine ⟨final, ?_, ?_⟩
+  · rw [Expressions.InteractionSemantics.Block.openRun_append,
+      hRetainRun, Simulation.Interaction.bind_done_ok]
+    simpa [retainLength, List.length_map] using hOrderRun
+  · simpa [join.orderTarget] using hFinalRel
+
+theorem JoinArtifact.thenBlock
+    (program : Expressions.Program) {ctx : Locals.Ctx}
+    {join : AllocationLayout.Join}
+    (artifact : JoinArtifact ctx join)
+    {α : Type}
+    {resultRel :
+      Except EVMException α → Except EVMException Structured.Outcome → Prop}
+    {sourceRun : Simulation.Interaction EVMException α}
+    {body : List Expressions.Stmt}
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (fuel : Nat)
+    (hFuel :
+      artifact.retainArtifact.promotionCodes.length + 1 +
+          artifact.orderArtifact.promotionCodes.length < fuel)
+    (hInitial :
+      StackRelation.StateRel ctx.layout suffix returns source target)
+    (hBody :
+      ∀ {joinedTarget : Structured.RunState},
+        StackRelation.StateRel join.target suffix returns source joinedTarget →
+        Simulation.Interaction.Rel resultRel sourceRun
+          (Expressions.InteractionSemantics.Block.openRun program
+            (fuel -
+              (artifact.retainArtifact.promotionCodes.length + 1 +
+                artifact.orderArtifact.promotionCodes.length))
+            { stmts := body } joinedTarget)) :
+    Simulation.Interaction.Rel resultRel sourceRun
+      (Expressions.InteractionSemantics.Block.openRun program fuel
+        { stmts :=
+            artifact.retainArtifact.promotionCodes.map
+                Expressions.Stmt.code ++
+              [Expressions.Stmt.code artifact.retainArtifact.cleanup] ++
+              artifact.orderArtifact.promotionCodes.map Expressions.Stmt.code ++
+              body }
+        target) := by
+  let joinLength :=
+    artifact.retainArtifact.promotionCodes.length + 1 +
+      artifact.orderArtifact.promotionCodes.length
+  obtain ⟨joinedTarget, hJoinRun, hJoinedRel⟩ :=
+    artifact.blockOpenRun program fuel hFuel hInitial
+  rw [show
+      artifact.retainArtifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code artifact.retainArtifact.cleanup] ++
+            artifact.orderArtifact.promotionCodes.map Expressions.Stmt.code ++
+            body =
+        (artifact.retainArtifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code artifact.retainArtifact.cleanup] ++
+            artifact.orderArtifact.promotionCodes.map Expressions.Stmt.code) ++
+          body by simp [List.append_assoc]]
+  rw [Expressions.InteractionSemantics.Block.openRun_append,
+    hJoinRun, Simulation.Interaction.bind_done_ok]
+  have hLength :
+      (artifact.retainArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code artifact.retainArtifact.cleanup] ++
+          artifact.orderArtifact.promotionCodes.map Expressions.Stmt.code).length =
+        joinLength := by
+    simp only [List.length_append, List.length_map, List.length_singleton]
+    simp [joinLength]
+  rw [hLength]
+  simpa [joinLength] using hBody hJoinedRel
 
 theorem Transition.compiledBlockOpenRun
     (program : Expressions.Program) {ctx : Locals.Ctx}

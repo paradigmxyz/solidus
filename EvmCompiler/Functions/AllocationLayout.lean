@@ -316,6 +316,24 @@ def build? (source target : Locals.Layout) : Option Join := do
           else
             none
 
+theorem build?_endpoints
+    {source target : Locals.Layout} {join : Join}
+    (hBuild : build? source target = some join) :
+    join.source = source ∧ join.target = target := by
+  unfold build? at hBuild
+  split at hBuild
+  · contradiction
+  · rename_i retain hRetain
+    dsimp only at hBuild
+    split at hBuild
+    · contradiction
+    · all_goals
+        split at hBuild
+        · simp only [Option.some.injEq] at hBuild
+          subst join
+          exact ⟨rfl, rfl⟩
+        · contradiction
+
 def statements (join : Join) : List Locals.Stmt :=
   (join.retain.schedule.promotions.map fun promotion =>
       Locals.Stmt.promoteName promotion.name) ++

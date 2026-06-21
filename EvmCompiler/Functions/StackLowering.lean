@@ -519,6 +519,56 @@ theorem lowerPointFuel_cont_components
           · rw [if_neg hFalls] at hLower
             contradiction
 
+theorem lowerStmtListFuel_brk_components
+    {fuel : Nat} {ctx : Ctx} {rest : List Stmt}
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {lowered : List Locals.Stmt}
+    (hLower :
+      lowerStmtListFuel fuel ctx (.brk :: rest) (point :: points) =
+        some lowered) :
+    ∃ order,
+      point.order? = some order ∧
+        pointAccess? ctx .brk point = some () ∧
+        point.fallsThrough = false ∧ point.regions = [] ∧
+        point.retain? = none ∧
+        lowered = order.statements ++ exitStmts point.exit? ++ [.brk] := by
+  obtain ⟨order, head, hOrder, hHead, hCases⟩ :=
+    lowerStmtListFuel_cons_components hLower
+  obtain ⟨hAccess, hFalls, hRegions, hRetain, hHeadCode⟩ :=
+    lowerPointFuel_brk_components hHead
+  have hAbrupt := hCases.resolve_left (by
+    intro hRegular
+    rw [hFalls] at hRegular
+    exact Bool.noConfusion hRegular.1)
+  exact
+    ⟨order, hOrder, hAccess, hFalls, hRegions, hRetain,
+      by rw [hAbrupt.2, hHeadCode, List.append_assoc]⟩
+
+theorem lowerStmtListFuel_cont_components
+    {fuel : Nat} {ctx : Ctx} {rest : List Stmt}
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {lowered : List Locals.Stmt}
+    (hLower :
+      lowerStmtListFuel fuel ctx (.cont :: rest) (point :: points) =
+        some lowered) :
+    ∃ order,
+      point.order? = some order ∧
+        pointAccess? ctx .cont point = some () ∧
+        point.fallsThrough = false ∧ point.regions = [] ∧
+        point.retain? = none ∧
+        lowered = order.statements ++ exitStmts point.exit? ++ [.cont] := by
+  obtain ⟨order, head, hOrder, hHead, hCases⟩ :=
+    lowerStmtListFuel_cons_components hLower
+  obtain ⟨hAccess, hFalls, hRegions, hRetain, hHeadCode⟩ :=
+    lowerPointFuel_cont_components hHead
+  have hAbrupt := hCases.resolve_left (by
+    intro hRegular
+    rw [hFalls] at hRegular
+    exact Bool.noConfusion hRegular.1)
+  exact
+    ⟨order, hOrder, hAccess, hFalls, hRegions, hRetain,
+      by rw [hAbrupt.2, hHeadCode, List.append_assoc]⟩
+
 theorem lowerStmtListFuel_expr_components
     {fuel : Nat} {ctx : Ctx} {expr : Expr 0} {rest : List Stmt}
     {point : StackSchedule.Point} {points : List StackSchedule.Point}

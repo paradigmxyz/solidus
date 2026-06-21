@@ -146,6 +146,31 @@ theorem mem_of_mem_promoteAt
 
 namespace StateRel
 
+theorem restrictTo
+    {layout scope : Locals.Layout} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hRel : StateRel layout suffix returns source target)
+    (hScope : ∀ {name : Name}, name ∈ layout → name ∈ scope) :
+    StateRel layout suffix returns (source.restrictTo scope) target := by
+  have hValues :
+      values (source.restrictTo scope) layout = values source layout := by
+    unfold values
+    apply List.map_congr_left
+    intro name hName
+    simp only [Locals.Source.State.restrictTo]
+    rw [Locals.Source.Store.restrictTo_mem (hScope hName)]
+  constructor
+  · simpa using hRel.shared
+  · exact hRel.returns
+  · rw [hRel.stack, hValues]
+  · intro name hName
+    obtain ⟨value, hValue⟩ := hRel.defined hName
+    refine ⟨value, ?_⟩
+    simpa [Locals.Source.State.restrictTo] using
+      (Locals.Source.Store.restrictTo_mem
+        (scope := scope) (store := source.vars) (hScope hName)).trans hValue
+
 theorem expr
     {layout : Locals.Layout} {suffix : List Word}
     {returns : List Structured.ReturnDest}

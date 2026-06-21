@@ -237,6 +237,7 @@ fi
 for theorem in \
     'scheduleBlockFuel_entry_sound' \
     'scheduleBlock?_entry_sound' \
+    'scheduleStmtListFuelWithTargets_cons_components' \
     'scheduleStmtListFuel_cons_components' \
     'scheduleStmtListFuel_cons_nonempty' \
     'scheduleStmtListFuel_nil_components' \
@@ -251,7 +252,9 @@ for theorem in \
     'scheduleStmtFuel_terminal_components' \
     'scheduleStmtFuel_terminalArgs_components' \
     'scheduleStmtFuelWithTargets_brk_components' \
-    'scheduleStmtFuelWithTargets_cont_components'; do
+    'scheduleStmtFuelWithTargets_cont_components' \
+    'scheduleStmtListFuelWithTargets_brk_components' \
+    'scheduleStmtListFuelWithTargets_cont_components'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.StackSchedule.${theorem}" \
       EvmCompiler/Verification.lean; then

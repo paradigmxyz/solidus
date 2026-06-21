@@ -66,6 +66,46 @@ def OpenListPreserves
         (Expressions.InteractionSemantics.Block.openRun targetProgram
           (code.length + 1) { stmts := code } target)
 
+def BreakListPreserves
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (stmts : List Functions.Stmt)
+    (targetLayout : Locals.Layout)
+    (code : List Expressions.Stmt) : Prop :=
+  finalCtx.layout = targetLayout ∧
+    ∀ (sourceCtx : Functions.Source.Ctx)
+      {suffix : List Word} {returns : List Structured.ReturnDest}
+      {source : Locals.Source.State} {target : Structured.RunState},
+      BreakCtxCovers sourceCtx targetCtx targetLayout →
+      StateRel targetCtx.layout suffix returns source target →
+      Simulation.Interaction.Rel
+        (OpenOutcomeRel finalCtx suffix returns)
+        (Functions.InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx (stmts.length + 1) { stmts } source)
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          (code.length + 1) { stmts := code } target)
+
+def ContinueListPreserves
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (stmts : List Functions.Stmt)
+    (targetLayout : Locals.Layout)
+    (code : List Expressions.Stmt) : Prop :=
+  finalCtx.layout = targetLayout ∧
+    ∀ (sourceCtx : Functions.Source.Ctx)
+      {suffix : List Word} {returns : List Structured.ReturnDest}
+      {source : Locals.Source.State} {target : Structured.RunState},
+      ContinueCtxCovers sourceCtx targetCtx targetLayout →
+      StateRel targetCtx.layout suffix returns source target →
+      Simulation.Interaction.Rel
+        (OpenOutcomeRel finalCtx suffix returns)
+        (Functions.InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx (stmts.length + 1) { stmts } source)
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          (code.length + 1) { stmts := code } target)
+
 theorem regularEmpty
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
@@ -784,6 +824,262 @@ theorem RegularListPreserves.toOpenList
   | error _ => exact Simulation.Interaction.ExceptRel.error trivial
   | ok hResult =>
       exact Simulation.Interaction.ExceptRel.ok hResult.toOpen
+
+theorem brkList_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel : Nat)
+    (rest : List Functions.Stmt)
+    (fact : AllocationLivenessFacts.Point)
+    (restFacts : List AllocationLivenessFacts.Point)
+    {targetLayout : Locals.Layout}
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {finalLayout : Locals.Layout} {lowered : List Locals.Stmt}
+    {targetCtx finalCtx : Locals.Ctx} {code : List Expressions.Stmt}
+    (hTarget : targets.brk? = some targetLayout)
+    (hTargetDepth :
+      targetCtx.breakDepth? = some targetLayout.length)
+    (hSchedule :
+      StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
+          targetCtx.layout (.brk :: rest) (fact :: restFacts) =
+        some (point :: points, finalLayout))
+    (hLower :
+      StackLowering.lowerStmtListFuel lowerFuel lowerCtx
+          (.brk :: rest) (point :: points) = some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    BreakListPreserves sourceProgram targetProgram targetCtx finalCtx
+      (.brk :: rest) targetLayout code := by
+  obtain
+      ⟨order, exit, hOrderBuild, hExitBuild, hPointOrder, _hBefore,
+        _hStatement, hPointExit, _hRetain, _hRegions, _hFalls,
+        hPoints, hFinalLayout⟩ :=
+    StackSchedule.scheduleStmtListFuelWithTargets_brk_components
+      hTarget hSchedule
+  subst points
+  obtain
+      ⟨lowerOrder, hLowerOrder, _hAccess, _hLowerFalls, _hLowerRegions,
+        _hLowerRetain, hLowered⟩ :=
+    StackLowering.lowerStmtListFuel_brk_components hLower
+  have hOrderEq : lowerOrder = order :=
+    Option.some.inj (hLowerOrder.symm.trans hPointOrder)
+  subst lowerOrder
+  have hExitEq : point.exit? = some exit := hPointExit
+  have hLowered' :
+      lowered = order.statements ++ (exit.statements ++ [.brk]) := by
+    simpa [StackLowering.exitStmts, hExitEq, List.append_assoc] using hLowered
+  have hOrderSource : targetCtx.layout = order.source :=
+    (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+  have hExitSource : order.target = exit.source :=
+    (AllocationLayout.Join.build?_endpoints hExitBuild).1.symm
+  rw [hLowered'] at hCompile
+  obtain
+      ⟨orderCode, orderedCtx, bodyCode, hOrderCompile, hBodyCompile,
+        hWholeCode⟩ :=
+    Locals.Block.compileOpen_append_components hCompile
+  obtain ⟨orderArtifact⟩ :=
+    StackTransitionCompilation.Ordering.compileArtifact order hOrderSource
+  have hOrderPair :=
+    Option.some.inj (orderArtifact.compileEq.symm.trans hOrderCompile)
+  have hOrderCode :
+      orderArtifact.promotionCodes.map Expressions.Stmt.code = orderCode :=
+    congrArg Prod.fst hOrderPair
+  have hOrderedCtx : targetCtx.withLayout order.target = orderedCtx :=
+    congrArg Prod.snd hOrderPair
+  rw [← hOrderCode] at hWholeCode
+  rw [← hOrderedCtx] at hBodyCompile
+  have hBodySource :
+      (targetCtx.withLayout order.target).layout = exit.source := by
+    simpa [Locals.Ctx.withLayout] using hExitSource
+  obtain ⟨exitArtifact, hBodyFinal, hBodyCode, hBodyForward⟩ :=
+    compiledBrkJoinPointOfEquations sourceProgram targetProgram
+      (targetCtx.withLayout order.target) finalCtx exit
+      (exit.statements ++ [.brk]) bodyCode hBodySource
+      (by
+        rw [(AllocationLayout.Join.build?_endpoints hExitBuild).2]
+        simpa [Locals.Ctx.withLayout] using hTargetDepth)
+      rfl hBodyCompile
+  refine ⟨?_, ?_⟩
+  · rw [hBodyFinal]
+    simp [Locals.Ctx.withLayout,
+      (AllocationLayout.Join.build?_endpoints hExitBuild).2]
+  · intro sourceCtx suffix returns source target hCtx hInitial
+    obtain ⟨scope, hSourceScope, hScopeCovers⟩ := hCtx.sourceCovers
+    have hWholeFuel :
+        orderArtifact.promotionCodes.length < code.length + 1 := by
+      rw [hWholeCode, List.length_append, List.length_map]
+      omega
+    have hPrefixed :
+        Simulation.Interaction.Rel
+          (OpenOutcomeRel finalCtx suffix returns)
+          (Functions.InteractionSemantics.Stmt.openRun sourceProgram
+            sourceCtx (rest.length + 1) .brk source)
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            (code.length + 1)
+            { stmts :=
+                orderArtifact.promotionCodes.map Expressions.Stmt.code ++
+                  bodyCode }
+            target) := by
+      apply orderArtifact.thenBlock targetProgram (code.length + 1)
+          hWholeFuel hInitial
+      intro orderedTarget hOrderedRel
+      have hBody :=
+        hBodyForward sourceCtx (rest.length + 1) hSourceScope
+          (by
+            rw [(AllocationLayout.Join.build?_endpoints hExitBuild).2]
+            exact hScopeCovers)
+          hOrderedRel
+      have hTailFuel :
+          code.length + 1 - orderArtifact.promotionCodes.length =
+            bodyCode.length + 1 := by
+        rw [hWholeCode, List.length_append, List.length_map]
+        omega
+      rw [hTailFuel]
+      exact hBody
+    have hHead :
+        Simulation.Interaction.Rel
+          (OpenOutcomeRel finalCtx suffix returns)
+          (Functions.InteractionSemantics.Stmt.openRun sourceProgram
+            sourceCtx (rest.length + 1) .brk source)
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            (code.length + 1) { stmts := code } target) := by
+      simpa [hWholeCode] using hPrefixed
+    rw [Functions.InteractionSemantics.Block.openRun_cons]
+    simpa [Functions.InteractionSemantics.Stmt.openRun,
+      Functions.Source.Canonical.Stmt.run,
+      Functions.Source.Effectful.Control.Stmt.run, hSourceScope] using hHead
+
+theorem contList_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel : Nat)
+    (rest : List Functions.Stmt)
+    (fact : AllocationLivenessFacts.Point)
+    (restFacts : List AllocationLivenessFacts.Point)
+    {targetLayout : Locals.Layout}
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {finalLayout : Locals.Layout} {lowered : List Locals.Stmt}
+    {targetCtx finalCtx : Locals.Ctx} {code : List Expressions.Stmt}
+    (hTarget : targets.cont? = some targetLayout)
+    (hTargetDepth :
+      targetCtx.continueDepth? = some targetLayout.length)
+    (hSchedule :
+      StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
+          targetCtx.layout (.cont :: rest) (fact :: restFacts) =
+        some (point :: points, finalLayout))
+    (hLower :
+      StackLowering.lowerStmtListFuel lowerFuel lowerCtx
+          (.cont :: rest) (point :: points) = some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    ContinueListPreserves sourceProgram targetProgram targetCtx finalCtx
+      (.cont :: rest) targetLayout code := by
+  obtain
+      ⟨order, exit, hOrderBuild, hExitBuild, hPointOrder, _hBefore,
+        _hStatement, hPointExit, _hRetain, _hRegions, _hFalls,
+        hPoints, _hFinalLayout⟩ :=
+    StackSchedule.scheduleStmtListFuelWithTargets_cont_components
+      hTarget hSchedule
+  subst points
+  obtain
+      ⟨lowerOrder, hLowerOrder, _hAccess, _hLowerFalls, _hLowerRegions,
+        _hLowerRetain, hLowered⟩ :=
+    StackLowering.lowerStmtListFuel_cont_components hLower
+  have hOrderEq : lowerOrder = order :=
+    Option.some.inj (hLowerOrder.symm.trans hPointOrder)
+  subst lowerOrder
+  have hExitEq : point.exit? = some exit := hPointExit
+  have hLowered' :
+      lowered = order.statements ++ (exit.statements ++ [.cont]) := by
+    simpa [StackLowering.exitStmts, hExitEq, List.append_assoc] using hLowered
+  have hOrderSource : targetCtx.layout = order.source :=
+    (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+  have hExitSource : order.target = exit.source :=
+    (AllocationLayout.Join.build?_endpoints hExitBuild).1.symm
+  rw [hLowered'] at hCompile
+  obtain
+      ⟨orderCode, orderedCtx, bodyCode, hOrderCompile, hBodyCompile,
+        hWholeCode⟩ :=
+    Locals.Block.compileOpen_append_components hCompile
+  obtain ⟨orderArtifact⟩ :=
+    StackTransitionCompilation.Ordering.compileArtifact order hOrderSource
+  have hOrderPair :=
+    Option.some.inj (orderArtifact.compileEq.symm.trans hOrderCompile)
+  have hOrderCode :
+      orderArtifact.promotionCodes.map Expressions.Stmt.code = orderCode :=
+    congrArg Prod.fst hOrderPair
+  have hOrderedCtx : targetCtx.withLayout order.target = orderedCtx :=
+    congrArg Prod.snd hOrderPair
+  rw [← hOrderCode] at hWholeCode
+  rw [← hOrderedCtx] at hBodyCompile
+  have hBodySource :
+      (targetCtx.withLayout order.target).layout = exit.source := by
+    simpa [Locals.Ctx.withLayout] using hExitSource
+  obtain ⟨exitArtifact, hBodyFinal, hBodyCode, hBodyForward⟩ :=
+    compiledContJoinPointOfEquations sourceProgram targetProgram
+      (targetCtx.withLayout order.target) finalCtx exit
+      (exit.statements ++ [.cont]) bodyCode hBodySource
+      (by
+        rw [(AllocationLayout.Join.build?_endpoints hExitBuild).2]
+        simpa [Locals.Ctx.withLayout] using hTargetDepth)
+      rfl hBodyCompile
+  refine ⟨?_, ?_⟩
+  · rw [hBodyFinal]
+    simp [Locals.Ctx.withLayout,
+      (AllocationLayout.Join.build?_endpoints hExitBuild).2]
+  · intro sourceCtx suffix returns source target hCtx hInitial
+    obtain ⟨scope, hSourceScope, hScopeCovers⟩ := hCtx.sourceCovers
+    have hWholeFuel :
+        orderArtifact.promotionCodes.length < code.length + 1 := by
+      rw [hWholeCode, List.length_append, List.length_map]
+      omega
+    have hPrefixed :
+        Simulation.Interaction.Rel
+          (OpenOutcomeRel finalCtx suffix returns)
+          (Functions.InteractionSemantics.Stmt.openRun sourceProgram
+            sourceCtx (rest.length + 1) .cont source)
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            (code.length + 1)
+            { stmts :=
+                orderArtifact.promotionCodes.map Expressions.Stmt.code ++
+                  bodyCode }
+            target) := by
+      apply orderArtifact.thenBlock targetProgram (code.length + 1)
+          hWholeFuel hInitial
+      intro orderedTarget hOrderedRel
+      have hBody :=
+        hBodyForward sourceCtx (rest.length + 1) hSourceScope
+          (by
+            rw [(AllocationLayout.Join.build?_endpoints hExitBuild).2]
+            exact hScopeCovers)
+          hOrderedRel
+      have hTailFuel :
+          code.length + 1 - orderArtifact.promotionCodes.length =
+            bodyCode.length + 1 := by
+        rw [hWholeCode, List.length_append, List.length_map]
+        omega
+      rw [hTailFuel]
+      exact hBody
+    have hHead :
+        Simulation.Interaction.Rel
+          (OpenOutcomeRel finalCtx suffix returns)
+          (Functions.InteractionSemantics.Stmt.openRun sourceProgram
+            sourceCtx (rest.length + 1) .cont source)
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            (code.length + 1) { stmts := code } target) := by
+      simpa [hWholeCode] using hPrefixed
+    rw [Functions.InteractionSemantics.Block.openRun_cons]
+    simpa [Functions.InteractionSemantics.Stmt.openRun,
+      Functions.Source.Canonical.Stmt.run,
+      Functions.Source.Effectful.Control.Stmt.run, hSourceScope] using hHead
 
 theorem terminalList_of_compilers
     (sourceProgram : Functions.Program)

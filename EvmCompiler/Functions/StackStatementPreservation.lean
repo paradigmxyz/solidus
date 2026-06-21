@@ -63,6 +63,24 @@ theorem afterOrdering
 
 end CtxCovers
 
+structure BreakCtxCovers (source : Functions.Source.Ctx)
+    (target : Locals.Ctx) (layout : Locals.Layout) : Prop where
+  context : CtxCovers source target
+  targetDepth : target.breakDepth? = some layout.length
+  sourceCovers :
+    ∃ scope,
+      source.breakScope? = some scope ∧
+        ∀ {name : Name}, name ∈ layout → name ∈ scope
+
+structure ContinueCtxCovers (source : Functions.Source.Ctx)
+    (target : Locals.Ctx) (layout : Locals.Layout) : Prop where
+  context : CtxCovers source target
+  targetDepth : target.continueDepth? = some layout.length
+  sourceCovers :
+    ∃ scope,
+      source.continueScope? = some scope ∧
+        ∀ {name : Name}, name ∈ layout → name ∈ scope
+
 structure RegularResultRel (targetCtx : Locals.Ctx)
     (suffix : List Word) (returns : List Structured.ReturnDest)
     (source :
@@ -134,6 +152,283 @@ theorem RegularResultRel.toOpen
   cases hRel.sourceMode
   cases hRel.targetMode
   exact .regular hRel.context hRel.state
+
+theorem openRun_brk_join_generated
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceFuel : Nat) (join : AllocationLayout.Join)
+    (artifact : StackTransitionCompilation.JoinArtifact targetCtx join)
+    {scope : List Name} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hScope : sourceCtx.breakScope? = some scope)
+    (hScopeCovers :
+      ∀ {name : Name}, name ∈ join.target → name ∈ scope)
+    (hInitial :
+      StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (OpenOutcomeRel (targetCtx.withLayout join.target) suffix returns)
+      (Functions.InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel .brk source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        (artifact.retainArtifact.promotionCodes.length + 1 +
+          artifact.orderArtifact.promotionCodes.length + 3)
+        { stmts :=
+            artifact.retainArtifact.promotionCodes.map
+                Expressions.Stmt.code ++
+              [Expressions.Stmt.code artifact.retainArtifact.cleanup] ++
+              artifact.orderArtifact.promotionCodes.map Expressions.Stmt.code ++
+              [.code [], .brk] }
+        target) := by
+  let joinLength :=
+    artifact.retainArtifact.promotionCodes.length + 1 +
+      artifact.orderArtifact.promotionCodes.length
+  apply artifact.thenBlock targetProgram (joinLength + 3)
+      (by simp [joinLength]) hInitial
+  intro joinedTarget hJoinedRel
+  have hTarget :=
+    Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_brk
+      targetProgram 0 [] joinedTarget joinedTarget (by rfl)
+  rw [show
+      joinLength + 3 -
+          (artifact.retainArtifact.promotionCodes.length + 1 +
+            artifact.orderArtifact.promotionCodes.length) = 3 by
+      simp [joinLength]]
+  rw [Functions.InteractionSemantics.Stmt.openRun_brk
+    sourceProgram sourceCtx sourceFuel source hScope]
+  rw [hTarget]
+  apply Simulation.Interaction.Rel.done
+  apply Simulation.Interaction.ExceptRel.ok
+  exact .brk (hJoinedRel.restrictTo hScopeCovers)
+
+theorem openRun_cont_join_generated
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceFuel : Nat) (join : AllocationLayout.Join)
+    (artifact : StackTransitionCompilation.JoinArtifact targetCtx join)
+    {scope : List Name} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hScope : sourceCtx.continueScope? = some scope)
+    (hScopeCovers :
+      ∀ {name : Name}, name ∈ join.target → name ∈ scope)
+    (hInitial :
+      StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (OpenOutcomeRel (targetCtx.withLayout join.target) suffix returns)
+      (Functions.InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel .cont source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        (artifact.retainArtifact.promotionCodes.length + 1 +
+          artifact.orderArtifact.promotionCodes.length + 3)
+        { stmts :=
+            artifact.retainArtifact.promotionCodes.map
+                Expressions.Stmt.code ++
+              [Expressions.Stmt.code artifact.retainArtifact.cleanup] ++
+              artifact.orderArtifact.promotionCodes.map Expressions.Stmt.code ++
+              [.code [], .cont] }
+        target) := by
+  let joinLength :=
+    artifact.retainArtifact.promotionCodes.length + 1 +
+      artifact.orderArtifact.promotionCodes.length
+  apply artifact.thenBlock targetProgram (joinLength + 3)
+      (by simp [joinLength]) hInitial
+  intro joinedTarget hJoinedRel
+  have hTarget :=
+    Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_cont
+      targetProgram 0 [] joinedTarget joinedTarget (by rfl)
+  rw [show
+      joinLength + 3 -
+          (artifact.retainArtifact.promotionCodes.length + 1 +
+            artifact.orderArtifact.promotionCodes.length) = 3 by
+      simp [joinLength]]
+  rw [Functions.InteractionSemantics.Stmt.openRun_cont
+    sourceProgram sourceCtx sourceFuel source hScope]
+  rw [hTarget]
+  apply Simulation.Interaction.Rel.done
+  apply Simulation.Interaction.ExceptRel.ok
+  exact .cont (hJoinedRel.restrictTo hScopeCovers)
+
+theorem compiledBrkJoinPointOfEquations
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (join : AllocationLayout.Join)
+    (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
+    (hSource : targetCtx.layout = join.source)
+    (hTargetDepth : targetCtx.breakDepth? = some join.target.length)
+    (hLowered : lowered = join.statements ++ [.brk])
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    ∃ artifact : StackTransitionCompilation.JoinArtifact targetCtx join,
+      finalCtx = targetCtx.withLayout join.target ∧
+      code =
+        artifact.retainArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code artifact.retainArtifact.cleanup] ++
+          artifact.orderArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [.code [], .brk] ∧
+      ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel : Nat)
+        {scope : List Name} {suffix : List Word}
+        {returns : List Structured.ReturnDest}
+        {source : Locals.Source.State} {target : Structured.RunState},
+        sourceCtx.breakScope? = some scope →
+        (∀ {name : Name}, name ∈ join.target → name ∈ scope) →
+        StateRel targetCtx.layout suffix returns source target →
+        Simulation.Interaction.Rel
+          (OpenOutcomeRel finalCtx suffix returns)
+          (Functions.InteractionSemantics.Stmt.openRun
+            sourceProgram sourceCtx sourceFuel .brk source)
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            (code.length + 1) { stmts := code } target) := by
+  rw [hLowered] at hCompile
+  obtain ⟨joinCode, joinedCtx, brkCode, hJoinCompile, hBrkCompile,
+      hWholeCode⟩ :=
+    Locals.Block.compileOpen_append_components hCompile
+  obtain ⟨artifact⟩ :=
+    StackTransitionCompilation.Join.compileArtifact join hSource
+  have hJoinPair :=
+    Option.some.inj (artifact.compileEq.symm.trans hJoinCompile)
+  have hJoinCode :
+      artifact.retainArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code artifact.retainArtifact.cleanup] ++
+          artifact.orderArtifact.promotionCodes.map Expressions.Stmt.code =
+        joinCode :=
+    congrArg Prod.fst hJoinPair
+  have hJoinedCtx : targetCtx.withLayout join.target = joinedCtx :=
+    congrArg Prod.snd hJoinPair
+  rw [← hJoinedCtx] at hBrkCompile
+  have hStmtCompile :=
+    Locals.Block.compileOpen_single_components hBrkCompile
+  obtain ⟨depth, cleanup, hDepth, hCleanup, hBrkCode, hFinalCtx⟩ :=
+    Locals.Stmt.compile_brk_components hStmtCompile
+  have hDepthEq : depth = join.target.length := by
+    have hDepth' :
+        (targetCtx.withLayout join.target).breakDepth? =
+          some join.target.length := by
+      simpa [Locals.Ctx.withLayout] using hTargetDepth
+    rw [hDepth'] at hDepth
+    exact (Option.some.inj hDepth).symm
+  subst depth
+  have hCleanupEq : cleanup = [] := by
+    simp [Locals.Ctx.cleanupTo?, Locals.Ctx.withLayout] at hCleanup
+    exact hCleanup
+  subst cleanup
+  have hCode :
+      code =
+        artifact.retainArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code artifact.retainArtifact.cleanup] ++
+          artifact.orderArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [.code [], .brk] := by
+    rw [hWholeCode, ← hJoinCode, hBrkCode]
+    simp [Locals.codeStmt, List.append_assoc]
+  refine ⟨artifact, ?_, hCode, ?_⟩
+  · exact hFinalCtx
+  · intro sourceCtx sourceFuel scope suffix returns source target
+      hScope hScopeCovers hInitial
+    have hRun :=
+      openRun_brk_join_generated sourceProgram targetProgram sourceCtx
+        targetCtx sourceFuel join artifact hScope hScopeCovers hInitial
+    have hFuelEq :
+        code.length + 1 =
+          artifact.retainArtifact.promotionCodes.length + 1 +
+            artifact.orderArtifact.promotionCodes.length + 3 := by
+      rw [hCode]
+      simp only [List.length_append, List.length_map,
+        List.length_cons, List.length_nil]
+    rw [hFuelEq, hCode, hFinalCtx]
+    simpa [List.append_assoc] using hRun
+
+theorem compiledContJoinPointOfEquations
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targetCtx finalCtx : Locals.Ctx)
+    (join : AllocationLayout.Join)
+    (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
+    (hSource : targetCtx.layout = join.source)
+    (hTargetDepth : targetCtx.continueDepth? = some join.target.length)
+    (hLowered : lowered = join.statements ++ [.cont])
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    ∃ artifact : StackTransitionCompilation.JoinArtifact targetCtx join,
+      finalCtx = targetCtx.withLayout join.target ∧
+      code =
+        artifact.retainArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code artifact.retainArtifact.cleanup] ++
+          artifact.orderArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [.code [], .cont] ∧
+      ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel : Nat)
+        {scope : List Name} {suffix : List Word}
+        {returns : List Structured.ReturnDest}
+        {source : Locals.Source.State} {target : Structured.RunState},
+        sourceCtx.continueScope? = some scope →
+        (∀ {name : Name}, name ∈ join.target → name ∈ scope) →
+        StateRel targetCtx.layout suffix returns source target →
+        Simulation.Interaction.Rel
+          (OpenOutcomeRel finalCtx suffix returns)
+          (Functions.InteractionSemantics.Stmt.openRun
+            sourceProgram sourceCtx sourceFuel .cont source)
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            (code.length + 1) { stmts := code } target) := by
+  rw [hLowered] at hCompile
+  obtain ⟨joinCode, joinedCtx, contCode, hJoinCompile, hContCompile,
+      hWholeCode⟩ :=
+    Locals.Block.compileOpen_append_components hCompile
+  obtain ⟨artifact⟩ :=
+    StackTransitionCompilation.Join.compileArtifact join hSource
+  have hJoinPair :=
+    Option.some.inj (artifact.compileEq.symm.trans hJoinCompile)
+  have hJoinCode :
+      artifact.retainArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code artifact.retainArtifact.cleanup] ++
+          artifact.orderArtifact.promotionCodes.map Expressions.Stmt.code =
+        joinCode :=
+    congrArg Prod.fst hJoinPair
+  have hJoinedCtx : targetCtx.withLayout join.target = joinedCtx :=
+    congrArg Prod.snd hJoinPair
+  rw [← hJoinedCtx] at hContCompile
+  have hStmtCompile :=
+    Locals.Block.compileOpen_single_components hContCompile
+  obtain ⟨depth, cleanup, hDepth, hCleanup, hContCode, hFinalCtx⟩ :=
+    Locals.Stmt.compile_cont_components hStmtCompile
+  have hDepthEq : depth = join.target.length := by
+    have hDepth' :
+        (targetCtx.withLayout join.target).continueDepth? =
+          some join.target.length := by
+      simpa [Locals.Ctx.withLayout] using hTargetDepth
+    rw [hDepth'] at hDepth
+    exact (Option.some.inj hDepth).symm
+  subst depth
+  have hCleanupEq : cleanup = [] := by
+    simp [Locals.Ctx.cleanupTo?, Locals.Ctx.withLayout] at hCleanup
+    exact hCleanup
+  subst cleanup
+  have hCode :
+      code =
+        artifact.retainArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code artifact.retainArtifact.cleanup] ++
+          artifact.orderArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [.code [], .cont] := by
+    rw [hWholeCode, ← hJoinCode, hContCode]
+    simp [Locals.codeStmt, List.append_assoc]
+  refine ⟨artifact, hFinalCtx, hCode, ?_⟩
+  intro sourceCtx sourceFuel scope suffix returns source target
+    hScope hScopeCovers hInitial
+  have hRun :=
+    openRun_cont_join_generated sourceProgram targetProgram sourceCtx
+      targetCtx sourceFuel join artifact hScope hScopeCovers hInitial
+  have hFuelEq :
+      code.length + 1 =
+        artifact.retainArtifact.promotionCodes.length + 1 +
+          artifact.orderArtifact.promotionCodes.length + 3 := by
+    rw [hCode]
+    simp only [List.length_append, List.length_map,
+      List.length_cons, List.length_nil]
+  rw [hFuelEq, hCode, hFinalCtx]
+  simpa [List.append_assoc] using hRun
 
 theorem openRun_terminal_generated
     (sourceProgram : Functions.Program)
