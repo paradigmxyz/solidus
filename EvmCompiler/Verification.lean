@@ -3251,6 +3251,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_fromEntry
 #check EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached
 #check EvmCompiler.Locals.finishToPreserving_components
+#check EvmCompiler.Functions.StackLoweringCompilation.initReturns_compileOpen_final
+#check EvmCompiler.Functions.StackLoweringCompilation.lowerFunction?_toExpressions?_components
 
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.Join.compiledOpenRun
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.OrderingArtifact.thenBlock
@@ -3284,6 +3286,7 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackCallPreservation.CallerWriteback.compileOpenRun
 #print axioms EvmCompiler.Functions.StackCallPreservation.CallPoint.core
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached
+#print axioms EvmCompiler.Functions.StackLoweringCompilation.lowerFunction?_toExpressions?_components
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.JoinArtifact.thenBlock
 #print axioms EvmCompiler.Expressions.TargetFuel.Covers.if_body_after_two
 #print axioms EvmCompiler.Functions.StackBlockPreservation.brkList_of_compilers
