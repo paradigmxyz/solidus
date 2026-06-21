@@ -23,6 +23,7 @@ import EvmCompiler.Functions.StackAccessLowering
 import EvmCompiler.Functions.StackRelation
 import EvmCompiler.Functions.StackExpressionPreservation
 import EvmCompiler.Functions.StackStatementPreservation
+import EvmCompiler.Functions.StackBlockPreservation
 import EvmCompiler.Functions.StackTransitionPreservation
 import EvmCompiler.Functions.StackTransitionCompilation
 import EvmCompiler.Functions.StackLowering
@@ -2941,6 +2942,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackStatementPreservation.regularThenTransition
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_let_generated
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_assign_generated
+#check EvmCompiler.Functions.StackBlockPreservation.regularCons
 #check EvmCompiler.Functions.StackTransitionPreservation.Promotion.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.Cleanup.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.PromotionCodes.openRun

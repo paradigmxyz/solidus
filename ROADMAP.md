@@ -117,6 +117,8 @@ short composition module.
   emitted shuffle/cleanup code establishes the next regular statement relation.
 - [x] Compose any regular statement theorem with any checked retain transition
   under independent source/target fuel, without exposing the generated artifact.
+- [x] Add a block-owned generic regular-head/recursive-tail composition theorem
+  over the dynamic relation and exact target fuel subtraction.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls
