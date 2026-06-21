@@ -3256,6 +3256,9 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.finishToPreserving_components
 #check EvmCompiler.Functions.StackLoweringCompilation.initReturns_compileOpen_final
 #check EvmCompiler.Functions.StackLoweringCompilation.lowerFunction?_toExpressions?_components
+#check EvmCompiler.Functions.StackLowering.lowerProgram?_components
+#check EvmCompiler.Locals.Program.toExpressions?_components
+#check EvmCompiler.Functions.StackLoweringCompilation.lowerProgram?_toExpressions?_components
 #check EvmCompiler.Locals.Stmt.compile_assignTopWithOffset_components
 #check EvmCompiler.Functions.StackLoweringCompilation.callPoint_components
 #check EvmCompiler.Functions.StackStatementPreservation.compiledControlThenTransition
@@ -3304,6 +3307,7 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackCallPreservation.CallPoint.core
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_bodyRun
 #print axioms EvmCompiler.Functions.StackLoweringCompilation.lowerFunction?_toExpressions?_components
+#print axioms EvmCompiler.Functions.StackLoweringCompilation.lowerProgram?_toExpressions?_components
 #print axioms EvmCompiler.Functions.StackCallPreservation.CallPoint.compiledOfCompilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.callCons_of_compilers
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_optionalReturn

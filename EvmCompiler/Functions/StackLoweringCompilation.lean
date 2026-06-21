@@ -412,6 +412,31 @@ theorem callPoint_components
       rw [hCode, hCoreCode, hRestCode]
       simp [Locals.codeStmt, List.append_assoc]
 
+/-- Whole-program stack lowering followed by ordinary Locals compilation
+exposes both compiled function lists and the compiled main block. -/
+theorem lowerProgram?_toExpressions?_components
+    {source : Functions.Program} {locals : Locals.Program}
+    {target : Expressions.Program}
+    (hLower : StackLowering.lowerProgram? source = some locals)
+    (hCompile : locals.toExpressions? = some target) :
+    ∃ procs localsBody targetProcs targetBody,
+      StackLowering.lowerFunctions? source.functions source.functions =
+          some procs ∧
+      StackLowering.lowerBlock?
+          { functions := source.functions, returns := [] }
+          { normal := ∅ } ∅ [] source.body = some localsBody ∧
+      Locals.ProcList.toExpressions? procs = some targetProcs ∧
+      Locals.Block.compile Locals.Ctx.initial localsBody = some targetBody ∧
+      locals = { procs, body := localsBody } ∧
+      target = { procs := targetProcs, body := targetBody } := by
+  obtain ⟨procs, localsBody, hProcs, hBody, hLocals⟩ :=
+    StackLowering.lowerProgram?_components hLower
+  obtain ⟨targetProcs, targetBody, hTargetProcs, hTargetBody, hTarget⟩ :=
+    Locals.Program.toExpressions?_components hCompile
+  rw [hLocals] at hTargetProcs hTargetBody
+  exact ⟨procs, localsBody, targetProcs, targetBody, hProcs, hBody,
+    hTargetProcs, hTargetBody, hLocals, hTarget⟩
+
 namespace Examples
 
 def deadProgramCompiles? : Option Assembly.TargetProgram := do

@@ -1813,6 +1813,20 @@ def toExpressions? (program : Program) : Option Expressions.Program := do
   let body ← Block.compile Ctx.initial program.body
   some { procs := procs, body := body }
 
+theorem toExpressions?_components
+    {program : Program} {lower : Expressions.Program}
+    (hCompile : toExpressions? program = some lower) :
+    ∃ procs body,
+      ProcList.toExpressions? program.procs = some procs ∧
+      Block.compile Ctx.initial program.body = some body ∧
+      lower = { procs, body } := by
+  unfold toExpressions? at hCompile
+  obtain ⟨procs, hProcs, hAfterProcs⟩ :=
+    Option.bind_eq_some_iff.mp hCompile
+  obtain ⟨body, hBody, hProgram⟩ :=
+    Option.bind_eq_some_iff.mp hAfterProcs
+  exact ⟨procs, body, hProcs, hBody, Option.some.inj hProgram |>.symm⟩
+
 def compile? (program : Program) :
     Option Assembly.TargetProgram := do
   let lower ← toExpressions? program

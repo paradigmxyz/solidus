@@ -1436,6 +1436,22 @@ def lowerProgram? (program : Program) : Option Locals.Program := do
       { normal := ∅ } ∅ [] program.body
   some { procs, body }
 
+theorem lowerProgram?_components
+    {program : Program} {lower : Locals.Program}
+    (hLower : lowerProgram? program = some lower) :
+    ∃ procs body,
+      lowerFunctions? program.functions program.functions = some procs ∧
+      lowerBlock?
+          { functions := program.functions, returns := [] }
+          { normal := ∅ } ∅ [] program.body = some body ∧
+      lower = { procs, body } := by
+  unfold lowerProgram? at hLower
+  obtain ⟨procs, hProcs, hAfterProcs⟩ :=
+    Option.bind_eq_some_iff.mp hLower
+  obtain ⟨body, hBody, hProgram⟩ :=
+    Option.bind_eq_some_iff.mp hAfterProcs
+  exact ⟨procs, body, hProcs, hBody, Option.some.inj hProgram |>.symm⟩
+
 namespace Examples
 
 def word (value : Nat) : Word :=
