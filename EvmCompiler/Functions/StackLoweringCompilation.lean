@@ -217,6 +217,30 @@ def returnCodeStmts : Option Structured.Code → List Expressions.Stmt
   | none => []
   | some code => [.code code]
 
+/-- Return initialization emits exactly one target statement per source return
+name. Call-fuel decomposition uses this compiler-owned length equation. -/
+theorem initReturns_compileOpen_length :
+    ∀ (names : List Name) (ctx finalCtx : Locals.Ctx)
+      (code : List Expressions.Stmt),
+      Locals.Block.compileOpen ctx { stmts := Lower.initReturns names } =
+          some (code, finalCtx) →
+      code.length = names.length
+  | [], ctx, finalCtx, code, hCompile => by
+      simp [Lower.initReturns, Locals.Block.compileOpen] at hCompile
+      exact congrArg List.length hCompile.1
+  | name :: rest, ctx, finalCtx, code, hCompile => by
+      obtain ⟨headCode, middle, tailCode, hHead, hTail, hCode⟩ :=
+        Locals.Block.compileOpen_cons_components hCompile
+      have hHeadLength : headCode.length = 1 := by
+        simp [Locals.Stmt.compile, Locals.Expr.compileCode, Locals.codeStmt]
+          at hHead
+        exact (congrArg List.length hHead.1).symm
+      have hTailLength :=
+        initReturns_compileOpen_length rest middle finalCtx tailCode hTail
+      rw [hCode, List.length_append, hHeadLength, hTailLength]
+      simp only [List.length_cons]
+      omega
+
 theorem lowerFunction?_toExpressions?_components
     {functions : List FunDef} {fn : FunDef} {proc : Locals.Proc}
     {lowerProc : Expressions.Proc}

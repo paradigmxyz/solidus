@@ -31,6 +31,7 @@ for theorem in \
     'controlListAtZero' \
     'blockPointAt_of_compilers' \
     'blockConsAt_of_compilers' \
+    'compiledGrowingRegionAt_of_compilers' \
     'exprConsAt_of_compilers' \
     'letConsAt_of_compilers' \
     'assignConsAt_of_compilers'; do

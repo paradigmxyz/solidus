@@ -3558,8 +3558,6 @@ theorem callCons_of_compilers
     {sourceEnv : List Name}
     (hFunctions : lowerCtx.functions = sourceProgram.functions)
     (hNodup : targetCtx.layout.Nodup)
-    (hTargetsLayout :
-      ∀ name, name ∈ callTargets → name ∈ targetCtx.layout)
     (hArgsScoped :
       ∀ arg, arg ∈ args → Functions.Scope.ExprScoped sourceEnv arg)
     (hArgsSupported :
@@ -3658,10 +3656,7 @@ theorem callCons_of_compilers
         hArgsScoped
     have hOrderedTargets :
         ∀ name, name ∈ callTargets → name ∈ order.target := by
-      intro name hName
-      apply order.target_mem_iff.mpr
-      rw [← hOrderSource]
-      exact hTargetsLayout name hName
+      exact StackAccess.call_targets_mem hCallAccess
     obtain ⟨compiledRetain, hCompiledRetain, hCompiled⟩ :=
       StackCallPreservation.CallPoint.compiledOfCompilers sourceProgram
         targetProgram lowerCtx targets returnNames callTargets functionName
@@ -3700,8 +3695,6 @@ theorem callConsAtSucc_of_compilers
     {sourceEnv : List Name}
     (hFunctions : lowerCtx.functions = sourceProgram.functions)
     (hNodup : targetCtx.layout.Nodup)
-    (hTargetsLayout :
-      ∀ name, name ∈ callTargets → name ∈ targetCtx.layout)
     (hArgsScoped :
       ∀ arg, arg ∈ args → Functions.Scope.ExprScoped sourceEnv arg)
     (hArgsSupported :
@@ -3807,10 +3800,7 @@ theorem callConsAtSucc_of_compilers
         hArgsScoped
     have hOrderedTargets :
         ∀ name, name ∈ callTargets → name ∈ order.target := by
-      intro name hName
-      apply order.target_mem_iff.mpr
-      rw [← hOrderSource]
-      exact hTargetsLayout name hName
+      exact StackAccess.call_targets_mem hCallAccess
     obtain ⟨compiledRetain, hCompiledRetain, hCompiled⟩ :=
       StackCallPreservation.CallPoint.compiledOfCompilersAtSucc sourceProgram
         targetProgram lowerCtx targets returnNames sourceFuel callTargets

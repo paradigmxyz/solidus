@@ -3020,6 +3020,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackAccessLowering.callSequence_compile_of_check
 #check EvmCompiler.Functions.StackAccess.Expr.scoped_of_check
 #check EvmCompiler.Functions.StackAccess.assign_components
+#check EvmCompiler.Functions.StackAccess.call_targets_mem
 #check EvmCompiler.Functions.StackAccess.Examples.top16_accessible
 #check EvmCompiler.Functions.StackAccess.Examples.below_top16_rejected
 #check EvmCompiler.Functions.StackRelation.values_promoteAt
@@ -3228,6 +3229,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_leave_components
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_call_components
 #check EvmCompiler.Functions.StackLowering.lowerFunction?_components
+#check EvmCompiler.Functions.StackLowering.functionBodyLayout_nodup
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_block_components
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_if_components
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_switch_components
@@ -3266,6 +3268,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_bodyRun
 #check EvmCompiler.Locals.finishToPreserving_components
 #check EvmCompiler.Functions.StackLoweringCompilation.initReturns_compileOpen_final
+#check EvmCompiler.Functions.StackLoweringCompilation.initReturns_compileOpen_length
 #check EvmCompiler.Functions.StackLoweringCompilation.lowerFunction?_toExpressions?_components
 #check EvmCompiler.Functions.StackLowering.lowerProgram?_components
 #check EvmCompiler.Locals.Program.toExpressions?_components
@@ -3284,6 +3287,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackExactFuelPreservation.controlListAtZero
 #check EvmCompiler.Functions.StackExactFuelPreservation.blockPointAt_of_compilers
 #check EvmCompiler.Functions.StackExactFuelPreservation.blockConsAt_of_compilers
+#check EvmCompiler.Functions.StackExactFuelPreservation.compiledGrowingRegionAt_of_compilers
 #check EvmCompiler.Functions.StackRecursivePreservation.compiledListAtOne
 #check EvmCompiler.Functions.StackStatementPreservation.ControlPointPreservesAt
 #check EvmCompiler.Functions.StackStatementPreservation.CompiledControlPointAt
@@ -3343,6 +3347,7 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackBlockPreservation.callConsAtSucc_of_compilers
 #print axioms EvmCompiler.Functions.StackExactFuelPreservation.assignConsAt_of_compilers
 #print axioms EvmCompiler.Functions.StackExactFuelPreservation.blockConsAt_of_compilers
+#print axioms EvmCompiler.Functions.StackExactFuelPreservation.compiledGrowingRegionAt_of_compilers
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledListAtOne
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_optionalReturn
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_optionalReturn_of_bodyRun

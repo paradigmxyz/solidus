@@ -582,6 +582,404 @@ theorem compiledListAtOne
     hSchedule hLower hCompile hNodup
   omega
 
+private def CalleePreservesAt
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (sourceFuel : Nat) : Prop :=
+  ∀ (functionName : Name) (args : List (Functions.Expr 1))
+    (callCtx : Locals.Ctx) (fn : Functions.FunDef),
+    Functions.Source.FunList.find? functionName sourceProgram.functions =
+        some fn →
+    ∀ (targetFuel : Nat)
+      {suffix : List Word} {returns : List Structured.ReturnDest}
+      {source sourceAfterArgs : Locals.Source.State}
+      {target targetAfterArgs : Structured.RunState}
+      {argValues : List Word},
+      StateRel callCtx.layout suffix returns source target →
+      Locals.InteractionPreservation.Expr.ResultRel args.length
+          source target (sourceAfterArgs, argValues) targetAfterArgs →
+      (∀ {proc : Expressions.Proc},
+        Expressions.EffectSemantics.ProcList.lookup? functionName
+            targetProgram.procs = some proc →
+        Expressions.TargetFuel.Covers targetProgram sourceFuel
+          (targetFuel - 1) proc.body.stmts) →
+      Simulation.Interaction.ForwardRel
+        FuelTruncated
+        (StackCallPreservation.OpenAttachedCallResultRel
+          fn.returns.length target.evm.stack returns)
+        (Functions.InteractionSemantics.FunDef.openRunBody sourceProgram
+          fn argValues sourceFuel sourceAfterArgs)
+        (Expressions.InteractionSemantics.Stmt.openRun targetProgram
+          targetFuel (.call functionName) targetAfterArgs)
+
+private theorem compiledListAt_of_callees
+    (returnNames : List Name)
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel sourceFuel : Nat)
+    {canBreak canContinue inFunction : Bool}
+    {sourceEnv : List Name} {stmts : List Functions.Stmt}
+    {facts : List AllocationLivenessFacts.Point}
+    {points : List StackSchedule.Point}
+    {finalLayout : Locals.Layout} {lowered : List Locals.Stmt}
+    {targetCtx finalCtx : Locals.Ctx} {code : List Expressions.Stmt}
+    (hFunctions : lowerCtx.functions = sourceProgram.functions)
+    (hCallees :
+      ∀ calleeFuel, calleeFuel < sourceFuel →
+        CalleePreservesAt sourceProgram targetProgram calleeFuel)
+    (hWF : Functions.Block.WF canBreak canContinue inFunction { stmts })
+    (hScoped : Functions.Scope.StmtList.Scoped sourceEnv stmts)
+    (hSupported : Functions.InteractionSemantics.StmtList.OpenSupported stmts)
+    (hControl :
+      StackLoweringCompilation.ControlCtxAgrees canBreak canContinue targets
+        targetCtx)
+    (hReturns : lowerCtx.returns = returnNames)
+    (hSchedule :
+      StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
+          targetCtx.layout stmts facts = some (points, finalLayout))
+    (hLower :
+      StackLowering.lowerStmtListFuel lowerFuel lowerCtx stmts points =
+        some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx))
+    (hNodup : targetCtx.layout.Nodup) :
+    ControlScheduledListPreservesAt sourceProgram targetProgram targets
+        returnNames targetCtx finalCtx stmts finalLayout code sourceFuel ∧
+      finalCtx.layout.Nodup := by
+  induction sourceFuel using Nat.strong_induction_on generalizing lowerCtx
+      targets pinned scheduleFuel lowerFuel canBreak canContinue inFunction
+      sourceEnv stmts facts points finalLayout lowered targetCtx finalCtx code with
+  | h sourceFuel ih =>
+      cases sourceFuel with
+      | zero =>
+          exact zeroPairOfOnePair returnNames
+            (compiledListAtOne returnNames sourceProgram targetProgram lowerCtx
+              targets pinned scheduleFuel lowerFuel hWF hScoped hSupported
+              hControl hReturns hSchedule hLower hCompile hNodup)
+      | succ sourceFuel =>
+          cases sourceFuel with
+          | zero =>
+              exact compiledListAtOne returnNames sourceProgram targetProgram
+                lowerCtx targets pinned scheduleFuel lowerFuel hWF hScoped
+                hSupported hControl hReturns hSchedule hLower hCompile hNodup
+          | succ innerFuel =>
+              cases stmts with
+              | nil =>
+                  cases facts with
+                  | nil =>
+                      simp [StackSchedule.scheduleStmtListFuelWithTargets]
+                          at hSchedule
+                      have hPoints := hSchedule.1
+                      subst points
+                      have hFinal := hSchedule.2.symm
+                      subst finalLayout
+                      have hLowered :=
+                        StackLowering.lowerStmtListFuel_nil_components hLower
+                      subst lowered
+                      simp [Locals.Block.compileOpen] at hCompile
+                      rcases hCompile with ⟨rfl, rfl⟩
+                      exact
+                        ⟨StackBlockPreservation.controlNilAt returnNames
+                          sourceProgram targetProgram targets targetCtx
+                          (innerFuel + 2), hNodup⟩
+                  | cons fact restFacts =>
+                      simp [StackSchedule.scheduleStmtListFuelWithTargets]
+                        at hSchedule
+              | cons stmt rest =>
+                  cases facts with
+                  | nil =>
+                      simp [StackSchedule.scheduleStmtListFuelWithTargets]
+                        at hSchedule
+                  | cons fact restFacts =>
+                      cases points with
+                      | nil =>
+                          obtain ⟨_order, _rawPoint, _hOrder, _hPoint,
+                              hCases⟩ :=
+                            StackSchedule.scheduleStmtListFuelWithTargets_cons_components
+                              hSchedule
+                          rcases hCases with hFalls | hStops
+                          · obtain ⟨_hFalls, _retain, _tail, _tailFinal,
+                                _hRetain, _hTail, hPoints, _hFinal⟩ := hFalls
+                            simp at hPoints
+                          · simp at hStops
+                      | cons point points =>
+                          cases hWF with
+                          | cons hStmtWF hRestWF =>
+                            have hTail :
+                                ∀ {tailLayout tailFinal : Locals.Layout}
+                                  {tailLowered : List Locals.Stmt}
+                                  {middleCtx tailFinalCtx : Locals.Ctx}
+                                  {tailCode : List Expressions.Stmt},
+                                  middleCtx.layout = tailLayout →
+                                  middleCtx.layout.Nodup →
+                                  Locals.Ctx.SameControl targetCtx middleCtx →
+                                  StackSchedule.scheduleStmtListFuelWithTargets
+                                      targets scheduleFuel pinned tailLayout
+                                      rest restFacts =
+                                    some (points, tailFinal) →
+                                  StackLowering.lowerStmtListFuel lowerFuel
+                                      lowerCtx rest points = some tailLowered →
+                                  Locals.Block.compileOpen middleCtx
+                                      { stmts := tailLowered } =
+                                    some (tailCode, tailFinalCtx) →
+                                  ControlScheduledListPreservesAt sourceProgram
+                                      targetProgram targets returnNames middleCtx
+                                      tailFinalCtx rest tailFinal tailCode
+                                      (innerFuel + 1) ∧
+                                    tailFinalCtx.layout.Nodup := by
+                              intro tailLayout tailFinal tailLowered middleCtx
+                                tailFinalCtx tailCode hMiddleLayout
+                                hMiddleNodup hSame hTailSchedule hTailLower
+                                hTailCompile
+                              apply ih (innerFuel + 1) (by omega) lowerCtx
+                                targets pinned scheduleFuel lowerFuel
+                                (sourceEnv :=
+                                  Functions.Scope.Stmt.outEnv sourceEnv stmt)
+                                hFunctions
+                              · intro calleeFuel hLt
+                                exact hCallees calleeFuel (by omega)
+                              · exact hRestWF
+                              · exact hScoped.2
+                              · exact hSupported.2
+                              · exact hControl.afterSameControl hSame
+                              · exact hReturns
+                              · simpa [hMiddleLayout] using hTailSchedule
+                              · exact hTailLower
+                              · exact hTailCompile
+                              · exact hMiddleNodup
+                            cases stmt with
+                            | expr expr =>
+                                simpa [Nat.add_assoc] using
+                                  (exprConsAt_of_compilers returnNames
+                                    sourceProgram targetProgram lowerCtx targets
+                                    pinned scheduleFuel lowerFuel
+                                    (innerFuel + 1) expr rest fact restFacts
+                                    hNodup hScoped.1 hSupported.1 hSchedule
+                                    hLower hCompile hTail)
+                            | let_ name value =>
+                                simpa [Nat.add_assoc] using
+                                  (letConsAt_of_compilers returnNames
+                                    sourceProgram targetProgram lowerCtx targets
+                                    pinned scheduleFuel lowerFuel
+                                    (innerFuel + 1) name value rest fact
+                                    restFacts hNodup hScoped.1.2 hSupported.1
+                                    hSchedule hLower hCompile hTail)
+                            | assign name value =>
+                                simpa [Nat.add_assoc] using
+                                  (assignConsAt_of_compilers returnNames
+                                    sourceProgram targetProgram lowerCtx targets
+                                    pinned scheduleFuel lowerFuel
+                                    (innerFuel + 1) name value rest fact
+                                    restFacts hNodup hScoped.1.2 hSupported.1
+                                    hSchedule hLower hCompile hTail)
+                            | block body =>
+                                rcases body with ⟨bodyStmts⟩
+                                have hBodyWF := blockStmtWF hStmtWF
+                                apply blockConsAt_of_compilers returnNames
+                                  sourceProgram targetProgram lowerCtx targets
+                                  pinned scheduleFuel lowerFuel (innerFuel + 1)
+                                  { stmts := bodyStmts } rest fact restFacts
+                                  hNodup hSchedule
+                                  hLower hCompile
+                                · intro childCtx bodyFacts rawRegion bodyLowered
+                                    bodyCode bodyFinalCtx hSame hChildSchedule
+                                    hChildLower hChildCompile hChildNodup
+                                  have hChildListSchedule :=
+                                    StackSchedule.scheduleBlockFuelWithTargets_statementList
+                                      hChildSchedule
+                                  exact (ih (innerFuel + 1) (by omega) lowerCtx
+                                    targets (StackSchedule.layoutSet childCtx.layout)
+                                    ((scheduleFuel - 1) - 1)
+                                    ((lowerFuel - 1) - 1)
+                                    (sourceEnv := sourceEnv) hFunctions
+                                    (fun calleeFuel hLt =>
+                                      hCallees calleeFuel (by omega))
+                                    hBodyWF
+                                    (blockScopedStmts hScoped.1)
+                                    (blockSupportedStmts hSupported.1)
+                                    ((hControl.afterSameControl hSame).withLayout
+                                      rawRegion.entry.target)
+                                    hReturns
+                                    (by simpa [Locals.Ctx.withLayout] using
+                                      hChildListSchedule)
+                                    hChildLower hChildCompile hChildNodup).1
+                                · exact hTail
+                            | if_ cond body =>
+                                rcases body with ⟨bodyStmts⟩
+                                cases hStmtWF with
+                                | if_ hBodyWF =>
+                                    apply ifConsAtSucc_of_compilers returnNames
+                                      sourceProgram targetProgram lowerCtx targets
+                                      pinned scheduleFuel lowerFuel innerFuel cond
+                                      { stmts := bodyStmts } rest fact restFacts
+                                      hNodup hScoped.1.1
+                                      hSupported.1.1 hSchedule hLower hCompile
+                                    · intro childCtx bodyFacts rawRegion
+                                        bodyLowered bodyCode bodyFinalCtx hSame
+                                        hChildSchedule hChildLower hChildCompile
+                                        hChildNodup
+                                      have hChildListSchedule :=
+                                        StackSchedule.scheduleBlockFuelWithTargets_statementList
+                                          hChildSchedule
+                                      exact (ih innerFuel (by omega) lowerCtx
+                                        targets
+                                        (StackSchedule.layoutSet childCtx.layout)
+                                        ((scheduleFuel - 1) - 1)
+                                        ((lowerFuel - 1) - 1)
+                                        (sourceEnv := sourceEnv) hFunctions
+                                        (fun calleeFuel hLt =>
+                                          hCallees calleeFuel (by omega))
+                                        hBodyWF
+                                        (blockScopedStmts hScoped.1.2)
+                                        (blockSupportedStmts hSupported.1.2)
+                                        ((hControl.afterSameControl hSame).withLayout
+                                          rawRegion.entry.target)
+                                        hReturns
+                                        (by simpa [Locals.Ctx.withLayout] using
+                                          hChildListSchedule)
+                                        hChildLower hChildCompile hChildNodup).1
+                                    · exact hTail
+                            | switch scrutinee cases defaultBody =>
+                                cases hStmtWF with
+                                | switch hCasesWF hDefaultWF =>
+                                    apply switchConsAtSucc_of_compilers
+                                      returnNames sourceProgram targetProgram
+                                      lowerCtx targets pinned scheduleFuel
+                                      lowerFuel innerFuel scrutinee cases
+                                      defaultBody rest fact restFacts hNodup
+                                      hScoped.1.1 hSupported.1.1 hSchedule hLower
+                                      hCompile
+                                    · intro child childCtx bodyFacts rawRegion
+                                        bodyLowered bodyCode bodyFinalCtx hOrigin
+                                        hSame hChildSchedule hChildLower
+                                        hChildCompile hChildNodup
+                                      rcases child with ⟨childStmts⟩
+                                      have hChildListSchedule :=
+                                        StackSchedule.scheduleBlockFuelWithTargets_statementList
+                                          hChildSchedule
+                                      exact (ih innerFuel (by omega) lowerCtx
+                                        targets
+                                        (StackSchedule.layoutSet childCtx.layout)
+                                        ((scheduleFuel - 1) - 1)
+                                        ((lowerFuel - 1) - 1)
+                                        (sourceEnv := sourceEnv) hFunctions
+                                        (fun calleeFuel hLt =>
+                                          hCallees calleeFuel (by omega))
+                                        (hOrigin.wf hCasesWF hDefaultWF)
+                                        (blockScopedStmts
+                                          (hOrigin.scopePreserved hScoped.1.2.1
+                                            hScoped.1.2.2))
+                                        (blockSupportedStmts
+                                          (hOrigin.supported hSupported.1.2.1
+                                            hSupported.1.2.2))
+                                        ((hControl.afterSameControl hSame).withLayout
+                                          rawRegion.entry.target)
+                                        hReturns
+                                        (by simpa [Locals.Ctx.withLayout] using
+                                          hChildListSchedule)
+                                        hChildLower hChildCompile hChildNodup).1
+                                    · exact hTail
+                            | for_ init cond post body =>
+                                cases hStmtWF with
+                                | for_ hInitWF hPostWF hBodyWF =>
+                                    apply forConsAtSucc_of_compilers returnNames
+                                      sourceProgram targetProgram lowerCtx targets
+                                      pinned scheduleFuel lowerFuel innerFuel init
+                                      cond post body rest fact restFacts hNodup
+                                      hScoped.1.2.1 hSupported.1.2.1 hSchedule
+                                      hLower hCompile
+                                    · intro childFuel hChildFuel loopOuterCtx
+                                        loopInitCtx childTargets child childCtx
+                                        childFacts rawRegion childLowered childCode
+                                        childFinalCtx hOrigin hChildSchedule
+                                        hChildLower hChildCompile hChildNodup
+                                      obtain ⟨childEnv, hChildScoped⟩ :=
+                                        hOrigin.scopePreserved hScoped.1.1
+                                          hScoped.1.2.2.1 hScoped.1.2.2.2
+                                      obtain ⟨childBreak, childContinue,
+                                          hChildWF, hChildControl⟩ :=
+                                        hOrigin.wfAndControl hInitWF hPostWF
+                                          hBodyWF
+                                      rcases child with ⟨childStmts⟩
+                                      have hChildListSchedule :=
+                                        StackSchedule.scheduleBlockFuelWithTargets_statementList
+                                          hChildSchedule
+                                      exact ih childFuel (by omega) lowerCtx
+                                        childTargets
+                                        (StackSchedule.layoutSet childCtx.layout)
+                                        ((scheduleFuel - 1) - 1)
+                                        ((lowerFuel - 1) - 1)
+                                        (sourceEnv := childEnv) hFunctions
+                                        (fun calleeFuel hLt =>
+                                          hCallees calleeFuel (by omega))
+                                        hChildWF
+                                        (blockScopedStmts hChildScoped)
+                                        (blockSupportedStmts
+                                          (hOrigin.supported hSupported.1.1
+                                            hSupported.1.2.2.1
+                                            hSupported.1.2.2.2))
+                                        (hChildControl.withLayout
+                                          rawRegion.entry.target)
+                                        hReturns
+                                        (by simpa [Locals.Ctx.withLayout] using
+                                          hChildListSchedule)
+                                        hChildLower hChildCompile hChildNodup
+                                    · exact hTail
+                            | brk =>
+                                cases hStmtWF with
+                                | brk hAllowed =>
+                                    exact brkControlListAt_of_compilers
+                                      returnNames sourceProgram targetProgram
+                                      lowerCtx targets pinned scheduleFuel
+                                      lowerFuel (innerFuel + 1) rest fact restFacts
+                                      hNodup hControl hAllowed hSchedule hLower
+                                      hCompile
+                            | cont =>
+                                cases hStmtWF with
+                                | cont hAllowed =>
+                                    exact contControlListAt_of_compilers
+                                      returnNames sourceProgram targetProgram
+                                      lowerCtx targets pinned scheduleFuel
+                                      lowerFuel (innerFuel + 1) rest fact restFacts
+                                      hNodup hControl hAllowed hSchedule hLower
+                                      hCompile
+                            | leave =>
+                                exact leaveControlListAt_of_compilers returnNames
+                                  sourceProgram targetProgram lowerCtx targets
+                                  pinned scheduleFuel lowerFuel (innerFuel + 1)
+                                  rest fact restFacts hNodup hReturns hSchedule
+                                  hLower hCompile
+                            | call callTargets functionName args =>
+                                apply callConsAtSucc_of_compilers returnNames
+                                  sourceProgram targetProgram lowerCtx targets
+                                  pinned scheduleFuel lowerFuel innerFuel
+                                  callTargets functionName args rest fact restFacts
+                                  hFunctions hNodup hScoped.1.2.2 hSupported.1
+                                  hSchedule hLower hCompile
+                                · exact hCallees innerFuel (by omega) functionName
+                                    args
+                                · exact hTail
+                            | terminal kind =>
+                                cases hStmtWF with
+                                | terminal hArgCount =>
+                                    exact terminalControlListAt_of_compilers
+                                      returnNames sourceProgram targetProgram
+                                      lowerCtx targets pinned scheduleFuel
+                                      lowerFuel (innerFuel + 1) kind rest fact
+                                      restFacts hNodup hArgCount hSchedule hLower
+                                      hCompile
+                            | terminalArgs kind args =>
+                                exact terminalArgsControlListAt_of_compilers
+                                  returnNames sourceProgram targetProgram lowerCtx
+                                  targets pinned scheduleFuel lowerFuel
+                                  (innerFuel + 1) kind args rest fact restFacts
+                                  hNodup hScoped.1 hSupported.1 hSchedule hLower
+                                  hCompile
+
 end StackRecursivePreservation
 end Functions
 end EvmCompiler

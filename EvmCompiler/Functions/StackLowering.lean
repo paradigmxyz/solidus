@@ -1361,6 +1361,16 @@ def functionDemand (fn : FunDef) : Demand :=
 def functionBodyLayout (fn : FunDef) : Locals.Layout :=
   fn.returns.reverse ++ fn.params.reverse
 
+theorem functionBodyLayout_nodup
+    {fn : FunDef} (hSignature : (fn.returns ++ fn.params).Nodup) :
+    (functionBodyLayout fn).Nodup := by
+  have hParts := List.nodup_append.mp hSignature
+  apply List.nodup_append.mpr
+  refine ⟨by simpa using hParts.1, by simpa using hParts.2.1, ?_⟩
+  intro left hLeft right hRight hEq
+  exact hParts.2.2 left (by simpa using hLeft)
+    right (by simpa using hRight) hEq
+
 def lowerFunction? (functions : List FunDef) (fn : FunDef) :
     Option Locals.Proc := do
   let entryLayout := fn.params.reverse

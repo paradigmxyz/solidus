@@ -113,6 +113,45 @@ def call? (layout : Locals.Layout) (targets : List Name)
   let _ ← ExprSeq.check? layout 0 (Lower.argExprs args)
   returnedTargets? layout targets
 
+theorem assignTopWithOffset_mem
+    {layout : Locals.Layout} {offset : Nat} {name : Name}
+    (hCheck : assignTopWithOffset? layout offset name = some ()) :
+    name ∈ layout := by
+  unfold assignTopWithOffset? at hCheck
+  cases hDepth : Locals.Layout.lookupDepth? name layout with
+  | none => simp [hDepth] at hCheck
+  | some depth => exact Locals.Layout.mem_of_lookupDepth?_eq_some hDepth
+
+theorem returnedTargetsRev_mem :
+    ∀ {layout : Locals.Layout} {targets : List Name},
+      returnedTargetsRev? layout targets = some () →
+      ∀ name, name ∈ targets → name ∈ layout
+  | layout, [], hCheck, name, hMem => by simp at hMem
+  | layout, head :: rest, hCheck, name, hMem => by
+      simp only [returnedTargetsRev?] at hCheck
+      obtain ⟨_unit, hHead, hTail⟩ := Option.bind_eq_some_iff.mp hCheck
+      simp only [List.mem_cons] at hMem
+      rcases hMem with rfl | hMem
+      · exact assignTopWithOffset_mem hHead
+      · exact returnedTargetsRev_mem hTail name hMem
+
+theorem returnedTargets_mem
+    {layout : Locals.Layout} {targets : List Name}
+    (hCheck : returnedTargets? layout targets = some ()) :
+    ∀ name, name ∈ targets → name ∈ layout := by
+  intro name hMem
+  apply returnedTargetsRev_mem hCheck name
+  simpa using hMem
+
+theorem call_targets_mem
+    {layout : Locals.Layout} {targets : List Name}
+    {args : List (Functions.Expr 1)}
+    (hCheck : call? layout targets args = some ()) :
+    ∀ name, name ∈ targets → name ∈ layout := by
+  unfold call? at hCheck
+  obtain ⟨_unit, _hArgs, hTargets⟩ := Option.bind_eq_some_iff.mp hCheck
+  exact returnedTargets_mem hTargets
+
 namespace Examples
 
 theorem top16_accessible :

@@ -146,6 +146,18 @@ inductive WF : List FunDef → Prop where
   | cons {fn : FunDef} {rest : List FunDef}
       (hFn : fn.WF) (hRest : WF rest) : WF (fn :: rest)
 
+theorem wf_of_mem
+    {functions : List FunDef} {fn : FunDef}
+    (hWF : WF functions) (hMem : fn ∈ functions) :
+    fn.WF := by
+  induction hWF with
+  | nil => simp at hMem
+  | cons hHead hRest ih =>
+      simp only [List.mem_cons] at hMem
+      rcases hMem with rfl | hMem
+      · exact hHead
+      · exact ih hMem
+
 end FunList
 
 namespace Program

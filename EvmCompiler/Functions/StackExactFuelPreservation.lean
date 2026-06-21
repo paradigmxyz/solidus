@@ -444,6 +444,166 @@ theorem controlOpenRegionAsBlockAt
           simp only [Structured.Outcome.halt, Structured.OutcomeT.halt]
           exact .done (.ok (.halt hShared))
 
+/-- Exact-fuel block preservation for a region with a checked entry transition
+and no exit join. Function bodies use this shape because their final layout is
+consumed by the separately proved return epilogue. -/
+theorem controlGrowingRegionAsBlockAt
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx bodyFinalCtx : Locals.Ctx)
+    (source : Functions.Block) (bodyCode : List Expressions.Stmt)
+    (entry : AllocationLayout.Transition)
+    (entryArtifact : StackTransitionCompilation.Artifact targetCtx entry)
+    (targetBody : Expressions.Block)
+    (sourceFuel : Nat)
+    (hBody :
+      ControlScheduledListPreservesAt sourceProgram targetProgram targets
+        returnNames (targetCtx.withLayout entry.target) bodyFinalCtx
+        source.stmts bodyFinalCtx.layout bodyCode sourceFuel)
+    (hEntrySource : targetCtx.layout = entry.source)
+    (hTargetBody :
+      targetBody.stmts =
+        entryArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code entryArtifact.cleanup] ++ bodyCode) :
+    ControlBlockPreservesAt sourceProgram targetProgram targets returnNames
+      targetCtx bodyFinalCtx source targetBody sourceFuel := by
+  rcases source with ⟨sourceStmts⟩
+  rcases targetBody with ⟨targetStmts⟩
+  simp only at hTargetBody
+  subst targetStmts
+  unfold ControlBlockPreservesAt
+  intro sourceCtx targetFuel suffix returns initialSource initialTarget hFuel
+    hCtx hInitial
+  have hLength := hFuel.length_lt
+  have hEntryFuel : entryArtifact.promotionCodes.length + 1 < targetFuel := by
+    simp only [List.length_append, List.length_map, List.length_cons,
+      List.length_nil] at hLength
+    omega
+  apply entryArtifact.thenBlockForward targetProgram targetFuel hEntryFuel
+    hInitial
+  intro transitionedTarget hTransitioned
+  have hBodyFuelRaw :=
+    Expressions.TargetFuel.Covers.tail_after_append hFuel
+  have hBodyFuel :
+      Expressions.TargetFuel.Covers targetProgram sourceFuel
+        (targetFuel - (entryArtifact.promotionCodes.length + 1)) bodyCode := by
+    simpa only [List.length_append, List.length_map, List.length_cons,
+      List.length_nil, Nat.add_zero] using hBodyFuelRaw
+  exact hBody.2 sourceCtx
+    (targetFuel - (entryArtifact.promotionCodes.length + 1)) hBodyFuel
+    (hCtx.afterTransition entry hEntrySource) hTransitioned
+
+/-- Reconstruct exact-fuel growing-region preservation from the ordinary
+scheduler, stack lowerer, and Locals compiler equations. -/
+theorem compiledGrowingRegionAt_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (scheduleFuel lowerFuel sourceFuel : Nat)
+    (body : Functions.Block)
+    (bodyFacts : AllocationLivenessFacts.Region)
+    (rawRegion : StackSchedule.Region)
+    (targetCtx regionFinalCtx : Locals.Ctx)
+    (hNodup : targetCtx.layout.Nodup)
+    (loweredBody : Locals.Block)
+    (regionCode : List Expressions.Stmt)
+    (hSchedule :
+      StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
+          (StackSchedule.layoutSet targetCtx.layout) targetCtx.layout
+          body bodyFacts = some rawRegion)
+    (hLower :
+      StackLowering.lowerBlockFuel (lowerFuel - 1) lowerCtx body rawRegion =
+        some loweredBody)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx loweredBody =
+        some (regionCode, regionFinalCtx))
+    (hBody :
+      ∀ {bodyLowered bodyCode bodyFinalCtx},
+        StackLowering.lowerStmtListFuel ((lowerFuel - 1) - 1) lowerCtx
+            body.stmts rawRegion.points = some bodyLowered →
+        Locals.Block.compileOpen
+            (targetCtx.withLayout rawRegion.entry.target)
+            { stmts := bodyLowered } = some (bodyCode, bodyFinalCtx) →
+        (targetCtx.withLayout rawRegion.entry.target).layout.Nodup →
+        ControlScheduledListPreservesAt sourceProgram targetProgram targets
+            returnNames (targetCtx.withLayout rawRegion.entry.target)
+            bodyFinalCtx body.stmts rawRegion.finalLayout bodyCode sourceFuel ∧
+          bodyFinalCtx.layout.Nodup) :
+    ∃ bodyFinalCtx : Locals.Ctx,
+      ControlBlockPreservesAt sourceProgram targetProgram targets returnNames
+          targetCtx bodyFinalCtx body { stmts := regionCode } sourceFuel ∧
+        bodyFinalCtx.layout.Nodup ∧
+        bodyFinalCtx.layout = rawRegion.finalLayout ∧
+        regionFinalCtx = bodyFinalCtx ∧
+        targetCtx.layout = rawRegion.entry.source := by
+  obtain ⟨builtEntry, _points, _finalLayout, hEntryBuild, _hPoints,
+      hRawEntry, _hRawPoints, hRawExitNone, _hRawFinal⟩ :=
+    StackSchedule.scheduleBlockFuelWithTargets_components hSchedule
+  have hBuiltEntry : builtEntry = rawRegion.entry := hRawEntry.symm
+  subst builtEntry
+  obtain ⟨bodyLowered, hBodyLower, hLoweredBody⟩ :=
+    StackLowering.lowerBlockFuel_components hLower
+  have hLoweredBody' :
+      loweredBody.stmts =
+        StackLowering.transitionStmts rawRegion.entry ++ bodyLowered := by
+    rw [hRawExitNone] at hLoweredBody
+    simpa [StackLowering.exitStmts] using hLoweredBody
+  have hLoweredBodyStruct :
+      loweredBody =
+        { stmts :=
+            StackLowering.transitionStmts rawRegion.entry ++ bodyLowered } := by
+    cases loweredBody
+    simp_all
+  rw [hLoweredBodyStruct] at hCompile
+  obtain ⟨entryCode, entryFinalCtx, bodyCode, hEntryCompile, hBodyCompile,
+      hRegionCode⟩ :=
+    Locals.Block.compileOpen_append_components hCompile
+  have hEntrySource : targetCtx.layout = rawRegion.entry.source :=
+    (AllocationLayout.Transition.build?_sound hEntryBuild).1.symm
+  obtain ⟨entryArtifact⟩ :=
+    StackTransitionCompilation.Transition.compileArtifact rawRegion.entry
+      hEntrySource
+  have hEntryPair :=
+    Option.some.inj (entryArtifact.compileEq.symm.trans hEntryCompile)
+  have hEntryCode :
+      entryArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code entryArtifact.cleanup] = entryCode :=
+    congrArg Prod.fst hEntryPair
+  have hEntryFinal :
+      targetCtx.withLayout rawRegion.entry.target = entryFinalCtx :=
+    congrArg Prod.snd hEntryPair
+  rw [← hEntryFinal] at hBodyCompile
+  have hEntryNodup :
+      (targetCtx.withLayout rawRegion.entry.target).layout.Nodup := by
+    simp only [Locals.Ctx.withLayout]
+    apply AllocationLayout.Transition.target_nodup rawRegion.entry
+    rw [← hEntrySource]
+    exact hNodup
+  have hBodyResult :=
+    hBody (by simpa using hBodyLower) hBodyCompile hEntryNodup
+  have hBodyPreserves := hBodyResult.1
+  have hBodyNodup := hBodyResult.2
+  have hBodyLayout : regionFinalCtx.layout = rawRegion.finalLayout :=
+    hBodyPreserves.1
+  have hTargetBody :
+      ({ stmts := regionCode } : Expressions.Block).stmts =
+        entryArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code entryArtifact.cleanup] ++ bodyCode := by
+    simp only
+    rw [hRegionCode, ← hEntryCode]
+  have hBodySelf :
+      ControlScheduledListPreservesAt sourceProgram targetProgram targets
+        returnNames (targetCtx.withLayout rawRegion.entry.target) regionFinalCtx
+        body.stmts regionFinalCtx.layout bodyCode sourceFuel :=
+    ⟨rfl, hBodyPreserves.2⟩
+  refine ⟨regionFinalCtx, ?_, hBodyNodup,
+    hBodyLayout, rfl, hEntrySource⟩
+  exact controlGrowingRegionAsBlockAt returnNames sourceProgram targetProgram
+    targets targetCtx regionFinalCtx body bodyCode rawRegion.entry entryArtifact
+    { stmts := regionCode } sourceFuel hBodySelf hEntrySource hTargetBody
+
 theorem compiledOpenRegionAt_of_compilers
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
