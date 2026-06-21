@@ -1810,7 +1810,7 @@ namespace Function
 /-- One initialized function body is preserved through its scheduled body and
 ordinary fallthrough return epilogue. The recursive body theorem is an
 adjacent private input; the public program theorem discharges it by fuel. -/
-theorem openRunBody_afterPrelude
+theorem openRunBody_afterPrelude_of_run
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (fn : Functions.FunDef) (args : List Word)
@@ -1827,14 +1827,16 @@ theorem openRunBody_afterPrelude
     (hInsert :
       Functions.Source.Store.insertMany fn.params args
           Locals.Source.Store.empty = some paramStore)
-    (hBody :
-      StackStatementPreservation.ControlBlockPreserves
-        sourceProgram targetProgram {} fn.returns targetCtx finalCtx
-        fn.body targetBody)
-    (hRuntime :
-      StackStatementPreservation.RuntimeCtxCovers
-        (Functions.Source.Effectful.FunDef.bodyCtx fn) targetCtx {}
-        fn.returns (frame :: callerReturns))
+    (hBodyRun :
+      Simulation.Interaction.ForwardRel
+        StackStatementPreservation.FuelTruncated
+        (StackStatementPreservation.ControlOpenOutcomeRel {}
+          fn.returns finalCtx [] (frame :: callerReturns))
+        (Functions.InteractionSemantics.Block.openRun sourceProgram
+          (Functions.Source.Effectful.FunDef.bodyCtx fn) sourceFuel fn.body
+          (CalleeEntry.sourceState sourceAfterArgs fn paramStore))
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          targetFuel targetBody target))
     (hReturnAccess :
       StackAccess.ExprSeq.check? finalCtx.layout 0
           (StackLowering.returnWords fn.returns) = some ())
@@ -1845,10 +1847,7 @@ theorem openRunBody_afterPrelude
       finalCtx.cleanupToPreserving? fn.returns.length 0 = some cleanup)
     (hFuel :
       Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
-        (targetBody.stmts ++ [.code returnCode, .code cleanup]))
-    (hInitial :
-      StateRel targetCtx.layout [] (frame :: callerReturns)
-        (CalleeEntry.sourceState sourceAfterArgs fn paramStore) target) :
+        (targetBody.stmts ++ [.code returnCode, .code cleanup])) :
     Simulation.Interaction.ForwardRel
       StackStatementPreservation.FuelTruncated
       (OpenCallResultRel frame callerReturns)
@@ -1858,13 +1857,6 @@ theorem openRunBody_afterPrelude
         { stmts :=
             targetBody.stmts ++ [.code returnCode, .code cleanup] } target) := by
   rcases targetBody with ⟨targetStmts⟩
-  have hBodyFuel :
-      Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
-        targetStmts :=
-    Expressions.TargetFuel.Covers.head_of_append hFuel
-  have hBodyRun :=
-    hBody (Functions.Source.Effectful.FunDef.bodyCtx fn)
-      sourceFuel targetFuel hBodyFuel hRuntime hInitial
   unfold Functions.InteractionSemantics.FunDef.openRunBody
     Functions.Source.Canonical.FunDef.runBody
     Functions.Source.Effectful.Control.FunDef.runBody
@@ -1938,9 +1930,67 @@ theorem openRunBody_afterPrelude
       apply Simulation.Interaction.ExceptRel.ok
       exact CallResultRel.halt hShared.symm
 
+theorem openRunBody_afterPrelude
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (fn : Functions.FunDef) (args : List Word)
+    (paramStore : Functions.Source.Store)
+    (sourceAfterArgs : Locals.Source.State)
+    (sourceFuel targetFuel : Nat)
+    (targetCtx finalCtx : Locals.Ctx)
+    (targetBody : Expressions.Block)
+    (returnCode cleanup : Structured.Code)
+    {frame : Structured.ReturnDest}
+    {callerReturns : List Structured.ReturnDest}
+    {target : Structured.RunState}
+    (hFrameRetc : frame.retc = fn.returns.length)
+    (hInsert :
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty = some paramStore)
+    (hBody :
+      StackStatementPreservation.ControlBlockPreserves
+        sourceProgram targetProgram {} fn.returns targetCtx finalCtx
+        fn.body targetBody)
+    (hRuntime :
+      StackStatementPreservation.RuntimeCtxCovers
+        (Functions.Source.Effectful.FunDef.bodyCtx fn) targetCtx {}
+        fn.returns (frame :: callerReturns))
+    (hReturnAccess :
+      StackAccess.ExprSeq.check? finalCtx.layout 0
+          (StackLowering.returnWords fn.returns) = some ())
+    (hReturnCompile :
+      Locals.ExprSeq.compileCode finalCtx 0
+          (StackLowering.returnWords fn.returns) = some returnCode)
+    (hCleanup :
+      finalCtx.cleanupToPreserving? fn.returns.length 0 = some cleanup)
+    (hFuel :
+      Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
+        (targetBody.stmts ++ [.code returnCode, .code cleanup]))
+    (hInitial :
+      StateRel targetCtx.layout [] (frame :: callerReturns)
+        (CalleeEntry.sourceState sourceAfterArgs fn paramStore) target) :
+    Simulation.Interaction.ForwardRel
+      StackStatementPreservation.FuelTruncated
+      (OpenCallResultRel frame callerReturns)
+      (Functions.InteractionSemantics.FunDef.openRunBody
+        sourceProgram fn args (sourceFuel + 1) sourceAfterArgs)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
+        { stmts :=
+            targetBody.stmts ++ [.code returnCode, .code cleanup] } target) := by
+  have hBodyFuel :=
+    Expressions.TargetFuel.Covers.head_of_append hFuel
+  have hBodyRun :=
+    hBody (Functions.Source.Effectful.FunDef.bodyCtx fn)
+      sourceFuel targetFuel hBodyFuel hRuntime hInitial
+  exact
+    openRunBody_afterPrelude_of_run sourceProgram targetProgram fn args
+      paramStore sourceAfterArgs sourceFuel targetFuel targetCtx finalCtx
+      targetBody returnCode cleanup hFrameRetc hInsert hBodyRun hReturnAccess
+      hReturnCompile hCleanup hFuel
+
 /-- Zero-return specialization of `openRunBody_afterPrelude` matching the
 instruction-free return-vector phase emitted by `StackLowering`. -/
-theorem openRunBody_afterPrelude_noReturns
+theorem openRunBody_afterPrelude_noReturns_of_run
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (fn : Functions.FunDef) (args : List Word)
@@ -1958,21 +2008,20 @@ theorem openRunBody_afterPrelude_noReturns
     (hInsert :
       Functions.Source.Store.insertMany fn.params args
           Locals.Source.Store.empty = some paramStore)
-    (hBody :
-      StackStatementPreservation.ControlBlockPreserves
-        sourceProgram targetProgram {} fn.returns targetCtx finalCtx
-        fn.body targetBody)
-    (hRuntime :
-      StackStatementPreservation.RuntimeCtxCovers
-        (Functions.Source.Effectful.FunDef.bodyCtx fn) targetCtx {}
-        fn.returns (frame :: callerReturns))
+    (hBodyRun :
+      Simulation.Interaction.ForwardRel
+        StackStatementPreservation.FuelTruncated
+        (StackStatementPreservation.ControlOpenOutcomeRel {}
+          fn.returns finalCtx [] (frame :: callerReturns))
+        (Functions.InteractionSemantics.Block.openRun sourceProgram
+          (Functions.Source.Effectful.FunDef.bodyCtx fn) sourceFuel fn.body
+          (CalleeEntry.sourceState sourceAfterArgs fn paramStore))
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          targetFuel targetBody target))
     (hCleanup : finalCtx.cleanupToPreserving? 0 0 = some cleanup)
     (hFuel :
       Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
-        (targetBody.stmts ++ [.code cleanup]))
-    (hInitial :
-      StateRel targetCtx.layout [] (frame :: callerReturns)
-        (CalleeEntry.sourceState sourceAfterArgs fn paramStore) target) :
+        (targetBody.stmts ++ [.code cleanup])) :
     Simulation.Interaction.ForwardRel
       StackStatementPreservation.FuelTruncated
       (OpenCallResultRel frame callerReturns)
@@ -1981,13 +2030,6 @@ theorem openRunBody_afterPrelude_noReturns
       (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
         { stmts := targetBody.stmts ++ [.code cleanup] } target) := by
   rcases targetBody with ⟨targetStmts⟩
-  have hBodyFuel :
-      Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
-        targetStmts :=
-    Expressions.TargetFuel.Covers.head_of_append hFuel
-  have hBodyRun :=
-    hBody (Functions.Source.Effectful.FunDef.bodyCtx fn)
-      sourceFuel targetFuel hBodyFuel hRuntime hInitial
   unfold Functions.InteractionSemantics.FunDef.openRunBody
     Functions.Source.Canonical.FunDef.runBody
     Functions.Source.Effectful.Control.FunDef.runBody
@@ -2066,9 +2108,59 @@ theorem openRunBody_afterPrelude_noReturns
       apply Simulation.Interaction.ExceptRel.ok
       exact CallResultRel.halt hShared.symm
 
+theorem openRunBody_afterPrelude_noReturns
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (fn : Functions.FunDef) (args : List Word)
+    (paramStore : Functions.Source.Store)
+    (sourceAfterArgs : Locals.Source.State)
+    (sourceFuel targetFuel : Nat)
+    (targetCtx finalCtx : Locals.Ctx)
+    (targetBody : Expressions.Block)
+    (cleanup : Structured.Code)
+    {frame : Structured.ReturnDest}
+    {callerReturns : List Structured.ReturnDest}
+    {target : Structured.RunState}
+    (hReturns : fn.returns = [])
+    (hFrameRetc : frame.retc = 0)
+    (hInsert :
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty = some paramStore)
+    (hBody :
+      StackStatementPreservation.ControlBlockPreserves
+        sourceProgram targetProgram {} fn.returns targetCtx finalCtx
+        fn.body targetBody)
+    (hRuntime :
+      StackStatementPreservation.RuntimeCtxCovers
+        (Functions.Source.Effectful.FunDef.bodyCtx fn) targetCtx {}
+        fn.returns (frame :: callerReturns))
+    (hCleanup : finalCtx.cleanupToPreserving? 0 0 = some cleanup)
+    (hFuel :
+      Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
+        (targetBody.stmts ++ [.code cleanup]))
+    (hInitial :
+      StateRel targetCtx.layout [] (frame :: callerReturns)
+        (CalleeEntry.sourceState sourceAfterArgs fn paramStore) target) :
+    Simulation.Interaction.ForwardRel
+      StackStatementPreservation.FuelTruncated
+      (OpenCallResultRel frame callerReturns)
+      (Functions.InteractionSemantics.FunDef.openRunBody
+        sourceProgram fn args (sourceFuel + 1) sourceAfterArgs)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
+        { stmts := targetBody.stmts ++ [.code cleanup] } target) := by
+  have hBodyFuel :=
+    Expressions.TargetFuel.Covers.head_of_append hFuel
+  have hBodyRun :=
+    hBody (Functions.Source.Effectful.FunDef.bodyCtx fn)
+      sourceFuel targetFuel hBodyFuel hRuntime hInitial
+  exact
+    openRunBody_afterPrelude_noReturns_of_run sourceProgram targetProgram fn
+      args paramStore sourceAfterArgs sourceFuel targetFuel targetCtx finalCtx
+      targetBody cleanup hReturns hFrameRetc hInsert hBodyRun hCleanup hFuel
+
 /-- Preserve a whole function body from the real call-created entry state,
 including the metadata marker and compiler-generated zero-return prelude. -/
-theorem openRunBody_fromEntry
+theorem openRunBody_fromEntry_of_bodyRun
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (fn : Functions.FunDef) (args : List Word)
@@ -2097,12 +2189,24 @@ theorem openRunBody_fromEntry
           (returnPreludeCode,
             Locals.Ctx.procEntryWithLayoutAndRetc
               (StackLowering.functionBodyLayout fn) fn.returns.length))
-    (hBody :
-      StackStatementPreservation.ControlBlockPreserves
-        sourceProgram targetProgram {} fn.returns
-        (Locals.Ctx.procEntryWithLayoutAndRetc
-          (StackLowering.functionBodyLayout fn) fn.returns.length)
-        finalCtx fn.body targetBody)
+    (hBodyRun :
+      ∀ {targetAfterPrelude : Structured.RunState},
+        StateRel (StackLowering.functionBodyLayout fn) []
+            ({ callerStack := callerStack, retc := fn.returns.length } ::
+              callerTarget.returns)
+            (CalleeEntry.sourceState sourceAfterArgs fn paramStore)
+            targetAfterPrelude →
+        Simulation.Interaction.ForwardRel
+          StackStatementPreservation.FuelTruncated
+          (StackStatementPreservation.ControlOpenOutcomeRel {}
+            fn.returns finalCtx []
+            ({ callerStack := callerStack, retc := fn.returns.length } ::
+              callerTarget.returns))
+          (Functions.InteractionSemantics.Block.openRun sourceProgram
+            (Functions.Source.Effectful.FunDef.bodyCtx fn) sourceFuel fn.body
+            (CalleeEntry.sourceState sourceAfterArgs fn paramStore))
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            targetFuel targetBody targetAfterPrelude))
     (hReturnAccess :
       StackAccess.ExprSeq.check? finalCtx.layout 0
           (StackLowering.returnWords fn.returns) = some ())
@@ -2180,16 +2284,239 @@ theorem openRunBody_fromEntry
     exact (congrArg Prod.snd (Option.some.inj hPreludeCompile)).symm
   subst preludeCode
   subst preludeFinalCtx
+  have hExactBodyRun := hBodyRun (by
+    simpa [bodyCtx, StackLowering.functionBodyLayout] using hPreludeRel)
+  have hAfter :=
+    openRunBody_afterPrelude_of_run sourceProgram targetProgram fn args paramStore
+      sourceAfterArgs sourceFuel targetFuel bodyCtx finalCtx targetBody
+      returnCode cleanup rfl hInsert hExactBodyRun hReturnAccess
+      hReturnCompile hCleanup hFuel
+  have hEntryRun :=
+    EntryMarker.openRun targetProgram
+      (targetFuel + fn.returns.length + 1) fn.params.reverse targetEntry
+      (by omega)
+  change Simulation.Interaction.ForwardRel _ _ _ _
+  rw [Expressions.InteractionSemantics.Block.openRun_append, hEntryRun]
+  simp only [Simulation.Interaction.pure,
+    Simulation.Interaction.bind_done_ok,
+    Structured.Outcome.regular_mode, Structured.Outcome.regular_state,
+    List.length_cons, List.length_nil, Nat.add_zero]
+  rw [show targetFuel + fn.returns.length + 1 - 1 =
+      targetFuel + fn.returns.length by omega]
+  rw [Expressions.InteractionSemantics.Block.openRun_append, hPreludeRun]
+  simp only [Simulation.Interaction.pure,
+    Simulation.Interaction.bind_done_ok,
+    Structured.Outcome.regular_mode, Structured.Outcome.regular_state]
+  have hResidual :
+      targetFuel + fn.returns.length - returnPreludeCode.length =
+        targetFuel := by
+    omega
+  rw [hResidual]
+  exact hAfter
+
+theorem openRunBody_fromEntry
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (fn : Functions.FunDef) (args : List Word)
+    (paramStore : Functions.Source.Store)
+    (sourceAfterArgs : Locals.Source.State)
+    (sourceFuel targetFuel : Nat)
+    (finalCtx : Locals.Ctx)
+    (returnPreludeCode : List Expressions.Stmt)
+    (targetBody : Expressions.Block)
+    (returnCode cleanup : Structured.Code)
+    {callerTarget : Structured.RunState}
+    {callerStack : List Word}
+    (hTargetFuel : 0 < targetFuel)
+    (hSignature : (fn.returns ++ fn.params).Nodup)
+    (hInsert :
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty = some paramStore)
+    (hShared :
+      callerTarget.evm.toSharedState = sourceAfterArgs.shared)
+    (hReturnPreludeCompile :
+      Locals.Block.compileOpen
+          (Locals.Ctx.procEntryWithLayoutAndRetc
+            fn.params.reverse fn.returns.length)
+          { stmts := Lower.initReturns fn.returns } =
+        some
+          (returnPreludeCode,
+            Locals.Ctx.procEntryWithLayoutAndRetc
+              (StackLowering.functionBodyLayout fn) fn.returns.length))
+    (hBody :
+      StackStatementPreservation.ControlBlockPreserves
+        sourceProgram targetProgram {} fn.returns
+        (Locals.Ctx.procEntryWithLayoutAndRetc
+          (StackLowering.functionBodyLayout fn) fn.returns.length)
+        finalCtx fn.body targetBody)
+    (hReturnAccess :
+      StackAccess.ExprSeq.check? finalCtx.layout 0
+          (StackLowering.returnWords fn.returns) = some ())
+    (hReturnCompile :
+      Locals.ExprSeq.compileCode finalCtx 0
+          (StackLowering.returnWords fn.returns) = some returnCode)
+    (hCleanup :
+      finalCtx.cleanupToPreserving? fn.returns.length 0 = some cleanup)
+    (hFuel :
+      Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
+        (targetBody.stmts ++ [.code returnCode, .code cleanup])) :
+    Simulation.Interaction.ForwardRel
+      StackStatementPreservation.FuelTruncated
+      (OpenCallResultRel
+        { callerStack := callerStack, retc := fn.returns.length }
+        callerTarget.returns)
+      (Functions.InteractionSemantics.FunDef.openRunBody
+        sourceProgram fn args (sourceFuel + 1) sourceAfterArgs)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        (targetFuel + fn.returns.length + 1)
+        { stmts :=
+            [.code [.bindLocals 0 fn.params.reverse]] ++
+              (returnPreludeCode ++
+                (targetBody.stmts ++ [.code returnCode, .code cleanup])) }
+        (CalleeEntry.targetState callerTarget args.reverse callerStack
+          fn.returns.length)) := by
+  have hBodyFuel := Expressions.TargetFuel.Covers.head_of_append hFuel
   have hRuntime :=
     CalleeEntry.runtimeCtx fn
       { callerStack := callerStack, retc := fn.returns.length }
       callerTarget.returns
+  apply openRunBody_fromEntry_of_bodyRun sourceProgram targetProgram fn args
+    paramStore sourceAfterArgs sourceFuel targetFuel finalCtx
+    returnPreludeCode targetBody returnCode cleanup hTargetFuel hSignature
+    hInsert hShared hReturnPreludeCompile
+  · intro targetAfter hInitial
+    exact hBody (Functions.Source.Effectful.FunDef.bodyCtx fn)
+      sourceFuel targetFuel hBodyFuel hRuntime hInitial
+  · exact hReturnAccess
+  · exact hReturnCompile
+  · exact hCleanup
+  · exact hFuel
+
+theorem openRunBody_fromEntry_noReturns_of_bodyRun
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (fn : Functions.FunDef) (args : List Word)
+    (paramStore : Functions.Source.Store)
+    (sourceAfterArgs : Locals.Source.State)
+    (sourceFuel targetFuel : Nat)
+    (finalCtx : Locals.Ctx)
+    (returnPreludeCode : List Expressions.Stmt)
+    (targetBody : Expressions.Block)
+    (cleanup : Structured.Code)
+    {callerTarget : Structured.RunState}
+    {callerStack : List Word}
+    (hTargetFuel : 0 < targetFuel)
+    (hReturns : fn.returns = [])
+    (hSignature : (fn.returns ++ fn.params).Nodup)
+    (hInsert :
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty = some paramStore)
+    (hShared :
+      callerTarget.evm.toSharedState = sourceAfterArgs.shared)
+    (hReturnPreludeCompile :
+      Locals.Block.compileOpen
+          (Locals.Ctx.procEntryWithLayoutAndRetc
+            fn.params.reverse fn.returns.length)
+          { stmts := Lower.initReturns fn.returns } =
+        some
+          (returnPreludeCode,
+            Locals.Ctx.procEntryWithLayoutAndRetc
+              (StackLowering.functionBodyLayout fn) fn.returns.length))
+    (hBodyRun :
+      ∀ {targetAfterPrelude : Structured.RunState},
+        StateRel (StackLowering.functionBodyLayout fn) []
+            ({ callerStack := callerStack, retc := fn.returns.length } ::
+              callerTarget.returns)
+            (CalleeEntry.sourceState sourceAfterArgs fn paramStore)
+            targetAfterPrelude →
+        Simulation.Interaction.ForwardRel
+          StackStatementPreservation.FuelTruncated
+          (StackStatementPreservation.ControlOpenOutcomeRel {}
+            fn.returns finalCtx []
+            ({ callerStack := callerStack, retc := fn.returns.length } ::
+              callerTarget.returns))
+          (Functions.InteractionSemantics.Block.openRun sourceProgram
+            (Functions.Source.Effectful.FunDef.bodyCtx fn) sourceFuel fn.body
+            (CalleeEntry.sourceState sourceAfterArgs fn paramStore))
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            targetFuel targetBody targetAfterPrelude))
+    (hCleanup : finalCtx.cleanupToPreserving? 0 0 = some cleanup)
+    (hFuel :
+      Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
+        (targetBody.stmts ++ [.code cleanup])) :
+    Simulation.Interaction.ForwardRel
+      StackStatementPreservation.FuelTruncated
+      (OpenCallResultRel
+        { callerStack := callerStack, retc := fn.returns.length }
+        callerTarget.returns)
+      (Functions.InteractionSemantics.FunDef.openRunBody
+        sourceProgram fn args (sourceFuel + 1) sourceAfterArgs)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        (targetFuel + fn.returns.length + 1)
+        { stmts :=
+            [.code [.bindLocals 0 fn.params.reverse]] ++
+              (returnPreludeCode ++
+                (targetBody.stmts ++ [.code cleanup])) }
+        (CalleeEntry.targetState callerTarget args.reverse callerStack
+          fn.returns.length)) := by
+  let entryCtx :=
+    Locals.Ctx.procEntryWithLayoutAndRetc
+      fn.params.reverse fn.returns.length
+  let bodyCtx :=
+    Locals.Ctx.procEntryWithLayoutAndRetc
+      (StackLowering.functionBodyLayout fn) fn.returns.length
+  let sourceEntry := CalleeEntry.sourceState sourceAfterArgs fn paramStore
+  let targetEntry :=
+    CalleeEntry.targetState callerTarget args.reverse callerStack
+      fn.returns.length
+  have hEntryRel :
+      StateRel fn.params.reverse []
+        ({ callerStack := callerStack, retc := fn.returns.length } ::
+          callerTarget.returns)
+        sourceEntry targetEntry := by
+    exact CalleeEntry.stateRel hSignature hInsert hShared rfl
+  have hNodup :
+      (fn.returns.reverse ++ entryCtx.layout).Nodup := by
+    have hParts := List.nodup_append.mp hSignature
+    change (fn.returns.reverse ++ fn.params.reverse).Nodup
+    have hReturnsReverse : fn.returns.reverse.Nodup := by
+      simpa using hParts.1
+    have hParamsReverse : fn.params.reverse.Nodup := by
+      simpa using hParts.2.1
+    apply List.nodup_append.mpr
+    refine ⟨hReturnsReverse, hParamsReverse, ?_⟩
+    intro left hLeft right hRight hEq
+    exact hParts.2.2 left (by simpa using hLeft)
+      right (by simpa using hRight) hEq
+  have hZero :
+      ∀ name, name ∈ fn.returns → sourceEntry.vars name = some Lower.zero := by
+    intro name hName
+    simpa [sourceEntry, CalleeEntry.sourceState,
+      Functions.InteractionSemantics.stateModel,
+      Locals.InteractionSemantics.stateModel,
+      Locals.Source.Effectful.Ordinary.stateModel] using
+      Functions.Source.Store.initReturns_apply_of_mem
+        (List.nodup_append.mp hSignature).1 hName
+  obtain ⟨preludeCode, preludeFinalCtx, targetAfterPrelude,
+      hPreludeCompile, hPreludeLayout, hPreludeLength, _hPreludeOnly,
+      hPreludeRun, hPreludeRel⟩ :=
+    ReturnPrelude.compileOpenRun_of_fuel targetProgram fn.returns entryCtx
+      (targetFuel + fn.returns.length) (by omega) hNodup hZero hEntryRel
+  have hPreludeEq : preludeCode = returnPreludeCode := by
+    rw [hReturnPreludeCompile] at hPreludeCompile
+    exact (congrArg Prod.fst (Option.some.inj hPreludeCompile)).symm
+  have hPreludeCtxEq : preludeFinalCtx = bodyCtx := by
+    rw [hReturnPreludeCompile] at hPreludeCompile
+    exact (congrArg Prod.snd (Option.some.inj hPreludeCompile)).symm
+  subst preludeCode
+  subst preludeFinalCtx
+  have hExactBodyRun := hBodyRun (by
+    simpa [bodyCtx, StackLowering.functionBodyLayout] using hPreludeRel)
   have hAfter :=
-    openRunBody_afterPrelude sourceProgram targetProgram fn args paramStore
-      sourceAfterArgs sourceFuel targetFuel bodyCtx finalCtx targetBody
-      returnCode cleanup rfl hInsert hBody hRuntime hReturnAccess
-      hReturnCompile hCleanup hFuel (by
-        simpa [bodyCtx, StackLowering.functionBodyLayout] using hPreludeRel)
+    openRunBody_afterPrelude_noReturns_of_run sourceProgram targetProgram fn args
+      paramStore sourceAfterArgs sourceFuel targetFuel bodyCtx finalCtx
+      targetBody cleanup hReturns (by simp [hReturns]) hInsert hExactBodyRun
+      hCleanup hFuel
   have hEntryRun :=
     EntryMarker.openRun targetProgram
       (targetFuel + fn.returns.length + 1) fn.params.reverse targetEntry
@@ -2268,91 +2595,22 @@ theorem openRunBody_fromEntry_noReturns
                 (targetBody.stmts ++ [.code cleanup])) }
         (CalleeEntry.targetState callerTarget args.reverse callerStack
           fn.returns.length)) := by
-  let entryCtx :=
-    Locals.Ctx.procEntryWithLayoutAndRetc
-      fn.params.reverse fn.returns.length
-  let bodyCtx :=
-    Locals.Ctx.procEntryWithLayoutAndRetc
-      (StackLowering.functionBodyLayout fn) fn.returns.length
-  let sourceEntry := CalleeEntry.sourceState sourceAfterArgs fn paramStore
-  let targetEntry :=
-    CalleeEntry.targetState callerTarget args.reverse callerStack
-      fn.returns.length
-  have hEntryRel :
-      StateRel fn.params.reverse []
-        ({ callerStack := callerStack, retc := fn.returns.length } ::
-          callerTarget.returns)
-        sourceEntry targetEntry := by
-    exact CalleeEntry.stateRel hSignature hInsert hShared rfl
-  have hNodup :
-      (fn.returns.reverse ++ entryCtx.layout).Nodup := by
-    have hParts := List.nodup_append.mp hSignature
-    change (fn.returns.reverse ++ fn.params.reverse).Nodup
-    have hReturnsReverse : fn.returns.reverse.Nodup := by
-      simpa using hParts.1
-    have hParamsReverse : fn.params.reverse.Nodup := by
-      simpa using hParts.2.1
-    apply List.nodup_append.mpr
-    refine ⟨hReturnsReverse, hParamsReverse, ?_⟩
-    intro left hLeft right hRight hEq
-    exact hParts.2.2 left (by simpa using hLeft)
-      right (by simpa using hRight) hEq
-  have hZero :
-      ∀ name, name ∈ fn.returns → sourceEntry.vars name = some Lower.zero := by
-    intro name hName
-    simpa [sourceEntry, CalleeEntry.sourceState,
-      Functions.InteractionSemantics.stateModel,
-      Locals.InteractionSemantics.stateModel,
-      Locals.Source.Effectful.Ordinary.stateModel] using
-      Functions.Source.Store.initReturns_apply_of_mem
-        (List.nodup_append.mp hSignature).1 hName
-  obtain ⟨preludeCode, preludeFinalCtx, targetAfterPrelude,
-      hPreludeCompile, hPreludeLayout, hPreludeLength, _hPreludeOnly,
-      hPreludeRun, hPreludeRel⟩ :=
-    ReturnPrelude.compileOpenRun_of_fuel targetProgram fn.returns entryCtx
-      (targetFuel + fn.returns.length) (by omega) hNodup hZero hEntryRel
-  have hPreludeEq : preludeCode = returnPreludeCode := by
-    rw [hReturnPreludeCompile] at hPreludeCompile
-    exact (congrArg Prod.fst (Option.some.inj hPreludeCompile)).symm
-  have hPreludeCtxEq : preludeFinalCtx = bodyCtx := by
-    rw [hReturnPreludeCompile] at hPreludeCompile
-    exact (congrArg Prod.snd (Option.some.inj hPreludeCompile)).symm
-  subst preludeCode
-  subst preludeFinalCtx
+  have hBodyFuel := Expressions.TargetFuel.Covers.head_of_append hFuel
   have hRuntime :=
     CalleeEntry.runtimeCtx fn
       { callerStack := callerStack, retc := fn.returns.length }
       callerTarget.returns
-  have hAfter :=
-    openRunBody_afterPrelude_noReturns sourceProgram targetProgram fn args
-      paramStore sourceAfterArgs sourceFuel targetFuel bodyCtx finalCtx
-      targetBody cleanup hReturns (by simp [hReturns]) hInsert hBody hRuntime
-      hCleanup hFuel (by
-        simpa [bodyCtx, StackLowering.functionBodyLayout] using hPreludeRel)
-  have hEntryRun :=
-    EntryMarker.openRun targetProgram
-      (targetFuel + fn.returns.length + 1) fn.params.reverse targetEntry
-      (by omega)
-  change Simulation.Interaction.ForwardRel _ _ _ _
-  rw [Expressions.InteractionSemantics.Block.openRun_append, hEntryRun]
-  simp only [Simulation.Interaction.pure,
-    Simulation.Interaction.bind_done_ok,
-    Structured.Outcome.regular_mode, Structured.Outcome.regular_state,
-    List.length_cons, List.length_nil, Nat.add_zero]
-  rw [show targetFuel + fn.returns.length + 1 - 1 =
-      targetFuel + fn.returns.length by omega]
-  rw [Expressions.InteractionSemantics.Block.openRun_append, hPreludeRun]
-  simp only [Simulation.Interaction.pure,
-    Simulation.Interaction.bind_done_ok,
-    Structured.Outcome.regular_mode, Structured.Outcome.regular_state]
-  have hResidual :
-      targetFuel + fn.returns.length - returnPreludeCode.length =
-        targetFuel := by
-    omega
-  rw [hResidual]
-  exact hAfter
+  apply openRunBody_fromEntry_noReturns_of_bodyRun sourceProgram targetProgram
+    fn args paramStore sourceAfterArgs sourceFuel targetFuel finalCtx
+    returnPreludeCode targetBody cleanup hTargetFuel hReturns hSignature
+    hInsert hShared hReturnPreludeCompile
+  · intro targetAfter hInitial
+    exact hBody (Functions.Source.Effectful.FunDef.bodyCtx fn)
+      sourceFuel targetFuel hBodyFuel hRuntime hInitial
+  · exact hCleanup
+  · exact hFuel
 
-theorem openRunBody_attached
+theorem openRunBody_attached_of_bodyRun
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (fn : Functions.FunDef) (proc : Expressions.Proc)
@@ -2394,12 +2652,24 @@ theorem openRunBody_attached
           (returnPreludeCode,
             Locals.Ctx.procEntryWithLayoutAndRetc
               (StackLowering.functionBodyLayout fn) fn.returns.length))
-    (hBody :
-      StackStatementPreservation.ControlBlockPreserves
-        sourceProgram targetProgram {} fn.returns
-        (Locals.Ctx.procEntryWithLayoutAndRetc
-          (StackLowering.functionBodyLayout fn) fn.returns.length)
-        finalCtx fn.body targetBody)
+    (hBodyRun :
+      ∀ {targetAfterPrelude : Structured.RunState},
+        StateRel (StackLowering.functionBodyLayout fn) []
+            ({ callerStack := callerStack, retc := fn.returns.length } ::
+              callerTarget.returns)
+            (CalleeEntry.sourceState sourceAfterArgs fn paramStore)
+            targetAfterPrelude →
+        Simulation.Interaction.ForwardRel
+          StackStatementPreservation.FuelTruncated
+          (StackStatementPreservation.ControlOpenOutcomeRel {}
+            fn.returns finalCtx []
+            ({ callerStack := callerStack, retc := fn.returns.length } ::
+              callerTarget.returns))
+          (Functions.InteractionSemantics.Block.openRun sourceProgram
+            (Functions.Source.Effectful.FunDef.bodyCtx fn) sourceFuel fn.body
+            (CalleeEntry.sourceState sourceAfterArgs fn paramStore))
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            targetFuel targetBody targetAfterPrelude))
     (hReturnAccess :
       StackAccess.ExprSeq.check? finalCtx.layout 0
           (StackLowering.returnWords fn.returns) = some ())
@@ -2420,11 +2690,11 @@ theorem openRunBody_attached
         (targetFuel + fn.returns.length + 2) (.call proc.name)
         callerTarget) := by
   have hBodyRun :=
-    openRunBody_fromEntry sourceProgram targetProgram fn args paramStore
+    openRunBody_fromEntry_of_bodyRun sourceProgram targetProgram fn args paramStore
       sourceAfterArgs sourceFuel targetFuel finalCtx returnPreludeCode
       targetBody returnCode cleanup (callerTarget := callerTarget)
       (callerStack := callerStack) hTargetFuel hSignature hInsert hShared
-      hReturnPreludeCompile hBody hReturnAccess hReturnCompile hCleanup hFuel
+      hReturnPreludeCompile hBodyRun hReturnAccess hReturnCompile hCleanup hFuel
   rw [← hProcBody] at hBodyRun
   have hBodyRun' :
       Simulation.Interaction.ForwardRel
@@ -2443,7 +2713,7 @@ theorem openRunBody_attached
     CallAttachment.of_body hLookup hSplit hBodyRun'
   simpa [hRetc, Nat.add_assoc] using hAttached
 
-theorem openRunBody_attached_noReturns
+theorem openRunBody_attached_noReturns_of_bodyRun
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (fn : Functions.FunDef) (proc : Expressions.Proc)
@@ -2486,12 +2756,24 @@ theorem openRunBody_attached_noReturns
           (returnPreludeCode,
             Locals.Ctx.procEntryWithLayoutAndRetc
               (StackLowering.functionBodyLayout fn) fn.returns.length))
-    (hBody :
-      StackStatementPreservation.ControlBlockPreserves
-        sourceProgram targetProgram {} fn.returns
-        (Locals.Ctx.procEntryWithLayoutAndRetc
-          (StackLowering.functionBodyLayout fn) fn.returns.length)
-        finalCtx fn.body targetBody)
+    (hBodyRun :
+      ∀ {targetAfterPrelude : Structured.RunState},
+        StateRel (StackLowering.functionBodyLayout fn) []
+            ({ callerStack := callerStack, retc := fn.returns.length } ::
+              callerTarget.returns)
+            (CalleeEntry.sourceState sourceAfterArgs fn paramStore)
+            targetAfterPrelude →
+        Simulation.Interaction.ForwardRel
+          StackStatementPreservation.FuelTruncated
+          (StackStatementPreservation.ControlOpenOutcomeRel {}
+            fn.returns finalCtx []
+            ({ callerStack := callerStack, retc := fn.returns.length } ::
+              callerTarget.returns))
+          (Functions.InteractionSemantics.Block.openRun sourceProgram
+            (Functions.Source.Effectful.FunDef.bodyCtx fn) sourceFuel fn.body
+            (CalleeEntry.sourceState sourceAfterArgs fn paramStore))
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            targetFuel targetBody targetAfterPrelude))
     (hCleanup : finalCtx.cleanupToPreserving? 0 0 = some cleanup)
     (hFuel :
       Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
@@ -2505,11 +2787,11 @@ theorem openRunBody_attached_noReturns
         (targetFuel + fn.returns.length + 2) (.call proc.name)
         callerTarget) := by
   have hBodyRun :=
-    openRunBody_fromEntry_noReturns sourceProgram targetProgram fn args
+    openRunBody_fromEntry_noReturns_of_bodyRun sourceProgram targetProgram fn args
       paramStore sourceAfterArgs sourceFuel targetFuel finalCtx
       returnPreludeCode targetBody cleanup (callerTarget := callerTarget)
       (callerStack := callerStack) hTargetFuel hReturns hSignature hInsert
-      hShared hReturnPreludeCompile hBody hCleanup hFuel
+      hShared hReturnPreludeCompile hBodyRun hCleanup hFuel
   rw [← hProcBody] at hBodyRun
   have hBodyRun' :
       Simulation.Interaction.ForwardRel
@@ -2530,6 +2812,126 @@ theorem openRunBody_attached_noReturns
 /-- Uniform semantic interface for the compiler-owned optional return-code
 phase. `none` is permitted exactly for zero-return procedures and emits no
 target statement. -/
+theorem openRunBody_attached_of_optionalReturn_of_bodyRun
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (fn : Functions.FunDef) (proc : Expressions.Proc)
+    (args : List Word) (paramStore : Functions.Source.Store)
+    (sourceAfterArgs : Locals.Source.State)
+    (sourceFuel targetFuel : Nat)
+    (finalCtx : Locals.Ctx)
+    (returnPreludeCode : List Expressions.Stmt)
+    (targetBody : Expressions.Block)
+    (returnCode? : Option Structured.Code)
+    (cleanup : Structured.Code)
+    {callerTarget : Structured.RunState}
+    {callerStack : List Word}
+    (hTargetFuel : 0 < targetFuel)
+    (hSignature : (fn.returns ++ fn.params).Nodup)
+    (hInsert :
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty = some paramStore)
+    (hLookup :
+      Expressions.EffectSemantics.ProcList.lookup?
+          proc.name targetProgram.procs = some proc)
+    (hSplit :
+      Structured.StackFrame.splitArgs? proc.argc callerTarget.evm.stack =
+        some (args.reverse, callerStack))
+    (hRetc : proc.retc = fn.returns.length)
+    (hShared :
+      callerTarget.evm.toSharedState = sourceAfterArgs.shared)
+    (hProcBody :
+      proc.body =
+        { stmts :=
+            [.code [.bindLocals 0 fn.params.reverse]] ++
+              (returnPreludeCode ++
+                (targetBody.stmts ++
+                  (StackLoweringCompilation.returnCodeStmts returnCode? ++
+                    [.code cleanup]))) })
+    (hReturnPreludeCompile :
+      Locals.Block.compileOpen
+          (Locals.Ctx.procEntryWithLayoutAndRetc
+            fn.params.reverse fn.returns.length)
+          { stmts := Lower.initReturns fn.returns } =
+        some
+          (returnPreludeCode,
+            Locals.Ctx.procEntryWithLayoutAndRetc
+              (StackLowering.functionBodyLayout fn) fn.returns.length))
+    (hExactBodyRun :
+      ∀ {targetAfterPrelude : Structured.RunState},
+        StateRel (StackLowering.functionBodyLayout fn) []
+            ({ callerStack := callerStack, retc := fn.returns.length } ::
+              callerTarget.returns)
+            (CalleeEntry.sourceState sourceAfterArgs fn paramStore)
+            targetAfterPrelude →
+        Simulation.Interaction.ForwardRel
+          StackStatementPreservation.FuelTruncated
+          (StackStatementPreservation.ControlOpenOutcomeRel {}
+            fn.returns finalCtx []
+            ({ callerStack := callerStack, retc := fn.returns.length } ::
+              callerTarget.returns))
+          (Functions.InteractionSemantics.Block.openRun sourceProgram
+            (Functions.Source.Effectful.FunDef.bodyCtx fn) sourceFuel fn.body
+            (CalleeEntry.sourceState sourceAfterArgs fn paramStore))
+          (Expressions.InteractionSemantics.Block.openRun targetProgram
+            targetFuel targetBody targetAfterPrelude))
+    (hReturnPhase :
+      match returnCode? with
+      | none => fn.returns = []
+      | some returnCode =>
+          Locals.ExprSeq.compileCode finalCtx 0
+              (StackLowering.returnWords fn.returns) = some returnCode)
+    (hReturnAccess :
+      StackAccess.ExprSeq.check? finalCtx.layout 0
+          (StackLowering.returnWords fn.returns) = some ())
+    (hCleanup :
+      finalCtx.cleanupToPreserving? fn.returns.length 0 = some cleanup)
+    (hFuel :
+      Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
+        (targetBody.stmts ++
+          (StackLoweringCompilation.returnCodeStmts returnCode? ++
+            [.code cleanup]))) :
+    Simulation.Interaction.ForwardRel
+      StackStatementPreservation.FuelTruncated
+      (OpenAttachedCallResultRel proc.retc callerStack callerTarget.returns)
+      (Functions.InteractionSemantics.FunDef.openRunBody
+        sourceProgram fn args (sourceFuel + 1) sourceAfterArgs)
+      (Expressions.InteractionSemantics.Stmt.openRun targetProgram
+        (targetFuel + fn.returns.length + 2) (.call proc.name)
+        callerTarget) := by
+  cases returnCode? with
+  | none =>
+      have hCleanup' :
+          finalCtx.cleanupToPreserving? 0 0 = some cleanup := by
+        have hLength : fn.returns.length = 0 := by simp [hReturnPhase]
+        simpa only [hLength] using hCleanup
+      apply openRunBody_attached_noReturns_of_bodyRun sourceProgram
+        targetProgram fn proc
+        args paramStore sourceAfterArgs sourceFuel targetFuel finalCtx
+        returnPreludeCode targetBody cleanup hTargetFuel hReturnPhase
+        hSignature hInsert hLookup hSplit hRetc hShared
+      · simpa [StackLoweringCompilation.returnCodeStmts,
+          List.append_assoc] using hProcBody
+      · exact hReturnPreludeCompile
+      · exact hExactBodyRun
+      · exact hCleanup'
+      · simpa [StackLoweringCompilation.returnCodeStmts,
+          List.append_assoc] using hFuel
+  | some returnCode =>
+      apply openRunBody_attached_of_bodyRun sourceProgram targetProgram fn proc args
+        paramStore sourceAfterArgs sourceFuel targetFuel finalCtx
+        returnPreludeCode targetBody returnCode cleanup hTargetFuel hSignature
+        hInsert hLookup hSplit hRetc hShared
+      · simpa [StackLoweringCompilation.returnCodeStmts,
+          List.append_assoc] using hProcBody
+      · exact hReturnPreludeCompile
+      · exact hExactBodyRun
+      · exact hReturnAccess
+      · exact hReturnPhase
+      · exact hCleanup
+      · simpa [StackLoweringCompilation.returnCodeStmts,
+          List.append_assoc] using hFuel
+
 theorem openRunBody_attached_of_optionalReturn
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
@@ -2605,37 +3007,29 @@ theorem openRunBody_attached_of_optionalReturn
       (Expressions.InteractionSemantics.Stmt.openRun targetProgram
         (targetFuel + fn.returns.length + 2) (.call proc.name)
         callerTarget) := by
-  cases returnCode? with
-  | none =>
-      have hCleanup' :
-          finalCtx.cleanupToPreserving? 0 0 = some cleanup := by
-        have hLength : fn.returns.length = 0 := by simp [hReturnPhase]
-        simpa only [hLength] using hCleanup
-      apply openRunBody_attached_noReturns sourceProgram targetProgram fn proc
-        args paramStore sourceAfterArgs sourceFuel targetFuel finalCtx
-        returnPreludeCode targetBody cleanup hTargetFuel hReturnPhase
-        hSignature hInsert hLookup hSplit hRetc hShared
-      · simpa [StackLoweringCompilation.returnCodeStmts,
-          List.append_assoc] using hProcBody
-      · exact hReturnPreludeCompile
-      · exact hBody
-      · exact hCleanup'
-      · simpa [StackLoweringCompilation.returnCodeStmts,
-          List.append_assoc] using hFuel
-  | some returnCode =>
-      apply openRunBody_attached sourceProgram targetProgram fn proc args
-        paramStore sourceAfterArgs sourceFuel targetFuel finalCtx
-        returnPreludeCode targetBody returnCode cleanup hTargetFuel hSignature
-        hInsert hLookup hSplit hRetc hShared
-      · simpa [StackLoweringCompilation.returnCodeStmts,
-          List.append_assoc] using hProcBody
-      · exact hReturnPreludeCompile
-      · exact hBody
-      · exact hReturnAccess
-      · exact hReturnPhase
-      · exact hCleanup
-      · simpa [StackLoweringCompilation.returnCodeStmts,
-          List.append_assoc] using hFuel
+  have hBodyFuel :
+      Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
+        targetBody.stmts :=
+    Expressions.TargetFuel.Covers.head_of_append hFuel
+  have hRuntime :=
+    CalleeEntry.runtimeCtx fn
+      { callerStack := callerStack, retc := fn.returns.length }
+      callerTarget.returns
+  apply openRunBody_attached_of_optionalReturn_of_bodyRun sourceProgram
+    targetProgram fn proc args paramStore sourceAfterArgs sourceFuel targetFuel
+    finalCtx returnPreludeCode targetBody returnCode? cleanup hTargetFuel
+    hSignature hInsert hLookup hSplit hRetc hShared hProcBody
+    hReturnPreludeCompile
+  · intro targetAfterPrelude hInitial
+    exact hBody (Functions.Source.Effectful.FunDef.bodyCtx fn)
+      sourceFuel targetFuel hBodyFuel hRuntime (by
+        simpa [Locals.Ctx.procEntryWithLayoutAndRetc,
+          Locals.Ctx.procEntryWithLayout,
+          StackLowering.functionBodyLayout] using hInitial)
+  · exact hReturnPhase
+  · exact hReturnAccess
+  · exact hCleanup
+  · exact hFuel
 
 end Function
 
