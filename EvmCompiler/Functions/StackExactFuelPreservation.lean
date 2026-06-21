@@ -2654,6 +2654,604 @@ theorem forConsAtOne_of_compilers
     simpa [Locals.Ctx.withLayout] using hOrderedNodup
   · exact hTail
 
+theorem compiledNonfallPointAt_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel sourceFuel : Nat)
+    (stmt : Functions.Stmt) (rest : List Functions.Stmt)
+    (fact : AllocationLivenessFacts.Point)
+    (restFacts : List AllocationLivenessFacts.Point)
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {finalLayout : Locals.Layout} {lowered : List Locals.Stmt}
+    {targetCtx finalCtx : Locals.Ctx} {code : List Expressions.Stmt}
+    (hSchedule :
+      StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
+          targetCtx.layout (stmt :: rest) (fact :: restFacts) =
+        some (point :: points, finalLayout))
+    (hLower :
+      StackLowering.lowerStmtListFuel lowerFuel lowerCtx
+          (stmt :: rest) (point :: points) = some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx))
+    (hFalls :
+      ∀ {before rawPoint},
+        StackSchedule.scheduleStmtFuelWithTargets targets scheduleFuel pinned
+            before stmt fact = some rawPoint →
+          rawPoint.fallsThrough = false)
+    (hPoint :
+      ∀ {order rawPoint pointLowered pointCode middleCtx},
+        AllocationLayout.Ordering.build? targetCtx.layout
+            (StackSchedule.orderPriority targetCtx.layout stmt fact) =
+          some order →
+        StackSchedule.scheduleStmtFuelWithTargets targets scheduleFuel pinned
+            order.target stmt fact = some rawPoint →
+        StackLowering.lowerPointFuel lowerFuel lowerCtx stmt
+            { rawPoint with order? := some order, retain? := none } =
+          some pointLowered →
+        Locals.Block.compileOpen (targetCtx.withLayout order.target)
+            { stmts := pointLowered } = some (pointCode, middleCtx) →
+        CompiledControlPointAt sourceProgram targetProgram targets returnNames
+            (targetCtx.withLayout order.target) middleCtx stmt pointCode
+            rawPoint.statementLayout sourceFuel ∧
+          middleCtx.layout.Nodup) :
+    CompiledControlPointAt sourceProgram targetProgram targets returnNames
+        targetCtx finalCtx stmt code finalLayout sourceFuel ∧
+      finalCtx.layout.Nodup := by
+  obtain ⟨order, rawPoint, hOrderBuild, hRawSchedule, hRawFalls, hPointEq,
+      hPoints, hFinalLayout⟩ :=
+    StackSchedule.scheduleStmtListFuelWithTargets_cons_nonfallthrough_components
+      hSchedule hFalls
+  subst point
+  subst points
+  have hScheduledFalls :
+      ({ rawPoint with order? := some order, retain? := none } :
+        StackSchedule.Point).fallsThrough = false := by
+    simpa using hRawFalls
+  obtain ⟨lowerOrder, pointLowered, hLowerOrder, hPointLower, hLowered⟩ :=
+    StackLowering.lowerStmtListFuel_cons_nonfallthrough_components hLower
+      hScheduledFalls
+  have hOrderEq : lowerOrder = order :=
+    Option.some.inj (hLowerOrder.symm.trans rfl)
+  subst lowerOrder
+  rw [hLowered] at hCompile
+  obtain ⟨orderCode, orderedCtx, pointCode, hOrderCompile, hPointCompile,
+      hWholeCode⟩ :=
+    Locals.Block.compileOpen_append_components hCompile
+  have hOrderSource : targetCtx.layout = order.source :=
+    (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+  obtain ⟨orderArtifact⟩ :=
+    StackTransitionCompilation.Ordering.compileArtifact order hOrderSource
+  have hOrderPair :=
+    Option.some.inj (orderArtifact.compileEq.symm.trans hOrderCompile)
+  have hOrderCode :
+      orderArtifact.promotionCodes.map Expressions.Stmt.code = orderCode :=
+    congrArg Prod.fst hOrderPair
+  have hOrderedCtx : targetCtx.withLayout order.target = orderedCtx :=
+    congrArg Prod.snd hOrderPair
+  rw [← hOrderedCtx] at hPointCompile
+  obtain ⟨hPointCompiled, hMiddleNodup⟩ :=
+    hPoint hOrderBuild hRawSchedule hPointLower hPointCompile
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · rw [hFinalLayout]
+    exact hPointCompiled.layout
+  · unfold ControlPointPreservesAt
+    intro sourceCtx targetFuel suffix returns source target hFuel hCtx hInitial
+    have hFuel' := hFuel
+    rw [hWholeCode, ← hOrderCode] at hFuel'
+    have hPointFuel :=
+      Expressions.TargetFuel.Covers.tail_after_append hFuel'
+    rw [hWholeCode, ← hOrderCode]
+    apply orderArtifact.thenBlockForward targetProgram targetFuel
+        (by
+          have hLength := Expressions.TargetFuel.Covers.length_lt hFuel'
+          simp only [List.length_append, List.length_map] at hLength
+          omega) hInitial
+    intro orderedTarget hOrdered
+    apply hPointCompiled.preserves sourceCtx
+      (targetFuel - orderArtifact.promotionCodes.length)
+    · simpa using hPointFuel
+    · exact hCtx.afterOrdering order hOrderSource
+    · exact hOrdered
+  · exact hMiddleNodup
+
+theorem controlNonfallPointToListAt
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx finalCtx : Locals.Ctx)
+    (stmt : Functions.Stmt) (rest : List Functions.Stmt)
+    (code : List Expressions.Stmt) (finalLayout : Locals.Layout)
+    (sourceFuel : Nat)
+    (hPoint :
+      CompiledControlPointAt sourceProgram targetProgram targets returnNames
+        targetCtx finalCtx stmt code finalLayout sourceFuel)
+    (hSource :
+      ∀ (sourceCtx : Functions.Source.Ctx)
+        (source : Locals.Source.State)
+        (returns : List Structured.ReturnDest),
+        RuntimeCtxCovers sourceCtx targetCtx targets returnNames returns →
+        Functions.InteractionSemantics.Block.openRun sourceProgram sourceCtx
+            (sourceFuel + 1) { stmts := stmt :: rest } source =
+          Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
+            sourceFuel stmt source) :
+    ControlScheduledListPreservesAt sourceProgram targetProgram targets
+      returnNames targetCtx finalCtx (stmt :: rest) finalLayout code
+      (sourceFuel + 1) := by
+  refine ⟨hPoint.layout, ?_⟩
+  intro sourceCtx targetFuel suffix returns source target hFuel hCtx hInitial
+  have hPointFuel :
+      Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel code := by
+    apply Expressions.TargetFuel.Covers.head_of_succ_append
+      (left := code) (right := [])
+    simpa [Nat.succ_eq_add_one] using hFuel
+  rw [hSource sourceCtx source returns hCtx]
+  exact hPoint.preserves sourceCtx targetFuel hPointFuel hCtx hInitial
+
+theorem brkControlListAt_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel sourceFuel : Nat)
+    (rest : List Functions.Stmt)
+    (fact : AllocationLivenessFacts.Point)
+    (restFacts : List AllocationLivenessFacts.Point)
+    {targetLayout : Locals.Layout}
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {finalLayout : Locals.Layout} {lowered : List Locals.Stmt}
+    {targetCtx finalCtx : Locals.Ctx} {code : List Expressions.Stmt}
+    (hNodup : targetCtx.layout.Nodup)
+    (hTarget : targets.brk? = some targetLayout)
+    (hTargetDepth : targetCtx.breakDepth? = some targetLayout.length)
+    (hSchedule :
+      StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
+          targetCtx.layout (.brk :: rest) (fact :: restFacts) =
+        some (point :: points, finalLayout))
+    (hLower :
+      StackLowering.lowerStmtListFuel lowerFuel lowerCtx
+          (.brk :: rest) (point :: points) = some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    ControlScheduledListPreservesAt sourceProgram targetProgram targets
+        returnNames targetCtx finalCtx (.brk :: rest) finalLayout code
+        (sourceFuel + 1) ∧
+      finalCtx.layout.Nodup := by
+  obtain ⟨hCompiled, hFinalNodup⟩ :=
+    compiledNonfallPointAt_of_compilers returnNames sourceProgram targetProgram
+      lowerCtx targets pinned scheduleFuel lowerFuel sourceFuel .brk rest fact
+      restFacts hSchedule hLower hCompile
+      (by
+        intro before rawPoint hRaw
+        obtain ⟨_exit, _hExit, _hBefore, _hStatement, _hPointExit,
+            _hRetain, _hRegions, hFalls⟩ :=
+          StackSchedule.scheduleStmtFuelWithTargets_brk_components hTarget hRaw
+        exact hFalls)
+      (by
+        intro order rawPoint pointLowered pointCode middleCtx hOrderBuild
+          hRawSchedule hPointLower hPointCompile
+        obtain ⟨exit, hExitBuild, _hRawBefore, hRawStatement, hRawExit,
+            _hRawRetain, _hRawRegions, _hRawFalls⟩ :=
+          StackSchedule.scheduleStmtFuelWithTargets_brk_components hTarget
+            hRawSchedule
+        obtain ⟨_hAccess, _hLowerFalls, _hLowerRegions, _hLowerRetain,
+            hPointLowered⟩ :=
+          StackLowering.lowerPointFuel_brk_components hPointLower
+        have hExitSource : order.target = exit.source :=
+          (AllocationLayout.Join.build?_endpoints hExitBuild).1.symm
+        have hExitTarget : exit.target = targetLayout :=
+          (AllocationLayout.Join.build?_endpoints hExitBuild).2
+        have hTarget' : targets.brk? = some exit.target := by
+          rw [hExitTarget]
+          exact hTarget
+        have hDepth :
+            (targetCtx.withLayout order.target).breakDepth? =
+              some exit.target.length := by
+          rw [hExitTarget]
+          simpa [Locals.Ctx.withLayout] using hTargetDepth
+        have hPointLowered' :
+            pointLowered = exit.statements ++ [.brk] := by
+          simpa [StackLowering.exitStmts, hRawExit] using hPointLowered
+        have hPointCompiled :=
+          (compiledBrkControlPointOfEquations sourceProgram targetProgram
+            targets returnNames (targetCtx.withLayout order.target) middleCtx
+            exit pointLowered pointCode hTarget'
+            (by simpa [Locals.Ctx.withLayout] using hExitSource)
+            hDepth hPointLowered' hPointCompile).at sourceFuel
+        have hOrderSource : targetCtx.layout = order.source :=
+          (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+        have hOrderedNodup : order.target.Nodup :=
+          order.target_nodup (by rw [← hOrderSource]; exact hNodup)
+        have hMiddleNodup : middleCtx.layout.Nodup := by
+          rw [hPointCompiled.layout]
+          apply exit.target_nodup
+          rw [← hExitSource]
+          exact hOrderedNodup
+        exact ⟨(by simpa [hRawStatement, hExitTarget] using hPointCompiled),
+          hMiddleNodup⟩)
+  refine ⟨controlNonfallPointToListAt returnNames sourceProgram targetProgram
+    targets targetCtx finalCtx .brk rest code finalLayout sourceFuel hCompiled
+    ?_, hFinalNodup⟩
+  intro sourceCtx source returns hCtx
+  obtain ⟨scope, hSourceScope, _hScopeCovers⟩ :=
+    (hCtx.breakTarget hTarget).sourceCovers
+  rw [Functions.InteractionSemantics.Block.openRun_cons]
+  simp only [Functions.InteractionSemantics.Stmt.openRun,
+    Functions.Source.Canonical.Stmt.run,
+    Functions.Source.Effectful.Control.Stmt.run, hSourceScope]
+  let result :=
+    (Locals.Source.Effectful.Outcome.brk
+        (Functions.InteractionSemantics.stateModel.restrictTo scope source),
+      sourceCtx)
+  change Simulation.Interaction.bind
+      ((pure result) :
+        Simulation.Interaction EVMException
+          (Locals.Source.Effectful.Outcome Locals.Source.State ×
+            Functions.Source.Ctx)) _ =
+    ((pure result) :
+      Simulation.Interaction EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State ×
+          Functions.Source.Ctx))
+  change Simulation.Interaction.bind
+      (Simulation.Interaction.done (.ok result)) _ =
+    Simulation.Interaction.done (.ok result)
+  rw [Simulation.Interaction.bind_done_ok]
+  simp [result]
+  rfl
+
+theorem contControlListAt_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel sourceFuel : Nat)
+    (rest : List Functions.Stmt)
+    (fact : AllocationLivenessFacts.Point)
+    (restFacts : List AllocationLivenessFacts.Point)
+    {targetLayout : Locals.Layout}
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {finalLayout : Locals.Layout} {lowered : List Locals.Stmt}
+    {targetCtx finalCtx : Locals.Ctx} {code : List Expressions.Stmt}
+    (hNodup : targetCtx.layout.Nodup)
+    (hTarget : targets.cont? = some targetLayout)
+    (hTargetDepth : targetCtx.continueDepth? = some targetLayout.length)
+    (hSchedule :
+      StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
+          targetCtx.layout (.cont :: rest) (fact :: restFacts) =
+        some (point :: points, finalLayout))
+    (hLower :
+      StackLowering.lowerStmtListFuel lowerFuel lowerCtx
+          (.cont :: rest) (point :: points) = some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    ControlScheduledListPreservesAt sourceProgram targetProgram targets
+        returnNames targetCtx finalCtx (.cont :: rest) finalLayout code
+        (sourceFuel + 1) ∧
+      finalCtx.layout.Nodup := by
+  obtain ⟨hCompiled, hFinalNodup⟩ :=
+    compiledNonfallPointAt_of_compilers returnNames sourceProgram targetProgram
+      lowerCtx targets pinned scheduleFuel lowerFuel sourceFuel .cont rest fact
+      restFacts hSchedule hLower hCompile
+      (by
+        intro before rawPoint hRaw
+        obtain ⟨_exit, _hExit, _hBefore, _hStatement, _hPointExit,
+            _hRetain, _hRegions, hFalls⟩ :=
+          StackSchedule.scheduleStmtFuelWithTargets_cont_components hTarget hRaw
+        exact hFalls)
+      (by
+        intro order rawPoint pointLowered pointCode middleCtx hOrderBuild
+          hRawSchedule hPointLower hPointCompile
+        obtain ⟨exit, hExitBuild, _hRawBefore, hRawStatement, hRawExit,
+            _hRawRetain, _hRawRegions, _hRawFalls⟩ :=
+          StackSchedule.scheduleStmtFuelWithTargets_cont_components hTarget
+            hRawSchedule
+        obtain ⟨_hAccess, _hLowerFalls, _hLowerRegions, _hLowerRetain,
+            hPointLowered⟩ :=
+          StackLowering.lowerPointFuel_cont_components hPointLower
+        have hExitSource : order.target = exit.source :=
+          (AllocationLayout.Join.build?_endpoints hExitBuild).1.symm
+        have hExitTarget : exit.target = targetLayout :=
+          (AllocationLayout.Join.build?_endpoints hExitBuild).2
+        have hTarget' : targets.cont? = some exit.target := by
+          rw [hExitTarget]
+          exact hTarget
+        have hDepth :
+            (targetCtx.withLayout order.target).continueDepth? =
+              some exit.target.length := by
+          rw [hExitTarget]
+          simpa [Locals.Ctx.withLayout] using hTargetDepth
+        have hPointLowered' :
+            pointLowered = exit.statements ++ [.cont] := by
+          simpa [StackLowering.exitStmts, hRawExit] using hPointLowered
+        have hPointCompiled :=
+          (compiledContControlPointOfEquations sourceProgram targetProgram
+            targets returnNames (targetCtx.withLayout order.target) middleCtx
+            exit pointLowered pointCode hTarget'
+            (by simpa [Locals.Ctx.withLayout] using hExitSource)
+            hDepth hPointLowered' hPointCompile).at sourceFuel
+        have hOrderSource : targetCtx.layout = order.source :=
+          (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+        have hOrderedNodup : order.target.Nodup :=
+          order.target_nodup (by rw [← hOrderSource]; exact hNodup)
+        have hMiddleNodup : middleCtx.layout.Nodup := by
+          rw [hPointCompiled.layout]
+          apply exit.target_nodup
+          rw [← hExitSource]
+          exact hOrderedNodup
+        exact ⟨(by simpa [hRawStatement, hExitTarget] using hPointCompiled),
+          hMiddleNodup⟩)
+  refine ⟨controlNonfallPointToListAt returnNames sourceProgram targetProgram
+    targets targetCtx finalCtx .cont rest code finalLayout sourceFuel hCompiled
+    ?_, hFinalNodup⟩
+  intro sourceCtx source returns hCtx
+  obtain ⟨scope, hSourceScope, _hScopeCovers⟩ :=
+    (hCtx.continueTarget hTarget).sourceCovers
+  rw [Functions.InteractionSemantics.Block.openRun_cons]
+  simp only [Functions.InteractionSemantics.Stmt.openRun,
+    Functions.Source.Canonical.Stmt.run,
+    Functions.Source.Effectful.Control.Stmt.run, hSourceScope]
+  let result :=
+    (Locals.Source.Effectful.Outcome.cont
+        (Functions.InteractionSemantics.stateModel.restrictTo scope source),
+      sourceCtx)
+  change Simulation.Interaction.bind
+      ((pure result) :
+        Simulation.Interaction EVMException
+          (Locals.Source.Effectful.Outcome Locals.Source.State ×
+            Functions.Source.Ctx)) _ =
+    ((pure result) :
+      Simulation.Interaction EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State ×
+          Functions.Source.Ctx))
+  change Simulation.Interaction.bind
+      (Simulation.Interaction.done (.ok result)) _ =
+    Simulation.Interaction.done (.ok result)
+  rw [Simulation.Interaction.bind_done_ok]
+  simp [result]
+  rfl
+
+theorem leaveControlListAt_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel sourceFuel : Nat)
+    (rest : List Functions.Stmt)
+    (fact : AllocationLivenessFacts.Point)
+    (restFacts : List AllocationLivenessFacts.Point)
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {finalLayout : Locals.Layout} {lowered : List Locals.Stmt}
+    {targetCtx finalCtx : Locals.Ctx} {code : List Expressions.Stmt}
+    (hNodup : targetCtx.layout.Nodup)
+    (hReturns : lowerCtx.returns = returnNames)
+    (hSchedule :
+      StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
+          targetCtx.layout (.leave :: rest) (fact :: restFacts) =
+        some (point :: points, finalLayout))
+    (hLower :
+      StackLowering.lowerStmtListFuel lowerFuel lowerCtx
+          (.leave :: rest) (point :: points) = some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    ControlScheduledListPreservesAt sourceProgram targetProgram targets
+        returnNames targetCtx finalCtx (.leave :: rest) finalLayout code
+        (sourceFuel + 1) ∧
+      finalCtx.layout.Nodup := by
+  obtain ⟨hCompiled, hFinalNodup⟩ :=
+    compiledNonfallPointAt_of_compilers returnNames sourceProgram targetProgram
+      lowerCtx targets pinned scheduleFuel lowerFuel sourceFuel .leave rest fact
+      restFacts hSchedule hLower hCompile
+      (by
+        intro before rawPoint hRaw
+        exact
+          (StackSchedule.scheduleStmtFuelWithTargets_leave_components
+            hRaw).2.2.2.2)
+      (by
+        intro order rawPoint pointLowered pointCode middleCtx hOrderBuild
+          hRawSchedule hPointLower hPointCompile
+        obtain ⟨hRawBefore, hRawStatement, _hRawRetain, _hRawRegions,
+            _hRawFalls⟩ :=
+          StackSchedule.scheduleStmtFuelWithTargets_leave_components
+            hRawSchedule
+        obtain ⟨hAccess, _hLowerFalls, _hLowerRegions, _hLowerRetain,
+            hPointLowered⟩ :=
+          StackLowering.lowerPointFuel_leave_components hPointLower
+        have hAccess' :
+            StackAccess.ExprSeq.check? rawPoint.beforeLayout 0
+                (StackLowering.returnWords lowerCtx.returns) = some () := by
+          simpa [StackLowering.pointAccess?] using hAccess
+        rw [hReturns] at hAccess'
+        have hReturnAccess :
+            StackAccess.ExprSeq.check? order.target 0
+                (StackLowering.returnWords returnNames) = some () := by
+          simpa [hRawBefore] using hAccess'
+        have hPointLowered' :
+            pointLowered =
+              StackLowering.pushWordReturns returnNames ++ [.leave] := by
+          simpa [hReturns] using hPointLowered
+        have hPointCompiled :=
+          (compiledLeaveControlPointOfEquations sourceProgram targetProgram
+            targets returnNames (targetCtx.withLayout order.target) middleCtx
+            pointLowered pointCode
+            (by simpa [Locals.Ctx.withLayout] using hReturnAccess)
+            hPointLowered' hPointCompile).at sourceFuel
+        have hOrderSource : targetCtx.layout = order.source :=
+          (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+        have hOrderedNodup : order.target.Nodup :=
+          order.target_nodup (by rw [← hOrderSource]; exact hNodup)
+        have hMiddleNodup : middleCtx.layout.Nodup := by
+          rw [hPointCompiled.layout]
+          simpa [Locals.Ctx.withLayout] using hOrderedNodup
+        exact ⟨(by
+          simpa [hRawStatement, Locals.Ctx.withLayout] using hPointCompiled),
+          hMiddleNodup⟩)
+  refine ⟨controlNonfallPointToListAt returnNames sourceProgram targetProgram
+    targets targetCtx finalCtx .leave rest code finalLayout sourceFuel hCompiled
+    ?_, hFinalNodup⟩
+  intro sourceCtx source _returns _hCtx
+  exact
+    Functions.InteractionSemantics.Block.openRun_leave_cons sourceProgram
+      sourceCtx sourceFuel rest source
+
+theorem terminalControlListAt_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel sourceFuel : Nat)
+    (kind : Assembly.HaltKind) (rest : List Functions.Stmt)
+    (fact : AllocationLivenessFacts.Point)
+    (restFacts : List AllocationLivenessFacts.Point)
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {finalLayout : Locals.Layout} {lowered : List Locals.Stmt}
+    {targetCtx finalCtx : Locals.Ctx} {code : List Expressions.Stmt}
+    (hNodup : targetCtx.layout.Nodup)
+    (hArgCount : kind.argCount = 0)
+    (hSchedule :
+      StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
+          targetCtx.layout (.terminal kind :: rest) (fact :: restFacts) =
+        some (point :: points, finalLayout))
+    (hLower :
+      StackLowering.lowerStmtListFuel lowerFuel lowerCtx
+          (.terminal kind :: rest) (point :: points) = some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    ControlScheduledListPreservesAt sourceProgram targetProgram targets
+        returnNames targetCtx finalCtx (.terminal kind :: rest) finalLayout code
+        (sourceFuel + 1) ∧
+      finalCtx.layout.Nodup := by
+  obtain ⟨hCompiled, hFinalNodup⟩ :=
+    compiledNonfallPointAt_of_compilers returnNames sourceProgram targetProgram
+      lowerCtx targets pinned scheduleFuel lowerFuel sourceFuel (.terminal kind)
+      rest fact restFacts hSchedule hLower hCompile
+      (by
+        intro before rawPoint hRaw
+        exact
+          (StackSchedule.scheduleStmtFuelWithTargets_terminal_components
+            hRaw).2.2.2.2)
+      (by
+        intro order rawPoint pointLowered pointCode middleCtx hOrderBuild
+          hRawSchedule hPointLower hPointCompile
+        obtain ⟨_hRawBefore, hRawStatement, _hRawRetain, _hRawRegions,
+            _hRawFalls⟩ :=
+          StackSchedule.scheduleStmtFuelWithTargets_terminal_components
+            hRawSchedule
+        obtain ⟨_hAccess, _hLowerFalls, _hLowerRegions, _hLowerRetain,
+            hPointLowered⟩ :=
+          StackLowering.lowerPointFuel_terminal_components hPointLower
+        have hPointCompiled :=
+          (compiledTerminalControlPointOfEquations sourceProgram targetProgram
+            targets returnNames (targetCtx.withLayout order.target) middleCtx
+            kind pointLowered pointCode hArgCount hPointLowered
+            hPointCompile).at sourceFuel
+        have hOrderSource : targetCtx.layout = order.source :=
+          (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+        have hOrderedNodup : order.target.Nodup :=
+          order.target_nodup (by rw [← hOrderSource]; exact hNodup)
+        have hMiddleNodup : middleCtx.layout.Nodup := by
+          rw [hPointCompiled.layout]
+          simpa [Locals.Ctx.withLayout] using hOrderedNodup
+        exact ⟨(by
+          simpa [hRawStatement, Locals.Ctx.withLayout] using hPointCompiled),
+          hMiddleNodup⟩)
+  refine ⟨controlNonfallPointToListAt returnNames sourceProgram targetProgram
+    targets targetCtx finalCtx (.terminal kind) rest code finalLayout sourceFuel
+    hCompiled ?_, hFinalNodup⟩
+  intro sourceCtx source returns _hCtx
+  simpa [Functions.InteractionSemantics.Stmt.openRun] using
+    Functions.InteractionSemantics.Block.openRun_terminal_cons sourceProgram
+      sourceCtx sourceFuel kind rest source
+
+theorem terminalArgsControlListAt_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel sourceFuel : Nat)
+    (kind : Assembly.HaltKind) (args : Locals.ExprSeq kind.argCount)
+    (rest : List Functions.Stmt)
+    (fact : AllocationLivenessFacts.Point)
+    (restFacts : List AllocationLivenessFacts.Point)
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {finalLayout : Locals.Layout} {lowered : List Locals.Stmt}
+    {targetCtx finalCtx : Locals.Ctx} {code : List Expressions.Stmt}
+    {sourceEnv : List Name}
+    (hNodup : targetCtx.layout.Nodup)
+    (hScoped : Functions.Scope.ExprSeqScoped sourceEnv args)
+    (hSupported : Locals.InteractionSemantics.ExprSeq.OpenSupported args)
+    (hSchedule :
+      StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
+          targetCtx.layout (.terminalArgs kind args :: rest)
+          (fact :: restFacts) = some (point :: points, finalLayout))
+    (hLower :
+      StackLowering.lowerStmtListFuel lowerFuel lowerCtx
+          (.terminalArgs kind args :: rest) (point :: points) = some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    ControlScheduledListPreservesAt sourceProgram targetProgram targets
+        returnNames targetCtx finalCtx (.terminalArgs kind args :: rest)
+        finalLayout code (sourceFuel + 1) ∧
+      finalCtx.layout.Nodup := by
+  obtain ⟨hCompiled, hFinalNodup⟩ :=
+    compiledNonfallPointAt_of_compilers returnNames sourceProgram targetProgram
+      lowerCtx targets pinned scheduleFuel lowerFuel sourceFuel
+      (.terminalArgs kind args) rest fact restFacts hSchedule hLower hCompile
+      (by
+        intro before rawPoint hRaw
+        exact
+          (StackSchedule.scheduleStmtFuelWithTargets_terminalArgs_components
+            hRaw).2.2.2.2)
+      (by
+        intro order rawPoint pointLowered pointCode middleCtx hOrderBuild
+          hRawSchedule hPointLower hPointCompile
+        obtain ⟨hRawBefore, hRawStatement, _hRawRetain, _hRawRegions,
+            _hRawFalls⟩ :=
+          StackSchedule.scheduleStmtFuelWithTargets_terminalArgs_components
+            hRawSchedule
+        obtain ⟨hAccess, _hLowerFalls, _hLowerRegions, _hLowerRetain,
+            hPointLowered⟩ :=
+          StackLowering.lowerPointFuel_terminalArgs_components hPointLower
+        have hArgsAccess :
+            StackAccess.ExprSeq.check? order.target 0 args = some () := by
+          simpa [StackLowering.pointAccess?, hRawBefore] using hAccess
+        have hPointCompiled :=
+          (compiledTerminalArgsControlPointOfEquations sourceProgram
+            targetProgram targets returnNames
+            (targetCtx.withLayout order.target) middleCtx kind args pointLowered
+            pointCode hScoped hSupported
+            (by simpa [Locals.Ctx.withLayout] using hArgsAccess)
+            hPointLowered hPointCompile).at sourceFuel
+        have hOrderSource : targetCtx.layout = order.source :=
+          (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+        have hOrderedNodup : order.target.Nodup :=
+          order.target_nodup (by rw [← hOrderSource]; exact hNodup)
+        have hMiddleNodup : middleCtx.layout.Nodup := by
+          rw [hPointCompiled.layout]
+          simpa [Locals.Ctx.withLayout] using hOrderedNodup
+        exact ⟨(by
+          simpa [hRawStatement, Locals.Ctx.withLayout] using hPointCompiled),
+          hMiddleNodup⟩)
+  refine ⟨controlNonfallPointToListAt returnNames sourceProgram targetProgram
+    targets targetCtx finalCtx (.terminalArgs kind args) rest code finalLayout
+    sourceFuel hCompiled ?_, hFinalNodup⟩
+  intro sourceCtx source returns _hCtx
+  simpa [Functions.InteractionSemantics.Stmt.openRun] using
+    Functions.InteractionSemantics.Block.openRun_terminalArgs_cons sourceProgram
+      sourceCtx sourceFuel kind args rest source
+
 theorem blockPointAt_of_compilers
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
