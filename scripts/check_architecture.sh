@@ -63,7 +63,11 @@ for theorem in \
     'controlScheduledRegion' \
     'controlScheduledRegionAsBlock' \
     'compiledScheduledRegion_of_compilers' \
+    'controlGrowingRegionAsBlock' \
+    'controlOpenRegionAsBlock' \
+    'compiledOpenRegion_of_compilers' \
     'ControlSwitchBranchPreserves' \
+    'ControlSwitchBranchPreserves.toPoint' \
     'SwitchBranchRel' \
     'compiledSwitchBranch_of_compilers' \
     'switchDefaultRel_of_compilers' \
@@ -72,9 +76,11 @@ for theorem in \
     'blockPoint_of_compilers' \
     'ifPoint_of_compilers' \
     'switchPoint_of_compilers' \
+    'forPoint_of_compilers' \
     'blockCons_of_compilers' \
     'ifCons_of_compilers' \
     'switchCons_of_compilers' \
+    'forCons_of_compilers' \
     'exprCons_of_compilers' \
     'letCons_of_compilers' \
     'assignCons_of_compilers' \
@@ -273,6 +279,7 @@ for theorem in \
     'controlFor' \
     'RuntimeCtxCovers.withoutLoopControl' \
     'RuntimeCtxCovers.withLoopControl' \
+    'RuntimeCtxCovers.afterJoin' \
     'openRun_let_generated' \
     'openRun_assign_generated'; do
   if ! rg -Fq \
@@ -350,6 +357,8 @@ if ! rg -Fq \
 fi
 
 for theorem in \
+    'loopBaseline' \
+    'loopBaseline_suffix' \
     'scheduleBlockFuel_entry_sound' \
     'scheduleBlock?_entry_sound' \
     'scheduleStmtListFuelWithTargets_cons_components' \

@@ -42,6 +42,15 @@ structure ControlTargets where
 def layoutSet (layout : Locals.Layout) : LiveSet :=
   layout.toFinset
 
+/-- Canonical loop layout: initializer locals remain above the enclosing
+layout, whose exact order is restored as a dormant suffix. -/
+def loopBaseline (outer current : Locals.Layout) : Locals.Layout :=
+  current.filter (fun name => decide (name ∉ layoutSet outer)) ++ outer
+
+theorem loopBaseline_suffix (outer current : Locals.Layout) :
+    ∃ pre, loopBaseline outer current = pre ++ outer :=
+  ⟨current.filter (fun name => decide (name ∉ layoutSet outer)), rfl⟩
+
 def required (pinned live : LiveSet) : LiveSet :=
   pinned ∪ live
 
@@ -251,10 +260,15 @@ mutual
             match facts.regions, facts.loop? with
             | [initFacts, postFacts, bodyFacts], some _loop => do
                 let outerProtected := layoutSet layout
-                let initRegion ←
+                let rawInitRegion ←
                   scheduleBlockFuelWithTargets {} fuel outerProtected
                     layout init initFacts
-                let baseline := initRegion.finalLayout
+                let baseline := loopBaseline layout rawInitRegion.finalLayout
+                let initExit ←
+                  Join.build? rawInitRegion.finalLayout baseline
+                let initRegion :=
+                  { rawInitRegion with
+                      exit? := some initExit, finalLayout := baseline }
                 let loopProtected := layoutSet baseline
                 let loopTargets : ControlTargets :=
                   { brk? := some baseline
@@ -1007,35 +1021,43 @@ theorem scheduleStmtFuelWithTargets_for_components
     (hSchedule :
       scheduleStmtFuelWithTargets targets fuel pinned layout
           (.for_ init cond post body) facts = some point) :
-    ∃ initFacts postFacts bodyFacts loopFacts initRegion rawPostRegion
-        rawBodyRegion postExit bodyExit,
+    ∃ initFacts postFacts bodyFacts loopFacts rawInitRegion rawPostRegion
+        rawBodyRegion initExit postExit bodyExit,
       facts.regions = [initFacts, postFacts, bodyFacts] ∧
         facts.loop? = some loopFacts ∧
         scheduleBlockFuelWithTargets {} (fuel - 1) (layoutSet layout)
-            layout init initFacts = some initRegion ∧
+            layout init initFacts = some rawInitRegion ∧
+        Join.build? rawInitRegion.finalLayout
+            (loopBaseline layout rawInitRegion.finalLayout) = some initExit ∧
         scheduleBlockFuelWithTargets
             {}
-            (fuel - 1) (layoutSet initRegion.finalLayout)
-            initRegion.finalLayout post postFacts = some rawPostRegion ∧
+            (fuel - 1)
+            (layoutSet (loopBaseline layout rawInitRegion.finalLayout))
+            (loopBaseline layout rawInitRegion.finalLayout) post postFacts =
+          some rawPostRegion ∧
         scheduleBlockFuelWithTargets
-            { brk? := some initRegion.finalLayout
-              cont? := some initRegion.finalLayout }
-            (fuel - 1) (layoutSet initRegion.finalLayout)
-            initRegion.finalLayout body bodyFacts = some rawBodyRegion ∧
-        Join.build? rawPostRegion.finalLayout initRegion.finalLayout =
-          some postExit ∧
-        Join.build? rawBodyRegion.finalLayout initRegion.finalLayout =
-          some bodyExit ∧
+            { brk? := some (loopBaseline layout rawInitRegion.finalLayout)
+              cont? := some (loopBaseline layout rawInitRegion.finalLayout) }
+            (fuel - 1)
+            (layoutSet (loopBaseline layout rawInitRegion.finalLayout))
+            (loopBaseline layout rawInitRegion.finalLayout) body bodyFacts =
+          some rawBodyRegion ∧
+        Join.build? rawPostRegion.finalLayout
+            (loopBaseline layout rawInitRegion.finalLayout) = some postExit ∧
+        Join.build? rawBodyRegion.finalLayout
+            (loopBaseline layout rawInitRegion.finalLayout) = some bodyExit ∧
         point.beforeLayout = layout ∧ point.statementLayout = layout ∧
         point.retain? = none ∧
         point.regions =
-          [initRegion,
+          [{ rawInitRegion with
+              exit? := some initExit,
+              finalLayout := loopBaseline layout rawInitRegion.finalLayout },
            { rawPostRegion with
               exit? := some postExit,
-              finalLayout := initRegion.finalLayout },
+              finalLayout := loopBaseline layout rawInitRegion.finalLayout },
            { rawBodyRegion with
               exit? := some bodyExit,
-              finalLayout := initRegion.finalLayout }] ∧
+              finalLayout := loopBaseline layout rawInitRegion.finalLayout }] ∧
         point.fallsThrough = true := by
   cases fuel with
   | zero => simp [scheduleStmtFuelWithTargets] at hSchedule
@@ -1057,10 +1079,12 @@ theorem scheduleStmtFuelWithTargets_for_components
                       | none => simp [hRegions, hLoop] at hSchedule
                       | some loopFacts =>
                           rw [hRegions, hLoop] at hSchedule
-                          obtain ⟨initRegion, hInit, hAfterInit⟩ :=
+                          obtain ⟨rawInitRegion, hInit, hAfterInit⟩ :=
                             Option.bind_eq_some_iff.mp hSchedule
-                          obtain ⟨rawPostRegion, hPost, hAfterPost⟩ :=
+                          obtain ⟨initExit, hInitExit, hAfterInitExit⟩ :=
                             Option.bind_eq_some_iff.mp hAfterInit
+                          obtain ⟨rawPostRegion, hPost, hAfterPost⟩ :=
+                            Option.bind_eq_some_iff.mp hAfterInitExit
                           obtain ⟨rawBodyRegion, hBody, hAfterBody⟩ :=
                             Option.bind_eq_some_iff.mp hAfterPost
                           obtain ⟨postExit, hPostExit, hAfterPostExit⟩ :=
@@ -1070,8 +1094,9 @@ theorem scheduleStmtFuelWithTargets_for_components
                           have hPointEq := Option.some.inj hPoint
                           subst point
                           exact ⟨initFacts, postFacts, bodyFacts, loopFacts,
-                            initRegion, rawPostRegion, rawBodyRegion, postExit,
-                            bodyExit, rfl, rfl, by simpa using hInit,
+                            rawInitRegion, rawPostRegion, rawBodyRegion,
+                            initExit, postExit, bodyExit, rfl, rfl,
+                            by simpa using hInit, hInitExit,
                             by simpa using hPost, by simpa using hBody,
                             hPostExit, hBodyExit, rfl, rfl, rfl, rfl, rfl⟩
 

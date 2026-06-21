@@ -260,6 +260,23 @@ theorem afterTransition
       (target.withLayout transition.schedule.target) targets returns :=
   ⟨hCtx.control.afterTransition transition hSource, hCtx.leaveReady⟩
 
+theorem afterJoin
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {targets : StackSchedule.ControlTargets}
+    {returns : List Structured.ReturnDest}
+    (hCtx : RuntimeCtxCovers source target targets returns)
+    (join : AllocationLayout.Join)
+    (hSource : target.layout = join.source) :
+    RuntimeCtxCovers source (target.withLayout join.target) targets returns := by
+  have hRetainSource : target.layout = join.retain.source :=
+    hSource.trans join.retainSource.symm
+  have hRetained := hCtx.afterTransition join.retain hRetainSource
+  have hOrderSource :
+      (target.withLayout join.retain.target).layout = join.order.source := by
+    simpa [Locals.Ctx.withLayout] using join.orderSource.symm
+  have hOrdered := hRetained.afterOrdering join.order hOrderSource
+  simpa [Locals.Ctx.withLayout, join.orderTarget] using hOrdered
+
 theorem ofSameControlLayout
     {source : Functions.Source.Ctx} {before after : Locals.Ctx}
     {targets : StackSchedule.ControlTargets}

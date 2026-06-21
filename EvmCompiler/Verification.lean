@@ -2995,6 +2995,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackSchedule.scheduleDefaultRegionFuelWithTargets_none_shape
 #check EvmCompiler.Functions.StackSchedule.scheduleDefaultRegionFuelWithTargets_some_shape
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_for_components
+#check EvmCompiler.Functions.StackSchedule.loopBaseline
+#check EvmCompiler.Functions.StackSchedule.loopBaseline_suffix
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuelWithTargets_brk_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuelWithTargets_cont_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_terminal_components
@@ -3040,6 +3042,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers
 #check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.afterOrdering
 #check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.afterTransition
+#check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.afterJoin
 #check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.prepend
 #check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.withoutLoopControl
 #check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.withLoopControl
@@ -3117,8 +3120,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackBlockPreservation.controlScopedBodyThenJoin
 #check EvmCompiler.Functions.StackBlockPreservation.controlScheduledRegion
 #check EvmCompiler.Functions.StackBlockPreservation.controlScheduledRegionAsBlock
+#check EvmCompiler.Functions.StackBlockPreservation.controlGrowingRegionAsBlock
+#check EvmCompiler.Functions.StackBlockPreservation.controlOpenRegionAsBlock
+#check EvmCompiler.Functions.StackBlockPreservation.compiledOpenRegion_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.compiledScheduledRegion_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.ControlSwitchBranchPreserves
+#check EvmCompiler.Functions.StackBlockPreservation.ControlSwitchBranchPreserves.toPoint
 #check EvmCompiler.Functions.StackBlockPreservation.SwitchBranchRel
 #check EvmCompiler.Functions.StackBlockPreservation.compiledSwitchBranch_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.switchDefaultRel_of_compilers
@@ -3127,9 +3134,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackBlockPreservation.blockPoint_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.ifPoint_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.switchPoint_of_compilers
+#check EvmCompiler.Functions.StackBlockPreservation.forPoint_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.blockCons_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.ifCons_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.switchCons_of_compilers
+#check EvmCompiler.Functions.StackBlockPreservation.forCons_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.exprCons_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.letCons_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.assignCons_of_compilers
@@ -3237,9 +3246,11 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackBlockPreservation.blockPoint_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.ifPoint_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.switchPoint_of_compilers
+#print axioms EvmCompiler.Functions.StackBlockPreservation.forPoint_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.blockCons_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.ifCons_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.switchCons_of_compilers
+#print axioms EvmCompiler.Functions.StackBlockPreservation.forCons_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.exprCons_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.letCons_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.assignCons_of_compilers
