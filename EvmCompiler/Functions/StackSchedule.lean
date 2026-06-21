@@ -1,5 +1,6 @@
 import EvmCompiler.Functions.AllocationLivenessFacts
 import EvmCompiler.Functions.AllocationLayout
+import EvmCompiler.Functions.StackAccess
 
 /-!
 Forward symbolic stack scheduling over compiler-owned liveness facts.
@@ -82,14 +83,39 @@ def accessible (layout : Locals.Layout) (name : Name) : Bool :=
 
 def orderPriority (layout : Locals.Layout) (stmt : Stmt)
     (facts : AllocationLivenessFacts.Point) : List Name :=
-  let dying :=
+  let allDying :=
     layout.filter fun name => decide (name ∉ facts.liveAfter)
-  let immediate :=
-    AllocationLivenessFacts.Stmt.nextUse stmt ++ dying
-  let accessibleFuture := facts.nextUse.filter (accessible layout)
-  ((AllocationLivenessFacts.stableUnique
-      (immediate ++ accessibleFuture)).filter
-        fun name => decide (name ∈ layout)).take 16
+  let reachableDying :=
+    (allDying.filter (accessible layout)).reverse
+  let futureCount :=
+    if layout.length <= 16 then 0 else 2
+  let boundedFuture :=
+    match stmt with
+    | .let_ _ _ =>
+        (facts.nextUse.filter (accessible layout)).take futureCount
+    | _ => []
+  let preferredImmediate :=
+    if (StackAccess.Stmt.check? layout stmt).isSome then
+      match stmt with
+      | .let_ _ _ => reachableDying
+      | _ => []
+    else
+      AllocationLivenessFacts.Stmt.nextUse stmt ++ reachableDying
+  let preferred :=
+    ((AllocationLivenessFacts.stableUnique
+        (preferredImmediate ++ boundedFuture)).filter
+          fun name => decide (name ∈ layout)).take 16
+  let fallback :=
+    ((AllocationLivenessFacts.stableUnique
+        (AllocationLivenessFacts.Stmt.nextUse stmt ++ allDying)).filter
+            fun name => decide (name ∈ layout)).take 16
+  match AllocationLayout.Ordering.build? layout preferred with
+  | some order =>
+      if (StackAccess.Stmt.check? order.target stmt).isSome then
+        preferred
+      else
+        fallback
+  | none => fallback
 
 def covers (layout : Locals.Layout) (live : LiveSet) : Prop :=
   live ⊆ layoutSet layout

@@ -1,5 +1,6 @@
 import EvmCompiler.Solidity.BridgeJson
 import EvmCompiler.Assembly.Bytecode
+import EvmCompiler.Assembly.Compact
 import EvmCompiler.Functions.StackDiagnostics
 import EvmCompiler.Compiler.StackArtifact
 import EvmCompiler.Objects.Compiler
@@ -410,6 +411,16 @@ def printStackDiagnostics
       (fun artifact =>
         (Assembly.Bytecode.encodeTarget artifact.target).size)
       |>.getD 0
+  let compactArtifact? := stackArtifact?.bind fun artifact =>
+    Assembly.Compact.compile? artifact.certified.target
+  let compactBytes := compactArtifact?.map (·.bytes.size) |>.getD 0
+  let compactBranchWidth :=
+    compactArtifact?.map (·.branchWidth) |>.getD 0
+  let assemblyStats :=
+    stackArtifact?.map
+      (fun artifact =>
+        Assembly.Compact.sourceStats artifact.certified.target)
+      |>.getD {}
   let compileFinish ← IO.monoMsNow
   let reports := Functions.StackDiagnostics.programReports functions
   let summary := Functions.StackDiagnostics.summarize reports
@@ -430,6 +441,27 @@ def printStackDiagnostics
   IO.println ("stack_program_compilation=" ++ boolString compiled?.isSome)
   IO.println ("stack_program_assembly_instrs=" ++ toString assemblyInstrs)
   IO.println ("stack_program_bytecode_bytes=" ++ toString stackBytes)
+  IO.println
+    ("stack_program_compact_artifact=" ++
+      boolString compactArtifact?.isSome)
+  IO.println
+    ("stack_program_compact_bytecode_bytes=" ++ toString compactBytes)
+  IO.println
+    ("stack_program_compact_branch_width=" ++
+      toString compactBranchWidth)
+  IO.println
+    ("stack_program_instruction_mix=" ++
+      "source=" ++ toString assemblyStats.instructions ++
+      "\tlabels=" ++ toString assemblyStats.labels ++
+      "\tpushes=" ++ toString assemblyStats.pushes ++
+      "\tzero_pushes=" ++ toString assemblyStats.zeroPushes ++
+      "\tjumps=" ++ toString assemblyStats.jumps ++
+      "\tjumpis=" ++ toString assemblyStats.jumpis ++
+      "\tadds=" ++ toString assemblyStats.adds ++
+      "\tpops=" ++ toString assemblyStats.pops ++
+      "\tdups=" ++ toString assemblyStats.dups ++
+      "\tswaps=" ++ toString assemblyStats.swaps ++
+      "\tother_prims=" ++ toString assemblyStats.otherPrims)
   IO.println
     ("timing\tstack_program\t" ++ toString (compileFinish - compileStart))
   match lowered? with
@@ -539,6 +571,8 @@ def runStackDiagnostics (config : Config)
       config.linkerSymbols
   let frontendArtifact? :=
     objectArtifact?.map Solidity.Frontend.VerifiedStackObjectArtifact.codeArtifact
+  let compactFrontendArtifact? := frontendArtifact?.bind fun artifact =>
+    Assembly.Compact.compile? artifact.compiled.certified.target
   IO.println
     ("stack_frontend_object_artifact=" ++ boolString objectArtifact?.isSome)
   IO.println
@@ -548,6 +582,12 @@ def runStackDiagnostics (config : Config)
           |>.getD 0))
   IO.println
     ("stack_frontend_code_artifact=" ++ boolString frontendArtifact?.isSome)
+  IO.println
+    ("stack_frontend_compact_code_artifact=" ++
+      boolString compactFrontendArtifact?.isSome)
+  IO.println
+    ("stack_frontend_compact_code_bytecode_bytes=" ++
+      toString (compactFrontendArtifact?.map (·.bytes.size) |>.getD 0))
   match functionsForStackDiagnostics? program.object config.linkerSymbols with
   | none =>
       throw

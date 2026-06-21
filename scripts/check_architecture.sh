@@ -1240,6 +1240,16 @@ report_matches \
   EvmCompiler/Solidity/VerifiedStackObjectArtifact.lean
 
 report_matches \
+  'Compact physical layout must remain Assembly-owned:' \
+  '^import EvmCompiler\.(Functions|Locals|Expressions|Structured|TypedCfg|Objects|Yul|Solidity|Compiler|Public)' \
+  EvmCompiler/Assembly/Compact.lean
+
+report_matches \
+  'Compact physical layout must not introduce observer or replay machinery:' \
+  '(Observer|Replay|Oracle|CallOracle)' \
+  EvmCompiler/Assembly/Compact.lean
+
+report_matches \
   'Concrete-resource/open-external target semantics must remain Assembly-owned:' \
   '^import EvmCompiler\.(Functions|Locals|Expressions|Structured|TypedCfg|Objects|Yul|Public)' \
   EvmCompiler/Assembly/InteractionConcreteResources.lean

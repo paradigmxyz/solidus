@@ -113,6 +113,25 @@ def call? (layout : Locals.Layout) (targets : List Name)
   let _ ← ExprSeq.check? layout 0 (Lower.argExprs args)
   returnedTargets? layout targets
 
+namespace Stmt
+
+/-- Check the accesses performed at the current statement boundary. Compound
+statements whose relevant expression executes only after a child region are
+left to the region scheduler. -/
+def check? (layout : Locals.Layout) : Functions.Stmt -> Option Unit
+  | .expr expr => Expr.check? layout 0 expr
+  | .let_ _ value => Expr.check? layout 0 value
+  | .assign name value => assign? layout name value
+  | .if_ condition _ => Expr.check? layout 0 condition
+  | .switch scrutinee _ _ => Expr.check? layout 0 scrutinee
+  | .for_ _ _ _ _ => none
+  | .call targets _ args => call? layout targets args
+  | .terminal _ => some ()
+  | .terminalArgs _ args => ExprSeq.check? layout 0 args
+  | .block _ | .brk | .cont | .leave => none
+
+end Stmt
+
 theorem assignTopWithOffset_mem
     {layout : Locals.Layout} {offset : Nat} {name : Name}
     (hCheck : assignTopWithOffset? layout offset name = some ()) :

@@ -218,8 +218,9 @@ elimination are not prerequisites for Permit2 or Aave.
 
 ### 7. Horizontal Composition
 
-- [ ] Make the public allocation compiler compute and discharge all liveness,
-  layout, shuffle, rematerialization, and spill obligations.
+- [x] Make the public allocation compiler compute and discharge all selected
+  liveness, layout, and shuffle obligations; exact Aave/Permit2 need neither
+  rematerialization nor spilling, so those remain dormant fallback tracks.
 - [x] Re-establish Functions-to-Locals/Expressions forward preservation for
   all source outcomes and ordered effects.
 - [x] Compose the checked root-code artifact through existing lower pass
@@ -233,11 +234,10 @@ elimination are not prerequisites for Permit2 or Aave.
 ### 8. Exact Contracts and Scalability
 
 - [x] Exact pinned Aave compiles stack-only with no reservation or source
-  non-alias premise through the checked root-code artifact and raw-bytecode
-  theorem; recursive object-image composition remains open.
+  non-alias premise through the checked recursive object artifact and
+  raw-bytecode theorem.
 - [x] Exact pinned Permit2 compiles stack-only through the checked root-code
-  artifact and raw-bytecode theorem; recursive object-image composition
-  remains open.
+  artifact and recursive raw-bytecode theorem.
 - [x] Both compile through the recursive `VerifiedStackObjectArtifact` to
   exact root-image raw bytecode under the horizontal open-world theorem, with
   compiler-owned child validity and no legacy allocation metadata. Resource
@@ -255,6 +255,11 @@ elimination are not prerequisites for Permit2 or Aave.
 - [ ] If deployable output still requires it, implement compact `PUSH` encoding
   as a separate Assembly-owned pass with decoding and execution preservation.
   It must not be mixed into allocation correctness.
+- [x] Executable viability: minimum-width constants, bounded two-name
+  growth-point lookahead, adjacent-fallthrough jump elision, and unreferenced
+  label pruning produce 23303-byte Permit2 and 43933-byte Aave root code.
+- [ ] Prove compact layout/relocation, preprocessing, decoding, and open-run
+  preservation; integrate the checked bytes into recursive object planning.
 
 ## Completion Gates
 

@@ -140,35 +140,47 @@ mutual
     | [], [], _ => none
     | source :: rest, facts :: restFacts, index =>
         let pointPath := path ++ "/stmt[" ++ toString index ++ "]"
-        let resident := StackSchedule.residentBefore source facts
-        if !StackSchedule.covers layout resident then
-          some (coverageFailure pointPath "statement-entry" layout resident)
-        else
-          match StackSchedule.scheduleStmtFuel fuel pinned layout source facts with
-          | none =>
+        match Ordering.build? layout
+            (StackSchedule.orderPriority layout source facts) with
+        | none =>
+            some
+              { path := pointPath
+                phase := "statement-ordering"
+                reason := "next-use ordering cannot reach a requested value" }
+        | some order =>
+            let resident := StackSchedule.residentBefore source facts
+            if !StackSchedule.covers order.target resident then
               some
-                { path := pointPath
-                  phase := "statement-schedule"
-                  reason := "structured child scheduling or fact shape failed" }
-          | some point =>
-              if point.fallsThrough then
-                let afterDemand := StackSchedule.required pinned
-                  (StackSchedule.nextLive facts.liveAfter rest restFacts)
-                if !StackSchedule.covers point.statementLayout afterDemand then
+                (coverageFailure pointPath "statement-entry"
+                  order.target resident)
+            else
+              match StackSchedule.scheduleStmtFuel fuel pinned order.target
+                  source facts with
+              | none =>
                   some
-                    (coverageFailure pointPath "fallthrough"
-                      point.statementLayout afterDemand)
-                else
-                  match Transition.build? point.statementLayout afterDemand with
-                  | none =>
+                    { path := pointPath
+                      phase := "statement-schedule"
+                      reason :=
+                        "structured child scheduling or fact shape failed" }
+              | some point =>
+                  if point.fallsThrough then
+                    let afterDemand := StackSchedule.required pinned
+                      (StackSchedule.nextLive facts.liveAfter rest restFacts)
+                    if !StackSchedule.covers point.statementLayout afterDemand then
                       some
-                        (transitionFailure pointPath "fallthrough-transition"
+                        (coverageFailure pointPath "fallthrough"
                           point.statementLayout afterDemand)
-                  | some transition =>
-                      firstScheduleFailureListFuel fuel path pinned
-                        transition.target rest restFacts (index + 1)
-              else
-                none
+                    else
+                      match Transition.build? point.statementLayout afterDemand with
+                      | none =>
+                          some
+                            (transitionFailure pointPath "fallthrough-transition"
+                              point.statementLayout afterDemand)
+                      | some transition =>
+                          firstScheduleFailureListFuel fuel path pinned
+                            transition.target rest restFacts (index + 1)
+                  else
+                    none
     | _, _, index =>
         some
           { path := path ++ "/stmt[" ++ toString index ++ "]"
