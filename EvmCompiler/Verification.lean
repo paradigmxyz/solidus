@@ -2948,6 +2948,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackSchedule.scheduleBlockFuelWithTargets_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_cons_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuelWithTargets_cons_components
+#check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuelWithTargets_cons_fallsThrough_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_cons_nonempty
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_nil_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_expr_components
@@ -3082,6 +3083,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackLowering.Examples.dormantCallProgram_lowers
 #check EvmCompiler.Functions.StackLowering.Examples.controlProgram_lowers
 #check EvmCompiler.Functions.StackLowering.lowerStmtListFuel_cons_components
+#check EvmCompiler.Functions.StackLowering.lowerStmtListFuel_cons_fallsThrough_components
 #check EvmCompiler.Functions.StackLowering.lowerBlockFuel_components
 #check EvmCompiler.Functions.StackLowering.lowerStmtListFuel_nil_components
 #check EvmCompiler.Functions.StackLowering.lowerStmtListFuel_expr_components

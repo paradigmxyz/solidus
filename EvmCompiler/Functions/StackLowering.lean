@@ -265,6 +265,29 @@ theorem lowerStmtListFuel_cons_components
         Option.bind_eq_some_iff.mp hAfterHead
       exact .inl ⟨rfl, tail, hTail, (Option.some.inj hResult).symm⟩
 
+theorem lowerStmtListFuel_cons_fallsThrough_components
+    {fuel : Nat} {ctx : Ctx}
+    {stmt : Stmt} {rest : List Stmt}
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {lowered : List Locals.Stmt}
+    (hLower :
+      lowerStmtListFuel fuel ctx (stmt :: rest) (point :: points) =
+        some lowered)
+    (hFalls : point.fallsThrough = true) :
+    ∃ order head tail,
+      point.order? = some order ∧
+        lowerPointFuel fuel ctx stmt point = some head ∧
+        lowerStmtListFuel fuel ctx rest points = some tail ∧
+        lowered = order.statements ++ head ++ tail := by
+  obtain ⟨order, head, hOrder, hHead, hCases⟩ :=
+    lowerStmtListFuel_cons_components hLower
+  have hRegular := hCases.resolve_right (by
+    intro hAbrupt
+    rw [hFalls] at hAbrupt
+    exact Bool.noConfusion hAbrupt.1)
+  obtain ⟨_hFalls, tail, hTail, hLowered⟩ := hRegular
+  exact ⟨order, head, tail, hOrder, hHead, hTail, hLowered⟩
+
 theorem lowerStmtListFuel_nil_components
     {fuel : Nat} {ctx : Ctx} {lowered : List Locals.Stmt}
     (hLower : lowerStmtListFuel fuel ctx [] [] = some lowered) :

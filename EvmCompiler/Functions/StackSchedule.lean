@@ -503,6 +503,51 @@ theorem scheduleStmtListFuelWithTargets_cons_components
   · rw [if_neg hCover] at hAfterOrder
     contradiction
 
+theorem scheduleStmtListFuelWithTargets_cons_fallsThrough_components
+    {targets : ControlTargets} {fuel : Nat}
+    {pinned : LiveSet} {layout : Locals.Layout}
+    {stmt : Stmt} {rest : List Stmt}
+    {facts : AllocationLivenessFacts.Point}
+    {restFacts : List AllocationLivenessFacts.Point}
+    {point : Point} {points : List Point} {finalLayout : Locals.Layout}
+    (hSchedule :
+      scheduleStmtListFuelWithTargets targets fuel pinned layout (stmt :: rest)
+          (facts :: restFacts) = some (point :: points, finalLayout))
+    (hFalls :
+      ∀ {before rawPoint},
+        scheduleStmtFuelWithTargets targets fuel pinned before stmt facts =
+            some rawPoint →
+          rawPoint.fallsThrough = true) :
+    ∃ order rawPoint retain tailFinal,
+      Ordering.build? layout (orderPriority layout stmt facts) = some order ∧
+        scheduleStmtFuelWithTargets targets fuel pinned order.target stmt facts =
+          some rawPoint ∧
+        rawPoint.fallsThrough = true ∧
+        Transition.build? rawPoint.statementLayout
+            (required pinned (nextLive facts.liveAfter rest restFacts)) =
+          some retain ∧
+        point =
+          { rawPoint with order? := some order, retain? := some retain } ∧
+        scheduleStmtListFuelWithTargets targets fuel pinned retain.target rest
+            restFacts = some (points, tailFinal) ∧
+        finalLayout = tailFinal := by
+  obtain ⟨order, rawPoint, hOrder, hRaw, hCases⟩ :=
+    scheduleStmtListFuelWithTargets_cons_components hSchedule
+  have hRawFalls : rawPoint.fallsThrough = true := by
+    apply hFalls
+    simpa using hRaw
+  have hRegular := hCases.resolve_right (by
+    intro hAbrupt
+    rw [hRawFalls] at hAbrupt
+    exact Bool.noConfusion hAbrupt.1)
+  obtain ⟨_hFalls, retain, tail, tailFinal, hRetain, hTail, hPoints,
+      hFinal⟩ := hRegular
+  injection hPoints with hPoint hTailPoints
+  subst point
+  subst tail
+  exact ⟨order, rawPoint, retain, tailFinal, hOrder, hRaw, hRawFalls,
+    hRetain, rfl, hTail, hFinal⟩
+
 theorem scheduleStmtListFuel_cons_components
     {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
     {stmt : Stmt} {rest : List Stmt}

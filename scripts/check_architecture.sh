@@ -75,6 +75,7 @@ fi
 
 for theorem in \
     'lowerStmtListFuel_cons_components' \
+    'lowerStmtListFuel_cons_fallsThrough_components' \
     'lowerStmtListFuel_nil_components' \
     'lowerStmtListFuel_expr_components' \
     'lowerStmtListFuel_let_components' \
@@ -94,6 +95,14 @@ for theorem in \
     failed=1
   fi
 done
+
+if ! rg -Fq \
+    '#check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuelWithTargets_cons_fallsThrough_components' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing checked fallthrough scheduler inversion.' >&2
+  failed=1
+fi
 
 if ! rg -Fq \
     '#check EvmCompiler.Functions.StackAccessLowering.callSequence_compile_of_check' \
