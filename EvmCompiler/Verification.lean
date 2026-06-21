@@ -3289,6 +3289,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackExactFuelPreservation.blockConsAt_of_compilers
 #check EvmCompiler.Functions.StackExactFuelPreservation.compiledGrowingRegionAt_of_compilers
 #check EvmCompiler.Functions.StackRecursivePreservation.compiledListAtOne
+#check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.initial
+#check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyOpenAt
+#check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
 #check EvmCompiler.Functions.StackStatementPreservation.ControlPointPreservesAt
 #check EvmCompiler.Functions.StackStatementPreservation.CompiledControlPointAt
 #check EvmCompiler.Functions.StackStatementPreservation.CompiledControlPoint.at
@@ -3349,6 +3352,9 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackExactFuelPreservation.blockConsAt_of_compilers
 #print axioms EvmCompiler.Functions.StackExactFuelPreservation.compiledGrowingRegionAt_of_compilers
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledListAtOne
+#print axioms EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.initial
+#print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyOpenAt
+#print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_optionalReturn
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_optionalReturn_of_bodyRun
 #print axioms EvmCompiler.Functions.StackCallPreservation.FunctionLookup.of_compilers

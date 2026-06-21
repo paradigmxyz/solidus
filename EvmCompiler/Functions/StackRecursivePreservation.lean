@@ -1250,6 +1250,208 @@ private theorem compilerCalleePreservesAt
               simpa only [hProcRetc, hProcName, hName, hCallerReturns] using
                 hAttached
 
+/-- The checked whole-program lowering and ordinary Locals compiler construct
+the open main-block simulation without exposing liveness facts, schedules,
+layouts, or a recursive-callee capability. The returned lexical-cleanup
+equation is compiler output and is composed by the closed-program theorem. -/
+theorem compiledProgramBodyOpenAt
+    (sourceProgram : Functions.Program)
+    (localsProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceFuel : Nat)
+    (hProgramWF : sourceProgram.WF)
+    (hProgramScoped : sourceProgram.Scoped)
+    (hProgramSupported :
+      Functions.InteractionSemantics.Program.OpenSupported sourceProgram)
+    (hLower :
+      StackLowering.lowerProgram? sourceProgram = some localsProgram)
+    (hCompile :
+      Locals.Program.toExpressions? localsProgram = some targetProgram) :
+    ∃ code finalCtx,
+      Locals.Block.compileOpen Locals.Ctx.initial localsProgram.body =
+          some (code, finalCtx) ∧
+        Locals.finishScoped Locals.Ctx.initial finalCtx code =
+          some targetProgram.body ∧
+        ControlBlockPreservesAt sourceProgram targetProgram {} []
+          Locals.Ctx.initial finalCtx sourceProgram.body { stmts := code }
+          sourceFuel ∧
+        finalCtx.layout.Nodup := by
+  rcases sourceProgram with
+    ⟨sourceFunctions, ⟨sourceStmts⟩, sourceMemoryContract⟩
+  let sourceProgram : Functions.Program :=
+    { functions := sourceFunctions, body := { stmts := sourceStmts },
+      memoryContract := sourceMemoryContract }
+  change sourceProgram.WF at hProgramWF
+  change sourceProgram.Scoped at hProgramScoped
+  change Functions.InteractionSemantics.Program.OpenSupported sourceProgram at hProgramSupported
+  change StackLowering.lowerProgram? sourceProgram = some localsProgram at hLower
+  obtain ⟨lowerProcs, localsBody, targetProcs, targetBody,
+      hLowerFunctions, hLowerBody, hCompileFunctions, hCompileBody,
+      hLocalsProgram, hTargetProgram⟩ :=
+    StackLoweringCompilation.lowerProgram?_toExpressions?_components
+      hLower hCompile
+  subst localsProgram
+  subst targetProgram
+  obtain ⟨facts, schedule, _hFacts, hSchedule, hLowerScheduled⟩ :=
+    StackLowering.lowerBlock?_components hLowerBody
+  obtain ⟨code, finalCtx, hCompileOpen, hFinish⟩ :=
+    Locals.Block.compile_components hCompileBody
+  have hScheduleRaw :
+      StackSchedule.scheduleBlockFuelWithTargets {}
+          (AllocationLiveness.analysisFuel sourceProgram.body) ∅ []
+          sourceProgram.body facts = some schedule := by
+    simpa [StackSchedule.scheduleBlock?, StackSchedule.scheduleBlockFuel] using
+      hSchedule
+  have hLowerRaw :
+      StackLowering.lowerBlockFuel
+          (AllocationLiveness.analysisFuel sourceProgram.body)
+          { functions := sourceProgram.functions, returns := [] }
+          sourceProgram.body schedule = some localsBody := by
+    simpa [StackLowering.lowerScheduledBlock?] using hLowerScheduled
+  have hInitialNodup : Locals.Ctx.initial.layout.Nodup := by
+    simp [Locals.Ctx.initial]
+  obtain ⟨bodyFinalCtx, hPreserves, hFinalNodup, _hFinalLayout,
+      hFinalCtx, _hEntrySource⟩ :=
+    compiledGrowingRegionAt_of_compilers [] sourceProgram
+      { procs := targetProcs, body := targetBody }
+      { functions := sourceProgram.functions, returns := [] }
+      {} ∅ (AllocationLiveness.analysisFuel sourceProgram.body + 1)
+      (AllocationLiveness.analysisFuel sourceProgram.body + 1) sourceFuel
+      sourceProgram.body facts schedule Locals.Ctx.initial finalCtx
+      hInitialNodup localsBody code hScheduleRaw hLowerRaw hCompileOpen
+      (by
+        intro bodyLowered bodyCode childFinalCtx hListLower hListCompile
+          hEntryNodup
+        have hListSchedule :=
+          StackSchedule.scheduleBlockFuelWithTargets_statementList hScheduleRaw
+        exact compiledListAt_of_callees [] sourceProgram
+          { procs := targetProcs, body := targetBody }
+          { functions := sourceProgram.functions, returns := [] }
+          {} ∅
+          (AllocationLiveness.analysisFuel sourceProgram.body - 1)
+          (AllocationLiveness.analysisFuel sourceProgram.body - 1)
+          sourceFuel rfl
+          (fun calleeFuel _ =>
+            compilerCalleePreservesAt sourceProgram
+              { procs := targetProcs, body := targetBody } lowerProcs
+              hProgramWF hProgramScoped hProgramSupported hLowerFunctions
+              hCompileFunctions calleeFuel)
+          hProgramWF.2 hProgramScoped.2 hProgramSupported.2
+          (StackLoweringCompilation.ControlCtxAgrees.initial.withLayout
+            schedule.entry.target) rfl
+          (by simpa [Locals.Ctx.initial] using hListSchedule)
+          hListLower hListCompile hEntryNodup)
+  subst bodyFinalCtx
+  exact ⟨code, finalCtx, hCompileOpen, hFinish, hPreserves, hFinalNodup⟩
+
+/-- Whole-program Functions stack allocation preserves the canonical scoped
+main-block execution through the actual compiled Expressions program. The
+compiler-owned lexical cleanup runs only after regular completion; abrupt and
+terminal outcomes retain their existing ordered open-effect behavior. -/
+theorem compiledProgramBodyAt
+    (sourceProgram : Functions.Program)
+    (localsProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceFuel : Nat)
+    (hProgramWF : sourceProgram.WF)
+    (hProgramScoped : sourceProgram.Scoped)
+    (hProgramSupported :
+      Functions.InteractionSemantics.Program.OpenSupported sourceProgram)
+    (hLower :
+      StackLowering.lowerProgram? sourceProgram = some localsProgram)
+    (hCompile :
+      Locals.Program.toExpressions? localsProgram = some targetProgram)
+    (targetFuel : Nat)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hFuel :
+      Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
+        targetProgram.body.stmts)
+    (hInitial :
+      StateRel Locals.Ctx.initial.layout suffix returns source target) :
+    Simulation.Interaction.ForwardRel
+      FuelTruncated
+      (ControlScopedOutcomeRel {} [] Locals.Ctx.initial suffix returns
+        Functions.Source.Ctx.initial)
+      (Functions.InteractionSemantics.Program.openRunState
+        sourceFuel sourceProgram source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel targetProgram.body target) := by
+  obtain ⟨code, finalCtx, _hCompileOpen, hFinish, hPreserves,
+      _hFinalNodup⟩ :=
+    compiledProgramBodyOpenAt sourceProgram localsProgram targetProgram
+      sourceFuel hProgramWF hProgramScoped hProgramSupported hLower hCompile
+  obtain ⟨cleanup, hCleanup, hTargetBody⟩ :=
+    Locals.finishScoped_components hFinish
+  rw [hTargetBody] at hFuel ⊢
+  have hCoreFuel := Expressions.TargetFuel.Covers.head_of_append hFuel
+  have hOpen :=
+    hPreserves Functions.Source.Ctx.initial targetFuel hCoreFuel
+      (RuntimeCtxCovers.initial [] returns) hInitial
+  have hLength := hFuel.length_lt
+  have hCleanupFuel : 2 ≤ targetFuel - code.length := by
+    simp only [List.length_append, Locals.codeStmt, List.length_cons,
+      List.length_nil, Nat.add_zero] at hLength
+    omega
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  unfold Functions.InteractionSemantics.Program.openRunState
+    Functions.Source.Canonical.Program.runState
+    Functions.Source.Effectful.Control.Program.runState
+  unfold Functions.Source.Effectful.Control.Block.runScoped
+  change
+    Simulation.Interaction.ForwardRel FuelTruncated
+      (ControlScopedOutcomeRel {} [] Locals.Ctx.initial suffix returns
+        Functions.Source.Ctx.initial)
+      (Simulation.Interaction.bind
+        (Functions.InteractionSemantics.Block.openRun sourceProgram
+          Functions.Source.Ctx.initial sourceFuel sourceProgram.body source)
+        _)
+      _
+  apply Simulation.Interaction.ForwardRel.bind hOpen
+  intro sourceResult targetResult hResult
+  cases hResult with
+  | @regular sourceAfter sourceAfterCtx targetAfter hRuntime hState =>
+      obtain ⟨afterCleanup, hCleanupRun, hFinal⟩ :=
+        StackTransitionPreservation.Cleanup.openRun rfl
+          (by
+            change [] = finalCtx.layout.drop finalCtx.layout.length
+            exact List.drop_length.symm)
+          hCleanup
+          hState
+      have hTargetCleanup :=
+        Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+          targetProgram (targetFuel - code.length) cleanup targetAfter
+          afterCleanup hCleanupFuel hCleanupRun
+      simp only [Structured.Outcome.regular_mode,
+        Structured.Outcome.regular_state,
+        Locals.Source.Effectful.Outcome.regular, Locals.codeStmt]
+      rw [hTargetCleanup]
+      apply Simulation.Interaction.ForwardRel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      apply ControlOpenResultRel.regular
+      · exact RuntimeCtxCovers.initial [] returns
+      · exact hFinal.restrictTo (fun hName => hName)
+  | brk hTarget hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact ControlOpenResultRel.brk hTarget hState
+  | cont hTarget hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact ControlOpenResultRel.cont hTarget hState
+  | leave hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact ControlOpenResultRel.leave hState
+  | halt hShared =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact ControlOpenResultRel.halt hShared
+
 end StackRecursivePreservation
 end Functions
 end EvmCompiler

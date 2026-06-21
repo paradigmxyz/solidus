@@ -165,7 +165,7 @@ elimination are not prerequisites for Permit2 or Aave.
 - [x] Prove ordinary `leave` from canonical source scope through checked return
   accessibility, value-preserving return-slot anonymization, preserving frame
   cleanup, and non-fallthrough list composition.
-- [ ] Prove statement-list and structured-control layout composition.
+- [x] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls
 
@@ -190,7 +190,7 @@ elimination are not prerequisites for Permit2 or Aave.
   caller's retained symbolic layout through compiler-owned point equations.
 - [x] Discharge the private callee-body premise by source-fuel recursion for
   recursive and non-recursive call graphs.
-- [ ] Keep call artifacts compiler-owned and absent from public theorem
+- [x] Keep call artifacts compiler-owned and absent from public theorem
   premises.
 
 ### 5. Rematerialization Owner
@@ -220,7 +220,7 @@ elimination are not prerequisites for Permit2 or Aave.
 
 - [ ] Make the public allocation compiler compute and discharge all liveness,
   layout, shuffle, rematerialization, and spill obligations.
-- [ ] Re-establish Functions-to-Locals/Expressions forward preservation for
+- [x] Re-establish Functions-to-Locals/Expressions forward preservation for
   all source outcomes and ordered effects.
 - [ ] Compose through existing lower pass theorems without recursive compiler
   reasoning in `Yul.EndToEnd`.

@@ -27,6 +27,40 @@ if ! rg -Fq \
   failed=1
 fi
 
+if ! rg -Fq \
+    '#check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyOpenAt' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing callback-free whole-program stack preservation.' >&2
+  failed=1
+fi
+
+if ! rg -Fq \
+    '#check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing closed whole-program stack preservation.' >&2
+  failed=1
+fi
+
+if sed -n \
+    '/^theorem compiledProgramBodyOpenAt/,/^[[:space:]]*finalCtx.layout.Nodup := by$/p' \
+    EvmCompiler/Functions/StackRecursivePreservation.lean | \
+    rg -q 'CalleePreservesAt|hCallees|hSchedule|hLowerFunctions|hCompileFunctions'; then
+  printf '%s\n\n' \
+    'Public stack preservation exposes recursive or compiler-generated evidence.' >&2
+  failed=1
+fi
+
+if sed -n \
+    '/^theorem compiledProgramBodyAt/,/^[[:space:]]*(Expressions.InteractionSemantics.Block.openRun$/p' \
+    EvmCompiler/Functions/StackRecursivePreservation.lean | \
+    rg -q 'CalleePreservesAt|hCallees|hSchedule|hLowerFunctions|hCompileFunctions'; then
+  printf '%s\n\n' \
+    'Closed public stack preservation exposes compiler-generated evidence.' >&2
+  failed=1
+fi
+
 for theorem in \
     'controlListAtZero' \
     'blockPointAt_of_compilers' \

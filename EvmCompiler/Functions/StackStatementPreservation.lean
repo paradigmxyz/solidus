@@ -473,6 +473,26 @@ structure RuntimeCtxCovers (source : Functions.Source.Ctx)
 
 namespace RuntimeCtxCovers
 
+theorem initial (returnNames : List Name)
+    (returns : List Structured.ReturnDest) :
+    RuntimeCtxCovers Functions.Source.Ctx.initial Locals.Ctx.initial {}
+      returnNames returns := by
+  refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_⟩
+    · constructor
+      simp [Functions.Source.Ctx.initial, Locals.Ctx.initial]
+    · intro layout hTarget
+      simp at hTarget
+    · intro layout hTarget
+      simp at hTarget
+  · refine ⟨?_, ?_, ?_, ?_⟩
+    · rfl
+    · intro scope hScope
+      simp [Functions.Source.Ctx.initial] at hScope
+    · simp [Functions.Source.Ctx.initial]
+    · simp [Functions.Source.Ctx.initial]
+  · simp [Functions.Source.Ctx.initial]
+
 theorem context
     {source : Functions.Source.Ctx} {target : Locals.Ctx}
     {targets : StackSchedule.ControlTargets}
