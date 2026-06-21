@@ -1447,10 +1447,23 @@ for theorem in \
   fi
 done
 
+if ! rg -Fq \
+    '#check EvmCompiler.Functions.AllocationLivenessFacts.annotateBlock?_sound' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing checked Functions liveness facts.' >&2
+  failed=1
+fi
+
 report_matches \
   'Functions allocation liveness must remain a source-owned analysis:' \
   '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|Interaction|EffectSemantics|Structured|TypedCfg|Assembly\.(Assembler|Compiler))' \
   EvmCompiler/Functions/AllocationLiveness.lean
+
+report_matches \
+  'Functions liveness facts must remain a source-owned annotation pass:' \
+  '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|Interaction|EffectSemantics|Structured|TypedCfg|Assembly\.(Assembler|Compiler)|Locals\.Compiler)' \
+  EvmCompiler/Functions/AllocationLivenessFacts.lean
 
 report_matches \
   'Functions allocation layout must remain an adjacent symbolic-stack owner:' \
@@ -1521,6 +1534,7 @@ report_matches \
   EvmCompiler/Locals/InteractionPreservation.lean \
   EvmCompiler/Functions/AllocationInteraction*.lean \
   EvmCompiler/Functions/AllocationLiveness.lean \
+  EvmCompiler/Functions/AllocationLivenessFacts.lean \
   EvmCompiler/Functions/AllocationLayout.lean \
   EvmCompiler/Functions/AllocationLayoutLowering.lean \
   EvmCompiler/Functions/AllocationObserverRelation.lean \

@@ -78,13 +78,16 @@ short composition module.
   public premise.
 - [x] Prove the computed analyzer satisfies an independent structural relation
   covering uses, definitions, calls, joins, and abrupt-outcome successors.
-- [ ] Integrate the computed artifact into allocation planning and add focused
-  planner examples. Source-analysis regressions for dead declarations, loops,
-  terminal statements, and dormant caller values are checked.
+- [x] Attach computed live-before/live-after facts recursively to statement,
+  branch, loop, terminal, and internal-call regions in one compiler-owned
+  artifact. Planner consumption remains in the layout phase.
+- [x] Add focused source-analysis regressions for dead declarations, loops,
+  terminal statements, and dormant caller values.
 
 ### 3. Layout and Shuffle Owner
 
-- [ ] Track a symbolic stack layout at each allocation program point.
+- [ ] Track a symbolic stack layout alongside the checked liveness point at
+  each allocation program point.
 - [ ] Invoke the checked retain schedule at each program point so dead values
   are popped promptly; next-use ordering remains open.
 - [ ] Compute canonical layouts at branch, switch, loop, and call-return joins.

@@ -191,6 +191,13 @@ theorem run_sound
 
 end Close
 
+structure LoopResult where
+  liveIn : LiveSet
+  headLive : LiveSet
+  postLive : LiveSet
+  bodyLive : LiveSet
+  deriving DecidableEq
+
 mutual
   def analyzeBlockFuel
       (fuel : Nat) (demand : Demand) (block : Block) : Option LiveSet :=
@@ -253,19 +260,8 @@ mutual
                 fun defaultLive =>
                   some (Expr.uses scrutinee ∪ (caseLive ∪ defaultLive))
         | .for_ init cond post body =>
-            let step := fun headLive =>
-              (analyzeBlockFuel fuel
-                  (demand.withNormal headLive) post).bind fun postLive =>
-                (analyzeBlockFuel fuel
-                    { normal := postLive
-                      brk := demand.normal
-                      cont := postLive
-                      leave := demand.leave }
-                    body).bind fun bodyLive =>
-                  some (Expr.uses cond ∪ (demand.normal ∪ bodyLive))
-            let seed := Expr.uses cond ∪ demand.normal
-            (Close.run fuel step seed).bind fun headLive =>
-              analyzeBlockFuel fuel (demand.withNormal headLive) init
+            (analyzeLoopFuel fuel demand init cond post body).map
+              LoopResult.liveIn
         | .brk => some demand.brk
         | .cont => some demand.cont
         | .leave => some demand.leave
@@ -275,6 +271,37 @@ mutual
                 LiveSet.eraseMany targets demand.normal)
         | .terminal _ => some ∅
         | .terminalArgs _ args => some (ExprSeq.uses args)
+
+  def analyzeLoopFuel
+      (fuel : Nat) (demand : Demand)
+      (init : Block) (cond : Expr 1) (post body : Block) :
+      Option LoopResult :=
+    match fuel with
+    | 0 => none
+    | fuel + 1 =>
+        let step := fun headLive =>
+          (analyzeBlockFuel fuel
+              (demand.withNormal headLive) post).bind fun postLive =>
+            (analyzeBlockFuel fuel
+                { normal := postLive
+                  brk := demand.normal
+                  cont := postLive
+                  leave := demand.leave }
+                body).bind fun bodyLive =>
+              some (Expr.uses cond ∪ (demand.normal ∪ bodyLive))
+        let seed := Expr.uses cond ∪ demand.normal
+        (Close.run fuel step seed).bind fun headLive =>
+          (analyzeBlockFuel fuel
+              (demand.withNormal headLive) post).bind fun postLive =>
+            (analyzeBlockFuel fuel
+                { normal := postLive
+                  brk := demand.normal
+                  cont := postLive
+                  leave := demand.leave }
+                body).bind fun bodyLive =>
+              (analyzeBlockFuel fuel
+                  (demand.withNormal headLive) init).bind fun liveIn =>
+                some { liveIn, headLive, postLive, bodyLive }
 end
 
 mutual
@@ -414,24 +441,14 @@ mutual
                 (analyzeDefaultFuel_sound hDefault)
         | for_ init cond post body =>
             simp only [analyzeStmtFuel] at hAnalyze
-            obtain ⟨headLive, hClose, hInit⟩ :=
-              Option.bind_eq_some_iff.mp hAnalyze
-            obtain ⟨loopStepLive, hStep, hSubset⟩ := Close.run_sound hClose
-            obtain ⟨postLive, hPost, hStepTail⟩ :=
-              Option.bind_eq_some_iff.mp hStep
-            obtain ⟨bodyLive, hBody, hStepResult⟩ :=
-              Option.bind_eq_some_iff.mp hStepTail
-            have hEq :
-                Expr.uses cond ∪ (demand.normal ∪ bodyLive) =
-                  loopStepLive := by
-              simpa only [Option.some.injEq] using hStepResult
-            subst loopStepLive
-            exact
-              .for_
-                (analyzeBlockFuel_sound hPost)
-                (analyzeBlockFuel_sound hBody)
-                hSubset
-                (analyzeBlockFuel_sound hInit)
+            cases hLoop :
+                analyzeLoopFuel fuel demand init cond post body with
+            | none => simp [hLoop] at hAnalyze
+            | some result =>
+                have hEq : result.liveIn = liveIn := by
+                  simpa [hLoop] using hAnalyze
+                subst liveIn
+                exact analyzeLoopFuel_sound hLoop
         | brk =>
             have hEq : demand.brk = liveIn := by
               simpa only [analyzeStmtFuel, Option.some.injEq] using hAnalyze
@@ -464,6 +481,48 @@ mutual
               simpa only [analyzeStmtFuel, Option.some.injEq] using hAnalyze
             cases hEq
             exact .terminalArgs
+
+  theorem analyzeLoopFuel_sound
+      {fuel : Nat} {demand : Demand}
+      {init : Block} {cond : Expr 1} {post body : Block}
+      {result : LoopResult}
+      (hAnalyze :
+        analyzeLoopFuel fuel demand init cond post body = some result) :
+      Stmt.Valid demand (.for_ init cond post body) result.liveIn := by
+    cases fuel with
+    | zero => simp [analyzeLoopFuel] at hAnalyze
+    | succ fuel =>
+        simp only [analyzeLoopFuel] at hAnalyze
+        obtain ⟨headLive, hClose, hAfterClose⟩ :=
+          Option.bind_eq_some_iff.mp hAnalyze
+        obtain ⟨postLive, hPost, hAfterPost⟩ :=
+          Option.bind_eq_some_iff.mp hAfterClose
+        obtain ⟨bodyLive, hBody, hAfterBody⟩ :=
+          Option.bind_eq_some_iff.mp hAfterPost
+        obtain ⟨liveIn, hInit, hResult⟩ :=
+          Option.bind_eq_some_iff.mp hAfterBody
+        have hResultEq :
+            ({ liveIn := liveIn
+               headLive := headLive
+               postLive := postLive
+               bodyLive := bodyLive } : LoopResult) = result := by
+          simpa only [Option.some.injEq] using hResult
+        subst result
+        obtain ⟨loopStepLive, hStep, hSubset⟩ := Close.run_sound hClose
+        rw [hPost] at hStep
+        simp only [Option.bind_some] at hStep
+        rw [hBody] at hStep
+        have hStepEq :
+            Expr.uses cond ∪ (demand.normal ∪ bodyLive) =
+              loopStepLive := by
+          simpa only [Option.bind_some, Option.some.injEq] using hStep
+        subst loopStepLive
+        exact
+          .for_
+            (analyzeBlockFuel_sound hPost)
+            (analyzeBlockFuel_sound hBody)
+            hSubset
+            (analyzeBlockFuel_sound hInit)
 end
 
 mutual
@@ -496,8 +555,11 @@ mutual
 end
 
 
+def analysisFuel (block : Block) : Nat :=
+  blockAnalysisSize block + 1
+
 def analyzeBlock? (demand : Demand) (block : Block) : Option LiveSet :=
-  analyzeBlockFuel (blockAnalysisSize block + 1) demand block
+  analyzeBlockFuel (analysisFuel block) demand block
 
 theorem analyzeBlock?_sound
     {demand : Demand} {block : Block} {liveIn : LiveSet}
