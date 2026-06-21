@@ -28,6 +28,7 @@ import EvmCompiler.Functions.StackTransitionPreservation
 import EvmCompiler.Functions.StackTransitionCompilation
 import EvmCompiler.Functions.StackLowering
 import EvmCompiler.Functions.StackLoweringCompilation
+import EvmCompiler.Functions.StackDiagnostics
 import EvmCompiler.Functions.AllocationObserverRelation
 import EvmCompiler.Functions.AllocationObserverSafety
 import EvmCompiler.Functions.AllocationObserverPreservation
@@ -2918,6 +2919,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLayout.scheduleRetain?_sound
 #check EvmCompiler.Functions.AllocationLayout.Transition.build?_sound
 #check EvmCompiler.Functions.AllocationLayout.Transition.target_nodup
+#check EvmCompiler.Functions.AllocationLayout.Ordering.build?
+#check EvmCompiler.Functions.AllocationLayout.Ordering.valid
 #check EvmCompiler.Functions.AllocationLayoutLowering.Schedule.compile
 #check EvmCompiler.Functions.AllocationLayoutLowering.Transition.compile
 #check EvmCompiler.Functions.StackSchedule.scheduleBlockFuel_entry_sound
@@ -2937,6 +2940,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_terminalArgs_components
 #check EvmCompiler.Functions.StackSchedule.Examples.sequentialDead_stackOnly
 #check EvmCompiler.Functions.StackSchedule.Examples.dormantCall_schedule_succeeds
+#check EvmCompiler.Functions.StackDiagnostics.programReports
+#check EvmCompiler.Functions.StackDiagnostics.NextUse.block
 #check EvmCompiler.Functions.StackAccessLowering.Expr.compileCode_of_check
 #check EvmCompiler.Functions.StackAccessLowering.ExprSeq.compileCode_of_check
 #check EvmCompiler.Functions.StackAccessLowering.assign_compile_of_check

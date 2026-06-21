@@ -185,6 +185,32 @@ theorem target_nodup
 
 end Transition
 
+/-- A pure stack permutation used to place imminent accesses near the top.
+Unlike `Transition`, it drops no values. -/
+structure Ordering where
+  source : Locals.Layout
+  promotions : List Promotion
+  target : Locals.Layout
+  valid : run source promotions = some target
+
+namespace Ordering
+
+def build? (layout : Locals.Layout) (topFirst : List Name) : Option Ordering :=
+  match hBuild : build layout topFirst.reverse with
+  | none => none
+  | some (promotions, target) =>
+      some
+        { source := layout
+          promotions
+          target
+          valid := build_run hBuild }
+
+def statements (ordering : Ordering) : List Locals.Stmt :=
+  ordering.promotions.map fun promotion =>
+    Locals.Stmt.promoteName promotion.name
+
+end Ordering
+
 def Schedule.statements (schedule : Schedule) : List Locals.Stmt :=
   (schedule.promotions.map fun promotion =>
       Locals.Stmt.promoteName promotion.name) ++

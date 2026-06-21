@@ -157,11 +157,25 @@ for theorem in \
     'build_run' \
     'scheduleRetain?_sound' \
     'Transition.build?_sound' \
-    'Transition.target_nodup'; do
+    'Transition.target_nodup' \
+    'Ordering.build?' \
+    'Ordering.valid'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.AllocationLayout.${theorem}" \
       EvmCompiler/Verification.lean; then
     printf 'Verification root is missing Functions layout theorem %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
+for theorem in \
+    'programReports' \
+    'NextUse.block'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.Functions.StackDiagnostics.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing stack diagnostic interface %s.\n\n' \
       "$theorem" >&2
     failed=1
   fi
@@ -1709,6 +1723,11 @@ report_matches \
   'Functions stack compilation bridge must use only the adjacent Locals compiler:' \
   '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|Interaction|EffectSemantics|TypedCfg|Assembly\.(Assembler|Compiler))' \
   EvmCompiler/Functions/StackLoweringCompilation.lean
+
+report_matches \
+  'Functions stack diagnostics must remain read-only and allocator-local:' \
+  '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|Interaction|EffectSemantics|TypedCfg|Assembly\.(Assembler|Compiler)|Locals\.Compiler)' \
+  EvmCompiler/Functions/StackDiagnostics.lean
 
 report_matches \
   'Canonical Expressions semantics must interpret Expressions syntax directly, not compile through Structured:' \

@@ -32,6 +32,25 @@ and compiler success; it does not take generated schedules, layouts,
 certificates, or preservation oracles as premises. `Yul.EndToEnd` remains a
 short composition module.
 
+## Viability Decision
+
+The exact pinned-contract diagnostic now resolves the architecture fork:
+
+- Permit2 reaches 39/39 Functions units under stack-only next-use scheduling;
+  its un-ordered baseline had eight top-16 access failures in the dispatcher.
+- Linked Aave Pool reaches 189/189 Functions units under the same policy; its
+  baseline had one access failure and one depth-18 retain failure in
+  `fun_flashLoan`.
+- The sufficient policy is stable next-use ranking, at most 16 imminent
+  promotions, and canonical join restoration over only the differing top
+  prefix while preserving the common dormant suffix.
+
+Therefore no Functions-to-Functions normalization pass is currently planned.
+Source normalization becomes necessary only if the integrated physical
+allocator still finds a program whose genuinely simultaneous/effectful live
+set cannot be scheduled stack-only. Rematerialization and dead source-binding
+elimination are not prerequisites for Permit2 or Aave.
+
 ## Semantic Invariants
 
 - `msize()` executes honest EVM `MSIZE`; its exact value and ordering are
@@ -66,6 +85,10 @@ short composition module.
 - [ ] Add allocation diagnostics that report peak live values, shuffle cost,
   rematerializations, spill words, compile time, and output bytes without
   changing compiler semantics.
+- [x] Route exact pinned Permit2 and linked Aave Pool through liveness,
+  scheduling, accessibility, join, and dormant-frame diagnostics; record the
+  exact first baseline failures and verify that next-use physical scheduling
+  resolves all 39 and 189 Functions units respectively.
 
 ### 2. Backward Liveness Owner
 
@@ -89,7 +112,8 @@ short composition module.
 - [x] Track a symbolic stack layout alongside the checked liveness point at
   each allocation program point.
 - [x] Invoke the checked retain schedule at each program point so dead values
-  are popped promptly; next-use ordering remains open.
+  are popped promptly; exact-contract diagnostics establish the required
+  next-use policy, whose production artifact/proof integration remains open.
 - [x] Compute canonical layouts at branch, switch, and loop joins; exact
   internal-call return restoration remains in the call boundary.
 - [x] Generate a checked symbolic retain transition using only accessible
