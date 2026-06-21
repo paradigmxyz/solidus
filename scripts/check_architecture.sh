@@ -57,6 +57,7 @@ for theorem in \
     'ifPoint_of_compilers' \
     'blockCons_of_compilers' \
     'ifCons_of_compilers' \
+    'exprCons_of_compilers' \
     'RegularListPreserves.toOpenList' \
     'terminalList_of_compilers' \
     'terminalArgsList_of_compilers'; do

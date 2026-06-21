@@ -1517,6 +1517,82 @@ theorem ifCons_of_compilers
           hBody hChildSchedule hChildLower hChildCompile)
   · exact hTail
 
+theorem exprCons_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (pinned : AllocationLiveness.LiveSet)
+    (scheduleFuel lowerFuel : Nat)
+    (expr : Functions.Expr 0) (rest : List Functions.Stmt)
+    (fact : AllocationLivenessFacts.Point)
+    (restFacts : List AllocationLivenessFacts.Point)
+    {point : StackSchedule.Point} {points : List StackSchedule.Point}
+    {finalLayout : Locals.Layout} {lowered : List Locals.Stmt}
+    {targetCtx finalCtx : Locals.Ctx} {code : List Expressions.Stmt}
+    {sourceEnv : List Name}
+    (hScoped : Functions.Scope.ExprScoped sourceEnv expr)
+    (hSupported : Locals.InteractionSemantics.Expr.OpenSupported expr)
+    (hSchedule :
+      StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
+          targetCtx.layout (.expr expr :: rest) (fact :: restFacts) =
+        some (point :: points, finalLayout))
+    (hLower :
+      StackLowering.lowerStmtListFuel lowerFuel lowerCtx
+          (.expr expr :: rest) (point :: points) = some lowered)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx))
+    (hTail :
+      ∀ {tailLayout : Locals.Layout} {tailFinal : Locals.Layout}
+        {tailLowered : List Locals.Stmt} {middleCtx tailFinalCtx : Locals.Ctx}
+        {tailCode : List Expressions.Stmt},
+        middleCtx.layout = tailLayout →
+        StackSchedule.scheduleStmtListFuelWithTargets targets scheduleFuel pinned
+            tailLayout rest restFacts = some (points, tailFinal) →
+        StackLowering.lowerStmtListFuel lowerFuel lowerCtx rest points =
+          some tailLowered →
+        Locals.Block.compileOpen middleCtx { stmts := tailLowered } =
+          some (tailCode, tailFinalCtx) →
+        ControlScheduledListPreserves sourceProgram targetProgram targets
+          middleCtx tailFinalCtx rest tailFinal tailCode) :
+    ControlScheduledListPreserves sourceProgram targetProgram targets
+      targetCtx finalCtx (.expr expr :: rest) finalLayout code := by
+  apply controlFallthroughCons_of_compilers sourceProgram targetProgram lowerCtx
+    targets pinned scheduleFuel lowerFuel (.expr expr) rest fact restFacts
+    hSchedule hLower hCompile
+  · intro before rawPoint hRaw
+    exact
+      (StackSchedule.scheduleStmtFuelWithTargets_expr_components hRaw).2.2.2.2
+  · intro order rawPoint retain pointLowered pointCode middleCtx hOrderBuild
+      hRawSchedule hRetainBuild hPointLower hPointCompile
+    obtain ⟨hRawBefore, hRawStatement, _hRawRetain, _hRawRegions,
+        _hRawFalls⟩ :=
+      StackSchedule.scheduleStmtFuelWithTargets_expr_components hRawSchedule
+    obtain ⟨lowerRetain, hAccess, _hLowerFalls, _hLowerRegions,
+        hLowerRetain, hPointLowered⟩ :=
+      StackLowering.lowerPointFuel_expr_components hPointLower
+    have hLowerRetainEq : lowerRetain = retain :=
+      Option.some.inj (hLowerRetain.symm.trans rfl)
+    subst lowerRetain
+    have hRetainSource :
+        (targetCtx.withLayout order.target).layout = retain.source := by
+      have hBuiltSource : rawPoint.statementLayout = retain.source :=
+        (AllocationLayout.Transition.build?_sound hRetainBuild).1.symm
+      simpa [Locals.Ctx.withLayout] using
+        hRawStatement.symm.trans hBuiltSource
+    have hExprAccess :
+        StackAccess.Expr.check?
+            (targetCtx.withLayout order.target).layout 0 expr = some () := by
+      simpa [StackLowering.pointAccess?, Locals.Ctx.withLayout, hRawBefore]
+        using hAccess
+    exact
+      compiledExprControlPointOfEquations sourceProgram targetProgram targets
+        (targetCtx.withLayout order.target) middleCtx expr retain pointLowered
+        pointCode hRetainSource hScoped hSupported hExprAccess hPointLowered
+        hPointCompile
+  · exact hTail
+
 theorem regularEmpty
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)

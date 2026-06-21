@@ -640,6 +640,25 @@ theorem scheduleStmtFuel_expr_components
       subst point
       simp
 
+theorem scheduleStmtFuelWithTargets_expr_components
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout : Locals.Layout} {expr : Expr 0}
+    {facts : AllocationLivenessFacts.Point} {point : Point}
+    (hSchedule :
+      scheduleStmtFuelWithTargets targets fuel pinned layout (.expr expr) facts =
+        some point) :
+    point.beforeLayout = layout ∧
+      point.statementLayout = layout ∧
+      point.retain? = none ∧ point.regions = [] ∧
+      point.fallsThrough = true := by
+  cases fuel with
+  | zero =>
+      simp [scheduleStmtFuelWithTargets] at hSchedule
+  | succ fuel =>
+      simp [scheduleStmtFuelWithTargets, alwaysExits] at hSchedule
+      subst point
+      simp
+
 theorem scheduleStmtFuel_let_components
     {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}
     {name : Name} {value : Expr 1}
