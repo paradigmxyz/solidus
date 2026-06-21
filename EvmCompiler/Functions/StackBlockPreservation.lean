@@ -106,6 +106,108 @@ def ContinueListPreserves
         (Expressions.InteractionSemantics.Block.openRun targetProgram
           (code.length + 1) { stmts := code } target)
 
+def ScheduledListPreserves
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx finalCtx : Locals.Ctx)
+    (stmts : List Functions.Stmt)
+    (finalLayout : Locals.Layout)
+    (code : List Expressions.Stmt) : Prop :=
+  finalCtx.layout = finalLayout ∧
+    ∀ (sourceCtx : Functions.Source.Ctx)
+      {suffix : List Word} {returns : List Structured.ReturnDest}
+      {source : Locals.Source.State} {target : Structured.RunState},
+      ControlCtxCovers sourceCtx targetCtx targets →
+      StateRel targetCtx.layout suffix returns source target →
+      Simulation.Interaction.Rel
+        (OpenOutcomeRel finalCtx suffix returns)
+        (Functions.InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx (stmts.length + 1) { stmts } source)
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          (code.length + 1) { stmts := code } target)
+
+def ControlScheduledListPreserves
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx finalCtx : Locals.Ctx)
+    (stmts : List Functions.Stmt)
+    (finalLayout : Locals.Layout)
+    (code : List Expressions.Stmt) : Prop :=
+  finalCtx.layout = finalLayout ∧
+    ∀ (sourceCtx : Functions.Source.Ctx)
+      {suffix : List Word} {returns : List Structured.ReturnDest}
+      {source : Locals.Source.State} {target : Structured.RunState},
+      ControlCtxCovers sourceCtx targetCtx targets →
+      StateRel targetCtx.layout suffix returns source target →
+      Simulation.Interaction.Rel
+        (ControlOpenOutcomeRel targets finalCtx suffix returns)
+        (Functions.InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx (stmts.length + 1) { stmts } source)
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          (code.length + 1) { stmts := code } target)
+
+theorem controlCons
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx middleCtx finalCtx : Locals.Ctx)
+    (stmt : Functions.Stmt) (rest : List Functions.Stmt)
+    (headCode tailCode code : List Expressions.Stmt)
+    (finalLayout : Locals.Layout)
+    (hHead :
+      ControlPointPreserves sourceProgram targetProgram targets targetCtx
+        middleCtx stmt headCode)
+    (hTail :
+      ControlScheduledListPreserves sourceProgram targetProgram targets
+        middleCtx finalCtx rest finalLayout tailCode)
+    (hCode : code = headCode ++ tailCode) :
+    ControlScheduledListPreserves sourceProgram targetProgram targets
+      targetCtx finalCtx (stmt :: rest) finalLayout code := by
+  rcases hTail with ⟨hFinal, hTailForward⟩
+  subst code
+  refine ⟨hFinal, ?_⟩
+  intro sourceCtx suffix returns source target hCtx hInitial
+  have hHeadFuel : headCode.length < (headCode ++ tailCode).length + 1 := by
+    simp
+    omega
+  have hHeadRun :=
+    hHead sourceCtx (rest.length + 1) ((headCode ++ tailCode).length + 1)
+      hHeadFuel hCtx hInitial
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  rw [Functions.InteractionSemantics.Block.openRun_cons]
+  simp only [List.length_cons]
+  apply Simulation.Interaction.Rel.bind hHeadRun
+  intro sourceResult targetResult hResult
+  cases hResult with
+  | regular hMiddleCtx hMiddleState =>
+      have hTailRun :=
+        hTailForward _ hMiddleCtx hMiddleState
+      have hTailFuel :
+          (headCode ++ tailCode).length + 1 - headCode.length =
+            tailCode.length + 1 := by
+        simp
+        omega
+      rw [hTailFuel]
+      exact hTailRun
+  | brk hState =>
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .brk hState
+  | cont hState =>
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .cont hState
+  | leave hState =>
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .leave hState
+  | halt hShared hReturns =>
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .halt hShared hReturns
+
 theorem regularEmpty
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
@@ -824,6 +926,62 @@ theorem RegularListPreserves.toOpenList
   | error _ => exact Simulation.Interaction.ExceptRel.error trivial
   | ok hResult =>
       exact Simulation.Interaction.ExceptRel.ok hResult.toOpen
+
+theorem OpenListPreserves.toScheduledList
+    {sourceProgram : Functions.Program}
+    {targetProgram : Expressions.Program}
+    {targets : StackSchedule.ControlTargets}
+    {targetCtx finalCtx : Locals.Ctx}
+    {stmts : List Functions.Stmt}
+    {finalLayout : Locals.Layout}
+    {code : List Expressions.Stmt}
+    (hPreserves :
+      OpenListPreserves sourceProgram targetProgram targetCtx finalCtx
+        stmts finalLayout code) :
+    ScheduledListPreserves sourceProgram targetProgram targets targetCtx
+      finalCtx stmts finalLayout code := by
+  rcases hPreserves with ⟨hFinal, hForward⟩
+  refine ⟨hFinal, ?_⟩
+  intro sourceCtx suffix returns source target hCtx hInitial
+  exact hForward sourceCtx hCtx.context hInitial
+
+theorem BreakListPreserves.toScheduledList
+    {sourceProgram : Functions.Program}
+    {targetProgram : Expressions.Program}
+    {targets : StackSchedule.ControlTargets}
+    {targetCtx finalCtx : Locals.Ctx}
+    {stmts : List Functions.Stmt}
+    {targetLayout : Locals.Layout}
+    {code : List Expressions.Stmt}
+    (hTarget : targets.brk? = some targetLayout)
+    (hPreserves :
+      BreakListPreserves sourceProgram targetProgram targetCtx finalCtx
+        stmts targetLayout code) :
+    ScheduledListPreserves sourceProgram targetProgram targets targetCtx
+      finalCtx stmts targetLayout code := by
+  rcases hPreserves with ⟨hFinal, hForward⟩
+  refine ⟨hFinal, ?_⟩
+  intro sourceCtx suffix returns source target hCtx hInitial
+  exact hForward sourceCtx (hCtx.breakTarget hTarget) hInitial
+
+theorem ContinueListPreserves.toScheduledList
+    {sourceProgram : Functions.Program}
+    {targetProgram : Expressions.Program}
+    {targets : StackSchedule.ControlTargets}
+    {targetCtx finalCtx : Locals.Ctx}
+    {stmts : List Functions.Stmt}
+    {targetLayout : Locals.Layout}
+    {code : List Expressions.Stmt}
+    (hTarget : targets.cont? = some targetLayout)
+    (hPreserves :
+      ContinueListPreserves sourceProgram targetProgram targetCtx finalCtx
+        stmts targetLayout code) :
+    ScheduledListPreserves sourceProgram targetProgram targets targetCtx
+      finalCtx stmts targetLayout code := by
+  rcases hPreserves with ⟨hFinal, hForward⟩
+  refine ⟨hFinal, ?_⟩
+  intro sourceCtx suffix returns source target hCtx hInitial
+  exact hForward sourceCtx (hCtx.continueTarget hTarget) hInitial
 
 theorem brkList_of_compilers
     (sourceProgram : Functions.Program)

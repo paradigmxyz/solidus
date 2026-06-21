@@ -81,6 +81,94 @@ structure ContinueCtxCovers (source : Functions.Source.Ctx)
       source.continueScope? = some scope ∧
         ∀ {name : Name}, name ∈ layout → name ∈ scope
 
+structure ControlCtxCovers (source : Functions.Source.Ctx)
+    (target : Locals.Ctx) (targets : StackSchedule.ControlTargets) : Prop where
+  context : CtxCovers source target
+  breakTarget :
+    ∀ {layout : Locals.Layout}, targets.brk? = some layout →
+      BreakCtxCovers source target layout
+  continueTarget :
+    ∀ {layout : Locals.Layout}, targets.cont? = some layout →
+      ContinueCtxCovers source target layout
+
+namespace ControlCtxCovers
+
+theorem afterOrdering
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {targets : StackSchedule.ControlTargets}
+    (hCtx : ControlCtxCovers source target targets)
+    (ordering : AllocationLayout.Ordering)
+    (hSource : target.layout = ordering.source) :
+    ControlCtxCovers source (target.withLayout ordering.target) targets := by
+  constructor
+  · exact hCtx.context.afterOrdering ordering hSource
+  · intro layout hTarget
+    have hBreak := hCtx.breakTarget hTarget
+    exact
+      { context := hBreak.context.afterOrdering ordering hSource
+        targetDepth := by
+          simpa [Locals.Ctx.withLayout] using hBreak.targetDepth
+        sourceCovers := hBreak.sourceCovers }
+  · intro layout hTarget
+    have hContinue := hCtx.continueTarget hTarget
+    exact
+      { context := hContinue.context.afterOrdering ordering hSource
+        targetDepth := by
+          simpa [Locals.Ctx.withLayout] using hContinue.targetDepth
+        sourceCovers := hContinue.sourceCovers }
+
+theorem afterTransition
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {targets : StackSchedule.ControlTargets}
+    (hCtx : ControlCtxCovers source target targets)
+    (transition : AllocationLayout.Transition)
+    (hSource : target.layout = transition.source) :
+    ControlCtxCovers source
+      (target.withLayout transition.schedule.target) targets := by
+  constructor
+  · exact hCtx.context.afterTransition transition hSource
+  · intro layout hTarget
+    have hBreak := hCtx.breakTarget hTarget
+    exact
+      { context := hBreak.context.afterTransition transition hSource
+        targetDepth := by
+          simpa [Locals.Ctx.withLayout] using hBreak.targetDepth
+        sourceCovers := hBreak.sourceCovers }
+  · intro layout hTarget
+    have hContinue := hCtx.continueTarget hTarget
+    exact
+      { context := hContinue.context.afterTransition transition hSource
+        targetDepth := by
+          simpa [Locals.Ctx.withLayout] using hContinue.targetDepth
+        sourceCovers := hContinue.sourceCovers }
+
+theorem prepend
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {targets : StackSchedule.ControlTargets}
+    (hCtx : ControlCtxCovers source target targets) (name : Name) :
+    ControlCtxCovers { source with scope := name :: source.scope }
+      (target.withLayout (name :: target.layout)) targets := by
+  constructor
+  · exact hCtx.context.prepend name
+  · intro layout hTarget
+    have hBreak := hCtx.breakTarget hTarget
+    exact
+      { context := hBreak.context.prepend name
+        targetDepth := by
+          simpa [Locals.Ctx.withLayout] using hBreak.targetDepth
+        sourceCovers := by
+          simpa using hBreak.sourceCovers }
+  · intro layout hTarget
+    have hContinue := hCtx.continueTarget hTarget
+    exact
+      { context := hContinue.context.prepend name
+        targetDepth := by
+          simpa [Locals.Ctx.withLayout] using hContinue.targetDepth
+        sourceCovers := by
+          simpa using hContinue.sourceCovers }
+
+end ControlCtxCovers
+
 structure RegularResultRel (targetCtx : Locals.Ctx)
     (suffix : List Word) (returns : List Structured.ReturnDest)
     (source :
@@ -137,6 +225,84 @@ abbrev OpenOutcomeRel (finalCtx : Locals.Ctx)
   Simulation.Interaction.ExceptRel
     (fun (_ : EVMException) (_ : EVMException) => True)
     (OpenResultRel finalCtx suffix returns)
+
+inductive ControlOpenResultRel (targets : StackSchedule.ControlTargets)
+    (finalCtx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest) :
+    (Locals.Source.Effectful.Outcome Locals.Source.State ×
+      Functions.Source.Ctx) →
+    Structured.Outcome → Prop
+  | regular {source sourceCtx target} :
+      ControlCtxCovers sourceCtx finalCtx targets →
+      StateRel finalCtx.layout suffix returns source target →
+      ControlOpenResultRel targets finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.regular source, sourceCtx)
+        (Structured.Outcome.regular target)
+  | brk {source sourceCtx target layout} :
+      StateRel layout suffix returns source target →
+      ControlOpenResultRel targets finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.brk source, sourceCtx)
+        (Structured.Outcome.brk target)
+  | cont {source sourceCtx target layout} :
+      StateRel layout suffix returns source target →
+      ControlOpenResultRel targets finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.cont source, sourceCtx)
+        (Structured.Outcome.cont target)
+  | leave {source sourceCtx target layout} :
+      StateRel layout suffix returns source target →
+      ControlOpenResultRel targets finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.leave source, sourceCtx)
+        (Structured.Outcome.leave target)
+  | halt {kind source sourceCtx target} :
+      source.shared = target.evm.toSharedState →
+      target.returns = returns →
+      ControlOpenResultRel targets finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.halt kind source, sourceCtx)
+        (Structured.Outcome.halt kind target)
+
+abbrev ControlOpenOutcomeRel (targets : StackSchedule.ControlTargets)
+    (finalCtx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest) :=
+  Simulation.Interaction.ExceptRel
+    (fun (_ : EVMException) (_ : EVMException) => True)
+    (ControlOpenResultRel targets finalCtx suffix returns)
+
+def ControlPointPreserves
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx finalCtx : Locals.Ctx)
+    (stmt : Functions.Stmt) (code : List Expressions.Stmt) : Prop :=
+  ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel targetFuel : Nat)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState},
+    code.length < targetFuel →
+    ControlCtxCovers sourceCtx targetCtx targets →
+    StateRel targetCtx.layout suffix returns source target →
+    Simulation.Interaction.Rel
+      (ControlOpenOutcomeRel targets finalCtx suffix returns)
+      (Functions.InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel stmt source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        targetFuel { stmts := code } target)
+
+theorem ControlOpenResultRel.toOpen
+    {targets : StackSchedule.ControlTargets}
+    {finalCtx : Locals.Ctx} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source :
+      Locals.Source.Effectful.Outcome Locals.Source.State ×
+        Functions.Source.Ctx}
+    {target : Structured.Outcome}
+    (hRel :
+      ControlOpenResultRel targets finalCtx suffix returns source target) :
+    OpenResultRel finalCtx suffix returns source target := by
+  cases hRel with
+  | regular hCtx hState => exact .regular hCtx.context hState
+  | brk hState => exact .brk hState
+  | cont hState => exact .cont hState
+  | leave hState => exact .leave hState
+  | halt hShared hReturns => exact .halt hShared hReturns
 
 theorem RegularResultRel.toOpen
     {targetCtx : Locals.Ctx} {suffix : List Word}
