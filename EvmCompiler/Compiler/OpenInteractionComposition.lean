@@ -5,7 +5,7 @@ import EvmCompiler.Structured.InteractionTerminalPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Assembly.InteractionConcreteResources
-import EvmCompiler.Solidity.Frontend
+import EvmCompiler.Solidity.VerifiedStackObjectArtifact
 
 namespace EvmCompiler
 namespace Compiler
@@ -982,6 +982,7 @@ theorem compiledVerifiedStackCodeToRawBytecode
     {source : Yul.InteractionSemantics.State}
     {functionsState : Functions.InteractionSemantics.State}
     {expressionsState : Expressions.InteractionSemantics.RunState}
+    (suffix : List UInt8 := [])
     (hCode : object.compileVerifiedStackCodeArtifactIn? context =
       some codeArtifact)
     (hWF : codeArtifact.lower.toFunctions.WF)
@@ -1014,7 +1015,7 @@ theorem compiledVerifiedStackCodeToRawBytecode
               (.Block [codeArtifact.ordered.program.contract.dispatcher])
               (some codeArtifact.ordered.program.contract) source)
             (Assembly.Bytecode.InteractionSemantics.openRunNResult
-              (Assembly.Bytecode.ofList codeArtifact.bytes)
+              (Assembly.Bytecode.ofList (codeArtifact.bytes ++ suffix))
               (2 *
                 (Structured.InteractionStaticCost.blockBudget
                     codeArtifact.compiled.expressions.toStructured
@@ -1058,12 +1059,81 @@ theorem compiledVerifiedStackCodeToRawBytecode
       hTerminal
   have hDecoding :
       Assembly.Bytecode.DecodingCorrect codeArtifact.compiled.target
-        (Assembly.Bytecode.ofList codeArtifact.bytes) := by
+        (Assembly.Bytecode.ofList (codeArtifact.bytes ++ suffix)) := by
     simpa using
       Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_decodingCorrect
-        hCode []
+        hCode suffix
   refine ⟨structuredFuel, hAccepted, generated, ?_⟩
   exact stackEncodedToRawBytecode hEncoded hDecoding hTerminal
+
+/-- Recursive Solidity object construction reaches the exact root image. Child
+objects and payload layout are computed by the frontend artifact, while the
+root code proof remains the adjacent checked stack-code theorem above. -/
+theorem compiledVerifiedStackObjectToRawBytecode
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hWF : artifact.codeArtifact.lower.toFunctions.WF)
+    (hScoped : artifact.codeArtifact.lower.toFunctions.Scoped)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial
+        (Yul.Contract.names
+          artifact.codeArtifact.ordered.program.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState)
+    (hTerminal : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceTerminal
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [artifact.codeArtifact.ordered.program.contract.dispatcher])
+        (some artifact.codeArtifact.ordered.program.contract) source)) :
+    ∃ structuredFuel,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        ∃ generated :
+            Structured.TypedCfgPreservation.Program.GeneratedContext
+              artifact.codeArtifact.compiled.expressions.toStructured
+              artifact.codeArtifact.compiled.entryShapes
+              artifact.codeArtifact.compiled.cfg,
+          Simulation.Interaction.Rel
+            (YulStackBytecodeDoneRel
+              artifact.codeArtifact.compiled.expressions.toStructured
+              artifact.codeArtifact.compiled.entryShapes
+              artifact.codeArtifact.compiled.cfg generated
+              artifact.codeArtifact.compiled.certified.target)
+            (Yul.InteractionSemantics.exec (sourceFuel + 1)
+              (.Block
+                [artifact.codeArtifact.ordered.program.contract.dispatcher])
+              (some artifact.codeArtifact.ordered.program.contract) source)
+            (Assembly.Bytecode.InteractionSemantics.openRunNResult
+              (Assembly.Bytecode.ofList artifact.image.bytes)
+              (2 *
+                (Structured.InteractionStaticCost.blockBudget
+                    artifact.codeArtifact.compiled.expressions.toStructured
+                    structuredFuel
+                    artifact.codeArtifact.compiled.expressions.toStructured.body *
+                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                    artifact.codeArtifact.compiled.cfg))
+              { expressionsState.evm with
+                pc := EvmYul.UInt256.ofNat 0 }) := by
+  obtain ⟨_children, plan, _hChildren, _hPlan, _hFinish, hCode,
+      _hArtifactChildren, _hContext, _hChildImages, _hPayload, hImage⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+      hObject
+  have hResult :=
+    compiledVerifiedStackCodeToRawBytecode
+      (suffix := plan.payload) hCode hWF hScoped hYulInitial hYulDomain
+      hStackInitial hTerminal
+  simpa [hImage] using hResult
 
 /-- The end-to-end relation for a successfully compiled artifact. Intermediate
 compiler witnesses are existential and fixed across the whole interaction

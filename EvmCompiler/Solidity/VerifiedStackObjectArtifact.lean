@@ -1,0 +1,357 @@
+import EvmCompiler.Solidity.Frontend
+
+namespace EvmCompiler
+namespace Solidity
+namespace Frontend
+
+inductive VerifiedStackObjectArtifact where
+  | mk
+      (computed : Object.ObjectComputedObjectData)
+      (image : ObjectImage)
+      (codeArtifact : Object.VerifiedStackCodeArtifact)
+      (children : List VerifiedStackObjectArtifact)
+
+namespace VerifiedStackObjectArtifact
+
+def computed : VerifiedStackObjectArtifact → Object.ObjectComputedObjectData
+  | .mk computed _image _codeArtifact _children => computed
+
+def image : VerifiedStackObjectArtifact → ObjectImage
+  | .mk _computed image _codeArtifact _children => image
+
+def codeArtifact : VerifiedStackObjectArtifact →
+    Object.VerifiedStackCodeArtifact
+  | .mk _computed _image codeArtifact _children => codeArtifact
+
+def children : VerifiedStackObjectArtifact →
+    List VerifiedStackObjectArtifact
+  | .mk _computed _image _codeArtifact children => children
+
+end VerifiedStackObjectArtifact
+
+namespace Object
+
+def planVerifiedStackObjectArtifactFromChildren? (object : Object)
+    (linkerSymbols : List (Name × Word))
+    (childArtifacts : List VerifiedStackObjectArtifact) :
+    Option ObjectArtifactPlan :=
+  object.planObjectArtifactFromChildImagesWith? linkerSymbols
+    (childArtifacts.map VerifiedStackObjectArtifact.image)
+    (fun context => do
+      let artifact ← object.compileVerifiedStackCodeArtifactIn? context
+      some artifact.bytes)
+
+def compileVerifiedStackMarkerCodeArtifact? (object : Object)
+    (plan : ObjectArtifactPlan)
+    (codeArtifact : VerifiedStackCodeArtifact) :
+    Option VerifiedStackCodeArtifact :=
+  match plan.immutableNames with
+  | [] => some codeArtifact
+  | _ :: _ =>
+      let markerContext : ObjectBuiltinContext :=
+        { plan.context with
+          immutableValues := plan.markerImmutableValues }
+      object.compileVerifiedStackCodeArtifactIn? markerContext
+
+def finishVerifiedStackObjectArtifact? (object : Object)
+    (childArtifacts : List VerifiedStackObjectArtifact)
+    (plan : ObjectArtifactPlan) : Option VerifiedStackObjectArtifact := do
+  let codeArtifact ← object.compileVerifiedStackCodeArtifactIn? plan.context
+  if codeArtifact.bytes.length == plan.codeBase then
+    let markerArtifact ←
+      object.compileVerifiedStackMarkerCodeArtifact? plan codeArtifact
+    if markerArtifact.bytes.length == plan.codeBase then
+      let ownImmutableReferences :=
+        Bytecode.immutableReferenceEntriesFromCodes
+          codeArtifact.bytes markerArtifact.bytes plan.markerImmutableValues
+      let payloadImmutableReferences ←
+        ObjectItemRef.List.immutableReferenceEntriesFromNat?
+          object.data plan.childImages plan.codeBase plan.items
+      let immutableReferences :=
+        ownImmutableReferences ++ payloadImmutableReferences
+      let computed : ObjectComputedObjectData :=
+        { childImages := plan.childImages
+          items := plan.items
+          dataSizes := plan.dataSizes
+          dataOffsets := plan.dataOffsets
+          payload := plan.payload
+          codeBase := plan.codeBase
+          context := plan.context
+          code := codeArtifact.bytes
+          markerCode := markerArtifact.bytes }
+      let image : ObjectImage :=
+        { name := object.name
+          bytes := codeArtifact.bytes ++ plan.payload
+          immutableReferences := immutableReferences
+          layoutEntries := plan.layout
+          dataSizeEntries := plan.dataSizes
+          dataOffsetEntries := plan.dataOffsets }
+      some (.mk computed image codeArtifact childArtifacts)
+    else
+      none
+  else
+    none
+
+theorem finishVerifiedStackObjectArtifact?_parts
+    {object : Object} {plan : ObjectArtifactPlan}
+    {childArtifacts : List VerifiedStackObjectArtifact}
+    {artifact : VerifiedStackObjectArtifact}
+    (hFinish :
+      object.finishVerifiedStackObjectArtifact? childArtifacts plan =
+        some artifact) :
+    object.compileVerifiedStackCodeArtifactIn? plan.context =
+        some artifact.codeArtifact ∧
+      artifact.children = childArtifacts ∧
+      artifact.computed.context = plan.context ∧
+      artifact.computed.childImages = plan.childImages ∧
+      artifact.computed.payload = plan.payload ∧
+      artifact.computed.code = artifact.codeArtifact.bytes ∧
+      artifact.image.bytes = artifact.codeArtifact.bytes ++ plan.payload := by
+  unfold finishVerifiedStackObjectArtifact? at hFinish
+  cases hCode : object.compileVerifiedStackCodeArtifactIn? plan.context with
+  | none => simp [hCode] at hFinish
+  | some codeArtifact =>
+      cases hCodeLength : codeArtifact.bytes.length == plan.codeBase with
+      | false =>
+          have hCodeNe : codeArtifact.bytes.length ≠ plan.codeBase := by
+            simpa using hCodeLength
+          simp [hCode, hCodeNe] at hFinish
+      | true =>
+          have hCodeEq : codeArtifact.bytes.length = plan.codeBase := by
+            simpa using hCodeLength
+          cases hMarker :
+              object.compileVerifiedStackMarkerCodeArtifact?
+                plan codeArtifact with
+          | none => simp [hCode, hCodeEq, hMarker] at hFinish
+          | some markerArtifact =>
+              cases hMarkerLength :
+                  markerArtifact.bytes.length == plan.codeBase with
+              | false =>
+                  have hMarkerNe :
+                      markerArtifact.bytes.length ≠ plan.codeBase := by
+                    simpa using hMarkerLength
+                  simp [hCode, hCodeEq, hMarker, hMarkerNe] at hFinish
+              | true =>
+                  have hMarkerEq :
+                      markerArtifact.bytes.length = plan.codeBase := by
+                    simpa using hMarkerLength
+                  cases hPayloadReferences :
+                      ObjectItemRef.List.immutableReferenceEntriesFromNat?
+                        object.data plan.childImages plan.codeBase
+                          plan.items with
+                  | none =>
+                      simp [hCode, hCodeEq, hMarker, hMarkerEq,
+                        hPayloadReferences] at hFinish
+                  | some payloadReferences =>
+                      simp [hCode, hCodeEq, hMarker, hMarkerEq,
+                        hPayloadReferences] at hFinish
+                      subst artifact
+                      refine ⟨?_, rfl, rfl, rfl, rfl, rfl, rfl⟩
+                      rfl
+
+mutual
+  def compileVerifiedStackObjectArtifactWithLinkerSymbols?
+      (object : Object) (linkerSymbols : List (Name × Word)) :
+      Option VerifiedStackObjectArtifact := do
+    let childArtifacts ←
+      List.compileVerifiedStackObjectArtifactsWithLinkerSymbols?
+        object.objects linkerSymbols
+    let plan ←
+      object.planVerifiedStackObjectArtifactFromChildren?
+        linkerSymbols childArtifacts
+    object.finishVerifiedStackObjectArtifact? childArtifacts plan
+  termination_by sizeOf object
+  decreasing_by
+    simp_wf
+    cases object
+    simp_wf
+    omega
+
+  def List.compileVerifiedStackObjectArtifactsWithLinkerSymbols?
+      (objects : List Object) (linkerSymbols : List (Name × Word)) :
+      Option (List VerifiedStackObjectArtifact) :=
+    match objects with
+    | [] => some []
+    | object :: rest => do
+        let head ←
+          Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+            object linkerSymbols
+        let tail ←
+          List.compileVerifiedStackObjectArtifactsWithLinkerSymbols?
+            rest linkerSymbols
+        some (head :: tail)
+  termination_by sizeOf objects
+  decreasing_by
+    all_goals simp_wf
+    all_goals omega
+end
+
+theorem compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+    {object : Object} {linkerSymbols : List (Name × Word)}
+    {artifact : VerifiedStackObjectArtifact}
+    (hCompile :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact) :
+    ∃ childArtifacts plan,
+      List.compileVerifiedStackObjectArtifactsWithLinkerSymbols?
+          object.objects linkerSymbols = some childArtifacts ∧
+      object.planVerifiedStackObjectArtifactFromChildren?
+          linkerSymbols childArtifacts = some plan ∧
+      object.finishVerifiedStackObjectArtifact? childArtifacts plan =
+        some artifact ∧
+      object.compileVerifiedStackCodeArtifactIn? plan.context =
+        some artifact.codeArtifact ∧
+      artifact.children = childArtifacts ∧
+      artifact.computed.context = plan.context ∧
+      artifact.computed.childImages = plan.childImages ∧
+      artifact.computed.payload = plan.payload ∧
+      artifact.image.bytes =
+        artifact.codeArtifact.bytes ++ plan.payload := by
+  unfold compileVerifiedStackObjectArtifactWithLinkerSymbols? at hCompile
+  cases hChildren :
+      List.compileVerifiedStackObjectArtifactsWithLinkerSymbols?
+        object.objects linkerSymbols with
+  | none => simp [hChildren] at hCompile
+  | some childArtifacts =>
+      cases hPlan :
+          object.planVerifiedStackObjectArtifactFromChildren?
+            linkerSymbols childArtifacts with
+      | none => simp [hChildren, hPlan] at hCompile
+      | some plan =>
+          have hFinish :
+              object.finishVerifiedStackObjectArtifact?
+                  childArtifacts plan = some artifact := by
+            simpa [hChildren, hPlan] using hCompile
+          have hParts := finishVerifiedStackObjectArtifact?_parts hFinish
+          refine
+            ⟨childArtifacts, plan, rfl, hPlan, hFinish, hParts.1,
+              hParts.2.1, hParts.2.2.1, ?_, hParts.2.2.2.2.1,
+              hParts.2.2.2.2.2.2⟩
+          exact hParts.2.2.2.1
+
+theorem compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
+    {object : Object} {linkerSymbols : List (Name × Word)}
+    {artifact : VerifiedStackObjectArtifact}
+    (hCompile :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact) :
+    Assembly.Bytecode.DecodingCorrect artifact.codeArtifact.compiled.target
+      (Assembly.Bytecode.ofList artifact.image.bytes) := by
+  obtain ⟨_children, plan, _hChildren, _hPlan, _hFinish, hCode,
+      _hArtifactChildren, _hContext, _hChildImages, _hPayload, hImage⟩ :=
+    compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts hCompile
+  rw [hImage]
+  exact compileVerifiedStackCodeArtifactIn?_decodingCorrect
+    hCode plan.payload
+
+mutual
+  inductive VerifiedStackObjectArtifact.ValidFor
+      (linkerSymbols : List (Name × Word)) :
+      Object → VerifiedStackObjectArtifact → Prop where
+    | intro
+        {object : Object} {artifact : VerifiedStackObjectArtifact}
+        {childArtifacts : List VerifiedStackObjectArtifact}
+        {plan : ObjectArtifactPlan}
+        (children : VerifiedStackObjectArtifact.ListValidFor linkerSymbols
+          object.objects childArtifacts)
+        (planned : object.planVerifiedStackObjectArtifactFromChildren?
+          linkerSymbols childArtifacts = some plan)
+        (finished : object.finishVerifiedStackObjectArtifact?
+          childArtifacts plan = some artifact) :
+        VerifiedStackObjectArtifact.ValidFor linkerSymbols object artifact
+
+  inductive VerifiedStackObjectArtifact.ListValidFor
+      (linkerSymbols : List (Name × Word)) :
+      List Object → List VerifiedStackObjectArtifact → Prop where
+    | nil : VerifiedStackObjectArtifact.ListValidFor linkerSymbols [] []
+    | cons
+        {object : Object} {objects : List Object}
+        {artifact : VerifiedStackObjectArtifact}
+        {artifacts : List VerifiedStackObjectArtifact}
+        (head : VerifiedStackObjectArtifact.ValidFor
+          linkerSymbols object artifact)
+        (tail : VerifiedStackObjectArtifact.ListValidFor
+          linkerSymbols objects artifacts) :
+        VerifiedStackObjectArtifact.ListValidFor linkerSymbols
+          (object :: objects) (artifact :: artifacts)
+end
+
+mutual
+  theorem compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
+      (object : Object) (linkerSymbols : List (Name × Word))
+      (artifact : VerifiedStackObjectArtifact)
+      (hCompile :
+        object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+            linkerSymbols = some artifact) :
+      VerifiedStackObjectArtifact.ValidFor linkerSymbols object artifact := by
+    unfold compileVerifiedStackObjectArtifactWithLinkerSymbols? at hCompile
+    cases hChildren :
+        List.compileVerifiedStackObjectArtifactsWithLinkerSymbols?
+          object.objects linkerSymbols with
+    | none => simp [hChildren] at hCompile
+    | some childArtifacts =>
+        cases hPlan : object.planVerifiedStackObjectArtifactFromChildren?
+            linkerSymbols childArtifacts with
+        | none => simp [hChildren, hPlan] at hCompile
+        | some plan =>
+            have hFinish :
+                object.finishVerifiedStackObjectArtifact?
+                    childArtifacts plan = some artifact := by
+              simpa [hChildren, hPlan] using hCompile
+            exact .intro
+              (List.compileVerifiedStackObjectArtifactsWithLinkerSymbols?_valid
+                object.objects linkerSymbols childArtifacts hChildren)
+              hPlan hFinish
+  termination_by 2 * sizeOf object
+  decreasing_by
+    simp_wf
+    cases object
+    simp_wf
+    omega
+
+  theorem List.compileVerifiedStackObjectArtifactsWithLinkerSymbols?_valid
+      (objects : List Object) (linkerSymbols : List (Name × Word))
+      (artifacts : List VerifiedStackObjectArtifact)
+      (hCompile :
+        List.compileVerifiedStackObjectArtifactsWithLinkerSymbols?
+            objects linkerSymbols = some artifacts) :
+      VerifiedStackObjectArtifact.ListValidFor
+        linkerSymbols objects artifacts := by
+    cases objects with
+    | nil =>
+        simp [List.compileVerifiedStackObjectArtifactsWithLinkerSymbols?]
+          at hCompile
+        subst artifacts
+        exact .nil
+    | cons object rest =>
+        unfold List.compileVerifiedStackObjectArtifactsWithLinkerSymbols?
+          at hCompile
+        cases hHead :
+            object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+              linkerSymbols with
+        | none => simp [hHead] at hCompile
+        | some artifact =>
+            cases hTail :
+                List.compileVerifiedStackObjectArtifactsWithLinkerSymbols?
+                  rest linkerSymbols with
+            | none => simp [hHead, hTail] at hCompile
+            | some tail =>
+                simp [hHead, hTail] at hCompile
+                subst artifacts
+                exact .cons
+                  (compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
+                    object linkerSymbols artifact hHead)
+                  (List.compileVerifiedStackObjectArtifactsWithLinkerSymbols?_valid
+                    rest linkerSymbols tail hTail)
+  termination_by 2 * sizeOf objects + 1
+  decreasing_by
+    all_goals simp_all
+    all_goals simp_wf
+    all_goals omega
+end
+
+end Object
+
+end Frontend
+end Solidity
+end EvmCompiler

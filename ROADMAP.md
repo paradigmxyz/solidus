@@ -238,8 +238,10 @@ elimination are not prerequisites for Permit2 or Aave.
 - [x] Exact pinned Permit2 compiles stack-only through the checked root-code
   artifact and raw-bytecode theorem; recursive object-image composition
   remains open.
-- [ ] Both compile through `CompiledObjectArtifact` to exact raw bytecode under
-  the full open-world/resource-observer theorem.
+- [x] Both compile through the recursive `VerifiedStackObjectArtifact` to
+  exact root-image raw bytecode under the horizontal open-world theorem, with
+  compiler-owned child validity and no legacy allocation metadata. Resource
+  observer replay remains the existing separately composed semantic boundary.
 - [ ] Profile all analysis and compilation stages; remove algorithmic
   superlinearity on the exact contracts.
 - [ ] Record compile time, peak memory, allocation statistics, and output size.

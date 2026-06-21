@@ -3063,12 +3063,11 @@ structure ObjectArtifactPlan where
   layout : List ObjectLayout.Entry
   context : ObjectBuiltinContext
 
-def planObjectArtifactFromChildren? (object : Object)
+def planObjectArtifactFromChildImagesWith? (object : Object)
     (linkerSymbols : List (Name × Word))
-    (childArtifacts : List CompiledObjectArtifact) :
+    (childImages : List ObjectImage)
+    (compileBytesIn? : ObjectBuiltinContext → Option (List UInt8)) :
     Option ObjectArtifactPlan := do
-    let childImages :=
-      childArtifacts.map CompiledObjectArtifact.image
     let childImmutableReferences :=
       ObjectImage.immutableReferenceEntries childImages
     let immutableNames := object.loadImmutableNames
@@ -3098,9 +3097,8 @@ def planObjectArtifactFromChildren? (object : Object)
     if !placeholderContext.objectDataNamesUnique? then
       none
     else
-    let placeholderArtifact ←
-      object.compileOrderedCodeArtifactIn? placeholderContext
-    let codeBase := placeholderArtifact.bytes.length
+    let placeholderBytes ← compileBytesIn? placeholderContext
+    let codeBase := placeholderBytes.length
     let selfSize := EvmYul.UInt256.ofNat (codeBase + payload.length)
     let layout ←
       ObjectItemRef.List.objectLayoutEntriesFromNat?
@@ -3130,6 +3128,16 @@ def planObjectArtifactFromChildren? (object : Object)
         codeBase := codeBase
         layout := layout
         context := context }
+
+def planObjectArtifactFromChildren? (object : Object)
+    (linkerSymbols : List (Name × Word))
+    (childArtifacts : List CompiledObjectArtifact) :
+    Option ObjectArtifactPlan :=
+  object.planObjectArtifactFromChildImagesWith? linkerSymbols
+    (childArtifacts.map CompiledObjectArtifact.image)
+    (fun context => do
+      let artifact ← object.compileOrderedCodeArtifactIn? context
+      some artifact.bytes)
 
 def compileMarkerCodeArtifact? (object : Object)
     (plan : ObjectArtifactPlan) (codeArtifact : CompiledCodeArtifact) :

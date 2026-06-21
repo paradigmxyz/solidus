@@ -1185,7 +1185,8 @@ for theorem in \
 done
 
 for theorem in \
-    'compiledVerifiedStackCodeToRawBytecode'; do
+    'compiledVerifiedStackCodeToRawBytecode' \
+    'compiledVerifiedStackObjectToRawBytecode'; do
   if ! rg -Fq \
       "#check EvmCompiler.Compiler.OpenInteractionComposition.${theorem}" \
       EvmCompiler/Verification.lean; then
@@ -1204,6 +1205,15 @@ if sed -n \
   failed=1
 fi
 
+if sed -n \
+    '/^theorem compiledVerifiedStackObjectToRawBytecode/,/:= by$/p' \
+    EvmCompiler/Compiler/OpenInteractionComposition.lean | \
+    rg -q 'hSupported|hFrameSafe|Certificate|Schedule|Layout|Evidence|Oracle'; then
+  printf '%s\n\n' \
+    'Checked recursive stack-object theorem exposes compiler-generated evidence.' >&2
+  failed=1
+fi
+
 report_matches \
   'Functions open-support checking must remain a semantic-owner check:' \
   '^import EvmCompiler\..*(Compiler|Yul|Solidity|Objects|Observer|Replay|Oracle|TypedCfg|Assembly\.(Assembler|Compiler))' \
@@ -1218,6 +1228,16 @@ report_matches \
   'The production stack artifact must not define source or target interpreters:' \
   '^[[:space:]]*(partial[[:space:]]+)?def[[:space:]]+.*(eval|exec|run|step|replay)[^:]*[:=]' \
   EvmCompiler/Compiler/StackArtifact.lean
+
+report_matches \
+  'Verified stack object construction must not reuse legacy allocation artifacts:' \
+  'CompiledObjectArtifact|Objects\.Program\.CompileArtifact|Allocation\.ProgramPlan|compileOrderedCodeArtifactIn' \
+  EvmCompiler/Solidity/VerifiedStackObjectArtifact.lean
+
+report_matches \
+  'Verified stack object construction must not import observer or replay corridors:' \
+  '^import EvmCompiler\..*(Observer|Replay|Oracle)' \
+  EvmCompiler/Solidity/VerifiedStackObjectArtifact.lean
 
 report_matches \
   'Concrete-resource/open-external target semantics must remain Assembly-owned:' \

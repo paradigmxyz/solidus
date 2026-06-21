@@ -3,6 +3,7 @@ import EvmCompiler.Assembly.Bytecode
 import EvmCompiler.Functions.StackDiagnostics
 import EvmCompiler.Compiler.StackArtifact
 import EvmCompiler.Objects.Compiler
+import EvmCompiler.Solidity.VerifiedStackObjectArtifact
 
 namespace EvmCompiler.BackendCli
 
@@ -533,8 +534,18 @@ def printStackDiagnostics
 
 def runStackDiagnostics (config : Config)
     (program : Solidity.Frontend.Program) : IO Unit := do
+  let objectArtifact? :=
+    program.object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+      config.linkerSymbols
   let frontendArtifact? :=
-    verifiedStackCodeArtifact? program.object config.linkerSymbols
+    objectArtifact?.map Solidity.Frontend.VerifiedStackObjectArtifact.codeArtifact
+  IO.println
+    ("stack_frontend_object_artifact=" ++ boolString objectArtifact?.isSome)
+  IO.println
+    ("stack_frontend_object_bytecode_bytes=" ++
+      toString
+        (objectArtifact?.map (fun artifact => artifact.image.bytes.length)
+          |>.getD 0))
   IO.println
     ("stack_frontend_code_artifact=" ++ boolString frontendArtifact?.isSome)
   match functionsForStackDiagnostics? program.object config.linkerSymbols with
