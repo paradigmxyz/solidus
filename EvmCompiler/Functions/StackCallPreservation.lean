@@ -794,6 +794,83 @@ theorem of_body
 
 end CallAttachment
 
+namespace FunctionLookup
+
+/-- Source first-match function lookup is preserved by the actual stack
+function lowerer followed by ordinary Locals procedure compilation. -/
+theorem of_compilers
+    (allFunctions : List FunDef) (name : Name) :
+    ∀ {sourceFunctions : List FunDef} {procs : List Locals.Proc}
+      {lowerProcs : List Expressions.Proc} {fn : FunDef},
+      StackLowering.lowerFunctions? allFunctions sourceFunctions =
+          some procs →
+      Locals.ProcList.toExpressions? procs = some lowerProcs →
+      Functions.Source.FunList.find? name sourceFunctions = some fn →
+      ∃ proc lowerProc,
+        StackLowering.lowerFunction? allFunctions fn = some proc ∧
+        proc.toExpressions? = some lowerProc ∧
+        Expressions.EffectSemantics.ProcList.lookup? name lowerProcs =
+          some lowerProc
+  | [], _procs, _lowerProcs, _fn, _hLower, _hCompile, hFind => by
+      simp [Functions.Source.FunList.find?] at hFind
+  | head :: rest, procs, lowerProcs, fn, hLower, hCompile, hFind => by
+      cases hHeadLower : StackLowering.lowerFunction? allFunctions head with
+      | none =>
+          simp [StackLowering.lowerFunctions?, hHeadLower] at hLower
+      | some headProc =>
+          cases hTailLower :
+              StackLowering.lowerFunctions? allFunctions rest with
+          | none =>
+              simp [StackLowering.lowerFunctions?, hHeadLower, hTailLower]
+                at hLower
+          | some tailProcs =>
+              simp [StackLowering.lowerFunctions?, hHeadLower, hTailLower]
+                  at hLower
+              subst procs
+              cases hHeadCompile : headProc.toExpressions? with
+              | none =>
+                  simp [Locals.ProcList.toExpressions?, hHeadCompile]
+                    at hCompile
+              | some headLower =>
+                  cases hTailCompile :
+                      Locals.ProcList.toExpressions? tailProcs with
+                  | none =>
+                      simp [Locals.ProcList.toExpressions?, hHeadCompile,
+                        hTailCompile] at hCompile
+                  | some tailLower =>
+                      simp [Locals.ProcList.toExpressions?, hHeadCompile,
+                          hTailCompile] at hCompile
+                      subst lowerProcs
+                      have hHeadProcName : headProc.name = head.name := by
+                        obtain ⟨_facts, _schedule, _body, _hFacts,
+                            _hSchedule, _hBody, _hAccess, hProc⟩ :=
+                          StackLowering.lowerFunction?_components hHeadLower
+                        rw [hProc]
+                      have hHeadLowerName : headLower.name = head.name :=
+                        (Locals.Proc.toExpressions?_name hHeadCompile).trans
+                          hHeadProcName
+                      by_cases hName : head.name = name
+                      · simp [Functions.Source.FunList.find?, hName] at hFind
+                        subst fn
+                        refine ⟨headProc, headLower, hHeadLower,
+                          hHeadCompile, ?_⟩
+                        simp [Expressions.EffectSemantics.ProcList.lookup?,
+                          hHeadLowerName, hName]
+                      · have hTailFind :
+                            Functions.Source.FunList.find? name rest =
+                              some fn := by
+                          simpa [Functions.Source.FunList.find?, hName]
+                            using hFind
+                        obtain ⟨proc, lowerProc, hProcLower,
+                            hProcCompile, hLookup⟩ :=
+                          of_compilers allFunctions name hTailLower
+                            hTailCompile hTailFind
+                        refine ⟨proc, lowerProc, hProcLower, hProcCompile, ?_⟩
+                        simp [Expressions.EffectSemantics.ProcList.lookup?,
+                          hHeadLowerName, hName, hLookup]
+
+end FunctionLookup
+
 namespace CallerWriteback
 
 structure PendingRel
