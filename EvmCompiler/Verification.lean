@@ -2933,8 +2933,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackRelation.values_promoteAt
 #check EvmCompiler.Functions.StackRelation.StateRel.expr
 #check EvmCompiler.Functions.StackExpressionPreservation.openEvalZero_compileCode
+#check EvmCompiler.Functions.StackExpressionPreservation.openEvalOne_compileCode
 #check EvmCompiler.Functions.StackExpressionPreservation.openEvalOne_fresh_compileCode
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_let_generated
+#check EvmCompiler.Functions.StackStatementPreservation.openRun_assign_generated
 #check EvmCompiler.Functions.StackTransitionPreservation.Promotion.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.Cleanup.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.PromotionCodes.openRun

@@ -86,6 +86,50 @@ theorem values_insert_fresh
     exact hFresh hCandidate
   simp [Locals.Source.State.insert, Locals.Source.Store.insert, hNe]
 
+theorem values_insert_existing
+    {source : Locals.Source.State} {layout : Locals.Layout}
+    {name : Name} {depth : Nat} {value : Word}
+    (hNodup : layout.Nodup)
+    (hAt : layout[depth]? = some name) :
+    values (source.insert name value) layout =
+      (values source layout).set depth value := by
+  induction layout generalizing depth with
+  | nil => simp at hAt
+  | cons head tail ih =>
+      cases depth with
+      | zero =>
+          simp only [List.getElem?_cons_zero] at hAt
+          cases hAt
+          have hNotMem : name ∉ tail := List.nodup_cons.mp hNodup |>.1
+          unfold values
+          simp only [List.map_cons, List.set_cons_zero,
+            Locals.Source.State.insert,
+            Locals.Source.Store.insert_self, Option.getD_some]
+          congr 1
+          apply List.map_congr_left
+          intro candidate hCandidate
+          have hNe : candidate ≠ name := by
+            intro hEq
+            subst candidate
+            exact hNotMem hCandidate
+          simp [Locals.Source.Store.insert, hNe]
+      | succ depth =>
+          simp only [List.getElem?_cons_succ] at hAt
+          have hParts := List.nodup_cons.mp hNodup
+          have hHeadNe : head ≠ name := by
+            intro hEq
+            subst head
+            exact hParts.1 (List.mem_of_getElem? hAt)
+          unfold values
+          simp only [List.map_cons, List.set_cons_succ,
+            Locals.Source.State.insert]
+          rw [show
+            Locals.Source.Store.insert source.vars name value head =
+              source.vars head by
+            simp [Locals.Source.Store.insert, hHeadNe]]
+          exact congrArg (List.cons ((source.vars head).getD
+            (EvmYul.UInt256.ofNat 0))) (ih hParts.2 hAt)
+
 theorem mem_of_mem_promoteAt
     {layout : Locals.Layout} {index : Nat} {name candidate : Name}
     (hAt : layout[index]? = some name)
@@ -188,6 +232,56 @@ theorem ofExprResultOneInsert
       refine ⟨oldValue, ?_⟩
       simp [Locals.Source.State.insert,
         Locals.Source.Store.insert, hNe]
+      rw [hResult.vars]
+      exact hOldValue
+
+theorem ofExprResultOneAssign
+    {layout : Locals.Layout} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {name : Name} {depth : Nat} {value : Word}
+    {initialSource finalSource : Locals.Source.State}
+    {initialTarget targetAfterValue finalTarget : Structured.RunState}
+    (hNodup : layout.Nodup)
+    (hDepth :
+      Locals.Layout.lookupDepth? name layout = some (depth + 1))
+    (hInitial :
+      StateRel layout suffix returns initialSource initialTarget)
+    (hResult :
+      Locals.InteractionPreservation.Expr.ResultRel 1
+        initialSource initialTarget (finalSource, [value]) targetAfterValue)
+    (hFinalShared :
+      finalTarget.evm.toSharedState =
+        targetAfterValue.evm.toSharedState)
+    (hFinalReturns :
+      finalTarget.returns = targetAfterValue.returns)
+    (hFinalStack :
+      finalTarget.evm.stack =
+        initialTarget.evm.stack.set depth value) :
+    StateRel layout suffix returns
+      (finalSource.insert name value) finalTarget := by
+  have hAt : layout[depth]? = some name :=
+    Locals.Layout.getElem?_eq_some_of_lookupDepth?_eq_some hDepth
+  have hDepthBound : depth < (values initialSource layout).length := by
+    unfold values
+    simpa using (List.getElem?_eq_some_iff.mp hAt).1
+  constructor
+  · rw [hFinalShared]
+    simpa [Locals.Source.State.insert] using hResult.shared
+  · exact hFinalReturns.trans (hResult.returns.trans hInitial.returns)
+  · rw [hFinalStack, hInitial.stack,
+      List.set_append_left depth value hDepthBound,
+      ← values_insert_existing hNodup hAt]
+    unfold values
+    simp only [Locals.Source.State.insert]
+    rw [hResult.vars]
+  · intro candidate hCandidate
+    by_cases hName : candidate = name
+    · subst candidate
+      exact ⟨value, Locals.Source.Store.insert_self _ _ _⟩
+    · obtain ⟨oldValue, hOldValue⟩ := hInitial.defined hCandidate
+      refine ⟨oldValue, ?_⟩
+      simp [Locals.Source.State.insert,
+        Locals.Source.Store.insert, hName]
       rw [hResult.vars]
       exact hOldValue
 

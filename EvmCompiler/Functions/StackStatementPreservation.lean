@@ -132,6 +132,119 @@ theorem openRun_let_generated
   rw [Structured.InteractionSemantics.Code.openRun_append]
   simpa [Simulation.Interaction.bind_assoc] using hCore
 
+theorem openRun_assign_generated
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
+    (fuel : Nat) {name : Name} (valueExpr : Locals.Expr 1)
+    {depth : Nat} {valueCode : Structured.Code}
+    {swapOp : Structured.BasicOp} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hCtx : CtxCovers sourceCtx targetCtx)
+    (hNodup : targetCtx.layout.Nodup)
+    (hDepth :
+      Locals.Layout.lookupDepth? name targetCtx.layout = some (depth + 1))
+    (hValueScoped : Locals.Scope.ExprScoped targetCtx.layout valueExpr)
+    (hValueSupported :
+      Locals.InteractionSemantics.Expr.OpenSupported valueExpr)
+    (hValueCompile :
+      Locals.Expr.compileCode targetCtx 0 valueExpr = some valueCode)
+    (hSwap : Locals.StackOp.swap? (depth + 1) = some swapOp)
+    (hInitial :
+      StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (RegularOutcomeRel targetCtx suffix returns)
+      (Locals.InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx fuel (.assign name valueExpr) source)
+      (Expressions.InteractionSemantics.Stmt.openRun
+        targetProgram fuel
+        (.code
+          (valueCode ++ [.op swapOp, .op .pop] ++
+            Locals.bindLocals 0 targetCtx.layout))
+        target) := by
+  have hValue :=
+    StackExpressionPreservation.openEvalOne_compileCode
+      valueExpr targetCtx hValueScoped hValueSupported
+      hValueCompile hInitial
+  have hAt : targetCtx.layout[depth]? = some name :=
+    Locals.Layout.getElem?_eq_some_of_lookupDepth?_eq_some hDepth
+  have hMem : name ∈ targetCtx.layout :=
+    List.mem_of_getElem? hAt
+  obtain ⟨old, hOld⟩ := hInitial.defined hMem
+  have hContains : source.vars.contains name = true := by
+    simp [Locals.Source.Store.contains, hOld]
+  have hOldStack : target.evm.stack[depth]? = some old := by
+    rw [hInitial.stack]
+    have hValuesAt := values_getElem?_eq_some (source := source) hAt
+    rw [hOld] at hValuesAt
+    have hBound : depth < (values source targetCtx.layout).length :=
+      List.getElem?_eq_some_iff.mp hValuesAt |>.1
+    rw [List.getElem?_append_left hBound]
+    exact hValuesAt
+  have hCore :
+      Simulation.Interaction.Rel
+        (RegularOutcomeRel targetCtx suffix returns)
+        (Simulation.Interaction.bind
+          (Locals.InteractionSemantics.Expr.openEvalOne valueExpr source)
+          (fun result =>
+            Simulation.Interaction.pure
+              (Locals.Source.Effectful.Outcome.regular
+                (result.1.insert name result.2), sourceCtx)))
+        (Simulation.Interaction.bind
+          (Structured.InteractionSemantics.Code.openRun
+            (valueCode ++ [.op swapOp, .op .pop] ++
+              Locals.bindLocals 0 targetCtx.layout)
+            target)
+          (fun final =>
+            Simulation.Interaction.pure
+              (Structured.Outcome.regular final))) := by
+    rw [List.append_assoc,
+      Structured.InteractionSemantics.Code.openRun_append,
+      Simulation.Interaction.bind_assoc]
+    apply Simulation.Interaction.Rel.bind hValue
+    intro sourceAfterValue targetAfterValue hValueResult
+    rcases sourceAfterValue with ⟨sourceFinal, value⟩
+    have hValueStack :
+        targetAfterValue.evm.stack = value :: target.evm.stack := by
+      simpa using hValueResult.stack
+    obtain ⟨finalTarget, hSwapRun, hFinalStack,
+        hFinalShared, hFinalReturns⟩ :=
+      Locals.InteractionPreservation.Code.openRun_swap_pop
+        hSwap hOldStack hValueStack
+    rw [Structured.InteractionSemantics.Code.openRun_append,
+      hSwapRun, Simulation.Interaction.bind_done_ok]
+    rw [show Locals.bindLocals 0 targetCtx.layout =
+        [.bindLocals 0 targetCtx.layout] by rfl,
+      Locals.InteractionPreservation.Code.openRun_bindLocals,
+      Simulation.Interaction.bind_done_ok]
+    apply Simulation.Interaction.Rel.done
+    apply Simulation.Interaction.ExceptRel.ok
+    exact
+      { sourceMode := rfl
+        targetMode := rfl
+        context := hCtx
+        state := StateRel.ofExprResultOneAssign
+          hNodup hDepth hInitial hValueResult
+            hFinalShared hFinalReturns hFinalStack }
+  unfold Locals.InteractionSemantics.Expr.openEvalOne
+    Structured.InteractionSemantics.Code.openRun
+    Locals.InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel at hCore
+  simp only [Locals.Source.State.insert] at hCore
+  unfold Locals.InteractionSemantics.Stmt.openRun
+    Expressions.InteractionSemantics.Stmt.openRun
+    Locals.InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+  simp only [Locals.Source.Effectful.Control.Stmt.run,
+    Locals.Source.Effectful.StateModel.vars,
+    Expressions.EffectSemantics.Control.Stmt.run]
+  dsimp only [id]
+  rw [hContains]
+  simp only [Locals.Source.Effectful.StateModel.withVars,
+    if_true, Locals.Source.State.withVars]
+  simpa [Simulation.Interaction.bind_assoc] using hCore
+
 end StackStatementPreservation
 end Functions
 end EvmCompiler

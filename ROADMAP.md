@@ -109,6 +109,8 @@ short composition module.
   expression preservation theorem, including zero-result statement expressions.
 - [x] Prove fresh local binding against the ordinary open statement semantics
   using the dynamic layout relation and the canonical silent binding marker.
+- [x] Prove assignment updates exactly its unique symbolic stack slot and
+  preserves the dynamic layout and dormant suffix under open semantics.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls

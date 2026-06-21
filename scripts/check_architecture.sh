@@ -50,13 +50,17 @@ if ! rg -Fq \
   failed=1
 fi
 
-if ! rg -Fq \
-    '#check EvmCompiler.Functions.StackStatementPreservation.openRun_let_generated' \
-    EvmCompiler/Verification.lean; then
-  printf '%s\n\n' \
-    'Verification root is missing dynamic-layout open statement preservation.' >&2
-  failed=1
-fi
+for theorem in \
+    'openRun_let_generated' \
+    'openRun_assign_generated'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.Functions.StackStatementPreservation.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing dynamic-layout statement theorem %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
 
 for theorem in \
     'build_run' \
