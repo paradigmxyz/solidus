@@ -1452,6 +1452,84 @@ theorem compiledProgramBodyAt
       apply Simulation.Interaction.ExceptRel.ok
       exact ControlOpenResultRel.halt hShared
 
+def ProgramSourceHalted :
+    Except EVMException Functions.InteractionSemantics.Outcome → Prop
+  | .ok { mode := .halt _, .. } => True
+  | _ => False
+
+def ProgramTargetHalted :
+    Except EVMException Expressions.InteractionSemantics.Outcome → Prop
+  | .ok { mode := .halt _, .. } => True
+  | _ => False
+
+theorem ControlScopedOutcomeRel.targetHalted_of_sourceHalted
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {sourceDone : Except EVMException Functions.InteractionSemantics.Outcome}
+    {targetDone : Except EVMException Expressions.InteractionSemantics.Outcome}
+    (hRel :
+      ControlScopedOutcomeRel {} [] Locals.Ctx.initial suffix returns
+        Functions.Source.Ctx.initial sourceDone targetDone)
+    (hSource : ProgramSourceHalted sourceDone) :
+    ProgramTargetHalted targetDone := by
+  cases hRel with
+  | error hError => cases hSource
+  | ok hResult =>
+      cases hResult with
+      | regular hRuntime hState => cases hSource
+      | brk hTarget hState => cases hSource
+      | cont hTarget hState => cases hSource
+      | leave hState => cases hSource
+      | halt hShared => trivial
+
+/-- A universally terminal canonical Functions execution yields a full
+open-world relation to the compiled Expressions program. Target meta-fuel is
+computed from the target program and source fuel, not supplied as evidence. -/
+theorem compiledProgramBodyTerminal
+    (sourceProgram : Functions.Program)
+    (localsProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceFuel : Nat)
+    (hProgramWF : sourceProgram.WF)
+    (hProgramScoped : sourceProgram.Scoped)
+    (hProgramSupported :
+      Functions.InteractionSemantics.Program.OpenSupported sourceProgram)
+    (hLower :
+      StackLowering.lowerProgram? sourceProgram = some localsProgram)
+    (hCompile :
+      Locals.Program.toExpressions? localsProgram = some targetProgram)
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hInitial :
+      StateRel Locals.Ctx.initial.layout [] [] source target)
+    (hTerminal : Simulation.Interaction.AllDone ProgramSourceHalted
+      (Functions.InteractionSemantics.Program.openRunState
+        sourceFuel sourceProgram source)) :
+    ∃ targetFuel,
+      Simulation.Interaction.Rel
+          (ControlScopedOutcomeRel {} [] Locals.Ctx.initial [] []
+            Functions.Source.Ctx.initial)
+          (Functions.InteractionSemantics.Program.openRunState
+            sourceFuel sourceProgram source)
+          (Expressions.InteractionSemantics.Block.openRun
+            targetProgram targetFuel targetProgram.body target) ∧
+        Simulation.Interaction.AllDone ProgramTargetHalted
+          (Expressions.InteractionSemantics.Block.openRun
+            targetProgram targetFuel targetProgram.body target) := by
+  let targetFuel :=
+    Expressions.TargetFuel.budget targetProgram sourceFuel
+      targetProgram.body.stmts
+  have hForward :=
+    compiledProgramBodyAt sourceProgram localsProgram targetProgram sourceFuel
+      hProgramWF hProgramScoped hProgramSupported hLower hCompile targetFuel
+      (by simp [Expressions.TargetFuel.Covers, targetFuel]) hInitial
+  have hRel := Simulation.Interaction.ForwardRel.rel_of_allDone
+    hForward hTerminal
+    (fun _error hSource _hTruncated => by cases hSource)
+  refine ⟨targetFuel, hRel, ?_⟩
+  have hStrong := Simulation.Interaction.Rel.strengthen_left hRel hTerminal
+  apply Simulation.Interaction.Rel.allDone_right hStrong
+  intro sourceDone targetDone hDone
+  exact ControlScopedOutcomeRel.targetHalted_of_sourceHalted hDone.1 hDone.2
+
 end StackRecursivePreservation
 end Functions
 end EvmCompiler

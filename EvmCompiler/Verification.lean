@@ -1668,6 +1668,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionProgram.dispatcherForward_of_ordered_toObjects?
 #check EvmCompiler.Yul.FunctionsInteractionProgram.targetSuccessful
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToAllocatedExpressions
+#check EvmCompiler.Compiler.OpenInteractionComposition.yulToStackExpressionsTerminal
+#check EvmCompiler.Compiler.OpenInteractionComposition.stackExpressionsToStructuredTerminal
+#check EvmCompiler.Compiler.OpenInteractionComposition.yulToStackStructuredTerminal
 #check EvmCompiler.Compiler.OpenInteractionComposition.expressionsToStructured
 #check EvmCompiler.Simulation.Interaction.ForwardRel.rel_of_allDone
 #check EvmCompiler.Yul.FunctionsInteractionProgram.terminalRel
@@ -1675,6 +1678,11 @@ or audit-alias corridor.
 #check EvmCompiler.TypedCfg.InteractionPreservation.Program.compileCertified?_entry_openRunN_assembly_rel
 #check EvmCompiler.Compiler.OpenInteractionComposition.structuredToEncodedBytecode
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.structuredToEncodedBytecode
+#check EvmCompiler.Compiler.OpenInteractionComposition.YulStackBytecodeDoneRel.targetTerminal
+#check EvmCompiler.Compiler.OpenInteractionComposition.yulStackToEncodedBytecode
+#print axioms EvmCompiler.Compiler.OpenInteractionComposition.yulStackToEncodedBytecode
+#check EvmCompiler.Compiler.OpenInteractionComposition.stackEncodedToRawBytecode
+#print axioms EvmCompiler.Compiler.OpenInteractionComposition.stackEncodedToRawBytecode
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledYulToEncodedBytecode
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledWithPassToEncodedBytecode
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledOrderedYulToEncodedBytecode
@@ -3292,6 +3300,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.initial
 #check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyOpenAt
 #check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
+#check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyTerminal
 #check EvmCompiler.Functions.StackStatementPreservation.ControlPointPreservesAt
 #check EvmCompiler.Functions.StackStatementPreservation.CompiledControlPointAt
 #check EvmCompiler.Functions.StackStatementPreservation.CompiledControlPoint.at
@@ -3355,6 +3364,7 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.initial
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyOpenAt
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
+#print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyTerminal
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_optionalReturn
 #print axioms EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_optionalReturn_of_bodyRun
 #print axioms EvmCompiler.Functions.StackCallPreservation.FunctionLookup.of_compilers

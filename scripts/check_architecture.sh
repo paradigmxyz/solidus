@@ -1169,6 +1169,21 @@ report_matches \
   '^[[:space:]]*(partial[[:space:]]+)?def[[:space:]]+.*(compile|lower|emit|assemble|evalTail|evalArgs|evalValues|execSeq|loop)[^:]*[:=]' \
   EvmCompiler/Compiler/OpenInteractionComposition.lean
 
+for theorem in \
+    'yulToStackExpressionsTerminal' \
+    'stackExpressionsToStructuredTerminal' \
+    'yulToStackStructuredTerminal' \
+    'yulStackToEncodedBytecode' \
+    'stackEncodedToRawBytecode'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.Compiler.OpenInteractionComposition.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing stack composition theorem %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
 report_matches \
   'Concrete-resource/open-external target semantics must remain Assembly-owned:' \
   '^import EvmCompiler\.(Functions|Locals|Expressions|Structured|TypedCfg|Objects|Yul|Public)' \
