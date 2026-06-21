@@ -321,6 +321,18 @@ def ControlPointPreserves
       (Expressions.InteractionSemantics.Block.openRun targetProgram
         targetFuel { stmts := code } target)
 
+structure CompiledControlPoint
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx finalCtx : Locals.Ctx)
+    (stmt : Functions.Stmt) (code : List Expressions.Stmt)
+    (finalLayout : Locals.Layout) : Prop where
+  layout : finalCtx.layout = finalLayout
+  preserves :
+    ControlPointPreserves sourceProgram targetProgram targets targetCtx finalCtx
+      stmt code
+
 theorem ControlOpenResultRel.toOpen
     {targets : StackSchedule.ControlTargets}
     {finalCtx : Locals.Ctx} {suffix : List Word}

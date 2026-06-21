@@ -48,11 +48,15 @@ for theorem in \
     'controlOrdering' \
     'controlNil' \
     'controlCons' \
+    'controlOrderedCons' \
+    'controlFallthroughCons_of_compilers' \
     'controlScheduledRegion' \
     'controlScheduledRegionAsBlock' \
     'compiledScheduledRegion_of_compilers' \
     'blockPoint_of_compilers' \
     'ifPoint_of_compilers' \
+    'blockCons_of_compilers' \
+    'ifCons_of_compilers' \
     'RegularListPreserves.toOpenList' \
     'terminalList_of_compilers' \
     'terminalArgsList_of_compilers'; do
