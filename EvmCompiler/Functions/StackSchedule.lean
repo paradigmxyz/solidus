@@ -813,6 +813,20 @@ theorem scheduleCaseRegionsFuelWithTargets_nil_components
     regions = [] := by
   simpa [scheduleCaseRegionsFuelWithTargets] using hSchedule.symm
 
+theorem scheduleCaseRegionsFuelWithTargets_nil_shape
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout : Locals.Layout}
+    {facts : List AllocationLivenessFacts.Region} {regions : List Region}
+    (hSchedule :
+      scheduleCaseRegionsFuelWithTargets targets fuel pinned layout [] facts =
+        some regions) :
+    facts = [] ∧ regions = [] := by
+  cases facts with
+  | nil =>
+      exact ⟨rfl, scheduleCaseRegionsFuelWithTargets_nil_components hSchedule⟩
+  | cons fact restFacts =>
+      simp [scheduleCaseRegionsFuelWithTargets] at hSchedule
+
 theorem scheduleCaseRegionsFuelWithTargets_cons_components
     {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
     {layout : Locals.Layout} {value : Word} {body : Block}
@@ -849,6 +863,62 @@ theorem scheduleCaseRegionsFuelWithTargets_cons_components
       exact ⟨rawRegion, exit, hBody, hExit, hRegion.symm,
         by simpa [hRegions] using hTail⟩
 
+theorem scheduleCaseRegionsFuelWithTargets_cons_shape
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout : Locals.Layout} {value : Word} {body : Block}
+    {rest : List (Word × Block)}
+    {facts : List AllocationLivenessFacts.Region} {scheduled : List Region}
+    (hSchedule :
+      scheduleCaseRegionsFuelWithTargets targets fuel pinned layout
+          ((value, body) :: rest) facts = some scheduled) :
+    ∃ fact restFacts rawRegion exit region regions,
+      facts = fact :: restFacts ∧
+        scheduled = region :: regions ∧
+        scheduleBlockFuelWithTargets targets fuel pinned layout body fact =
+          some rawRegion ∧
+        Join.build? rawRegion.finalLayout layout = some exit ∧
+        region =
+          { rawRegion with exit? := some exit, finalLayout := layout } ∧
+        scheduleCaseRegionsFuelWithTargets targets fuel pinned layout
+            rest restFacts = some regions := by
+  cases facts with
+  | nil => simp [scheduleCaseRegionsFuelWithTargets] at hSchedule
+  | cons fact restFacts =>
+      simp only [scheduleCaseRegionsFuelWithTargets] at hSchedule
+      obtain ⟨rawRegion, hBody, hAfterBody⟩ :=
+        Option.bind_eq_some_iff.mp hSchedule
+      obtain ⟨exit, hExit, hAfterExit⟩ :=
+        Option.bind_eq_some_iff.mp hAfterBody
+      obtain ⟨regions, hTail, hResult⟩ :=
+        Option.bind_eq_some_iff.mp hAfterExit
+      have hScheduled := Option.some.inj hResult
+      subst scheduled
+      exact ⟨fact, restFacts, rawRegion, exit,
+        { rawRegion with exit? := some exit, finalLayout := layout }, regions,
+        rfl, rfl, hBody, hExit, rfl, hTail⟩
+
+theorem scheduleCaseRegionsFuelWithTargets_length
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout : Locals.Layout} {cases : List (Word × Block)}
+    {facts : List AllocationLivenessFacts.Region} {regions : List Region}
+    (hSchedule :
+      scheduleCaseRegionsFuelWithTargets targets fuel pinned layout cases facts =
+        some regions) :
+    regions.length = cases.length := by
+  induction cases generalizing facts regions with
+  | nil =>
+      obtain ⟨_hFacts, hRegions⟩ :=
+        scheduleCaseRegionsFuelWithTargets_nil_shape hSchedule
+      subst regions
+      rfl
+  | cons head rest ih =>
+      rcases head with ⟨value, body⟩
+      obtain ⟨fact, restFacts, rawRegion, exit, region, restRegions,
+          _hFacts, hRegions, _hBody, _hExit, _hRegion, hTail⟩ :=
+        scheduleCaseRegionsFuelWithTargets_cons_shape hSchedule
+      subst regions
+      simp [ih hTail]
+
 theorem scheduleDefaultRegionFuelWithTargets_none_components
     {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
     {layout : Locals.Layout} {regions : List Region}
@@ -857,6 +927,20 @@ theorem scheduleDefaultRegionFuelWithTargets_none_components
         some regions) :
     regions = [] := by
   simpa [scheduleDefaultRegionFuelWithTargets] using hSchedule.symm
+
+theorem scheduleDefaultRegionFuelWithTargets_none_shape
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout : Locals.Layout}
+    {facts : List AllocationLivenessFacts.Region} {regions : List Region}
+    (hSchedule :
+      scheduleDefaultRegionFuelWithTargets targets fuel pinned layout none facts =
+        some regions) :
+    facts = [] ∧ regions = [] := by
+  cases facts with
+  | nil =>
+      exact ⟨rfl, scheduleDefaultRegionFuelWithTargets_none_components hSchedule⟩
+  | cons fact restFacts =>
+      simp [scheduleDefaultRegionFuelWithTargets] at hSchedule
 
 theorem scheduleDefaultRegionFuelWithTargets_some_components
     {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
@@ -884,6 +968,38 @@ theorem scheduleDefaultRegionFuelWithTargets_some_components
       have hList := Option.some.inj hResult
       injection hList with hRegion
       exact ⟨rawRegion, exit, hBody, hExit, hRegion.symm⟩
+
+theorem scheduleDefaultRegionFuelWithTargets_some_shape
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout : Locals.Layout} {body : Block}
+    {facts : List AllocationLivenessFacts.Region} {regions : List Region}
+    (hSchedule :
+      scheduleDefaultRegionFuelWithTargets targets fuel pinned layout
+          (some body) facts = some regions) :
+    ∃ fact rawRegion exit region,
+      facts = [fact] ∧ regions = [region] ∧
+        scheduleBlockFuelWithTargets targets fuel pinned layout body fact =
+          some rawRegion ∧
+        Join.build? rawRegion.finalLayout layout = some exit ∧
+        region =
+          { rawRegion with exit? := some exit, finalLayout := layout } := by
+  cases facts with
+  | nil => simp [scheduleDefaultRegionFuelWithTargets] at hSchedule
+  | cons fact restFacts =>
+      cases restFacts with
+      | cons next rest =>
+          simp [scheduleDefaultRegionFuelWithTargets] at hSchedule
+      | nil =>
+          simp only [scheduleDefaultRegionFuelWithTargets] at hSchedule
+          obtain ⟨rawRegion, hBody, hAfterBody⟩ :=
+            Option.bind_eq_some_iff.mp hSchedule
+          obtain ⟨exit, hExit, hResult⟩ :=
+            Option.bind_eq_some_iff.mp hAfterBody
+          have hRegions := Option.some.inj hResult
+          subst regions
+          exact ⟨fact, rawRegion, exit,
+            { rawRegion with exit? := some exit, finalLayout := layout },
+            rfl, rfl, hBody, hExit, rfl⟩
 
 theorem scheduleStmtFuel_let_components
     {fuel : Nat} {pinned : LiveSet} {layout : Locals.Layout}

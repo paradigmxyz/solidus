@@ -583,6 +583,15 @@ theorem lowerCasesFuel_nil_components
     lowered = [] := by
   simpa [lowerCasesFuel] using hLower.symm
 
+theorem lowerCasesFuel_nil_shape
+    {fuel : Nat} {ctx : Ctx} {regions : List StackSchedule.Region}
+    {lowered : List (Word × Locals.Block)}
+    (hLower : lowerCasesFuel fuel ctx [] regions = some lowered) :
+    regions = [] ∧ lowered = [] := by
+  cases regions with
+  | nil => exact ⟨rfl, lowerCasesFuel_nil_components hLower⟩
+  | cons region rest => simp [lowerCasesFuel] at hLower
+
 theorem lowerCasesFuel_cons_components
     {fuel : Nat} {ctx : Ctx} {value : Word} {body : Block}
     {rest : List (Word × Block)} {region : StackSchedule.Region}
@@ -608,11 +617,44 @@ theorem lowerCasesFuel_cons_components
       subst actualRest
       exact ⟨hBody, hRest⟩
 
+theorem lowerCasesFuel_cons_shape
+    {fuel : Nat} {ctx : Ctx} {value : Word} {body : Block}
+    {rest : List (Word × Block)} {regions : List StackSchedule.Region}
+    {lowered : List (Word × Locals.Block)}
+    (hLower :
+      lowerCasesFuel fuel ctx ((value, body) :: rest) regions = some lowered) :
+    ∃ region restRegions loweredBody loweredRest,
+      regions = region :: restRegions ∧
+        lowered = (value, loweredBody) :: loweredRest ∧
+        lowerBlockFuel fuel ctx body region = some loweredBody ∧
+        lowerCasesFuel fuel ctx rest restRegions = some loweredRest := by
+  cases regions with
+  | nil => simp [lowerCasesFuel] at hLower
+  | cons region restRegions =>
+      simp only [lowerCasesFuel] at hLower
+      obtain ⟨loweredBody, hBody, hAfterBody⟩ :=
+        Option.bind_eq_some_iff.mp hLower
+      obtain ⟨loweredRest, hRest, hResult⟩ :=
+        Option.bind_eq_some_iff.mp hAfterBody
+      have hLowered := Option.some.inj hResult
+      subst lowered
+      exact ⟨region, restRegions, loweredBody, loweredRest,
+        rfl, rfl, hBody, hRest⟩
+
 theorem lowerDefaultFuel_none_components
     {fuel : Nat} {ctx : Ctx} {lowered : Option Locals.Block}
     (hLower : lowerDefaultFuel fuel ctx none [] = some lowered) :
     lowered = none := by
   simpa [lowerDefaultFuel] using hLower.symm
+
+theorem lowerDefaultFuel_none_shape
+    {fuel : Nat} {ctx : Ctx} {regions : List StackSchedule.Region}
+    {lowered : Option Locals.Block}
+    (hLower : lowerDefaultFuel fuel ctx none regions = some lowered) :
+    regions = [] ∧ lowered = none := by
+  cases regions with
+  | nil => exact ⟨rfl, lowerDefaultFuel_none_components hLower⟩
+  | cons region rest => simp [lowerDefaultFuel] at hLower
 
 theorem lowerDefaultFuel_some_components
     {fuel : Nat} {ctx : Ctx} {body : Block}
@@ -631,6 +673,26 @@ theorem lowerDefaultFuel_some_components
       injection hSome with hBodyEq
       subst actualBody
       exact hBody
+
+theorem lowerDefaultFuel_some_shape
+    {fuel : Nat} {ctx : Ctx} {body : Block}
+    {regions : List StackSchedule.Region} {lowered : Option Locals.Block}
+    (hLower : lowerDefaultFuel fuel ctx (some body) regions = some lowered) :
+    ∃ region loweredBody,
+      regions = [region] ∧ lowered = some loweredBody ∧
+        lowerBlockFuel fuel ctx body region = some loweredBody := by
+  cases regions with
+  | nil => simp [lowerDefaultFuel] at hLower
+  | cons region rest =>
+      cases rest with
+      | cons next tail => simp [lowerDefaultFuel] at hLower
+      | nil =>
+          simp only [lowerDefaultFuel] at hLower
+          obtain ⟨loweredBody, hBody, hResult⟩ :=
+            Option.bind_eq_some_iff.mp hLower
+          have hLowered := Option.some.inj hResult
+          subst lowered
+          exact ⟨region, loweredBody, rfl, rfl, hBody⟩
 
 theorem lowerPointFuel_brk_components
     {fuel : Nat} {ctx : Ctx}

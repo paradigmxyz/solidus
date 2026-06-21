@@ -379,6 +379,26 @@ theorem budget_if_body_add_two_le
   have hStride := eight_le_programStride program
   nlinarith
 
+theorem budget_switch_selected_add_two_le
+    (program : Expressions.Program) (sourceFuel : Nat)
+    (scrutinee : Expressions.Expr 1)
+    (cases : List (Expressions.Word × Expressions.Block))
+    (defaultBody : Option Expressions.Block)
+    (rest : List Expressions.Stmt) (value : Expressions.Word)
+    (selected : Expressions.Block)
+    (hSelect :
+      Expressions.EffectSemantics.Switch.select value cases defaultBody =
+        some selected) :
+    budget program sourceFuel selected.stmts + 2 ≤
+      budget program (sourceFuel + 1)
+        (.switch scrutinee cases defaultBody :: rest) := by
+  have hSelected := selected_block_size_le hSelect
+  have hStride := eight_le_programStride program
+  rcases selected with ⟨selectedStmts⟩
+  unfold budget
+  simp only [stmtListSize, stmtSize, blockSize] at hSelected ⊢
+  nlinarith
+
 namespace Covers
 
 theorem length_lt {program : Expressions.Program} {sourceFuel targetFuel : Nat}
@@ -425,6 +445,23 @@ theorem if_body_after_two {program : Expressions.Program}
     TargetFuel.Covers program sourceFuel (targetFuel - 2) body.stmts := by
   have hBody := le_trans
     (budget_if_body_add_two_le program sourceFuel cond body rest) h
+  exact Nat.le_sub_of_add_le hBody
+
+theorem switch_selected_after_two {program : Expressions.Program}
+    {sourceFuel targetFuel : Nat} {scrutinee : Expressions.Expr 1}
+    {cases : List (Expressions.Word × Expressions.Block)}
+    {defaultBody : Option Expressions.Block}
+    {rest : List Expressions.Stmt} {value : Expressions.Word}
+    {selected : Expressions.Block}
+    (h : TargetFuel.Covers program (sourceFuel + 1) targetFuel
+      (.switch scrutinee cases defaultBody :: rest))
+    (hSelect :
+      Expressions.EffectSemantics.Switch.select value cases defaultBody =
+        some selected) :
+    TargetFuel.Covers program sourceFuel (targetFuel - 2) selected.stmts := by
+  have hBody := le_trans
+    (budget_switch_selected_add_two_le program sourceFuel scrutinee cases
+      defaultBody rest value selected hSelect) h
   exact Nat.le_sub_of_add_le hBody
 
 end Covers

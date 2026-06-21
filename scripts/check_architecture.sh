@@ -55,10 +55,18 @@ for theorem in \
     'controlScheduledRegion' \
     'controlScheduledRegionAsBlock' \
     'compiledScheduledRegion_of_compilers' \
+    'ControlSwitchBranchPreserves' \
+    'SwitchBranchRel' \
+    'compiledSwitchBranch_of_compilers' \
+    'switchDefaultRel_of_compilers' \
+    'switchCasesRel_of_compilers' \
+    'switchBranchRelToPreserve' \
     'blockPoint_of_compilers' \
     'ifPoint_of_compilers' \
+    'switchPoint_of_compilers' \
     'blockCons_of_compilers' \
     'ifCons_of_compilers' \
+    'switchCons_of_compilers' \
     'exprCons_of_compilers' \
     'letCons_of_compilers' \
     'assignCons_of_compilers' \
@@ -104,8 +112,12 @@ for theorem in \
     'lowerPointFuel_switch_components' \
     'lowerCasesFuel_nil_components' \
     'lowerCasesFuel_cons_components' \
+    'lowerCasesFuel_nil_shape' \
+    'lowerCasesFuel_cons_shape' \
     'lowerDefaultFuel_none_components' \
-    'lowerDefaultFuel_some_components'; do
+    'lowerDefaultFuel_some_components' \
+    'lowerDefaultFuel_none_shape' \
+    'lowerDefaultFuel_some_shape'; do
   if ! rg -Fq \
       "#check EvmCompiler.Functions.StackLowering.${theorem}" \
       EvmCompiler/Verification.lean; then
@@ -324,8 +336,13 @@ for theorem in \
     'scheduleStmtFuelWithTargets_switch_components' \
     'scheduleCaseRegionsFuelWithTargets_nil_components' \
     'scheduleCaseRegionsFuelWithTargets_cons_components' \
+    'scheduleCaseRegionsFuelWithTargets_nil_shape' \
+    'scheduleCaseRegionsFuelWithTargets_cons_shape' \
+    'scheduleCaseRegionsFuelWithTargets_length' \
     'scheduleDefaultRegionFuelWithTargets_none_components' \
     'scheduleDefaultRegionFuelWithTargets_some_components' \
+    'scheduleDefaultRegionFuelWithTargets_none_shape' \
+    'scheduleDefaultRegionFuelWithTargets_some_shape' \
     'scheduleBlockFuelWithTargets_components' \
     'scheduleStmtListFuelWithTargets_brk_components' \
     'scheduleStmtListFuelWithTargets_cont_components'; do
