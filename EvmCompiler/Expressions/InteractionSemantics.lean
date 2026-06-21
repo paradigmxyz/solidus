@@ -401,6 +401,24 @@ theorem openRunForLoop_succ
               (Structured.Outcome.regular result.1)) := by
   rfl
 
+/-- The positive-fuel `for` wrapper exposes initializer execution before the
+recursive loop kernel. -/
+theorem openRun_for
+    (program : Expressions.Program) (fuel : Nat)
+    (init : Expressions.Block) (cond : Expressions.Expr 1)
+    (post body : Expressions.Block) (state : RunState) :
+    openRun program (fuel + 1) (.for_ init cond post body) state =
+      Simulation.Interaction.bind (Block.openRun program fuel init state)
+        (fun initOutcome =>
+          match initOutcome.mode with
+          | .regular =>
+              openRunForLoop program fuel cond post body initOutcome.state
+          | .brk | .cont =>
+              Simulation.Interaction.error .InvalidInstruction
+          | .leave | .halt _ =>
+              Simulation.Interaction.pure initOutcome) := by
+  rfl
+
 /-- A positive-fuel procedure call exposes stack splitting and its body run. -/
 theorem openRun_call
     (program : Expressions.Program) (fuel : Nat)

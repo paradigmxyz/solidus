@@ -23,6 +23,8 @@ for theorem in \
     'programStride' \
     'Covers' \
     'Covers.length_lt' \
+    'Covers.weaken_target' \
+    'Covers.head_after_one_append' \
     'Covers.head_of_succ_append' \
     'Covers.tail_after_succ_append' \
     'Covers.if_body_after_two' \
@@ -228,6 +230,14 @@ if ! rg -Fq \
   failed=1
 fi
 
+if ! rg -Fq \
+    '#check EvmCompiler.Expressions.InteractionSemantics.Stmt.openRun_for' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing the Expressions-owned outer for equation.' >&2
+  failed=1
+fi
+
 for theorem in \
     'OpenResultRel' \
     'openRun_terminal_generated' \
@@ -254,9 +264,13 @@ for theorem in \
     'SwitchBranchesPreserve' \
     'controlSwitch' \
     'ControlScopedOutcomeRel' \
+    'ControlBlockPreserves' \
+    'ForCoreResultRel' \
     'controlBlockToScoped' \
     'controlBlockToScopedBlock' \
     'controlForLoop' \
+    'controlForCore' \
+    'controlFor' \
     'RuntimeCtxCovers.withoutLoopControl' \
     'RuntimeCtxCovers.withLoopControl' \
     'openRun_let_generated' \

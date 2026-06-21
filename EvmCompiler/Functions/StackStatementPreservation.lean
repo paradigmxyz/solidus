@@ -522,6 +522,58 @@ theorem controlBlockToScopedBlock
   cases targetBody
   exact controlBlockToScoped hRun
 
+def ControlBlockPreserves
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx finalCtx : Locals.Ctx)
+    (sourceBody : Functions.Block)
+    (targetBody : Expressions.Block) : Prop :=
+  ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel targetFuel : Nat)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState},
+    Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
+      targetBody.stmts →
+    RuntimeCtxCovers sourceCtx targetCtx targets returns →
+    StateRel targetCtx.layout suffix returns source target →
+    Simulation.Interaction.ForwardRel FuelTruncated
+      (ControlOpenOutcomeRel targets finalCtx suffix returns)
+      (Functions.InteractionSemantics.Block.openRun sourceProgram sourceCtx
+        sourceFuel sourceBody source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
+        targetBody target)
+
+inductive ForCoreResultRel (sourceCtx : Functions.Source.Ctx)
+    (loopTargetCtx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest) :
+    (Locals.Source.Effectful.Outcome Locals.Source.State ×
+      Functions.Source.Ctx) →
+    Structured.Outcome → Prop
+  | regular {sourceBefore sourceAfter target} :
+      sourceAfter = sourceBefore.restrictTo sourceCtx.scope →
+      StateRel loopTargetCtx.layout suffix returns sourceBefore target →
+      ForCoreResultRel sourceCtx loopTargetCtx suffix returns
+        (Locals.Source.Effectful.Outcome.regular sourceAfter, sourceCtx)
+        (Structured.Outcome.regular target)
+  | leave {source target layout} :
+      StateRel layout suffix returns source target →
+      ForCoreResultRel sourceCtx loopTargetCtx suffix returns
+        (Locals.Source.Effectful.Outcome.leave source, sourceCtx)
+        (Structured.Outcome.leave target)
+  | halt {kind source target} :
+      source.shared = target.evm.toSharedState →
+      target.returns = returns →
+      ForCoreResultRel sourceCtx loopTargetCtx suffix returns
+        (Locals.Source.Effectful.Outcome.halt kind source, sourceCtx)
+        (Structured.Outcome.halt kind target)
+
+abbrev ForCoreOutcomeRel (sourceCtx : Functions.Source.Ctx)
+    (loopTargetCtx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest) :=
+  Simulation.Interaction.ExceptRel
+    (fun (_ : EVMException) (_ : EVMException) => True)
+    (ForCoreResultRel sourceCtx loopTargetCtx suffix returns)
+
 def ControlPointPreserves
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
@@ -780,6 +832,242 @@ theorem controlForLoop
               exact .done (.ok (.leave hBodyState))
           | halt hShared hReturns =>
               exact .done (.ok (.halt hShared hReturns))
+
+/-- The outer `for` wrapper composes initializer execution with the recursive
+loop kernel. Its regular result deliberately retains a pre-restriction source
+witness until the allocator-owned exit transition removes initializer locals. -/
+theorem controlForCore
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (sourceCtx : Functions.Source.Ctx)
+    (targetCtx loopTargetCtx : Locals.Ctx)
+    (init : Functions.Block)
+    (cond : Functions.Expr 1) (condCode : Structured.Code)
+    (post body : Functions.Block)
+    (targetInit targetPost targetBody : Expressions.Block)
+    (hCondScoped : Locals.Scope.ExprScoped loopTargetCtx.layout cond)
+    (hCondSupported : Locals.InteractionSemantics.Expr.OpenSupported cond)
+    (hCondCompile :
+      Locals.Expr.compileCode loopTargetCtx 0 cond = some condCode)
+    (hInit :
+      ControlBlockPreserves sourceProgram targetProgram {}
+        targetCtx.withoutLoopControl loopTargetCtx init targetInit)
+    (hBody :
+      ControlPointPreserves sourceProgram targetProgram
+        { brk? := some loopTargetCtx.layout,
+          cont? := some loopTargetCtx.layout }
+        (loopTargetCtx.withLoopControl loopTargetCtx.layout.length)
+        (loopTargetCtx.withLoopControl loopTargetCtx.layout.length)
+        (.block body) targetBody.stmts)
+    (hPost :
+      ControlPointPreserves sourceProgram targetProgram {}
+        loopTargetCtx.withoutLoopControl loopTargetCtx.withoutLoopControl
+        (.block post) targetPost.stmts) :
+    ∀ (sourceFuel targetFuel : Nat)
+      {suffix : List Word} {returns : List Structured.ReturnDest}
+      {source : Locals.Source.State} {target : Structured.RunState},
+      Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
+        [.for_ targetInit (.code condCode) targetPost targetBody] →
+      RuntimeCtxCovers sourceCtx targetCtx targets returns →
+      StateRel targetCtx.layout suffix returns source target →
+      Simulation.Interaction.ForwardRel FuelTruncated
+        (ForCoreOutcomeRel sourceCtx loopTargetCtx suffix returns)
+        (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
+          sourceFuel (.for_ init cond post body) source)
+        (Expressions.InteractionSemantics.Stmt.openRun targetProgram targetFuel
+          (.for_ targetInit (.code condCode) targetPost targetBody) target) := by
+  intro sourceFuel
+  cases sourceFuel with
+  | zero =>
+      intro targetFuel suffix returns source target hFuel hCtx hInitial
+      unfold Functions.InteractionSemantics.Stmt.openRun
+        Functions.Source.Canonical.Stmt.run
+        Functions.Source.Effectful.Control.Stmt.run
+      exact .truncated rfl
+  | succ fuel =>
+      intro targetFuel suffix returns source target hFuel hCtx hInitial
+      have hTargetLength := hFuel.length_lt
+      have hTargetEq : targetFuel = (targetFuel - 1) + 1 := by omega
+      rw [Functions.InteractionSemantics.Stmt.openRun_for, hTargetEq,
+        Expressions.InteractionSemantics.Stmt.openRun_for]
+      have hInitFuelSmall :=
+        Expressions.TargetFuel.Covers.for_init_after_two hFuel
+      have hInitFuel :
+          Expressions.TargetFuel.Covers targetProgram fuel (targetFuel - 1)
+            targetInit.stmts :=
+        hInitFuelSmall.weaken_target (by omega)
+      have hLoopFuelSmall :=
+        Expressions.TargetFuel.Covers.for_loop_after_two hFuel
+      have hLoopFuel :
+          Expressions.TargetFuel.Covers targetProgram fuel (targetFuel - 1)
+            [.for_ targetInit (.code condCode) targetPost targetBody] :=
+        hLoopFuelSmall.weaken_target (by omega)
+      have hInitCtx := hCtx.withoutLoopControl
+      have hInitInitial :
+          StateRel targetCtx.withoutLoopControl.layout suffix returns
+            source target := by
+        simpa [Locals.Ctx.withoutLoopControl] using hInitial
+      have hInitRun :=
+        hInit sourceCtx.withoutLoopControl fuel (targetFuel - 1) hInitFuel
+          hInitCtx hInitInitial
+      apply Simulation.Interaction.ForwardRel.bind hInitRun
+      intro sourceInit targetInitOutcome hInitResult
+      cases hInitResult with
+      | @regular _sourceAfterInit sourceAfterInitCtx _targetAfterInit hLoopCtx
+          hInitState =>
+          simp only [Locals.Source.Effectful.Outcome.regular,
+            Structured.Outcome.regular, Structured.OutcomeT.regular]
+          have hLoopRun :=
+            controlForLoop sourceProgram targetProgram sourceAfterInitCtx
+              loopTargetCtx cond condCode post body targetInit targetPost
+              targetBody hCondScoped hCondSupported hCondCompile hBody hPost
+              fuel (targetFuel - 1) hLoopFuel hLoopCtx hInitState
+          change Simulation.Interaction.ForwardRel FuelTruncated
+            (ForCoreOutcomeRel sourceCtx loopTargetCtx suffix returns) _
+            (Expressions.InteractionSemantics.Stmt.openRunForLoop targetProgram
+              (targetFuel - 1) (.code condCode) targetPost targetBody
+              _targetAfterInit)
+          rw [← Simulation.Interaction.bind_pure
+            (Expressions.InteractionSemantics.Stmt.openRunForLoop targetProgram
+              (targetFuel - 1) (.code condCode) targetPost targetBody
+              _targetAfterInit)]
+          apply Simulation.Interaction.ForwardRel.bind hLoopRun
+          intro sourceLoop targetLoop hLoopResult
+          cases hLoopResult with
+          | regular _hFinalCtx hLoopState =>
+              exact .done (.ok (.regular rfl hLoopState))
+          | brk hNoTarget _hLoopState => simp at hNoTarget
+          | cont hNoTarget _hLoopState => simp at hNoTarget
+          | leave hLoopState =>
+              exact .done (.ok (.leave hLoopState))
+          | halt hShared hReturns =>
+              exact .done (.ok (.halt hShared hReturns))
+      | brk hNoTarget _hInitState => simp at hNoTarget
+      | cont hNoTarget _hInitState => simp at hNoTarget
+      | leave hInitState =>
+          exact .done (.ok (.leave hInitState))
+      | halt hShared hReturns =>
+          exact .done (.ok (.halt hShared hReturns))
+
+/-- Discharge the compiler's lexical cleanup after a complete `for`, removing
+initializer locals and restoring the enclosing runtime context. -/
+theorem controlFor
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx loopTargetCtx : Locals.Ctx)
+    (init : Functions.Block)
+    (cond : Functions.Expr 1) (condCode : Structured.Code)
+    (post body : Functions.Block)
+    (targetInit targetPost targetBody : Expressions.Block)
+    (outerCleanup : Structured.Code)
+    (hOuterLayout :
+      ∃ pre, loopTargetCtx.layout = pre ++ targetCtx.layout)
+    (hOuterCleanup :
+      loopTargetCtx.cleanupTo? targetCtx.layout.length = some outerCleanup)
+    (hCondScoped : Locals.Scope.ExprScoped loopTargetCtx.layout cond)
+    (hCondSupported : Locals.InteractionSemantics.Expr.OpenSupported cond)
+    (hCondCompile :
+      Locals.Expr.compileCode loopTargetCtx 0 cond = some condCode)
+    (hInit :
+      ControlBlockPreserves sourceProgram targetProgram {}
+        targetCtx.withoutLoopControl loopTargetCtx init targetInit)
+    (hBody :
+      ControlPointPreserves sourceProgram targetProgram
+        { brk? := some loopTargetCtx.layout,
+          cont? := some loopTargetCtx.layout }
+        (loopTargetCtx.withLoopControl loopTargetCtx.layout.length)
+        (loopTargetCtx.withLoopControl loopTargetCtx.layout.length)
+        (.block body) targetBody.stmts)
+    (hPost :
+      ControlPointPreserves sourceProgram targetProgram {}
+        loopTargetCtx.withoutLoopControl loopTargetCtx.withoutLoopControl
+        (.block post) targetPost.stmts) :
+    ControlPointPreserves sourceProgram targetProgram targets targetCtx
+      targetCtx (.for_ init cond post body)
+      ([.for_ targetInit (.code condCode) targetPost targetBody] ++
+        Locals.codeStmt outerCleanup) := by
+  intro sourceCtx sourceFuel targetFuel suffix returns source target hFuel hCtx
+    hInitial
+  have hTargetLength := hFuel.length_lt
+  have hTargetLength' : 2 < targetFuel := by
+    simpa [Locals.codeStmt] using hTargetLength
+  have hCoreFuel :=
+    Expressions.TargetFuel.Covers.head_after_one_append
+      (left := [.for_ targetInit (.code condCode) targetPost targetBody])
+      (right := Locals.codeStmt outerCleanup)
+      (by simp [Locals.codeStmt]) hFuel
+  have hCore :=
+    controlForCore sourceProgram targetProgram targets sourceCtx targetCtx
+      loopTargetCtx init cond condCode post body targetInit targetPost targetBody
+      hCondScoped hCondSupported hCondCompile hInit hBody hPost sourceFuel
+      (targetFuel - 1) hCoreFuel hCtx hInitial
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  have hTargetEq : targetFuel = (targetFuel - 2) + 2 := by omega
+  have hInnerEq : (targetFuel - 2) + 1 = targetFuel - 1 := by omega
+  rw [hTargetEq,
+    Expressions.InteractionSemantics.Block.openRun_single_stmt, hInnerEq]
+  apply Simulation.Interaction.ForwardRel.bind_right hCore
+  intro sourceDone targetDone hResult
+  cases hResult with
+  | error hError =>
+      exact .done (.error hError)
+  | ok hCoreResult =>
+      cases hCoreResult with
+      | @regular sourceBefore sourceAfter targetAfter hRestricted hState =>
+          simp only [Structured.Outcome.regular,
+            Structured.OutcomeT.regular]
+          have hResidualFuel :
+              targetFuel - 2 + 2 -
+                  [Expressions.Stmt.for_ targetInit (.code condCode) targetPost
+                    targetBody].length =
+                targetFuel - 1 := by
+            simp only [List.length_singleton]
+            omega
+          rw [hResidualFuel]
+          change Simulation.Interaction.ForwardRel FuelTruncated
+            (ControlOpenOutcomeRel targets targetCtx suffix returns)
+            (Simulation.Interaction.pure
+              (Locals.Source.Effectful.Outcome.regular sourceAfter, sourceCtx))
+            (Expressions.InteractionSemantics.Block.openRun targetProgram
+              (targetFuel - 1) { stmts := Locals.codeStmt outerCleanup }
+              targetAfter)
+          obtain ⟨pre, hLayout⟩ := hOuterLayout
+          have hSuffix :
+              targetCtx.layout =
+                loopTargetCtx.layout.drop
+                  (loopTargetCtx.layout.length - targetCtx.layout.length) := by
+            rw [hLayout]
+            simp
+          obtain ⟨finalTarget, hCleanupRun, hFinalState⟩ :=
+            StackTransitionPreservation.Cleanup.openRun rfl hSuffix
+              hOuterCleanup hState
+          have hCleanupFuel : 2 ≤ targetFuel - 1 := by omega
+          have hTargetCleanup :=
+            Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+              targetProgram (targetFuel - 1)
+                outerCleanup _ finalTarget hCleanupFuel hCleanupRun
+          have hTargetCleanup' :
+              Expressions.InteractionSemantics.Block.openRun targetProgram
+                  (targetFuel - 1)
+                  { stmts := Locals.codeStmt outerCleanup } targetAfter =
+                .done (.ok (Structured.Outcome.regular finalTarget)) := by
+            simpa [Locals.codeStmt] using hTargetCleanup
+          rw [hTargetCleanup']
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          rw [hRestricted]
+          exact .regular hCtx
+            (hFinalState.restrictTo hCtx.context.scope)
+      | leave hState =>
+          simp only [Structured.Outcome.leave,
+            Structured.OutcomeT.leave]
+          exact .done (.ok (.leave hState))
+      | halt hShared hReturns =>
+          simp only [Structured.Outcome.halt,
+            Structured.OutcomeT.halt]
+          exact .done (.ok (.halt hShared hReturns))
 
 theorem RegularResultRel.toOpen
     {targetCtx : Locals.Ctx} {suffix : List Word}

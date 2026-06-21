@@ -2455,6 +2455,8 @@ or audit-alias corridor.
 #check EvmCompiler.Expressions.TargetFuel.programStride
 #check EvmCompiler.Expressions.TargetFuel.Covers
 #check EvmCompiler.Expressions.TargetFuel.Covers.length_lt
+#check EvmCompiler.Expressions.TargetFuel.Covers.weaken_target
+#check EvmCompiler.Expressions.TargetFuel.Covers.head_after_one_append
 #check EvmCompiler.Expressions.TargetFuel.Covers.head_of_succ_append
 #check EvmCompiler.Expressions.TargetFuel.Covers.tail_after_succ_append
 #check EvmCompiler.Expressions.TargetFuel.Covers.if_body_after_two
@@ -3026,6 +3028,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.InteractionSemantics.Stmt.openRunForLoop_succ
 #check EvmCompiler.Functions.InteractionSemantics.Stmt.openRun_block_eq_scoped_pair
 #check EvmCompiler.Expressions.InteractionSemantics.Stmt.openRunForLoop_succ
+#check EvmCompiler.Expressions.InteractionSemantics.Stmt.openRun_for
 #check EvmCompiler.Functions.StackStatementPreservation.OpenResultRel
 #check EvmCompiler.Functions.StackStatementPreservation.BreakCtxCovers
 #check EvmCompiler.Functions.StackStatementPreservation.ContinueCtxCovers
@@ -3042,11 +3045,15 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.withLoopControl
 #check EvmCompiler.Functions.StackStatementPreservation.ControlOpenResultRel
 #check EvmCompiler.Functions.StackStatementPreservation.ControlScopedOutcomeRel
+#check EvmCompiler.Functions.StackStatementPreservation.ControlBlockPreserves
+#check EvmCompiler.Functions.StackStatementPreservation.ForCoreResultRel
 #check EvmCompiler.Functions.StackStatementPreservation.ControlPointPreserves
 #check EvmCompiler.Functions.StackStatementPreservation.CompiledControlPoint
 #check EvmCompiler.Functions.StackStatementPreservation.controlBlockToScoped
 #check EvmCompiler.Functions.StackStatementPreservation.controlBlockToScopedBlock
 #check EvmCompiler.Functions.StackStatementPreservation.controlForLoop
+#check EvmCompiler.Functions.StackStatementPreservation.controlForCore
+#check EvmCompiler.Functions.StackStatementPreservation.controlFor
 #check EvmCompiler.Functions.StackStatementPreservation.regularRelToControl
 #check EvmCompiler.Functions.StackStatementPreservation.openRelToControl
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_expr_controlCtx
@@ -3218,6 +3225,8 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.withoutLoopControl
 #print axioms EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.withLoopControl
 #print axioms EvmCompiler.Functions.StackStatementPreservation.controlForLoop
+#print axioms EvmCompiler.Functions.StackStatementPreservation.controlForCore
+#print axioms EvmCompiler.Functions.StackStatementPreservation.controlFor
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.JoinArtifact.thenBlock
 #print axioms EvmCompiler.Expressions.TargetFuel.Covers.if_body_after_two
 #print axioms EvmCompiler.Functions.StackBlockPreservation.brkList_of_compilers

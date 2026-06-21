@@ -466,6 +466,28 @@ theorem budget_for_loop_add_one_le
 
 namespace Covers
 
+theorem weaken_target {program : Expressions.Program}
+    {sourceFuel smaller larger : Nat} {stmts : List Expressions.Stmt}
+    (h : TargetFuel.Covers program sourceFuel smaller stmts)
+    (hLe : smaller ≤ larger) :
+    TargetFuel.Covers program sourceFuel larger stmts :=
+  le_trans h hLe
+
+theorem head_after_one_append {program : Expressions.Program}
+    {sourceFuel targetFuel : Nat} {left right : List Expressions.Stmt}
+    (hRight : right ≠ [])
+    (h : TargetFuel.Covers program sourceFuel targetFuel (left ++ right)) :
+    TargetFuel.Covers program sourceFuel (targetFuel - 1) left := by
+  have hRightLength : 1 ≤ right.length :=
+    Nat.one_le_iff_ne_zero.mpr fun hZero =>
+      hRight (List.length_eq_zero_iff.mp hZero)
+  have hRightSize : right.length ≤ stmtListSize right :=
+    length_le_stmtListSize right
+  unfold TargetFuel.Covers at h ⊢
+  rw [budget_append] at h
+  unfold budget at h ⊢
+  omega
+
 theorem length_lt {program : Expressions.Program} {sourceFuel targetFuel : Nat}
     {stmts : List Expressions.Stmt}
     (h : TargetFuel.Covers program sourceFuel targetFuel stmts) :
