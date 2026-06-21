@@ -30,6 +30,9 @@ def exitStmts : Option Join → List Locals.Stmt
   | none => []
   | some exit => exit.statements
 
+/-- Copy a named return value into an anonymous word slot. The arithmetic is
+value-preserving, while the TypedCfg owner classifies the fresh result as
+`.word` rather than retaining the source `.local` tag across procedure exit. -/
 def returnWord (name : Name) : Expr 1 :=
   .prim .add
     (by
@@ -49,25 +52,106 @@ def pushWordReturns : List Name → List Locals.Stmt
   | [] => []
   | name :: rest => [.exprs (returnWords (name :: rest))]
 
-theorem returnWord_eval
-    {name : Name} {state : Locals.Source.State} {value : Word}
-    (hValue : state.vars name = some value) :
-    Locals.Source.Expr.eval Locals.Source.PrimitiveSemantics.structured
-        (returnWord name) state = .ok (state, [value]) := by
-  cases value with
-  | mk val =>
-      simp [returnWord, Locals.Source.Expr.eval,
-        Locals.Source.Expr.ExprSeq.eval,
-        Locals.Source.PrimitiveSemantics.structured,
-        Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
-        Expressions.Structured.BasicOp.inputs,
-        Structured.BasicOp.toPrimOp,
-        Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
-        EvmYul.EVM.execBinOp, EvmYul.Stack.pop2, EvmYul.Stack.push,
-        hValue, Lower.zero, EvmYul.UInt256.add,
-        EvmYul.UInt256.ofNat,
-        EvmYul.EVM.State.replaceStackAndIncrPC,
-        EvmYul.EVM.State.incrPC, Locals.Source.State.withShared, Id.run]
+private theorem returnWords_scoped_cast
+    {left right : Nat} (h : left = right)
+    {layout : Locals.Layout} {exprs : Locals.ExprSeq left}
+    (hScoped : Functions.Scope.ExprSeqScoped layout exprs) :
+    Functions.Scope.ExprSeqScoped layout
+      (cast (congrArg Locals.ExprSeq h) exprs) := by
+  cases h
+  exact hScoped
+
+private theorem returnWords_localsScoped_cast_iff
+    {left right : Nat} (h : left = right)
+    {layout : Locals.Layout} {exprs : Locals.ExprSeq left} :
+    Locals.Scope.ExprSeqScoped layout
+        (cast (congrArg Locals.ExprSeq h) exprs) ↔
+      Locals.Scope.ExprSeqScoped layout exprs := by
+  cases h
+  rfl
+
+theorem returnWords_scoped
+    {names layout : Locals.Layout}
+    (hSubset : ∀ name, name ∈ names → name ∈ layout) :
+    Functions.Scope.ExprSeqScoped layout (returnWords names) := by
+  induction names with
+  | nil => simp [returnWords, Functions.Scope.ExprSeqScoped]
+  | cons name names ih =>
+      unfold returnWords
+      let exprs : Locals.ExprSeq (1 + names.length) :=
+        Locals.ExprSeq.cons (returnWord name) (returnWords names)
+      have hLen : 1 + names.length = names.length + 1 := by omega
+      change
+        Functions.Scope.ExprSeqScoped layout
+          (cast (congrArg Locals.ExprSeq hLen) exprs)
+      apply returnWords_scoped_cast hLen
+      refine ⟨?_, ?_⟩
+      simpa [returnWord, Functions.Scope.ExprScoped,
+        Functions.Scope.ExprSeqScoped, Functions.Scope.Contains] using
+        hSubset name (by simp)
+      exact ih (fun other hOther => hSubset other (by simp [hOther]))
+
+private theorem returnWords_localsScoped_cast
+    {left right : Nat} (h : left = right)
+    {layout : Locals.Layout} {exprs : Locals.ExprSeq left}
+    (hScoped : Locals.Scope.ExprSeqScoped layout exprs) :
+    Locals.Scope.ExprSeqScoped layout
+      (cast (congrArg Locals.ExprSeq h) exprs) := by
+  cases h
+  exact hScoped
+
+theorem returnWords_localsScoped
+    {names layout : Locals.Layout}
+    (hSubset : ∀ name, name ∈ names → name ∈ layout) :
+    Locals.Scope.ExprSeqScoped layout (returnWords names) := by
+  induction names with
+  | nil => simp [returnWords, Locals.Scope.ExprSeqScoped]
+  | cons name names ih =>
+      unfold returnWords
+      let exprs : Locals.ExprSeq (1 + names.length) :=
+        Locals.ExprSeq.cons (returnWord name) (returnWords names)
+      have hLen : 1 + names.length = names.length + 1 := by omega
+      change
+        Locals.Scope.ExprSeqScoped layout
+          (cast (congrArg Locals.ExprSeq hLen) exprs)
+      apply returnWords_localsScoped_cast hLen
+      refine ⟨?_, ?_⟩
+      simpa [returnWord, Locals.Scope.ExprScoped,
+        Locals.Scope.ExprSeqScoped, Locals.Scope.Contains] using
+        hSubset name (by simp)
+      exact ih (fun other hOther => hSubset other (by simp [hOther]))
+
+theorem returnWords_names_mem_of_scoped :
+    ∀ {names layout : Locals.Layout},
+      Locals.Scope.ExprSeqScoped layout (returnWords names) →
+        ∀ {name : Name}, name ∈ names → name ∈ layout
+  | [], _layout, _hScoped, _name, hMem => by simp at hMem
+  | head :: tail, layout, hScoped, name, hMem => by
+      unfold returnWords at hScoped
+      let exprs : Locals.ExprSeq (1 + tail.length) :=
+        Locals.ExprSeq.cons (returnWord head) (returnWords tail)
+      have hLen : 1 + tail.length = tail.length + 1 := by omega
+      change
+        Locals.Scope.ExprSeqScoped layout
+          (cast (congrArg Locals.ExprSeq hLen) exprs) at hScoped
+      have hParts := (returnWords_localsScoped_cast_iff hLen).mp hScoped
+      rcases List.mem_cons.mp hMem with rfl | hTail
+      · simpa [returnWord, Locals.Scope.ExprScoped,
+          Locals.Scope.ExprSeqScoped, Locals.Scope.Contains] using hParts.1
+      · exact returnWords_names_mem_of_scoped hParts.2 hTail
+
+theorem returnWords_names_mem_of_check
+    {names layout : Locals.Layout}
+    (hCheck :
+      StackAccess.ExprSeq.check? layout 0 (returnWords names) = some ()) :
+    ∀ {name : Name}, name ∈ names → name ∈ layout := by
+  have hSelf :
+      Functions.Scope.ExprSeqScoped names (returnWords names) :=
+    returnWords_scoped (fun _name hName => hName)
+  intro name hName
+  exact
+    returnWords_names_mem_of_scoped
+      (StackAccess.ExprSeq.scoped_of_check hCheck hSelf) hName
 
 def callStmts? (ctx : Ctx) (targets : List Name)
     (functionName : Name) (args : List (Expr 1)) :
@@ -429,6 +513,43 @@ theorem lowerPointFuel_assign_components
                     exact
                       ⟨retain, rfl, hFallsTrue, rfl, rfl,
                         by simpa using hLower.symm⟩
+            | cons region regions => simp [hRegions] at hLower
+          · rw [if_neg hFalls] at hLower
+            contradiction
+
+theorem lowerPointFuel_leave_components
+    {fuel : Nat} {ctx : Ctx}
+    {point : StackSchedule.Point} {lowered : List Locals.Stmt}
+    (hLower : lowerPointFuel fuel ctx .leave point = some lowered) :
+    pointAccess? ctx .leave point = some () ∧
+      point.fallsThrough = false ∧ point.regions = [] ∧
+      point.retain? = none ∧
+      lowered = pushWordReturns ctx.returns ++ [.leave] := by
+  cases fuel with
+  | zero => simp [lowerPointFuel] at hLower
+  | succ fuel =>
+      simp only [lowerPointFuel] at hLower
+      cases hAccess : pointAccess? ctx .leave point with
+      | none => simp [hAccess] at hLower
+      | some unit =>
+          cases unit
+          rw [hAccess] at hLower
+          by_cases hFalls :
+              point.fallsThrough = !StackSchedule.alwaysExits .leave
+          · rw [if_pos hFalls] at hLower
+            cases hRegions : point.regions with
+            | nil =>
+                rw [hRegions] at hLower
+                have hFallsFalse : point.fallsThrough = false := by
+                  simpa [StackSchedule.alwaysExits] using hFalls
+                rw [hFallsFalse] at hLower
+                cases hRetain : point.retain? with
+                | none =>
+                    rw [hRetain] at hLower
+                    exact
+                      ⟨rfl, hFallsFalse, rfl, rfl,
+                        by simpa using hLower.symm⟩
+                | some retain => simp [hRetain] at hLower
             | cons region regions => simp [hRegions] at hLower
           · rw [if_neg hFalls] at hLower
             contradiction

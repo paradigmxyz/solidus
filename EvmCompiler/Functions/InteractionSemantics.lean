@@ -272,6 +272,40 @@ theorem openRun_cons
               Simulation.Interaction.pure (result.1, ctx)) = _
   rfl
 
+theorem openRun_leave_cons
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (rest : List Functions.Stmt) (state : State) :
+    openRun program ctx (fuel + 1) { stmts := .leave :: rest } state =
+      Functions.Source.Canonical.Stmt.run stateModel primitiveSemantics
+        program ctx fuel .leave state := by
+  rw [openRun_cons]
+  unfold Functions.Source.Canonical.Stmt.run
+    Functions.Source.Effectful.Control.Stmt.run
+  cases hScope : ctx.leaveScope? with
+  | none =>
+      simp only [hScope]
+      change Simulation.Interaction.bind
+          (Simulation.Interaction.done
+            (.error EvmYul.EVM.ExecutionException.InvalidInstruction)) _ =
+        Simulation.Interaction.done
+          (.error EvmYul.EVM.ExecutionException.InvalidInstruction)
+      rw [Simulation.Interaction.bind_done_error]
+  | some scope =>
+      simp only [hScope]
+      let result :=
+        (Functions.Source.Effectful.Outcome.leave
+            (stateModel.restrictTo scope state),
+          ctx)
+      change Simulation.Interaction.bind
+          ((pure result) : Open (Outcome × Functions.Source.Ctx)) _ =
+        ((pure result) : Open (Outcome × Functions.Source.Ctx))
+      change Simulation.Interaction.bind
+          (Simulation.Interaction.done (.ok result)) _ =
+        Simulation.Interaction.done (.ok result)
+      rw [Simulation.Interaction.bind_done_ok]
+      simp [result]
+      rfl
+
 /-- A successful nonempty block exposes a successful canonical head run. -/
 theorem successful_openRun_cons_head
     {program : Functions.Program} {ctx : Functions.Source.Ctx}

@@ -162,6 +162,9 @@ elimination are not prerequisites for Permit2 or Aave.
 - [x] Prove compiler-equation-driven recursive composition for arbitrary
   expression/declaration/assignment lists with computed target fuel and no
   generated semantic premise.
+- [x] Prove ordinary `leave` from canonical source scope through checked return
+  accessibility, value-preserving return-slot anonymization, preserving frame
+  cleanup, and non-fallthrough list composition.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls
@@ -225,6 +228,10 @@ elimination are not prerequisites for Permit2 or Aave.
 
 ### 9. Optional Code Density
 
+- [ ] If return-copy overhead is material, replace the current proved `ADD 0`
+  local-to-word slot anonymization with a zero-byte Structured/TypedCfg relabel
+  marker and prove that adjacent pass separately. The existing coercion remains
+  the correctness baseline.
 - [ ] If deployable output still requires it, implement compact `PUSH` encoding
   as a separate Assembly-owned pass with decoding and execution preservation.
   It must not be mixed into allocation correctness.

@@ -1,4 +1,5 @@
 import EvmCompiler.Functions.StackSchedule
+import EvmCompiler.Functions.SourceSemantics
 import EvmCompiler.Locals.InteractionPreservation
 
 /-!
@@ -18,6 +19,21 @@ abbrev Word := Assembly.Word
 def values (source : Locals.Source.State)
     (layout : Locals.Layout) : List Word :=
   layout.map fun name => (source.vars name).getD (EvmYul.UInt256.ofNat 0)
+
+theorem values_eq_of_lookupMany
+    {source : Locals.Source.State} {names : Locals.Layout}
+    {result : List Word}
+    (hLookup : Functions.Source.Store.lookupMany names source.vars =
+      some result) :
+    values source names = result := by
+  have hPairs := Functions.Source.Store.lookupMany_forall₂ hLookup
+  clear hLookup
+  induction hPairs with
+  | nil => rfl
+  | cons hValue _hTail ih =>
+      unfold values
+      simp only [List.map_cons, hValue, Option.getD_some]
+      congr
 
 structure StateRel (layout : Locals.Layout) (suffix : List Word)
     (returns : List Structured.ReturnDest)
@@ -145,6 +161,46 @@ theorem mem_of_mem_promoteAt
     · exact List.mem_of_mem_drop hDrop
 
 namespace StateRel
+
+theorem of_lookupMany
+    {layout : Locals.Layout} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    {result : List Word}
+    (hShared : target.evm.toSharedState = source.shared)
+    (hReturns : target.returns = returns)
+    (hLookup :
+      Functions.Source.Store.lookupMany layout source.vars = some result)
+    (hStack : target.evm.stack = result ++ suffix) :
+    StateRel layout suffix returns source target := by
+  refine ⟨hShared, hReturns, ?_, ?_⟩
+  · rw [values_eq_of_lookupMany hLookup]
+    exact hStack
+  · intro name hName
+    have hContains :=
+      Functions.Source.Store.lookupMany_contains_of_mem hLookup hName
+    cases hValue : source.vars name with
+    | none => simp [Locals.Source.Store.contains, hValue] at hContains
+    | some value => exact ⟨value, rfl⟩
+
+theorem lookupMany_of_subset
+    {layout : Locals.Layout} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hRel : StateRel layout suffix returns source target)
+    {names : List Name}
+    (hSubset : ∀ name, name ∈ names → name ∈ layout) :
+    ∃ result,
+      Functions.Source.Store.lookupMany names source.vars = some result := by
+  induction names with
+  | nil => exact ⟨[], rfl⟩
+  | cons name names ih =>
+      obtain ⟨value, hValue⟩ := hRel.defined (hSubset name (by simp))
+      obtain ⟨result, hResult⟩ :=
+        ih (fun other hOther => hSubset other (by simp [hOther]))
+      exact
+        ⟨value :: result, by
+          simp [Functions.Source.Store.lookupMany, hValue, hResult]⟩
 
 theorem restrictTo
     {layout scope : Locals.Layout} {suffix : List Word}

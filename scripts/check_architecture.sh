@@ -86,6 +86,7 @@ for theorem in \
     'assignCons_of_compilers' \
     'brkControlList_of_compilers' \
     'contControlList_of_compilers' \
+    'leaveControlList_of_compilers' \
     'terminalControlList_of_compilers' \
     'terminalArgsControlList_of_compilers' \
     'RegularListPreserves.toOpenList' \
@@ -123,6 +124,7 @@ for theorem in \
     'lowerPointFuel_assign_components' \
     'lowerPointFuel_terminal_components' \
     'lowerPointFuel_terminalArgs_components' \
+    'lowerPointFuel_leave_components' \
     'lowerPointFuel_switch_components' \
     'lowerCasesFuel_nil_components' \
     'lowerCasesFuel_cons_components' \
@@ -264,6 +266,11 @@ for theorem in \
     'compiledExprPointOfEquations' \
     'compiledLetPointOfEquations' \
     'compiledAssignPointOfEquations' \
+    'returnWords_openEval' \
+    'returnWords_openSupported' \
+    'openRun_leave_returnCode' \
+    'openRun_leave_noReturns' \
+    'compiledLeaveControlPointOfEquations' \
     'controlThenTransitionForward' \
     'controlAppendEmptyCodeForward' \
     'controlIf' \
@@ -280,6 +287,9 @@ for theorem in \
     'RuntimeCtxCovers.withoutLoopControl' \
     'RuntimeCtxCovers.withLoopControl' \
     'RuntimeCtxCovers.afterJoin' \
+    'ReturnCtxCovers' \
+    'ReturnCtxCovers.afterLayout' \
+    'ReturnCtxCovers.ofSameControl' \
     'openRun_let_generated' \
     'openRun_assign_generated'; do
   if ! rg -Fq \

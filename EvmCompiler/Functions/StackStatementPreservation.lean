@@ -4,12 +4,143 @@ import EvmCompiler.Functions.StackLowering
 import EvmCompiler.Functions.StackTransitionCompilation
 import EvmCompiler.Functions.InteractionSemantics
 import EvmCompiler.Expressions.TargetFuel
+import EvmCompiler.Locals.InteractionCleanupPreservation
 
 namespace EvmCompiler
 namespace Functions
 namespace StackStatementPreservation
 
 open StackRelation
+
+@[simp] private theorem openEvalSeq_cast
+    {left right : Nat} (h : left = right)
+    (exprs : Locals.ExprSeq left) (state : Locals.Source.State) :
+    Locals.InteractionSemantics.ExprSeq.openEval
+        (cast (congrArg Locals.ExprSeq h) exprs) state =
+      Locals.InteractionSemantics.ExprSeq.openEval exprs state := by
+  cases h
+  rfl
+
+@[simp] theorem returnWord_openEval
+    {name : Name} {state : Locals.Source.State} {value : Word}
+    (hValue : state.vars name = some value) :
+    Locals.InteractionSemantics.Expr.openEval
+        (StackLowering.returnWord name) state =
+      Simulation.Interaction.pure (state, [value]) := by
+  cases value with
+  | mk raw =>
+      unfold StackLowering.returnWord
+        Locals.InteractionSemantics.Expr.openEval
+      simp [Locals.Source.Effectful.Expr.Control.eval,
+        Locals.Source.Effectful.Expr.Control.ExprSeq.eval,
+        Locals.InteractionSemantics.primitiveSemantics,
+        Locals.InteractionSemantics.stateModel,
+        Locals.Source.Effectful.Ordinary.stateModel,
+        Locals.Source.Effectful.StateModel.vars,
+        EvmCompiler.Simulation.Interaction.instMonad,
+        Simulation.Interaction.pure, Simulation.Interaction.bind,
+        Simulation.Interaction.bind_done_ok,
+        hValue, Lower.zero, EvmYul.UInt256.add,
+        EvmYul.UInt256.ofNat, Id.run]
+
+theorem returnWords_openEval :
+    ∀ (names : List Name) (state : Locals.Source.State)
+      (values : List Word),
+      Functions.Source.Store.lookupMany names state.vars = some values →
+      Locals.InteractionSemantics.ExprSeq.openEval
+          (StackLowering.returnWords names) state =
+        Simulation.Interaction.pure (state, values)
+  | [], state, values, hLookup => by
+      simp [Functions.Source.Store.lookupMany] at hLookup
+      subst values
+      rfl
+  | name :: rest, state, values, hLookup => by
+      unfold Functions.Source.Store.lookupMany at hLookup
+      cases hValue : state.vars name with
+      | none => simp [hValue] at hLookup
+      | some value =>
+          cases hRest : Functions.Source.Store.lookupMany rest state.vars with
+          | none => simp [hValue, hRest] at hLookup
+          | some restValues =>
+              simp [hValue, hRest] at hLookup
+              subst values
+              unfold StackLowering.returnWords
+              let exprs : Locals.ExprSeq (1 + rest.length) :=
+                Locals.ExprSeq.cons (StackLowering.returnWord name)
+                  (StackLowering.returnWords rest)
+              have hLen : 1 + rest.length = rest.length + 1 := by omega
+              change
+                Locals.InteractionSemantics.ExprSeq.openEval
+                    (cast (congrArg Locals.ExprSeq hLen) exprs) state =
+                  .done (.ok (state, value :: restValues))
+              rw [openEvalSeq_cast hLen]
+              have hHeadOpen := returnWord_openEval hValue
+              have hTailOpen :=
+                returnWords_openEval rest state restValues hRest
+              unfold Locals.InteractionSemantics.Expr.openEval at hHeadOpen
+              unfold Locals.InteractionSemantics.ExprSeq.openEval at hTailOpen ⊢
+              simp only [exprs,
+                Locals.Source.Effectful.Expr.Control.ExprSeq.eval,
+                Locals.Source.Effectful.Expr.Control.eval]
+              change
+                (do
+                  let headResult ←
+                    Locals.Source.Effectful.Expr.Control.eval
+                      Locals.InteractionSemantics.stateModel
+                      Locals.InteractionSemantics.primitiveSemantics
+                      (StackLowering.returnWord name) state
+                  let tailResult ←
+                    Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+                      Locals.InteractionSemantics.stateModel
+                      Locals.InteractionSemantics.primitiveSemantics
+                      (StackLowering.returnWords rest) headResult.1
+                  pure (tailResult.1, headResult.2 ++ tailResult.2)) =
+                    .done (.ok (state, value :: restValues))
+              rw [hHeadOpen]
+              change
+                (do
+                  let tailResult ←
+                    Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+                      Locals.InteractionSemantics.stateModel
+                      Locals.InteractionSemantics.primitiveSemantics
+                      (StackLowering.returnWords rest) state
+                  pure (tailResult.1, [value] ++ tailResult.2)) =
+                    .done (.ok (state, value :: restValues))
+              rw [hTailOpen]
+              rfl
+
+private theorem returnWords_openSupported_cast
+    {left right : Nat} (h : left = right)
+    {exprs : Locals.ExprSeq left}
+    (hSupported :
+      Locals.InteractionSemantics.ExprSeq.OpenSupported exprs) :
+    Locals.InteractionSemantics.ExprSeq.OpenSupported
+      (cast (congrArg Locals.ExprSeq h) exprs) := by
+  cases h
+  exact hSupported
+
+theorem returnWords_openSupported :
+    ∀ (names : List Name),
+      Locals.InteractionSemantics.ExprSeq.OpenSupported
+        (StackLowering.returnWords names)
+  | [] => trivial
+  | head :: tail => by
+      unfold StackLowering.returnWords
+      let exprs : Locals.ExprSeq (1 + tail.length) :=
+        Locals.ExprSeq.cons (StackLowering.returnWord head)
+          (StackLowering.returnWords tail)
+      have hLen : 1 + tail.length = tail.length + 1 := by omega
+      change
+        Locals.InteractionSemantics.ExprSeq.OpenSupported
+          (cast (congrArg Locals.ExprSeq hLen) exprs)
+      apply returnWords_openSupported_cast hLen
+      refine ⟨?_, returnWords_openSupported tail⟩
+      simp [StackLowering.returnWord,
+        Locals.InteractionSemantics.Expr.OpenSupported,
+        Locals.InteractionSemantics.ExprSeq.OpenSupported,
+        Locals.InteractionSemantics.Primitive.supportsOpen,
+        Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+        Structured.BasicOp.toPrimOp, Assembly.PrimOp.continuingStep?]
 
 abbrev FuelTruncated :=
   Locals.InteractionPreservation.Block.FuelTruncated
@@ -204,10 +335,140 @@ theorem prepend
 
 end ControlCtxCovers
 
+structure ReturnCtxCovers (source : Functions.Source.Ctx)
+    (target : Locals.Ctx) (returnNames : List Name) : Prop where
+  availability : target.leaveDepth?.isSome = source.leaveScope?.isSome
+  sourceScope :
+    ∀ {scope : List Name}, source.leaveScope? = some scope →
+      ∀ {name : Name}, name ∈ returnNames → name ∈ scope
+  targetDepth :
+    source.leaveScope?.isSome → target.leaveDepth? = some 0
+  targetRetc :
+    source.leaveScope?.isSome → target.leaveRetc = returnNames.length
+
+namespace ReturnCtxCovers
+
+theorem afterLayout
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {returnNames : List Name}
+    (hCtx : ReturnCtxCovers source target returnNames)
+    (layout : Locals.Layout) :
+    ReturnCtxCovers source (target.withLayout layout) returnNames := by
+  exact
+    { availability := by
+        simpa [Locals.Ctx.withLayout] using hCtx.availability
+      sourceScope := hCtx.sourceScope
+      targetDepth := by
+        intro hLeave
+        simpa [Locals.Ctx.withLayout] using hCtx.targetDepth hLeave
+      targetRetc := by
+        intro hLeave
+        simpa [Locals.Ctx.withLayout] using hCtx.targetRetc hLeave }
+
+theorem ofSameControl
+    {source : Functions.Source.Ctx} {before after : Locals.Ctx}
+    {returnNames : List Name}
+    (hCtx : ReturnCtxCovers source before returnNames)
+    (hControl : Locals.Ctx.SameControl before after) :
+    ReturnCtxCovers source after returnNames := by
+  exact
+    { availability := by
+        rw [← hControl.leaveDepth]
+        exact hCtx.availability
+      sourceScope := hCtx.sourceScope
+      targetDepth := by
+        intro hLeave
+        rw [← hControl.leaveDepth]
+        exact hCtx.targetDepth hLeave
+      targetRetc := by
+        intro hLeave
+        rw [← hControl.leaveRetc]
+        exact hCtx.targetRetc hLeave }
+
+theorem prepend
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {returnNames : List Name}
+    (hCtx : ReturnCtxCovers source target returnNames) (name : Name) :
+    ReturnCtxCovers { source with scope := name :: source.scope }
+      (target.withLayout (name :: target.layout)) returnNames := by
+  exact
+    { availability := by
+        simpa [Locals.Ctx.withLayout] using hCtx.availability
+      sourceScope := by
+        intro scope hScope candidate hCandidate
+        exact hCtx.sourceScope (by simpa using hScope) hCandidate
+      targetDepth := by
+        intro hLeave
+        simpa [Locals.Ctx.withLayout] using
+          hCtx.targetDepth (by simpa using hLeave)
+      targetRetc := by
+        intro hLeave
+        simpa [Locals.Ctx.withLayout] using
+          hCtx.targetRetc (by simpa using hLeave) }
+
+theorem withoutLoopControl
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {returnNames : List Name}
+    (hCtx : ReturnCtxCovers source target returnNames) :
+    ReturnCtxCovers source.withoutLoopControl target.withoutLoopControl
+      returnNames := by
+  exact
+    { availability := by
+        simpa [Functions.Source.Ctx.withoutLoopControl,
+          Locals.Ctx.withoutLoopControl] using hCtx.availability
+      sourceScope := by
+        intro scope hScope name hName
+        exact hCtx.sourceScope (by simpa [Functions.Source.Ctx.withoutLoopControl]
+          using hScope) hName
+      targetDepth := by
+        intro hLeave
+        simpa [Functions.Source.Ctx.withoutLoopControl,
+          Locals.Ctx.withoutLoopControl] using
+          hCtx.targetDepth (by simpa [Functions.Source.Ctx.withoutLoopControl]
+            using hLeave)
+      targetRetc := by
+        intro hLeave
+        simpa [Functions.Source.Ctx.withoutLoopControl,
+          Locals.Ctx.withoutLoopControl] using
+          hCtx.targetRetc (by simpa [Functions.Source.Ctx.withoutLoopControl]
+            using hLeave) }
+
+theorem withLoopControl
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {returnNames : List Name}
+    (hCtx : ReturnCtxCovers source target returnNames) :
+    ReturnCtxCovers
+      (source.withLoopControl source.scope source.scope)
+      (target.withLoopControl target.layout.length) returnNames := by
+  exact
+    { availability := by
+        simpa [Functions.Source.Ctx.withLoopControl,
+          Locals.Ctx.withLoopControl] using hCtx.availability
+      sourceScope := by
+        intro scope hScope name hName
+        exact hCtx.sourceScope (by simpa [Functions.Source.Ctx.withLoopControl]
+          using hScope) hName
+      targetDepth := by
+        intro hLeave
+        simpa [Functions.Source.Ctx.withLoopControl,
+          Locals.Ctx.withLoopControl] using
+          hCtx.targetDepth (by simpa [Functions.Source.Ctx.withLoopControl]
+            using hLeave)
+      targetRetc := by
+        intro hLeave
+        simpa [Functions.Source.Ctx.withLoopControl,
+          Locals.Ctx.withLoopControl] using
+          hCtx.targetRetc (by simpa [Functions.Source.Ctx.withLoopControl]
+            using hLeave) }
+
+end ReturnCtxCovers
+
 structure RuntimeCtxCovers (source : Functions.Source.Ctx)
     (target : Locals.Ctx) (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (returns : List Structured.ReturnDest) : Prop where
   control : ControlCtxCovers source target targets
+  returnContext : ReturnCtxCovers source target returnNames
   leaveReady : source.leaveScope?.isSome → returns ≠ []
 
 namespace RuntimeCtxCovers
@@ -215,16 +476,18 @@ namespace RuntimeCtxCovers
 theorem context
     {source : Functions.Source.Ctx} {target : Locals.Ctx}
     {targets : StackSchedule.ControlTargets}
+    {returnNames : List Name}
     {returns : List Structured.ReturnDest}
-    (hCtx : RuntimeCtxCovers source target targets returns) :
+    (hCtx : RuntimeCtxCovers source target targets returnNames returns) :
     CtxCovers source target :=
   hCtx.control.context
 
 theorem breakTarget
     {source : Functions.Source.Ctx} {target : Locals.Ctx}
     {targets : StackSchedule.ControlTargets}
+    {returnNames : List Name}
     {returns : List Structured.ReturnDest}
-    (hCtx : RuntimeCtxCovers source target targets returns)
+    (hCtx : RuntimeCtxCovers source target targets returnNames returns)
     {layout : Locals.Layout} (hTarget : targets.brk? = some layout) :
     BreakCtxCovers source target layout :=
   hCtx.control.breakTarget hTarget
@@ -232,8 +495,9 @@ theorem breakTarget
 theorem continueTarget
     {source : Functions.Source.Ctx} {target : Locals.Ctx}
     {targets : StackSchedule.ControlTargets}
+    {returnNames : List Name}
     {returns : List Structured.ReturnDest}
-    (hCtx : RuntimeCtxCovers source target targets returns)
+    (hCtx : RuntimeCtxCovers source target targets returnNames returns)
     {layout : Locals.Layout} (hTarget : targets.cont? = some layout) :
     ContinueCtxCovers source target layout :=
   hCtx.control.continueTarget hTarget
@@ -241,33 +505,41 @@ theorem continueTarget
 theorem afterOrdering
     {source : Functions.Source.Ctx} {target : Locals.Ctx}
     {targets : StackSchedule.ControlTargets}
+    {returnNames : List Name}
     {returns : List Structured.ReturnDest}
-    (hCtx : RuntimeCtxCovers source target targets returns)
+    (hCtx : RuntimeCtxCovers source target targets returnNames returns)
     (ordering : AllocationLayout.Ordering)
     (hSource : target.layout = ordering.source) :
     RuntimeCtxCovers source (target.withLayout ordering.target) targets
-      returns :=
-  ⟨hCtx.control.afterOrdering ordering hSource, hCtx.leaveReady⟩
+      returnNames returns :=
+  ⟨hCtx.control.afterOrdering ordering hSource,
+    hCtx.returnContext.afterLayout ordering.target, hCtx.leaveReady⟩
 
 theorem afterTransition
     {source : Functions.Source.Ctx} {target : Locals.Ctx}
     {targets : StackSchedule.ControlTargets}
+    {returnNames : List Name}
     {returns : List Structured.ReturnDest}
-    (hCtx : RuntimeCtxCovers source target targets returns)
+    (hCtx : RuntimeCtxCovers source target targets returnNames returns)
     (transition : AllocationLayout.Transition)
     (hSource : target.layout = transition.source) :
     RuntimeCtxCovers source
-      (target.withLayout transition.schedule.target) targets returns :=
-  ⟨hCtx.control.afterTransition transition hSource, hCtx.leaveReady⟩
+      (target.withLayout transition.schedule.target) targets returnNames
+      returns :=
+  ⟨hCtx.control.afterTransition transition hSource,
+    hCtx.returnContext.afterLayout transition.schedule.target,
+    hCtx.leaveReady⟩
 
 theorem afterJoin
     {source : Functions.Source.Ctx} {target : Locals.Ctx}
     {targets : StackSchedule.ControlTargets}
+    {returnNames : List Name}
     {returns : List Structured.ReturnDest}
-    (hCtx : RuntimeCtxCovers source target targets returns)
+    (hCtx : RuntimeCtxCovers source target targets returnNames returns)
     (join : AllocationLayout.Join)
     (hSource : target.layout = join.source) :
-    RuntimeCtxCovers source (target.withLayout join.target) targets returns := by
+    RuntimeCtxCovers source (target.withLayout join.target) targets returnNames
+      returns := by
   have hRetainSource : target.layout = join.retain.source :=
     hSource.trans join.retainSource.symm
   have hRetained := hCtx.afterTransition join.retain hRetainSource
@@ -280,31 +552,37 @@ theorem afterJoin
 theorem ofSameControlLayout
     {source : Functions.Source.Ctx} {before after : Locals.Ctx}
     {targets : StackSchedule.ControlTargets}
+    {returnNames : List Name}
     {returns : List Structured.ReturnDest}
-    (hCtx : RuntimeCtxCovers source before targets returns)
+    (hCtx : RuntimeCtxCovers source before targets returnNames returns)
     (hControl : Locals.Ctx.SameControl before after)
     (hLayout : after.layout = before.layout) :
-    RuntimeCtxCovers source after targets returns :=
-  ⟨hCtx.control.ofSameControlLayout hControl hLayout, hCtx.leaveReady⟩
+    RuntimeCtxCovers source after targets returnNames returns :=
+  ⟨hCtx.control.ofSameControlLayout hControl hLayout,
+    hCtx.returnContext.ofSameControl hControl, hCtx.leaveReady⟩
 
 theorem prepend
     {source : Functions.Source.Ctx} {target : Locals.Ctx}
     {targets : StackSchedule.ControlTargets}
+    {returnNames : List Name}
     {returns : List Structured.ReturnDest}
-    (hCtx : RuntimeCtxCovers source target targets returns) (name : Name) :
+    (hCtx : RuntimeCtxCovers source target targets returnNames returns)
+    (name : Name) :
     RuntimeCtxCovers { source with scope := name :: source.scope }
-      (target.withLayout (name :: target.layout)) targets returns := by
-  refine ⟨hCtx.control.prepend name, ?_⟩
+      (target.withLayout (name :: target.layout)) targets returnNames
+      returns := by
+  refine ⟨hCtx.control.prepend name, hCtx.returnContext.prepend name, ?_⟩
   simpa using hCtx.leaveReady
 
 theorem withoutLoopControl
     {source : Functions.Source.Ctx} {target : Locals.Ctx}
     {targets : StackSchedule.ControlTargets}
+    {returnNames : List Name}
     {returns : List Structured.ReturnDest}
-    (hCtx : RuntimeCtxCovers source target targets returns) :
+    (hCtx : RuntimeCtxCovers source target targets returnNames returns) :
     RuntimeCtxCovers source.withoutLoopControl target.withoutLoopControl {}
-      returns := by
-  refine ⟨?_, ?_⟩
+      returnNames returns := by
+  refine ⟨?_, hCtx.returnContext.withoutLoopControl, ?_⟩
   · refine ⟨?_, ?_, ?_⟩
     · constructor
       intro name hName
@@ -318,20 +596,21 @@ theorem withoutLoopControl
 theorem withLoopControl
     {source : Functions.Source.Ctx} {target : Locals.Ctx}
     {targets : StackSchedule.ControlTargets}
+    {returnNames : List Name}
     {returns : List Structured.ReturnDest}
-    (hCtx : RuntimeCtxCovers source target targets returns) :
+    (hCtx : RuntimeCtxCovers source target targets returnNames returns) :
     RuntimeCtxCovers
       (source.withLoopControl source.scope source.scope)
       (target.withLoopControl target.layout.length)
       { brk? := some target.layout, cont? := some target.layout }
-      returns := by
+      returnNames returns := by
   have hContext :
       CtxCovers (source.withLoopControl source.scope source.scope)
         (target.withLoopControl target.layout.length) := by
     constructor
     intro name hName
     exact hCtx.context.scope hName
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, hCtx.returnContext.withLoopControl, ?_⟩
   · refine ⟨hContext, ?_, ?_⟩
     · intro layout hTarget
       have hLayout : target.layout = layout := Option.some.inj hTarget
@@ -409,56 +688,59 @@ abbrev OpenOutcomeRel (finalCtx : Locals.Ctx)
     (OpenResultRel finalCtx suffix returns)
 
 inductive ControlOpenResultRel (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (finalCtx : Locals.Ctx)
     (suffix : List Word) (returns : List Structured.ReturnDest) :
     (Locals.Source.Effectful.Outcome Locals.Source.State ×
       Functions.Source.Ctx) →
     Structured.Outcome → Prop
   | regular {source sourceCtx target} :
-      RuntimeCtxCovers sourceCtx finalCtx targets returns →
+      RuntimeCtxCovers sourceCtx finalCtx targets returnNames returns →
       StateRel finalCtx.layout suffix returns source target →
-      ControlOpenResultRel targets finalCtx suffix returns
+      ControlOpenResultRel targets returnNames finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.regular source, sourceCtx)
         (Structured.Outcome.regular target)
   | brk {source sourceCtx target layout} :
       targets.brk? = some layout →
       StateRel layout suffix returns source target →
-      ControlOpenResultRel targets finalCtx suffix returns
+      ControlOpenResultRel targets returnNames finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.brk source, sourceCtx)
         (Structured.Outcome.brk target)
   | cont {source sourceCtx target layout} :
       targets.cont? = some layout →
       StateRel layout suffix returns source target →
-      ControlOpenResultRel targets finalCtx suffix returns
+      ControlOpenResultRel targets returnNames finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.cont source, sourceCtx)
         (Structured.Outcome.cont target)
   | leave {source sourceCtx target layout} :
       StateRel layout suffix returns source target →
-      ControlOpenResultRel targets finalCtx suffix returns
+      ControlOpenResultRel targets returnNames finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.leave source, sourceCtx)
         (Structured.Outcome.leave target)
   | halt {kind source sourceCtx target} :
       source.shared = target.evm.toSharedState →
       target.returns = returns →
-      ControlOpenResultRel targets finalCtx suffix returns
+      ControlOpenResultRel targets returnNames finalCtx suffix returns
         (Locals.Source.Effectful.Outcome.halt kind source, sourceCtx)
         (Structured.Outcome.halt kind target)
 
 abbrev ControlOpenOutcomeRel (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (finalCtx : Locals.Ctx)
     (suffix : List Word) (returns : List Structured.ReturnDest) :=
   Simulation.Interaction.ExceptRel
     (fun (_ : EVMException) (_ : EVMException) => True)
-    (ControlOpenResultRel targets finalCtx suffix returns)
+    (ControlOpenResultRel targets returnNames finalCtx suffix returns)
 
 abbrev ControlScopedOutcomeRel (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (finalCtx : Locals.Ctx)
     (suffix : List Word) (returns : List Structured.ReturnDest)
     (sourceCtx : Functions.Source.Ctx) :=
   Simulation.Interaction.ExceptRel
     (fun (_ : EVMException) (_ : EVMException) => True)
     (fun sourceOutcome targetOutcome =>
-      ControlOpenResultRel targets finalCtx suffix returns
+      ControlOpenResultRel targets returnNames finalCtx suffix returns
         (sourceOutcome, sourceCtx) targetOutcome)
 
 /-- Re-expose a compiled lexical block over the canonical scoped-block
@@ -472,17 +754,18 @@ theorem controlBlockToScoped
     {body : Functions.Block}
     {code : List Expressions.Stmt}
     {finalCtx : Locals.Ctx}
+    {returnNames : List Name}
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hRun :
       Simulation.Interaction.ForwardRel FuelTruncated
-        (ControlOpenOutcomeRel targets finalCtx suffix returns)
+        (ControlOpenOutcomeRel targets returnNames finalCtx suffix returns)
         (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
           sourceFuel (.block body) source)
         (Expressions.InteractionSemantics.Block.openRun targetProgram
           targetFuel { stmts := code } target)) :
     Simulation.Interaction.ForwardRel FuelTruncated
-      (ControlScopedOutcomeRel targets finalCtx suffix returns sourceCtx)
+      (ControlScopedOutcomeRel targets returnNames finalCtx suffix returns sourceCtx)
       (Functions.InteractionSemantics.Block.openRunScoped sourceProgram
         sourceCtx body sourceFuel source)
       (Expressions.InteractionSemantics.Block.openRun targetProgram
@@ -495,7 +778,7 @@ theorem controlBlockToScoped
   | error _ =>
       cases targetDone with
       | error _ =>
-          change ControlOpenOutcomeRel targets finalCtx suffix returns
+          change ControlOpenOutcomeRel targets returnNames finalCtx suffix returns
             (.error _) (.error _) at hDone
           cases hDone with
           | error hError => exact .error hError
@@ -504,7 +787,7 @@ theorem controlBlockToScoped
       cases targetDone with
       | error _ => cases hDone
       | ok _ =>
-          change ControlOpenOutcomeRel targets finalCtx suffix returns
+          change ControlOpenOutcomeRel targets returnNames finalCtx suffix returns
             (.ok (_, sourceCtx)) (.ok _) at hDone
           cases hDone with
           | ok hResult => exact .ok hResult
@@ -519,18 +802,19 @@ theorem controlBlockToScopedBlock
     {code : List Expressions.Stmt}
     {targetBody : Expressions.Block}
     {finalCtx : Locals.Ctx}
+    {returnNames : List Name}
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hCode : code = targetBody.stmts)
     (hRun :
       Simulation.Interaction.ForwardRel FuelTruncated
-        (ControlOpenOutcomeRel targets finalCtx suffix returns)
+        (ControlOpenOutcomeRel targets returnNames finalCtx suffix returns)
         (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
           sourceFuel (.block body) source)
         (Expressions.InteractionSemantics.Block.openRun targetProgram
           targetFuel { stmts := code } target)) :
     Simulation.Interaction.ForwardRel FuelTruncated
-      (ControlScopedOutcomeRel targets finalCtx suffix returns sourceCtx)
+      (ControlScopedOutcomeRel targets returnNames finalCtx suffix returns sourceCtx)
       (Functions.InteractionSemantics.Block.openRunScoped sourceProgram
         sourceCtx body sourceFuel source)
       (Expressions.InteractionSemantics.Block.openRun targetProgram
@@ -543,6 +827,7 @@ def ControlBlockPreserves
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (targetCtx finalCtx : Locals.Ctx)
     (sourceBody : Functions.Block)
     (targetBody : Expressions.Block) : Prop :=
@@ -551,10 +836,10 @@ def ControlBlockPreserves
     {source : Locals.Source.State} {target : Structured.RunState},
     Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
       targetBody.stmts →
-    RuntimeCtxCovers sourceCtx targetCtx targets returns →
+    RuntimeCtxCovers sourceCtx targetCtx targets returnNames returns →
     StateRel targetCtx.layout suffix returns source target →
     Simulation.Interaction.ForwardRel FuelTruncated
-      (ControlOpenOutcomeRel targets finalCtx suffix returns)
+      (ControlOpenOutcomeRel targets returnNames finalCtx suffix returns)
       (Functions.InteractionSemantics.Block.openRun sourceProgram sourceCtx
         sourceFuel sourceBody source)
       (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
@@ -595,16 +880,17 @@ def ControlPointPreserves
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (targetCtx finalCtx : Locals.Ctx)
     (stmt : Functions.Stmt) (code : List Expressions.Stmt) : Prop :=
   ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel targetFuel : Nat)
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState},
     Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel code →
-    RuntimeCtxCovers sourceCtx targetCtx targets returns →
+    RuntimeCtxCovers sourceCtx targetCtx targets returnNames returns →
     StateRel targetCtx.layout suffix returns source target →
     Simulation.Interaction.ForwardRel FuelTruncated
-      (ControlOpenOutcomeRel targets finalCtx suffix returns)
+      (ControlOpenOutcomeRel targets returnNames finalCtx suffix returns)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel stmt source)
       (Expressions.InteractionSemantics.Block.openRun targetProgram
@@ -614,13 +900,371 @@ structure CompiledControlPoint
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (targetCtx finalCtx : Locals.Ctx)
     (stmt : Functions.Stmt) (code : List Expressions.Stmt)
     (finalLayout : Locals.Layout) : Prop where
   layout : finalCtx.layout = finalLayout
   preserves :
-    ControlPointPreserves sourceProgram targetProgram targets targetCtx finalCtx
-      stmt code
+    ControlPointPreserves sourceProgram targetProgram targets returnNames
+      targetCtx finalCtx stmt code
+
+/-- Ordinary `leave` with an emitted return vector. Return expressions are
+evaluated once, their exact values are preserved while the active local layout
+is removed, and the resulting stack prefix is related to the source return
+scope in canonical order. -/
+theorem openRun_leave_returnCode
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceFuel targetExtra : Nat)
+    (returnNames scope : List Name)
+    (returnCode cleanup : Structured.Code)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hSourceScope : sourceCtx.leaveScope? = some scope)
+    (hReturnsScope : ∀ name, name ∈ returnNames → name ∈ scope)
+    (hAccess :
+      StackAccess.ExprSeq.check? targetCtx.layout 0
+          (StackLowering.returnWords returnNames) = some ())
+    (hReturnCompile :
+      Locals.ExprSeq.compileCode targetCtx 0
+          (StackLowering.returnWords returnNames) = some returnCode)
+    (hCleanup :
+      targetCtx.cleanupToPreserving? returnNames.length 0 = some cleanup)
+    (hReturnFrame : returns ≠ [])
+    (hInitial :
+      StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (ControlOpenOutcomeRel targets returnNames targetCtx suffix returns)
+      (Functions.InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel .leave source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        (targetExtra + 4)
+        { stmts := [.code returnCode, .code cleanup, .leave] } target) := by
+  have hNamesLayout :
+      ∀ name : Name, name ∈ returnNames → name ∈ targetCtx.layout := by
+    intro name hName
+    exact StackLowering.returnWords_names_mem_of_check hAccess hName
+  obtain ⟨values, hLookup⟩ :=
+    hInitial.lookupMany_of_subset hNamesLayout
+  have hReturnRel :=
+    StackExpressionPreservation.openEvalSeq_compileCode
+      (StackLowering.returnWords returnNames) targetCtx
+      (StackLowering.returnWords_localsScoped hNamesLayout)
+      (returnWords_openSupported returnNames) hReturnCompile hInitial
+  have hReturnEval := returnWords_openEval returnNames source values hLookup
+  rw [hReturnEval] at hReturnRel
+  obtain ⟨targetAfterReturns, hReturnRun, hReturnDone⟩ :=
+    Simulation.Interaction.Rel.done_left hReturnRel
+  cases hReturnDone with
+  | @ok sourceResult targetAfterReturns hReturnResult =>
+      have hCleanupMany :
+          Locals.Ctx.cleanupManyPreserving? targetCtx.layout.length
+              returnNames.length = some cleanup := by
+        unfold Locals.Ctx.cleanupToPreserving? at hCleanup
+        simpa using hCleanup
+      have hValuesLength : values.reverse.length = returnNames.length := by
+        simpa using Functions.Source.Store.lookupMany_length hLookup
+      have hDiscardedLength :
+          (StackRelation.values source targetCtx.layout).length =
+            targetCtx.layout.length := by
+        simp [StackRelation.values]
+      have hAfterStack :
+          targetAfterReturns.evm.stack =
+            values.reverse ++ StackRelation.values source targetCtx.layout ++
+              suffix := by
+        rw [hReturnResult.stack, hInitial.stack]
+        simp [List.append_assoc]
+      obtain
+          ⟨targetFinal, hCleanupRun, hFinalStack,
+            hCleanupShared, hCleanupReturns⟩ :=
+        Locals.InteractionCleanupPreservation.openRun_cleanupManyPreserving?
+          hCleanupMany hValuesLength hDiscardedLength hAfterStack
+      have hRestrictedLookup :
+          Functions.Source.Store.lookupMany returnNames
+              (source.restrictTo scope).vars = some values := by
+        simpa [Locals.Source.State.restrictTo] using
+          Functions.Source.Store.lookupMany_restrictTo_of_mem
+            hReturnsScope hLookup
+      have hReverseLookup :
+          Functions.Source.Store.lookupMany returnNames.reverse
+              (source.restrictTo scope).vars = some values.reverse :=
+        Functions.Source.Store.lookupMany_reverse hRestrictedLookup
+      have hFinalRel :
+          StateRel returnNames.reverse suffix returns
+            (source.restrictTo scope) targetFinal := by
+        apply StateRel.of_lookupMany
+        · rw [hCleanupShared, hReturnResult.shared]
+          rfl
+        · exact
+            hCleanupReturns.trans
+              (hReturnResult.returns.trans hInitial.returns)
+        · exact hReverseLookup
+        · exact hFinalStack
+      have hSourceRun :
+          Functions.InteractionSemantics.Stmt.openRun
+              sourceProgram sourceCtx sourceFuel .leave source =
+            .done
+              (.ok
+                (Locals.Source.Effectful.Outcome.leave
+                    (source.restrictTo scope),
+                  sourceCtx)) := by
+        unfold Functions.InteractionSemantics.Stmt.openRun
+          Functions.Source.Canonical.Stmt.run
+        simp only [Functions.Source.Effectful.Control.Stmt.run]
+        rw [hSourceScope]
+        simp [Functions.InteractionSemantics.stateModel,
+          Locals.InteractionSemantics.stateModel,
+          Locals.Source.Effectful.Ordinary.stateModel,
+          Locals.Source.Effectful.StateModel.restrictTo,
+          Simulation.Interaction.pure]
+        rfl
+      have hTargetRun :
+          Expressions.InteractionSemantics.Block.openRun targetProgram
+              (targetExtra + 4)
+              { stmts := [.code returnCode, .code cleanup, .leave] }
+              target =
+            .done (.ok (Structured.Outcome.leave targetFinal)) := by
+        unfold Expressions.InteractionSemantics.Block.openRun
+        simp only [Expressions.EffectSemantics.Control.Block.run,
+          Expressions.EffectSemantics.Control.Stmt.run]
+        unfold Structured.InteractionSemantics.Code.openRun at hReturnRun
+        rw [hReturnRun]
+        change
+          Expressions.InteractionSemantics.Block.openRun targetProgram
+              (targetExtra + 3)
+              { stmts := [.code cleanup, .leave] } targetAfterReturns =
+            .done (.ok (Structured.Outcome.leave targetFinal))
+        exact
+          Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_leave
+            targetProgram targetExtra cleanup targetAfterReturns targetFinal
+              hCleanupRun (by
+                rw [hCleanupReturns, hReturnResult.returns, hInitial.returns]
+                exact hReturnFrame)
+      rw [hSourceRun, hTargetRun]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact ControlOpenResultRel.leave hFinalRel
+
+/-- Zero-result `leave` omits the return-expression statement and removes the
+entire active local layout before executing the adjacent target `leave`. -/
+theorem openRun_leave_noReturns
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceFuel targetExtra : Nat)
+    (scope : List Name) (cleanup : Structured.Code)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hSourceScope : sourceCtx.leaveScope? = some scope)
+    (hCleanup : targetCtx.cleanupToPreserving? 0 0 = some cleanup)
+    (hReturnFrame : returns ≠ [])
+    (hInitial :
+      StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (ControlOpenOutcomeRel targets [] targetCtx suffix returns)
+      (Functions.InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel .leave source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        (targetExtra + 3)
+        { stmts := [.code cleanup, .leave] } target) := by
+  have hCleanupMany :
+      Locals.Ctx.cleanupManyPreserving? targetCtx.layout.length 0 =
+        some cleanup := by
+    unfold Locals.Ctx.cleanupToPreserving? at hCleanup
+    simpa using hCleanup
+  have hDiscardedLength :
+      (StackRelation.values source targetCtx.layout).length =
+        targetCtx.layout.length := by
+    simp [StackRelation.values]
+  obtain
+      ⟨targetFinal, hCleanupRun, hFinalStack,
+        hCleanupShared, hCleanupReturns⟩ :=
+    Locals.InteractionCleanupPreservation.openRun_cleanupManyPreserving?
+      (values := [])
+      (discarded := StackRelation.values source targetCtx.layout)
+      (suffix := suffix) (target := target)
+      hCleanupMany rfl hDiscardedLength (by
+        simpa using hInitial.stack)
+  have hFinalRel :
+      StateRel [] suffix returns (source.restrictTo scope) targetFinal := by
+    apply StateRel.of_lookupMany
+    · rw [hCleanupShared, hInitial.shared]
+      rfl
+    · exact hCleanupReturns.trans hInitial.returns
+    · rfl
+    · simpa using hFinalStack
+  have hSourceRun :
+      Functions.InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx sourceFuel .leave source =
+        .done
+          (.ok
+            (Locals.Source.Effectful.Outcome.leave
+                (source.restrictTo scope),
+              sourceCtx)) := by
+    unfold Functions.InteractionSemantics.Stmt.openRun
+      Functions.Source.Canonical.Stmt.run
+    simp only [Functions.Source.Effectful.Control.Stmt.run]
+    rw [hSourceScope]
+    simp [Functions.InteractionSemantics.stateModel,
+      Locals.InteractionSemantics.stateModel,
+      Locals.Source.Effectful.Ordinary.stateModel,
+      Locals.Source.Effectful.StateModel.restrictTo,
+      Simulation.Interaction.pure]
+    rfl
+  have hTargetRun :
+      Expressions.InteractionSemantics.Block.openRun targetProgram
+          (targetExtra + 3) { stmts := [.code cleanup, .leave] } target =
+        .done (.ok (Structured.Outcome.leave targetFinal)) :=
+    Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_leave
+      targetProgram targetExtra cleanup target targetFinal hCleanupRun (by
+        rw [hCleanupReturns, hInitial.returns]
+        exact hReturnFrame)
+  rw [hSourceRun, hTargetRun]
+  apply Simulation.Interaction.Rel.done
+  apply Simulation.Interaction.ExceptRel.ok
+  exact ControlOpenResultRel.leave hFinalRel
+
+/-- Compiler-owned ordinary `leave` preservation. The checked lowerer chooses
+the canonical return-expression sequence, and ordinary Locals compilation
+computes both its code and the preserving frame cleanup. -/
+theorem compiledLeaveControlPointOfEquations
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
+    (targetCtx finalCtx : Locals.Ctx)
+    (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
+    (hAccess :
+      StackAccess.ExprSeq.check? targetCtx.layout 0
+          (StackLowering.returnWords returnNames) = some ())
+    (hLowered :
+      lowered = StackLowering.pushWordReturns returnNames ++ [.leave])
+    (hCompile :
+      Locals.Block.compileOpen targetCtx { stmts := lowered } =
+        some (code, finalCtx)) :
+    CompiledControlPoint sourceProgram targetProgram targets returnNames
+      targetCtx finalCtx .leave code targetCtx.layout := by
+  cases returnNames with
+  | nil =>
+      simp [StackLowering.pushWordReturns, Lower.pushReturns] at hLowered
+      subst lowered
+      have hLeaveCompile :=
+        Locals.Block.compileOpen_single_components hCompile
+      obtain ⟨depth, cleanup, hDepth, hCleanup, hCode, hFinal⟩ :=
+        Locals.Stmt.compile_leave_components hLeaveCompile
+      subst finalCtx
+      refine ⟨rfl, ?_⟩
+      unfold ControlPointPreserves
+      intro sourceCtx sourceFuel targetFuel suffix returns source target hFuel
+        hCtx hInitial
+      cases hSourceScope : sourceCtx.leaveScope? with
+      | none =>
+          have hAvailability := hCtx.returnContext.availability
+          rw [hDepth, hSourceScope] at hAvailability
+          simp at hAvailability
+      | some scope =>
+          have hDepthZero :=
+            hCtx.returnContext.targetDepth (by simp [hSourceScope])
+          have hDepthEq : depth = 0 := by
+            rw [hDepth] at hDepthZero
+            exact Option.some.inj hDepthZero
+          subst depth
+          have hRetc :=
+            hCtx.returnContext.targetRetc (by simp [hSourceScope])
+          have hCleanupZero :
+              targetCtx.cleanupToPreserving? 0 0 = some cleanup := by
+            simpa [hRetc] using hCleanup
+          have hLength := Expressions.TargetFuel.Covers.length_lt hFuel
+          rw [hCode] at hLength
+          simp [Locals.codeStmt] at hLength
+          let targetExtra := targetFuel - 3
+          have hFuelEq : targetFuel = targetExtra + 3 := by omega
+          apply Simulation.Interaction.ForwardRel.ofRel
+          rw [hCode, hFuelEq]
+          simpa [Locals.codeStmt] using
+            openRun_leave_noReturns sourceProgram targetProgram targets
+              sourceCtx targetCtx sourceFuel targetExtra scope cleanup
+              hSourceScope hCleanupZero
+              (hCtx.leaveReady (by simp [hSourceScope])) hInitial
+  | cons head tail =>
+      obtain ⟨returnCode, hReturnCompile⟩ :=
+        StackAccessLowering.ExprSeq.compileCode_of_check hAccess targetCtx rfl
+      have hReturnBlock :
+          Locals.Block.compileOpen targetCtx
+              { stmts :=
+                  [.exprs
+                    (StackLowering.returnWords (head :: tail))] } =
+            some ([.code returnCode], targetCtx) := by
+        simp [Locals.Block.compileOpen, Locals.Stmt.compile, hReturnCompile,
+          Locals.codeStmt]
+      have hLoweredShape :
+          lowered =
+            [.exprs (StackLowering.returnWords (head :: tail))] ++
+              [.leave] := by
+        simpa [StackLowering.pushWordReturns, Lower.pushReturns] using hLowered
+      rw [hLoweredShape] at hCompile
+      obtain
+          ⟨returnStmts, middleCtx, leaveStmts,
+            hReturnBlock', hLeaveBlock, hWholeCode⟩ :=
+        Locals.Block.compileOpen_append_components hCompile
+      have hReturnPair :=
+        Option.some.inj (hReturnBlock.symm.trans hReturnBlock')
+      have hReturnStmts : [.code returnCode] = returnStmts :=
+        congrArg Prod.fst hReturnPair
+      have hMiddle : targetCtx = middleCtx :=
+        congrArg Prod.snd hReturnPair
+      subst returnStmts
+      subst middleCtx
+      have hLeaveCompile :=
+        Locals.Block.compileOpen_single_components hLeaveBlock
+      obtain ⟨depth, cleanup, hDepth, hCleanup, hLeaveCode, hFinal⟩ :=
+        Locals.Stmt.compile_leave_components hLeaveCompile
+      subst finalCtx
+      have hCode :
+          code = [.code returnCode, .code cleanup, .leave] := by
+        rw [hWholeCode, hLeaveCode]
+        simp [Locals.codeStmt]
+      refine ⟨rfl, ?_⟩
+      unfold ControlPointPreserves
+      intro sourceCtx sourceFuel targetFuel suffix returns source target hFuel
+        hCtx hInitial
+      cases hSourceScope : sourceCtx.leaveScope? with
+      | none =>
+          have hAvailability := hCtx.returnContext.availability
+          rw [hDepth, hSourceScope] at hAvailability
+          simp at hAvailability
+      | some scope =>
+          have hDepthZero :=
+            hCtx.returnContext.targetDepth (by simp [hSourceScope])
+          have hDepthEq : depth = 0 := by
+            rw [hDepth] at hDepthZero
+            exact Option.some.inj hDepthZero
+          subst depth
+          have hRetc :=
+            hCtx.returnContext.targetRetc (by simp [hSourceScope])
+          have hCleanupReturns :
+              targetCtx.cleanupToPreserving? (head :: tail).length 0 =
+                some cleanup := by
+            simpa [hRetc] using hCleanup
+          have hLength := Expressions.TargetFuel.Covers.length_lt hFuel
+          rw [hCode] at hLength
+          simp at hLength
+          let targetExtra := targetFuel - 4
+          have hFuelEq : targetFuel = targetExtra + 4 := by omega
+          apply Simulation.Interaction.ForwardRel.ofRel
+          rw [hCode, hFuelEq]
+          exact
+            openRun_leave_returnCode sourceProgram targetProgram targets
+              sourceCtx targetCtx sourceFuel targetExtra (head :: tail) scope
+              returnCode cleanup hSourceScope
+              (fun name hName =>
+                hCtx.returnContext.sourceScope hSourceScope hName) hAccess
+              hReturnCompile hCleanupReturns
+              (hCtx.leaveReady (by simp [hSourceScope])) hInitial
 
 /-- The semantic loop kernel composes the condition, scoped body, scoped post,
 and the smaller recursive iteration. Compiler-owned scheduling and lowering
@@ -628,6 +1272,7 @@ remain outside this statement-owner theorem. -/
 theorem controlForLoop
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
+    (returnNames : List Name)
     (sourceLoopCtx : Functions.Source.Ctx)
     (targetLoopCtx : Locals.Ctx)
     (cond : Functions.Expr 1) (condCode : Structured.Code)
@@ -641,11 +1286,13 @@ theorem controlForLoop
       ControlPointPreserves sourceProgram targetProgram
         { brk? := some targetLoopCtx.layout,
           cont? := some targetLoopCtx.layout }
+        returnNames
         (targetLoopCtx.withLoopControl targetLoopCtx.layout.length)
         (targetLoopCtx.withLoopControl targetLoopCtx.layout.length)
         (.block body) targetBody.stmts)
     (hPost :
       ControlPointPreserves sourceProgram targetProgram {}
+        returnNames
         targetLoopCtx.withoutLoopControl
         targetLoopCtx.withoutLoopControl
         (.block post) targetPost.stmts) :
@@ -654,10 +1301,10 @@ theorem controlForLoop
       {source : Locals.Source.State} {target : Structured.RunState},
       Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
         [.for_ targetInit (.code condCode) targetPost targetBody] →
-      RuntimeCtxCovers sourceLoopCtx targetLoopCtx {} returns →
+      RuntimeCtxCovers sourceLoopCtx targetLoopCtx {} returnNames returns →
       StateRel targetLoopCtx.layout suffix returns source target →
       Simulation.Interaction.ForwardRel FuelTruncated
-        (ControlScopedOutcomeRel {} targetLoopCtx suffix returns sourceLoopCtx)
+        (ControlScopedOutcomeRel {} returnNames targetLoopCtx suffix returns sourceLoopCtx)
         (Functions.InteractionSemantics.Stmt.openRunForLoop sourceProgram
           sourceLoopCtx cond sourceLoopCtx.withoutLoopControl post
           (sourceLoopCtx.withLoopControl sourceLoopCtx.scope
@@ -719,7 +1366,7 @@ theorem controlForLoop
                 fuel (targetFuel - 1) hBodyFuel hBodyCtx hBodyInitial)
           apply Simulation.Interaction.ForwardRel.bind
             (targetRel := fun sourceOutcome targetOutcome =>
-              ControlOpenResultRel {} targetLoopCtx suffix returns
+              ControlOpenResultRel {} returnNames targetLoopCtx suffix returns
                 (sourceOutcome, sourceLoopCtx) targetOutcome)
             (leftNext := fun bodyOutcome =>
               match bodyOutcome.mode with
@@ -777,7 +1424,7 @@ theorem controlForLoop
                 StateRel targetLoopCtx.layout suffix returns
                   sourceAfterBody targetAfterBody →
                 Simulation.Interaction.ForwardRel FuelTruncated
-                  (ControlScopedOutcomeRel {} targetLoopCtx suffix returns
+                  (ControlScopedOutcomeRel {} returnNames targetLoopCtx suffix returns
                     sourceLoopCtx)
                   (Simulation.Interaction.bind
                     (Functions.InteractionSemantics.Block.openRunScoped
@@ -857,6 +1504,7 @@ theorem controlForCore
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (sourceCtx : Functions.Source.Ctx)
     (targetCtx loopTargetCtx : Locals.Ctx)
     (init : Functions.Block)
@@ -868,17 +1516,19 @@ theorem controlForCore
     (hCondCompile :
       Locals.Expr.compileCode loopTargetCtx 0 cond = some condCode)
     (hInit :
-      ControlBlockPreserves sourceProgram targetProgram {}
+      ControlBlockPreserves sourceProgram targetProgram {} returnNames
         targetCtx.withoutLoopControl loopTargetCtx init targetInit)
     (hBody :
       ControlPointPreserves sourceProgram targetProgram
         { brk? := some loopTargetCtx.layout,
           cont? := some loopTargetCtx.layout }
+        returnNames
         (loopTargetCtx.withLoopControl loopTargetCtx.layout.length)
         (loopTargetCtx.withLoopControl loopTargetCtx.layout.length)
         (.block body) targetBody.stmts)
     (hPost :
       ControlPointPreserves sourceProgram targetProgram {}
+        returnNames
         loopTargetCtx.withoutLoopControl loopTargetCtx.withoutLoopControl
         (.block post) targetPost.stmts) :
     ∀ (sourceFuel targetFuel : Nat)
@@ -886,7 +1536,7 @@ theorem controlForCore
       {source : Locals.Source.State} {target : Structured.RunState},
       Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
         [.for_ targetInit (.code condCode) targetPost targetBody] →
-      RuntimeCtxCovers sourceCtx targetCtx targets returns →
+      RuntimeCtxCovers sourceCtx targetCtx targets returnNames returns →
       StateRel targetCtx.layout suffix returns source target →
       Simulation.Interaction.ForwardRel FuelTruncated
         (ForCoreOutcomeRel sourceCtx loopTargetCtx suffix returns)
@@ -936,7 +1586,8 @@ theorem controlForCore
           simp only [Locals.Source.Effectful.Outcome.regular,
             Structured.Outcome.regular, Structured.OutcomeT.regular]
           have hLoopRun :=
-            controlForLoop sourceProgram targetProgram sourceAfterInitCtx
+            controlForLoop sourceProgram targetProgram returnNames
+              sourceAfterInitCtx
               loopTargetCtx cond condCode post body targetInit targetPost
               targetBody hCondScoped hCondSupported hCondCompile hBody hPost
               fuel (targetFuel - 1) hLoopFuel hLoopCtx hInitState
@@ -973,6 +1624,7 @@ theorem controlFor
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (targetCtx loopTargetCtx : Locals.Ctx)
     (init : Functions.Block)
     (cond : Functions.Expr 1) (condCode : Structured.Code)
@@ -988,21 +1640,23 @@ theorem controlFor
     (hCondCompile :
       Locals.Expr.compileCode loopTargetCtx 0 cond = some condCode)
     (hInit :
-      ControlBlockPreserves sourceProgram targetProgram {}
+      ControlBlockPreserves sourceProgram targetProgram {} returnNames
         targetCtx.withoutLoopControl loopTargetCtx init targetInit)
     (hBody :
       ControlPointPreserves sourceProgram targetProgram
         { brk? := some loopTargetCtx.layout,
           cont? := some loopTargetCtx.layout }
+        returnNames
         (loopTargetCtx.withLoopControl loopTargetCtx.layout.length)
         (loopTargetCtx.withLoopControl loopTargetCtx.layout.length)
         (.block body) targetBody.stmts)
     (hPost :
       ControlPointPreserves sourceProgram targetProgram {}
+        returnNames
         loopTargetCtx.withoutLoopControl loopTargetCtx.withoutLoopControl
         (.block post) targetPost.stmts) :
-    ControlPointPreserves sourceProgram targetProgram targets targetCtx
-      targetCtx (.for_ init cond post body)
+    ControlPointPreserves sourceProgram targetProgram targets returnNames
+      targetCtx targetCtx (.for_ init cond post body)
       ([.for_ targetInit (.code condCode) targetPost targetBody] ++
         Locals.codeStmt outerCleanup) := by
   intro sourceCtx sourceFuel targetFuel suffix returns source target hFuel hCtx
@@ -1016,7 +1670,8 @@ theorem controlFor
       (right := Locals.codeStmt outerCleanup)
       (by simp [Locals.codeStmt]) hFuel
   have hCore :=
-    controlForCore sourceProgram targetProgram targets sourceCtx targetCtx
+    controlForCore sourceProgram targetProgram targets returnNames sourceCtx
+      targetCtx
       loopTargetCtx init cond condCode post body targetInit targetPost targetBody
       hCondScoped hCondSupported hCondCompile hInit hBody hPost sourceFuel
       (targetFuel - 1) hCoreFuel hCtx hInitial
@@ -1044,7 +1699,7 @@ theorem controlFor
             omega
           rw [hResidualFuel]
           change Simulation.Interaction.ForwardRel FuelTruncated
-            (ControlOpenOutcomeRel targets targetCtx suffix returns)
+            (ControlOpenOutcomeRel targets returnNames targetCtx suffix returns)
             (Simulation.Interaction.pure
               (Locals.Source.Effectful.Outcome.regular sourceAfter, sourceCtx))
             (Expressions.InteractionSemantics.Block.openRun targetProgram
@@ -1104,6 +1759,7 @@ theorem RegularResultRel.toOpen
 theorem regularRelToControl
     {targets : StackSchedule.ControlTargets}
     {finalCtx : Locals.Ctx} {suffix : List Word}
+    {returnNames : List Name}
     {returns : List Structured.ReturnDest}
     {sourceRun :
       Simulation.Interaction EVMException
@@ -1119,10 +1775,10 @@ theorem regularRelToControl
           match result with
           | .error _ => True
           | .ok sourceResult =>
-              RuntimeCtxCovers sourceResult.2 finalCtx targets returns)
+              RuntimeCtxCovers sourceResult.2 finalCtx targets returnNames returns)
         sourceRun) :
     Simulation.Interaction.ForwardRel FuelTruncated
-      (ControlOpenOutcomeRel targets finalCtx suffix returns)
+      (ControlOpenOutcomeRel targets returnNames finalCtx suffix returns)
       sourceRun targetRun := by
   apply Simulation.Interaction.ForwardRel.ofRel
   apply Simulation.Interaction.Rel.mono
@@ -1143,6 +1799,7 @@ theorem regularRelToControl
 theorem openRelToControl
     {targets : StackSchedule.ControlTargets}
     {finalCtx : Locals.Ctx} {suffix : List Word}
+    {returnNames : List Name}
     {returns : List Structured.ReturnDest}
     {sourceRun :
       Simulation.Interaction EVMException
@@ -1160,12 +1817,12 @@ theorem openRelToControl
           | .ok sourceResult =>
               match sourceResult.1.mode with
               | .regular =>
-                  RuntimeCtxCovers sourceResult.2 finalCtx targets returns
+                  RuntimeCtxCovers sourceResult.2 finalCtx targets returnNames returns
               | .brk | .cont => False
               | .leave | .halt _ => True)
         sourceRun) :
     Simulation.Interaction.ForwardRel FuelTruncated
-      (ControlOpenOutcomeRel targets finalCtx suffix returns)
+      (ControlOpenOutcomeRel targets returnNames finalCtx suffix returns)
       sourceRun targetRun := by
   apply Simulation.Interaction.ForwardRel.ofRel
   apply Simulation.Interaction.Rel.mono
@@ -1188,14 +1845,15 @@ theorem openRun_expr_controlCtx
     (sourceCtx : Functions.Source.Ctx) (sourceFuel : Nat)
     (expr : Functions.Expr 0) (source : Locals.Source.State)
     (targets : StackSchedule.ControlTargets) (finalCtx : Locals.Ctx)
+    {returnNames : List Name}
     {returns : List Structured.ReturnDest}
-    (hCtx : RuntimeCtxCovers sourceCtx finalCtx targets returns) :
+    (hCtx : RuntimeCtxCovers sourceCtx finalCtx targets returnNames returns) :
     Simulation.Interaction.AllDone
       (fun result =>
         match result with
         | .error _ => True
         | .ok sourceResult =>
-            RuntimeCtxCovers sourceResult.2 finalCtx targets returns)
+            RuntimeCtxCovers sourceResult.2 finalCtx targets returnNames returns)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel (.expr expr) source) := by
   unfold Functions.InteractionSemantics.Stmt.openRun
@@ -1216,17 +1874,18 @@ theorem openRun_let_controlCtx
     (name : Name) (value : Functions.Expr 1)
     (source : Locals.Source.State)
     (targets : StackSchedule.ControlTargets) (finalCtx : Locals.Ctx)
+    {returnNames : List Name}
     {returns : List Structured.ReturnDest}
     (hCtx :
       RuntimeCtxCovers
         { sourceCtx with scope := name :: sourceCtx.scope }
-        finalCtx targets returns) :
+        finalCtx targets returnNames returns) :
     Simulation.Interaction.AllDone
       (fun result =>
         match result with
         | .error _ => True
         | .ok sourceResult =>
-            RuntimeCtxCovers sourceResult.2 finalCtx targets returns)
+            RuntimeCtxCovers sourceResult.2 finalCtx targets returnNames returns)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel (.let_ name value) source) := by
   unfold Functions.InteractionSemantics.Stmt.openRun
@@ -1246,14 +1905,15 @@ theorem openRun_assign_controlCtx
     (name : Name) (value : Functions.Expr 1)
     (source : Locals.Source.State)
     (targets : StackSchedule.ControlTargets) (finalCtx : Locals.Ctx)
+    {returnNames : List Name}
     {returns : List Structured.ReturnDest}
-    (hCtx : RuntimeCtxCovers sourceCtx finalCtx targets returns) :
+    (hCtx : RuntimeCtxCovers sourceCtx finalCtx targets returnNames returns) :
     Simulation.Interaction.AllDone
       (fun result =>
         match result with
         | .error _ => True
         | .ok sourceResult =>
-            RuntimeCtxCovers sourceResult.2 finalCtx targets returns)
+            RuntimeCtxCovers sourceResult.2 finalCtx targets returnNames returns)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel (.assign name value) source) := by
   unfold Functions.InteractionSemantics.Stmt.openRun
@@ -1275,6 +1935,7 @@ theorem openRun_assign_controlCtx
 theorem controlThenTransition
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (targetCtx : Locals.Ctx)
     (transition : AllocationLayout.Transition)
     {sourceRun :
@@ -1291,13 +1952,13 @@ theorem controlThenTransition
         targetFuel)
     (hCore :
       Simulation.Interaction.Rel
-        (ControlOpenOutcomeRel targets targetCtx suffix returns)
+        (ControlOpenOutcomeRel targets returnNames targetCtx suffix returns)
         sourceRun
         (Expressions.InteractionSemantics.Block.openRun targetProgram
           targetFuel { stmts := coreCode } target)) :
     ∃ artifact : StackTransitionCompilation.Artifact targetCtx transition,
       Simulation.Interaction.Rel
-        (ControlOpenOutcomeRel targets
+        (ControlOpenOutcomeRel targets returnNames
           (targetCtx.withLayout transition.schedule.target) suffix returns)
         sourceRun
         (Expressions.InteractionSemantics.Block.openRun targetProgram
@@ -1358,6 +2019,7 @@ theorem controlThenTransition
 theorem controlThenTransitionForward
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (targetCtx : Locals.Ctx)
     (transition : AllocationLayout.Transition)
     {sourceRun :
@@ -1374,13 +2036,13 @@ theorem controlThenTransitionForward
         targetFuel)
     (hCore :
       Simulation.Interaction.ForwardRel FuelTruncated
-        (ControlOpenOutcomeRel targets targetCtx suffix returns)
+        (ControlOpenOutcomeRel targets returnNames targetCtx suffix returns)
         sourceRun
         (Expressions.InteractionSemantics.Block.openRun targetProgram
           targetFuel { stmts := coreCode } target)) :
     ∃ artifact : StackTransitionCompilation.Artifact targetCtx transition,
       Simulation.Interaction.ForwardRel FuelTruncated
-        (ControlOpenOutcomeRel targets
+        (ControlOpenOutcomeRel targets returnNames
           (targetCtx.withLayout transition.schedule.target) suffix returns)
         sourceRun
         (Expressions.InteractionSemantics.Block.openRun targetProgram
@@ -1445,6 +2107,7 @@ theorem controlThenTransitionForward
 theorem controlAppendEmptyCode
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (targetCtx : Locals.Ctx)
     {sourceRun :
       Simulation.Interaction EVMException
@@ -1457,12 +2120,12 @@ theorem controlAppendEmptyCode
     (hFuel : code.length + 1 < targetFuel)
     (hRun :
       Simulation.Interaction.Rel
-        (ControlOpenOutcomeRel targets targetCtx suffix returns)
+        (ControlOpenOutcomeRel targets returnNames targetCtx suffix returns)
         sourceRun
         (Expressions.InteractionSemantics.Block.openRun targetProgram
           targetFuel { stmts := code } target)) :
     Simulation.Interaction.Rel
-      (ControlOpenOutcomeRel targets targetCtx suffix returns)
+      (ControlOpenOutcomeRel targets returnNames targetCtx suffix returns)
       sourceRun
       (Expressions.InteractionSemantics.Block.openRun targetProgram
         targetFuel { stmts := code ++ [.code []] } target) := by
@@ -1510,6 +2173,7 @@ theorem controlAppendEmptyCode
 theorem controlAppendEmptyCodeForward
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (targetCtx : Locals.Ctx)
     {sourceRun :
       Simulation.Interaction EVMException
@@ -1522,12 +2186,12 @@ theorem controlAppendEmptyCodeForward
     (hFuel : code.length + 1 < targetFuel)
     (hRun :
       Simulation.Interaction.ForwardRel FuelTruncated
-        (ControlOpenOutcomeRel targets targetCtx suffix returns)
+        (ControlOpenOutcomeRel targets returnNames targetCtx suffix returns)
         sourceRun
         (Expressions.InteractionSemantics.Block.openRun targetProgram
           targetFuel { stmts := code } target)) :
     Simulation.Interaction.ForwardRel FuelTruncated
-      (ControlOpenOutcomeRel targets targetCtx suffix returns)
+      (ControlOpenOutcomeRel targets returnNames targetCtx suffix returns)
       sourceRun
       (Expressions.InteractionSemantics.Block.openRun targetProgram
         targetFuel { stmts := code ++ [.code []] } target) := by
@@ -1580,6 +2244,7 @@ theorem controlIf
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
     (sourceFuel targetFuel : Nat)
     (cond : Functions.Expr 1) (body : Functions.Block)
@@ -1587,7 +2252,7 @@ theorem controlIf
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hTargetFuel : 2 ≤ targetFuel)
-    (hCtx : RuntimeCtxCovers sourceCtx targetCtx targets returns)
+    (hCtx : RuntimeCtxCovers sourceCtx targetCtx targets returnNames returns)
     (hCondScoped : Locals.Scope.ExprScoped targetCtx.layout cond)
     (hCondSupported : Locals.InteractionSemantics.Expr.OpenSupported cond)
     (hCondCompile :
@@ -1598,13 +2263,13 @@ theorem controlIf
         {targetAfter : Structured.RunState},
         StateRel targetCtx.layout suffix returns sourceAfter targetAfter →
           Simulation.Interaction.ForwardRel FuelTruncated
-            (ControlOpenOutcomeRel targets targetCtx suffix returns)
+            (ControlOpenOutcomeRel targets returnNames targetCtx suffix returns)
             (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
               sourceFuel (.block body) sourceAfter)
             (Expressions.InteractionSemantics.Block.openRun targetProgram
               (targetFuel - 2) targetBody targetAfter)) :
     Simulation.Interaction.ForwardRel FuelTruncated
-      (ControlOpenOutcomeRel targets targetCtx suffix returns)
+      (ControlOpenOutcomeRel targets returnNames targetCtx suffix returns)
       (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
         (sourceFuel + 1) (.if_ cond body) source)
       (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
@@ -1640,7 +2305,8 @@ def SwitchBranchesPreserve
     (defaultBody : Option Functions.Block)
     (compiledCases : List (Word × Expressions.Block))
     (compiledDefault : Option Expressions.Block)
-    (suffix : List Word) (returns : List Structured.ReturnDest) : Prop :=
+    (returnNames : List Name) (suffix : List Word)
+    (returns : List Structured.ReturnDest) : Prop :=
   ∀ value,
     match Functions.Source.Switch.select value cases defaultBody,
         Expressions.EffectSemantics.Switch.select value compiledCases
@@ -1651,7 +2317,7 @@ def SwitchBranchesPreserve
           {targetAfter : Structured.RunState},
           StateRel targetCtx.layout suffix returns sourceAfter targetAfter →
             Simulation.Interaction.ForwardRel FuelTruncated
-              (ControlOpenOutcomeRel targets targetCtx suffix returns)
+              (ControlOpenOutcomeRel targets returnNames targetCtx suffix returns)
               (Functions.InteractionSemantics.Stmt.openRun sourceProgram
                 sourceCtx sourceFuel (.block sourceBody) sourceAfter)
               (Expressions.InteractionSemantics.Block.openRun targetProgram
@@ -1662,6 +2328,7 @@ theorem controlSwitch
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
     (sourceFuel targetFuel : Nat)
     (scrutinee : Functions.Expr 1)
@@ -1673,7 +2340,7 @@ theorem controlSwitch
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hTargetFuel : 2 ≤ targetFuel)
-    (hCtx : RuntimeCtxCovers sourceCtx targetCtx targets returns)
+    (hCtx : RuntimeCtxCovers sourceCtx targetCtx targets returnNames returns)
     (hScrutineeScoped : Locals.Scope.ExprScoped targetCtx.layout scrutinee)
     (hScrutineeSupported :
       Locals.InteractionSemantics.Expr.OpenSupported scrutinee)
@@ -1683,9 +2350,9 @@ theorem controlSwitch
     (hBranches :
       SwitchBranchesPreserve sourceProgram targetProgram targets sourceCtx
         targetCtx sourceFuel (targetFuel - 2) cases defaultBody compiledCases
-        compiledDefault suffix returns) :
+        compiledDefault returnNames suffix returns) :
     Simulation.Interaction.ForwardRel FuelTruncated
-      (ControlOpenOutcomeRel targets targetCtx suffix returns)
+      (ControlOpenOutcomeRel targets returnNames targetCtx suffix returns)
       (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
         (sourceFuel + 1) (.switch scrutinee cases defaultBody) source)
       (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
@@ -1945,6 +2612,7 @@ theorem compiledBrkControlPointOfEquations
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (targetCtx finalCtx : Locals.Ctx)
     (join : AllocationLayout.Join)
     (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
@@ -1955,8 +2623,8 @@ theorem compiledBrkControlPointOfEquations
     (hCompile :
       Locals.Block.compileOpen targetCtx { stmts := lowered } =
         some (code, finalCtx)) :
-    CompiledControlPoint sourceProgram targetProgram targets targetCtx finalCtx
-      .brk code join.target := by
+    CompiledControlPoint sourceProgram targetProgram targets returnNames
+      targetCtx finalCtx .brk code join.target := by
   obtain ⟨_artifact, hFinal, _hCode, hForward⟩ :=
     compiledBrkJoinPointOfEquations sourceProgram targetProgram targetCtx
       finalCtx join lowered code hSource hTargetDepth hLowered hCompile
@@ -2095,6 +2763,7 @@ theorem compiledContControlPointOfEquations
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (targetCtx finalCtx : Locals.Ctx)
     (join : AllocationLayout.Join)
     (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
@@ -2105,8 +2774,8 @@ theorem compiledContControlPointOfEquations
     (hCompile :
       Locals.Block.compileOpen targetCtx { stmts := lowered } =
         some (code, finalCtx)) :
-    CompiledControlPoint sourceProgram targetProgram targets targetCtx finalCtx
-      .cont code join.target := by
+    CompiledControlPoint sourceProgram targetProgram targets returnNames
+      targetCtx finalCtx .cont code join.target := by
   obtain ⟨_artifact, hFinal, _hCode, hForward⟩ :=
     compiledContJoinPointOfEquations sourceProgram targetProgram targetCtx
       finalCtx join lowered code hSource hTargetDepth hLowered hCompile
@@ -2278,6 +2947,7 @@ theorem compiledTerminalControlPointOfEquations
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (targetCtx finalCtx : Locals.Ctx)
     (kind : Assembly.HaltKind)
     (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
@@ -2286,8 +2956,8 @@ theorem compiledTerminalControlPointOfEquations
     (hCompile :
       Locals.Block.compileOpen targetCtx { stmts := lowered } =
         some (code, finalCtx)) :
-    CompiledControlPoint sourceProgram targetProgram targets targetCtx finalCtx
-      (.terminal kind) code targetCtx.layout := by
+    CompiledControlPoint sourceProgram targetProgram targets returnNames
+      targetCtx finalCtx (.terminal kind) code targetCtx.layout := by
   obtain ⟨hFinal, _hCode, hForward⟩ :=
     compiledTerminalPointOfEquations sourceProgram targetProgram targetCtx
       finalCtx kind lowered code hArgCount hLowered hCompile
@@ -2464,6 +3134,7 @@ theorem compiledTerminalArgsControlPointOfEquations
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (targetCtx finalCtx : Locals.Ctx)
     (kind : Assembly.HaltKind) (args : Locals.ExprSeq kind.argCount)
     (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
@@ -2475,8 +3146,8 @@ theorem compiledTerminalArgsControlPointOfEquations
     (hCompile :
       Locals.Block.compileOpen targetCtx { stmts := lowered } =
         some (code, finalCtx)) :
-    CompiledControlPoint sourceProgram targetProgram targets targetCtx finalCtx
-      (.terminalArgs kind args) code targetCtx.layout := by
+    CompiledControlPoint sourceProgram targetProgram targets returnNames
+      targetCtx finalCtx (.terminalArgs kind args) code targetCtx.layout := by
   obtain ⟨hFinal, _argsCode, _hArgsCompile, _hCode, hForward⟩ :=
     compiledTerminalArgsPointOfEquations sourceProgram targetProgram targetCtx
       finalCtx kind args lowered code hScoped hSupported hAccess hLowered
@@ -3393,6 +4064,7 @@ theorem compiledExprControlPointOfEquations
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (targetCtx middleCtx : Locals.Ctx)
     (expr : Functions.Expr 0)
     (transition : AllocationLayout.Transition)
@@ -3407,8 +4079,8 @@ theorem compiledExprControlPointOfEquations
     (hCompile :
       Locals.Block.compileOpen targetCtx { stmts := lowered } =
         some (headCode, middleCtx)) :
-    CompiledControlPoint sourceProgram targetProgram targets targetCtx middleCtx
-      (.expr expr) headCode transition.schedule.target := by
+    CompiledControlPoint sourceProgram targetProgram targets returnNames
+      targetCtx middleCtx (.expr expr) headCode transition.schedule.target := by
   obtain ⟨hMiddle, hLength, hForward⟩ :=
     compiledExprPointOfEquations sourceProgram targetProgram targetCtx middleCtx
       expr transition lowered headCode hSource hScoped hSupported hAccess
@@ -3542,6 +4214,7 @@ theorem compiledLetControlPointOfEquations
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (targetCtx middleCtx : Locals.Ctx)
     (name : Name) (value : Functions.Expr 1)
     (transition : AllocationLayout.Transition)
@@ -3558,8 +4231,9 @@ theorem compiledLetControlPointOfEquations
     (hCompile :
       Locals.Block.compileOpen targetCtx { stmts := lowered } =
         some (headCode, middleCtx)) :
-    CompiledControlPoint sourceProgram targetProgram targets targetCtx middleCtx
-      (.let_ name value) headCode transition.schedule.target := by
+    CompiledControlPoint sourceProgram targetProgram targets returnNames
+      targetCtx middleCtx (.let_ name value) headCode
+      transition.schedule.target := by
   obtain ⟨hMiddle, hLength, hForward⟩ :=
     compiledLetPointOfEquations sourceProgram targetProgram targetCtx middleCtx
       name value transition lowered headCode hSource hFresh hScoped hSupported
@@ -3696,6 +4370,7 @@ theorem compiledAssignControlPointOfEquations
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
     (targetCtx middleCtx : Locals.Ctx)
     (name : Name) (value : Functions.Expr 1)
     (transition : AllocationLayout.Transition)
@@ -3712,8 +4387,9 @@ theorem compiledAssignControlPointOfEquations
     (hCompile :
       Locals.Block.compileOpen targetCtx { stmts := lowered } =
         some (headCode, middleCtx)) :
-    CompiledControlPoint sourceProgram targetProgram targets targetCtx middleCtx
-      (.assign name value) headCode transition.schedule.target := by
+    CompiledControlPoint sourceProgram targetProgram targets returnNames
+      targetCtx middleCtx (.assign name value) headCode
+      transition.schedule.target := by
   obtain ⟨hMiddle, hLength, hForward⟩ :=
     compiledAssignPointOfEquations sourceProgram targetProgram targetCtx
       middleCtx name value transition lowered headCode hSource hNodup hScoped

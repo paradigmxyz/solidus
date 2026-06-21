@@ -746,6 +746,25 @@ theorem scheduleStmtFuelWithTargets_assign_components
       subst point
       simp
 
+theorem scheduleStmtFuelWithTargets_leave_components
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout : Locals.Layout}
+    {facts : AllocationLivenessFacts.Point} {point : Point}
+    (hSchedule :
+      scheduleStmtFuelWithTargets targets fuel pinned layout .leave facts =
+        some point) :
+    point.beforeLayout = layout ∧
+      point.statementLayout = layout ∧
+      point.retain? = none ∧ point.regions = [] ∧
+      point.fallsThrough = false := by
+  cases fuel with
+  | zero =>
+      simp [scheduleStmtFuelWithTargets] at hSchedule
+  | succ fuel =>
+      simp [scheduleStmtFuelWithTargets, alwaysExits] at hSchedule
+      subst point
+      simp
+
 theorem scheduleStmtFuelWithTargets_terminal_components
     {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
     {layout : Locals.Layout} {kind : Assembly.HaltKind}
