@@ -20,6 +20,9 @@ import EvmCompiler.Functions.AllocationLayoutLowering
 import EvmCompiler.Functions.StackSchedule
 import EvmCompiler.Functions.StackAccess
 import EvmCompiler.Functions.StackAccessLowering
+import EvmCompiler.Functions.StackRelation
+import EvmCompiler.Functions.StackTransitionPreservation
+import EvmCompiler.Functions.StackTransitionCompilation
 import EvmCompiler.Functions.StackLowering
 import EvmCompiler.Functions.StackLoweringCompilation
 import EvmCompiler.Functions.AllocationObserverRelation
@@ -2925,6 +2928,14 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackAccessLowering.callSequence_compile_of_check
 #check EvmCompiler.Functions.StackAccess.Examples.top16_accessible
 #check EvmCompiler.Functions.StackAccess.Examples.below_top16_rejected
+#check EvmCompiler.Functions.StackRelation.values_promoteAt
+#check EvmCompiler.Functions.StackTransitionPreservation.Promotion.openRun
+#check EvmCompiler.Functions.StackTransitionPreservation.Cleanup.openRun
+#check EvmCompiler.Functions.StackTransitionPreservation.PromotionCodes.openRun
+#check EvmCompiler.Functions.StackTransitionPreservation.Schedule.openRun
+#check EvmCompiler.Functions.StackTransitionCompilation.compilePromotions
+#check EvmCompiler.Functions.StackTransitionCompilation.Transition.compileArtifact
+#check EvmCompiler.Functions.StackTransitionCompilation.Transition.compiledOpenRun
 #check EvmCompiler.Functions.StackLowering.Examples.deadProgram_lowers
 #check EvmCompiler.Functions.StackLowering.returnWord_eval
 #check EvmCompiler.Functions.StackLowering.Examples.dormantCallProgram_lowers

@@ -102,6 +102,9 @@ short composition module.
 - [x] Check expression `DUP`, assignment `SWAP`, call-argument, returned-target,
   and function-return accessibility and prove successful checks compile through
   the ordinary adjacent Locals compiler.
+- [x] Prove the ordinary compiler constructs each checked retain transition
+  internally and that its promotion/cleanup code preserves the dynamic layout
+  relation under open semantics without generated public evidence.
 - [ ] Prove statement-list and structured-control layout composition.
 
 ### 4. Internal Calls

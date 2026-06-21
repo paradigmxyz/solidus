@@ -34,6 +34,14 @@ if ! rg -Fq \
   failed=1
 fi
 
+if ! rg -Fq \
+    '#check EvmCompiler.Functions.StackTransitionCompilation.Transition.compiledOpenRun' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing generated-evidence-free stack transition preservation.' >&2
+  failed=1
+fi
+
 for theorem in \
     'build_run' \
     'scheduleRetain?_sound' \
@@ -1520,6 +1528,21 @@ report_matches \
   EvmCompiler/Functions/StackAccessLowering.lean
 
 report_matches \
+  'Functions dynamic stack relation must remain adjacent to Locals semantics:' \
+  '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|TypedCfg|Assembly\.(Assembler|Compiler))' \
+  EvmCompiler/Functions/StackRelation.lean
+
+report_matches \
+  'Functions stack-transition preservation must not import a compiler or observer corridor:' \
+  '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|TypedCfg|Assembly\.(Assembler|Compiler)|Locals\.Compiler)' \
+  EvmCompiler/Functions/StackTransitionPreservation.lean
+
+report_matches \
+  'Functions stack-transition compilation must remain an adjacent compiler bridge:' \
+  '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|TypedCfg|Assembly\.(Assembler|Compiler))' \
+  EvmCompiler/Functions/StackTransitionCompilation.lean
+
+report_matches \
   'Functions stack lowering must remain a syntax-only adjacent pass:' \
   '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|Interaction|EffectSemantics|TypedCfg|Assembly\.(Assembler|Compiler)|Locals\.Compiler)' \
   EvmCompiler/Functions/StackLowering.lean
@@ -1594,6 +1617,9 @@ report_matches \
   EvmCompiler/Functions/StackSchedule.lean \
   EvmCompiler/Functions/StackAccess.lean \
   EvmCompiler/Functions/StackAccessLowering.lean \
+  EvmCompiler/Functions/StackRelation.lean \
+  EvmCompiler/Functions/StackTransitionPreservation.lean \
+  EvmCompiler/Functions/StackTransitionCompilation.lean \
   EvmCompiler/Functions/StackLowering.lean \
   EvmCompiler/Functions/StackLoweringCompilation.lean \
   EvmCompiler/Functions/AllocationObserverRelation.lean \
