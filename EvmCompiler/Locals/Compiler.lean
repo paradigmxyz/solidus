@@ -101,6 +101,22 @@ def finishToPreserving (final : Ctx) (preserve targetDepth : Nat)
   let cleanup ← final.cleanupToPreserving? preserve targetDepth
   some { stmts := stmts ++ codeStmt cleanup }
 
+theorem finishToPreserving_components
+    {final : Ctx} {preserve targetDepth : Nat}
+    {stmts : List Expressions.Stmt} {block : Expressions.Block}
+    (hFinish :
+      finishToPreserving final preserve targetDepth stmts = some block) :
+    ∃ cleanup,
+      final.cleanupToPreserving? preserve targetDepth = some cleanup ∧
+      block = { stmts := stmts ++ codeStmt cleanup } := by
+  unfold finishToPreserving at hFinish
+  cases hCleanup : final.cleanupToPreserving? preserve targetDepth with
+  | none => simp [hCleanup] at hFinish
+  | some cleanup =>
+      simp [hCleanup] at hFinish
+      subst block
+      exact ⟨cleanup, rfl, rfl⟩
+
 def finishScoped (outer final : Ctx) (stmts : List Expressions.Stmt) :
     Option Expressions.Block := do
   let cleanup ← final.cleanupTo? outer.layout.length

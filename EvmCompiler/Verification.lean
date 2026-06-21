@@ -3250,6 +3250,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackCallPreservation.EntryMarker.openRun
 #check EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_fromEntry
 #check EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached
+#check EvmCompiler.Locals.finishToPreserving_components
 
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.Join.compiledOpenRun
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.OrderingArtifact.thenBlock
