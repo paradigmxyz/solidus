@@ -47,8 +47,10 @@ for theorem in \
     'ControlScheduledListPreserves' \
     'controlCons' \
     'controlScheduledRegion' \
+    'controlScheduledRegionAsBlock' \
     'compiledScheduledRegion_of_compilers' \
     'blockPoint_of_compilers' \
+    'ifPoint_of_compilers' \
     'RegularListPreserves.toOpenList' \
     'terminalList_of_compilers' \
     'terminalArgsList_of_compilers'; do

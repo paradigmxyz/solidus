@@ -3045,8 +3045,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackBlockPreservation.controlCons
 #check EvmCompiler.Functions.StackBlockPreservation.controlScopedBodyThenJoin
 #check EvmCompiler.Functions.StackBlockPreservation.controlScheduledRegion
+#check EvmCompiler.Functions.StackBlockPreservation.controlScheduledRegionAsBlock
 #check EvmCompiler.Functions.StackBlockPreservation.compiledScheduledRegion_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.blockPoint_of_compilers
+#check EvmCompiler.Functions.StackBlockPreservation.ifPoint_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.brkList_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.contList_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.RegularListPreserves.toOpenList
@@ -3113,3 +3115,4 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackBlockPreservation.controlCons
 #print axioms EvmCompiler.Functions.StackBlockPreservation.controlScheduledRegion
 #print axioms EvmCompiler.Functions.StackBlockPreservation.blockPoint_of_compilers
+#print axioms EvmCompiler.Functions.StackBlockPreservation.ifPoint_of_compilers
