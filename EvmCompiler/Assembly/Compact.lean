@@ -318,6 +318,51 @@ def layout? (source : Assembly.Program) (branchWidth : Nat) :
 def lookupLabel? (table : LabelTable) (target : Label) : Option Nat :=
   (table.find? fun entry => entry.1 == target).map Prod.snd
 
+theorem layoutRev?_names
+    {branchWidth pc endPc : Nat} {source : Assembly.Program}
+    {acc table : LabelTable}
+    (hLayout : layoutRev? branchWidth source pc acc =
+      some (table, endPc)) :
+    table.map Prod.fst = acc.reverse.map Prod.fst ++ source.labels := by
+  induction source generalizing pc acc table endPc with
+  | nil =>
+      simp [layoutRev?] at hLayout
+      rcases hLayout with ⟨rfl, rfl⟩
+      simp [Assembly.Program.labels]
+  | cons instr rest ih =>
+      cases hSize : sourceInstrSize? branchWidth instr with
+      | none => simp [layoutRev?, hSize] at hLayout
+      | some size =>
+          cases instr with
+          | label name =>
+              have hTail : layoutRev? branchWidth rest (pc + size)
+                  ((name, pc) :: acc) = some (table, endPc) := by
+                simpa [layoutRev?, hSize] using hLayout
+              have hRest := ih hTail
+              simpa [Assembly.Program.labels, List.reverse_cons,
+                List.map_append, List.append_assoc] using hRest
+          | prim op | push op | jump op | jumpi op =>
+              have hTail : layoutRev? branchWidth rest (pc + size) acc =
+                  some (table, endPc) := by
+                simpa [layoutRev?, hSize] using hLayout
+              have hRest := ih hTail
+              simpa [Assembly.Program.labels] using hRest
+
+theorem lookupLabel?_name_mem
+    {table : LabelTable} {target : Label} {pc : Nat}
+    (hLookup : lookupLabel? table target = some pc) :
+    target ∈ table.map Prod.fst := by
+  unfold lookupLabel? at hLookup
+  cases hFind : table.find? (fun entry => entry.1 == target) with
+  | none => simp [hFind] at hLookup
+  | some entry =>
+      have hMem : entry ∈ table := List.mem_of_find?_eq_some hFind
+      have hName : entry.1 = target := by
+        have hFound := List.find?_some hFind
+        simpa using hFound
+      apply List.mem_map.mpr
+      exact ⟨entry, hMem, hName⟩
+
 def emitInstrRev? (branchWidth pc : Nat) (table : LabelTable)
     (instr : Assembly.Instr) (acc : List Located) : Option (List Located) :=
   match instr with
@@ -1051,11 +1096,415 @@ def prepare (source : Assembly.Program) : Assembly.Program :=
   let elided := elideFallthroughJumps source
   pruneUnreferencedLabels (referencedLabels elided) elided
 
+inductive PreparationAction where
+  | keep
+  | skip
+  deriving BEq, DecidableEq, Repr
+
+structure PreparationBlock where
+  sourcePc : Nat
+  preparedPc : Nat
+  sourceInstr : Assembly.Instr
+  action : PreparationAction
+  deriving DecidableEq, Repr
+
+def alignPreparationFrom? : Assembly.Program -> Assembly.Program ->
+    Nat -> Nat -> Option (List PreparationBlock)
+  | [], [], _, _ => some []
+  | [], _ :: _, _, _ => none
+  | instr :: rest, [], sourcePc, preparedPc => do
+      let blocks <- alignPreparationFrom? rest []
+        (sourcePc + instr.byteSize) preparedPc
+      some
+        ({ sourcePc := sourcePc
+           preparedPc := preparedPc
+           sourceInstr := instr
+           action := .skip } :: blocks)
+  | instr :: rest, preparedInstr :: preparedRest, sourcePc, preparedPc =>
+      if instr = preparedInstr then do
+        let blocks <- alignPreparationFrom? rest preparedRest
+          (sourcePc + instr.byteSize) (preparedPc + preparedInstr.byteSize)
+        some
+          ({ sourcePc := sourcePc
+             preparedPc := preparedPc
+             sourceInstr := instr
+             action := .keep } :: blocks)
+      else do
+        let blocks <- alignPreparationFrom? rest
+          (preparedInstr :: preparedRest)
+          (sourcePc + instr.byteSize) preparedPc
+        some
+          ({ sourcePc := sourcePc
+             preparedPc := preparedPc
+             sourceInstr := instr
+             action := .skip } :: blocks)
+termination_by source prepared => source.length + prepared.length
+
+def alignPreparation? (source prepared : Assembly.Program) :
+    Option (List PreparationBlock) :=
+  alignPreparationFrom? source prepared 0 0
+
+def PreparationBoundaryPair (blocks : List PreparationBlock)
+    (sourceEnd preparedEnd sourcePc preparedPc : Nat) : Prop :=
+  (∃ block,
+    block ∈ blocks ∧ block.sourcePc = sourcePc ∧
+      block.preparedPc = preparedPc) ∨
+  (sourcePc = sourceEnd ∧ preparedPc = preparedEnd)
+
+inductive PreparationBlocksValidFrom :
+    Assembly.Program -> Assembly.Program -> Nat -> Nat ->
+      List PreparationBlock -> Prop
+  | nil (sourcePc preparedPc : Nat) :
+      PreparationBlocksValidFrom [] [] sourcePc preparedPc []
+  | keep (instr : Assembly.Instr)
+      (sourceRest preparedRest : Assembly.Program)
+      (sourcePc preparedPc : Nat) (blocks : List PreparationBlock)
+      (hRest : PreparationBlocksValidFrom sourceRest preparedRest
+        (sourcePc + instr.byteSize) (preparedPc + instr.byteSize) blocks) :
+      PreparationBlocksValidFrom (instr :: sourceRest)
+        (instr :: preparedRest) sourcePc preparedPc
+        ({ sourcePc := sourcePc
+           preparedPc := preparedPc
+           sourceInstr := instr
+           action := .keep } :: blocks)
+  | skip (instr : Assembly.Instr) (sourceRest prepared : Assembly.Program)
+      (sourcePc preparedPc : Nat) (blocks : List PreparationBlock)
+      (hRest : PreparationBlocksValidFrom sourceRest prepared
+        (sourcePc + instr.byteSize) preparedPc blocks) :
+      PreparationBlocksValidFrom (instr :: sourceRest) prepared
+        sourcePc preparedPc
+        ({ sourcePc := sourcePc
+           preparedPc := preparedPc
+           sourceInstr := instr
+           action := .skip } :: blocks)
+
+def PreparationBlock.nextPreparedPc (block : PreparationBlock) : Nat :=
+  match block.action with
+  | .keep => block.preparedPc + block.sourceInstr.byteSize
+  | .skip => block.preparedPc
+
+theorem PreparationBlocksValidFrom.initial_boundary
+    {source prepared : Assembly.Program} {sourcePc preparedPc : Nat}
+    {blocks : List PreparationBlock}
+    (hValid : PreparationBlocksValidFrom source prepared
+      sourcePc preparedPc blocks) :
+    PreparationBoundaryPair blocks
+      (sourcePc + source.byteLength) (preparedPc + prepared.byteLength)
+      sourcePc preparedPc := by
+  cases hValid with
+  | nil => exact Or.inr ⟨by simp, by simp⟩
+  | keep instr sourceRest preparedRest sourcePc preparedPc blocks hRest =>
+      exact Or.inl
+        ⟨{ sourcePc := sourcePc, preparedPc := preparedPc
+           sourceInstr := instr, action := .keep }, by simp⟩
+  | skip instr sourceRest prepared sourcePc preparedPc blocks hRest =>
+      exact Or.inl
+        ⟨{ sourcePc := sourcePc, preparedPc := preparedPc
+           sourceInstr := instr, action := .skip }, by simp⟩
+
+theorem PreparationBlocksValidFrom.next_boundary
+    {source prepared : Assembly.Program} {sourcePc preparedPc : Nat}
+    {blocks : List PreparationBlock}
+    (hValid : PreparationBlocksValidFrom source prepared
+      sourcePc preparedPc blocks) :
+    ∀ {block : PreparationBlock}, block ∈ blocks ->
+      PreparationBoundaryPair blocks
+        (sourcePc + source.byteLength) (preparedPc + prepared.byteLength)
+        (block.sourcePc + block.sourceInstr.byteSize)
+        block.nextPreparedPc := by
+  intro block hMem
+  induction hValid with
+  | nil => simp at hMem
+  | @keep instr sourceRest preparedRest sourcePc preparedPc blocks hRest ih =>
+      simp at hMem
+      cases hMem with
+      | inl hHead =>
+          subst block
+          cases hRest with
+          | nil =>
+              exact Or.inr ⟨by simp [Assembly.Program.byteLength_cons],
+                by simp [Assembly.Program.byteLength_cons,
+                  PreparationBlock.nextPreparedPc]⟩
+          | keep next sourceTail preparedTail nextSourcePc nextPreparedPc
+              nextBlocks hNext =>
+              exact Or.inl
+                ⟨{ sourcePc := sourcePc + instr.byteSize
+                   preparedPc := preparedPc + instr.byteSize
+                   sourceInstr := next, action := .keep },
+                  by simp [PreparationBlock.nextPreparedPc]⟩
+          | skip next sourceTail prepared nextSourcePc nextPreparedPc
+              nextBlocks hNext =>
+              exact Or.inl
+                ⟨{ sourcePc := sourcePc + instr.byteSize
+                   preparedPc := preparedPc + instr.byteSize
+                   sourceInstr := next, action := .skip },
+                  by simp [PreparationBlock.nextPreparedPc]⟩
+      | inr hTail =>
+          have hNext := ih hTail
+          rcases hNext with hActive | hEnd
+          · rcases hActive with ⟨next, hNextMem, hSource, hPrepared⟩
+            exact Or.inl ⟨next, by simp [hNextMem], hSource, hPrepared⟩
+          · exact Or.inr
+              ⟨by simpa [Assembly.Program.byteLength_cons, Nat.add_assoc]
+                  using hEnd.1,
+                by simpa [Assembly.Program.byteLength_cons, Nat.add_assoc]
+                  using hEnd.2⟩
+  | @skip instr sourceRest prepared sourcePc preparedPc blocks hRest ih =>
+      simp at hMem
+      cases hMem with
+      | inl hHead =>
+          subst block
+          cases hRest with
+          | nil =>
+              exact Or.inr ⟨by simp [Assembly.Program.byteLength_cons],
+                by simp [PreparationBlock.nextPreparedPc]⟩
+          | keep next sourceTail preparedTail nextSourcePc nextPreparedPc
+              nextBlocks hNext =>
+              exact Or.inl
+                ⟨{ sourcePc := sourcePc + instr.byteSize
+                   preparedPc := preparedPc
+                   sourceInstr := next, action := .keep },
+                  by simp [PreparationBlock.nextPreparedPc]⟩
+          | skip next sourceTail prepared nextSourcePc nextPreparedPc
+              nextBlocks hNext =>
+              exact Or.inl
+                ⟨{ sourcePc := sourcePc + instr.byteSize
+                   preparedPc := preparedPc
+                   sourceInstr := next, action := .skip },
+                  by simp [PreparationBlock.nextPreparedPc]⟩
+      | inr hTail =>
+          have hNext := ih hTail
+          rcases hNext with hActive | hEnd
+          · rcases hActive with ⟨next, hNextMem, hSource, hPrepared⟩
+            exact Or.inl ⟨next, by simp [hNextMem], hSource, hPrepared⟩
+          · exact Or.inr
+              ⟨by simpa [Assembly.Program.byteLength_cons, Nat.add_assoc]
+                  using hEnd.1,
+                hEnd.2⟩
+
+theorem PreparationBlocksValidFrom.source_decompose_of_block_mem
+    {source prepared : Assembly.Program} {sourcePc preparedPc : Nat}
+    {blocks : List PreparationBlock}
+    (hValid : PreparationBlocksValidFrom source prepared
+      sourcePc preparedPc blocks) :
+    ∀ {block : PreparationBlock}, block ∈ blocks ->
+      ∃ pre post,
+        source = pre ++ block.sourceInstr :: post ∧
+          block.sourcePc = sourcePc + pre.byteLength := by
+  intro block hMem
+  induction hValid with
+  | nil => simp at hMem
+  | @keep instr sourceRest preparedRest sourcePc preparedPc blocks hRest ih =>
+      simp at hMem
+      cases hMem with
+      | inl hHead =>
+          subst block
+          exact ⟨[], sourceRest, rfl, by simp⟩
+      | inr hTail =>
+          obtain ⟨pre, post, hSource, hPc⟩ := ih hTail
+          subst sourceRest
+          refine ⟨instr :: pre, post, by simp, ?_⟩
+          simpa [Assembly.Program.byteLength_cons, Nat.add_assoc] using hPc
+  | @skip instr sourceRest prepared sourcePc preparedPc blocks hRest ih =>
+      simp at hMem
+      cases hMem with
+      | inl hHead =>
+          subst block
+          exact ⟨[], sourceRest, rfl, by simp⟩
+      | inr hTail =>
+          obtain ⟨pre, post, hSource, hPc⟩ := ih hTail
+          subst sourceRest
+          refine ⟨instr :: pre, post, by simp, ?_⟩
+          simpa [Assembly.Program.byteLength_cons, Nat.add_assoc] using hPc
+
+theorem PreparationBlocksValidFrom.prepared_decompose_of_keep
+    {source prepared : Assembly.Program} {sourcePc preparedPc : Nat}
+    {blocks : List PreparationBlock}
+    (hValid : PreparationBlocksValidFrom source prepared
+      sourcePc preparedPc blocks) :
+    ∀ {block : PreparationBlock}, block ∈ blocks -> block.action = .keep ->
+      ∃ pre post,
+        prepared = pre ++ block.sourceInstr :: post ∧
+          block.preparedPc = preparedPc + pre.byteLength := by
+  intro block hMem hKeep
+  induction hValid with
+  | nil => simp at hMem
+  | @keep instr sourceRest preparedRest sourcePc preparedPc blocks hRest ih =>
+      simp at hMem
+      cases hMem with
+      | inl hHead =>
+          subst block
+          exact ⟨[], preparedRest, rfl, by simp⟩
+      | inr hTail =>
+          obtain ⟨pre, post, hPrepared, hPc⟩ := ih hTail
+          subst preparedRest
+          refine ⟨instr :: pre, post, by simp, ?_⟩
+          simpa [Assembly.Program.byteLength_cons, Nat.add_assoc] using hPc
+  | @skip instr sourceRest prepared sourcePc preparedPc blocks hRest ih =>
+      simp at hMem
+      cases hMem with
+      | inl hHead =>
+          subst block
+          simp at hKeep
+      | inr hTail => exact ih hTail
+
+theorem alignPreparationFrom?_valid :
+    ∀ {source prepared : Assembly.Program} {sourcePc preparedPc : Nat}
+      {blocks : List PreparationBlock},
+      alignPreparationFrom? source prepared sourcePc preparedPc = some blocks ->
+        PreparationBlocksValidFrom source prepared sourcePc preparedPc blocks := by
+  intro source
+  induction source with
+  | nil =>
+      intro prepared sourcePc preparedPc blocks hAlign
+      cases prepared with
+      | nil =>
+          simp [alignPreparationFrom?] at hAlign
+          subst blocks
+          exact .nil sourcePc preparedPc
+      | cons preparedInstr preparedRest =>
+          simp [alignPreparationFrom?] at hAlign
+  | cons instr rest ih =>
+      intro prepared sourcePc preparedPc blocks hAlign
+      cases prepared with
+      | nil =>
+          simp [alignPreparationFrom?] at hAlign
+          cases hRest : alignPreparationFrom? rest []
+              (sourcePc + instr.byteSize) preparedPc with
+          | none => simp [hRest] at hAlign
+          | some restBlocks =>
+              simp [hRest] at hAlign
+              subst blocks
+              exact .skip instr rest [] sourcePc preparedPc restBlocks
+                (ih hRest)
+      | cons preparedInstr preparedRest =>
+          by_cases hEq : instr = preparedInstr
+          · subst preparedInstr
+            simp [alignPreparationFrom?] at hAlign
+            cases hRest : alignPreparationFrom? rest preparedRest
+                (sourcePc + instr.byteSize) (preparedPc + instr.byteSize) with
+            | none => simp [hRest] at hAlign
+            | some restBlocks =>
+                simp [hRest] at hAlign
+                subst blocks
+                exact .keep instr rest preparedRest sourcePc preparedPc
+                  restBlocks (ih hRest)
+          · simp [alignPreparationFrom?, hEq] at hAlign
+            cases hRest : alignPreparationFrom? rest
+                (preparedInstr :: preparedRest)
+                (sourcePc + instr.byteSize) preparedPc with
+            | none => simp [hRest] at hAlign
+            | some restBlocks =>
+                simp [hRest] at hAlign
+                subst blocks
+                exact .skip instr rest (preparedInstr :: preparedRest)
+                  sourcePc preparedPc restBlocks (ih hRest)
+
+theorem alignPreparation?_valid
+    {source prepared : Assembly.Program} {blocks : List PreparationBlock}
+    (hAlign : alignPreparation? source prepared = some blocks) :
+    PreparationBlocksValidFrom source prepared 0 0 blocks := by
+  exact alignPreparationFrom?_valid hAlign
+
+def preparationTargetPc? (blocks : List PreparationBlock)
+    (sourceEnd preparedEnd sourcePc : Nat) : Option Nat :=
+  match blocks.find? fun block => block.sourcePc == sourcePc with
+  | some block => some block.preparedPc
+  | none => if sourcePc = sourceEnd then some preparedEnd else none
+
+theorem preparationBoundaryPair_of_targetPc?
+    {blocks : List PreparationBlock}
+    {sourceEnd preparedEnd sourcePc preparedPc : Nat}
+    (hLookup : preparationTargetPc? blocks sourceEnd preparedEnd sourcePc =
+      some preparedPc) :
+    PreparationBoundaryPair blocks sourceEnd preparedEnd sourcePc preparedPc := by
+  unfold preparationTargetPc? at hLookup
+  cases hFind : blocks.find? (fun block => block.sourcePc == sourcePc) with
+  | some block =>
+      have hMem := List.mem_of_find?_eq_some hFind
+      have hSource := List.find?_some hFind
+      rw [hFind] at hLookup
+      simp at hLookup
+      exact Or.inl ⟨block, hMem, by simpa using hSource, hLookup⟩
+  | none =>
+      rw [hFind] at hLookup
+      by_cases hEnd : sourcePc = sourceEnd
+      · simp [hEnd] at hLookup
+        exact Or.inr ⟨hEnd, hLookup.symm⟩
+      · simp [hEnd] at hLookup
+
+def preparationBlockSafe? (source prepared : Assembly.Program)
+    (blocks : List PreparationBlock) (block : PreparationBlock) : Bool :=
+  match block.action, block.sourceInstr with
+  | .skip, .label _ => true
+  | .skip, .jump target =>
+      match source.labelPc target with
+      | some sourceDest =>
+          preparationTargetPc? blocks source.byteLength prepared.byteLength
+            sourceDest == some block.preparedPc
+      | none => false
+  | .skip, _ => false
+  | .keep, .jump target | .keep, .jumpi target =>
+      match source.labelPc target, prepared.labelPc target with
+      | some sourceDest, some preparedDest =>
+          preparationTargetPc? blocks source.byteLength prepared.byteLength
+            sourceDest == some preparedDest
+      | _, _ => false
+  | .keep, .prim .pc => false
+  | .keep, _ => true
+
+def preparationSafe? (source prepared : Assembly.Program)
+    (blocks : List PreparationBlock) : Bool :=
+  blocks.all (preparationBlockSafe? source prepared blocks)
+
+def PreparationBlockSafe (source prepared : Assembly.Program)
+    (blocks : List PreparationBlock) (block : PreparationBlock) : Prop :=
+  match block.action, block.sourceInstr with
+  | .skip, .label _ => True
+  | .skip, .jump target =>
+      ∃ sourceDest,
+        source.labelPc target = some sourceDest ∧
+          preparationTargetPc? blocks source.byteLength prepared.byteLength
+            sourceDest = some block.preparedPc
+  | .skip, _ => False
+  | .keep, .jump target | .keep, .jumpi target =>
+      ∃ sourceDest preparedDest,
+        source.labelPc target = some sourceDest ∧
+          prepared.labelPc target = some preparedDest ∧
+            preparationTargetPc? blocks source.byteLength prepared.byteLength
+              sourceDest = some preparedDest
+  | .keep, .prim .pc => False
+  | .keep, _ => True
+
+def PreparationSafe (source prepared : Assembly.Program)
+    (blocks : List PreparationBlock) : Prop :=
+  ∀ block, block ∈ blocks -> PreparationBlockSafe source prepared blocks block
+
+theorem preparationBlockSafe_of_check
+    {source prepared : Assembly.Program} {blocks : List PreparationBlock}
+    {block : PreparationBlock}
+    (hCheck : preparationBlockSafe? source prepared blocks block = true) :
+    PreparationBlockSafe source prepared blocks block := by
+  rcases block with ⟨sourcePc, preparedPc, sourceInstr, action⟩
+  cases action <;> cases sourceInstr <;>
+    simp [preparationBlockSafe?, PreparationBlockSafe] at hCheck ⊢
+  all_goals
+    split at hCheck <;> simp_all
+
+theorem preparationSafe_of_check
+    {source prepared : Assembly.Program} {blocks : List PreparationBlock}
+    (hCheck : preparationSafe? source prepared blocks = true) :
+    PreparationSafe source prepared blocks := by
+  intro block hMem
+  exact preparationBlockSafe_of_check
+    ((List.all_eq_true.mp hCheck) block hMem)
+
 structure Artifact where
   physicalSource : Assembly.Program
   branchWidth : Nat
   labels : LabelTable
   codeLength : Nat
+  preparation : List PreparationBlock
   blocks : List SourceBlock
   program : Program
   bytes : ByteArray
@@ -1113,7 +1562,12 @@ def sourceStats (source : Assembly.Program) : SourceStats :=
   source.foldl SourceStats.addInstr {}
 
 def compile? (source : Assembly.Program) : Option Artifact := do
+  let _ <- if decide source.PCFits then some () else none
   let physicalSource := prepare source
+  let preparation <- alignPreparation? source physicalSource
+  let _ <- if preparationSafe? source physicalSource preparation then
+    some ()
+  else none
   let branchWidth <- widthForNat? physicalSource.byteLength
   let (labels, codeLength) <- layout? physicalSource branchWidth
   let program <- emit? physicalSource branchWidth labels
@@ -1126,6 +1580,7 @@ def compile? (source : Assembly.Program) : Option Artifact := do
             branchWidth := branchWidth
             labels := labels
             codeLength := codeLength
+            preparation := preparation
             blocks := blocks
             program := program
             bytes := encode program }
@@ -1138,7 +1593,12 @@ def compile? (source : Assembly.Program) : Option Artifact := do
 
 structure Artifact.ValidFor (artifact : Artifact)
     (source : Assembly.Program) : Prop where
+  sourcePCFits : source.PCFits
   physicalSource : artifact.physicalSource = prepare source
+  preparationAligned : alignPreparation? source artifact.physicalSource =
+    some artifact.preparation
+  preparationSafe : preparationSafe? source artifact.physicalSource
+    artifact.preparation = true
   branchWidth : widthForNat? artifact.physicalSource.byteLength =
     some artifact.branchWidth
   layout : layout? artifact.physicalSource artifact.branchWidth =
@@ -1159,42 +1619,55 @@ theorem compile?_valid {source : Assembly.Program} {artifact : Artifact}
     (hCompile : compile? source = some artifact) :
     artifact.ValidFor source := by
   unfold compile? at hCompile
+  have hSourceFits : source.PCFits := by
+    by_contra hNotFits
+    simp [hNotFits] at hCompile
+  simp [hSourceFits] at hCompile
   generalize hPhysical : prepare source = physicalSource at hCompile
-  cases hWidth : widthForNat? physicalSource.byteLength with
-  | none => simp [hWidth] at hCompile
-  | some branchWidth =>
-      simp [hWidth] at hCompile
-      cases hLayout : layout? physicalSource branchWidth with
-      | none => simp [hLayout] at hCompile
-      | some layoutResult =>
-          cases layoutResult with
-          | mk labels codeLength =>
-              simp [hLayout] at hCompile
-              cases hEmit : emit? physicalSource branchWidth labels with
-              | none => simp [hEmit] at hCompile
-              | some program =>
-                  simp [hEmit] at hCompile
-                  cases hBlocks :
-                      emitBlocks? physicalSource branchWidth labels with
-                  | none => simp [hBlocks] at hCompile
-                  | some blocks =>
-                      simp [hBlocks] at hCompile
-                      by_cases hCode : blocksCode blocks = program.code
-                      · simp [hCode] at hCompile
-                        by_cases hLabels :
-                            labelsConsistent? blocks labels = true
-                        · simp [hLabels] at hCompile
-                          by_cases hWellFormed : program.wellFormed? = true
-                          · simp [hWellFormed] at hCompile
-                            cases hCompile
-                            exact
-                              Artifact.ValidFor.mk hPhysical.symm hWidth hLayout
-                                hEmit hBlocks hCode
-                                (labelsConsistent_of_check hLabels)
-                                (Program.wellFormed_of_check hWellFormed) rfl
-                          · simp [hWellFormed] at hCompile
-                        · simp [hLabels] at hCompile
-                      · simp [hCode] at hCompile
+  cases hPreparation : alignPreparation? source physicalSource with
+  | none => simp [hPreparation] at hCompile
+  | some preparation =>
+      simp [hPreparation] at hCompile
+      by_cases hPreparationSafe :
+          preparationSafe? source physicalSource preparation = true
+      · simp [hPreparationSafe] at hCompile
+        cases hWidth : widthForNat? physicalSource.byteLength with
+        | none => simp [hWidth] at hCompile
+        | some branchWidth =>
+            simp [hWidth] at hCompile
+            cases hLayout : layout? physicalSource branchWidth with
+            | none => simp [hLayout] at hCompile
+            | some layoutResult =>
+                cases layoutResult with
+                | mk labels codeLength =>
+                    simp [hLayout] at hCompile
+                    cases hEmit : emit? physicalSource branchWidth labels with
+                    | none => simp [hEmit] at hCompile
+                    | some program =>
+                        simp [hEmit] at hCompile
+                        cases hBlocks :
+                            emitBlocks? physicalSource branchWidth labels with
+                        | none => simp [hBlocks] at hCompile
+                        | some blocks =>
+                            simp [hBlocks] at hCompile
+                            by_cases hCode : blocksCode blocks = program.code
+                            · simp [hCode] at hCompile
+                              by_cases hLabels :
+                                  labelsConsistent? blocks labels = true
+                              · simp [hLabels] at hCompile
+                                by_cases hWellFormed :
+                                    program.wellFormed? = true
+                                · simp [hWellFormed] at hCompile
+                                  cases hCompile
+                                  exact Artifact.ValidFor.mk hSourceFits hPhysical.symm
+                                    hPreparation hPreparationSafe hWidth hLayout
+                                    hEmit hBlocks hCode
+                                    (labelsConsistent_of_check hLabels)
+                                    (Program.wellFormed_of_check hWellFormed) rfl
+                                · simp [hWellFormed] at hCompile
+                              · simp [hLabels] at hCompile
+                            · simp [hCode] at hCompile
+      · simp [hPreparationSafe] at hCompile
 
 theorem Artifact.ValidFor.physicalSourcePCFits
     {artifact : Artifact} {source : Assembly.Program}
@@ -1211,6 +1684,19 @@ theorem Artifact.ValidFor.physicalSourcePCFits
       _ = EvmYul.UInt256.size := by norm_num [EvmYul.UInt256.size]
   unfold Assembly.Program.PCFits Assembly.Program.pcAfter
   exact EvmYul.UInt256.toNat_ofNat_of_lt hBound
+
+theorem compile?_preparationBlocksValid
+    {source : Assembly.Program} {artifact : Artifact}
+    (hCompile : compile? source = some artifact) :
+    PreparationBlocksValidFrom source artifact.physicalSource 0 0
+      artifact.preparation := by
+  exact alignPreparation?_valid (compile?_valid hCompile).preparationAligned
+
+theorem compile?_preparationSafe
+    {source : Assembly.Program} {artifact : Artifact}
+    (hCompile : compile? source = some artifact) :
+    PreparationSafe source artifact.physicalSource artifact.preparation := by
+  exact preparationSafe_of_check (compile?_valid hCompile).preparationSafe
 
 theorem Artifact.ValidFor.mem_program_of_mem_block
     {artifact : Artifact} {source : Assembly.Program}
@@ -1269,6 +1755,21 @@ theorem compile?_initial_boundary
   rw [hArtifact.blockCode] at hBoundary
   exact hBoundary
 
+theorem compile?_physical_labelPc_of_lookup
+    {source : Assembly.Program} {artifact : Artifact}
+    {label : Label} {compactPc : Nat}
+    (hCompile : compile? source = some artifact)
+    (hLookup : lookupLabel? artifact.labels label = some compactPc) :
+    ∃ sourcePc, artifact.physicalSource.labelPc label = some sourcePc := by
+  have hLayout := (compile?_valid hCompile).layout
+  unfold layout? at hLayout
+  have hNames := layoutRev?_names hLayout
+  have hMem := lookupLabel?_name_mem hLookup
+  rw [hNames] at hMem
+  simp only [List.reverse_nil, List.map_nil, List.nil_append] at hMem
+  exact Assembly.Program.labelPc_exists_of_mem_labels
+    artifact.physicalSource hMem
+
 theorem compile?_label_boundary
     {source : Assembly.Program} {artifact : Artifact}
     {label : Label} {sourceDest compactDest : Nat}
@@ -1314,6 +1815,54 @@ theorem compile?_source_openStepResult_eq_block
     hPreFits
   simpa [Assembly.Program.pcAfter, hBlockPc] using hPc
 
+theorem compile?_preparation_source_openStepResult_eq_block
+    {source : Assembly.Program} {artifact : Artifact}
+    {block : PreparationBlock} {state : EVMState}
+    (hCompile : compile? source = some artifact)
+    (hBlock : block ∈ artifact.preparation)
+    (hPc : state.pc = EvmYul.UInt256.ofNat block.sourcePc) :
+    Assembly.InteractionSemantics.Source.openStepResult source state =
+      Assembly.InteractionSemantics.Source.openStepAtResult
+        source block.sourcePc block.sourceInstr state := by
+  have hArtifact := compile?_valid hCompile
+  have hPreparation := compile?_preparationBlocksValid hCompile
+  obtain ⟨pre, post, hSource, hBlockPc⟩ :=
+    hPreparation.source_decompose_of_block_mem hBlock
+  have hWholeFits := hArtifact.sourcePCFits
+  rw [hSource] at hWholeFits ⊢
+  have hPreFits :=
+    (Assembly.Program.PCFitsFrom.of_append
+      (pre := pre) (code := block.sourceInstr :: post) (post := [])
+      (by simpa using hWholeFits)).start
+  apply Assembly.InteractionPreservation.source_openStepResult_at_boundary
+    hPreFits
+  simpa [Assembly.Program.pcAfter, hBlockPc] using hPc
+
+theorem compile?_preparation_target_openStepResult_eq_block
+    {source : Assembly.Program} {artifact : Artifact}
+    {block : PreparationBlock} {state : EVMState}
+    (hCompile : compile? source = some artifact)
+    (hBlock : block ∈ artifact.preparation)
+    (hKeep : block.action = .keep)
+    (hPc : state.pc = EvmYul.UInt256.ofNat block.preparedPc) :
+    Assembly.InteractionSemantics.Source.openStepResult
+        artifact.physicalSource state =
+      Assembly.InteractionSemantics.Source.openStepAtResult
+        artifact.physicalSource block.preparedPc block.sourceInstr state := by
+  have hArtifact := compile?_valid hCompile
+  have hPreparation := compile?_preparationBlocksValid hCompile
+  obtain ⟨pre, post, hPrepared, hBlockPc⟩ :=
+    hPreparation.prepared_decompose_of_keep hBlock hKeep
+  have hWholeFits := hArtifact.physicalSourcePCFits
+  rw [hPrepared] at hWholeFits ⊢
+  have hPreFits :=
+    (Assembly.Program.PCFitsFrom.of_append
+      (pre := pre) (code := block.sourceInstr :: post) (post := [])
+      (by simpa using hWholeFits)).start
+  apply Assembly.InteractionPreservation.source_openStepResult_at_boundary
+    hPreFits
+  simpa [Assembly.Program.pcAfter, hBlockPc] using hPc
+
 def StepResultRuntimeRel : StepResult -> StepResult -> Prop
   | .running target, .running source => SameRuntimeData target source
   | .halted target, .halted source =>
@@ -1327,6 +1876,71 @@ abbrev RuntimeOutcomeRel :
   Simulation.Interaction.ExceptRel
     (fun targetError sourceError => targetError = sourceError)
     StepResultRuntimeRel
+
+def PreparationStateRel (sourceProgram : Assembly.Program)
+    (artifact : Artifact) (target source : EVMState) : Prop :=
+  ∃ sourcePc preparedPc,
+    PreparationBoundaryPair artifact.preparation sourceProgram.byteLength
+        artifact.physicalSource.byteLength sourcePc preparedPc ∧
+      source.pc = EvmYul.UInt256.ofNat sourcePc ∧
+      target.pc = EvmYul.UInt256.ofNat preparedPc ∧
+      SameRuntimeData target source
+
+theorem PreparationStateRel.active_of_terminal_succ
+    {sourceProgram : Assembly.Program} {artifact : Artifact}
+    {target source : EVMState} {fuel : Nat}
+    (hCompile : compile? sourceProgram = some artifact)
+    (hBoundary : PreparationStateRel sourceProgram artifact target source)
+    (hTerminal : Simulation.Interaction.AllDone
+      Assembly.InteractionSemantics.Terminal
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        sourceProgram (fuel + 1) source)) :
+    ∃ block,
+      block ∈ artifact.preparation ∧
+        source.pc = EvmYul.UInt256.ofNat block.sourcePc ∧
+          target.pc = EvmYul.UInt256.ofNat block.preparedPc ∧
+            SameRuntimeData target source := by
+  rcases hBoundary with
+    ⟨sourcePc, preparedPc, hPair, hSourcePc, hTargetPc, hRel⟩
+  rcases hPair with hBlock | hEnd
+  · rcases hBlock with ⟨block, hMem, hBlockSource, hBlockPrepared⟩
+    exact
+      ⟨block, hMem, by simpa [hBlockSource] using hSourcePc,
+        by simpa [hBlockPrepared] using hTargetPc, hRel⟩
+  · rcases hEnd with ⟨hSourceEnd, _hPreparedEnd⟩
+    have hArtifact := compile?_valid hCompile
+    have hToNat : source.pc.toNat = sourceProgram.byteLength := by
+      rw [hSourcePc, hSourceEnd]
+      exact hArtifact.sourcePCFits
+    have hStep :
+        Assembly.InteractionSemantics.Source.openStepResult sourceProgram source =
+          .done (.error EvmYul.EVM.ExecutionException.InvalidInstruction) := by
+      unfold Assembly.InteractionSemantics.Source.openStepResult
+        Assembly.Source.stepResultWith
+      rw [hToNat, instrAtPc_end_eq_none]
+      rfl
+    rw [Assembly.InteractionSemantics.Source.openRunNResult_succ] at hTerminal
+    have hPrefix := Simulation.Interaction.AllDone.bind_inv hTerminal
+    rw [hStep] at hPrefix
+    cases hPrefix with
+    | done hDone => exact False.elim hDone
+
+def PreparationStepResultRel (sourceProgram : Assembly.Program)
+    (artifact : Artifact) : StepResult -> StepResult -> Prop
+  | .running target, .running source =>
+      PreparationStateRel sourceProgram artifact target source
+  | .halted target, .halted source =>
+      target.kind = source.kind ∧
+        SameRuntimeData target.state source.state ∧
+          target.output = source.output
+  | _, _ => False
+
+abbrev PreparationOutcomeRel (sourceProgram : Assembly.Program)
+    (artifact : Artifact) :
+    Except EVMException StepResult -> Except EVMException StepResult -> Prop :=
+  Simulation.Interaction.ExceptRel
+    (fun targetError sourceError => targetError = sourceError)
+    (PreparationStepResultRel sourceProgram artifact)
 
 def BoundaryStateRel (artifact : Artifact)
     (target source : EVMState) : Prop :=
@@ -1395,6 +2009,46 @@ abbrev BoundaryOutcomeRel (artifact : Artifact) :
 def RunningAt (pc : Word) : Except EVMException StepResult -> Prop
   | .ok (.running state) => state.pc = pc
   | _ => True
+
+theorem runtimeRel_to_preparationRel
+    {sourceProgram : Assembly.Program} {artifact : Artifact}
+    {targetRun sourceRun : Assembly.InteractionSemantics.OpenStepResult}
+    {sourcePc preparedPc : Nat}
+    (hBoundary : PreparationBoundaryPair artifact.preparation
+      sourceProgram.byteLength artifact.physicalSource.byteLength
+      sourcePc preparedPc)
+    (hRel : Simulation.Interaction.Rel RuntimeOutcomeRel targetRun sourceRun)
+    (hTargetPc : Simulation.Interaction.AllDone
+      (RunningAt (EvmYul.UInt256.ofNat preparedPc)) targetRun)
+    (hSourcePc : Simulation.Interaction.AllDone
+      (RunningAt (EvmYul.UInt256.ofNat sourcePc)) sourceRun) :
+    Simulation.Interaction.Rel
+      (PreparationOutcomeRel sourceProgram artifact) targetRun sourceRun := by
+  have hTarget := Simulation.Interaction.Rel.strengthen_left hRel hTargetPc
+  have hBoth :=
+    Simulation.Interaction.Rel.strengthen_right hTarget hSourcePc
+  apply Simulation.Interaction.Rel.mono hBoth
+  intro targetDone sourceDone hDone
+  rcases hDone with ⟨⟨hRuntime, hTargetAt⟩, hSourceAt⟩
+  cases hRuntime with
+  | error hError => exact .error hError
+  | ok hResult =>
+      rename_i targetResult sourceResult
+      cases targetResult with
+      | running target =>
+          cases sourceResult with
+          | running source =>
+              apply Simulation.Interaction.ExceptRel.ok
+              change target.pc = EvmYul.UInt256.ofNat preparedPc at hTargetAt
+              change source.pc = EvmYul.UInt256.ofNat sourcePc at hSourceAt
+              exact
+                ⟨sourcePc, preparedPc, hBoundary,
+                  hSourceAt, hTargetAt, hResult⟩
+          | halted source => simp [StepResultRuntimeRel] at hResult
+      | halted target =>
+          cases sourceResult with
+          | running source => simp [StepResultRuntimeRel] at hResult
+          | halted source => exact .ok hResult
 
 theorem runtimeRel_to_boundaryRel
     {artifact : Artifact} {targetRun sourceRun :
@@ -1699,6 +2353,506 @@ theorem SimpleSourceInstrRel.compactSequential
     (hInstr : SimpleSourceInstrRel sourceInstr compactInstr) :
     compactInstr.Sequential := by
   cases hInstr <;> trivial
+
+inductive PreparationSimpleInstr : Assembly.Instr -> Prop
+  | label (name : Label) : PreparationSimpleInstr (.label name)
+  | prim (op : PrimOp) (hNoPc : op ≠ .pc) :
+      PreparationSimpleInstr (.prim op)
+  | push (value : Word) : PreparationSimpleInstr (.push value)
+
+theorem PreparationSimpleInstr.openStepAtResult_runtimeRel
+    {instr : Assembly.Instr} (hSimple : PreparationSimpleInstr instr)
+    (targetProgram sourceProgram : Assembly.Program)
+    (targetPc sourcePc : Nat) {target source : EVMState}
+    (hRel : SameRuntimeData target source) :
+    Simulation.Interaction.Rel RuntimeOutcomeRel
+      (Assembly.InteractionSemantics.Source.openStepAtResult
+        targetProgram targetPc instr target)
+      (Assembly.InteractionSemantics.Source.openStepAtResult
+        sourceProgram sourcePc instr source) := by
+  cases hSimple with
+  | label name =>
+      rw [(SimpleSourceInstrRel.label name).openStepResult_eq
+        targetProgram targetPc target]
+      rw [(SimpleSourceInstrRel.label name).openStepResult_eq
+        sourceProgram sourcePc source]
+      simpa [Instr.openStepResult, Instr.openStep, Instr.haltKind?] using
+        (Instr.openStepResult_runtimeRel
+          (instr := Instr.jumpdest) (target := target) (source := source)
+          trivial hRel)
+  | prim op hNoPc =>
+      rw [(SimpleSourceInstrRel.prim op).openStepResult_eq
+        targetProgram targetPc target]
+      rw [(SimpleSourceInstrRel.prim op).openStepResult_eq
+        sourceProgram sourcePc source]
+      have hIndependent : (Instr.prim op).PCIndependent := by
+        cases op <;> simp [Instr.PCIndependent] at hNoPc ⊢
+      simpa [Instr.openStepResult, Instr.openStep, Instr.haltKind?] using
+        (Instr.openStepResult_runtimeRel
+          (instr := Instr.prim op) (target := target) (source := source)
+          hIndependent hRel)
+  | push value =>
+      rw [(SimpleSourceInstrRel.push 32 value).openStepResult_eq
+        targetProgram targetPc target]
+      rw [(SimpleSourceInstrRel.push 32 value).openStepResult_eq
+        sourceProgram sourcePc source]
+      simpa [Instr.openStepResult, Instr.openStep, Instr.haltKind?] using
+        (Instr.openStepResult_runtimeRel
+          (instr := Instr.push 32 value) (target := target) (source := source)
+          trivial hRel)
+
+theorem PreparationSimpleInstr.source_runningAt_next
+    {instr : Assembly.Instr} (hSimple : PreparationSimpleInstr instr)
+    (program : Assembly.Program) (pc : Nat) (state : EVMState) :
+    Simulation.Interaction.AllDone
+      (RunningAt (state.pc + EvmYul.UInt256.ofNat instr.byteSize))
+      (Assembly.InteractionSemantics.Source.openStepAtResult
+        program pc instr state) := by
+  cases hSimple with
+  | label name =>
+      exact (SimpleSourceInstrRel.label name).source_runningAt_next
+        program pc state
+  | prim op hNoPc =>
+      exact (SimpleSourceInstrRel.prim op).source_runningAt_next
+        program pc state
+  | push value =>
+      exact (SimpleSourceInstrRel.push 32 value).source_runningAt_next
+        program pc state
+
+theorem compile?_preparation_simple_block_rel
+    {sourceProgram : Assembly.Program} {artifact : Artifact}
+    {block : PreparationBlock} {target source : EVMState}
+    (hCompile : compile? sourceProgram = some artifact)
+    (hBlock : block ∈ artifact.preparation)
+    (hKeep : block.action = .keep)
+    (hSimple : PreparationSimpleInstr block.sourceInstr)
+    (hTargetPc : target.pc = EvmYul.UInt256.ofNat block.preparedPc)
+    (hSourcePc : source.pc = EvmYul.UInt256.ofNat block.sourcePc)
+    (hRel : SameRuntimeData target source) :
+    Simulation.Interaction.Rel
+      (PreparationOutcomeRel sourceProgram artifact)
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.physicalSource 1 target)
+      (Assembly.InteractionSemantics.Source.openStepAtResult
+        sourceProgram block.sourcePc block.sourceInstr source) := by
+  have hPreparation := compile?_preparationBlocksValid hCompile
+  have hNext := hPreparation.next_boundary hBlock
+  have hTargetStep :=
+    compile?_preparation_target_openStepResult_eq_block
+      hCompile hBlock hKeep hTargetPc
+  rw [Assembly.InteractionSemantics.Source.openRunNResult_one, hTargetStep]
+  apply runtimeRel_to_preparationRel (by simpa using hNext)
+    (hSimple.openStepAtResult_runtimeRel artifact.physicalSource sourceProgram
+      block.preparedPc block.sourcePc hRel)
+  · simpa [PreparationBlock.nextPreparedPc, hKeep, hTargetPc,
+      UInt256_ofNat_add] using
+      hSimple.source_runningAt_next artifact.physicalSource
+        block.preparedPc target
+  · simpa [hSourcePc, UInt256_ofNat_add] using
+      hSimple.source_runningAt_next sourceProgram block.sourcePc source
+
+theorem compile?_preparation_skip_label_rel
+    {sourceProgram : Assembly.Program} {artifact : Artifact}
+    {block : PreparationBlock} {name : Label}
+    {target source : EVMState}
+    (hCompile : compile? sourceProgram = some artifact)
+    (hBlock : block ∈ artifact.preparation)
+    (hInstr : block.sourceInstr = .label name)
+    (hSkip : block.action = .skip)
+    (hTargetPc : target.pc = EvmYul.UInt256.ofNat block.preparedPc)
+    (hSourcePc : source.pc = EvmYul.UInt256.ofNat block.sourcePc)
+    (hRel : SameRuntimeData target source) :
+    Simulation.Interaction.Rel
+      (PreparationOutcomeRel sourceProgram artifact)
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.physicalSource 0 target)
+      (Assembly.InteractionSemantics.Source.openStepAtResult
+        sourceProgram block.sourcePc block.sourceInstr source) := by
+  have hPreparation := compile?_preparationBlocksValid hCompile
+  have hNext := hPreparation.next_boundary hBlock
+  rw [hInstr] at hNext ⊢
+  rw [Assembly.InteractionSemantics.Source.openRunNResult_zero]
+  apply runtimeRel_to_preparationRel
+    (by simpa [PreparationBlock.nextPreparedPc, hSkip] using hNext)
+  · rw [(SimpleSourceInstrRel.label name).openStepResult_eq
+      sourceProgram block.sourcePc source]
+    apply Simulation.Interaction.Rel.done
+    apply Simulation.Interaction.ExceptRel.ok
+    exact SameRuntimeData.with_pc_right
+      (source.pc + EvmYul.UInt256.ofNat 1) hRel
+  · exact .done hTargetPc
+  · simpa [hSourcePc, UInt256_ofNat_add,
+      Assembly.Instr.byteSize] using
+      (SimpleSourceInstrRel.label name).source_runningAt_next
+        sourceProgram block.sourcePc source
+
+theorem compile?_preparation_skip_jump_rel
+    {sourceProgram : Assembly.Program} {artifact : Artifact}
+    {block : PreparationBlock} {label : Label}
+    {target source : EVMState}
+    (hCompile : compile? sourceProgram = some artifact)
+    (hBlock : block ∈ artifact.preparation)
+    (hInstr : block.sourceInstr = .jump label)
+    (hSkip : block.action = .skip)
+    (hTargetPc : target.pc = EvmYul.UInt256.ofNat block.preparedPc)
+    (hRel : SameRuntimeData target source) :
+    Simulation.Interaction.Rel
+      (PreparationOutcomeRel sourceProgram artifact)
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.physicalSource 0 target)
+      (Assembly.InteractionSemantics.Source.openStepAtResult
+        sourceProgram block.sourcePc block.sourceInstr source) := by
+  have hSafe := compile?_preparationSafe hCompile block hBlock
+  unfold PreparationBlockSafe at hSafe
+  rw [hSkip, hInstr] at hSafe
+  change ∃ sourceDest,
+    sourceProgram.labelPc label = some sourceDest ∧
+      preparationTargetPc? artifact.preparation sourceProgram.byteLength
+        artifact.physicalSource.byteLength sourceDest =
+          some block.preparedPc at hSafe
+  obtain ⟨sourceDest, hSourceDest, hLookup⟩ := hSafe
+  have hBoundary := preparationBoundaryPair_of_targetPc? hLookup
+  rw [hInstr, Assembly.InteractionSemantics.Source.openRunNResult_zero]
+  apply runtimeRel_to_preparationRel hBoundary
+  · unfold Assembly.InteractionSemantics.Source.openStepAtResult
+      Assembly.InteractionSemantics.Source.openStepAt Assembly.Source.stepAt
+    simp [hSourceDest, Assembly.Source.jumpPc,
+      Assembly.Instr.haltKind?, Simulation.Interaction.bind]
+    exact .done (.ok
+      (SameRuntimeData.with_pc_right
+        (EvmYul.UInt256.ofNat sourceDest) hRel))
+  · exact .done hTargetPc
+  · unfold Assembly.InteractionSemantics.Source.openStepAtResult
+      Assembly.InteractionSemantics.Source.openStepAt Assembly.Source.stepAt
+    simp [hSourceDest, Assembly.Source.jumpPc,
+      Assembly.Instr.haltKind?, Simulation.Interaction.bind]
+    exact .done rfl
+
+theorem compile?_preparation_keep_jump_rel
+    {sourceProgram : Assembly.Program} {artifact : Artifact}
+    {block : PreparationBlock} {label : Label}
+    {target source : EVMState}
+    (hCompile : compile? sourceProgram = some artifact)
+    (hBlock : block ∈ artifact.preparation)
+    (hInstr : block.sourceInstr = .jump label)
+    (hKeep : block.action = .keep)
+    (hTargetPc : target.pc = EvmYul.UInt256.ofNat block.preparedPc)
+    (hRel : SameRuntimeData target source) :
+    Simulation.Interaction.Rel
+      (PreparationOutcomeRel sourceProgram artifact)
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.physicalSource 1 target)
+      (Assembly.InteractionSemantics.Source.openStepAtResult
+        sourceProgram block.sourcePc block.sourceInstr source) := by
+  have hSafe := compile?_preparationSafe hCompile block hBlock
+  unfold PreparationBlockSafe at hSafe
+  rw [hKeep, hInstr] at hSafe
+  change ∃ sourceDest preparedDest,
+    sourceProgram.labelPc label = some sourceDest ∧
+      artifact.physicalSource.labelPc label = some preparedDest ∧
+        preparationTargetPc? artifact.preparation sourceProgram.byteLength
+          artifact.physicalSource.byteLength sourceDest =
+            some preparedDest at hSafe
+  obtain ⟨sourceDest, preparedDest, hSourceDest, hPreparedDest, hLookup⟩ :=
+    hSafe
+  have hBoundary := preparationBoundaryPair_of_targetPc? hLookup
+  have hTargetStep :=
+    compile?_preparation_target_openStepResult_eq_block
+      hCompile hBlock hKeep hTargetPc
+  rw [hInstr] at hTargetStep
+  rw [hInstr, Assembly.InteractionSemantics.Source.openRunNResult_one,
+    hTargetStep]
+  apply runtimeRel_to_preparationRel hBoundary
+  · unfold Assembly.InteractionSemantics.Source.openStepAtResult
+      Assembly.InteractionSemantics.Source.openStepAt Assembly.Source.stepAt
+    simp [hSourceDest, hPreparedDest, Assembly.Source.jumpPc,
+      Assembly.Instr.haltKind?, Simulation.Interaction.bind]
+    exact .done (Simulation.Interaction.ExceptRel.ok
+      (SameRuntimeData.with_pc_right (EvmYul.UInt256.ofNat sourceDest)
+        (SameRuntimeData.with_pc_left
+          (EvmYul.UInt256.ofNat preparedDest) hRel)))
+  · unfold Assembly.InteractionSemantics.Source.openStepAtResult
+      Assembly.InteractionSemantics.Source.openStepAt Assembly.Source.stepAt
+    simp [hPreparedDest, Assembly.Source.jumpPc,
+      Assembly.Instr.haltKind?, Simulation.Interaction.bind]
+    exact .done rfl
+  · unfold Assembly.InteractionSemantics.Source.openStepAtResult
+      Assembly.InteractionSemantics.Source.openStepAt Assembly.Source.stepAt
+    simp [hSourceDest, Assembly.Source.jumpPc,
+      Assembly.Instr.haltKind?, Simulation.Interaction.bind]
+    exact .done rfl
+
+theorem compile?_preparation_keep_jumpi_rel
+    {sourceProgram : Assembly.Program} {artifact : Artifact}
+    {block : PreparationBlock} {label : Label}
+    {target source : EVMState}
+    (hCompile : compile? sourceProgram = some artifact)
+    (hBlock : block ∈ artifact.preparation)
+    (hInstr : block.sourceInstr = .jumpi label)
+    (hKeep : block.action = .keep)
+    (hTargetPc : target.pc = EvmYul.UInt256.ofNat block.preparedPc)
+    (hSourcePc : source.pc = EvmYul.UInt256.ofNat block.sourcePc)
+    (hRel : SameRuntimeData target source) :
+    Simulation.Interaction.Rel
+      (PreparationOutcomeRel sourceProgram artifact)
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.physicalSource 1 target)
+      (Assembly.InteractionSemantics.Source.openStepAtResult
+        sourceProgram block.sourcePc block.sourceInstr source) := by
+  have hSafe := compile?_preparationSafe hCompile block hBlock
+  unfold PreparationBlockSafe at hSafe
+  rw [hKeep, hInstr] at hSafe
+  change ∃ sourceDest preparedDest,
+    sourceProgram.labelPc label = some sourceDest ∧
+      artifact.physicalSource.labelPc label = some preparedDest ∧
+        preparationTargetPc? artifact.preparation sourceProgram.byteLength
+          artifact.physicalSource.byteLength sourceDest =
+            some preparedDest at hSafe
+  obtain ⟨sourceDest, preparedDest, hSourceDest, hPreparedDest, hLookup⟩ :=
+    hSafe
+  have hTakenBoundary := preparationBoundaryPair_of_targetPc? hLookup
+  have hPreparation := compile?_preparationBlocksValid hCompile
+  have hNextBoundary := hPreparation.next_boundary hBlock
+  have hTargetStep :=
+    compile?_preparation_target_openStepResult_eq_block
+      hCompile hBlock hKeep hTargetPc
+  rw [hInstr] at hTargetStep hNextBoundary ⊢
+  rw [Assembly.InteractionSemantics.Source.openRunNResult_one, hTargetStep]
+  have hStack := SameRuntimeData.stack_eq hRel
+  have hRuntime : Simulation.Interaction.Rel RuntimeOutcomeRel
+      (Assembly.InteractionSemantics.Source.openStepAtResult
+        artifact.physicalSource block.preparedPc (.jumpi label) target)
+      (Assembly.InteractionSemantics.Source.openStepAtResult
+        sourceProgram block.sourcePc (.jumpi label) source) := by
+    unfold Assembly.InteractionSemantics.Source.openStepAtResult
+      Assembly.InteractionSemantics.Source.openStepAt Assembly.Source.stepAt
+    simp only [hSourceDest, hPreparedDest, Option.elim_some,
+      Assembly.Instr.haltKind?, Simulation.Interaction.bind_done_ok]
+    rw [hStack]
+    cases hSourceStack : source.stack with
+    | nil =>
+        simp [hSourceStack, EvmYul.Stack.pop]
+        exact .done (.error rfl)
+    | cons cond stack =>
+        simp [hSourceStack, EvmYul.Stack.pop]
+        apply Simulation.Interaction.Rel.done
+        apply Simulation.Interaction.ExceptRel.ok
+        exact
+          SameRuntimeData.with_pc_right
+            (if cond != EvmYul.UInt256.ofNat 0 then
+              EvmYul.UInt256.ofNat sourceDest
+            else Assembly.Source.jumpiFallthroughPc source)
+            (SameRuntimeData.with_pc_left
+              (if cond != EvmYul.UInt256.ofNat 0 then
+                EvmYul.UInt256.ofNat preparedDest
+              else Assembly.Source.jumpiFallthroughPc target)
+              (SameRuntimeData.replaceStack
+                (targetStack := stack) (sourceStack := stack) hRel rfl))
+  cases hSourceStack : source.stack with
+  | nil =>
+      apply runtimeRel_to_preparationRel
+        (by simpa [PreparationBlock.nextPreparedPc, hKeep, hInstr]
+          using hNextBoundary)
+        hRuntime
+      · unfold Assembly.InteractionSemantics.Source.openStepAtResult
+          Assembly.InteractionSemantics.Source.openStepAt Assembly.Source.stepAt
+        simp [hPreparedDest, hStack, hSourceStack,
+          Assembly.Instr.haltKind?, EvmYul.Stack.pop]
+        exact .done trivial
+      · unfold Assembly.InteractionSemantics.Source.openStepAtResult
+          Assembly.InteractionSemantics.Source.openStepAt Assembly.Source.stepAt
+        simp [hSourceDest, hSourceStack,
+          Assembly.Instr.haltKind?, EvmYul.Stack.pop]
+        exact .done trivial
+  | cons cond stack =>
+      by_cases hCond : (cond != EvmYul.UInt256.ofNat 0) = true
+      · apply runtimeRel_to_preparationRel hTakenBoundary hRuntime
+        · unfold Assembly.InteractionSemantics.Source.openStepAtResult
+            Assembly.InteractionSemantics.Source.openStepAt Assembly.Source.stepAt
+          simp [hPreparedDest, hStack, hSourceStack, hCond,
+            Assembly.Instr.haltKind?, EvmYul.Stack.pop]
+          exact .done (by simp [RunningAt, hCond])
+        · unfold Assembly.InteractionSemantics.Source.openStepAtResult
+            Assembly.InteractionSemantics.Source.openStepAt Assembly.Source.stepAt
+          simp [hSourceDest, hSourceStack, hCond,
+            Assembly.Instr.haltKind?, EvmYul.Stack.pop]
+          exact .done (by simp [RunningAt, hCond])
+      · apply runtimeRel_to_preparationRel
+          (by simpa [PreparationBlock.nextPreparedPc, hKeep, hInstr]
+            using hNextBoundary)
+          hRuntime
+        · unfold Assembly.InteractionSemantics.Source.openStepAtResult
+            Assembly.InteractionSemantics.Source.openStepAt Assembly.Source.stepAt
+          simp [hPreparedDest, hStack, hSourceStack, hCond,
+            Assembly.Source.jumpiFallthroughPc, Assembly.Instr.byteSize,
+            Assembly.Instr.jumpSize, Assembly.Instr.push32Size,
+            Assembly.Instr.haltKind?, EvmYul.Stack.pop, hTargetPc,
+            UInt256_ofNat_add, UInt256_add_assoc, Nat.add_assoc]
+          exact .done (by simp [RunningAt, hCond])
+        · unfold Assembly.InteractionSemantics.Source.openStepAtResult
+            Assembly.InteractionSemantics.Source.openStepAt Assembly.Source.stepAt
+          simp [hSourceDest, hSourceStack, hCond,
+            Assembly.Source.jumpiFallthroughPc, Assembly.Instr.byteSize,
+            Assembly.Instr.jumpSize, Assembly.Instr.push32Size,
+            Assembly.Instr.haltKind?, EvmYul.Stack.pop, hSourcePc,
+            UInt256_ofNat_add, UInt256_add_assoc, Nat.add_assoc]
+          exact .done (by simp [RunningAt, hCond])
+
+theorem compile?_preparationBlock_open_rel
+    {sourceProgram : Assembly.Program} {artifact : Artifact}
+    {block : PreparationBlock} {target source : EVMState}
+    (hCompile : compile? sourceProgram = some artifact)
+    (hBlock : block ∈ artifact.preparation)
+    (hTargetPc : target.pc = EvmYul.UInt256.ofNat block.preparedPc)
+    (hSourcePc : source.pc = EvmYul.UInt256.ofNat block.sourcePc)
+    (hRel : SameRuntimeData target source) :
+    ∃ targetFuel,
+      targetFuel <= 1 ∧
+        Simulation.Interaction.Rel
+          (PreparationOutcomeRel sourceProgram artifact)
+          (Assembly.InteractionSemantics.Source.openRunNResult
+            artifact.physicalSource targetFuel target)
+          (Assembly.InteractionSemantics.Source.openStepAtResult
+            sourceProgram block.sourcePc block.sourceInstr source) := by
+  cases hAction : block.action with
+  | keep =>
+      cases hInstr : block.sourceInstr with
+      | label name =>
+          have hSimple : PreparationSimpleInstr block.sourceInstr :=
+            hInstr.symm ▸ PreparationSimpleInstr.label name
+          refine ⟨1, by omega, ?_⟩
+          simpa [hInstr] using
+            (compile?_preparation_simple_block_rel hCompile hBlock hAction
+              hSimple hTargetPc hSourcePc hRel)
+      | prim op =>
+          have hNoPc : op ≠ .pc := by
+            intro hPc
+            subst op
+            have hSafe := compile?_preparationSafe hCompile block hBlock
+            unfold PreparationBlockSafe at hSafe
+            rw [hAction, hInstr] at hSafe
+            exact hSafe
+          have hSimple : PreparationSimpleInstr block.sourceInstr :=
+            hInstr.symm ▸ PreparationSimpleInstr.prim op hNoPc
+          refine ⟨1, by omega, ?_⟩
+          simpa [hInstr] using
+            (compile?_preparation_simple_block_rel hCompile hBlock hAction
+              hSimple hTargetPc hSourcePc hRel)
+      | push value =>
+          have hSimple : PreparationSimpleInstr block.sourceInstr :=
+            hInstr.symm ▸ PreparationSimpleInstr.push value
+          refine ⟨1, by omega, ?_⟩
+          simpa [hInstr] using
+            (compile?_preparation_simple_block_rel hCompile hBlock hAction
+              hSimple hTargetPc hSourcePc hRel)
+      | jump label =>
+          refine ⟨1, by omega, ?_⟩
+          simpa [hInstr] using
+            (compile?_preparation_keep_jump_rel hCompile hBlock hInstr
+              hAction hTargetPc hRel)
+      | jumpi label =>
+          refine ⟨1, by omega, ?_⟩
+          simpa [hInstr] using
+            (compile?_preparation_keep_jumpi_rel hCompile hBlock hInstr
+              hAction hTargetPc hSourcePc hRel)
+  | skip =>
+      cases hInstr : block.sourceInstr with
+      | label name =>
+          refine ⟨0, by omega, ?_⟩
+          simpa [hInstr] using
+            (compile?_preparation_skip_label_rel hCompile hBlock hInstr
+              hAction hTargetPc hSourcePc hRel)
+      | jump label =>
+          refine ⟨0, by omega, ?_⟩
+          simpa [hInstr] using
+            (compile?_preparation_skip_jump_rel hCompile hBlock hInstr
+              hAction hTargetPc hRel)
+      | prim op | push op | jumpi op =>
+          have hSafe := compile?_preparationSafe hCompile block hBlock
+          unfold PreparationBlockSafe at hSafe
+          rw [hAction, hInstr] at hSafe
+          exact False.elim hSafe
+
+theorem compile?_preparation_openRunNResult_terminal_rel
+    {sourceProgram : Assembly.Program} {artifact : Artifact}
+    (hCompile : compile? sourceProgram = some artifact)
+    (fuel extra : Nat) {target source : EVMState}
+    (hBoundary : PreparationStateRel sourceProgram artifact target source)
+    (hTerminal : Simulation.Interaction.AllDone
+      Assembly.InteractionSemantics.Terminal
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        sourceProgram fuel source)) :
+    Simulation.Interaction.Rel RuntimeOutcomeRel
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.physicalSource (fuel + extra) target)
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        sourceProgram fuel source) := by
+  induction fuel generalizing target source extra with
+  | zero =>
+      change Simulation.Interaction.AllDone
+        Assembly.InteractionSemantics.Terminal
+        (.done (.ok (.running source))) at hTerminal
+      cases hTerminal with
+      | done hDone => exact False.elim hDone
+  | succ fuel ih =>
+      have hTerminalSucc : Simulation.Interaction.AllDone
+          Assembly.InteractionSemantics.Terminal
+          (Assembly.InteractionSemantics.Source.openRunNResult
+            sourceProgram (fuel + 1) source) := by
+        simpa [Nat.succ_eq_add_one] using hTerminal
+      obtain ⟨block, hBlock, hSourcePc, hTargetPc, hRuntime⟩ :=
+        hBoundary.active_of_terminal_succ hCompile hTerminalSucc
+      obtain ⟨stepFuel, hStepFuel, hStep⟩ :=
+        compile?_preparationBlock_open_rel hCompile hBlock
+          hTargetPc hSourcePc hRuntime
+      have hSourceStep :=
+        compile?_preparation_source_openStepResult_eq_block
+          hCompile hBlock hSourcePc
+      have hTerminalExpanded := hTerminalSucc
+      rw [Assembly.InteractionSemantics.Source.openRunNResult_succ,
+        hSourceStep] at hTerminalExpanded
+      have hStepTerminal :=
+        Simulation.Interaction.AllDone.bind_inv hTerminalExpanded
+      have hStepStrong :=
+        Simulation.Interaction.Rel.strengthen_right hStep hStepTerminal
+      let remaining := fuel + (extra + (1 - stepFuel))
+      have hFuel : Nat.succ fuel + extra = stepFuel + remaining := by
+        dsimp [remaining]
+        omega
+      rw [hFuel,
+        Assembly.InteractionSemantics.Source.openRunNResult_add]
+      rw [Assembly.InteractionSemantics.Source.openRunNResult_succ,
+        hSourceStep]
+      apply Simulation.Interaction.Rel.bind_custom hStepStrong
+      intro targetDone sourceDone hDone
+      rcases hDone with ⟨hRelated, hContinuationTerminal⟩
+      cases hRelated with
+      | error hError => exact False.elim hContinuationTerminal
+      | ok hResult =>
+          rename_i targetResult sourceResult
+          cases targetResult with
+          | running targetMid =>
+              cases sourceResult with
+              | running sourceMid =>
+                  change PreparationStateRel sourceProgram artifact
+                    targetMid sourceMid at hResult
+                  change Simulation.Interaction.AllDone
+                    Assembly.InteractionSemantics.Terminal
+                    (Assembly.InteractionSemantics.Source.openRunNResult
+                      sourceProgram fuel sourceMid) at hContinuationTerminal
+                  exact ih (extra + (1 - stepFuel)) hResult
+                    hContinuationTerminal
+              | halted sourceHalt =>
+                  simp [PreparationStepResultRel] at hResult
+          | halted targetHalt =>
+              cases sourceResult with
+              | running sourceMid =>
+                  simp [PreparationStepResultRel] at hResult
+              | halted sourceHalt =>
+                  change targetHalt.kind = sourceHalt.kind ∧
+                    SameRuntimeData targetHalt.state sourceHalt.state ∧
+                      targetHalt.output = sourceHalt.output at hResult
+                  exact .done (.ok hResult)
 
 /-- Actual compact-byte execution. Decoding is imported from EVMYulLean and
 instruction effects reuse the Assembly target kernels. -/
@@ -2142,7 +3296,6 @@ theorem compile?_sourceBlock_open_rel
     {source : Assembly.Program} {artifact : Artifact}
     {block : SourceBlock} {targetState sourceState : EVMState}
     (hCompile : compile? source = some artifact)
-    (hAccepted : Assembly.Accepted artifact.physicalSource)
     (hBlock : block ∈ artifact.blocks)
     (hTargetPc : targetState.pc = EvmYul.UInt256.ofNat block.compactPc)
     (hSourcePc : sourceState.pc = EvmYul.UInt256.ofNat block.sourcePc)
@@ -2161,8 +3314,6 @@ theorem compile?_sourceBlock_open_rel
     hBlocks.block_emit_of_mem hBlock
   have hNextBoundary := hBlocks.next_boundary hBlock hSize
   rw [(compile?_valid hCompile).blockCode] at hNextBoundary
-  have hSourceMem : block.sourceInstr ∈ artifact.physicalSource :=
-    hBlocks.sourceInstr_mem_of_block_mem hBlock
   rcases block with ⟨sourcePc, compactPc, sourceInstr, code⟩
   cases sourceInstr with
   | label name =>
@@ -2233,10 +3384,7 @@ theorem compile?_sourceBlock_open_rel
             subst compactSize
             subst code
             obtain ⟨sourceDest, hSourceDest⟩ :=
-              Assembly.Program.target_resolves_of_accepted
-                (instr := .jump target) (target := target)
-                hAccepted.checked (by simpa using hSourceMem)
-                (by simp [Assembly.Instr.targets])
+              compile?_physical_labelPc_of_lookup hCompile hDest
             let pushLocated : Located :=
               { pc := compactPc
                 instr := .push artifact.branchWidth
@@ -2273,10 +3421,7 @@ theorem compile?_sourceBlock_open_rel
             subst compactSize
             subst code
             obtain ⟨sourceDest, hSourceDest⟩ :=
-              Assembly.Program.target_resolves_of_accepted
-                (instr := .jumpi target) (target := target)
-                hAccepted.checked (by simpa using hSourceMem)
-                (by simp [Assembly.Instr.targets])
+              compile?_physical_labelPc_of_lookup hCompile hDest
             let pushLocated : Located :=
               { pc := compactPc
                 instr := .push artifact.branchWidth
@@ -2312,7 +3457,6 @@ open-world branch has halted. -/
 theorem compile?_openRunNResult_terminal_rel
     {input : Assembly.Program} {artifact : Artifact}
     (hCompile : compile? input = some artifact)
-    (hAccepted : Assembly.Accepted artifact.physicalSource)
     (fuel extra : Nat) {target source : EVMState}
     (hBoundary : BoundaryStateRel artifact target source)
     (hTerminal : Simulation.Interaction.AllDone
@@ -2339,7 +3483,7 @@ theorem compile?_openRunNResult_terminal_rel
       obtain ⟨block, hBlock, hSourcePc, hTargetPc, hRuntime⟩ :=
         hBoundary.active_of_terminal_succ hCompile hTerminalSucc
       obtain ⟨stepFuel, hStepFuel, hStep⟩ :=
-        compile?_sourceBlock_open_rel hCompile hAccepted hBlock
+        compile?_sourceBlock_open_rel hCompile hBlock
           hTargetPc hSourcePc hRuntime
       have hSourceStep :=
         compile?_source_openStepResult_eq_block hCompile hBlock hSourcePc
@@ -2387,6 +3531,111 @@ theorem compile?_openRunNResult_terminal_rel
                     SameRuntimeData targetHalt.state sourceHalt.state ∧
                       targetHalt.output = sourceHalt.output at hResult
                   exact .done (.ok hResult)
+
+theorem stepResultRuntimeRel_trans
+    {first second third : StepResult}
+    (hFirst : StepResultRuntimeRel first second)
+    (hSecond : StepResultRuntimeRel second third) :
+    StepResultRuntimeRel first third := by
+  cases first with
+  | running firstState =>
+      cases second with
+      | running secondState =>
+          cases third with
+          | running thirdState =>
+              exact SameRuntimeData.trans hFirst hSecond
+          | halted thirdHalt =>
+              exact False.elim hSecond
+      | halted secondHalt =>
+          exact False.elim hFirst
+  | halted firstHalt =>
+      cases second with
+      | running secondState =>
+          exact False.elim hFirst
+      | halted secondHalt =>
+          cases third with
+          | running thirdState =>
+              exact False.elim hSecond
+          | halted thirdHalt =>
+              exact
+                ⟨Eq.trans hFirst.1 hSecond.1,
+                  SameRuntimeData.trans hFirst.2.1 hSecond.2.1,
+                  Eq.trans hFirst.2.2 hSecond.2.2⟩
+
+theorem runtimeOutcomeRel_trans
+    {first second third : Except EVMException StepResult}
+    (hFirst : RuntimeOutcomeRel first second)
+    (hSecond : RuntimeOutcomeRel second third) :
+    RuntimeOutcomeRel first third := by
+  cases hFirst with
+  | error hFirstError =>
+      cases hSecond with
+      | error hSecondError =>
+          exact .error (hFirstError.trans hSecondError)
+  | ok hFirstResult =>
+      cases hSecond with
+      | ok hSecondResult =>
+          exact .ok (stepResultRuntimeRel_trans hFirstResult hSecondResult)
+
+theorem runtimeOutcomeRel_terminal_left
+    {target source : Except EVMException StepResult}
+    (hRel : RuntimeOutcomeRel target source)
+    (hTerminal : Assembly.InteractionSemantics.Terminal source) :
+    Assembly.InteractionSemantics.Terminal target := by
+  cases hRel with
+  | error hError => exact False.elim hTerminal
+  | ok hResult =>
+      rename_i targetResult sourceResult
+      cases targetResult <;> cases sourceResult <;>
+        simp_all [StepResultRuntimeRel,
+          Assembly.InteractionSemantics.Terminal, StepResult.IsTerminal]
+
+/-- The complete Assembly-owned compact boundary. Preprocessing and variable-
+width encoding remain adjacent subproofs, while this theorem only composes
+their exact open interaction trees. -/
+theorem compile?_source_openRunNResult_terminal_rel
+    {sourceProgram : Assembly.Program} {artifact : Artifact}
+    (hCompile : compile? sourceProgram = some artifact)
+    (fuel extra : Nat) {target source : EVMState}
+    (hTargetPc : target.pc = EvmYul.UInt256.ofNat 0)
+    (hSourcePc : source.pc = EvmYul.UInt256.ofNat 0)
+    (hInitial : SameRuntimeData target source)
+    (hTerminal : Simulation.Interaction.AllDone
+      Assembly.InteractionSemantics.Terminal
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        sourceProgram fuel source)) :
+    Simulation.Interaction.Rel RuntimeOutcomeRel
+      (openRunNResult artifact.bytes (2 * fuel + extra) target)
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        sourceProgram fuel source) := by
+  have hPreparationBoundary :
+      PreparationStateRel sourceProgram artifact source source :=
+    ⟨0, 0,
+      (by simpa using
+        (compile?_preparationBlocksValid hCompile).initial_boundary),
+      hSourcePc, hSourcePc, SameRuntimeData.refl source⟩
+  have hPreparation :=
+    compile?_preparation_openRunNResult_terminal_rel
+      hCompile fuel 0 hPreparationBoundary hTerminal
+  have hPhysicalTerminal : Simulation.Interaction.AllDone
+      Assembly.InteractionSemantics.Terminal
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.physicalSource fuel source) := by
+    have hStrong := Simulation.Interaction.Rel.strengthen_left
+      (Simulation.Interaction.Rel.symm hPreparation) hTerminal
+    apply Simulation.Interaction.Rel.allDone_right hStrong
+    intro sourceDone targetDone hDone
+    exact runtimeOutcomeRel_terminal_left hDone.1 hDone.2
+  have hCompactBoundary : BoundaryStateRel artifact target source :=
+    ⟨0, 0, compile?_initial_boundary hCompile,
+      hSourcePc, hTargetPc, hInitial⟩
+  have hCompact := compile?_openRunNResult_terminal_rel
+    hCompile fuel extra hCompactBoundary hPhysicalTerminal
+  apply Simulation.Interaction.Rel.mono
+    (Simulation.Interaction.Rel.trans hCompact hPreparation)
+  intro targetDone sourceDone hDone
+  rcases hDone with ⟨middleDone, hTargetMiddle, hMiddleSource⟩
+  exact runtimeOutcomeRel_trans hTargetMiddle hMiddleSource
 
 end InteractionSemantics
 

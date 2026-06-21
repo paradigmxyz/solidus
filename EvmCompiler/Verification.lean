@@ -3325,6 +3325,9 @@ or audit-alias corridor.
 #check EvmCompiler.Assembly.Compact.InteractionSemantics.openRunNResult_push_jumpi_source_rel
 #check EvmCompiler.Assembly.Compact.InteractionSemantics.compile?_sourceBlock_open_rel
 #check EvmCompiler.Assembly.Compact.InteractionSemantics.compile?_openRunNResult_terminal_rel
+#check EvmCompiler.Assembly.Compact.InteractionSemantics.compile?_preparationBlock_open_rel
+#check EvmCompiler.Assembly.Compact.InteractionSemantics.compile?_preparation_openRunNResult_terminal_rel
+#check EvmCompiler.Assembly.Compact.InteractionSemantics.compile?_source_openRunNResult_terminal_rel
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_decodingCorrect
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
@@ -3410,6 +3413,9 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Assembly.Compact.InteractionSemantics.openRunNResult_push_jumpi_source_rel
 #print axioms EvmCompiler.Assembly.Compact.InteractionSemantics.compile?_sourceBlock_open_rel
 #print axioms EvmCompiler.Assembly.Compact.InteractionSemantics.compile?_openRunNResult_terminal_rel
+#print axioms EvmCompiler.Assembly.Compact.InteractionSemantics.compile?_preparationBlock_open_rel
+#print axioms EvmCompiler.Assembly.Compact.InteractionSemantics.compile?_preparation_openRunNResult_terminal_rel
+#print axioms EvmCompiler.Assembly.Compact.InteractionSemantics.compile?_source_openRunNResult_terminal_rel
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackCodeToRawBytecode
