@@ -3321,6 +3321,9 @@ or audit-alias corridor.
 #check EvmCompiler.Assembly.Compact.Instr.openStepResult_runtimeRel
 #check EvmCompiler.Assembly.Compact.compile?_blocksValid
 #check EvmCompiler.Assembly.Compact.openStepResultEqInstrOfFetch
+#check EvmCompiler.Assembly.Compact.InteractionSemantics.openRunNResult_push_jump_source_rel
+#check EvmCompiler.Assembly.Compact.InteractionSemantics.openRunNResult_push_jumpi_source_rel
+#check EvmCompiler.Assembly.Compact.InteractionSemantics.compile?_sourceBlock_open_rel
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_decodingCorrect
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
@@ -3402,6 +3405,9 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Assembly.Compact.Instr.openStepResult_runtimeRel
 #print axioms EvmCompiler.Assembly.Compact.compile?_blocksValid
 #print axioms EvmCompiler.Assembly.Compact.openStepResultEqInstrOfFetch
+#print axioms EvmCompiler.Assembly.Compact.InteractionSemantics.openRunNResult_push_jump_source_rel
+#print axioms EvmCompiler.Assembly.Compact.InteractionSemantics.openRunNResult_push_jumpi_source_rel
+#print axioms EvmCompiler.Assembly.Compact.InteractionSemantics.compile?_sourceBlock_open_rel
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackCodeToRawBytecode
