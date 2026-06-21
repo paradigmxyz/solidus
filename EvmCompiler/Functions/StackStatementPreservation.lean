@@ -280,6 +280,58 @@ theorem prepend
   refine ⟨hCtx.control.prepend name, ?_⟩
   simpa using hCtx.leaveReady
 
+theorem withoutLoopControl
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {targets : StackSchedule.ControlTargets}
+    {returns : List Structured.ReturnDest}
+    (hCtx : RuntimeCtxCovers source target targets returns) :
+    RuntimeCtxCovers source.withoutLoopControl target.withoutLoopControl {}
+      returns := by
+  refine ⟨?_, ?_⟩
+  · refine ⟨?_, ?_, ?_⟩
+    · constructor
+      intro name hName
+      exact hCtx.context.scope hName
+    · intro layout hTarget
+      simp at hTarget
+    · intro layout hTarget
+      simp at hTarget
+  · simpa [Functions.Source.Ctx.withoutLoopControl] using hCtx.leaveReady
+
+theorem withLoopControl
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {targets : StackSchedule.ControlTargets}
+    {returns : List Structured.ReturnDest}
+    (hCtx : RuntimeCtxCovers source target targets returns) :
+    RuntimeCtxCovers
+      (source.withLoopControl source.scope source.scope)
+      (target.withLoopControl target.layout.length)
+      { brk? := some target.layout, cont? := some target.layout }
+      returns := by
+  have hContext :
+      CtxCovers (source.withLoopControl source.scope source.scope)
+        (target.withLoopControl target.layout.length) := by
+    constructor
+    intro name hName
+    exact hCtx.context.scope hName
+  refine ⟨?_, ?_⟩
+  · refine ⟨hContext, ?_, ?_⟩
+    · intro layout hTarget
+      have hLayout : target.layout = layout := Option.some.inj hTarget
+      subst layout
+      exact
+        { context := hContext
+          targetDepth := rfl
+          sourceCovers := ⟨source.scope, rfl, hCtx.context.scope⟩ }
+    · intro layout hTarget
+      have hLayout : target.layout = layout := Option.some.inj hTarget
+      subst layout
+      exact
+        { context := hContext
+          targetDepth := rfl
+          sourceCovers := ⟨source.scope, rfl, hCtx.context.scope⟩ }
+  · simpa [Functions.Source.Ctx.withLoopControl] using hCtx.leaveReady
+
 end RuntimeCtxCovers
 
 structure RegularResultRel (targetCtx : Locals.Ctx)

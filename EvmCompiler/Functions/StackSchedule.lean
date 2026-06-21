@@ -252,16 +252,15 @@ mutual
             | [initFacts, postFacts, bodyFacts], some _loop => do
                 let outerProtected := layoutSet layout
                 let initRegion ←
-                  scheduleBlockFuelWithTargets targets fuel outerProtected
+                  scheduleBlockFuelWithTargets {} fuel outerProtected
                     layout init initFacts
                 let baseline := initRegion.finalLayout
                 let loopProtected := layoutSet baseline
                 let loopTargets : ControlTargets :=
-                  { targets with
-                    brk? := some baseline
+                  { brk? := some baseline
                     cont? := some baseline }
                 let postRegion ←
-                  scheduleBlockFuelWithTargets loopTargets fuel loopProtected
+                  scheduleBlockFuelWithTargets {} fuel loopProtected
                     baseline post postFacts
                 let bodyRegion ←
                   scheduleBlockFuelWithTargets loopTargets fuel loopProtected
@@ -1012,17 +1011,14 @@ theorem scheduleStmtFuelWithTargets_for_components
         rawBodyRegion postExit bodyExit,
       facts.regions = [initFacts, postFacts, bodyFacts] ∧
         facts.loop? = some loopFacts ∧
-        scheduleBlockFuelWithTargets targets (fuel - 1) (layoutSet layout)
+        scheduleBlockFuelWithTargets {} (fuel - 1) (layoutSet layout)
             layout init initFacts = some initRegion ∧
         scheduleBlockFuelWithTargets
-            { targets with
-              brk? := some initRegion.finalLayout
-              cont? := some initRegion.finalLayout }
+            {}
             (fuel - 1) (layoutSet initRegion.finalLayout)
             initRegion.finalLayout post postFacts = some rawPostRegion ∧
         scheduleBlockFuelWithTargets
-            { targets with
-              brk? := some initRegion.finalLayout
+            { brk? := some initRegion.finalLayout
               cont? := some initRegion.finalLayout }
             (fuel - 1) (layoutSet initRegion.finalLayout)
             initRegion.finalLayout body bodyFacts = some rawBodyRegion ∧

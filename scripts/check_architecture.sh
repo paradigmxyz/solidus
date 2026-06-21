@@ -237,6 +237,8 @@ for theorem in \
     'controlIf' \
     'SwitchBranchesPreserve' \
     'controlSwitch' \
+    'RuntimeCtxCovers.withoutLoopControl' \
+    'RuntimeCtxCovers.withLoopControl' \
     'openRun_let_generated' \
     'openRun_assign_generated'; do
   if ! rg -Fq \

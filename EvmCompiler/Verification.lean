@@ -3024,6 +3024,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.afterOrdering
 #check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.afterTransition
 #check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.prepend
+#check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.withoutLoopControl
+#check EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.withLoopControl
 #check EvmCompiler.Functions.StackStatementPreservation.ControlOpenResultRel
 #check EvmCompiler.Functions.StackStatementPreservation.ControlPointPreserves
 #check EvmCompiler.Functions.StackStatementPreservation.CompiledControlPoint
@@ -3190,6 +3192,8 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Expressions.TargetFuel.Covers.switch_selected_after_two
 #print axioms EvmCompiler.Functions.StackExpressionPreservation.openEvalOnePop_compileCode
 #print axioms EvmCompiler.Functions.StackStatementPreservation.controlSwitch
+#print axioms EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.withoutLoopControl
+#print axioms EvmCompiler.Functions.StackStatementPreservation.RuntimeCtxCovers.withLoopControl
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.JoinArtifact.thenBlock
 #print axioms EvmCompiler.Expressions.TargetFuel.Covers.if_body_after_two
 #print axioms EvmCompiler.Functions.StackBlockPreservation.brkList_of_compilers
