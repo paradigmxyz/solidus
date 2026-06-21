@@ -2731,10 +2731,12 @@ theorem controlFallthroughConsAt_of_compilers
           some (tailCode, tailFinalCtx) →
         ControlScheduledListPreservesAt sourceProgram targetProgram targets
           returnNames middleCtx tailFinalCtx rest tailFinal tailCode
-          sourceFuel) :
+          sourceFuel ∧
+        tailFinalCtx.layout.Nodup) :
     ControlScheduledListPreservesAt sourceProgram targetProgram targets
       returnNames targetCtx finalCtx (stmt :: rest) finalLayout code
-      (sourceFuel + 1) := by
+      (sourceFuel + 1) ∧
+    finalCtx.layout.Nodup := by
   obtain ⟨order, rawPoint, retain, tailFinal, hOrderBuild, hRawSchedule,
       hRawFalls, hRetainBuild, hPointEq, hTailSchedule, hFinalLayout⟩ :=
     StackSchedule.scheduleStmtListFuelWithTargets_cons_fallsThrough_components
@@ -2780,9 +2782,10 @@ theorem controlFallthroughConsAt_of_compilers
   have hMiddleControl : Locals.Ctx.SameControl targetCtx middleCtx :=
     (Locals.Ctx.SameControl.withLayout targetCtx order.target).trans
       (Locals.Block.compileOpen_sameControl hPointCompile)
-  have hTailPreserves :=
+  have hTailResult :=
     hTail hPointCompiled.layout hMiddleNodup hMiddleControl hTailSchedule hTailLower
       hTailCompile
+  have hTailPreserves := hTailResult.1
   have hTailPreserves' :
       ControlScheduledListPreservesAt sourceProgram targetProgram targets
         returnNames middleCtx finalCtx rest finalLayout tailCode sourceFuel := by
@@ -2791,6 +2794,7 @@ theorem controlFallthroughConsAt_of_compilers
   have hCode : code = orderCode ++ pointCode ++ tailCode := by
     rw [hWholeCode, hRestCode]
     simp [List.append_assoc]
+  refine ⟨?_, hTailResult.2⟩
   exact
     controlOrderedConsAt returnNames sourceProgram targetProgram targets
       targetCtx middleCtx finalCtx stmt rest order orderCode pointCode tailCode
@@ -3754,11 +3758,13 @@ theorem callConsAtSucc_of_compilers
           some (tailCode, tailFinalCtx) →
         ControlScheduledListPreservesAt sourceProgram targetProgram targets
           returnNames middleCtx tailFinalCtx rest tailFinal tailCode
-          (sourceFuel + 1)) :
+          (sourceFuel + 1) ∧
+        tailFinalCtx.layout.Nodup) :
     ControlScheduledListPreservesAt sourceProgram targetProgram targets
       returnNames targetCtx finalCtx
       (.call callTargets functionName args :: rest) finalLayout code
-      ((sourceFuel + 1) + 1) := by
+      ((sourceFuel + 1) + 1) ∧
+    finalCtx.layout.Nodup := by
   apply controlFallthroughConsAt_of_compilers returnNames sourceProgram
     targetProgram lowerCtx targets pinned scheduleFuel lowerFuel
     (sourceFuel + 1)
@@ -3873,10 +3879,12 @@ theorem callConsAtOne_of_compilers
         Locals.Block.compileOpen middleCtx { stmts := tailLowered } =
           some (tailCode, tailFinalCtx) →
         ControlScheduledListPreservesAt sourceProgram targetProgram targets
-          returnNames middleCtx tailFinalCtx rest tailFinal tailCode 0) :
+          returnNames middleCtx tailFinalCtx rest tailFinal tailCode 0 ∧
+        tailFinalCtx.layout.Nodup) :
     ControlScheduledListPreservesAt sourceProgram targetProgram targets
       returnNames targetCtx finalCtx
-      (.call callTargets functionName args :: rest) finalLayout code 1 := by
+      (.call callTargets functionName args :: rest) finalLayout code 1 ∧
+    finalCtx.layout.Nodup := by
   apply controlFallthroughConsAt_of_compilers returnNames sourceProgram
     targetProgram lowerCtx targets pinned scheduleFuel lowerFuel 0
     (.call callTargets functionName args) rest fact restFacts hSchedule hLower
