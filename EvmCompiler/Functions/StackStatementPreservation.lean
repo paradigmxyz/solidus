@@ -3,6 +3,7 @@ import EvmCompiler.Functions.StackAccessLowering
 import EvmCompiler.Functions.StackLowering
 import EvmCompiler.Functions.StackTransitionCompilation
 import EvmCompiler.Functions.InteractionSemantics
+import EvmCompiler.Expressions.TargetFuel
 
 namespace EvmCompiler
 namespace Functions
@@ -310,7 +311,7 @@ def ControlPointPreserves
   ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel targetFuel : Nat)
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState},
-    code.length < targetFuel →
+    Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel code →
     ControlCtxCovers sourceCtx targetCtx targets →
     StateRel targetCtx.layout suffix returns source target →
     Simulation.Interaction.ForwardRel FuelTruncated

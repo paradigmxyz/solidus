@@ -19,6 +19,22 @@ for theorem in \
 done
 
 for theorem in \
+    'programStride' \
+    'Covers' \
+    'Covers.length_lt' \
+    'Covers.head_of_succ_append' \
+    'Covers.tail_after_succ_append' \
+    'Covers.if_body_after_two'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.Expressions.TargetFuel.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing structural target-fuel interface %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
+for theorem in \
     'regularEmpty' \
     'regularCons' \
     'regularConsOfPoint' \

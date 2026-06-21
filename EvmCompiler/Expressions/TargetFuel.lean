@@ -270,6 +270,165 @@ theorem selected_block_size_le
         simp [caseListSize]
         omega
 
+/--
+Uniform target meta-fuel reserved for one source recursion level. The two sums
+cover every compiler-selected procedure body, including nested target control.
+-/
+def programStride (program : Expressions.Program) : Nat :=
+  8 +
+    (program.toStructured.procs.map fun proc => proc.body.stmts.length).sum +
+    (program.toStructured.procs.map fun proc =>
+      structuredBlockSize proc.body).sum
+
+theorem eight_le_programStride (program : Expressions.Program) :
+    8 ≤ programStride program := by
+  unfold programStride
+  omega
+
+/--
+Structural target budget for a compiled statement list at one source fuel.
+`stmtListSize` pays for the current list and every nested target block; the
+stride pays for recursive source control and any selected internal callee.
+-/
+def budget (program : Expressions.Program) (sourceFuel : Nat)
+    (stmts : List Expressions.Stmt) : Nat :=
+  stmtListSize stmts + programStride program * (sourceFuel + 1)
+
+def Covers (program : Expressions.Program) (sourceFuel targetFuel : Nat)
+    (stmts : List Expressions.Stmt) : Prop :=
+  budget program sourceFuel stmts ≤ targetFuel
+
+theorem length_lt_budget (program : Expressions.Program)
+    (sourceFuel : Nat) (stmts : List Expressions.Stmt) :
+    stmts.length < budget program sourceFuel stmts := by
+  have hLength := length_le_stmtListSize stmts
+  have hStride := eight_le_programStride program
+  unfold budget
+  nlinarith
+
+@[simp] theorem budget_append (program : Expressions.Program)
+    (sourceFuel : Nat) (left right : List Expressions.Stmt) :
+    budget program sourceFuel (left ++ right) =
+      stmtListSize left + budget program sourceFuel right := by
+  simp [budget, stmtListSize_append, Nat.add_assoc]
+
+theorem budget_le_succ_append (program : Expressions.Program)
+    (sourceFuel : Nat) (left right : List Expressions.Stmt) :
+    budget program sourceFuel left ≤
+      budget program (sourceFuel + 1) (left ++ right) := by
+  rw [budget_append]
+  unfold budget
+  have hStride := eight_le_programStride program
+  nlinarith
+
+theorem budget_le_append (program : Expressions.Program)
+    (sourceFuel : Nat) (left right : List Expressions.Stmt) :
+    budget program sourceFuel left ≤
+      budget program sourceFuel (left ++ right) := by
+  rw [budget_append]
+  unfold budget
+  omega
+
+theorem budget_tail_add_length_le_succ_append
+    (program : Expressions.Program) (sourceFuel : Nat)
+    (left right : List Expressions.Stmt) :
+    left.length + budget program sourceFuel right ≤
+      budget program (sourceFuel + 1) (left ++ right) := by
+  rw [budget_append]
+  unfold budget
+  have hLength := length_le_stmtListSize left
+  have hStride := eight_le_programStride program
+  nlinarith
+
+theorem budget_tail_le_succ_append_sub_length
+    (program : Expressions.Program) (sourceFuel : Nat)
+    (left right : List Expressions.Stmt) :
+    budget program sourceFuel right ≤
+      budget program (sourceFuel + 1) (left ++ right) - left.length := by
+  have h := budget_tail_add_length_le_succ_append
+    program sourceFuel left right
+  omega
+
+theorem budget_tail_add_length_le_append
+    (program : Expressions.Program) (sourceFuel : Nat)
+    (left right : List Expressions.Stmt) :
+    left.length + budget program sourceFuel right ≤
+      budget program sourceFuel (left ++ right) := by
+  rw [budget_append]
+  have hLength := length_le_stmtListSize left
+  omega
+
+theorem budget_tail_le_append_sub_length
+    (program : Expressions.Program) (sourceFuel : Nat)
+    (left right : List Expressions.Stmt) :
+    budget program sourceFuel right ≤
+      budget program sourceFuel (left ++ right) - left.length := by
+  have h := budget_tail_add_length_le_append
+    program sourceFuel left right
+  omega
+
+theorem budget_if_body_add_two_le
+    (program : Expressions.Program) (sourceFuel : Nat)
+    (cond : Expressions.Expr 1) (body : Expressions.Block)
+    (rest : List Expressions.Stmt) :
+    budget program sourceFuel body.stmts + 2 ≤
+      budget program (sourceFuel + 1) (.if_ cond body :: rest) := by
+  cases body
+  unfold budget
+  simp only [stmtListSize, stmtSize, blockSize, List.length_cons]
+  have hStride := eight_le_programStride program
+  nlinarith
+
+namespace Covers
+
+theorem length_lt {program : Expressions.Program} {sourceFuel targetFuel : Nat}
+    {stmts : List Expressions.Stmt}
+    (h : TargetFuel.Covers program sourceFuel targetFuel stmts) :
+    stmts.length < targetFuel := by
+  exact lt_of_lt_of_le (length_lt_budget program sourceFuel stmts) h
+
+theorem head_of_succ_append {program : Expressions.Program}
+    {sourceFuel targetFuel : Nat} {left right : List Expressions.Stmt}
+    (h : TargetFuel.Covers program (sourceFuel + 1) targetFuel
+      (left ++ right)) :
+    TargetFuel.Covers program sourceFuel targetFuel left := by
+  exact le_trans (budget_le_succ_append program sourceFuel left right) h
+
+theorem head_of_append {program : Expressions.Program}
+    {sourceFuel targetFuel : Nat} {left right : List Expressions.Stmt}
+    (h : TargetFuel.Covers program sourceFuel targetFuel (left ++ right)) :
+    TargetFuel.Covers program sourceFuel targetFuel left := by
+  exact le_trans (budget_le_append program sourceFuel left right) h
+
+theorem tail_after_succ_append {program : Expressions.Program}
+    {sourceFuel targetFuel : Nat} {left right : List Expressions.Stmt}
+    (h : TargetFuel.Covers program (sourceFuel + 1) targetFuel
+      (left ++ right)) :
+    TargetFuel.Covers program sourceFuel (targetFuel - left.length) right := by
+  exact le_trans
+    (budget_tail_le_succ_append_sub_length program sourceFuel left right)
+    (Nat.sub_le_sub_right h left.length)
+
+theorem tail_after_append {program : Expressions.Program}
+    {sourceFuel targetFuel : Nat} {left right : List Expressions.Stmt}
+    (h : TargetFuel.Covers program sourceFuel targetFuel (left ++ right)) :
+    TargetFuel.Covers program sourceFuel (targetFuel - left.length) right := by
+  exact le_trans
+    (budget_tail_le_append_sub_length program sourceFuel left right)
+    (Nat.sub_le_sub_right h left.length)
+
+theorem if_body_after_two {program : Expressions.Program}
+    {sourceFuel targetFuel : Nat} {cond : Expressions.Expr 1}
+    {body : Expressions.Block} {rest : List Expressions.Stmt}
+    (h : TargetFuel.Covers program (sourceFuel + 1) targetFuel
+      (.if_ cond body :: rest)) :
+    TargetFuel.Covers program sourceFuel (targetFuel - 2) body.stmts := by
+  have hBody := le_trans
+    (budget_if_body_add_two_le program sourceFuel cond body rest) h
+  exact Nat.le_sub_of_add_le hBody
+
+end Covers
+
 end TargetFuel
 end Expressions
 end EvmCompiler

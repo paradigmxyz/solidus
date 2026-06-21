@@ -139,7 +139,7 @@ def ControlScheduledListPreserves
     ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel targetFuel : Nat)
       {suffix : List Word} {returns : List Structured.ReturnDest}
       {source : Locals.Source.State} {target : Structured.RunState},
-      code.length < targetFuel →
+      Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel code →
       ControlCtxCovers sourceCtx targetCtx targets →
       StateRel targetCtx.layout suffix returns source target →
       Simulation.Interaction.ForwardRel FuelTruncated
@@ -178,9 +178,12 @@ theorem controlCons
       simp only [Functions.Source.Effectful.Control.Block.runOpen]
       exact Simulation.Interaction.ForwardRel.truncated rfl
   | succ sourceFuel =>
-      have hHeadFuel : headCode.length < targetFuel := by
-        simp only [List.length_append] at hFuel
-        omega
+      have hFuel' :
+          Expressions.TargetFuel.Covers targetProgram (sourceFuel + 1)
+            targetFuel (headCode ++ tailCode) := by
+        simpa [Nat.succ_eq_add_one] using hFuel
+      have hHeadFuel :=
+        Expressions.TargetFuel.Covers.head_of_succ_append hFuel'
       have hHeadRun :=
         hHead sourceCtx sourceFuel targetFuel hHeadFuel hCtx hInitial
       rw [Expressions.InteractionSemantics.Block.openRun_append]
@@ -189,10 +192,8 @@ theorem controlCons
       intro sourceResult targetResult hResult
       cases hResult with
       | regular hMiddleCtx hMiddleState =>
-          have hTailFuel :
-              tailCode.length < targetFuel - headCode.length := by
-            simp only [List.length_append] at hFuel
-            omega
+          have hTailFuel :=
+            Expressions.TargetFuel.Covers.tail_after_succ_append hFuel'
           exact
             hTailForward _ sourceFuel (targetFuel - headCode.length)
               hTailFuel hMiddleCtx hMiddleState
@@ -237,9 +238,13 @@ theorem controlScopedBodyThenJoin
     (hScopeCovers :
       ∀ {name : Name}, name ∈ exit.target → name ∈ sourceCtx.scope)
     (hFuel :
-      bodyCode.length +
-          (exitArtifact.retainArtifact.promotionCodes.length + 1 +
-            exitArtifact.orderArtifact.promotionCodes.length) < targetFuel)
+      Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
+        (bodyCode ++
+          (exitArtifact.retainArtifact.promotionCodes.map
+                Expressions.Stmt.code ++
+            [Expressions.Stmt.code exitArtifact.retainArtifact.cleanup] ++
+            exitArtifact.orderArtifact.promotionCodes.map
+              Expressions.Stmt.code)))
     (hInitial :
       StateRel bodyCtx.layout suffix returns initialSource initialTarget) :
     Simulation.Interaction.ForwardRel FuelTruncated
@@ -267,7 +272,8 @@ theorem controlScopedBodyThenJoin
         initialTarget) := by
   cases source
   rcases hBody with ⟨_hBodyFinal, hBodyForward⟩
-  have hBodyFuel : bodyCode.length < targetFuel := by omega
+  have hBodyFuel :=
+    Expressions.TargetFuel.Covers.head_of_append hFuel
   have hBodyRun :=
     hBodyForward sourceCtx sourceFuel targetFuel hBodyFuel hBodyCtx hInitial
   rw [Expressions.InteractionSemantics.Block.openRun_append]
@@ -281,6 +287,9 @@ theorem controlScopedBodyThenJoin
           exitArtifact.retainArtifact.promotionCodes.length + 1 +
               exitArtifact.orderArtifact.promotionCodes.length <
             targetFuel - bodyCode.length := by
+        have hLength := Expressions.TargetFuel.Covers.length_lt hFuel
+        simp only [List.length_append, List.length_map, List.length_cons,
+          List.length_nil] at hLength
         omega
       obtain ⟨finalTarget, hExitRun, hFinalState⟩ :=
         exitArtifact.blockOpenRun targetProgram
@@ -343,9 +352,15 @@ theorem controlScheduledRegion
     (hScopeCovers :
       ∀ {name : Name}, name ∈ exit.target → name ∈ sourceCtx.scope)
     (hFuel :
-      entryArtifact.promotionCodes.length + 1 + bodyCode.length +
-          (exitArtifact.retainArtifact.promotionCodes.length + 1 +
-            exitArtifact.orderArtifact.promotionCodes.length) < targetFuel)
+      Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
+        ((entryArtifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code entryArtifact.cleanup]) ++
+          (bodyCode ++
+            (exitArtifact.retainArtifact.promotionCodes.map
+                  Expressions.Stmt.code ++
+              [Expressions.Stmt.code exitArtifact.retainArtifact.cleanup] ++
+              exitArtifact.orderArtifact.promotionCodes.map
+                Expressions.Stmt.code))))
     (hInitial :
       StateRel targetCtx.layout suffix returns initialSource initialTarget) :
     Simulation.Interaction.ForwardRel FuelTruncated
@@ -374,6 +389,9 @@ theorem controlScheduledRegion
                   Expressions.Stmt.code) }
         initialTarget) := by
   have hEntryFuel : entryArtifact.promotionCodes.length + 1 < targetFuel := by
+    have hLength := Expressions.TargetFuel.Covers.length_lt hFuel
+    simp only [List.length_append, List.length_map, List.length_cons,
+      List.length_nil] at hLength
     omega
   rw [show
       entryArtifact.promotionCodes.map Expressions.Stmt.code ++
@@ -403,19 +421,26 @@ theorem controlScheduledRegion
               Expressions.Stmt.code))
       targetFuel hEntryFuel hInitial
   intro transitionedTarget hTransitioned
-  have hBodyFuel :
-      bodyCode.length +
-          (exitArtifact.retainArtifact.promotionCodes.length + 1 +
-            exitArtifact.orderArtifact.promotionCodes.length) <
-        targetFuel - (entryArtifact.promotionCodes.length + 1) := by
-    omega
+  have hBodyFuel :=
+    Expressions.TargetFuel.Covers.tail_after_append hFuel
+  have hBodyFuel' :
+      Expressions.TargetFuel.Covers targetProgram sourceFuel
+        (targetFuel - (entryArtifact.promotionCodes.length + 1))
+        (bodyCode ++
+          (exitArtifact.retainArtifact.promotionCodes.map
+                Expressions.Stmt.code ++
+            [Expressions.Stmt.code exitArtifact.retainArtifact.cleanup] ++
+            exitArtifact.orderArtifact.promotionCodes.map
+              Expressions.Stmt.code)) := by
+    simpa only [List.length_append, List.length_map, List.length_cons,
+      List.length_nil, Nat.add_zero] using hBodyFuel
   have hRun :=
     controlScopedBodyThenJoin sourceProgram targetProgram targets sourceCtx
       (targetCtx.withLayout entry.target) bodyFinalCtx source bodyCode exit
       exitArtifact sourceFuel
       (targetFuel - (entryArtifact.promotionCodes.length + 1))
       hBody (hCtx.afterTransition entry hEntrySource) hFinalCtx hScopeCovers
-      hBodyFuel hTransitioned
+      hBodyFuel' hTransitioned
   simpa [List.append_assoc] using hRun
 
 theorem compiledScheduledRegion_of_compilers
@@ -736,6 +761,7 @@ theorem blockPoint_of_compilers
   unfold ControlPointPreserves
   intro sourceCtx sourceFuel targetFuel suffix returns source target hFuel
     hCtx hInitial
+  have hCodeLength := Expressions.TargetFuel.Covers.length_lt hFuel
   have hFinalControl :
       ControlCtxCovers sourceCtx
         (bodyFinalCtx.withLayout exit.target) targets :=
@@ -745,19 +771,22 @@ theorem blockPoint_of_compilers
     intro name hName
     apply hCtx.context.scope
     rwa [hExitTarget] at hName
-  have hRegionFuel :
-      entryArtifact.promotionCodes.length + 1 + bodyCode.length +
-          (exitArtifact.retainArtifact.promotionCodes.length + 1 +
-            exitArtifact.orderArtifact.promotionCodes.length) < targetFuel := by
-    rw [hCode, hBlockCode, hCoreCode] at hFuel
-    simp only [List.length_append, List.length_map, List.length_cons,
-      List.length_nil] at hFuel
-    omega
+  have hBlockFuel :
+      Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
+        targetBlock.stmts := by
+    have h := hFuel
+    rw [hCode, hBlockCode] at h
+    exact Expressions.TargetFuel.Covers.head_of_append h
+  have hRegionWithEmptyFuel := hBlockFuel
+  rw [hCoreCode] at hRegionWithEmptyFuel
+  have hRegionFuel :=
+    Expressions.TargetFuel.Covers.head_of_append hRegionWithEmptyFuel
   have hRegionRun :=
     controlScheduledRegion sourceProgram targetProgram targets sourceCtx
       targetCtx bodyFinalCtx body bodyCode rawRegion.entry entryArtifact exit
       exitArtifact sourceFuel targetFuel hBodyPreservesSelf hCtx hEntrySource
-      hFinalControl hScopeCovers hRegionFuel hInitial
+      hFinalControl hScopeCovers
+      (by simpa [List.append_assoc] using hRegionFuel) hInitial
   have hRegionEmptyFuel :
       (entryArtifact.promotionCodes.map Expressions.Stmt.code ++
           [Expressions.Stmt.code entryArtifact.cleanup] ++ bodyCode ++
@@ -765,10 +794,10 @@ theorem blockPoint_of_compilers
             [Expressions.Stmt.code exitArtifact.retainArtifact.cleanup] ++
             exitArtifact.orderArtifact.promotionCodes.map Expressions.Stmt.code)).length +
         1 < targetFuel := by
-    rw [hCode, hBlockCode, hCoreCode] at hFuel
-    simp only [List.length_append, List.length_map, List.length_cons,
-      List.length_nil] at hFuel ⊢
-    omega
+    have hLength :=
+      Expressions.TargetFuel.Covers.length_lt hRegionWithEmptyFuel
+    simpa only [List.length_append, List.length_map, List.length_cons,
+      List.length_nil, Nat.add_zero, Nat.add_assoc] using hLength
   have hWithEmpty :=
     controlAppendEmptyCodeForward targetProgram targets
       (bodyFinalCtx.withLayout exit.target) targetFuel hRegionEmptyFuel hRegionRun
@@ -785,10 +814,10 @@ theorem blockPoint_of_compilers
   have hWholeFuel :
       targetBlock.stmts.length + retain.schedule.promotions.length + 1 <
         targetFuel := by
-    rw [hCode, hBlockCode, ← hCompiledRetainCode] at hFuel
+    rw [hCode, hBlockCode, ← hCompiledRetainCode] at hCodeLength
     simp only [List.length_append, List.length_map, List.length_cons,
-      List.length_nil] at hFuel
-    rw [compiledRetainArtifact.codes.code_length] at hFuel
+      List.length_nil] at hCodeLength
+    rw [compiledRetainArtifact.codes.code_length] at hCodeLength
     omega
   obtain ⟨retainArtifact, hWholeRun⟩ :=
     controlThenTransitionForward targetProgram targets

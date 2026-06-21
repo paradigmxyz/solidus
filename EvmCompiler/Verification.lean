@@ -2451,6 +2451,12 @@ or audit-alias corridor.
 #check EvmCompiler.Expressions.TargetFuel.stmtListSize_eq
 #check EvmCompiler.Expressions.TargetFuel.stmtListNestedSize_append
 #check EvmCompiler.Expressions.TargetFuel.selected_block_size_le
+#check EvmCompiler.Expressions.TargetFuel.programStride
+#check EvmCompiler.Expressions.TargetFuel.Covers
+#check EvmCompiler.Expressions.TargetFuel.Covers.length_lt
+#check EvmCompiler.Expressions.TargetFuel.Covers.head_of_succ_append
+#check EvmCompiler.Expressions.TargetFuel.Covers.tail_after_succ_append
+#check EvmCompiler.Expressions.TargetFuel.Covers.if_body_after_two
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationMode
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationExprResultRel
@@ -3101,6 +3107,7 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_brk_components
 #print axioms EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_cont_components
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.JoinArtifact.thenBlock
+#print axioms EvmCompiler.Expressions.TargetFuel.Covers.if_body_after_two
 #print axioms EvmCompiler.Functions.StackBlockPreservation.brkList_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.contList_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.controlCons
