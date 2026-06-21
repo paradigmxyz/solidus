@@ -306,6 +306,158 @@ theorem assignConsAt_of_compilers
     simpa [Locals.Ctx.withLayout] using hOrderedNodup
   · exact hTail
 
+theorem compiledScheduledRegionAt_of_compilers
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (lowerCtx : StackLowering.Ctx)
+    (targets : StackSchedule.ControlTargets)
+    (scheduleFuel lowerFuel sourceFuel : Nat)
+    (body : Functions.Block)
+    (bodyFacts : AllocationLivenessFacts.Region)
+    (rawRegion : StackSchedule.Region)
+    (exit : AllocationLayout.Join)
+    (targetCtx regionFinalCtx : Locals.Ctx)
+    (hNodup : targetCtx.layout.Nodup)
+    (loweredBody : Locals.Block)
+    (regionCode : List Expressions.Stmt)
+    (hSchedule :
+      StackSchedule.scheduleBlockFuelWithTargets targets (scheduleFuel - 1)
+          (StackSchedule.layoutSet targetCtx.layout) targetCtx.layout
+          body bodyFacts = some rawRegion)
+    (hExitBuild :
+      AllocationLayout.Join.build? rawRegion.finalLayout targetCtx.layout =
+        some exit)
+    (hLower :
+      StackLowering.lowerBlockFuel (lowerFuel - 1) lowerCtx body
+          { rawRegion with exit? := some exit, finalLayout := targetCtx.layout } =
+        some loweredBody)
+    (hCompile :
+      Locals.Block.compileOpen targetCtx loweredBody =
+        some (regionCode, regionFinalCtx))
+    (hBody :
+      ∀ {bodyLowered bodyCode bodyFinalCtx},
+        StackLowering.lowerStmtListFuel ((lowerFuel - 1) - 1) lowerCtx
+            body.stmts rawRegion.points = some bodyLowered →
+        Locals.Block.compileOpen
+            (targetCtx.withLayout rawRegion.entry.target)
+            { stmts := bodyLowered } = some (bodyCode, bodyFinalCtx) →
+        (targetCtx.withLayout rawRegion.entry.target).layout.Nodup →
+        ControlScheduledListPreservesAt sourceProgram targetProgram targets
+          returnNames (targetCtx.withLayout rawRegion.entry.target) bodyFinalCtx
+          body.stmts rawRegion.finalLayout bodyCode sourceFuel) :
+    ∃ bodyCode bodyFinalCtx,
+      ∃ entryArtifact :
+          StackTransitionCompilation.Artifact targetCtx rawRegion.entry,
+      ∃ exitArtifact :
+          StackTransitionCompilation.JoinArtifact bodyFinalCtx exit,
+        ControlScheduledListPreservesAt sourceProgram targetProgram targets
+          returnNames (targetCtx.withLayout rawRegion.entry.target) bodyFinalCtx
+          body.stmts rawRegion.finalLayout bodyCode sourceFuel ∧
+          regionCode =
+            entryArtifact.promotionCodes.map Expressions.Stmt.code ++
+              [Expressions.Stmt.code entryArtifact.cleanup] ++ bodyCode ++
+              (exitArtifact.retainArtifact.promotionCodes.map
+                    Expressions.Stmt.code ++
+                [Expressions.Stmt.code exitArtifact.retainArtifact.cleanup] ++
+                exitArtifact.orderArtifact.promotionCodes.map
+                  Expressions.Stmt.code) ∧
+          regionFinalCtx = bodyFinalCtx.withLayout exit.target ∧
+          bodyFinalCtx.withLayout exit.target = targetCtx ∧
+          targetCtx.layout = rawRegion.entry.source := by
+  obtain ⟨builtEntry, _childPoints, _childFinalLayout, hEntryBuild,
+      _hChildPoints, hRawEntry, _hRawPoints, _hRawExitNone,
+      _hRawFinal⟩ :=
+    StackSchedule.scheduleBlockFuelWithTargets_components hSchedule
+  have hBuiltEntry : builtEntry = rawRegion.entry := hRawEntry.symm
+  subst builtEntry
+  obtain ⟨bodyLowered, hBodyLower, hLoweredBody⟩ :=
+    StackLowering.lowerBlockFuel_components hLower
+  have hLoweredBody' :
+      loweredBody.stmts =
+        StackLowering.transitionStmts rawRegion.entry ++
+          (bodyLowered ++ exit.statements) := by
+    simpa [StackLowering.exitStmts] using hLoweredBody
+  have hLoweredBodyStruct :
+      loweredBody =
+        { stmts :=
+            StackLowering.transitionStmts rawRegion.entry ++
+              (bodyLowered ++ exit.statements) } := by
+    cases loweredBody
+    simp_all
+  rw [hLoweredBodyStruct] at hCompile
+  obtain ⟨entryCode, entryFinalCtx, restCode, hEntryCompile, hRestCompile,
+      hRegionCode⟩ :=
+    Locals.Block.compileOpen_append_components hCompile
+  have hEntrySource : targetCtx.layout = rawRegion.entry.source :=
+    (AllocationLayout.Transition.build?_sound hEntryBuild).1.symm
+  obtain ⟨entryArtifact⟩ :=
+    StackTransitionCompilation.Transition.compileArtifact rawRegion.entry
+      hEntrySource
+  have hEntryPair :=
+    Option.some.inj (entryArtifact.compileEq.symm.trans hEntryCompile)
+  have hEntryCode :
+      entryArtifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code entryArtifact.cleanup] = entryCode :=
+    congrArg Prod.fst hEntryPair
+  have hEntryFinal :
+      targetCtx.withLayout rawRegion.entry.target = entryFinalCtx :=
+    congrArg Prod.snd hEntryPair
+  rw [← hEntryFinal] at hRestCompile
+  have hRestCompile' :
+      Locals.Block.compileOpen
+          (targetCtx.withLayout rawRegion.entry.target)
+          { stmts := bodyLowered ++ exit.statements } =
+        some (restCode, regionFinalCtx) := by
+    simpa [List.append_assoc] using hRestCompile
+  obtain ⟨bodyCode, bodyFinalCtx, exitCode, hBodyCompile, hExitCompile,
+      hRestCode⟩ :=
+    Locals.Block.compileOpen_append_components hRestCompile'
+  have hEntryNodup :
+      (targetCtx.withLayout rawRegion.entry.target).layout.Nodup := by
+    simp only [Locals.Ctx.withLayout]
+    apply AllocationLayout.Transition.target_nodup rawRegion.entry
+    rw [← hEntrySource]
+    exact hNodup
+  have hBodyPreserves :=
+    hBody (by simpa using hBodyLower) hBodyCompile hEntryNodup
+  have hBodyLayout : bodyFinalCtx.layout = rawRegion.finalLayout :=
+    hBodyPreserves.1
+  have hExitSource : bodyFinalCtx.layout = exit.source := by
+    rw [hBodyLayout]
+    exact (AllocationLayout.Join.build?_endpoints hExitBuild).1.symm
+  obtain ⟨exitArtifact⟩ :=
+    StackTransitionCompilation.Join.compileArtifact exit hExitSource
+  have hExitPair :=
+    Option.some.inj (exitArtifact.compileEq.symm.trans hExitCompile)
+  have hExitCode :
+      exitArtifact.retainArtifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code exitArtifact.retainArtifact.cleanup] ++
+          exitArtifact.orderArtifact.promotionCodes.map Expressions.Stmt.code =
+        exitCode :=
+    congrArg Prod.fst hExitPair
+  have hRegionFinal :
+      bodyFinalCtx.withLayout exit.target = regionFinalCtx :=
+    congrArg Prod.snd hExitPair
+  have hExitTarget : exit.target = targetCtx.layout :=
+    (AllocationLayout.Join.build?_endpoints hExitBuild).2
+  have hControl :
+      Locals.Ctx.SameControl targetCtx
+        (bodyFinalCtx.withLayout exit.target) :=
+    (Locals.Ctx.SameControl.withLayout targetCtx rawRegion.entry.target).trans
+      ((Locals.Block.compileOpen_sameControl hBodyCompile).trans
+        (Locals.Ctx.SameControl.withLayout bodyFinalCtx exit.target))
+  have hRestoredCtx :
+      bodyFinalCtx.withLayout exit.target = targetCtx := by
+    cases targetCtx
+    cases bodyFinalCtx
+    simp [Locals.Ctx.withLayout] at hControl hExitTarget ⊢
+    rcases hControl with ⟨hBreak, hContinue, hLeave, hRetc⟩
+    simp_all
+  refine ⟨bodyCode, bodyFinalCtx, entryArtifact, exitArtifact,
+    hBodyPreserves, ?_, hRegionFinal.symm, hRestoredCtx, hEntrySource⟩
+  rw [hRegionCode, ← hEntryCode, hRestCode, ← hExitCode]
+  simp [List.append_assoc]
+
 theorem blockPointAt_of_compilers
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
