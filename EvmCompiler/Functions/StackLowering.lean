@@ -209,6 +209,29 @@ mutual
           none
 end
 
+theorem lowerBlockFuel_components
+    {fuel : Nat} {ctx : Ctx} {source : Block}
+    {schedule : StackSchedule.Region} {lowered : Locals.Block}
+    (hLower : lowerBlockFuel fuel ctx source schedule = some lowered) :
+    ∃ body,
+      lowerStmtListFuel (fuel - 1) ctx source.stmts schedule.points =
+          some body ∧
+        lowered.stmts =
+          transitionStmts schedule.entry ++ body ++
+            exitStmts schedule.exit? := by
+  cases fuel with
+  | zero => simp [lowerBlockFuel] at hLower
+  | succ fuel =>
+      simp only [lowerBlockFuel] at hLower
+      obtain ⟨body, hBody, hResult⟩ :=
+        Option.bind_eq_some_iff.mp hLower
+      have hLowered := Option.some.inj hResult
+      exact
+        ⟨body, by simpa using hBody,
+          by
+            simpa using
+              congrArg Locals.Block.stmts hLowered.symm⟩
+
 theorem lowerStmtListFuel_cons_components
     {fuel : Nat} {ctx : Ctx}
     {stmt : Stmt} {rest : List Stmt}

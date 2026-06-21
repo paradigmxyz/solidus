@@ -3022,6 +3022,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackBlockPreservation.ContinueListPreserves
 #check EvmCompiler.Functions.StackBlockPreservation.ControlScheduledListPreserves
 #check EvmCompiler.Functions.StackBlockPreservation.controlCons
+#check EvmCompiler.Functions.StackBlockPreservation.controlScopedBodyThenJoin
+#check EvmCompiler.Functions.StackBlockPreservation.controlScheduledRegion
 #check EvmCompiler.Functions.StackBlockPreservation.brkList_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.contList_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.RegularListPreserves.toOpenList
@@ -3051,6 +3053,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackLowering.Examples.dormantCallProgram_lowers
 #check EvmCompiler.Functions.StackLowering.Examples.controlProgram_lowers
 #check EvmCompiler.Functions.StackLowering.lowerStmtListFuel_cons_components
+#check EvmCompiler.Functions.StackLowering.lowerBlockFuel_components
 #check EvmCompiler.Functions.StackLowering.lowerStmtListFuel_nil_components
 #check EvmCompiler.Functions.StackLowering.lowerStmtListFuel_expr_components
 #check EvmCompiler.Functions.StackLowering.lowerStmtListFuel_let_components
@@ -3081,3 +3084,4 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackBlockPreservation.brkList_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.contList_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.controlCons
+#print axioms EvmCompiler.Functions.StackBlockPreservation.controlScheduledRegion

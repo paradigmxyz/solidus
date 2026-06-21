@@ -136,9 +136,10 @@ def ControlScheduledListPreserves
     (finalLayout : Locals.Layout)
     (code : List Expressions.Stmt) : Prop :=
   finalCtx.layout = finalLayout ∧
-    ∀ (sourceCtx : Functions.Source.Ctx)
+    ∀ (sourceCtx : Functions.Source.Ctx) (targetFuel : Nat)
       {suffix : List Word} {returns : List Structured.ReturnDest}
       {source : Locals.Source.State} {target : Structured.RunState},
+      code.length < targetFuel →
       ControlCtxCovers sourceCtx targetCtx targets →
       StateRel targetCtx.layout suffix returns source target →
       Simulation.Interaction.Rel
@@ -146,7 +147,7 @@ def ControlScheduledListPreserves
         (Functions.InteractionSemantics.Block.openRun
           sourceProgram sourceCtx (stmts.length + 1) { stmts } source)
         (Expressions.InteractionSemantics.Block.openRun targetProgram
-          (code.length + 1) { stmts := code } target)
+          targetFuel { stmts := code } target)
 
 theorem controlCons
     (sourceProgram : Functions.Program)
@@ -168,12 +169,12 @@ theorem controlCons
   rcases hTail with ⟨hFinal, hTailForward⟩
   subst code
   refine ⟨hFinal, ?_⟩
-  intro sourceCtx suffix returns source target hCtx hInitial
-  have hHeadFuel : headCode.length < (headCode ++ tailCode).length + 1 := by
-    simp
+  intro sourceCtx targetFuel suffix returns source target hFuel hCtx hInitial
+  have hHeadFuel : headCode.length < targetFuel := by
+    simp only [List.length_append] at hFuel
     omega
   have hHeadRun :=
-    hHead sourceCtx (rest.length + 1) ((headCode ++ tailCode).length + 1)
+    hHead sourceCtx (rest.length + 1) targetFuel
       hHeadFuel hCtx hInitial
   rw [Expressions.InteractionSemantics.Block.openRun_append]
   rw [Functions.InteractionSemantics.Block.openRun_cons]
@@ -182,14 +183,13 @@ theorem controlCons
   intro sourceResult targetResult hResult
   cases hResult with
   | regular hMiddleCtx hMiddleState =>
-      have hTailRun :=
-        hTailForward _ hMiddleCtx hMiddleState
       have hTailFuel :
-          (headCode ++ tailCode).length + 1 - headCode.length =
-            tailCode.length + 1 := by
-        simp
+          tailCode.length < targetFuel - headCode.length := by
+        simp only [List.length_append] at hFuel
         omega
-      rw [hTailFuel]
+      have hTailRun :=
+        hTailForward _ (targetFuel - headCode.length) hTailFuel
+          hMiddleCtx hMiddleState
       exact hTailRun
   | brk hState =>
       apply Simulation.Interaction.Rel.done
@@ -207,6 +207,210 @@ theorem controlCons
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
       exact .halt hShared hReturns
+
+theorem controlScopedBodyThenJoin
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (sourceCtx : Functions.Source.Ctx)
+    (bodyCtx bodyFinalCtx : Locals.Ctx)
+    (source : Functions.Block) (bodyCode : List Expressions.Stmt)
+    (exit : AllocationLayout.Join)
+    (exitArtifact :
+      StackTransitionCompilation.JoinArtifact bodyFinalCtx exit)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {initialSource : Locals.Source.State}
+    {initialTarget : Structured.RunState}
+    (targetFuel : Nat)
+    (hBody :
+      ControlScheduledListPreserves sourceProgram targetProgram targets
+        bodyCtx bodyFinalCtx source.stmts bodyFinalCtx.layout bodyCode)
+    (hBodyCtx : ControlCtxCovers sourceCtx bodyCtx targets)
+    (hFinalCtx :
+      ControlCtxCovers sourceCtx
+        (bodyFinalCtx.withLayout exit.target) targets)
+    (hScopeCovers :
+      ∀ {name : Name}, name ∈ exit.target → name ∈ sourceCtx.scope)
+    (hFuel :
+      bodyCode.length +
+          (exitArtifact.retainArtifact.promotionCodes.length + 1 +
+            exitArtifact.orderArtifact.promotionCodes.length) < targetFuel)
+    (hInitial :
+      StateRel bodyCtx.layout suffix returns initialSource initialTarget) :
+    Simulation.Interaction.Rel
+      (ControlOpenOutcomeRel targets
+        (bodyFinalCtx.withLayout exit.target) suffix returns)
+      (Simulation.Interaction.bind
+        (Functions.InteractionSemantics.Block.openRun sourceProgram sourceCtx
+          (source.stmts.length + 1) source initialSource)
+        (fun result =>
+          match result.1.mode with
+          | .regular =>
+              Simulation.Interaction.pure
+                (Locals.Source.Effectful.Outcome.regular
+                  (result.1.state.restrictTo sourceCtx.scope), sourceCtx)
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure (result.1, sourceCtx)))
+      (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
+        { stmts :=
+            bodyCode ++
+              (exitArtifact.retainArtifact.promotionCodes.map
+                  Expressions.Stmt.code ++
+                [Expressions.Stmt.code exitArtifact.retainArtifact.cleanup] ++
+                exitArtifact.orderArtifact.promotionCodes.map
+                  Expressions.Stmt.code) }
+        initialTarget) := by
+  cases source
+  rcases hBody with ⟨_hBodyFinal, hBodyForward⟩
+  have hBodyFuel : bodyCode.length < targetFuel := by omega
+  have hBodyRun :=
+    hBodyForward sourceCtx targetFuel hBodyFuel hBodyCtx hInitial
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  apply Simulation.Interaction.Rel.bind hBodyRun
+  intro sourceResult targetResult hResult
+  cases hResult with
+  | regular _hBodyControl hBodyState =>
+      simp only [Locals.Source.Effectful.Outcome.regular,
+        Structured.Outcome.regular, Structured.OutcomeT.regular]
+      have hExitFuel :
+          exitArtifact.retainArtifact.promotionCodes.length + 1 +
+              exitArtifact.orderArtifact.promotionCodes.length <
+            targetFuel - bodyCode.length := by
+        omega
+      obtain ⟨finalTarget, hExitRun, hFinalState⟩ :=
+        exitArtifact.blockOpenRun targetProgram
+          (targetFuel - bodyCode.length) hExitFuel hBodyState
+      rw [hExitRun]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .regular hFinalCtx (hFinalState.restrictTo hScopeCovers)
+  | brk hState =>
+      simp only [Locals.Source.Effectful.Outcome.brk,
+        Structured.Outcome.brk, Structured.OutcomeT.brk]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .brk hState
+  | cont hState =>
+      simp only [Locals.Source.Effectful.Outcome.cont,
+        Structured.Outcome.cont, Structured.OutcomeT.cont]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .cont hState
+  | leave hState =>
+      simp only [Locals.Source.Effectful.Outcome.leave,
+        Structured.Outcome.leave, Structured.OutcomeT.leave]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .leave hState
+  | halt hShared hReturns =>
+      simp only [Locals.Source.Effectful.Outcome.halt,
+        Structured.Outcome.halt, Structured.OutcomeT.halt]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .halt hShared hReturns
+
+theorem controlScheduledRegion
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (sourceCtx : Functions.Source.Ctx)
+    (targetCtx bodyFinalCtx : Locals.Ctx)
+    (source : Functions.Block) (bodyCode : List Expressions.Stmt)
+    (entry : AllocationLayout.Transition)
+    (entryArtifact :
+      StackTransitionCompilation.Artifact targetCtx entry)
+    (exit : AllocationLayout.Join)
+    (exitArtifact :
+      StackTransitionCompilation.JoinArtifact bodyFinalCtx exit)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {initialSource : Locals.Source.State}
+    {initialTarget : Structured.RunState}
+    (targetFuel : Nat)
+    (hBody :
+      ControlScheduledListPreserves sourceProgram targetProgram targets
+        (targetCtx.withLayout entry.target) bodyFinalCtx source.stmts
+        bodyFinalCtx.layout bodyCode)
+    (hCtx : ControlCtxCovers sourceCtx targetCtx targets)
+    (hEntrySource : targetCtx.layout = entry.source)
+    (hFinalCtx :
+      ControlCtxCovers sourceCtx
+        (bodyFinalCtx.withLayout exit.target) targets)
+    (hScopeCovers :
+      ∀ {name : Name}, name ∈ exit.target → name ∈ sourceCtx.scope)
+    (hFuel :
+      entryArtifact.promotionCodes.length + 1 + bodyCode.length +
+          (exitArtifact.retainArtifact.promotionCodes.length + 1 +
+            exitArtifact.orderArtifact.promotionCodes.length) < targetFuel)
+    (hInitial :
+      StateRel targetCtx.layout suffix returns initialSource initialTarget) :
+    Simulation.Interaction.Rel
+      (ControlOpenOutcomeRel targets
+        (bodyFinalCtx.withLayout exit.target) suffix returns)
+      (Simulation.Interaction.bind
+        (Functions.InteractionSemantics.Block.openRun sourceProgram sourceCtx
+          (source.stmts.length + 1) source initialSource)
+        (fun result =>
+          match result.1.mode with
+          | .regular =>
+              Simulation.Interaction.pure
+                (Locals.Source.Effectful.Outcome.regular
+                  (result.1.state.restrictTo sourceCtx.scope), sourceCtx)
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure (result.1, sourceCtx)))
+      (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
+        { stmts :=
+            entryArtifact.promotionCodes.map Expressions.Stmt.code ++
+              [Expressions.Stmt.code entryArtifact.cleanup] ++
+              bodyCode ++
+              (exitArtifact.retainArtifact.promotionCodes.map
+                  Expressions.Stmt.code ++
+                [Expressions.Stmt.code exitArtifact.retainArtifact.cleanup] ++
+                exitArtifact.orderArtifact.promotionCodes.map
+                  Expressions.Stmt.code) }
+        initialTarget) := by
+  have hEntryFuel : entryArtifact.promotionCodes.length + 1 < targetFuel := by
+    omega
+  rw [show
+      entryArtifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code entryArtifact.cleanup] ++
+            bodyCode ++
+            (exitArtifact.retainArtifact.promotionCodes.map
+                Expressions.Stmt.code ++
+              [Expressions.Stmt.code exitArtifact.retainArtifact.cleanup] ++
+              exitArtifact.orderArtifact.promotionCodes.map
+                Expressions.Stmt.code) =
+        (entryArtifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code entryArtifact.cleanup]) ++
+          (bodyCode ++
+            (exitArtifact.retainArtifact.promotionCodes.map
+                Expressions.Stmt.code ++
+              [Expressions.Stmt.code exitArtifact.retainArtifact.cleanup] ++
+              exitArtifact.orderArtifact.promotionCodes.map
+                Expressions.Stmt.code)) by
+      simp [List.append_assoc]]
+  apply entryArtifact.thenBlock targetProgram
+      (body :=
+        bodyCode ++
+          (exitArtifact.retainArtifact.promotionCodes.map
+              Expressions.Stmt.code ++
+            [Expressions.Stmt.code exitArtifact.retainArtifact.cleanup] ++
+            exitArtifact.orderArtifact.promotionCodes.map
+              Expressions.Stmt.code))
+      targetFuel hEntryFuel hInitial
+  intro transitionedTarget hTransitioned
+  have hBodyFuel :
+      bodyCode.length +
+          (exitArtifact.retainArtifact.promotionCodes.length + 1 +
+            exitArtifact.orderArtifact.promotionCodes.length) <
+        targetFuel - (entryArtifact.promotionCodes.length + 1) := by
+    omega
+  have hRun :=
+    controlScopedBodyThenJoin sourceProgram targetProgram targets sourceCtx
+      (targetCtx.withLayout entry.target) bodyFinalCtx source bodyCode exit
+      exitArtifact (targetFuel - (entryArtifact.promotionCodes.length + 1))
+      hBody (hCtx.afterTransition entry hEntrySource) hFinalCtx hScopeCovers
+      hBodyFuel hTransitioned
+  simpa [List.append_assoc] using hRun
 
 theorem regularEmpty
     (sourceProgram : Functions.Program)
