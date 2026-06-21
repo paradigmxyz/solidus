@@ -260,6 +260,8 @@ elimination are not prerequisites for Permit2 or Aave.
   label pruning produce 22855-byte Permit2 and 43933-byte Aave root code.
 - [x] Prove exact variable-width byte decoding and connect decoded instructions
   to the shared Assembly open-step kernels.
+- [x] Check physical program-counter independence and prove every compact
+  instruction preserves runtime data and the exact open interaction tree.
 - [ ] Prove PC-relocated preprocessing and open-run preservation, then integrate
   the checked bytes into recursive object planning.
 

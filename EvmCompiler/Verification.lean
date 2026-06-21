@@ -3317,6 +3317,8 @@ or audit-alias corridor.
 #check EvmCompiler.Assembly.Compact.compile?_valid
 #check EvmCompiler.Assembly.Compact.compile?_decodingCorrect
 #check EvmCompiler.Assembly.Compact.openStepResultEqInstrOfDecodeAt
+#check EvmCompiler.Assembly.InteractionPreservation.PrimOp.openStep_runtimeRel_of_ne_pc
+#check EvmCompiler.Assembly.Compact.Instr.openStepResult_runtimeRel
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_decodingCorrect
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
@@ -3394,6 +3396,8 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Assembly.Compact.compile?_valid
 #print axioms EvmCompiler.Assembly.Compact.compile?_decodingCorrect
 #print axioms EvmCompiler.Assembly.Compact.openStepResultEqInstrOfDecodeAt
+#print axioms EvmCompiler.Assembly.InteractionPreservation.PrimOp.openStep_runtimeRel_of_ne_pc
+#print axioms EvmCompiler.Assembly.Compact.Instr.openStepResult_runtimeRel
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackCodeToRawBytecode

@@ -112,6 +112,24 @@ theorem replaceStackAndIncrPC
   simp [SameRuntimeData, eraseRuntimeControl] at hRel ⊢
   exact ⟨hRel.1, hStack⟩
 
+/-- Runtime data is insensitive to the physical width of two corresponding
+instructions, provided they produce the same stack. -/
+theorem replaceStackAndIncrPC_of_deltas
+    {target source : EVMState}
+    {targetStack sourceStack : EvmYul.Stack Word}
+    {targetPcDelta sourcePcDelta : Nat}
+    (hRel : SameRuntimeData target source)
+    (hStack : targetStack = sourceStack) :
+    SameRuntimeData
+      (target.replaceStackAndIncrPC targetStack
+        (pcΔ := targetPcDelta))
+      (source.replaceStackAndIncrPC sourceStack
+        (pcΔ := sourcePcDelta)) := by
+  cases target
+  cases source
+  simp [SameRuntimeData, eraseRuntimeControl] at hRel ⊢
+  exact ⟨hRel.1, hStack⟩
+
 theorem replaceStack
     {target source : EVMState}
     {targetStack sourceStack : EvmYul.Stack Word}

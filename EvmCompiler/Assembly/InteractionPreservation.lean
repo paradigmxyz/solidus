@@ -822,6 +822,71 @@ theorem openStep_runtimeRel
             closedStep_runtimeRel
               hArity hNoPc hExternal hGas hMsize hRel
 
+/-- Terminal primitive execution is insensitive to compiler-owned PC and
+execution counters, including the complete halted machine state and output. -/
+theorem terminalOpenStep_runtimeRel
+    (kind : HaltKind) {target source : EVMState}
+    (hRel : SameRuntimeData target source) :
+    Simulation.Interaction.Rel RuntimeStateRel
+      (InteractionSemantics.PrimOp.openStep kind.toPrimOp target)
+      (InteractionSemantics.PrimOp.openStep kind.toPrimOp source) := by
+  have hExternal :
+      Simulation.ExternalKind.ofEVMOperation? kind.toPrimOp.toEVM = none := by
+    cases kind <;> rfl
+  have hGas : kind.toPrimOp ≠ .gas := by
+    cases kind <;> simp [HaltKind.toPrimOp]
+  have hMsize : kind.toPrimOp ≠ .msize := by
+    cases kind <;> simp [HaltKind.toPrimOp]
+  rw [InteractionSemantics.PrimOp.openStep_closed hExternal hGas hMsize,
+    InteractionSemantics.PrimOp.openStep_closed hExternal hGas hMsize]
+  apply Simulation.Interaction.Rel.done
+  have hRun :=
+    Assembly.PrimOp.terminal_step_map_eraseRuntimeControl kind hRel
+  cases hTarget : kind.toPrimOp.step target with
+  | error targetError =>
+      cases hSource : kind.toPrimOp.step source with
+      | error sourceError =>
+          simp [hTarget, hSource, Except.map] at hRun
+          exact Simulation.Interaction.ExceptRel.error hRun
+      | ok sourceFinal =>
+          simp [hTarget, hSource, Except.map] at hRun
+  | ok targetFinal =>
+      cases hSource : kind.toPrimOp.step source with
+      | error sourceError =>
+          simp [hTarget, hSource, Except.map] at hRun
+      | ok sourceFinal =>
+          simp [hTarget, hSource, Except.map] at hRun
+          exact Simulation.Interaction.ExceptRel.ok hRun
+
+/-- Complete PC-independent primitive congruence. This packages the ordinary,
+resource, open-world, terminal, and explicit-invalid families behind one
+owner-level interface for physical-layout passes. -/
+theorem openStep_runtimeRel_of_ne_pc
+    {op : Assembly.PrimOp} {target source : EVMState}
+    (hNoPc : op ≠ .pc)
+    (hRel : SameRuntimeData target source) :
+    Simulation.Interaction.Rel RuntimeStateRel
+      (InteractionSemantics.PrimOp.openStep op target)
+      (InteractionSemantics.PrimOp.openStep op source) := by
+  by_cases hArity : ∃ arity, op.stackArity? = some arity
+  · exact openStep_runtimeRel hArity hNoPc hRel
+  · have hTerminalOrInvalid :
+        op = .stop ∨ op = .return ∨ op = .revert ∨
+          op = .selfdestruct ∨ op = .invalid := by
+      cases op <;> simp [Assembly.PrimOp.stackArity?] at hArity ⊢
+    rcases hTerminalOrInvalid with
+      hStop | hReturn | hRevert | hSelfdestruct | hInvalid
+    · subst op
+      exact terminalOpenStep_runtimeRel .stop hRel
+    · subst op
+      exact terminalOpenStep_runtimeRel .return hRel
+    · subst op
+      exact terminalOpenStep_runtimeRel .revert hRel
+    · subst op
+      exact terminalOpenStep_runtimeRel .selfdestruct hRel
+    · subst op
+      exact .done (.error rfl)
+
 /--
 Open primitive execution preserves compiler-owned words below the complete
 source-visible operand prefix. CALL/CREATE requests remain exactly equal and

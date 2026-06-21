@@ -1,5 +1,5 @@
 import EvmCompiler.Assembly.Bytecode
-import EvmCompiler.Assembly.InteractionSemantics
+import EvmCompiler.Assembly.InteractionPreservation
 import Mathlib.Tactic.IntervalCases
 
 namespace EvmCompiler
@@ -93,6 +93,10 @@ def Valid : Instr -> Prop
   | .push width value => FitsWidth width value.toNat
   | .jump | .jumpi | .jumpdest | .prim _ => True
 
+def PCIndependent : Instr -> Prop
+  | .prim .pc => False
+  | _ => True
+
 def decoded? : Instr -> Option (Prod EVMOp (Option (Prod Word Nat)))
   | .push width value => do
       let op <- pushOp? width
@@ -148,12 +152,22 @@ def valid? : Instr -> Bool
   | .push width value => fitsWidth? width value.toNat
   | .jump | .jumpi | .jumpdest | .prim _ => true
 
+def pcIndependent? : Instr -> Bool
+  | .prim .pc => false
+  | _ => true
+
 theorem valid_of_check {instr : Instr} (hCheck : instr.valid? = true) :
     instr.Valid := by
   cases instr <;> simp [valid?, Valid, fitsWidth?, FitsWidth] at hCheck ⊢
   exact
     { left := hCheck.1.1
       right := { left := hCheck.1.2, right := hCheck.2 } }
+
+theorem pcIndependent_of_check {instr : Instr}
+    (hCheck : instr.pcIndependent? = true) : instr.PCIndependent := by
+  cases instr <;> simp [pcIndependent?, PCIndependent] at hCheck ⊢
+  rename_i op
+  cases op <;> simp [PCIndependent] at hCheck ⊢
 
 end Instr
 
@@ -182,6 +196,9 @@ def byteLength (program : Program) : Nat :=
 def Valid (program : Program) : Prop :=
   program.code.Forall fun located => located.instr.Valid
 
+def PCIndependent (program : Program) : Prop :=
+  program.code.Forall fun located => located.instr.PCIndependent
+
 def codeLayoutFrom : List Located -> Nat -> Prop
   | [], _ => True
   | located :: rest, pc =>
@@ -197,9 +214,13 @@ def layoutFrom? : List Located -> Nat -> Bool
 def valid? (program : Program) : Bool :=
   program.code.all fun located => located.instr.valid?
 
+def pcIndependent? (program : Program) : Bool :=
+  program.code.all fun located => located.instr.pcIndependent?
+
 def wellFormed? (program : Program) : Bool :=
   program.valid? && layoutFrom? program.code 0 &&
-    decide (Program.codeByteLength program.code < 18446744073709551616)
+    decide (Program.codeByteLength program.code < 18446744073709551616) &&
+      program.pcIndependent?
 
 theorem layoutFrom_of_check :
     ∀ {code : List Located} {pc : Nat},
@@ -217,16 +238,26 @@ theorem valid_of_check {program : Program}
   intro located hMem
   exact Instr.valid_of_check ((List.all_eq_true.mp hCheck) located hMem)
 
+theorem pcIndependent_of_check {program : Program}
+    (hCheck : program.pcIndependent? = true) : program.PCIndependent := by
+  apply List.forall_iff_forall_mem.mpr
+  intro located hMem
+  exact Instr.pcIndependent_of_check
+    ((List.all_eq_true.mp hCheck) located hMem)
+
 theorem wellFormed_of_check {program : Program}
     (hCheck : program.wellFormed? = true) :
     program.Valid ∧ codeLayoutFrom program.code 0 ∧
-      Program.codeByteLength program.code < 18446744073709551616 := by
+      Program.codeByteLength program.code < 18446744073709551616 ∧
+        program.PCIndependent := by
   simp [wellFormed?] at hCheck
   exact
-    { left := valid_of_check hCheck.1.1
+    { left := valid_of_check hCheck.1.1.1
       right :=
-        { left := layoutFrom_of_check hCheck.1.2
-          right := hCheck.2 } }
+        { left := layoutFrom_of_check hCheck.1.1.2
+          right :=
+            { left := hCheck.1.2
+              right := pcIndependent_of_check hCheck.2 } } }
 
 theorem existsLocatedOfFetch {program : Program}
     {pc : Nat} {instr : Instr}
@@ -728,7 +759,8 @@ structure Artifact.ValidFor (artifact : Artifact)
     some artifact.program
   wellFormed : artifact.program.Valid ∧
     Program.codeLayoutFrom artifact.program.code 0 ∧
-      Program.codeByteLength artifact.program.code < 18446744073709551616
+      Program.codeByteLength artifact.program.code < 18446744073709551616 ∧
+        artifact.program.PCIndependent
   bytes : artifact.bytes = encode artifact.program
 
 theorem compile?_valid {source : Assembly.Program} {artifact : Artifact}
@@ -766,23 +798,177 @@ theorem compile?_decodingCorrect
   rw [hValid.bytes]
   exact
     decodingCorrectOfWellFormed
-      hValid.wellFormed.1 hValid.wellFormed.2.1 hValid.wellFormed.2.2
+      hValid.wellFormed.1 hValid.wellFormed.2.1 hValid.wellFormed.2.2.1
 
 namespace Instr
 
-def openStepResult : Instr -> EVMState ->
-    Assembly.InteractionSemantics.OpenStepResult
+def toLogical : Instr -> TargetInstr
+  | .push _ value => .push32 value
+  | .jump => .jump
+  | .jumpi => .jumpi
+  | .jumpdest => .jumpdest
+  | .prim op => .prim op
+
+def haltKind? : Instr -> Option HaltKind
+  | .prim op => op.haltKind?
+  | _ => none
+
+def openStep : Instr -> EVMState -> Assembly.InteractionSemantics.OpenStep
   | .push width value, state =>
-      Assembly.InteractionSemantics.Target.openStepPushResult
+      Assembly.InteractionSemantics.Target.openStepPush
         width value state
   | .jump, state =>
-      Assembly.InteractionSemantics.Target.openStepInstrResult .jump state
+      Assembly.InteractionSemantics.Target.openStepInstr .jump state
   | .jumpi, state =>
-      Assembly.InteractionSemantics.Target.openStepInstrResult .jumpi state
+      Assembly.InteractionSemantics.Target.openStepInstr .jumpi state
   | .jumpdest, state =>
-      Assembly.InteractionSemantics.Target.openStepInstrResult .jumpdest state
+      Assembly.InteractionSemantics.Target.openStepInstr .jumpdest state
   | .prim op, state =>
-      Assembly.InteractionSemantics.Target.openStepInstrResult (.prim op) state
+      Assembly.InteractionSemantics.Target.openStepInstr (.prim op) state
+
+def openStepResult (instr : Instr) (state : EVMState) :
+    Assembly.InteractionSemantics.OpenStepResult := do
+  let state' <- instr.openStep state
+  match instr.haltKind? with
+  | some kind =>
+      pure (.halted
+        { kind := kind
+          state := state'
+          output := kind.output state' })
+  | none => pure (.running state')
+
+end Instr
+
+def StepResultRuntimeRel : StepResult -> StepResult -> Prop
+  | .running target, .running source => SameRuntimeData target source
+  | .halted target, .halted source =>
+      target.kind = source.kind ∧
+        SameRuntimeData target.state source.state ∧
+          target.output = source.output
+  | _, _ => False
+
+abbrev RuntimeOutcomeRel :
+    Except EVMException StepResult -> Except EVMException StepResult -> Prop :=
+  Simulation.Interaction.ExceptRel
+    (fun targetError sourceError => targetError = sourceError)
+    StepResultRuntimeRel
+
+theorem haltOutput_eq_of_sameRuntimeData
+    {target source : EVMState} (kind : HaltKind)
+    (hRel : SameRuntimeData target source) :
+    kind.output target = kind.output source := by
+  have hShared := SameRuntimeData.shared_eq hRel
+  cases kind <;> simp [HaltKind.output, hShared]
+
+namespace Instr
+
+theorem toLogical_haltKind? (instr : Instr) :
+    instr.toLogical.haltKind? = instr.haltKind? := by
+  cases instr <;> rfl
+
+/-- A compact instruction and its logical PUSH32-era counterpart expose the
+same open interaction and runtime data. Their physical PCs may differ. -/
+theorem openStep_runtimeRel
+    {instr : Instr} {target source : EVMState}
+    (hIndependent : instr.PCIndependent)
+    (hRel : SameRuntimeData target source) :
+    Simulation.Interaction.Rel
+      Assembly.InteractionPreservation.PrimOp.RuntimeStateRel
+      (instr.openStep target)
+      (Assembly.InteractionSemantics.Target.openStepInstr
+        instr.toLogical source) := by
+  cases instr with
+  | push width value =>
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact
+        SameRuntimeData.replaceStackAndIncrPC_of_deltas hRel
+          (congrArg (fun stack => stack.push value)
+            (SameRuntimeData.stack_eq hRel))
+  | jump =>
+      change Simulation.Interaction.Rel _
+        (Assembly.InteractionSemantics.Target.openStepInstr .jump target)
+        (Assembly.InteractionSemantics.Target.openStepInstr .jump source)
+      unfold Assembly.InteractionSemantics.Target.openStepInstr
+        Assembly.Target.stepInstrWith
+      have hStack := SameRuntimeData.stack_eq hRel
+      rw [hStack]
+      cases hPop : source.stack.pop with
+      | none => exact .done (.error rfl)
+      | some pair =>
+          rcases pair with ⟨rest, dest⟩
+          apply Simulation.Interaction.Rel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact
+            SameRuntimeData.with_pc_right dest
+              (SameRuntimeData.with_pc_left dest
+                (SameRuntimeData.replaceStack
+                  (targetStack := rest) (sourceStack := rest) hRel rfl))
+  | jumpi =>
+      change Simulation.Interaction.Rel _
+        (Assembly.InteractionSemantics.Target.openStepInstr .jumpi target)
+        (Assembly.InteractionSemantics.Target.openStepInstr .jumpi source)
+      unfold Assembly.InteractionSemantics.Target.openStepInstr
+        Assembly.Target.stepInstrWith
+      have hStack := SameRuntimeData.stack_eq hRel
+      rw [hStack]
+      cases hPop : source.stack.pop2 with
+      | none => exact .done (.error rfl)
+      | some values =>
+          rcases values with ⟨rest, dest, cond⟩
+          apply Simulation.Interaction.Rel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact
+            SameRuntimeData.with_pc_right
+              (if cond != EvmYul.UInt256.ofNat 0 then
+                dest else source.pc + EvmYul.UInt256.ofNat 1)
+              (SameRuntimeData.with_pc_left
+                (if cond != EvmYul.UInt256.ofNat 0 then
+                  dest else target.pc + EvmYul.UInt256.ofNat 1)
+                (SameRuntimeData.replaceStack
+                  (targetStack := rest) (sourceStack := rest) hRel rfl))
+  | jumpdest =>
+      change Simulation.Interaction.Rel _
+        (Assembly.InteractionSemantics.Target.openStepInstr .jumpdest target)
+        (Assembly.InteractionSemantics.Target.openStepInstr .jumpdest source)
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact
+        SameRuntimeData.incrPC_right
+          (SameRuntimeData.incrPC_left hRel)
+  | prim op =>
+      have hNoPc : op ≠ .pc := by
+        intro hOp
+        subst op
+        simpa [PCIndependent] using hIndependent
+      exact
+        Assembly.InteractionPreservation.PrimOp.openStep_runtimeRel_of_ne_pc
+          hNoPc hRel
+
+theorem openStepResult_runtimeRel
+    {instr : Instr} {target source : EVMState}
+    (hIndependent : instr.PCIndependent)
+    (hRel : SameRuntimeData target source) :
+    Simulation.Interaction.Rel RuntimeOutcomeRel
+      (instr.openStepResult target)
+      (Assembly.InteractionSemantics.Target.openStepInstrResult
+        instr.toLogical source) := by
+  unfold openStepResult
+    Assembly.InteractionSemantics.Target.openStepInstrResult
+    Assembly.Target.stepInstrResultWith
+  rw [toLogical_haltKind?]
+  apply Simulation.Interaction.Rel.bind
+    (openStep_runtimeRel hIndependent hRel)
+  intro targetFinal sourceFinal hFinal
+  cases hKind : instr.haltKind? with
+  | none =>
+      exact .done (.ok hFinal)
+  | some kind =>
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact
+        ⟨rfl, hFinal,
+          haltOutput_eq_of_sameRuntimeData kind hFinal⟩
 
 end Instr
 
