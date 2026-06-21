@@ -179,6 +179,14 @@ if ! rg -Fq \
   failed=1
 fi
 
+if ! rg -Fq \
+    '#check EvmCompiler.Functions.StackExpressionPreservation.openEvalOnePop_compileCode' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing dynamic-layout one-word pop preservation.' >&2
+  failed=1
+fi
+
 for theorem in \
     'Block.openRun_terminal_cons' \
     'Block.openRun_terminalArgs_cons'; do
@@ -214,6 +222,8 @@ for theorem in \
     'controlThenTransitionForward' \
     'controlAppendEmptyCodeForward' \
     'controlIf' \
+    'SwitchBranchesPreserve' \
+    'controlSwitch' \
     'openRun_let_generated' \
     'openRun_assign_generated'; do
   if ! rg -Fq \

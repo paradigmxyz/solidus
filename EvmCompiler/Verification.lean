@@ -2998,6 +2998,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackRelation.StateRel.ofExprResultOnePop
 #check EvmCompiler.Functions.StackExpressionPreservation.openEvalZero_compileCode
 #check EvmCompiler.Functions.StackExpressionPreservation.openEvalOne_compileCode
+#check EvmCompiler.Functions.StackExpressionPreservation.openEvalOnePop_compileCode
 #check EvmCompiler.Functions.StackExpressionPreservation.openEvalCondition_compileCode
 #check EvmCompiler.Functions.StackExpressionPreservation.openEvalOne_fresh_compileCode
 #check EvmCompiler.Functions.StackExpressionPreservation.openEvalSeq_compileCode
@@ -3026,6 +3027,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackStatementPreservation.controlAppendEmptyCode
 #check EvmCompiler.Functions.StackStatementPreservation.controlAppendEmptyCodeForward
 #check EvmCompiler.Functions.StackStatementPreservation.controlIf
+#check EvmCompiler.Functions.StackStatementPreservation.SwitchBranchesPreserve
+#check EvmCompiler.Functions.StackStatementPreservation.controlSwitch
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_brk_join_generated
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_cont_join_generated
 #check EvmCompiler.Functions.StackStatementPreservation.compiledBrkJoinPointOfEquations
@@ -3161,6 +3164,8 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_cont_components
 #print axioms EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_switch_components
 #print axioms EvmCompiler.Functions.StackLowering.lowerPointFuel_switch_components
+#print axioms EvmCompiler.Functions.StackExpressionPreservation.openEvalOnePop_compileCode
+#print axioms EvmCompiler.Functions.StackStatementPreservation.controlSwitch
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.JoinArtifact.thenBlock
 #print axioms EvmCompiler.Expressions.TargetFuel.Covers.if_body_after_two
 #print axioms EvmCompiler.Functions.StackBlockPreservation.brkList_of_compilers

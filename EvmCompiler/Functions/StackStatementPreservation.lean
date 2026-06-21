@@ -972,6 +972,110 @@ theorem controlIf
   | true =>
       exact hBody hResult.state
 
+def SwitchBranchesPreserve
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    (cases : List (Word × Functions.Block))
+    (defaultBody : Option Functions.Block)
+    (compiledCases : List (Word × Expressions.Block))
+    (compiledDefault : Option Expressions.Block)
+    (suffix : List Word) (returns : List Structured.ReturnDest) : Prop :=
+  ∀ value,
+    match Functions.Source.Switch.select value cases defaultBody,
+        Expressions.EffectSemantics.Switch.select value compiledCases
+          compiledDefault with
+    | none, none => True
+    | some sourceBody, some targetBody =>
+        ∀ {sourceAfter : Locals.Source.State}
+          {targetAfter : Structured.RunState},
+          StateRel targetCtx.layout suffix returns sourceAfter targetAfter →
+            Simulation.Interaction.ForwardRel FuelTruncated
+              (ControlOpenOutcomeRel targets targetCtx suffix returns)
+              (Functions.InteractionSemantics.Stmt.openRun sourceProgram
+                sourceCtx sourceFuel (.block sourceBody) sourceAfter)
+              (Expressions.InteractionSemantics.Block.openRun targetProgram
+                targetFuel targetBody targetAfter)
+    | _, _ => False
+
+theorem controlSwitch
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    (scrutinee : Functions.Expr 1)
+    (cases : List (Word × Functions.Block))
+    (defaultBody : Option Functions.Block)
+    (scrutineeCode : Structured.Code)
+    (compiledCases : List (Word × Expressions.Block))
+    (compiledDefault : Option Expressions.Block)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hTargetFuel : 2 ≤ targetFuel)
+    (hCtx : RuntimeCtxCovers sourceCtx targetCtx targets returns)
+    (hScrutineeScoped : Locals.Scope.ExprScoped targetCtx.layout scrutinee)
+    (hScrutineeSupported :
+      Locals.InteractionSemantics.Expr.OpenSupported scrutinee)
+    (hScrutineeCompile :
+      Locals.Expr.compileCode targetCtx 0 scrutinee = some scrutineeCode)
+    (hInitial : StateRel targetCtx.layout suffix returns source target)
+    (hBranches :
+      SwitchBranchesPreserve sourceProgram targetProgram targets sourceCtx
+        targetCtx sourceFuel (targetFuel - 2) cases defaultBody compiledCases
+        compiledDefault suffix returns) :
+    Simulation.Interaction.ForwardRel FuelTruncated
+      (ControlOpenOutcomeRel targets targetCtx suffix returns)
+      (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
+        (sourceFuel + 1) (.switch scrutinee cases defaultBody) source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
+        { stmts :=
+            [.switch (.code scrutineeCode) compiledCases compiledDefault] }
+        target) := by
+  have hTargetFuelEq : targetFuel = (targetFuel - 2) + 2 := by omega
+  rw [hTargetFuelEq,
+    Expressions.InteractionSemantics.Block.openRun_single_switch]
+  rw [Functions.InteractionSemantics.Stmt.openRun_switch]
+  have hScrutinee :=
+    StackExpressionPreservation.openEvalOnePop_compileCode
+      scrutinee targetCtx hScrutineeScoped hScrutineeSupported
+      hScrutineeCompile hInitial
+  apply Simulation.Interaction.ForwardRel.bind
+    (Simulation.Interaction.ForwardRel.ofRel (by
+      simpa [Functions.InteractionSemantics.Expr.openEvalOne] using hScrutinee))
+  intro sourceResult targetResult hResult
+  rcases sourceResult with ⟨sourceAfter, value⟩
+  rcases targetResult with ⟨targetAfter, targetValue⟩
+  cases hResult.value
+  cases hSourceSelect :
+      Functions.Source.Switch.select value cases defaultBody with
+  | none =>
+      cases hTargetSelect :
+          Expressions.EffectSemantics.Switch.select value compiledCases
+            compiledDefault with
+      | none =>
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact .regular hCtx hResult.state
+      | some targetBody =>
+          have hBranch := hBranches value
+          rw [hSourceSelect, hTargetSelect] at hBranch
+          contradiction
+  | some sourceBody =>
+      cases hTargetSelect :
+          Expressions.EffectSemantics.Switch.select value compiledCases
+            compiledDefault with
+      | none =>
+          have hBranch := hBranches value
+          rw [hSourceSelect, hTargetSelect] at hBranch
+          contradiction
+      | some targetBody =>
+          have hBranch := hBranches value
+          rw [hSourceSelect, hTargetSelect] at hBranch
+          exact hBranch hResult.state
+
 theorem openRun_brk_join_generated
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
