@@ -2469,7 +2469,11 @@ theorem ForFuelCapacity.of_reserve
       AllocationInteractionTargetFuel.stmtListNestedSize_append]
     simp [AllocationInteractionTargetFuel.stmtListNestedSize,
       AllocationInteractionTargetFuel.stmtNestedSize,
-      AllocationInteractionTargetFuel.blockSize, Locals.codeStmt]
+      AllocationInteractionTargetFuel.blockSize,
+      Expressions.TargetFuel.stmtListSize,
+      Expressions.TargetFuel.stmtListNestedSize,
+      Expressions.TargetFuel.stmtNestedSize,
+      Expressions.TargetFuel.blockSize, Locals.codeStmt]
   have hPostBlockSize :
       AllocationInteractionTargetFuel.blockSize components.compiledPost =
         AllocationInteractionTargetFuel.stmtListSize

@@ -2215,14 +2215,12 @@ theorem block
         omega
       _ = totalFuel := Nat.sub_add_cancel hBodyBase
   have hBodyNestedSize :
-      AllocationInteractionTargetFuel.stmtListNestedSize
-          bodyCursor.compiled ≤
-        AllocationInteractionTargetFuel.stmtListNestedSize
-          cursor.compiled := by
+      Expressions.TargetFuel.stmtListNestedSize bodyCursor.compiled ≤
+        Expressions.TargetFuel.stmtListNestedSize cursor.compiled := by
     rw [hCompiled,
-      AllocationInteractionTargetFuel.stmtListNestedSize_append,
+      Expressions.TargetFuel.stmtListNestedSize_append,
       hHeadCode, hTargetShape,
-      AllocationInteractionTargetFuel.stmtListNestedSize_append]
+      Expressions.TargetFuel.stmtListNestedSize_append]
     omega
   have hStrideFuel :
       callStride expressions * (sourceFuel + 1) =
@@ -2238,6 +2236,11 @@ theorem block
   have hBodyReserve :
       AllocationInteractionTargetFuel.Reserve bodyCursor bodyExtra := by
     unfold AllocationInteractionTargetFuel.Reserve at hTargetReserve ⊢
+    change
+      Expressions.TargetFuel.stmtListNestedSize cursor.compiled ≤ targetExtra
+      at hTargetReserve
+    change
+      Expressions.TargetFuel.stmtListNestedSize bodyCursor.compiled ≤ bodyExtra
     omega
   have hBodyRecursive :=
     hBodyForward bodyCursor bodyExtra hBodyReserve hBodyBoundary
@@ -2481,21 +2484,23 @@ theorem if_
   obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
     AllocationInteractionCleanup.Plain.finishScoped_shape hFinish
   have hTargetBlockSize :
-      AllocationInteractionTargetFuel.blockSize targetBody =
-        AllocationInteractionTargetFuel.stmtListSize targetBody.stmts := by
+      Expressions.TargetFuel.blockSize targetBody =
+        Expressions.TargetFuel.stmtListSize targetBody.stmts := by
     cases targetBody
     rfl
   have hBodyWithinParent :
-      AllocationInteractionTargetFuel.stmtListSize bodyCursor.compiled ≤
-        AllocationInteractionTargetFuel.stmtListNestedSize
+      Expressions.TargetFuel.stmtListSize bodyCursor.compiled ≤
+        Expressions.TargetFuel.stmtListNestedSize
           cursor.compiled := by
     rw [hCompiled,
-      AllocationInteractionTargetFuel.stmtListNestedSize_append,
+      Expressions.TargetFuel.stmtListNestedSize_append,
       hHeadCode]
     simp only [AllocationInteractionTargetFuel.stmtListNestedSize,
-      AllocationInteractionTargetFuel.stmtNestedSize]
+      AllocationInteractionTargetFuel.stmtNestedSize,
+      Expressions.TargetFuel.stmtListNestedSize,
+      Expressions.TargetFuel.stmtNestedSize]
     rw [hTargetBlockSize, hTargetShape,
-      AllocationInteractionTargetFuel.stmtListSize_append]
+      Expressions.TargetFuel.stmtListSize_append]
     omega
   have hFuelGap : sourceFuel + 1 = (bodyFuel + 1) + 2 := by
     simp [bodyFuel]
@@ -2506,14 +2511,16 @@ theorem if_
           callStride expressions * 2 := by
     rw [hFuelGap, Nat.mul_add]
   have hBodySizeEq :=
-    AllocationInteractionTargetFuel.stmtListSize_eq
-      bodyCursor.compiled
+    Expressions.TargetFuel.stmtListSize_eq bodyCursor.compiled
   have hBodyTargetCapacity :
       targetBudget bodyCursor bodyFuel
-            (AllocationInteractionTargetFuel.stmtListNestedSize
+            (Expressions.TargetFuel.stmtListNestedSize
               bodyCursor.compiled) ≤
         targetBodyFuel := by
     unfold AllocationInteractionTargetFuel.Reserve at hTargetReserve
+    change
+      Expressions.TargetFuel.stmtListNestedSize cursor.compiled ≤ targetExtra
+      at hTargetReserve
     unfold targetBodyFuel totalFuel targetBudget
     rw [hStrideFuel]
     have hStride := eight_le_callStride expressions
@@ -2890,28 +2897,35 @@ theorem switch
     obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
       AllocationInteractionCleanup.Plain.finishScoped_shape hFinish
     have hActualTargetSize :
-        AllocationInteractionTargetFuel.blockSize selectedTarget =
-          AllocationInteractionTargetFuel.stmtListSize selectedTarget.stmts := by
+        Expressions.TargetFuel.blockSize selectedTarget =
+          Expressions.TargetFuel.stmtListSize selectedTarget.stmts := by
       cases selectedTarget
       rfl
     have hBodyWithinTarget :
-        AllocationInteractionTargetFuel.stmtListSize bodyCursor.compiled ≤
-          AllocationInteractionTargetFuel.blockSize selectedTarget := by
+        Expressions.TargetFuel.stmtListSize bodyCursor.compiled ≤
+          Expressions.TargetFuel.blockSize selectedTarget := by
       rw [hActualTargetSize, hTargetShape,
-        AllocationInteractionTargetFuel.stmtListSize_append]
+        Expressions.TargetFuel.stmtListSize_append]
       omega
-    have hTargetWithinSwitch :=
-      AllocationInteractionTargetFuel.selected_block_size_le hTargetSelect
+    have hTargetWithinSwitch :
+        Expressions.TargetFuel.blockSize selectedTarget ≤
+          Expressions.TargetFuel.caseListSize compiledCases +
+            Expressions.TargetFuel.defaultSize compiledDefault :=
+      Expressions.TargetFuel.selected_block_size_le hTargetSelect
     have hSwitchWithinParent :
-        AllocationInteractionTargetFuel.caseListSize compiledCases +
-            AllocationInteractionTargetFuel.defaultSize compiledDefault ≤
-          AllocationInteractionTargetFuel.stmtListNestedSize
+        Expressions.TargetFuel.caseListSize compiledCases +
+            Expressions.TargetFuel.defaultSize compiledDefault ≤
+          Expressions.TargetFuel.stmtListNestedSize
             cursor.compiled := by
       rw [components.compiled,
-        AllocationInteractionTargetFuel.stmtListNestedSize_append,
+        Expressions.TargetFuel.stmtListNestedSize_append,
         components.codeHead]
       simp only [AllocationInteractionTargetFuel.stmtListNestedSize,
-        AllocationInteractionTargetFuel.stmtNestedSize]
+        AllocationInteractionTargetFuel.stmtNestedSize,
+        Expressions.TargetFuel.stmtListNestedSize,
+        Expressions.TargetFuel.stmtNestedSize,
+        Expressions.TargetFuel.caseListSize,
+        Expressions.TargetFuel.defaultSize]
       omega
     have hBodyWithinParent :
         AllocationInteractionTargetFuel.stmtListSize bodyCursor.compiled ≤

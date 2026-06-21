@@ -12,6 +12,7 @@ import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Assembly.InteractionConcreteResources
 import EvmCompiler.Expressions.InteractionPreservation
 import EvmCompiler.Expressions.ObserverPreservation
+import EvmCompiler.Expressions.TargetFuel
 import EvmCompiler.Functions.AllocationLowering
 import EvmCompiler.Functions.AllocationLiveness
 import EvmCompiler.Functions.AllocationLivenessFacts
@@ -2447,6 +2448,9 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.EffectSemantics.Stmt.Eval.outcome_unique
 #check EvmCompiler.Structured.EffectSemantics.For.Eval.outcome_unique
 #check EvmCompiler.Expressions.StmtList.toStructured_append
+#check EvmCompiler.Expressions.TargetFuel.stmtListSize_eq
+#check EvmCompiler.Expressions.TargetFuel.stmtListNestedSize_append
+#check EvmCompiler.Expressions.TargetFuel.selected_block_size_le
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationMode
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationExprResultRel

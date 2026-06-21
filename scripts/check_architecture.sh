@@ -1718,6 +1718,11 @@ report_matches \
   EvmCompiler/Functions/StackSchedule.lean
 
 report_matches \
+  'Expressions target-fuel analysis must not depend on Functions allocation corridors:' \
+  '^import EvmCompiler\.Functions\.' \
+  EvmCompiler/Expressions/TargetFuel.lean
+
+report_matches \
   'Functions stack accessibility must remain a compiler-free symbolic owner:' \
   '^import EvmCompiler\..*(AllocationLowering|MixedAllocation|Objects|Observer|Interaction|EffectSemantics|TypedCfg|Assembly\.(Assembler|Compiler)|Locals\.Compiler)' \
   EvmCompiler/Functions/StackAccess.lean
