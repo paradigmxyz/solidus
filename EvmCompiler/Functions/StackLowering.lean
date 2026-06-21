@@ -542,6 +542,51 @@ theorem lowerPointFuel_cont_components
           · rw [if_neg hFalls] at hLower
             contradiction
 
+theorem lowerPointFuel_block_components
+    {fuel : Nat} {ctx : Ctx} {body : Block}
+    {point : StackSchedule.Point} {lowered : List Locals.Stmt}
+    (hLower : lowerPointFuel fuel ctx (.block body) point = some lowered) :
+    ∃ region loweredBody retain,
+      pointAccess? ctx (.block body) point = some () ∧
+        point.fallsThrough = true ∧ point.regions = [region] ∧
+        lowerBlockFuel (fuel - 1) ctx body region = some loweredBody ∧
+        point.retain? = some retain ∧
+        lowered = [.block loweredBody] ++ transitionStmts retain := by
+  cases fuel with
+  | zero => simp [lowerPointFuel] at hLower
+  | succ fuel =>
+      simp only [lowerPointFuel] at hLower
+      cases hAccess : pointAccess? ctx (.block body) point with
+      | none => simp [hAccess] at hLower
+      | some unit =>
+          cases unit
+          rw [hAccess] at hLower
+          by_cases hFalls :
+              point.fallsThrough = !StackSchedule.alwaysExits (.block body)
+          · rw [if_pos hFalls] at hLower
+            cases hRegions : point.regions with
+            | nil => simp [hRegions] at hLower
+            | cons region rest =>
+                cases rest with
+                | cons next tail => simp [hRegions] at hLower
+                | nil =>
+                    cases hBody : lowerBlockFuel fuel ctx body region with
+                    | none => simp [hRegions, hBody] at hLower
+                    | some loweredBody =>
+                        have hFallsTrue : point.fallsThrough = true := by
+                          simpa [StackSchedule.alwaysExits] using hFalls
+                        simp [hRegions, hBody, hFallsTrue] at hLower
+                        cases hRetain : point.retain? with
+                        | none => simp [hRetain] at hLower
+                        | some retain =>
+                            rw [hRetain] at hLower
+                            exact
+                              ⟨region, loweredBody, retain, rfl, hFallsTrue,
+                                rfl, by simpa using hBody, rfl,
+                                by simpa using hLower.symm⟩
+          · rw [if_neg hFalls] at hLower
+            contradiction
+
 theorem lowerStmtListFuel_brk_components
     {fuel : Nat} {ctx : Ctx} {rest : List Stmt}
     {point : StackSchedule.Point} {points : List StackSchedule.Point}

@@ -2935,6 +2935,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLayoutLowering.Join.compile
 #check EvmCompiler.Functions.StackSchedule.scheduleBlockFuel_entry_sound
 #check EvmCompiler.Functions.StackSchedule.scheduleBlock?_entry_sound
+#check EvmCompiler.Functions.StackSchedule.scheduleBlockFuelWithTargets_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_cons_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuelWithTargets_cons_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_cons_nonempty
@@ -2949,6 +2950,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuel_terminalArgs_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_brk_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_cont_components
+#check EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_block_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuelWithTargets_brk_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuelWithTargets_cont_components
 #check EvmCompiler.Functions.StackSchedule.scheduleStmtListFuel_terminal_components
@@ -2982,9 +2984,14 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackStatementPreservation.ControlCtxCovers
 #check EvmCompiler.Functions.StackStatementPreservation.ControlCtxCovers.afterOrdering
 #check EvmCompiler.Functions.StackStatementPreservation.ControlCtxCovers.afterTransition
+#check EvmCompiler.Functions.StackStatementPreservation.ControlCtxCovers.ofSameControlLayout
 #check EvmCompiler.Functions.StackStatementPreservation.ControlCtxCovers.prepend
 #check EvmCompiler.Functions.StackStatementPreservation.ControlOpenResultRel
 #check EvmCompiler.Functions.StackStatementPreservation.ControlPointPreserves
+#check EvmCompiler.Functions.StackStatementPreservation.controlThenTransition
+#check EvmCompiler.Functions.StackStatementPreservation.controlThenTransitionForward
+#check EvmCompiler.Functions.StackStatementPreservation.controlAppendEmptyCode
+#check EvmCompiler.Functions.StackStatementPreservation.controlAppendEmptyCodeForward
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_brk_join_generated
 #check EvmCompiler.Functions.StackStatementPreservation.openRun_cont_join_generated
 #check EvmCompiler.Functions.StackStatementPreservation.compiledBrkJoinPointOfEquations
@@ -3024,6 +3031,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackBlockPreservation.controlCons
 #check EvmCompiler.Functions.StackBlockPreservation.controlScopedBodyThenJoin
 #check EvmCompiler.Functions.StackBlockPreservation.controlScheduledRegion
+#check EvmCompiler.Functions.StackBlockPreservation.blockPoint_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.brkList_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.contList_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.RegularListPreserves.toOpenList
@@ -3047,6 +3055,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackTransitionCompilation.PromotionCodes.openBlockRun
 #check EvmCompiler.Functions.StackTransitionCompilation.Artifact.blockOpenRun
 #check EvmCompiler.Functions.StackTransitionCompilation.Artifact.thenBlock
+#check EvmCompiler.Functions.StackTransitionCompilation.Artifact.thenBlockForward
 #check EvmCompiler.Functions.StackTransitionCompilation.Transition.compiledBlockOpenRun
 #check EvmCompiler.Functions.StackLowering.Examples.deadProgram_lowers
 #check EvmCompiler.Functions.StackLowering.returnWord_eval
@@ -3069,6 +3078,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_terminalArgs_components
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_brk_components
 #check EvmCompiler.Functions.StackLowering.lowerPointFuel_cont_components
+#check EvmCompiler.Functions.StackLowering.lowerPointFuel_block_components
 #check EvmCompiler.Functions.StackLowering.lowerBlock?_components
 #check EvmCompiler.Functions.StackLoweringCompilation.Examples.deadProgram_compiles
 #check EvmCompiler.Functions.StackLoweringCompilation.Examples.dormantCallProgram_compiles
@@ -3085,3 +3095,4 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackBlockPreservation.contList_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.controlCons
 #print axioms EvmCompiler.Functions.StackBlockPreservation.controlScheduledRegion
+#print axioms EvmCompiler.Functions.StackBlockPreservation.blockPoint_of_compilers

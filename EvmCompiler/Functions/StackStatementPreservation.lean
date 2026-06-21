@@ -10,6 +10,9 @@ namespace StackStatementPreservation
 
 open StackRelation
 
+abbrev FuelTruncated :=
+  Locals.InteractionPreservation.Block.FuelTruncated
+
 structure CtxCovers (source : Functions.Source.Ctx)
     (target : Locals.Ctx) : Prop where
   scope : ∀ {name : Name}, name ∈ target.layout → name ∈ source.scope
@@ -140,6 +143,37 @@ theorem afterTransition
       { context := hContinue.context.afterTransition transition hSource
         targetDepth := by
           simpa [Locals.Ctx.withLayout] using hContinue.targetDepth
+        sourceCovers := hContinue.sourceCovers }
+
+theorem ofSameControlLayout
+    {source : Functions.Source.Ctx} {before after : Locals.Ctx}
+    {targets : StackSchedule.ControlTargets}
+    (hCtx : ControlCtxCovers source before targets)
+    (hControl : Locals.Ctx.SameControl before after)
+    (hLayout : after.layout = before.layout) :
+    ControlCtxCovers source after targets := by
+  have hContext : CtxCovers source after := by
+    constructor
+    intro name hName
+    apply hCtx.context.scope
+    rwa [hLayout] at hName
+  constructor
+  · exact hContext
+  · intro layout hTarget
+    have hBreak := hCtx.breakTarget hTarget
+    exact
+      { context := hContext
+        targetDepth := by
+          rw [← hControl.breakDepth]
+          exact hBreak.targetDepth
+        sourceCovers := hBreak.sourceCovers }
+  · intro layout hTarget
+    have hContinue := hCtx.continueTarget hTarget
+    exact
+      { context := hContext
+        targetDepth := by
+          rw [← hControl.continueDepth]
+          exact hContinue.targetDepth
         sourceCovers := hContinue.sourceCovers }
 
 theorem prepend
@@ -279,7 +313,7 @@ def ControlPointPreserves
     code.length < targetFuel →
     ControlCtxCovers sourceCtx targetCtx targets →
     StateRel targetCtx.layout suffix returns source target →
-    Simulation.Interaction.Rel
+    Simulation.Interaction.ForwardRel FuelTruncated
       (ControlOpenOutcomeRel targets finalCtx suffix returns)
       (Functions.InteractionSemantics.Stmt.openRun
         sourceProgram sourceCtx sourceFuel stmt source)
@@ -318,6 +352,310 @@ theorem RegularResultRel.toOpen
   cases hRel.sourceMode
   cases hRel.targetMode
   exact .regular hRel.context hRel.state
+
+theorem controlThenTransition
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx : Locals.Ctx)
+    (transition : AllocationLayout.Transition)
+    {sourceRun :
+      Simulation.Interaction EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State ×
+          Functions.Source.Ctx)}
+    {coreCode : List Expressions.Stmt}
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {target : Structured.RunState}
+    (targetFuel : Nat)
+    (hSource : targetCtx.layout = transition.source)
+    (hFuel :
+      coreCode.length + transition.schedule.promotions.length + 1 <
+        targetFuel)
+    (hCore :
+      Simulation.Interaction.Rel
+        (ControlOpenOutcomeRel targets targetCtx suffix returns)
+        sourceRun
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          targetFuel { stmts := coreCode } target)) :
+    ∃ artifact : StackTransitionCompilation.Artifact targetCtx transition,
+      Simulation.Interaction.Rel
+        (ControlOpenOutcomeRel targets
+          (targetCtx.withLayout transition.schedule.target) suffix returns)
+        sourceRun
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          targetFuel
+          { stmts :=
+              coreCode ++
+                (artifact.promotionCodes.map Expressions.Stmt.code ++
+                  [Expressions.Stmt.code artifact.cleanup]) }
+          target) := by
+  obtain ⟨artifact⟩ :=
+    StackTransitionCompilation.Transition.compileArtifact transition hSource
+  refine ⟨artifact, ?_⟩
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  rw [← Simulation.Interaction.bind_pure sourceRun]
+  apply Simulation.Interaction.Rel.bind hCore
+  intro sourceResult targetResult hResult
+  cases hResult with
+  | regular hCtx hState =>
+      have hTransitionFuel :
+          artifact.promotionCodes.length + 1 <
+            targetFuel - coreCode.length := by
+        rw [artifact.codes.code_length]
+        omega
+      obtain ⟨finalTarget, hTransitionRun, hFinalState⟩ :=
+        artifact.blockOpenRun targetProgram
+          (targetFuel - coreCode.length) hTransitionFuel hState
+      simp only [Locals.Source.Effectful.Outcome.regular,
+        Structured.Outcome.regular, Structured.OutcomeT.regular]
+      rw [hTransitionRun]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .regular (hCtx.afterTransition transition hSource) hFinalState
+  | brk hState =>
+      simp only [Locals.Source.Effectful.Outcome.brk,
+        Structured.Outcome.brk, Structured.OutcomeT.brk]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .brk hState
+  | cont hState =>
+      simp only [Locals.Source.Effectful.Outcome.cont,
+        Structured.Outcome.cont, Structured.OutcomeT.cont]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .cont hState
+  | leave hState =>
+      simp only [Locals.Source.Effectful.Outcome.leave,
+        Structured.Outcome.leave, Structured.OutcomeT.leave]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .leave hState
+  | halt hShared hReturns =>
+      simp only [Locals.Source.Effectful.Outcome.halt,
+        Structured.Outcome.halt, Structured.OutcomeT.halt]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .halt hShared hReturns
+
+theorem controlThenTransitionForward
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx : Locals.Ctx)
+    (transition : AllocationLayout.Transition)
+    {sourceRun :
+      Simulation.Interaction EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State ×
+          Functions.Source.Ctx)}
+    {coreCode : List Expressions.Stmt}
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {target : Structured.RunState}
+    (targetFuel : Nat)
+    (hSource : targetCtx.layout = transition.source)
+    (hFuel :
+      coreCode.length + transition.schedule.promotions.length + 1 <
+        targetFuel)
+    (hCore :
+      Simulation.Interaction.ForwardRel FuelTruncated
+        (ControlOpenOutcomeRel targets targetCtx suffix returns)
+        sourceRun
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          targetFuel { stmts := coreCode } target)) :
+    ∃ artifact : StackTransitionCompilation.Artifact targetCtx transition,
+      Simulation.Interaction.ForwardRel FuelTruncated
+        (ControlOpenOutcomeRel targets
+          (targetCtx.withLayout transition.schedule.target) suffix returns)
+        sourceRun
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          targetFuel
+          { stmts :=
+              coreCode ++
+                (artifact.promotionCodes.map Expressions.Stmt.code ++
+                  [Expressions.Stmt.code artifact.cleanup]) }
+          target) := by
+  obtain ⟨artifact⟩ :=
+    StackTransitionCompilation.Transition.compileArtifact transition hSource
+  refine ⟨artifact, ?_⟩
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  apply Simulation.Interaction.ForwardRel.bind_right hCore
+  intro sourceDone targetDone hResult
+  cases hResult with
+  | error hError =>
+      apply Simulation.Interaction.ForwardRel.done
+      exact Simulation.Interaction.ExceptRel.error hError
+  | ok hResult =>
+      cases hResult with
+      | regular hCtx hState =>
+          simp only [Locals.Source.Effectful.Outcome.regular,
+            Structured.Outcome.regular, Structured.OutcomeT.regular]
+          have hTransitionFuel :
+              artifact.promotionCodes.length + 1 <
+                targetFuel - coreCode.length := by
+            rw [artifact.codes.code_length]
+            omega
+          obtain ⟨finalTarget, hTransitionRun, hFinalState⟩ :=
+            artifact.blockOpenRun targetProgram
+              (targetFuel - coreCode.length) hTransitionFuel hState
+          rw [hTransitionRun]
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact .regular (hCtx.afterTransition transition hSource) hFinalState
+      | brk hState =>
+          simp only [Locals.Source.Effectful.Outcome.brk,
+            Structured.Outcome.brk, Structured.OutcomeT.brk]
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact .brk hState
+      | cont hState =>
+          simp only [Locals.Source.Effectful.Outcome.cont,
+            Structured.Outcome.cont, Structured.OutcomeT.cont]
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact .cont hState
+      | leave hState =>
+          simp only [Locals.Source.Effectful.Outcome.leave,
+            Structured.Outcome.leave, Structured.OutcomeT.leave]
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact .leave hState
+      | halt hShared hReturns =>
+          simp only [Locals.Source.Effectful.Outcome.halt,
+            Structured.Outcome.halt, Structured.OutcomeT.halt]
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact .halt hShared hReturns
+
+theorem controlAppendEmptyCode
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx : Locals.Ctx)
+    {sourceRun :
+      Simulation.Interaction EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State ×
+          Functions.Source.Ctx)}
+    {code : List Expressions.Stmt}
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {target : Structured.RunState}
+    (targetFuel : Nat)
+    (hFuel : code.length + 1 < targetFuel)
+    (hRun :
+      Simulation.Interaction.Rel
+        (ControlOpenOutcomeRel targets targetCtx suffix returns)
+        sourceRun
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          targetFuel { stmts := code } target)) :
+    Simulation.Interaction.Rel
+      (ControlOpenOutcomeRel targets targetCtx suffix returns)
+      sourceRun
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        targetFuel { stmts := code ++ [.code []] } target) := by
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  rw [← Simulation.Interaction.bind_pure sourceRun]
+  apply Simulation.Interaction.Rel.bind hRun
+  intro sourceResult targetResult hResult
+  cases hResult with
+  | @regular sourceState sourceContext targetState hCtx hState =>
+      simp only [Locals.Source.Effectful.Outcome.regular,
+        Structured.Outcome.regular, Structured.OutcomeT.regular]
+      have hEmpty :=
+        Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+          targetProgram (targetFuel - code.length) [] targetState targetState
+          (by omega) (by rfl)
+      rw [hEmpty]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .regular hCtx hState
+  | brk hState =>
+      simp only [Locals.Source.Effectful.Outcome.brk,
+        Structured.Outcome.brk, Structured.OutcomeT.brk]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .brk hState
+  | cont hState =>
+      simp only [Locals.Source.Effectful.Outcome.cont,
+        Structured.Outcome.cont, Structured.OutcomeT.cont]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .cont hState
+  | leave hState =>
+      simp only [Locals.Source.Effectful.Outcome.leave,
+        Structured.Outcome.leave, Structured.OutcomeT.leave]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .leave hState
+  | halt hShared hReturns =>
+      simp only [Locals.Source.Effectful.Outcome.halt,
+        Structured.Outcome.halt, Structured.OutcomeT.halt]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact .halt hShared hReturns
+
+theorem controlAppendEmptyCodeForward
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (targetCtx : Locals.Ctx)
+    {sourceRun :
+      Simulation.Interaction EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State ×
+          Functions.Source.Ctx)}
+    {code : List Expressions.Stmt}
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {target : Structured.RunState}
+    (targetFuel : Nat)
+    (hFuel : code.length + 1 < targetFuel)
+    (hRun :
+      Simulation.Interaction.ForwardRel FuelTruncated
+        (ControlOpenOutcomeRel targets targetCtx suffix returns)
+        sourceRun
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          targetFuel { stmts := code } target)) :
+    Simulation.Interaction.ForwardRel FuelTruncated
+      (ControlOpenOutcomeRel targets targetCtx suffix returns)
+      sourceRun
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        targetFuel { stmts := code ++ [.code []] } target) := by
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  apply Simulation.Interaction.ForwardRel.bind_right hRun
+  intro sourceDone targetDone hResult
+  cases hResult with
+  | error hError =>
+      apply Simulation.Interaction.ForwardRel.done
+      exact Simulation.Interaction.ExceptRel.error hError
+  | ok hResult =>
+      cases hResult with
+      | @regular sourceState sourceContext targetState hCtx hState =>
+          simp only [Locals.Source.Effectful.Outcome.regular,
+            Structured.Outcome.regular, Structured.OutcomeT.regular]
+          have hEmpty :=
+            Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+              targetProgram (targetFuel - code.length) [] targetState targetState
+              (by omega) (by rfl)
+          rw [hEmpty]
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact .regular hCtx hState
+      | brk hState =>
+          simp only [Locals.Source.Effectful.Outcome.brk,
+            Structured.Outcome.brk, Structured.OutcomeT.brk]
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact .brk hState
+      | cont hState =>
+          simp only [Locals.Source.Effectful.Outcome.cont,
+            Structured.Outcome.cont, Structured.OutcomeT.cont]
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact .cont hState
+      | leave hState =>
+          simp only [Locals.Source.Effectful.Outcome.leave,
+            Structured.Outcome.leave, Structured.OutcomeT.leave]
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact .leave hState
+      | halt hShared hReturns =>
+          simp only [Locals.Source.Effectful.Outcome.halt,
+            Structured.Outcome.halt, Structured.OutcomeT.halt]
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact .halt hShared hReturns
 
 theorem openRun_brk_join_generated
     (sourceProgram : Functions.Program)

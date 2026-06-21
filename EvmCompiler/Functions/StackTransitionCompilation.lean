@@ -514,6 +514,54 @@ theorem Artifact.thenBlock
   rw [hLength]
   exact hBody hTransitionedRel
 
+theorem Artifact.thenBlockForward
+    (program : Expressions.Program) {ctx : Locals.Ctx}
+    {transition : Transition} (artifact : Artifact ctx transition)
+    {Error : Type} {α : Type}
+    {truncated : Error → Prop}
+    {resultRel :
+      Except Error α → Except EVMException Structured.Outcome → Prop}
+    {sourceRun : Simulation.Interaction Error α}
+    {body : List Expressions.Stmt}
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (fuel : Nat)
+    (hFuel : artifact.promotionCodes.length + 1 < fuel)
+    (hInitial :
+      StackRelation.StateRel ctx.layout suffix returns source target)
+    (hBody :
+      ∀ {transitionedTarget : Structured.RunState},
+        StackRelation.StateRel transition.schedule.target suffix returns
+            source transitionedTarget →
+        Simulation.Interaction.ForwardRel truncated resultRel sourceRun
+          (Expressions.InteractionSemantics.Block.openRun program
+            (fuel - (artifact.promotionCodes.length + 1))
+            { stmts := body } transitionedTarget)) :
+    Simulation.Interaction.ForwardRel truncated resultRel sourceRun
+      (Expressions.InteractionSemantics.Block.openRun program fuel
+        { stmts :=
+            artifact.promotionCodes.map Expressions.Stmt.code ++
+              [Expressions.Stmt.code artifact.cleanup] ++ body }
+        target) := by
+  obtain ⟨transitionedTarget, hTransitionRun, hTransitionedRel⟩ :=
+    artifact.blockOpenRun program fuel hFuel hInitial
+  rw [show
+      artifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code artifact.cleanup] ++ body =
+        (artifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code artifact.cleanup]) ++ body by
+      simp [List.append_assoc]]
+  rw [Expressions.InteractionSemantics.Block.openRun_append,
+    hTransitionRun, Simulation.Interaction.bind_done_ok]
+  have hLength :
+      (artifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code artifact.cleanup]).length =
+        artifact.promotionCodes.length + 1 := by
+    simp
+  rw [hLength]
+  exact hBody hTransitionedRel
+
 theorem JoinArtifact.blockOpenRun
     (program : Expressions.Program) {ctx : Locals.Ctx}
     {join : AllocationLayout.Join}

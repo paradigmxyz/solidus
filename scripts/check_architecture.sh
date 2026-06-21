@@ -28,6 +28,10 @@ for theorem in \
     'RegularLeafList' \
     'regularLeafList_of_compilers' \
     'OpenListPreserves' \
+    'ControlScheduledListPreserves' \
+    'controlCons' \
+    'controlScheduledRegion' \
+    'blockPoint_of_compilers' \
     'RegularListPreserves.toOpenList' \
     'terminalList_of_compilers' \
     'terminalArgsList_of_compilers'; do
@@ -158,6 +162,8 @@ for theorem in \
     'compiledExprPointOfEquations' \
     'compiledLetPointOfEquations' \
     'compiledAssignPointOfEquations' \
+    'controlThenTransitionForward' \
+    'controlAppendEmptyCodeForward' \
     'openRun_let_generated' \
     'openRun_assign_generated'; do
   if ! rg -Fq \
@@ -253,6 +259,8 @@ for theorem in \
     'scheduleStmtFuel_terminalArgs_components' \
     'scheduleStmtFuelWithTargets_brk_components' \
     'scheduleStmtFuelWithTargets_cont_components' \
+    'scheduleStmtFuelWithTargets_block_components' \
+    'scheduleBlockFuelWithTargets_components' \
     'scheduleStmtListFuelWithTargets_brk_components' \
     'scheduleStmtListFuelWithTargets_cont_components'; do
   if ! rg -Fq \
