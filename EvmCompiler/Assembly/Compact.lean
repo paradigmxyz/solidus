@@ -323,6 +323,19 @@ def layout? (pinnedPushPcs : List Nat) (source : Assembly.Program)
     Option (Prod LabelTable Nat) :=
   layoutRev? pinnedPushPcs branchWidth source 0 0 []
 
+/-- A branch width is viable when the complete compact layout fits strictly
+below the largest destination representable at that width. -/
+def branchWidthFits? (pinnedPushPcs : List Nat)
+    (source : Assembly.Program) (branchWidth : Nat) : Bool :=
+  match layout? pinnedPushPcs source branchWidth with
+  | none => false
+  | some (_, codeLength) => fitsWidth? branchWidth codeLength
+
+def branchWidthFor? (pinnedPushPcs : List Nat)
+    (source : Assembly.Program) : Option Nat :=
+  candidateWidths.find? fun width =>
+    branchWidthFits? pinnedPushPcs source width
+
 def lookupLabel? (table : LabelTable) (target : Label) : Option Nat :=
   (table.find? fun entry => entry.1 == target).map Prod.snd
 
@@ -1280,6 +1293,21 @@ inductive PreparationBlocksValidFrom :
            sourceInstr := instr
            action := .skip } :: blocks)
 
+theorem PreparationBlocksValidFrom.prepared_byteLength_le_source_byteLength
+    {source prepared : Assembly.Program} {sourcePc preparedPc : Nat}
+    {blocks : List PreparationBlock}
+    (hValid : PreparationBlocksValidFrom source prepared
+      sourcePc preparedPc blocks) :
+    prepared.byteLength ≤ source.byteLength := by
+  induction hValid with
+  | nil => simp
+  | keep instr sourceRest preparedRest sourcePc preparedPc blocks hRest ih =>
+      simp only [Assembly.Program.byteLength_cons]
+      omega
+  | skip instr sourceRest prepared sourcePc preparedPc blocks hRest ih =>
+      simp only [Assembly.Program.byteLength_cons]
+      omega
+
 def PreparationBlock.nextPreparedPc (block : PreparationBlock) : Nat :=
   match block.action with
   | .keep => block.preparedPc + block.sourceInstr.byteSize
@@ -1888,7 +1916,7 @@ def compile? (source : Assembly.Program)
   let _ <- if preparationSafeIndexed? source physicalSource preparation then
     some ()
   else none
-  let branchWidth <- widthForNat? physicalSource.byteLength
+  let branchWidth <- branchWidthFor? pinnedPushPcs physicalSource
   let (labels, codeLength) <- layout? pinnedPushPcs physicalSource branchWidth
   let program <- emit? pinnedPushPcs physicalSource branchWidth labels
   let blocks <- emitBlocks? pinnedPushPcs physicalSource branchWidth labels
@@ -1920,7 +1948,8 @@ structure Artifact.ValidFor (artifact : Artifact)
     some artifact.preparation
   preparationSafeIndexed : preparationSafeIndexed? source artifact.physicalSource
     artifact.preparation = true
-  branchWidth : widthForNat? artifact.physicalSource.byteLength =
+  selectedBranchWidth :
+    branchWidthFor? artifact.pinnedPushPcs artifact.physicalSource =
     some artifact.branchWidth
   layout : layout? artifact.pinnedPushPcs artifact.physicalSource
     artifact.branchWidth =
@@ -1955,7 +1984,7 @@ theorem compile?_valid {source : Assembly.Program} {pinnedPushPcs : List Nat}
       by_cases hPreparationSafe :
           preparationSafeIndexed? source physicalSource preparation = true
       · simp [hPreparationSafe] at hCompile
-        cases hWidth : widthForNat? physicalSource.byteLength with
+        cases hWidth : branchWidthFor? pinnedPushPcs physicalSource with
         | none => simp [hWidth] at hCompile
         | some branchWidth =>
             simp [hWidth] at hCompile
@@ -1997,17 +2026,9 @@ theorem Artifact.ValidFor.physicalSourcePCFits
     {artifact : Artifact} {source : Assembly.Program}
     (hValid : artifact.ValidFor source) :
     artifact.physicalSource.PCFits := by
-  have hWidth := widthForNat?_fits hValid.branchWidth
-  have hPow : 256 ^ artifact.branchWidth <= 256 ^ 32 :=
-    Nat.pow_le_pow_right (by omega) hWidth.2.1
-  have hBound : artifact.physicalSource.byteLength < EvmYul.UInt256.size := by
-    calc
-      artifact.physicalSource.byteLength < 256 ^ artifact.branchWidth :=
-        hWidth.2.2
-      _ <= 256 ^ 32 := hPow
-      _ = EvmYul.UInt256.size := by norm_num [EvmYul.UInt256.size]
-  unfold Assembly.Program.PCFits Assembly.Program.pcAfter
-  exact EvmYul.UInt256.toNat_ofNat_of_lt hBound
+  apply Assembly.Program.PCFits.of_byteLength_le hValid.sourcePCFits
+  exact
+    (alignPreparation?_valid hValid.preparationAligned).prepared_byteLength_le_source_byteLength
 
 theorem compile?_preparationBlocksValid
     {source : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}

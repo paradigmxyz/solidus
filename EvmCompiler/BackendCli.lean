@@ -391,6 +391,100 @@ def firstCfgFailurePhase?
   let input ← prefixResult.fallthrough?
   some (cfgStmtFailurePhase stmt ctx prefixResult.next input)
 
+structure CompactFamilyStats where
+  labels : Nat := 0
+  labelBytes : Nat := 0
+  constants : Nat := 0
+  constantBytes : Nat := 0
+  jumps : Nat := 0
+  jumpBytes : Nat := 0
+  jumpis : Nat := 0
+  jumpiBytes : Nat := 0
+  prims : Nat := 0
+  primBytes : Nat := 0
+  adds : Nat := 0
+  pops : Nat := 0
+  dups : Nat := 0
+  swaps : Nat := 0
+  otherPrims : Nat := 0
+
+def CompactFamilyStats.addBlock (stats : CompactFamilyStats)
+    (block : Assembly.Compact.SourceBlock) : CompactFamilyStats :=
+  let bytes := Assembly.Compact.Program.codeByteLength block.code
+  match block.sourceInstr with
+  | .label _ =>
+      { stats with
+        labels := stats.labels + 1
+        labelBytes := stats.labelBytes + bytes }
+  | .push _ =>
+      { stats with
+        constants := stats.constants + 1
+        constantBytes := stats.constantBytes + bytes }
+  | .jump _ =>
+      { stats with
+        jumps := stats.jumps + 1
+        jumpBytes := stats.jumpBytes + bytes }
+  | .jumpi _ =>
+      { stats with
+        jumpis := stats.jumpis + 1
+        jumpiBytes := stats.jumpiBytes + bytes }
+  | .prim op =>
+      let opcode := (EvmYul.EVM.serializeInstr op.toEVM).toNat
+      let isDup := decide (0x80 <= opcode ∧ opcode <= 0x8f)
+      let isSwap := decide (0x90 <= opcode ∧ opcode <= 0x9f)
+      { stats with
+        prims := stats.prims + 1
+        primBytes := stats.primBytes + bytes
+        adds := stats.adds + if op = .add then 1 else 0
+        pops := stats.pops + if op = .pop then 1 else 0
+        dups := stats.dups + if isDup then 1 else 0
+        swaps := stats.swaps + if isSwap then 1 else 0
+        otherPrims := stats.otherPrims +
+          if op != .add && op != .pop && !isDup && !isSwap then 1 else 0 }
+
+def compactFamilyStats (artifact : Assembly.Compact.Artifact) :
+    CompactFamilyStats :=
+  artifact.blocks.foldl CompactFamilyStats.addBlock {}
+
+structure ControlPatternStats where
+  adjacentJump : Nat := 0
+  adjacentJumpi : Nat := 0
+  conditionalDiamond : Nat := 0
+  labelJump : Nat := 0
+  consecutiveLabels : Nat := 0
+  pushPop : Nat := 0
+  swapPair : Nat := 0
+
+def controlPatternStats : Assembly.Program → ControlPatternStats
+  | first :: second :: rest =>
+      let tail := controlPatternStats (second :: rest)
+      match first, second, rest with
+      | .jump target, .label next, _ =>
+          { tail with adjacentJump := tail.adjacentJump +
+              if target = next then 1 else 0 }
+      | .jumpi target, .label next, _ =>
+          { tail with adjacentJumpi := tail.adjacentJumpi +
+              if target = next then 1 else 0 }
+      | .jumpi target, .jump _, .label next :: _ =>
+          { tail with conditionalDiamond := tail.conditionalDiamond +
+              if target = next then 1 else 0 }
+      | .label _, .jump _, _ =>
+          { tail with labelJump := tail.labelJump + 1 }
+      | .label _, .label _, _ =>
+          { tail with consecutiveLabels := tail.consecutiveLabels + 1 }
+      | .push _, .prim .pop, _ =>
+          { tail with pushPop := tail.pushPop + 1 }
+      | .prim left, .prim right, _ =>
+          let leftOp := (EvmYul.EVM.serializeInstr left.toEVM).toNat
+          let rightOp := (EvmYul.EVM.serializeInstr right.toEVM).toNat
+          { tail with swapPair := tail.swapPair +
+              if 0x90 <= leftOp && leftOp <= 0x9f && leftOp = rightOp then
+                1
+              else
+                0 }
+      | _, _, _ => tail
+  | _ => {}
+
 def printStackDiagnostics
     (source : String) (contract objectName : String)
     (functions : Functions.Program) : IO Unit := do
@@ -420,6 +514,15 @@ def printStackDiagnostics
     stackArtifact?.map
       (fun artifact =>
         Assembly.Compact.sourceStats artifact.certified.target)
+      |>.getD {}
+  let physicalStats :=
+    compactArtifact?.map
+      (fun artifact => Assembly.Compact.sourceStats artifact.physicalSource)
+      |>.getD {}
+  let compactStats := compactArtifact?.map compactFamilyStats |>.getD {}
+  let controlStats :=
+    compactArtifact?.map
+      (fun artifact => controlPatternStats artifact.physicalSource)
       |>.getD {}
   let compileFinish ← IO.monoMsNow
   let reports := Functions.StackDiagnostics.programReports functions
@@ -462,6 +565,39 @@ def printStackDiagnostics
       "\tdups=" ++ toString assemblyStats.dups ++
       "\tswaps=" ++ toString assemblyStats.swaps ++
       "\tother_prims=" ++ toString assemblyStats.otherPrims)
+  IO.println
+    ("stack_program_prepared_mix=" ++
+      "source=" ++ toString physicalStats.instructions ++
+      "\tlabels=" ++ toString physicalStats.labels ++
+      "\tpushes=" ++ toString physicalStats.pushes ++
+      "\tjumps=" ++ toString physicalStats.jumps ++
+      "\tjumpis=" ++ toString physicalStats.jumpis ++
+      "\tadds=" ++ toString physicalStats.adds ++
+      "\tpops=" ++ toString physicalStats.pops ++
+      "\tdups=" ++ toString physicalStats.dups ++
+      "\tswaps=" ++ toString physicalStats.swaps ++
+      "\tother_prims=" ++ toString physicalStats.otherPrims)
+  IO.println
+    ("stack_program_compact_family_bytes=" ++
+      "labels=" ++ toString compactStats.labelBytes ++
+      "\tconstants=" ++ toString compactStats.constantBytes ++
+      "\tjumps=" ++ toString compactStats.jumpBytes ++
+      "\tjumpis=" ++ toString compactStats.jumpiBytes ++
+      "\tprims=" ++ toString compactStats.primBytes ++
+      "\tadds=" ++ toString compactStats.adds ++
+      "\tpops=" ++ toString compactStats.pops ++
+      "\tdups=" ++ toString compactStats.dups ++
+      "\tswaps=" ++ toString compactStats.swaps ++
+      "\tother_prims=" ++ toString compactStats.otherPrims)
+  IO.println
+    ("stack_program_control_patterns=" ++
+      "adjacent_jump=" ++ toString controlStats.adjacentJump ++
+      "\tadjacent_jumpi=" ++ toString controlStats.adjacentJumpi ++
+      "\tconditional_diamond=" ++ toString controlStats.conditionalDiamond ++
+      "\tlabel_jump=" ++ toString controlStats.labelJump ++
+      "\tconsecutive_labels=" ++ toString controlStats.consecutiveLabels ++
+      "\tpush_pop=" ++ toString controlStats.pushPop ++
+      "\tswap_pair=" ++ toString controlStats.swapPair)
   IO.println
     ("timing\tstack_program\t" ++ toString (compileFinish - compileStart))
   match lowered? with
