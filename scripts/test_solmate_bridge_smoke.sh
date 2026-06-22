@@ -138,6 +138,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
+  --linker-symbol "solmate/utils/SafeTransferLib.sol:SafeTransferLib=0x1111111111111111111111111111111111111111" \
   --format lean-backend-check \
   --output "$SOLMATE_BACKEND_CHECK"
 
@@ -342,13 +343,10 @@ for item in backend_check.get("checkedObjects", []):
         raise SystemExit(f"Solmate backend failure missing firstNone: {item!r}")
 if set(backend_status) != {("SolmateHarness", "creation"), ("SolmateHarness", "runtime")}:
     raise SystemExit(f"unexpected Solmate backend labels: {backend_status!r}")
-runtime_backend_status, runtime_first_none = backend_status[
-    ("SolmateHarness", "runtime")
-]
-if runtime_backend_status == "fail" and runtime_first_none != "to_yul_contract":
-    raise SystemExit(
-        f"unexpected Solmate runtime backend blocker: {backend_status!r}"
-    )
+for key, (status, first_none) in backend_status.items():
+    if status != "pass" or first_none != "none":
+        raise SystemExit(f"linked Solmate backend failed at {key}: {backend_status!r}")
+runtime_backend_status, runtime_first_none = backend_status[("SolmateHarness", "runtime")]
 
 print(f"solmate_batch_decode_objects={batch_count}")
 print(f"solmate_manifest_decode_objects={replay_count}")

@@ -107,6 +107,39 @@ end Transition
 
 namespace Plain
 
+/--
+An open lowering-state extension guarantees enough physical stack depth for
+ordinary lexical cleanup.  Consequently an abrupt-capable compiler result at
+this boundary is the ordinary `finishScoped` result whenever both endpoint
+layouts come from checked allocation contexts.
+-/
+theorem finishScopedOrAbrupt_of_stateExtends
+    {lowerCtx : AllocationLowering.Ctx}
+    {beforeState afterState : AllocationLowering.State}
+    {outerLocals finalLocals : Locals.Ctx}
+    {beforePlan afterPlan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {beforeMode afterMode : ActivationMode}
+    {source : Locals.Block} {stmts : List Expressions.Stmt}
+    {target : Expressions.Block}
+    (hBefore :
+      AllocationObserverContext.ActivationExprContext lowerCtx beforeState
+        outerLocals beforePlan beforeLive beforeMode)
+    (hAfter :
+      AllocationObserverContext.ActivationExprContext lowerCtx afterState
+        finalLocals afterPlan afterLive afterMode)
+    (hExtends : AllocationLowering.StateExtends beforeLive beforeState afterState)
+    (hFinish :
+      Locals.finishScopedOrAbrupt outerLocals finalLocals source stmts =
+        some target) :
+    Locals.finishScoped outerLocals finalLocals stmts = some target := by
+  rcases hExtends with ⟨dropped, hLayout, _hFresh, _hSlots⟩
+  have hDepth :
+      outerLocals.layout.length ≤ finalLocals.layout.length := by
+    rw [hBefore.layout_eq, hAfter.layout_eq, hLayout]
+    simp
+  exact Locals.finishScopedOrAbrupt_eq_finishScoped_of_le hDepth hFinish
+
 theorem finishScoped_shape
     {outer final : Locals.Ctx}
     {stmts : List Expressions.Stmt}

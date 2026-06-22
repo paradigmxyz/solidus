@@ -142,6 +142,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
+  --linker-symbol "solady/utils/LibBit.sol:LibBit=0x1111111111111111111111111111111111111111" \
   --format lean-backend-check \
   --output "$SOLADY_BACKEND_CHECK"
 
@@ -307,13 +308,12 @@ if set(backend_status) != {
     ("SoladyLibBitFallback", "runtime"),
 }:
     raise SystemExit(f"unexpected Solady backend labels: {backend_status!r}")
+for key, (status, first_none) in backend_status.items():
+    if status != "pass" or first_none != "none":
+        raise SystemExit(f"linked Solady backend failed at {key}: {backend_status!r}")
 runtime_backend_status, runtime_first_none = backend_status[
     ("SoladyLibBitFallback", "runtime")
 ]
-if runtime_backend_status == "fail" and runtime_first_none != "to_yul_contract":
-    raise SystemExit(
-        f"unexpected Solady runtime backend blocker: {backend_status!r}"
-    )
 
 print(f"solady_batch_decode_objects={batch_count}")
 print(f"solady_manifest_decode_objects={replay_count}")

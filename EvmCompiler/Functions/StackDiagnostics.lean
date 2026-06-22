@@ -237,8 +237,24 @@ def coverageFailure (path phase : String)
         toString (live \ StackSchedule.layoutSet layout).card ++
         " demanded values" }
 
+def scheduleStmtKind : Stmt → String
+  | .expr _ => "expr"
+  | .let_ _ _ => "let"
+  | .assign _ _ => "assign"
+  | .block _ => "block"
+  | .if_ _ _ => "if"
+  | .switch _ _ _ => "switch"
+  | .for_ _ _ _ _ => "for"
+  | .brk => "break"
+  | .cont => "continue"
+  | .leave => "leave"
+  | .call _ _ _ => "call"
+  | .terminal _ => "terminal"
+  | .terminalArgs _ _ => "terminalArgs"
+
 mutual
   def firstScheduleFailureBlockFuel
+      (targets : StackSchedule.ControlTargets)
       (fuel : Nat) (path : String) (pinned : LiveSet)
       (layout : Locals.Layout) (source : Block)
       (facts : AllocationLivenessFacts.Region) : Option Failure :=
@@ -253,10 +269,11 @@ mutual
           match Transition.build? layout demand with
           | none => some (transitionFailure path "entry-transition" layout demand)
           | some entry =>
-              firstScheduleFailureListFuel fuel path pinned entry.target
+              firstScheduleFailureListFuel targets fuel path pinned entry.target
                 source.stmts facts.points 0
 
   def firstScheduleFailureListFuel
+      (targets : StackSchedule.ControlTargets)
       (fuel : Nat) (path : String) (pinned : LiveSet)
       (layout : Locals.Layout) :
       List Stmt → List AllocationLivenessFacts.Point → Nat → Option Failure
@@ -277,14 +294,112 @@ mutual
                 (coverageFailure pointPath "statement-entry"
                   order.target resident)
             else
-              match StackSchedule.scheduleStmtFuel fuel pinned order.target
+              match StackSchedule.scheduleStmtFuelWithTargets targets fuel pinned order.target
                   source facts with
               | none =>
-                  some
-                    { path := pointPath
-                      phase := "statement-schedule"
-                      reason :=
-                        "structured child scheduling or fact shape failed" }
+                  match source, facts.regions with
+                  | .block body, [bodyFacts]
+                  | .if_ _ body, [bodyFacts] =>
+                      match firstScheduleFailureBlockFuel targets fuel
+                          (pointPath ++ "/region[0]")
+                          (StackSchedule.layoutSet order.target)
+                          order.target body bodyFacts with
+                      | some failure => some failure
+                      | none =>
+                          match StackSchedule.scheduleBlockFuelWithTargets
+                              targets fuel
+                              (StackSchedule.layoutSet order.target)
+                              order.target body bodyFacts with
+                          | some child =>
+                              let failure :=
+                                transitionFailure pointPath "statement-join"
+                                  child.finalLayout
+                                  (StackSchedule.layoutSet order.target)
+                              some
+                                { failure with
+                                  reason :=
+                                    scheduleStmtKind source ++ ": " ++
+                                      failure.reason ++ "; child=" ++
+                                      reprStr child.finalLayout ++ "; parent=" ++
+                                      reprStr order.target }
+                          | none =>
+                              some
+                                { path := pointPath
+                                  phase := "statement-schedule"
+                                  reason :=
+                                    scheduleStmtKind source ++
+                                      " child failed without a nested diagnostic" }
+                  | .for_ init _ post body,
+                      [initFacts, postFacts, bodyFacts] =>
+                      let outerProtected := StackSchedule.layoutSet order.target
+                      match StackSchedule.scheduleBlockFuelWithTargets {}
+                          fuel outerProtected order.target init initFacts with
+                      | none =>
+                          firstScheduleFailureBlockFuel {} fuel
+                            (pointPath ++ "/loop-init") outerProtected
+                            order.target init initFacts
+                      | some rawInit =>
+                          let baseline :=
+                            StackSchedule.loopBaseline order.target
+                              rawInit.finalLayout
+                          match AllocationLayout.Join.build?
+                              rawInit.finalLayout baseline with
+                          | none =>
+                              some
+                                { path := pointPath ++ "/loop-init"
+                                  phase := "statement-join"
+                                  reason :=
+                                    "loop init cannot reach its canonical layout" }
+                          | some _ =>
+                              let loopProtected := StackSchedule.layoutSet baseline
+                              match StackSchedule.scheduleBlockFuelWithTargets {}
+                                  fuel loopProtected baseline post postFacts with
+                              | none =>
+                                  firstScheduleFailureBlockFuel {} fuel
+                                    (pointPath ++ "/loop-post") loopProtected
+                                    baseline post postFacts
+                              | some postRegion =>
+                                  match AllocationLayout.Join.build?
+                                      postRegion.finalLayout baseline with
+                                  | none =>
+                                      some
+                                        { path := pointPath ++ "/loop-post"
+                                          phase := "statement-join"
+                                          reason :=
+                                            "loop post cannot restore its canonical layout" }
+                                  | some _ =>
+                                      let loopTargets : StackSchedule.ControlTargets :=
+                                        { brk? := some baseline
+                                          cont? := some baseline }
+                                      match StackSchedule.scheduleBlockFuelWithTargets
+                                          loopTargets fuel loopProtected baseline
+                                          body bodyFacts with
+                                      | none =>
+                                          firstScheduleFailureBlockFuel loopTargets fuel
+                                            (pointPath ++ "/loop-body") loopProtected
+                                            baseline body bodyFacts
+                                      | some bodyRegion =>
+                                          match AllocationLayout.Join.build?
+                                              bodyRegion.finalLayout baseline with
+                                          | none =>
+                                              some
+                                                { path := pointPath ++ "/loop-body"
+                                                  phase := "statement-join"
+                                                  reason :=
+                                                    "loop body cannot restore its canonical layout" }
+                                          | some _ =>
+                                              some
+                                                { path := pointPath
+                                                  phase := "statement-schedule"
+                                                  reason :=
+                                                    "loop scheduling failed after all child checks" }
+                  | _, _ =>
+                      some
+                        { path := pointPath
+                          phase := "statement-schedule"
+                          reason :=
+                            "scheduling " ++ scheduleStmtKind source ++
+                              " or its structured children failed" }
               | some point =>
                   if point.fallsThrough then
                     let afterDemand := StackSchedule.required pinned
@@ -300,7 +415,7 @@ mutual
                             (transitionFailure pointPath "fallthrough-transition"
                               point.statementLayout afterDemand)
                       | some transition =>
-                          firstScheduleFailureListFuel fuel path pinned
+                          firstScheduleFailureListFuel targets fuel path pinned
                             transition.target rest restFacts (index + 1)
                   else
                     none
@@ -317,7 +432,7 @@ def firstScheduleFailure? (path : String) (pinned : LiveSet)
   if (StackSchedule.scheduleBlock? pinned layout source facts).isSome then
     none
   else
-    firstScheduleFailureBlockFuel (AllocationLiveness.analysisFuel source)
+    firstScheduleFailureBlockFuel {} (AllocationLiveness.analysisFuel source)
       path pinned layout source facts
 
 mutual
@@ -422,7 +537,10 @@ mutual
               phase := "top16-access"
               reason :=
                 stmtKind source ++ " failed in layout depth " ++
-                  toString point.beforeLayout.length }
+                  toString point.beforeLayout.length ++
+                  "; layout=" ++ reprStr point.beforeLayout ++
+                  "; expression-order=" ++
+                    reprStr (AllocationLivenessFacts.Stmt.nextUse source) }
         else
           match firstAccessFailureNestedFuel fuel pointPath ctx source point with
           | some failure => some failure
@@ -524,17 +642,9 @@ mutual
 end
 
 def statementPriority (ctx : StackLowering.Ctx) (source : Stmt) : List Name :=
-  unique <|
-    match source with
-    | .expr value | .let_ _ value => Expr.priority value
-    | .assign name value => Expr.priority value ++ [name]
-    | .if_ condition _ | .for_ _ condition _ _ => Expr.priority condition
-    | .switch scrutinee _ _ => Expr.priority scrutinee
-    | .leave => ExprSeq.priority (StackLowering.returnWords ctx.returns)
-    | .call targets _ args =>
-        ExprSeq.priority (Lower.argExprs args) ++ targets.reverse
-    | .terminalArgs _ args => ExprSeq.priority args
-    | _ => []
+  match source with
+  | .leave => ExprSeq.priority (StackLowering.returnWords ctx.returns)
+  | _ => StackAccess.Stmt.accessPriority source
 
 mutual
   def allPriorityFuel (fuel : Nat) (ctx : StackLowering.Ctx)
@@ -749,9 +859,19 @@ mutual
         match source with
         | .let_ name value => do
             if (StackAccess.Expr.check? layout 0 value).isNone then
+              let access :=
+                match StackAccess.Expr.firstFailure? layout 0 value with
+                | none => "unknown"
+                | some (failed, offset, depth) =>
+                    failed ++ "@offset=" ++ toString offset ++
+                      ",depth=" ++ toString depth
               throw
                 { path, phase := "next-use-access"
-                  reason := "declaration expression remains inaccessible" }
+                  reason :=
+                    "declaration expression remains inaccessible; layout=" ++
+                      reprStr layout ++ "; priority=" ++
+                      reprStr (statementPriority ctx source) ++
+                      "; first=" ++ access }
             if name ∈ layout then
               throw { path, phase := "next-use-layout", reason := "duplicate binding" }
             pure (name :: layout)

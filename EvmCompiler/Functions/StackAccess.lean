@@ -32,6 +32,63 @@ mutual
 end
 
 mutual
+  def Expr.firstFailure? {results : Nat} (layout : Locals.Layout)
+      (offset : Nat) : Functions.Expr results → Option (Name × Nat × Nat)
+    | .lit _ | .code _ => none
+    | .var name =>
+        match Locals.Layout.lookupDepth? name layout with
+        | none => some (name, offset, 0)
+        | some depth =>
+            if (Locals.StackOp.dup? (offset + depth)).isSome then none
+            else some (name, offset, depth)
+    | .prim _ args => ExprSeq.firstFailure? layout offset args
+
+  def ExprSeq.firstFailure? {results : Nat} (layout : Locals.Layout)
+      (offset : Nat) : Locals.ExprSeq results → Option (Name × Nat × Nat)
+    | .nil => none
+    | .cons (left := left) head tail =>
+        match Expr.firstFailure? layout offset head with
+        | some failure => some failure
+        | none => ExprSeq.firstFailure? layout (offset + left) tail
+end
+
+def insertAccess (access : Name × Nat) : List (Name × Nat) → List (Name × Nat)
+  | [] => [access]
+  | head :: rest =>
+      if head.2 < access.2 then access :: head :: rest
+      else head :: insertAccess access rest
+
+def sortAccesses (accesses : List (Name × Nat)) : List (Name × Nat) :=
+  accesses.foldl (fun sorted access => insertAccess access sorted) []
+
+def uniqueNames : List Name → List Name
+  | [] => []
+  | name :: rest =>
+      name :: (uniqueNames rest).filter fun candidate => decide (candidate ≠ name)
+
+mutual
+  def Expr.accesses {results : Nat} (offset : Nat) :
+      Functions.Expr results → List (Name × Nat)
+    | .lit _ | .code _ => []
+    | .var name => [(name, offset)]
+    | .prim _ args => ExprSeq.accesses offset args
+
+  def ExprSeq.accesses {results : Nat} (offset : Nat) :
+      Locals.ExprSeq results → List (Name × Nat)
+    | .nil => []
+    | .cons (left := left) head tail =>
+        Expr.accesses offset head ++ ExprSeq.accesses (offset + left) tail
+end
+
+def Expr.accessPriority {results : Nat}
+    (expr : Functions.Expr results) : List Name :=
+  uniqueNames ((sortAccesses (Expr.accesses 0 expr)).map Prod.fst)
+
+def ExprSeq.accessPriority {results : Nat}
+    (exprs : Locals.ExprSeq results) : List Name :=
+  uniqueNames ((sortAccesses (ExprSeq.accesses 0 exprs)).map Prod.fst)
+
+mutual
   theorem Expr.scoped_of_check
       {results : Nat} {layout sourceEnv : Locals.Layout} {offset : Nat}
       {expr : Functions.Expr results}
@@ -115,7 +172,18 @@ def call? (layout : Locals.Layout) (targets : List Name)
 
 namespace Stmt
 
-/-- Check the accesses performed at the current statement boundary. Compound
+def accessPriority : Functions.Stmt → List Name
+  | .expr expr | .let_ _ expr => Expr.accessPriority expr
+  | .assign name expr => Expr.accessPriority expr ++ [name]
+  | .if_ condition _ | .for_ _ condition _ _ =>
+      Expr.accessPriority condition
+  | .switch scrutinee _ _ => Expr.accessPriority scrutinee
+  | .call targets _ args =>
+      ExprSeq.accessPriority (Lower.argExprs args) ++ targets.reverse
+  | .terminalArgs _ args => ExprSeq.accessPriority args
+  | .block _ | .brk | .cont | .leave | .terminal _ => []
+
+/-- Check the accesses performed at the current statement boundary. Nested
 statements whose relevant expression executes only after a child region are
 left to the region scheduler. -/
 def check? (layout : Locals.Layout) : Functions.Stmt -> Option Unit
@@ -172,6 +240,14 @@ theorem call_targets_mem
   exact returnedTargets_mem hTargets
 
 namespace Examples
+
+def offsetPriorityExpr : Functions.Expr 1 :=
+  .prim .add
+    (.cons (.var "shallow") (.cons (.var "deep") .nil))
+
+theorem larger_evaluation_offset_is_prioritized :
+    Expr.accessPriority offsetPriorityExpr = ["deep", "shallow"] := by
+  decide
 
 theorem top16_accessible :
     Expr.check? ((List.range 16).map fun index => toString index)

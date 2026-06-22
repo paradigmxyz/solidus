@@ -53,6 +53,22 @@ mutual
         (args : ExprSeq kind.argCount)
 end
 
+namespace Stmt
+
+@[simp] def alwaysExits : Stmt → Bool
+  | .brk | .cont | .leave | .terminal _ | .terminalArgs _ _ => true
+  | _ => false
+
+end Stmt
+
+namespace StmtList
+
+def hasDirectExit : List Stmt → Bool
+  | [] => false
+  | stmt :: rest => stmt.alwaysExits || hasDirectExit rest
+
+end StmtList
+
 structure Proc where
   name : Name
   argc : Nat

@@ -7437,6 +7437,20 @@ theorem if_true_of_components
   obtain ⟨targetBodyMid, _bodyMode, hBodyForward⟩ :=
     hBody hLowerBody hCompileBody hCondInvariant
       (Structured.ObserverSemantics.Code.runCondition_returns_eq hTargetCond)
+  have hBodyCompiler :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx _openFinal compiledBodyLocals bodyPlan bodyLive
+        _bodyMode := by
+    rcases hBodyForward with
+      ⟨_sourceFuel, _targetFuel, _hSource, _hTarget,
+        hFinalInvariant, _hSame, _hEffect⟩
+    exact hFinalInvariant.activation.compiler
+  have hRegularFinish :=
+    AllocationObserverCleanup.Plain.finishScopedOrAbrupt_of_stateExtends
+      hCondInvariant.activation.compiler hBodyCompiler
+      (AllocationLowering.lowerBlockOpen_stateExtends
+        hBodyScoped hLowerBody)
+      hFinish
   obtain
       ⟨targetFinal, bodySourceFuel, bodyTargetFuel,
         hSourceBody, hTargetBody, hFinalInvariant, hBodyEffect⟩ :=
@@ -7445,7 +7459,7 @@ theorem if_true_of_components
       hSourceScope
       rfl hCondInvariant.activation.compiler
       hCondInvariant.activation.planWF hSubset hBodyScoped hLowerBody
-      hFinish
+      hRegularFinish
   have hSourceCond :
       Functions.Source.Effectful.Expr.evalCondition
           (Functions.ObserverSemantics.stateModel transcript)
@@ -7829,13 +7843,27 @@ theorem if_true_of_components
   obtain ⟨targetBodyMid, _bodyMode, hBodyForward⟩ :=
     hBody hLowerBody hCompileBody hCondInvariant
       (Structured.ObserverSemantics.Code.runCondition_returns_eq hTargetCond)
+  have hBodyCompiler :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx _openFinal compiledBodyLocals bodyPlan bodyLive
+        _bodyMode := by
+    rcases hBodyForward with
+      ⟨_sourceFuel, _targetFuel, _hSource, _hTarget,
+        hFinalInvariant, _hSame⟩
+    exact hFinalInvariant.compiler
+  have hRegularFinish :=
+    AllocationObserverCleanup.Plain.finishScopedOrAbrupt_of_stateExtends
+      hCondInvariant.compiler hBodyCompiler
+      (AllocationLowering.lowerBlockOpen_stateExtends
+        hBodyScoped hLowerBody)
+      hFinish
   obtain
       ⟨targetFinal, bodySourceFuel, bodyTargetFuel,
         hSourceBody, hTargetBody, hFinalInvariant⟩ :=
     RegularScopedBlockInvariantForward.finish_regular
       hBodyForward hSourceScope
       rfl hCondInvariant.compiler
-      hCondInvariant.planWF hSubset hBodyScoped hLowerBody hFinish
+      hCondInvariant.planWF hSubset hBodyScoped hLowerBody hRegularFinish
   have hSourceCond :
       Functions.Source.Effectful.Expr.evalCondition
           (Functions.ObserverSemantics.stateModel transcript)
@@ -8054,6 +8082,62 @@ theorem ScopedBlockForward.finish_nonregular
         target targetOutcome)
 
 /--
+Abrupt-capable lexical closure preserves a nonregular block whether the
+ordinary cleanup was emitted or the checked direct-exit fallback selected the
+open target body unchanged.
+-/
+theorem ScopedBlockForward.finish_nonregular_or_abrupt
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {finalLive : List Locals.Name}
+    {frameBase : Nat} {finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {compiledBody : List Expressions.Stmt}
+    {loweredBody : Locals.Block}
+    {targetBlock : Expressions.Block}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    {outerLocals finalLocals : Locals.Ctx}
+    (hBody :
+      BlockForward contract transcript plan finalLive frameBase finalMode
+        sourceProgram sourceCtx sourceBlock source targetProgram
+        { stmts := Expressions.StmtList.toStructured compiledBody }
+        target sourceOutcome targetOutcome finalCtx)
+    (hMode : sourceOutcome.mode ≠ .regular)
+    (hFinish :
+      Locals.finishScopedOrAbrupt outerLocals finalLocals loweredBody
+          compiledBody =
+        some targetBlock) :
+    ScopedBlockForward contract transcript plan finalLive frameBase
+      finalMode sourceProgram sourceCtx sourceBlock source targetProgram
+      { stmts := Expressions.StmtList.toStructured targetBlock.stmts }
+      target sourceOutcome targetOutcome := by
+  rcases Locals.finishScopedOrAbrupt_components hFinish with
+    hRegular | ⟨_hNone, _hExit, hShape⟩
+  · exact ScopedBlockForward.finish_nonregular hBody hMode hRegular
+  · rcases hBody with
+      ⟨sourceFuel, targetFuel, hSourceOpen, hTargetBody, hRel⟩
+    have hSourceScoped :=
+      Functions.Source.Effectful.Block.runScoped_nonregular_of_runOpen
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        sourceProgram hSourceOpen hMode
+    subst targetBlock
+    exact
+      ⟨sourceFuel, targetFuel, hSourceScoped,
+        by simpa using hTargetBody, hRel⟩
+
+/--
 Allocator-aware counterpart of `ScopedBlockForward.finish_nonregular`.
 
 Abrupt source and target outcomes skip the generated lexical cleanup, so the
@@ -8126,6 +8210,67 @@ theorem ScopedBlockRuntimeForward.finish_nonregular
             Expressions.StmtList.toStructured compiledBody ++
               [Structured.Stmt.code cleanup] }
         target targetOutcome)
+
+/-- Runtime/resource-preserving abrupt-capable lexical closure. -/
+theorem ScopedBlockRuntimeForward.finish_nonregular_or_abrupt
+    {contract : MemoryContract.Contract}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {finalLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {compiledBody : List Expressions.Stmt}
+    {loweredBody : Locals.Block}
+    {targetBlock : Expressions.Block}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    {outerLocals finalLocals : Locals.Ctx}
+    (hBody :
+      AllocationObserverOutcome.BlockRuntimeForward
+        contract config allocatorDepth transcript plan finalLive
+        frameBase initialMode finalMode sourceProgram sourceCtx sourceBlock
+        source targetProgram
+        { stmts := Expressions.StmtList.toStructured compiledBody }
+        target sourceOutcome targetOutcome finalCtx)
+    (hMode : sourceOutcome.mode ≠ .regular)
+    (hFinish :
+      Locals.finishScopedOrAbrupt outerLocals finalLocals loweredBody
+          compiledBody =
+        some targetBlock) :
+    AllocationObserverOutcome.ScopedBlockRuntimeForward
+      contract config allocatorDepth transcript plan finalLive
+      frameBase initialMode finalMode sourceProgram sourceCtx sourceBlock
+      source targetProgram
+      { stmts := Expressions.StmtList.toStructured targetBlock.stmts }
+      target sourceOutcome targetOutcome := by
+  rcases Locals.finishScopedOrAbrupt_components hFinish with
+    hRegular | ⟨_hNone, _hExit, hShape⟩
+  · exact
+      ScopedBlockRuntimeForward.finish_nonregular hBody hMode hRegular
+  · rcases hBody with
+      ⟨sourceFuel, targetFuel, hSourceOpen, hTargetBody, hRel,
+        hSame, hEffect⟩
+    have hSourceScoped :=
+      Functions.Source.Effectful.Block.runScoped_nonregular_of_runOpen
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        sourceProgram hSourceOpen hMode
+    subst targetBlock
+    exact
+      ⟨sourceFuel, targetFuel, hSourceScoped,
+        by simpa using hTargetBody, hRel, hSame, hEffect⟩
 
 namespace NonregularStmtForward
 
@@ -8246,7 +8391,8 @@ theorem if_true_of_components
     hBody hLowerBody hCompileBody hCondInvariant
       (Structured.ObserverSemantics.Code.runCondition_returns_eq hTargetCond)
   have hScopedForward :=
-    ScopedBlockForward.finish_nonregular hBodyForward hMode hFinish
+    ScopedBlockForward.finish_nonregular_or_abrupt
+      hBodyForward hMode hFinish
   rcases hScopedForward with
     ⟨bodySourceFuel, bodyTargetFuel, hSourceScoped, hTargetScoped,
       _hBodyOutcomeRel⟩
@@ -8434,14 +8580,12 @@ theorem if_true_of_components
         hBodyForward, hOuterOutcomeRel, hP⟩ :=
     hBody hLowerBody hCompileBody hCondInvariant
       (Structured.ObserverSemantics.Code.runCondition_returns_eq hTargetCond)
-  rcases hBodyForward with
-    ⟨bodySourceFuel, bodyTargetFuel, hSourceOpen, hTargetBody,
+  have hScopedForward :=
+    _root_.EvmCompiler.Functions.AllocationObserverStatement.Sequence.ScopedBlockRuntimeForward.finish_nonregular_or_abrupt
+      hBodyForward hMode hFinish
+  rcases hScopedForward with
+    ⟨bodySourceFuel, bodyTargetFuel, hSourceScoped, hTargetScoped,
       _hBodyOutcomeRel, hSame, hBodyEffect⟩
-  have hSourceScoped :=
-    Functions.Source.Effectful.Block.runScoped_nonregular_of_runOpen
-      (Functions.ObserverSemantics.stateModel transcript)
-      (Functions.ObserverSemantics.primitiveSemantics transcript)
-      sourceProgram hSourceOpen hMode
   have hSourceCond :
       Functions.Source.Effectful.Expr.evalCondition
           (Functions.ObserverSemantics.stateModel transcript)
@@ -8454,37 +8598,14 @@ theorem if_true_of_components
       (Functions.ObserverSemantics.stateModel transcript)
       (Functions.ObserverSemantics.primitiveSemantics transcript)
       sourceProgram hSourceCond hSourceScoped
-  obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
-    AllocationObserverCleanup.Plain.finishScoped_shape hFinish
   have hTargetMode : targetOutcome.mode ≠ .regular :=
     hOuterOutcomeRel.target_nonregular hMode
-  have hTargetScoped :
+  have hTargetScoped' :
       Structured.ObserverSemantics.Block.Eval
         targetProgram bodyTargetFuel compiledBody.toStructured
         targetAfterCond targetOutcome := by
-    rcases compiledBody with ⟨compiledBodyStmts⟩
-    change
-      Structured.ObserverSemantics.Block.Eval
-        targetProgram bodyTargetFuel
-        { stmts :=
-            Expressions.StmtList.toStructured compiledBodyStmts }
-        targetAfterCond targetOutcome
-    have hTargetShape' :
-        compiledBodyStmts =
-          compiledOpenBody ++ [Expressions.Stmt.code cleanup] := by
-      simpa using hTargetShape
-    rw [hTargetShape']
-    simpa [Expressions.StmtList.toStructured_append,
-      Expressions.StmtList.toStructured,
-      Expressions.Stmt.toStructured] using
-      (Structured.EffectSemantics.Block.Eval.append_nonregular
-        hTargetBody hTargetMode :
-        Structured.ObserverSemantics.Block.Eval
-          targetProgram bodyTargetFuel
-          { stmts :=
-              Expressions.StmtList.toStructured compiledOpenBody ++
-                [Structured.Stmt.code cleanup] }
-          targetAfterCond targetOutcome)
+    cases compiledBody
+    exact hTargetScoped
   have hTargetCondTrue :
       Structured.ObserverSemantics.Code.runCondition condCode target =
         .ok (targetAfterCond, true) := by
@@ -8495,7 +8616,7 @@ theorem if_true_of_components
         (.if_ condCode compiledBody.toStructured)
         target targetOutcome :=
     Structured.EffectSemantics.Stmt.Eval.if_true
-      hTargetCondTrue hTargetScoped
+      hTargetCondTrue hTargetScoped'
   have hTarget :
     Structured.ObserverSemantics.Block.Eval
         targetProgram (bodyTargetFuel + 2)

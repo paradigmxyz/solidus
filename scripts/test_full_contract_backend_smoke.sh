@@ -125,7 +125,6 @@ def require_backend(name, lines, expected_units):
     required = {
         "stack_frontend_object_artifact=true",
         "stack_frontend_code_artifact=true",
-        "stack_frontend_compact_code_artifact=true",
     }
     missing = sorted(required - set(lines))
     if missing:

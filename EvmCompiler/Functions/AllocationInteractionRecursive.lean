@@ -1121,10 +1121,10 @@ theorem if_
         capacity := hBoundary.capacity }
     obtain ⟨hCleanupFuel, hBody⟩ :=
       hBodyForward bodyCursor hNestedBoundary
-    apply AllocationInteractionControl.block_of_components
+    apply AllocationInteractionControl.block_of_components_or_abrupt
       (bodyLive := Functions.Scope.Block.outEnv live body)
       hBoundary.sourceScope rfl rfl hBoundary.control hAfter
-      hExtendsAfter hBodyAgree hFinish hCleanupFuel
+      bodyCursor.lower hExtendsAfter hBodyAgree hFinish hCleanupFuel
     simpa [bodyFuel, targetBodyFuel, totalFuel] using hBody
   have hHead :=
     AllocationInteractionControl.if_of_components

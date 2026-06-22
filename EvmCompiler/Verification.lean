@@ -797,6 +797,10 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.scopedBlock_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.policyScopedBlock_generated
+#check EvmCompiler.Locals.InteractionSemantics.Abrupt.block_allDone_of_hasDirectExit
+#check EvmCompiler.Locals.finishScopedOrAbrupt_components
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.scopedBlock_abrupt_generated
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.policyScopedBlock_abrupt_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.policy_block_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.policy_block_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.policy_if_generated
@@ -2428,6 +2432,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLowering.lowerStmt_stateExtends
 #check EvmCompiler.Functions.AllocationLowering.lowerStmtList_stateExtends
 #check EvmCompiler.Functions.AllocationLowering.lowerBlockOpen_stateExtends
+#check EvmCompiler.Functions.AllocationLowering.lowerStmt_hasDirectExit_eq
+#check EvmCompiler.Functions.AllocationLowering.lowerBlockOpen_hasDirectExit_eq
 #check EvmCompiler.Locals.Block.compileOpen_append_components
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.NonregularStmtForward
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.NonregularStmtForward.terminalArgs_of_compilers
@@ -2443,6 +2449,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.ScopedBlockForward
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.ScopedBlockForward.finish_regular
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.ScopedBlockForward.finish_nonregular
+#check EvmCompiler.Functions.AllocationObserverStatement.Sequence.ScopedBlockForward.finish_nonregular_or_abrupt
+#check EvmCompiler.Functions.AllocationInteractionControl.block_of_components_or_abrupt
+#check EvmCompiler.Functions.AllocationInteractionControlResource.block_of_components_or_abrupt
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularScopedBlockInvariantForward
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularScopedBlockInvariantForward.finish_regular
 #check EvmCompiler.Functions.AllocationObserverTerminal.Invocation.forward_observer
@@ -2803,6 +2812,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularScopedBlockRuntimeInvariantForward.finish_regular
 #check EvmCompiler.Functions.AllocationObserverOutcome.ScopedBlockRuntimeForward
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.ScopedBlockRuntimeForward.finish_nonregular
+#check EvmCompiler.Functions.AllocationObserverStatement.Sequence.ScopedBlockRuntimeForward.finish_nonregular_or_abrupt
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationOutcomeRel.reframe_of_isExit
 #check EvmCompiler.Functions.AllocationObserverStatement.ForLoop.finish_regular_outer_runtime
 #check EvmCompiler.Functions.AllocationObserverStatement.ForLoop.RegularRuntimeInvariantForward.of_safe_source_run
@@ -2982,6 +2992,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLayoutLowering.Transition.compile
 #check EvmCompiler.Functions.AllocationLayoutLowering.Ordering.compile
 #check EvmCompiler.Functions.AllocationLayoutLowering.Join.compile
+#check EvmCompiler.Functions.StackAccess.Examples.larger_evaluation_offset_is_prioritized
 #check EvmCompiler.Functions.StackSchedule.scheduleBlockFuel_entry_sound
 #check EvmCompiler.Functions.StackSchedule.scheduleBlock?_entry_sound
 #check EvmCompiler.Functions.StackSchedule.scheduleBlockFuelWithTargets_components

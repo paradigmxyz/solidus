@@ -40,6 +40,41 @@ structure ControlTargets where
   brk? : Option Locals.Layout := none
   cont? : Option Locals.Layout := none
 
+def pointsFallThrough : List Point → Bool
+  | [] => true
+  | point :: rest =>
+      if point.fallsThrough then pointsFallThrough rest else false
+
+def Region.fallsThrough (region : Region) : Bool :=
+  pointsFallThrough region.points
+
+def Region.close? (region : Region) (target : Locals.Layout) : Option Region :=
+  if region.fallsThrough then do
+    let exit ← Join.build? region.finalLayout target
+    some { region with exit? := some exit, finalLayout := target }
+  else
+    some region
+
+theorem Region.close?_components {region closed : Region}
+    {target : Locals.Layout}
+    (hClose : region.close? target = some closed) :
+    (region.fallsThrough = true ∧
+      ∃ exit,
+        Join.build? region.finalLayout target = some exit ∧
+        closed =
+          { region with exit? := some exit, finalLayout := target }) ∨
+    (region.fallsThrough = false ∧ closed = region) := by
+  cases hFalls : region.fallsThrough with
+  | false =>
+      right
+      simp [Region.close?, hFalls] at hClose
+      exact ⟨rfl, hClose.symm⟩
+  | true =>
+      left
+      simp only [Region.close?, hFalls, ↓reduceIte] at hClose
+      obtain ⟨exit, hExit, hClosed⟩ := Option.bind_eq_some_iff.mp hClose
+      exact ⟨rfl, exit, hExit, Option.some.inj hClosed |>.symm⟩
+
 def layoutSet (layout : Locals.Layout) : LiveSet :=
   layout.toFinset
 
@@ -100,14 +135,14 @@ def orderPriority (layout : Locals.Layout) (stmt : Stmt)
       | .let_ _ _ => reachableDying
       | _ => []
     else
-      AllocationLivenessFacts.Stmt.nextUse stmt ++ reachableDying
+      StackAccess.Stmt.accessPriority stmt ++ reachableDying
   let preferred :=
     ((AllocationLivenessFacts.stableUnique
         (preferredImmediate ++ boundedFuture)).filter
           fun name => decide (name ∈ layout)).take 16
   let fallback :=
     ((AllocationLivenessFacts.stableUnique
-        (AllocationLivenessFacts.Stmt.nextUse stmt ++ allDying)).filter
+        (StackAccess.Stmt.accessPriority stmt ++ allDying)).filter
             fun name => decide (name ∈ layout)).take 16
   match AllocationLayout.Ordering.build? layout preferred with
   | some order =>
@@ -125,9 +160,7 @@ instance coversDecidable (layout : Locals.Layout) (live : LiveSet) :
   unfold covers layoutSet
   infer_instance
 
-def alwaysExits : Stmt → Bool
-  | .brk | .cont | .leave | .terminal _ | .terminalArgs _ _ => true
-  | _ => false
+abbrev alwaysExits : Stmt → Bool := Functions.Stmt.alwaysExits
 
 mutual
   def scheduleBlockFuelWithTargets
@@ -233,13 +266,13 @@ mutual
         | .block body =>
             match facts.regions with
             | [bodyFacts] => do
-                let region ←
+                let rawRegion ←
                   scheduleBlockFuelWithTargets targets fuel
                     (layoutSet layout) layout
                     body bodyFacts
-                let exit ← Join.build? region.finalLayout layout
+                let exit ← Join.build? rawRegion.finalLayout layout
                 let region :=
-                  { region with exit? := some exit, finalLayout := layout }
+                  { rawRegion with exit? := some exit, finalLayout := layout }
                 some
                   { order? := none
                     beforeLayout := layout
@@ -250,13 +283,11 @@ mutual
         | .if_ _ body =>
             match facts.regions with
             | [bodyFacts] => do
-                let region ←
+                let rawRegion ←
                   scheduleBlockFuelWithTargets targets fuel
                     (layoutSet layout) layout
                     body bodyFacts
-                let exit ← Join.build? region.finalLayout layout
-                let region :=
-                  { region with exit? := some exit, finalLayout := layout }
+                let region ← rawRegion.close? layout
                 some
                   { order? := none
                     beforeLayout := layout
@@ -1363,8 +1394,9 @@ theorem scheduleStmtFuelWithTargets_block_components
                         hExit] at hSchedule
                       subst point
                       exact
-                        ⟨bodyFacts, rawRegion, exit, rfl, by simpa using hRegion,
-                          hExit, rfl, rfl, rfl, rfl, rfl, rfl⟩
+                        ⟨bodyFacts, rawRegion, exit, rfl,
+                          by simpa using hRegion, hExit, rfl, rfl, rfl, rfl,
+                          rfl, rfl⟩
 
 theorem scheduleStmtFuelWithTargets_if_components
     {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
@@ -1373,15 +1405,14 @@ theorem scheduleStmtFuelWithTargets_if_components
     (hSchedule :
       scheduleStmtFuelWithTargets targets fuel pinned layout (.if_ cond body)
           facts = some point) :
-    ∃ bodyFacts rawRegion exit,
+    ∃ bodyFacts rawRegion region,
       facts.regions = [bodyFacts] ∧
         scheduleBlockFuelWithTargets targets (fuel - 1) (layoutSet layout)
             layout body bodyFacts = some rawRegion ∧
-        Join.build? rawRegion.finalLayout layout = some exit ∧
+        rawRegion.close? layout = some region ∧
         point.beforeLayout = layout ∧ point.statementLayout = layout ∧
         point.exit? = none ∧ point.retain? = none ∧
-        point.regions =
-          [{ rawRegion with exit? := some exit, finalLayout := layout }] ∧
+        point.regions = [region] ∧
         point.fallsThrough = true := by
   cases fuel with
   | zero =>
@@ -1402,17 +1433,172 @@ theorem scheduleStmtFuelWithTargets_if_components
                   simp [scheduleStmtFuelWithTargets, hRegions, hRegion]
                     at hSchedule
               | some rawRegion =>
-                  cases hExit : Join.build? rawRegion.finalLayout layout with
+                  cases hClose : rawRegion.close? layout with
                   | none =>
                       simp [scheduleStmtFuelWithTargets, hRegions, hRegion,
-                        hExit] at hSchedule
-                  | some exit =>
+                        hClose] at hSchedule
+                  | some region =>
                       simp [scheduleStmtFuelWithTargets, hRegions, hRegion,
-                        hExit] at hSchedule
+                        hClose] at hSchedule
                       subst point
                       exact
-                        ⟨bodyFacts, rawRegion, exit, rfl, by simpa using hRegion,
-                          hExit, rfl, rfl, rfl, rfl, rfl, rfl⟩
+                        ⟨bodyFacts, rawRegion, region, rfl,
+                          by simpa using hRegion, hClose, rfl, rfl, rfl, rfl,
+                          rfl, rfl⟩
+
+theorem scheduleStmtFuelWithTargets_fallsThrough
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout : Locals.Layout} {stmt : Stmt}
+    {facts : AllocationLivenessFacts.Point} {point : Point}
+    (hSchedule :
+      scheduleStmtFuelWithTargets targets fuel pinned layout stmt facts =
+        some point) :
+    point.fallsThrough = !stmt.alwaysExits := by
+  cases stmt with
+  | expr expr =>
+      simpa [Functions.Stmt.alwaysExits] using
+        (scheduleStmtFuelWithTargets_expr_components hSchedule).2.2.2.2
+  | let_ name value =>
+      simpa [Functions.Stmt.alwaysExits] using
+        (scheduleStmtFuelWithTargets_let_components hSchedule).2.2.2.2.2
+  | assign name value =>
+      simpa [Functions.Stmt.alwaysExits] using
+        (scheduleStmtFuelWithTargets_assign_components hSchedule).2.2.2.2
+  | block body =>
+      obtain ⟨_bodyFacts, _rawRegion, _exit, _hFacts, _hBody, _hClose,
+          _hBefore, _hStatement, _hExit, _hRetain, _hRegions, hFalls⟩ :=
+        scheduleStmtFuelWithTargets_block_components hSchedule
+      simpa [Functions.Stmt.alwaysExits] using hFalls
+  | if_ cond body =>
+      obtain ⟨_bodyFacts, _rawRegion, _region, _hFacts, _hBody, _hClose,
+          _hBefore, _hStatement, _hExit, _hRetain, _hRegions, hFalls⟩ :=
+        scheduleStmtFuelWithTargets_if_components hSchedule
+      simpa [Functions.Stmt.alwaysExits] using hFalls
+  | switch scrutinee cases defaultBody =>
+      obtain ⟨_caseRegions, _defaultRegions, _hCases, _hDefault,
+          _hBefore, _hStatement, _hRetain, _hRegions, hFalls⟩ :=
+        scheduleStmtFuelWithTargets_switch_components hSchedule
+      simpa [Functions.Stmt.alwaysExits] using hFalls
+  | for_ init cond post body =>
+      obtain ⟨_initFacts, _postFacts, _bodyFacts, _loopFacts,
+          _rawInitRegion, _rawPostRegion, _rawBodyRegion, _initExit,
+          _postExit, _bodyExit, _hFacts, _hLoop, _hInit, _hInitExit,
+          _hPost, _hBody, _hPostExit, _hBodyExit, _hBefore, _hStatement,
+          _hRetain, _hRegions, hFalls⟩ :=
+        scheduleStmtFuelWithTargets_for_components hSchedule
+      simpa [Functions.Stmt.alwaysExits] using hFalls
+  | brk =>
+      cases hTarget : targets.brk? with
+      | none =>
+          cases fuel with
+          | zero => simp [scheduleStmtFuelWithTargets] at hSchedule
+          | succ fuel =>
+              simp [scheduleStmtFuelWithTargets, hTarget] at hSchedule
+              subst point
+              rfl
+      | some target =>
+          obtain ⟨_exit, _hBuild, _hBefore, _hStatement, _hExit,
+              _hRetain, _hRegions, hFalls⟩ :=
+            scheduleStmtFuelWithTargets_brk_components hTarget hSchedule
+          simpa [Functions.Stmt.alwaysExits] using hFalls
+  | cont =>
+      cases hTarget : targets.cont? with
+      | none =>
+          cases fuel with
+          | zero => simp [scheduleStmtFuelWithTargets] at hSchedule
+          | succ fuel =>
+              simp [scheduleStmtFuelWithTargets, hTarget] at hSchedule
+              subst point
+              rfl
+      | some target =>
+          obtain ⟨_exit, _hBuild, _hBefore, _hStatement, _hExit,
+              _hRetain, _hRegions, hFalls⟩ :=
+            scheduleStmtFuelWithTargets_cont_components hTarget hSchedule
+          simpa [Functions.Stmt.alwaysExits] using hFalls
+  | leave =>
+      simpa [Functions.Stmt.alwaysExits] using
+        (scheduleStmtFuelWithTargets_leave_components hSchedule).2.2.2.2
+  | call targets functionName args =>
+      simpa [Functions.Stmt.alwaysExits] using
+        (scheduleStmtFuelWithTargets_call_components hSchedule).2.2.2.2
+  | terminal kind =>
+      simpa [Functions.Stmt.alwaysExits] using
+        (scheduleStmtFuelWithTargets_terminal_components hSchedule).2.2.2.2
+  | terminalArgs kind args =>
+      simpa [Functions.Stmt.alwaysExits] using
+        (scheduleStmtFuelWithTargets_terminalArgs_components hSchedule).2.2.2.2
+
+theorem scheduleStmtListFuelWithTargets_hasDirectExit_of_not_fallsThrough
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout finalLayout : Locals.Layout} {stmts : List Stmt}
+    {facts : List AllocationLivenessFacts.Point} {points : List Point}
+    (hSchedule :
+      scheduleStmtListFuelWithTargets targets fuel pinned layout stmts facts =
+        some (points, finalLayout))
+    (hFalls : pointsFallThrough points = false) :
+    Functions.StmtList.hasDirectExit stmts = true := by
+  induction stmts generalizing facts layout points finalLayout with
+  | nil =>
+      cases facts with
+      | nil =>
+          simp [scheduleStmtListFuelWithTargets] at hSchedule
+          rcases hSchedule with ⟨rfl, rfl⟩
+          simp [pointsFallThrough] at hFalls
+      | cons fact restFacts =>
+          simp [scheduleStmtListFuelWithTargets] at hSchedule
+  | cons stmt rest ih =>
+      cases facts with
+      | nil =>
+          simp [scheduleStmtListFuelWithTargets] at hSchedule
+      | cons fact restFacts =>
+          obtain ⟨order, rawPoint, _hOrder, hRaw, hCases⟩ :=
+            scheduleStmtListFuelWithTargets_cons_components hSchedule
+          have hRawFallsEq :=
+            scheduleStmtFuelWithTargets_fallsThrough hRaw
+          cases hRawFalls : rawPoint.fallsThrough with
+          | false =>
+              have hNot : (!stmt.alwaysExits) = false :=
+                hRawFallsEq.symm.trans hRawFalls
+              have hStmtExit : stmt.alwaysExits = true := by
+                cases hStmt : stmt.alwaysExits with
+                | false =>
+                    have hFalse : true = false := by
+                      simpa only [hStmt, Bool.not_false] using hNot
+                    exact False.elim (Bool.noConfusion hFalse)
+                | true => rfl
+              unfold Functions.StmtList.hasDirectExit
+              rw [hStmtExit]
+              rfl
+          | true =>
+              rcases hCases with hFall | hAbrupt
+              · rcases hFall with
+                  ⟨_hRawFalls, retain, tail, tailFinal, _hRetain,
+                    hTailSchedule, hPoints, _hFinal⟩
+                rw [hPoints] at hFalls
+                simp [pointsFallThrough, hRawFalls] at hFalls
+                have hTailExit := ih hTailSchedule hFalls
+                simp [Functions.StmtList.hasDirectExit, hTailExit]
+              · exact False.elim
+                  (Bool.noConfusion (hRawFalls.symm.trans hAbrupt.1))
+
+theorem scheduleBlockFuelWithTargets_hasDirectExit_of_not_fallsThrough
+    {targets : ControlTargets} {fuel : Nat} {pinned : LiveSet}
+    {layout : Locals.Layout} {source : Block}
+    {facts : AllocationLivenessFacts.Region} {region : Region}
+    (hSchedule :
+      scheduleBlockFuelWithTargets targets fuel pinned layout source facts =
+        some region)
+    (hFalls : region.fallsThrough = false) :
+    Functions.StmtList.hasDirectExit source.stmts = true := by
+  obtain ⟨entry, points, finalLayout, _hEntry, hPoints, _hRegionEntry,
+      hRegionPoints, _hExit, _hFinal⟩ :=
+    scheduleBlockFuelWithTargets_components hSchedule
+  have hPointsFalls : pointsFallThrough points = false := by
+    rw [← hRegionPoints]
+    exact hFalls
+  exact
+    scheduleStmtListFuelWithTargets_hasDirectExit_of_not_fallsThrough
+      hPoints hPointsFalls
 
 /-- Every successful statement schedule preserves duplicate-free symbolic
 layouts. Structured statements restore their enclosing layout; declarations

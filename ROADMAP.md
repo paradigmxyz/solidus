@@ -278,8 +278,16 @@ premise or hidden memory access in the current checked artifact path.
   have zero inaccessible-depth failures and use stack-only allocation.
 - [x] Select proved direct discards at straight-line fallthrough points while
   preserving canonical entry/join/return transitions. Exact recursive images
-  are now 20,732 bytes for Permit2 and 40,185 bytes for linked Aave; native
+  are now 20,712 bytes for Permit2 and 40,185 bytes for linked Aave; native
   diagnostics remain practical at 8.5s/107 MB and 24.2s/135 MB respectively.
+- [x] Treat abrupt-only conditional regions honestly at both adjacent owners:
+  Functions scheduling emits no fictitious join, while Locals compilation
+  omits unreachable lexical cleanup under a checked direct-exit theorem.
+- [x] Rank physical expression operands by maximum evaluation offset, so deep
+  nested expressions remain within `DUP1`-`DUP16` without source rewriting.
+  The checked corpus now includes OpenZeppelin, Chainlink, PRBMath, Solbase,
+  Balancer V3, Seaport, Compound Comet, Solmate, and Solady in addition to the
+  exact pinned Permit2 and linked Aave gates.
 
 ### 9. Optional Code Density
 

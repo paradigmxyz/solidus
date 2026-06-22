@@ -138,6 +138,111 @@ theorem block_of_components
                   (Simulation.Interaction.pure _)
               exact .done (.ok hActivation)
 
+/-- Resource/effect counterpart of abrupt-aware lexical closure. -/
+theorem block_of_components_or_abrupt
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {contract : MemoryContract.Contract}
+    {config : Config} {allocatorDepth : Nat}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerStart bodyState : AllocationLowering.State}
+    {bodyLocals outerLocals : Locals.Ctx}
+    {bodyPlan : Plan}
+    {returns live bodyLive : List Functions.Name}
+    {frameBase sourceFuel targetFuel : Nat}
+    {entryMode : ActivationMode}
+    {sourceCtx bodyCtx : Functions.Source.Ctx}
+    {body : Functions.Block}
+    {loweredBody : Locals.Block}
+    {bodyCode : List Expressions.Stmt}
+    {targetBlock : Expressions.Block}
+    {source : SourceState} {target : TargetState}
+    (hSourceScope : sourceCtx.scope = live)
+    (hLower :
+      AllocationLowering.lowerBlockOpen lowerCtx returns lowerStart body =
+        some (loweredBody, bodyState))
+    (hFinish :
+      Locals.finishScopedOrAbrupt outerLocals bodyLocals loweredBody bodyCode =
+        some targetBlock)
+    (hCleanupFuel : 2 ≤ targetFuel - bodyCode.length)
+    (hBody :
+      Simulation.Interaction.Rel
+        (RuntimeResultRel contract lowerCtx bodyState bodyLocals bodyPlan
+          returns bodyLive frameBase entryMode sourceCtx bodyCtx config
+          allocatorDepth target)
+        (Functions.InteractionSemantics.Block.openRun
+          program sourceCtx sourceFuel body source)
+        (Expressions.InteractionSemantics.Block.openRun
+          expressions targetFuel { stmts := bodyCode } target)) :
+    Simulation.Interaction.Rel
+      (OpenResultRel config allocatorDepth entryMode target)
+      (Functions.InteractionSemantics.Stmt.openRun
+        program sourceCtx sourceFuel (.block body) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        expressions targetFuel targetBlock target) := by
+  rcases Locals.finishScopedOrAbrupt_components hFinish with
+    hRegular | ⟨_hNoCleanup, hLoweredExit, hTargetShape⟩
+  · exact
+      block_of_components hSourceScope hRegular hCleanupFuel hBody
+  · have hSourceExit :
+        Functions.StmtList.hasDirectExit body.stmts = true := by
+      calc
+        Functions.StmtList.hasDirectExit body.stmts =
+            Locals.StmtList.hasDirectExit loweredBody.stmts :=
+          (AllocationLowering.lowerBlockOpen_hasDirectExit_eq hLower).symm
+        _ = true := hLoweredExit
+    have hNonregular :=
+      Functions.InteractionSemantics.Abrupt.block_allDone_of_hasDirectExit
+        program sourceCtx sourceFuel body source hSourceExit
+    have hStrong :=
+      Simulation.Interaction.Rel.strengthen_left hBody hNonregular
+    have hStrong' :
+        Simulation.Interaction.Rel
+          (Simulation.Interaction.ExceptRel
+            (fun left right : EVMException => left = right)
+            (fun sourceResult targetResult =>
+              ControlResultRel contract lowerCtx bodyState bodyLocals bodyPlan
+                  returns bodyLive frameBase entryMode sourceCtx bodyCtx
+                  sourceResult targetResult ∧
+                ResultRel config allocatorDepth entryMode target
+                  sourceResult targetResult ∧
+                sourceResult.1.mode ≠ .regular))
+          (Functions.InteractionSemantics.Block.openRun
+            program sourceCtx sourceFuel body source)
+          (Expressions.InteractionSemantics.Block.openRun
+            expressions targetFuel { stmts := bodyCode } target) := by
+      apply Simulation.Interaction.Rel.mono hStrong
+      intro sourceDone targetDone hDone
+      rcases hDone with ⟨hRelated, hMode⟩
+      cases hRelated.1 with
+      | error hError => exact .error hError
+      | ok hSemantic =>
+          cases hRelated.2 with
+          | ok hEffect => exact .ok ⟨hSemantic, hEffect, hMode⟩
+    rw [Functions.InteractionSemantics.Stmt.openRun_block]
+    subst targetBlock
+    conv_rhs =>
+      rw [← Simulation.Interaction.bind_pure
+        (Expressions.InteractionSemantics.Block.openRun expressions
+          targetFuel { stmts := bodyCode } target)]
+    apply Simulation.Interaction.Rel.bind hStrong'
+    intro sourceResult targetResult hResult
+    rcases hResult with ⟨hSemantic, hEffect, hMode⟩
+    cases hSemantic with
+    | regular _hInvariant _hSameFrame _hControl =>
+        exact False.elim (hMode rfl)
+    | @nonregular sourceOutcome targetOutcome finalCtx mode
+        hSourceNonregular _hSameFrame _hControl _hState =>
+        cases hSourceMode : sourceOutcome.mode with
+        | regular => exact False.elim (hSourceNonregular hSourceMode)
+        | brk | cont | leave | halt _ =>
+            change
+              Simulation.Interaction.Rel _
+                (Simulation.Interaction.pure (sourceOutcome, sourceCtx))
+                (Simulation.Interaction.pure targetResult)
+            exact Simulation.Interaction.Rel.done
+              (Simulation.Interaction.ExceptRel.ok hEffect)
+
 /-- The scoped-block interface combines the same semantic and resource run. -/
 theorem blockScoped_of_components
     {program : Functions.Program}

@@ -186,6 +186,145 @@ theorem block_of_components
                 (Functions.Source.Ctx.SameControl.refl sourceCtx)
                 (.halt kind stateRel)
 
+/--
+Close a lexical block compiled with the abrupt-aware Locals closure.  The
+ordinary branch reuses `block_of_components`; the fallback branch derives the
+source direct-exit fact from the checked lowering and therefore cannot expose
+a regular source result that would require cleanup.
+-/
+theorem block_of_components_or_abrupt
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerStart bodyState outerState : AllocationLowering.State}
+    {bodyLocals outerLocals : Locals.Ctx}
+    {bodyPlan outerPlan : Plan}
+    {returns live bodyLive : List Functions.Name}
+    {frameBase sourceFuel targetFuel : Nat}
+    {entryMode : ActivationMode}
+    {sourceCtx bodyCtx : Functions.Source.Ctx}
+    {body : Functions.Block}
+    {loweredBody : Locals.Block}
+    {bodyCode : List Expressions.Stmt}
+    {targetBlock : Expressions.Block}
+    {source : SourceState} {target : TargetState}
+    (hSourceScope : sourceCtx.scope = live)
+    (hBodyCtx : bodyCtx = { sourceCtx with scope := bodyLive })
+    (hBodyLive : bodyLive = Functions.Scope.Block.outEnv live body)
+    (hControl : ControlScopesWithin returns live sourceCtx)
+    (hOuter :
+      AllocationContext.ActivationInvariant contract lowerCtx outerState
+        outerLocals outerPlan live frameBase entryMode source target)
+    (hLower :
+      AllocationLowering.lowerBlockOpen lowerCtx returns lowerStart body =
+        some (loweredBody, bodyState))
+    (hExtends :
+      AllocationLowering.StateExtends live outerState bodyState)
+    (hPlanAgree : PlanAgreesOn bodyPlan outerPlan live)
+    (hFinish :
+      Locals.finishScopedOrAbrupt outerLocals bodyLocals loweredBody bodyCode =
+        some targetBlock)
+    (hCleanupFuel : 2 ≤ targetFuel - bodyCode.length)
+    (hBody :
+      Simulation.Interaction.Rel
+        (OpenControlResultRel contract lowerCtx bodyState bodyLocals bodyPlan
+          returns bodyLive frameBase entryMode sourceCtx bodyCtx)
+        (Functions.InteractionSemantics.Block.openRun
+          program sourceCtx sourceFuel body source)
+        (Expressions.InteractionSemantics.Block.openRun
+          expressions targetFuel { stmts := bodyCode } target)) :
+    Simulation.Interaction.Rel
+      (OpenControlResultRel contract lowerCtx outerState outerLocals outerPlan
+        returns live frameBase entryMode sourceCtx sourceCtx)
+      (Functions.InteractionSemantics.Stmt.openRun
+        program sourceCtx sourceFuel (.block body) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        expressions targetFuel targetBlock target) := by
+  rcases Locals.finishScopedOrAbrupt_components hFinish with
+    hRegular | ⟨_hNoCleanup, hLoweredExit, hTargetShape⟩
+  · exact
+      block_of_components hSourceScope hBodyCtx hBodyLive hControl hOuter
+        hExtends hPlanAgree hRegular hCleanupFuel hBody
+  · have hSourceExit :
+        Functions.StmtList.hasDirectExit body.stmts = true := by
+      calc
+        Functions.StmtList.hasDirectExit body.stmts =
+            Locals.StmtList.hasDirectExit loweredBody.stmts :=
+          (AllocationLowering.lowerBlockOpen_hasDirectExit_eq hLower).symm
+        _ = true := hLoweredExit
+    have hNonregular :=
+      Functions.InteractionSemantics.Abrupt.block_allDone_of_hasDirectExit
+        program sourceCtx sourceFuel body source hSourceExit
+    have hStrong :=
+      Simulation.Interaction.Rel.strengthen_left hBody hNonregular
+    have hStrong' :
+        Simulation.Interaction.Rel
+          (Simulation.Interaction.ExceptRel
+            (fun left right : EVMException => left = right)
+            (fun sourceResult targetResult =>
+              ControlResultRel contract lowerCtx bodyState bodyLocals bodyPlan
+                  returns bodyLive frameBase entryMode sourceCtx bodyCtx
+                  sourceResult targetResult ∧
+                sourceResult.1.mode ≠ .regular))
+          (Functions.InteractionSemantics.Block.openRun
+            program sourceCtx sourceFuel body source)
+          (Expressions.InteractionSemantics.Block.openRun
+            expressions targetFuel { stmts := bodyCode } target) := by
+      apply Simulation.Interaction.Rel.mono hStrong
+      intro sourceDone targetDone hDone
+      rcases hDone with ⟨hRelated, hMode⟩
+      cases hRelated with
+      | error hError => exact .error hError
+      | ok hResult => exact .ok ⟨hResult, hMode⟩
+    rw [Functions.InteractionSemantics.Stmt.openRun_block]
+    subst targetBlock
+    conv_rhs =>
+      rw [← Simulation.Interaction.bind_pure
+        (Expressions.InteractionSemantics.Block.openRun expressions
+          targetFuel { stmts := bodyCode } target)]
+    apply Simulation.Interaction.Rel.bind hStrong'
+    intro sourceResult targetResult hResult
+    rcases hResult with ⟨hRelated, hMode⟩
+    cases hRelated with
+    | regular _hInvariant _hSameFrame _hControl =>
+        exact False.elim (hMode rfl)
+    | @nonregular sourceOutcome targetOutcome finalCtx mode
+        hNonregular sameFrame _control state =>
+        have hReindexed :=
+          ControlResultRel.reindex_nonregular_live
+            (afterLive := live) state hNonregular
+        have hAgree :=
+          hPlanAgree.mono
+            (hControl.outcomeLive_subset sourceOutcome.mode)
+        have hOuterState := hReindexed.transport_plan hAgree
+        cases hOuterState with
+        | regular state => exact False.elim (hNonregular rfl)
+        | brk defined stackLength modeMatches stateRel =>
+            exact Simulation.Interaction.Rel.done
+              (.ok (ControlResultRel.nonregular (mode := mode) hNonregular
+                sameFrame
+                (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                (.brk defined stackLength modeMatches stateRel)))
+        | cont defined stackLength modeMatches stateRel =>
+            exact Simulation.Interaction.Rel.done
+              (.ok (ControlResultRel.nonregular (mode := mode) hNonregular
+                sameFrame
+                (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                (.cont defined stackLength modeMatches stateRel)))
+        | leave stateRel =>
+            exact Simulation.Interaction.Rel.done
+              (.ok (ControlResultRel.nonregular (mode := mode) hNonregular
+                sameFrame
+                (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                (.leave stateRel)))
+        | halt kind stateRel =>
+            exact Simulation.Interaction.Rel.done
+              (.ok (ControlResultRel.nonregular (mode := mode) hNonregular
+                sameFrame
+                (Functions.Source.Ctx.SameControl.refl sourceCtx)
+                (.halt kind stateRel)))
+
 /-- The same lexical-block theorem with its constant source context erased. -/
 theorem blockScoped_of_components
     {program : Functions.Program}

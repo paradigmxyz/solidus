@@ -809,6 +809,92 @@ abbrev ControlOpenOutcomeRel (targets : StackSchedule.ControlTargets)
     (fun (_ : EVMException) (_ : EVMException) => True)
     (ControlOpenResultRel targets returnNames finalCtx suffix returns)
 
+theorem controlOpenOutcome_rebase_of_nonregular
+    {targets : StackSchedule.ControlTargets}
+    {returnNames : List Name} {fromCtx toCtx : Locals.Ctx}
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {sourceRun :
+      Simulation.Interaction EVMException
+        (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx)}
+    {targetRun : Simulation.Interaction EVMException Structured.Outcome}
+    (hRun :
+      Simulation.Interaction.ForwardRel FuelTruncated
+        (ControlOpenOutcomeRel targets returnNames fromCtx suffix returns)
+        sourceRun targetRun)
+    (hNonregular :
+      Simulation.Interaction.AllDone
+        Functions.InteractionSemantics.Abrupt.NonregularResult sourceRun) :
+    Simulation.Interaction.ForwardRel FuelTruncated
+      (ControlOpenOutcomeRel targets returnNames toCtx suffix returns)
+      sourceRun targetRun := by
+  apply Simulation.Interaction.ForwardRel.mono
+    (Simulation.Interaction.ForwardRel.strengthen_left hRun hNonregular)
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hRelated, hMode⟩
+  cases hRelated with
+  | error hError => exact .error hError
+  | ok hResult =>
+      apply Simulation.Interaction.ExceptRel.ok
+      cases hResult with
+      | regular _hCtx _hState =>
+          exact False.elim (hMode rfl)
+      | brk hTarget hState => exact .brk hTarget hState
+      | cont hTarget hState => exact .cont hTarget hState
+      | leave hState => exact .leave hState
+      | halt hShared => exact .halt hShared
+
+theorem controlOpenBlockAsStmt_of_nonregular
+    {sourceProgram : Functions.Program}
+    {targetProgram : Expressions.Program}
+    {targets : StackSchedule.ControlTargets}
+    {returnNames : List Name} {finalCtx : Locals.Ctx}
+    {sourceCtx : Functions.Source.Ctx} {sourceFuel targetFuel : Nat}
+    {body : Functions.Block} {targetBody : Expressions.Block}
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hRun :
+      Simulation.Interaction.ForwardRel FuelTruncated
+        (ControlOpenOutcomeRel targets returnNames finalCtx suffix returns)
+        (Functions.InteractionSemantics.Block.openRun sourceProgram sourceCtx
+          sourceFuel body source)
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          targetFuel targetBody target))
+    (hNonregular :
+      Simulation.Interaction.AllDone
+        Functions.InteractionSemantics.Abrupt.NonregularResult
+        (Functions.InteractionSemantics.Block.openRun sourceProgram sourceCtx
+          sourceFuel body source)) :
+    Simulation.Interaction.ForwardRel FuelTruncated
+      (ControlOpenOutcomeRel targets returnNames finalCtx suffix returns)
+      (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
+        sourceFuel (.block body) source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        targetFuel targetBody target) := by
+  rw [Functions.InteractionSemantics.Stmt.openRun_block_eq_scoped_pair,
+    Functions.InteractionSemantics.Block.openRunScoped_eq_bind,
+    Simulation.Interaction.bind_assoc]
+  have hStrong :=
+    Simulation.Interaction.ForwardRel.strengthen_left hRun hNonregular
+  rw [← Simulation.Interaction.bind_pure
+    (Expressions.InteractionSemantics.Block.openRun targetProgram
+      targetFuel targetBody target)]
+  apply Simulation.Interaction.ForwardRel.bind_custom hStrong
+  intro sourceDone targetDone hRelated
+  rcases hRelated with ⟨hOutcome, hMode⟩
+  cases hOutcome with
+  | error hError => exact .done (.error hError)
+  | ok hResult =>
+      cases hResult with
+      | regular _hCtx _hState => exact False.elim (hMode rfl)
+      | brk hTarget hState =>
+          exact .done (.ok (.brk hTarget hState))
+      | cont hTarget hState =>
+          exact .done (.ok (.cont hTarget hState))
+      | leave hState =>
+          exact .done (.ok (.leave hState))
+      | halt hShared =>
+          exact .done (.ok (.halt hShared))
+
 abbrev ControlScopedOutcomeRel (targets : StackSchedule.ControlTargets)
     (returnNames : List Name)
     (finalCtx : Locals.Ctx)
@@ -922,6 +1008,28 @@ def ControlBlockPreserves
       (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
         targetBody target)
 
+def ControlLexicalBlockPreserves
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
+    (targetCtx finalCtx : Locals.Ctx)
+    (sourceBody : Functions.Block)
+    (targetBody : Expressions.Block) : Prop :=
+  ∀ (sourceCtx : Functions.Source.Ctx) (sourceFuel targetFuel : Nat)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState},
+    Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
+      targetBody.stmts →
+    RuntimeCtxCovers sourceCtx targetCtx targets returnNames returns →
+    StateRel targetCtx.layout suffix returns source target →
+    Simulation.Interaction.ForwardRel FuelTruncated
+      (ControlOpenOutcomeRel targets returnNames finalCtx suffix returns)
+      (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
+        sourceFuel (.block sourceBody) source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
+        targetBody target)
+
 def ControlBlockPreservesAt
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
@@ -945,6 +1053,29 @@ def ControlBlockPreservesAt
       (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
         targetBody target)
 
+def ControlLexicalBlockPreservesAt
+    (sourceProgram : Functions.Program)
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
+    (targetCtx finalCtx : Locals.Ctx)
+    (sourceBody : Functions.Block)
+    (targetBody : Expressions.Block)
+    (sourceFuel : Nat) : Prop :=
+  ∀ (sourceCtx : Functions.Source.Ctx) (targetFuel : Nat)
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState},
+    Expressions.TargetFuel.Covers targetProgram sourceFuel targetFuel
+      targetBody.stmts →
+    RuntimeCtxCovers sourceCtx targetCtx targets returnNames returns →
+    StateRel targetCtx.layout suffix returns source target →
+    Simulation.Interaction.ForwardRel FuelTruncated
+      (ControlOpenOutcomeRel targets returnNames finalCtx suffix returns)
+      (Functions.InteractionSemantics.Stmt.openRun sourceProgram sourceCtx
+        sourceFuel (.block sourceBody) source)
+      (Expressions.InteractionSemantics.Block.openRun targetProgram targetFuel
+        targetBody target)
+
 theorem ControlBlockPreserves.at
     {sourceProgram : Functions.Program}
     {targetProgram : Expressions.Program}
@@ -960,6 +1091,48 @@ theorem ControlBlockPreserves.at
       targetCtx finalCtx sourceBody targetBody sourceFuel := by
   intro sourceCtx targetFuel suffix returns source target hFuel hCtx hInitial
   exact h sourceCtx sourceFuel targetFuel hFuel hCtx hInitial
+
+theorem ControlBlockPreserves.rebase_of_hasDirectExit
+    {sourceProgram : Functions.Program}
+    {targetProgram : Expressions.Program}
+    {targets : StackSchedule.ControlTargets}
+    {returnNames : List Name}
+    {targetCtx fromCtx toCtx : Locals.Ctx}
+    {sourceBody : Functions.Block} {targetBody : Expressions.Block}
+    (hPreserves :
+      ControlBlockPreserves sourceProgram targetProgram targets returnNames
+        targetCtx fromCtx sourceBody targetBody)
+    (hExit : Functions.StmtList.hasDirectExit sourceBody.stmts = true) :
+    ControlBlockPreserves sourceProgram targetProgram targets returnNames
+      targetCtx toCtx sourceBody targetBody := by
+  intro sourceCtx sourceFuel targetFuel suffix returns source target hFuel
+    hCtx hInitial
+  apply controlOpenOutcome_rebase_of_nonregular
+    (hPreserves sourceCtx sourceFuel targetFuel hFuel hCtx hInitial)
+  exact
+    Functions.InteractionSemantics.Abrupt.block_allDone_of_hasDirectExit
+      sourceProgram sourceCtx sourceFuel sourceBody source hExit
+
+theorem ControlBlockPreservesAt.rebase_of_hasDirectExit
+    {sourceProgram : Functions.Program}
+    {targetProgram : Expressions.Program}
+    {targets : StackSchedule.ControlTargets}
+    {returnNames : List Name}
+    {targetCtx fromCtx toCtx : Locals.Ctx}
+    {sourceBody : Functions.Block} {targetBody : Expressions.Block}
+    {sourceFuel : Nat}
+    (hPreserves :
+      ControlBlockPreservesAt sourceProgram targetProgram targets returnNames
+        targetCtx fromCtx sourceBody targetBody sourceFuel)
+    (hExit : Functions.StmtList.hasDirectExit sourceBody.stmts = true) :
+    ControlBlockPreservesAt sourceProgram targetProgram targets returnNames
+      targetCtx toCtx sourceBody targetBody sourceFuel := by
+  intro sourceCtx targetFuel suffix returns source target hFuel hCtx hInitial
+  apply controlOpenOutcome_rebase_of_nonregular
+    (hPreserves sourceCtx targetFuel hFuel hCtx hInitial)
+  exact
+    Functions.InteractionSemantics.Abrupt.block_allDone_of_hasDirectExit
+      sourceProgram sourceCtx sourceFuel sourceBody source hExit
 
 inductive ForCoreResultRel (sourceCtx : Functions.Source.Ctx)
     (returnNames : List Name) (loopTargetCtx : Locals.Ctx)
@@ -2773,6 +2946,57 @@ theorem controlAppendEmptyCodeForward
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
           exact .halt hShared
+
+theorem controlAppendUnreachableForward
+    (targetProgram : Expressions.Program)
+    (targets : StackSchedule.ControlTargets)
+    (returnNames : List Name)
+    (targetCtx : Locals.Ctx)
+    {sourceRun :
+      Simulation.Interaction EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State ×
+          Functions.Source.Ctx)}
+    {code suffixCode : List Expressions.Stmt}
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {target : Structured.RunState}
+    (targetFuel : Nat)
+    (hRun :
+      Simulation.Interaction.ForwardRel FuelTruncated
+        (ControlOpenOutcomeRel targets returnNames targetCtx suffix returns)
+        sourceRun
+        (Expressions.InteractionSemantics.Block.openRun targetProgram
+          targetFuel { stmts := code } target))
+    (hNonregular :
+      Simulation.Interaction.AllDone
+        Functions.InteractionSemantics.Abrupt.NonregularResult sourceRun) :
+    Simulation.Interaction.ForwardRel FuelTruncated
+      (ControlOpenOutcomeRel targets returnNames targetCtx suffix returns)
+      sourceRun
+      (Expressions.InteractionSemantics.Block.openRun targetProgram
+        targetFuel { stmts := code ++ suffixCode } target) := by
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  apply Simulation.Interaction.ForwardRel.bind_right
+    (Simulation.Interaction.ForwardRel.strengthen_left hRun hNonregular)
+  intro sourceDone targetDone hResult
+  rcases hResult with ⟨hRelated, hMode⟩
+  cases hRelated with
+  | error hError =>
+      exact .done (.error hError)
+  | ok hRelated =>
+      cases hRelated with
+      | regular _hCtx _hState => exact False.elim (hMode rfl)
+      | brk hTarget hState =>
+          simp only [Structured.Outcome.brk, Structured.OutcomeT.brk]
+          exact .done (.ok (.brk hTarget hState))
+      | cont hTarget hState =>
+          simp only [Structured.Outcome.cont, Structured.OutcomeT.cont]
+          exact .done (.ok (.cont hTarget hState))
+      | leave hState =>
+          simp only [Structured.Outcome.leave, Structured.OutcomeT.leave]
+          exact .done (.ok (.leave hState))
+      | halt hShared =>
+          simp only [Structured.Outcome.halt, Structured.OutcomeT.halt]
+          exact .done (.ok (.halt hShared))
 
 theorem controlIf
     (sourceProgram : Functions.Program)

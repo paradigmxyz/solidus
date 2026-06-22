@@ -2428,6 +2428,169 @@ theorem lowerStmt_call_components
         · simp [lowerStmt, hFind, hArgsLength, hTargetsLength] at hLower
       · simp [lowerStmt, hFind, hArgsLength] at hLower
 
+/-- Allocation lowering preserves the direct-exit classification of a statement. -/
+theorem lowerStmt_hasDirectExit_eq
+    {ctx : Ctx} {returns : List Name} {state final : State}
+    {stmt : Stmt} {lowered : List Locals.Stmt}
+    (hLower : lowerStmt ctx returns state stmt = some (lowered, final)) :
+    Locals.StmtList.hasDirectExit lowered = stmt.alwaysExits := by
+  cases stmt with
+  | expr expr =>
+      cases hExpr : lowerExpr ctx state expr with
+      | none => simp [lowerStmt, hExpr] at hLower
+      | some loweredExpr =>
+          simp [lowerStmt, hExpr] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          rfl
+  | let_ name value =>
+      cases hValue : lowerExpr ctx state value with
+      | none => simp [lowerStmt, hValue] at hLower
+      | some loweredValue =>
+          by_cases hStack :
+              isStackSlot ctx
+                  (AllocationSupport.allocateName name state.allocation).1 =
+                true
+          · simp [lowerStmt, hValue, hStack] at hLower
+            rcases hLower with ⟨rfl, rfl⟩
+            rfl
+          · by_cases hFrame : ctx.frameName ∈ state.layout
+            · simp [lowerStmt, hValue, hStack, hFrame] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              rfl
+            · simp [lowerStmt, hValue, hStack, hFrame] at hLower
+  | assign name value =>
+      cases hSlot :
+          AllocationSupport.lookupSlot? name state.allocation.env with
+      | none => simp [lowerStmt, hSlot] at hLower
+      | some slot =>
+          cases hValue : lowerExpr ctx state value with
+          | none => simp [lowerStmt, hSlot, hValue] at hLower
+          | some loweredValue =>
+              by_cases hStack : isStackSlot ctx slot = true
+              · simp [lowerStmt, hSlot, hValue, hStack] at hLower
+                rcases hLower with ⟨rfl, rfl⟩
+                rfl
+              · by_cases hFrame : ctx.frameName ∈ state.layout
+                · simp [lowerStmt, hSlot, hValue, hStack, hFrame] at hLower
+                  rcases hLower with ⟨rfl, rfl⟩
+                  rfl
+                · simp [lowerStmt, hSlot, hValue, hStack, hFrame] at hLower
+  | block body =>
+      obtain ⟨loweredBody, _hBody, rfl⟩ :=
+        lowerStmt_block_components hLower
+      rfl
+  | if_ cond body =>
+      obtain ⟨loweredCond, loweredBody, _hCond, _hBody, rfl⟩ :=
+        lowerStmt_if_components hLower
+      rfl
+  | switch scrutinee cases defaultBody =>
+      obtain
+          ⟨loweredScrutinee, loweredCases, afterCases, loweredDefault,
+            _hScrutinee, _hCases, _hDefault, rfl⟩ :=
+        lowerStmt_switch_components hLower
+      rfl
+  | for_ init cond post body =>
+      obtain
+          ⟨loweredInit, loopState, loweredCond, loweredPost, afterPost,
+            loweredBody, afterBody, _hInit, _hCond, _hPost, _hBody,
+            rfl, _hFinal⟩ :=
+        lowerStmt_for_components hLower
+      rfl
+  | brk =>
+      simp [lowerStmt] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      rfl
+  | cont =>
+      simp [lowerStmt] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      rfl
+  | leave =>
+      cases hValues : lowerReturnExprs ctx state returns with
+      | none => simp [lowerStmt, hValues] at hLower
+      | some values =>
+          simp [lowerStmt, hValues] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          rfl
+  | call targets functionName args =>
+      obtain
+          ⟨fn, loweredArgs, callArgs, stores, release,
+            _hFind, _hArgsLength, _hTargetsLength, _hNodup, _hArgs,
+            _hCallArgs, _hStores, hRelease, hShape, rfl⟩ :=
+        lowerStmt_call_components hLower
+      have hReleaseExit :
+          Locals.StmtList.hasDirectExit release = false := by
+        by_cases hFrame : functionName ∈ ctx.frameFunctions
+        · cases hConfig : ctx.frameConfig? with
+          | none => simp [hFrame, hConfig] at hRelease
+          | some config =>
+              simp [hFrame, hConfig] at hRelease
+              subst release
+              rfl
+        · simp [hFrame] at hRelease
+          subst release
+          rfl
+      rw [hShape]
+      simp [Locals.StmtList.hasDirectExit, hReleaseExit]
+  | terminal kind =>
+      simp [lowerStmt] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      rfl
+  | terminalArgs kind args =>
+      cases hArgs : lowerExprSeq ctx state args with
+      | none => simp [lowerStmt, hArgs] at hLower
+      | some loweredArgs =>
+          simp [lowerStmt, hArgs] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          rfl
+
+private theorem locals_hasDirectExit_append
+    (left right : List Locals.Stmt) :
+    Locals.StmtList.hasDirectExit (left ++ right) =
+      (Locals.StmtList.hasDirectExit left ||
+        Locals.StmtList.hasDirectExit right) := by
+  induction left with
+  | nil => rfl
+  | cons head tail ih =>
+      simp [Locals.StmtList.hasDirectExit, ih, Bool.or_assoc]
+
+/-- Open block lowering preserves the direct-exit classifier exactly. -/
+theorem lowerBlockOpen_hasDirectExit_eq
+    {ctx : Ctx} {returns : List Name} {state final : State}
+    {source : Block} {lowered : Locals.Block}
+    (hLower :
+      lowerBlockOpen ctx returns state source = some (lowered, final)) :
+    Locals.StmtList.hasDirectExit lowered.stmts =
+      Functions.StmtList.hasDirectExit source.stmts := by
+  rcases source with ⟨sourceStmts⟩
+  rcases lowered with ⟨loweredStmts⟩
+  simp only [lowerBlockOpen] at hLower
+  cases hList : lowerStmtList ctx returns state sourceStmts with
+  | none => simp [hList] at hLower
+  | some result =>
+      rcases result with ⟨actualLowered, actualFinal⟩
+      simp [hList] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      induction sourceStmts generalizing state actualLowered actualFinal with
+      | nil =>
+          simp [lowerStmtList] at hList
+          rcases hList with ⟨rfl, rfl⟩
+          rfl
+      | cons head tail ih =>
+          cases hHead : lowerStmt ctx returns state head with
+          | none => simp [lowerStmtList, hHead] at hList
+          | some headResult =>
+              rcases headResult with ⟨loweredHead, next⟩
+              cases hTail : lowerStmtList ctx returns next tail with
+              | none => simp [lowerStmtList, hHead, hTail] at hList
+              | some tailResult =>
+                  rcases tailResult with ⟨loweredTail, tailFinal⟩
+                  simp [lowerStmtList, hHead, hTail] at hList
+                  rcases hList with ⟨rfl, rfl⟩
+                  rw [locals_hasDirectExit_append,
+                    lowerStmt_hasDirectExit_eq hHead,
+                    ih loweredTail tailFinal hTail]
+                  rfl
+
 /--
 Case/default lowering preserves the absence of a selected source branch.
 -/

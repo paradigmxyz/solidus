@@ -564,6 +564,141 @@ def openRunState (fuel : Nat) (program : Locals.Program)
 
 end Program
 
+namespace Abrupt
+
+def NonregularResult :
+    Except EVMException (Outcome × Locals.Source.Ctx) → Prop
+  | .error _ => True
+  | .ok result => result.1.mode ≠ .regular
+
+theorem stmt_allDone_of_alwaysExits
+    (program : Locals.Program) (ctx : Locals.Source.Ctx)
+    (fuel : Nat) (stmt : Locals.Stmt) (state : State)
+    (hExit : stmt.alwaysExits = true) :
+    Simulation.Interaction.AllDone NonregularResult
+      (Stmt.openRun program ctx fuel stmt state) := by
+  cases stmt with
+  | expr _ => simp [Locals.Stmt.alwaysExits] at hExit
+  | exprs _ => simp [Locals.Stmt.alwaysExits] at hExit
+  | let_ _ _ => simp [Locals.Stmt.alwaysExits] at hExit
+  | assign _ _ => simp [Locals.Stmt.alwaysExits] at hExit
+  | assignTop _ => simp [Locals.Stmt.alwaysExits] at hExit
+  | assignTopWithOffset _ _ => simp [Locals.Stmt.alwaysExits] at hExit
+  | promoteName _ => simp [Locals.Stmt.alwaysExits] at hExit
+  | discardName _ => simp [Locals.Stmt.alwaysExits] at hExit
+  | cleanupTo _ => simp [Locals.Stmt.alwaysExits] at hExit
+  | block _ => simp [Locals.Stmt.alwaysExits] at hExit
+  | if_ _ _ => simp [Locals.Stmt.alwaysExits] at hExit
+  | switch _ _ _ => simp [Locals.Stmt.alwaysExits] at hExit
+  | for_ _ _ _ _ => simp [Locals.Stmt.alwaysExits] at hExit
+  | call _ => simp [Locals.Stmt.alwaysExits] at hExit
+  | brk =>
+      cases hScope : ctx.breakScope? with
+      | none =>
+          simp [Stmt.openRun, Locals.Source.Effectful.Control.Stmt.run, hScope]
+          exact .done trivial
+      | some scope =>
+          simp [Stmt.openRun, Locals.Source.Effectful.Control.Stmt.run, hScope,
+            NonregularResult]
+          exact .done (by
+            simp [NonregularResult, Locals.Source.Effectful.Outcome.brk])
+  | cont =>
+      cases hScope : ctx.continueScope? with
+      | none =>
+          simp [Stmt.openRun, Locals.Source.Effectful.Control.Stmt.run, hScope]
+          exact .done trivial
+      | some scope =>
+          simp [Stmt.openRun, Locals.Source.Effectful.Control.Stmt.run, hScope,
+            NonregularResult]
+          exact .done (by
+            simp [NonregularResult, Locals.Source.Effectful.Outcome.cont])
+  | leave =>
+      cases hScope : ctx.leaveScope? with
+      | none =>
+          simp [Stmt.openRun, Locals.Source.Effectful.Control.Stmt.run, hScope]
+          exact .done trivial
+      | some scope =>
+          simp [Stmt.openRun, Locals.Source.Effectful.Control.Stmt.run, hScope,
+            NonregularResult]
+          exact .done (by
+            simp [NonregularResult, Locals.Source.Effectful.Outcome.leave])
+  | terminal kind =>
+      unfold Stmt.openRun Locals.Source.Effectful.Control.Stmt.run
+      apply Simulation.Interaction.AllDone.bind
+        (Simulation.Interaction.AllDone.trivial
+          (primitiveSemantics.terminal kind state []))
+      · intro _error _hTrivial
+        trivial
+      · intro final _hTrivial
+        apply Simulation.Interaction.AllDone.done
+        simp [NonregularResult, Locals.Source.Effectful.Outcome.halt]
+  | terminalArgs kind args =>
+      unfold Stmt.openRun Locals.Source.Effectful.Control.Stmt.run
+      apply Simulation.Interaction.AllDone.bind
+        (Simulation.Interaction.AllDone.trivial
+          (Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+            stateModel primitiveSemantics args state))
+      · intro _error _hTrivial
+        trivial
+      · intro result _hTrivial
+        apply Simulation.Interaction.AllDone.bind
+          (Simulation.Interaction.AllDone.trivial
+            (primitiveSemantics.terminal kind result.1 result.2))
+        · intro _error _hTrivial
+          trivial
+        · intro final _hTrivial
+          apply Simulation.Interaction.AllDone.done
+          simp [NonregularResult, Locals.Source.Effectful.Outcome.halt]
+
+theorem block_allDone_of_hasDirectExit
+    (program : Locals.Program) (ctx : Locals.Source.Ctx)
+    (fuel : Nat) (block : Locals.Block) (state : State)
+    (hExit : Locals.StmtList.hasDirectExit block.stmts = true) :
+    Simulation.Interaction.AllDone NonregularResult
+      (Block.openRun program ctx fuel block state) := by
+  rcases block with ⟨stmts⟩
+  induction stmts generalizing ctx fuel state with
+  | nil => simp [Locals.StmtList.hasDirectExit] at hExit
+  | cons stmt rest ih =>
+      cases fuel with
+      | zero =>
+          simp [Block.openRun, Locals.Source.Effectful.Control.Block.runOpen]
+          exact .done trivial
+      | succ fuel =>
+          unfold Block.openRun Locals.Source.Effectful.Control.Block.runOpen
+          by_cases hHead : stmt.alwaysExits = true
+          · apply Simulation.Interaction.AllDone.bind
+              (stmt_allDone_of_alwaysExits program ctx fuel stmt state hHead)
+            · intro _error _hTrivial
+              trivial
+            · intro result hNonregular
+              rcases result with ⟨⟨resultState, mode⟩, resultCtx⟩
+              cases mode with
+              | regular => exact False.elim (hNonregular rfl)
+              | brk | cont | leave | halt _ =>
+                  exact .done (by simp [NonregularResult])
+          · have hTail : Locals.StmtList.hasDirectExit rest = true := by
+              have hHeadFalse : stmt.alwaysExits = false :=
+                Bool.eq_false_of_not_eq_true hHead
+              unfold Locals.StmtList.hasDirectExit at hExit
+              rw [hHeadFalse] at hExit
+              simpa using hExit
+            apply Simulation.Interaction.AllDone.bind
+              (Simulation.Interaction.AllDone.trivial
+                (Stmt.openRun program ctx fuel stmt state))
+            · intro _error _hTrivial
+              trivial
+            · intro result _hTrivial
+              rcases result with ⟨⟨resultState, mode⟩, resultCtx⟩
+              cases mode with
+              | regular =>
+                  simpa [Block.openRun] using
+                    ih resultCtx fuel resultState hTail
+              | brk | cont | leave | halt _ =>
+                  exact .done (by simp [NonregularResult])
+
+end Abrupt
+
 end InteractionSemantics
 end Locals
 end EvmCompiler

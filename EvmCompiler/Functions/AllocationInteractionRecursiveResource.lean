@@ -2481,8 +2481,17 @@ theorem if_
     · intro name hLive
       exact (hSlots name hLive).trans
         (congrArg (AllocationSupport.lookupSlot? name) hAfterEnv.symm)
-  obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
-    AllocationInteractionCleanup.Plain.finishScoped_shape hFinish
+  have hBodyWithinTarget :
+      Expressions.TargetFuel.stmtListSize bodyCursor.compiled ≤
+        Expressions.TargetFuel.stmtListSize targetBody.stmts := by
+    rcases Locals.finishScopedOrAbrupt_components hFinish with
+      hRegular | ⟨_hNone, _hExit, hShape⟩
+    · obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
+        AllocationInteractionCleanup.Plain.finishScoped_shape hRegular
+      rw [hTargetShape, Expressions.TargetFuel.stmtListSize_append]
+      omega
+    · subst targetBody
+      exact Nat.le_refl _
   have hTargetBlockSize :
       Expressions.TargetFuel.blockSize targetBody =
         Expressions.TargetFuel.stmtListSize targetBody.stmts := by
@@ -2499,8 +2508,7 @@ theorem if_
       AllocationInteractionTargetFuel.stmtNestedSize,
       Expressions.TargetFuel.stmtListNestedSize,
       Expressions.TargetFuel.stmtNestedSize]
-    rw [hTargetBlockSize, hTargetShape,
-      Expressions.TargetFuel.stmtListSize_append]
+    rw [hTargetBlockSize]
     omega
   have hFuelGap : sourceFuel + 1 = (bodyFuel + 1) + 2 := by
     simp [bodyFuel]
@@ -2575,15 +2583,16 @@ theorem if_
       hBodyForward bodyCursor hBodyTargetCapacity hNestedBoundary
         (by simpa [bodyFuel] using hBodySuccess)
     have hSemantic :=
-      AllocationInteractionControl.block_of_components
+      AllocationInteractionControl.block_of_components_or_abrupt
         (bodyLive := Functions.Scope.Block.outEnv live body)
         hBoundary.semantic.sourceScope rfl rfl hBoundary.semantic.control
-        hAfter hExtendsAfter hBodyAgree hFinish hCleanupFuel
+        hAfter bodyCursor.lower hExtendsAfter hBodyAgree hFinish hCleanupFuel
         (Simulation.Interaction.Rel.mono hBody
           (fun _ _ hDone => hDone.1))
     have hResource :=
-      AllocationInteractionControlResource.block_of_components
-        hBoundary.semantic.sourceScope hFinish hCleanupFuel hBody
+      AllocationInteractionControlResource.block_of_components_or_abrupt
+        hBoundary.semantic.sourceScope bodyCursor.lower hFinish hCleanupFuel
+        hBody
     exact Simulation.Interaction.Rel.inter hSemantic hResource
   have hHead :=
     AllocationInteractionControlResource.if_of_components

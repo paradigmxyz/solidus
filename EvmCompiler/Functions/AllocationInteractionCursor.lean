@@ -1863,7 +1863,7 @@ theorem CoreCursor.scoped
         CoreCursor root (.lexical scope cursor.planning.nextScope)
           live body lowerState localsCtx,
       nested.compiled = bodyCode ∧
-        nested.finalLocals = bodyLocals := by
+        nested.finalLocals = bodyLocals ∧ nested.lowered = lowered := by
   obtain ⟨openFinal, hOpen, _hScopedEnv, _hScopedNext,
       _hScopedLayout⟩ :=
     AllocationLowering.lowerBlockScoped_components hLower
@@ -1926,7 +1926,7 @@ theorem CoreCursor.scoped
         rest scope
         (AllocationSupport.planStmt scope cursor.planning stmt)
         hHeadEntry
-  obtain ⟨nested, _hLowered, _hFinalState, hCode, hLocals⟩ :=
+  obtain ⟨nested, hLowered, _hFinalState, hCode, hLocals⟩ :=
     cursor.lexical lexicalScope entered
       (by simpa [entered] using cursor.planningAllocation)
       (by
@@ -1936,7 +1936,7 @@ theorem CoreCursor.scoped
       (by simpa [scopeEntry] using hEntryRecipe)
       hInnerScopes hOpen hCompile hScoped
       (by simpa [entered] using cursor.activeEnv)
-  exact ⟨nested, hCode, hLocals⟩
+  exact ⟨nested, hCode, hLocals, hLowered⟩
 
 /-- Decompose a lexical block into its body cursor and exact outer tail. -/
 theorem CoreCursor.blockCursors
@@ -1998,7 +1998,7 @@ theorem CoreCursor.blockCursors
       (by simp [AllocationSupport.planStmt])
       hLowerBody hBodyCompile hBodyScoped
   rcases hBodyCursor with
-    ⟨bodyCursor, hBodyCode, hBodyLocals⟩
+    ⟨bodyCursor, hBodyCode, hBodyLocals, _hBodyLowered⟩
   have hAfterShape :=
     AllocationLowering.lowerBlockScoped_state_shape hLowerBody
   cases hAfterLocals
@@ -2048,8 +2048,9 @@ theorem CoreCursor.ifCursors
             some loweredCond ∧
           Locals.Expr.compileCode localsCtx 0 loweredCond =
             some condCode ∧
-          Locals.finishScoped
-              localsCtx bodyCursor.finalLocals bodyCursor.compiled =
+          Locals.finishScopedOrAbrupt
+              localsCtx bodyCursor.finalLocals bodyCursor.lowered
+                bodyCursor.compiled =
             some targetBody ∧
           afterState.allocation.env =
             lowerState.allocation.env ∧
@@ -2075,7 +2076,7 @@ theorem CoreCursor.ifCursors
       Functions.Scope.ExprScoped live cond ∧
         Functions.Scope.Block.Scoped live body := by
     simpa [Functions.Scope.Stmt.Scoped] using hScopedStmt
-  obtain ⟨bodyCursor, hBodyCode, hBodyLocals⟩ :=
+  obtain ⟨bodyCursor, hBodyCode, hBodyLocals, hBodyLowered⟩ :=
     cursor.scoped
       (stmt := .if_ cond body)
       (body := body)
@@ -2090,7 +2091,7 @@ theorem CoreCursor.ifCursors
       hCompileCond, ?_, hAfterShape.1, hAfterShape.2, hScoped.1,
       ⟨hPlan, hFinalState, hFinalLocals, ⟨headCode, hCompiled⟩⟩⟩
   · simpa using hHeadCompile
-  rw [hBodyCode, hBodyLocals]
+  rw [hBodyCode, hBodyLocals, hBodyLowered]
   exact hFinish
 
 /-- Compiler-owned adjacent components of one source `switch`. -/

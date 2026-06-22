@@ -253,12 +253,12 @@ def runtime_backend_status(report, contract):
     first_none = check.get("firstNone")
     object_image = check.get("stages", {}).get("object_image")
     if (
-        status != "fail"
-        or first_none not in {"locals_compile", "locals_to_expressions"}
-        or object_image != "none"
+        status != "pass"
+        or first_none != "none"
+        or object_image != "some"
     ):
         raise SystemExit(
-            f"{contract} runtime did not enforce unguarded-spill rejection: "
+            f"{contract} runtime did not compile through verified stack allocation: "
             f"{check!r}"
         )
     return status, first_none

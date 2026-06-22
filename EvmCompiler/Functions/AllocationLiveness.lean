@@ -135,9 +135,10 @@ mutual
           ((ExprList.uses args ∪
               LiveSet.eraseMany targets demand.normal) ∪
             targets.toFinset)
-    | terminal : Stmt.Valid demand (.terminal kind) ∅
+    | terminal : Stmt.Valid demand (.terminal kind) demand.leave
     | terminalArgs :
-        Stmt.Valid demand (.terminalArgs kind args) (ExprSeq.uses args)
+        Stmt.Valid demand (.terminalArgs kind args)
+          (ExprSeq.uses args ∪ demand.leave)
 end
 
 namespace Close
@@ -272,8 +273,9 @@ mutual
               ((ExprList.uses args ∪
                   LiveSet.eraseMany targets demand.normal) ∪
                 targets.toFinset)
-        | .terminal _ => some ∅
-        | .terminalArgs _ args => some (ExprSeq.uses args)
+        | .terminal _ => some demand.leave
+        | .terminalArgs _ args =>
+            some (ExprSeq.uses args ∪ demand.leave)
 
   def analyzeLoopFuel
       (fuel : Nat) (demand : Demand)
@@ -477,12 +479,12 @@ mutual
             subst liveIn
             exact .call
         | terminal kind =>
-            have hEq : (∅ : LiveSet) = liveIn := by
+            have hEq : demand.leave = liveIn := by
               simpa only [analyzeStmtFuel, Option.some.injEq] using hAnalyze
             subst liveIn
             exact .terminal
         | terminalArgs kind args =>
-            have hEq : ExprSeq.uses args = liveIn := by
+            have hEq : ExprSeq.uses args ∪ demand.leave = liveIn := by
               simpa only [analyzeStmtFuel, Option.some.injEq] using hAnalyze
             cases hEq
             exact .terminalArgs

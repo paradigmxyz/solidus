@@ -264,6 +264,8 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
+  --linker-symbol "@openzeppelin/contracts/utils/Strings.sol:Strings=0x1111111111111111111111111111111111111111" \
+  --linker-symbol "@openzeppelin/contracts/utils/math/Math.sol:Math=0x2222222222222222222222222222222222222222" \
   --format lean-backend-check \
   --output "$STRINGS_BACKEND_CHECK"
 
@@ -468,12 +470,8 @@ if len(runtime_checks) != 1:
 runtime_check = runtime_checks[0]
 runtime_backend_status = runtime_check.get("status")
 runtime_first_none = runtime_check.get("firstNone")
-if runtime_backend_status not in {"pass", "fail"}:
-    raise SystemExit(f"unexpected Strings backend status: {runtime_check!r}")
-if runtime_backend_status == "pass" and runtime_first_none != "none":
-    raise SystemExit(f"Strings backend pass mismatch: {runtime_check!r}")
-if runtime_backend_status == "fail" and runtime_first_none in {"", None, "none"}:
-    raise SystemExit(f"Strings backend failure missing firstNone: {runtime_check!r}")
+if runtime_backend_status != "pass" or runtime_first_none != "none":
+    raise SystemExit(f"linked Strings backend failed: {runtime_check!r}")
 
 print(f"strings_runtime_lean_decode={summary['lean_bridge_json_decode']}")
 print(f"strings_runtime_functions={functions}")

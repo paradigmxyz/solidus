@@ -5497,6 +5497,7 @@ def evmCompilerRunnerLocalsStmtKind :
   | .assignTopWithOffset offset name =>
       "assignTopWithOffset:" ++ toString offset ++ ":" ++ name
   | .promoteName name => "promoteName:" ++ name
+  | .discardName name => "discardName:" ++ name
   | .cleanupTo layout => "cleanupTo:" ++ toString layout.length
   | .block _ => "block"
   | .if_ _ _ => "if"

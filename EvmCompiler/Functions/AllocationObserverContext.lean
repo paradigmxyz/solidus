@@ -2057,6 +2057,20 @@ inductive ActivationExprContext
 
 namespace ActivationExprContext
 
+/-- Both allocation modes preserve the lowering-owned Locals layout. -/
+theorem layout_eq
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {mode : AllocationObserverRelation.ActivationMode}
+    (hContext :
+      ActivationExprContext lowerCtx lowerState localsCtx plan live mode) :
+    localsCtx.layout = lowerState.layout := by
+  cases hContext with
+  | stack context => exact context.layout
+  | scratch context => exact context.layout
+
 /--
 Construct the compiler context for an all-stack activation from the checked
 layout and allocation-plan classification.

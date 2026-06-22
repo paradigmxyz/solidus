@@ -1459,6 +1459,139 @@ def OpenSupported (program : Functions.Program) : Prop :=
 
 end Program
 
+namespace Abrupt
+
+def NonregularResult :
+    Except EVMException (Outcome × Functions.Source.Ctx) → Prop
+  | .error _ => True
+  | .ok result => result.1.mode ≠ .regular
+
+theorem stmt_allDone_of_alwaysExits
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (stmt : Functions.Stmt) (state : State)
+    (hExit : stmt.alwaysExits = true) :
+    Simulation.Interaction.AllDone NonregularResult
+      (Stmt.openRun program ctx fuel stmt state) := by
+  cases stmt with
+  | expr _ => simp [Functions.Stmt.alwaysExits] at hExit
+  | let_ _ _ => simp [Functions.Stmt.alwaysExits] at hExit
+  | assign _ _ => simp [Functions.Stmt.alwaysExits] at hExit
+  | block _ => simp [Functions.Stmt.alwaysExits] at hExit
+  | if_ _ _ => simp [Functions.Stmt.alwaysExits] at hExit
+  | switch _ _ _ => simp [Functions.Stmt.alwaysExits] at hExit
+  | for_ _ _ _ _ => simp [Functions.Stmt.alwaysExits] at hExit
+  | call _ _ _ => simp [Functions.Stmt.alwaysExits] at hExit
+  | brk =>
+      cases hScope : ctx.breakScope? with
+      | none =>
+          simp [Stmt.openRun, Functions.Source.Canonical.Stmt.run,
+            Functions.Source.Effectful.Control.Stmt.run, hScope]
+          apply Simulation.Interaction.AllDone.done
+          trivial
+      | some scope =>
+          rw [Stmt.openRun_brk program ctx fuel state hScope]
+          exact .done (by simp [NonregularResult])
+  | cont =>
+      cases hScope : ctx.continueScope? with
+      | none =>
+          simp [Stmt.openRun, Functions.Source.Canonical.Stmt.run,
+            Functions.Source.Effectful.Control.Stmt.run, hScope]
+          apply Simulation.Interaction.AllDone.done
+          trivial
+      | some scope =>
+          rw [Stmt.openRun_cont program ctx fuel state hScope]
+          exact .done (by simp [NonregularResult])
+  | leave =>
+      cases hScope : ctx.leaveScope? with
+      | none =>
+          simp [Stmt.openRun, Functions.Source.Canonical.Stmt.run,
+            Functions.Source.Effectful.Control.Stmt.run, hScope]
+          apply Simulation.Interaction.AllDone.done
+          trivial
+      | some scope =>
+          rw [Stmt.openRun_leave program ctx fuel state hScope]
+          exact .done (by simp [NonregularResult])
+  | terminal kind =>
+      unfold Stmt.openRun Functions.Source.Canonical.Stmt.run
+        Functions.Source.Effectful.Control.Stmt.run
+      apply Simulation.Interaction.AllDone.bind
+        (Simulation.Interaction.AllDone.trivial
+          (primitiveSemantics.terminal kind state []))
+      · intro _error _hTrivial
+        trivial
+      · intro final _hTrivial
+        exact .done (by simp [NonregularResult])
+  | terminalArgs kind args =>
+      unfold Stmt.openRun Functions.Source.Canonical.Stmt.run
+        Functions.Source.Effectful.Control.Stmt.run
+      apply Simulation.Interaction.AllDone.bind
+        (Simulation.Interaction.AllDone.trivial
+          (Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+            stateModel primitiveSemantics args state))
+      · intro _error _hTrivial
+        trivial
+      · intro result _hTrivial
+        apply Simulation.Interaction.AllDone.bind
+          (Simulation.Interaction.AllDone.trivial
+            (primitiveSemantics.terminal kind result.1 result.2))
+        · intro _error _hTrivial
+          trivial
+        · intro final _hTrivial
+          exact .done (by simp [NonregularResult])
+
+theorem block_allDone_of_hasDirectExit
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (block : Functions.Block) (state : State)
+    (hExit : Functions.StmtList.hasDirectExit block.stmts = true) :
+    Simulation.Interaction.AllDone NonregularResult
+      (Block.openRun program ctx fuel block state) := by
+  rcases block with ⟨stmts⟩
+  induction stmts generalizing ctx fuel state with
+  | nil =>
+      simp [Functions.StmtList.hasDirectExit] at hExit
+  | cons stmt rest ih =>
+      cases fuel with
+      | zero =>
+          simp [Block.openRun, Functions.Source.Canonical.Block.runOpen,
+            Functions.Source.Effectful.Control.Block.runOpen]
+          apply Simulation.Interaction.AllDone.done
+          trivial
+      | succ fuel =>
+          unfold Block.openRun Functions.Source.Canonical.Block.runOpen
+            Functions.Source.Effectful.Control.Block.runOpen
+          by_cases hHead : stmt.alwaysExits = true
+          · apply Simulation.Interaction.AllDone.bind
+              (stmt_allDone_of_alwaysExits program ctx fuel stmt state hHead)
+            · intro _error _hTrivial
+              trivial
+            · intro result hNonregular
+              rcases result with ⟨⟨resultState, mode⟩, resultCtx⟩
+              cases mode with
+              | regular => exact False.elim (hNonregular rfl)
+              | brk | cont | leave | halt _ =>
+                  exact .done (by simp [NonregularResult])
+          · have hTail : Functions.StmtList.hasDirectExit rest = true := by
+              have hHeadFalse : stmt.alwaysExits = false :=
+                Bool.eq_false_of_not_eq_true hHead
+              unfold Functions.StmtList.hasDirectExit at hExit
+              rw [hHeadFalse] at hExit
+              simpa using hExit
+            apply Simulation.Interaction.AllDone.bind
+              (Simulation.Interaction.AllDone.trivial
+                (Stmt.openRun program ctx fuel stmt state))
+            · intro _error _hTrivial
+              trivial
+            · intro result _hTrivial
+              rcases result with ⟨⟨resultState, mode⟩, resultCtx⟩
+              cases mode with
+              | regular =>
+                  simpa [Block.openRun] using
+                    ih resultCtx fuel resultState hTail
+              | brk | cont | leave | halt _ =>
+                  exact .done (by simp [NonregularResult])
+
+end Abrupt
+
 end InteractionSemantics
 end Functions
 end EvmCompiler

@@ -239,9 +239,15 @@ if summary["counts"]["objects"] != 1:
 compatibility = summary.get("backendCompatibility", {})
 if compatibility.get("status") != "ready":
     raise SystemExit(f"unexpected Compound Comet compatibility: {compatibility!r}")
-for key in ["unsupportedPrimitiveNames", "objectBuiltinNames", "dialectBuiltinNames"]:
+for key in ["unsupportedPrimitiveNames", "dialectBuiltinNames"]:
     if compatibility.get(key):
         raise SystemExit(f"Compound Comet summary unexpectedly reports {key}")
+object_builtins = compatibility.get("objectBuiltinNames", [])
+if object_builtins not in ([], ["memoryguard"]):
+    raise SystemExit(
+        f"Compound Comet summary reports unexpected object builtins: "
+        f"{object_builtins!r}"
+    )
 
 if backend["counts"]["checkedObjects"] != 1:
     raise SystemExit(

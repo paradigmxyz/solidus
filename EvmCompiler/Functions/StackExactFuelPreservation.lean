@@ -1971,7 +1971,7 @@ theorem ifPointAtSucc_of_compilers
     CompiledControlPointAt sourceProgram targetProgram targets returnNames
       targetCtx finalCtx (.if_ cond body) code retain.schedule.target
       (sourceFuel + 1) := by
-  obtain ⟨bodyFacts, rawRegion, exit, _hFacts, hChildSchedule, hExitBuild,
+  obtain ⟨bodyFacts, rawRegion, closedRegion, _hFacts, hChildSchedule, hClose,
       _hBefore, _hStatement, _hRawExit, _hRawRetain, hRawRegions,
       _hFalls⟩ :=
     StackSchedule.scheduleStmtFuelWithTargets_if_components hSchedule
@@ -1979,8 +1979,7 @@ theorem ifPointAtSucc_of_compilers
       hLowerRegions, hLowerBody, hLowerRetain, hLowered⟩ :=
     StackLowering.lowerPointFuel_if_components hLower
   have hRegionList :
-      [region] =
-        [{ rawRegion with exit? := some exit, finalLayout := targetCtx.layout }] :=
+      [region] = [closedRegion] :=
     hLowerRegions.symm.trans (hPointRegions.trans hRawRegions)
   injection hRegionList with hRegion
   subst region
@@ -2002,43 +2001,130 @@ theorem ifPointAtSucc_of_compilers
       hCondCompile, hRegionCompile, hFinish, hIfCode, hIfFinal⟩ :=
     Locals.Stmt.compile_if_components hIfStmtCompile
   subst ifFinalCtx
-  obtain ⟨bodyCode, bodyFinalCtx, entryArtifact, exitArtifact,
-      hBodyPreserves, hRegionCode, hRegionFinal, hRestoredCtx,
-      hEntrySource⟩ :=
-    compiledScheduledRegionAt_of_compilers returnNames sourceProgram targetProgram
-      lowerCtx targets scheduleFuel lowerFuel sourceFuel body bodyFacts rawRegion
-      exit targetCtx regionFinalCtx hNodup loweredBody regionCode hChildSchedule
-      hExitBuild hLowerBody hRegionCompile
-      (fun hBodyLower hBodyCompile hChildNodup =>
-        hBody hChildSchedule hBodyLower hBodyCompile hChildNodup)
-  obtain ⟨cleanup, hCleanup, hTargetBody⟩ :=
-    Locals.finishScoped_components hFinish
-  have hBodyPreservesSelf :
-      ControlScheduledListPreservesAt sourceProgram targetProgram targets
-        returnNames (targetCtx.withLayout rawRegion.entry.target) bodyFinalCtx
-        body.stmts bodyFinalCtx.layout bodyCode sourceFuel :=
-    ⟨rfl, hBodyPreserves.2⟩
-  have hRegionCtx : regionFinalCtx = targetCtx :=
-    hRegionFinal.trans hRestoredCtx
-  have hCleanupEmpty : cleanup = [] := by
-    rw [hRegionCtx] at hCleanup
-    simpa [Locals.Ctx.cleanupTo?] using hCleanup
-  subst cleanup
-  have hTargetBodyCode :
-      targetBody.stmts =
-        ((entryArtifact.promotionCodes.map Expressions.Stmt.code ++
-            [Expressions.Stmt.code entryArtifact.cleanup]) ++
-          (bodyCode ++
-            (exitArtifact.retainArtifact.promotionCodes.map
-                  Expressions.Stmt.code ++
-              [Expressions.Stmt.code exitArtifact.retainArtifact.cleanup] ++
-              exitArtifact.orderArtifact.promotionCodes.map
-                Expressions.Stmt.code))) ++ [.code []] := by
-    rw [hTargetBody, hRegionCode]
-    simp [Locals.codeStmt, List.append_assoc]
-  have hExitTarget : exit.target = targetCtx.layout := by
-    have h := congrArg Locals.Ctx.layout hRestoredCtx
-    simpa [Locals.Ctx.withLayout] using h
+  have hTargetBodyPreserves :
+      ControlLexicalBlockPreservesAt sourceProgram targetProgram targets
+        returnNames targetCtx targetCtx body targetBody sourceFuel := by
+    rcases StackSchedule.Region.close?_components hClose with hNormal | hAbrupt
+    · rcases hNormal with ⟨_hRawFalls, exit, hExitBuild, hClosed⟩
+      subst closedRegion
+      obtain ⟨bodyCode, bodyFinalCtx, entryArtifact, exitArtifact,
+          hBodyPreserves, hRegionCode, hRegionFinal, hRestoredCtx,
+          hEntrySource⟩ :=
+        compiledScheduledRegionAt_of_compilers returnNames sourceProgram
+          targetProgram lowerCtx targets scheduleFuel lowerFuel sourceFuel body
+          bodyFacts rawRegion exit targetCtx regionFinalCtx hNodup loweredBody
+          regionCode hChildSchedule hExitBuild hLowerBody hRegionCompile
+          (fun hBodyLower hBodyCompile hChildNodup =>
+            hBody hChildSchedule hBodyLower hBodyCompile hChildNodup)
+      have hBodyPreservesSelf :
+          ControlScheduledListPreservesAt sourceProgram targetProgram targets
+            returnNames (targetCtx.withLayout rawRegion.entry.target)
+            bodyFinalCtx body.stmts bodyFinalCtx.layout bodyCode sourceFuel :=
+        ⟨rfl, hBodyPreserves.2⟩
+      have hRegionCtx : regionFinalCtx = targetCtx :=
+        hRegionFinal.trans hRestoredCtx
+      have hTargetBodyFinished :
+          Locals.finishScoped targetCtx regionFinalCtx regionCode =
+            some targetBody := by
+        rcases Locals.finishScopedOrAbrupt_components hFinish with
+          hFinished | hFallback
+        · exact hFinished
+        · rw [hRegionCtx] at hFallback
+          simp [Locals.finishScoped, Locals.Ctx.cleanupTo?] at hFallback
+      obtain ⟨cleanup, hCleanup, hTargetBody⟩ :=
+        Locals.finishScoped_components hTargetBodyFinished
+      have hCleanupEmpty : cleanup = [] := by
+        rw [hRegionCtx] at hCleanup
+        simpa [Locals.Ctx.cleanupTo?] using hCleanup
+      subst cleanup
+      have hTargetBodyCode :
+          targetBody.stmts =
+            ((entryArtifact.promotionCodes.map Expressions.Stmt.code ++
+                [Expressions.Stmt.code entryArtifact.cleanup]) ++
+              (bodyCode ++
+                (exitArtifact.retainArtifact.promotionCodes.map
+                      Expressions.Stmt.code ++
+                  [Expressions.Stmt.code exitArtifact.retainArtifact.cleanup] ++
+                  exitArtifact.orderArtifact.promotionCodes.map
+                    Expressions.Stmt.code))) ++ [.code []] := by
+        rw [hTargetBody, hRegionCode]
+        simp [Locals.codeStmt, List.append_assoc]
+      have hExitTarget : exit.target = targetCtx.layout := by
+        have h := congrArg Locals.Ctx.layout hRestoredCtx
+        simpa [Locals.Ctx.withLayout] using h
+      intro sourceCtx targetFuel suffix returns source target hFuel hCtx hInitial
+      have hFinalControl :
+          RuntimeCtxCovers sourceCtx
+            (bodyFinalCtx.withLayout exit.target) targets returnNames returns := by
+        rw [hRestoredCtx]
+        exact hCtx
+      have hScopeCovers :
+          ∀ {name : Name}, name ∈ exit.target → name ∈ sourceCtx.scope := by
+        intro name hName
+        apply hCtx.context.scope
+        rwa [hExitTarget] at hName
+      have hRun :=
+        controlScheduledRegionAsBlock returnNames sourceProgram targetProgram
+          targets sourceCtx targetCtx bodyFinalCtx body bodyCode rawRegion.entry
+          entryArtifact exit exitArtifact targetBody sourceFuel targetFuel
+          hBodyPreservesSelf hCtx hEntrySource hFinalControl hScopeCovers
+          hTargetBodyCode hFuel hInitial
+      rwa [hRestoredCtx] at hRun
+    · rcases hAbrupt with ⟨hRawFalls, hClosed⟩
+      subst closedRegion
+      obtain ⟨bodyFinalCtx, hGrowing, _hBodyNodup, _hBodyLayout,
+          hRegionFinal, _hEntrySource⟩ :=
+        compiledGrowingRegionAt_of_compilers returnNames sourceProgram
+          targetProgram lowerCtx targets (StackSchedule.layoutSet targetCtx.layout)
+          scheduleFuel lowerFuel sourceFuel body bodyFacts rawRegion targetCtx
+          regionFinalCtx hNodup loweredBody regionCode hChildSchedule hLowerBody
+          hRegionCompile
+          (fun hBodyLower hBodyCompile hChildNodup => by
+            have hPreserves :=
+              hBody hChildSchedule hBodyLower hBodyCompile hChildNodup
+            have hRawFinalNodup :=
+              StackSchedule.scheduleStmtListFuelWithTargets_finalLayout_nodup
+                hChildNodup
+                (StackSchedule.scheduleBlockFuelWithTargets_statementList
+                  hChildSchedule)
+            refine ⟨hPreserves, ?_⟩
+            rw [hPreserves.1]
+            exact hRawFinalNodup)
+      have hHasExit : Functions.StmtList.hasDirectExit body.stmts = true :=
+        StackSchedule.scheduleBlockFuelWithTargets_hasDirectExit_of_not_fallsThrough
+          hChildSchedule hRawFalls
+      have hGrowingRebased :
+          ControlBlockPreservesAt sourceProgram targetProgram targets returnNames
+            targetCtx targetCtx body { stmts := regionCode } sourceFuel :=
+        hGrowing.rebase_of_hasDirectExit hHasExit
+      intro sourceCtx targetFuel suffix returns source target hFuel hCtx hInitial
+      have hNonregular :=
+        Functions.InteractionSemantics.Abrupt.block_allDone_of_hasDirectExit
+          sourceProgram sourceCtx sourceFuel body source hHasExit
+      rcases Locals.finishScopedOrAbrupt_components hFinish with
+        hFinished | hFallback
+      · obtain ⟨cleanup, _hCleanup, hTargetBody⟩ :=
+          Locals.finishScoped_components hFinished
+        have hTargetBodyStmts :
+            targetBody.stmts = regionCode ++ Locals.codeStmt cleanup := by
+          simpa using congrArg Expressions.Block.stmts hTargetBody
+        have hFuel' := hFuel
+        rw [hTargetBodyStmts] at hFuel'
+        have hPrefixFuel := Expressions.TargetFuel.Covers.head_of_append hFuel'
+        have hPrefixRun :=
+          hGrowingRebased sourceCtx targetFuel hPrefixFuel hCtx hInitial
+        rw [hTargetBody]
+        have hAppended :=
+          controlAppendUnreachableForward
+            (suffixCode := Locals.codeStmt cleanup) targetProgram targets
+            returnNames targetCtx targetFuel hPrefixRun hNonregular
+        exact controlOpenBlockAsStmt_of_nonregular hAppended hNonregular
+      · have hTargetBody : targetBody = { stmts := regionCode } :=
+          hFallback.2.2
+        subst targetBody
+        have hPrefixRun :=
+          hGrowingRebased sourceCtx targetFuel hFuel hCtx hInitial
+        exact controlOpenBlockAsStmt_of_nonregular hPrefixRun hNonregular
   obtain ⟨compiledRetainArtifact⟩ :=
     StackTransitionCompilation.RegularTransition.compileArtifact retain hRetainSource
   have hCompiledRetainPair :=
@@ -2068,30 +2154,13 @@ theorem ifPointAtSucc_of_compilers
     omega
   have hTargetBodyFuel :=
     Expressions.TargetFuel.Covers.if_body_after_two hFuel'
-  have hFinalControl :
-      RuntimeCtxCovers sourceCtx
-        (bodyFinalCtx.withLayout exit.target) targets returnNames returns := by
-    rw [hRestoredCtx]
-    exact hCtx
-  have hScopeCovers :
-      ∀ {name : Name}, name ∈ exit.target → name ∈ sourceCtx.scope := by
-    intro name hName
-    apply hCtx.context.scope
-    rwa [hExitTarget] at hName
   have hIfRun :=
     controlIf sourceProgram targetProgram targets returnNames sourceCtx targetCtx
       sourceFuel targetFuel cond body condCode targetBody hTargetFuel hCtx
       hCondScoped hSupported hCondCompile hInitial (by
         intro sourceAfter targetAfter hAfter
-        have hBlockRun :=
-          controlScheduledRegionAsBlock returnNames sourceProgram targetProgram targets
-            sourceCtx targetCtx bodyFinalCtx body bodyCode rawRegion.entry
-            entryArtifact exit exitArtifact targetBody sourceFuel
-            (targetFuel - 2) hBodyPreservesSelf hCtx
-            hEntrySource
-            hFinalControl hScopeCovers hTargetBodyCode hTargetBodyFuel hAfter
-        rw [hRestoredCtx] at hBlockRun
-        exact hBlockRun)
+        exact hTargetBodyPreserves sourceCtx (targetFuel - 2)
+          hTargetBodyFuel hCtx hAfter)
   have hCodeLength := Expressions.TargetFuel.Covers.length_lt hFuel'
   have hWholeFuel :
       [Expressions.Stmt.if_ (.code condCode) targetBody].length +

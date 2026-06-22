@@ -636,6 +636,24 @@ def printStackDiagnostics
       match lowered.procs.find? fun proc => proc.toExpressions?.isNone with
       | some proc =>
           IO.println ("stack_program_first_proc_failure=" ++ proc.name)
+          let entry :=
+            Locals.Ctx.procEntryWithLayoutAndRetc proc.entryLayout proc.retc
+          match Locals.Block.compileOpen entry proc.body with
+          | none =>
+              IO.println "stack_program_first_proc_open=false"
+          | some (code, finalCtx) =>
+              IO.println "stack_program_first_proc_open=true"
+              IO.println
+                ("stack_program_first_proc_final_depth=" ++
+                  toString finalCtx.layout.length)
+              IO.println
+                ("stack_program_first_proc_direct_exit=" ++
+                  boolString
+                    (Locals.StmtList.hasDirectExit proc.body.stmts))
+              IO.println
+                ("stack_program_first_proc_finish=" ++
+                  boolString
+                    (Locals.finishToPreserving finalCtx proc.retc 0 code).isSome)
       | none =>
           if (Locals.Block.compile Locals.Ctx.initial lowered.body).isNone then
             IO.println "stack_program_first_proc_failure=program-body"
@@ -819,7 +837,7 @@ def run (config : Config) : IO Unit := do
     return
   let compileStart ← IO.monoMsNow
   let compiledObject? :=
-    program.object.compileObjectArtifactWithLinkerSymbols?
+    program.object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
       config.linkerSymbols
   let byteLength :=
     match compiledObject? with

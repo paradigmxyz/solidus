@@ -139,6 +139,56 @@ theorem finishScoped_components
       subst block
       exact ⟨cleanup, by simpa using hCleanup, rfl⟩
 
+def finishScopedOrAbrupt (outer final : Ctx)
+    (source : Locals.Block) (stmts : List Expressions.Stmt) :
+    Option Expressions.Block :=
+  match finishScoped outer final stmts with
+  | some block => some block
+  | none =>
+      if StmtList.hasDirectExit source.stmts then
+        some { stmts := stmts }
+      else none
+
+theorem finishScopedOrAbrupt_components
+    {outer final : Ctx} {source : Locals.Block}
+    {stmts : List Expressions.Stmt} {block : Expressions.Block}
+    (hFinish : finishScopedOrAbrupt outer final source stmts = some block) :
+    (finishScoped outer final stmts = some block) ∨
+      (finishScoped outer final stmts = none ∧
+        StmtList.hasDirectExit source.stmts = true ∧
+          block = { stmts := stmts }) := by
+  unfold finishScopedOrAbrupt at hFinish
+  cases hScoped : finishScoped outer final stmts with
+  | none =>
+      cases hExit : StmtList.hasDirectExit source.stmts with
+      | false => simp [hScoped, hExit] at hFinish
+      | true =>
+          simp [hScoped, hExit] at hFinish
+          subst block
+          exact .inr ⟨rfl, rfl, rfl⟩
+  | some lowerBody =>
+      simp [hScoped] at hFinish
+      subst block
+      exact .inl rfl
+
+/--
+When the final stack is at least as deep as the enclosing lexical stack,
+ordinary cleanup is available.  In that case the abrupt-only fallback cannot
+be the branch selected by `finishScopedOrAbrupt`.
+-/
+theorem finishScopedOrAbrupt_eq_finishScoped_of_le
+    {outer final : Ctx} {source : Locals.Block}
+    {stmts : List Expressions.Stmt} {block : Expressions.Block}
+    (hDepth : outer.layout.length ≤ final.layout.length)
+    (hFinish :
+      finishScopedOrAbrupt outer final source stmts = some block) :
+    finishScoped outer final stmts = some block := by
+  rcases finishScopedOrAbrupt_components hFinish with
+    hScoped | ⟨hScoped, _hExit, _hBlock⟩
+  · exact hScoped
+  · unfold finishScoped at hScoped
+    simp [Ctx.cleanupTo?, hDepth] at hScoped
+
 set_option maxHeartbeats 800000 in
 mutual
   def Expr.compileCode {results : Nat} (ctx : Ctx) (offset : Nat)
@@ -257,7 +307,7 @@ mutual
     | .if_ cond body => do
         let condExpr ← Expr.compile ctx cond
         let (bodyCode, bodyCtx) ← Block.compileOpen ctx body
-        let lowerBody ← finishScoped ctx bodyCtx bodyCode
+        let lowerBody ← finishScopedOrAbrupt ctx bodyCtx body bodyCode
         some ([Expressions.Stmt.if_ condExpr lowerBody], ctx)
     | .switch scrutinee cases defaultBody => do
         let scrutineeExpr ← Expr.compile ctx scrutinee
@@ -640,10 +690,8 @@ theorem compile_terminalArgs_components
       rcases hCompile with ⟨rfl, rfl⟩
       exact ⟨argsCode, rfl, rfl, rfl⟩
 
-/--
-Successful compilation of a Locals `if` decomposes through the ordinary
-condition compiler, open-block compiler, and scoped cleanup.
--/
+/-- Successful compilation of a Locals `if` decomposes through the ordinary
+condition compiler, open-block compiler, and checked lexical closure. -/
 theorem compile_if_components
     {ctx final : Ctx}
     {cond : Expr 1} {body : Block}
@@ -653,7 +701,7 @@ theorem compile_if_components
     ∃ condCode bodyCode bodyCtx lowerBody,
       Expr.compileCode ctx 0 cond = some condCode ∧
       Block.compileOpen ctx body = some (bodyCode, bodyCtx) ∧
-      finishScoped ctx bodyCtx bodyCode = some lowerBody ∧
+      finishScopedOrAbrupt ctx bodyCtx body bodyCode = some lowerBody ∧
       code = [Expressions.Stmt.if_ (.code condCode) lowerBody] ∧
       final = ctx := by
   cases hCond : Expr.compileCode ctx 0 cond with
@@ -665,7 +713,7 @@ theorem compile_if_components
           simp [Stmt.compile, Expr.compile, hCond, hBody] at hCompile
       | some bodyResult =>
           rcases bodyResult with ⟨bodyCode, bodyCtx⟩
-          cases hFinish : finishScoped ctx bodyCtx bodyCode with
+          cases hFinish : finishScopedOrAbrupt ctx bodyCtx body bodyCode with
           | none =>
               simp [Stmt.compile, Expr.compile, hCond, hBody, hFinish]
                 at hCompile
@@ -676,6 +724,18 @@ theorem compile_if_components
               exact
                 ⟨condCode, bodyCode, bodyCtx, lowerBody,
                   rfl, rfl, hFinish, rfl, rfl⟩
+
+namespace Examples
+
+def abruptIfBody : Block :=
+  { stmts := [.discardName "x", .terminal .stop] }
+
+theorem abrupt_if_needs_no_unreachable_cleanup :
+    (Stmt.compile (Ctx.initial.withLayout ["x"])
+      (.if_ (.lit (EvmYul.UInt256.ofNat 1)) abruptIfBody)).isSome = true := by
+  native_decide
+
+end Examples
 
 /--
 Successful compilation of a Locals `switch` decomposes through the ordinary
@@ -1318,7 +1378,7 @@ theorem compileOpen_single_if_components
     ∃ condCode bodyCode bodyCtx lowerBody,
       Expr.compileCode ctx 0 cond = some condCode ∧
       Block.compileOpen ctx body = some (bodyCode, bodyCtx) ∧
-      finishScoped ctx bodyCtx bodyCode = some lowerBody ∧
+      finishScopedOrAbrupt ctx bodyCtx body bodyCode = some lowerBody ∧
       code = [Expressions.Stmt.if_ (.code condCode) lowerBody] ∧
       final = ctx := by
   cases hStmt : Stmt.compile ctx (.if_ cond body) with
@@ -2562,7 +2622,8 @@ mutual
                 simp [hCond, hBodyCompile] at hCompile
             | some bodyOut =>
                 rcases bodyOut with ⟨bodyCode, bodyCtx⟩
-                cases hFinish : finishScoped ctx bodyCtx bodyCode with
+                cases hFinish :
+                    finishScopedOrAbrupt ctx bodyCtx body bodyCode with
                 | none =>
                     simp [hCond, hBodyCompile, hFinish] at hCompile
                 | some lowerBody =>
@@ -2574,8 +2635,14 @@ mutual
                     have hBodyCodeNo :=
                       Block.compileOpen_noCallCreate ctx body hParts.2
                         hBodyCompile
-                    have hLowerBodyNo :=
-                      finishScoped_noCallCreate hBodyCodeNo hFinish
+                    have hLowerBodyNo :
+                        lowerBody.usesCallCreate = false := by
+                      rcases finishScopedOrAbrupt_components hFinish with
+                        hScoped | hAbrupt
+                      · exact finishScoped_noCallCreate hBodyCodeNo hScoped
+                      · rw [hAbrupt.2.2]
+                        simpa [Expressions.Block.usesCallCreate] using
+                          hBodyCodeNo
                     simp [Expressions.StmtList.usesCallCreate,
                       Expressions.Stmt.usesCallCreate, hCondNo, hLowerBodyNo]
     | switch scrutinee cases defaultBody =>

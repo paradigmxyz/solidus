@@ -4417,6 +4417,90 @@ theorem scopedBlock_generated
       apply Simulation.Interaction.ExceptRel.ok
       exact ScopedResultRel.halt hShared hReturns
 
+theorem scopedBlock_abrupt_generated
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx)
+    (targetCtx bodyCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat) (body : Locals.Block)
+    (bodyCode : List Expressions.Stmt)
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hExit : Locals.StmtList.hasDirectExit body.stmts = true)
+    (hBody :
+      Simulation.Interaction.ForwardRel
+        Block.FuelTruncated
+        (OpenOutcomeRel bodyCtx suffix returns)
+        (InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx sourceFuel body source)
+        (Expressions.InteractionSemantics.Block.openRun
+          targetProgram targetFuel { stmts := bodyCode } target)) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (ScopedOutcomeRel targetCtx suffix returns)
+      (InteractionSemantics.Block.openRunScoped
+        sourceProgram sourceCtx body sourceFuel source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := bodyCode } target) := by
+  unfold InteractionSemantics.Block.openRunScoped
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+    Locals.Source.Effectful.Control.Block.runScoped
+  change
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (ScopedOutcomeRel targetCtx suffix returns)
+      (Simulation.Interaction.bind
+        (InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx sourceFuel body source) _)
+      _
+  have hNonregular :=
+    InteractionSemantics.Abrupt.block_allDone_of_hasDirectExit
+      sourceProgram sourceCtx sourceFuel body source hExit
+  have hStrong :=
+    Simulation.Interaction.ForwardRel.strengthen_left hBody hNonregular
+  have hStrong' :
+      Simulation.Interaction.ForwardRel
+        Block.FuelTruncated
+        (Simulation.Interaction.ExceptRel
+          (fun (_ : EVMException) (_ : EVMException) => True)
+          (fun sourceResult targetResult =>
+            OpenResultRel bodyCtx suffix returns sourceResult targetResult ∧
+              sourceResult.1.mode ≠ .regular))
+        (InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx sourceFuel body source)
+        (Expressions.InteractionSemantics.Block.openRun
+          targetProgram targetFuel { stmts := bodyCode } target) := by
+    apply Simulation.Interaction.ForwardRel.mono hStrong
+    intro sourceDone targetDone hDone
+    rcases hDone with ⟨hRelated, hMode⟩
+    cases hRelated with
+    | error _ => exact .error trivial
+    | ok hOpen => exact .ok ⟨hOpen, hMode⟩
+  conv_rhs =>
+    rw [← Simulation.Interaction.bind_pure
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := bodyCode } target)]
+  apply Simulation.Interaction.ForwardRel.bind hStrong'
+  intro sourceResult targetResult hResult
+  rcases hResult with ⟨hRelated, hMode⟩
+  cases hRelated with
+  | regular _hCtx _hState => exact False.elim (hMode rfl)
+  | brk hState =>
+      exact Simulation.Interaction.ForwardRel.done
+        (.ok (ScopedResultRel.brk hState))
+  | cont hState =>
+      exact Simulation.Interaction.ForwardRel.done
+        (.ok (ScopedResultRel.cont hState))
+  | leave hState =>
+      exact Simulation.Interaction.ForwardRel.done
+        (.ok (ScopedResultRel.leave hState))
+  | halt hShared hReturns =>
+      exact Simulation.Interaction.ForwardRel.done
+        (.ok (ScopedResultRel.halt hShared hReturns))
+
 /--
 Fuel-aligned loop recursion. Source fuel `n` is simulated by target fuel
 `n + slack`; one iteration decrements both sides, while the fixed slack covers
@@ -4509,6 +4593,86 @@ theorem if_generated
           sourceProgram targetProgram sourceCtx targetCtx bodyCtx
           sourceFuel (targetFuel - 2) body bodyCode cleanup
           hCtx hLayout hCleanup hCleanupFuel (hBody hResult.state)
+      exact forward_scoped_withContext hCtx hScoped
+
+theorem if_generated_abrupt
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx)
+    (targetCtx bodyCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    (cond : Locals.Expr 1) (body : Locals.Block)
+    (condCode : Structured.Code)
+    (bodyCode : List Expressions.Stmt)
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : bodyCode.length + 4 ≤ targetFuel)
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hCondScoped : Scope.ExprScoped targetCtx.layout cond)
+    (hCondSupported : InteractionSemantics.Expr.OpenSupported cond)
+    (hCondCompile :
+      Locals.Expr.compileCode targetCtx 0 cond = some condCode)
+    (hExit : Locals.StmtList.hasDirectExit body.stmts = true)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target)
+    (hBody :
+      ∀ {sourceAfter : Locals.Source.State}
+        {targetAfter : Structured.RunState},
+        Frame.StateRel targetCtx.layout suffix returns
+            sourceAfter targetAfter →
+          Simulation.Interaction.ForwardRel
+            Block.FuelTruncated
+            (OpenOutcomeRel bodyCtx suffix returns)
+            (InteractionSemantics.Block.openRun
+              sourceProgram sourceCtx sourceFuel body sourceAfter)
+            (Expressions.InteractionSemantics.Block.openRun
+              targetProgram (targetFuel - 2)
+                { stmts := bodyCode } targetAfter)) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel targetCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx (sourceFuel + 1) (.if_ cond body) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel
+          { stmts :=
+              [Expressions.Stmt.if_ (.code condCode)
+                { stmts := bodyCode }] }
+          target) := by
+  rw [TargetBlock.openRun_single_stmt_of_fuel
+    targetProgram targetFuel _ target (by omega)]
+  have hTargetStmtFuel :
+      targetFuel - 1 = (targetFuel - 2) + 1 := by
+    omega
+  rw [hTargetStmtFuel]
+  unfold InteractionSemantics.Stmt.openRun
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+    Expressions.InteractionSemantics.Stmt.openRun
+  simp only [Locals.Source.Effectful.Control.Stmt.run,
+    Expressions.EffectSemantics.Control.Stmt.run]
+  have hCond :=
+    Expr.openEvalCondition_compileCode
+      cond targetCtx hCondScoped hCondSupported hCondCompile hInitial
+  apply Simulation.Interaction.ForwardRel.bind
+    (Simulation.Interaction.ForwardRel.ofRel hCond)
+  intro sourceResult targetResult hResult
+  rcases sourceResult with ⟨sourceAfter, sourceCond⟩
+  rcases targetResult with ⟨targetAfter, targetCond⟩
+  cases hResult.condition
+  cases sourceCond with
+  | false =>
+      apply Simulation.Interaction.ForwardRel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact OpenResultRel.regular hCtx hResult.state
+  | true =>
+      have hScoped :=
+        scopedBlock_abrupt_generated
+          sourceProgram targetProgram sourceCtx targetCtx bodyCtx
+          sourceFuel (targetFuel - 2) body bodyCode hExit
+          (hBody hResult.state)
       exact forward_scoped_withContext hCtx hScoped
 
 /--
@@ -4843,21 +5007,30 @@ theorem if_of_compile
   obtain ⟨condCode, bodyCode, bodyCtx, lowerBody,
     hCondCompile, hBodyCompile, hFinish, hCode, hFinal⟩ :=
     Locals.Stmt.compile_if_components hCompile
-  obtain ⟨cleanup, hCleanup, hLowerBody⟩ :=
-    Locals.finishScoped_components hFinish
   obtain ⟨hTargetFuel, hBodyForward⟩ := hBody hBodyCompile
-  have hLayout :=
-    Locals.Block.compileOpen_layout_extends_of_sourceOwned
-      hOwned hBodyCompile
   subst finalCtx
   subst stmts
-  subst lowerBody
-  exact
-    if_generated
-      sourceProgram targetProgram sourceCtx targetCtx bodyCtx
-      sourceFuel targetFuel cond body condCode bodyCode cleanup
-      hTargetFuel hCtx hCondScoped hCondSupported hCondCompile
-      hLayout hCleanup hInitial hBodyForward
+  rcases Locals.finishScopedOrAbrupt_components hFinish with
+    hScoped | hAbrupt
+  · obtain ⟨cleanup, hCleanup, hLowerBody⟩ :=
+      Locals.finishScoped_components hScoped
+    have hLayout :=
+      Locals.Block.compileOpen_layout_extends_of_sourceOwned
+        hOwned hBodyCompile
+    subst lowerBody
+    exact
+      if_generated
+        sourceProgram targetProgram sourceCtx targetCtx bodyCtx
+        sourceFuel targetFuel cond body condCode bodyCode cleanup
+        hTargetFuel hCtx hCondScoped hCondSupported hCondCompile
+        hLayout hCleanup hInitial hBodyForward
+  · rw [hAbrupt.2.2]
+    exact
+      if_generated_abrupt
+        sourceProgram targetProgram sourceCtx targetCtx bodyCtx
+        sourceFuel targetFuel cond body condCode bodyCode
+        hTargetFuel hCtx hCondScoped hCondSupported hCondCompile
+        hAbrupt.2.1 hInitial hBodyForward
 
 /-- Compiler-facing switch theorem over the ordinary case/default compiler. -/
 theorem switch_of_compile

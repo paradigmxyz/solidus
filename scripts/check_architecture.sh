@@ -1268,8 +1268,28 @@ fi
 
 report_matches \
   'The exact-contract stack gate must not inject scratch or enforce deployability:' \
-  'scratch-reservation|AAVE_SCRATCH|permit_bytes[[:space:]]*[<>]|aave_bytes[[:space:]]*[<>]' \
+  'scratch-reservation|AAVE_SCRATCH|permit_bytes[[:space:]]*[<>]|aave_bytes[[:space:]]*[<>]|stack_frontend_compact_code_artifact=true' \
   scripts/test_full_contract_backend_smoke.sh
+
+if ! rg -Fq 'finishScopedOrAbrupt ctx bodyCtx body bodyCode' \
+      EvmCompiler/Locals/Compiler.lean ||
+    ! rg -Fq 'Region.close?' EvmCompiler/Functions/StackSchedule.lean; then
+  printf '%s\n\n' \
+    'Abrupt-only conditional regions must not require unreachable layout cleanup.' >&2
+  failed=1
+fi
+
+report_matches \
+  'Stack allocation must not contain contract-specific behavior:' \
+  'Permit2|Aave|Balancer|Seaport|OpenZeppelin|Compound|Solady|Solmate' \
+  EvmCompiler/Functions/AllocationLiveness.lean \
+  EvmCompiler/Functions/AllocationLivenessFacts.lean \
+  EvmCompiler/Functions/AllocationLayout.lean \
+  EvmCompiler/Functions/StackAccess.lean \
+  EvmCompiler/Functions/StackSchedule.lean \
+  EvmCompiler/Functions/StackLowering.lean \
+  EvmCompiler/Functions/StackBlockPreservation.lean \
+  EvmCompiler/Functions/StackExactFuelPreservation.lean
 
 report_matches \
   'Verified stack object construction must not reuse legacy allocation artifacts:' \
@@ -1937,12 +1957,14 @@ if printf '%s\n' "$ordered_lowering" |
     >&2
   failed=1
 fi
-if ! rg -q 'compileObjectArtifactWithLinkerSymbols\?' \
+if ! rg -q 'compileVerifiedStackObjectArtifactWithLinkerSymbols\?' \
+      EvmCompiler/BackendCli.lean ||
+    rg -q 'compileObjectArtifactWithLinkerSymbols\?' \
       EvmCompiler/BackendCli.lean ||
     rg -q 'computedImageUncheckedWithLinkerSymbols\?' \
       EvmCompiler/BackendCli.lean; then
   printf '%s\n\n' \
-    'The native object-image backend must retain the recursive checked compiler artifact.' \
+    'The native object-image backend must select the verified stack object artifact.' \
     >&2
   failed=1
 fi

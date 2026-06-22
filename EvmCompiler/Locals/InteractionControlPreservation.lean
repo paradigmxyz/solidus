@@ -862,6 +862,92 @@ theorem policyScopedBlock_generated
       apply Simulation.Interaction.ExceptRel.ok
       exact PolicyScopedResultRel.halt hShared hReturns
 
+theorem policyScopedBlock_abrupt_generated
+    (policy : ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx)
+    (targetCtx bodyCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat) (body : Locals.Block)
+    (bodyCode : List Expressions.Stmt)
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hExit : Locals.StmtList.hasDirectExit body.stmts = true)
+    (hBody :
+      Simulation.Interaction.ForwardRel
+        Block.FuelTruncated
+        (PolicyOpenOutcomeRel policy bodyCtx suffix returns)
+        (InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx sourceFuel body source)
+        (Expressions.InteractionSemantics.Block.openRun
+          targetProgram targetFuel { stmts := bodyCode } target)) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (PolicyScopedOutcomeRel policy targetCtx suffix returns)
+      (InteractionSemantics.Block.openRunScoped
+        sourceProgram sourceCtx body sourceFuel source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := bodyCode } target) := by
+  unfold InteractionSemantics.Block.openRunScoped
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+    Locals.Source.Effectful.Control.Block.runScoped
+  change
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (PolicyScopedOutcomeRel policy targetCtx suffix returns)
+      (Simulation.Interaction.bind
+        (InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx sourceFuel body source) _)
+      _
+  have hNonregular :=
+    InteractionSemantics.Abrupt.block_allDone_of_hasDirectExit
+      sourceProgram sourceCtx sourceFuel body source hExit
+  have hStrong :=
+    Simulation.Interaction.ForwardRel.strengthen_left hBody hNonregular
+  have hStrong' :
+      Simulation.Interaction.ForwardRel
+        Block.FuelTruncated
+        (Simulation.Interaction.ExceptRel
+          (fun (_ : EVMException) (_ : EVMException) => True)
+          (fun sourceResult targetResult =>
+            PolicyOpenResultRel policy bodyCtx suffix returns
+                sourceResult targetResult ∧
+              sourceResult.1.mode ≠ .regular))
+        (InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx sourceFuel body source)
+        (Expressions.InteractionSemantics.Block.openRun
+          targetProgram targetFuel { stmts := bodyCode } target) := by
+    apply Simulation.Interaction.ForwardRel.mono hStrong
+    intro sourceDone targetDone hDone
+    rcases hDone with ⟨hRelated, hMode⟩
+    cases hRelated with
+    | error _ => exact .error trivial
+    | ok hOpen => exact .ok ⟨hOpen, hMode⟩
+  conv_rhs =>
+    rw [← Simulation.Interaction.bind_pure
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := bodyCode } target)]
+  apply Simulation.Interaction.ForwardRel.bind hStrong'
+  intro sourceResult targetResult hResult
+  rcases hResult with ⟨hRelated, hMode⟩
+  cases hRelated with
+  | regular _hPolicy _hCtx _hState => exact False.elim (hMode rfl)
+  | brk _hPolicy hAllowed hState =>
+      exact Simulation.Interaction.ForwardRel.done
+        (.ok (PolicyScopedResultRel.brk hAllowed hState))
+  | cont _hPolicy hAllowed hState =>
+      exact Simulation.Interaction.ForwardRel.done
+        (.ok (PolicyScopedResultRel.cont hAllowed hState))
+  | leave _hPolicy hAllowed hState =>
+      exact Simulation.Interaction.ForwardRel.done
+        (.ok (PolicyScopedResultRel.leave hAllowed hState))
+  | halt _hPolicy hShared hReturns =>
+      exact Simulation.Interaction.ForwardRel.done
+        (.ok (PolicyScopedResultRel.halt hShared hReturns))
+
 /-- A lexical block is the shared policy-indexed scoped child followed by the
 unchanged enclosing source context. -/
 theorem policy_block_generated
@@ -1058,6 +1144,88 @@ theorem policy_if_generated
           hCtx hLayout hCleanup hCleanupFuel (hBody hResult.state)
       exact policy_forward_scoped_withContext hPolicy hCtx hScoped
 
+theorem policy_if_generated_abrupt
+    (policy : ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx)
+    (targetCtx bodyCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    (cond : Locals.Expr 1) (body : Locals.Block)
+    (condCode : Structured.Code)
+    (bodyCode : List Expressions.Stmt)
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : bodyCode.length + 4 ≤ targetFuel)
+    (hPolicy : ControlPolicy.ContextCompatible policy sourceCtx)
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hCondScoped : Scope.ExprScoped targetCtx.layout cond)
+    (hCondSupported : InteractionSemantics.Expr.OpenSupported cond)
+    (hCondCompile :
+      Locals.Expr.compileCode targetCtx 0 cond = some condCode)
+    (hExit : Locals.StmtList.hasDirectExit body.stmts = true)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target)
+    (hBody :
+      ∀ {sourceAfter : Locals.Source.State}
+        {targetAfter : Structured.RunState},
+        Frame.StateRel targetCtx.layout suffix returns
+            sourceAfter targetAfter →
+          Simulation.Interaction.ForwardRel
+            Block.FuelTruncated
+            (PolicyOpenOutcomeRel policy bodyCtx suffix returns)
+            (InteractionSemantics.Block.openRun
+              sourceProgram sourceCtx sourceFuel body sourceAfter)
+            (Expressions.InteractionSemantics.Block.openRun
+              targetProgram (targetFuel - 2)
+                { stmts := bodyCode } targetAfter)) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (PolicyOpenOutcomeRel policy targetCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx (sourceFuel + 1) (.if_ cond body) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel
+          { stmts :=
+              [Expressions.Stmt.if_ (.code condCode)
+                { stmts := bodyCode }] }
+          target) := by
+  rw [TargetBlock.openRun_single_stmt_of_fuel
+    targetProgram targetFuel _ target (by omega)]
+  have hTargetStmtFuel :
+      targetFuel - 1 = (targetFuel - 2) + 1 := by
+    omega
+  rw [hTargetStmtFuel]
+  unfold InteractionSemantics.Stmt.openRun
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+    Expressions.InteractionSemantics.Stmt.openRun
+  simp only [Locals.Source.Effectful.Control.Stmt.run,
+    Expressions.EffectSemantics.Control.Stmt.run]
+  have hCond :=
+    Expr.openEvalCondition_compileCode
+      cond targetCtx hCondScoped hCondSupported hCondCompile hInitial
+  apply Simulation.Interaction.ForwardRel.bind
+    (Simulation.Interaction.ForwardRel.ofRel hCond)
+  intro sourceResult targetResult hResult
+  rcases sourceResult with ⟨sourceAfter, sourceCond⟩
+  rcases targetResult with ⟨targetAfter, targetCond⟩
+  cases hResult.condition
+  cases sourceCond with
+  | false =>
+      apply Simulation.Interaction.ForwardRel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact PolicyOpenResultRel.regular hPolicy hCtx hResult.state
+  | true =>
+      have hScoped :=
+        policyScopedBlock_abrupt_generated
+          policy sourceProgram targetProgram sourceCtx targetCtx bodyCtx
+          sourceFuel (targetFuel - 2) body bodyCode hExit
+          (hBody hResult.state)
+      exact policy_forward_scoped_withContext hPolicy hCtx hScoped
+
 theorem policy_if_of_compile
     (policy : ControlPolicy)
     (sourceProgram : Locals.Program)
@@ -1109,21 +1277,30 @@ theorem policy_if_of_compile
   obtain ⟨condCode, bodyCode, bodyCtx, lowerBody,
     hCondCompile, hBodyCompile, hFinish, hCode, hFinal⟩ :=
     Locals.Stmt.compile_if_components hCompile
-  obtain ⟨cleanup, hCleanup, hLowerBody⟩ :=
-    Locals.finishScoped_components hFinish
   obtain ⟨hTargetFuel, hBodyForward⟩ := hBody hBodyCompile
-  have hLayout :=
-    Locals.Block.compileOpen_layout_extends_of_sourceOwned
-      hOwned hBodyCompile
   subst finalCtx
   subst stmts
-  subst lowerBody
-  exact
-    policy_if_generated
-      policy sourceProgram targetProgram sourceCtx targetCtx bodyCtx
-      sourceFuel targetFuel cond body condCode bodyCode cleanup
-      hTargetFuel hPolicy hCtx hCondScoped hCondSupported hCondCompile
-      hLayout hCleanup hInitial hBodyForward
+  rcases Locals.finishScopedOrAbrupt_components hFinish with
+    hScoped | hAbrupt
+  · obtain ⟨cleanup, hCleanup, hLowerBody⟩ :=
+      Locals.finishScoped_components hScoped
+    have hLayout :=
+      Locals.Block.compileOpen_layout_extends_of_sourceOwned
+        hOwned hBodyCompile
+    subst lowerBody
+    exact
+      policy_if_generated
+        policy sourceProgram targetProgram sourceCtx targetCtx bodyCtx
+        sourceFuel targetFuel cond body condCode bodyCode cleanup
+        hTargetFuel hPolicy hCtx hCondScoped hCondSupported hCondCompile
+        hLayout hCleanup hInitial hBodyForward
+  · rw [hAbrupt.2.2]
+    exact
+      policy_if_generated_abrupt
+        policy sourceProgram targetProgram sourceCtx targetCtx bodyCtx
+        sourceFuel targetFuel cond body condCode bodyCode
+        hTargetFuel hPolicy hCtx hCondScoped hCondSupported hCondCompile
+        hAbrupt.2.1 hInitial hBodyForward
 
 theorem policy_switch_generated
     (policy : ControlPolicy)
