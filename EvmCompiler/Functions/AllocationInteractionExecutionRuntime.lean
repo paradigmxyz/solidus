@@ -1126,6 +1126,99 @@ theorem if_
         hTailSuccess hTailSafe =>
       hTailForward tail hExact hTailBoundary hTailSafe)
 
+/-- Switch preservation carries guarded success only into the compiler-selected
+source branch and its reached regular continuation. -/
+theorem switch
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {scrutinee : Functions.Expr 1}
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase sourceFuel targetExtra : Nat}
+    {config : Config} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor : CoreCursor root scope live
+      { stmts := .switch scrutinee cases defaultBody :: rest }
+      beforeState beforeLocals)
+    (hSourceFuel : 1 < sourceFuel)
+    (hBoundary :
+      Boundary cursor contract globalFrameWords config allocatorDepth frameBase
+        mode sourceCtx source target)
+    (hReserve : AllocationInteractionTargetFuel.Reserve cursor targetExtra)
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+        program sourceCtx sourceFuel
+          { stmts := .switch scrutinee cases defaultBody :: rest } source)
+    (hBodyForward :
+      ∀ {value : Word} {selected : Functions.Block}
+        {selectedStart : AllocationLowering.State}
+        {selectedPlanning : AllocationSupport.PlanningState}
+        (hSelect :
+          Functions.Source.Switch.select value cases defaultBody =
+            some selected)
+        (bodyCursor :
+          CoreCursor root (.lexical scope selectedPlanning.nextScope)
+            live selected selectedStart beforeLocals)
+        {sourceAfter targetAfter},
+        targetBudget bodyCursor (sourceFuel - 2)
+              (AllocationInteractionTargetFuel.stmtListNestedSize
+                bodyCursor.compiled) ≤
+            targetBudget cursor sourceFuel targetExtra - 2 →
+          Boundary bodyCursor contract globalFrameWords config allocatorDepth
+            frameBase mode sourceCtx sourceAfter targetAfter →
+          AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+            program sourceCtx (sourceFuel - 2) selected sourceAfter →
+          2 ≤
+              (targetBudget cursor sourceFuel targetExtra - 2) -
+                bodyCursor.compiled.length ∧
+            Simulation.Interaction.Rel
+              (RuntimeResultRel contract root.lowerCtx
+                bodyCursor.finalState bodyCursor.finalLocals bodyCursor.plan
+                root.returns (Functions.Scope.Block.outEnv live selected)
+                frameBase mode sourceCtx
+                { sourceCtx with
+                  scope := Functions.Scope.Block.outEnv live selected }
+                config allocatorDepth targetAfter)
+              (Functions.InteractionSemantics.Block.openRun program sourceCtx
+                (sourceFuel - 2) selected sourceAfter)
+              (Expressions.InteractionSemantics.Block.openRun expressions
+                (targetBudget cursor sourceFuel targetExtra - 2)
+                { stmts := bodyCursor.compiled } targetAfter))
+    (hTailForward :
+      ∀ {afterState : AllocationLowering.State}
+        (tail : CoreCursor root scope live { stmts := rest }
+          afterState beforeLocals),
+        ExactTail cursor tail →
+        ∀ {sourceMid targetMid tailMode},
+          Boundary tail contract globalFrameWords config allocatorDepth
+              frameBase tailMode sourceCtx sourceMid targetMid →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
+            CursorRuntimeAt tail contract config allocatorDepth frameBase
+              (sourceFuel - 1) (targetExtra + callStride expressions)
+              tailMode sourceCtx sourceMid targetMid) :
+    CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
+      targetExtra mode sourceCtx source target := by
+  exact CursorRuntimeAt.switch cursor hSourceFuel hReserve hBoundary
+    hExecutionSafe.ordinarySuccessful hExecutionSafe
+    (fun {value selected selectedStart selectedPlanning} hSelect bodyCursor
+        {sourceAfter targetAfter} hTargetCapacity hBodyBoundary hBodySuccess
+        hBodySafe =>
+      hBodyForward hSelect bodyCursor hTargetCapacity hBodyBoundary hBodySafe)
+    (fun {afterState} tail hExact {sourceMid targetMid tailMode} hTailBoundary
+        hTailSuccess hTailSafe =>
+      hTailForward tail hExact hTailBoundary hTailSafe)
+
 
 end AllocationInteractionExecutionRuntime
 end Functions

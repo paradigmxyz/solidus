@@ -241,6 +241,8 @@ import EvmCompiler.Yul.StateRelation
 #print axioms EvmCompiler.Functions.AllocationInteractionExecutionRuntime.block
 #check EvmCompiler.Functions.AllocationInteractionExecutionRuntime.if_
 #print axioms EvmCompiler.Functions.AllocationInteractionExecutionRuntime.if_
+#check EvmCompiler.Functions.AllocationInteractionExecutionRuntime.switch
+#print axioms EvmCompiler.Functions.AllocationInteractionExecutionRuntime.switch
 #check EvmCompiler.Functions.AllocationInteractionSafeSemantics.Block.ExecutionSafe
 #check EvmCompiler.Functions.AllocationInteractionSafeSemantics.Block.openRun_eq_ordinary_of_successful
 #print axioms EvmCompiler.Functions.AllocationInteractionSafeSemantics.Block.openRun_eq_ordinary_of_successful

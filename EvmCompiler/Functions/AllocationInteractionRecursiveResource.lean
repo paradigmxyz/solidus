@@ -2838,8 +2838,6 @@ theorem switch
     (hSourceFuel : 1 < sourceFuel)
     (hTargetReserve :
       AllocationInteractionTargetFuel.Reserve cursor targetExtra)
-    (hScrutineeSafe :
-      AllocationInteractionSafety.ExprSafe contract scrutinee source)
     (hBoundary :
       Boundary cursor contract globalFrameWords config allocatorDepth frameBase
         mode sourceCtx source target)
@@ -2848,6 +2846,10 @@ theorem switch
         (Functions.InteractionSemantics.Block.openRun program sourceCtx
           sourceFuel
           { stmts := .switch scrutinee cases defaultBody :: rest } source))
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+        program sourceCtx sourceFuel
+          { stmts := .switch scrutinee cases defaultBody :: rest } source)
     (hBodyForward :
       ∀ {value} {selected : Functions.Block}
         {selectedStart : AllocationLowering.State}
@@ -2868,6 +2870,8 @@ theorem switch
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Block.openRun program sourceCtx
               (sourceFuel - 2) selected sourceAfter) →
+          AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+            program sourceCtx (sourceFuel - 2) selected sourceAfter →
           2 ≤
               (targetBudget cursor sourceFuel targetExtra - 2) -
                 bodyCursor.compiled.length ∧
@@ -2895,6 +2899,8 @@ theorem switch
             Simulation.Interaction.Successful
               (Functions.InteractionSemantics.Block.openRun program sourceCtx
                 (sourceFuel - 1) { stmts := rest } sourceMid) →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
               (sourceFuel - 1) (targetExtra + callStride expressions)
               tailMode sourceCtx
@@ -2929,6 +2935,9 @@ theorem switch
     have hHead :=
       Functions.InteractionSemantics.Block.successful_openRun_cons_head hWhole
     simpa [Functions.InteractionSemantics.Stmt.openRun] using hHead
+  have hSafeHead :=
+    AllocationInteractionSafeSuccessful.successful_head
+      (by omega) hExecutionSafe
   obtain
       ⟨afterState, headLower, headCode, tail, loweredScrutinee,
         loweredCases, afterCases, loweredDefault, scrutineeCode,
@@ -2937,11 +2946,34 @@ theorem switch
   have hAfterInvariant :=
     hBoundary.semantic.invariant.transport_state
       components.afterEnv components.afterLayout
+  have hSafeHeadAtBody :
+      Simulation.Interaction.Successful
+        (AllocationInteractionSafeSemantics.Stmt.openRun contract program
+          sourceCtx (bodyFuel + 1)
+          (.switch scrutinee cases defaultBody) source) := by
+    have hFuelEq : bodyFuel + 1 = sourceFuel - 1 := by
+      simp [bodyFuel]
+      omega
+    rw [hFuelEq]
+    exact hSafeHead
+  have hSafeScrutineeSuccess :
+      Simulation.Interaction.Successful
+        (AllocationInteractionSafeSemantics.Expr.openEvalOne
+          contract scrutinee source) := by
+    have hSafeHeadForScrutinee := hSafeHeadAtBody
+    rw [AllocationInteractionSafeSemantics.Stmt.openRun_switch]
+      at hSafeHeadForScrutinee
+    exact Simulation.Interaction.Successful.bind_left
+      hSafeHeadForScrutinee
+  have hScrutineeChecked :=
+    AllocationInteractionSafeExpression.valueChecked_of_successful
+      components.scrutineeScoped hBoundary.semantic.invariant.defined
+      hSafeScrutineeSuccess
   have hScrutinee :=
     AllocationInteractionExpressionResource.forwardOne
       (AllocationInteractionPrimitiveResource.canonicalPrimitiveForward
         contract)
-      hBoundary.configEq hScrutineeSafe
+      hBoundary.configEq hScrutineeChecked.safety
       hBoundary.semantic.invariant.compiler components.scrutineeScoped
       components.lowerScrutinee components.compileScrutinee
       hBoundary.semantic.invariant.state hBoundary.ready
@@ -2991,6 +3023,9 @@ theorem switch
         Simulation.Interaction.Successful
           (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
             bodyFuel (.block selected) sourceAfter) →
+        Simulation.Interaction.Successful
+          (AllocationInteractionSafeSemantics.Stmt.openRun contract program
+            sourceCtx bodyFuel (.block selected) sourceAfter) →
           Simulation.Interaction.Rel
             (RuntimeResultRel contract root.lowerCtx afterState beforeLocals
               cursor.plan root.returns live frameBase mode sourceCtx sourceCtx
@@ -3001,7 +3036,7 @@ theorem switch
               targetBodyFuel selectedTarget targetAfter) := by
     intro value selected selectedTarget sourceAfter targetAfter
       hSourceSelect hTargetSelect hAfter hReadyAfter hReturns
-      hSelectedSuccess
+      hSelectedSuccess hSelectedSafe
     obtain
         ⟨selectedAfter, selectedHeadLower, selectedHeadCode, selectedTail,
           selectedScrutineeCode, selectedCases, selectedDefault,
@@ -3066,6 +3101,13 @@ theorem switch
       rw [Functions.InteractionSemantics.Stmt.openRun_block]
         at hSelectedSuccess
       exact Simulation.Interaction.Successful.bind_left hSelectedSuccess
+    have hBodySafe :
+        AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+          program sourceCtx bodyFuel selected sourceAfter := by
+      unfold AllocationInteractionSafeSemantics.Block.ExecutionSafe
+      rw [AllocationInteractionSafeSemantics.Stmt.openRun_block]
+        at hSelectedSafe
+      exact Simulation.Interaction.Successful.bind_left hSelectedSafe
     obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
       AllocationInteractionCleanup.Plain.finishScoped_shape hFinish
     have hActualTargetSize :
@@ -3128,6 +3170,7 @@ theorem switch
     obtain ⟨hCleanupFuel, hBody⟩ :=
       hBodyForward hSourceSelect bodyCursor hBodyTargetCapacity hNestedBoundary
         (by simpa [bodyFuel] using hBodySuccess)
+        (by simpa [bodyFuel] using hBodySafe)
     have hSemantic :=
       AllocationInteractionControl.block_of_components
         (bodyLive := Functions.Scope.Block.outEnv live selected)
@@ -3144,6 +3187,7 @@ theorem switch
       (sourceBodyFuel := bodyFuel) (targetBodyFuel := targetBodyFuel)
       hAfterInvariant hScrutinee hVars
       (by simpa [bodyFuel, hBodyFuel] using hHeadSuccess)
+      hScrutineeChecked.ordinary hSafeHeadAtBody
       hSelection hSelected
   have hHead' :
       Simulation.Interaction.Rel
@@ -3168,13 +3212,13 @@ theorem switch
       rfl
     simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
   have hResult :=
-    cons_of_parts_successful cursor tail components.exactTail
+    cons_of_parts_executionSafe cursor tail components.exactTail
       components.compiled hMidCtx
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
-      (by simpa [childFuel, hFuel] using hSuccessful)
+      (by simpa [childFuel, hFuel] using hExecutionSafe)
       (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hReturns
-          hTailSuccess =>
+          hTailSuccess hTailSafe =>
         hTailForward tail components.exactTail
           { semantic :=
               { invariant := hInvariant
@@ -3191,7 +3235,7 @@ theorem switch
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
             budget := hBoundary.budget }
-          hTailSuccess)
+          hTailSuccess hTailSafe)
   have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
   rw [hFuel'] at hResult
   exact hResult
