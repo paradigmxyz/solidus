@@ -662,6 +662,110 @@ theorem at_targetFuel
 
 end RecursiveOpenRuntime
 
+/-- Fuel-bounded recursive allocation preservation for exactly the guarded
+source executions that are reached. Unlike `RecursiveOpenRuntime`, this
+capability cannot be applied to an arbitrary merely-successful source run. -/
+def ExecutionSafeRecursiveOpenRuntime
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    (contract : MemoryContract.Contract)
+    (globalFrameWords fuelBound : Nat) : Prop :=
+  ∀ {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Config} {allocatorDepth frameBase : Nat}
+    {sourceFuel targetExtra : Nat}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor :
+      CoreCursor root scope live sourceBlock lowerState localsCtx),
+    sourceFuel < fuelBound →
+    Boundary cursor contract globalFrameWords config allocatorDepth frameBase
+      mode sourceCtx source target →
+    AllocationInteractionFrame.Budget config (allocatorDepth + sourceFuel) →
+    AllocationInteractionTargetFuel.Reserve cursor targetExtra →
+    AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+      program sourceCtx sourceFuel sourceBlock source →
+    CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
+      targetExtra mode sourceCtx source target
+
+namespace ExecutionSafeRecursiveOpenRuntime
+
+/-- Instantiate reached-execution recursive preservation at a larger exact
+target budget without exposing the compiler-generated reserve as a premise. -/
+theorem at_targetFuel
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {contract : MemoryContract.Contract}
+    {globalFrameWords fuelBound : Nat}
+    (hRecursive :
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
+        contract globalFrameWords fuelBound)
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Config} {allocatorDepth frameBase : Nat}
+    {sourceFuel targetFuel : Nat}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor : CoreCursor root scope live sourceBlock lowerState localsCtx)
+    (hFuel : sourceFuel < fuelBound)
+    (hTargetFuel :
+      targetBudget cursor sourceFuel
+          (AllocationInteractionTargetFuel.stmtListNestedSize
+            cursor.compiled) ≤
+        targetFuel)
+    (hBoundary :
+      Boundary cursor contract globalFrameWords config allocatorDepth frameBase
+        mode sourceCtx source target)
+    (hFuelBudget :
+      AllocationInteractionFrame.Budget config (allocatorDepth + sourceFuel))
+    (hSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+        program sourceCtx sourceFuel sourceBlock source) :
+    Simulation.Interaction.Rel
+      (RuntimeResultRel contract root.lowerCtx cursor.finalState
+        cursor.finalLocals cursor.plan root.returns
+        (Functions.Scope.Block.outEnv live sourceBlock) frameBase mode sourceCtx
+        { sourceCtx with
+          scope := Functions.Scope.Block.outEnv live sourceBlock }
+        config allocatorDepth target)
+      (Functions.InteractionSemantics.Block.openRun program sourceCtx
+        sourceFuel sourceBlock source)
+      (Expressions.InteractionSemantics.Block.openRun expressions targetFuel
+        { stmts := cursor.compiled } target) := by
+  let targetExtra := targetFuel - targetBudget cursor sourceFuel 0
+  have hReserve :
+      AllocationInteractionTargetFuel.Reserve cursor targetExtra := by
+    change
+      AllocationInteractionTargetFuel.stmtListNestedSize cursor.compiled ≤
+        targetExtra
+    simp only [targetExtra, targetBudget] at hTargetFuel ⊢
+    omega
+  have hForward :=
+    hRecursive cursor hFuel hBoundary hFuelBudget hReserve hSafe
+      (targetExtra := targetExtra)
+  have hExact :
+      targetBudget cursor sourceFuel targetExtra = targetFuel := by
+    simp [targetBudget, targetExtra, callStride, Nat.mul_succ]
+      at hTargetFuel ⊢
+    omega
+  simpa [CursorRuntimeAt, hExact] using hForward
+
+end ExecutionSafeRecursiveOpenRuntime
+
 namespace SelectedCallee
 
 /-- The real selected procedure table bounds every nested statement in the
