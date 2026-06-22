@@ -104,6 +104,42 @@ HOOKS_FALLBACK_SOURCE="$OUTDIR/UniswapV4HooksFallback.sol"
 HOOKS_BRIDGE_DIR="$OUTDIR/hooks-bridge-json"
 HOOKS_CHECK="$OUTDIR/UniswapV4HooksFallback.runtime.lean-json-check.txt"
 HOOKS_SUMMARY="$OUTDIR/UniswapV4HooksFallback.bridge-json-summary.json"
+STRICT_BACKEND_DIR="$OUTDIR/strict-backend"
+
+run_strict_backend() {
+  local label="$1"
+  local input_format="$2"
+  local input="$3"
+  shift 3
+  local output="$STRICT_BACKEND_DIR/$label.lean-backend-check.json"
+
+  mkdir -p "$STRICT_BACKEND_DIR"
+  python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+    "$input" \
+    --input-format "$input_format" \
+    --lake "$LAKE_BIN" \
+    --lake-cwd "$ROOT" \
+    --format lean-backend-check \
+    --output "$output" \
+    "$@"
+  python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$output"
+  python3 - "$label" "$output" <<'PY'
+import json
+import sys
+
+label = sys.argv[1]
+result = json.load(open(sys.argv[2]))
+counts = result.get("counts", {})
+if counts.get("checkedObjects", 0) < 1:
+    raise SystemExit(f"{label}: strict backend did not inspect an object")
+if counts.get("failedObjects") != 0:
+    raise SystemExit(f"{label}: strict backend failed: {result!r}")
+for checked in result.get("checkedObjects", []):
+    if checked.get("status") != "pass" or checked.get("firstNone") != "none":
+        raise SystemExit(f"{label}: incomplete checked artifact: {checked!r}")
+print(f"{label}_strict_backend_objects={counts['checkedObjects']}")
+PY
+}
 
 SOLC_VERSION="$UNISWAP_V4_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$REPO/src/libraries/SwapMath.sol" \
@@ -1076,6 +1112,57 @@ if missing:
 
 print("hooks_runtime_summary_primitives=yes")
 PY
+
+POOL_LINKER_ARGS=()
+POOL_LINKER_SYMBOLS=(
+  'libraries/BitMath.sol:BitMath'
+  'libraries/CurrencyReserves.sol:CurrencyReserves'
+  'libraries/CustomRevert.sol:CustomRevert'
+  'libraries/FixedPoint128.sol:FixedPoint128'
+  'libraries/FixedPoint96.sol:FixedPoint96'
+  'libraries/FullMath.sol:FullMath'
+  'libraries/Hooks.sol:Hooks'
+  'libraries/LiquidityMath.sol:LiquidityMath'
+  'libraries/Lock.sol:Lock'
+  'libraries/NonzeroDeltaCount.sol:NonzeroDeltaCount'
+  'libraries/Pool.sol:Pool'
+  'libraries/ProtocolFeeLibrary.sol:ProtocolFeeLibrary'
+  'libraries/SqrtPriceMath.sol:SqrtPriceMath'
+  'libraries/SwapMath.sol:SwapMath'
+  'libraries/TickMath.sol:TickMath'
+  'libraries/UnsafeMath.sol:UnsafeMath'
+  'types/BalanceDelta.sol:BalanceDeltaLibrary'
+  'types/BeforeSwapDelta.sol:BeforeSwapDeltaLibrary'
+  'types/Currency.sol:CurrencyLibrary'
+)
+for i in "${!POOL_LINKER_SYMBOLS[@]}"; do
+  POOL_LINKER_ARGS+=(--linker-symbol "${POOL_LINKER_SYMBOLS[$i]}=$((i + 1))")
+done
+
+run_strict_backend swapmath_creation bridge-json-manifest \
+  "$UNISWAP_BRIDGE_DIR/manifest.json" \
+  --contract SwapMath --object creation
+run_strict_backend tickmath_runtime bridge-json-manifest \
+  "$TICKMATH_BRIDGE_DIR/manifest.json" \
+  --contract UniswapV4TickMathFallback --object runtime
+run_strict_backend sqrt_price_runtime bridge-json-manifest \
+  "$SQRT_PRICE_BRIDGE_DIR/manifest.json" \
+  --contract UniswapV4SqrtPriceMathFallback --object runtime
+run_strict_backend lock_runtime bridge-json-manifest \
+  "$LOCK_BRIDGE_DIR/manifest.json" \
+  --contract UniswapV4LockFallback --object runtime
+run_strict_backend currency_delta_runtime bridge-json-manifest \
+  "$CURRENCY_DELTA_BRIDGE_DIR/manifest.json" \
+  --contract UniswapV4CurrencyDeltaFallback --object runtime
+run_strict_backend hooks_runtime bridge-json-manifest \
+  "$HOOKS_BRIDGE_DIR/manifest.json" \
+  --contract UniswapV4HooksFallback --object runtime
+run_strict_backend poolmanager_creation bridge-json-manifest \
+  "$POOLMANAGER_PACKAGE_MANIFEST" \
+  --contract PoolManager --object creation "${POOL_LINKER_ARGS[@]}"
+
+SQRT_PRICE_BACKEND_STATUS="pass"
+SQRT_PRICE_BACKEND_FIRST_NONE="none"
 
 SWAPMATH_HEX_BYTES="$(wc -c < "$SWAPMATH_HEX" | tr -d ' ')"
 POOLMANAGER_BRIDGE_BYTES="$(wc -c < "$POOLMANAGER_BRIDGE" | tr -d ' ')"

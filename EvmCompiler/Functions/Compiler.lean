@@ -1,6 +1,7 @@
 import EvmCompiler.Functions.Syntax
 import EvmCompiler.Functions.LoweringCore
 import EvmCompiler.Locals.Compiler
+import Std.Data.HashSet.Lemmas
 
 namespace EvmCompiler
 namespace Functions
@@ -178,8 +179,14 @@ namespace SourceAcceptedCheck
 
 namespace Names
 
+def nodupFrom? (seen : Std.HashSet Name) : List Name → Bool
+  | [] => true
+  | name :: rest =>
+      if seen.contains name then false
+      else nodupFrom? (seen.insert name) rest
+
 def nodup? (names : List Name) : Bool :=
-  decide names.Nodup
+  nodupFrom? {} names
 
 def in? (env : List Name) (name : Name) : Bool :=
   decide (name ∈ env)
@@ -190,10 +197,50 @@ def fresh? (env : List Name) (name : Name) : Bool :=
 def allIn? (env names : List Name) : Bool :=
   names.all fun name => in? env name
 
+theorem nodupFrom?_eq_true_iff
+    (seen : Std.HashSet Name) (names : List Name) :
+    nodupFrom? seen names = true ↔
+      names.Nodup ∧ ∀ name ∈ names, name ∉ seen := by
+  induction names generalizing seen with
+  | nil => simp [nodupFrom?]
+  | cons name rest ih =>
+      by_cases hMem : name ∈ seen
+      · have hContains : seen.contains name = true :=
+          Std.HashSet.mem_iff_contains.mp hMem
+        simp [nodupFrom?, hContains, hMem]
+      · have hContains : seen.contains name = false :=
+          Std.HashSet.contains_eq_false_iff_not_mem.mpr hMem
+        rw [nodupFrom?, if_neg (by simpa using hContains), ih]
+        simp only [List.nodup_cons, List.mem_cons, forall_eq_or_imp,
+          Std.HashSet.mem_insert]
+        constructor
+        · rintro ⟨hRestNodup, hFresh⟩
+          refine ⟨⟨?_, hRestNodup⟩, hMem, ?_⟩
+          · intro hNameRest
+            exact (hFresh name hNameRest) (Or.inl (by simp))
+          intro candidate hCandidate
+          have hNotInserted := hFresh candidate hCandidate
+          intro hCandidateMem
+          exact hNotInserted (Or.inr hCandidateMem)
+        · rintro ⟨⟨hNotRest, hRestNodup⟩, _hHeadFresh, hRestFresh⟩
+          refine ⟨hRestNodup, ?_⟩
+          intro candidate hCandidate
+          intro hInserted
+          rcases hInserted with hEq | hSeen
+          · apply hNotRest
+            have hNameEq : name = candidate := by simpa using hEq
+            simpa [hNameEq] using hCandidate
+          · exact hRestFresh candidate hCandidate hSeen
+
+@[simp] theorem nodup?_eq_true_iff (names : List Name) :
+    nodup? names = true ↔ names.Nodup := by
+  rw [nodup?, nodupFrom?_eq_true_iff]
+  simp
+
 theorem nodup_of_check {names : List Name}
     (hCheck : nodup? names = true) :
     names.Nodup :=
-  of_decide_eq_true hCheck
+  (nodup?_eq_true_iff names).mp hCheck
 
 theorem in_of_check {env : List Name} {name : Name}
     (hCheck : in? env name = true) :

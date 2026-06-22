@@ -1,5 +1,6 @@
 import EvmCompiler.Structured.ControlLabels
 import EvmCompiler.TypedCfg
+import Std.Data.HashSet.Lemmas
 
 namespace EvmCompiler
 namespace Structured
@@ -38,6 +39,76 @@ structure DispatchSite where
   returnLabel : Assembly.Label
   caseLabel : Assembly.Label
   deriving DecidableEq, Repr
+
+namespace DispatchTokenList
+
+def uniqueNatFrom? (seen : Std.HashSet Nat) : List Nat → Bool
+  | [] => true
+  | token :: rest =>
+      if seen.contains token then false
+      else uniqueNatFrom? (seen.insert token) rest
+
+def uniqueNat? (tokens : List Nat) : Bool :=
+  uniqueNatFrom? {} tokens
+
+theorem uniqueNatFrom?_eq_true_iff
+    (seen : Std.HashSet Nat) (tokens : List Nat) :
+    uniqueNatFrom? seen tokens = true ↔
+      tokens.Nodup ∧ ∀ token ∈ tokens, token ∉ seen := by
+  induction tokens generalizing seen with
+  | nil => simp [uniqueNatFrom?]
+  | cons token rest ih =>
+      by_cases hMem : token ∈ seen
+      · have hContains : seen.contains token = true :=
+          Std.HashSet.mem_iff_contains.mp hMem
+        simp [uniqueNatFrom?, hContains, hMem]
+      · have hContains : seen.contains token = false :=
+          Std.HashSet.contains_eq_false_iff_not_mem.mpr hMem
+        rw [uniqueNatFrom?, if_neg (by simpa using hContains), ih]
+        simp only [List.nodup_cons, List.mem_cons, forall_eq_or_imp,
+          Std.HashSet.mem_insert]
+        constructor
+        · rintro ⟨hRestNodup, hFresh⟩
+          refine ⟨⟨?_, hRestNodup⟩, hMem, ?_⟩
+          · intro hTokenRest
+            exact (hFresh token hTokenRest) (Or.inl (by simp))
+          intro candidate hCandidate
+          have hNotInserted := hFresh candidate hCandidate
+          intro hCandidateMem
+          exact hNotInserted (Or.inr hCandidateMem)
+        · rintro ⟨⟨hNotRest, hRestNodup⟩, _hHeadFresh, hRestFresh⟩
+          refine ⟨hRestNodup, ?_⟩
+          intro candidate hCandidate
+          intro hInserted
+          rcases hInserted with hEq | hSeen
+          · apply hNotRest
+            have hTokenEq : token = candidate := by simpa using hEq
+            simpa [hTokenEq] using hCandidate
+          · exact hRestFresh candidate hCandidate hSeen
+
+@[simp] theorem uniqueNat?_eq_true_iff (tokens : List Nat) :
+    uniqueNat? tokens = true ↔ tokens.Nodup := by
+  rw [uniqueNat?, uniqueNatFrom?_eq_true_iff]
+  simp
+
+theorem uint256ToNat_injective :
+    Function.Injective EvmYul.UInt256.toNat := by
+  intro left right hEq
+  rcases left with ⟨left⟩
+  rcases right with ⟨right⟩
+  congr 1
+  apply Fin.ext
+  simpa [EvmYul.UInt256.toNat] using hEq
+
+def unique? (tokens : List Word) : Bool :=
+  uniqueNat? (tokens.map EvmYul.UInt256.toNat)
+
+@[simp] theorem unique?_eq_true_iff (tokens : List Word) :
+    unique? tokens = true ↔ tokens.Nodup := by
+  rw [unique?, uniqueNat?_eq_true_iff,
+    List.nodup_map_iff uint256ToNat_injective]
+
+end DispatchTokenList
 
 structure Result where
   blocks : List CfgBlock
@@ -656,7 +727,7 @@ def generateWithProcEntryShapes? (program : Program)
     lowerProcBodiesWithShapes? entryShapes program.procs program.procs
       main.next
   let calls := main.calls ++ procCalls
-  if (calls.map DispatchSite.token).Nodup then
+  if DispatchTokenList.unique? (calls.map DispatchSite.token) then
     let endInput := main.fallthrough?.getD mainInput
     let endBlock : CfgBlock :=
       { label := ProcLabel.programEnd

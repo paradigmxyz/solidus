@@ -14,6 +14,7 @@ inductive Mode where
   | image
   | summary
   | check
+  | stackAnalysis
   | stackDiagnostics
   deriving BEq
 
@@ -40,6 +41,7 @@ def parseMode? : String → Option Mode
   | "image" => some .image
   | "summary" => some .summary
   | "check" => some .check
+  | "stack-analysis" => some .stackAnalysis
   | "stack-diagnostics" => some .stackDiagnostics
   | _ => none
 
@@ -70,7 +72,7 @@ def printImage (mode : Mode)
     (image : Solidity.Frontend.ObjectImage) : IO Unit := do
   match mode with
   | .image => IO.println ("bytecode=0x" ++ bytesHex image.bytes)
-  | .summary | .check | .stackDiagnostics => pure ()
+  | .summary | .check | .stackAnalysis | .stackDiagnostics => pure ()
   for entry in image.immutableReferences do
     for reference in entry.snd do
       IO.println
@@ -455,35 +457,59 @@ structure ControlPatternStats where
   pushPop : Nat := 0
   swapPair : Nat := 0
 
-def controlPatternStats : Assembly.Program → ControlPatternStats
-  | first :: second :: rest =>
-      let tail := controlPatternStats (second :: rest)
-      match first, second, rest with
-      | .jump target, .label next, _ =>
-          { tail with adjacentJump := tail.adjacentJump +
-              if target = next then 1 else 0 }
-      | .jumpi target, .label next, _ =>
-          { tail with adjacentJumpi := tail.adjacentJumpi +
-              if target = next then 1 else 0 }
-      | .jumpi target, .jump _, .label next :: _ =>
-          { tail with conditionalDiamond := tail.conditionalDiamond +
-              if target = next then 1 else 0 }
-      | .label _, .jump _, _ =>
-          { tail with labelJump := tail.labelJump + 1 }
-      | .label _, .label _, _ =>
-          { tail with consecutiveLabels := tail.consecutiveLabels + 1 }
-      | .push _, .prim .pop, _ =>
-          { tail with pushPop := tail.pushPop + 1 }
-      | .prim left, .prim right, _ =>
-          let leftOp := (EvmYul.EVM.serializeInstr left.toEVM).toNat
-          let rightOp := (EvmYul.EVM.serializeInstr right.toEVM).toNat
-          { tail with swapPair := tail.swapPair +
-              if 0x90 <= leftOp && leftOp <= 0x9f && leftOp = rightOp then
-                1
-              else
-                0 }
-      | _, _, _ => tail
-  | _ => {}
+def ControlPatternStats.addPair (stats : ControlPatternStats)
+    (first second : Assembly.Instr) : ControlPatternStats :=
+  match first, second with
+  | .jump target, .label next =>
+      { stats with adjacentJump := stats.adjacentJump +
+          if target = next then 1 else 0 }
+  | .jumpi target, .label next =>
+      { stats with adjacentJumpi := stats.adjacentJumpi +
+          if target = next then 1 else 0 }
+  | .label _, .jump _ =>
+      { stats with labelJump := stats.labelJump + 1 }
+  | .label _, .label _ =>
+      { stats with consecutiveLabels := stats.consecutiveLabels + 1 }
+  | .push _, .prim .pop =>
+      { stats with pushPop := stats.pushPop + 1 }
+  | .prim left, .prim right =>
+      let leftOp := (EvmYul.EVM.serializeInstr left.toEVM).toNat
+      let rightOp := (EvmYul.EVM.serializeInstr right.toEVM).toNat
+      { stats with swapPair := stats.swapPair +
+          if 0x90 <= leftOp && leftOp <= 0x9f && leftOp = rightOp then
+            1
+          else
+            0 }
+  | _, _ => stats
+
+def ControlPatternStats.addTriple (stats : ControlPatternStats)
+    (first second third : Assembly.Instr) : ControlPatternStats :=
+  match first, second, third with
+  | .jumpi target, .jump _, .label next =>
+      { stats with conditionalDiamond := stats.conditionalDiamond +
+          if target = next then 1 else 0 }
+  | _, _, _ => stats
+
+structure ControlPatternFold where
+  stats : ControlPatternStats := {}
+  previous2? : Option Assembly.Instr := none
+  previous? : Option Assembly.Instr := none
+
+def ControlPatternFold.addInstr (state : ControlPatternFold)
+    (current : Assembly.Instr) : ControlPatternFold :=
+  let stats :=
+    match state.previous? with
+    | none => state.stats
+    | some previous => state.stats.addPair previous current
+  let stats :=
+    match state.previous2?, state.previous? with
+    | some previous2, some previous =>
+        stats.addTriple previous2 previous current
+    | _, _ => stats
+  { stats, previous2? := state.previous?, previous? := some current }
+
+def controlPatternStats (source : Assembly.Program) : ControlPatternStats :=
+  (source.foldl ControlPatternFold.addInstr {}).stats
 
 structure ReturnDispatchStats where
   dispatches : Nat := 0
@@ -522,7 +548,7 @@ def printStackDiagnostics
   let stackBytes :=
     stackArtifact?.map
       (fun artifact =>
-        (Assembly.Bytecode.encodeTarget artifact.target).size)
+        (Assembly.Bytecode.encodeTargetFast artifact.target).size)
       |>.getD 0
   let compactArtifact? := stackArtifact?.bind fun artifact =>
     Assembly.Compact.compile? artifact.certified.target
@@ -800,6 +826,143 @@ def runStackDiagnostics (config : Config)
       printStackDiagnostics program.source program.contract
         program.object.name functions
 
+def runCompactAnalysis (source : Assembly.Program) : IO Unit := do
+  let sourceFits := decide source.PCFits
+  IO.println ("compact_source_pc_fits=" ++ boolString sourceFits)
+  if !sourceFits then return
+  IO.println
+    ("compact_source_instructions=" ++ toString source.length)
+  let elided := Assembly.Compact.elideFallthroughJumpsFast source
+  IO.println
+    ("compact_elided_instructions=" ++ toString elided.length)
+  let referenced := Assembly.Compact.referencedLabelsFast elided
+  IO.println
+    ("compact_referenced_labels=" ++ toString referenced.length)
+  let physical :=
+    Assembly.Compact.pruneUnreferencedLabelsFast referenced elided
+  IO.println
+    ("compact_prepared=true\tinstructions=" ++ toString physical.length)
+  let preparation? :=
+    Assembly.Compact.alignPreparationFast? source physical
+  IO.println
+    ("compact_preparation=" ++ boolString preparation?.isSome)
+  let some preparation := preparation? | return
+  let preparationSafe :=
+    Assembly.Compact.preparationSafeIndexed? source physical preparation
+  IO.println
+    ("compact_preparation_safe=" ++ boolString preparationSafe)
+  if !preparationSafe then return
+  let branchWidth? := Assembly.Compact.branchWidthFor? [] physical
+  IO.println
+    ("compact_branch_width=" ++
+      match branchWidth? with
+      | none => "none"
+      | some width => toString width)
+  let some branchWidth := branchWidth? | return
+  let layout? := Assembly.Compact.layout? [] physical branchWidth
+  IO.println ("compact_layout=" ++ boolString layout?.isSome)
+  let some (labels, codeLength) := layout? | return
+  IO.println
+    ("compact_layout_labels=" ++ toString labels.length ++
+      "\tbytes=" ++ toString codeLength)
+  let emitted? := Assembly.Compact.emit? [] physical branchWidth labels
+  IO.println ("compact_emit=" ++ boolString emitted?.isSome)
+  let some emitted := emitted? | return
+  IO.println
+    ("compact_emit_instructions=" ++ toString emitted.code.length)
+  let blocks? :=
+    Assembly.Compact.emitBlocksFast? [] physical branchWidth labels
+  IO.println ("compact_blocks=" ++ boolString blocks?.isSome)
+  let some blocks := blocks? | return
+  IO.println ("compact_block_count=" ++ toString blocks.length)
+  let blockCodeMatches :=
+    Assembly.Compact.blocksCodeMatches? blocks emitted.code
+  IO.println
+    ("compact_block_code=" ++ boolString blockCodeMatches)
+  let labelsConsistent := Assembly.Compact.labelsConsistent? blocks labels
+  IO.println
+    ("compact_labels_consistent=" ++ boolString labelsConsistent)
+  let wellFormed := emitted.wellFormedFast?
+  IO.println ("compact_well_formed=" ++ boolString wellFormed)
+  let bytes := Assembly.Compact.encode emitted
+  IO.println ("compact_encoded_bytes=" ++ toString bytes.size)
+
+def runStackAnalysis (config : Config)
+    (program : Solidity.Frontend.Program) : IO Unit := do
+  match functionsForStackDiagnostics? program.object config.linkerSymbols with
+  | none =>
+      throw
+        (IO.userError
+          "stack analysis Yul-to-Functions normalization returned none")
+  | some functions =>
+      let normalized :=
+        Functions.StackPressureNormalization.Program.normalize functions
+      IO.println
+        ("source_accepted=" ++ boolString
+          (Functions.SourceAcceptedCheck.Program.sourceAccepted? functions))
+      IO.println
+        ("normalized_source_accepted=" ++ boolString
+          (Functions.SourceAcceptedCheck.Program.sourceAccepted? normalized))
+      IO.println
+        ("source_open_supported=" ++ boolString
+          (Functions.OpenSupportCheck.Program.openSupported? functions))
+      IO.println
+        ("normalized_open_supported=" ++ boolString
+          (Functions.OpenSupportCheck.Program.openSupported? normalized))
+      let locals? := Functions.StackLowering.lowerProgram? normalized
+      IO.println
+        ("normalized_lowering=" ++ boolString
+          locals?.isSome)
+      let expressions? := locals?.bind Locals.Program.toExpressions?
+      IO.println
+        ("normalized_expressions=" ++ boolString expressions?.isSome)
+      let structuredWF := expressions?.any fun expressions =>
+        Structured.SourceAcceptedCheck.Program.wf? expressions.toStructured
+      IO.println ("normalized_structured_wf=" ++ boolString structuredWF)
+      let generated? := expressions?.bind fun expressions =>
+        Structured.TypedCfgCompiler.artifactWithProcEntryShapes?
+          expressions.toStructured []
+      IO.println
+        ("normalized_cfg_generated=" ++ boolString generated?.isSome)
+      let independent := generated?.any fun generated =>
+        generated.cfg.programCounterIndependent?
+      IO.println
+        ("normalized_cfg_independent=" ++ boolString independent)
+      let certified? := generated?.bind fun generated =>
+        if generated.cfg.programCounterIndependent? then
+          generated.cfg.compileCertified?
+        else
+          none
+      IO.println
+        ("normalized_cfg_certified=" ++ boolString certified?.isSome)
+      match certified? with
+      | none => pure ()
+      | some certified => runCompactAnalysis certified.target
+      let target? := certified?.bind fun certified =>
+        Assembly.compileExecutable? certified.target
+      IO.println ("normalized_target=" ++ boolString target?.isSome)
+      let decodeWindow := target?.any
+        Assembly.Bytecode.targetFitsDecodeWindow?
+      IO.println ("normalized_decode_window=" ++ boolString decodeWindow)
+      let reports := Functions.StackDiagnostics.programReports normalized
+      let summary := Functions.StackDiagnostics.summarize reports
+      IO.println "stack_analysis=complete"
+      IO.println ("units=" ++ toString summary.units)
+      IO.println ("liveness_ok=" ++ toString summary.livenessOk)
+      IO.println ("schedule_ok=" ++ toString summary.scheduleOk)
+      IO.println ("lowering_ok=" ++ toString summary.loweringOk)
+      IO.println ("next_use_ok=" ++ toString summary.nextUseOk)
+      IO.println ("peak_live=" ++ toString summary.metrics.peakLive)
+      IO.println
+        ("inaccessible_depth_failures=" ++ toString summary.accessFailures)
+      match Functions.StackDiagnostics.firstFailure? reports with
+      | none => IO.println "first_failure=none"
+      | some (unitName, failure) =>
+          IO.println ("first_failure_unit=" ++ unitName)
+          IO.println ("first_failure_path=" ++ failure.path)
+          IO.println ("first_failure_phase=" ++ failure.phase)
+          IO.println ("first_failure_reason=" ++ failure.reason)
+
 def printCheck
     (program : Solidity.Frontend.Program)
     (image? : Option Solidity.Frontend.ObjectImage)
@@ -832,6 +995,9 @@ def run (config : Config) : IO Unit := do
     | .error err => throw (IO.userError ("bridge JSON decode failed: " ++ err))
   let decodeFinish ← IO.monoMsNow
   IO.println ("timing\tdecode\t" ++ toString (decodeFinish - decodeStart))
+  if config.mode == .stackAnalysis then
+    runStackAnalysis config program
+    return
   if config.mode == .stackDiagnostics then
     runStackDiagnostics config program
     return
@@ -853,7 +1019,7 @@ def run (config : Config) : IO Unit := do
       | .check => printCheck program none false
       | .image | .summary =>
           throw (IO.userError "unchecked object-image generation returned none")
-      | .stackDiagnostics => pure ()
+      | .stackAnalysis | .stackDiagnostics => pure ()
   | some artifact =>
       match config.mode with
       | .image | .summary => printImage config.mode artifact.image
@@ -863,10 +1029,11 @@ def run (config : Config) : IO Unit := do
             | some resolved => resolved.toSolcYulProgram?.isSome
             | none => false
           printCheck program (some artifact.image) solcOk
-      | .stackDiagnostics => pure ()
+      | .stackAnalysis | .stackDiagnostics => pure ()
 
 def usage : String :=
-  "usage: evm-compiler-backend (image|summary|check|stack-diagnostics) " ++
+  "usage: evm-compiler-backend " ++
+    "(image|summary|check|stack-analysis|stack-diagnostics) " ++
     "BRIDGE_JSON [NAME=DECIMAL ...]"
 
 def cliMain (args : List String) : IO UInt32 := do

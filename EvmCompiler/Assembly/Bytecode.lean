@@ -42,12 +42,53 @@ def byteSize : TargetInstr → Nat
 def encodeLocated (located : LocatedTarget) : List UInt8 :=
   encodeInstr located.instr
 
+def encodeTargetBytesRev : List LocatedTarget → List UInt8 → List UInt8
+  | [], acc => acc.reverse
+  | located :: rest, acc =>
+      encodeTargetBytesRev rest ((encodeLocated located).reverse ++ acc)
+
+def encodeTargetFast (target : TargetProgram) : ByteArray :=
+  ofList (encodeTargetBytesRev target.code [])
+
+@[implemented_by encodeTargetFast]
 def encodeTarget (target : TargetProgram) : ByteArray :=
   ofList (target.code.flatMap encodeLocated)
 
+private theorem encodeTargetBytesRev_eq
+    (code : List LocatedTarget) (acc : List UInt8) :
+    encodeTargetBytesRev code acc =
+      acc.reverse ++ code.flatMap encodeLocated := by
+  induction code generalizing acc with
+  | nil => simp [encodeTargetBytesRev]
+  | cons located rest ih =>
+      simp [encodeTargetBytesRev, ih, List.reverse_append,
+        List.append_assoc]
+
+theorem encodeTargetFast_eq (target : TargetProgram) :
+    encodeTargetFast target = encodeTarget target := by
+  simp [encodeTargetFast, encodeTarget, encodeTargetBytesRev_eq]
+
+def codeByteLengthFast (code : List LocatedTarget) : Nat :=
+  code.foldl (fun total located => total + byteSize located.instr) 0
+
+@[implemented_by codeByteLengthFast]
 def codeByteLength : List LocatedTarget → Nat
   | [] => 0
   | located :: rest => byteSize located.instr + codeByteLength rest
+
+private theorem foldl_byteSize_eq (code : List LocatedTarget) (total : Nat) :
+    code.foldl (fun acc located => acc + byteSize located.instr) total =
+      total + codeByteLength code := by
+  induction code generalizing total with
+  | nil => simp [codeByteLength]
+  | cons located rest ih =>
+      simp only [List.foldl_cons, codeByteLength]
+      rw [ih]
+      omega
+
+theorem codeByteLengthFast_eq (code : List LocatedTarget) :
+    codeByteLengthFast code = codeByteLength code := by
+  simp [codeByteLengthFast, foldl_byteSize_eq]
 
 theorem codeByteLength_append (left right : List LocatedTarget) :
     codeByteLength (left ++ right) =

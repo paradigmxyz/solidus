@@ -632,12 +632,12 @@ theorem wellTyped_of_indexed_check {program : Program}
   (wellTypedIndexed?_eq_true_iff program).mp hCheck
 
 def wellTyped? (program : Program) : Bool :=
-  decide program.WellTyped
+  program.wellTypedIndexed?
 
 theorem wellTyped_of_check {program : Program}
     (hCheck : program.wellTyped? = true) :
     program.WellTyped := by
-  simpa [wellTyped?] using hCheck
+  exact wellTyped_of_indexed_check hCheck
 
 theorem wellTyped_allBlocksTyped {program : Program}
     (h : program.WellTyped) :

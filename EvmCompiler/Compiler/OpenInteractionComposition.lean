@@ -1,6 +1,7 @@
 import EvmCompiler.Yul.FunctionsInteractionProgram
 import EvmCompiler.Functions.AllocationInteractionProgram
 import EvmCompiler.Functions.StackRecursivePreservation
+import EvmCompiler.Functions.StackPressureNormalizationProgram
 import EvmCompiler.Structured.InteractionTerminalPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.Assembly.InteractionBytecode
@@ -113,6 +114,94 @@ theorem yulToStackExpressionsTerminal
   refine ⟨targetFuel, ?_, hStackHalted⟩
   simpa [YulStackExpressionsDoneRel] using
     Simulation.Interaction.Rel.trans hYulRel hStackRel
+
+/-- Terminal Yul preservation through the adjacent Functions normalization
+and checked stack allocator. The normalization is compiler-computed and its
+exact open-semantics equality bridges the existing Yul and allocation owners. -/
+theorem yulToNormalizedStackExpressionsTerminal
+    {profile : Yul.SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {objects : Objects.Program}
+    {normalized : Functions.Program}
+    {locals : Locals.Program} {expressions : Expressions.Program}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hDecomposition :
+      Yul.FunctionsCompilerArtifact.PassDecomposition sourceProgram objects)
+    (hProgramOk :
+      Yul.SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
+    (hNormalize : normalized =
+      Functions.StackPressureNormalization.Program.normalize
+        objects.toFunctions)
+    (hWF : normalized.WF)
+    (hScoped : normalized.Scoped)
+    (hSupported :
+      Functions.InteractionSemantics.Program.OpenSupported normalized)
+    (hLower :
+      Functions.StackLowering.lowerProgram? normalized = some locals)
+    (hCompile :
+      Locals.Program.toExpressions? locals = some expressions)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial (Yul.Contract.names sourceProgram.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState)
+    (hTerminal : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceTerminal
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [sourceProgram.contract.dispatcher])
+        (some sourceProgram.contract) source)) :
+    ∃ targetFuel,
+      Simulation.Interaction.Rel YulStackExpressionsDoneRel
+          (Yul.InteractionSemantics.exec (sourceFuel + 1)
+            (.Block [sourceProgram.contract.dispatcher])
+            (some sourceProgram.contract) source)
+          (Expressions.InteractionSemantics.Block.openRun expressions
+            targetFuel expressions.body expressionsState) ∧
+        Simulation.Interaction.AllDone
+          Functions.StackRecursivePreservation.ProgramTargetHalted
+          (Expressions.InteractionSemantics.Block.openRun expressions
+            targetFuel expressions.body expressionsState) := by
+  let functionsFuel :=
+    Yul.FunctionsInteractionStaticCost.programBudget
+      sourceProgram (sourceFuel + 1)
+  have hYul := Yul.FunctionsInteractionProgram.dispatcherForward
+    (sourceFuel := sourceFuel)
+    hDecomposition hProgramOk hYulInitial hYulDomain
+  obtain ⟨hYulRel, hYulTargetHalted⟩ :=
+    Yul.FunctionsInteractionProgram.terminalRel hYul hTerminal
+  have hYulRelNormalized : Simulation.Interaction.Rel
+      Yul.FunctionsInteractionProgram.DoneRel
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [sourceProgram.contract.dispatcher])
+        (some sourceProgram.contract) source)
+      (Functions.InteractionSemantics.Program.openRunState
+        functionsFuel normalized functionsState) := by
+    rw [hNormalize,
+      Functions.StackPressureNormalization.Program.normalize_openRunState]
+    exact hYulRel
+  have hFunctionsHalted : Simulation.Interaction.AllDone
+      Functions.StackRecursivePreservation.ProgramSourceHalted
+      (Functions.InteractionSemantics.Program.openRunState
+        functionsFuel normalized functionsState) := by
+    rw [hNormalize,
+      Functions.StackPressureNormalization.Program.normalize_openRunState]
+    apply Simulation.Interaction.AllDone.mono hYulTargetHalted
+    intro outcome hOutcome
+    simpa [functionsFuel,
+      Yul.FunctionsInteractionProgram.TargetHalted,
+      Functions.StackRecursivePreservation.ProgramSourceHalted] using hOutcome
+  obtain ⟨targetFuel, hStackRel, hStackHalted⟩ :=
+    Functions.StackRecursivePreservation.compiledProgramBodyTerminal
+      normalized locals expressions functionsFuel hWF hScoped
+      hSupported hLower hCompile hStackInitial hFunctionsHalted
+  refine ⟨targetFuel, ?_, hStackHalted⟩
+  simpa [YulStackExpressionsDoneRel] using
+    Simulation.Interaction.Rel.trans hYulRelNormalized hStackRel
 
 /-- Compose the checked Yul-to-Functions whole-program theorem with the
 allocation pass's checked whole-main theorem. No compiler recursion or
@@ -384,6 +473,63 @@ theorem yulToStackStructuredTerminal
   obtain ⟨targetFuel, hRel, hHalted⟩ :=
     yulToStackExpressionsTerminal hDecomposition hProgramOk hWF hScoped
       hSupported hLower hCompile hYulInitial hYulDomain hStackInitial hTerminal
+  exact ⟨targetFuel,
+    stackExpressionsToStructuredTerminal hRel hHalted⟩
+
+/-- The normalized stack path composed with the transparent
+Expressions-to-Structured adapter. -/
+theorem yulToNormalizedStackStructuredTerminal
+    {profile : Yul.SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {objects : Objects.Program}
+    {normalized : Functions.Program}
+    {locals : Locals.Program} {expressions : Expressions.Program}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hDecomposition :
+      Yul.FunctionsCompilerArtifact.PassDecomposition sourceProgram objects)
+    (hProgramOk :
+      Yul.SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
+    (hNormalize : normalized =
+      Functions.StackPressureNormalization.Program.normalize
+        objects.toFunctions)
+    (hWF : normalized.WF)
+    (hScoped : normalized.Scoped)
+    (hSupported :
+      Functions.InteractionSemantics.Program.OpenSupported normalized)
+    (hLower :
+      Functions.StackLowering.lowerProgram? normalized = some locals)
+    (hCompile :
+      Locals.Program.toExpressions? locals = some expressions)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial (Yul.Contract.names sourceProgram.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState)
+    (hTerminal : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceTerminal
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [sourceProgram.contract.dispatcher])
+        (some sourceProgram.contract) source)) :
+    ∃ targetFuel,
+      Simulation.Interaction.Rel YulStackExpressionsDoneRel
+          (Yul.InteractionSemantics.exec (sourceFuel + 1)
+            (.Block [sourceProgram.contract.dispatcher])
+            (some sourceProgram.contract) source)
+          (Structured.InteractionSemantics.Program.openRunState
+            targetFuel expressions.toStructured expressionsState) ∧
+        Simulation.Interaction.AllDone
+          Structured.InteractionTerminalPreservation.OpenOutcome.SourceHalted
+          (Structured.InteractionSemantics.Program.openRunState
+            targetFuel expressions.toStructured expressionsState) := by
+  obtain ⟨targetFuel, hRel, hHalted⟩ :=
+    yulToNormalizedStackExpressionsTerminal hDecomposition hProgramOk
+      hNormalize hWF hScoped hSupported hLower hCompile hYulInitial
+      hYulDomain hStackInitial hTerminal
   exact ⟨targetFuel,
     stackExpressionsToStructuredTerminal hRel hHalted⟩
 
@@ -1088,6 +1234,102 @@ theorem yulStackToAssemblySource
   have hReturns : expressionsState.returns = [] := hStackInitial.returns
   simpa [YulStackBytecodeDoneRel, hReturns] using hComposed
 
+/-- The checked Functions normalization composed horizontally before the
+stack allocator and the existing lower Assembly source theorem. -/
+theorem yulNormalizedStackToAssemblySource
+    {profile : Yul.SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {objects : Objects.Program}
+    {normalized : Functions.Program}
+    {locals : Locals.Program} {expressions : Expressions.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {artifact : TypedCfg.Program.CertifiedArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hDecomposition :
+      Yul.FunctionsCompilerArtifact.PassDecomposition sourceProgram objects)
+    (hProgramOk :
+      Yul.SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
+    (hNormalize : normalized =
+      Functions.StackPressureNormalization.Program.normalize
+        objects.toFunctions)
+    (hWF : normalized.WF)
+    (hScoped : normalized.Scoped)
+    (hSupported :
+      Functions.InteractionSemantics.Program.OpenSupported normalized)
+    (hLower :
+      Functions.StackLowering.lowerProgram? normalized = some locals)
+    (hExpressionsCompile :
+      Locals.Program.toExpressions? locals = some expressions)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial (Yul.Contract.names sourceProgram.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState)
+    (hGenerate :
+      Structured.TypedCfgCompiler.generateWithProcEntryShapes?
+          expressions.toStructured entryShapes = some cfg)
+    (hCompile : cfg.compileCertified? = some artifact)
+    (hStructuredWF : expressions.toStructured.WF)
+    (hFrameSafe : expressions.toStructured.FrameSafe)
+    (hIndependent : cfg.ProgramCounterIndependent)
+    (hTerminal : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceTerminal
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [sourceProgram.contract.dispatcher])
+        (some sourceProgram.contract) source)) :
+    ∃ structuredFuel,
+      ∃ generated :
+          Structured.TypedCfgPreservation.Program.GeneratedContext
+            expressions.toStructured entryShapes cfg,
+        Simulation.Interaction.Rel
+          (YulStackBytecodeDoneRel expressions.toStructured entryShapes cfg
+            generated artifact.target)
+          (Yul.InteractionSemantics.exec (sourceFuel + 1)
+            (.Block [sourceProgram.contract.dispatcher])
+            (some sourceProgram.contract) source)
+          (Assembly.InteractionSemantics.Source.openRunNResult
+            artifact.target
+            (Structured.InteractionStaticCost.blockBudget
+                expressions.toStructured structuredFuel
+                expressions.toStructured.body *
+              TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg)
+            { expressionsState.evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  obtain ⟨structuredFuel, hUpper, hStructuredHalted⟩ :=
+    yulToNormalizedStackStructuredTerminal hDecomposition hProgramOk
+      hNormalize hWF hScoped hSupported hLower hExpressionsCompile
+      hYulInitial hYulDomain hStackInitial hTerminal
+  have hExpressionsInitial :
+      expressionsState = Structured.RunState.initial expressionsState.evm := by
+    rcases expressionsState with ⟨evm, returns⟩
+    have hReturns : returns = [] := hStackInitial.returns
+    subst returns
+    rfl
+  have hStructuredInitial :
+      Structured.TypedCfgPreservation.StateRel expressionsState []
+        expressionsState.evm := by
+    rw [hExpressionsInitial]
+    exact Structured.TypedCfgPreservation.StateRel.initial _
+  have hAssemblyInitial : Assembly.SameRuntimeData expressionsState.evm
+      ({ expressionsState.evm with
+          pc := EvmYul.UInt256.ofNat 0 } : Structured.EVMState).incrPC := by
+    apply Assembly.SameRuntimeData.incrPC_right
+    apply Assembly.SameRuntimeData.with_pc_right
+    exact Assembly.SameRuntimeData.refl _
+  obtain ⟨generated, hLowerRel⟩ :=
+    structuredToAssemblySource hGenerate hCompile hStructuredWF hFrameSafe
+      hIndependent hStructuredHalted hStructuredInitial rfl hAssemblyInitial
+  refine ⟨structuredFuel, generated, ?_⟩
+  have hComposed := Simulation.Interaction.Rel.trans hUpper hLowerRel
+  have hReturns : expressionsState.returns = [] := hStackInitial.returns
+  simpa [YulStackBytecodeDoneRel, hReturns] using hComposed
+
 /-- Terminal relation after the Assembly-owned compact physical encoding. -/
 def YulStackCompactDoneRel
     (structured : Structured.Program)
@@ -1278,18 +1520,19 @@ theorem compiledVerifiedStackCodeToRawBytecode
       using
         Solidity.Frontend.Object.toSolcYulOrderedProgram?_programOkWithEntries
           hOrdered
-  obtain ⟨hSupported, hStackLower, hExpressions, hStructuredWF, _hShapes,
-      hGenerate, _hWellTyped, hIndependent, hCertified, _hTarget,
-      _hWindow, hSourceAccepted⟩ :=
+  obtain ⟨hNormalize, _hSourceSupported, hNormalizedSupported, hStackLower,
+      hExpressions, hStructuredWF, _hShapes, hGenerate, _hWellTyped,
+      hIndependent, hCertified, _hTarget, _hWindow, hNormalizedAccepted,
+      _hSourceAccepted⟩ :=
     Compiler.StackArtifact.compile?_parts hStackArtifact
   have hAssembly := Compiler.StackArtifact.compile?_assembly hStackArtifact
   have hFrameSafe :=
     Compiler.StackArtifact.compile?_frameSafe hStackArtifact
   obtain ⟨structuredFuel, generated, hAssemblySource⟩ :=
-    yulStackToAssemblySource decomposition hProgramOk hSourceAccepted.1
-      hSourceAccepted.2 hSupported hStackLower hExpressions hYulInitial
-      hYulDomain hStackInitial hGenerate hCertified hStructuredWF hFrameSafe
-      hIndependent hTerminal
+    yulNormalizedStackToAssemblySource decomposition hProgramOk hNormalize
+      hNormalizedAccepted.1 hNormalizedAccepted.2 hNormalizedSupported
+      hStackLower hExpressions hYulInitial hYulDomain hStackInitial hGenerate
+      hCertified hStructuredWF hFrameSafe hIndependent hTerminal
   have hAccepted : Assembly.Accepted
       codeArtifact.compiled.certified.target :=
     Assembly.Preservation.compile?_some_accepted hAssembly

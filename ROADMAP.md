@@ -2,8 +2,9 @@
 
 ## Objective
 
-Build a general, horizontally proved Functions-to-Locals/Expressions allocator
-that compiles the exact pinned Permit2 and linked Aave Pool through the checked
+Build a general, horizontally proved Functions normalization and
+Functions-to-Locals/Expressions allocator that compiles the exact pinned
+Permit2, linked Aave Pool, and broad real-contract corpus through the checked
 Yul-to-raw-bytecode artifact path with practical compile time.
 
 The current completion target is semantic and proof completeness, not EVM
@@ -26,12 +27,14 @@ The primary compiler-correctness result remains forward preservation through
 the existing adjacent passes:
 
 ```
-Yul -> Functions -> allocated Locals/Expressions -> Structured
-    -> TypedCfg -> Assembly -> bytecode
+Yul -> Functions -> normalized Functions -> allocated Locals/Expressions
+    -> Structured -> TypedCfg -> Assembly -> bytecode
 ```
 
-The allocation boundary computes liveness, layouts, and shuffles. The exact
-contracts need neither rematerialization nor a guarded spill plan. Its public theorem takes
+The normalization boundary performs only proved, semantics-exact expression
+reassociation/order rewrites. The allocation boundary computes liveness,
+layouts, and shuffles. The exact contracts need neither rematerialization nor a
+guarded spill plan. Its public theorem takes
 accepted source, related initial states, source execution/resource premises,
 and compiler success; it does not take generated schedules, layouts,
 certificates, or preservation oracles as premises. `Yul.EndToEnd` remains a
@@ -50,11 +53,14 @@ The exact pinned-contract diagnostic now resolves the architecture fork:
   promotions, and canonical join restoration over only the differing top
   prefix while preserving the common dormant suffix.
 
-Therefore no Functions-to-Functions normalization pass is currently planned.
-Source normalization becomes necessary only if the integrated physical
-allocator still finds a program whose genuinely simultaneous/effectful live
-set cannot be scheduled stack-only. Rematerialization and dead source-binding
-elimination are not prerequisites for Permit2 or Aave.
+Permit2 and Aave do not require source optimization. The broader Uniswap v4
+gate did expose a general expression-shape problem in solc's TickMath output:
+semantically associative pure `or` trees and literal-left `and` trees could
+force inaccessible intermediate operands despite a schedulable live set. A
+checked Functions-to-Functions normalization now reassociates those pure trees
+and orders literal conjunctions before physical allocation. Its all-fuel open
+semantics theorem preserves the exact state, outcome, and ordered effect tree.
+It is not a rematerializer and never duplicates an expression or effect.
 
 ## Semantic Invariants
 
@@ -204,11 +210,19 @@ elimination are not prerequisites for Permit2 or Aave.
 - [x] Keep call artifacts compiler-owned and absent from public theorem
   premises.
 
-### 5. Rematerialization Contingency
+### 5. Functions Normalization and Rematerialization Contingency
 
-The exact-contract viability gate does not require source normalization or
-rematerialization. These are deliberately deferred until a general input
-exhibits irreducible stack pressure after next-use scheduling.
+- [x] Add a Functions-owned recursive normalization for pure associative `or`
+  trees and literal-left `and` ordering, selected before physical allocation.
+- [x] Prove expression, argument, statement, block, loop, switch, function, and
+  whole-program exact open-semantics equality for every fuel and response tree.
+- [x] Integrate normalization into `StackArtifact.compile?` and the adjacent
+  public composition theorem without generated evidence or a Yul-to-bytecode
+  proof corridor.
+
+General dead-binding elimination and rematerialization remain deferred until a
+program exhibits irreducible pressure after normalization and next-use
+scheduling.
 
 - [ ] Define a conservative `StableEffectFree` predicate over Functions
   expressions.
@@ -278,8 +292,11 @@ premise or hidden memory access in the current checked artifact path.
   have zero inaccessible-depth failures and use stack-only allocation.
 - [x] Select proved direct discards at straight-line fallthrough points while
   preserving canonical entry/join/return transitions. Exact recursive images
-  are now 20,712 bytes for Permit2 and 40,185 bytes for linked Aave; native
-  diagnostics remain practical at 8.5s/107 MB and 24.2s/135 MB respectively.
+  at that checkpoint were 20,712 bytes for Permit2 and 40,185 bytes for linked
+  Aave; native diagnostics remained practical at 8.5s/107 MB and 24.2s/135 MB
+  respectively. The current strict recursive artifact gate emits 90,723 and
+  92,924 bytes after the broader scheduling/backend changes. These figures are
+  diagnostics, not deployability requirements.
 - [x] Treat abrupt-only conditional regions honestly at both adjacent owners:
   Functions scheduling emits no fictitious join, while Locals compilation
   omits unreachable lexical cleanup under a checked direct-exit theorem.
@@ -288,6 +305,16 @@ premise or hidden memory access in the current checked artifact path.
   The checked corpus now includes OpenZeppelin, Chainlink, PRBMath, Solbase,
   Balancer V3, Seaport, Compound Comet, Solmate, and Solady in addition to the
   exact pinned Permit2 and linked Aave gates.
+- [x] Replace all Uniswap v4 summary/decode-only lanes with strict checked
+  backend gates. SwapMath creation, TickMath, SqrtPriceMath, Lock,
+  CurrencyDelta, Hooks, Extsload/Exttload, and linked PoolManager creation all
+  produce complete checked artifacts.
+- [x] Remove large-program native recursion failures with proved, stack-safe
+  implementations of procedure traversal, compact preparation/alignment,
+  block emission/equality, well-formedness, and byte-length checks. PoolManager
+  schedules 770/770 units, compacts 639,081 logical instructions to 498,004
+  runtime bytes, and its 500,624-byte creation artifact completes in about 26
+  seconds. Output size remains diagnostic rather than a deployability gate.
 
 ### 9. Optional Code Density
 
@@ -356,7 +383,8 @@ At each completed boundary:
 The goal is incomplete while Aave needs compiler scratch memory, while a
 fixture provides spill storage, while generated allocation evidence appears at
 the public boundary, while exact pinned Permit2 or linked Aave fails the checked
-raw-bytecode artifact path, or while any selected adjacent boundary lacks a
-checked preservation theorem. Bytecode deployability and the deferred
+raw-bytecode artifact path, while any named real-contract corpus lane remains
+summary/decode-only, or while any selected adjacent boundary lacks a checked
+preservation theorem. Bytecode deployability and the deferred
 return-PC density migration are explicitly outside this stage's completion
 gate.

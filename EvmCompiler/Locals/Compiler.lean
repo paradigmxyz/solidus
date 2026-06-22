@@ -1856,12 +1856,42 @@ end Proc
 
 namespace ProcList
 
+private def toExpressionsRev? :
+    List Proc → List Expressions.Proc → Option (List Expressions.Proc)
+  | [], acc => some acc.reverse
+  | proc :: rest, acc => do
+      let lowerProc ← proc.toExpressions?
+      toExpressionsRev? rest (lowerProc :: acc)
+
+def toExpressionsFast? (procs : List Proc) :
+    Option (List Expressions.Proc) :=
+  toExpressionsRev? procs []
+
+@[implemented_by toExpressionsFast?]
 def toExpressions? : List Proc → Option (List Expressions.Proc)
   | [] => some []
   | proc :: rest => do
       let lowerProc ← proc.toExpressions?
       let lowerRest ← toExpressions? rest
       some (lowerProc :: lowerRest)
+
+private theorem toExpressionsRev?_eq :
+    ∀ (procs : List Proc) (acc : List Expressions.Proc),
+      toExpressionsRev? procs acc = do
+        let lower ← toExpressions? procs
+        some (acc.reverse ++ lower)
+  | [], acc => by simp [toExpressionsRev?, toExpressions?]
+  | proc :: rest, acc => by
+      cases hProc : proc.toExpressions? with
+      | none => simp [toExpressionsRev?, toExpressions?, hProc]
+      | some lowerProc =>
+          simp [toExpressionsRev?, toExpressions?, hProc,
+            toExpressionsRev?_eq, List.reverse_cons, List.append_assoc]
+          cases hRest : toExpressions? rest <;> simp [hRest]
+
+theorem toExpressionsFast?_eq (procs : List Proc) :
+    toExpressionsFast? procs = toExpressions? procs := by
+  simp [toExpressionsFast?, toExpressionsRev?_eq]
 
 theorem toExpressions?_member_components :
     ∀ {procs : List Proc} {lower : List Expressions.Proc} {proc : Proc},

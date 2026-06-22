@@ -122,13 +122,6 @@ def orderPriority (layout : Locals.Layout) (stmt : Stmt)
     layout.filter fun name => decide (name ∉ facts.liveAfter)
   let reachableDying :=
     (allDying.filter (accessible layout)).reverse
-  let futureCount :=
-    if layout.length <= 16 then 0 else 2
-  let boundedFuture :=
-    match stmt with
-    | .let_ _ _ =>
-        (facts.nextUse.filter (accessible layout)).take futureCount
-    | _ => []
   let preferredImmediate :=
     if (StackAccess.Stmt.check? layout stmt).isSome then
       match stmt with
@@ -136,6 +129,8 @@ def orderPriority (layout : Locals.Layout) (stmt : Stmt)
       | _ => []
     else
       StackAccess.Stmt.accessPriority stmt ++ reachableDying
+  let boundedFuture :=
+    (facts.nextUse.filter (accessible layout)).take 12
   let preferred :=
     ((AllocationLivenessFacts.stableUnique
         (preferredImmediate ++ boundedFuture)).filter

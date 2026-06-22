@@ -2,6 +2,7 @@ import EvmCompiler.Assembly.Bytecode
 import EvmCompiler.Assembly.InteractionPreservation
 import Mathlib.Tactic.IntervalCases
 import Std.Data.HashMap.Lemmas
+import Std.Data.HashSet.Lemmas
 
 namespace EvmCompiler
 namespace Assembly
@@ -187,9 +188,27 @@ structure Program where
 
 namespace Program
 
+def codeByteLengthFast (code : List Located) : Nat :=
+  code.foldl (fun total located => total + located.instr.byteSize) 0
+
+@[implemented_by codeByteLengthFast]
 def codeByteLength : List Located -> Nat
   | [] => 0
   | located :: rest => located.instr.byteSize + codeByteLength rest
+
+private theorem foldl_byteSize_eq (code : List Located) (total : Nat) :
+    code.foldl (fun acc located => acc + located.instr.byteSize) total =
+      total + codeByteLength code := by
+  induction code generalizing total with
+  | nil => simp [codeByteLength]
+  | cons located rest ih =>
+      simp only [List.foldl_cons, codeByteLength]
+      rw [ih]
+      omega
+
+theorem codeByteLengthFast_eq (code : List Located) :
+    codeByteLengthFast code = codeByteLength code := by
+  simp [codeByteLengthFast, foldl_byteSize_eq]
 
 theorem codeByteLength_append (left right : List Located) :
     codeByteLength (left ++ right) =
@@ -224,16 +243,44 @@ def layoutFrom? : List Located -> Nat -> Bool
       decide (located.pc = pc) &&
         layoutFrom? rest (pc + located.instr.byteSize)
 
+def layoutFromFast? : List Located → Nat → Bool
+  | [], _ => true
+  | located :: rest, pc =>
+      if located.pc == pc then
+        layoutFromFast? rest (pc + located.instr.byteSize)
+      else
+        false
+
+theorem layoutFromFast?_eq (code : List Located) (pc : Nat) :
+    layoutFromFast? code pc = layoutFrom? code pc := by
+  induction code generalizing pc with
+  | nil => rfl
+  | cons located rest ih =>
+      by_cases hPc : located.pc = pc
+      · simp [layoutFromFast?, layoutFrom?, hPc, ih]
+      · simp [layoutFromFast?, layoutFrom?, hPc]
+
 def valid? (program : Program) : Bool :=
   program.code.all fun located => located.instr.valid?
 
 def pcIndependent? (program : Program) : Bool :=
   program.code.all fun located => located.instr.pcIndependent?
 
+def wellFormedFast? (program : Program) : Bool :=
+  program.valid? && layoutFromFast? program.code 0 &&
+    decide (Program.codeByteLengthFast program.code < 18446744073709551616) &&
+      program.pcIndependent?
+
+@[implemented_by wellFormedFast?]
 def wellFormed? (program : Program) : Bool :=
   program.valid? && layoutFrom? program.code 0 &&
     decide (Program.codeByteLength program.code < 18446744073709551616) &&
       program.pcIndependent?
+
+theorem wellFormedFast?_eq (program : Program) :
+    wellFormedFast? program = wellFormed? program := by
+  simp [wellFormedFast?, wellFormed?, layoutFromFast?_eq,
+    codeByteLengthFast_eq]
 
 theorem layoutFrom_of_check :
     ∀ {code : List Located} {pc : Nat},
@@ -456,6 +503,31 @@ def emitSourceBlock? (pinnedPushPcs : List Nat)
     table instr []
   some reversed.reverse
 
+def emitBlocksFromRev? (pinnedPushPcs : List Nat) (branchWidth : Nat)
+    (table : LabelTable) :
+    Assembly.Program → Nat → Nat → List SourceBlock →
+      Option (List SourceBlock)
+  | [], _sourcePc, _compactPc, acc => some acc.reverse
+  | instr :: rest, sourcePc, compactPc, acc => do
+      let compactSize ←
+        sourceInstrSizeAt? pinnedPushPcs branchWidth sourcePc instr
+      let code ←
+        emitSourceBlock? pinnedPushPcs branchWidth sourcePc compactPc
+          table instr
+      emitBlocksFromRev? pinnedPushPcs branchWidth table rest
+        (sourcePc + instr.byteSize) (compactPc + compactSize)
+        ({ sourcePc := sourcePc
+           compactPc := compactPc
+           sourceInstr := instr
+           code := code } :: acc)
+
+def emitBlocksFromFast? (pinnedPushPcs : List Nat) (branchWidth : Nat)
+    (table : LabelTable) (source : Assembly.Program)
+    (sourcePc compactPc : Nat) : Option (List SourceBlock) :=
+  emitBlocksFromRev? pinnedPushPcs branchWidth table source
+    sourcePc compactPc []
+
+@[implemented_by emitBlocksFromFast?]
 def emitBlocksFrom? (pinnedPushPcs : List Nat) (branchWidth : Nat)
     (table : LabelTable) :
     Assembly.Program -> Nat -> Nat -> Option (List SourceBlock)
@@ -474,13 +546,119 @@ def emitBlocksFrom? (pinnedPushPcs : List Nat) (branchWidth : Nat)
            sourceInstr := instr
            code := code } :: blocks)
 
+def emitBlocksFast? (pinnedPushPcs : List Nat) (source : Assembly.Program)
+    (branchWidth : Nat) (table : LabelTable) : Option (List SourceBlock) :=
+  emitBlocksFromFast? pinnedPushPcs branchWidth table source 0 0
+
+@[implemented_by emitBlocksFast?]
 def emitBlocks? (pinnedPushPcs : List Nat) (source : Assembly.Program)
     (branchWidth : Nat)
     (table : LabelTable) : Option (List SourceBlock) :=
   emitBlocksFrom? pinnedPushPcs branchWidth table source 0 0
 
+private theorem emitBlocksFromRev_eq
+    (pinnedPushPcs : List Nat) (branchWidth : Nat) (table : LabelTable) :
+    ∀ (source : Assembly.Program) (sourcePc compactPc : Nat)
+      (acc : List SourceBlock),
+      emitBlocksFromRev? pinnedPushPcs branchWidth table source
+          sourcePc compactPc acc = do
+        let blocks ←
+          emitBlocksFrom? pinnedPushPcs branchWidth table source
+            sourcePc compactPc
+        some (acc.reverse ++ blocks)
+  | [], sourcePc, compactPc, acc => by
+      simp [emitBlocksFromRev?, emitBlocksFrom?]
+  | instr :: rest, sourcePc, compactPc, acc => by
+      cases hSize :
+          sourceInstrSizeAt? pinnedPushPcs branchWidth sourcePc instr with
+      | none =>
+          simp [emitBlocksFromRev?, emitBlocksFrom?, hSize]
+      | some compactSize =>
+          cases hCode :
+              emitSourceBlock? pinnedPushPcs branchWidth sourcePc compactPc
+                table instr with
+          | none =>
+              simp [emitBlocksFromRev?, emitBlocksFrom?, hSize, hCode]
+          | some code =>
+              simp [emitBlocksFromRev?, emitBlocksFrom?, hSize, hCode,
+                emitBlocksFromRev_eq, List.reverse_cons,
+                List.append_assoc]
+              cases hTail :
+                  emitBlocksFrom? pinnedPushPcs branchWidth table rest
+                    (sourcePc + instr.byteSize)
+                    (compactPc + compactSize) <;> simp [hTail]
+
+theorem emitBlocksFromFast_eq
+    (pinnedPushPcs : List Nat) (branchWidth : Nat) (table : LabelTable)
+    (source : Assembly.Program) (sourcePc compactPc : Nat) :
+    emitBlocksFromFast? pinnedPushPcs branchWidth table source
+        sourcePc compactPc =
+      emitBlocksFrom? pinnedPushPcs branchWidth table source
+        sourcePc compactPc := by
+  simp [emitBlocksFromFast?, emitBlocksFromRev_eq]
+
+theorem emitBlocksFast_eq
+    (pinnedPushPcs : List Nat) (source : Assembly.Program)
+    (branchWidth : Nat) (table : LabelTable) :
+    emitBlocksFast? pinnedPushPcs source branchWidth table =
+      emitBlocks? pinnedPushPcs source branchWidth table := by
+  simp [emitBlocksFast?, emitBlocks?, emitBlocksFromFast_eq]
+
+def blocksCodeRev : List SourceBlock → List Located → List Located
+  | [], acc => acc.reverse
+  | block :: rest, acc =>
+      blocksCodeRev rest (block.code.reverse ++ acc)
+
+def blocksCodeFast (blocks : List SourceBlock) : List Located :=
+  blocksCodeRev blocks []
+
+@[implemented_by blocksCodeFast]
 def blocksCode (blocks : List SourceBlock) : List Located :=
   blocks.flatMap SourceBlock.code
+
+private theorem blocksCodeRev_eq (blocks : List SourceBlock)
+    (acc : List Located) :
+    blocksCodeRev blocks acc = acc.reverse ++ blocksCode blocks := by
+  induction blocks generalizing acc with
+  | nil => simp [blocksCodeRev, blocksCode]
+  | cons block rest ih =>
+      simp [blocksCodeRev, blocksCode, ih, List.reverse_append,
+        List.append_assoc]
+
+theorem blocksCodeFast_eq (blocks : List SourceBlock) :
+    blocksCodeFast blocks = blocksCode blocks := by
+  simp [blocksCodeFast, blocksCodeRev_eq]
+
+def locatedListEq? : List Located → List Located → Bool
+  | [], [] => true
+  | left :: leftRest, right :: rightRest =>
+      if left == right then locatedListEq? leftRest rightRest else false
+  | _, _ => false
+
+theorem locatedListEq?_eq_true_iff (left right : List Located) :
+    locatedListEq? left right = true ↔ left = right := by
+  induction left generalizing right with
+  | nil => cases right <;> simp [locatedListEq?]
+  | cons head tail ih =>
+      cases right with
+      | nil => simp [locatedListEq?]
+      | cons other rest =>
+          simp [locatedListEq?, ih]
+
+def blocksCodeMatches? (blocks : List SourceBlock)
+    (code : List Located) : Bool :=
+  locatedListEq? (blocksCodeFast blocks) code
+
+theorem blocksCodeMatches?_eq_true_iff
+    (blocks : List SourceBlock) (code : List Located) :
+    blocksCodeMatches? blocks code = true ↔ blocksCode blocks = code := by
+  simp [blocksCodeMatches?, locatedListEq?_eq_true_iff, blocksCodeFast_eq]
+
+theorem blocksCodeMatches_of_check
+    {blocks : List SourceBlock} {code : List Located}
+    (hCheck : blocksCodeMatches? blocks code = true) :
+    blocksCode blocks = code :=
+  (blocksCodeMatches?_eq_true_iff blocks code).mp hCheck
 
 def blockLabelConsistent? (table : LabelTable) (block : SourceBlock) : Bool :=
   match block.sourceInstr with
@@ -1174,6 +1352,23 @@ theorem decodingCorrectOfWellFormedWithSuffix
 
 /-- Remove an unconditional transfer to the label physically adjacent to it.
 The label remains available to every other incoming edge. -/
+def elideFallthroughJumpsRev :
+    Assembly.Program → Assembly.Program → Assembly.Program
+  | .jump target :: .label next :: rest, acc =>
+      if target = next then
+        elideFallthroughJumpsRev rest (.label next :: acc)
+      else
+        elideFallthroughJumpsRev
+          rest (.label next :: .jump target :: acc)
+  | instr :: rest, acc =>
+      elideFallthroughJumpsRev rest (instr :: acc)
+  | [], acc => acc.reverse
+
+def elideFallthroughJumpsFast (source : Assembly.Program) :
+    Assembly.Program :=
+  elideFallthroughJumpsRev source []
+
+@[implemented_by elideFallthroughJumpsFast]
 def elideFallthroughJumps : Assembly.Program -> Assembly.Program
   | .jump target :: .label next :: rest =>
       if target = next then
@@ -1185,9 +1380,43 @@ def elideFallthroughJumps : Assembly.Program -> Assembly.Program
 termination_by source => source.length
 decreasing_by all_goals (simp_wf <;> omega)
 
+def referencedLabelsRev : Assembly.Program → List Label → List Label
+  | [], acc => acc.reverse
+  | .pushLabel target :: rest, acc =>
+      referencedLabelsRev rest (target :: acc)
+  | .jump target :: rest, acc =>
+      referencedLabelsRev rest (target :: acc)
+  | .jumpi target :: rest, acc =>
+      referencedLabelsRev rest (target :: acc)
+  | _ :: rest, acc => referencedLabelsRev rest acc
+
+def referencedLabelsFast (source : Assembly.Program) : List Label :=
+  referencedLabelsRev source []
+
+@[implemented_by referencedLabelsFast]
 def referencedLabels (source : Assembly.Program) : List Label :=
   source.flatMap Assembly.Instr.targets
 
+def referencedLabelSet (targets : List Label) : Std.HashSet Label :=
+  targets.foldl (fun set label => set.insert label)
+    (Std.HashSet.emptyWithCapacity targets.length)
+
+def pruneUnreferencedLabelsRev (targets : Std.HashSet Label) :
+    Assembly.Program → Assembly.Program → Assembly.Program
+  | [], acc => acc.reverse
+  | .label name :: rest, acc =>
+      if targets.contains name then
+        pruneUnreferencedLabelsRev targets rest (.label name :: acc)
+      else
+        pruneUnreferencedLabelsRev targets rest acc
+  | instr :: rest, acc =>
+      pruneUnreferencedLabelsRev targets rest (instr :: acc)
+
+def pruneUnreferencedLabelsFast (targets : List Label)
+    (source : Assembly.Program) : Assembly.Program :=
+  pruneUnreferencedLabelsRev (referencedLabelSet targets) source []
+
+@[implemented_by pruneUnreferencedLabelsFast]
 def pruneUnreferencedLabels (targets : List Label) :
     Assembly.Program -> Assembly.Program
   | [] => []
@@ -1198,9 +1427,133 @@ def pruneUnreferencedLabels (targets : List Label) :
         pruneUnreferencedLabels targets rest
   | instr :: rest => instr :: pruneUnreferencedLabels targets rest
 
+def prepareFast (source : Assembly.Program) : Assembly.Program :=
+  let elided := elideFallthroughJumpsFast source
+  pruneUnreferencedLabelsFast (referencedLabelsFast elided) elided
+
+@[implemented_by prepareFast]
 def prepare (source : Assembly.Program) : Assembly.Program :=
   let elided := elideFallthroughJumps source
   pruneUnreferencedLabels (referencedLabels elided) elided
+
+private theorem elideFallthroughJumpsRev_eq
+    (source acc : Assembly.Program) :
+    elideFallthroughJumpsRev source acc =
+      acc.reverse ++ elideFallthroughJumps source := by
+  induction source generalizing acc with
+  | nil => simp [elideFallthroughJumpsRev, elideFallthroughJumps]
+  | cons instr rest ih =>
+      cases instr with
+      | jump target =>
+          cases rest with
+          | nil =>
+              simp [elideFallthroughJumpsRev, elideFallthroughJumps]
+          | cons next tail =>
+              cases next with
+              | label next =>
+                  by_cases h : target = next
+                  · have hIH := ih acc
+                    simpa [elideFallthroughJumpsRev,
+                      elideFallthroughJumps, h] using hIH
+                  · have hIH := ih (.jump target :: acc)
+                    simpa [elideFallthroughJumpsRev,
+                      elideFallthroughJumps, h,
+                      List.reverse_cons, List.append_assoc] using hIH
+              | prim op | push op | pushLabel op | jump op | jumpi op |
+                  jumpDynamic =>
+                  have hIH := ih (.jump target :: acc)
+                  simpa [elideFallthroughJumpsRev,
+                    elideFallthroughJumps,
+                    List.reverse_cons, List.append_assoc] using hIH
+      | label name | prim name | push name | pushLabel name | jumpi name |
+          jumpDynamic =>
+          simp [elideFallthroughJumpsRev, elideFallthroughJumps, ih,
+            List.reverse_cons, List.append_assoc]
+
+theorem elideFallthroughJumpsFast_eq (source : Assembly.Program) :
+    elideFallthroughJumpsFast source = elideFallthroughJumps source := by
+  simp [elideFallthroughJumpsFast, elideFallthroughJumpsRev_eq]
+
+private theorem referencedLabelsRev_eq (source : Assembly.Program)
+    (acc : List Label) :
+    referencedLabelsRev source acc =
+      acc.reverse ++ referencedLabels source := by
+  induction source generalizing acc with
+  | nil => simp [referencedLabelsRev, referencedLabels]
+  | cons instr rest ih =>
+      cases instr <;>
+        simp [referencedLabelsRev, referencedLabels,
+          Assembly.Instr.targets, ih, List.reverse_cons, List.append_assoc]
+
+theorem referencedLabelsFast_eq (source : Assembly.Program) :
+    referencedLabelsFast source = referencedLabels source := by
+  simp [referencedLabelsFast, referencedLabelsRev_eq]
+
+private theorem hashSetContains_foldl_insert
+    (items : List Label) (labels : Std.HashSet Label) (label : Label) :
+    (items.foldl (fun set item => set.insert item) labels).contains label =
+      (labels.contains label || items.contains label) := by
+  induction items generalizing labels with
+  | nil => simp
+  | cons head tail ih =>
+      rw [List.foldl, ih, Std.HashSet.contains_insert]
+      by_cases hEq : head = label
+      · subst head
+        simp [Bool.or_comm]
+      · have hRev : label ≠ head := by
+          intro h
+          exact hEq h.symm
+        have hBeq : (head == label) = false :=
+          beq_eq_false_iff_ne.mpr hEq
+        simp [hBeq, hRev]
+
+theorem referencedLabelSet_contains (targets : List Label) (label : Label) :
+    (referencedLabelSet targets).contains label = targets.contains label := by
+  simp [referencedLabelSet, hashSetContains_foldl_insert]
+
+private theorem pruneUnreferencedLabelsRev_eq (targetList : List Label)
+    (targetSet : Std.HashSet Label)
+    (hSet : ∀ label, targetSet.contains label = targetList.contains label) :
+    ∀ (source acc : Assembly.Program),
+      pruneUnreferencedLabelsRev targetSet source acc =
+        acc.reverse ++ pruneUnreferencedLabels targetList source
+  | [], acc => by
+      simp [pruneUnreferencedLabelsRev, pruneUnreferencedLabels]
+  | instr :: rest, acc => by
+      cases instr with
+      | label name =>
+          by_cases hMem : name ∈ targetList
+          · have hContains : targetSet.contains name = true := by
+              rw [hSet]
+              simpa using hMem
+            simp [pruneUnreferencedLabelsRev, pruneUnreferencedLabels,
+              hMem, hContains,
+              pruneUnreferencedLabelsRev_eq targetList targetSet hSet rest,
+              List.reverse_cons, List.append_assoc]
+          · have hContains : targetSet.contains name = false := by
+              rw [hSet]
+              simpa using hMem
+            simp [pruneUnreferencedLabelsRev, pruneUnreferencedLabels,
+              hMem, hContains,
+              pruneUnreferencedLabelsRev_eq targetList targetSet hSet rest]
+      | prim op | push op | pushLabel op | jump op | jumpi op | jumpDynamic =>
+          simp [pruneUnreferencedLabelsRev, pruneUnreferencedLabels,
+            pruneUnreferencedLabelsRev_eq targetList targetSet hSet rest,
+            List.reverse_cons, List.append_assoc]
+
+theorem pruneUnreferencedLabelsFast_eq
+    (targets : List Label) (source : Assembly.Program) :
+    pruneUnreferencedLabelsFast targets source =
+      pruneUnreferencedLabels targets source := by
+  unfold pruneUnreferencedLabelsFast
+  rw [pruneUnreferencedLabelsRev_eq targets (referencedLabelSet targets)
+    (referencedLabelSet_contains targets)]
+  simp
+
+theorem prepareFast_eq (source : Assembly.Program) :
+    prepareFast source = prepare source := by
+  simp [prepareFast, prepare, elideFallthroughJumpsFast_eq,
+    referencedLabelsFast_eq, pruneUnreferencedLabelsFast_eq]
 
 /-- Find physical Assembly push sites whose values differ between two
 shape-identical programs. Pinning precisely these PCs gives both programs the
@@ -1235,6 +1588,40 @@ structure PreparationBlock where
   action : PreparationAction
   deriving DecidableEq, Repr
 
+def alignPreparationFromRev? : Assembly.Program → Assembly.Program →
+    Nat → Nat → List PreparationBlock → Option (List PreparationBlock)
+  | [], [], _, _, acc => some acc.reverse
+  | [], _ :: _, _, _, _ => none
+  | instr :: rest, [], sourcePc, preparedPc, acc =>
+      alignPreparationFromRev? rest []
+        (sourcePc + instr.byteSize) preparedPc
+        ({ sourcePc := sourcePc
+           preparedPc := preparedPc
+           sourceInstr := instr
+           action := .skip } :: acc)
+  | instr :: rest, preparedInstr :: preparedRest,
+      sourcePc, preparedPc, acc =>
+      if instr = preparedInstr then
+        alignPreparationFromRev? rest preparedRest
+          (sourcePc + instr.byteSize)
+          (preparedPc + preparedInstr.byteSize)
+          ({ sourcePc := sourcePc
+             preparedPc := preparedPc
+             sourceInstr := instr
+             action := .keep } :: acc)
+      else
+        alignPreparationFromRev? rest (preparedInstr :: preparedRest)
+          (sourcePc + instr.byteSize) preparedPc
+          ({ sourcePc := sourcePc
+             preparedPc := preparedPc
+             sourceInstr := instr
+             action := .skip } :: acc)
+
+def alignPreparationFromFast? (source prepared : Assembly.Program)
+    (sourcePc preparedPc : Nat) : Option (List PreparationBlock) :=
+  alignPreparationFromRev? source prepared sourcePc preparedPc []
+
+@[implemented_by alignPreparationFromFast?]
 def alignPreparationFrom? : Assembly.Program -> Assembly.Program ->
     Nat -> Nat -> Option (List PreparationBlock)
   | [], [], _, _ => some []
@@ -1267,9 +1654,60 @@ def alignPreparationFrom? : Assembly.Program -> Assembly.Program ->
              action := .skip } :: blocks)
 termination_by source prepared => source.length + prepared.length
 
+def alignPreparationFast? (source prepared : Assembly.Program) :
+    Option (List PreparationBlock) :=
+  alignPreparationFromFast? source prepared 0 0
+
+@[implemented_by alignPreparationFast?]
 def alignPreparation? (source prepared : Assembly.Program) :
     Option (List PreparationBlock) :=
   alignPreparationFrom? source prepared 0 0
+
+private theorem alignPreparationFromRev_eq :
+    ∀ (source prepared : Assembly.Program) (sourcePc preparedPc : Nat)
+      (acc : List PreparationBlock),
+      alignPreparationFromRev? source prepared sourcePc preparedPc acc = do
+        let blocks ← alignPreparationFrom? source prepared sourcePc preparedPc
+        some (acc.reverse ++ blocks)
+  | [], prepared, sourcePc, preparedPc, acc => by
+      cases prepared <;>
+        simp [alignPreparationFromRev?, alignPreparationFrom?]
+  | instr :: rest, prepared, sourcePc, preparedPc, acc => by
+      cases prepared with
+      | nil =>
+          simp [alignPreparationFromRev?, alignPreparationFrom?,
+            alignPreparationFromRev_eq, List.reverse_cons,
+            List.append_assoc]
+          cases hTail :
+              alignPreparationFrom? rest []
+                (sourcePc + instr.byteSize) preparedPc <;> simp [hTail]
+      | cons preparedInstr preparedRest =>
+          by_cases hEq : instr = preparedInstr
+          · subst instr
+            simp [alignPreparationFromRev?, alignPreparationFrom?,
+              alignPreparationFromRev_eq, List.reverse_cons,
+              List.append_assoc]
+            cases hTail :
+                alignPreparationFrom? rest preparedRest
+                  (sourcePc + preparedInstr.byteSize)
+                  (preparedPc + preparedInstr.byteSize) <;> simp [hTail]
+          · simp [alignPreparationFromRev?, alignPreparationFrom?, hEq,
+              alignPreparationFromRev_eq, List.reverse_cons,
+              List.append_assoc]
+            cases hTail :
+                alignPreparationFrom? rest (preparedInstr :: preparedRest)
+                  (sourcePc + instr.byteSize) preparedPc <;> simp [hTail]
+
+theorem alignPreparationFromFast_eq (source prepared : Assembly.Program)
+    (sourcePc preparedPc : Nat) :
+    alignPreparationFromFast? source prepared sourcePc preparedPc =
+      alignPreparationFrom? source prepared sourcePc preparedPc := by
+  simp [alignPreparationFromFast?, alignPreparationFromRev_eq]
+
+theorem alignPreparationFast_eq (source prepared : Assembly.Program) :
+    alignPreparationFast? source prepared =
+      alignPreparation? source prepared := by
+  simp [alignPreparationFast?, alignPreparation?, alignPreparationFromFast_eq]
 
 def PreparationBoundaryPair (blocks : List PreparationBlock)
     (sourceEnd preparedEnd sourcePc preparedPc : Nat) : Prop :=
@@ -1948,7 +2386,7 @@ def compile? (source : Assembly.Program)
   let (labels, codeLength) <- layout? pinnedPushPcs physicalSource branchWidth
   let program <- emit? pinnedPushPcs physicalSource branchWidth labels
   let blocks <- emitBlocks? pinnedPushPcs physicalSource branchWidth labels
-  if blocksCode blocks = program.code then
+  if blocksCodeMatches? blocks program.code then
     if labelsConsistent? blocks labels then
       if program.wellFormed? then
         some
@@ -2031,8 +2469,11 @@ theorem compile?_valid {source : Assembly.Program} {pinnedPushPcs : List Nat}
                         | none => simp [hBlocks] at hCompile
                         | some blocks =>
                             simp [hBlocks] at hCompile
-                            by_cases hCode : blocksCode blocks = program.code
-                            · simp [hCode] at hCompile
+                            by_cases hCodeCheck :
+                                blocksCodeMatches? blocks program.code = true
+                            · have hCode :=
+                                blocksCodeMatches_of_check hCodeCheck
+                              simp [hCodeCheck] at hCompile
                               by_cases hLabels :
                                   labelsConsistent? blocks labels = true
                               · simp [hLabels] at hCompile
@@ -2047,7 +2488,7 @@ theorem compile?_valid {source : Assembly.Program} {pinnedPushPcs : List Nat}
                                     (Program.wellFormed_of_check hWellFormed) rfl
                                 · simp [hWellFormed] at hCompile
                               · simp [hLabels] at hCompile
-                            · simp [hCode] at hCompile
+                            · simp [hCodeCheck] at hCompile
       · simp [hPreparationSafe] at hCompile
 
 theorem Artifact.ValidFor.physicalSourcePCFits

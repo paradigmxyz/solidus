@@ -34,6 +34,7 @@ import EvmCompiler.Functions.StackTransitionCompilation
 import EvmCompiler.Functions.StackLowering
 import EvmCompiler.Functions.StackLoweringCompilation
 import EvmCompiler.Functions.StackDiagnostics
+import EvmCompiler.Functions.StackPressureNormalizationProgram
 import EvmCompiler.Functions.AllocationObserverRelation
 import EvmCompiler.Functions.AllocationObserverSafety
 import EvmCompiler.Functions.AllocationObserverPreservation
@@ -3494,3 +3495,14 @@ or audit-alias corridor.
 #print axioms EvmCompiler.TypedCfg.ReturnAddressPreservation.returnDispatch_eventually
 #print axioms EvmCompiler.TypedCfg.ReturnAddressPreservation.prim_openStep_runtimeRel
 #print axioms EvmCompiler.TypedCfg.ReturnAddressPreservation.pop_runState_runtimeRel
+#print axioms EvmCompiler.Functions.StackPressureNormalization.Program.normalize_openRunState
+#print axioms EvmCompiler.Locals.ProcList.toExpressionsFast?_eq
+#print axioms EvmCompiler.Assembly.Bytecode.codeByteLengthFast_eq
+#print axioms EvmCompiler.Assembly.Bytecode.encodeTargetFast_eq
+#print axioms EvmCompiler.Assembly.Compact.Program.codeByteLengthFast_eq
+#print axioms EvmCompiler.Assembly.Compact.Program.wellFormedFast?_eq
+#print axioms EvmCompiler.Assembly.Compact.prepareFast_eq
+#print axioms EvmCompiler.Assembly.Compact.alignPreparationFast_eq
+#print axioms EvmCompiler.Assembly.Compact.emitBlocksFast_eq
+#print axioms EvmCompiler.Assembly.Compact.blocksCodeFast_eq
+#print axioms EvmCompiler.Assembly.Compact.blocksCodeMatches?_eq_true_iff

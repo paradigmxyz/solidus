@@ -286,7 +286,10 @@ mutual
             some
               { path := pointPath
                 phase := "statement-ordering"
-                reason := "next-use ordering cannot reach a requested value" }
+                reason :=
+                  "priority ordering cannot reach a requested value; layout=" ++
+                    reprStr layout ++ "; priority=" ++
+                    reprStr (StackSchedule.orderPriority layout source facts) }
         | some order =>
             let resident := StackSchedule.residentBefore source facts
             if !StackSchedule.covers order.target resident then
@@ -393,6 +396,17 @@ mutual
                                                   phase := "statement-schedule"
                                                   reason :=
                                                     "loop scheduling failed after all child checks" }
+                  | .switch _ cases defaultBody, regions =>
+                      let caseFacts := regions.take cases.length
+                      let defaultFacts := regions.drop cases.length
+                      let branchProtected := StackSchedule.layoutSet order.target
+                      match firstScheduleFailureCasesFuel targets fuel
+                          pointPath branchProtected order.target
+                          cases caseFacts 0 with
+                      | some failure => some failure
+                      | none =>
+                          firstScheduleFailureDefaultFuel targets fuel pointPath
+                            branchProtected order.target defaultBody defaultFacts
                   | _, _ =>
                       some
                         { path := pointPath
@@ -424,6 +438,71 @@ mutual
           { path := path ++ "/stmt[" ++ toString index ++ "]"
             phase := "fact-shape"
             reason := "source statements and liveness points have different lengths" }
+
+  def firstScheduleFailureCasesFuel
+      (targets : StackSchedule.ControlTargets)
+      (fuel : Nat) (path : String) (pinned : LiveSet)
+      (layout : Locals.Layout) :
+      List (Word × Block) → List AllocationLivenessFacts.Region → Nat →
+        Option Failure
+    | [], [], _ => none
+    | (_, body) :: rest, facts :: restFacts, index =>
+        let casePath := path ++ "/case[" ++ toString index ++ "]"
+        match StackSchedule.scheduleBlockFuelWithTargets targets fuel pinned
+            layout body facts with
+        | none =>
+            firstScheduleFailureBlockFuel targets fuel casePath pinned layout
+              body facts
+        | some region =>
+            match Join.build? region.finalLayout layout with
+            | none =>
+                let failure :=
+                  transitionFailure casePath "case-join"
+                    region.finalLayout (StackSchedule.layoutSet layout)
+                some
+                  { failure with
+                    reason := failure.reason ++ "; branch=" ++
+                      reprStr region.finalLayout ++ "; switch=" ++
+                      reprStr layout }
+            | some _ =>
+                firstScheduleFailureCasesFuel targets fuel path pinned layout
+                  rest restFacts (index + 1)
+    | _, _, index =>
+        some
+          { path := path ++ "/case[" ++ toString index ++ "]"
+            phase := "case-fact-shape"
+            reason := "switch cases and liveness regions have different lengths" }
+
+  def firstScheduleFailureDefaultFuel
+      (targets : StackSchedule.ControlTargets)
+      (fuel : Nat) (path : String) (pinned : LiveSet)
+      (layout : Locals.Layout) :
+      Option Block → List AllocationLivenessFacts.Region → Option Failure
+    | none, [] => none
+    | some body, [facts] =>
+        let defaultPath := path ++ "/default"
+        match StackSchedule.scheduleBlockFuelWithTargets targets fuel pinned
+            layout body facts with
+        | none =>
+            firstScheduleFailureBlockFuel targets fuel defaultPath pinned layout
+              body facts
+        | some region =>
+            match Join.build? region.finalLayout layout with
+            | some _ => none
+            | none =>
+                let failure :=
+                  transitionFailure defaultPath "default-join"
+                    region.finalLayout (StackSchedule.layoutSet layout)
+                some
+                  { failure with
+                    reason := failure.reason ++ "; branch=" ++
+                      reprStr region.finalLayout ++ "; switch=" ++
+                      reprStr layout }
+    | _, _ =>
+        some
+          { path := path ++ "/default"
+            phase := "default-fact-shape"
+            reason := "switch default and liveness regions have different shapes" }
 end
 
 def firstScheduleFailure? (path : String) (pinned : LiveSet)

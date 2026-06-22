@@ -810,9 +810,49 @@ if ! rg -q '@\[implemented_by lowerFunctionsFast\?\]' \
     ! rg -q '@\[implemented_by findOccurrencesFast\]' \
       EvmCompiler/Solidity/Frontend.lean ||
     ! rg -q 'theorem findOccurrencesFast_eq' \
-      EvmCompiler/Solidity/Frontend.lean; then
+      EvmCompiler/Solidity/Frontend.lean ||
+    ! rg -q '@\[implemented_by toExpressionsFast\?\]' \
+      EvmCompiler/Locals/Compiler.lean ||
+    ! rg -q 'theorem toExpressionsFast\?_eq' \
+      EvmCompiler/Locals/Compiler.lean ||
+    ! rg -q '@\[implemented_by prepareFast\]' \
+      EvmCompiler/Assembly/Compact.lean ||
+    ! rg -q 'theorem prepareFast_eq' \
+      EvmCompiler/Assembly/Compact.lean ||
+    ! rg -q '@\[implemented_by alignPreparationFast\?\]' \
+      EvmCompiler/Assembly/Compact.lean ||
+    ! rg -q 'theorem alignPreparationFast_eq' \
+      EvmCompiler/Assembly/Compact.lean ||
+    ! rg -q '@\[implemented_by emitBlocksFast\?\]' \
+      EvmCompiler/Assembly/Compact.lean ||
+    ! rg -q 'theorem emitBlocksFast_eq' \
+      EvmCompiler/Assembly/Compact.lean ||
+    ! rg -q '@\[implemented_by wellFormedFast\?\]' \
+      EvmCompiler/Assembly/Compact.lean ||
+    ! rg -q 'theorem wellFormedFast\?_eq' \
+      EvmCompiler/Assembly/Compact.lean ||
+    ! rg -q '@\[implemented_by codeByteLengthFast\]' \
+      EvmCompiler/Assembly/Bytecode.lean ||
+    ! rg -q 'theorem codeByteLengthFast_eq' \
+      EvmCompiler/Assembly/Bytecode.lean ||
+    ! rg -q '@\[implemented_by encodeTargetFast\]' \
+      EvmCompiler/Assembly/Bytecode.lean ||
+    ! rg -q 'theorem encodeTargetFast_eq' \
+      EvmCompiler/Assembly/Bytecode.lean; then
   printf '%s\n\n' \
     'Large-contract runtime optimizations must remain proved implementations of their logical specifications.' \
+    >&2
+  failed=1
+fi
+
+if ! rg -Fq 'Functions.StackPressureNormalization.Program.normalize source' \
+      EvmCompiler/Compiler/StackArtifact.lean ||
+    ! rg -q 'theorem Program\.normalize_openRunState' \
+      EvmCompiler/Functions/StackPressureNormalizationProgram.lean ||
+    ! rg -Fq 'yulToNormalizedStackStructuredTerminal' \
+      EvmCompiler/Compiler/OpenInteractionComposition.lean; then
+  printf '%s\n\n' \
+    'Functions stack-pressure normalization must remain a checked adjacent pass in the public stack artifact.' \
     >&2
   failed=1
 fi
@@ -1290,6 +1330,12 @@ report_matches \
   EvmCompiler/Functions/StackLowering.lean \
   EvmCompiler/Functions/StackBlockPreservation.lean \
   EvmCompiler/Functions/StackExactFuelPreservation.lean
+
+report_matches \
+  'Functions stack-pressure normalization must not contain contract-specific behavior:' \
+  'Permit2|Aave|Balancer|Seaport|OpenZeppelin|Compound|Solady|Solmate|Uniswap|TickMath|PoolManager' \
+  EvmCompiler/Functions/StackPressureNormalization.lean \
+  EvmCompiler/Functions/StackPressureNormalizationProgram.lean
 
 report_matches \
   'Verified stack object construction must not reuse legacy allocation artifacts:' \

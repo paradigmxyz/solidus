@@ -3,6 +3,13 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOLC_BIN="${SOLC:-solc}"
+if [[ -n "${LAKE:-}" ]]; then
+  LAKE_BIN="$LAKE"
+elif [[ -x "$HOME/.elan/bin/lake" ]]; then
+  LAKE_BIN="$HOME/.elan/bin/lake"
+else
+  LAKE_BIN="lake"
+fi
 
 TMPDIR="${TMPDIR:-/tmp}"
 OUTDIR="$(mktemp -d "$TMPDIR/evm-compiler-uniswap-v4-extload-summary.XXXXXX")"
@@ -54,6 +61,7 @@ EXTLOAD_FIXTURE="$OUTDIR/UniswapV4ExtloadWrapper.sol"
 EXTLOAD_BRIDGE_DIR="$OUTDIR/extload-bridge-json"
 EXTLOAD_MANIFEST="$EXTLOAD_BRIDGE_DIR/manifest.json"
 EXTLOAD_SUMMARY="$OUTDIR/UniswapV4ExtloadWrapper.bridge-json-summary.json"
+EXTLOAD_BACKEND="$OUTDIR/UniswapV4ExtloadWrapper.lean-backend-check.json"
 
 cat > "$EXTLOAD_FIXTURE" <<'SOL'
 // SPDX-License-Identifier: UNLICENSED
@@ -97,9 +105,22 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
 
 python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$EXTLOAD_SUMMARY"
 
+python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+  "$EXTLOAD_MANIFEST" \
+  --input-format bridge-json-manifest \
+  --contract UniswapV4ExtloadWrapper \
+  --object runtime \
+  --lake "$LAKE_BIN" \
+  --lake-cwd "$ROOT" \
+  --format lean-backend-check \
+  --output "$EXTLOAD_BACKEND"
+
+python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$EXTLOAD_BACKEND"
+
 printf 'uniswap_v4_extload_summary_smoke=pass\n'
 printf 'repo_ref=%s\n' "$ACTUAL_REF"
-python3 - "$EXTLOAD_MANIFEST" "$EXTLOAD_BRIDGE_DIR" "$EXTLOAD_SUMMARY" <<'PY'
+python3 - "$EXTLOAD_MANIFEST" "$EXTLOAD_BRIDGE_DIR" "$EXTLOAD_SUMMARY" \
+  "$EXTLOAD_BACKEND" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -107,6 +128,7 @@ from pathlib import Path
 manifest_path = Path(sys.argv[1])
 bridge_dir = Path(sys.argv[2])
 summary_path = Path(sys.argv[3])
+backend_path = Path(sys.argv[4])
 
 manifest = json.loads(manifest_path.read_text())
 counts = manifest.get("counts", {})
@@ -180,9 +202,22 @@ if unexpected_blockers:
         f"{unexpected_blockers!r}"
     )
 
+backend = json.loads(backend_path.read_text())
+backend_counts = backend.get("counts", {})
+if backend_counts.get("checkedObjects") != 1:
+    raise SystemExit(f"unexpected extload backend counts: {backend_counts!r}")
+if backend_counts.get("failedObjects") != 0:
+    raise SystemExit(f"extload strict backend failed: {backend!r}")
+checked = backend.get("checkedObjects", [])
+if len(checked) != 1 or checked[0].get("status") != "pass":
+    raise SystemExit(f"extload checked artifact did not pass: {checked!r}")
+if checked[0].get("firstNone") != "none":
+    raise SystemExit(f"extload checked artifact is incomplete: {checked[0]!r}")
+
 print(f"uniswap_v4_extload_manifest_entries={counts['entries']}")
 print(f"uniswap_v4_extload_summary_calls={runtime_summary['counts']['calls']}")
 print("uniswap_v4_extload_frontend_metadata=yes")
 print("uniswap_v4_extload_summary_primitives=yes")
 print(f"uniswap_v4_extload_backend_compatibility={compatibility['status']}")
+print("uniswap_v4_extload_strict_backend=pass")
 PY

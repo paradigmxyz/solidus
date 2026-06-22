@@ -156,6 +156,46 @@ theorem openEval_closedStep
     EvmYul.EVM.State.incrPC, Simulation.Interaction.bind_done_ok,
     Locals.Source.State.withShared, Id.run]
 
+@[simp] theorem openEval_and (state : State) (left right : Word) :
+    openEval .and state [left, right] =
+      Simulation.Interaction.pure
+        (state, [EvmYul.UInt256.land right left]) := by
+  rw [openEval_closedStep
+    (step := .bin EvmYul.UInt256.land)
+    (by simp [Expressions.Structured.BasicOp.inputs])
+    (by simp [supportsOpen,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp, Assembly.PrimOp.continuingStep?])
+    (by rfl) (by simp [Structured.BasicOp.toPrimOp])
+    (by simp [Structured.BasicOp.toPrimOp])]
+  unfold Simulation.Interaction.map
+  simp [Assembly.PrimStep.run, isolated, finish,
+    EvmYul.EVM.execBinOp, EvmYul.Stack.pop2,
+    EvmYul.Stack.push,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC, Simulation.Interaction.bind_done_ok,
+    Locals.Source.State.withShared, Id.run]
+
+@[simp] theorem openEval_or (state : State) (left right : Word) :
+    openEval .or state [left, right] =
+      Simulation.Interaction.pure
+        (state, [EvmYul.UInt256.lor right left]) := by
+  rw [openEval_closedStep
+    (step := .bin EvmYul.UInt256.lor)
+    (by simp [Expressions.Structured.BasicOp.inputs])
+    (by simp [supportsOpen,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp, Assembly.PrimOp.continuingStep?])
+    (by rfl) (by simp [Structured.BasicOp.toPrimOp])
+    (by simp [Structured.BasicOp.toPrimOp])]
+  unfold Simulation.Interaction.map
+  simp [Assembly.PrimStep.run, isolated, finish,
+    EvmYul.EVM.execBinOp, EvmYul.Stack.pop2,
+    EvmYul.Stack.push,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC, Simulation.Interaction.bind_done_ok,
+    Locals.Source.State.withShared, Id.run]
+
 def openTerminal (kind : Assembly.HaltKind) (state : State)
     (values : List Word) : Open State :=
   let isolatedState : Assembly.EVMState := isolated state values
