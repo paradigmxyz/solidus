@@ -3,8 +3,13 @@
 ## Objective
 
 Build a general, horizontally proved Functions-to-Locals/Expressions allocator
-that compiles the exact pinned Permit2 and linked Aave Pool efficiently through
-the checked Yul-to-bytecode artifact path.
+that compiles the exact pinned Permit2 and linked Aave Pool through the checked
+Yul-to-raw-bytecode artifact path with practical compile time.
+
+The current completion target is semantic and proof completeness, not EVM
+deployment-size compliance. Output size remains measured regression data, but
+neither the 24 KiB deployment limit nor further code-density optimization is a
+completion gate for this stage.
 
 Aave must use stack-only allocation. Permit2 may spill only into a reservation
 derived from its checked `memoryguard(size)` and the allocator's computed spill
@@ -270,6 +275,11 @@ premise or hidden memory access in the current checked artifact path.
 
 ### 9. Optional Code Density
 
+This track is deferred. Its checked lemmas and experiments are preserved, but
+the production token-based return path is already the correctness baseline and
+the unchecked return-PC migration below is not a prerequisite for the current
+Permit2/Aave end-to-end proof.
+
 - [x] Measure internal-return dispatch on exact contracts. Aave has 188
   dispatchers and 649 call sites; linear token tests and per-site cleanup are
   the largest remaining generic control-density cost.
@@ -327,8 +337,10 @@ At each completed boundary:
 - `git diff --check`;
 - a green git checkpoint.
 
-The goal is incomplete while Aave needs compiler scratch memory, while its
-checked image remains above the deployment-size limit, while a fixture provides
-spill storage, while generated allocation evidence appears at the public
-boundary, or while any selected adjacent boundary lacks a checked preservation
-theorem.
+The goal is incomplete while Aave needs compiler scratch memory, while a
+fixture provides spill storage, while generated allocation evidence appears at
+the public boundary, while exact pinned Permit2 or linked Aave fails the checked
+raw-bytecode artifact path, or while any selected adjacent boundary lacks a
+checked preservation theorem. Bytecode deployability and the deferred
+return-PC density migration are explicitly outside this stage's completion
+gate.

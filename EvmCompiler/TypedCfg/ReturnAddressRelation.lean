@@ -100,6 +100,33 @@ def PlainSlot : Slot -> Prop
 def PlainSlots (slots : List Slot) : Prop :=
   forall slot, slot ∈ slots -> PlainSlot slot
 
+theorem plainSlots_drop
+    {slots : List Slot} (hPlain : PlainSlots slots) (count : Nat) :
+    PlainSlots (slots.drop count) := by
+  intro slot hMem
+  exact hPlain slot (List.mem_of_mem_drop hMem)
+
+theorem plainSlots_replicate_word_append
+    {slots : List Slot} (hPlain : PlainSlots slots) (count : Nat) :
+    PlainSlots (List.replicate count .word ++ slots) := by
+  intro slot hMem
+  rcases List.mem_append.mp hMem with hWord | hRest
+  · have hSlot : slot = .word := by
+      simpa using List.eq_of_mem_replicate hWord
+    subst slot
+    trivial
+  · exact hPlain slot hRest
+
+theorem plainSlots_pushWords
+    {shape : Shape} (hPlain : PlainSlots shape.slots) (count : Nat) :
+    PlainSlots (Shape.pushWords count shape).slots := by
+  exact plainSlots_replicate_word_append hPlain count
+
+theorem plainSlots_pop
+    {shape : Shape} (hPlain : PlainSlots shape.slots) (count : Nat) :
+    PlainSlots (Shape.pop count shape).slots := by
+  exact plainSlots_drop hPlain count
+
 theorem slotWordRel_eq_of_plain
     {resolve : Resolver} {sites : List ReturnSite}
     {slot : Slot} {target source : Word}

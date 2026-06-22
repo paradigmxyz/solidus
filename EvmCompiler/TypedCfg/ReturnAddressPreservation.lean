@@ -167,6 +167,36 @@ theorem prim_openStep_runtimeRel
                 rw [hTargetFinalStack', hSourceFinalStack']
                 exact hStackRel
 
+theorem prim_openStep_runtimeRel_retype
+    {resolve : ReturnAddressRelation.Resolver}
+    {sites : List ReturnSite}
+    {op : Assembly.PrimOp} {inputArity outputArity : Nat}
+    {input primitiveOutput output : Shape}
+    {target source : Assembly.EVMState}
+    (hArity : op.stackArity? = some (inputArity, outputArity))
+    (hPrimitiveType :
+      TypedCfg.Instr.type? (.prim op) input = some primitiveOutput)
+    (hNoPc : op ≠ .pc)
+    (hInputPlain : PlainSlots input.slots)
+    (hPrimitivePlain : PlainSlots primitiveOutput.slots)
+    (hOutputPlain : PlainSlots output.slots)
+    (hLength : output.length = primitiveOutput.length)
+    (hTail : output.tail = primitiveOutput.tail)
+    (hRel : RuntimeRel resolve sites input target source) :
+    Simulation.Interaction.Rel (OpenResultRel resolve sites output)
+      (Assembly.InteractionSemantics.PrimOp.openStep op target)
+      (Assembly.InteractionSemantics.PrimOp.openStep op source) := by
+  have hPrimitive := prim_openStep_runtimeRel hArity hPrimitiveType hNoPc
+    hInputPlain hPrimitivePlain hRel
+  apply Simulation.Interaction.Rel.mono hPrimitive
+  intro targetDone sourceDone hDone
+  cases hDone with
+  | error _ => exact Simulation.Interaction.ExceptRel.error True.intro
+  | ok hState =>
+      apply Simulation.Interaction.ExceptRel.ok
+      exact runtimeRel_retype_plain hPrimitivePlain hOutputPlain
+        hLength hTail hState
+
 theorem bindLocals_runtimeRel
     {resolve : ReturnAddressRelation.Resolver} {sites : List ReturnSite}
     {offset : Nat} {names : List String} {input output : Shape}
