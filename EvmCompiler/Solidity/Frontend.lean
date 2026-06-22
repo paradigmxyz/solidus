@@ -4,6 +4,7 @@ import EvmCompiler.Objects.Layout
 import EvmCompiler.Objects.Compiler
 import EvmCompiler.Compiler.StackArtifact
 import EvmCompiler.Assembly.Bytecode
+import EvmCompiler.Assembly.Compact
 
 namespace EvmCompiler
 namespace Solidity
@@ -2485,7 +2486,33 @@ structure VerifiedStackCodeArtifact where
   ordered : Yul.OrderedProgram
   lower : Objects.Program
   compiled : Compiler.StackArtifact.Artifact
+  compact : Assembly.Compact.Artifact
   bytes : List UInt8
+
+/-- Compute the physical push sites whose compact width must remain stable when
+Solidity patches immutable values. The marker program is produced by the same
+checked frontend and stack allocator; the Assembly owner accepts pins only
+when both prepared programs have identical instruction shape. -/
+def immutablePushPcsFor? (object : Object)
+    (context : ObjectBuiltinContext) (actual : Assembly.Program) :
+    Option (List Nat) :=
+  let immutableNames := object.loadImmutableNames
+  match immutableNames with
+  | [] => some []
+  | _ :: _ => do
+      let markerImmutableValues :=
+        ImmutableReference.markerEntriesFromNat 0 immutableNames
+      if context.immutableValues = markerImmutableValues then
+        some []
+      else
+        let markerContext : ObjectBuiltinContext :=
+          { context with immutableValues := markerImmutableValues }
+        let resolved ← object.resolveObjectBuiltinsIn? markerContext
+        let ordered ← resolved.toSolcYulOrderedProgram?
+        let lower ← ordered.toObjects?
+        let compiled ← Compiler.StackArtifact.compile? lower.toFunctions
+        Assembly.Compact.differingPushPcs?
+          actual compiled.certified.target
 
 def compileVerifiedStackCodeArtifactIn? (object : Object)
     (context : ObjectBuiltinContext) : Option VerifiedStackCodeArtifact := do
@@ -2493,8 +2520,12 @@ def compileVerifiedStackCodeArtifactIn? (object : Object)
   let ordered ← resolved.toSolcYulOrderedProgram?
   let lower ← ordered.toObjects?
   let compiled ← Compiler.StackArtifact.compile? lower.toFunctions
-  let bytes := (Assembly.Bytecode.encodeTarget compiled.target).toList
-  some { resolved, ordered, lower, compiled, bytes }
+  let pinnedPushPcs ←
+    object.immutablePushPcsFor? context compiled.certified.target
+  let compact ←
+    Assembly.Compact.compile? compiled.certified.target pinnedPushPcs
+  let bytes := compact.bytes.toList
+  some { resolved, ordered, lower, compiled, compact, bytes }
 
 theorem compileVerifiedStackCodeArtifactIn?_parts
     {object : Object} {context : ObjectBuiltinContext}
@@ -2506,8 +2537,12 @@ theorem compileVerifiedStackCodeArtifactIn?_parts
       artifact.ordered.toObjects? = some artifact.lower ∧
       Compiler.StackArtifact.compile? artifact.lower.toFunctions =
         some artifact.compiled ∧
-      artifact.bytes =
-        (Assembly.Bytecode.encodeTarget artifact.compiled.target).toList := by
+      ∃ pinnedPushPcs,
+        object.immutablePushPcsFor? context artifact.compiled.certified.target =
+          some pinnedPushPcs ∧
+        Assembly.Compact.compile? artifact.compiled.certified.target
+            pinnedPushPcs = some artifact.compact ∧
+        artifact.bytes = artifact.compact.bytes.toList := by
   unfold compileVerifiedStackCodeArtifactIn? at hCompile
   cases hResolved : object.resolveObjectBuiltinsIn? context with
   | none => simp [hResolved] at hCompile
@@ -2523,29 +2558,40 @@ theorem compileVerifiedStackCodeArtifactIn?_parts
               | none =>
                   simp [hResolved, hOrdered, hLower, hCompiled] at hCompile
               | some compiled =>
-                  simp [hResolved, hOrdered, hLower, hCompiled] at hCompile
-                  subst artifact
-                  exact
-                    ⟨by simpa using hResolved, by simpa using hOrdered,
-                      by simpa using hLower, by simpa using hCompiled, by simp⟩
+                  cases hPins :
+                      object.immutablePushPcsFor? context
+                        compiled.certified.target with
+                  | none =>
+                      simp [hResolved, hOrdered, hLower, hCompiled, hPins]
+                        at hCompile
+                  | some pinnedPushPcs =>
+                      cases hCompact :
+                          Assembly.Compact.compile? compiled.certified.target
+                            pinnedPushPcs with
+                      | none =>
+                          simp [hResolved, hOrdered, hLower, hCompiled, hPins,
+                            hCompact] at hCompile
+                      | some compact =>
+                          simp [hResolved, hOrdered, hLower, hCompiled, hPins,
+                            hCompact] at hCompile
+                          subst artifact
+                          exact
+                            ⟨by simpa using hResolved, by simpa using hOrdered,
+                              by simpa using hLower, by simpa using hCompiled,
+                              pinnedPushPcs, by simpa using hPins,
+                              by simpa using hCompact, by simp⟩
 
 theorem compileVerifiedStackCodeArtifactIn?_decodingCorrect
     {object : Object} {context : ObjectBuiltinContext}
     {artifact : VerifiedStackCodeArtifact}
     (hCompile : object.compileVerifiedStackCodeArtifactIn? context =
-      some artifact)
-    (suffix : List UInt8) :
-    Assembly.Bytecode.DecodingCorrect artifact.compiled.target
-      (Assembly.Bytecode.ofList (artifact.bytes ++ suffix)) := by
-  obtain ⟨_hResolved, _hOrdered, _hLower, hArtifact, hBytes⟩ :=
+      some artifact) :
+    Assembly.Compact.DecodingCorrect artifact.compact.program
+      artifact.compact.bytes := by
+  obtain ⟨_hResolved, _hOrdered, _hLower, _hArtifact, _pinnedPushPcs,
+      _hPins, hCompact, _hBytes⟩ :=
     compileVerifiedStackCodeArtifactIn?_parts hCompile
-  have hAssembly := Compiler.StackArtifact.compile?_assembly hArtifact
-  obtain ⟨_hSupported, _hStackLower, _hExpressions, _hSourceWF, _hShapes, _hGenerate,
-      _hWellTyped, _hIndependent, _hCertified, _hTarget, hWindow⟩ :=
-    Compiler.StackArtifact.compile?_parts hArtifact
-  rw [hBytes]
-  exact Assembly.Bytecode.compile_decodingCorrect_with_suffix hAssembly
-    (Assembly.Bytecode.compile_decodeSafety hAssembly hWindow) suffix
+  exact Assembly.Compact.compile?_decodingCorrect hCompact
 
 def compileOrderedCodeArtifactIn? (object : Object)
     (context : ObjectBuiltinContext) : Option CompiledCodeArtifact := do
@@ -3063,6 +3109,255 @@ structure ObjectArtifactPlan where
   layout : List ObjectLayout.Entry
   context : ObjectBuiltinContext
 
+structure ObjectCodeBasePlan where
+  codeBase : Nat
+  layout : List ObjectLayout.Entry
+  dataOffsets : List (Name × Word)
+  context : ObjectBuiltinContext
+
+def stabilizeObjectCodeBase? (object : Object)
+    (linkerSymbols : List (Name × Word))
+    (childImages : List ObjectImage)
+    (childImmutableReferences : List (Name × List ImmutableReference))
+    (immutableValues : List (Name × Word))
+    (dataSizes : List (Name × Word)) (items : List ObjectItemRef)
+    (payload : List UInt8)
+    (compileBytesIn? : ObjectBuiltinContext → Option (List UInt8)) :
+    Nat → Nat → Option ObjectCodeBasePlan
+  | fuel, candidate => do
+      let layout ←
+        ObjectItemRef.List.objectLayoutEntriesFromNat?
+          object.data childImages candidate items
+      let dataOffsets ←
+        ObjectItemRef.List.dataOffsetEntriesFromNat?
+          object.data childImages candidate items
+      let context : ObjectBuiltinContext :=
+        { layout := { entries := layout }
+          dataSizes := dataSizes
+          dataOffsets := dataOffsets
+          linkerSymbols := linkerSymbols
+          immutableValues := immutableValues
+          immutableReferences := childImmutableReferences
+          selfSize? := some
+            (object.name, EvmYul.UInt256.ofNat (candidate + payload.length)) }
+      if !context.objectDataNamesUnique? then
+        none
+      else
+        let bytes ← compileBytesIn? context
+        if bytes.length == candidate then
+          some { codeBase := candidate, layout, dataOffsets, context }
+        else
+          match fuel with
+          | 0 => none
+          | fuel + 1 =>
+              stabilizeObjectCodeBase? object linkerSymbols childImages
+                childImmutableReferences immutableValues dataSizes items
+                payload compileBytesIn? fuel bytes.length
+termination_by fuel candidate => fuel
+
+/-- Artifact-retaining variant of code-base stabilization. This avoids
+recompiling the final fixed-point context after the planner has already checked
+it, while leaving the generic byte-only planner above unchanged. -/
+def stabilizeObjectCodeBaseArtifact? {α : Type}
+    (object : Object) (linkerSymbols : List (Name × Word))
+    (childImages : List ObjectImage)
+    (childImmutableReferences : List (Name × List ImmutableReference))
+    (immutableValues : List (Name × Word))
+    (dataSizes : List (Name × Word)) (items : List ObjectItemRef)
+    (payload : List UInt8)
+    (compileArtifactIn? : ObjectBuiltinContext → Option α)
+    (artifactBytes : α → List UInt8) :
+    Nat → Nat → Option (ObjectCodeBasePlan × α)
+  | fuel, candidate => do
+      let layout ←
+        ObjectItemRef.List.objectLayoutEntriesFromNat?
+          object.data childImages candidate items
+      let dataOffsets ←
+        ObjectItemRef.List.dataOffsetEntriesFromNat?
+          object.data childImages candidate items
+      let context : ObjectBuiltinContext :=
+        { layout := { entries := layout }
+          dataSizes := dataSizes
+          dataOffsets := dataOffsets
+          linkerSymbols := linkerSymbols
+          immutableValues := immutableValues
+          immutableReferences := childImmutableReferences
+          selfSize? := some
+            (object.name, EvmYul.UInt256.ofNat (candidate + payload.length)) }
+      if !context.objectDataNamesUnique? then
+        none
+      else
+        let artifact ← compileArtifactIn? context
+        let bytes := artifactBytes artifact
+        if bytes.length == candidate then
+          some ({ codeBase := candidate, layout, dataOffsets, context }, artifact)
+        else
+          match fuel with
+          | 0 => none
+          | fuel + 1 =>
+              stabilizeObjectCodeBaseArtifact? object linkerSymbols childImages
+                childImmutableReferences immutableValues dataSizes items
+                payload compileArtifactIn? artifactBytes fuel bytes.length
+termination_by fuel candidate => fuel
+
+theorem stabilizeObjectCodeBaseArtifact?_compiled {α : Type}
+    (object : Object) (linkerSymbols : List (Name × Word))
+    (childImages : List ObjectImage)
+    (childImmutableReferences : List (Name × List ImmutableReference))
+    (immutableValues : List (Name × Word))
+    (dataSizes : List (Name × Word)) (items : List ObjectItemRef)
+    (payload : List UInt8)
+    (compileArtifactIn? : ObjectBuiltinContext → Option α)
+    (artifactBytes : α → List UInt8)
+    {fuel candidate : Nat} {plan : ObjectCodeBasePlan} {artifact : α}
+    (hStabilize :
+      stabilizeObjectCodeBaseArtifact? object linkerSymbols childImages
+        childImmutableReferences immutableValues dataSizes items payload
+        compileArtifactIn? artifactBytes fuel candidate =
+          some (plan, artifact)) :
+    compileArtifactIn? plan.context = some artifact := by
+  induction fuel generalizing candidate with
+  | zero =>
+      unfold stabilizeObjectCodeBaseArtifact? at hStabilize
+      obtain ⟨layout, _hLayout, hAfterLayout⟩ :=
+        Option.bind_eq_some_iff.mp hStabilize
+      obtain ⟨dataOffsets, _hOffsets, hAfterOffsets⟩ :=
+        Option.bind_eq_some_iff.mp hAfterLayout
+      let context : ObjectBuiltinContext :=
+        { layout := { entries := layout }
+          dataSizes := dataSizes
+          dataOffsets := dataOffsets
+          linkerSymbols := linkerSymbols
+          immutableValues := immutableValues
+          immutableReferences := childImmutableReferences
+          selfSize? := some
+            (object.name, EvmYul.UInt256.ofNat (candidate + payload.length)) }
+      change (if (!context.objectDataNamesUnique?) = true then none else
+        (compileArtifactIn? context).bind fun compiled =>
+          if ((artifactBytes compiled).length == candidate) = true then
+            some
+              ({ codeBase := candidate, layout, dataOffsets, context }, compiled)
+          else none) = some (plan, artifact) at hAfterOffsets
+      by_cases hUnique : context.objectDataNamesUnique?
+      · simp only [hUnique, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+          at hAfterOffsets
+        obtain ⟨compiled, hCompiled, hAfterCompiled⟩ :=
+          Option.bind_eq_some_iff.mp hAfterOffsets
+        by_cases hLength : (artifactBytes compiled).length = candidate
+        · have hEq :
+              ({ codeBase := candidate, layout, dataOffsets, context }, compiled) =
+                (plan, artifact) := by
+            simpa [hLength] using hAfterCompiled
+          cases hEq
+          exact hCompiled
+        · simp [hLength] at hAfterCompiled
+      · simp [hUnique] at hAfterOffsets
+  | succ fuel ih =>
+      unfold stabilizeObjectCodeBaseArtifact? at hStabilize
+      obtain ⟨layout, _hLayout, hAfterLayout⟩ :=
+        Option.bind_eq_some_iff.mp hStabilize
+      obtain ⟨dataOffsets, _hOffsets, hAfterOffsets⟩ :=
+        Option.bind_eq_some_iff.mp hAfterLayout
+      let context : ObjectBuiltinContext :=
+        { layout := { entries := layout }
+          dataSizes := dataSizes
+          dataOffsets := dataOffsets
+          linkerSymbols := linkerSymbols
+          immutableValues := immutableValues
+          immutableReferences := childImmutableReferences
+          selfSize? := some
+            (object.name, EvmYul.UInt256.ofNat (candidate + payload.length)) }
+      change (if (!context.objectDataNamesUnique?) = true then none else
+        (compileArtifactIn? context).bind fun compiled =>
+          if ((artifactBytes compiled).length == candidate) = true then
+            some
+              ({ codeBase := candidate, layout, dataOffsets, context }, compiled)
+          else
+            stabilizeObjectCodeBaseArtifact? object linkerSymbols childImages
+              childImmutableReferences immutableValues dataSizes items payload
+              compileArtifactIn? artifactBytes fuel
+                (artifactBytes compiled).length) =
+          some (plan, artifact) at hAfterOffsets
+      by_cases hUnique : context.objectDataNamesUnique?
+      · simp only [hUnique, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+          at hAfterOffsets
+        obtain ⟨compiled, hCompiled, hAfterCompiled⟩ :=
+          Option.bind_eq_some_iff.mp hAfterOffsets
+        by_cases hLength : (artifactBytes compiled).length = candidate
+        · have hEq :
+              ({ codeBase := candidate, layout, dataOffsets, context }, compiled) =
+                (plan, artifact) := by
+            simpa [hLength] using hAfterCompiled
+          cases hEq
+          exact hCompiled
+        · simp [hLength] at hAfterCompiled
+          exact ih hAfterCompiled
+      · simp [hUnique] at hAfterOffsets
+
+def planObjectArtifactFromChildImagesArtifactWith? {α : Type}
+    (object : Object) (linkerSymbols : List (Name × Word))
+    (childImages : List ObjectImage)
+    (compileArtifactIn? : ObjectBuiltinContext → Option α)
+    (artifactBytes : α → List UInt8) :
+    Option (ObjectArtifactPlan × α) := do
+  let childImmutableReferences :=
+    ObjectImage.immutableReferenceEntries childImages
+  let immutableNames := object.loadImmutableNames
+  let zeroImmutableValues :=
+    ImmutableReference.zeroEntries immutableNames
+  let markerImmutableValues :=
+    ImmutableReference.markerEntriesFromNat 0 immutableNames
+  let items ← object.payloadItems? childImages
+  let dataSizes ←
+    ObjectItemRef.List.dataSizeEntries? object.data childImages items
+  let payload ←
+    ObjectItemRef.List.payloadBytes? object.data childImages items
+  let (stabilized, artifact) ←
+    stabilizeObjectCodeBaseArtifact? object linkerSymbols childImages
+      childImmutableReferences zeroImmutableValues dataSizes items payload
+      compileArtifactIn? artifactBytes 64 0
+  some
+    ({ childImages := childImages
+       immutableNames := immutableNames
+       markerImmutableValues := markerImmutableValues
+       items := items
+       dataSizes := dataSizes
+       dataOffsets := stabilized.dataOffsets
+       payload := payload
+       codeBase := stabilized.codeBase
+       layout := stabilized.layout
+       context := stabilized.context }, artifact)
+
+theorem planObjectArtifactFromChildImagesArtifactWith?_compiled {α : Type}
+    (object : Object) (linkerSymbols : List (Name × Word))
+    (childImages : List ObjectImage)
+    (compileArtifactIn? : ObjectBuiltinContext → Option α)
+    (artifactBytes : α → List UInt8)
+    {plan : ObjectArtifactPlan} {artifact : α}
+    (hPlan :
+      planObjectArtifactFromChildImagesArtifactWith? object linkerSymbols
+        childImages compileArtifactIn? artifactBytes = some (plan, artifact)) :
+    compileArtifactIn? plan.context = some artifact := by
+  unfold planObjectArtifactFromChildImagesArtifactWith? at hPlan
+  obtain ⟨items, _hItems, hAfterItems⟩ :=
+    Option.bind_eq_some_iff.mp hPlan
+  obtain ⟨dataSizes, _hDataSizes, hAfterDataSizes⟩ :=
+    Option.bind_eq_some_iff.mp hAfterItems
+  obtain ⟨payload, _hPayload, hAfterPayload⟩ :=
+    Option.bind_eq_some_iff.mp hAfterDataSizes
+  obtain ⟨stabilizedArtifact, hStabilized, hAfterStabilized⟩ :=
+    Option.bind_eq_some_iff.mp hAfterPayload
+  rcases stabilizedArtifact with ⟨stabilized, compiled⟩
+  simp only [Option.some.injEq, Prod.mk.injEq] at hAfterStabilized
+  rcases hAfterStabilized with ⟨hPlanEq, hArtifactEq⟩
+  subst plan
+  subst artifact
+  exact
+    stabilizeObjectCodeBaseArtifact?_compiled object linkerSymbols childImages
+      (ObjectImage.immutableReferenceEntries childImages)
+      (ImmutableReference.zeroEntries object.loadImmutableNames)
+      dataSizes items payload compileArtifactIn? artifactBytes hStabilized
+
 def planObjectArtifactFromChildImagesWith? (object : Object)
     (linkerSymbols : List (Name × Word))
     (childImages : List ObjectImage)
@@ -3078,56 +3373,23 @@ def planObjectArtifactFromChildImagesWith? (object : Object)
     let items ← object.payloadItems? childImages
     let dataSizes ←
       ObjectItemRef.List.dataSizeEntries? object.data childImages items
-    let layout0 ←
-      ObjectItemRef.List.objectLayoutEntriesFromNat?
-        object.data childImages 0 items
-    let dataOffsets0 ←
-      ObjectItemRef.List.dataOffsetEntriesFromNat?
-        object.data childImages 0 items
     let payload ←
       ObjectItemRef.List.payloadBytes? object.data childImages items
-    let placeholderContext : ObjectBuiltinContext :=
-      { layout := { entries := layout0 }
-        dataSizes := dataSizes
-        dataOffsets := dataOffsets0
-        linkerSymbols := linkerSymbols
-        immutableValues := zeroImmutableValues
-        immutableReferences := childImmutableReferences
-        selfSize? := some (object.name, EvmYul.UInt256.ofNat 0) }
-    if !placeholderContext.objectDataNamesUnique? then
-      none
-    else
-    let placeholderBytes ← compileBytesIn? placeholderContext
-    let codeBase := placeholderBytes.length
-    let selfSize := EvmYul.UInt256.ofNat (codeBase + payload.length)
-    let layout ←
-      ObjectItemRef.List.objectLayoutEntriesFromNat?
-        object.data childImages codeBase items
-    let dataOffsets ←
-      ObjectItemRef.List.dataOffsetEntriesFromNat?
-        object.data childImages codeBase items
-    let context : ObjectBuiltinContext :=
-      { layout := { entries := layout }
-        dataSizes := dataSizes
-        dataOffsets := dataOffsets
-        linkerSymbols := linkerSymbols
-        immutableValues := zeroImmutableValues
-        immutableReferences := childImmutableReferences
-        selfSize? := some (object.name, selfSize) }
-    if !context.objectDataNamesUnique? then
-      none
-    else
+    let stabilized ←
+      stabilizeObjectCodeBase? object linkerSymbols childImages
+        childImmutableReferences zeroImmutableValues dataSizes items payload
+        compileBytesIn? 64 0
     some
       { childImages := childImages
         immutableNames := immutableNames
         markerImmutableValues := markerImmutableValues
         items := items
         dataSizes := dataSizes
-        dataOffsets := dataOffsets
+        dataOffsets := stabilized.dataOffsets
         payload := payload
-        codeBase := codeBase
-        layout := layout
-        context := context }
+        codeBase := stabilized.codeBase
+        layout := stabilized.layout
+        context := stabilized.context }
 
 def planObjectArtifactFromChildren? (object : Object)
     (linkerSymbols : List (Name × Word))

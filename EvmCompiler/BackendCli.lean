@@ -566,13 +566,13 @@ def printStackDiagnostics
 
 def runStackDiagnostics (config : Config)
     (program : Solidity.Frontend.Program) : IO Unit := do
+  let artifactStart ← IO.monoMsNow
   let objectArtifact? :=
     program.object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
       config.linkerSymbols
   let frontendArtifact? :=
     objectArtifact?.map Solidity.Frontend.VerifiedStackObjectArtifact.codeArtifact
-  let compactFrontendArtifact? := frontendArtifact?.bind fun artifact =>
-    Assembly.Compact.compile? artifact.compiled.certified.target
+  let compactFrontendArtifact? := frontendArtifact?.map (·.compact)
   IO.println
     ("stack_frontend_object_artifact=" ++ boolString objectArtifact?.isSome)
   IO.println
@@ -580,6 +580,10 @@ def runStackDiagnostics (config : Config)
       toString
         (objectArtifact?.map (fun artifact => artifact.image.bytes.length)
           |>.getD 0))
+  let artifactFinish ← IO.monoMsNow
+  IO.println
+    ("timing\tstack_frontend_object\t" ++
+      toString (artifactFinish - artifactStart))
   IO.println
     ("stack_frontend_code_artifact=" ++ boolString frontendArtifact?.isSome)
   IO.println
@@ -588,6 +592,10 @@ def runStackDiagnostics (config : Config)
   IO.println
     ("stack_frontend_compact_code_bytecode_bytes=" ++
       toString (compactFrontendArtifact?.map (·.bytes.size) |>.getD 0))
+  IO.println
+    ("stack_frontend_compact_pinned_pushes=" ++
+      toString
+        (compactFrontendArtifact?.map (·.pinnedPushPcs.length) |>.getD 0))
   match functionsForStackDiagnostics? program.object config.linkerSymbols with
   | none =>
       throw

@@ -264,7 +264,7 @@ elimination are not prerequisites for Permit2 or Aave.
   instruction preserves runtime data and the exact open interaction tree.
 - [x] Prove compiler-selected one-source-instruction execution over actual
   compact bytes, including relocated JUMP/JUMPI blocks and all open effects.
-- [ ] Prove PC-relocated preprocessing and open-run preservation, then integrate
+- [x] Prove PC-relocated preprocessing and open-run preservation, then integrate
   the checked bytes into recursive object planning.
 
 ## Completion Gates

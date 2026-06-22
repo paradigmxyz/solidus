@@ -294,58 +294,69 @@ end Program
 
 abbrev LabelTable := List (Prod Label Nat)
 
-def sourceInstrSize? (branchWidth : Nat) : Assembly.Instr -> Option Nat
+def pushWidthAt? (pinnedPushPcs : List Nat) (sourcePc : Nat)
+    (value : Word) : Option Nat :=
+  if pinnedPushPcs.contains sourcePc then some 32 else widthForWord? value
+
+def sourceInstrSizeAt? (pinnedPushPcs : List Nat) (branchWidth sourcePc : Nat) :
+    Assembly.Instr -> Option Nat
   | .label _ | .prim _ => some 1
   | .push value => do
-      let width <- widthForWord? value
+      let width <- pushWidthAt? pinnedPushPcs sourcePc value
       some (width + 1)
   | .jump _ | .jumpi _ => some (branchWidth + 2)
 
-def layoutRev? (branchWidth : Nat) :
-    Assembly.Program -> Nat -> LabelTable -> Option (Prod LabelTable Nat)
-  | [], pc, labels => some (labels.reverse, pc)
-  | instr :: rest, pc, labels => do
-      let size <- sourceInstrSize? branchWidth instr
+def layoutRev? (pinnedPushPcs : List Nat) (branchWidth : Nat) :
+    Assembly.Program -> Nat -> Nat -> LabelTable -> Option (Prod LabelTable Nat)
+  | [], _sourcePc, compactPc, labels => some (labels.reverse, compactPc)
+  | instr :: rest, sourcePc, compactPc, labels => do
+      let size <- sourceInstrSizeAt? pinnedPushPcs branchWidth sourcePc instr
       let labels :=
         match instr with
-        | .label name => (name, pc) :: labels
+        | .label name => (name, compactPc) :: labels
         | _ => labels
-      layoutRev? branchWidth rest (pc + size) labels
+      layoutRev? pinnedPushPcs branchWidth rest
+        (sourcePc + instr.byteSize) (compactPc + size) labels
 
-def layout? (source : Assembly.Program) (branchWidth : Nat) :
+def layout? (pinnedPushPcs : List Nat) (source : Assembly.Program)
+    (branchWidth : Nat) :
     Option (Prod LabelTable Nat) :=
-  layoutRev? branchWidth source 0 []
+  layoutRev? pinnedPushPcs branchWidth source 0 0 []
 
 def lookupLabel? (table : LabelTable) (target : Label) : Option Nat :=
   (table.find? fun entry => entry.1 == target).map Prod.snd
 
 theorem layoutRev?_names
-    {branchWidth pc endPc : Nat} {source : Assembly.Program}
+    {pinnedPushPcs : List Nat} {branchWidth sourcePc compactPc endPc : Nat}
+    {source : Assembly.Program}
     {acc table : LabelTable}
-    (hLayout : layoutRev? branchWidth source pc acc =
+    (hLayout : layoutRev? pinnedPushPcs branchWidth source
+      sourcePc compactPc acc =
       some (table, endPc)) :
     table.map Prod.fst = acc.reverse.map Prod.fst ++ source.labels := by
-  induction source generalizing pc acc table endPc with
+  induction source generalizing sourcePc compactPc acc table endPc with
   | nil =>
       simp [layoutRev?] at hLayout
       rcases hLayout with ⟨rfl, rfl⟩
       simp [Assembly.Program.labels]
   | cons instr rest ih =>
-      cases hSize : sourceInstrSize? branchWidth instr with
+      cases hSize :
+          sourceInstrSizeAt? pinnedPushPcs branchWidth sourcePc instr with
       | none => simp [layoutRev?, hSize] at hLayout
       | some size =>
           cases instr with
           | label name =>
-              have hTail : layoutRev? branchWidth rest (pc + size)
-                  ((name, pc) :: acc) = some (table, endPc) := by
+              have hTail : layoutRev? pinnedPushPcs branchWidth rest
+                  (sourcePc + (Assembly.Instr.label name).byteSize)
+                  (compactPc + size)
+                  ((name, compactPc) :: acc) = some (table, endPc) := by
                 simpa [layoutRev?, hSize] using hLayout
               have hRest := ih hTail
               simpa [Assembly.Program.labels, List.reverse_cons,
                 List.map_append, List.append_assoc] using hRest
           | prim op | push op | jump op | jumpi op =>
-              have hTail : layoutRev? branchWidth rest (pc + size) acc =
-                  some (table, endPc) := by
-                simpa [layoutRev?, hSize] using hLayout
+              have hTail := hLayout
+              simp [layoutRev?, hSize] at hTail
               have hRest := ih hTail
               simpa [Assembly.Program.labels] using hRest
 
@@ -364,22 +375,23 @@ theorem lookupLabel?_name_mem
       apply List.mem_map.mpr
       exact ⟨entry, hMem, hName⟩
 
-def emitInstrRev? (branchWidth pc : Nat) (table : LabelTable)
+def emitInstrRev? (pinnedPushPcs : List Nat)
+    (branchWidth sourcePc compactPc : Nat) (table : LabelTable)
     (instr : Assembly.Instr) (acc : List Located) : Option (List Located) :=
   match instr with
   | .label _ =>
-      some ({ pc := pc, instr := .jumpdest } :: acc)
+      some ({ pc := compactPc, instr := .jumpdest } :: acc)
   | .prim op =>
-      some ({ pc := pc, instr := .prim op } :: acc)
+      some ({ pc := compactPc, instr := .prim op } :: acc)
   | .push value => do
-      let width <- widthForWord? value
-      some ({ pc := pc, instr := .push width value } :: acc)
+      let width <- pushWidthAt? pinnedPushPcs sourcePc value
+      some ({ pc := compactPc, instr := .push width value } :: acc)
   | .jump target => do
       let dest <- lookupLabel? table target
       if fitsWidth? branchWidth dest then
         some
-          ({ pc := pc + branchWidth + 1, instr := .jump } ::
-            { pc := pc,
+          ({ pc := compactPc + branchWidth + 1, instr := .jump } ::
+            { pc := compactPc,
               instr := .push branchWidth (EvmYul.UInt256.ofNat dest) } :: acc)
       else
         none
@@ -387,23 +399,26 @@ def emitInstrRev? (branchWidth pc : Nat) (table : LabelTable)
       let dest <- lookupLabel? table target
       if fitsWidth? branchWidth dest then
         some
-          ({ pc := pc + branchWidth + 1, instr := .jumpi } ::
-            { pc := pc,
+          ({ pc := compactPc + branchWidth + 1, instr := .jumpi } ::
+            { pc := compactPc,
               instr := .push branchWidth (EvmYul.UInt256.ofNat dest) } :: acc)
       else
         none
 
-def emitRev? (branchWidth : Nat) (table : LabelTable) :
-    Assembly.Program -> Nat -> List Located -> Option (List Located)
-  | [], _pc, acc => some acc.reverse
-  | instr :: rest, pc, acc => do
-      let size <- sourceInstrSize? branchWidth instr
-      let acc <- emitInstrRev? branchWidth pc table instr acc
-      emitRev? branchWidth table rest (pc + size) acc
+def emitRev? (pinnedPushPcs : List Nat) (branchWidth : Nat)
+    (table : LabelTable) :
+    Assembly.Program -> Nat -> Nat -> List Located -> Option (List Located)
+  | [], _sourcePc, _compactPc, acc => some acc.reverse
+  | instr :: rest, sourcePc, compactPc, acc => do
+      let size <- sourceInstrSizeAt? pinnedPushPcs branchWidth sourcePc instr
+      let acc <- emitInstrRev? pinnedPushPcs branchWidth sourcePc compactPc
+        table instr acc
+      emitRev? pinnedPushPcs branchWidth table rest
+        (sourcePc + instr.byteSize) (compactPc + size) acc
 
-def emit? (source : Assembly.Program) (branchWidth : Nat)
+def emit? (pinnedPushPcs : List Nat) (source : Assembly.Program) (branchWidth : Nat)
     (table : LabelTable) : Option Program := do
-  let code <- emitRev? branchWidth table source 0 []
+  let code <- emitRev? pinnedPushPcs branchWidth table source 0 0 []
   some { code := code }
 
 structure SourceBlock where
@@ -413,19 +428,24 @@ structure SourceBlock where
   code : List Located
   deriving DecidableEq, Repr
 
-def emitSourceBlock? (branchWidth compactPc : Nat) (table : LabelTable)
+def emitSourceBlock? (pinnedPushPcs : List Nat)
+    (branchWidth sourcePc compactPc : Nat) (table : LabelTable)
     (instr : Assembly.Instr) : Option (List Located) := do
-  let reversed <- emitInstrRev? branchWidth compactPc table instr []
+  let reversed <- emitInstrRev? pinnedPushPcs branchWidth sourcePc compactPc
+    table instr []
   some reversed.reverse
 
-def emitBlocksFrom? (branchWidth : Nat) (table : LabelTable) :
+def emitBlocksFrom? (pinnedPushPcs : List Nat) (branchWidth : Nat)
+    (table : LabelTable) :
     Assembly.Program -> Nat -> Nat -> Option (List SourceBlock)
   | [], _sourcePc, _compactPc => some []
   | instr :: rest, sourcePc, compactPc => do
-      let compactSize <- sourceInstrSize? branchWidth instr
-      let code <- emitSourceBlock? branchWidth compactPc table instr
+      let compactSize <-
+        sourceInstrSizeAt? pinnedPushPcs branchWidth sourcePc instr
+      let code <- emitSourceBlock? pinnedPushPcs branchWidth sourcePc compactPc
+        table instr
       let blocks <-
-        emitBlocksFrom? branchWidth table rest
+        emitBlocksFrom? pinnedPushPcs branchWidth table rest
           (sourcePc + instr.byteSize) (compactPc + compactSize)
       some
         ({ sourcePc := sourcePc
@@ -433,9 +453,10 @@ def emitBlocksFrom? (branchWidth : Nat) (table : LabelTable) :
            sourceInstr := instr
            code := code } :: blocks)
 
-def emitBlocks? (source : Assembly.Program) (branchWidth : Nat)
+def emitBlocks? (pinnedPushPcs : List Nat) (source : Assembly.Program)
+    (branchWidth : Nat)
     (table : LabelTable) : Option (List SourceBlock) :=
-  emitBlocksFrom? branchWidth table source 0 0
+  emitBlocksFrom? pinnedPushPcs branchWidth table source 0 0
 
 def blocksCode (blocks : List SourceBlock) : List Located :=
   blocks.flatMap SourceBlock.code
@@ -463,31 +484,36 @@ theorem labelsConsistent_of_check
   rw [hInstr] at hBlock
   simpa using hBlock
 
-inductive BlocksValidFrom (branchWidth : Nat) (table : LabelTable) :
+inductive BlocksValidFrom (pinnedPushPcs : List Nat)
+    (branchWidth : Nat) (table : LabelTable) :
     Assembly.Program -> Nat -> Nat -> List SourceBlock -> Prop
   | nil (sourcePc compactPc : Nat) :
-      BlocksValidFrom branchWidth table [] sourcePc compactPc []
+      BlocksValidFrom pinnedPushPcs branchWidth table [] sourcePc compactPc []
   | cons (instr : Assembly.Instr) (rest : Assembly.Program)
       (sourcePc compactPc compactSize : Nat)
       (code : List Located) (blocks : List SourceBlock)
-      (hSize : sourceInstrSize? branchWidth instr = some compactSize)
+      (hSize : sourceInstrSizeAt? pinnedPushPcs branchWidth sourcePc instr =
+        some compactSize)
       (hCode :
-        emitSourceBlock? branchWidth compactPc table instr = some code)
-      (hRest : BlocksValidFrom branchWidth table rest
+        emitSourceBlock? pinnedPushPcs branchWidth sourcePc compactPc table
+          instr = some code)
+      (hRest : BlocksValidFrom pinnedPushPcs branchWidth table rest
         (sourcePc + instr.byteSize) (compactPc + compactSize) blocks) :
-      BlocksValidFrom branchWidth table (instr :: rest) sourcePc compactPc
+      BlocksValidFrom pinnedPushPcs branchWidth table (instr :: rest)
+        sourcePc compactPc
         ({ sourcePc := sourcePc
            compactPc := compactPc
            sourceInstr := instr
            code := code } :: blocks)
 
 theorem emitBlocksFrom?_valid
-    {branchWidth : Nat} {table : LabelTable} :
+    {pinnedPushPcs : List Nat} {branchWidth : Nat} {table : LabelTable} :
     forall {source : Assembly.Program} {sourcePc compactPc : Nat}
       {blocks : List SourceBlock},
-      emitBlocksFrom? branchWidth table source sourcePc compactPc =
+      emitBlocksFrom? pinnedPushPcs branchWidth table source sourcePc compactPc =
           some blocks ->
-        BlocksValidFrom branchWidth table source sourcePc compactPc blocks := by
+        BlocksValidFrom pinnedPushPcs branchWidth table source sourcePc
+          compactPc blocks := by
   intro source
   induction source with
   | nil =>
@@ -498,17 +524,19 @@ theorem emitBlocksFrom?_valid
   | cons instr rest ih =>
       intro sourcePc compactPc blocks hEmit
       unfold emitBlocksFrom? at hEmit
-      cases hSize : sourceInstrSize? branchWidth instr with
+      cases hSize :
+          sourceInstrSizeAt? pinnedPushPcs branchWidth sourcePc instr with
       | none => simp [hSize] at hEmit
       | some compactSize =>
           simp [hSize] at hEmit
           cases hCode :
-              emitSourceBlock? branchWidth compactPc table instr with
+              emitSourceBlock? pinnedPushPcs branchWidth sourcePc compactPc
+                table instr with
           | none => simp [hCode] at hEmit
           | some code =>
               simp [hCode] at hEmit
               cases hRest :
-                  emitBlocksFrom? branchWidth table rest
+                  emitBlocksFrom? pinnedPushPcs branchWidth table rest
                     (sourcePc + instr.byteSize)
                     (compactPc + compactSize) with
               | none => simp [hRest] at hEmit
@@ -519,29 +547,34 @@ theorem emitBlocksFrom?_valid
                     code restBlocks hSize hCode (ih hRest)
 
 theorem emitBlocks?_valid
-    {source : Assembly.Program} {branchWidth : Nat} {table : LabelTable}
+    {pinnedPushPcs : List Nat} {source : Assembly.Program}
+    {branchWidth : Nat} {table : LabelTable}
     {blocks : List SourceBlock}
-    (hEmit : emitBlocks? source branchWidth table = some blocks) :
-    BlocksValidFrom branchWidth table source 0 0 blocks := by
+    (hEmit : emitBlocks? pinnedPushPcs source branchWidth table = some blocks) :
+    BlocksValidFrom pinnedPushPcs branchWidth table source 0 0 blocks := by
   exact emitBlocksFrom?_valid hEmit
 
 theorem emitSourceBlock?_codeByteLength
-    {branchWidth compactPc compactSize : Nat} {table : LabelTable}
+    {pinnedPushPcs : List Nat}
+    {branchWidth sourcePc compactPc compactSize : Nat} {table : LabelTable}
     {instr : Assembly.Instr} {code : List Located}
-    (hSize : sourceInstrSize? branchWidth instr = some compactSize)
-    (hCode : emitSourceBlock? branchWidth compactPc table instr = some code) :
+    (hSize : sourceInstrSizeAt? pinnedPushPcs branchWidth sourcePc instr =
+      some compactSize)
+    (hCode : emitSourceBlock? pinnedPushPcs branchWidth sourcePc compactPc
+      table instr = some code) :
     Program.codeByteLength code = compactSize := by
   cases instr with
   | label name | prim name =>
-      simp [sourceInstrSize?, emitSourceBlock?, emitInstrRev?] at hSize hCode
+      simp [sourceInstrSizeAt?, emitSourceBlock?, emitInstrRev?]
+        at hSize hCode
       subst compactSize
       subst code
       rfl
   | push value =>
-      cases hWidth : widthForWord? value with
-      | none => simp [sourceInstrSize?, hWidth] at hSize
+      cases hWidth : pushWidthAt? pinnedPushPcs sourcePc value with
+      | none => simp [sourceInstrSizeAt?, hWidth] at hSize
       | some width =>
-          simp [sourceInstrSize?, hWidth, emitSourceBlock?, emitInstrRev?]
+          simp [sourceInstrSizeAt?, hWidth, emitSourceBlock?, emitInstrRev?]
             at hSize hCode
           subst compactSize
           subst code
@@ -551,7 +584,7 @@ theorem emitSourceBlock?_codeByteLength
       | none => simp [emitSourceBlock?, emitInstrRev?, hDest] at hCode
       | some dest =>
           by_cases hFits : fitsWidth? branchWidth dest = true
-          · simp [sourceInstrSize?, emitSourceBlock?, emitInstrRev?,
+          · simp [sourceInstrSizeAt?, emitSourceBlock?, emitInstrRev?,
               hDest, hFits] at hSize hCode
             subst compactSize
             subst code
@@ -566,14 +599,15 @@ def BoundaryPair (blocks : List SourceBlock)
   (sourcePc = sourceEnd ∧ compactPc = compactEnd)
 
 theorem BlocksValidFrom.next_boundary
-    {branchWidth : Nat} {table : LabelTable}
+    {pinnedPushPcs : List Nat} {branchWidth : Nat} {table : LabelTable}
     {source : Assembly.Program} {sourcePc compactPc : Nat}
     {blocks : List SourceBlock}
-    (hValid : BlocksValidFrom branchWidth table source
+    (hValid : BlocksValidFrom pinnedPushPcs branchWidth table source
       sourcePc compactPc blocks) :
     forall {block : SourceBlock}, block ∈ blocks ->
       ∀ {compactSize : Nat},
-        sourceInstrSize? branchWidth block.sourceInstr = some compactSize ->
+        sourceInstrSizeAt? pinnedPushPcs branchWidth block.sourcePc
+          block.sourceInstr = some compactSize ->
         BoundaryPair blocks
           (sourcePc + source.byteLength)
           (compactPc + Program.codeByteLength (blocksCode blocks))
@@ -628,9 +662,10 @@ theorem BlocksValidFrom.next_boundary
                 hHeadCodeLength, Nat.add_assoc] using hCompactEnd
 
 theorem BlocksValidFrom.initial_boundary
-    {branchWidth : Nat} {table : LabelTable}
+    {pinnedPushPcs : List Nat} {branchWidth : Nat} {table : LabelTable}
     {source : Assembly.Program} {blocks : List SourceBlock}
-    (hValid : BlocksValidFrom branchWidth table source 0 0 blocks) :
+    (hValid : BlocksValidFrom pinnedPushPcs branchWidth table source 0 0
+      blocks) :
     BoundaryPair blocks source.byteLength
       (Program.codeByteLength (blocksCode blocks)) 0 0 := by
   cases hValid with
@@ -645,15 +680,17 @@ theorem BlocksValidFrom.initial_boundary
              code := code }, by simp⟩
 
 theorem BlocksValidFrom.block_emit_of_mem
-    {branchWidth : Nat} {table : LabelTable}
+    {pinnedPushPcs : List Nat} {branchWidth : Nat} {table : LabelTable}
     {source : Assembly.Program} {sourcePc compactPc : Nat}
     {blocks : List SourceBlock}
-    (hValid : BlocksValidFrom branchWidth table source
+    (hValid : BlocksValidFrom pinnedPushPcs branchWidth table source
       sourcePc compactPc blocks) :
     forall {block : SourceBlock}, block ∈ blocks ->
       ∃ compactSize,
-        sourceInstrSize? branchWidth block.sourceInstr = some compactSize ∧
-          emitSourceBlock? branchWidth block.compactPc table
+        sourceInstrSizeAt? pinnedPushPcs branchWidth block.sourcePc
+            block.sourceInstr = some compactSize ∧
+          emitSourceBlock? pinnedPushPcs branchWidth block.sourcePc
+            block.compactPc table
             block.sourceInstr = some block.code := by
   intro block hMem
   induction hValid with
@@ -668,10 +705,10 @@ theorem BlocksValidFrom.block_emit_of_mem
       | inr hTail => exact ih hTail
 
 theorem BlocksValidFrom.sourceInstr_mem_of_block_mem
-    {branchWidth : Nat} {table : LabelTable}
+    {pinnedPushPcs : List Nat} {branchWidth : Nat} {table : LabelTable}
     {source : Assembly.Program} {sourcePc compactPc : Nat}
     {blocks : List SourceBlock}
-    (hValid : BlocksValidFrom branchWidth table source
+    (hValid : BlocksValidFrom pinnedPushPcs branchWidth table source
       sourcePc compactPc blocks) :
     forall {block : SourceBlock}, block ∈ blocks ->
       block.sourceInstr ∈ source := by
@@ -689,10 +726,10 @@ theorem BlocksValidFrom.sourceInstr_mem_of_block_mem
           simp [ih hTail]
 
 theorem BlocksValidFrom.decompose_of_block_mem
-    {branchWidth : Nat} {table : LabelTable}
+    {pinnedPushPcs : List Nat} {branchWidth : Nat} {table : LabelTable}
     {source : Assembly.Program} {sourcePc compactPc : Nat}
     {blocks : List SourceBlock}
-    (hValid : BlocksValidFrom branchWidth table source
+    (hValid : BlocksValidFrom pinnedPushPcs branchWidth table source
       sourcePc compactPc blocks) :
     ∀ {block : SourceBlock}, block ∈ blocks ->
       ∃ pre post,
@@ -736,10 +773,10 @@ theorem instrAtPc_end_eq_none (program : Assembly.Program) :
     instrAtPcFrom_end_eq_none program 0
 
 theorem BlocksValidFrom.block_of_instrAtPcFrom
-    {branchWidth : Nat} {table : LabelTable}
+    {pinnedPushPcs : List Nat} {branchWidth : Nat} {table : LabelTable}
     {source : Assembly.Program} {sourcePc compactPc query pc : Nat}
     {blocks : List SourceBlock} {instr : Assembly.Instr}
-    (hValid : BlocksValidFrom branchWidth table source
+    (hValid : BlocksValidFrom pinnedPushPcs branchWidth table source
       sourcePc compactPc blocks)
     (hAt : Assembly.Program.instrAtPcFrom source sourcePc query =
       some (pc, instr)) :
@@ -764,10 +801,11 @@ theorem BlocksValidFrom.block_of_instrAtPcFrom
         exact ⟨block, by simp [hMem], hBlockPc, hInstr⟩
 
 theorem BlocksValidFrom.block_of_instrAtPc
-    {branchWidth : Nat} {table : LabelTable}
+    {pinnedPushPcs : List Nat} {branchWidth : Nat} {table : LabelTable}
     {source : Assembly.Program} {blocks : List SourceBlock}
     {query pc : Nat} {instr : Assembly.Instr}
-    (hValid : BlocksValidFrom branchWidth table source 0 0 blocks)
+    (hValid : BlocksValidFrom pinnedPushPcs branchWidth table source 0 0
+      blocks)
     (hAt : source.instrAtPc query = some (pc, instr)) :
     ∃ block,
       block ∈ blocks ∧ block.sourcePc = pc ∧ block.sourceInstr = instr := by
@@ -1067,6 +1105,48 @@ theorem decodingCorrectOfWellFormed
         located hMem
     simpa [encode, Bytecode.ofList] using hDecoded
 
+theorem decodingCorrectOfWellFormedWithSuffix
+    {program : Program}
+    (hValid : program.Valid)
+    (hLayout : Program.codeLayoutFrom program.code 0)
+    (hWindow :
+      Program.codeByteLength program.code < 18446744073709551616)
+    (suffix : List UInt8) :
+    DecodingCorrect program
+      (Bytecode.ofList (program.code.flatMap encodeLocated ++ suffix)) where
+  decodes := by
+    intro located hMem
+    have hEndLe := codeLayoutMemberEndLe hLayout located hMem
+    have hEnd :
+        located.pc + located.instr.byteSize <
+          18446744073709551616 := by
+      omega
+    have hStart : located.pc + 1 < 18446744073709551616 := by
+      have hSize := Instr.byteSize_pos located.instr
+      omega
+    have hPcLt : located.pc < 18446744073709551616 := by omega
+    have hDecoded :=
+      codeLayoutDecodeAtWithPrefix
+        (code := program.code) (pre := []) (suffix := suffix) (base := 0)
+        hLayout rfl
+        (fun item hItem =>
+          (List.forall_iff_forall_mem.mp hValid) item hItem)
+        (fun item hItem => by
+          have hItemEnd := codeLayoutMemberEndLe hLayout item hItem
+          have hItemPc : item.pc < 18446744073709551616 := by
+            have hItemSize := Instr.byteSize_pos item.instr
+            omega
+          exact Bytecode.uint256_ofNat_toNat_of_decode_window hItemPc)
+        (fun item hItem => by
+          have hItemEnd := codeLayoutMemberEndLe hLayout item hItem
+          have hItemSize := Instr.byteSize_pos item.instr
+          omega)
+        (fun item hItem => by
+          have hItemEnd := codeLayoutMemberEndLe hLayout item hItem
+          omega)
+        located hMem
+    simpa [Bytecode.ofList] using hDecoded
+
 /-- Remove an unconditional transfer to the label physically adjacent to it.
 The label remains available to every other incoming edge. -/
 def elideFallthroughJumps : Assembly.Program -> Assembly.Program
@@ -1096,6 +1176,27 @@ def pruneUnreferencedLabels (targets : List Label) :
 def prepare (source : Assembly.Program) : Assembly.Program :=
   let elided := elideFallthroughJumps source
   pruneUnreferencedLabels (referencedLabels elided) elided
+
+/-- Find physical Assembly push sites whose values differ between two
+shape-identical programs. Pinning precisely these PCs gives both programs the
+same compact layout while leaving every unrelated push minimum-width. -/
+def differingPushPcsFrom? : Assembly.Program → Assembly.Program → Nat →
+    Option (List Nat)
+  | [], [], _ => some []
+  | .push actual :: actualRest, .push marker :: markerRest, sourcePc => do
+      let rest ← differingPushPcsFrom? actualRest markerRest
+        (sourcePc + (Assembly.Instr.push actual).byteSize)
+      if actual = marker then some rest else some (sourcePc :: rest)
+  | actual :: actualRest, marker :: markerRest, sourcePc =>
+      if actual = marker then
+        differingPushPcsFrom? actualRest markerRest
+          (sourcePc + actual.byteSize)
+      else
+        none
+  | _, _, _ => none
+
+def differingPushPcs? (actual marker : Assembly.Program) : Option (List Nat) :=
+  differingPushPcsFrom? (prepare actual) (prepare marker) 0
 
 inductive PreparationAction where
   | keep
@@ -1717,6 +1818,7 @@ theorem preparationSafe_of_check
     ((List.all_eq_true.mp hCheck) block hMem)
 
 structure Artifact where
+  pinnedPushPcs : List Nat
   physicalSource : Assembly.Program
   branchWidth : Nat
   labels : LabelTable
@@ -1778,7 +1880,8 @@ def SourceStats.addInstr (stats : SourceStats)
 def sourceStats (source : Assembly.Program) : SourceStats :=
   source.foldl SourceStats.addInstr {}
 
-def compile? (source : Assembly.Program) : Option Artifact := do
+def compile? (source : Assembly.Program)
+    (pinnedPushPcs : List Nat := []) : Option Artifact := do
   let _ <- if decide source.PCFits then some () else none
   let physicalSource := prepare source
   let preparation <- alignPreparation? source physicalSource
@@ -1786,14 +1889,15 @@ def compile? (source : Assembly.Program) : Option Artifact := do
     some ()
   else none
   let branchWidth <- widthForNat? physicalSource.byteLength
-  let (labels, codeLength) <- layout? physicalSource branchWidth
-  let program <- emit? physicalSource branchWidth labels
-  let blocks <- emitBlocks? physicalSource branchWidth labels
+  let (labels, codeLength) <- layout? pinnedPushPcs physicalSource branchWidth
+  let program <- emit? pinnedPushPcs physicalSource branchWidth labels
+  let blocks <- emitBlocks? pinnedPushPcs physicalSource branchWidth labels
   if blocksCode blocks = program.code then
     if labelsConsistent? blocks labels then
       if program.wellFormed? then
         some
-          { physicalSource := physicalSource
+          { pinnedPushPcs := pinnedPushPcs
+            physicalSource := physicalSource
             branchWidth := branchWidth
             labels := labels
             codeLength := codeLength
@@ -1818,12 +1922,14 @@ structure Artifact.ValidFor (artifact : Artifact)
     artifact.preparation = true
   branchWidth : widthForNat? artifact.physicalSource.byteLength =
     some artifact.branchWidth
-  layout : layout? artifact.physicalSource artifact.branchWidth =
+  layout : layout? artifact.pinnedPushPcs artifact.physicalSource
+    artifact.branchWidth =
     some (artifact.labels, artifact.codeLength)
-  emitted : emit? artifact.physicalSource artifact.branchWidth artifact.labels =
+  emitted : emit? artifact.pinnedPushPcs artifact.physicalSource
+    artifact.branchWidth artifact.labels =
     some artifact.program
-  blocks : emitBlocks? artifact.physicalSource artifact.branchWidth
-    artifact.labels = some artifact.blocks
+  blocks : emitBlocks? artifact.pinnedPushPcs artifact.physicalSource
+    artifact.branchWidth artifact.labels = some artifact.blocks
   blockCode : blocksCode artifact.blocks = artifact.program.code
   labelsConsistent : LabelsConsistent artifact.blocks artifact.labels
   wellFormed : artifact.program.Valid ∧
@@ -1832,8 +1938,9 @@ structure Artifact.ValidFor (artifact : Artifact)
         artifact.program.PCIndependent
   bytes : artifact.bytes = encode artifact.program
 
-theorem compile?_valid {source : Assembly.Program} {artifact : Artifact}
-    (hCompile : compile? source = some artifact) :
+theorem compile?_valid {source : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Artifact}
+    (hCompile : compile? source pinnedPushPcs = some artifact) :
     artifact.ValidFor source := by
   unfold compile? at hCompile
   have hSourceFits : source.PCFits := by
@@ -1852,18 +1959,18 @@ theorem compile?_valid {source : Assembly.Program} {artifact : Artifact}
         | none => simp [hWidth] at hCompile
         | some branchWidth =>
             simp [hWidth] at hCompile
-            cases hLayout : layout? physicalSource branchWidth with
+            cases hLayout : layout? pinnedPushPcs physicalSource branchWidth with
             | none => simp [hLayout] at hCompile
             | some layoutResult =>
                 cases layoutResult with
                 | mk labels codeLength =>
                     simp [hLayout] at hCompile
-                    cases hEmit : emit? physicalSource branchWidth labels with
+                    cases hEmit : emit? pinnedPushPcs physicalSource branchWidth labels with
                     | none => simp [hEmit] at hCompile
                     | some program =>
                         simp [hEmit] at hCompile
                         cases hBlocks :
-                            emitBlocks? physicalSource branchWidth labels with
+                            emitBlocks? pinnedPushPcs physicalSource branchWidth labels with
                         | none => simp [hBlocks] at hCompile
                         | some blocks =>
                             simp [hBlocks] at hCompile
@@ -1903,15 +2010,15 @@ theorem Artifact.ValidFor.physicalSourcePCFits
   exact EvmYul.UInt256.toNat_ofNat_of_lt hBound
 
 theorem compile?_preparationBlocksValid
-    {source : Assembly.Program} {artifact : Artifact}
-    (hCompile : compile? source = some artifact) :
+    {source : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}
+    (hCompile : compile? source pinnedPushPcs = some artifact) :
     PreparationBlocksValidFrom source artifact.physicalSource 0 0
       artifact.preparation := by
   exact alignPreparation?_valid (compile?_valid hCompile).preparationAligned
 
 theorem compile?_preparationSafe
-    {source : Assembly.Program} {artifact : Artifact}
-    (hCompile : compile? source = some artifact) :
+    {source : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}
+    (hCompile : compile? source pinnedPushPcs = some artifact) :
     PreparationSafe source artifact.physicalSource artifact.preparation := by
   apply preparationSafe_of_check
   rw [← preparationSafeIndexed_eq]
@@ -1928,8 +2035,8 @@ theorem Artifact.ValidFor.mem_program_of_mem_block
   exact List.mem_flatMap.mpr ⟨block, hBlock, hLocated⟩
 
 theorem compile?_decodingCorrect
-    {source : Assembly.Program} {artifact : Artifact}
-    (hCompile : compile? source = some artifact) :
+    {source : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}
+    (hCompile : compile? source pinnedPushPcs = some artifact) :
     DecodingCorrect artifact.program artifact.bytes := by
   have hValid := compile?_valid hCompile
   rw [hValid.bytes]
@@ -1937,25 +2044,40 @@ theorem compile?_decodingCorrect
     decodingCorrectOfWellFormed
       hValid.wellFormed.1 hValid.wellFormed.2.1 hValid.wellFormed.2.2.1
 
+theorem compile?_decodingCorrect_with_suffix
+    {source : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}
+    (hCompile : compile? source pinnedPushPcs = some artifact)
+    (suffix : List UInt8) :
+    DecodingCorrect artifact.program
+      (Bytecode.ofList (artifact.bytes.toList ++ suffix)) := by
+  have hValid := compile?_valid hCompile
+  rw [hValid.bytes]
+  simpa [encode, Bytecode.ofList] using
+    decodingCorrectOfWellFormedWithSuffix
+      hValid.wellFormed.1 hValid.wellFormed.2.1
+      hValid.wellFormed.2.2.1 suffix
+
 theorem compile?_blocksValid
-    {source : Assembly.Program} {artifact : Artifact}
-    (hCompile : compile? source = some artifact) :
-    BlocksValidFrom artifact.branchWidth artifact.labels
+    {source : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}
+    (hCompile : compile? source pinnedPushPcs = some artifact) :
+    BlocksValidFrom artifact.pinnedPushPcs artifact.branchWidth artifact.labels
       artifact.physicalSource 0 0 artifact.blocks := by
   exact emitBlocks?_valid (compile?_valid hCompile).blocks
 
 theorem compile?_block_of_instrAtPc
-    {source : Assembly.Program} {artifact : Artifact}
+    {source : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}
     {query pc : Nat} {instr : Assembly.Instr}
-    (hCompile : compile? source = some artifact)
+    (hCompile : compile? source pinnedPushPcs = some artifact)
     (hAt : artifact.physicalSource.instrAtPc query = some (pc, instr)) :
     ∃ block compactSize,
       block ∈ artifact.blocks ∧
         block.sourcePc = pc ∧ block.sourceInstr = instr ∧
-          sourceInstrSize? artifact.branchWidth block.sourceInstr =
+          sourceInstrSizeAt? artifact.pinnedPushPcs artifact.branchWidth
+            block.sourcePc block.sourceInstr =
             some compactSize ∧
-          emitSourceBlock? artifact.branchWidth block.compactPc
-            artifact.labels block.sourceInstr = some block.code := by
+          emitSourceBlock? artifact.pinnedPushPcs artifact.branchWidth
+            block.sourcePc block.compactPc artifact.labels block.sourceInstr =
+              some block.code := by
   have hBlocks := compile?_blocksValid hCompile
   obtain ⟨block, hMem, hBlockPc, hInstr⟩ :=
     hBlocks.block_of_instrAtPc hAt
@@ -1965,8 +2087,8 @@ theorem compile?_block_of_instrAtPc
     ⟨block, compactSize, hMem, hBlockPc, hInstr, hSize, hCode⟩
 
 theorem compile?_initial_boundary
-    {source : Assembly.Program} {artifact : Artifact}
-    (hCompile : compile? source = some artifact) :
+    {source : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}
+    (hCompile : compile? source pinnedPushPcs = some artifact) :
     BoundaryPair artifact.blocks artifact.physicalSource.byteLength
       (Program.codeByteLength artifact.program.code) 0 0 := by
   have hArtifact := compile?_valid hCompile
@@ -1975,9 +2097,9 @@ theorem compile?_initial_boundary
   exact hBoundary
 
 theorem compile?_physical_labelPc_of_lookup
-    {source : Assembly.Program} {artifact : Artifact}
+    {source : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}
     {label : Label} {compactPc : Nat}
-    (hCompile : compile? source = some artifact)
+    (hCompile : compile? source pinnedPushPcs = some artifact)
     (hLookup : lookupLabel? artifact.labels label = some compactPc) :
     ∃ sourcePc, artifact.physicalSource.labelPc label = some sourcePc := by
   have hLayout := (compile?_valid hCompile).layout
@@ -1990,9 +2112,9 @@ theorem compile?_physical_labelPc_of_lookup
     artifact.physicalSource hMem
 
 theorem compile?_label_boundary
-    {source : Assembly.Program} {artifact : Artifact}
+    {source : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}
     {label : Label} {sourceDest compactDest : Nat}
-    (hCompile : compile? source = some artifact)
+    (hCompile : compile? source pinnedPushPcs = some artifact)
     (hSource : artifact.physicalSource.labelPc label = some sourceDest)
     (hCompact : lookupLabel? artifact.labels label = some compactDest) :
     BoundaryPair artifact.blocks artifact.physicalSource.byteLength
@@ -2011,9 +2133,9 @@ theorem compile?_label_boundary
   exact Or.inl ⟨block, hMem, hBlockPc, hCompactPc.symm⟩
 
 theorem compile?_source_openStepResult_eq_block
-    {source : Assembly.Program} {artifact : Artifact}
+    {source : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}
     {block : SourceBlock} {state : EVMState}
-    (hCompile : compile? source = some artifact)
+    (hCompile : compile? source pinnedPushPcs = some artifact)
     (hBlock : block ∈ artifact.blocks)
     (hPc : state.pc = EvmYul.UInt256.ofNat block.sourcePc) :
     Assembly.InteractionSemantics.Source.openStepResult
@@ -2035,9 +2157,9 @@ theorem compile?_source_openStepResult_eq_block
   simpa [Assembly.Program.pcAfter, hBlockPc] using hPc
 
 theorem compile?_preparation_source_openStepResult_eq_block
-    {source : Assembly.Program} {artifact : Artifact}
+    {source : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}
     {block : PreparationBlock} {state : EVMState}
-    (hCompile : compile? source = some artifact)
+    (hCompile : compile? source pinnedPushPcs = some artifact)
     (hBlock : block ∈ artifact.preparation)
     (hPc : state.pc = EvmYul.UInt256.ofNat block.sourcePc) :
     Assembly.InteractionSemantics.Source.openStepResult source state =
@@ -2058,9 +2180,9 @@ theorem compile?_preparation_source_openStepResult_eq_block
   simpa [Assembly.Program.pcAfter, hBlockPc] using hPc
 
 theorem compile?_preparation_target_openStepResult_eq_block
-    {source : Assembly.Program} {artifact : Artifact}
+    {source : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}
     {block : PreparationBlock} {state : EVMState}
-    (hCompile : compile? source = some artifact)
+    (hCompile : compile? source pinnedPushPcs = some artifact)
     (hBlock : block ∈ artifact.preparation)
     (hKeep : block.action = .keep)
     (hPc : state.pc = EvmYul.UInt256.ofNat block.preparedPc) :
@@ -2106,9 +2228,10 @@ def PreparationStateRel (sourceProgram : Assembly.Program)
       SameRuntimeData target source
 
 theorem PreparationStateRel.active_of_terminal_succ
-    {sourceProgram : Assembly.Program} {artifact : Artifact}
+    {sourceProgram : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Artifact}
     {target source : EVMState} {fuel : Nat}
-    (hCompile : compile? sourceProgram = some artifact)
+    (hCompile : compile? sourceProgram pinnedPushPcs = some artifact)
     (hBoundary : PreparationStateRel sourceProgram artifact target source)
     (hTerminal : Simulation.Interaction.AllDone
       Assembly.InteractionSemantics.Terminal
@@ -2171,9 +2294,9 @@ def BoundaryStateRel (artifact : Artifact)
       SameRuntimeData target source
 
 theorem BoundaryStateRel.active_of_terminal_succ
-    {input : Assembly.Program} {artifact : Artifact}
+    {input : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}
     {target source : EVMState} {fuel : Nat}
-    (hCompile : compile? input = some artifact)
+    (hCompile : compile? input pinnedPushPcs = some artifact)
     (hBoundary : BoundaryStateRel artifact target source)
     (hTerminal : Simulation.Interaction.AllDone
       Assembly.InteractionSemantics.Terminal
@@ -2639,9 +2762,10 @@ theorem PreparationSimpleInstr.source_runningAt_next
         program pc state
 
 theorem compile?_preparation_simple_block_rel
-    {sourceProgram : Assembly.Program} {artifact : Artifact}
+    {sourceProgram : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Artifact}
     {block : PreparationBlock} {target source : EVMState}
-    (hCompile : compile? sourceProgram = some artifact)
+    (hCompile : compile? sourceProgram pinnedPushPcs = some artifact)
     (hBlock : block ∈ artifact.preparation)
     (hKeep : block.action = .keep)
     (hSimple : PreparationSimpleInstr block.sourceInstr)
@@ -2671,10 +2795,11 @@ theorem compile?_preparation_simple_block_rel
       hSimple.source_runningAt_next sourceProgram block.sourcePc source
 
 theorem compile?_preparation_skip_label_rel
-    {sourceProgram : Assembly.Program} {artifact : Artifact}
+    {sourceProgram : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Artifact}
     {block : PreparationBlock} {name : Label}
     {target source : EVMState}
-    (hCompile : compile? sourceProgram = some artifact)
+    (hCompile : compile? sourceProgram pinnedPushPcs = some artifact)
     (hBlock : block ∈ artifact.preparation)
     (hInstr : block.sourceInstr = .label name)
     (hSkip : block.action = .skip)
@@ -2706,10 +2831,11 @@ theorem compile?_preparation_skip_label_rel
         sourceProgram block.sourcePc source
 
 theorem compile?_preparation_skip_jump_rel
-    {sourceProgram : Assembly.Program} {artifact : Artifact}
+    {sourceProgram : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Artifact}
     {block : PreparationBlock} {label : Label}
     {target source : EVMState}
-    (hCompile : compile? sourceProgram = some artifact)
+    (hCompile : compile? sourceProgram pinnedPushPcs = some artifact)
     (hBlock : block ∈ artifact.preparation)
     (hInstr : block.sourceInstr = .jump label)
     (hSkip : block.action = .skip)
@@ -2748,10 +2874,11 @@ theorem compile?_preparation_skip_jump_rel
     exact .done rfl
 
 theorem compile?_preparation_keep_jump_rel
-    {sourceProgram : Assembly.Program} {artifact : Artifact}
+    {sourceProgram : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Artifact}
     {block : PreparationBlock} {label : Label}
     {target source : EVMState}
-    (hCompile : compile? sourceProgram = some artifact)
+    (hCompile : compile? sourceProgram pinnedPushPcs = some artifact)
     (hBlock : block ∈ artifact.preparation)
     (hInstr : block.sourceInstr = .jump label)
     (hKeep : block.action = .keep)
@@ -2802,10 +2929,11 @@ theorem compile?_preparation_keep_jump_rel
     exact .done rfl
 
 theorem compile?_preparation_keep_jumpi_rel
-    {sourceProgram : Assembly.Program} {artifact : Artifact}
+    {sourceProgram : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Artifact}
     {block : PreparationBlock} {label : Label}
     {target source : EVMState}
-    (hCompile : compile? sourceProgram = some artifact)
+    (hCompile : compile? sourceProgram pinnedPushPcs = some artifact)
     (hBlock : block ∈ artifact.preparation)
     (hInstr : block.sourceInstr = .jumpi label)
     (hKeep : block.action = .keep)
@@ -2918,9 +3046,10 @@ theorem compile?_preparation_keep_jumpi_rel
           exact .done (by simp [RunningAt, hCond])
 
 theorem compile?_preparationBlock_open_rel
-    {sourceProgram : Assembly.Program} {artifact : Artifact}
+    {sourceProgram : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Artifact}
     {block : PreparationBlock} {target source : EVMState}
-    (hCompile : compile? sourceProgram = some artifact)
+    (hCompile : compile? sourceProgram pinnedPushPcs = some artifact)
     (hBlock : block ∈ artifact.preparation)
     (hTargetPc : target.pc = EvmYul.UInt256.ofNat block.preparedPc)
     (hSourcePc : source.pc = EvmYul.UInt256.ofNat block.sourcePc)
@@ -2993,8 +3122,9 @@ theorem compile?_preparationBlock_open_rel
           exact False.elim hSafe
 
 theorem compile?_preparation_openRunNResult_terminal_rel
-    {sourceProgram : Assembly.Program} {artifact : Artifact}
-    (hCompile : compile? sourceProgram = some artifact)
+    {sourceProgram : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Artifact}
+    (hCompile : compile? sourceProgram pinnedPushPcs = some artifact)
     (fuel extra : Nat) {target source : EVMState}
     (hBoundary : PreparationStateRel sourceProgram artifact target source)
     (hTerminal : Simulation.Interaction.AllDone
@@ -3237,7 +3367,7 @@ theorem openRunNResult_one_source_rel
 theorem openRunNResult_one_source_boundary_rel
     {artifact : Artifact} {sourcePc compactPc : Nat}
     {sourceInstr : Assembly.Instr} {compactInstr : Instr}
-    {target source : EVMState}
+    {bytes : ByteArray} {target source : EVMState}
     (hBoundary : BoundaryPair artifact.blocks
       artifact.physicalSource.byteLength
       (Program.codeByteLength artifact.program.code)
@@ -3246,12 +3376,12 @@ theorem openRunNResult_one_source_boundary_rel
     (hInstr : SimpleSourceInstrRel sourceInstr compactInstr)
     (hValid : compactInstr.Valid)
     (hIndependent : compactInstr.PCIndependent)
-    (hDecode : decodeAt artifact.bytes compactPc compactInstr)
+    (hDecode : decodeAt bytes compactPc compactInstr)
     (hPc : target.pc = EvmYul.UInt256.ofNat compactPc)
     (hSourcePc : source.pc = EvmYul.UInt256.ofNat sourcePc)
     (hRel : SameRuntimeData target source) :
     Simulation.Interaction.Rel (BoundaryOutcomeRel artifact)
-      (openRunNResult artifact.bytes 1 target)
+      (openRunNResult bytes 1 target)
       (Assembly.InteractionSemantics.Source.openStepAtResult
         artifact.physicalSource sourcePc sourceInstr source) := by
   apply runtimeRel_to_boundaryRel hBoundary
@@ -3379,20 +3509,20 @@ theorem openRunNResult_push_jump_source_rel
 
 theorem openRunNResult_push_jump_source_boundary_rel
     {artifact : Artifact} {sourcePc sourceDest compactPc compactDest width : Nat}
-    {label : Label} {targetState sourceState : EVMState}
+    {label : Label} {bytes : ByteArray} {targetState sourceState : EVMState}
     (hBoundary : BoundaryPair artifact.blocks
       artifact.physicalSource.byteLength
       (Program.codeByteLength artifact.program.code)
       sourceDest compactDest)
     (hSourceDest : artifact.physicalSource.labelPc label = some sourceDest)
     (hFits : FitsWidth width (EvmYul.UInt256.ofNat compactDest).toNat)
-    (hPushDecode : decodeAt artifact.bytes compactPc
+    (hPushDecode : decodeAt bytes compactPc
       (.push width (EvmYul.UInt256.ofNat compactDest)))
-    (hJumpDecode : decodeAt artifact.bytes (compactPc + width + 1) .jump)
+    (hJumpDecode : decodeAt bytes (compactPc + width + 1) .jump)
     (hTargetPc : targetState.pc = EvmYul.UInt256.ofNat compactPc)
     (hRel : SameRuntimeData targetState sourceState) :
     Simulation.Interaction.Rel (BoundaryOutcomeRel artifact)
-      (openRunNResult artifact.bytes 2 targetState)
+      (openRunNResult bytes 2 targetState)
       (Assembly.InteractionSemantics.Source.openStepAtResult
         artifact.physicalSource sourcePc (.jump label) sourceState) := by
   apply runtimeRel_to_boundaryRel hBoundary
@@ -3449,7 +3579,7 @@ theorem openRunNResult_push_jumpi_source_rel
 
 theorem openRunNResult_push_jumpi_source_boundary_rel
     {artifact : Artifact} {sourcePc sourceDest compactPc compactDest width : Nat}
-    {label : Label} {targetState sourceState : EVMState}
+    {label : Label} {bytes : ByteArray} {targetState sourceState : EVMState}
     (hTakenBoundary : BoundaryPair artifact.blocks
       artifact.physicalSource.byteLength
       (Program.codeByteLength artifact.program.code)
@@ -3461,14 +3591,14 @@ theorem openRunNResult_push_jumpi_source_boundary_rel
       (compactPc + width + 2))
     (hSourceDest : artifact.physicalSource.labelPc label = some sourceDest)
     (hFits : FitsWidth width (EvmYul.UInt256.ofNat compactDest).toNat)
-    (hPushDecode : decodeAt artifact.bytes compactPc
+    (hPushDecode : decodeAt bytes compactPc
       (.push width (EvmYul.UInt256.ofNat compactDest)))
-    (hJumpDecode : decodeAt artifact.bytes (compactPc + width + 1) .jumpi)
+    (hJumpDecode : decodeAt bytes (compactPc + width + 1) .jumpi)
     (hTargetPc : targetState.pc = EvmYul.UInt256.ofNat compactPc)
     (hSourcePc : sourceState.pc = EvmYul.UInt256.ofNat sourcePc)
     (hRel : SameRuntimeData targetState sourceState) :
     Simulation.Interaction.Rel (BoundaryOutcomeRel artifact)
-      (openRunNResult artifact.bytes 2 targetState)
+      (openRunNResult bytes 2 targetState)
       (Assembly.InteractionSemantics.Source.openStepAtResult
         artifact.physicalSource sourcePc (.jumpi label) sourceState) := by
   have hRuntime := openRunNResult_push_jumpi_source_rel
@@ -3512,9 +3642,10 @@ theorem openRunNResult_push_jumpi_source_boundary_rel
 /-- Compiler-selected one-source-instruction compact execution. Every block,
 width, destination, and decoder fact is recovered from the checked artifact. -/
 theorem compile?_sourceBlock_open_rel
-    {source : Assembly.Program} {artifact : Artifact}
+    {source : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}
     {block : SourceBlock} {targetState sourceState : EVMState}
-    (hCompile : compile? source = some artifact)
+    (hCompile : compile? source pinnedPushPcs = some artifact)
+    (suffix : List UInt8 := [])
     (hBlock : block ∈ artifact.blocks)
     (hTargetPc : targetState.pc = EvmYul.UInt256.ofNat block.compactPc)
     (hSourcePc : sourceState.pc = EvmYul.UInt256.ofNat block.sourcePc)
@@ -3522,13 +3653,15 @@ theorem compile?_sourceBlock_open_rel
     ∃ targetFuel,
       targetFuel <= 2 ∧
         Simulation.Interaction.Rel (BoundaryOutcomeRel artifact)
-          (openRunNResult artifact.bytes targetFuel targetState)
+          (openRunNResult
+            (Bytecode.ofList (artifact.bytes.toList ++ suffix))
+            targetFuel targetState)
           (Assembly.InteractionSemantics.Source.openStepAtResult
             artifact.physicalSource block.sourcePc block.sourceInstr
             sourceState) := by
   have hArtifact := compile?_valid hCompile
   have hBlocks := compile?_blocksValid hCompile
-  have hDecoding := compile?_decodingCorrect hCompile
+  have hDecoding := compile?_decodingCorrect_with_suffix hCompile suffix
   obtain ⟨compactSize, hSize, hCode⟩ :=
     hBlocks.block_emit_of_mem hBlock
   have hNextBoundary := hBlocks.next_boundary hBlock hSize
@@ -3536,7 +3669,8 @@ theorem compile?_sourceBlock_open_rel
   rcases block with ⟨sourcePc, compactPc, sourceInstr, code⟩
   cases sourceInstr with
   | label name =>
-      simp [sourceInstrSize?, emitSourceBlock?, emitInstrRev?] at hSize hCode
+      simp [sourceInstrSizeAt?, emitSourceBlock?, emitInstrRev?]
+        at hSize hCode
       subst compactSize
       subst code
       let located : Located := { pc := compactPc, instr := .jumpdest }
@@ -3552,7 +3686,8 @@ theorem compile?_sourceBlock_open_rel
             hArtifact.wellFormed.2.2.2) located hMem)
           (hDecoding.decodes located hMem) hTargetPc hSourcePc hRel⟩
   | prim op =>
-      simp [sourceInstrSize?, emitSourceBlock?, emitInstrRev?] at hSize hCode
+      simp [sourceInstrSizeAt?, emitSourceBlock?, emitInstrRev?]
+        at hSize hCode
       subst compactSize
       subst code
       let located : Located := { pc := compactPc, instr := .prim op }
@@ -3568,10 +3703,10 @@ theorem compile?_sourceBlock_open_rel
             hArtifact.wellFormed.2.2.2) located hMem)
           (hDecoding.decodes located hMem) hTargetPc hSourcePc hRel⟩
   | push value =>
-      cases hWidth : widthForWord? value with
-      | none => simp [sourceInstrSize?, hWidth] at hSize
+      cases hWidth : pushWidthAt? artifact.pinnedPushPcs sourcePc value with
+      | none => simp [sourceInstrSizeAt?, hWidth] at hSize
       | some width =>
-          simp [sourceInstrSize?, hWidth, emitSourceBlock?, emitInstrRev?]
+          simp [sourceInstrSizeAt?, hWidth, emitSourceBlock?, emitInstrRev?]
             at hSize hCode
           subst compactSize
           subst code
@@ -3598,7 +3733,7 @@ theorem compile?_sourceBlock_open_rel
       | some compactDest =>
           by_cases hFitsBool :
               fitsWidth? artifact.branchWidth compactDest = true
-          · simp [sourceInstrSize?, emitSourceBlock?, emitInstrRev?,
+          · simp [sourceInstrSizeAt?, emitSourceBlock?, emitInstrRev?,
               hDest, hFitsBool] at hSize hCode
             subst compactSize
             subst code
@@ -3635,7 +3770,7 @@ theorem compile?_sourceBlock_open_rel
       | some compactDest =>
           by_cases hFitsBool :
               fitsWidth? artifact.branchWidth compactDest = true
-          · simp [sourceInstrSize?, emitSourceBlock?, emitInstrRev?,
+          · simp [sourceInstrSizeAt?, emitSourceBlock?, emitInstrRev?,
               hDest, hFitsBool] at hSize hCode
             subst compactSize
             subst code
@@ -3674,8 +3809,9 @@ uniform two-opcode budget per source instruction. The extra budget is useful
 for composition: one-opcode blocks leave one unit that is inert once every
 open-world branch has halted. -/
 theorem compile?_openRunNResult_terminal_rel
-    {input : Assembly.Program} {artifact : Artifact}
-    (hCompile : compile? input = some artifact)
+    {input : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}
+    (hCompile : compile? input pinnedPushPcs = some artifact)
+    (suffix : List UInt8 := [])
     (fuel extra : Nat) {target source : EVMState}
     (hBoundary : BoundaryStateRel artifact target source)
     (hTerminal : Simulation.Interaction.AllDone
@@ -3683,7 +3819,9 @@ theorem compile?_openRunNResult_terminal_rel
       (Assembly.InteractionSemantics.Source.openRunNResult
         artifact.physicalSource fuel source)) :
     Simulation.Interaction.Rel RuntimeOutcomeRel
-      (openRunNResult artifact.bytes (2 * fuel + extra) target)
+      (openRunNResult
+        (Bytecode.ofList (artifact.bytes.toList ++ suffix))
+        (2 * fuel + extra) target)
       (Assembly.InteractionSemantics.Source.openRunNResult
         artifact.physicalSource fuel source) := by
   induction fuel generalizing target source extra with
@@ -3702,7 +3840,7 @@ theorem compile?_openRunNResult_terminal_rel
       obtain ⟨block, hBlock, hSourcePc, hTargetPc, hRuntime⟩ :=
         hBoundary.active_of_terminal_succ hCompile hTerminalSucc
       obtain ⟨stepFuel, hStepFuel, hStep⟩ :=
-        compile?_sourceBlock_open_rel hCompile hBlock
+        compile?_sourceBlock_open_rel hCompile suffix hBlock
           hTargetPc hSourcePc hRuntime
       have hSourceStep :=
         compile?_source_openStepResult_eq_block hCompile hBlock hSourcePc
@@ -3813,8 +3951,10 @@ theorem runtimeOutcomeRel_terminal_left
 width encoding remain adjacent subproofs, while this theorem only composes
 their exact open interaction trees. -/
 theorem compile?_source_openRunNResult_terminal_rel
-    {sourceProgram : Assembly.Program} {artifact : Artifact}
-    (hCompile : compile? sourceProgram = some artifact)
+    {sourceProgram : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Artifact}
+    (hCompile : compile? sourceProgram pinnedPushPcs = some artifact)
+    (suffix : List UInt8 := [])
     (fuel extra : Nat) {target source : EVMState}
     (hTargetPc : target.pc = EvmYul.UInt256.ofNat 0)
     (hSourcePc : source.pc = EvmYul.UInt256.ofNat 0)
@@ -3824,7 +3964,9 @@ theorem compile?_source_openRunNResult_terminal_rel
       (Assembly.InteractionSemantics.Source.openRunNResult
         sourceProgram fuel source)) :
     Simulation.Interaction.Rel RuntimeOutcomeRel
-      (openRunNResult artifact.bytes (2 * fuel + extra) target)
+      (openRunNResult
+        (Bytecode.ofList (artifact.bytes.toList ++ suffix))
+        (2 * fuel + extra) target)
       (Assembly.InteractionSemantics.Source.openRunNResult
         sourceProgram fuel source) := by
   have hPreparationBoundary :
@@ -3849,7 +3991,7 @@ theorem compile?_source_openRunNResult_terminal_rel
     ⟨0, 0, compile?_initial_boundary hCompile,
       hSourcePc, hTargetPc, hInitial⟩
   have hCompact := compile?_openRunNResult_terminal_rel
-    hCompile fuel extra hCompactBoundary hPhysicalTerminal
+    hCompile suffix fuel extra hCompactBoundary hPhysicalTerminal
   apply Simulation.Interaction.Rel.mono
     (Simulation.Interaction.Rel.trans hCompact hPreparation)
   intro targetDone sourceDone hDone

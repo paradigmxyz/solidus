@@ -34,12 +34,10 @@ namespace Object
 def planVerifiedStackObjectArtifactFromChildren? (object : Object)
     (linkerSymbols : List (Name × Word))
     (childArtifacts : List VerifiedStackObjectArtifact) :
-    Option ObjectArtifactPlan :=
-  object.planObjectArtifactFromChildImagesWith? linkerSymbols
+    Option (ObjectArtifactPlan × VerifiedStackCodeArtifact) :=
+  object.planObjectArtifactFromChildImagesArtifactWith? linkerSymbols
     (childArtifacts.map VerifiedStackObjectArtifact.image)
-    (fun context => do
-      let artifact ← object.compileVerifiedStackCodeArtifactIn? context
-      some artifact.bytes)
+    object.compileVerifiedStackCodeArtifactIn? (·.bytes)
 
 def compileVerifiedStackMarkerCodeArtifact? (object : Object)
     (plan : ObjectArtifactPlan)
@@ -55,8 +53,8 @@ def compileVerifiedStackMarkerCodeArtifact? (object : Object)
 
 def finishVerifiedStackObjectArtifact? (object : Object)
     (childArtifacts : List VerifiedStackObjectArtifact)
-    (plan : ObjectArtifactPlan) : Option VerifiedStackObjectArtifact := do
-  let codeArtifact ← object.compileVerifiedStackCodeArtifactIn? plan.context
+    (plan : ObjectArtifactPlan) (codeArtifact : VerifiedStackCodeArtifact) :
+    Option VerifiedStackObjectArtifact := do
   if codeArtifact.bytes.length == plan.codeBase then
     let markerArtifact ←
       object.compileVerifiedStackMarkerCodeArtifact? plan codeArtifact
@@ -95,12 +93,13 @@ def finishVerifiedStackObjectArtifact? (object : Object)
 theorem finishVerifiedStackObjectArtifact?_parts
     {object : Object} {plan : ObjectArtifactPlan}
     {childArtifacts : List VerifiedStackObjectArtifact}
+    {codeArtifact : VerifiedStackCodeArtifact}
     {artifact : VerifiedStackObjectArtifact}
     (hFinish :
-      object.finishVerifiedStackObjectArtifact? childArtifacts plan =
+      object.finishVerifiedStackObjectArtifact? childArtifacts plan
+          codeArtifact =
         some artifact) :
-    object.compileVerifiedStackCodeArtifactIn? plan.context =
-        some artifact.codeArtifact ∧
+    artifact.codeArtifact = codeArtifact ∧
       artifact.children = childArtifacts ∧
       artifact.computed.context = plan.context ∧
       artifact.computed.childImages = plan.childImages ∧
@@ -108,21 +107,18 @@ theorem finishVerifiedStackObjectArtifact?_parts
       artifact.computed.code = artifact.codeArtifact.bytes ∧
       artifact.image.bytes = artifact.codeArtifact.bytes ++ plan.payload := by
   unfold finishVerifiedStackObjectArtifact? at hFinish
-  cases hCode : object.compileVerifiedStackCodeArtifactIn? plan.context with
-  | none => simp [hCode] at hFinish
-  | some codeArtifact =>
-      cases hCodeLength : codeArtifact.bytes.length == plan.codeBase with
+  cases hCodeLength : codeArtifact.bytes.length == plan.codeBase with
       | false =>
           have hCodeNe : codeArtifact.bytes.length ≠ plan.codeBase := by
             simpa using hCodeLength
-          simp [hCode, hCodeNe] at hFinish
+          simp [hCodeNe] at hFinish
       | true =>
           have hCodeEq : codeArtifact.bytes.length = plan.codeBase := by
             simpa using hCodeLength
           cases hMarker :
               object.compileVerifiedStackMarkerCodeArtifact?
                 plan codeArtifact with
-          | none => simp [hCode, hCodeEq, hMarker] at hFinish
+          | none => simp [hCodeEq, hMarker] at hFinish
           | some markerArtifact =>
               cases hMarkerLength :
                   markerArtifact.bytes.length == plan.codeBase with
@@ -130,7 +126,7 @@ theorem finishVerifiedStackObjectArtifact?_parts
                   have hMarkerNe :
                       markerArtifact.bytes.length ≠ plan.codeBase := by
                     simpa using hMarkerLength
-                  simp [hCode, hCodeEq, hMarker, hMarkerNe] at hFinish
+                  simp [hCodeEq, hMarker, hMarkerNe] at hFinish
               | true =>
                   have hMarkerEq :
                       markerArtifact.bytes.length = plan.codeBase := by
@@ -140,14 +136,13 @@ theorem finishVerifiedStackObjectArtifact?_parts
                         object.data plan.childImages plan.codeBase
                           plan.items with
                   | none =>
-                      simp [hCode, hCodeEq, hMarker, hMarkerEq,
+                      simp [hCodeEq, hMarker, hMarkerEq,
                         hPayloadReferences] at hFinish
                   | some payloadReferences =>
-                      simp [hCode, hCodeEq, hMarker, hMarkerEq,
+                      simp [hCodeEq, hMarker, hMarkerEq,
                         hPayloadReferences] at hFinish
                       subst artifact
-                      refine ⟨?_, rfl, rfl, rfl, rfl, rfl, rfl⟩
-                      rfl
+                      exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 mutual
   def compileVerifiedStackObjectArtifactWithLinkerSymbols?
@@ -156,10 +151,11 @@ mutual
     let childArtifacts ←
       List.compileVerifiedStackObjectArtifactsWithLinkerSymbols?
         object.objects linkerSymbols
-    let plan ←
+    let planned ←
       object.planVerifiedStackObjectArtifactFromChildren?
         linkerSymbols childArtifacts
-    object.finishVerifiedStackObjectArtifact? childArtifacts plan
+    object.finishVerifiedStackObjectArtifact? childArtifacts
+      planned.1 planned.2
   termination_by sizeOf object
   decreasing_by
     simp_wf
@@ -192,13 +188,13 @@ theorem compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
     (hCompile :
       object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
           linkerSymbols = some artifact) :
-    ∃ childArtifacts plan,
+    ∃ childArtifacts plan codeArtifact,
       List.compileVerifiedStackObjectArtifactsWithLinkerSymbols?
           object.objects linkerSymbols = some childArtifacts ∧
       object.planVerifiedStackObjectArtifactFromChildren?
-          linkerSymbols childArtifacts = some plan ∧
-      object.finishVerifiedStackObjectArtifact? childArtifacts plan =
-        some artifact ∧
+          linkerSymbols childArtifacts = some (plan, codeArtifact) ∧
+      object.finishVerifiedStackObjectArtifact? childArtifacts plan
+          codeArtifact = some artifact ∧
       object.compileVerifiedStackCodeArtifactIn? plan.context =
         some artifact.codeArtifact ∧
       artifact.children = childArtifacts ∧
@@ -217,17 +213,28 @@ theorem compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
           object.planVerifiedStackObjectArtifactFromChildren?
             linkerSymbols childArtifacts with
       | none => simp [hChildren, hPlan] at hCompile
-      | some plan =>
+      | some planned =>
+          rcases planned with ⟨plan, codeArtifact⟩
           have hFinish :
               object.finishVerifiedStackObjectArtifact?
-                  childArtifacts plan = some artifact := by
+                  childArtifacts plan codeArtifact = some artifact := by
             simpa [hChildren, hPlan] using hCompile
           have hParts := finishVerifiedStackObjectArtifact?_parts hFinish
+          have hCodeArtifact :
+              object.compileVerifiedStackCodeArtifactIn? plan.context =
+                some codeArtifact :=
+            planObjectArtifactFromChildImagesArtifactWith?_compiled
+              object linkerSymbols
+              (childArtifacts.map VerifiedStackObjectArtifact.image)
+              object.compileVerifiedStackCodeArtifactIn? (·.bytes) hPlan
+          have hCode :
+              object.compileVerifiedStackCodeArtifactIn? plan.context =
+                some artifact.codeArtifact := by
+            simpa [hParts.1] using hCodeArtifact
           refine
-            ⟨childArtifacts, plan, rfl, hPlan, hFinish, hParts.1,
-              hParts.2.1, hParts.2.2.1, ?_, hParts.2.2.2.2.1,
-              hParts.2.2.2.2.2.2⟩
-          exact hParts.2.2.2.1
+            ⟨childArtifacts, plan, codeArtifact, rfl, hPlan, hFinish, hCode,
+              hParts.2.1, hParts.2.2.1, hParts.2.2.2.1,
+              hParts.2.2.2.2.1, hParts.2.2.2.2.2.2⟩
 
 theorem compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
     {object : Object} {linkerSymbols : List (Name × Word)}
@@ -235,14 +242,18 @@ theorem compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
     (hCompile :
       object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
           linkerSymbols = some artifact) :
-    Assembly.Bytecode.DecodingCorrect artifact.codeArtifact.compiled.target
+    Assembly.Compact.DecodingCorrect artifact.codeArtifact.compact.program
       (Assembly.Bytecode.ofList artifact.image.bytes) := by
-  obtain ⟨_children, plan, _hChildren, _hPlan, _hFinish, hCode,
+  obtain ⟨_children, plan, _codeArtifact, _hChildren, _hPlan, _hFinish, hCode,
       _hArtifactChildren, _hContext, _hChildImages, _hPayload, hImage⟩ :=
     compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts hCompile
   rw [hImage]
-  exact compileVerifiedStackCodeArtifactIn?_decodingCorrect
-    hCode plan.payload
+  obtain ⟨_hResolved, _hOrdered, _hLower, _hStack, _pinnedPushPcs,
+      _hPins, hCompact, hBytes⟩ :=
+    compileVerifiedStackCodeArtifactIn?_parts hCode
+  rw [hBytes]
+  exact Assembly.Compact.compile?_decodingCorrect_with_suffix
+    hCompact plan.payload
 
 mutual
   inductive VerifiedStackObjectArtifact.ValidFor
@@ -252,12 +263,13 @@ mutual
         {object : Object} {artifact : VerifiedStackObjectArtifact}
         {childArtifacts : List VerifiedStackObjectArtifact}
         {plan : ObjectArtifactPlan}
+        {codeArtifact : VerifiedStackCodeArtifact}
         (children : VerifiedStackObjectArtifact.ListValidFor linkerSymbols
           object.objects childArtifacts)
         (planned : object.planVerifiedStackObjectArtifactFromChildren?
-          linkerSymbols childArtifacts = some plan)
+          linkerSymbols childArtifacts = some (plan, codeArtifact))
         (finished : object.finishVerifiedStackObjectArtifact?
-          childArtifacts plan = some artifact) :
+          childArtifacts plan codeArtifact = some artifact) :
         VerifiedStackObjectArtifact.ValidFor linkerSymbols object artifact
 
   inductive VerifiedStackObjectArtifact.ListValidFor
@@ -293,10 +305,11 @@ mutual
         cases hPlan : object.planVerifiedStackObjectArtifactFromChildren?
             linkerSymbols childArtifacts with
         | none => simp [hChildren, hPlan] at hCompile
-        | some plan =>
+        | some planned =>
+            rcases planned with ⟨plan, codeArtifact⟩
             have hFinish :
                 object.finishVerifiedStackObjectArtifact?
-                    childArtifacts plan = some artifact := by
+                    childArtifacts plan codeArtifact = some artifact := by
               simpa [hChildren, hPlan] using hCompile
             exact .intro
               (List.compileVerifiedStackObjectArtifactsWithLinkerSymbols?_valid
