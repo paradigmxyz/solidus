@@ -240,6 +240,21 @@ theorem ReturnSite.mem_of_findTarget?_eq_some
         rcases ih hFind with ⟨found, hMem, hTarget⟩
         exact ⟨found, by simp [hMem], hTarget⟩
 
+theorem ReturnSite.mem_token_of_findTarget?_eq_some
+    {token : Word} {sites : List ReturnSite} {target : Label}
+    (hFind : ReturnSite.findTarget? token sites = some target) :
+    ∃ site ∈ sites, site.token = token ∧ site.target = target := by
+  induction sites with
+  | nil =>
+      simp [ReturnSite.findTarget?] at hFind
+  | cons site rest ih =>
+      by_cases hToken : site.token = token
+      · simp [ReturnSite.findTarget?, hToken] at hFind
+        exact ⟨site, by simp, hToken, hFind⟩
+      · simp [ReturnSite.findTarget?, hToken] at hFind
+        rcases ih hFind with ⟨found, hMem, hFoundToken, hTarget⟩
+        exact ⟨found, by simp [hMem], hFoundToken, hTarget⟩
+
 theorem findBlock?_exists_of_targetsHaveShape?_eq_true
     {program : Program} {shape : Shape} {sites : List ReturnSite}
     (hShapes : Terminator.targetsHaveShape? program shape sites = true)

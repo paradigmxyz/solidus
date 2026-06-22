@@ -11,8 +11,8 @@ def type? (instr : Instr) (shape : Shape) : Option Shape :=
   match instr with
   | .push value =>
       some { shape with slots := .literal value :: shape.slots }
-  | .returnToken _value =>
-      some { shape with slots := .returnToken :: shape.slots }
+  | .returnToken value =>
+      some { shape with slots := .returnPC value.toNat :: shape.slots }
   | .prim op =>
       match op.stackArity? with
       | none => none
@@ -187,6 +187,7 @@ namespace Shape
 def returnTokenDepthList? : List Slot → Option Nat
   | [] => none
   | .returnToken :: _ => some 0
+  | .returnPC _ :: _ => some 0
   | _ :: rest => returnTokenDepthList? rest |>.map (· + 1)
 
 def returnTokenDepth? (shape : Shape) : Option Nat :=

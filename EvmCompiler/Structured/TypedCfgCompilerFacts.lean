@@ -61,7 +61,7 @@ theorem sourceLength_eq_of_returnTokenDepth?_eq_some
       simp [TypedCfg.Shape.returnTokenDepthList?] at hDepth
   | cons slot rest ih =>
       cases slot
-      case returnToken =>
+      case returnToken | returnPC =>
         simp [TypedCfg.Shape.returnTokenDepthList?] at hDepth
         subst depth
         simp
@@ -85,7 +85,7 @@ theorem returnTokenDepth?_lt_length
       simp [TypedCfg.Shape.returnTokenDepthList?] at hDepth
   | cons slot rest ih =>
       cases slot
-      case returnToken =>
+      case returnToken | returnPC =>
         simp [TypedCfg.Shape.returnTokenDepthList?] at hDepth
         subst depth
         simp
@@ -207,7 +207,7 @@ theorem returnTokenDepth?_tail_lift
         TypedCfg.Shape.returnTokenDepthList?] at hSource
   | cons slot rest =>
       cases slot
-      case returnToken =>
+      case returnToken | returnPC =>
         simp [TypedCfgCompiler.Shape.sourceLength,
           TypedCfgCompiler.Shape.sourceView, TypedCfg.Shape.length,
           TypedCfg.Shape.returnTokenDepth?,
@@ -229,7 +229,7 @@ theorem returnTokenDepth?_some_of_tail_some
         TypedCfg.Shape.returnTokenDepthList?] at hTail
   | cons slot rest =>
       cases slot
-      case returnToken =>
+      case returnToken | returnPC =>
         exact
           ⟨0, by
             simp [TypedCfg.Shape.returnTokenDepth?,
@@ -320,7 +320,7 @@ theorem returnTokenDepth?_tail_some_of_some
         TypedCfg.Shape.returnTokenDepthList?] at hDepth
   | cons slot rest =>
       cases slot
-      case returnToken =>
+      case returnToken | returnPC =>
         simp [TypedCfgCompiler.Shape.sourceLength,
           TypedCfgCompiler.Shape.sourceView, TypedCfg.Shape.length,
           TypedCfg.Shape.returnTokenDepth?,

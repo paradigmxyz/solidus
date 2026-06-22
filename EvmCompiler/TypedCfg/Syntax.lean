@@ -94,6 +94,10 @@ def hasPrefix (prefixShape shape : Shape) : Prop :=
 def slotsAgree : List Slot → List Slot → Bool
   | [], _ => true
   | _, [] => true
+  | .returnPC _ :: leftRest, .returnToken :: rightRest =>
+      slotsAgree leftRest rightRest
+  | .returnToken :: leftRest, .returnPC _ :: rightRest =>
+      slotsAgree leftRest rightRest
   | left :: leftRest, right :: rightRest =>
       (decide (left = .word) || decide (right = .word) ||
         decide (left = right)) &&

@@ -145,6 +145,7 @@ import EvmCompiler.Structured.ObserverTerminalAdequacy
 import EvmCompiler.Structured.ObserverGeneratedAdequacy
 import EvmCompiler.Structured.ObserverProgramAdequacy
 import EvmCompiler.TypedCfg.Preservation
+import EvmCompiler.TypedCfg.ReturnAddressPreservation
 import EvmCompiler.TypedCfg.ObserverPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.Yul.EffectSemantics
@@ -3475,3 +3476,6 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackBlockPreservation.leaveControlList_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.terminalControlList_of_compilers
 #print axioms EvmCompiler.Functions.StackBlockPreservation.terminalArgsControlList_of_compilers
+#print axioms EvmCompiler.TypedCfg.ReturnAddressRelation.tokensUnique?_eq_true_iff
+#print axioms EvmCompiler.TypedCfg.ReturnAddressPreservation.returnToken_openStepAt
+#print axioms EvmCompiler.TypedCfg.ReturnAddressPreservation.returnDispatch_eventually

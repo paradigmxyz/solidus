@@ -283,6 +283,12 @@ premise or hidden memory access in the current checked artifact path.
   relates the logical Assembly label PC to its compact physical PC. Prove this
   relation through only shuffles, calls, and returns; reject arithmetic or
   effectful consumption of code pointers.
+
+  The checked first slice now covers token uniqueness, compiler-owned symbolic
+  label pushes, typed dormant caller suffixes, return-PC stack lifting, dynamic
+  return dispatch, and restoration of the post-return stack relation. The
+  remaining part of this item is transport through complete call bodies and
+  Compact's physical relocation map.
 - [ ] Construct the return-PC annotation and relocation map inside the checked
   TypedCfg-to-Assembly/Compact artifact, select dynamic returns only after its
   adjacent forward and exact observer-replay theorems are checked, then
