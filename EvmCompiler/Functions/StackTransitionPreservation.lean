@@ -12,6 +12,134 @@ namespace StackTransitionPreservation
 open AllocationLayout
 open StackRelation
 
+theorem Discard.openRun
+    {ctx : Locals.Ctx} {discard : Discard}
+    {discarded : Locals.Layout} {code : Structured.Code}
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hApply : discard.apply? ctx.layout = some discarded)
+    (hCode :
+      ctx.discardNameStackOnly? discard.name = some (code, discarded))
+    (hRel : StateRel ctx.layout suffix returns source target) :
+    ∃ final,
+      Structured.InteractionSemantics.Code.openRun code target =
+          .done (.ok final) ∧
+        StateRel discarded suffix returns source final := by
+  unfold Discard.apply? at hApply
+  cases hDepth : Locals.Layout.lookupDepth? discard.name ctx.layout with
+  | none => simp [hDepth] at hApply
+  | some depth =>
+      by_cases hAllowed : depth = discard.depth ∧ depth ≤ 17
+      · simp [hDepth, hAllowed] at hApply
+        have hDiscarded := hApply.2
+        subst discarded
+        have hMem : discard.name ∈ ctx.layout :=
+          Locals.Layout.mem_of_lookupDepth?_eq_some hDepth
+        obtain ⟨index, hDepthIndex⟩ :=
+          Locals.Layout.exists_lookupDepth?_eq_some_of_mem hMem
+        have hDepthEq : depth = index + 1 := by
+          rw [hDepth] at hDepthIndex
+          exact Option.some.inj hDepthIndex
+        have hIndex : discard.depth - 1 = index := by omega
+        have hAt : ctx.layout[index]? = some discard.name :=
+          Locals.Layout.getElem?_eq_some_of_lookupDepth?_eq_some hDepthIndex
+        have hValueAt := values_getElem?_eq_some
+          (source := source) hAt
+        have hIndexBound : index < (values source ctx.layout).length :=
+          (List.getElem?_eq_some_iff.mp hValueAt).1
+        have hTargetAt :
+            target.evm.stack[index]? =
+              some ((source.vars discard.name).getD
+                (EvmYul.UInt256.ofNat 0)) := by
+          rw [hRel.stack, List.getElem?_append_left hIndexBound]
+          exact hValueAt
+        obtain ⟨final, hRun, hDiscardedLayout, hFinalStack,
+            hShared, hReturns⟩ :=
+          Locals.InteractionCleanupPreservation.openRun_discardNameStackOnly?_exact
+            hDepthIndex hCode hTargetAt
+        refine ⟨final, hRun, ?_⟩
+        rw [hIndex]
+        constructor
+        · exact hShared.trans hRel.shared
+        · exact hReturns.trans hRel.returns
+        · rw [hFinalStack, hRel.stack,
+            Locals.StackList.swapPopAt_append_of_lt
+              index (values source ctx.layout) suffix hIndexBound,
+            ← values_discardAt]
+        · intro candidate hCandidate
+          apply hRel.defined
+          exact Locals.StackList.mem_of_mem_swapPopAt hCandidate
+      · simp [hDepth, hAllowed] at hApply
+
+theorem Discard.openRunWithBind
+    {ctx : Locals.Ctx} {discard : Discard}
+    {discarded : Locals.Layout} {code : Structured.Code}
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hApply : discard.apply? ctx.layout = some discarded)
+    (hCode :
+      ctx.discardNameStackOnly? discard.name = some (code, discarded))
+    (hRel : StateRel ctx.layout suffix returns source target) :
+    ∃ final,
+      Structured.InteractionSemantics.Code.openRun
+          (code ++ Locals.bindLocals 0 discarded) target =
+        .done (.ok final) ∧
+      StateRel discarded suffix returns source final := by
+  obtain ⟨final, hRun, hFinal⟩ := Discard.openRun hApply hCode hRel
+  refine ⟨final, ?_, hFinal⟩
+  rw [Structured.InteractionSemantics.Code.openRun_append, hRun,
+    Simulation.Interaction.bind_done_ok]
+  simpa [Locals.bindLocals] using
+    Locals.InteractionPreservation.Code.openRun_bindLocals 0 discarded final
+
+inductive DiscardCodes :
+    Locals.Ctx → List Discard → List Structured.Code → Locals.Ctx → Prop where
+  | nil (ctx : Locals.Ctx) : DiscardCodes ctx [] [] ctx
+  | cons
+      {ctx discardedCtx finalCtx : Locals.Ctx}
+      {discarded : Locals.Layout}
+      {discard : Discard} {rest : List Discard}
+      {raw head : Structured.Code} {tail : List Structured.Code}
+      (apply : discard.apply? ctx.layout = some discarded)
+      (code :
+        ctx.discardNameStackOnly? discard.name = some (raw, discarded))
+      (discardedCtxEq : discardedCtx = ctx.withLayout discarded)
+      (headEq : head = raw ++ Locals.bindLocals 0 discarded)
+      (tailCodes : DiscardCodes discardedCtx rest tail finalCtx) :
+      DiscardCodes ctx (discard :: rest) (head :: tail) finalCtx
+
+namespace DiscardCodes
+
+theorem openRun
+    {ctx finalCtx : Locals.Ctx} {discards : List Discard}
+    {codes : List Structured.Code}
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hCodes : DiscardCodes ctx discards codes finalCtx)
+    (hRel : StateRel ctx.layout suffix returns source target) :
+    ∃ final,
+      Structured.InteractionSemantics.Code.openRun codes.flatten target =
+          .done (.ok final) ∧
+        StateRel finalCtx.layout suffix returns source final := by
+  induction hCodes generalizing target with
+  | nil ctx => exact ⟨target, rfl, hRel⟩
+  | @cons ctx discardedCtx finalCtx discarded discard rest raw head tail
+      hApply hCode hDiscardedCtx hHead hTail ih =>
+      obtain ⟨middle, hHeadRun, hMiddleRel⟩ :=
+        Discard.openRunWithBind hApply hCode hRel
+      subst discardedCtx
+      obtain ⟨final, hTailRun, hFinalRel⟩ := ih hMiddleRel
+      refine ⟨final, ?_, hFinalRel⟩
+      rw [hHead]
+      change
+        Structured.InteractionSemantics.Code.openRun
+            ((raw ++ Locals.bindLocals 0 discarded) ++ tail.flatten) target =
+          .done (.ok final)
+      rw [Structured.InteractionSemantics.Code.openRun_append, hHeadRun]
+      exact hTailRun
+
+end DiscardCodes
+
 theorem Promotion.openRun
     {promotion : Promotion} {layout promoted : Locals.Layout}
     {code : Structured.Code} {suffix : List Word}

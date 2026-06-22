@@ -13,6 +13,166 @@ namespace StackTransitionCompilation
 open AllocationLayout
 open StackTransitionPreservation
 
+theorem Discard.compileCode
+    {ctx : Locals.Ctx} {discard : Discard}
+    {discarded : Locals.Layout}
+    (hApply : discard.apply? ctx.layout = some discarded) :
+    ∃ raw head,
+      ctx.discardNameStackOnly? discard.name = some (raw, discarded) ∧
+      head = raw ++ Locals.bindLocals 0 discarded ∧
+      Locals.Stmt.compile ctx (.discardName discard.name) =
+        some (Locals.codeStmt head, ctx.withLayout discarded) := by
+  rcases discard with ⟨name, discardDepth⟩
+  unfold Discard.apply? at hApply
+  cases hDepth : Locals.Layout.lookupDepth? name ctx.layout with
+  | none => simp [hDepth] at hApply
+  | some depth =>
+      by_cases hAllowed : depth = discardDepth ∧ depth ≤ 17
+      · simp [hDepth, hAllowed] at hApply
+        have hDiscarded := hApply.2
+        subst discarded
+        have hMem : name ∈ ctx.layout :=
+          Locals.Layout.mem_of_lookupDepth?_eq_some hDepth
+        obtain ⟨index, hDepthIndex⟩ :=
+          Locals.Layout.exists_lookupDepth?_eq_some_of_mem hMem
+        have hDepthEq : depth = index + 1 := by
+          rw [hDepth] at hDepthIndex
+          exact Option.some.inj hDepthIndex
+        have hDiscardDepth : discardDepth = index + 1 := by omega
+        subst discardDepth
+        cases index with
+        | zero =>
+            have hDiscard :
+                ctx.discardNameStackOnly? name =
+                  some
+                    ([Structured.BasicInstr.op .pop],
+                      Locals.Layout.discardAt 0 ctx.layout) := by
+              unfold Locals.Ctx.discardNameStackOnly?
+              simp [hDepthIndex]
+            refine
+              ⟨[Structured.BasicInstr.op .pop],
+                [Structured.BasicInstr.op .pop] ++
+                  Locals.bindLocals 0
+                    (Locals.Layout.discardAt 0 ctx.layout),
+                hDiscard, rfl, ?_⟩
+            simp [Locals.Stmt.compile, hDiscard]
+        | succ index =>
+            have hBound : index + 1 ≤ 16 := by omega
+            have hBound' : index ≤ 15 := by omega
+            obtain ⟨op, hOp⟩ :=
+              Locals.StackOp.exists_swap?_of_pos_of_le
+                (depth := index + 1) (by omega) hBound
+            have hDiscard :
+                ctx.discardNameStackOnly? name =
+                  some
+                    ([Structured.BasicInstr.op op,
+                        Structured.BasicInstr.op .pop],
+                      Locals.Layout.discardAt (index + 1) ctx.layout) := by
+              unfold Locals.Ctx.discardNameStackOnly?
+              simp [hDepthIndex, hBound, hBound', hOp]
+            refine
+              ⟨[Structured.BasicInstr.op op,
+                  Structured.BasicInstr.op .pop],
+                [Structured.BasicInstr.op op,
+                    Structured.BasicInstr.op .pop] ++
+                  Locals.bindLocals 0
+                    (Locals.Layout.discardAt (index + 1) ctx.layout),
+                hDiscard, rfl, ?_⟩
+            simp [Locals.Stmt.compile, hDiscard]
+      · simp [hDepth, hAllowed] at hApply
+
+theorem compileDiscards
+    {ctx : Locals.Ctx} {discards : List Discard}
+    {finalLayout : Locals.Layout}
+    (hRun : runDiscards ctx.layout discards = some finalLayout) :
+    ∃ codes finalCtx,
+      DiscardCodes ctx discards codes finalCtx ∧
+      Locals.Block.compileOpen ctx
+          { stmts := discards.map fun discard =>
+              Locals.Stmt.discardName discard.name } =
+        some (codes.map Expressions.Stmt.code, finalCtx) ∧
+      finalCtx = ctx.withLayout finalLayout := by
+  induction discards generalizing ctx with
+  | nil =>
+      simp [runDiscards] at hRun
+      subst finalLayout
+      refine ⟨[], ctx, .nil ctx, ?_, ?_⟩
+      · simp [Locals.Block.compileOpen]
+      · cases ctx
+        rfl
+  | cons discard rest ih =>
+      unfold runDiscards at hRun
+      cases hApply : discard.apply? ctx.layout with
+      | none => simp [hApply] at hRun
+      | some discarded =>
+          have hTailRun :
+              runDiscards discarded rest = some finalLayout := by
+            simpa [hApply] using hRun
+          obtain ⟨raw, head, hCode, hHeadEq, hHeadCompile⟩ :=
+            Discard.compileCode hApply
+          obtain ⟨tailCodes, tailCtx, hTailCodes,
+              hTailCompile, hTailCtx⟩ :=
+            ih (ctx := ctx.withLayout discarded) hTailRun
+          refine
+            ⟨head :: tailCodes, tailCtx,
+              .cons hApply hCode rfl hHeadEq hTailCodes, ?_, ?_⟩
+          · simp [Locals.Block.compileOpen, hHeadCompile, hTailCompile,
+              Locals.codeStmt]
+          · rw [hTailCtx]
+            cases ctx
+            rfl
+
+structure DiscardArtifact (ctx : Locals.Ctx)
+    (schedule : DiscardSchedule) where
+  statementCodes : List Structured.Code
+  codes :
+    DiscardCodes ctx schedule.discards statementCodes
+      (ctx.withLayout schedule.target)
+  compileEq :
+    Locals.Block.compileOpen ctx { stmts := schedule.statements } =
+      some
+        (statementCodes.map Expressions.Stmt.code,
+          ctx.withLayout schedule.target)
+
+theorem DiscardSchedule.compileArtifact
+    {ctx : Locals.Ctx} (schedule : DiscardSchedule)
+    (hSource : ctx.layout = schedule.source) :
+    Nonempty (DiscardArtifact ctx schedule) := by
+  have hRun :
+      runDiscards ctx.layout schedule.discards = some schedule.target := by
+    simpa [hSource] using schedule.valid
+  obtain ⟨codes, finalCtx, hCodes, hCompile, hFinalCtx⟩ :=
+    compileDiscards hRun
+  subst finalCtx
+  exact
+    ⟨{ statementCodes := codes
+       codes := hCodes
+       compileEq := by
+         simpa [DiscardSchedule.statements] using hCompile }⟩
+
+theorem DiscardSchedule.compiledOpenRun
+    {ctx : Locals.Ctx} (schedule : DiscardSchedule)
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hSource : ctx.layout = schedule.source)
+    (hRel :
+      StackRelation.StateRel ctx.layout suffix returns source target) :
+    ∃ artifact : DiscardArtifact ctx schedule,
+      ∃ final,
+        Locals.Block.compileOpen ctx { stmts := schedule.statements } =
+          some
+            (artifact.statementCodes.map Expressions.Stmt.code,
+              ctx.withLayout schedule.target) ∧
+        Structured.InteractionSemantics.Code.openRun
+            artifact.statementCodes.flatten target =
+          .done (.ok final) ∧
+        StackRelation.StateRel schedule.target suffix returns source final := by
+  obtain ⟨artifact⟩ := DiscardSchedule.compileArtifact schedule hSource
+  obtain ⟨final, hRun, hFinalRel⟩ :=
+    StackTransitionPreservation.DiscardCodes.openRun artifact.codes hRel
+  exact ⟨artifact, final, artifact.compileEq, hRun, by simpa using hFinalRel⟩
+
 theorem Promotion.compileCode
     {ctx : Locals.Ctx} {promotion : Promotion}
     {promoted : Locals.Layout}

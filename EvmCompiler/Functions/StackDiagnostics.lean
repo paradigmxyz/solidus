@@ -77,6 +77,91 @@ def block (source : Block) (facts : AllocationLivenessFacts.Region) : Metrics :=
 
 end Metrics
 
+structure DiscardMetrics where
+  transitions : Nat := 0
+  successful : Nat := 0
+  failures : Nat := 0
+  oldSwaps : Nat := 0
+  directSwaps : Nat := 0
+  restoreFailures : Nat := 0
+  restoreSwaps : Nat := 0
+  discards : Nat := 0
+  deriving Repr
+
+namespace DiscardMetrics
+
+def combine (left right : DiscardMetrics) : DiscardMetrics :=
+  { transitions := left.transitions + right.transitions
+    successful := left.successful + right.successful
+    failures := left.failures + right.failures
+    oldSwaps := left.oldSwaps + right.oldSwaps
+    directSwaps := left.directSwaps + right.directSwaps
+    restoreFailures := left.restoreFailures + right.restoreFailures
+    restoreSwaps := left.restoreSwaps + right.restoreSwaps
+    discards := left.discards + right.discards }
+
+def transition (transition : AllocationLayout.Transition) : DiscardMetrics :=
+  let oldSwaps :=
+    transition.schedule.promotions.foldl
+      (fun total promotion => total + (promotion.depth - 1)) 0
+  match AllocationLayout.scheduleDiscards?
+      transition.source transition.live with
+  | none => { transitions := 1, failures := 1, oldSwaps := oldSwaps }
+  | some schedule =>
+      let directSwaps :=
+        schedule.discards.foldl
+          (fun total discard =>
+            total + if discard.depth = 1 then 0 else 1) 0
+      match AllocationLayout.Ordering.build?
+          schedule.target transition.schedule.target with
+      | none =>
+          { transitions := 1
+            successful := 1
+            oldSwaps := oldSwaps
+            directSwaps := directSwaps
+            restoreFailures := 1
+            discards := schedule.discards.length }
+      | some restore =>
+          let restoreSwaps :=
+            restore.promotions.foldl
+              (fun total promotion => total + (promotion.depth - 1)) 0
+          { transitions := 1
+            successful := 1
+            oldSwaps := oldSwaps
+            directSwaps := directSwaps
+            restoreSwaps := restoreSwaps
+            discards := schedule.discards.length }
+
+def join (join : AllocationLayout.Join) : DiscardMetrics :=
+  transition join.retain
+
+mutual
+  def regionFuel : Nat → StackSchedule.Region → DiscardMetrics
+    | 0, _ => {}
+    | fuel + 1, schedule =>
+        combine (transition schedule.entry)
+          (combine (pointsFuel fuel schedule.points)
+            (schedule.exit?.map join |>.getD {}))
+
+  def pointsFuel : Nat → List StackSchedule.Point → DiscardMetrics
+    | 0, _ => {}
+    | _, [] => {}
+    | fuel + 1, point :: rest =>
+        let here :=
+          combine (point.retain?.map transition |>.getD {})
+            (combine (point.exit?.map join |>.getD {})
+              (regionsFuel fuel point.regions))
+        combine here (pointsFuel fuel rest)
+
+  def regionsFuel : Nat → List StackSchedule.Region → DiscardMetrics
+    | 0, _ => {}
+    | _, [] => {}
+    | fuel + 1, head :: rest =>
+        combine (regionFuel fuel head) (regionsFuel fuel rest)
+end
+
+end DiscardMetrics
+
 structure Failure where
   path : String
   phase : String
@@ -746,6 +831,7 @@ structure UnitReport where
   firstFailure? : Option Failure := none
   nextUseOk : Bool := false
   nextUseFailure? : Option Failure := none
+  discardMetrics : DiscardMetrics := {}
   deriving Repr
 
 def functionReport (functions : List FunDef) (fn : FunDef) : UnitReport :=
@@ -776,6 +862,9 @@ def functionReport (functions : List FunDef) (fn : FunDef) : UnitReport :=
           let loweringOk := (StackLowering.lowerFunction? functions fn).isSome
           { name := path, metrics, livenessOk := true, scheduleOk := true
             accessFailures, loweringOk
+            discardMetrics :=
+              DiscardMetrics.regionFuel
+                (AllocationLiveness.analysisFuel fn.body) schedule
             nextUseOk := nextUse.isOk
             nextUseFailure? := match nextUse with | .error failure => some failure | _ => none
             firstFailure? :=
@@ -813,6 +902,9 @@ def bodyReport (program : Program) : UnitReport :=
             (StackLowering.lowerBlock? ctx demand ∅ [] program.body).isSome
           { name := path, metrics, livenessOk := true, scheduleOk := true
             accessFailures, loweringOk
+            discardMetrics :=
+              DiscardMetrics.regionFuel
+                (AllocationLiveness.analysisFuel program.body) schedule
             nextUseOk := nextUse.isOk
             nextUseFailure? := match nextUse with | .error failure => some failure | _ => none
             firstFailure? :=
@@ -836,6 +928,7 @@ structure Summary where
   nextUseOk : Nat := 0
   accessFailures : Nat := 0
   metrics : Metrics := {}
+  discardMetrics : DiscardMetrics := {}
   deriving Repr
 
 def Summary.add (summary : Summary) (report : UnitReport) : Summary :=
@@ -845,7 +938,9 @@ def Summary.add (summary : Summary) (report : UnitReport) : Summary :=
     loweringOk := summary.loweringOk + if report.loweringOk then 1 else 0
     nextUseOk := summary.nextUseOk + if report.nextUseOk then 1 else 0
     accessFailures := summary.accessFailures + report.accessFailures
-    metrics := Metrics.combine summary.metrics report.metrics }
+    metrics := Metrics.combine summary.metrics report.metrics
+    discardMetrics :=
+      DiscardMetrics.combine summary.discardMetrics report.discardMetrics }
 
 def summarize (reports : List UnitReport) : Summary :=
   reports.foldl Summary.add {}

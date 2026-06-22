@@ -2966,6 +2966,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLayout.scheduleRetain?_sound
 #check EvmCompiler.Functions.AllocationLayout.Transition.build?_sound
 #check EvmCompiler.Functions.AllocationLayout.Transition.target_nodup
+#check EvmCompiler.Functions.AllocationLayout.scheduleDiscards?_sound
 #check EvmCompiler.Functions.AllocationLayout.Ordering.build?
 #check EvmCompiler.Functions.AllocationLayout.Ordering.valid
 #check EvmCompiler.Functions.AllocationLayout.Ordering.target_perm
@@ -3197,12 +3198,17 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackBlockPreservation.terminalList_of_compilers
 #check EvmCompiler.Functions.StackBlockPreservation.terminalArgsList_of_compilers
 #check EvmCompiler.Functions.StackTransitionPreservation.Promotion.openRun
+#check EvmCompiler.Functions.StackTransitionPreservation.Discard.openRun
+#check EvmCompiler.Functions.StackTransitionPreservation.DiscardCodes.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.Cleanup.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.PromotionCodes.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.PromotionCodes.code_length
 #check EvmCompiler.Functions.StackTransitionPreservation.Schedule.openRun
 #check EvmCompiler.Functions.StackTransitionPreservation.Ordering.openRun
 #check EvmCompiler.Functions.StackTransitionCompilation.compilePromotions
+#check EvmCompiler.Functions.StackTransitionCompilation.compileDiscards
+#check EvmCompiler.Functions.StackTransitionCompilation.DiscardSchedule.compileArtifact
+#check EvmCompiler.Functions.StackTransitionCompilation.DiscardSchedule.compiledOpenRun
 #check EvmCompiler.Functions.StackTransitionCompilation.Transition.compileArtifact
 #check EvmCompiler.Functions.StackTransitionCompilation.Transition.compiledOpenRun
 #check EvmCompiler.Functions.StackTransitionCompilation.Ordering.compiledOpenRun
@@ -3358,6 +3364,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackCallPreservation.Function.openRunBody_attached_of_optionalReturn_of_bodyRun
 
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.Join.compiledOpenRun
+#print axioms EvmCompiler.Functions.StackTransitionCompilation.DiscardSchedule.compiledOpenRun
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.OrderingArtifact.thenBlock
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.OrderingArtifact.thenBlockForward
 #print axioms EvmCompiler.Locals.InteractionCleanupPreservation.openRun_discardNameStackOnly?_top

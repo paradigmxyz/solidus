@@ -125,6 +125,129 @@ def retained (layout : Locals.Layout) (live : LiveSet) : Locals.Layout :=
 def dead (layout : Locals.Layout) (live : LiveSet) : List Name :=
   layout.filter fun name => decide (name ∉ live)
 
+structure Discard where
+  name : Name
+  depth : Nat
+  deriving DecidableEq, Repr
+
+def Discard.apply? (layout : Locals.Layout)
+    (discard : Discard) : Option Locals.Layout := do
+  let sourceDepth ← Locals.Layout.lookupDepth? discard.name layout
+  if sourceDepth = discard.depth ∧ sourceDepth ≤ 17 then
+    some (Locals.Layout.discardAt (discard.depth - 1) layout)
+  else
+    none
+
+def runDiscards : Locals.Layout → List Discard → Option Locals.Layout
+  | layout, [] => some layout
+  | layout, discard :: rest => do
+      let discarded ← discard.apply? layout
+      runDiscards discarded rest
+
+def buildDiscards : Locals.Layout → List Name →
+    Option (List Discard × Locals.Layout)
+  | layout, [] => some ([], layout)
+  | layout, name :: rest => do
+      let sourceDepth ← Locals.Layout.lookupDepth? name layout
+      if sourceDepth ≤ 17 then
+        let discarded := Locals.Layout.discardAt (sourceDepth - 1) layout
+        let (tail, final) ← buildDiscards discarded rest
+        some ({ name, depth := sourceDepth } :: tail, final)
+      else
+        none
+
+theorem buildDiscards_run
+    {layout : Locals.Layout} {names : List Name}
+    {discards : List Discard} {final : Locals.Layout}
+    (hBuild : buildDiscards layout names = some (discards, final)) :
+    runDiscards layout discards = some final := by
+  induction names generalizing layout discards final with
+  | nil =>
+      simp [buildDiscards] at hBuild
+      rcases hBuild with ⟨rfl, rfl⟩
+      rfl
+  | cons name rest ih =>
+      unfold buildDiscards at hBuild
+      cases hDepth : Locals.Layout.lookupDepth? name layout with
+      | none => simp [hDepth] at hBuild
+      | some depth =>
+          by_cases hAccessible : depth ≤ 17
+          · simp [hDepth, hAccessible] at hBuild
+            cases hTail :
+                buildDiscards
+                  (Locals.Layout.discardAt (depth - 1) layout) rest with
+            | none => simp [hTail] at hBuild
+            | some result =>
+                rcases result with ⟨tail, tailFinal⟩
+                rw [hTail] at hBuild
+                have hPair := Option.some.inj hBuild
+                injection hPair with hDiscards hFinal
+                subst discards
+                subst final
+                have hApply :
+                    Discard.apply? layout { name := name, depth := depth } =
+                      some (Locals.Layout.discardAt (depth - 1) layout) := by
+                  simp [Discard.apply?, hDepth, hAccessible]
+                rw [runDiscards, hApply]
+                exact ih hTail
+          · simp [hDepth, hAccessible] at hBuild
+
+structure DiscardSchedule where
+  source : Locals.Layout
+  live : LiveSet
+  discards : List Discard
+  target : Locals.Layout
+  valid : runDiscards source discards = some target
+  targetSet : target.toFinset = source.toFinset ∩ live
+  targetNodup : target.Nodup
+
+def DiscardSchedule.statements (schedule : DiscardSchedule) :
+    List Locals.Stmt :=
+  schedule.discards.map fun discard => .discardName discard.name
+
+def scheduleDiscards? (layout : Locals.Layout)
+    (live : LiveSet) : Option DiscardSchedule :=
+  match hBuild : buildDiscards layout (dead layout live) with
+  | none => none
+  | some (discards, target) =>
+      if hSet : target.toFinset = layout.toFinset ∩ live then
+        if hNodup : target.Nodup then
+          some
+            { source := layout
+              live
+              discards
+              target
+              valid := buildDiscards_run hBuild
+              targetSet := hSet
+              targetNodup := hNodup }
+        else
+          none
+      else
+        none
+
+theorem scheduleDiscards?_sound
+    {layout : Locals.Layout} {live : LiveSet}
+    {schedule : DiscardSchedule}
+    (hSchedule : scheduleDiscards? layout live = some schedule) :
+    schedule.source = layout ∧
+      schedule.live = live ∧
+      runDiscards layout schedule.discards = some schedule.target ∧
+      schedule.target.toFinset = layout.toFinset ∩ live ∧
+      schedule.target.Nodup := by
+  unfold scheduleDiscards? at hSchedule
+  split at hSchedule
+  · contradiction
+  · rename_i discards target hBuild
+    split at hSchedule
+    · rename_i hSet
+      split at hSchedule
+      · rename_i hNodup
+        simp only [Option.some.injEq] at hSchedule
+        subst schedule
+        exact ⟨rfl, rfl, buildDiscards_run hBuild, hSet, hNodup⟩
+      · contradiction
+    · contradiction
+
 def scheduleRetain? (layout : Locals.Layout)
     (live : LiveSet) : Option Schedule := do
   let (promotions, promoted) ← build layout (dead layout live)

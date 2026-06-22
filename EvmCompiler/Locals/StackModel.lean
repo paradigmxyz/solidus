@@ -33,6 +33,63 @@ theorem map_swapPopAt {α β : Type} (f : α → β)
                 simp [List.getElem?_map, hAt]
               simp [swapPopAt, hAt, hMapAt, List.map_set]
 
+theorem swapPopAt_append_of_lt {α : Type} (idx : Nat)
+    (items suffix : List α) (hIdx : idx < items.length) :
+    swapPopAt idx (items ++ suffix) = swapPopAt idx items ++ suffix := by
+  cases items with
+  | nil => simp at hIdx
+  | cons head rest =>
+      cases idx with
+      | zero => simp [swapPopAt]
+      | succ idx =>
+          have hRest : idx < rest.length := by simpa using hIdx
+          change
+            (match (rest ++ suffix)[idx]? with
+              | none => head :: (rest ++ suffix)
+              | some _ => (rest ++ suffix).set idx head) =
+            (match rest[idx]? with
+              | none => head :: rest
+              | some _ => rest.set idx head) ++ suffix
+          rw [List.getElem?_append_left hRest]
+          cases hAt : rest[idx]? with
+          | none => simp [hAt]
+          | some value =>
+              rw [List.set_append_left idx head hRest]
+
+theorem mem_set_cases {α : Type} {items : List α} {idx : Nat}
+    {new candidate : α} (hIdx : idx < items.length)
+    (hMem : candidate ∈ items.set idx new) :
+    candidate = new ∨ candidate ∈ items := by
+  rw [List.set_eq_take_cons_drop new hIdx] at hMem
+  rcases List.mem_append.mp hMem with hTake | hTail
+  · exact Or.inr (List.mem_of_mem_take hTake)
+  · rcases List.mem_cons.mp hTail with hNew | hDrop
+    · exact Or.inl hNew
+    · exact Or.inr (List.mem_of_mem_drop hDrop)
+
+theorem mem_of_mem_swapPopAt {α : Type} {idx : Nat}
+    {items : List α} {candidate : α}
+    (hMem : candidate ∈ swapPopAt idx items) : candidate ∈ items := by
+  cases items with
+  | nil => simp [swapPopAt] at hMem
+  | cons head rest =>
+      cases idx with
+      | zero =>
+          simp only [swapPopAt] at hMem
+          exact List.mem_cons_of_mem head hMem
+      | succ idx =>
+          simp only [swapPopAt] at hMem
+          cases hAt : rest[idx]? with
+          | none => simpa [hAt] using hMem
+          | some value =>
+              rw [hAt] at hMem
+              have hIdx : idx < rest.length :=
+                (List.getElem?_eq_some_iff.mp hAt).1
+              rcases mem_set_cases hIdx hMem with hHead | hRest
+              · subst candidate
+                exact List.mem_cons_self
+              · exact List.mem_cons_of_mem head hRest
+
 end StackList
 
 namespace Layout

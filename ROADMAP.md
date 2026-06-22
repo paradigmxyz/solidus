@@ -119,6 +119,12 @@ elimination are not prerequisites for Permit2 or Aave.
   internal-call return restoration remains in the call boundary.
 - [x] Generate a checked symbolic retain transition using only accessible
   promotions and one suffix cleanup; inaccessible shuffles are rejected.
+- [x] Define and prove compiler-owned direct dead-slot discards: each selected
+  slot uses `POP` or one `SWAP` plus `POP`, preserves the dynamic relation and
+  dormant suffix, and is computed without a public schedule premise.
+- [ ] Replace regular-point canonical retain transitions with direct discard
+  schedules and carry their arbitrary live permutations to the next point;
+  retain canonical restoration only at actual control joins and call returns.
 - [x] Prove the retain artifact executes to its recorded promoted layout,
   preserves the canonical relative order of survivors, and satisfies its
   target-suffix/depth checks. Expression `DUP` checks remain part of lowering.

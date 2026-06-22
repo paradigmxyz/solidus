@@ -72,6 +72,58 @@ theorem openRun_discardNameStackOnly?_buried
         InteractionPreservation.Code.openRun_swap_pop hOp hGet hStack
       exact ⟨final, hRun, rfl, hFinalStack, hShared, hReturns⟩
 
+/-- A compiler-owned direct discard realizes the symbolic `swapPopAt` model. -/
+theorem openRun_discardNameStackOnly?_exact
+    {ctx : Ctx} {name : Name} {code : Structured.Code}
+    {discarded : Layout} {index : Nat} {old : Word}
+    {target : Structured.RunState}
+    (hDepth : Layout.lookupDepth? name ctx.layout = some (index + 1))
+    (hCode : ctx.discardNameStackOnly? name = some (code, discarded))
+    (hAt : target.evm.stack[index]? = some old) :
+    ∃ final,
+      Structured.InteractionSemantics.Code.openRun code target =
+          .done (.ok final) ∧
+        discarded = Layout.discardAt index ctx.layout ∧
+        final.evm.stack = StackList.swapPopAt index target.evm.stack ∧
+        final.evm.toSharedState = target.evm.toSharedState ∧
+        final.returns = target.returns := by
+  cases index with
+  | zero =>
+      cases hStack : target.evm.stack with
+      | nil => simp [hStack] at hAt
+      | cons head rest =>
+          simp [hStack] at hAt
+          subst head
+          obtain ⟨final, hRun, hDiscarded, hFinalStack, hShared, hReturns⟩ :=
+            openRun_discardNameStackOnly?_top
+              (by simpa using hDepth) hCode hStack
+          exact
+            ⟨final, hRun, hDiscarded,
+              by simpa [StackList.swapPopAt, hStack] using hFinalStack,
+              hShared, hReturns⟩
+  | succ index =>
+      cases hStack : target.evm.stack with
+      | nil => simp [hStack] at hAt
+      | cons head rest =>
+          have hRestAt : rest[index]? = some old := by
+            simpa [hStack] using hAt
+          have hBound : index + 1 ≤ 16 := by
+            by_contra hNotBound
+            have hNotBound' : ¬ index + 1 ≤ 16 := by omega
+            unfold Ctx.discardNameStackOnly? at hCode
+            simp [hDepth, hNotBound'] at hCode
+            omega
+          obtain ⟨final, hRun, hDiscarded, hFinalStack, hShared, hReturns⟩ :=
+            openRun_discardNameStackOnly?_buried
+              (by simpa [Nat.succ_eq_add_one] using hDepth)
+              hBound hCode hRestAt hStack
+          exact
+            ⟨final, hRun, hDiscarded,
+              by
+                rw [hFinalStack]
+                simp [StackList.swapPopAt, hRestAt],
+              hShared, hReturns⟩
+
 /-- The generated restore sequence moves one buried value above its prefix. -/
 theorem openRun_swapRestoreUpTo?
     {depth : Nat} {code : Structured.Code}

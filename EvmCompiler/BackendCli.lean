@@ -693,6 +693,17 @@ def printStackDiagnostics
   IO.println ("peak_dormant=" ++ toString summary.metrics.peakDormant)
   IO.println
     ("inaccessible_depth_failures=" ++ toString summary.accessFailures)
+  IO.println
+    ("direct_discard_viability=" ++
+      "transitions=" ++ toString summary.discardMetrics.transitions ++
+      "\tsuccessful=" ++ toString summary.discardMetrics.successful ++
+      "\tfailures=" ++ toString summary.discardMetrics.failures ++
+      "\told_swaps=" ++ toString summary.discardMetrics.oldSwaps ++
+      "\tdirect_swaps=" ++ toString summary.discardMetrics.directSwaps ++
+      "\trestore_failures=" ++
+        toString summary.discardMetrics.restoreFailures ++
+      "\trestore_swaps=" ++ toString summary.discardMetrics.restoreSwaps ++
+      "\tdiscards=" ++ toString summary.discardMetrics.discards)
   match Functions.StackDiagnostics.firstFailure? reports with
   | none => IO.println "first_failure=none"
   | some (unitName, failure) =>
