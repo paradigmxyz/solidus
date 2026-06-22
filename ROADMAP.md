@@ -315,6 +315,10 @@ premise or hidden memory access in the current checked artifact path.
   schedules 770/770 units, compacts 639,081 logical instructions to 498,004
   runtime bytes, and its 500,624-byte creation artifact completes in about 26
   seconds. Output size remains diagnostic rather than a deployability gate.
+- [x] Add pinned protocol-diversity gates for full Morpho Blue, Safe
+  `CREATE`/`CREATE2`, ENS dynamic byte operations, and ERC-4337 packed calldata.
+  All eight creation/runtime objects pass the checked backend and all 14
+  differential call sequences match full-solc execution.
 
 ### 9. Optional Code Density
 

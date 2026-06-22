@@ -1321,7 +1321,7 @@ fi
 
 report_matches \
   'Stack allocation must not contain contract-specific behavior:' \
-  'Permit2|Aave|Balancer|Seaport|OpenZeppelin|Compound|Solady|Solmate' \
+  'Permit2|Aave|Balancer|Seaport|OpenZeppelin|Compound|Solady|Solmate|Uniswap|TickMath|PoolManager|Morpho|SafeCreate|ENSBytes|AccountAbstraction' \
   EvmCompiler/Functions/AllocationLiveness.lean \
   EvmCompiler/Functions/AllocationLivenessFacts.lean \
   EvmCompiler/Functions/AllocationLayout.lean \
@@ -1333,7 +1333,7 @@ report_matches \
 
 report_matches \
   'Functions stack-pressure normalization must not contain contract-specific behavior:' \
-  'Permit2|Aave|Balancer|Seaport|OpenZeppelin|Compound|Solady|Solmate|Uniswap|TickMath|PoolManager' \
+  'Permit2|Aave|Balancer|Seaport|OpenZeppelin|Compound|Solady|Solmate|Uniswap|TickMath|PoolManager|Morpho|SafeCreate|ENSBytes|AccountAbstraction' \
   EvmCompiler/Functions/StackPressureNormalization.lean \
   EvmCompiler/Functions/StackPressureNormalizationProgram.lean
 

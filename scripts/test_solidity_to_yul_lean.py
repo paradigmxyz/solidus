@@ -225,6 +225,49 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "library MathLib {}",
         )
 
+    def test_standard_json_preserves_optimizer_runs(self):
+        request = bridge.standard_json_input(
+            "Protocol.sol",
+            "contract Protocol {}",
+            via_ir=True,
+            optimized=True,
+            experimental=True,
+            optimizer_runs=999999,
+        )
+        self.assertEqual(
+            request["settings"]["optimizer"],
+            {
+                "enabled": True,
+                "details": {"yul": True},
+                "runs": 999999,
+            },
+        )
+
+    def test_contract_compare_preserves_optimizer_and_yul_parser_options(self):
+        parser = compare_call.build_arg_parser()
+        args = parser.parse_args(
+            [
+                "Protocol.sol",
+                "--contract",
+                "Protocol",
+                "--calldata",
+                "0x",
+                "--optimized",
+                "--optimizer-runs",
+                "999999",
+                "--yul-ast-solc",
+                "/opt/solc-0.8.26",
+                "--yul-ast-solc-arg=--base-path",
+            ]
+        )
+        command = []
+        compare_call.append_bridge_compile_options(command, args)
+        self.assertIn("--optimizer-runs", command)
+        self.assertIn("999999", command)
+        self.assertIn("--yul-ast-solc", command)
+        self.assertIn("/opt/solc-0.8.26", command)
+        self.assertIn("--yul-ast-solc-arg=--base-path", command)
+
     def test_yul_standard_json_input_requests_source_ast(self):
         request = bridge.yul_standard_json_input(
             "Object.yul",
@@ -9219,6 +9262,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertIn("test_openzeppelin_bridge_smoke.sh", runner)
         self.assertIn("test_chainlink_cbor_bridge_smoke.sh", runner)
         self.assertIn("test_additional_real_contracts_bridge_smoke.sh", runner)
+        self.assertIn("test_protocol_diversity_bridge_smoke.sh", runner)
 
         v4_extload_smoke = (
             scripts_dir / "test_uniswap_v4_extload_summary_smoke.sh"
@@ -9371,6 +9415,42 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "--format lean-backend-check",
             "real_contract_repositories=4",
             "real_contract_compare_calls=48",
+        ]:
+            self.assertIn(behavior, smoke)
+
+    def test_protocol_diversity_smoke_keeps_pinned_strict_coverage(self):
+        scripts_dir = Path(__file__).resolve().parent
+        smoke = (
+            scripts_dir / "test_protocol_diversity_bridge_smoke.sh"
+        ).read_text()
+
+        for ref_name in [
+            "MORPHO_BLUE_REF",
+            "SAFE_SMART_ACCOUNT_REF",
+            "ENS_CONTRACTS_REF",
+            "ACCOUNT_ABSTRACTION_REF",
+        ]:
+            self.assertRegex(
+                smoke,
+                rf'{ref_name}="\$\{{{ref_name}:-[0-9a-f]{{40}}\}}"',
+            )
+
+        for behavior in [
+            "contract MorphoCorpus is Morpho",
+            "--optimizer-runs",
+            "999999",
+            "--yul-ast-solc",
+            "contract SafeCreateCorpus is CreateCall",
+            "performCreate(uint256,bytes)",
+            "ENSBytesCorpus",
+            "data.substring(5, 20)",
+            "AccountAbstractionCorpus",
+            "UserOperationLib.unpackPaymasterStaticFields",
+            "--format lean-backend-check",
+            "first_none=none",
+            "compare_contract_call_bytecode.py",
+            "protocol_diversity_strict_backend_objects=8",
+            "protocol_diversity_compare_calls=14",
         ]:
             self.assertIn(behavior, smoke)
 

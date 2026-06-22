@@ -194,6 +194,7 @@ def build_full_solc_input(bridge: Any, args: argparse.Namespace) -> dict[str, An
         optimized=args.optimized,
         experimental=args.experimental,
         include_sources=include_sources,
+        optimizer_runs=getattr(args, "optimizer_runs", None),
     )
     ensure_output_selection_fields(
         compiler_input,
@@ -245,6 +246,14 @@ def append_bridge_compile_options(
         command.extend(["--source-name", args.source_name])
     if args.optimized:
         command.append("--optimized")
+    optimizer_runs = getattr(args, "optimizer_runs", None)
+    if optimizer_runs is not None:
+        command.extend(["--optimizer-runs", str(optimizer_runs)])
+    yul_ast_solc = getattr(args, "yul_ast_solc", None)
+    if yul_ast_solc:
+        command.extend(["--yul-ast-solc", yul_ast_solc])
+    for solc_arg in getattr(args, "yul_ast_solc_arg", []):
+        command.append(f"--yul-ast-solc-arg={solc_arg}")
     if not args.via_ir:
         command.append("--no-via-ir")
     if not args.experimental:
@@ -772,6 +781,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--linker-symbol", action="append", default=[])
     parser.add_argument("--solc", default=os.environ.get("SOLC", "/Users/dan/.local/bin/solc"))
     parser.add_argument("--solc-arg", action="append", default=[])
+    parser.add_argument("--yul-ast-solc")
+    parser.add_argument("--yul-ast-solc-arg", action="append", default=[])
     parser.add_argument("--lake", default=os.environ.get("LAKE", "/Users/dan/.elan/bin/lake"))
     parser.add_argument("--lake-cwd", type=Path, default=Path.cwd())
     parser.add_argument("--forge", default=os.environ.get("FORGE", "forge"))
@@ -784,6 +795,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--optimized", action="store_true")
+    parser.add_argument("--optimizer-runs", type=int, metavar="N")
     parser.add_argument("--no-via-ir", dest="via_ir", action="store_false")
     parser.add_argument("--no-experimental", dest="experimental", action="store_false")
     parser.add_argument("--namespace", default="Generated.ContractCallCompare")
@@ -799,7 +811,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.creation_only and args.runtime_only:
         parser.error("--creation-only and --runtime-only are mutually exclusive")
+    if args.optimizer_runs is not None:
+        if not args.optimized:
+            parser.error("--optimizer-runs requires --optimized")
+        if args.optimizer_runs <= 0:
+            parser.error("--optimizer-runs must be positive")
     args.solc = resolve_executable(args.solc)
+    if args.yul_ast_solc:
+        args.yul_ast_solc = resolve_executable(args.yul_ast_solc)
     args.forge = resolve_executable(args.forge)
     args.lake = resolve_executable(args.lake)
     calldatas = [concrete_hex(item, "calldata") for item in args.calldata]

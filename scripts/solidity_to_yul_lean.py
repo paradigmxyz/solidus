@@ -4883,13 +4883,17 @@ def standard_json_input(
     experimental: bool,
     include_sources: Optional[Dict[str, str]] = None,
     require_bytecode: bool = True,
+    optimizer_runs: Optional[int] = None,
 ) -> Json:
     settings: Json = {
         "viaIR": via_ir,
         "outputSelection": {"*": {"*": [], "": []}},
     }
     if optimized:
-        settings["optimizer"] = {"enabled": True, "details": {"yul": True}}
+        optimizer: Json = {"enabled": True, "details": {"yul": True}}
+        if optimizer_runs is not None:
+            optimizer["runs"] = optimizer_runs
+        settings["optimizer"] = optimizer
     if experimental:
         settings["experimental"] = True
     sources = {source_name: {"content": content}}
@@ -7631,6 +7635,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--optimizer-runs",
+        type=int,
+        metavar="N",
+        help=(
+            "Set the Solidity optimizer runs count. Requires --optimized and "
+            "is preserved in the Standard JSON compiler input."
+        ),
+    )
+    parser.add_argument(
         "--format",
         choices=[
             "lean",
@@ -8531,6 +8544,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
     try:
+        if args.optimizer_runs is not None:
+            if not args.optimized:
+                fail("--optimizer-runs requires --optimized")
+            if args.optimizer_runs <= 0:
+                fail("--optimizer-runs must be positive")
         if args.input_format == "bridge-json-manifest":
             rendered, source_name, contract_name, selected_name = (
                 render_bridge_json_manifest_input_output(args)
@@ -8685,7 +8703,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 experimental=args.experimental,
                 include_sources=include_sources,
                 require_bytecode=require_solc_bytecode,
+                optimizer_runs=args.optimizer_runs,
             )
+        if args.optimizer_runs is not None:
+            settings = compiler_input.setdefault("settings", {})
+            if not isinstance(settings, dict):
+                fail("Standard JSON settings must be an object")
+            optimizer = settings.setdefault("optimizer", {})
+            if not isinstance(optimizer, dict):
+                fail("Standard JSON optimizer settings must be an object")
+            optimizer["enabled"] = True
+            optimizer["runs"] = args.optimizer_runs
         ast_output = solc_yul_ast_output(args.optimized)
         output = run_solc(args.solc, compiler_input, args.solc_arg)
         recover_missing_contract_yul_asts(
