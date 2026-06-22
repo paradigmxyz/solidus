@@ -2019,11 +2019,13 @@ or audit-alias corridor.
 #check EvmCompiler.Public.ObserverComposition.terminalWithResourceSafety
 #check EvmCompiler.Public.ObserverComposition.terminalStackOnly
 #check EvmCompiler.Yul.EndToEnd.ClosedResourceCorrect
+#check EvmCompiler.Yul.EndToEnd.compiledVerifiedStackObjectToRawBytecode
 #check EvmCompiler.Yul.EndToEnd.closedResourceCorrect
 #check EvmCompiler.Yul.EndToEnd.OpenWorldTerminalCorrect
 #check EvmCompiler.Yul.EndToEnd.compiledObjectRootToBytecode
 #check EvmCompiler.Yul.EndToEnd.openWorldTerminalCorrect
 #print axioms EvmCompiler.Yul.EndToEnd.openWorldTerminalCorrect
+#print axioms EvmCompiler.Yul.EndToEnd.compiledVerifiedStackObjectToRawBytecode
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.primitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mload_simulate

@@ -386,6 +386,11 @@ the horizontally composed compiler module. -/
 abbrev compiledObjectRootToBytecode :=
   @Compiler.OpenInteractionComposition.compiledObjectRootToBytecode
 
+/-- Exact recursive-object/raw-byte correctness for the checked stack
+allocator and compact encoder used by the verified Solidity frontend. -/
+abbrev compiledVerifiedStackObjectToRawBytecode :=
+  @Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
+
 end EndToEnd
 end Yul
 end EvmCompiler
