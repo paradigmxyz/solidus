@@ -7,7 +7,7 @@ namespace Assembly
 inductive Label where
   | named (name : String)
   | generated (scope : Nat) (tag : Nat)
-  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr
+  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Hashable, Repr
 abbrev Word := EvmYul.UInt256
 abbrev EVMOp := EvmYul.Operation EvmYul.OperationType.EVM
 

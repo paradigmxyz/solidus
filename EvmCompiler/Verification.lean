@@ -3315,6 +3315,8 @@ or audit-alias corridor.
 #check EvmCompiler.Compiler.StackArtifact.compile?_frameSafe
 #check EvmCompiler.Compiler.StackArtifact.compile?_decodingCorrect
 #check EvmCompiler.Assembly.Compact.compile?_valid
+#check EvmCompiler.Assembly.Compact.preparationSafeIndexed_eq
+#check EvmCompiler.Assembly.Compact.compile?_preparationSafe
 #check EvmCompiler.Assembly.Compact.compile?_decodingCorrect
 #check EvmCompiler.Assembly.Compact.openStepResultEqInstrOfDecodeAt
 #check EvmCompiler.Assembly.InteractionPreservation.PrimOp.openStep_runtimeRel_of_ne_pc
@@ -3403,6 +3405,8 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Compiler.StackArtifact.compile?_openSupported
 #print axioms EvmCompiler.Compiler.StackArtifact.compile?_frameSafe
 #print axioms EvmCompiler.Assembly.Compact.compile?_valid
+#print axioms EvmCompiler.Assembly.Compact.preparationSafeIndexed_eq
+#print axioms EvmCompiler.Assembly.Compact.compile?_preparationSafe
 #print axioms EvmCompiler.Assembly.Compact.compile?_decodingCorrect
 #print axioms EvmCompiler.Assembly.Compact.openStepResultEqInstrOfDecodeAt
 #print axioms EvmCompiler.Assembly.InteractionPreservation.PrimOp.openStep_runtimeRel_of_ne_pc

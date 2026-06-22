@@ -1,6 +1,7 @@
 import EvmCompiler.Assembly.Bytecode
 import EvmCompiler.Assembly.InteractionPreservation
 import Mathlib.Tactic.IntervalCases
+import Std.Data.HashMap.Lemmas
 
 namespace EvmCompiler
 namespace Assembly
@@ -1412,6 +1413,159 @@ def preparationTargetPc? (blocks : List PreparationBlock)
   | some block => some block.preparedPc
   | none => if sourcePc = sourceEnd then some preparedEnd else none
 
+abbrev LabelPcIndex := Std.HashMap Label Nat
+abbrev BoundaryPcIndex := Std.HashMap Nat Nat
+
+def buildLabelPcIndexFrom : Assembly.Program -> Nat -> LabelPcIndex ->
+    LabelPcIndex
+  | [], _pc, index => index
+  | instr :: rest, pc, index =>
+      let index :=
+        match instr with
+        | .label name => index.insertIfNew name pc
+        | _ => index
+      buildLabelPcIndexFrom rest (pc + instr.byteSize) index
+
+def buildLabelPcIndex (program : Assembly.Program) : LabelPcIndex :=
+  buildLabelPcIndexFrom program 0 {}
+
+theorem buildLabelPcIndexFrom_get?
+    (program : Assembly.Program) (pc : Nat) (index : LabelPcIndex)
+    (target : Label) :
+    (buildLabelPcIndexFrom program pc index).get? target =
+      match index.get? target with
+      | some existing => some existing
+      | none => Assembly.Program.labelPcFrom program pc target := by
+  induction program generalizing pc index with
+  | nil =>
+      cases hExisting : index.get? target <;>
+        simp only [buildLabelPcIndexFrom, Assembly.Program.labelPcFrom,
+          hExisting]
+  | cons instr rest ih =>
+      cases instr with
+      | label name =>
+          rw [buildLabelPcIndexFrom, ih]
+          by_cases hName : name = target
+          · subst name
+            cases hExisting : index.get? target with
+            | none =>
+                have hExisting' : index[target]? = none := by
+                  simpa only [Std.HashMap.get?_eq_getElem?] using hExisting
+                have hNotMem : target ∉ index := by
+                  intro hMem
+                  have hSome :=
+                    (Std.HashMap.mem_iff_isSome_getElem?).mp hMem
+                  rw [hExisting'] at hSome
+                  simp at hSome
+                simp only [Std.HashMap.get?_eq_getElem?,
+                  Std.HashMap.getElem?_insertIfNew]
+                simp [hExisting', hNotMem, Assembly.Program.labelPcFrom]
+            | some existing =>
+                have hExisting' : index[target]? = some existing := by
+                  simpa only [Std.HashMap.get?_eq_getElem?] using hExisting
+                obtain ⟨hMem, _hGet⟩ :=
+                  (Std.HashMap.getElem?_eq_some_iff.mp hExisting')
+                simp only [Std.HashMap.get?_eq_getElem?,
+                  Std.HashMap.getElem?_insertIfNew]
+                simp only [beq_self_eq_true, true_and, hMem,
+                  not_true_eq_false, if_false, hExisting']
+          · have hBeq : (name == target) = false := by
+              simpa using hName
+            simp only [Std.HashMap.get?_eq_getElem?,
+              Std.HashMap.getElem?_insertIfNew]
+            simp [hBeq, hName, Assembly.Program.labelPcFrom]
+      | prim op | push op | jump op | jumpi op =>
+          simpa [buildLabelPcIndexFrom, Assembly.Program.labelPcFrom]
+            using ih (pc := pc + Assembly.Instr.byteSize _) (index := index)
+
+theorem buildLabelPcIndex_get?
+    (program : Assembly.Program) (target : Label) :
+    (buildLabelPcIndex program).get? target = program.labelPc target := by
+  simpa [buildLabelPcIndex, Assembly.Program.labelPc] using
+    buildLabelPcIndexFrom_get? program 0 ({} : LabelPcIndex) target
+
+def buildBoundaryPcIndex : List PreparationBlock -> BoundaryPcIndex ->
+    BoundaryPcIndex
+  | [], index => index
+  | block :: rest, index =>
+      buildBoundaryPcIndex rest
+        (index.insertIfNew block.sourcePc block.preparedPc)
+
+def preparationBoundaryIndex (blocks : List PreparationBlock) :
+    BoundaryPcIndex :=
+  buildBoundaryPcIndex blocks {}
+
+theorem buildBoundaryPcIndex_get?
+    (blocks : List PreparationBlock) (index : BoundaryPcIndex)
+    (query : Nat) :
+    (buildBoundaryPcIndex blocks index).get? query =
+      match index.get? query with
+      | some existing => some existing
+      | none =>
+          (blocks.find? fun block => block.sourcePc == query).map
+            PreparationBlock.preparedPc := by
+  induction blocks generalizing index with
+  | nil =>
+      cases hExisting : index.get? query <;>
+        simp only [buildBoundaryPcIndex, List.find?_nil, Option.map_none,
+          hExisting]
+  | cons block rest ih =>
+      rw [buildBoundaryPcIndex, ih]
+      by_cases hPc : block.sourcePc = query
+      · subst query
+        cases hExisting : index.get? block.sourcePc with
+        | none =>
+            have hExisting' : index[block.sourcePc]? = none := by
+              simpa only [Std.HashMap.get?_eq_getElem?] using hExisting
+            have hNotMem : block.sourcePc ∉ index := by
+              intro hMem
+              have hSome :=
+                (Std.HashMap.mem_iff_isSome_getElem?).mp hMem
+              rw [hExisting'] at hSome
+              simp at hSome
+            simp only [Std.HashMap.get?_eq_getElem?,
+              Std.HashMap.getElem?_insertIfNew]
+            simp [hExisting', hNotMem]
+        | some existing =>
+            have hExisting' : index[block.sourcePc]? = some existing := by
+              simpa only [Std.HashMap.get?_eq_getElem?] using hExisting
+            obtain ⟨hMem, _hGet⟩ :=
+              (Std.HashMap.getElem?_eq_some_iff.mp hExisting')
+            simp only [Std.HashMap.get?_eq_getElem?,
+              Std.HashMap.getElem?_insertIfNew]
+            simp only [beq_self_eq_true, true_and, hMem,
+              not_true_eq_false, if_false, hExisting']
+      · have hBeq : (block.sourcePc == query) = false := by
+          simpa using hPc
+        simp only [Std.HashMap.get?_eq_getElem?,
+          Std.HashMap.getElem?_insertIfNew]
+        simp [hBeq, hPc]
+
+theorem preparationBoundaryIndex_get?
+    (blocks : List PreparationBlock) (query : Nat) :
+    (preparationBoundaryIndex blocks).get? query =
+      (blocks.find? fun block => block.sourcePc == query).map
+        PreparationBlock.preparedPc := by
+  simpa [preparationBoundaryIndex] using
+    buildBoundaryPcIndex_get? blocks ({} : BoundaryPcIndex) query
+
+def preparationTargetPcIndexed? (index : BoundaryPcIndex)
+    (sourceEnd preparedEnd sourcePc : Nat) : Option Nat :=
+  match index.get? sourcePc with
+  | some preparedPc => some preparedPc
+  | none => if sourcePc = sourceEnd then some preparedEnd else none
+
+theorem preparationTargetPcIndexed_eq
+    (blocks : List PreparationBlock)
+    (sourceEnd preparedEnd sourcePc : Nat) :
+    preparationTargetPcIndexed? (preparationBoundaryIndex blocks)
+        sourceEnd preparedEnd sourcePc =
+      preparationTargetPc? blocks sourceEnd preparedEnd sourcePc := by
+  unfold preparationTargetPcIndexed? preparationTargetPc?
+  rw [preparationBoundaryIndex_get?]
+  cases hFind : blocks.find? (fun block => block.sourcePc == sourcePc) <;>
+    simp [hFind]
+
 theorem preparationBoundaryPair_of_targetPc?
     {blocks : List PreparationBlock}
     {sourceEnd preparedEnd sourcePc preparedPc : Nat}
@@ -1456,6 +1610,69 @@ def preparationBlockSafe? (source prepared : Assembly.Program)
 def preparationSafe? (source prepared : Assembly.Program)
     (blocks : List PreparationBlock) : Bool :=
   blocks.all (preparationBlockSafe? source prepared blocks)
+
+structure PreparationLookupIndex where
+  sourceLabels : LabelPcIndex
+  preparedLabels : LabelPcIndex
+  boundaries : BoundaryPcIndex
+
+def buildPreparationLookupIndex (source prepared : Assembly.Program)
+    (blocks : List PreparationBlock) : PreparationLookupIndex :=
+  { sourceLabels := buildLabelPcIndex source
+    preparedLabels := buildLabelPcIndex prepared
+    boundaries := preparationBoundaryIndex blocks }
+
+def preparationBlockSafeIndexed? (index : PreparationLookupIndex)
+    (sourceEnd preparedEnd : Nat) (block : PreparationBlock) : Bool :=
+  match block.action, block.sourceInstr with
+  | .skip, .label _ => true
+  | .skip, .jump target =>
+      match index.sourceLabels.get? target with
+      | some sourceDest =>
+          preparationTargetPcIndexed? index.boundaries sourceEnd preparedEnd
+            sourceDest == some block.preparedPc
+      | none => false
+  | .skip, _ => false
+  | .keep, .jump target | .keep, .jumpi target =>
+      match index.sourceLabels.get? target,
+          index.preparedLabels.get? target with
+      | some sourceDest, some preparedDest =>
+          preparationTargetPcIndexed? index.boundaries sourceEnd preparedEnd
+            sourceDest == some preparedDest
+      | _, _ => false
+  | .keep, .prim .pc => false
+  | .keep, _ => true
+
+def preparationSafeIndexed? (source prepared : Assembly.Program)
+    (blocks : List PreparationBlock) : Bool :=
+  let index := buildPreparationLookupIndex source prepared blocks
+  blocks.all
+    (preparationBlockSafeIndexed? index source.byteLength prepared.byteLength)
+
+theorem preparationBlockSafeIndexed_eq
+    (source prepared : Assembly.Program) (blocks : List PreparationBlock)
+    (block : PreparationBlock) :
+    preparationBlockSafeIndexed?
+        (buildPreparationLookupIndex source prepared blocks)
+        source.byteLength prepared.byteLength block =
+      preparationBlockSafe? source prepared blocks block := by
+  rcases block with ⟨sourcePc, preparedPc, sourceInstr, action⟩
+  cases action <;> cases sourceInstr <;>
+    simp [preparationBlockSafeIndexed?, preparationBlockSafe?,
+      buildPreparationLookupIndex, buildLabelPcIndex_get?,
+      preparationTargetPcIndexed_eq]
+  all_goals try (rename_i op; cases op <;> rfl)
+  all_goals
+    simp only [← Std.HashMap.get?_eq_getElem?, buildLabelPcIndex_get?]
+
+theorem preparationSafeIndexed_eq
+    (source prepared : Assembly.Program) (blocks : List PreparationBlock) :
+    preparationSafeIndexed? source prepared blocks =
+      preparationSafe? source prepared blocks := by
+  unfold preparationSafeIndexed? preparationSafe?
+  apply congrArg (fun predicate => blocks.all predicate)
+  funext block
+  exact preparationBlockSafeIndexed_eq source prepared blocks block
 
 def PreparationBlockSafe (source prepared : Assembly.Program)
     (blocks : List PreparationBlock) (block : PreparationBlock) : Prop :=
@@ -1565,7 +1782,7 @@ def compile? (source : Assembly.Program) : Option Artifact := do
   let _ <- if decide source.PCFits then some () else none
   let physicalSource := prepare source
   let preparation <- alignPreparation? source physicalSource
-  let _ <- if preparationSafe? source physicalSource preparation then
+  let _ <- if preparationSafeIndexed? source physicalSource preparation then
     some ()
   else none
   let branchWidth <- widthForNat? physicalSource.byteLength
@@ -1597,7 +1814,7 @@ structure Artifact.ValidFor (artifact : Artifact)
   physicalSource : artifact.physicalSource = prepare source
   preparationAligned : alignPreparation? source artifact.physicalSource =
     some artifact.preparation
-  preparationSafe : preparationSafe? source artifact.physicalSource
+  preparationSafeIndexed : preparationSafeIndexed? source artifact.physicalSource
     artifact.preparation = true
   branchWidth : widthForNat? artifact.physicalSource.byteLength =
     some artifact.branchWidth
@@ -1629,7 +1846,7 @@ theorem compile?_valid {source : Assembly.Program} {artifact : Artifact}
   | some preparation =>
       simp [hPreparation] at hCompile
       by_cases hPreparationSafe :
-          preparationSafe? source physicalSource preparation = true
+          preparationSafeIndexed? source physicalSource preparation = true
       · simp [hPreparationSafe] at hCompile
         cases hWidth : widthForNat? physicalSource.byteLength with
         | none => simp [hWidth] at hCompile
@@ -1696,7 +1913,9 @@ theorem compile?_preparationSafe
     {source : Assembly.Program} {artifact : Artifact}
     (hCompile : compile? source = some artifact) :
     PreparationSafe source artifact.physicalSource artifact.preparation := by
-  exact preparationSafe_of_check (compile?_valid hCompile).preparationSafe
+  apply preparationSafe_of_check
+  rw [← preparationSafeIndexed_eq]
+  exact (compile?_valid hCompile).preparationSafeIndexed
 
 theorem Artifact.ValidFor.mem_program_of_mem_block
     {artifact : Artifact} {source : Assembly.Program}
