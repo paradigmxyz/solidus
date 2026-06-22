@@ -238,9 +238,12 @@ theorem buildLabelIndexFrom_get?
             simp only [Std.HashMap.get?_eq_getElem?,
               Std.HashMap.getElem?_insertIfNew]
             simp [hBeq, hName, labelPcFrom]
-      | prim op | push op | jump op | jumpi op =>
+      | prim op | push op | pushLabel op | jump op | jumpi op =>
           simpa [buildLabelIndexFrom, labelPcFrom] using
             ih (pc := pc + Instr.byteSize _) (index := index)
+      | jumpDynamic =>
+          simpa [buildLabelIndexFrom, labelPcFrom] using
+            ih (pc := pc + Instr.byteSize .jumpDynamic) (index := index)
 
 theorem buildLabelIndex_get? (program : Program) (target : Label) :
     program.buildLabelIndex.get? target = program.labelPc target := by
@@ -295,6 +298,14 @@ theorem lookupLabel?_labelTableFrom_eq_labelPcFrom
                 (labelTableFrom rest (pc + Instr.byteSize (.push value))) target =
               labelPcFrom rest (pc + Instr.byteSize (.push value)) target
           exact ih (pc := pc + Instr.byteSize (.push value))
+      | pushLabel label =>
+          change
+            lookupLabel?
+                (labelTableFrom rest
+                  (pc + Instr.byteSize (.pushLabel label))) target =
+              labelPcFrom rest
+                (pc + Instr.byteSize (.pushLabel label)) target
+          exact ih (pc := pc + Instr.byteSize (.pushLabel label))
       | jump jumpTarget =>
           change
             lookupLabel?
@@ -311,6 +322,14 @@ theorem lookupLabel?_labelTableFrom_eq_labelPcFrom
               labelPcFrom rest
                 (pc + Instr.byteSize (.jumpi jumpTarget)) target
           exact ih (pc := pc + Instr.byteSize (.jumpi jumpTarget))
+      | jumpDynamic =>
+          change
+            lookupLabel?
+                (labelTableFrom rest
+                  (pc + Instr.byteSize .jumpDynamic)) target =
+              labelPcFrom rest
+                (pc + Instr.byteSize .jumpDynamic) target
+          exact ih (pc := pc + Instr.byteSize .jumpDynamic)
 
 theorem lookupLabel?_labelTable_eq_labelPc
     (program : Program) (target : Label) :
@@ -395,6 +414,25 @@ theorem instrAtPc_pc_eq {program : Program} {query pc : Nat}
     (hAt : instrAtPc program query = some (pc, instr)) :
     pc = query :=
   instrAtPcFrom_pc_eq hAt
+
+theorem instrAtPcFrom_mem {program : Program} {base query pc : Nat}
+    {instr : Instr}
+    (hAt : instrAtPcFrom program base query = some (pc, instr)) :
+    instr ∈ program := by
+  induction program generalizing base with
+  | nil => simp [instrAtPcFrom] at hAt
+  | cons head rest ih =>
+      by_cases hQuery : query = base
+      · subst query
+        simp [instrAtPcFrom] at hAt
+        rcases hAt with ⟨rfl, rfl⟩
+        simp
+      · simp [instrAtPcFrom, hQuery] at hAt
+        exact List.mem_cons_of_mem head (ih hAt)
+
+theorem instrAtPc_mem {program : Program} {query pc : Nat} {instr : Instr}
+    (hAt : instrAtPc program query = some (pc, instr)) : instr ∈ program := by
+  exact instrAtPcFrom_mem hAt
 
 theorem instrAtPc_end_le_byteLength {program : Program}
     {query pc : Nat} {instr : Instr}
@@ -516,6 +554,20 @@ theorem instrAtPcFrom_of_labelPcFrom
             have hPos := Instr.byteSize_pos (.push value)
             omega
           simpa [instrAtPcFrom, hNe] using hAt
+      | pushLabel label =>
+          change
+            labelPcFrom rest
+                (base + Instr.byteSize (.pushLabel label)) target =
+              some pc at hLabel
+          have hAt :=
+            ih (base := base + Instr.byteSize (.pushLabel label)) hLabel
+          have hBaseLe :
+              base + Instr.byteSize (.pushLabel label) ≤ pc :=
+            instrAtPcFrom_base_le_query hAt
+          have hNe : pc ≠ base := by
+            have hPos := Instr.byteSize_pos (.pushLabel label)
+            omega
+          simpa [instrAtPcFrom, hNe] using hAt
       | jump jumpTarget =>
           change
             labelPcFrom rest
@@ -542,6 +594,18 @@ theorem instrAtPcFrom_of_labelPcFrom
             instrAtPcFrom_base_le_query hAt
           have hNe : pc ≠ base := by
             have hPos := Instr.byteSize_pos (.jumpi jumpTarget)
+            omega
+          simpa [instrAtPcFrom, hNe] using hAt
+      | jumpDynamic =>
+          change
+            labelPcFrom rest
+                (base + Instr.byteSize .jumpDynamic) target = some pc at hLabel
+          have hAt :=
+            ih (base := base + Instr.byteSize .jumpDynamic) hLabel
+          have hBaseLe : base + Instr.byteSize .jumpDynamic ≤ pc :=
+            instrAtPcFrom_base_le_query hAt
+          have hNe : pc ≠ base := by
+            have hPos := Instr.byteSize_pos .jumpDynamic
             omega
           simpa [instrAtPcFrom, hNe] using hAt
 
@@ -627,6 +691,9 @@ def emitInstr? (program : Program) (pc : Nat) : Instr → Option (List LocatedTa
       some [{ pc := pc, instr := TargetInstr.prim op }]
   | .push value =>
       some [{ pc := pc, instr := TargetInstr.push32 value }]
+  | .pushLabel target => do
+      let dest ← Program.labelPc program target
+      some [{ pc := pc, instr := TargetInstr.push32 (EvmYul.UInt256.ofNat dest) }]
   | .jump target => do
       let dest ← Program.labelPc program target
       some
@@ -639,6 +706,8 @@ def emitInstr? (program : Program) (pc : Nat) : Instr → Option (List LocatedTa
         [ { pc := pc, instr := TargetInstr.push32 (EvmYul.UInt256.ofNat dest) }
         , { pc := pc + Instr.push32Size, instr := TargetInstr.jumpi }
         ]
+  | .jumpDynamic =>
+      some [{ pc := pc, instr := TargetInstr.jump }]
 
 def emitInstrWithTable? (table : Program.LabelTable) (pc : Nat) :
     Instr → Option (List LocatedTarget)
@@ -648,6 +717,9 @@ def emitInstrWithTable? (table : Program.LabelTable) (pc : Nat) :
       some [{ pc := pc, instr := TargetInstr.prim op }]
   | .push value =>
       some [{ pc := pc, instr := TargetInstr.push32 value }]
+  | .pushLabel target => do
+      let dest ← Program.lookupLabel? table target
+      some [{ pc := pc, instr := TargetInstr.push32 (EvmYul.UInt256.ofNat dest) }]
   | .jump target => do
       let dest ← Program.lookupLabel? table target
       some
@@ -660,6 +732,8 @@ def emitInstrWithTable? (table : Program.LabelTable) (pc : Nat) :
         [ { pc := pc, instr := TargetInstr.push32 (EvmYul.UInt256.ofNat dest) }
         , { pc := pc + Instr.push32Size, instr := TargetInstr.jumpi }
         ]
+  | .jumpDynamic =>
+      some [{ pc := pc, instr := TargetInstr.jump }]
 
 def emitInstrWithIndex? (index : Program.LabelIndex) (pc : Nat) :
     Instr → Option (List LocatedTarget)
@@ -669,6 +743,9 @@ def emitInstrWithIndex? (index : Program.LabelIndex) (pc : Nat) :
       some [{ pc := pc, instr := TargetInstr.prim op }]
   | .push value =>
       some [{ pc := pc, instr := TargetInstr.push32 value }]
+  | .pushLabel target => do
+      let dest ← index.get? target
+      some [{ pc := pc, instr := TargetInstr.push32 (EvmYul.UInt256.ofNat dest) }]
   | .jump target => do
       let dest ← index.get? target
       some
@@ -681,6 +758,8 @@ def emitInstrWithIndex? (index : Program.LabelIndex) (pc : Nat) :
         [ { pc := pc, instr := TargetInstr.push32 (EvmYul.UInt256.ofNat dest) }
         , { pc := pc + Instr.push32Size, instr := TargetInstr.jumpi }
         ]
+  | .jumpDynamic =>
+      some [{ pc := pc, instr := TargetInstr.jump }]
 
 theorem emitInstrWithTable?_eq_emitInstr?
     (program : Program) (pc : Nat) (instr : Instr) :
@@ -706,10 +785,17 @@ theorem emitInstr?_length_le_two
     (hEmit : emitInstr? program pc instr = some emitted) :
     emitted.length <= 2 := by
   cases instr with
-  | label name | prim name | push name =>
+  | label name | prim name | push name | jumpDynamic =>
       simp [emitInstr?] at hEmit
       subst emitted
       simp
+  | pushLabel target =>
+      cases hDest : Program.labelPc program target with
+      | none => simp [emitInstr?, hDest] at hEmit
+      | some dest =>
+          simp [emitInstr?, hDest] at hEmit
+          subst emitted
+          simp
   | jump target | jumpi target =>
       cases hDest : Program.labelPc program target with
       | none => simp [emitInstr?, hDest] at hEmit
@@ -736,6 +822,15 @@ theorem emitInstr?_first {program : Program} {pc : Nat} {instr : Instr}
       simp [emitInstr?] at hEmit
       cases hEmit
       exact ⟨TargetInstr.push32 value, [], rfl⟩
+  | pushLabel target =>
+      cases hDest : Program.labelPc program target with
+      | none =>
+          simp [emitInstr?, hDest] at hEmit
+      | some dest =>
+          simp [emitInstr?, hDest] at hEmit
+          cases hEmit
+          exact
+            ⟨TargetInstr.push32 (EvmYul.UInt256.ofNat dest), [], rfl⟩
   | jump target =>
       cases hDest : Program.labelPc program target with
       | none =>
@@ -758,6 +853,10 @@ theorem emitInstr?_first {program : Program} {pc : Nat} {instr : Instr}
             ⟨TargetInstr.push32 (EvmYul.UInt256.ofNat dest),
               [{ pc := pc + Instr.push32Size, instr := TargetInstr.jumpi }],
               rfl⟩
+  | jumpDynamic =>
+      simp [emitInstr?] at hEmit
+      cases hEmit
+      exact ⟨TargetInstr.jump, [], rfl⟩
 
 theorem emitInstr?_find?_none_of_byteSize_le {program : Program}
     {pc query : Nat} {instr : Instr} {emitted : List LocatedTarget}
@@ -790,6 +889,20 @@ theorem emitInstr?_find?_none_of_byteSize_le {program : Program}
         exact Nat.ne_of_lt
           (Nat.lt_of_lt_of_le (Nat.add_lt_add_left hPos pc) hLe')
       simp [hNe]
+  | pushLabel target =>
+      cases hDest : Program.labelPc program target with
+      | none =>
+          simp [emitInstr?, hDest] at hEmit
+      | some dest =>
+          simp [emitInstr?, hDest] at hEmit
+          cases hEmit
+          have hNe : pc ≠ query := by
+            have hLe' : pc + Instr.push32Size ≤ query := by
+              simpa [Instr.byteSize] using hLe
+            have hPos : 0 < Instr.push32Size := by decide
+            exact Nat.ne_of_lt
+              (Nat.lt_of_lt_of_le (Nat.add_lt_add_left hPos pc) hLe')
+          simp [hNe]
   | jump target =>
       cases hDest : Program.labelPc program target with
       | none =>
@@ -822,6 +935,13 @@ theorem emitInstr?_find?_none_of_byteSize_le {program : Program}
                 (by simp [Instr.byteSize, Instr.jumpSize, Instr.push32Size])
                 hLe)
           simp [hNeHead, hNeJump]
+  | jumpDynamic =>
+      simp [emitInstr?] at hEmit
+      cases hEmit
+      have hNe : pc ≠ query := by
+        exact Nat.ne_of_lt
+          (Nat.lt_of_lt_of_le (by simp [Instr.byteSize]) hLe)
+      simp [hNe]
 
 def emitFrom? (program : Program) : Program → Nat → Option (List LocatedTarget)
   | [], _ => some []

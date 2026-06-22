@@ -9,10 +9,11 @@ def targetInstr : Instr → TargetInstr
   | .prim op => .prim op
   | .push value => .push32 value
   | .label _ => .jumpdest
-  | .jump _ | .jumpi _ => .prim .invalid
+  | .jumpDynamic => .jump
+  | .pushLabel _ | .jump _ | .jumpi _ => .prim .invalid
 
 def SourceLocalInstr : Instr → Prop
-  | .jump _ | .jumpi _ => False
+  | .pushLabel _ | .jump _ | .jumpi _ | .jumpDynamic => False
   | _ => True
 
 theorem source_stepAt_eq_targetInstr {instr : Instr}
@@ -24,8 +25,10 @@ theorem source_stepAt_eq_targetInstr {instr : Instr}
   | label _ => rfl
   | prim _ => rfl
   | push _ => rfl
+  | pushLabel _ => cases hLocal
   | jump _ => cases hLocal
   | jumpi _ => cases hLocal
+  | jumpDynamic => cases hLocal
 
 theorem source_stepResult_local {instr : Instr}
     {pre post : Program} {state final : EVMState}

@@ -396,8 +396,10 @@ inductive Instr where
   | label (name : Label)
   | prim (op : PrimOp)
   | push (value : Word)
+  | pushLabel (target : Label)
   | jump (target : Label)
   | jumpi (target : Label)
+  | jumpDynamic
   deriving DecidableEq, Repr
 
 abbrev Program := List Instr
@@ -411,20 +413,24 @@ def byteSize : Instr → Nat
   | .label _ => 1
   | .prim _ => 1
   | .push _ => push32Size
+  | .pushLabel _ => push32Size
   | .jump _ => jumpSize
   | .jumpi _ => jumpSize
+  | .jumpDynamic => 1
 
 theorem byteSize_pos (instr : Instr) : 0 < instr.byteSize := by
   cases instr <;> simp [byteSize, push32Size, jumpSize]
 
 def targets : Instr → List Label
+  | .pushLabel target => [target]
   | .jump target => [target]
   | .jumpi target => [target]
   | _ => []
 
 def usesCallCreate : Instr → Bool
   | .prim op => op.isCallCreate
-  | .label _ | .push _ | .jump _ | .jumpi _ => false
+  | .label _ | .push _ | .pushLabel _ | .jump _ | .jumpi _
+  | .jumpDynamic => false
 
 end Instr
 

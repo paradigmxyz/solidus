@@ -62,7 +62,7 @@ namespace Instr
   | halted halt => rfl
   | running after =>
       cases instr with
-      | label name | prim name | push name =>
+      | label name | prim name | push name | pushLabel name =>
           simp [Assembly.Instr.classifyFlowWith, FlowStep.result]
       | jump name =>
           by_cases hContinue : continueTransfer (.jump name) = true <;>
@@ -80,6 +80,9 @@ namespace Instr
                     continueTransfer (.jumpi target) = true <;>
                   simp [Assembly.Instr.classifyFlowWith, FlowStep.result,
                     hPop, hZero, hContinue]
+      | jumpDynamic =>
+          by_cases hContinue : continueTransfer .jumpDynamic = true <;>
+            simp [Assembly.Instr.classifyFlowWith, FlowStep.result, hContinue]
 
 end Instr
 

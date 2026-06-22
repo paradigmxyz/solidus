@@ -107,6 +107,13 @@ theorem stepAt_emit_sound {program : Program} {pc : Nat} {instr : Instr}
       simp [emitInstr?, Source.stepAt] at hEmit hStep
       subst located
       simpa [runList_single] using hStep
+  | pushLabel target =>
+      cases hDest : Program.labelPc program target with
+      | none => simp [emitInstr?, hDest] at hEmit
+      | some dest =>
+          simp [emitInstr?, Source.stepAt, hDest] at hEmit hStep
+          subst located
+          simpa [runList_single] using hStep
   | jump target =>
       cases hDest : Program.labelPc program target with
       | none =>
@@ -135,6 +142,10 @@ theorem stepAt_emit_sound {program : Program} {pc : Nat} {instr : Instr}
               .ok sourceState
           rw [run_push_jumpi dest state]
           exact hStep
+  | jumpDynamic =>
+      simp [emitInstr?, Source.stepAt] at hEmit hStep
+      subst located
+      simpa [runList_single] using hStep
 
 theorem stepAt_emit_result_sound {program : Program} {pc : Nat} {instr : Instr}
     {located : List LocatedTarget} {state : EVMState} {result : StepResult}
@@ -154,6 +165,14 @@ theorem stepAt_emit_result_sound {program : Program} {pc : Nat} {instr : Instr}
       simp [emitInstr?, Source.stepAtResult, Source.stepAt] at hEmit hStep
       subst located
       simpa [runListResult_single] using hStep
+  | pushLabel target =>
+      cases hDest : Program.labelPc program target with
+      | none => simp [emitInstr?, hDest] at hEmit
+      | some dest =>
+          simp [emitInstr?, Source.stepAtResult, Source.stepAt, hDest,
+            Instr.haltKind?] at hEmit hStep
+          subst located
+          simpa [runListResult_single] using hStep
   | jump target =>
       cases hDest : Program.labelPc program target with
       | none =>
@@ -192,6 +211,11 @@ theorem stepAt_emit_result_sound {program : Program} {pc : Nat} {instr : Instr}
               | mk stack cond =>
                   simp [hPop] at hStep ⊢
                   exact hStep
+  | jumpDynamic =>
+      simp [emitInstr?, Source.stepAtResult, Source.stepAt,
+        Instr.haltKind?] at hEmit hStep
+      subst located
+      simpa [runListResult_single] using hStep
 
 theorem stepAt_emit_projected_sound {program : Program} {pc : Nat} {instr : Instr}
     {located : List LocatedTarget} {state sourceState : EVMState}
@@ -448,6 +472,15 @@ theorem source_compiled_step_sound {program : Program}
                   simp [emitInstr?] at hEmitInstr
               | push value =>
                   simp [emitInstr?] at hEmitInstr
+              | pushLabel target =>
+                  cases hDest : Program.labelPc program target with
+                  | none =>
+                      simp [emitInstr?, hDest] at hEmitInstr
+                      have hBad : False := by
+                        simp [Source.stepAt, hDest, Source.invalid] at hStep
+                      cases hBad
+                  | some dest =>
+                      simp [emitInstr?, hDest] at hEmitInstr
               | jump target =>
                   cases hDest : Program.labelPc program target with
                   | none =>
@@ -465,6 +498,8 @@ theorem source_compiled_step_sound {program : Program}
                       simp [hDest, Source.invalid] at hStep
                   | some dest =>
                       simp [emitInstr?, hDest] at hEmitInstr
+              | jumpDynamic =>
+                  simp [emitInstr?] at hEmitInstr
           | some emitted =>
               unfold Compiled.step Compiled.stepWith emitCurrent?
               simp [hAt, hEmitInstr]
@@ -491,6 +526,16 @@ theorem source_compiled_step_result_sound {program : Program}
                   simp [emitInstr?] at hEmitInstr
               | push value =>
                   simp [emitInstr?] at hEmitInstr
+              | pushLabel target =>
+                  cases hDest : Program.labelPc program target with
+                  | none =>
+                      simp [emitInstr?, hDest] at hEmitInstr
+                      have hBad : False := by
+                        unfold Source.stepAtResult Source.stepAt Source.invalid at hStep
+                        simp [hDest, Instr.haltKind?] at hStep
+                      cases hBad
+                  | some dest =>
+                      simp [emitInstr?, hDest] at hEmitInstr
               | jump target =>
                   cases hDest : Program.labelPc program target with
                   | none =>
@@ -511,6 +556,8 @@ theorem source_compiled_step_result_sound {program : Program}
                       cases hBad
                   | some dest =>
                       simp [emitInstr?, hDest] at hEmitInstr
+              | jumpDynamic =>
+                  simp [emitInstr?] at hEmitInstr
           | some emitted =>
               unfold Compiled.stepResult Compiled.stepResultWith emitCurrent?
               simp [hAt, hEmitInstr]
@@ -600,7 +647,7 @@ def TargetBlockPcSafe (instr : Instr) (state : EVMState) : Prop :=
   match instr with
   | .jump _ | .jumpi _ =>
       state.pc.toNat + Instr.push32Size < EvmYul.UInt256.size
-  | .label _ | .prim _ | .push _ => True
+  | .label _ | .prim _ | .push _ | .pushLabel _ | .jumpDynamic => True
 
 theorem targetBlockPcSafe_of_instrAtPc_of_byteLength_lt
     {program : Program} {state : EVMState} {pc : Nat} {instr : Instr}
@@ -613,6 +660,8 @@ theorem targetBlockPcSafe_of_instrAtPc_of_byteLength_lt
   | prim op =>
       simp [TargetBlockPcSafe]
   | push value =>
+      simp [TargetBlockPcSafe]
+  | pushLabel target =>
       simp [TargetBlockPcSafe]
   | jump targetLabel =>
       have hPcEq : pc = state.pc.toNat :=
@@ -640,6 +689,8 @@ theorem targetBlockPcSafe_of_instrAtPc_of_byteLength_lt
         simpa [Instr.byteSize, Instr.jumpSize] using hEnd
       simp [TargetBlockPcSafe]
       omega
+  | jumpDynamic =>
+      simp [TargetBlockPcSafe]
 
 inductive BlockTrace (program : Program) (target : TargetProgram) :
     Nat → EVMState → EVMState → Prop where

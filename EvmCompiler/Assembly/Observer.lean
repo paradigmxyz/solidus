@@ -35,7 +35,8 @@ def ofTargetInstr? : TargetInstr → Option ResourceObserver
 
 def ofInstr? : Instr → Option ResourceObserver
   | .prim op => ofPrimOp? op
-  | .label _ | .push _ | .jump _ | .jumpi _ => none
+  | .label _ | .push _ | .pushLabel _ | .jump _ | .jumpi _
+  | .jumpDynamic => none
 
 def recordFromPostState (kind : ResourceObserver) (state : EVMState) :
     ResourceTrace :=
@@ -1392,9 +1393,13 @@ theorem stepAtResult_observer_running_stack
           hTargetObserver hTargetStep
   | push _ =>
       simp [ResourceObserver.ofInstr?] at hObserver
+  | pushLabel _ =>
+      simp [ResourceObserver.ofInstr?] at hObserver
   | jump _ =>
       simp [ResourceObserver.ofInstr?] at hObserver
   | jumpi _ =>
+      simp [ResourceObserver.ofInstr?] at hObserver
+  | jumpDynamic =>
       simp [ResourceObserver.ofInstr?] at hObserver
 
 theorem stepAtResultWithOracle_of_withObservers
@@ -1950,6 +1955,24 @@ theorem target_runNResultWithOracle_eq_runList_of_emitInstr?
         ⟨targetInstr, restEmitted, hFirst, hFetch⟩
       cases hFirst
       exact target_runNResultWithOracle_single_of_fetch hFetch
+  | pushLabel targetLabel =>
+      cases hDest : Program.labelPc program targetLabel with
+      | none => simp [emitInstr?, hDest] at hEmit
+      | some dest =>
+          simp [emitInstr?, hDest] at hEmit
+          subst emitted
+          rcases
+              assemble?_fetch_first_of_instrAtPc
+                (program := program) (target := target)
+                (query := state.pc.toNat) (pc := pc)
+                (instr := .pushLabel targetLabel)
+                (emitted :=
+                  [LocatedTarget.mk pc
+                    (TargetInstr.push32 (EvmYul.UInt256.ofNat dest))])
+                hAsm hAt (by simp [emitInstr?, hDest]) with
+            ⟨targetInstr, restEmitted, hFirst, hFetch⟩
+          cases hFirst
+          exact target_runNResultWithOracle_single_of_fetch hFetch
   | jump targetLabel =>
       cases hDest : Program.labelPc program targetLabel with
       | none =>
@@ -2040,6 +2063,19 @@ theorem target_runNResultWithOracle_eq_runList_of_emitInstr?
           exact
             target_runNResultWithOracle_push_jumpi_of_fetch
               hFetchPush hFetchJumpi hNoOverflow
+  | jumpDynamic =>
+      simp [emitInstr?] at hEmit
+      subst emitted
+      rcases
+          assemble?_fetch_first_of_instrAtPc
+            (program := program) (target := target)
+            (query := state.pc.toNat) (pc := pc)
+            (instr := .jumpDynamic)
+            (emitted := [LocatedTarget.mk pc TargetInstr.jump])
+            hAsm hAt (by simp [emitInstr?]) with
+        ⟨targetInstr, restEmitted, hFirst, hFetch⟩
+      cases hFirst
+      exact target_runNResultWithOracle_single_of_fetch hFetch
 
 theorem target_runNResultWithOracle_of_emitInstr?_runList
     {program : Program} {target : TargetProgram}
@@ -2129,6 +2165,28 @@ theorem stepAt_emit_result_withObservers_sound
           unfold Target.stepInstrResultWithObservers
           rw [hTargetPlain]
           rfl
+      | pushLabel target =>
+          cases hDest : Program.labelPc program target with
+          | none => simp [emitInstr?, hDest] at hEmit
+          | some dest =>
+              simp [emitInstr?, hDest, Source.stepAtResult, Source.stepAt,
+                Instr.haltKind?] at hEmit hPlain
+              subst located
+              cases hTrace
+              have hTargetPlain :
+                  Target.stepInstrResult
+                      (TargetInstr.push32 (EvmYul.UInt256.ofNat dest)) state =
+                    .ok result := by
+                simpa [Source.stepAtResult, Source.stepAt, hDest,
+                  Instr.haltKind?] using hPlain
+              change
+                Target.runListResultWithObservers
+                    [TargetInstr.push32 (EvmYul.UInt256.ofNat dest)] state =
+                  .ok (result, [])
+              rw [runListResultWithObservers_single]
+              unfold Target.stepInstrResultWithObservers
+              rw [hTargetPlain]
+              rfl
       | jump target =>
           cases hDest : Program.labelPc program target with
           | none =>
@@ -2173,6 +2231,22 @@ theorem stepAt_emit_result_withObservers_sound
                       simp [hPop] at hPlain
                       cases hPlain
                       rfl
+      | jumpDynamic =>
+          simp [emitInstr?, Source.stepAtResult, Source.stepAt,
+            Instr.haltKind?] at hEmit hPlain
+          subst located
+          cases hTrace
+          have hTargetPlain :
+              Target.stepInstrResult TargetInstr.jump state = .ok result := by
+            simpa [Source.stepAtResult, Source.stepAt,
+              Instr.haltKind?] using hPlain
+          change
+            Target.runListResultWithObservers [TargetInstr.jump] state =
+              .ok (result, [])
+          rw [runListResultWithObservers_single]
+          unfold Target.stepInstrResultWithObservers
+          rw [hTargetPlain]
+          rfl
 
 theorem stepAt_emit_result_withOracle_sound
     {program : Program} {pc : Nat} {instr : Instr}
@@ -2240,6 +2314,28 @@ theorem stepAt_emit_result_withOracle_sound
           rw [hTargetPlain]
           simpa [ResourceObserver.ofInstr?, ResourceObserver.ofTargetInstr?]
             using hStep
+      | pushLabel target =>
+          cases hDest : Program.labelPc program target with
+          | none => simp [emitInstr?, hDest] at hEmit
+          | some dest =>
+              simp [emitInstr?, hDest, Source.stepAtResult, Source.stepAt,
+                Instr.haltKind?] at hEmit hPlain
+              subst located
+              have hTargetPlain :
+                  Target.stepInstrResult
+                      (TargetInstr.push32 (EvmYul.UInt256.ofNat dest)) state =
+                    .ok plainResult := by
+                simpa [Source.stepAtResult, Source.stepAt, hDest,
+                  Instr.haltKind?] using hPlain
+              change
+                Target.runListResultWithOracle
+                    [TargetInstr.push32 (EvmYul.UInt256.ofNat dest)]
+                    state trace = .ok (result, trace')
+              rw [runListResultWithOracle_single]
+              unfold Target.stepInstrResultWithOracle
+              rw [hTargetPlain]
+              simpa [ResourceObserver.ofInstr?,
+                ResourceObserver.ofTargetInstr?] using hStep
       | jump target =>
           cases hDest : Program.labelPc program target with
           | none =>
@@ -2290,6 +2386,23 @@ theorem stepAt_emit_result_withOracle_sound
                       simp [hPop] at hPlain
                       cases hPlain
                       rfl
+      | jumpDynamic =>
+          simp [emitInstr?, Source.stepAtResult, Source.stepAt,
+            Instr.haltKind?] at hEmit hPlain
+          subst located
+          have hTargetPlain :
+              Target.stepInstrResult TargetInstr.jump state =
+                .ok plainResult := by
+            simpa [Source.stepAtResult, Source.stepAt,
+              Instr.haltKind?] using hPlain
+          change
+            Target.runListResultWithOracle [TargetInstr.jump]
+                state trace = .ok (result, trace')
+          rw [runListResultWithOracle_single]
+          unfold Target.stepInstrResultWithOracle
+          rw [hTargetPlain]
+          simpa [ResourceObserver.ofInstr?,
+            ResourceObserver.ofTargetInstr?] using hStep
 
 /--
 Executing the complete target block emitted for one labeled Assembly
@@ -2315,6 +2428,18 @@ theorem stepAt_emit_result_withOracle_eq
         Target.stepInstrResult, TargetInstr.haltKind?, Instr.haltKind?,
         Source.stepAtResultWithOracle, Source.stepAtResult, Source.stepAt,
         ResourceObserver.ofInstr?, ResourceObserver.ofTargetInstr?]
+  | pushLabel target =>
+      cases hDest : Program.labelPc program target with
+      | none => simp [emitInstr?, hDest] at hEmit
+      | some dest =>
+          simp [emitInstr?, hDest] at hEmit
+          subst located
+          simp [runListResultWithOracle_single,
+            Target.stepInstrResultWithOracle,
+            Target.stepInstrResult, TargetInstr.haltKind?, Instr.haltKind?,
+            Source.stepAtResultWithOracle, Source.stepAtResult, Source.stepAt,
+            hDest, ResourceObserver.ofInstr?,
+            ResourceObserver.ofTargetInstr?]
   | prim op =>
       simp [emitInstr?] at hEmit
       subst located
@@ -2375,6 +2500,15 @@ theorem stepAt_emit_result_withOracle_eq
               simp [Source.stepAtResultWithOracle, Source.stepAtResult,
                 Source.stepAt, hDest, hPop, Instr.haltKind?,
                 ResourceObserver.ofInstr?]
+  | jumpDynamic =>
+      simp [emitInstr?] at hEmit
+      subst located
+      simp [runListResultWithOracle_single,
+        Target.stepInstrResultWithOracle,
+        Target.stepInstrResult, Target.stepInstr, Target.stepInstrWith,
+        TargetInstr.haltKind?, Instr.haltKind?,
+        Source.stepAtResultWithOracle, Source.stepAtResult, Source.stepAt,
+        ResourceObserver.ofInstr?, ResourceObserver.ofTargetInstr?]
 
 /--
 A successful running Assembly oracle step preserves the source instruction
@@ -2387,6 +2521,7 @@ theorem source_stepAtResultWithOracle_running_boundary
     {state final : EVMState} {trace trace' : ResourceTrace}
     (hAt : Program.instrAtPc program state.pc.toNat = some (pc, instr))
     (hLen : Program.byteLength program < EvmYul.UInt256.size)
+    (hNotDynamic : instr ≠ .jumpDynamic)
     (hStep :
       Source.stepAtResultWithOracle program pc instr state trace =
         .ok (.running final, trace')) :
@@ -2485,6 +2620,32 @@ theorem source_stepAtResultWithOracle_running_boundary
         omega
       rw [hFinalPc]
       exact hNext
+  | pushLabel target =>
+      cases hDest : Program.labelPc program target with
+      | none =>
+          simp [Source.stepAtResult, Source.stepAt, hDest,
+            Source.invalid, Bind.bind, Except.bind] at hPlain
+      | some dest =>
+          have hPlainPc :
+              plain.pc = state.pc + EvmYul.UInt256.ofNat
+                (Instr.pushLabel target).byteSize := by
+            simp [Source.stepAtResult, Source.stepAt, hDest,
+              Target.stepInstr, Instr.haltKind?, TargetInstr.haltKind?]
+              at hPlain
+            cases hPlain
+            rfl
+          have hNoOverflow :
+              state.pc.toNat + (Instr.pushLabel target).byteSize <
+                EvmYul.UInt256.size := by
+            simp [Instr.byteSize, Instr.push32Size] at hStateEndLe
+            omega
+          have hFinalPc :
+              final.pc.toNat = pc + (Instr.pushLabel target).byteSize := by
+            rw [hOraclePc, hPlainPc,
+              add_ofNat_toNat_of_no_overflow hNoOverflow]
+            omega
+          rw [hFinalPc]
+          exact hNext
   | jump target =>
       cases hDest : Program.labelPc program target with
       | none =>
@@ -2588,6 +2749,8 @@ theorem source_stepAtResultWithOracle_running_boundary
                   refine ⟨dest, .label target, ?_⟩
                   rw [hOraclePc]
                   simpa [hDestWord] using hDestAt
+  | jumpDynamic =>
+      exact (hNotDynamic rfl).elim
 
 /--
 Exact adjacent adequacy for one labeled Assembly instruction.
@@ -2660,6 +2823,19 @@ theorem emitted_length_le_of_terminal_target_run
           simp [StepResult.IsTerminal] at hTerminal
       | succ fuel =>
           simp
+  | pushLabel targetLabel =>
+      cases hDest : Program.labelPc program targetLabel with
+      | none => simp [emitInstr?, hDest] at hEmit
+      | some dest =>
+          simp [emitInstr?, hDest] at hEmit
+          subst emitted
+          cases fuel with
+          | zero =>
+              simp [Target.runNResultWithOracle] at hRun
+              rcases hRun with ⟨hResult, _hTrace⟩
+              subst result
+              simp [StepResult.IsTerminal] at hTerminal
+          | succ fuel => simp
   | prim op =>
       simp [emitInstr?] at hEmit
       subst emitted
@@ -2768,6 +2944,16 @@ theorem emitted_length_le_of_terminal_target_run
                   simp [StepResult.IsTerminal] at hTerminal
               | succ fuel =>
                   simp
+  | jumpDynamic =>
+      simp [emitInstr?] at hEmit
+      subst emitted
+      cases fuel with
+      | zero =>
+          simp [Target.runNResultWithOracle] at hRun
+          rcases hRun with ⟨hResult, _hTrace⟩
+          subst result
+          simp [StepResult.IsTerminal] at hTerminal
+      | succ fuel => simp
 
 /--
 Backward adequacy for arbitrary terminal assembled-target oracle runs.
@@ -2781,6 +2967,7 @@ theorem assemble_terminal_target_run_source_exists
     {state : EVMState} {trace traceOut : ResourceTrace}
     {fuel : Nat} {halt : Halt} {pc : Nat} {instr : Instr}
     (hAsm : assemble? program = some target)
+    (hAccepted : program.accepted = true)
     (hAt : Program.instrAtPc program state.pc.toNat = some (pc, instr))
     (hLen : Program.byteLength program < EvmYul.UInt256.size)
     (hRun :
@@ -2789,6 +2976,9 @@ theorem assemble_terminal_target_run_source_exists
     ∃ sourceFuel,
       Source.runNResultWithOracle program sourceFuel state trace =
         .ok (.halted halt, traceOut) := by
+  have hInstructions : program.instructionsAccepted = true := by
+    simp only [Program.accepted, Bool.and_eq_true] at hAccepted
+    exact hAccepted.1.1
   induction fuel using Nat.strong_induction_on generalizing state trace pc instr with
   | h fuel ih =>
       rcases assemble_covers_current_pc hAsm hAt with
@@ -2803,6 +2993,9 @@ theorem assemble_terminal_target_run_source_exists
           hAsm hAt hEmit hRun (by simp [StepResult.IsTerminal])
       have hSafe : TargetBlockPcSafe instr state :=
         targetBlockPcSafe_of_instrAtPc_of_byteLength_lt hAt hLen
+      have hNotDynamic : instr ≠ .jumpDynamic :=
+        Program.instr_ne_jumpDynamic_of_instructionsAccepted hInstructions
+          (Program.instrAtPc_mem hAt)
       have hHead :
           Target.runNResultWithOracle target emitted.length state trace =
             Source.stepResultWithOracle program state trace := by
@@ -2853,7 +3046,7 @@ theorem assemble_terminal_target_run_source_exists
                 exact hSource
               rcases
                   source_stepAtResultWithOracle_running_boundary
-                    hAt hLen hStepAt with
+                    hAt hLen hNotDynamic hStepAt with
                 hEnd | ⟨nextPc, nextInstr, hNextAt⟩
               · cases hRest : restFuel with
                 | zero =>
@@ -2891,7 +3084,8 @@ theorem compile_terminal_target_run_source_exists
       Source.runNResultWithOracle program sourceFuel state trace =
         .ok (.halted halt, traceOut) :=
   assemble_terminal_target_run_source_exists
-    (compile?_some_assemble hCompile) hAt hLen hRun
+    (compile?_some_assemble hCompile)
+    (compile?_some_accepted hCompile).checked hAt hLen hRun
 
 theorem source_step_current_emit_result_withObservers_sound
     {program : Program} {state : EVMState}
@@ -2968,6 +3162,14 @@ theorem source_compiled_step_result_withObservers_sound
               simp [emitInstr?] at hEmit
           | push value =>
               simp [emitInstr?] at hEmit
+          | pushLabel target =>
+              cases hDest : Program.labelPc program target with
+              | none =>
+                  simp [emitInstr?, hDest] at hEmit
+                  unfold Source.stepAtResult Source.stepAt Source.invalid at hPlain
+                  simp [hDest, Instr.haltKind?] at hPlain
+              | some dest =>
+                  simp [emitInstr?, hDest] at hEmit
           | jump target =>
               cases hDest : Program.labelPc program target with
               | none =>
@@ -2984,6 +3186,8 @@ theorem source_compiled_step_result_withObservers_sound
                   simp [hDest, Instr.haltKind?] at hPlain
               | some dest =>
                   simp [emitInstr?, hDest] at hEmit
+          | jumpDynamic =>
+              simp [emitInstr?] at hEmit
   | some code =>
       exact source_step_current_emit_result_withObservers_sound hEmit hStep
 
@@ -3011,6 +3215,15 @@ theorem source_compiled_step_result_withOracle_sound
               simp [emitInstr?] at hEmit
           | push value =>
               simp [emitInstr?] at hEmit
+          | pushLabel target =>
+              cases hDest : Program.labelPc program target with
+              | none =>
+                  simp [emitInstr?, hDest] at hEmit
+                  unfold Source.stepAtResultWithOracle Source.stepAtResult
+                    Source.stepAt Source.invalid at hStep
+                  simp [hDest, Bind.bind, Except.bind] at hStep
+              | some dest =>
+                  simp [emitInstr?, hDest] at hEmit
           | jump target =>
               cases hDest : Program.labelPc program target with
               | none =>
@@ -3029,6 +3242,8 @@ theorem source_compiled_step_result_withOracle_sound
                   simp [hDest, Bind.bind, Except.bind] at hStep
               | some dest =>
                   simp [emitInstr?, hDest] at hEmit
+          | jumpDynamic =>
+              simp [emitInstr?] at hEmit
   | some code =>
       exact source_step_current_emit_result_withOracle_sound hEmit hStep
 

@@ -270,6 +270,23 @@ premise or hidden memory access in the current checked artifact path.
 
 ### 9. Optional Code Density
 
+- [x] Measure internal-return dispatch on exact contracts. Aave has 188
+  dispatchers and 649 call sites; linear token tests and per-site cleanup are
+  the largest remaining generic control-density cost.
+- [x] Add Assembly-owned symbolic label pushes and raw dynamic jumps, with
+  label resolution, closed/open execution preservation, observer silence, and
+  exact wide-assembler emission. Compact rejects both persistent code-pointer
+  forms, and ordinary accepted Assembly rejects raw dynamic jumps, until the
+  invariant below is checked.
+- [ ] Replace TypedCfg return tokens with typed return PCs using the existing
+  `.returnPC` slot: ordinary words remain equal, while each return-PC slot
+  relates the logical Assembly label PC to its compact physical PC. Prove this
+  relation through only shuffles, calls, and returns; reject arithmetic or
+  effectful consumption of code pointers.
+- [ ] Construct the return-PC annotation and relocation map inside the checked
+  TypedCfg-to-Assembly/Compact artifact, select dynamic returns only after its
+  adjacent forward and exact observer-replay theorems are checked, then
+  re-profile Permit2 and Aave.
 - [ ] If return-copy overhead is material, replace the current proved `ADD 0`
   local-to-word slot anonymization with a zero-byte Structured/TypedCfg relabel
   marker and prove that adjacent pass separately. The existing coercion remains
@@ -304,7 +321,8 @@ At each completed boundary:
 - `git diff --check`;
 - a green git checkpoint.
 
-The goal is incomplete while Aave needs compiler scratch memory, while a
-fixture provides spill storage, while generated allocation evidence appears at
-the public boundary, or while any new adjacent boundary lacks a checked
-preservation theorem.
+The goal is incomplete while Aave needs compiler scratch memory, while its
+checked image remains above the deployment-size limit, while a fixture provides
+spill storage, while generated allocation evidence appears at the public
+boundary, or while any selected adjacent boundary lacks a checked preservation
+theorem.

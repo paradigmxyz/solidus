@@ -1413,6 +1413,20 @@ theorem stepAt_emit_open_eq
             [TargetInstr.push32 value] state
       rw [openRunList_single]
       rfl
+  | pushLabel target =>
+      cases hDest : Program.labelPc program target with
+      | none => simp [emitInstr?, hDest] at hEmit
+      | some dest =>
+          simp [emitInstr?, hDest] at hEmit
+          subst located
+          change
+            InteractionSemantics.Source.openStepAt program pc
+                (.pushLabel target) state =
+              InteractionSemantics.Target.openRunList
+                [TargetInstr.push32 (EvmYul.UInt256.ofNat dest)] state
+          rw [openRunList_single]
+          simp [InteractionSemantics.Source.openStepAt, Source.stepAt, hDest]
+          rfl
   | jump target =>
       cases hDest : Program.labelPc program target with
       | none =>
@@ -1447,6 +1461,17 @@ theorem stepAt_emit_open_eq
           rw [open_run_push_jumpi]
           simp [InteractionSemantics.Source.openStepAt, Source.stepAt, hDest]
           rfl
+  | jumpDynamic =>
+      simp [emitInstr?] at hEmit
+      subst located
+      change
+        InteractionSemantics.Source.openStepAt program pc .jumpDynamic state =
+          InteractionSemantics.Target.openRunList [TargetInstr.jump] state
+      rw [openRunList_single]
+      simp [InteractionSemantics.Source.openStepAt, Source.stepAt,
+        InteractionSemantics.Target.openStepInstr, Target.stepInstr,
+        Target.stepInstrWith]
+      cases hPop : state.stack.pop <;> simp [hPop]
 
 theorem stepAt_emit_open_rel
     {program : Program} {pc : Nat} {instr : Instr}
@@ -1499,6 +1524,22 @@ theorem stepAt_emit_open_result_eq
             [TargetInstr.push32 value] state
       rw [openRunListResult_single]
       rfl
+  | pushLabel target =>
+      cases hDest : Program.labelPc program target with
+      | none => simp [emitInstr?, hDest] at hEmit
+      | some dest =>
+          simp [emitInstr?, hDest] at hEmit
+          subst located
+          change
+            InteractionSemantics.Source.openStepAtResult program pc
+                (.pushLabel target) state =
+              InteractionSemantics.Target.openRunListResult
+                [TargetInstr.push32 (EvmYul.UInt256.ofNat dest)] state
+          rw [openRunListResult_single]
+          simp [InteractionSemantics.Source.openStepAtResult,
+            InteractionSemantics.Source.openStepAt, Source.stepAt,
+            Instr.haltKind?, hDest]
+          rfl
   | jump target =>
       cases hDest : Program.labelPc program target with
       | none =>
@@ -1541,6 +1582,23 @@ theorem stepAt_emit_open_result_eq
           cases hPop : state.stack.pop <;> simp [hPop]
           change Simulation.Interaction.pure _ = _
           rfl
+  | jumpDynamic =>
+      simp [emitInstr?] at hEmit
+      subst located
+      change
+        InteractionSemantics.Source.openStepAtResult program pc
+            .jumpDynamic state =
+          InteractionSemantics.Target.openRunListResult
+            [TargetInstr.jump] state
+      rw [openRunListResult_single]
+      simp [InteractionSemantics.Source.openStepAtResult,
+        InteractionSemantics.Source.openStepAt, Source.stepAt,
+        Instr.haltKind?,
+        InteractionSemantics.Target.openStepInstrResult,
+        InteractionSemantics.Target.openStepInstr,
+        Target.stepInstrResultWith, Target.stepInstr,
+        Target.stepInstrWith, TargetInstr.haltKind?]
+      cases hPop : state.stack.pop <;> simp [hPop]
 
 theorem stepAt_emit_open_result_rel
     {program : Program} {pc : Nat} {instr : Instr}
@@ -1611,6 +1669,24 @@ theorem target_openRunNResult_eq_openRunList_of_emitInstr?
         ⟨targetInstr, restEmitted, hFirst, hFetch⟩
       cases hFirst
       exact target_openRunNResult_single_of_fetch hFetch
+  | pushLabel targetLabel =>
+      cases hDest : Program.labelPc program targetLabel with
+      | none => simp [emitInstr?, hDest] at hEmit
+      | some dest =>
+          simp [emitInstr?, hDest] at hEmit
+          subst emitted
+          rcases
+              assemble?_fetch_first_of_instrAtPc
+                (program := program) (target := target)
+                (query := state.pc.toNat) (pc := pc)
+                (instr := .pushLabel targetLabel)
+                (emitted :=
+                  [LocatedTarget.mk pc
+                    (TargetInstr.push32 (EvmYul.UInt256.ofNat dest))])
+                hAsm hAt (by simp [emitInstr?, hDest]) with
+            ⟨targetInstr, restEmitted, hFirst, hFetch⟩
+          cases hFirst
+          exact target_openRunNResult_single_of_fetch hFetch
   | jump targetLabel =>
       cases hDest : Program.labelPc program targetLabel with
       | none =>
@@ -1701,6 +1777,19 @@ theorem target_openRunNResult_eq_openRunList_of_emitInstr?
           exact
             target_openRunNResult_push_jumpi_of_fetch
               hFetchPush hFetchJumpi hNoOverflow
+  | jumpDynamic =>
+      simp [emitInstr?] at hEmit
+      subst emitted
+      rcases
+          assemble?_fetch_first_of_instrAtPc
+            (program := program) (target := target)
+            (query := state.pc.toNat) (pc := pc)
+            (instr := .jumpDynamic)
+            (emitted := [{ pc := pc, instr := TargetInstr.jump }])
+            hAsm hAt (by simp [emitInstr?]) with
+        ⟨targetInstr, restEmitted, hFirst, hFetch⟩
+      cases hFirst
+      exact target_openRunNResult_single_of_fetch hFetch
 
 /--
 One concrete branch through emitted-block execution. The transcript is the
@@ -1899,6 +1988,22 @@ theorem source_openStep_eq_compiled (program : Program) (state : EVMState) :
               simp [emitInstr?] at hEmit
           | push value =>
               simp [emitInstr?] at hEmit
+          | pushLabel target =>
+              cases hDest : Program.labelPc program target with
+              | none =>
+                  simp [hEmit, InteractionSemantics.Source.openStepAt,
+                    Assembly.Source.stepAt, Assembly.Source.invalid,
+                    emitInstr?, hDest, Simulation.Interaction.error]
+                  change
+                    Simulation.Interaction.error
+                        (Error := EVMException) (Result := EVMState)
+                        .InvalidInstruction =
+                      Simulation.Interaction.error
+                        (Error := EVMException) (Result := EVMState)
+                        .InvalidInstruction
+                  rfl
+              | some dest =>
+                  simp [emitInstr?, hDest] at hEmit
           | jump target =>
               cases hDest : Program.labelPc program target with
               | none =>
@@ -1931,6 +2036,8 @@ theorem source_openStep_eq_compiled (program : Program) (state : EVMState) :
                   rfl
               | some dest =>
                   simp [emitInstr?, hDest] at hEmit
+          | jumpDynamic =>
+              simp [emitInstr?] at hEmit
       | some located =>
           simpa [hEmit] using stepAt_emit_open_eq hEmit
 
@@ -1966,6 +2073,25 @@ theorem source_openStepResult_eq_compiled
               simp [emitInstr?] at hEmit
           | push value =>
               simp [emitInstr?] at hEmit
+          | pushLabel target =>
+              cases hDest : Program.labelPc program target with
+              | none =>
+                  simp [hEmit, InteractionSemantics.Source.openStepAtResult,
+                    InteractionSemantics.Source.openStepAt,
+                    Assembly.Source.stepAt, Assembly.Source.invalid,
+                    Instr.haltKind?, emitInstr?, hDest,
+                    Simulation.Interaction.error,
+                    Simulation.Interaction.bind]
+                  change
+                    Simulation.Interaction.error
+                        (Error := EVMException) (Result := StepResult)
+                        .InvalidInstruction =
+                      Simulation.Interaction.error
+                        (Error := EVMException) (Result := StepResult)
+                        .InvalidInstruction
+                  rfl
+              | some dest =>
+                  simp [emitInstr?, hDest] at hEmit
           | jump target =>
               cases hDest : Program.labelPc program target with
               | none =>
@@ -2004,6 +2130,8 @@ theorem source_openStepResult_eq_compiled
                   rfl
               | some dest =>
                   simp [emitInstr?, hDest] at hEmit
+          | jumpDynamic =>
+              simp [emitInstr?] at hEmit
       | some located =>
           simpa [hEmit] using stepAt_emit_open_result_eq hEmit
 

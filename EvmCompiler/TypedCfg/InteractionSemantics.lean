@@ -463,7 +463,9 @@ theorem openStep_executes_source_bounded
                   Nat.le_trans hUsed
                     (block_fuelBudget_le_of_findBlock? hFind),
                   hSource⟩
-      | prim op | push op | jump op | jumpi op =>
+      | prim op | push op | pushLabel op | jump op | jumpi op =>
+          cases hExec
+      | jumpDynamic =>
           cases hExec
 
 theorem openRunN_executes_source_bounded

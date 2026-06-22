@@ -115,7 +115,7 @@ def classifyFlowWith (continueTransfer : Instr → Bool)
   | .halted halt => .exit (.halted halt)
   | .running after =>
       match instr with
-      | .jump _ =>
+      | .jump _ | .jumpDynamic =>
           if continueTransfer instr then
             .next after
           else
@@ -358,6 +358,10 @@ def stepAt (program : Program) (_pc : Nat) (instr : Instr)
       Target.stepInstr (TargetInstr.prim op) state
   | .push value =>
       Target.stepInstr (TargetInstr.push32 value) state
+  | .pushLabel target => do
+      let dest ← (Program.labelPc program target).elim invalid pure
+      Target.stepInstr
+        (TargetInstr.push32 (EvmYul.UInt256.ofNat dest)) state
   | .jump target => do
       let dest ← (Program.labelPc program target).elim invalid pure
       pure (jumpPc dest state)
@@ -373,6 +377,8 @@ def stepAt (program : Program) (_pc : Nat) (instr : Instr)
           pure { state with pc := pc', stack := stack }
       | none =>
           .error .StackUnderflow
+  | .jumpDynamic =>
+      Target.stepInstr TargetInstr.jump state
 
 def stepAtResult (program : Program) (pc : Nat) (instr : Instr)
     (state : EVMState) : Except EVMException StepResult := do

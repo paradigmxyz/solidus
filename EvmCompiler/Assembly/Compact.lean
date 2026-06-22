@@ -305,6 +305,7 @@ def sourceInstrSizeAt? (pinnedPushPcs : List Nat) (branchWidth sourcePc : Nat) :
       let width <- pushWidthAt? pinnedPushPcs sourcePc value
       some (width + 1)
   | .jump _ | .jumpi _ => some (branchWidth + 2)
+  | .pushLabel _ | .jumpDynamic => none
 
 def layoutRev? (pinnedPushPcs : List Nat) (branchWidth : Nat) :
     Assembly.Program -> Nat -> Nat -> LabelTable -> Option (Prod LabelTable Nat)
@@ -367,7 +368,12 @@ theorem layoutRev?_names
               have hRest := ih hTail
               simpa [Assembly.Program.labels, List.reverse_cons,
                 List.map_append, List.append_assoc] using hRest
-          | prim op | push op | jump op | jumpi op =>
+          | prim op | push op | pushLabel op | jump op | jumpi op =>
+              have hTail := hLayout
+              simp [layoutRev?, hSize] at hTail
+              have hRest := ih hTail
+              simpa [Assembly.Program.labels] using hRest
+          | jumpDynamic =>
               have hTail := hLayout
               simp [layoutRev?, hSize] at hTail
               have hRest := ih hTail
@@ -399,6 +405,7 @@ def emitInstrRev? (pinnedPushPcs : List Nat)
   | .push value => do
       let width <- pushWidthAt? pinnedPushPcs sourcePc value
       some ({ pc := compactPc, instr := .push width value } :: acc)
+  | .pushLabel _ => none
   | .jump target => do
       let dest <- lookupLabel? table target
       if fitsWidth? branchWidth dest then
@@ -417,6 +424,7 @@ def emitInstrRev? (pinnedPushPcs : List Nat)
               instr := .push branchWidth (EvmYul.UInt256.ofNat dest) } :: acc)
       else
         none
+  | .jumpDynamic => none
 
 def emitRev? (pinnedPushPcs : List Nat) (branchWidth : Nat)
     (table : LabelTable) :
@@ -592,6 +600,8 @@ theorem emitSourceBlock?_codeByteLength
           subst compactSize
           subst code
           rfl
+  | pushLabel target =>
+      simp [sourceInstrSizeAt?] at hSize
   | jump target | jumpi target =>
       cases hDest : lookupLabel? table target with
       | none => simp [emitSourceBlock?, emitInstrRev?, hDest] at hCode
@@ -603,6 +613,8 @@ theorem emitSourceBlock?_codeByteLength
             subst code
             simp [Program.codeByteLength, Instr.byteSize, Nat.add_assoc]
           · simp [emitSourceBlock?, emitInstrRev?, hDest, hFits] at hCode
+  | jumpDynamic =>
+      simp [sourceInstrSizeAt?] at hSize
 
 def BoundaryPair (blocks : List SourceBlock)
     (sourceEnd compactEnd sourcePc compactPc : Nat) : Prop :=
@@ -1603,9 +1615,14 @@ theorem buildLabelPcIndexFrom_get?
             simp only [Std.HashMap.get?_eq_getElem?,
               Std.HashMap.getElem?_insertIfNew]
             simp [hBeq, hName, Assembly.Program.labelPcFrom]
-      | prim op | push op | jump op | jumpi op =>
+      | prim op | push op | pushLabel op | jump op | jumpi op =>
           simpa [buildLabelPcIndexFrom, Assembly.Program.labelPcFrom]
             using ih (pc := pc + Assembly.Instr.byteSize _) (index := index)
+      | jumpDynamic =>
+          simpa [buildLabelPcIndexFrom, Assembly.Program.labelPcFrom]
+            using ih
+              (pc := pc + Assembly.Instr.byteSize .jumpDynamic)
+              (index := index)
 
 theorem buildLabelPcIndex_get?
     (program : Assembly.Program) (target : Label) :
@@ -1733,6 +1750,7 @@ def preparationBlockSafe? (source prepared : Assembly.Program)
           preparationTargetPc? blocks source.byteLength prepared.byteLength
             sourceDest == some preparedDest
       | _, _ => false
+  | .keep, .pushLabel _ | .keep, .jumpDynamic => false
   | .keep, .prim .pc => false
   | .keep, _ => true
 
@@ -1769,6 +1787,7 @@ def preparationBlockSafeIndexed? (index : PreparationLookupIndex)
           preparationTargetPcIndexed? index.boundaries sourceEnd preparedEnd
             sourceDest == some preparedDest
       | _, _ => false
+  | .keep, .pushLabel _ | .keep, .jumpDynamic => false
   | .keep, .prim .pc => false
   | .keep, _ => true
 
@@ -1817,8 +1836,9 @@ def PreparationBlockSafe (source prepared : Assembly.Program)
       ∃ sourceDest preparedDest,
         source.labelPc target = some sourceDest ∧
           prepared.labelPc target = some preparedDest ∧
-            preparationTargetPc? blocks source.byteLength prepared.byteLength
+          preparationTargetPc? blocks source.byteLength prepared.byteLength
               sourceDest = some preparedDest
+  | .keep, .pushLabel _ | .keep, .jumpDynamic => False
   | .keep, .prim .pc => False
   | .keep, _ => True
 
@@ -1883,6 +1903,10 @@ def SourceStats.addInstr (stats : SourceStats)
         instructions := stats.instructions + 1
         pushes := stats.pushes + 1
         zeroPushes := stats.zeroPushes + if value.toNat = 0 then 1 else 0 }
+  | .pushLabel _ =>
+      { stats with
+        instructions := stats.instructions + 1
+        pushes := stats.pushes + 1 }
   | .jump _ =>
       { stats with
         instructions := stats.instructions + 1
@@ -1891,6 +1915,10 @@ def SourceStats.addInstr (stats : SourceStats)
       { stats with
         instructions := stats.instructions + 1
         jumpis := stats.jumpis + 1 }
+  | .jumpDynamic =>
+      { stats with
+        instructions := stats.instructions + 1
+        jumps := stats.jumps + 1 }
   | .prim op =>
       let opcode := (EvmYul.EVM.serializeInstr op.toEVM).toNat
       let isDup := decide (0x80 <= opcode ∧ opcode <= 0x8f)
@@ -3114,6 +3142,11 @@ theorem compile?_preparationBlock_open_rel
           simpa [hInstr] using
             (compile?_preparation_simple_block_rel hCompile hBlock hAction
               hSimple hTargetPc hSourcePc hRel)
+      | pushLabel label =>
+          have hSafe := compile?_preparationSafe hCompile block hBlock
+          unfold PreparationBlockSafe at hSafe
+          rw [hAction, hInstr] at hSafe
+          exact False.elim hSafe
       | jump label =>
           refine ⟨1, by omega, ?_⟩
           simpa [hInstr] using
@@ -3124,6 +3157,11 @@ theorem compile?_preparationBlock_open_rel
           simpa [hInstr] using
             (compile?_preparation_keep_jumpi_rel hCompile hBlock hInstr
               hAction hTargetPc hSourcePc hRel)
+      | jumpDynamic =>
+          have hSafe := compile?_preparationSafe hCompile block hBlock
+          unfold PreparationBlockSafe at hSafe
+          rw [hAction, hInstr] at hSafe
+          exact False.elim hSafe
   | skip =>
       cases hInstr : block.sourceInstr with
       | label name =>
@@ -3136,7 +3174,12 @@ theorem compile?_preparationBlock_open_rel
           simpa [hInstr] using
             (compile?_preparation_skip_jump_rel hCompile hBlock hInstr
               hAction hTargetPc hRel)
-      | prim op | push op | jumpi op =>
+      | prim op | push op | pushLabel op | jumpi op =>
+          have hSafe := compile?_preparationSafe hCompile block hBlock
+          unfold PreparationBlockSafe at hSafe
+          rw [hAction, hInstr] at hSafe
+          exact False.elim hSafe
+      | jumpDynamic =>
           have hSafe := compile?_preparationSafe hCompile block hBlock
           unfold PreparationBlockSafe at hSafe
           rw [hAction, hInstr] at hSafe
@@ -3747,6 +3790,8 @@ theorem compile?_sourceBlock_open_rel
               ((List.forall_iff_forall_mem.mp
                 hArtifact.wellFormed.2.2.2) located hMem)
               (hDecoding.decodes located hMem) hTargetPc hSourcePc hRel⟩
+  | pushLabel target =>
+      simp [sourceInstrSizeAt?] at hSize
   | jump target =>
       cases hDest : lookupLabel? artifact.labels target with
       | none =>
@@ -3824,6 +3869,8 @@ theorem compile?_sourceBlock_open_rel
                 (hDecoding.decodes jumpLocated hJumpMem)
                 hTargetPc hSourcePc hRel⟩
           · simp [emitSourceBlock?, emitInstrRev?, hDest, hFitsBool] at hCode
+  | jumpDynamic =>
+      simp [sourceInstrSizeAt?] at hSize
 
 /-- A terminal wide-Assembly run is simulated by actual compact bytes with a
 uniform two-opcode budget per source instruction. The extra budget is useful

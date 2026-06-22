@@ -416,11 +416,11 @@ def CompactFamilyStats.addBlock (stats : CompactFamilyStats)
       { stats with
         labels := stats.labels + 1
         labelBytes := stats.labelBytes + bytes }
-  | .push _ =>
+  | .push _ | .pushLabel _ =>
       { stats with
         constants := stats.constants + 1
         constantBytes := stats.constantBytes + bytes }
-  | .jump _ =>
+  | .jump _ | .jumpDynamic =>
       { stats with
         jumps := stats.jumps + 1
         jumpBytes := stats.jumpBytes + bytes }

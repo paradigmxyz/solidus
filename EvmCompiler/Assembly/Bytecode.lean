@@ -604,6 +604,13 @@ theorem emitInstr_layout {program : Program} {pc : Nat} {instr : Instr}
       simp [emitInstr?] at hEmit
       subst code
       simp [codeLayoutFrom]
+  | pushLabel target =>
+      cases hDest : Program.labelPc program target with
+      | none => simp [emitInstr?, hDest] at hEmit
+      | some dest =>
+          simp [emitInstr?, hDest] at hEmit
+          subst code
+          simp [codeLayoutFrom, byteSize, Instr.push32Size]
   | jump target =>
       cases hDest : Program.labelPc program target with
       | none =>
@@ -620,6 +627,10 @@ theorem emitInstr_layout {program : Program} {pc : Nat} {instr : Instr}
           simp [emitInstr?, hDest] at hEmit
           subst code
           simp [codeLayoutFrom, byteSize, Instr.push32Size]
+  | jumpDynamic =>
+      simp [emitInstr?] at hEmit
+      subst code
+      simp [codeLayoutFrom]
 
 theorem emitInstr_byteLength {program : Program} {pc : Nat} {instr : Instr}
     {code : List LocatedTarget}
@@ -638,6 +649,14 @@ theorem emitInstr_byteLength {program : Program} {pc : Nat} {instr : Instr}
       simp [emitInstr?] at hEmit
       subst code
       simp [codeByteLength, byteSize, Instr.byteSize, Instr.push32Size]
+  | pushLabel target =>
+      cases hDest : Program.labelPc program target with
+      | none => simp [emitInstr?, hDest] at hEmit
+      | some dest =>
+          simp [emitInstr?, hDest] at hEmit
+          subst code
+          simp [codeByteLength, byteSize, Instr.byteSize,
+            Instr.push32Size]
   | jump target =>
       cases hDest : Program.labelPc program target with
       | none =>
@@ -656,6 +675,10 @@ theorem emitInstr_byteLength {program : Program} {pc : Nat} {instr : Instr}
           subst code
           simp [codeByteLength, byteSize, Instr.byteSize, Instr.jumpSize,
             Instr.push32Size]
+  | jumpDynamic =>
+      simp [emitInstr?] at hEmit
+      subst code
+      simp [codeByteLength, byteSize, Instr.byteSize]
 
 theorem emitFrom_layout {program suffix : Program} {base : Nat}
     {code : List LocatedTarget}

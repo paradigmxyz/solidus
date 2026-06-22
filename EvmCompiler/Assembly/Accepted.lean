@@ -47,7 +47,8 @@ namespace Instr
 
 def accepted : Instr → Bool
   | .prim op => op.accepted
-  | .label _ | .push _ | .jump _ | .jumpi _ => true
+  | .label _ | .push _ | .pushLabel _ | .jump _ | .jumpi _ => true
+  | .jumpDynamic => false
 
 end Instr
 
@@ -106,6 +107,15 @@ def labelsUnique (program : Program) : Bool :=
 
 def instructionsAccepted (program : Program) : Bool :=
   program.all Instr.accepted
+
+theorem instr_ne_jumpDynamic_of_instructionsAccepted
+    {program : Program} {instr : Instr}
+    (hAccepted : instructionsAccepted program = true)
+    (hMem : instr ∈ program) : instr ≠ .jumpDynamic := by
+  have hInstr := (List.all_eq_true.mp hAccepted) instr hMem
+  intro hEq
+  subst instr
+  simp [Instr.accepted] at hInstr
 
 /--
 The independent accepted-input checker for the labeled assembly IR.
@@ -168,12 +178,18 @@ theorem labelPcFrom_none_of_not_mem_labels
       | push value =>
           unfold labelPcFrom
           exact ih (base + Instr.byteSize (.push value)) hNotMem
+      | pushLabel label =>
+          unfold labelPcFrom
+          exact ih (base + Instr.byteSize (.pushLabel label)) hNotMem
       | jump target' =>
           unfold labelPcFrom
           exact ih (base + Instr.byteSize (.jump target')) hNotMem
       | jumpi target' =>
           unfold labelPcFrom
           exact ih (base + Instr.byteSize (.jumpi target')) hNotMem
+      | jumpDynamic =>
+          unfold labelPcFrom
+          exact ih (base + Instr.byteSize .jumpDynamic) hNotMem
 
 theorem labelPc_none_of_not_mem_labels
     (program : Program) {target : Label}
@@ -219,10 +235,14 @@ theorem labelPcFrom_exists_of_mem_labels
           exact ih (base + Instr.byteSize (.prim op)) hMem
       | push value =>
           exact ih (base + Instr.byteSize (.push value)) hMem
+      | pushLabel label =>
+          exact ih (base + Instr.byteSize (.pushLabel label)) hMem
       | jump jumpTarget =>
           exact ih (base + Instr.byteSize (.jump jumpTarget)) hMem
       | jumpi jumpTarget =>
           exact ih (base + Instr.byteSize (.jumpi jumpTarget)) hMem
+      | jumpDynamic =>
+          exact ih (base + Instr.byteSize .jumpDynamic) hMem
 
 theorem labelPc_exists_of_mem_labels
     (program : Program) {target : Label}
@@ -266,6 +286,14 @@ theorem labelPcFrom_append_label_eq
               some (base + byteLength (.push value :: rest))
           rw [ih (base := base + Instr.byteSize (.push value)) hNotMem]
           simp [byteLength_cons, Nat.add_assoc]
+      | pushLabel label =>
+          unfold labelPcFrom
+          change
+            labelPcFrom (rest ++ Instr.label target :: suffix)
+              (base + Instr.byteSize (.pushLabel label)) target =
+              some (base + byteLength (.pushLabel label :: rest))
+          rw [ih (base := base + Instr.byteSize (.pushLabel label)) hNotMem]
+          simp [byteLength_cons, Nat.add_assoc]
       | jump target' =>
           unfold labelPcFrom
           change
@@ -281,6 +309,14 @@ theorem labelPcFrom_append_label_eq
               (base + Instr.byteSize (.jumpi target')) target =
               some (base + byteLength (.jumpi target' :: rest))
           rw [ih (base := base + Instr.byteSize (.jumpi target')) hNotMem]
+          simp [byteLength_cons, Nat.add_assoc]
+      | jumpDynamic =>
+          unfold labelPcFrom
+          change
+            labelPcFrom (rest ++ Instr.label target :: suffix)
+              (base + Instr.byteSize .jumpDynamic) target =
+              some (base + byteLength (.jumpDynamic :: rest))
+          rw [ih (base := base + Instr.byteSize .jumpDynamic) hNotMem]
           simp [byteLength_cons, Nat.add_assoc]
 
 theorem labelPc_append_label_eq
