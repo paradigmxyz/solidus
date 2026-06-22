@@ -67,6 +67,12 @@ def ClosedStackRel (resolve : Resolver) (sites : List ReturnSite) :
         ClosedStackRel resolve sites slots targetRest sourceRest
   | _ :: _, _, _ => False
 
+def TailRel (resolve : Resolver) (sites : List ReturnSite) :
+    FrameTail -> List Word -> List Word -> Prop
+  | .closed, target, source => target = [] ∧ source = []
+  | .caller, target, source =>
+      exists hiddenSlots, ClosedStackRel resolve sites hiddenSlots target source
+
 def StackRel (resolve : Resolver) (sites : List ReturnSite) :
     List Slot -> FrameTail -> List Word -> List Word -> Prop
   | [], .closed, target, source => target = [] ∧ source = []
@@ -86,6 +92,168 @@ def RuntimeRel (resolve : Resolver) (sites : List ReturnSite)
     (shape : Shape) (target source : Assembly.EVMState) : Prop :=
   target.toSharedState = source.toSharedState ∧
     ShapeStackRel resolve sites shape target.stack source.stack
+
+def PlainSlot : Slot -> Prop
+  | .returnToken | .returnPC _ => False
+  | _ => True
+
+def PlainSlots (slots : List Slot) : Prop :=
+  forall slot, slot ∈ slots -> PlainSlot slot
+
+theorem slotWordRel_eq_of_plain
+    {resolve : Resolver} {sites : List ReturnSite}
+    {slot : Slot} {target source : Word}
+    (hPlain : PlainSlot slot)
+    (hRel : SlotWordRel resolve sites slot target source) :
+    target = source := by
+  cases slot <;>
+    simp [PlainSlot, SlotWordRel] at hPlain hRel ⊢ <;>
+    assumption
+
+theorem closedStackRel_lengths
+    {resolve : Resolver} {sites : List ReturnSite}
+    {slots : List Slot} {target source : List Word}
+    (hRel : ClosedStackRel resolve sites slots target source) :
+    target.length = slots.length ∧ source.length = slots.length := by
+  induction slots generalizing target source with
+  | nil =>
+      rcases hRel with ⟨rfl, rfl⟩
+      simp
+  | cons slot rest ih =>
+      cases target with
+      | nil => cases hRel
+      | cons targetHead targetRest =>
+          cases source with
+          | nil => cases hRel
+          | cons sourceHead sourceRest =>
+              rcases ih hRel.2 with ⟨hTarget, hSource⟩
+              simp [hTarget, hSource]
+
+theorem closedStackRel_eq_of_plain
+    {resolve : Resolver} {sites : List ReturnSite}
+    {slots : List Slot} {target source : List Word}
+    (hPlain : PlainSlots slots)
+    (hRel : ClosedStackRel resolve sites slots target source) :
+    target = source := by
+  induction slots generalizing target source with
+  | nil => exact hRel.1.trans hRel.2.symm
+  | cons slot rest ih =>
+      cases target with
+      | nil => cases hRel
+      | cons targetHead targetRest =>
+          cases source with
+          | nil => cases hRel
+          | cons sourceHead sourceRest =>
+              have hHeadPlain : PlainSlot slot := hPlain slot (by simp)
+              have hRestPlain : PlainSlots rest := by
+                intro candidate hMem
+                exact hPlain candidate (by simp [hMem])
+              rw [slotWordRel_eq_of_plain hHeadPlain hRel.1]
+              rw [ih hRestPlain hRel.2]
+
+theorem closedStackRel_refl_of_plain
+    {resolve : Resolver} {sites : List ReturnSite}
+    {slots : List Slot} {values : List Word}
+    (hPlain : PlainSlots slots)
+    (hLength : values.length = slots.length) :
+    ClosedStackRel resolve sites slots values values := by
+  induction slots generalizing values with
+  | nil =>
+      have hValues : values = [] := List.eq_nil_of_length_eq_zero hLength
+      subst values
+      simp [ClosedStackRel]
+  | cons slot rest ih =>
+      cases values with
+      | nil => simp at hLength
+      | cons value values =>
+          have hHeadPlain : PlainSlot slot := hPlain slot (by simp)
+          have hRestPlain : PlainSlots rest := by
+            intro candidate hMem
+            exact hPlain candidate (by simp [hMem])
+          have hRestLength : values.length = rest.length := by
+            simpa using hLength
+          constructor
+          · cases slot <;>
+              simp [PlainSlot, SlotWordRel] at hHeadPlain ⊢
+          · exact ih hRestPlain hRestLength
+
+theorem stackRel_split
+    {resolve : Resolver} {sites : List ReturnSite}
+    {slots : List Slot} {tail : FrameTail}
+    {target source : List Word}
+    (hRel : StackRel resolve sites slots tail target source) :
+    exists targetVisible targetHidden sourceVisible sourceHidden,
+      target = targetVisible ++ targetHidden ∧
+      source = sourceVisible ++ sourceHidden ∧
+      ClosedStackRel resolve sites slots targetVisible sourceVisible ∧
+      TailRel resolve sites tail targetHidden sourceHidden := by
+  induction slots generalizing target source with
+  | nil =>
+      cases tail with
+      | closed =>
+          rcases hRel with ⟨rfl, rfl⟩
+          exact ⟨[], [], [], [], by simp [ClosedStackRel, TailRel]⟩
+      | caller =>
+          exact
+            ⟨[], target, [], source, by simp,
+              by simp, by simp [ClosedStackRel], hRel⟩
+  | cons slot rest ih =>
+      cases target with
+      | nil => cases hRel
+      | cons targetHead targetRest =>
+          cases source with
+          | nil => cases hRel
+          | cons sourceHead sourceRest =>
+              obtain
+                ⟨targetVisible, targetHidden, sourceVisible, sourceHidden,
+                  hTarget, hSource, hVisible, hTail⟩ := ih hRel.2
+              exact
+                ⟨targetHead :: targetVisible, targetHidden,
+                  sourceHead :: sourceVisible, sourceHidden,
+                  by simp [hTarget], by simp [hSource],
+                  ⟨hRel.1, hVisible⟩, hTail⟩
+
+theorem stackRel_split_plain
+    {resolve : Resolver} {sites : List ReturnSite}
+    {slots : List Slot} {tail : FrameTail}
+    {target source : List Word}
+    (hPlain : PlainSlots slots)
+    (hRel : StackRel resolve sites slots tail target source) :
+    exists visible targetHidden sourceHidden,
+      target = visible ++ targetHidden ∧
+      source = visible ++ sourceHidden ∧
+      visible.length = slots.length ∧
+      TailRel resolve sites tail targetHidden sourceHidden := by
+  obtain
+    ⟨targetVisible, targetHidden, sourceVisible, sourceHidden,
+      hTarget, hSource, hVisible, hTail⟩ := stackRel_split hRel
+  have hVisibleEq := closedStackRel_eq_of_plain hPlain hVisible
+  subst sourceVisible
+  have hLength := (closedStackRel_lengths hVisible).1
+  exact ⟨targetVisible, targetHidden, sourceHidden,
+    hTarget, hSource, hLength, hTail⟩
+
+theorem stackRel_of_closed_prefix_tail
+    {resolve : Resolver} {sites : List ReturnSite}
+    {slots : List Slot} {tail : FrameTail}
+    {targetVisible targetHidden sourceVisible sourceHidden : List Word}
+    (hVisible :
+      ClosedStackRel resolve sites slots targetVisible sourceVisible)
+    (hTail : TailRel resolve sites tail targetHidden sourceHidden) :
+    StackRel resolve sites slots tail
+      (targetVisible ++ targetHidden) (sourceVisible ++ sourceHidden) := by
+  induction slots generalizing targetVisible sourceVisible with
+  | nil =>
+      rcases hVisible with ⟨rfl, rfl⟩
+      cases tail <;> simpa [TailRel, StackRel] using hTail
+  | cons slot rest ih =>
+      cases targetVisible with
+      | nil => cases hVisible
+      | cons targetHead targetRest =>
+          cases sourceVisible with
+          | nil => cases hVisible
+          | cons sourceHead sourceRest =>
+              exact ⟨hVisible.1, ih hVisible.2⟩
 
 theorem runtimeRel_replaceStackAndIncrPC
     {resolve : Resolver} {sites : List ReturnSite}

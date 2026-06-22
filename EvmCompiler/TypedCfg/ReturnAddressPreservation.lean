@@ -9,6 +9,164 @@ namespace ReturnAddressPreservation
 
 open ReturnAddressRelation
 
+abbrev OpenResultRel (resolve : ReturnAddressRelation.Resolver)
+    (sites : List ReturnSite) (output : Shape) :
+    Except Assembly.EVMException Assembly.EVMState ->
+      Except Assembly.EVMException Assembly.EVMState -> Prop :=
+  Simulation.Interaction.ExceptRel
+    (fun _targetError _sourceError => True)
+    (RuntimeRel resolve sites output)
+
+theorem prim_openStep_runtimeRel
+    {resolve : ReturnAddressRelation.Resolver}
+    {sites : List ReturnSite}
+    {op : Assembly.PrimOp} {inputArity outputArity : Nat}
+    {input output : Shape}
+    {target source : Assembly.EVMState}
+    (hArity : op.stackArity? = some (inputArity, outputArity))
+    (hType : TypedCfg.Instr.type? (.prim op) input = some output)
+    (hNoPc : op ≠ .pc)
+    (hInputPlain : PlainSlots input.slots)
+    (hOutputPlain : PlainSlots output.slots)
+    (hRel : RuntimeRel resolve sites input target source) :
+    Simulation.Interaction.Rel (OpenResultRel resolve sites output)
+      (Assembly.InteractionSemantics.PrimOp.openStep op target)
+      (Assembly.InteractionSemantics.PrimOp.openStep op source) := by
+  obtain ⟨visible, targetHidden, sourceHidden,
+      hTargetStack, hSourceStack, hVisibleLength, hTail⟩ :=
+    stackRel_split_plain hInputPlain hRel.2
+  let targetActive : Assembly.EVMState := { target with stack := visible }
+  let sourceActive : Assembly.EVMState := { source with stack := visible }
+  have hActiveRel : Assembly.SameRuntimeData targetActive sourceActive := by
+    cases target
+    cases source
+    simp [targetActive, sourceActive, Assembly.SameRuntimeData,
+      Assembly.eraseRuntimeControl] at hRel ⊢
+    exact hRel.1
+  have hTypedLengths :=
+    TypedCfg.Instr.length_of_type?_prim hArity hType
+  have hTailEq : output.tail = input.tail := by
+    simp only [TypedCfg.Instr.type?] at hType
+    rw [hArity] at hType
+    by_cases hFits : inputArity ≤ input.length
+    · simp [hFits] at hType
+      cases hType
+      rfl
+    · simp [hFits] at hType
+  have hBound : inputArity ≤ visible.length := by
+    rw [hVisibleLength]
+    simpa [TypedCfg.Shape.length] using hTypedLengths.1
+  have hTargetSuffix :=
+    Assembly.InteractionPreservation.PrimOp.openStep_append_stack_rel_of_stackArity_le
+      targetActive targetHidden hArity hBound
+  have hTargetSuffix' :
+      Simulation.Interaction.Rel
+        (Assembly.InteractionPreservation.PrimOp.StackSuffixRuntimeRel
+          targetHidden)
+        (Assembly.InteractionSemantics.PrimOp.openStep op targetActive)
+        (Assembly.InteractionSemantics.PrimOp.openStep op target) := by
+    have hTargetState :
+        { targetActive with stack := targetActive.stack ++ targetHidden } =
+          target := by
+      cases target
+      simp [targetActive] at hTargetStack ⊢
+      exact hTargetStack.symm
+    rw [hTargetState] at hTargetSuffix
+    exact hTargetSuffix
+  have hSourceSuffix :=
+    Assembly.InteractionPreservation.PrimOp.openStep_append_stack_rel_of_stackArity_le
+      sourceActive sourceHidden hArity hBound
+  have hSourceSuffix' :
+      Simulation.Interaction.Rel
+        (Assembly.InteractionPreservation.PrimOp.StackSuffixRuntimeRel
+          sourceHidden)
+        (Assembly.InteractionSemantics.PrimOp.openStep op sourceActive)
+        (Assembly.InteractionSemantics.PrimOp.openStep op source) := by
+    have hSourceState :
+        { sourceActive with stack := sourceActive.stack ++ sourceHidden } =
+          source := by
+      cases source
+      simp [sourceActive] at hSourceStack ⊢
+      exact hSourceStack.symm
+    rw [hSourceState] at hSourceSuffix
+    exact hSourceSuffix
+  have hActive :=
+    Assembly.InteractionPreservation.PrimOp.openStep_runtimeRel
+      (op := op) ⟨(inputArity, outputArity), hArity⟩ hNoPc hActiveRel
+  have hRealizes :=
+    Assembly.InteractionPreservation.PrimOp.openStep_realizesStackArity
+      (state := targetActive) hArity
+  have hTargetToActive :=
+    Simulation.Interaction.Rel.strengthen_right hTargetSuffix'.symm hRealizes
+  have hTargetToSourceActive :=
+    Simulation.Interaction.Rel.trans hTargetToActive hActive
+  have hAll :=
+    Simulation.Interaction.Rel.trans hTargetToSourceActive hSourceSuffix'
+  apply Simulation.Interaction.Rel.mono hAll
+  intro targetDone sourceDone hDone
+  rcases hDone with
+    ⟨sourceActiveDone,
+      ⟨targetActiveDone, ⟨hTargetSuffixDone, hTargetLength⟩,
+        hActiveDone⟩,
+      hSourceSuffixDone⟩
+  cases hTargetSuffixDone with
+  | @error targetActiveError targetError hTargetError =>
+      cases hActiveDone with
+      | @error _ sourceActiveError hActiveError =>
+          cases hSourceSuffixDone with
+          | @error _ sourceError hSourceError =>
+              exact Simulation.Interaction.ExceptRel.error True.intro
+  | @ok targetActiveFinal targetFinal hTargetSuffixState =>
+      cases hActiveDone with
+      | @ok _ sourceActiveFinal hActiveState =>
+          cases hSourceSuffixDone with
+          | @ok _ sourceFinal hSourceSuffixState =>
+              apply Simulation.Interaction.ExceptRel.ok
+              constructor
+              · exact
+                  (Assembly.SameRuntimeData.shared_eq hTargetSuffixState).trans
+                    ((Assembly.SameRuntimeData.shared_eq hActiveState).trans
+                      (Assembly.SameRuntimeData.shared_eq
+                        hSourceSuffixState).symm)
+              · have hPrefixLength :
+                    targetActiveFinal.stack.length = output.slots.length := by
+                  simp only [
+                    Assembly.InteractionPreservation.PrimOp.RealizesStackArity]
+                    at hTargetLength
+                  rw [hTargetLength, show targetActive.stack.length = visible.length by
+                    simp [targetActive], hVisibleLength]
+                  simpa [TypedCfg.Shape.length] using hTypedLengths.2.symm
+                have hVisibleRel :
+                    ClosedStackRel resolve sites output.slots
+                      targetActiveFinal.stack targetActiveFinal.stack :=
+                  closedStackRel_refl_of_plain hOutputPlain hPrefixLength
+                have hActiveStack :
+                    targetActiveFinal.stack = sourceActiveFinal.stack :=
+                  Assembly.SameRuntimeData.stack_eq hActiveState
+                have hVisibleRel' :
+                    ClosedStackRel resolve sites output.slots
+                      targetActiveFinal.stack sourceActiveFinal.stack := by
+                  simpa [hActiveStack] using hVisibleRel
+                have hStackRel :=
+                  stackRel_of_closed_prefix_tail hVisibleRel' hTail
+                have hTargetFinalStack :=
+                  Assembly.SameRuntimeData.stack_eq hTargetSuffixState
+                have hSourceFinalStack :=
+                  Assembly.SameRuntimeData.stack_eq hSourceSuffixState
+                have hTargetFinalStack' :
+                    targetFinal.stack =
+                      targetActiveFinal.stack ++ targetHidden := by
+                  simpa using hTargetFinalStack
+                have hSourceFinalStack' :
+                    sourceFinal.stack =
+                      sourceActiveFinal.stack ++ sourceHidden := by
+                  simpa using hSourceFinalStack
+                change StackRel resolve sites output.slots output.tail
+                  targetFinal.stack sourceFinal.stack
+                rw [hTailEq]
+                rw [hTargetFinalStack', hSourceFinalStack']
+                exact hStackRel
+
 theorem returnToken_stepAt
     {cfg : TypedCfg.Program} {assembly : Assembly.Program}
     {token : Word} {site : ReturnSite} {targetPc currentPc : Nat}
