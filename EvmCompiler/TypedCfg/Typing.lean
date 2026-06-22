@@ -1,5 +1,6 @@
 import EvmCompiler.TypedCfg.Syntax
 import EvmCompiler.Assembly.PrimSemantics
+import Std.Data.HashMap.Lemmas
 
 namespace EvmCompiler
 namespace TypedCfg
@@ -193,6 +194,71 @@ def returnTokenDepth? (shape : Shape) : Option Nat :=
 
 end Shape
 
+namespace Program
+
+abbrev LabelShapeIndex := Std.HashMap Label Shape
+
+def buildLabelShapeIndexFrom : List Block → LabelShapeIndex → LabelShapeIndex
+  | [], index => index
+  | block :: rest, index =>
+      buildLabelShapeIndexFrom rest
+        (index.insertIfNew block.label block.input)
+
+def buildLabelShapeIndex (program : Program) : LabelShapeIndex :=
+  buildLabelShapeIndexFrom program.blocks {}
+
+theorem buildLabelShapeIndexFrom_get?
+    (blocks : List Block) (index : LabelShapeIndex) (target : Label) :
+    (buildLabelShapeIndexFrom blocks index).get? target =
+      match index.get? target with
+      | some existing => some existing
+      | none =>
+          (blocks.find? fun block => block.label == target).map Block.input := by
+  induction blocks generalizing index with
+  | nil =>
+      cases hExisting : index.get? target <;>
+        simp only [buildLabelShapeIndexFrom, List.find?_nil, Option.map_none,
+          hExisting]
+  | cons block rest ih =>
+      rw [buildLabelShapeIndexFrom, ih]
+      by_cases hLabel : block.label = target
+      · subst target
+        cases hExisting : index.get? block.label with
+        | none =>
+            have hExisting' : index[block.label]? = none := by
+              simpa only [Std.HashMap.get?_eq_getElem?] using hExisting
+            have hNotMem : block.label ∉ index := by
+              intro hMem
+              have hSome :=
+                (Std.HashMap.mem_iff_isSome_getElem?).mp hMem
+              rw [hExisting'] at hSome
+              simp at hSome
+            simp only [Std.HashMap.get?_eq_getElem?,
+              Std.HashMap.getElem?_insertIfNew]
+            simp [hExisting', hNotMem]
+        | some existing =>
+            have hExisting' : index[block.label]? = some existing := by
+              simpa only [Std.HashMap.get?_eq_getElem?] using hExisting
+            obtain ⟨hMem, _hGet⟩ :=
+              Std.HashMap.getElem?_eq_some_iff.mp hExisting'
+            simp only [Std.HashMap.get?_eq_getElem?,
+              Std.HashMap.getElem?_insertIfNew]
+            simp only [beq_self_eq_true, true_and, hMem,
+              not_true_eq_false, if_false, hExisting']
+      · have hBeq : (block.label == target) = false := by
+          simpa using hLabel
+        simp only [Std.HashMap.get?_eq_getElem?,
+          Std.HashMap.getElem?_insertIfNew]
+        simp [hBeq, hLabel]
+
+theorem buildLabelShapeIndex_get? (program : Program) (target : Label) :
+    (buildLabelShapeIndex program).get? target = program.labelShape? target := by
+  simpa [buildLabelShapeIndex, Program.labelShape?, Program.findBlock?] using
+    buildLabelShapeIndexFrom_get? program.blocks
+      ({} : LabelShapeIndex) target
+
+end Program
+
 namespace Terminator
 
 def targets : Terminator → List Label
@@ -207,26 +273,32 @@ def definedLabels : Terminator → List Label
   | .returnDispatch _returnCount sites => sites.map ReturnSite.caseLabel
   | _ => []
 
-def targetsHaveShape? (program : Program) (shape : Shape) :
+def targetsHaveShapeWith?
+    (labelShape? : Label → Option Shape) (shape : Shape) :
     List ReturnSite → Bool
   | [] => true
   | site :: rest =>
-      match program.labelShape? site.target with
+      match labelShape? site.target with
       | none => false
       | some targetShape =>
           shape.compatible targetShape &&
-            targetsHaveShape? program shape rest
+            targetsHaveShapeWith? labelShape? shape rest
 
-def type? (program : Program) (shape : Shape) : Terminator → Option Unit
+def targetsHaveShape? (program : Program) (shape : Shape) :
+    List ReturnSite → Bool :=
+  targetsHaveShapeWith? program.labelShape? shape
+
+def typeWith? (labelShape? : Label → Option Shape)
+    (shape : Shape) : Terminator → Option Unit
   | .fallthrough next => do
-      let targetShape ← program.labelShape? next
+      let targetShape ← labelShape? next
       if shape.compatible targetShape then some () else none
   | .jump target => do
-      let targetShape ← program.labelShape? target
+      let targetShape ← labelShape? target
       if shape.compatible targetShape then some () else none
   | .jumpi target next => do
-      let targetShape ← program.labelShape? target
-      let fallthroughShape ← program.labelShape? next
+      let targetShape ← labelShape? target
+      let fallthroughShape ← labelShape? next
       match shape.slots with
       | _condition :: rest =>
           let restShape := { shape with slots := rest }
@@ -241,7 +313,7 @@ def type? (program : Program) (shape : Shape) : Terminator → Option Unit
       if sites.isEmpty then
         none
       else if depth = returnCount &&
-          targetsHaveShape? program (shape.erase depth) sites then
+          targetsHaveShapeWith? labelShape? (shape.erase depth) sites then
         some ()
       else
         none
@@ -249,37 +321,84 @@ def type? (program : Program) (shape : Shape) : Terminator → Option Unit
       if kind.argCount ≤ shape.length then some () else none
   | .invalid => some ()
 
+attribute [simp] targetsHaveShapeWith? typeWith?
+
+def type? (program : Program) (shape : Shape) : Terminator → Option Unit :=
+  typeWith? program.labelShape? shape
+
+def targetsHaveShapeIndexed? (index : Program.LabelShapeIndex)
+    (shape : Shape) : List ReturnSite → Bool :=
+  targetsHaveShapeWith? index.get? shape
+
+def typeIndexed? (index : Program.LabelShapeIndex)
+    (shape : Shape) : Terminator → Option Unit :=
+  typeWith? index.get? shape
+
+theorem targetsHaveShapeIndexed_eq (program : Program) (shape : Shape)
+    (sites : List ReturnSite) :
+    targetsHaveShapeIndexed? program.buildLabelShapeIndex shape sites =
+      targetsHaveShape? program shape sites := by
+  induction sites with
+  | nil => rfl
+  | cons site rest ih =>
+      have hRest :
+          targetsHaveShapeWith? program.buildLabelShapeIndex.get? shape rest =
+            targetsHaveShapeWith? program.labelShape? shape rest := by
+        simpa [targetsHaveShapeIndexed?, targetsHaveShape?] using ih
+      simp only [targetsHaveShapeIndexed?, targetsHaveShape?,
+        targetsHaveShapeWith?]
+      rw [Program.buildLabelShapeIndex_get?, hRest]
+
+@[simp] theorem targetsHaveShapeWith_index_eq (program : Program)
+    (shape : Shape) (sites : List ReturnSite) :
+    targetsHaveShapeWith? program.buildLabelShapeIndex.get? shape sites =
+      targetsHaveShapeWith? program.labelShape? shape sites := by
+  simpa [targetsHaveShapeIndexed?, targetsHaveShape?] using
+    targetsHaveShapeIndexed_eq program shape sites
+
+theorem typeIndexed_eq (program : Program) (shape : Shape)
+    (term : Terminator) :
+    typeIndexed? program.buildLabelShapeIndex shape term =
+      type? program shape term := by
+  cases term <;>
+    simp only [typeIndexed?, type?, typeWith?,
+      Program.buildLabelShapeIndex_get?, targetsHaveShapeWith_index_eq]
+
 @[simp] theorem type?_halt_eq_some_iff
     {program : Program} {shape : Shape} {kind : Assembly.HaltKind} :
     type? program shape (.halt kind) = some () ↔
       kind.argCount ≤ shape.length := by
-  simp [type?]
+  simp [type?, typeWith?]
 
 @[simp] theorem type?_halt_eq_none_iff
     {program : Program} {shape : Shape} {kind : Assembly.HaltKind} :
     type? program shape (.halt kind) = none ↔
       shape.length < kind.argCount := by
-  simp [type?, Nat.not_le]
+  simp [type?, typeWith?, Nat.not_le]
 
 @[simp] theorem type?_halt_stop_empty
     {program : Program} :
     type? program (Shape.closed []) (.halt .stop) = some () := by
-  simp [type?, Assembly.HaltKind.argCount, Shape.length, Shape.closed]
+  simp [type?, typeWith?, Assembly.HaltKind.argCount, Shape.length,
+    Shape.closed]
 
 @[simp] theorem type?_halt_return_empty
     {program : Program} :
     type? program (Shape.closed []) (.halt .return) = none := by
-  simp [type?, Assembly.HaltKind.argCount, Shape.length, Shape.closed]
+  simp [type?, typeWith?, Assembly.HaltKind.argCount, Shape.length,
+    Shape.closed]
 
 @[simp] theorem type?_halt_revert_empty
     {program : Program} :
     type? program (Shape.closed []) (.halt .revert) = none := by
-  simp [type?, Assembly.HaltKind.argCount, Shape.length, Shape.closed]
+  simp [type?, typeWith?, Assembly.HaltKind.argCount, Shape.length,
+    Shape.closed]
 
 @[simp] theorem type?_halt_selfdestruct_empty
     {program : Program} :
     type? program (Shape.closed []) (.halt .selfdestruct) = none := by
-  simp [type?, Assembly.HaltKind.argCount, Shape.length, Shape.closed]
+  simp [type?, typeWith?, Assembly.HaltKind.argCount, Shape.length,
+    Shape.closed]
 
 end Terminator
 
@@ -288,6 +407,17 @@ namespace Block
 def WellTyped (program : Program) (block : Block) : Prop :=
   bodyType? block.body block.input = some block.output ∧
     block.term.type? program block.output = some ()
+
+def wellTypedIndexed? (index : Program.LabelShapeIndex)
+    (block : Block) : Bool :=
+  decide (bodyType? block.body block.input = some block.output) &&
+    decide (block.term.typeIndexed? index block.output = some ())
+
+@[simp] theorem wellTypedIndexed?_eq_true_iff
+    (program : Program) (block : Block) :
+    wellTypedIndexed? program.buildLabelShapeIndex block = true ↔
+      block.WellTyped program := by
+  simp [wellTypedIndexed?, WellTyped, Terminator.typeIndexed_eq]
 
 theorem halt_argCount_le_of_wellTyped
     {program : Program} {block : Block} {kind : Assembly.HaltKind}
@@ -374,6 +504,33 @@ instance wellTypedDecidable (program : Program) :
     Decidable program.WellTyped := by
   unfold WellTyped
   infer_instance
+
+def allBlocksTypedIndexed? (program : Program)
+    (index : LabelShapeIndex) : Bool :=
+  program.blocks.all (Block.wellTypedIndexed? index)
+
+@[simp] theorem allBlocksTypedIndexed?_eq_true_iff (program : Program) :
+    allBlocksTypedIndexed? program program.buildLabelShapeIndex = true ↔
+      program.AllBlocksTyped := by
+  simp [allBlocksTypedIndexed?, AllBlocksTyped,
+    List.forall_iff_forall_mem]
+
+def wellTypedIndexed? (program : Program) : Bool :=
+  let index := program.buildLabelShapeIndex
+  decide program.LabelsUnique &&
+    allBlocksTypedIndexed? program index &&
+    decide (program.findBlock? program.entry ≠ none) &&
+    decide program.EmittedLabelsUnique
+
+@[simp] theorem wellTypedIndexed?_eq_true_iff (program : Program) :
+    program.wellTypedIndexed? = true ↔ program.WellTyped := by
+  simp [wellTypedIndexed?, WellTyped]
+  aesop
+
+theorem wellTyped_of_indexed_check {program : Program}
+    (hCheck : program.wellTypedIndexed? = true) :
+    program.WellTyped :=
+  (wellTypedIndexed?_eq_true_iff program).mp hCheck
 
 def wellTyped? (program : Program) : Bool :=
   decide program.WellTyped

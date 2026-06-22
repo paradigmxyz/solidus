@@ -492,7 +492,7 @@ abbrev CertifiedArtifact :=
   Compiler.Artifact Assembly.Program ProgramCert
 
 def compileCertified? (program : Program) : Option CertifiedArtifact := do
-  if program.wellTyped? then pure () else none
+  if program.wellTypedIndexed? then pure () else none
   let metadata ← program.certificate?
   let target ← program.lower?
   if target.accepted then pure () else none
@@ -518,7 +518,7 @@ theorem compileCertified?_target {program : Program}
     (hCompile : program.compileCertified? = some artifact) :
     program.lower? = some artifact.target := by
   unfold compileCertified? at hCompile
-  by_cases hTyped : program.wellTyped? = true
+  by_cases hTyped : program.wellTypedIndexed? = true
   · simp [hTyped] at hCompile
     cases hCert : program.certificate? with
     | none =>
@@ -543,8 +543,8 @@ theorem compileCertified?_wellTyped {program : Program}
     (hCompile : program.compileCertified? = some artifact) :
     program.WellTyped := by
   unfold compileCertified? at hCompile
-  by_cases hTyped : program.wellTyped? = true
-  · exact Program.wellTyped_of_check hTyped
+  by_cases hTyped : program.wellTypedIndexed? = true
+  · exact Program.wellTyped_of_indexed_check hTyped
   · simp [hTyped] at hCompile
 
 theorem compileCertified?_certificate {program : Program}
@@ -552,7 +552,7 @@ theorem compileCertified?_certificate {program : Program}
     (hCompile : program.compileCertified? = some artifact) :
     program.certificate? = some artifact.metadata := by
   unfold compileCertified? at hCompile
-  by_cases hTyped : program.wellTyped? = true
+  by_cases hTyped : program.wellTypedIndexed? = true
   · simp [hTyped] at hCompile
     cases hCert : program.certificate? with
     | none =>
@@ -577,7 +577,7 @@ theorem compileCertified?_targetAccepted {program : Program}
     (hCompile : program.compileCertified? = some artifact) :
     artifact.target.accepted = true := by
   unfold compileCertified? at hCompile
-  by_cases hTyped : program.wellTyped? = true
+  by_cases hTyped : program.wellTypedIndexed? = true
   · simp [hTyped] at hCompile
     cases hCert : program.certificate? with
     | none =>
@@ -602,7 +602,7 @@ theorem compileCertified?_pcFits {program : Program}
     (hCompile : program.compileCertified? = some artifact) :
     artifact.target.PCFits := by
   unfold compileCertified? at hCompile
-  by_cases hTyped : program.wellTyped? = true
+  by_cases hTyped : program.wellTypedIndexed? = true
   · simp [hTyped] at hCompile
     cases hCert : program.certificate? with
     | none =>

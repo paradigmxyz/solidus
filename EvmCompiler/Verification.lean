@@ -3408,6 +3408,11 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Assembly.Compact.preparationSafeIndexed_eq
 #print axioms EvmCompiler.Assembly.Compact.compile?_preparationSafe
 #print axioms EvmCompiler.Assembly.Compact.compile?_decodingCorrect
+#print axioms EvmCompiler.TypedCfg.Program.buildLabelShapeIndex_get?
+#print axioms EvmCompiler.TypedCfg.Program.wellTypedIndexed?_eq_true_iff
+#print axioms EvmCompiler.Assembly.Program.buildLabelIndex_get?
+#print axioms EvmCompiler.Assembly.emitInstrWithIndex?_eq_emitInstr?
+#print axioms EvmCompiler.Assembly.emitExecutable?_eq_emit?
 #print axioms EvmCompiler.Assembly.Compact.openStepResultEqInstrOfDecodeAt
 #print axioms EvmCompiler.Assembly.InteractionPreservation.PrimOp.openStep_runtimeRel_of_ne_pc
 #print axioms EvmCompiler.Assembly.Compact.Instr.openStepResult_runtimeRel

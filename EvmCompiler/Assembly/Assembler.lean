@@ -1,4 +1,5 @@
 import EvmCompiler.Assembly.Syntax
+import Std.Data.HashMap.Lemmas
 
 namespace EvmCompiler
 namespace Assembly
@@ -125,6 +126,72 @@ def labelTable (program : Program) : LabelTable :=
 
 def lookupLabel? (table : LabelTable) (target : Label) : Option Nat :=
   (table.find? fun entry => entry.1 == target).map Prod.snd
+
+abbrev LabelIndex := Std.HashMap Label Nat
+
+def buildLabelIndexFrom : Program → Nat → LabelIndex → LabelIndex
+  | [], _pc, index => index
+  | instr :: rest, pc, index =>
+      let index :=
+        match instr with
+        | .label name => index.insertIfNew name pc
+        | _ => index
+      buildLabelIndexFrom rest (pc + instr.byteSize) index
+
+def buildLabelIndex (program : Program) : LabelIndex :=
+  buildLabelIndexFrom program 0 {}
+
+theorem buildLabelIndexFrom_get?
+    (program : Program) (pc : Nat) (index : LabelIndex) (target : Label) :
+    (buildLabelIndexFrom program pc index).get? target =
+      match index.get? target with
+      | some existing => some existing
+      | none => labelPcFrom program pc target := by
+  induction program generalizing pc index with
+  | nil =>
+      cases hExisting : index.get? target <;>
+        simp only [buildLabelIndexFrom, labelPcFrom, hExisting]
+  | cons instr rest ih =>
+      cases instr with
+      | label name =>
+          rw [buildLabelIndexFrom, ih]
+          by_cases hName : name = target
+          · subst name
+            cases hExisting : index.get? target with
+            | none =>
+                have hExisting' : index[target]? = none := by
+                  simpa only [Std.HashMap.get?_eq_getElem?] using hExisting
+                have hNotMem : target ∉ index := by
+                  intro hMem
+                  have hSome :=
+                    (Std.HashMap.mem_iff_isSome_getElem?).mp hMem
+                  rw [hExisting'] at hSome
+                  simp at hSome
+                simp only [Std.HashMap.get?_eq_getElem?,
+                  Std.HashMap.getElem?_insertIfNew]
+                simp [hExisting', hNotMem, labelPcFrom]
+            | some existing =>
+                have hExisting' : index[target]? = some existing := by
+                  simpa only [Std.HashMap.get?_eq_getElem?] using hExisting
+                obtain ⟨hMem, _hGet⟩ :=
+                  Std.HashMap.getElem?_eq_some_iff.mp hExisting'
+                simp only [Std.HashMap.get?_eq_getElem?,
+                  Std.HashMap.getElem?_insertIfNew]
+                simp only [beq_self_eq_true, true_and, hMem,
+                  not_true_eq_false, if_false, hExisting']
+          · have hBeq : (name == target) = false := by
+              simpa using hName
+            simp only [Std.HashMap.get?_eq_getElem?,
+              Std.HashMap.getElem?_insertIfNew]
+            simp [hBeq, hName, labelPcFrom]
+      | prim op | push op | jump op | jumpi op =>
+          simpa [buildLabelIndexFrom, labelPcFrom] using
+            ih (pc := pc + Instr.byteSize _) (index := index)
+
+theorem buildLabelIndex_get? (program : Program) (target : Label) :
+    program.buildLabelIndex.get? target = program.labelPc target := by
+  simpa [buildLabelIndex, labelPc] using
+    buildLabelIndexFrom_get? program 0 ({} : LabelIndex) target
 
 theorem labelTableFromRev_eq
     (program : Program) (pc : Nat) (acc : LabelTable) :
@@ -481,10 +548,10 @@ theorem instrAtPcFrom_append_boundary_cons
   exact instrAtPcFrom_at_head instr suffix (base + byteLength pre)
 
 def allTargetsResolveFast (program : Program) : Bool :=
-  let table := program.labelTable
+  let index := program.buildLabelIndex
   program.all fun instr =>
     instr.targets.all fun target =>
-      (lookupLabel? table target).isSome
+      (index.get? target).isSome
 
 @[implemented_by allTargetsResolveFast]
 def allTargetsResolve (program : Program) : Bool :=
@@ -495,7 +562,7 @@ def allTargetsResolve (program : Program) : Bool :=
 theorem allTargetsResolveFast_eq_allTargetsResolve (program : Program) :
     allTargetsResolveFast program = allTargetsResolve program := by
   simp only [allTargetsResolveFast, allTargetsResolve,
-    lookupLabel?_labelTable_eq_labelPc]
+    buildLabelIndex_get?]
 
 end Program
 
@@ -540,6 +607,27 @@ def emitInstrWithTable? (table : Program.LabelTable) (pc : Nat) :
         , { pc := pc + Instr.push32Size, instr := TargetInstr.jumpi }
         ]
 
+def emitInstrWithIndex? (index : Program.LabelIndex) (pc : Nat) :
+    Instr → Option (List LocatedTarget)
+  | .label _ =>
+      some [{ pc := pc, instr := TargetInstr.jumpdest }]
+  | .prim op =>
+      some [{ pc := pc, instr := TargetInstr.prim op }]
+  | .push value =>
+      some [{ pc := pc, instr := TargetInstr.push32 value }]
+  | .jump target => do
+      let dest ← index.get? target
+      some
+        [ { pc := pc, instr := TargetInstr.push32 (EvmYul.UInt256.ofNat dest) }
+        , { pc := pc + Instr.push32Size, instr := TargetInstr.jump }
+        ]
+  | .jumpi target => do
+      let dest ← index.get? target
+      some
+        [ { pc := pc, instr := TargetInstr.push32 (EvmYul.UInt256.ofNat dest) }
+        , { pc := pc + Instr.push32Size, instr := TargetInstr.jumpi }
+        ]
+
 theorem emitInstrWithTable?_eq_emitInstr?
     (program : Program) (pc : Nat) (instr : Instr) :
     emitInstrWithTable? program.labelTable pc instr =
@@ -547,6 +635,14 @@ theorem emitInstrWithTable?_eq_emitInstr?
   cases instr <;>
     simp [emitInstrWithTable?, emitInstr?,
       Program.lookupLabel?_labelTable_eq_labelPc]
+
+theorem emitInstrWithIndex?_eq_emitInstr?
+    (program : Program) (pc : Nat) (instr : Instr) :
+    emitInstrWithIndex? program.buildLabelIndex pc instr =
+      emitInstr? program pc instr := by
+  cases instr <;>
+    simp [emitInstrWithIndex?, emitInstr?,
+      ← Std.HashMap.get?_eq_getElem?, Program.buildLabelIndex_get?]
 
 /-- Every symbolic Assembly instruction expands to at most two target
 instructions. -/
@@ -703,8 +799,16 @@ def emitFromTableRev? (table : Program.LabelTable) :
       emitFromTableRev? table rest (pc + instr.byteSize)
         (here.reverse ++ acc)
 
+def emitFromIndexRev? (index : Program.LabelIndex) :
+    Program → Nat → List LocatedTarget → Option (List LocatedTarget)
+  | [], _, acc => some acc.reverse
+  | instr :: rest, pc, acc => do
+      let here ← emitInstrWithIndex? index pc instr
+      emitFromIndexRev? index rest (pc + instr.byteSize)
+        (here.reverse ++ acc)
+
 def emitExecutable? (program : Program) : Option (List LocatedTarget) :=
-  emitFromTableRev? program.labelTable program 0 []
+  emitFromIndexRev? program.buildLabelIndex program 0 []
 
 def assembleExecutable? (program : Program) : Option TargetProgram := do
   let code ← emitExecutable? program
@@ -750,9 +854,26 @@ theorem emitFromTableRev?_eq_emitFromRev? (program : Program) :
             emitFromTableRev?_eq_emitFromRev? program rest
               (pc + instr.byteSize) (here.reverse ++ acc)
 
+theorem emitFromIndexRev?_eq_emitFromRev? (program : Program) :
+    ∀ rest pc acc,
+      emitFromIndexRev? program.buildLabelIndex rest pc acc =
+        emitFromRev? program rest pc acc
+  | [], _pc, acc => by
+      simp [emitFromIndexRev?, emitFromRev?]
+  | instr :: rest, pc, acc => by
+      simp [emitFromIndexRev?, emitFromRev?,
+        emitInstrWithIndex?_eq_emitInstr? program pc instr]
+      cases hHere : emitInstr? program pc instr with
+      | none => simp [hHere]
+      | some here =>
+          simp [hHere]
+          exact
+            emitFromIndexRev?_eq_emitFromRev? program rest
+              (pc + instr.byteSize) (here.reverse ++ acc)
+
 theorem emitExecutable?_eq_emit? (program : Program) :
     emitExecutable? program = emit? program := by
-  rw [emitExecutable?, emitFromTableRev?_eq_emitFromRev?]
+  rw [emitExecutable?, emitFromIndexRev?_eq_emitFromRev?]
   simp [emit?,
     emitFromRev?_eq_emitFrom?_append program program 0 []]
   cases emitFrom? program program 0 <;> rfl
