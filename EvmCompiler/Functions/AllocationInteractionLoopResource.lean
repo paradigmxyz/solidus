@@ -39,7 +39,7 @@ def outcomeEffectAlgebra
 Resource-aware loop preservation is the concrete activation-effect
 specialization of the canonical semantic loop induction.
 -/
-theorem forward
+theorem forward_with
     {program : Functions.Program}
     {expressions : Expressions.Program}
     {contract : MemoryContract.Contract}
@@ -54,6 +54,7 @@ theorem forward
     {cond : Functions.Expr 1} {post body : Functions.Block}
     {targetCond : Expressions.Expr 1}
     {targetPost targetBody : Expressions.Block}
+    (sourceModel : AllocationInteractionLoop.SourceSemantics)
     (hLoopScope : loopCtx.scope = live)
     (hBodyBreak : bodyCtx.breakScope? = some live)
     (hBodyContinue : bodyCtx.continueScope? = some live)
@@ -63,12 +64,12 @@ theorem forward
             localsCtx plan live frameBase mode source target →
           AllocatorReady config allocatorDepth target →
           Simulation.Interaction.Successful
-            (Functions.InteractionSemantics.Expr.openEvalCondition
+            (sourceModel.openEvalCondition
               cond source) →
           Simulation.Interaction.Rel
             (AllocationInteractionExpressionResource.ConditionOutcomeRel
               contract config allocatorDepth plan live frameBase mode target)
-            (Functions.InteractionSemantics.Expr.openEvalCondition cond source)
+            (sourceModel.openEvalCondition cond source)
             (Expressions.InteractionSemantics.Expr.openRunCondition
               targetCond target))
     (hBody :
@@ -82,14 +83,14 @@ theorem forward
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
-            (Functions.InteractionSemantics.Block.openRunScoped
+            (sourceModel.openRunScoped
               program bodyCtx body fuel source) →
           Simulation.Interaction.Rel
             (AllocationInteractionLoop.OpenScopedEffectResultRel
               (OutcomeEffect config allocatorDepth) contract lowerCtx
               lowerState localsCtx plan returns live frameBase mode bodyCtx
               target)
-            (Functions.InteractionSemantics.Block.openRunScoped
+            (sourceModel.openRunScoped
               program bodyCtx body fuel source)
             (Expressions.InteractionSemantics.Block.openRun expressions
               (fuel + slack) targetBody target))
@@ -106,14 +107,14 @@ theorem forward
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
-            (Functions.InteractionSemantics.Block.openRunScoped
+            (sourceModel.openRunScoped
               program postCtx post fuel source) →
           Simulation.Interaction.Rel
             (AllocationInteractionLoop.OpenScopedEffectResultRel
               (OutcomeEffect config allocatorDepth) contract lowerCtx
               lowerState localsCtx plan returns live frameBase mode postCtx
               target)
-            (Functions.InteractionSemantics.Block.openRunScoped
+            (sourceModel.openRunScoped
               program postCtx post fuel source)
             (Expressions.InteractionSemantics.Block.openRun expressions
               (fuel + slack) targetPost target)) :
@@ -126,19 +127,19 @@ theorem forward
       AllocatorReady config allocatorDepth target →
       ActivationOwned config allocatorDepth frameBase mode →
       Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Stmt.openRunForLoop program loopCtx
+        (sourceModel.openRunForLoop program loopCtx
           cond postCtx post bodyCtx body fuel source) →
         Simulation.Interaction.Rel
           (AllocationInteractionLoop.OpenLoopEffectResultRel
             (OutcomeEffect config allocatorDepth) contract lowerCtx
             lowerState localsCtx plan returns live frameBase mode loopCtx target)
-          (Functions.InteractionSemantics.Stmt.openRunForLoop program loopCtx
+          (sourceModel.openRunForLoop program loopCtx
             cond postCtx post bodyCtx body fuel source)
           (Expressions.InteractionSemantics.Stmt.openRunForLoop expressions
             (fuel + slack) targetCond targetPost targetBody target) := by
   intro fuel mode source target hFuel hTargetReturns hRootFrame hInitial
     hReady hOwned hSuccess
-  apply AllocationInteractionLoop.forward_effect
+  apply AllocationInteractionLoop.forward_effect_with sourceModel
     (Effect := OutcomeEffect config allocatorDepth)
     (outcomeEffectAlgebra config allocatorDepth frameBase)
     hLoopScope hBodyBreak hBodyContinue (hCond := ?_) hBody hPost fuel hFuel

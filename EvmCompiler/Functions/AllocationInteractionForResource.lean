@@ -18,7 +18,7 @@ open AllocationInteractionResourceComposition
 Resource-aware `for` preservation specializes the canonical control owner to
 activation effects; it does not replay initializer or loop control.
 -/
-theorem forward
+theorem forward_with
     {program : Functions.Program}
     {expressions : Expressions.Program}
     {contract : MemoryContract.Contract}
@@ -37,6 +37,7 @@ theorem forward
     {targetCond : Expressions.Expr 1}
     {cleanup : Structured.Code}
     {source : SourceState} {target : TargetState}
+    (sourceModel : AllocationInteractionLoop.SourceSemantics)
     (hSourceScope : sourceCtx.scope = live)
     (hLoopLive : loopLive = Functions.Scope.Block.outEnv live init)
     (hInitCtx : initCtx = sourceCtx.withoutLoopControl)
@@ -58,7 +59,7 @@ theorem forward
         (RuntimeResultRel contract lowerCtx loopState initLocals loopPlan
           returns loopLive frameBase entryMode initCtx loopCtx config
           allocatorDepth target)
-        (Functions.InteractionSemantics.Block.openRun
+        (sourceModel.openRunBlock
           program initCtx sourceFuel init source)
         (Expressions.InteractionSemantics.Block.openRun
           expressions (sourceFuel + slack) targetInit target))
@@ -73,27 +74,27 @@ theorem forward
             initLocals loopPlan loopLive frameBase mode sourceAfter
               targetAfter →
           Simulation.Interaction.Successful
-            (Functions.InteractionSemantics.Stmt.openRunForLoop program
+            (sourceModel.openRunForLoop program
               loopCtx cond postCtx post bodyCtx body sourceFuel sourceAfter) →
             Simulation.Interaction.Rel
               (OpenLoopEffectResultRel
                 (OutcomeEffect config allocatorDepth) contract lowerCtx
                 loopState initLocals loopPlan returns loopLive frameBase mode
                 loopCtx targetAfter)
-              (Functions.InteractionSemantics.Stmt.openRunForLoop program
+              (sourceModel.openRunForLoop program
                 loopCtx cond postCtx post bodyCtx body sourceFuel sourceAfter)
               (Expressions.InteractionSemantics.Stmt.openRunForLoop
                 expressions (sourceFuel + slack) targetCond targetPost
                   targetBody targetAfter))
     (hSuccess :
       Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+        (sourceModel.openRunStmt program sourceCtx
           (sourceFuel + 1) (.for_ init cond post body) source)) :
     Simulation.Interaction.Rel
       (RuntimeResultRel contract lowerCtx outerState outerLocals outerPlan
         returns live frameBase entryMode sourceCtx sourceCtx config
         allocatorDepth target)
-      (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+      (sourceModel.openRunStmt program sourceCtx
         (sourceFuel + 1) (.for_ init cond post body) source)
       (Expressions.InteractionSemantics.Block.openRun expressions
         (sourceFuel + slack + 2)
@@ -101,7 +102,7 @@ theorem forward
             [.for_ targetInit targetCond targetPost targetBody,
               .code cleanup] }
         target) := by
-  apply AllocationInteractionFor.forward_effect
+  apply AllocationInteractionFor.forward_effect_with sourceModel
     (Effect := OutcomeEffect config allocatorDepth)
     (AllocationInteractionLoopResource.outcomeEffectAlgebra config
       allocatorDepth frameBase)

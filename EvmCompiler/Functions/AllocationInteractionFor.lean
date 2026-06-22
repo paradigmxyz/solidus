@@ -36,7 +36,7 @@ Compose an already-related initializer and recursive loop with the exact outer
 cleanup emitted for a Functions `for`. Compiler cursor decomposition remains
 outside this theorem; this owner only sequences adjacent semantic components.
 -/
-theorem forward_effect
+theorem forward_effect_with
     {Effect :
       ActivationMode → TargetState → TargetState → Locals.Source.Mode → Prop}
     {program : Functions.Program}
@@ -56,6 +56,7 @@ theorem forward_effect
     {targetCond : Expressions.Expr 1}
     {cleanup : Structured.Code}
     {source : SourceState} {target : TargetState}
+    (sourceModel : AllocationInteractionLoop.SourceSemantics)
     (effectAlgebra : EffectAlgebra Effect)
     (hSourceScope : sourceCtx.scope = live)
     (hLoopLive : loopLive = Functions.Scope.Block.outEnv live init)
@@ -78,7 +79,7 @@ theorem forward_effect
         (OpenControlEffectResultRel Effect contract lowerCtx loopState
           initLocals loopPlan returns loopLive frameBase entryMode initCtx
           loopCtx target)
-        (Functions.InteractionSemantics.Block.openRun
+        (sourceModel.openRunBlock
           program initCtx sourceFuel init source)
         (Expressions.InteractionSemantics.Block.openRun
           expressions (sourceFuel + slack) targetInit target))
@@ -97,13 +98,13 @@ theorem forward_effect
             initLocals loopPlan loopLive frameBase mode sourceAfter
               targetAfter →
           Simulation.Interaction.Successful
-            (Functions.InteractionSemantics.Stmt.openRunForLoop program
+            (sourceModel.openRunForLoop program
               loopCtx cond postCtx post bodyCtx body sourceFuel sourceAfter) →
             Simulation.Interaction.Rel
               (OpenLoopEffectResultRel Effect contract lowerCtx loopState
                 initLocals loopPlan returns loopLive frameBase mode loopCtx
                 targetAfter)
-              (Functions.InteractionSemantics.Stmt.openRunForLoop program
+              (sourceModel.openRunForLoop program
                 loopCtx cond postCtx post bodyCtx body sourceFuel sourceAfter)
               (Expressions.InteractionSemantics.Stmt.openRunForLoop
                 expressions (sourceFuel + slack) targetCond targetPost
@@ -118,13 +119,13 @@ theorem forward_effect
           Effect mode targetMid targetFinal .regular)
     (hSuccess :
       Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+        (sourceModel.openRunStmt program sourceCtx
           (sourceFuel + 1) (.for_ init cond post body) source)) :
     Simulation.Interaction.Rel
       (OpenControlEffectResultRel Effect contract lowerCtx outerState
         outerLocals outerPlan returns live frameBase entryMode sourceCtx
         sourceCtx target)
-      (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+      (sourceModel.openRunStmt program sourceCtx
         (sourceFuel + 1) (.for_ init cond post body) source)
       (Expressions.InteractionSemantics.Block.openRun expressions
         (sourceFuel + slack + 2)
@@ -141,7 +142,7 @@ theorem forward_effect
       match result.1.mode with
       | .regular =>
           Simulation.Interaction.bind
-            (Functions.InteractionSemantics.Stmt.openRunForLoop program
+            (sourceModel.openRunForLoop program
               result.2 cond result.2.withoutLoopControl post
               (result.2.withLoopControl result.2.scope result.2.scope)
               body sourceFuel result.1.state)
@@ -181,13 +182,13 @@ theorem forward_effect
           Simulation.Interaction.error (.InvalidInstruction : EVMException)
       | .leave | .halt _ => Simulation.Interaction.pure initOutcome
   have hSourceShape :
-      Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+      sourceModel.openRunStmt program sourceCtx
           (sourceFuel + 1) (.for_ init cond post body) source =
         Simulation.Interaction.bind
-          (Functions.InteractionSemantics.Block.openRun program
+          (sourceModel.openRunBlock program
             sourceCtx.withoutLoopControl sourceFuel init source)
           sourceNext := by
-    unfold Functions.InteractionSemantics.Stmt.openRun
+    unfold AllocationInteractionLoop.SourceSemantics.openRunStmt
       Functions.Source.Canonical.Stmt.run
     simp only [Functions.Source.Effectful.Control.Stmt.run]
     rfl
@@ -273,7 +274,7 @@ theorem forward_effect
             Simulation.Interaction.Successful.bind_inv hAfterInitSuccess
           have hLoopRunSuccess :
               Simulation.Interaction.Successful
-                (Functions.InteractionSemantics.Stmt.openRunForLoop program
+                (sourceModel.openRunForLoop program
                   canonicalLoopCtx cond canonicalLoopCtx.withoutLoopControl
                   post (canonicalLoopCtx.withLoopControl loopLive loopLive)
                   body sourceFuel initSource) := by
@@ -550,7 +551,9 @@ theorem forward
       | error hError => exact .error hError
       | ok _ => exact .ok trivial
   apply Simulation.Interaction.Rel.mono
-    (forward_effect (Effect := fun _ _ _ _ => True) EffectAlgebra.trivial
+    (forward_effect_with (Effect := fun _ _ _ _ => True)
+      AllocationInteractionLoop.SourceSemantics.ordinary
+      EffectAlgebra.trivial
       hSourceScope hLoopLive hInitCtx hLoopCtx hPostCtx hBodyCtx hOuter
       (by simp [EffectAlgebra.trivial]) hExtends hPlanAgree hCleanup hTargetFuel
       hInitEffect

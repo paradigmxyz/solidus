@@ -2252,7 +2252,8 @@ theorem for_
       cases hLoopSame
       rfl
     subst loopMode
-    apply AllocationInteractionLoop.forward_effect
+    apply AllocationInteractionLoop.forward_effect_with
+      AllocationInteractionLoop.SourceSemantics.ordinary
       (Effect := fun _ _ _ _ => True)
       AllocationInteractionLoop.EffectAlgebra.trivial
       (program := program) (expressions := expressions)
@@ -2283,10 +2284,18 @@ theorem for_
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Block.openRun program bodyCtx
               fuel body nextSource) := by
+        have hBodySuccess' :
+            Simulation.Interaction.Successful
+              (Functions.InteractionSemantics.Block.openRunScoped
+                program bodyCtx body fuel nextSource) := by
+          simpa [AllocationInteractionLoop.SourceSemantics.openRunScoped,
+            AllocationInteractionLoop.SourceSemantics.ordinary,
+            Functions.InteractionSemantics.Block.openRunScoped] using
+            hBodySuccess
         unfold Functions.InteractionSemantics.Block.openRunScoped
           Functions.Source.Canonical.Block.runScoped
-          Functions.Source.Effectful.Control.Block.runScoped at hBodySuccess
-        have hDone := Simulation.Interaction.Successful.bind_inv hBodySuccess
+          Functions.Source.Effectful.Control.Block.runScoped at hBodySuccess'
+        have hDone := Simulation.Interaction.Successful.bind_inv hBodySuccess'
         apply Simulation.Interaction.AllDone.mono hDone
         intro outcome hOutcome
         cases outcome with
@@ -2381,10 +2390,18 @@ theorem for_
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Block.openRun program postCtx
               fuel post nextSource) := by
+        have hPostSuccess' :
+            Simulation.Interaction.Successful
+              (Functions.InteractionSemantics.Block.openRunScoped
+                program postCtx post fuel nextSource) := by
+          simpa [AllocationInteractionLoop.SourceSemantics.openRunScoped,
+            AllocationInteractionLoop.SourceSemantics.ordinary,
+            Functions.InteractionSemantics.Block.openRunScoped] using
+            hPostSuccess
         unfold Functions.InteractionSemantics.Block.openRunScoped
           Functions.Source.Canonical.Block.runScoped
-          Functions.Source.Effectful.Control.Block.runScoped at hPostSuccess
-        have hDone := Simulation.Interaction.Successful.bind_inv hPostSuccess
+          Functions.Source.Effectful.Control.Block.runScoped at hPostSuccess'
+        have hDone := Simulation.Interaction.Successful.bind_inv hPostSuccess'
         apply Simulation.Interaction.AllDone.mono hDone
         intro outcome hOutcome
         cases outcome with
@@ -2496,7 +2513,8 @@ theorem for_
   have hInit' := hInitEffect
   rw [← hNestedFuel] at hInit'
   have hHeadEffect :=
-    AllocationInteractionFor.forward_effect
+    AllocationInteractionFor.forward_effect_with
+      AllocationInteractionLoop.SourceSemantics.ordinary
       (Effect := fun _ _ _ _ => True)
       AllocationInteractionLoop.EffectAlgebra.trivial
       (sourceFuel := loopFuel) (slack := slack)

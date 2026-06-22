@@ -3585,7 +3585,8 @@ theorem for_
       · rfl
       · rfl
       · exact hLoopReturns
-    apply AllocationInteractionLoopResource.forward
+    apply AllocationInteractionLoopResource.forward_with
+      AllocationInteractionLoop.SourceSemantics.ordinary
       (program := program) (expressions := expressions)
       (returns := root.returns) (live := components.loopLive)
       (loopCtx := loopCtx) (postCtx := postCtx) (bodyCtx := bodyCtx)
@@ -3612,10 +3613,18 @@ theorem for_
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Block.openRun program bodyCtx
               fuel body nextSource) := by
+        have hBodySuccess' :
+            Simulation.Interaction.Successful
+              (Functions.InteractionSemantics.Block.openRunScoped
+                program bodyCtx body fuel nextSource) := by
+          simpa [AllocationInteractionLoop.SourceSemantics.openRunScoped,
+            AllocationInteractionLoop.SourceSemantics.ordinary,
+            Functions.InteractionSemantics.Block.openRunScoped] using
+            hBodySuccess
         unfold Functions.InteractionSemantics.Block.openRunScoped
           Functions.Source.Canonical.Block.runScoped
-          Functions.Source.Effectful.Control.Block.runScoped at hBodySuccess
-        have hDone := Simulation.Interaction.Successful.bind_inv hBodySuccess
+          Functions.Source.Effectful.Control.Block.runScoped at hBodySuccess'
+        have hDone := Simulation.Interaction.Successful.bind_inv hBodySuccess'
         apply Simulation.Interaction.AllDone.mono hDone
         intro outcome hOutcome
         cases outcome with
@@ -3714,10 +3723,18 @@ theorem for_
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Block.openRun program postCtx
               fuel post nextSource) := by
+        have hPostSuccess' :
+            Simulation.Interaction.Successful
+              (Functions.InteractionSemantics.Block.openRunScoped
+                program postCtx post fuel nextSource) := by
+          simpa [AllocationInteractionLoop.SourceSemantics.openRunScoped,
+            AllocationInteractionLoop.SourceSemantics.ordinary,
+            Functions.InteractionSemantics.Block.openRunScoped] using
+            hPostSuccess
         unfold Functions.InteractionSemantics.Block.openRunScoped
           Functions.Source.Canonical.Block.runScoped
-          Functions.Source.Effectful.Control.Block.runScoped at hPostSuccess
-        have hDone := Simulation.Interaction.Successful.bind_inv hPostSuccess
+          Functions.Source.Effectful.Control.Block.runScoped at hPostSuccess'
+        have hDone := Simulation.Interaction.Successful.bind_inv hPostSuccess'
         apply Simulation.Interaction.AllDone.mono hDone
         intro outcome hOutcome
         cases outcome with
@@ -3831,7 +3848,8 @@ theorem for_
   have hInit' := hInit
   rw [← hNestedFuel] at hInit'
   have hHead :=
-    AllocationInteractionForResource.forward
+    AllocationInteractionForResource.forward_with
+      AllocationInteractionLoop.SourceSemantics.ordinary
       (sourceFuel := loopFuel) (slack := slack)
       (hSourceScope := hBoundary.semantic.sourceScope)
       (hLoopLive := components.loopLive_eq)

@@ -132,13 +132,72 @@ abbrev OpenScopedEffectResultRel
           Effect entryMode targetInitial target.state source.mode)
         sourceDone targetDone
 
+/-- The canonical Functions control semantics parameterized only by its
+primitive capability. Both ordinary and reservation-guarded execution use
+this interface, so the recursive loop simulation is proved once. -/
+structure SourceSemantics where
+  primitive :
+    Functions.Source.Canonical.PrimitiveSemantics
+      (Simulation.Interaction EVMException) SourceState
+  conditionVars :
+    ∀ (cond : Functions.Expr 1) (source : SourceState),
+      Simulation.Interaction.AllDone
+        (Locals.InteractionStatePreservation.ResultVars
+          (α := Bool) source)
+        (Locals.Source.Effectful.Expr.Control.evalCondition
+          Functions.InteractionSemantics.stateModel primitive cond source)
+
+namespace SourceSemantics
+
+def openEvalCondition (semantics : SourceSemantics)
+    (cond : Functions.Expr 1) (source : SourceState) :=
+  Locals.Source.Effectful.Expr.Control.evalCondition
+    Functions.InteractionSemantics.stateModel semantics.primitive cond source
+
+def openRunScoped (semantics : SourceSemantics)
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (block : Functions.Block) (fuel : Nat) (source : SourceState) :=
+  Functions.Source.Canonical.Block.runScoped
+    Functions.InteractionSemantics.stateModel semantics.primitive
+    program ctx block fuel source
+
+def openRunBlock (semantics : SourceSemantics)
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (block : Functions.Block) (source : SourceState) :=
+  Functions.Source.Canonical.Block.runOpen
+    Functions.InteractionSemantics.stateModel semantics.primitive
+    program ctx fuel block source
+
+def openRunStmt (semantics : SourceSemantics)
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (stmt : Functions.Stmt) (source : SourceState) :=
+  Functions.Source.Canonical.Stmt.run
+    Functions.InteractionSemantics.stateModel semantics.primitive
+    program ctx fuel stmt source
+
+def openRunForLoop (semantics : SourceSemantics)
+    (program : Functions.Program) (loopCtx : Functions.Source.Ctx)
+    (cond : Functions.Expr 1) (postCtx : Functions.Source.Ctx)
+    (post : Functions.Block) (bodyCtx : Functions.Source.Ctx)
+    (body : Functions.Block) (fuel : Nat) (source : SourceState) :=
+  Functions.Source.Effectful.Control.Stmt.runForLoop
+    Functions.InteractionSemantics.stateModel semantics.primitive
+    program loopCtx cond postCtx post bodyCtx body fuel source
+
+def ordinary : SourceSemantics where
+  primitive := Functions.InteractionSemantics.primitiveSemantics
+  conditionVars :=
+    Locals.InteractionStatePreservation.expr_openEvalCondition_vars
+
+end SourceSemantics
+
 /--
 Exact open-world preservation for the recursive loop owner carrying one
 composable target effect. Body and post are ordinary scoped-block preservation
 callbacks; no compiler or cursor reasoning occurs inside this semantic
 induction.
 -/
-theorem forward_effect
+theorem forward_effect_with
     {Effect :
       ActivationMode → TargetState → TargetState → Locals.Source.Mode → Prop}
     {program : Functions.Program}
@@ -154,6 +213,7 @@ theorem forward_effect
     {cond : Functions.Expr 1} {post body : Functions.Block}
     {targetCond : Expressions.Expr 1}
     {targetPost targetBody : Expressions.Block}
+    (sourceModel : SourceSemantics)
     (effectAlgebra : EffectAlgebra Effect)
     (hLoopScope : loopCtx.scope = live)
     (hBodyBreak : bodyCtx.breakScope? = some live)
@@ -164,7 +224,7 @@ theorem forward_effect
             localsCtx plan live frameBase mode source target →
           effectAlgebra.Ready target →
           Simulation.Interaction.Successful
-            (Functions.InteractionSemantics.Expr.openEvalCondition
+            (sourceModel.openEvalCondition
               cond source) →
           Simulation.Interaction.Rel
             (Simulation.Interaction.ExceptRel
@@ -173,7 +233,7 @@ theorem forward_effect
                 ActivationConditionResultRel contract plan live frameBase mode
                     target sourceResult targetResult ∧
                   Effect mode target targetResult.1 .regular))
-            (Functions.InteractionSemantics.Expr.openEvalCondition cond source)
+            (sourceModel.openEvalCondition cond source)
             (Expressions.InteractionSemantics.Expr.openRunCondition
               targetCond target))
     (hBody :
@@ -186,12 +246,12 @@ theorem forward_effect
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
-            (Functions.InteractionSemantics.Block.openRunScoped
+            (sourceModel.openRunScoped
               program bodyCtx body fuel source) →
           Simulation.Interaction.Rel
             (OpenScopedEffectResultRel Effect contract lowerCtx lowerState
               localsCtx plan returns live frameBase mode bodyCtx target)
-            (Functions.InteractionSemantics.Block.openRunScoped
+            (sourceModel.openRunScoped
               program bodyCtx body fuel source)
             (Expressions.InteractionSemantics.Block.openRun expressions
               (fuel + slack) targetBody target))
@@ -207,12 +267,12 @@ theorem forward_effect
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
             localsCtx plan live frameBase mode source target →
           Simulation.Interaction.Successful
-            (Functions.InteractionSemantics.Block.openRunScoped
+            (sourceModel.openRunScoped
               program postCtx post fuel source) →
           Simulation.Interaction.Rel
             (OpenScopedEffectResultRel Effect contract lowerCtx lowerState
               localsCtx plan returns live frameBase mode postCtx target)
-            (Functions.InteractionSemantics.Block.openRunScoped
+            (sourceModel.openRunScoped
               program postCtx post fuel source)
             (Expressions.InteractionSemantics.Block.openRun expressions
               (fuel + slack) targetPost target)) :
@@ -225,12 +285,12 @@ theorem forward_effect
       effectAlgebra.Ready target →
       effectAlgebra.Context mode →
       Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Stmt.openRunForLoop program loopCtx
+        (sourceModel.openRunForLoop program loopCtx
           cond postCtx post bodyCtx body fuel source) →
         Simulation.Interaction.Rel
           (OpenLoopEffectResultRel Effect contract lowerCtx lowerState
             localsCtx plan returns live frameBase mode loopCtx target)
-          (Functions.InteractionSemantics.Stmt.openRunForLoop program loopCtx
+          (sourceModel.openRunForLoop program loopCtx
             cond postCtx post bodyCtx body fuel source)
           (Expressions.InteractionSemantics.Stmt.openRunForLoop expressions
             (fuel + slack) targetCond targetPost targetBody target) := by
@@ -239,7 +299,7 @@ theorem forward_effect
   | zero =>
       intro mode source target hFuelBound hTargetReturns hRootFrame hInitial
         hReady hContext hSuccess
-      unfold Functions.InteractionSemantics.Stmt.openRunForLoop at hSuccess
+      unfold SourceSemantics.openRunForLoop at hSuccess
       simp only [Functions.Source.Effectful.Control.Stmt.runForLoop] at hSuccess
       exact False.elim
         (Simulation.Interaction.Successful.error_false
@@ -250,20 +310,18 @@ theorem forward_effect
       have hTargetFuel : fuel + 1 + slack = (fuel + slack) + 1 := by
         omega
       rw [hTargetFuel]
-      unfold Functions.InteractionSemantics.Stmt.openRunForLoop
+      unfold SourceSemantics.openRunForLoop
         Expressions.InteractionSemantics.Stmt.openRunForLoop
       simp only [Functions.Source.Effectful.Control.Stmt.runForLoop,
         Expressions.EffectSemantics.Control.Stmt.runForLoop]
-      unfold Functions.InteractionSemantics.Stmt.openRunForLoop at hSuccess
+      unfold SourceSemantics.openRunForLoop at hSuccess
       simp only [Functions.Source.Effectful.Control.Stmt.runForLoop] at hSuccess
       have hCondSuccess :=
         Simulation.Interaction.Successful.bind_inv hSuccess
       have hCondRunSuccess :=
         Simulation.Interaction.Successful.bind_left hSuccess
       have hCondRel := hCond hInitial hReady hCondRunSuccess
-      have hVars :=
-        Locals.InteractionStatePreservation.expr_openEvalCondition_vars
-          cond source
+      have hVars := sourceModel.conditionVars cond source
       have hCondStrong :=
         Simulation.Interaction.Rel.strengthen_right
           (Simulation.Interaction.Rel.strengthen_left
@@ -312,7 +370,7 @@ theorem forward_effect
                   hContinuationSuccess
               have hBodyRunSuccess :
                   Simulation.Interaction.Successful
-                    (Functions.InteractionSemantics.Block.openRunScoped
+                    (sourceModel.openRunScoped
                       program bodyCtx body fuel sourceAfterCond) := by
                 apply Simulation.Interaction.AllDone.mono hBodySuccess
                 intro outcome hOutcome
@@ -364,12 +422,12 @@ theorem forward_effect
                             bodyMode bodySource bodyTarget →
                         Simulation.Interaction.Successful
                           (Simulation.Interaction.bind
-                            (Functions.InteractionSemantics.Block.openRunScoped
+                            (sourceModel.openRunScoped
                               program postCtx post fuel bodySource)
                             (fun postOutcome =>
                               match postOutcome.mode with
                               | .regular =>
-                                  Functions.InteractionSemantics.Stmt.openRunForLoop
+                                  sourceModel.openRunForLoop
                                     program loopCtx cond postCtx post bodyCtx
                                       body fuel postOutcome.state
                               | .brk | .cont =>
@@ -382,12 +440,12 @@ theorem forward_effect
                               lowerState localsCtx plan returns live frameBase
                               mode loopCtx target)
                             (Simulation.Interaction.bind
-                              (Functions.InteractionSemantics.Block.openRunScoped
+                              (sourceModel.openRunScoped
                                 program postCtx post fuel bodySource)
                               (fun postOutcome =>
                                 match postOutcome.mode with
                                 | .regular =>
-                                    Functions.InteractionSemantics.Stmt.openRunForLoop
+                                    sourceModel.openRunForLoop
                                       program loopCtx cond postCtx post bodyCtx
                                         body fuel postOutcome.state
                                 | .brk | .cont =>
@@ -417,7 +475,7 @@ theorem forward_effect
                         hPostAndLoopSuccess
                     have hPostRunSuccess :
                         Simulation.Interaction.Successful
-                          (Functions.InteractionSemantics.Block.openRunScoped
+                          (sourceModel.openRunScoped
                             program postCtx post fuel bodySource) := by
                       apply Simulation.Interaction.AllDone.mono hPostSuccess
                       intro outcome hOutcome
@@ -803,7 +861,8 @@ theorem forward
       | error hError => exact .error hError
       | ok _ => exact .ok trivial
   apply Simulation.Interaction.Rel.mono
-    (forward_effect (Effect := fun _ _ _ _ => True) EffectAlgebra.trivial
+    (forward_effect_with (Effect := fun _ _ _ _ => True)
+      SourceSemantics.ordinary EffectAlgebra.trivial
       hLoopScope hBodyBreak hBodyContinue hCondEffect hBodyEffect hPostEffect
       fuel hFuel (by simp [targetReturns]) (by simp [rootMode, SameFrame.refl])
       hInitial

@@ -310,6 +310,25 @@ noncomputable def openEval (contract : MemoryContract.Contract)
 
 end ArgList
 
+namespace Block
+
+noncomputable def openRun (contract : MemoryContract.Contract)
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (block : Functions.Block) (state : State) :
+    Open (Outcome × Functions.Source.Ctx) :=
+  Functions.Source.Canonical.Block.runOpen
+    Functions.InteractionSemantics.stateModel
+    (primitiveSemantics contract) program ctx fuel block state
+
+noncomputable def openRunScoped (contract : MemoryContract.Contract)
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (block : Functions.Block) (fuel : Nat) (state : State) : Open Outcome :=
+  Functions.Source.Canonical.Block.runScoped
+    Functions.InteractionSemantics.stateModel
+    (primitiveSemantics contract) program ctx block fuel state
+
+end Block
+
 namespace Stmt
 
 noncomputable def openRunForLoop (contract : MemoryContract.Contract)
@@ -329,6 +348,126 @@ noncomputable def openRun (contract : MemoryContract.Contract)
   Functions.Source.Canonical.Stmt.run
     Functions.InteractionSemantics.stateModel
     (primitiveSemantics contract) program ctx fuel stmt state
+
+/-- One positive-fuel guarded loop iteration, exposed from the canonical
+parameterized Functions control semantics. -/
+theorem openRunForLoop_succ
+    (contract : MemoryContract.Contract) (program : Functions.Program)
+    (loopCtx : Functions.Source.Ctx) (cond : Functions.Expr 1)
+    (postBase : Functions.Source.Ctx) (post : Functions.Block)
+    (bodyBase : Functions.Source.Ctx) (body : Functions.Block)
+    (fuel : Nat) (state : State) :
+    openRunForLoop contract program loopCtx cond postBase post bodyBase body
+        (fuel + 1) state =
+      Simulation.Interaction.bind
+        (Expr.openEvalCondition contract cond state)
+        (fun result =>
+          if result.2 then
+            Simulation.Interaction.bind
+              (Block.openRunScoped contract program bodyBase body fuel result.1)
+              (fun bodyOutcome =>
+                match bodyOutcome.mode with
+                | .brk =>
+                    Simulation.Interaction.pure
+                      (Functions.Source.Effectful.Outcome.regular
+                        bodyOutcome.state)
+                | .regular | .cont =>
+                    Simulation.Interaction.bind
+                      (Block.openRunScoped contract program postBase post fuel
+                        bodyOutcome.state)
+                      (fun postOutcome =>
+                        match postOutcome.mode with
+                        | .regular =>
+                            openRunForLoop contract program loopCtx cond
+                              postBase post bodyBase body fuel
+                              postOutcome.state
+                        | .brk | .cont =>
+                            Simulation.Interaction.error .InvalidInstruction
+                        | .leave | .halt _ =>
+                            Simulation.Interaction.pure postOutcome)
+                | .leave | .halt _ =>
+                    Simulation.Interaction.pure bodyOutcome)
+          else
+            Simulation.Interaction.pure
+              (Functions.Source.Effectful.Outcome.regular
+                (result.1.restrictTo loopCtx.scope))) := by
+  unfold openRunForLoop
+  simp only [Functions.Source.Effectful.Control.Stmt.runForLoop]
+  rfl
+
+/-- A successful guarded loop kernel is exactly the ordinary canonical loop
+kernel, including the ordered open interaction tree. -/
+theorem openRunForLoop_eq_ordinary_of_successful
+    (contract : MemoryContract.Contract) (program : Functions.Program)
+    (loopCtx : Functions.Source.Ctx) (cond : Functions.Expr 1)
+    (postBase : Functions.Source.Ctx) (post : Functions.Block)
+    (bodyBase : Functions.Source.Ctx) (body : Functions.Block)
+    (fuel : Nat) (state : State)
+    (hSuccessful : Simulation.Interaction.Successful
+      (openRunForLoop contract program loopCtx cond postBase post bodyBase body
+        fuel state)) :
+    openRunForLoop contract program loopCtx cond postBase post bodyBase body
+        fuel state =
+      Functions.InteractionSemantics.Stmt.openRunForLoop program loopCtx cond
+        postBase post bodyBase body fuel state := by
+  exact
+    Functions.InteractionRefinement.Stmt.runForLoop_eq_of_successRefines
+      Functions.InteractionSemantics.stateModel
+      (primitive_successRefines_ordinary contract) program loopCtx cond
+      postBase post bodyBase body fuel state hSuccessful
+
+/-- The positive-fuel guarded `for` wrapper exposes its initializer and loop
+kernel while retaining the canonical Functions control semantics. -/
+theorem openRun_for
+    (contract : MemoryContract.Contract) (program : Functions.Program)
+    (ctx : Functions.Source.Ctx) (fuel : Nat) (init : Functions.Block)
+    (cond : Functions.Expr 1) (post body : Functions.Block) (state : State) :
+    openRun contract program ctx (fuel + 1) (.for_ init cond post body) state =
+      Simulation.Interaction.bind
+        (Block.openRun contract program ctx.withoutLoopControl fuel init state)
+        (fun initResult =>
+          match initResult.1.mode with
+          | .regular =>
+              Simulation.Interaction.bind
+                (openRunForLoop contract program initResult.2 cond
+                  initResult.2.withoutLoopControl post
+                  (initResult.2.withLoopControl
+                    initResult.2.scope initResult.2.scope)
+                  body fuel initResult.1.state)
+                (fun loopOutcome =>
+                  match loopOutcome.mode with
+                  | .regular =>
+                      Simulation.Interaction.pure
+                        (Functions.Source.Effectful.Outcome.regular
+                          (loopOutcome.state.restrictTo ctx.scope), ctx)
+                  | .brk | .cont =>
+                      Simulation.Interaction.error .InvalidInstruction
+                  | .leave | .halt _ =>
+                      Simulation.Interaction.pure (loopOutcome, ctx))
+          | .brk | .cont =>
+              Simulation.Interaction.error .InvalidInstruction
+          | .leave | .halt _ =>
+              Simulation.Interaction.pure (initResult.1, ctx)) := by
+  unfold openRun Functions.Source.Canonical.Stmt.run
+  simp only [Functions.Source.Effectful.Control.Stmt.run]
+  rfl
+
+/-- A successful guarded statement run is exactly the ordinary canonical
+statement run. -/
+theorem openRun_eq_ordinary_of_successful
+    (contract : MemoryContract.Contract) (program : Functions.Program)
+    (ctx : Functions.Source.Ctx) (fuel : Nat) (stmt : Functions.Stmt)
+    (state : State)
+    (hSuccessful : Simulation.Interaction.Successful
+      (openRun contract program ctx fuel stmt state)) :
+    openRun contract program ctx fuel stmt state =
+      Functions.InteractionSemantics.Stmt.openRun
+        program ctx fuel stmt state := by
+  exact
+    Functions.InteractionRefinement.Stmt.run_eq_of_successRefines
+      Functions.InteractionSemantics.stateModel
+      (primitive_successRefines_ordinary contract) program ctx fuel stmt state
+      hSuccessful
 
 theorem openRun_let
     (contract : MemoryContract.Contract) (program : Functions.Program)
@@ -442,14 +581,6 @@ theorem openRun_leave
 end Stmt
 
 namespace Block
-
-noncomputable def openRun (contract : MemoryContract.Contract)
-    (program : Functions.Program) (ctx : Functions.Source.Ctx)
-    (fuel : Nat) (block : Functions.Block) (state : State) :
-    Open (Outcome × Functions.Source.Ctx) :=
-  Functions.Source.Canonical.Block.runOpen
-    Functions.InteractionSemantics.stateModel
-    (primitiveSemantics contract) program ctx fuel block state
 
 /-- Reservation/host safety for one concrete block execution. It quantifies
 over every answer branch generated by that execution, not over unrelated
@@ -605,13 +736,6 @@ theorem openRun_append
               unfold Simulation.Interaction.pure
               rw [Simulation.Interaction.bind_done_ok]
               simp [hMode]
-
-noncomputable def openRunScoped (contract : MemoryContract.Contract)
-    (program : Functions.Program) (ctx : Functions.Source.Ctx)
-    (block : Functions.Block) (fuel : Nat) (state : State) : Open Outcome :=
-  Functions.Source.Canonical.Block.runScoped
-    Functions.InteractionSemantics.stateModel
-    (primitiveSemantics contract) program ctx block fuel state
 
 theorem openRunScoped_eq_ordinary_of_successful
     (contract : MemoryContract.Contract) (program : Functions.Program)
