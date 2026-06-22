@@ -53,6 +53,7 @@ import EvmCompiler.Functions.AllocationObserverProgram
 import EvmCompiler.Functions.AllocationObserverCall
 import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.InteractionSemantics
+import EvmCompiler.Functions.InteractionRefinement
 import EvmCompiler.Functions.OpenSupportCheck
 import EvmCompiler.Functions.InteractionArity
 import EvmCompiler.Functions.AllocationInteractionRelation
@@ -102,6 +103,7 @@ import EvmCompiler.Functions.ObserverSafety
 import EvmCompiler.Locals.EffectSemantics
 import EvmCompiler.Locals.InteractionCleanupPreservation
 import EvmCompiler.Locals.InteractionSemantics
+import EvmCompiler.Locals.InteractionRefinement
 import EvmCompiler.Locals.InteractionArity
 import EvmCompiler.Locals.InteractionStatePreservation
 import EvmCompiler.Locals.InteractionPreservation
@@ -230,6 +232,9 @@ import EvmCompiler.Yul.StateRelation
 #print axioms EvmCompiler.Functions.AllocationInteractionSafety.SourceSafety.uninhabited
 #check EvmCompiler.Functions.AllocationInteractionSafeSemantics.Primitive.safe_of_successful
 #check EvmCompiler.Functions.AllocationInteractionSafeExpression.exprChecked_of_successful
+#check EvmCompiler.Functions.AllocationInteractionSafeSemantics.Block.ExecutionSafe
+#check EvmCompiler.Functions.AllocationInteractionSafeSemantics.Block.openRun_eq_ordinary_of_successful
+#print axioms EvmCompiler.Functions.AllocationInteractionSafeSemantics.Block.openRun_eq_ordinary_of_successful
 #check EvmCompiler.Functions.AllocationInteractionResourceComposition.block_cons_successful
 #check EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.cons_of_parts_successful
 #check EvmCompiler.Functions.AllocationInteractionComposition.cons_successful
