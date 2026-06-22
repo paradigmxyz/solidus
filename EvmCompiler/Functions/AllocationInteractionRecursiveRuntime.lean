@@ -560,46 +560,8 @@ private theorem if_of_recursive
           sourceFuel { stmts := .if_ cond body :: rest } source)) :
     CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
-  have hWholeFuel :=
-    Functions.InteractionSemantics.Block.successful_openRun_fuel_pos hSuccess
-  have hHeadSuccess := successful_head hWholeFuel hSuccess
-  have hSourceFuel : 1 < sourceFuel := by
-    have hHeadFuel := (successful_if_condition hHeadSuccess).1
-    omega
-  have hCondScoped : Functions.Scope.ExprScoped live cond := by
-    simpa [Functions.Scope.Stmt.Scoped] using cursor.headScoped.1
-  have hCondSafe := hSafety.expr hCondScoped
-    hBoundary.semantic.invariant.defined
-    (successful_if_condition hHeadSuccess).2
-  exact CursorRuntimeAt.if_ cursor hSourceFuel hReserve hCondSafe hBoundary
-    hSuccess
-    (fun bodyCursor {sourceAfter targetAfter} hTargetCapacity hBodyBoundary
-        hBodySuccess => by
-      have hBodyRel :=
-        RecursiveOpenRuntime.at_targetFuel hRecursive bodyCursor
-          (by omega) hTargetCapacity hBodyBoundary
-          (AllocationInteractionFrame.Budget.mono (by omega) hFuelBudget)
-          hBodySuccess
-      have hCleanupFuel :
-          2 ≤
-            (targetBudget cursor sourceFuel targetExtra - 2) -
-              bodyCursor.compiled.length := by
-        have hStride := eight_le_callStride expressions
-        have hMul := Nat.mul_le_mul hStride
-          (show 1 ≤ sourceFuel - 2 + 1 by omega)
-        have hEnough :
-            bodyCursor.compiled.length + 2 ≤
-              targetBudget cursor sourceFuel targetExtra - 2 := by
-          exact le_trans (by
-            unfold targetBudget
-            omega) hTargetCapacity
-        omega
-      exact ⟨hCleanupFuel, hBodyRel⟩)
-    (fun {afterState} tail hExact
-        {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
-      recursive_tail hRecursive tail (by omega) hTailBoundary hFuelBudget
-        (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
-        hTailSuccess)
+  exact False.elim
+    (AllocationInteractionSafety.SourceSafety.uninhabited contract hSafety)
 
 private theorem switch_of_recursive
     {allocation : Locals.Allocation.ProgramPlan}

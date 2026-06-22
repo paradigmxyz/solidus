@@ -3,6 +3,7 @@ import EvmCompiler.Functions.AllocationInteractionCleanupResource
 import EvmCompiler.Functions.AllocationInteractionExpressionResource
 import EvmCompiler.Functions.AllocationInteractionLoop
 import EvmCompiler.Functions.AllocationInteractionResourceComposition
+import EvmCompiler.Functions.AllocationInteractionSafeExpression
 
 namespace EvmCompiler
 namespace Functions
@@ -372,6 +373,14 @@ theorem if_of_components
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
           (sourceBodyFuel + 1) (.if_ cond body) source))
+    (hCondOrdinary :
+      AllocationInteractionSafeSemantics.Expr.openEvalCondition
+          contract cond source =
+        Functions.InteractionSemantics.Expr.openEvalCondition cond source)
+    (hSafeSuccess :
+      Simulation.Interaction.Successful
+        (AllocationInteractionSafeSemantics.Stmt.openRun contract program
+          sourceCtx (sourceBodyFuel + 1) (.if_ cond body) source))
     (hTrue :
       ∀ {sourceAfter targetAfter},
         AllocationContext.ActivationInvariant contract lowerCtx lowerState
@@ -381,6 +390,9 @@ theorem if_of_components
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
               sourceBodyFuel (.block body) sourceAfter) →
+          Simulation.Interaction.Successful
+            (AllocationInteractionSafeSemantics.Stmt.openRun contract program
+              sourceCtx sourceBodyFuel (.block body) sourceAfter) →
           Simulation.Interaction.Rel
             (RuntimeResultRel contract lowerCtx lowerState localsCtx plan
               returns live frameBase mode sourceCtx sourceCtx config
@@ -401,16 +413,24 @@ theorem if_of_components
     Expressions.InteractionSemantics.Block.openRun_single_if]
   rw [Functions.InteractionSemantics.Stmt.openRun_if] at hSuccess
   have hCondSuccess := Simulation.Interaction.Successful.bind_inv hSuccess
+  rw [AllocationInteractionSafeSemantics.Stmt.openRun_if] at hSafeSuccess
+  have hSafeCondSuccess :=
+    Simulation.Interaction.Successful.bind_inv hSafeSuccess
+  rw [hCondOrdinary] at hSafeCondSuccess
   have hCondStrong :=
     Simulation.Interaction.Rel.strengthen_right
       (Simulation.Interaction.Rel.strengthen_left
-        (Simulation.Interaction.Rel.strengthen_left hCond hVars) hCondSuccess)
+        (Simulation.Interaction.Rel.strengthen_left
+          (Simulation.Interaction.Rel.strengthen_left hCond hVars)
+          hCondSuccess)
+        hSafeCondSuccess)
       (Expressions.InteractionReturns.Expr.openRunCondition_returns
         targetCond target)
   apply Simulation.Interaction.Rel.bind_custom hCondStrong
   intro sourceDone targetDone hDone
   rcases hDone with
-    ⟨⟨⟨hRelated, hVarsDone⟩, hContinuationSuccess⟩, hTargetReturns⟩
+    ⟨⟨⟨⟨hRelated, hVarsDone⟩, hContinuationSuccess⟩,
+      hSafeContinuationSuccess⟩, hTargetReturns⟩
   cases hRelated with
   | error hError => exact .done ⟨.error hError, .error hError⟩
   | @ok sourceResult targetResult hResult =>
@@ -444,7 +464,7 @@ theorem if_of_components
               (by
                 simpa [Structured.InteractionSemantics.Code.ConditionReturnsEq]
                   using hTargetReturns)
-              hContinuationSuccess)
+              hContinuationSuccess hSafeContinuationSuccess)
           intro sourceFinal targetFinal hFinal
           rcases hFinal with ⟨hSemantic, hBodyEffect⟩
           cases hBodyEffect with

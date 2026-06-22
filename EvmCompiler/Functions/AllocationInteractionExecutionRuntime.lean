@@ -1044,6 +1044,88 @@ theorem block
         hTailSuccess hTailSafe =>
       hTailForward tail hExact hTailBoundary hTailSafe)
 
+/-- Conditional preservation follows the guarded condition outcome that
+actually selects the body and then carries safety through the reached tail. -/
+theorem if_
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {cond : Functions.Expr 1} {body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase sourceFuel targetExtra : Nat}
+    {config : Config} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor : CoreCursor root scope live
+      { stmts := .if_ cond body :: rest } beforeState beforeLocals)
+    (hSourceFuel : 1 < sourceFuel)
+    (hBoundary :
+      Boundary cursor contract globalFrameWords config allocatorDepth frameBase
+        mode sourceCtx source target)
+    (hReserve : AllocationInteractionTargetFuel.Reserve cursor targetExtra)
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+        program sourceCtx sourceFuel { stmts := .if_ cond body :: rest } source)
+    (hBodyForward :
+      ∀ (bodyCursor :
+          CoreCursor root (.lexical scope cursor.planning.nextScope)
+            live body beforeState beforeLocals)
+        {sourceAfter targetAfter},
+        targetBudget bodyCursor (sourceFuel - 2)
+              (AllocationInteractionTargetFuel.stmtListNestedSize
+                bodyCursor.compiled) ≤
+            targetBudget cursor sourceFuel targetExtra - 2 →
+          Boundary bodyCursor contract globalFrameWords config allocatorDepth
+            frameBase mode sourceCtx sourceAfter targetAfter →
+          AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+            program sourceCtx (sourceFuel - 2) body sourceAfter →
+          2 ≤
+              (targetBudget cursor sourceFuel targetExtra - 2) -
+                bodyCursor.compiled.length ∧
+            Simulation.Interaction.Rel
+              (RuntimeResultRel contract root.lowerCtx
+                bodyCursor.finalState bodyCursor.finalLocals bodyCursor.plan
+                root.returns (Functions.Scope.Block.outEnv live body)
+                frameBase mode sourceCtx
+                { sourceCtx with
+                  scope := Functions.Scope.Block.outEnv live body }
+                config allocatorDepth targetAfter)
+              (Functions.InteractionSemantics.Block.openRun program sourceCtx
+                (sourceFuel - 2) body sourceAfter)
+              (Expressions.InteractionSemantics.Block.openRun expressions
+                (targetBudget cursor sourceFuel targetExtra - 2)
+                { stmts := bodyCursor.compiled } targetAfter))
+    (hTailForward :
+      ∀ {afterState : AllocationLowering.State}
+        (tail : CoreCursor root scope live { stmts := rest }
+          afterState beforeLocals),
+        ExactTail cursor tail →
+        ∀ {sourceMid targetMid tailMode},
+          Boundary tail contract globalFrameWords config allocatorDepth
+              frameBase tailMode sourceCtx sourceMid targetMid →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
+            CursorRuntimeAt tail contract config allocatorDepth frameBase
+              (sourceFuel - 1) (targetExtra + callStride expressions)
+              tailMode sourceCtx sourceMid targetMid) :
+    CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
+      targetExtra mode sourceCtx source target := by
+  exact CursorRuntimeAt.if_ cursor hSourceFuel hReserve hBoundary
+    hExecutionSafe.ordinarySuccessful hExecutionSafe
+    (fun bodyCursor {sourceAfter targetAfter} hTargetCapacity hBodyBoundary
+        hBodySuccess hBodySafe =>
+      hBodyForward bodyCursor hTargetCapacity hBodyBoundary hBodySafe)
+    (fun {afterState} tail hExact {sourceMid targetMid tailMode} hTailBoundary
+        hTailSuccess hTailSafe =>
+      hTailForward tail hExact hTailBoundary hTailSafe)
+
 
 end AllocationInteractionExecutionRuntime
 end Functions
