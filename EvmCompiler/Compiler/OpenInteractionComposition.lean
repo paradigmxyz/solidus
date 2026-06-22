@@ -1264,7 +1264,7 @@ theorem compiledVerifiedStackCodeToRawBytecode
               { expressionsState.evm with
                 pc := EvmYul.UInt256.ofNat 0 }) := by
   obtain ⟨_hResolved, hOrdered, hLower, hStackArtifact, _pinnedPushPcs,
-      _hPins, hCompact, hBytes⟩ :=
+      _hPins, hCompact, hBytes, _hMarker⟩ :=
     Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts hCode
   have hSource :=
     Solidity.Frontend.Object.toSolcYulOrderedProgram?_source hOrdered

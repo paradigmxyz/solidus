@@ -39,29 +39,16 @@ def planVerifiedStackObjectArtifactFromChildren? (object : Object)
     (childArtifacts.map VerifiedStackObjectArtifact.image)
     object.compileVerifiedStackCodeArtifactIn? (·.bytes)
 
-def compileVerifiedStackMarkerCodeArtifact? (object : Object)
-    (plan : ObjectArtifactPlan)
-    (codeArtifact : VerifiedStackCodeArtifact) :
-    Option VerifiedStackCodeArtifact :=
-  match plan.immutableNames with
-  | [] => some codeArtifact
-  | _ :: _ =>
-      let markerContext : ObjectBuiltinContext :=
-        { plan.context with
-          immutableValues := plan.markerImmutableValues }
-      object.compileVerifiedStackCodeArtifactIn? markerContext
-
 def finishVerifiedStackObjectArtifact? (object : Object)
     (childArtifacts : List VerifiedStackObjectArtifact)
     (plan : ObjectArtifactPlan) (codeArtifact : VerifiedStackCodeArtifact) :
     Option VerifiedStackObjectArtifact := do
   if codeArtifact.bytes.length == plan.codeBase then
-    let markerArtifact ←
-      object.compileVerifiedStackMarkerCodeArtifact? plan codeArtifact
-    if markerArtifact.bytes.length == plan.codeBase then
+    if codeArtifact.immutableMarkerBytes.length == plan.codeBase then
       let ownImmutableReferences :=
         Bytecode.immutableReferenceEntriesFromCodes
-          codeArtifact.bytes markerArtifact.bytes plan.markerImmutableValues
+          codeArtifact.bytes codeArtifact.immutableMarkerBytes
+            plan.markerImmutableValues
       let payloadImmutableReferences ←
         ObjectItemRef.List.immutableReferenceEntriesFromNat?
           object.data plan.childImages plan.codeBase plan.items
@@ -76,7 +63,7 @@ def finishVerifiedStackObjectArtifact? (object : Object)
           codeBase := plan.codeBase
           context := plan.context
           code := codeArtifact.bytes
-          markerCode := markerArtifact.bytes }
+          markerCode := codeArtifact.immutableMarkerBytes }
       let image : ObjectImage :=
         { name := object.name
           bytes := codeArtifact.bytes ++ plan.payload
@@ -115,34 +102,26 @@ theorem finishVerifiedStackObjectArtifact?_parts
       | true =>
           have hCodeEq : codeArtifact.bytes.length = plan.codeBase := by
             simpa using hCodeLength
-          cases hMarker :
-              object.compileVerifiedStackMarkerCodeArtifact?
-                plan codeArtifact with
-          | none => simp [hCodeEq, hMarker] at hFinish
-          | some markerArtifact =>
-              cases hMarkerLength :
-                  markerArtifact.bytes.length == plan.codeBase with
-              | false =>
-                  have hMarkerNe :
-                      markerArtifact.bytes.length ≠ plan.codeBase := by
-                    simpa using hMarkerLength
-                  simp [hCodeEq, hMarker, hMarkerNe] at hFinish
-              | true =>
-                  have hMarkerEq :
-                      markerArtifact.bytes.length = plan.codeBase := by
-                    simpa using hMarkerLength
-                  cases hPayloadReferences :
-                      ObjectItemRef.List.immutableReferenceEntriesFromNat?
-                        object.data plan.childImages plan.codeBase
-                          plan.items with
-                  | none =>
-                      simp [hCodeEq, hMarker, hMarkerEq,
-                        hPayloadReferences] at hFinish
-                  | some payloadReferences =>
-                      simp [hCodeEq, hMarker, hMarkerEq,
-                        hPayloadReferences] at hFinish
-                      subst artifact
-                      exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+          cases hMarkerLength :
+              codeArtifact.immutableMarkerBytes.length == plan.codeBase with
+          | false =>
+              have hMarkerNe :
+                  codeArtifact.immutableMarkerBytes.length ≠ plan.codeBase := by
+                simpa using hMarkerLength
+              simp [hCodeEq, hMarkerNe] at hFinish
+          | true =>
+              have hMarkerEq :
+                  codeArtifact.immutableMarkerBytes.length = plan.codeBase := by
+                simpa using hMarkerLength
+              cases hPayloadReferences :
+                  ObjectItemRef.List.immutableReferenceEntriesFromNat?
+                    object.data plan.childImages plan.codeBase plan.items with
+              | none =>
+                  simp [hCodeEq, hMarkerEq, hPayloadReferences] at hFinish
+              | some payloadReferences =>
+                  simp [hCodeEq, hMarkerEq, hPayloadReferences] at hFinish
+                  subst artifact
+                  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 mutual
   def compileVerifiedStackObjectArtifactWithLinkerSymbols?
@@ -249,7 +228,7 @@ theorem compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
     compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts hCompile
   rw [hImage]
   obtain ⟨_hResolved, _hOrdered, _hLower, _hStack, _pinnedPushPcs,
-      _hPins, hCompact, hBytes⟩ :=
+      _hPins, hCompact, hBytes, _hMarker⟩ :=
     compileVerifiedStackCodeArtifactIn?_parts hCode
   rw [hBytes]
   exact Assembly.Compact.compile?_decodingCorrect_with_suffix

@@ -2488,22 +2488,27 @@ structure VerifiedStackCodeArtifact where
   compiled : Compiler.StackArtifact.Artifact
   compact : Assembly.Compact.Artifact
   bytes : List UInt8
+  immutableMarkerBytes : List UInt8
+
+structure ImmutablePushPlan where
+  pinnedPushPcs : List Nat
+  markerTarget? : Option Assembly.Program
 
 /-- Compute the physical push sites whose compact width must remain stable when
 Solidity patches immutable values. The marker program is produced by the same
 checked frontend and stack allocator; the Assembly owner accepts pins only
 when both prepared programs have identical instruction shape. -/
-def immutablePushPcsFor? (object : Object)
+def immutablePushPlanFor? (object : Object)
     (context : ObjectBuiltinContext) (actual : Assembly.Program) :
-    Option (List Nat) :=
+    Option ImmutablePushPlan :=
   let immutableNames := object.loadImmutableNames
   match immutableNames with
-  | [] => some []
+  | [] => some { pinnedPushPcs := [], markerTarget? := none }
   | _ :: _ => do
       let markerImmutableValues :=
         ImmutableReference.markerEntriesFromNat 0 immutableNames
       if context.immutableValues = markerImmutableValues then
-        some []
+        some { pinnedPushPcs := [], markerTarget? := none }
       else
         let markerContext : ObjectBuiltinContext :=
           { context with immutableValues := markerImmutableValues }
@@ -2511,8 +2516,20 @@ def immutablePushPcsFor? (object : Object)
         let ordered ← resolved.toSolcYulOrderedProgram?
         let lower ← ordered.toObjects?
         let compiled ← Compiler.StackArtifact.compile? lower.toFunctions
-        Assembly.Compact.differingPushPcs?
+        let pinnedPushPcs ← Assembly.Compact.differingPushPcs?
           actual compiled.certified.target
+        some
+          { pinnedPushPcs := pinnedPushPcs
+            markerTarget? := some compiled.certified.target }
+
+def compileImmutableMarkerBytes? (plan : ImmutablePushPlan)
+    (actualCompact : Assembly.Compact.Artifact) : Option (List UInt8) :=
+  match plan.markerTarget? with
+  | none => some actualCompact.bytes.toList
+  | some markerTarget => do
+      let markerCompact ←
+        Assembly.Compact.compile? markerTarget plan.pinnedPushPcs
+      some markerCompact.bytes.toList
 
 def compileVerifiedStackCodeArtifactIn? (object : Object)
     (context : ObjectBuiltinContext) : Option VerifiedStackCodeArtifact := do
@@ -2520,12 +2537,15 @@ def compileVerifiedStackCodeArtifactIn? (object : Object)
   let ordered ← resolved.toSolcYulOrderedProgram?
   let lower ← ordered.toObjects?
   let compiled ← Compiler.StackArtifact.compile? lower.toFunctions
-  let pinnedPushPcs ←
-    object.immutablePushPcsFor? context compiled.certified.target
+  let pushPlan ←
+    object.immutablePushPlanFor? context compiled.certified.target
   let compact ←
-    Assembly.Compact.compile? compiled.certified.target pinnedPushPcs
+    Assembly.Compact.compile? compiled.certified.target pushPlan.pinnedPushPcs
   let bytes := compact.bytes.toList
-  some { resolved, ordered, lower, compiled, compact, bytes }
+  let immutableMarkerBytes ← compileImmutableMarkerBytes? pushPlan compact
+  some
+    { resolved, ordered, lower, compiled, compact, bytes,
+      immutableMarkerBytes }
 
 theorem compileVerifiedStackCodeArtifactIn?_parts
     {object : Object} {context : ObjectBuiltinContext}
@@ -2537,12 +2557,14 @@ theorem compileVerifiedStackCodeArtifactIn?_parts
       artifact.ordered.toObjects? = some artifact.lower ∧
       Compiler.StackArtifact.compile? artifact.lower.toFunctions =
         some artifact.compiled ∧
-      ∃ pinnedPushPcs,
-        object.immutablePushPcsFor? context artifact.compiled.certified.target =
-          some pinnedPushPcs ∧
+      ∃ pushPlan,
+        object.immutablePushPlanFor? context artifact.compiled.certified.target =
+          some pushPlan ∧
         Assembly.Compact.compile? artifact.compiled.certified.target
-            pinnedPushPcs = some artifact.compact ∧
-        artifact.bytes = artifact.compact.bytes.toList := by
+            pushPlan.pinnedPushPcs = some artifact.compact ∧
+        artifact.bytes = artifact.compact.bytes.toList ∧
+        compileImmutableMarkerBytes? pushPlan artifact.compact =
+          some artifact.immutableMarkerBytes := by
   unfold compileVerifiedStackCodeArtifactIn? at hCompile
   cases hResolved : object.resolveObjectBuiltinsIn? context with
   | none => simp [hResolved] at hCompile
@@ -2558,28 +2580,37 @@ theorem compileVerifiedStackCodeArtifactIn?_parts
               | none =>
                   simp [hResolved, hOrdered, hLower, hCompiled] at hCompile
               | some compiled =>
-                  cases hPins :
-                      object.immutablePushPcsFor? context
+                  cases hPlan :
+                      object.immutablePushPlanFor? context
                         compiled.certified.target with
                   | none =>
-                      simp [hResolved, hOrdered, hLower, hCompiled, hPins]
+                      simp [hResolved, hOrdered, hLower, hCompiled, hPlan]
                         at hCompile
-                  | some pinnedPushPcs =>
+                  | some pushPlan =>
                       cases hCompact :
                           Assembly.Compact.compile? compiled.certified.target
-                            pinnedPushPcs with
+                            pushPlan.pinnedPushPcs with
                       | none =>
-                          simp [hResolved, hOrdered, hLower, hCompiled, hPins,
+                          simp [hResolved, hOrdered, hLower, hCompiled, hPlan,
                             hCompact] at hCompile
                       | some compact =>
-                          simp [hResolved, hOrdered, hLower, hCompiled, hPins,
-                            hCompact] at hCompile
-                          subst artifact
-                          exact
-                            ⟨by simpa using hResolved, by simpa using hOrdered,
-                              by simpa using hLower, by simpa using hCompiled,
-                              pinnedPushPcs, by simpa using hPins,
-                              by simpa using hCompact, by simp⟩
+                          cases hMarker :
+                              compileImmutableMarkerBytes? pushPlan compact with
+                          | none =>
+                              simp [hResolved, hOrdered, hLower, hCompiled,
+                                hPlan, hCompact, hMarker] at hCompile
+                          | some immutableMarkerBytes =>
+                              simp [hResolved, hOrdered, hLower, hCompiled,
+                                hPlan, hCompact, hMarker] at hCompile
+                              subst artifact
+                              exact
+                                ⟨by simpa using hResolved,
+                                  by simpa using hOrdered,
+                                  by simpa using hLower,
+                                  by simpa using hCompiled,
+                                  pushPlan, by simpa using hPlan,
+                                  by simpa using hCompact, by simp,
+                                  by simpa using hMarker⟩
 
 theorem compileVerifiedStackCodeArtifactIn?_decodingCorrect
     {object : Object} {context : ObjectBuiltinContext}
@@ -2588,8 +2619,8 @@ theorem compileVerifiedStackCodeArtifactIn?_decodingCorrect
       some artifact) :
     Assembly.Compact.DecodingCorrect artifact.compact.program
       artifact.compact.bytes := by
-  obtain ⟨_hResolved, _hOrdered, _hLower, _hArtifact, _pinnedPushPcs,
-      _hPins, hCompact, _hBytes⟩ :=
+  obtain ⟨_hResolved, _hOrdered, _hLower, _hArtifact, _pushPlan,
+      _hPlan, hCompact, _hBytes, _hMarker⟩ :=
     compileVerifiedStackCodeArtifactIn?_parts hCompile
   exact Assembly.Compact.compile?_decodingCorrect hCompact
 
