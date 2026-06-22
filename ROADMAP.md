@@ -396,6 +396,13 @@ boundaries. Corpus acceptance alone does not discharge them.
   scratch-backed artifacts use the canonical parameterized Functions semantics
   to check only the concrete source run. Later derive host bounds from the
   gas-aware EVM theorem rather than source-language restrictions.
+  The replacement semantics is the ordinary parameterized Functions control
+  interpreter instantiated with a primitive guard: safe operations delegate to
+  the ordinary open primitive unchanged, while an actually reached violation
+  traps. Prove successful guarded runs equal their ordinary runs, then consume
+  that checked run in the adjacent Functions allocation proof. This preserves
+  honest `GAS`/`MSIZE` and the exact CALL/CREATE/LOG interaction order without
+  duplicating control semantics.
 - [ ] Carry the selected EVM fork/dialect in checked artifacts. Cover or
   honestly reject every solc-emittable builtin for that profile, including
   Osaka additions and supported `verbatim` forms.
