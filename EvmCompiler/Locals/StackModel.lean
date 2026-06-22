@@ -4,6 +4,37 @@ import Mathlib.Tactic.IntervalCases
 namespace EvmCompiler
 namespace Locals
 
+namespace StackList
+
+def swapPopAt {α : Type} : Nat → List α → List α
+  | _, [] => []
+  | 0, _ :: rest => rest
+  | idx + 1, head :: rest =>
+      match rest[idx]? with
+      | none => head :: rest
+      | some _ => rest.set idx head
+
+theorem map_swapPopAt {α β : Type} (f : α → β)
+    (idx : Nat) (items : List α) :
+    (swapPopAt idx items).map f = swapPopAt idx (items.map f) := by
+  cases items with
+  | nil => simp [swapPopAt]
+  | cons head rest =>
+      cases idx with
+      | zero => simp [swapPopAt]
+      | succ idx =>
+          cases hAt : rest[idx]? with
+          | none =>
+              have hMapAt : (rest.map f)[idx]? = none := by
+                simp [List.getElem?_map, hAt]
+              simp [swapPopAt, hAt, hMapAt]
+          | some value =>
+              have hMapAt : (rest.map f)[idx]? = some (f value) := by
+                simp [List.getElem?_map, hAt]
+              simp [swapPopAt, hAt, hMapAt, List.map_set]
+
+end StackList
+
 namespace Layout
 
 def lookupDepthFrom (name : Name) : Nat → Layout → Option Nat
@@ -202,6 +233,11 @@ def promoteAt (idx : Nat) (layout : Layout) : Layout :=
   match layout[idx]? with
   | none => layout
   | some name => name :: layout.take idx ++ layout.drop (idx + 1)
+
+/-- Remove one stack slot using the layout produced by `SWAP idx; POP`.
+Index zero needs only `POP`; an out-of-range index leaves the layout unchanged. -/
+def discardAt : Nat → Layout → Layout
+  | idx, layout => StackList.swapPopAt idx layout
 
 theorem promoteAt_perm (idx : Nat) (layout : Layout) :
     (promoteAt idx layout).Perm layout := by
@@ -431,6 +467,22 @@ def promoteNameStackOnly? (ctx : Ctx) (name : Name) :
     some (code, Layout.promoteAt idx ctx.layout)
   else
     none
+
+def discardNameStackOnly? (ctx : Ctx) (name : Name) :
+    Option (Structured.Code × Layout) := do
+  let depth ← Layout.lookupDepth? name ctx.layout
+  let idx := depth - 1
+  match idx with
+  | 0 =>
+      some ([Structured.BasicInstr.op .pop], Layout.discardAt 0 ctx.layout)
+  | idx + 1 =>
+      if idx + 1 ≤ 16 then
+        let op ← StackOp.swap? (idx + 1)
+        some
+          ([Structured.BasicInstr.op op, Structured.BasicInstr.op .pop],
+            Layout.discardAt (idx + 1) ctx.layout)
+      else
+        none
 
 def cleanupOnePreserving? : Nat → Option Structured.Code
   | 0 => some [Structured.BasicInstr.op .pop]

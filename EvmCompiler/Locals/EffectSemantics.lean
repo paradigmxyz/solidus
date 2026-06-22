@@ -632,6 +632,8 @@ mutual
         throw .InvalidInstruction
     | _fuel, .promoteName _name, _state =>
         throw .InvalidInstruction
+    | _fuel, .discardName _name, _state =>
+        throw .InvalidInstruction
     | _fuel, .cleanupTo _targetLayout, _state =>
         throw .InvalidInstruction
     | fuel, .block body, state => do

@@ -30,6 +30,7 @@ mutual
     | .assignTop _name => false
     | .assignTopWithOffset _offset _name => false
     | .promoteName _name => false
+    | .discardName _name => false
     | .cleanupTo _targetLayout => false
     | .block body => body.usesCallCreate
     | .if_ cond body => cond.usesCallCreate || body.usesCallCreate
@@ -237,6 +238,11 @@ mutual
         some
           (codeStmt (code ++ bindLocals 0 promoted),
             ctx.withLayout promoted)
+    | .discardName name => do
+        let (code, discarded) ← ctx.discardNameStackOnly? name
+        some
+          (codeStmt (code ++ bindLocals 0 discarded),
+            ctx.withLayout discarded)
     | .cleanupTo targetLayout => do
         if targetLayout =
             ctx.layout.drop (ctx.layout.length - targetLayout.length) then
@@ -464,6 +470,21 @@ theorem compile_promoteName_final
   | some result =>
       rcases result with ⟨promoteCode, layout⟩
       simp [Stmt.compile, hPromote] at hCompile
+      exact ⟨layout, hCompile.2.symm⟩
+
+/-- Discard statements change only the Locals layout. -/
+theorem compile_discardName_final
+    {ctx final : Ctx} {name : Name}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Stmt.compile ctx (.discardName name) = some (code, final)) :
+    ∃ layout, final = ctx.withLayout layout := by
+  cases hDiscard : ctx.discardNameStackOnly? name with
+  | none =>
+      simp [Stmt.compile, hDiscard] at hCompile
+  | some result =>
+      rcases result with ⟨discardCode, layout⟩
+      simp [Stmt.compile, hDiscard] at hCompile
       exact ⟨layout, hCompile.2.symm⟩
 
 /--
@@ -870,6 +891,10 @@ theorem compile_sameControl
       obtain ⟨layout, rfl⟩ :=
         compile_promoteName_final hCompile
       exact Ctx.SameControl.withLayout ctx layout
+  | discardName name =>
+      obtain ⟨layout, rfl⟩ :=
+        compile_discardName_final hCompile
+      exact Ctx.SameControl.withLayout ctx layout
   | cleanupTo target =>
       obtain ⟨_cleanup, _hTarget, _hCleanup, _hCode, rfl⟩ :=
         compile_cleanupTo_components hCompile
@@ -1002,6 +1027,8 @@ theorem compile_layout_extends_of_sourceOwned
       simp [Source.Stmt.SourceOwned] at hOwned
   | promoteName name =>
       simp [Source.Stmt.SourceOwned] at hOwned
+  | discardName name =>
+      simp [Source.Stmt.SourceOwned] at hOwned
   | cleanupTo targetLayout =>
       simp [Source.Stmt.SourceOwned] at hOwned
   | block body =>
@@ -1097,6 +1124,7 @@ theorem compile_layout_eq_outEnv_of_sourceOwned
   | assignTopWithOffset offset name =>
       simp [Source.Stmt.SourceOwned] at hOwned
   | promoteName name => simp [Source.Stmt.SourceOwned] at hOwned
+  | discardName name => simp [Source.Stmt.SourceOwned] at hOwned
   | cleanupTo targetLayout => simp [Source.Stmt.SourceOwned] at hOwned
   | block body =>
       obtain ⟨_bodyCode, _bodyCtx, _lowerBody,
@@ -2003,6 +2031,34 @@ theorem Ctx.promoteNameStackOnly?_noCallCreate {ctx : Ctx} {name : Name}
     ⟨_depth, idx, _hDepth, _hIdx, _hBound, hCode, _hPromoted⟩
   exact Ctx.swapRestoreUpTo?_noCallCreate (depth := idx) hCode
 
+theorem Ctx.discardNameStackOnly?_noCallCreate {ctx : Ctx} {name : Name}
+    {code : Structured.Code} {discarded : Layout}
+    (hDiscard :
+      ctx.discardNameStackOnly? name = some (code, discarded)) :
+    code.usesCallCreate = false := by
+  unfold Ctx.discardNameStackOnly? at hDiscard
+  cases hDepth : Layout.lookupDepth? name ctx.layout with
+  | none => simp [hDepth] at hDiscard
+  | some depth =>
+      simp only [hDepth, Option.bind_some] at hDiscard
+      cases hIdx : depth - 1 with
+      | zero =>
+          simp [hIdx] at hDiscard
+          rcases hDiscard with ⟨rfl, rfl⟩
+          rfl
+      | succ idx =>
+          by_cases hBound : idx ≤ 15
+          · simp [hIdx, hBound] at hDiscard
+            cases hSwap : StackOp.swap? (idx + 1) with
+            | none => simp [hSwap] at hDiscard
+            | some op =>
+                simp [hSwap] at hDiscard
+                rcases hDiscard with ⟨hCode, _hLayout⟩
+                subst code
+                exact Structured.Code.swapPop_noCallCreate
+                  (StackOp.swap?_not_callCreate (idx + 1) hSwap)
+          · simp [hIdx, hBound] at hDiscard
+
 theorem Ctx.cleanupOnePreserving?_noCallCreate {temps : Nat}
     {code : Structured.Code}
     (hCleanup : Ctx.cleanupOnePreserving? temps = some code) :
@@ -2440,6 +2496,20 @@ mutual
             exact codeStmt_noCallCreate
               (Structured.Code.usesCallCreate_append_eq_false hPromoteNo
                 (bindLocals_noCallCreate 0 promoted))
+    | discardName name =>
+        simp [Stmt.compile] at hCompile
+        cases hDiscard : ctx.discardNameStackOnly? name with
+        | none =>
+            simp [hDiscard] at hCompile
+        | some discardResult =>
+            rcases discardResult with ⟨discardCode, discarded⟩
+            simp [hDiscard] at hCompile
+            rcases hCompile with ⟨rfl, rfl⟩
+            have hDiscardNo :=
+              Ctx.discardNameStackOnly?_noCallCreate hDiscard
+            exact codeStmt_noCallCreate
+              (Structured.Code.usesCallCreate_append_eq_false hDiscardNo
+                (bindLocals_noCallCreate 0 discarded))
     | cleanupTo targetLayout =>
         by_cases hTarget :
             targetLayout =

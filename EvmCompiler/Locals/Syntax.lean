@@ -37,6 +37,7 @@ mutual
     | assignTop (name : Name)
     | assignTopWithOffset (offset : Nat) (name : Name)
     | promoteName (name : Name)
+    | discardName (name : Name)
     | cleanupTo (targetLayout : Layout)
     | block (body : Block)
     | if_ (cond : Expr 1) (body : Block)
@@ -94,6 +95,8 @@ mutual
           (.assignTopWithOffset offset name)
     | promoteName {canBreak canContinue canLeave : Bool} {name : Name} :
         Stmt.WF canBreak canContinue canLeave (.promoteName name)
+    | discardName {canBreak canContinue canLeave : Bool} {name : Name} :
+        Stmt.WF canBreak canContinue canLeave (.discardName name)
     | cleanupTo {canBreak canContinue canLeave : Bool}
         {targetLayout : Layout} :
         Stmt.WF canBreak canContinue canLeave (.cleanupTo targetLayout)
@@ -216,6 +219,7 @@ mutual
     | .assignTop name => Contains env name
     | .assignTopWithOffset _offset name => Contains env name
     | .promoteName name => Contains env name
+    | .discardName name => Contains env name
     | .cleanupTo _targetLayout => False
     | .block body => Block.Scoped env body
     | .if_ cond body => ExprScoped env cond ∧ Block.Scoped env body
@@ -356,6 +360,7 @@ mutual
     | .assignTop name => Scope.Contains env name
     | .assignTopWithOffset _offset name => Scope.Contains env name
     | .promoteName name => Scope.Contains env name
+    | .discardName name => Scope.Contains env name
     | .cleanupTo _targetLayout => False
     | .block body => BlockScoped env body
     | .if_ cond body => ExprScoped env cond ∧ BlockScoped env body

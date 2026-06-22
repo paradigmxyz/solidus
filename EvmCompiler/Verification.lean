@@ -387,6 +387,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationInteractionAbrupt.brk_of_lower_compile
 #check EvmCompiler.Functions.AllocationInteractionAbrupt.cont_of_lower_compile
 #check EvmCompiler.Locals.InteractionCleanupPreservation.openRun_swapRestoreUpTo?
+#check EvmCompiler.Locals.InteractionCleanupPreservation.openRun_discardNameStackOnly?_top
+#check EvmCompiler.Locals.InteractionCleanupPreservation.openRun_discardNameStackOnly?_buried
 #check EvmCompiler.Locals.InteractionCleanupPreservation.openRun_cleanupOnePreserving?
 #check EvmCompiler.Locals.InteractionCleanupPreservation.openRun_cleanupManyPreserving?
 #check EvmCompiler.Functions.AllocationInteractionCleanup.Preserving.forward_zero
@@ -3358,6 +3360,8 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.Join.compiledOpenRun
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.OrderingArtifact.thenBlock
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.OrderingArtifact.thenBlockForward
+#print axioms EvmCompiler.Locals.InteractionCleanupPreservation.openRun_discardNameStackOnly?_top
+#print axioms EvmCompiler.Locals.InteractionCleanupPreservation.openRun_discardNameStackOnly?_buried
 #print axioms EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_brk_components
 #print axioms EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_cont_components
 #print axioms EvmCompiler.Functions.StackSchedule.scheduleStmtFuelWithTargets_leave_components

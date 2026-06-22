@@ -281,6 +281,7 @@ mutual
     | .assignTop _name
     | .assignTopWithOffset _offset _name
     | .promoteName _name
+    | .discardName _name
     | .cleanupTo _targetLayout => True
     | .block body => Block.OpenSupported body
     | .if_ cond body =>

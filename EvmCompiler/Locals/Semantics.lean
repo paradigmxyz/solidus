@@ -317,6 +317,12 @@ mutual
             ctx.withLayout (Layout.promoteAt idx ctx.layout))
         else
           invalid
+    | _fuel, .discardName name, state => do
+        let (code, discarded) ←
+          (ctx.discardNameStackOnly? name).elim invalid pure
+        let evmAfterDiscard ← Structured.Code.run code state.evm
+        .ok (Outcome.regular (state.withEVM evmAfterDiscard),
+          ctx.withLayout discarded)
     | _fuel, .cleanupTo targetLayout, state => do
         if targetLayout =
             ctx.layout.drop (ctx.layout.length - targetLayout.length) then

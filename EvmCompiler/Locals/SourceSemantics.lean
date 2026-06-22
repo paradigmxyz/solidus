@@ -644,6 +644,8 @@ mutual
         invalid
     | _fuel, .promoteName _name, _state =>
         invalid
+    | _fuel, .discardName _name, _state =>
+        invalid
     | _fuel, .cleanupTo _targetLayout, _state =>
         invalid
     | fuel, .block body, state => do
@@ -791,6 +793,8 @@ theorem run_regular_scope {prim : PrimitiveSemantics} {program : Program}
   | assignTopWithOffset offset name =>
       simp [Source.Stmt.run, Source.invalid, invalid, EvmCompiler.Structured.invalid] at hRun
   | promoteName name =>
+      simp [Source.Stmt.run, Source.invalid, invalid, EvmCompiler.Structured.invalid] at hRun
+  | discardName name =>
       simp [Source.Stmt.run, Source.invalid, invalid, EvmCompiler.Structured.invalid] at hRun
   | cleanupTo targetLayout =>
       simp [Source.Stmt.run, Source.invalid, invalid,
@@ -1122,6 +1126,7 @@ mutual
     | .assignTop _name => False
     | .assignTopWithOffset _offset _name => False
     | .promoteName _name => False
+    | .discardName _name => False
     | .cleanupTo _targetLayout => False
     | .block body => Block.SourceOwned body
     | .if_ cond body => Expr.SourceOwned cond ∧ Block.SourceOwned body

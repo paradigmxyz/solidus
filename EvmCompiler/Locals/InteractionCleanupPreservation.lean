@@ -14,6 +14,64 @@ private theorem set_append_head
   | nil => rfl
   | cons head tail ih => simp [ih]
 
+theorem openRun_discardNameStackOnly?_top
+    {ctx : Ctx} {name : Name} {code : Structured.Code}
+    {discarded : Layout} {value : Word} {rest : List Word}
+    {target : Structured.RunState}
+    (hDepth : Layout.lookupDepth? name ctx.layout = some 1)
+    (hCode : ctx.discardNameStackOnly? name = some (code, discarded))
+    (hStack : target.evm.stack = value :: rest) :
+    ∃ final,
+      Structured.InteractionSemantics.Code.openRun code target =
+          .done (.ok final) ∧
+        discarded = Layout.discardAt 0 ctx.layout ∧
+        final.evm.stack = rest ∧
+        final.evm.toSharedState = target.evm.toSharedState ∧
+        final.returns = target.returns := by
+  unfold Ctx.discardNameStackOnly? at hCode
+  simp [hDepth] at hCode
+  rcases hCode with ⟨rfl, rfl⟩
+  let final :=
+    target.withEVM (target.evm.replaceStackAndIncrPC rest)
+  exact
+    ⟨final, InteractionPreservation.Code.openRun_pop hStack, rfl,
+      by simp [final, EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC],
+      by simp [final, EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC],
+      by simp [final]⟩
+
+theorem openRun_discardNameStackOnly?_buried
+    {ctx : Ctx} {name : Name} {code : Structured.Code}
+    {discarded : Layout} {depth : Nat}
+    {value old : Word} {rest : List Word}
+    {target : Structured.RunState}
+    (hDepth : Layout.lookupDepth? name ctx.layout = some (depth + 2))
+    (hBound : depth + 1 ≤ 16)
+    (hCode : ctx.discardNameStackOnly? name = some (code, discarded))
+    (hGet : rest[depth]? = some old)
+    (hStack : target.evm.stack = value :: rest) :
+    ∃ final,
+      Structured.InteractionSemantics.Code.openRun code target =
+          .done (.ok final) ∧
+        discarded = Layout.discardAt (depth + 1) ctx.layout ∧
+        final.evm.stack = rest.set depth value ∧
+        final.evm.toSharedState = target.evm.toSharedState ∧
+        final.returns = target.returns := by
+  unfold Ctx.discardNameStackOnly? at hCode
+  have hBound' : depth ≤ 15 := by omega
+  simp [hDepth, hBound'] at hCode
+  cases hOp : StackOp.swap? (depth + 1) with
+  | none => simp [hOp] at hCode
+  | some op =>
+      simp [hOp] at hCode
+      rcases hCode with ⟨hCode, hLayout⟩
+      subst code
+      subst discarded
+      obtain ⟨final, hRun, hFinalStack, hShared, hReturns⟩ :=
+        InteractionPreservation.Code.openRun_swap_pop hOp hGet hStack
+      exact ⟨final, hRun, rfl, hFinalStack, hShared, hReturns⟩
+
 /-- The generated restore sequence moves one buried value above its prefix. -/
 theorem openRun_swapRestoreUpTo?
     {depth : Nat} {code : Structured.Code}

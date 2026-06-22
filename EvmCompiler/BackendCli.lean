@@ -485,6 +485,25 @@ def controlPatternStats : Assembly.Program → ControlPatternStats
       | _, _, _ => tail
   | _ => {}
 
+structure ReturnDispatchStats where
+  dispatches : Nat := 0
+  sites : Nat := 0
+  repeatedCleanupSwaps : Nat := 0
+  sharedCleanupSwaps : Nat := 0
+
+def returnDispatchStats (program : TypedCfg.Program) : ReturnDispatchStats :=
+  program.blocks.foldl
+    (fun stats block =>
+      match block.term with
+      | .returnDispatch returnCount sites =>
+          { dispatches := stats.dispatches + 1
+            sites := stats.sites + sites.length
+            repeatedCleanupSwaps :=
+              stats.repeatedCleanupSwaps + returnCount * sites.length
+            sharedCleanupSwaps := stats.sharedCleanupSwaps + returnCount }
+      | _ => stats)
+    {}
+
 def printStackDiagnostics
     (source : String) (contract objectName : String)
     (functions : Functions.Program) : IO Unit := do
@@ -523,6 +542,9 @@ def printStackDiagnostics
   let controlStats :=
     compactArtifact?.map
       (fun artifact => controlPatternStats artifact.physicalSource)
+      |>.getD {}
+  let dispatchStats :=
+    stackArtifact?.map (fun artifact => returnDispatchStats artifact.cfg)
       |>.getD {}
   let compileFinish ← IO.monoMsNow
   let reports := Functions.StackDiagnostics.programReports functions
@@ -598,6 +620,14 @@ def printStackDiagnostics
       "\tconsecutive_labels=" ++ toString controlStats.consecutiveLabels ++
       "\tpush_pop=" ++ toString controlStats.pushPop ++
       "\tswap_pair=" ++ toString controlStats.swapPair)
+  IO.println
+    ("stack_program_return_dispatch=" ++
+      "dispatches=" ++ toString dispatchStats.dispatches ++
+      "\tsites=" ++ toString dispatchStats.sites ++
+      "\trepeated_cleanup_swaps=" ++
+        toString dispatchStats.repeatedCleanupSwaps ++
+      "\tshared_cleanup_swaps=" ++
+        toString dispatchStats.sharedCleanupSwaps)
   IO.println
     ("timing\tstack_program\t" ++ toString (compileFinish - compileStart))
   match lowered? with

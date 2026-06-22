@@ -86,6 +86,10 @@ theorem allDone_openRun
       simp only [Locals.Source.Effectful.Control.Stmt.run]
       apply Simulation.Interaction.AllDone.done
       trivial
+  | discardName name =>
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      apply Simulation.Interaction.AllDone.done
+      trivial
   | cleanupTo targetLayout =>
       simp only [Locals.Source.Effectful.Control.Stmt.run]
       apply Simulation.Interaction.AllDone.done
@@ -3053,6 +3057,10 @@ theorem sourceOwned (input : OwnerInput) : input.Verified := by
           code suffix returns hLeave hNodup hLeaveReturns hOwned
         simp [Locals.Source.Stmt.SourceOwned] at hOwned
     | promoteName =>
+        intro policy sourceProgram targetProgram targetCtx finalCtx
+          code suffix returns hLeave hNodup hLeaveReturns hOwned
+        simp [Locals.Source.Stmt.SourceOwned] at hOwned
+    | discardName =>
         intro policy sourceProgram targetProgram targetCtx finalCtx
           code suffix returns hLeave hNodup hLeaveReturns hOwned
         simp [Locals.Source.Stmt.SourceOwned] at hOwned

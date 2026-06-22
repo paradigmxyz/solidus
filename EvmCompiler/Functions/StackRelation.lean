@@ -84,6 +84,13 @@ theorem values_promoteAt
   simp [values, Locals.Layout.promoteAt, hAt, List.map_take,
     List.map_drop]
 
+theorem values_discardAt
+    (source : Locals.Source.State) (layout : Locals.Layout) (index : Nat) :
+    values source (Locals.Layout.discardAt index layout) =
+      Locals.StackList.swapPopAt index (values source layout) := by
+  unfold values Locals.Layout.discardAt
+  exact Locals.StackList.map_swapPopAt _ _ _
+
 theorem values_insert_fresh
     {source : Locals.Source.State} {layout : Locals.Layout}
     {name : Name} {value : Word}
