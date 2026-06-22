@@ -369,6 +369,46 @@ Permit2/Aave end-to-end proof.
 - [x] Prove PC-relocated preprocessing and open-run preservation, then integrate
   the checked bytes into recursive object planning.
 
+## Production Drop-In Audit
+
+The checked backend is a strong compiler-correctness result relative to the
+project's canonical open, gas-erased semantics. Production replacement of
+solc's backend additionally requires the following outer semantic and product
+boundaries. Corpus acceptance alone does not discharge them.
+
+- [x] Preserve one ordered open interaction tree for `gas`, `msize`, logs,
+  calls, and creates across every adjacent compiler pass and exact raw-byte
+  encoding.
+- [x] Compile broad pinned solc-Yul corpora, including Permit2, linked Aave,
+  Uniswap v4, Morpho, Safe, ENS, and ERC-4337, without contract-specific
+  compiler behavior.
+- [ ] Prove a fork-indexed refinement from actual gas-charging EVM execution to
+  the open Assembly/bytecode semantics, including exact `GAS`, `MSIZE`, memory
+  expansion, out-of-gas, exceptional halts, call gas, and transaction rollback.
+- [ ] Replace the universally-terminal public boundary with forward
+  preservation for every source outcome and a concrete-run corollary; retain
+  the open-world theorem as the compositional compiler layer.
+- [ ] Verify the solc Yul-AST import and Functions normalization performed by
+  the Python bridge, or make that frontend an explicit audited trust boundary.
+- [ ] Make memory safety program/run-indexed and derive host bounds from the
+  gas-aware execution theorem instead of requiring global safety for arbitrary
+  source expressions.
+- [ ] Carry the selected EVM fork/dialect in checked artifacts. Cover or
+  honestly reject every solc-emittable builtin for that profile, including
+  Osaka additions and supported `verbatim` forms.
+- [ ] Bundle canonical initial target construction into the public theorem so
+  the executed `CODESIZE`/`CODECOPY` image is definitionally the checked
+  artifact's bytes.
+- [ ] Prove or validate the imported cryptographic primitives, jump-destination
+  scanner, and EVM helper semantics against an authoritative fork model.
+- [ ] Meet deployment size and initcode limits, profile runtime gas, and add
+  source maps, link/immutable references, metadata, diagnostics, and standard
+  JSON artifact compatibility expected from a solc backend.
+
+Until these items are complete, describe the result as a theorem-bearing,
+checked Yul-to-bytecode backend relative to the project's semantics, not a
+production-equivalent replacement for solc's backend.
+
 ## Completion Gates
 
 At each completed boundary:

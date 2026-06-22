@@ -380,9 +380,11 @@ only a short alias of the designated horizontal composition theorem. -/
 theorem openWorldTerminalCorrect : OpenWorldTerminalCorrect :=
   Compiler.OpenInteractionComposition.openWorldTerminalCorrect
 
-/-- Exact recursive-object/raw-byte correctness with concrete resource
-observations and universally open external effects. All proof work remains in
-the horizontally composed compiler module. -/
+/-- Exact recursive-object/raw-byte correctness with model-state resource
+observations and universally open external effects. This theorem does not yet
+connect the model's stored gas value to fork-specific gas charging or
+out-of-gas execution. All compiler proof work remains in the horizontally
+composed compiler module. -/
 abbrev compiledObjectRootToBytecode :=
   @Compiler.OpenInteractionComposition.compiledObjectRootToBytecode
 

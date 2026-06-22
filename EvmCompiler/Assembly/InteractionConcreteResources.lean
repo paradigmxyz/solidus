@@ -6,6 +6,14 @@ namespace InteractionConcreteResources
 
 open Simulation
 
+/-
+These observers are concrete relative to the current gas-erased Assembly
+machine state: `MSIZE` reads that state's active-memory field and `GAS` reads
+its stored gas field. This module does not charge instruction gas or prove a
+refinement from fork-specific, out-of-gas-aware EVM execution. That outer
+bridge is a separate production obligation.
+-/
+
 /-- Re-emit every open request while also retaining its ordered exchange in
 the successful result. `prior` contains already concretized resource and
 external effects. -/
@@ -65,8 +73,8 @@ def resourceResult (kind : ResourceQuery) (state : EVMState) : StepResult :=
     (state.replaceStackAndIncrPC
       (state.stack.push (resourceValue kind state)))
 
-/-- One target instruction with concrete resource observers and open external
-effects. The result carries the exact interleaved transcript prefix. -/
+/-- One target instruction with model-state resource observers and open
+external effects. The result carries the exact interleaved transcript prefix. -/
 def stepInstrResultWithPrefix (instr : TargetInstr) (state : EVMState)
     (prior : Interaction.Transcript) :
     Interaction EVMException (StepResult × Interaction.Transcript) :=

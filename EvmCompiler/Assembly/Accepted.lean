@@ -383,6 +383,10 @@ The checked gasless theorem proves preservation for successful source runs.
 When related to gas-aware EVM execution, out-of-gas is an additional behavior:
 it can interrupt the deployed bytecode before the gasless run finishes unless a
 sufficient-gas premise is provided by a later theorem.
+
+This record is currently only a documentation marker: its field is `True`, so
+possessing it imposes no out-of-gas condition. A production EVM refinement must
+replace the marker with a substantive execution relation or premise.
 -/
 structure OutOfGasPolicyAssumption
     (_program : Program) (_initial : EvmYul.EVM.State) : Prop where
@@ -394,6 +398,9 @@ Projection boundary for observations of full EVM state.
 The current theorem compares EVM states after erasing gas accounting fields.
 External-facing state remains part of the compared EVM state; it is not
 projected away by this assembly layer.
+
+Like `OutOfGasPolicyAssumption`, this is currently a documentation marker with
+a `True` field, not a checked semantic restriction.
 -/
 structure CurrentContractProjectionAssumption
     (_program : Program) (_initial : EvmYul.EVM.State) : Prop where
@@ -416,13 +423,10 @@ def trivial {program : Program} {initial : EvmYul.EVM.State} :
 end CurrentContractProjectionAssumption
 
 /--
-The extra assumptions needed when moving from the gasless AST theorem to a
-gas-aware EVM execution theorem.
-
-No field is a new trusted constant: each later theorem must either require this
-structure as a hypothesis or prove the relevant field for a concrete execution.
-Keeping the fields here makes the trust boundary for gas and out-of-gas
-behavior visible to later compiler layers.
+Markers for the extra obligations needed when moving from the gasless AST
+theorem to a gas-aware EVM execution theorem. They make the missing boundary
+visible in signatures, but their current `True` fields do not discharge or
+enforce any gas, out-of-gas, or projection property.
 -/
 structure EVMExecutionAssumptions (program : Program) (initial : EvmYul.EVM.State) : Prop where
   accepted : Accepted program
