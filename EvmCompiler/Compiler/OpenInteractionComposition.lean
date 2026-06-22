@@ -1223,8 +1223,6 @@ theorem compiledVerifiedStackCodeToRawBytecode
     (suffix : List UInt8 := [])
     (hCode : object.compileVerifiedStackCodeArtifactIn? context =
       some codeArtifact)
-    (hWF : codeArtifact.lower.toFunctions.WF)
-    (hScoped : codeArtifact.lower.toFunctions.Scoped)
     (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
       [] source functionsState)
     (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
@@ -1282,15 +1280,16 @@ theorem compiledVerifiedStackCodeToRawBytecode
           hOrdered
   obtain ⟨hSupported, hStackLower, hExpressions, hStructuredWF, _hShapes,
       hGenerate, _hWellTyped, hIndependent, hCertified, _hTarget,
-      _hWindow⟩ :=
+      _hWindow, hSourceAccepted⟩ :=
     Compiler.StackArtifact.compile?_parts hStackArtifact
   have hAssembly := Compiler.StackArtifact.compile?_assembly hStackArtifact
   have hFrameSafe :=
     Compiler.StackArtifact.compile?_frameSafe hStackArtifact
   obtain ⟨structuredFuel, generated, hAssemblySource⟩ :=
-    yulStackToAssemblySource decomposition hProgramOk hWF hScoped hSupported
-      hStackLower hExpressions hYulInitial hYulDomain hStackInitial hGenerate
-      hCertified hStructuredWF hFrameSafe hIndependent hTerminal
+    yulStackToAssemblySource decomposition hProgramOk hSourceAccepted.1
+      hSourceAccepted.2 hSupported hStackLower hExpressions hYulInitial
+      hYulDomain hStackInitial hGenerate hCertified hStructuredWF hFrameSafe
+      hIndependent hTerminal
   have hAccepted : Assembly.Accepted
       codeArtifact.compiled.certified.target :=
     Assembly.Preservation.compile?_some_accepted hAssembly
@@ -1315,8 +1314,6 @@ theorem compiledVerifiedStackObjectToRawBytecode
     (hObject :
       object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
           linkerSymbols = some artifact)
-    (hWF : artifact.codeArtifact.lower.toFunctions.WF)
-    (hScoped : artifact.codeArtifact.lower.toFunctions.Scoped)
     (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
       [] source functionsState)
     (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
@@ -1365,8 +1362,8 @@ theorem compiledVerifiedStackObjectToRawBytecode
       hObject
   have hResult :=
     compiledVerifiedStackCodeToRawBytecode
-      (suffix := plan.payload) hCode hWF hScoped hYulInitial hYulDomain
-      hStackInitial hTerminal
+      (suffix := plan.payload) hCode hYulInitial hYulDomain hStackInitial
+      hTerminal
   simpa [hImage] using hResult
 
 /-- The end-to-end relation for a successfully compiled artifact. Intermediate

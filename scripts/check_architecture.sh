@@ -1221,7 +1221,7 @@ done
 if sed -n \
     '/^theorem compiledVerifiedStackCodeToRawBytecode/,/:= by$/p' \
     EvmCompiler/Compiler/OpenInteractionComposition.lean | \
-    rg -q 'hSupported|hFrameSafe|Certificate|Schedule|Layout|Evidence|Oracle'; then
+    rg -q 'hWF|hScoped|hSupported|hFrameSafe|Certificate|Schedule|Layout|Evidence|Oracle'; then
   printf '%s\n\n' \
     'Checked stack-artifact theorem exposes compiler-generated semantic evidence.' >&2
   failed=1
@@ -1230,7 +1230,7 @@ fi
 if sed -n \
     '/^theorem compiledVerifiedStackObjectToRawBytecode/,/:= by$/p' \
     EvmCompiler/Compiler/OpenInteractionComposition.lean | \
-    rg -q 'hSupported|hFrameSafe|Certificate|Schedule|Layout|Evidence|Oracle'; then
+    rg -q 'hWF|hScoped|hSupported|hFrameSafe|Certificate|Schedule|Layout|Evidence|Oracle'; then
   printf '%s\n\n' \
     'Checked recursive stack-object theorem exposes compiler-generated evidence.' >&2
   failed=1
@@ -1250,6 +1250,26 @@ report_matches \
   'The production stack artifact must not define source or target interpreters:' \
   '^[[:space:]]*(partial[[:space:]]+)?def[[:space:]]+.*(eval|exec|run|step|replay)[^:]*[:=]' \
   EvmCompiler/Compiler/StackArtifact.lean
+
+if ! rg -Fq \
+    'Functions.SourceAcceptedCheck.Program.sourceAccepted? source' \
+    EvmCompiler/Compiler/StackArtifact.lean; then
+  printf '%s\n\n' \
+    'The production stack artifact must check Functions source acceptance.' >&2
+  failed=1
+fi
+
+if ! rg -Fq 'evm-compiler-backend stack-diagnostics' \
+    scripts/test_full_contract_backend_smoke.sh; then
+  printf '%s\n\n' \
+    'The exact-contract gate must exercise the verified stack artifact.' >&2
+  failed=1
+fi
+
+report_matches \
+  'The exact-contract stack gate must not inject scratch or enforce deployability:' \
+  'scratch-reservation|AAVE_SCRATCH|permit_bytes[[:space:]]*[<>]|aave_bytes[[:space:]]*[<>]' \
+  scripts/test_full_contract_backend_smoke.sh
 
 report_matches \
   'Verified stack object construction must not reuse legacy allocation artifacts:' \

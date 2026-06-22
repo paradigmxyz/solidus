@@ -1,4 +1,5 @@
 import EvmCompiler.Functions.StackLowering
+import EvmCompiler.Functions.Compiler
 import EvmCompiler.Functions.OpenSupportCheck
 import EvmCompiler.Locals.Compiler
 import EvmCompiler.Structured.SourceAcceptedCheck
@@ -28,6 +29,10 @@ structure Artifact where
   target : Assembly.TargetProgram
 
 def compile? (source : Functions.Program) : Option Artifact := do
+  if Functions.SourceAcceptedCheck.Program.sourceAccepted? source then
+    pure ()
+  else
+    none
   let locals ← Functions.StackLowering.lowerProgram? source
   let expressions ← Locals.Program.toExpressions? locals
   if Structured.SourceAcceptedCheck.Program.wf?
@@ -71,8 +76,20 @@ theorem compile?_parts
       artifact.cfg.compileCertified? = some artifact.certified ∧
       Assembly.compileExecutable? artifact.certified.target =
         some artifact.target ∧
-      Assembly.Bytecode.TargetFitsDecodeWindow artifact.target := by
+      Assembly.Bytecode.TargetFitsDecodeWindow artifact.target ∧
+      source.SourceAccepted := by
+  have hSourceAcceptedCheck :
+      Functions.SourceAcceptedCheck.Program.sourceAccepted? source = true := by
+    by_contra hNot
+    have hFalse :
+        Functions.SourceAcceptedCheck.Program.sourceAccepted? source = false :=
+      Bool.eq_false_of_not_eq_true hNot
+    simp [compile?, hFalse] at hCompile
+  have hSourceAccepted : source.SourceAccepted :=
+    Functions.SourceAcceptedCheck.Program.sourceAccepted_of_check
+      hSourceAcceptedCheck
   unfold compile? at hCompile
+  simp only [hSourceAcceptedCheck, if_true, pure_bind] at hCompile
   cases hLocals : Functions.StackLowering.lowerProgram? source with
   | none => simp [hLocals] at hCompile
   | some locals =>
@@ -125,8 +142,9 @@ theorem compile?_parts
                                   TypedCfg.Program.programCounterIndependent_of_check
                                     hIndependent
                               · exact
-                                  Assembly.Bytecode.targetFitsDecodeWindow_of_check
-                                    hWindow
+                                  ⟨Assembly.Bytecode.targetFitsDecodeWindow_of_check
+                                      hWindow,
+                                    hSourceAccepted⟩
                             · simp [hWindow, hSupported] at hCompile
                           · simp [hWindow] at hCompile
                 · simp [hIndependent] at hCompile
@@ -137,7 +155,8 @@ theorem compile?_sourceWF
     (hCompile : compile? source = some artifact) :
     artifact.expressions.toStructured.WF := by
   obtain ⟨_hSupported, _hLower, _hExpressions, hSourceWF, _hShapes, _hGenerate,
-      _hWellTyped, _hIndependent, _hCertified, _hTarget, _hWindow⟩ :=
+      _hWellTyped, _hIndependent, _hCertified, _hTarget, _hWindow,
+      _hSourceAccepted⟩ :=
     compile?_parts hCompile
   exact hSourceWF
 
@@ -158,7 +177,8 @@ theorem compile?_assembly
     (hCompile : compile? source = some artifact) :
     Assembly.compile? artifact.certified.target = some artifact.target := by
   obtain ⟨_hSupported, _hLower, _hExpressions, _hSourceWF, _hShapes, _hGenerate,
-      _hWellTyped, _hIndependent, _hCertified, hTarget, _hWindow⟩ :=
+      _hWellTyped, _hIndependent, _hCertified, hTarget, _hWindow,
+      _hSourceAccepted⟩ :=
     compile?_parts hCompile
   rw [← Assembly.compileExecutable?_eq_compile?]
   exact hTarget
@@ -170,12 +190,22 @@ theorem compile?_decodingCorrect
       (Assembly.Bytecode.encodeTarget artifact.target) := by
   have hAssembly := compile?_assembly hCompile
   obtain ⟨_hSupported, _hLower, _hExpressions, _hSourceWF, _hShapes, _hGenerate,
-      _hWellTyped, _hIndependent, _hCertified, _hTarget, hWindow⟩ :=
+      _hWellTyped, _hIndependent, _hCertified, _hTarget, hWindow,
+      _hSourceAccepted⟩ :=
     compile?_parts hCompile
   exact
     { decodes :=
         Assembly.Bytecode.compile_decode_correct hAssembly
           (Assembly.Bytecode.compile_decodeSafety hAssembly hWindow) }
+
+theorem compile?_sourceAccepted
+    {source : Functions.Program} {artifact : Artifact}
+    (hCompile : compile? source = some artifact) :
+    source.SourceAccepted := by
+  obtain ⟨_hSupported, _hLower, _hExpressions, _hSourceWF, _hShapes,
+      _hGenerate, _hWellTyped, _hIndependent, _hCertified, _hTarget,
+      _hWindow, hSourceAccepted⟩ := compile?_parts hCompile
+  exact hSourceAccepted
 
 end StackArtifact
 end Compiler

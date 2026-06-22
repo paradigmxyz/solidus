@@ -13,8 +13,6 @@ PERMIT2_URL="${PERMIT2_URL:-https://github.com/Uniswap/permit2.git}"
 PERMIT2_REF="${PERMIT2_REF:-cc56ad0f3439c502c246fc5cfcc3db92bb8b7219}"
 AAVE_URL="${AAVE_URL:-https://github.com/aave/aave-v3-core.git}"
 AAVE_REF="${AAVE_REF:-b74526a7bc67a3a117a1963fc871b3eb8cea8435}"
-AAVE_SCRATCH_BASE="${AAVE_SCRATCH_BASE:-0x100000}"
-AAVE_SCRATCH_WORDS="${AAVE_SCRATCH_WORDS:-8193}"
 
 cleanup() {
   if [[ "${KEEP_TMP:-0}" == "1" ]]; then
@@ -80,12 +78,8 @@ AAVE_BACKEND="$OUTDIR/aave-pool-runtime.backend.txt"
 "$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" \
   --quiet "$PERMIT2_BRIDGE"
 
-"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$PERMIT2_BRIDGE" \
-  --input-format bridge-json \
-  --lake "$LAKE_BIN" \
-  --lake-cwd "$ROOT" \
-  --format lean-backend-check \
-  --output "$PERMIT2_BACKEND"
+"$LAKE_BIN" exe evm-compiler-backend stack-diagnostics \
+  "$PERMIT2_BRIDGE" > "$PERMIT2_BACKEND"
 
 (
   cd "$AAVE_REPO"
@@ -99,27 +93,21 @@ AAVE_BACKEND="$OUTDIR/aave-pool-runtime.backend.txt"
     --object runtime \
     --optimized \
     --format bridge-json \
-    --scratch-reservation-base "$AAVE_SCRATCH_BASE" \
-    --scratch-reservation-words "$AAVE_SCRATCH_WORDS" \
     --output "$AAVE_BRIDGE"
 )
 
 "$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" \
   --quiet "$AAVE_BRIDGE"
 
-"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$AAVE_BRIDGE" \
-  --input-format bridge-json \
-  --lake "$LAKE_BIN" \
-  --lake-cwd "$ROOT" \
-  --format lean-backend-check \
-  --linker-symbol contracts/protocol/libraries/logic/BorrowLogic.sol:BorrowLogic=0x1111111111111111111111111111111111111111 \
-  --linker-symbol contracts/protocol/libraries/logic/BridgeLogic.sol:BridgeLogic=0x2222222222222222222222222222222222222222 \
-  --linker-symbol contracts/protocol/libraries/logic/EModeLogic.sol:EModeLogic=0x3333333333333333333333333333333333333333 \
-  --linker-symbol contracts/protocol/libraries/logic/FlashLoanLogic.sol:FlashLoanLogic=0x4444444444444444444444444444444444444444 \
-  --linker-symbol contracts/protocol/libraries/logic/LiquidationLogic.sol:LiquidationLogic=0x5555555555555555555555555555555555555555 \
-  --linker-symbol contracts/protocol/libraries/logic/PoolLogic.sol:PoolLogic=0x6666666666666666666666666666666666666666 \
-  --linker-symbol contracts/protocol/libraries/logic/SupplyLogic.sol:SupplyLogic=0x7777777777777777777777777777777777777777 \
-  --output "$AAVE_BACKEND"
+"$LAKE_BIN" exe evm-compiler-backend stack-diagnostics "$AAVE_BRIDGE" \
+  contracts/protocol/libraries/logic/BorrowLogic.sol:BorrowLogic=97433442488726861213578988847752201310395502865 \
+  contracts/protocol/libraries/logic/BridgeLogic.sol:BridgeLogic=194866884977453722427157977695504402620791005730 \
+  contracts/protocol/libraries/logic/EModeLogic.sol:EModeLogic=292300327466180583640736966543256603931186508595 \
+  contracts/protocol/libraries/logic/FlashLoanLogic.sol:FlashLoanLogic=389733769954907444854315955391008805241582011460 \
+  contracts/protocol/libraries/logic/LiquidationLogic.sol:LiquidationLogic=487167212443634306067894944238761006551977514325 \
+  contracts/protocol/libraries/logic/PoolLogic.sol:PoolLogic=584600654932361167281473933086513207862373017190 \
+  contracts/protocol/libraries/logic/SupplyLogic.sol:SupplyLogic=682034097421088028495052921934265409172768520055 \
+  > "$AAVE_BACKEND"
 
 "$PYTHON_BIN" - "$PERMIT2_BRIDGE" "$PERMIT2_BACKEND" \
   "$AAVE_BRIDGE" "$AAVE_BACKEND" "$PERMIT2_REF" "$AAVE_REF" <<'PY'
@@ -133,33 +121,48 @@ aave_bridge = json.loads(Path(sys.argv[3]).read_text())
 aave_backend = Path(sys.argv[4]).read_text().splitlines()
 
 
-def require_backend(name, lines):
+def require_backend(name, lines, expected_units):
     required = {
-        "lean_backend_check=pass",
-        "stage\tsolc_validation\tsome",
-        "stage\tobject_image\tsome",
-        "first_none=none",
+        "stack_frontend_object_artifact=true",
+        "stack_frontend_code_artifact=true",
+        "stack_frontend_compact_code_artifact=true",
     }
     missing = sorted(required - set(lines))
     if missing:
-        raise SystemExit(f"{name} checked backend failed: missing {missing!r}")
-    bytecode = [line for line in lines if line.startswith("bytecode_bytes=")]
+        raise SystemExit(f"{name} verified stack artifact failed: {missing!r}")
+    bytecode = [
+        line for line in lines
+        if line.startswith("stack_frontend_object_bytecode_bytes=")
+    ]
     if len(bytecode) != 1 or int(bytecode[0].split("=", 1)[1]) <= 0:
-        raise SystemExit(f"{name} backend emitted no bytecode size")
+        raise SystemExit(f"{name} verified stack artifact emitted no bytecode")
+    units = [line for line in lines if line.startswith("unit\t")]
+    if len(units) != expected_units:
+        raise SystemExit(
+            f"{name} expected {expected_units} checked units, got {len(units)}"
+        )
+    for line in units:
+        fields = dict(
+            field.split("=", 1)
+            for field in line.split("\t")[2:]
+            if "=" in field
+        )
+        expected = {
+            "liveness": "true",
+            "schedule": "true",
+            "access_failures": "0",
+            "lowering": "true",
+            "next_use": "true",
+        }
+        bad = {key: fields.get(key) for key, value in expected.items()
+               if fields.get(key) != value}
+        if bad:
+            raise SystemExit(f"{name} unchecked stack unit: {line!r}; bad={bad!r}")
     return int(bytecode[0].split("=", 1)[1])
 
 
-permit_bytes = require_backend("Permit2", permit_backend)
-aave_bytes = require_backend("Aave Pool", aave_backend)
-
-if permit_bytes >= 300_000:
-    raise SystemExit(
-        f"Permit2 pressure allocation regressed: {permit_bytes} bytes"
-    )
-if aave_bytes >= 800_000:
-    raise SystemExit(
-        f"Aave Pool pressure allocation regressed: {aave_bytes} bytes"
-    )
+permit_bytes = require_backend("Permit2", permit_backend, 39)
+aave_bytes = require_backend("Aave Pool", aave_backend, 189)
 
 if permit_bridge.get("frontend") != {"producer": "solc", "ast": "yulAst"}:
     raise SystemExit("Permit2 did not use the exact-text parser boundary")
@@ -169,14 +172,13 @@ reservation = (
     .get("memoryContract", {})
     .get("scratch")
 )
-if not isinstance(reservation, dict):
-    raise SystemExit("Aave Pool is missing its explicit source reservation")
+if reservation is not None:
+    raise SystemExit(f"Aave Pool unexpectedly has scratch reservation: {reservation!r}")
 
 print("full_contract_backend_smoke=pass")
 print(f"permit2_ref={sys.argv[5]}")
 print(f"permit2_bytecode_bytes={permit_bytes}")
 print(f"aave_ref={sys.argv[6]}")
 print(f"aave_bytecode_bytes={aave_bytes}")
-print(f"aave_scratch_base={reservation['base']}")
-print(f"aave_scratch_words={reservation['words']}")
+print("aave_stack_only=true")
 PY

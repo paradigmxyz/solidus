@@ -261,6 +261,14 @@ premise or hidden memory access in the current checked artifact path.
   exact root-image raw bytecode under the horizontal open-world theorem, with
   compiler-owned child validity and no legacy allocation metadata. Resource
   observer replay remains the existing separately composed semantic boundary.
+- [x] Make the selected stack artifact check Functions source acceptance and
+  derive `WF`/`Scoped` internally; the exact code/object raw-bytecode theorems
+  no longer expose either decidable compiler-input property as a premise.
+- [x] Make the reproducible pinned-contract gate invoke
+  `compileVerifiedStackObjectArtifactWithLinkerSymbols?` directly. It requires
+  all 39 Permit2 and 189 Aave units to pass checked liveness, scheduling,
+  accessibility, next-use, and lowering, and rejects any Aave scratch
+  reservation; output size is informational only.
 - [x] Profile all analysis and compilation stages; remove algorithmic
   superlinearity on the exact contracts.
 - [x] Record compile time, peak memory, allocation statistics, and output size.
