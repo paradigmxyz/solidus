@@ -11,6 +11,7 @@ import EvmCompiler.Functions.AllocationInteractionFunctionReturnResource
 import EvmCompiler.Functions.AllocationInteractionLeaveResource
 import EvmCompiler.Functions.AllocationInteractionLoopResource
 import EvmCompiler.Functions.AllocationInteractionTerminalResource
+import EvmCompiler.Functions.AllocationInteractionSafeSuccessful
 
 namespace EvmCompiler
 namespace Functions
@@ -2214,6 +2215,9 @@ theorem block
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Block.openRun program sourceCtx
           sourceFuel { stmts := .block body :: rest } source))
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+        program sourceCtx sourceFuel { stmts := .block body :: rest } source)
     (hBodyForward :
       ∀ (bodyCursor :
           CoreCursor root (.lexical scope cursor.planning.nextScope)
@@ -2225,6 +2229,8 @@ theorem block
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Block.openRun program sourceCtx
               (sourceFuel - 1) body source) →
+          AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+            program sourceCtx (sourceFuel - 1) body source →
           CursorRuntimeAt bodyCursor contract config allocatorDepth frameBase
             (sourceFuel - 1) bodyExtra mode sourceCtx source target)
     (hTailForward :
@@ -2238,6 +2244,8 @@ theorem block
             Simulation.Interaction.Successful
               (Functions.InteractionSemantics.Block.openRun program sourceCtx
                 (sourceFuel - 1) { stmts := rest } sourceMid) →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
             CursorRuntimeAt tail contract config allocatorDepth frameBase
               (sourceFuel - 1) (targetExtra + callStride expressions)
               tailMode sourceCtx
@@ -2293,6 +2301,15 @@ theorem block
           childFuel body source) := by
     rw [Functions.InteractionSemantics.Stmt.openRun_block] at hHeadSuccess
     exact Simulation.Interaction.Successful.bind_left hHeadSuccess
+  have hSafeHead :=
+    AllocationInteractionSafeSuccessful.successful_head
+      hSourceFuel hExecutionSafe
+  have hBodySafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+        program sourceCtx childFuel body source := by
+    unfold AllocationInteractionSafeSemantics.Block.ExecutionSafe
+    rw [AllocationInteractionSafeSemantics.Stmt.openRun_block] at hSafeHead
+    exact Simulation.Interaction.Successful.bind_left hSafeHead
   obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
     AllocationInteractionCleanup.Plain.finishScoped_shape hFinish
   have hHeadLength :
@@ -2347,6 +2364,7 @@ theorem block
   have hBodyRecursive :=
     hBodyForward bodyCursor bodyExtra hBodyReserve hBodyBoundary
       (by simpa [childFuel] using hBodySuccess)
+      (by simpa [childFuel] using hBodySafe)
   have hBodyRel :
       Simulation.Interaction.Rel
         (RuntimeResultRel contract root.lowerCtx bodyCursor.finalState
@@ -2420,12 +2438,12 @@ theorem block
       rfl
     simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
   have hResult :=
-    cons_of_parts_successful cursor tail hExact hCompiled hMidCtx
+    cons_of_parts_executionSafe cursor tail hExact hCompiled hMidCtx
       (by simpa [childFuel, hFuel, totalFuel,
         Functions.Scope.Stmt.outEnv] using hHead')
-      (by simpa [childFuel, hFuel] using hSuccessful)
+      (by simpa [childFuel, hFuel] using hExecutionSafe)
       (fun {sourceMid targetMid tailMode} hInvariant hReady hSame hReturns
-          hTailSuccess =>
+          hTailSuccess hTailSafe =>
         hTailForward tail hExact
           { semantic :=
               { invariant := hInvariant
@@ -2442,7 +2460,7 @@ theorem block
             ready := hReady
             owned := hBoundary.owned.sameFrame hSame
             budget := hBoundary.budget }
-          hTailSuccess)
+          hTailSuccess hTailSafe)
   have hFuel' : sourceFuel - 1 + 1 = sourceFuel := by omega
   rw [hFuel'] at hResult
   exact hResult

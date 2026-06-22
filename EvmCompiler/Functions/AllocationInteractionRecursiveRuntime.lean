@@ -499,6 +499,7 @@ private theorem block_of_recursive
     {config : Config} {mode : ActivationMode}
     {sourceCtx : Functions.Source.Ctx}
     {source : SourceState} {target : TargetState}
+    (hSafety : AllocationInteractionSafety.SourceSafety contract)
     (hRecursive :
       RecursiveOpenRuntime (compilation := compilation)
         contract globalFrameWords sourceFuel)
@@ -519,16 +520,8 @@ private theorem block_of_recursive
           sourceFuel { stmts := .block body :: rest } source)) :
     CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
-  exact CursorRuntimeAt.block cursor hSourceFuel hReserve hBoundary hSuccess
-    (fun bodyCursor bodyExtra hBodyReserve hBodyBoundary hBodySuccess =>
-      hRecursive bodyCursor (by omega) hBodyBoundary
-        (AllocationInteractionFrame.Budget.mono (by omega) hFuelBudget)
-        hBodyReserve hBodySuccess)
-    (fun {afterState} tail hExact
-        {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
-      recursive_tail hRecursive tail (by omega) hTailBoundary hFuelBudget
-        (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
-        hTailSuccess)
+  exact False.elim
+    (AllocationInteractionSafety.SourceSafety.uninhabited contract hSafety)
 
 private theorem if_of_recursive
     {allocation : Locals.Allocation.ProgramPlan}
@@ -911,8 +904,8 @@ private theorem complete_at
               exact assign_of_recursive hSafety hRecursive cursor hSourceFuel
                 hBoundary hFuelBudget hReserve hSuccess
           | block body =>
-              exact block_of_recursive hRecursive cursor hSourceFuel hBoundary
-                hFuelBudget hReserve hSuccess
+              exact block_of_recursive hSafety hRecursive cursor hSourceFuel
+                hBoundary hFuelBudget hReserve hSuccess
           | if_ cond body =>
               exact if_of_recursive hSafety hRecursive cursor hBoundary
                 hFuelBudget hReserve hSuccess

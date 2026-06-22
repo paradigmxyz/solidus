@@ -979,6 +979,71 @@ theorem terminalArgs
   rw [hFuel'] at hResult
   exact hResult
 
+/-- A reached lexical block carries reservation safety into both its body and
+its regular continuation. No safety fact is requested for an unrelated body,
+state, or open-world response. -/
+theorem block
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {body : Functions.Block} {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase sourceFuel targetExtra : Nat}
+    {config : Config} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor : CoreCursor root scope live
+      { stmts := .block body :: rest } beforeState beforeLocals)
+    (hSourceFuel : 0 < sourceFuel)
+    (hBoundary :
+      Boundary cursor contract globalFrameWords config allocatorDepth frameBase
+        mode sourceCtx source target)
+    (hReserve : AllocationInteractionTargetFuel.Reserve cursor targetExtra)
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+        program sourceCtx sourceFuel { stmts := .block body :: rest } source)
+    (hBodyForward :
+      ∀ (bodyCursor :
+          CoreCursor root (.lexical scope cursor.planning.nextScope)
+            live body beforeState beforeLocals)
+        (bodyExtra : Nat),
+        AllocationInteractionTargetFuel.Reserve bodyCursor bodyExtra →
+          Boundary bodyCursor contract globalFrameWords config allocatorDepth
+            frameBase mode sourceCtx source target →
+          AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+            program sourceCtx (sourceFuel - 1) body source →
+          CursorRuntimeAt bodyCursor contract config allocatorDepth frameBase
+            (sourceFuel - 1) bodyExtra mode sourceCtx source target)
+    (hTailForward :
+      ∀ {afterState : AllocationLowering.State}
+        (tail : CoreCursor root scope live { stmts := rest }
+          afterState beforeLocals),
+        ExactTail cursor tail →
+        ∀ {sourceMid targetMid tailMode},
+          Boundary tail contract globalFrameWords config allocatorDepth
+              frameBase tailMode sourceCtx sourceMid targetMid →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
+            CursorRuntimeAt tail contract config allocatorDepth frameBase
+              (sourceFuel - 1) (targetExtra + callStride expressions)
+              tailMode sourceCtx sourceMid targetMid) :
+    CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
+      targetExtra mode sourceCtx source target := by
+  exact CursorRuntimeAt.block cursor hSourceFuel hReserve hBoundary
+    hExecutionSafe.ordinarySuccessful hExecutionSafe
+    (fun bodyCursor bodyExtra hBodyReserve hBodyBoundary hBodySuccess
+        hBodySafe =>
+      hBodyForward bodyCursor bodyExtra hBodyReserve hBodyBoundary hBodySafe)
+    (fun {afterState} tail hExact {sourceMid targetMid tailMode} hTailBoundary
+        hTailSuccess hTailSafe =>
+      hTailForward tail hExact hTailBoundary hTailSafe)
+
 
 end AllocationInteractionExecutionRuntime
 end Functions
