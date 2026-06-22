@@ -589,7 +589,8 @@ mutual
           simpa [Functions.Scope.ExprScoped] using hScoped
         exact var_of_lower_compile hCtx hLive hLower hCompile hRel hValue hReady
     | code rawCode =>
-        simp [AllocationInteractionSafety.ExprSafe] at hSafe
+        simp [AllocationInteractionSafety.ExprSafe,
+          AllocationInteractionSafeExpression.ExprSafe] at hSafe
     | prim op args =>
         rcases hSafe with ⟨hSupported, hArgsSafe, hPrimitiveSafe⟩
         have hArgsScoped : Functions.Scope.ExprSeqScoped live args := by

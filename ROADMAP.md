@@ -403,6 +403,13 @@ boundaries. Corpus acceptance alone does not discharge them.
   that checked run in the adjacent Functions allocation proof. This preserves
   honest `GAS`/`MSIZE` and the exact CALL/CREATE/LOG interaction order without
   duplicating control semantics.
+  - [x] Remove the uninstantiable mixed-allocation proposition and aliases from
+    the public `Yul.EndToEnd` surface; the checked stack-object/raw-byte theorem
+    is the sole production-facing compiler result and needs no memory premise.
+  - [x] Prove guarded-run equality and reached-continuation composition through
+    the Functions allocation owner.
+  - [ ] Finish guarded safety threading through nested control, internal calls,
+    and the scratch-backed program theorem; then delete the legacy global API.
 - [ ] Carry the selected EVM fork/dialect in checked artifacts. Cover or
   honestly reject every solc-emittable builtin for that profile, including
   Osaka additions and supported `verbatim` forms.

@@ -372,24 +372,6 @@ theorem closedResourceCorrect : ClosedResourceCorrect := by
   apply Result.of_adjacent_relations hSourceFunctions
   simpa [hContract] using hTerminal
 
-abbrev OpenWorldTerminalCorrect :=
-  Compiler.OpenInteractionComposition.OpenWorldTerminalCorrect
-
-/-- Legacy open-world terminal composition alias. Its current `SourceSafety`
-premise is formally uninhabited; use the separate checked stack-object theorem
-until the mixed-allocation route receives program/run-indexed scratch safety.
-The end-to-end module remains only a short alias of the horizontal theorem. -/
-theorem openWorldTerminalCorrect : OpenWorldTerminalCorrect :=
-  Compiler.OpenInteractionComposition.openWorldTerminalCorrect
-
-/-- Exact recursive-object/raw-byte correctness with model-state resource
-observations and universally open external effects. This theorem does not yet
-connect the model's stored gas value to fork-specific gas charging or
-out-of-gas execution. All compiler proof work remains in the horizontally
-composed compiler module. -/
-abbrev compiledObjectRootToBytecode :=
-  @Compiler.OpenInteractionComposition.compiledObjectRootToBytecode
-
 /-- Exact recursive-object/raw-byte correctness for the checked stack
 allocator and compact encoder used by the verified Solidity frontend. -/
 abbrev compiledVerifiedStackObjectToRawBytecode :=

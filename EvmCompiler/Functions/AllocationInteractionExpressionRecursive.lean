@@ -68,7 +68,8 @@ mutual
         exact AllocationInteractionExpression.var_of_lower_compile
           hCtx hLive hLower hCompile hRel hValue
     | code rawCode =>
-        simp [AllocationInteractionSafety.ExprSafe] at hSafe
+        simp [AllocationInteractionSafety.ExprSafe,
+          AllocationInteractionSafeExpression.ExprSafe] at hSafe
     | prim op args =>
         rcases hSafe with ⟨hSupported, hArgsSafe, hPrimitiveSafe⟩
         have hArgsScoped : Functions.Scope.ExprSeqScoped live args := by

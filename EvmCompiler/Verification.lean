@@ -94,6 +94,7 @@ import EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive
 import EvmCompiler.Functions.AllocationInteractionSafety
 import EvmCompiler.Functions.AllocationInteractionSafeSemantics
 import EvmCompiler.Functions.AllocationInteractionSafeExpression
+import EvmCompiler.Functions.AllocationInteractionSafeSuccessful
 import EvmCompiler.Functions.AllocationInteractionFrameExecution
 import EvmCompiler.Functions.AllocationInteractionFramePreservation
 import EvmCompiler.Functions.AllocationContext
@@ -232,6 +233,7 @@ import EvmCompiler.Yul.StateRelation
 #print axioms EvmCompiler.Functions.AllocationInteractionSafety.SourceSafety.uninhabited
 #check EvmCompiler.Functions.AllocationInteractionSafeSemantics.Primitive.safe_of_successful
 #check EvmCompiler.Functions.AllocationInteractionSafeExpression.exprChecked_of_successful
+#check EvmCompiler.Functions.AllocationInteractionSafeSuccessful.successful_head
 #check EvmCompiler.Functions.AllocationInteractionSafeSemantics.Block.ExecutionSafe
 #check EvmCompiler.Functions.AllocationInteractionSafeSemantics.Block.openRun_eq_ordinary_of_successful
 #print axioms EvmCompiler.Functions.AllocationInteractionSafeSemantics.Block.openRun_eq_ordinary_of_successful
@@ -1717,8 +1719,6 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledObjectRootToBytecode
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledFrontendCodeToAssemblyTarget
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledFrontendCodeToAssemblyTarget
-#check EvmCompiler.Compiler.OpenInteractionComposition.openWorldTerminalCorrect
-#print axioms EvmCompiler.Compiler.OpenInteractionComposition.openWorldTerminalCorrect
 #check EvmCompiler.Yul.FunctionsInteractionStatement.ControlDoneRel.block
 #check EvmCompiler.Yul.FunctionsInteractionRecursiveStatement.CompoundForward.block
 #print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveExpression.recursiveCondition
@@ -2043,10 +2043,6 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.EndToEnd.ClosedResourceCorrect
 #check EvmCompiler.Yul.EndToEnd.compiledVerifiedStackObjectToRawBytecode
 #check EvmCompiler.Yul.EndToEnd.closedResourceCorrect
-#check EvmCompiler.Yul.EndToEnd.OpenWorldTerminalCorrect
-#check EvmCompiler.Yul.EndToEnd.compiledObjectRootToBytecode
-#check EvmCompiler.Yul.EndToEnd.openWorldTerminalCorrect
-#print axioms EvmCompiler.Yul.EndToEnd.openWorldTerminalCorrect
 #print axioms EvmCompiler.Yul.EndToEnd.compiledVerifiedStackObjectToRawBytecode
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.primitiveForward

@@ -2266,57 +2266,6 @@ theorem compiledObjectRootToBytecode
       hObject
   exact hCompiled.observedBytecodeReplay hDecoding hTerminal
 
-/-- Legacy proposition for open-world terminal compiler correctness. Lowering
-artifacts are hidden inside `CompiledOpenWorldRel`, but the current
-`SourceSafety` premise is globally quantified and formally uninhabited. This
-proposition cannot be instantiated until that premise is replaced by
-program/run-indexed scratch safety. The separate verified-stack raw-bytecode
-theorem below does not depend on this interface. -/
-def OpenWorldTerminalCorrect : Prop :=
-  forall
-    (profile : Yul.SolcValidation.DialectProfile)
-    (sourceProgram : Yul.Program) (objects : Objects.Program)
-    (compiledArtifact : Objects.Program.CompileArtifact)
-    (sourceFuel : Nat)
-    (source : Yul.InteractionSemantics.State)
-    (functionsState : Functions.InteractionSemantics.State)
-    (expressionsState : Expressions.InteractionSemantics.RunState),
-    Yul.Program.toObjectsCanonical? sourceProgram = some objects ->
-    Objects.Program.compileArtifact? objects = some compiledArtifact ->
-    Yul.SolcValidation.ProgramOkWith? profile sourceProgram = true ->
-    objects.toFunctions.Scoped ->
-    Functions.AllocationInteractionSafety.SourceSafety
-      objects.toFunctions.memoryContract ->
-    Functions.AllocationInteractionProgram.ResourceSafe
-      compiledArtifact.metadata.allocation objects.toFunctions
-      (Yul.FunctionsInteractionStaticCost.programBudget
-        sourceProgram (sourceFuel + 1)) ->
-    Functions.AllocationInteractionProgram.StructuredFrameSafe
-      compiledArtifact.metadata.allocation objects.toFunctions ->
-    Yul.FunctionsInteractionRelation.ScopedStateRel
-      [] source functionsState ->
-    Yul.FunctionsInteractionRelation.TargetDomainWithin
-      (Yul.Fresh.initial (Yul.Contract.names sourceProgram.contract)).used
-      functionsState.vars ->
-    Functions.AllocationInteractionProgram.InitialRel
-      objects.toFunctions.memoryContract functionsState expressionsState ->
-    Simulation.Interaction.AllDone
-      Yul.FunctionsInteractionProgram.SourceTerminal
-      (Yul.InteractionSemantics.exec (sourceFuel + 1)
-        (.Block [sourceProgram.contract.dispatcher])
-        (some sourceProgram.contract) source) ->
-    CompiledOpenWorldRel sourceProgram objects compiledArtifact
-      sourceFuel source expressionsState
-
-theorem openWorldTerminalCorrect : OpenWorldTerminalCorrect := by
-  intro profile sourceProgram objects compiledArtifact sourceFuel source
-    functionsState expressionsState hObjects hCompile hProgramOk hScoped
-    hSafety hResourceSafe hFrameSafe hYulInitial hYulDomain
-    hAllocationInitial hTerminal
-  exact compiledYulToEncodedBytecode
-    hObjects hCompile hProgramOk hScoped hSafety hResourceSafe hFrameSafe
-    hYulInitial hYulDomain hAllocationInitial hTerminal
-
 end OpenInteractionComposition
 end Compiler
 end EvmCompiler

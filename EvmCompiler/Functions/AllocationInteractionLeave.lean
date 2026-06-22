@@ -126,8 +126,7 @@ theorem safe
           (cast (congrArg Locals.ExprSeq hLen) exprs) source
       apply exprSeqSafe_cast hLen
       refine ⟨⟨value, hValue⟩, ?_⟩
-      unfold Functions.InteractionSemantics.Expr.openEval
-        Locals.InteractionSemantics.Expr.openEval
+      unfold Locals.InteractionSemantics.Expr.openEval
       simp only [Locals.Source.Effectful.Expr.Control.eval]
       change
         Simulation.Interaction.AllDone _
