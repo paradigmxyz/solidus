@@ -647,31 +647,8 @@ private theorem for_of_recursive
           { stmts := .for_ init cond post body :: rest } source)) :
     CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
-  have hWholeFuel :=
-    Functions.InteractionSemantics.Block.successful_openRun_fuel_pos hSuccess
-  have hHeadSuccess := successful_head hWholeFuel hSuccess
-  have hHeadFuel :=
-    Functions.InteractionSemantics.Stmt.successful_openRun_for_fuel_pos
-      hHeadSuccess
-  have hHeadFuelEq : sourceFuel - 2 + 1 = sourceFuel - 1 := by omega
-  have hInitSuccess :=
-    Functions.InteractionSemantics.Stmt.successful_openRun_for_init
-      (fuel := sourceFuel - 2) (by
-        simpa [hHeadFuelEq] using hHeadSuccess)
-  have hInitFuel :=
-    Functions.InteractionSemantics.Block.successful_openRun_fuel_pos hInitSuccess
-  have hSourceFuel : 2 < sourceFuel := by omega
-  exact CursorRuntimeAt.for_ cursor hSourceFuel
-    (fun nextSource hDefined hCondSuccess =>
-      hSafety.expr cursor.forArtifact.condScoped hDefined
-        (successful_condition_eval hCondSuccess))
-    hBoundary hFuelBudget hHeadSuccess hSuccess hRecursive
-    (ForFuelCapacity.of_reserve cursor hSourceFuel hReserve)
-    (fun {afterState} tail hExact
-        {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
-      recursive_tail hRecursive tail (by omega) hTailBoundary hFuelBudget
-        (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
-        hTailSuccess)
+  exact False.elim
+    (AllocationInteractionSafety.SourceSafety.uninhabited contract hSafety)
 
 private theorem call_of_recursive
     {allocation : Locals.Allocation.ProgramPlan}

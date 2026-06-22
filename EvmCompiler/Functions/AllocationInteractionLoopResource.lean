@@ -10,6 +10,20 @@ open AllocationInteractionFrame
 open AllocationInteractionRelation
 open AllocationInteractionResource
 
+/-- Canonical Functions control instantiated with the reservation-guarded
+primitive semantics. This changes only primitive capability, not control. -/
+noncomputable def guardedSourceSemantics
+    (contract : MemoryContract.Contract) :
+    AllocationInteractionLoop.SourceSemantics where
+  primitive := AllocationInteractionSafeSemantics.primitiveSemantics contract
+  conditionVars := by
+    intro cond source
+    apply Simulation.Interaction.AllDone.mono
+      (AllocationInteractionSafeSemantics.Expr.openEvalCondition_vars_eq
+        contract cond source)
+    intro outcome hOutcome
+    cases outcome <;> exact hOutcome
+
 def outcomeEffectAlgebra
     (config : Config) (allocatorDepth frameBase : Nat) :
     AllocationInteractionLoop.EffectAlgebra

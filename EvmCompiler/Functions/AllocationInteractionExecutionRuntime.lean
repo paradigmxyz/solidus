@@ -1219,6 +1219,67 @@ theorem switch
         hTailSuccess hTailSafe =>
       hTailForward tail hExact hTailBoundary hTailSafe)
 
+/-- A reached `for` carries guarded success through initializer, condition,
+body, post, recursive iterations, and its regular continuation using the shared
+parameterized loop owner. -/
+theorem for_
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {init : Functions.Block} {cond : Functions.Expr 1}
+    {post body : Functions.Block} {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase sourceFuel targetExtra : Nat}
+    {config : Config} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor : CoreCursor root scope live
+      { stmts := .for_ init cond post body :: rest }
+      beforeState beforeLocals)
+    (hSourceFuel : 2 < sourceFuel)
+    (hBoundary :
+      Boundary cursor contract globalFrameWords config allocatorDepth frameBase
+        mode sourceCtx source target)
+    (hFuelBudget :
+      AllocationInteractionFrame.Budget config (allocatorDepth + sourceFuel))
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+        program sourceCtx sourceFuel
+          { stmts := .for_ init cond post body :: rest } source)
+    (hRecursive :
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
+        contract globalFrameWords sourceFuel)
+    (hCapacity :
+      ForFuelCapacity cursor.forArtifact (sourceFuel - 2)
+        ((targetBudget cursor sourceFuel targetExtra - 2) -
+          (sourceFuel - 2)))
+    (hTailForward :
+      ∀ {afterState : AllocationLowering.State}
+        (tail : CoreCursor root scope live { stmts := rest }
+          afterState beforeLocals),
+        ExactTail cursor tail →
+        ∀ {sourceMid targetMid tailMode},
+          Boundary tail contract globalFrameWords config allocatorDepth
+              frameBase tailMode sourceCtx sourceMid targetMid →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
+            CursorRuntimeAt tail contract config allocatorDepth frameBase
+              (sourceFuel - 1) (targetExtra + callStride expressions)
+              tailMode sourceCtx sourceMid targetMid) :
+    CursorRuntimeAt cursor contract config allocatorDepth frameBase sourceFuel
+      targetExtra mode sourceCtx source target := by
+  exact CursorRuntimeAt.for_ cursor hSourceFuel hBoundary hFuelBudget
+    hExecutionSafe hRecursive hCapacity
+    (fun {afterState} tail hExact {sourceMid targetMid tailMode} hTailBoundary
+        hTailSafe =>
+      hTailForward tail hExact hTailBoundary hTailSafe)
+
 
 end AllocationInteractionExecutionRuntime
 end Functions
