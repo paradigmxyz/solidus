@@ -167,6 +167,93 @@ theorem prim_openStep_runtimeRel
                 rw [hTargetFinalStack', hSourceFinalStack']
                 exact hStackRel
 
+theorem bindLocals_runtimeRel
+    {resolve : ReturnAddressRelation.Resolver} {sites : List ReturnSite}
+    {offset : Nat} {names : List String} {input output : Shape}
+    {target source : Assembly.EVMState}
+    (hType : TypedCfg.Instr.type? (.bindLocals offset names) input = some output)
+    (hInputPlain : PlainSlots input.slots)
+    (hOutputPlain : PlainSlots output.slots)
+    (hRel : RuntimeRel resolve sites input target source) :
+    RuntimeRel resolve sites output target source := by
+  exact runtimeRel_retype_plain hInputPlain hOutputPlain
+    (TypedCfg.Instr.length_of_type?_bindLocals hType)
+    (TypedCfg.Instr.tail_of_type? hType) hRel
+
+theorem bindScratch_runtimeRel
+    {resolve : ReturnAddressRelation.Resolver} {sites : List ReturnSite}
+    {baseDepth slot : Nat} {name : String} {input output : Shape}
+    {target source : Assembly.EVMState}
+    (hType :
+      TypedCfg.Instr.type? (.bindScratch baseDepth name slot) input = some output)
+    (hInputPlain : PlainSlots input.slots)
+    (hOutputPlain : PlainSlots output.slots)
+    (hRel : RuntimeRel resolve sites input target source) :
+    RuntimeRel resolve sites output target source := by
+  exact runtimeRel_retype_plain hInputPlain hOutputPlain
+    (TypedCfg.Instr.length_of_type?_bindScratch hType)
+    (TypedCfg.Instr.tail_of_type? hType) hRel
+
+theorem relabel_runtimeRel
+    {resolve : ReturnAddressRelation.Resolver} {sites : List ReturnSite}
+    {newShape input output : Shape} {target source : Assembly.EVMState}
+    (hType : TypedCfg.Instr.type? (.relabel newShape) input = some output)
+    (hInputPlain : PlainSlots input.slots)
+    (hOutputPlain : PlainSlots output.slots)
+    (hRel : RuntimeRel resolve sites input target source) :
+    RuntimeRel resolve sites output target source := by
+  exact runtimeRel_retype_plain hInputPlain hOutputPlain
+    (TypedCfg.Instr.length_of_type?_relabel hType)
+    (TypedCfg.Instr.tail_of_type? hType) hRel
+
+theorem push_runState_runtimeRel
+    {resolve : ReturnAddressRelation.Resolver} {sites : List ReturnSite}
+    {value : Word} {input output : Shape}
+    {target source : Assembly.EVMState}
+    (hType : TypedCfg.Instr.type? (.push value) input = some output)
+    (hRel : RuntimeRel resolve sites input target source) :
+    OpenResultRel resolve sites output
+      (TypedCfg.Instr.runState (.push value) input target)
+      (TypedCfg.Instr.runState (.push value) input source) := by
+  simp [TypedCfg.Instr.type?] at hType
+  subst output
+  apply Simulation.Interaction.ExceptRel.ok
+  apply runtimeRel_replaceStackAndIncrPC hRel
+  exact ⟨rfl, hRel.2⟩
+
+theorem pop_runState_runtimeRel
+    {resolve : ReturnAddressRelation.Resolver} {sites : List ReturnSite}
+    {input output : Shape} {target source : Assembly.EVMState}
+    (hType : TypedCfg.Instr.type? .pop input = some output)
+    (hInputPlain : PlainSlots input.slots)
+    (hOutputPlain : PlainSlots output.slots)
+    (hRel : RuntimeRel resolve sites input target source) :
+    OpenResultRel resolve sites output
+      (TypedCfg.Instr.runState .pop input target)
+      (TypedCfg.Instr.runState .pop input source) := by
+  have hPrimType :
+      TypedCfg.Instr.type? (.prim .pop) input = some output := by
+    rcases input with ⟨slots, tail⟩
+    cases slots with
+    | nil => simp [TypedCfg.Instr.type?] at hType
+    | cons slot rest =>
+        simp [TypedCfg.Instr.type?, TypedCfg.Shape.length,
+          TypedCfg.Shape.pop, TypedCfg.Shape.pushWords,
+          Assembly.PrimOp.stackArity?, Assembly.PrimOp.toEVM,
+          EvmYul.EVM.δ, EvmYul.EVM.α] at hType ⊢
+        exact hType
+  have hOpen := prim_openStep_runtimeRel
+    (resolve := resolve) (sites := sites)
+    (op := Assembly.PrimOp.pop) (inputArity := 1) (outputArity := 0)
+    (input := input) (output := output)
+    (target := target) (source := source)
+    (by rfl) hPrimType (by decide) hInputPlain hOutputPlain hRel
+  change Simulation.Interaction.Rel (OpenResultRel resolve sites output)
+    (.done (TypedCfg.Instr.runState .pop input target))
+    (.done (TypedCfg.Instr.runState .pop input source)) at hOpen
+  cases hOpen with
+  | done hDone => exact hDone
+
 theorem returnToken_stepAt
     {cfg : TypedCfg.Program} {assembly : Assembly.Program}
     {token : Word} {site : ReturnSite} {targetPc currentPc : Nat}

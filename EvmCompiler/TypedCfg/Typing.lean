@@ -170,6 +170,99 @@ theorem length_of_type?_bindScratch
       cases hType
       simp [Shape.length]
 
+theorem length_of_type?_relabel
+    {target input output : Shape}
+    (hType : Instr.type? (.relabel target) input = some output) :
+    output.length = input.length := by
+  by_cases hCompatible : input.relabelCompatible target
+  · simp [Instr.type?, hCompatible] at hType
+    cases hType
+    unfold Shape.relabelCompatible at hCompatible
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hCompatible
+    exact hCompatible.1.2.symm
+  · simp [Instr.type?, hCompatible] at hType
+
+theorem tail_of_type?
+    {instr : Instr} {input output : Shape}
+    (hType : instr.type? input = some output) :
+    output.tail = input.tail := by
+  cases instr with
+  | push value | returnToken value =>
+      simp [Instr.type?] at hType
+      cases hType
+      rfl
+  | prim op =>
+      cases hArity : op.stackArity? with
+      | none => simp [Instr.type?, hArity] at hType
+      | some arity =>
+          rcases arity with ⟨inputArity, outputArity⟩
+          by_cases hBound : inputArity ≤ input.length
+          · simp [Instr.type?, hArity, hBound] at hType
+            cases hType
+            rfl
+          · simp [Instr.type?, hArity, hBound] at hType
+  | pop =>
+      cases hSlots : input.slots with
+      | nil => simp [Instr.type?, hSlots] at hType
+      | cons slot rest =>
+          simp [Instr.type?, hSlots] at hType
+          cases hType
+          rfl
+  | dup depth =>
+      by_cases hDepth : depth < 16
+      · cases hGet : input.get? depth with
+        | none => simp [Instr.type?, hDepth, hGet] at hType
+        | some slot =>
+            simp [Instr.type?, hDepth, hGet] at hType
+            cases hType
+            rfl
+      · simp [Instr.type?, hDepth] at hType
+  | swap depth =>
+      by_cases hDepth : depth < 16
+      · cases hSlots : input.slots with
+        | nil =>
+            simp [Instr.type?, Shape.get?, hDepth, hSlots] at hType
+        | cons top rest =>
+            cases hGet : input.get? (depth + 1) with
+            | none => simp [Instr.type?, hDepth, hSlots, hGet] at hType
+            | some slot =>
+                simp [Instr.type?, hDepth, hSlots, hGet] at hType
+                cases hType
+                rfl
+      · simp [Instr.type?, hDepth] at hType
+  | bindLocals offset names =>
+      unfold Instr.type? Shape.bindLocals? at hType
+      by_cases hBound : offset + names.length ≤ input.length
+      · simp [hBound] at hType
+        cases hType
+        rfl
+      · simp [hBound] at hType
+  | bindScratch baseDepth name slot =>
+      unfold Instr.type? Shape.bindScratch? at hType
+      cases hGet : input.slots[baseDepth]? with
+      | none => simp [hGet] at hType
+      | some existing =>
+          simp [hGet] at hType
+          cases hType
+          rfl
+  | relabel target =>
+      by_cases hCompatible : input.relabelCompatible target
+      · simp [Instr.type?, hCompatible] at hType
+        cases hType
+        unfold Shape.relabelCompatible at hCompatible
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at hCompatible
+        exact hCompatible.2.symm
+      · simp [Instr.type?, hCompatible] at hType
+  | unwind target =>
+      unfold Instr.type? Shape.unwindTo at hType
+      by_cases hUnwind :
+          target.tail = input.tail ∧ target.length ≤ input.length ∧
+            input.slots.drop (input.length - target.length) = target.slots
+      · simp [hUnwind] at hType
+        cases hType
+        exact hUnwind.1
+      · simp [hUnwind] at hType
+
 end Instr
 
 namespace Block

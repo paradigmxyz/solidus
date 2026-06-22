@@ -255,6 +255,44 @@ theorem stackRel_of_closed_prefix_tail
           | cons sourceHead sourceRest =>
               exact ⟨hVisible.1, ih hVisible.2⟩
 
+theorem stackRel_retype_plain
+    {resolve : Resolver} {sites : List ReturnSite}
+    {inputSlots outputSlots : List Slot} {inputTail outputTail : FrameTail}
+    {target source : List Word}
+    (hInputPlain : PlainSlots inputSlots)
+    (hOutputPlain : PlainSlots outputSlots)
+    (hLength : outputSlots.length = inputSlots.length)
+    (hTailEq : outputTail = inputTail)
+    (hRel : StackRel resolve sites inputSlots inputTail target source) :
+    StackRel resolve sites outputSlots outputTail target source := by
+  obtain ⟨visible, targetHidden, sourceHidden,
+      hTarget, hSource, hVisibleLength, hTail⟩ :=
+    stackRel_split_plain hInputPlain hRel
+  have hOutputLength : visible.length = outputSlots.length := by
+    omega
+  have hVisible :
+      ClosedStackRel resolve sites outputSlots visible visible :=
+    closedStackRel_refl_of_plain hOutputPlain hOutputLength
+  have hRebuilt := stackRel_of_closed_prefix_tail hVisible hTail
+  rw [← hTarget, ← hSource] at hRebuilt
+  simpa [hTailEq] using hRebuilt
+
+theorem runtimeRel_retype_plain
+    {resolve : Resolver} {sites : List ReturnSite}
+    {input output : Shape} {target source : Assembly.EVMState}
+    (hInputPlain : PlainSlots input.slots)
+    (hOutputPlain : PlainSlots output.slots)
+    (hLength : output.length = input.length)
+    (hTailEq : output.tail = input.tail)
+    (hRel : RuntimeRel resolve sites input target source) :
+    RuntimeRel resolve sites output target source := by
+  constructor
+  · exact hRel.1
+  · apply stackRel_retype_plain hInputPlain hOutputPlain
+    · simpa [Shape.length] using hLength
+    · exact hTailEq
+    · exact hRel.2
+
 theorem runtimeRel_replaceStackAndIncrPC
     {resolve : Resolver} {sites : List ReturnSite}
     {inputShape outputShape : Shape}
