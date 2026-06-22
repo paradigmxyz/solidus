@@ -3209,6 +3209,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.StackTransitionCompilation.compileDiscards
 #check EvmCompiler.Functions.StackTransitionCompilation.DiscardSchedule.compileArtifact
 #check EvmCompiler.Functions.StackTransitionCompilation.DiscardSchedule.compiledOpenRun
+#check EvmCompiler.Functions.StackTransitionCompilation.RegularTransition.compileArtifact
+#check EvmCompiler.Functions.StackTransitionCompilation.RegularTransition.compiledOpenRun
+#check EvmCompiler.Functions.StackTransitionCompilation.RegularTransition.compiledBlockOpenRun
 #check EvmCompiler.Functions.StackTransitionCompilation.Transition.compileArtifact
 #check EvmCompiler.Functions.StackTransitionCompilation.Transition.compiledOpenRun
 #check EvmCompiler.Functions.StackTransitionCompilation.Ordering.compiledOpenRun
@@ -3365,6 +3368,7 @@ or audit-alias corridor.
 
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.Join.compiledOpenRun
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.DiscardSchedule.compiledOpenRun
+#print axioms EvmCompiler.Functions.StackTransitionCompilation.RegularTransition.compiledOpenRun
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.OrderingArtifact.thenBlock
 #print axioms EvmCompiler.Functions.StackTransitionCompilation.OrderingArtifact.thenBlockForward
 #print axioms EvmCompiler.Locals.InteractionCleanupPreservation.openRun_discardNameStackOnly?_top

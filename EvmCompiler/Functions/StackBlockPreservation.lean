@@ -24,7 +24,7 @@ def regularLeafTargetCost : List StackSchedule.Point → Nat
        | some order => order.promotions.length
        | none => 0) +
       (match point.retain? with
-       | some transition => transition.schedule.promotions.length + 2
+       | some transition => transition.schedule.discards.length + 2
        | none => 0) + regularLeafTargetCost points
 
 def RegularListPreserves
@@ -1080,13 +1080,13 @@ theorem compiledOpenRegion_of_compilers
     StackLowering.lowerBlockFuel_components hLower
   have hLoweredBody' :
       loweredBody.stmts =
-        StackLowering.transitionStmts rawRegion.entry ++
+        StackLowering.entryTransitionStmts rawRegion.entry ++
           (bodyLowered ++ exit.statements) := by
     simpa [StackLowering.exitStmts] using hLoweredBody
   have hLoweredBodyStruct :
       loweredBody =
         { stmts :=
-            StackLowering.transitionStmts rawRegion.entry ++
+            StackLowering.entryTransitionStmts rawRegion.entry ++
               (bodyLowered ++ exit.statements) } := by
     cases loweredBody
     simp_all
@@ -1226,13 +1226,13 @@ theorem compiledScheduledRegion_of_compilers
     StackLowering.lowerBlockFuel_components hLower
   have hLoweredBody' :
       loweredBody.stmts =
-        StackLowering.transitionStmts rawRegion.entry ++
+        StackLowering.entryTransitionStmts rawRegion.entry ++
           (bodyLowered ++ exit.statements) := by
     simpa [StackLowering.exitStmts] using hLoweredBody
   have hLoweredBodyStruct :
       loweredBody =
         { stmts :=
-            StackLowering.transitionStmts rawRegion.entry ++
+            StackLowering.entryTransitionStmts rawRegion.entry ++
               (bodyLowered ++ exit.statements) } := by
     cases loweredBody
     simp_all
@@ -1686,7 +1686,7 @@ theorem blockPoint_of_compilers
     (body : Functions.Block)
     (fact : AllocationLivenessFacts.Point)
     (rawPoint point : StackSchedule.Point)
-    (retain : AllocationLayout.Transition)
+    (retain : AllocationLayout.RegularTransition)
     (targetCtx finalCtx : Locals.Ctx)
     (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
     (hSchedule :
@@ -1742,7 +1742,7 @@ theorem blockPoint_of_compilers
     StackLowering.lowerBlockFuel_components hLowerBody
   have hLoweredBody' :
       loweredBody.stmts =
-        StackLowering.transitionStmts rawRegion.entry ++
+        StackLowering.entryTransitionStmts rawRegion.entry ++
           (bodyLowered ++ exit.statements) := by
     simpa [StackLowering.exitStmts] using hLoweredBody
   rw [hLowered] at hCompile
@@ -1758,7 +1758,7 @@ theorem blockPoint_of_compilers
   have hLoweredBodyStruct :
       loweredBody =
         { stmts :=
-            StackLowering.transitionStmts rawRegion.entry ++
+            StackLowering.entryTransitionStmts rawRegion.entry ++
               (bodyLowered ++ exit.statements) } := by
     cases loweredBody
     simp_all
@@ -1850,7 +1850,7 @@ theorem blockPoint_of_compilers
     rcases hControl with ⟨hBreak, hContinue, hLeave, hRetc⟩
     simp_all
   obtain ⟨compiledRetainArtifact⟩ :=
-    StackTransitionCompilation.Transition.compileArtifact retain hRetainSource
+    StackTransitionCompilation.RegularTransition.compileArtifact retain hRetainSource
   have hCompiledRetainPair :=
     Option.some.inj
       (compiledRetainArtifact.compileEq.symm.trans hRetainCompile)
@@ -1910,7 +1910,7 @@ theorem blockPoint_of_compilers
       (bodyFinalCtx.withLayout exit.target) targetFuel hRegionEmptyFuel hRegionRun
   rw [hRestoredCtx] at hWithEmpty
   have hWholeFuel :
-      targetBlock.stmts.length + retain.schedule.promotions.length + 1 <
+      targetBlock.stmts.length + retain.schedule.discards.length + 1 <
         targetFuel := by
     rw [hCode, hBlockCode, ← hCompiledRetainCode] at hCodeLength
     simp only [List.length_append, List.length_map, List.length_cons,
@@ -1945,7 +1945,7 @@ theorem ifPoint_of_compilers
     (cond : Functions.Expr 1) (body : Functions.Block)
     (fact : AllocationLivenessFacts.Point)
     (rawPoint point : StackSchedule.Point)
-    (retain : AllocationLayout.Transition)
+    (retain : AllocationLayout.RegularTransition)
     (targetCtx finalCtx : Locals.Ctx)
     (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
     {sourceEnv : List Name}
@@ -2048,7 +2048,7 @@ theorem ifPoint_of_compilers
     have h := congrArg Locals.Ctx.layout hRestoredCtx
     simpa [Locals.Ctx.withLayout] using h
   obtain ⟨compiledRetainArtifact⟩ :=
-    StackTransitionCompilation.Transition.compileArtifact retain hRetainSource
+    StackTransitionCompilation.RegularTransition.compileArtifact retain hRetainSource
   have hCompiledRetainPair :=
     Option.some.inj
       (compiledRetainArtifact.compileEq.symm.trans hRetainCompile)
@@ -2111,7 +2111,7 @@ theorem ifPoint_of_compilers
       have hCodeLength := Expressions.TargetFuel.Covers.length_lt hFuel'
       have hWholeFuel :
           [Expressions.Stmt.if_ (.code condCode) targetBody].length +
-              retain.schedule.promotions.length + 1 < targetFuel := by
+              retain.schedule.discards.length + 1 < targetFuel := by
         rw [← hCompiledRetainCode] at hCodeLength
         simp only [List.length_cons, List.length_append, List.length_map,
           List.length_nil] at hCodeLength ⊢
@@ -2144,7 +2144,7 @@ theorem switchPoint_of_compilers
     (defaultBody : Option Functions.Block)
     (fact : AllocationLivenessFacts.Point)
     (rawPoint point : StackSchedule.Point)
-    (retain : AllocationLayout.Transition)
+    (retain : AllocationLayout.RegularTransition)
     (targetCtx finalCtx : Locals.Ctx)
     (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
     {sourceEnv : List Name}
@@ -2232,7 +2232,7 @@ theorem switchPoint_of_compilers
         hBody hChildSchedule hChildLower hChildCompile)
       hDefaultRel
   obtain ⟨compiledRetainArtifact⟩ :=
-    StackTransitionCompilation.Transition.compileArtifact retain hRetainSource
+    StackTransitionCompilation.RegularTransition.compileArtifact retain hRetainSource
   have hCompiledRetainPair :=
     Option.some.inj
       (compiledRetainArtifact.compileEq.symm.trans hRetainCompile)
@@ -2282,7 +2282,7 @@ theorem switchPoint_of_compilers
       have hWholeFuel :
           [Expressions.Stmt.switch (.code scrutineeCode) compiledCases
               compiledDefault].length +
-              retain.schedule.promotions.length + 1 < targetFuel := by
+              retain.schedule.discards.length + 1 < targetFuel := by
         rw [← hCompiledRetainCode] at hCodeLength
         simp only [List.length_cons, List.length_append, List.length_map,
           List.length_nil] at hCodeLength ⊢
@@ -2314,7 +2314,7 @@ theorem forPoint_of_compilers
     (post body : Functions.Block)
     (fact : AllocationLivenessFacts.Point)
     (rawPoint point : StackSchedule.Point)
-    (retain : AllocationLayout.Transition)
+    (retain : AllocationLayout.RegularTransition)
     (targetCtx finalCtx : Locals.Ctx)
     (lowered : List Locals.Stmt) (code : List Expressions.Stmt)
     {sourceEnv : List Name}
@@ -2493,7 +2493,7 @@ theorem forPoint_of_compilers
       outerCleanup hOuterLayout hOuterCleanup hCondScoped hSupported
       hCondCompile hInitPreserves hBodyPoint hPostPoint
   obtain ⟨compiledRetainArtifact⟩ :=
-    StackTransitionCompilation.Transition.compileArtifact retain hRetainSource
+    StackTransitionCompilation.RegularTransition.compileArtifact retain hRetainSource
   have hCompiledRetainPair :=
     Option.some.inj
       (compiledRetainArtifact.compileEq.symm.trans hRetainCompile)
@@ -2528,7 +2528,7 @@ theorem forPoint_of_compilers
     simpa [hForCode] using hForRun
   have hLength := hFuel'.length_lt
   have hWholeFuel :
-      forCode.length + retain.schedule.promotions.length + 1 < targetFuel := by
+      forCode.length + retain.schedule.discards.length + 1 < targetFuel := by
     rw [← hCompiledRetainCode] at hLength
     simp only [List.length_append, List.length_map, List.length_cons,
       List.length_nil] at hLength
@@ -2584,7 +2584,7 @@ theorem controlFallthroughCons_of_compilers
           some order →
         StackSchedule.scheduleStmtFuelWithTargets targets scheduleFuel pinned
             order.target stmt fact = some rawPoint →
-        AllocationLayout.Transition.build? rawPoint.statementLayout
+        AllocationLayout.RegularTransition.build? rawPoint.statementLayout
             (StackSchedule.required pinned
               (StackSchedule.nextLive fact.liveAfter rest restFacts)) =
           some retain →
@@ -2703,7 +2703,7 @@ theorem controlFallthroughConsAt_of_compilers
           some order →
         StackSchedule.scheduleStmtFuelWithTargets targets scheduleFuel pinned
             order.target stmt fact = some rawPoint →
-        AllocationLayout.Transition.build? rawPoint.statementLayout
+        AllocationLayout.RegularTransition.build? rawPoint.statementLayout
             (StackSchedule.required pinned
               (StackSchedule.nextLive fact.liveAfter rest restFacts)) =
           some retain →
@@ -3014,7 +3014,7 @@ theorem blockCons_of_compilers
     have hRetainSource :
         (targetCtx.withLayout order.target).layout = retain.source := by
       have hBuiltSource : rawPoint.statementLayout = retain.source :=
-        (AllocationLayout.Transition.build?_sound hRetainBuild).1.symm
+        (AllocationLayout.RegularTransition.build?_sound hRetainBuild).1.symm
       simpa [Locals.Ctx.withLayout] using
         hRawStatement.symm.trans hBuiltSource
     exact
@@ -3101,7 +3101,7 @@ theorem ifCons_of_compilers
     have hRetainSource :
         (targetCtx.withLayout order.target).layout = retain.source := by
       have hBuiltSource : rawPoint.statementLayout = retain.source :=
-        (AllocationLayout.Transition.build?_sound hRetainBuild).1.symm
+        (AllocationLayout.RegularTransition.build?_sound hRetainBuild).1.symm
       simpa [Locals.Ctx.withLayout] using
         hRawStatement.symm.trans hBuiltSource
     exact
@@ -3193,7 +3193,7 @@ theorem switchCons_of_compilers
     have hRetainSource :
         (targetCtx.withLayout order.target).layout = retain.source := by
       have hBuiltSource : rawPoint.statementLayout = retain.source :=
-        (AllocationLayout.Transition.build?_sound hRetainBuild).1.symm
+        (AllocationLayout.RegularTransition.build?_sound hRetainBuild).1.symm
       simpa [Locals.Ctx.withLayout] using
         hRawStatement.symm.trans hBuiltSource
     exact
@@ -3288,7 +3288,7 @@ theorem forCons_of_compilers
     have hRetainSource :
         (targetCtx.withLayout order.target).layout = retain.source := by
       have hBuiltSource : rawPoint.statementLayout = retain.source :=
-        (AllocationLayout.Transition.build?_sound hRetainBuild).1.symm
+        (AllocationLayout.RegularTransition.build?_sound hRetainBuild).1.symm
       simpa [Locals.Ctx.withLayout] using
         hRawStatement.symm.trans hBuiltSource
     exact
@@ -3365,7 +3365,7 @@ theorem exprCons_of_compilers
     have hRetainSource :
         (targetCtx.withLayout order.target).layout = retain.source := by
       have hBuiltSource : rawPoint.statementLayout = retain.source :=
-        (AllocationLayout.Transition.build?_sound hRetainBuild).1.symm
+        (AllocationLayout.RegularTransition.build?_sound hRetainBuild).1.symm
       simpa [Locals.Ctx.withLayout] using
         hRawStatement.symm.trans hBuiltSource
     have hExprAccess :
@@ -3442,7 +3442,7 @@ theorem letCons_of_compilers
     have hRetainSource :
         name :: (targetCtx.withLayout order.target).layout = retain.source := by
       have hBuiltSource : rawPoint.statementLayout = retain.source :=
-        (AllocationLayout.Transition.build?_sound hRetainBuild).1.symm
+        (AllocationLayout.RegularTransition.build?_sound hRetainBuild).1.symm
       simpa [Locals.Ctx.withLayout] using
         hRawStatement.symm.trans hBuiltSource
     have hValueAccess :
@@ -3520,7 +3520,7 @@ theorem assignCons_of_compilers
     have hRetainSource :
         (targetCtx.withLayout order.target).layout = retain.source := by
       have hBuiltSource : rawPoint.statementLayout = retain.source :=
-        (AllocationLayout.Transition.build?_sound hRetainBuild).1.symm
+        (AllocationLayout.RegularTransition.build?_sound hRetainBuild).1.symm
       simpa [Locals.Ctx.withLayout] using
         hRawStatement.symm.trans hBuiltSource
     have hAssignAccess :
@@ -3637,7 +3637,7 @@ theorem callCons_of_compilers
     have hRetainSource :
         (targetCtx.withLayout order.target).layout = retain.source := by
       have hBuiltSource : rawPoint.statementLayout = retain.source :=
-        (AllocationLayout.Transition.build?_sound hRetainBuild).1.symm
+        (AllocationLayout.RegularTransition.build?_sound hRetainBuild).1.symm
       simpa [Locals.Ctx.withLayout] using
         hRawStatement.symm.trans hBuiltSource
     have hOrderSource : targetCtx.layout = order.source :=
@@ -3781,7 +3781,7 @@ theorem callConsAtSucc_of_compilers
     have hRetainSource :
         (targetCtx.withLayout order.target).layout = retain.source := by
       have hBuiltSource : rawPoint.statementLayout = retain.source :=
-        (AllocationLayout.Transition.build?_sound hRetainBuild).1.symm
+        (AllocationLayout.RegularTransition.build?_sound hRetainBuild).1.symm
       simpa [Locals.Ctx.withLayout] using
         hRawStatement.symm.trans hBuiltSource
     have hOrderSource : targetCtx.layout = order.source :=
@@ -3822,9 +3822,7 @@ theorem callConsAtSucc_of_compilers
     subst compiledRetain
     refine ⟨hCompiled, ?_⟩
     rw [hCompiled.layout]
-    apply AllocationLayout.Transition.target_nodup retain
-    rw [← hRetainSource]
-    simpa [Locals.Ctx.withLayout] using hOrderedNodup
+    exact retain.target_nodup
   · exact hTail
 
 theorem callConsAtOne_of_compilers
@@ -3897,7 +3895,7 @@ theorem callConsAtOne_of_compilers
     have hRetainSource :
         (targetCtx.withLayout order.target).layout = retain.source := by
       have hBuiltSource : rawPoint.statementLayout = retain.source :=
-        (AllocationLayout.Transition.build?_sound hRetainBuild).1.symm
+        (AllocationLayout.RegularTransition.build?_sound hRetainBuild).1.symm
       simpa [Locals.Ctx.withLayout] using
         hRawStatement.symm.trans hBuiltSource
     have hOrderSource : targetCtx.layout = order.source :=
@@ -3922,9 +3920,7 @@ theorem callConsAtOne_of_compilers
     subst compiledRetain
     refine ⟨hCompiled, ?_⟩
     rw [hCompiled.layout]
-    apply AllocationLayout.Transition.target_nodup retain
-    rw [← hRetainSource]
-    simpa [Locals.Ctx.withLayout] using hOrderedNodup
+    exact retain.target_nodup
   · exact hTail
 
 theorem brkControlList_of_compilers
@@ -4412,7 +4408,7 @@ theorem regularConsOfPoint
     (targetProgram : Expressions.Program)
     (sourceCtx : Functions.Source.Ctx)
     (targetCtx finalCtx : Locals.Ctx)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     (sourceFuel targetFuel : Nat)
     (stmt : Functions.Stmt) (rest : List Functions.Stmt)
     (head : Expressions.Stmt) (tailCode : List Expressions.Stmt)
@@ -4438,11 +4434,11 @@ theorem regularConsOfPoint
               { stmts := rest } sourceMid)
           (Expressions.InteractionSemantics.Block.openRun
             targetProgram
-              (targetFuel - (transition.schedule.promotions.length + 2))
+              (targetFuel - (transition.schedule.discards.length + 2))
               { stmts := tailCode } targetMid)) :
-    ∃ artifact : StackTransitionCompilation.Artifact targetCtx transition,
+    ∃ artifact : StackTransitionCompilation.RegularArtifact targetCtx transition,
       Locals.Block.compileOpen targetCtx
-          { stmts := transition.schedule.statements } =
+          { stmts := transition.statements } =
         some
           (artifact.promotionCodes.map Expressions.Stmt.code ++
             [Expressions.Stmt.code artifact.cleanup],
@@ -4463,7 +4459,7 @@ theorem regularConsOfPoint
   obtain ⟨artifact, hCompile, hHead⟩ := hPoint
   have hCodeLength :
       artifact.promotionCodes.length =
-        transition.schedule.promotions.length :=
+        transition.schedule.discards.length :=
     artifact.codes.code_length
   refine ⟨artifact, hCompile, ?_⟩
   apply regularCons sourceProgram targetProgram sourceCtx
@@ -4483,7 +4479,7 @@ theorem regularConsResult
     (stmt : Functions.Stmt) (rest : List Functions.Stmt)
     (point : StackSchedule.Point) (points : List StackSchedule.Point)
     (order : AllocationLayout.Ordering)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     (finalLayout tailFinal : Locals.Layout)
     (headCode tailCode code : List Expressions.Stmt)
     (hOrder : point.order? = some order)
@@ -4492,14 +4488,14 @@ theorem regularConsResult
       middleCtx = targetCtx.withLayout transition.schedule.target)
     (hHeadLength :
       headCode.length =
-        order.promotions.length + transition.schedule.promotions.length + 2)
+        order.promotions.length + transition.schedule.discards.length + 2)
     (hHead :
       ∀ (sourceCtx : Functions.Source.Ctx)
         (sourceFuel targetFuel : Nat)
         {suffix : List Word} {returns : List Structured.ReturnDest}
         {source : Locals.Source.State} {target : Structured.RunState},
         order.promotions.length +
-            transition.schedule.promotions.length + 2 < targetFuel →
+            transition.schedule.discards.length + 2 < targetFuel →
         CtxCovers sourceCtx targetCtx →
         StateRel targetCtx.layout suffix returns source target →
         Simulation.Interaction.Rel
@@ -4524,7 +4520,7 @@ theorem regularConsResult
     omega
   · intro sourceCtx suffix returns source target hCtx hInitial
     have hHeadFuel :
-        order.promotions.length + transition.schedule.promotions.length + 2 <
+        order.promotions.length + transition.schedule.discards.length + 2 <
           regularLeafTargetCost (point :: points) + 1 := by
       simp [regularLeafTargetCost, hOrder, hRetain]
       omega
@@ -4638,7 +4634,7 @@ theorem regularLeafList_of_compilers
               StackAccess.Expr.check? order.target 0 expr = some () := by
             simpa [StackLowering.pointAccess?, hBefore] using hPointAccess
           have hSource : order.target = retain.source :=
-            (AllocationLayout.Transition.build?_sound hBuild).1.symm
+            (AllocationLayout.RegularTransition.build?_sound hBuild).1.symm
           rw [hLowered] at hCompile
           obtain
               ⟨headCode, middleCtx, tailCode,
@@ -4683,7 +4679,7 @@ theorem regularLeafList_of_compilers
           have hWholeLength :
               headCode.length =
                 order.promotions.length +
-                  retain.schedule.promotions.length + 2 := by
+                  retain.schedule.discards.length + 2 := by
             rw [hHeadCode, List.length_append, List.length_map,
               hHeadLength, hOrderLength]
             omega
@@ -4695,7 +4691,7 @@ theorem regularLeafList_of_compilers
                 {source : Locals.Source.State}
                 {target : Structured.RunState},
                 order.promotions.length +
-                    retain.schedule.promotions.length + 2 < targetFuel →
+                    retain.schedule.discards.length + 2 < targetFuel →
                 CtxCovers sourceCtx targetCtx →
                 StateRel targetCtx.layout suffix returns source target →
                 Simulation.Interaction.Rel
@@ -4722,8 +4718,7 @@ theorem regularLeafList_of_compilers
           have hMiddleNodup : middleCtx.layout.Nodup := by
             rw [hMiddle]
             simpa [Locals.Ctx.withLayout] using
-              AllocationLayout.Transition.target_nodup retain
-                hRetainSourceNodup
+              retain.target_nodup
           have hTailSchedule' :
               StackSchedule.scheduleStmtListFuel scheduleFuel pinned
                   middleCtx.layout rest restFacts =
@@ -4772,7 +4767,7 @@ theorem regularLeafList_of_compilers
               StackAccess.Expr.check? order.target 0 value = some () := by
             simpa [StackLowering.pointAccess?, hBefore] using hPointAccess
           have hSource : name :: order.target = retain.source :=
-            (AllocationLayout.Transition.build?_sound hBuild).1.symm
+            (AllocationLayout.RegularTransition.build?_sound hBuild).1.symm
           rw [hLowered] at hCompile
           obtain
               ⟨headCode, middleCtx, tailCode,
@@ -4817,7 +4812,7 @@ theorem regularLeafList_of_compilers
           have hWholeLength :
               headCode.length =
                 order.promotions.length +
-                  retain.schedule.promotions.length + 2 := by
+                  retain.schedule.discards.length + 2 := by
             rw [hHeadCode, List.length_append, List.length_map,
               hHeadLength, hOrderLength]
             omega
@@ -4829,7 +4824,7 @@ theorem regularLeafList_of_compilers
                 {source : Locals.Source.State}
                 {target : Structured.RunState},
                 order.promotions.length +
-                    retain.schedule.promotions.length + 2 < targetFuel →
+                    retain.schedule.discards.length + 2 < targetFuel →
                 CtxCovers sourceCtx targetCtx →
                 StateRel targetCtx.layout suffix returns source target →
                 Simulation.Interaction.Rel
@@ -4858,8 +4853,7 @@ theorem regularLeafList_of_compilers
           have hMiddleNodup : middleCtx.layout.Nodup := by
             rw [hMiddle]
             simpa [Locals.Ctx.withLayout] using
-              AllocationLayout.Transition.target_nodup retain
-                hRetainSourceNodup
+              retain.target_nodup
           have hTailSchedule' :
               StackSchedule.scheduleStmtListFuel scheduleFuel pinned
                   middleCtx.layout rest restFacts =
@@ -4908,7 +4902,7 @@ theorem regularLeafList_of_compilers
               StackAccess.assign? order.target name value = some () := by
             simpa [StackLowering.pointAccess?, hBefore] using hPointAccess
           have hSource : order.target = retain.source :=
-            (AllocationLayout.Transition.build?_sound hBuild).1.symm
+            (AllocationLayout.RegularTransition.build?_sound hBuild).1.symm
           rw [hLowered] at hCompile
           obtain
               ⟨headCode, middleCtx, tailCode,
@@ -4954,7 +4948,7 @@ theorem regularLeafList_of_compilers
           have hWholeLength :
               headCode.length =
                 order.promotions.length +
-                  retain.schedule.promotions.length + 2 := by
+                  retain.schedule.discards.length + 2 := by
             rw [hHeadCode, List.length_append, List.length_map,
               hHeadLength, hOrderLength]
             omega
@@ -4966,7 +4960,7 @@ theorem regularLeafList_of_compilers
                 {source : Locals.Source.State}
                 {target : Structured.RunState},
                 order.promotions.length +
-                    retain.schedule.promotions.length + 2 < targetFuel →
+                    retain.schedule.discards.length + 2 < targetFuel →
                 CtxCovers sourceCtx targetCtx →
                 StateRel targetCtx.layout suffix returns source target →
                 Simulation.Interaction.Rel
@@ -4993,8 +4987,7 @@ theorem regularLeafList_of_compilers
           have hMiddleNodup : middleCtx.layout.Nodup := by
             rw [hMiddle]
             simpa [Locals.Ctx.withLayout] using
-              AllocationLayout.Transition.target_nodup retain
-                hRetainSourceNodup
+              retain.target_nodup
           have hTailSchedule' :
               StackSchedule.scheduleStmtListFuel scheduleFuel pinned
                   middleCtx.layout rest restFacts =

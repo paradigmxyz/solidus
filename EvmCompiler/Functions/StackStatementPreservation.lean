@@ -181,6 +181,28 @@ theorem afterTransition
   apply hCtx.scope
   rwa [hSource]
 
+theorem afterRegularTransition
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    (hCtx : CtxCovers source target)
+    (transition : AllocationLayout.RegularTransition)
+    (hSource : target.layout = transition.source) :
+    CtxCovers source (target.withLayout transition.target) := by
+  constructor
+  intro name hName
+  have hTarget : name ∈ transition.target.toFinset := by
+    simpa [Locals.Ctx.withLayout] using hName
+  have hSubset :
+      transition.target.toFinset ⊆ transition.source.toFinset := by
+    change
+      transition.schedule.target.toFinset ⊆
+        transition.schedule.source.toFinset
+    rw [transition.schedule.targetSet]
+    exact Finset.inter_subset_left
+  have hOriginal := hSubset hTarget
+  apply hCtx.scope
+  rw [hSource]
+  simpa using hOriginal
+
 theorem afterOrdering
     {source : Functions.Source.Ctx} {target : Locals.Ctx}
     (hCtx : CtxCovers source target)
@@ -273,6 +295,30 @@ theorem afterTransition
     have hContinue := hCtx.continueTarget hTarget
     exact
       { context := hContinue.context.afterTransition transition hSource
+        targetDepth := by
+          simpa [Locals.Ctx.withLayout] using hContinue.targetDepth
+        sourceCovers := hContinue.sourceCovers }
+
+theorem afterRegularTransition
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {targets : StackSchedule.ControlTargets}
+    (hCtx : ControlCtxCovers source target targets)
+    (transition : AllocationLayout.RegularTransition)
+    (hSource : target.layout = transition.source) :
+    ControlCtxCovers source (target.withLayout transition.target) targets := by
+  constructor
+  · exact hCtx.context.afterRegularTransition transition hSource
+  · intro layout hTarget
+    have hBreak := hCtx.breakTarget hTarget
+    exact
+      { context := hBreak.context.afterRegularTransition transition hSource
+        targetDepth := by
+          simpa [Locals.Ctx.withLayout] using hBreak.targetDepth
+        sourceCovers := hBreak.sourceCovers }
+  · intro layout hTarget
+    have hContinue := hCtx.continueTarget hTarget
+    exact
+      { context := hContinue.context.afterRegularTransition transition hSource
         targetDepth := by
           simpa [Locals.Ctx.withLayout] using hContinue.targetDepth
         sourceCovers := hContinue.sourceCovers }
@@ -549,6 +595,19 @@ theorem afterTransition
   ⟨hCtx.control.afterTransition transition hSource,
     hCtx.returnContext.afterLayout transition.schedule.target,
     hCtx.leaveReady⟩
+
+theorem afterRegularTransition
+    {source : Functions.Source.Ctx} {target : Locals.Ctx}
+    {targets : StackSchedule.ControlTargets}
+    {returnNames : List Name}
+    {returns : List Structured.ReturnDest}
+    (hCtx : RuntimeCtxCovers source target targets returnNames returns)
+    (transition : AllocationLayout.RegularTransition)
+    (hSource : target.layout = transition.source) :
+    RuntimeCtxCovers source (target.withLayout transition.target) targets
+      returnNames returns :=
+  ⟨hCtx.control.afterRegularTransition transition hSource,
+    hCtx.returnContext.afterLayout transition.target, hCtx.leaveReady⟩
 
 theorem afterJoin
     {source : Functions.Source.Ctx} {target : Locals.Ctx}
@@ -2272,7 +2331,7 @@ theorem controlThenTransition
     (targets : StackSchedule.ControlTargets)
     (returnNames : List Name)
     (targetCtx : Locals.Ctx)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     {sourceRun :
       Simulation.Interaction EVMException
         (Locals.Source.Effectful.Outcome Locals.Source.State ×
@@ -2283,7 +2342,7 @@ theorem controlThenTransition
     (targetFuel : Nat)
     (hSource : targetCtx.layout = transition.source)
     (hFuel :
-      coreCode.length + transition.schedule.promotions.length + 1 <
+      coreCode.length + transition.schedule.discards.length + 1 <
         targetFuel)
     (hCore :
       Simulation.Interaction.Rel
@@ -2291,7 +2350,7 @@ theorem controlThenTransition
         sourceRun
         (Expressions.InteractionSemantics.Block.openRun targetProgram
           targetFuel { stmts := coreCode } target)) :
-    ∃ artifact : StackTransitionCompilation.Artifact targetCtx transition,
+    ∃ artifact : StackTransitionCompilation.RegularArtifact targetCtx transition,
       Simulation.Interaction.Rel
         (ControlOpenOutcomeRel targets returnNames
           (targetCtx.withLayout transition.schedule.target) suffix returns)
@@ -2304,7 +2363,7 @@ theorem controlThenTransition
                   [Expressions.Stmt.code artifact.cleanup]) }
           target) := by
   obtain ⟨artifact⟩ :=
-    StackTransitionCompilation.Transition.compileArtifact transition hSource
+    StackTransitionCompilation.RegularTransition.compileArtifact transition hSource
   refine ⟨artifact, ?_⟩
   rw [Expressions.InteractionSemantics.Block.openRun_append]
   rw [← Simulation.Interaction.bind_pure sourceRun]
@@ -2325,7 +2384,7 @@ theorem controlThenTransition
       rw [hTransitionRun]
       apply Simulation.Interaction.Rel.done
       apply Simulation.Interaction.ExceptRel.ok
-      exact .regular (hCtx.afterTransition transition hSource) hFinalState
+      exact .regular (hCtx.afterRegularTransition transition hSource) hFinalState
   | brk hTarget hState =>
       simp only [Locals.Source.Effectful.Outcome.brk,
         Structured.Outcome.brk, Structured.OutcomeT.brk]
@@ -2356,7 +2415,7 @@ theorem controlThenTransitionForward
     (targets : StackSchedule.ControlTargets)
     (returnNames : List Name)
     (targetCtx : Locals.Ctx)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     {sourceRun :
       Simulation.Interaction EVMException
         (Locals.Source.Effectful.Outcome Locals.Source.State ×
@@ -2367,7 +2426,7 @@ theorem controlThenTransitionForward
     (targetFuel : Nat)
     (hSource : targetCtx.layout = transition.source)
     (hFuel :
-      coreCode.length + transition.schedule.promotions.length + 1 <
+      coreCode.length + transition.schedule.discards.length + 1 <
         targetFuel)
     (hCore :
       Simulation.Interaction.ForwardRel FuelTruncated
@@ -2375,7 +2434,7 @@ theorem controlThenTransitionForward
         sourceRun
         (Expressions.InteractionSemantics.Block.openRun targetProgram
           targetFuel { stmts := coreCode } target)) :
-    ∃ artifact : StackTransitionCompilation.Artifact targetCtx transition,
+    ∃ artifact : StackTransitionCompilation.RegularArtifact targetCtx transition,
       Simulation.Interaction.ForwardRel FuelTruncated
         (ControlOpenOutcomeRel targets returnNames
           (targetCtx.withLayout transition.schedule.target) suffix returns)
@@ -2388,7 +2447,7 @@ theorem controlThenTransitionForward
                   [Expressions.Stmt.code artifact.cleanup]) }
           target) := by
   obtain ⟨artifact⟩ :=
-    StackTransitionCompilation.Transition.compileArtifact transition hSource
+    StackTransitionCompilation.RegularTransition.compileArtifact transition hSource
   refine ⟨artifact, ?_⟩
   rw [Expressions.InteractionSemantics.Block.openRun_append]
   apply Simulation.Interaction.ForwardRel.bind_right hCore
@@ -2413,7 +2472,7 @@ theorem controlThenTransitionForward
           rw [hTransitionRun]
           apply Simulation.Interaction.ForwardRel.done
           apply Simulation.Interaction.ExceptRel.ok
-          exact .regular (hCtx.afterTransition transition hSource) hFinalState
+          exact .regular (hCtx.afterRegularTransition transition hSource) hFinalState
       | brk hTarget hState =>
           simp only [Locals.Source.Effectful.Outcome.brk,
             Structured.Outcome.brk, Structured.OutcomeT.brk]
@@ -2449,7 +2508,7 @@ theorem compiledControlThenTransition
     (returnNames : List Name)
     (targetCtx finalCtx : Locals.Ctx)
     (stmt : Functions.Stmt)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     (coreCode transitionCode code : List Expressions.Stmt)
     (hSource : targetCtx.layout = transition.source)
     (hTransitionCompile :
@@ -2463,7 +2522,7 @@ theorem compiledControlThenTransition
     CompiledControlPoint sourceProgram targetProgram targets returnNames
       targetCtx finalCtx stmt code transition.schedule.target := by
   obtain ⟨artifact⟩ :=
-    StackTransitionCompilation.Transition.compileArtifact transition hSource
+    StackTransitionCompilation.RegularTransition.compileArtifact transition hSource
   have hPair :=
     Option.some.inj (artifact.compileEq.symm.trans hTransitionCompile)
   have hArtifactCode :
@@ -2490,7 +2549,7 @@ theorem compiledControlThenTransition
       hCore sourceCtx sourceFuel targetFuel hCoreFuel hRuntime hInitial
     have hLength := Expressions.TargetFuel.Covers.length_lt hFuel'
     have hNumericFuel :
-        coreCode.length + transition.schedule.promotions.length + 1 <
+        coreCode.length + transition.schedule.discards.length + 1 <
           targetFuel := by
       rw [List.length_append, ← hArtifactCode,
         List.length_append, List.length_map, List.length_cons,
@@ -2518,7 +2577,7 @@ theorem compiledControlThenTransitionAt
     (returnNames : List Name)
     (targetCtx finalCtx : Locals.Ctx)
     (stmt : Functions.Stmt)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     (coreCode transitionCode code : List Expressions.Stmt)
     (sourceFuel : Nat)
     (hSource : targetCtx.layout = transition.source)
@@ -2533,7 +2592,7 @@ theorem compiledControlThenTransitionAt
     CompiledControlPointAt sourceProgram targetProgram targets returnNames
       targetCtx finalCtx stmt code transition.schedule.target sourceFuel := by
   obtain ⟨artifact⟩ :=
-    StackTransitionCompilation.Transition.compileArtifact transition hSource
+    StackTransitionCompilation.RegularTransition.compileArtifact transition hSource
   have hPair :=
     Option.some.inj (artifact.compileEq.symm.trans hTransitionCompile)
   have hArtifactCode :
@@ -2559,7 +2618,7 @@ theorem compiledControlThenTransitionAt
       hCore sourceCtx targetFuel hCoreFuel hRuntime hInitial
     have hLength := Expressions.TargetFuel.Covers.length_lt hFuel'
     have hNumericFuel :
-        coreCode.length + transition.schedule.promotions.length + 1 <
+        coreCode.length + transition.schedule.discards.length + 1 <
           targetFuel := by
       rw [List.length_append, ← hArtifactCode,
         List.length_append, List.length_map, List.length_cons,
@@ -3654,17 +3713,17 @@ theorem compiledTerminalArgsControlPointOfEquations
 
 theorem openRun_transition_generated
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hSource : targetCtx.layout = transition.source)
     (hCtx : CtxCovers sourceCtx targetCtx)
     (hInitial :
       StateRel targetCtx.layout suffix returns source target) :
-    ∃ artifact : StackTransitionCompilation.Artifact targetCtx transition,
+    ∃ artifact : StackTransitionCompilation.RegularArtifact targetCtx transition,
       ∃ final,
         Locals.Block.compileOpen targetCtx
-            { stmts := transition.schedule.statements } =
+            { stmts := transition.statements } =
           some
             (artifact.promotionCodes.map Expressions.Stmt.code ++
               [Expressions.Stmt.code artifact.cleanup],
@@ -3678,29 +3737,29 @@ theorem openRun_transition_generated
           (Locals.Source.Effectful.Outcome.regular source, sourceCtx)
           (Structured.Outcome.regular final) := by
   obtain ⟨artifact, final, hCompile, hRun, hFinal⟩ :=
-    StackTransitionCompilation.Transition.compiledOpenRun
+    StackTransitionCompilation.RegularTransition.compiledOpenRun
       transition hSource hInitial
   exact
     ⟨artifact, final, hCompile, hRun,
       { sourceMode := rfl
         targetMode := rfl
-        context := hCtx.afterTransition transition hSource
+        context := hCtx.afterRegularTransition transition hSource
         state := hFinal }⟩
 
 theorem openRun_transition_block_generated
     (targetProgram : Expressions.Program)
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hSource : targetCtx.layout = transition.source)
     (hCtx : CtxCovers sourceCtx targetCtx)
     (hInitial :
       StateRel targetCtx.layout suffix returns source target) :
-    ∃ artifact : StackTransitionCompilation.Artifact targetCtx transition,
+    ∃ artifact : StackTransitionCompilation.RegularArtifact targetCtx transition,
       ∃ final,
         Locals.Block.compileOpen targetCtx
-            { stmts := transition.schedule.statements } =
+            { stmts := transition.statements } =
           some
             (artifact.promotionCodes.map Expressions.Stmt.code ++
               [Expressions.Stmt.code artifact.cleanup],
@@ -3718,18 +3777,18 @@ theorem openRun_transition_block_generated
           (Locals.Source.Effectful.Outcome.regular source, sourceCtx)
           (Structured.Outcome.regular final) := by
   obtain ⟨artifact, final, hCompile, hRun, hFinal⟩ :=
-    StackTransitionCompilation.Transition.compiledBlockOpenRun
+    StackTransitionCompilation.RegularTransition.compiledBlockOpenRun
       targetProgram transition hSource hInitial
   exact
     ⟨artifact, final, hCompile, hRun,
       { sourceMode := rfl
         targetMode := rfl
-        context := hCtx.afterTransition transition hSource
+        context := hCtx.afterRegularTransition transition hSource
         state := hFinal }⟩
 
 def RegularPointPreserves
     (targetProgram : Expressions.Program) (targetCtx : Locals.Ctx)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     (sourceRun :
       Simulation.Interaction EVMException
         (Locals.Source.Effectful.Outcome Locals.Source.State ×
@@ -3738,9 +3797,9 @@ def RegularPointPreserves
     (targetFuel : Nat)
     (suffix : List Word) (returns : List Structured.ReturnDest)
     (target : Structured.RunState) : Prop :=
-  ∃ artifact : StackTransitionCompilation.Artifact targetCtx transition,
+  ∃ artifact : StackTransitionCompilation.RegularArtifact targetCtx transition,
     Locals.Block.compileOpen targetCtx
-        { stmts := transition.schedule.statements } =
+        { stmts := transition.statements } =
       some
         (artifact.promotionCodes.map Expressions.Stmt.code ++
           [Expressions.Stmt.code artifact.cleanup],
@@ -3761,7 +3820,7 @@ def RegularPointPreserves
 theorem regularThenTransition
     (targetProgram : Expressions.Program)
     (targetCtx : Locals.Ctx)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     (sourceRun :
       Simulation.Interaction EVMException
         (Locals.Source.Effectful.Outcome Locals.Source.State ×
@@ -3771,7 +3830,7 @@ theorem regularThenTransition
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {target : Structured.RunState}
     (hSource : targetCtx.layout = transition.source)
-    (hFuel : transition.schedule.promotions.length + 2 < targetFuel)
+    (hFuel : transition.schedule.discards.length + 2 < targetFuel)
     (hHead : ∀ targetFuel,
       Simulation.Interaction.Rel
         (RegularOutcomeRel targetCtx suffix returns)
@@ -3782,11 +3841,11 @@ theorem regularThenTransition
       head targetFuel suffix returns target := by
   unfold RegularPointPreserves
   obtain ⟨artifact⟩ :=
-    StackTransitionCompilation.Transition.compileArtifact
+    StackTransitionCompilation.RegularTransition.compileArtifact
       transition hSource
   have hCodeLength :
       artifact.promotionCodes.length =
-        transition.schedule.promotions.length :=
+        transition.schedule.discards.length :=
     artifact.codes.code_length
   have hCodeFuel : artifact.promotionCodes.length + 2 < targetFuel := by
     rw [hCodeLength]
@@ -3822,7 +3881,7 @@ theorem regularThenTransition
   exact
     { sourceMode := hResult.sourceMode
       targetMode := rfl
-      context := hResult.context.afterTransition transition hSource
+      context := hResult.context.afterRegularTransition transition hSource
       state := hFinalRel }
 
 theorem openRun_expr_generated
@@ -4094,12 +4153,12 @@ theorem exprThenTransition
     (targetProgram : Expressions.Program)
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
     (sourceFuel targetFuel : Nat) (expr : Functions.Expr 0)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     {code : Structured.Code} {suffix : List Word}
     {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hSource : targetCtx.layout = transition.source)
-    (hFuel : transition.schedule.promotions.length + 2 < targetFuel)
+    (hFuel : transition.schedule.discards.length + 2 < targetFuel)
     (hCtx : CtxCovers sourceCtx targetCtx)
     (hScoped : Locals.Scope.ExprScoped targetCtx.layout expr)
     (hSupported : Locals.InteractionSemantics.Expr.OpenSupported expr)
@@ -4121,12 +4180,12 @@ theorem letThenTransition
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
     (sourceFuel targetFuel : Nat)
     {name : Name} (valueExpr : Functions.Expr 1)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     {valueCode : Structured.Code} {suffix : List Word}
     {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hSource : name :: targetCtx.layout = transition.source)
-    (hFuel : transition.schedule.promotions.length + 2 < targetFuel)
+    (hFuel : transition.schedule.discards.length + 2 < targetFuel)
     (hCtx : CtxCovers sourceCtx targetCtx)
     (hFresh : name ∉ targetCtx.layout)
     (hScoped : Locals.Scope.ExprScoped targetCtx.layout valueExpr)
@@ -4154,13 +4213,13 @@ theorem assignThenTransition
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
     (sourceFuel targetFuel : Nat)
     {name : Name} (valueExpr : Functions.Expr 1)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     {depth : Nat} {valueCode : Structured.Code}
     {swapOp : Structured.BasicOp} {suffix : List Word}
     {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hSource : targetCtx.layout = transition.source)
-    (hFuel : transition.schedule.promotions.length + 2 < targetFuel)
+    (hFuel : transition.schedule.discards.length + 2 < targetFuel)
     (hCtx : CtxCovers sourceCtx targetCtx)
     (hNodup : targetCtx.layout.Nodup)
     (hDepth :
@@ -4188,7 +4247,7 @@ theorem assignThenTransition
 theorem RegularPointPreserves.compiledLowered
     (targetProgram : Expressions.Program)
     (beforeCtx pointCtx : Locals.Ctx)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     (sourceRun :
       Simulation.Interaction EVMException
         (Locals.Source.Effectful.Outcome Locals.Source.State ×
@@ -4204,7 +4263,7 @@ theorem RegularPointPreserves.compiledLowered
     (hPreserves :
       RegularPointPreserves targetProgram pointCtx transition sourceRun
         head targetFuel suffix returns target) :
-    ∃ artifact : StackTransitionCompilation.Artifact pointCtx transition,
+    ∃ artifact : StackTransitionCompilation.RegularArtifact pointCtx transition,
       Locals.Block.compileOpen beforeCtx { stmts := lowered } =
           some
             (head ::
@@ -4237,13 +4296,13 @@ theorem compiledExprPoint
     (targetProgram : Expressions.Program)
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
     (sourceFuel targetFuel : Nat) (expr : Functions.Expr 0)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     (lowered : List Locals.Stmt)
     {sourceEnv : List Name}
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hSource : targetCtx.layout = transition.source)
-    (hFuel : transition.schedule.promotions.length + 2 < targetFuel)
+    (hFuel : transition.schedule.discards.length + 2 < targetFuel)
     (hCtx : CtxCovers sourceCtx targetCtx)
     (hScoped : Functions.Scope.ExprScoped sourceEnv expr)
     (hSupported : Locals.InteractionSemantics.Expr.OpenSupported expr)
@@ -4252,7 +4311,7 @@ theorem compiledExprPoint
       lowered = [.expr expr] ++ StackLowering.transitionStmts transition)
     (hInitial : StateRel targetCtx.layout suffix returns source target) :
     ∃ code, ∃ artifact :
-      StackTransitionCompilation.Artifact targetCtx transition,
+      StackTransitionCompilation.RegularArtifact targetCtx transition,
       Locals.Block.compileOpen targetCtx { stmts := lowered } =
           some
             ((.code code) ::
@@ -4298,13 +4357,13 @@ theorem compiledLetPoint
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
     (sourceFuel targetFuel : Nat) (name : Name)
     (value : Functions.Expr 1)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     (lowered : List Locals.Stmt)
     {sourceEnv : List Name}
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hSource : name :: targetCtx.layout = transition.source)
-    (hFuel : transition.schedule.promotions.length + 2 < targetFuel)
+    (hFuel : transition.schedule.discards.length + 2 < targetFuel)
     (hCtx : CtxCovers sourceCtx targetCtx)
     (hFresh : name ∉ targetCtx.layout)
     (hScoped : Functions.Scope.ExprScoped sourceEnv value)
@@ -4315,7 +4374,7 @@ theorem compiledLetPoint
         StackLowering.transitionStmts transition)
     (hInitial : StateRel targetCtx.layout suffix returns source target) :
     ∃ code, ∃ artifact :
-      StackTransitionCompilation.Artifact
+      StackTransitionCompilation.RegularArtifact
         (targetCtx.withLayout (name :: targetCtx.layout)) transition,
       Locals.Block.compileOpen targetCtx { stmts := lowered } =
           some
@@ -4373,13 +4432,13 @@ theorem compiledAssignPoint
     (sourceCtx : Functions.Source.Ctx) (targetCtx : Locals.Ctx)
     (sourceFuel targetFuel : Nat) (name : Name)
     (value : Functions.Expr 1)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     (lowered : List Locals.Stmt)
     {sourceEnv : List Name}
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {source : Locals.Source.State} {target : Structured.RunState}
     (hSource : targetCtx.layout = transition.source)
-    (hFuel : transition.schedule.promotions.length + 2 < targetFuel)
+    (hFuel : transition.schedule.discards.length + 2 < targetFuel)
     (hCtx : CtxCovers sourceCtx targetCtx)
     (hNodup : targetCtx.layout.Nodup)
     (hScoped : Functions.Scope.ExprScoped sourceEnv value)
@@ -4391,7 +4450,7 @@ theorem compiledAssignPoint
     (hInitial : StateRel targetCtx.layout suffix returns source target) :
     ∃ (valueCode : Structured.Code) (swap : Structured.BasicOp),
       ∃ artifact :
-      StackTransitionCompilation.Artifact targetCtx transition,
+      StackTransitionCompilation.RegularArtifact targetCtx transition,
       Locals.Block.compileOpen targetCtx { stmts := lowered } =
           some
             ((.code
@@ -4451,7 +4510,7 @@ theorem compiledExprPointOfEquations
     (targetProgram : Expressions.Program)
     (targetCtx middleCtx : Locals.Ctx)
     (expr : Functions.Expr 0)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     (lowered : List Locals.Stmt) (headCode : List Expressions.Stmt)
     {sourceEnv : List Name}
     (hSource : targetCtx.layout = transition.source)
@@ -4464,12 +4523,12 @@ theorem compiledExprPointOfEquations
       Locals.Block.compileOpen targetCtx { stmts := lowered } =
         some (headCode, middleCtx)) :
     middleCtx = targetCtx.withLayout transition.schedule.target ∧
-      headCode.length = transition.schedule.promotions.length + 2 ∧
+      headCode.length = transition.schedule.discards.length + 2 ∧
       ∀ (sourceCtx : Functions.Source.Ctx)
         (sourceFuel targetFuel : Nat)
         {suffix : List Word} {returns : List Structured.ReturnDest}
         {source : Locals.Source.State} {target : Structured.RunState},
-        transition.schedule.promotions.length + 2 < targetFuel →
+        transition.schedule.discards.length + 2 < targetFuel →
         CtxCovers sourceCtx targetCtx →
         StateRel targetCtx.layout suffix returns source target →
         Simulation.Interaction.Rel
@@ -4481,7 +4540,7 @@ theorem compiledExprPointOfEquations
   obtain ⟨exprCode, hExprCompile⟩ :=
     StackAccessLowering.Expr.compileCode_of_check hAccess targetCtx rfl
   obtain ⟨artifact⟩ :=
-    StackTransitionCompilation.Transition.compileArtifact transition hSource
+    StackTransitionCompilation.RegularTransition.compileArtifact transition hSource
   have hCoreCompile :
       Locals.Stmt.compile targetCtx (.expr expr) =
         some ([.code exprCode], targetCtx) := by
@@ -4539,7 +4598,7 @@ theorem compiledExprControlPointOfEquations
     (returnNames : List Name)
     (targetCtx middleCtx : Locals.Ctx)
     (expr : Functions.Expr 0)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     (lowered : List Locals.Stmt) (headCode : List Expressions.Stmt)
     {sourceEnv : List Name}
     (hSource : targetCtx.layout = transition.source)
@@ -4565,7 +4624,7 @@ theorem compiledExprControlPointOfEquations
     hCtx hInitial
   have hCodeLength := Expressions.TargetFuel.Covers.length_lt hFuel
   have hNumericFuel :
-      transition.schedule.promotions.length + 2 < targetFuel := by
+      transition.schedule.discards.length + 2 < targetFuel := by
     rw [← hLength]
     exact hCodeLength
   have hRegular :=
@@ -4574,14 +4633,14 @@ theorem compiledExprControlPointOfEquations
   apply openRun_expr_controlCtx sourceProgram sourceCtx sourceFuel expr source
     targets middleCtx
   rw [hMiddle]
-  exact hCtx.afterTransition transition hSource
+  exact hCtx.afterRegularTransition transition hSource
 
 theorem compiledLetPointOfEquations
     (sourceProgram : Functions.Program)
     (targetProgram : Expressions.Program)
     (targetCtx middleCtx : Locals.Ctx)
     (name : Name) (value : Functions.Expr 1)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     (lowered : List Locals.Stmt) (headCode : List Expressions.Stmt)
     {sourceEnv : List Name}
     (hSource : name :: targetCtx.layout = transition.source)
@@ -4598,12 +4657,12 @@ theorem compiledLetPointOfEquations
     middleCtx =
         (targetCtx.withLayout (name :: targetCtx.layout)).withLayout
           transition.schedule.target ∧
-      headCode.length = transition.schedule.promotions.length + 2 ∧
+      headCode.length = transition.schedule.discards.length + 2 ∧
       ∀ (sourceCtx : Functions.Source.Ctx)
         (sourceFuel targetFuel : Nat)
         {suffix : List Word} {returns : List Structured.ReturnDest}
         {source : Locals.Source.State} {target : Structured.RunState},
-        transition.schedule.promotions.length + 2 < targetFuel →
+        transition.schedule.discards.length + 2 < targetFuel →
         CtxCovers sourceCtx targetCtx →
         StateRel targetCtx.layout suffix returns source target →
         Simulation.Interaction.Rel
@@ -4616,7 +4675,7 @@ theorem compiledLetPointOfEquations
     StackAccessLowering.Expr.compileCode_of_check hAccess targetCtx rfl
   let pointCtx := targetCtx.withLayout (name :: targetCtx.layout)
   obtain ⟨artifact⟩ :=
-    StackTransitionCompilation.Transition.compileArtifact transition
+    StackTransitionCompilation.RegularTransition.compileArtifact transition
       (ctx := pointCtx) (by simpa [pointCtx, Locals.Ctx.withLayout] using hSource)
   have hCoreCompile :
       Locals.Stmt.compile targetCtx (.let_ name value) =
@@ -4689,7 +4748,7 @@ theorem compiledLetControlPointOfEquations
     (returnNames : List Name)
     (targetCtx middleCtx : Locals.Ctx)
     (name : Name) (value : Functions.Expr 1)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     (lowered : List Locals.Stmt) (headCode : List Expressions.Stmt)
     {sourceEnv : List Name}
     (hSource : name :: targetCtx.layout = transition.source)
@@ -4718,7 +4777,7 @@ theorem compiledLetControlPointOfEquations
     hCtx hInitial
   have hCodeLength := Expressions.TargetFuel.Covers.length_lt hFuel
   have hNumericFuel :
-      transition.schedule.promotions.length + 2 < targetFuel := by
+      transition.schedule.discards.length + 2 < targetFuel := by
     rw [← hLength]
     exact hCodeLength
   have hRegular :=
@@ -4727,7 +4786,7 @@ theorem compiledLetControlPointOfEquations
   apply openRun_let_controlCtx sourceProgram sourceCtx sourceFuel name value
     source targets middleCtx
   rw [hMiddle]
-  exact (hCtx.prepend name).afterTransition transition
+  exact (hCtx.prepend name).afterRegularTransition transition
     (by simpa [Locals.Ctx.withLayout] using hSource)
 
 theorem compiledAssignPointOfEquations
@@ -4735,7 +4794,7 @@ theorem compiledAssignPointOfEquations
     (targetProgram : Expressions.Program)
     (targetCtx middleCtx : Locals.Ctx)
     (name : Name) (value : Functions.Expr 1)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     (lowered : List Locals.Stmt) (headCode : List Expressions.Stmt)
     {sourceEnv : List Name}
     (hSource : targetCtx.layout = transition.source)
@@ -4750,12 +4809,12 @@ theorem compiledAssignPointOfEquations
       Locals.Block.compileOpen targetCtx { stmts := lowered } =
         some (headCode, middleCtx)) :
     middleCtx = targetCtx.withLayout transition.schedule.target ∧
-      headCode.length = transition.schedule.promotions.length + 2 ∧
+      headCode.length = transition.schedule.discards.length + 2 ∧
       ∀ (sourceCtx : Functions.Source.Ctx)
         (sourceFuel targetFuel : Nat)
         {suffix : List Word} {returns : List Structured.ReturnDest}
         {source : Locals.Source.State} {target : Structured.RunState},
-        transition.schedule.promotions.length + 2 < targetFuel →
+        transition.schedule.discards.length + 2 < targetFuel →
         CtxCovers sourceCtx targetCtx →
         StateRel targetCtx.layout suffix returns source target →
         Simulation.Interaction.Rel
@@ -4770,7 +4829,7 @@ theorem compiledAssignPointOfEquations
     StackAccessLowering.Expr.compileCode_of_check
       hValueAccess targetCtx rfl
   obtain ⟨artifact⟩ :=
-    StackTransitionCompilation.Transition.compileArtifact transition hSource
+    StackTransitionCompilation.RegularTransition.compileArtifact transition hSource
   have hCoreCompile :
       Locals.Stmt.compile targetCtx (.assign name value) =
         some
@@ -4845,7 +4904,7 @@ theorem compiledAssignControlPointOfEquations
     (returnNames : List Name)
     (targetCtx middleCtx : Locals.Ctx)
     (name : Name) (value : Functions.Expr 1)
-    (transition : AllocationLayout.Transition)
+    (transition : AllocationLayout.RegularTransition)
     (lowered : List Locals.Stmt) (headCode : List Expressions.Stmt)
     {sourceEnv : List Name}
     (hSource : targetCtx.layout = transition.source)
@@ -4874,7 +4933,7 @@ theorem compiledAssignControlPointOfEquations
     hCtx hInitial
   have hCodeLength := Expressions.TargetFuel.Covers.length_lt hFuel
   have hNumericFuel :
-      transition.schedule.promotions.length + 2 < targetFuel := by
+      transition.schedule.discards.length + 2 < targetFuel := by
     rw [← hLength]
     exact hCodeLength
   have hRegular :=
@@ -4883,7 +4942,7 @@ theorem compiledAssignControlPointOfEquations
   apply openRun_assign_controlCtx sourceProgram sourceCtx sourceFuel name value
     source targets middleCtx
   rw [hMiddle]
-  exact hCtx.afterTransition transition hSource
+  exact hCtx.afterRegularTransition transition hSource
 
 end StackStatementPreservation
 end Functions

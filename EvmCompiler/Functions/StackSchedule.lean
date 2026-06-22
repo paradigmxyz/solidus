@@ -31,7 +31,7 @@ mutual
     beforeLayout : Locals.Layout
     statementLayout : Locals.Layout
     exit? : Option Join := none
-    retain? : Option Transition
+    retain? : Option RegularTransition
     regions : List Region := []
     fallsThrough : Bool := true
 end
@@ -166,7 +166,8 @@ mutual
           let afterDemand :=
             required pinned (nextLive facts.liveAfter rest restFacts)
           if covers point.statementLayout afterDemand then
-          let retain ← Transition.build? point.statementLayout afterDemand
+          let retain ←
+            RegularTransition.build? point.statementLayout afterDemand
           let point := { point with retain? := some retain }
           let (tail, finalLayout) ←
             scheduleStmtListFuelWithTargets targets fuel pinned retain.target
@@ -511,7 +512,7 @@ theorem scheduleStmtListFuelWithTargets_cons_components
           some rawPoint ∧
         ((rawPoint.fallsThrough = true ∧
             ∃ retain tail tailFinal,
-              Transition.build? rawPoint.statementLayout
+              RegularTransition.build? rawPoint.statementLayout
                   (required pinned
                     (nextLive facts.liveAfter rest restFacts)) =
                 some retain ∧
@@ -581,7 +582,7 @@ theorem scheduleStmtListFuelWithTargets_cons_fallsThrough_components
         scheduleStmtFuelWithTargets targets fuel pinned order.target stmt facts =
           some rawPoint ∧
         rawPoint.fallsThrough = true ∧
-        Transition.build? rawPoint.statementLayout
+        RegularTransition.build? rawPoint.statementLayout
             (required pinned (nextLive facts.liveAfter rest restFacts)) =
           some retain ∧
         point =
@@ -654,7 +655,7 @@ theorem scheduleStmtListFuel_cons_components
       scheduleStmtFuel fuel pinned order.target stmt facts = some rawPoint ∧
         ((rawPoint.fallsThrough = true ∧
             ∃ retain tail tailFinal,
-              Transition.build? rawPoint.statementLayout
+              RegularTransition.build? rawPoint.statementLayout
                   (required pinned
                     (nextLive facts.liveAfter rest restFacts)) =
                 some retain ∧
@@ -1550,9 +1551,7 @@ theorem scheduleStmtListFuelWithTargets_finalLayout_nodup
           · obtain ⟨_hFalls, retain, tail, tailFinal, hRetain, hTail,
                 _hPoints, hFinal⟩ := hFalls
             have hRetainedNodup : retain.target.Nodup :=
-              retain.target_nodup (by
-                rw [(Transition.build?_sound hRetain).1]
-                exact hPointNodup)
+              retain.target_nodup
             rw [hFinal]
             exact ih hRetainedNodup hTail
           · rw [hStops.2.2]
@@ -1657,7 +1656,7 @@ theorem scheduleStmtListFuel_expr_components
         point.statementLayout = order.target ∧
         point.retain? = some retain ∧ point.regions = [] ∧
         point.fallsThrough = true ∧
-        Transition.build? order.target
+        RegularTransition.build? order.target
             (required pinned (nextLive facts.liveAfter rest restFacts)) =
           some retain ∧
         scheduleStmtListFuel fuel pinned retain.target rest restFacts =
@@ -1703,7 +1702,7 @@ theorem scheduleStmtListFuel_let_components
         point.statementLayout = name :: order.target ∧
         point.retain? = some retain ∧ point.regions = [] ∧
         point.fallsThrough = true ∧
-        Transition.build? (name :: order.target)
+        RegularTransition.build? (name :: order.target)
             (required pinned (nextLive facts.liveAfter rest restFacts)) =
           some retain ∧
         scheduleStmtListFuel fuel pinned retain.target rest restFacts =
@@ -1748,7 +1747,7 @@ theorem scheduleStmtListFuel_assign_components
         point.statementLayout = order.target ∧
         point.retain? = some retain ∧ point.regions = [] ∧
         point.fallsThrough = true ∧
-        Transition.build? order.target
+        RegularTransition.build? order.target
             (required pinned (nextLive facts.liveAfter rest restFacts)) =
           some retain ∧
         scheduleStmtListFuel fuel pinned retain.target rest restFacts =

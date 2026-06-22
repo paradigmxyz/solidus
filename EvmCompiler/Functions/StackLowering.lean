@@ -23,8 +23,11 @@ structure Ctx where
   functions : List FunDef
   returns : List Name
 
-def transitionStmts (transition : Transition) : List Locals.Stmt :=
+def entryTransitionStmts (transition : Transition) : List Locals.Stmt :=
   transition.schedule.statements
+
+def transitionStmts (transition : RegularTransition) : List Locals.Stmt :=
+  transition.statements
 
 def exitStmts : Option Join → List Locals.Stmt
   | none => []
@@ -225,7 +228,7 @@ mutual
           lowerStmtListFuel fuel ctx source.stmts schedule.points
         some
           { stmts :=
-              transitionStmts schedule.entry ++ body ++
+              entryTransitionStmts schedule.entry ++ body ++
                 exitStmts schedule.exit? }
 
   def lowerStmtListFuel (fuel : Nat) (ctx : Ctx) :
@@ -328,7 +331,7 @@ theorem lowerBlockFuel_components
       lowerStmtListFuel (fuel - 1) ctx source.stmts schedule.points =
           some body ∧
         lowered.stmts =
-          transitionStmts schedule.entry ++ body ++
+          entryTransitionStmts schedule.entry ++ body ++
             exitStmts schedule.exit? := by
   cases fuel with
   | zero => simp [lowerBlockFuel] at hLower

@@ -238,6 +238,28 @@ if ! rg -Fq \
   failed=1
 fi
 
+if ! rg -Fq 'retain? : Option RegularTransition' \
+    EvmCompiler/Functions/StackSchedule.lean; then
+  printf '%s\n\n' \
+    'Regular stack-schedule points must use direct regular transitions.' >&2
+  failed=1
+fi
+
+if ! rg -Fq 'retain : Transition' \
+    EvmCompiler/Functions/AllocationLayout.lean; then
+  printf '%s\n\n' \
+    'Canonical control joins must retain the canonical transition owner.' >&2
+  failed=1
+fi
+
+if ! rg -Fq \
+    '#check EvmCompiler.Functions.StackTransitionCompilation.RegularTransition.compiledOpenRun' \
+    EvmCompiler/Verification.lean; then
+  printf '%s\n\n' \
+    'Verification root is missing direct regular-transition preservation.' >&2
+  failed=1
+fi
+
 if ! rg -Fq \
     '#check EvmCompiler.Functions.StackTransitionCompilation.Ordering.compiledOpenRun' \
     EvmCompiler/Verification.lean; then

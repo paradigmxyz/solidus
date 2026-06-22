@@ -248,6 +248,58 @@ theorem scheduleDiscards?_sound
       · contradiction
     · contradiction
 
+/-- A straight-line liveness transition. Unlike the canonical `Transition`
+used at joins, this may permute surviving names while directly removing dead
+slots. -/
+structure RegularTransition where
+  schedule : DiscardSchedule
+
+namespace RegularTransition
+
+def build? (layout : Locals.Layout) (live : LiveSet) :
+    Option RegularTransition := do
+  let schedule ← scheduleDiscards? layout live
+  some { schedule }
+
+def source (transition : RegularTransition) : Locals.Layout :=
+  transition.schedule.source
+
+def live (transition : RegularTransition) : LiveSet :=
+  transition.schedule.live
+
+def target (transition : RegularTransition) : Locals.Layout :=
+  transition.schedule.target
+
+def statements (transition : RegularTransition) : List Locals.Stmt :=
+  transition.schedule.statements ++ [.cleanupTo transition.target]
+
+def cost (transition : RegularTransition) : Nat :=
+  transition.schedule.discards.length
+
+theorem build?_sound
+    {layout : Locals.Layout} {live : LiveSet}
+    {transition : RegularTransition}
+    (hBuild : build? layout live = some transition) :
+    transition.source = layout ∧ transition.live = live ∧
+      runDiscards layout transition.schedule.discards =
+        some transition.target := by
+  unfold build? at hBuild
+  cases hSchedule : scheduleDiscards? layout live with
+  | none => simp [hSchedule] at hBuild
+  | some schedule =>
+      simp [hSchedule] at hBuild
+      subst transition
+      exact
+        ⟨(scheduleDiscards?_sound hSchedule).1,
+          (scheduleDiscards?_sound hSchedule).2.1,
+          (scheduleDiscards?_sound hSchedule).2.2.1⟩
+
+theorem target_nodup (transition : RegularTransition) :
+    transition.target.Nodup :=
+  transition.schedule.targetNodup
+
+end RegularTransition
+
 def scheduleRetain? (layout : Locals.Layout)
     (live : LiveSet) : Option Schedule := do
   let (promotions, promoted) ← build layout (dead layout live)

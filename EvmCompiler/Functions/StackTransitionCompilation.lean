@@ -173,6 +173,78 @@ theorem DiscardSchedule.compiledOpenRun
     StackTransitionPreservation.DiscardCodes.openRun artifact.codes hRel
   exact ⟨artifact, final, artifact.compileEq, hRun, by simpa using hFinalRel⟩
 
+structure RegularArtifact (ctx : Locals.Ctx)
+    (transition : RegularTransition) where
+  promotionCodes : List Structured.Code
+  cleanup : Structured.Code
+  codes :
+    DiscardCodes ctx transition.schedule.discards promotionCodes
+      (ctx.withLayout transition.target)
+  cleanupEq : cleanup = []
+  compileEq :
+    Locals.Block.compileOpen ctx { stmts := transition.statements } =
+      some
+        (promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code cleanup],
+         ctx.withLayout transition.target)
+
+theorem RegularTransition.compileArtifact
+    {ctx : Locals.Ctx} (transition : RegularTransition)
+    (hSource : ctx.layout = transition.source) :
+    Nonempty (RegularArtifact ctx transition) := by
+  obtain ⟨discardArtifact⟩ :=
+    DiscardSchedule.compileArtifact transition.schedule hSource
+  have hCleanup :
+      Locals.Block.compileOpen (ctx.withLayout transition.target)
+          { stmts := [.cleanupTo transition.target] } =
+        some
+          ([Expressions.Stmt.code []],
+            ctx.withLayout transition.target) := by
+    have hStmt :
+        Locals.Stmt.compile (ctx.withLayout transition.target)
+            (.cleanupTo transition.target) =
+          some
+            ([Expressions.Stmt.code []],
+              ctx.withLayout transition.target) := by
+      simp [Locals.Stmt.compile, Locals.Ctx.cleanupTo?,
+        Locals.Ctx.withLayout, Locals.codeStmt]
+    simpa [Locals.Block.compileOpen, hStmt]
+  refine
+    ⟨{ promotionCodes := discardArtifact.statementCodes
+       cleanup := []
+       codes := discardArtifact.codes
+       cleanupEq := rfl
+       compileEq := ?_ }⟩
+  have hAppend :=
+    Locals.Block.compileOpen_append discardArtifact.compileEq hCleanup
+  simpa [RegularTransition.statements] using hAppend
+
+theorem RegularTransition.compiledOpenRun
+    {ctx : Locals.Ctx} (transition : RegularTransition)
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hSource : ctx.layout = transition.source)
+    (hRel :
+      StackRelation.StateRel ctx.layout suffix returns source target) :
+    ∃ artifact : RegularArtifact ctx transition,
+      ∃ final,
+        Locals.Block.compileOpen ctx { stmts := transition.statements } =
+          some
+            (artifact.promotionCodes.map Expressions.Stmt.code ++
+              [Expressions.Stmt.code artifact.cleanup],
+             ctx.withLayout transition.target) ∧
+        Structured.InteractionSemantics.Code.openRun
+            (artifact.promotionCodes.flatten ++ artifact.cleanup) target =
+          .done (.ok final) ∧
+        StackRelation.StateRel transition.target suffix returns source final := by
+  obtain ⟨artifact⟩ := RegularTransition.compileArtifact transition hSource
+  obtain ⟨middle, hDiscardRun, hFinalRel⟩ :=
+    StackTransitionPreservation.DiscardCodes.openRun artifact.codes hRel
+  refine ⟨artifact, middle, artifact.compileEq, ?_, hFinalRel⟩
+  rw [artifact.cleanupEq, List.append_nil]
+  exact hDiscardRun
+
 theorem Promotion.compileCode
     {ctx : Locals.Ctx} {promotion : Promotion}
     {promoted : Locals.Layout}
@@ -540,6 +612,181 @@ theorem PromotionCodes.openBlockRun
       rw [hHeadBlock, Simulation.Interaction.bind_done_ok]
       simpa using hTailRun
 
+theorem DiscardCodes.openBlockRun
+    (program : Expressions.Program)
+    {ctx finalCtx : Locals.Ctx}
+    {discards : List Discard} {codes : List Structured.Code}
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hCodes : DiscardCodes ctx discards codes finalCtx)
+    (hRel : StackRelation.StateRel ctx.layout suffix returns source target)
+    (fuel : Nat) (hFuel : codes.length < fuel) :
+    ∃ final,
+      Expressions.InteractionSemantics.Block.openRun program fuel
+          { stmts := codes.map Expressions.Stmt.code } target =
+        .done (.ok (Structured.Outcome.regular final)) ∧
+      StackRelation.StateRel finalCtx.layout suffix returns source final := by
+  induction hCodes generalizing target fuel with
+  | nil ctx =>
+      refine ⟨target, ?_, hRel⟩
+      cases fuel with
+      | zero => simp at hFuel
+      | succ fuel =>
+          simp only [List.map_nil]
+          rw [Expressions.InteractionSemantics.Block.openRun_nil]
+          rfl
+  | @cons ctx discardedCtx finalCtx discarded discard rest raw head tail
+      hApply hCode hDiscardedCtx hHead hTail ih =>
+      obtain ⟨middle, hHeadRun, hMiddleRel⟩ :=
+        StackTransitionPreservation.Discard.openRunWithBind
+          hApply hCode hRel
+      have hHeadRun' :
+          Structured.InteractionSemantics.Code.openRun head target =
+            .done (.ok middle) := by
+        simpa [hHead] using hHeadRun
+      subst discardedCtx
+      obtain ⟨final, hTailRun, hFinalRel⟩ :=
+        ih hMiddleRel (fuel := fuel - 1) (by simp at hFuel ⊢; omega)
+      refine ⟨final, ?_, hFinalRel⟩
+      change
+        Expressions.InteractionSemantics.Block.openRun program fuel
+            { stmts := [.code head] ++
+                tail.map Expressions.Stmt.code } target =
+          .done (.ok (Structured.Outcome.regular final))
+      rw [Expressions.InteractionSemantics.Block.openRun_append]
+      have hHeadBlock :=
+        Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+          program fuel head target middle
+          (by simp at hFuel; omega) hHeadRun'
+      rw [hHeadBlock, Simulation.Interaction.bind_done_ok]
+      simpa using hTailRun
+
+theorem RegularArtifact.blockOpenRun
+    (program : Expressions.Program) {ctx : Locals.Ctx}
+    {transition : RegularTransition}
+    (artifact : RegularArtifact ctx transition)
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (fuel : Nat) (hFuel : artifact.promotionCodes.length + 1 < fuel)
+    (hRel :
+      StackRelation.StateRel ctx.layout suffix returns source target) :
+    ∃ final,
+      Expressions.InteractionSemantics.Block.openRun program fuel
+          { stmts :=
+              artifact.promotionCodes.map Expressions.Stmt.code ++
+                [Expressions.Stmt.code artifact.cleanup] } target =
+        .done (.ok (Structured.Outcome.regular final)) ∧
+      StackRelation.StateRel transition.target suffix returns source final := by
+  obtain ⟨middle, hDiscardRun, hFinalRel⟩ :=
+    DiscardCodes.openBlockRun program artifact.codes hRel fuel (by omega)
+  have hCleanupRun :
+      Structured.InteractionSemantics.Code.openRun artifact.cleanup middle =
+        .done (.ok middle) := by
+    rw [artifact.cleanupEq]
+    rfl
+  refine ⟨middle, ?_, hFinalRel⟩
+  rw [Expressions.InteractionSemantics.Block.openRun_append,
+    hDiscardRun, Simulation.Interaction.bind_done_ok]
+  have hCleanupBlock :=
+    Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
+      program (fuel - artifact.promotionCodes.length)
+        artifact.cleanup middle middle (by omega) hCleanupRun
+  simpa using hCleanupBlock
+
+theorem RegularArtifact.thenBlock
+    (program : Expressions.Program) {ctx : Locals.Ctx}
+    {transition : RegularTransition}
+    (artifact : RegularArtifact ctx transition)
+    {α : Type}
+    {resultRel :
+      Except EVMException α → Except EVMException Structured.Outcome → Prop}
+    {sourceRun : Simulation.Interaction EVMException α}
+    {body : List Expressions.Stmt}
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (fuel : Nat) (hFuel : artifact.promotionCodes.length + 1 < fuel)
+    (hInitial :
+      StackRelation.StateRel ctx.layout suffix returns source target)
+    (hBody :
+      ∀ {transitionedTarget : Structured.RunState},
+        StackRelation.StateRel transition.target suffix returns
+            source transitionedTarget →
+        Simulation.Interaction.Rel resultRel sourceRun
+          (Expressions.InteractionSemantics.Block.openRun program
+            (fuel - (artifact.promotionCodes.length + 1))
+            { stmts := body } transitionedTarget)) :
+    Simulation.Interaction.Rel resultRel sourceRun
+      (Expressions.InteractionSemantics.Block.openRun program fuel
+        { stmts :=
+            artifact.promotionCodes.map Expressions.Stmt.code ++
+              [Expressions.Stmt.code artifact.cleanup] ++ body }
+        target) := by
+  obtain ⟨transitionedTarget, hTransitionRun, hTransitionedRel⟩ :=
+    artifact.blockOpenRun program fuel hFuel hInitial
+  rw [show
+      artifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code artifact.cleanup] ++ body =
+        (artifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code artifact.cleanup]) ++ body by
+      simp [List.append_assoc]]
+  rw [Expressions.InteractionSemantics.Block.openRun_append,
+    hTransitionRun, Simulation.Interaction.bind_done_ok]
+  have hLength :
+      (artifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code artifact.cleanup]).length =
+        artifact.promotionCodes.length + 1 := by simp
+  rw [hLength]
+  exact hBody hTransitionedRel
+
+theorem RegularArtifact.thenBlockForward
+    (program : Expressions.Program) {ctx : Locals.Ctx}
+    {transition : RegularTransition}
+    (artifact : RegularArtifact ctx transition)
+    {Error α : Type} {truncated : Error → Prop}
+    {resultRel :
+      Except Error α → Except EVMException Structured.Outcome → Prop}
+    {sourceRun : Simulation.Interaction Error α}
+    {body : List Expressions.Stmt}
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (fuel : Nat) (hFuel : artifact.promotionCodes.length + 1 < fuel)
+    (hInitial :
+      StackRelation.StateRel ctx.layout suffix returns source target)
+    (hBody :
+      ∀ {transitionedTarget : Structured.RunState},
+        StackRelation.StateRel transition.target suffix returns
+            source transitionedTarget →
+        Simulation.Interaction.ForwardRel truncated resultRel sourceRun
+          (Expressions.InteractionSemantics.Block.openRun program
+            (fuel - (artifact.promotionCodes.length + 1))
+            { stmts := body } transitionedTarget)) :
+    Simulation.Interaction.ForwardRel truncated resultRel sourceRun
+      (Expressions.InteractionSemantics.Block.openRun program fuel
+        { stmts :=
+            artifact.promotionCodes.map Expressions.Stmt.code ++
+              [Expressions.Stmt.code artifact.cleanup] ++ body }
+        target) := by
+  obtain ⟨transitionedTarget, hTransitionRun, hTransitionedRel⟩ :=
+    artifact.blockOpenRun program fuel hFuel hInitial
+  rw [show
+      artifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code artifact.cleanup] ++ body =
+        (artifact.promotionCodes.map Expressions.Stmt.code ++
+            [Expressions.Stmt.code artifact.cleanup]) ++ body by
+      simp [List.append_assoc]]
+  rw [Expressions.InteractionSemantics.Block.openRun_append,
+    hTransitionRun, Simulation.Interaction.bind_done_ok]
+  have hLength :
+      (artifact.promotionCodes.map Expressions.Stmt.code ++
+          [Expressions.Stmt.code artifact.cleanup]).length =
+        artifact.promotionCodes.length + 1 := by simp
+  rw [hLength]
+  exact hBody hTransitionedRel
+
 theorem OrderingArtifact.blockOpenRun
     (program : Expressions.Program) {ctx : Locals.Ctx}
     {ordering : AllocationLayout.Ordering}
@@ -887,6 +1134,36 @@ theorem Transition.compiledBlockOpenRun
         StackRelation.StateRel transition.schedule.target suffix returns
           source final := by
   obtain ⟨artifact⟩ := Transition.compileArtifact transition hSource
+  obtain ⟨final, hRun, hFinalRel⟩ :=
+    artifact.blockOpenRun program (artifact.promotionCodes.length + 2)
+      (by omega) hRel
+  exact ⟨artifact, final, artifact.compileEq, hRun, hFinalRel⟩
+
+theorem RegularTransition.compiledBlockOpenRun
+    (program : Expressions.Program) {ctx : Locals.Ctx}
+    (transition : RegularTransition)
+    {suffix : List StackRelation.Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hSource : ctx.layout = transition.source)
+    (hRel :
+      StackRelation.StateRel ctx.layout suffix returns source target) :
+    ∃ artifact : RegularArtifact ctx transition,
+      ∃ final,
+        Locals.Block.compileOpen ctx { stmts := transition.statements } =
+          some
+            (artifact.promotionCodes.map Expressions.Stmt.code ++
+              [Expressions.Stmt.code artifact.cleanup],
+             ctx.withLayout transition.target) ∧
+        Expressions.InteractionSemantics.Block.openRun program
+            (artifact.promotionCodes.length + 2)
+            { stmts :=
+                artifact.promotionCodes.map Expressions.Stmt.code ++
+                  [Expressions.Stmt.code artifact.cleanup] }
+            target =
+          .done (.ok (Structured.Outcome.regular final)) ∧
+        StackRelation.StateRel transition.target suffix returns source final := by
+  obtain ⟨artifact⟩ := RegularTransition.compileArtifact transition hSource
   obtain ⟨final, hRun, hFinalRel⟩ :=
     artifact.blockOpenRun program (artifact.promotionCodes.length + 2)
       (by omega) hRel

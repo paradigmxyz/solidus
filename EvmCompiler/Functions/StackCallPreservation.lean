@@ -1739,7 +1739,7 @@ theorem compiledOfCompilers
     (hArgSupported :
       Functions.InteractionSemantics.ArgList.OpenSupported args)
     (hRetainSource :
-      ∀ {retain : AllocationLayout.Transition},
+      ∀ {retain : AllocationLayout.RegularTransition},
         point.retain? = some retain →
         targetCtx.layout = retain.source)
     (hLower :
@@ -1829,7 +1829,7 @@ theorem compiledOfCompilersAtSucc
     (hArgSupported :
       Functions.InteractionSemantics.ArgList.OpenSupported args)
     (hRetainSource :
-      ∀ {retain : AllocationLayout.Transition},
+      ∀ {retain : AllocationLayout.RegularTransition},
         point.retain? = some retain →
         targetCtx.layout = retain.source)
     (hLower :
@@ -1914,7 +1914,7 @@ theorem compiledOfCompilersAtZero
     (code : List Expressions.Stmt)
     (lowerFuel : Nat)
     (hRetainSource :
-      ∀ {retain : AllocationLayout.Transition},
+      ∀ {retain : AllocationLayout.RegularTransition},
         point.retain? = some retain →
         targetCtx.layout = retain.source)
     (hLower :

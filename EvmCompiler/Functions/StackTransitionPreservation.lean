@@ -110,6 +110,15 @@ inductive DiscardCodes :
 
 namespace DiscardCodes
 
+theorem code_length
+    {ctx finalCtx : Locals.Ctx} {discards : List Discard}
+    {codes : List Structured.Code}
+    (hCodes : DiscardCodes ctx discards codes finalCtx) :
+    codes.length = discards.length := by
+  induction hCodes with
+  | nil => rfl
+  | cons _ _ _ _ hTail ih => simp [ih]
+
 theorem openRun
     {ctx finalCtx : Locals.Ctx} {discards : List Discard}
     {codes : List Structured.Code}

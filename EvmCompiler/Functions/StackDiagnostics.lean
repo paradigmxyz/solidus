@@ -132,6 +132,44 @@ def transition (transition : AllocationLayout.Transition) : DiscardMetrics :=
             restoreSwaps := restoreSwaps
             discards := schedule.discards.length }
 
+def regularTransition
+    (transition : AllocationLayout.RegularTransition) : DiscardMetrics :=
+  let directSwaps :=
+    transition.schedule.discards.foldl
+      (fun total discard =>
+        total + if discard.depth = 1 then 0 else 1) 0
+  match AllocationLayout.Transition.build?
+      transition.source transition.live with
+  | none =>
+      { transitions := 1
+        successful := 1
+        directSwaps := directSwaps
+        restoreFailures := 1
+        discards := transition.schedule.discards.length }
+  | some old =>
+      let oldSwaps :=
+        old.schedule.promotions.foldl
+          (fun total promotion => total + (promotion.depth - 1)) 0
+      match AllocationLayout.Ordering.build?
+          transition.target old.target with
+      | none =>
+          { transitions := 1
+            successful := 1
+            oldSwaps := oldSwaps
+            directSwaps := directSwaps
+            restoreFailures := 1
+            discards := transition.schedule.discards.length }
+      | some restore =>
+          let restoreSwaps :=
+            restore.promotions.foldl
+              (fun total promotion => total + (promotion.depth - 1)) 0
+          { transitions := 1
+            successful := 1
+            oldSwaps := oldSwaps
+            directSwaps := directSwaps
+            restoreSwaps := restoreSwaps
+            discards := transition.schedule.discards.length }
+
 def join (join : AllocationLayout.Join) : DiscardMetrics :=
   transition join.retain
 
@@ -148,7 +186,7 @@ mutual
     | _, [] => {}
     | fuel + 1, point :: rest =>
         let here :=
-          combine (point.retain?.map transition |>.getD {})
+          combine (point.retain?.map regularTransition |>.getD {})
             (combine (point.exit?.map join |>.getD {})
               (regionsFuel fuel point.regions))
         combine here (pointsFuel fuel rest)

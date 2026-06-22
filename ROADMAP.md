@@ -122,7 +122,7 @@ elimination are not prerequisites for Permit2 or Aave.
 - [x] Define and prove compiler-owned direct dead-slot discards: each selected
   slot uses `POP` or one `SWAP` plus `POP`, preserves the dynamic relation and
   dormant suffix, and is computed without a public schedule premise.
-- [ ] Replace regular-point canonical retain transitions with direct discard
+- [x] Replace regular-point canonical retain transitions with direct discard
   schedules and carry their arbitrary live permutations to the next point;
   retain canonical restoration only at actual control joins and call returns.
 - [x] Prove the retain artifact executes to its recorded promoted layout,
@@ -263,6 +263,10 @@ premise or hidden memory access in the current checked artifact path.
   5.60 seconds and 108 MB RSS for Permit2, and 15.97 seconds and 140 MB RSS for
   Aave. Their recursive images are 22,970 and 43,983 bytes respectively; both
   have zero inaccessible-depth failures and use stack-only allocation.
+- [x] Select proved direct discards at straight-line fallthrough points while
+  preserving canonical entry/join/return transitions. Exact recursive images
+  are now 20,732 bytes for Permit2 and 40,185 bytes for linked Aave; native
+  diagnostics remain practical at 8.5s/107 MB and 24.2s/135 MB respectively.
 
 ### 9. Optional Code Density
 
