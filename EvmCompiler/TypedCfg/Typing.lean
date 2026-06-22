@@ -515,12 +515,17 @@ def allBlocksTypedIndexed? (program : Program)
   simp [allBlocksTypedIndexed?, AllBlocksTyped,
     List.forall_iff_forall_mem]
 
+@[simp] theorem blockLabels_nodup_iff (program : Program) :
+    (program.blocks.map Block.label).Nodup ↔ program.LabelsUnique := by
+  unfold List.Nodup LabelsUnique
+  rw [List.pairwise_map]
+
 def wellTypedIndexed? (program : Program) : Bool :=
   let index := program.buildLabelShapeIndex
-  decide program.LabelsUnique &&
+  Assembly.LabelList.unique? (program.blocks.map Block.label) &&
     allBlocksTypedIndexed? program index &&
     decide (program.findBlock? program.entry ≠ none) &&
-    decide program.EmittedLabelsUnique
+    Assembly.LabelList.unique? program.EmittedLabels
 
 @[simp] theorem wellTypedIndexed?_eq_true_iff (program : Program) :
     program.wellTypedIndexed? = true ↔ program.WellTyped := by

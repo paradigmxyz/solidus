@@ -25,8 +25,8 @@ Yul -> Functions -> allocated Locals/Expressions -> Structured
     -> TypedCfg -> Assembly -> bytecode
 ```
 
-The allocation boundary computes liveness, layouts, shuffles,
-rematerialization choices, and any guarded spill plan. Its public theorem takes
+The allocation boundary computes liveness, layouts, and shuffles. The exact
+contracts need neither rematerialization nor a guarded spill plan. Its public theorem takes
 accepted source, related initial states, source execution/resource premises,
 and compiler success; it does not take generated schedules, layouts,
 certificates, or preservation oracles as premises. `Yul.EndToEnd` remains a
@@ -82,7 +82,7 @@ elimination are not prerequisites for Permit2 or Aave.
   fixture reservation as evidence, not completion.
 - [x] Audit the current monotone-slot allocator and Solidity's legacy and SSA
   stack-allocation strategies.
-- [ ] Add allocation diagnostics that report peak live values, shuffle cost,
+- [x] Add allocation diagnostics that report peak live values, shuffle cost,
   rematerializations, spill words, compile time, and output bytes without
   changing compiler semantics.
 - [x] Route exact pinned Permit2 and linked Aave Pool through liveness,
@@ -193,7 +193,11 @@ elimination are not prerequisites for Permit2 or Aave.
 - [x] Keep call artifacts compiler-owned and absent from public theorem
   premises.
 
-### 5. Rematerialization Owner
+### 5. Rematerialization Contingency
+
+The exact-contract viability gate does not require source normalization or
+rematerialization. These are deliberately deferred until a general input
+exhibits irreducible stack pressure after next-use scheduling.
 
 - [ ] Define a conservative `StableEffectFree` predicate over Functions
   expressions.
@@ -203,7 +207,11 @@ elimination are not prerequisites for Permit2 or Aave.
 - [ ] Integrate rematerialization only when it relieves an otherwise
   inaccessible/deep live value.
 
-### 6. Guarded Spill Fallback
+### 6. Guarded Spill Contingency
+
+The exact contracts compile stack-only. Guarded spilling remains a possible
+future fallback for programs that cannot be scheduled stack-only; it is not a
+premise or hidden memory access in the current checked artifact path.
 
 - [ ] Compute the minimal spill set only after stack scheduling and
   rematerialization fail.
@@ -242,9 +250,13 @@ elimination are not prerequisites for Permit2 or Aave.
   exact root-image raw bytecode under the horizontal open-world theorem, with
   compiler-owned child validity and no legacy allocation metadata. Resource
   observer replay remains the existing separately composed semantic boundary.
-- [ ] Profile all analysis and compilation stages; remove algorithmic
+- [x] Profile all analysis and compilation stages; remove algorithmic
   superlinearity on the exact contracts.
-- [ ] Record compile time, peak memory, allocation statistics, and output size.
+- [x] Record compile time, peak memory, allocation statistics, and output size.
+  After indexed label lookup and uniqueness checks, complete diagnostics take
+  5.60 seconds and 108 MB RSS for Permit2, and 15.97 seconds and 140 MB RSS for
+  Aave. Their recursive images are 22,970 and 43,983 bytes respectively; both
+  have zero inaccessible-depth failures and use stack-only allocation.
 
 ### 9. Optional Code Density
 
@@ -252,7 +264,7 @@ elimination are not prerequisites for Permit2 or Aave.
   local-to-word slot anonymization with a zero-byte Structured/TypedCfg relabel
   marker and prove that adjacent pass separately. The existing coercion remains
   the correctness baseline.
-- [ ] If deployable output still requires it, implement compact `PUSH` encoding
+- [x] If deployable output still requires it, implement compact `PUSH` encoding
   as a separate Assembly-owned pass with decoding and execution preservation.
   It must not be mixed into allocation correctness.
 - [x] Executable viability: minimum-width constants, bounded two-name

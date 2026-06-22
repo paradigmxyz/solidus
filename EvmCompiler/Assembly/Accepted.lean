@@ -102,7 +102,7 @@ theorem noDuplicates_eq_true_iff_nodup
       simp [noDuplicates, ih, List.contains_iff_mem]
 
 def labelsUnique (program : Program) : Bool :=
-  noDuplicates program.labels
+  LabelList.unique? program.labels
 
 def instructionsAccepted (program : Program) : Bool :=
   program.all Instr.accepted
@@ -123,8 +123,7 @@ theorem labels_nodup_of_accepted {program : Program}
   have hUnique : program.labelsUnique = true := by
     simp only [accepted, Bool.and_eq_true] at hAccepted
     exact hAccepted.1.2
-  exact
-    (noDuplicates_eq_true_iff_nodup program.labels).mp hUnique
+  exact (LabelList.unique?_eq_true_iff program.labels).mp hUnique
 
 theorem target_resolves_of_accepted {program : Program}
     {instr : Instr} {target : Label}

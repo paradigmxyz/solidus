@@ -1,5 +1,6 @@
 import EvmCompiler.Assembly.Syntax
 import Std.Data.HashMap.Lemmas
+import Std.Data.HashSet.Lemmas
 
 namespace EvmCompiler
 namespace Assembly
@@ -81,6 +82,59 @@ def ofDecoded? (op : EVMOp) (arg : Option (Word × Nat)) :
     ofDecoded? EvmYul.Operation.CREATE2 none = some (.prim .create2) := rfl
 
 end TargetInstr
+
+namespace LabelList
+
+def uniqueFrom? (seen : Std.HashSet Label) : List Label → Bool
+  | [] => true
+  | label :: rest =>
+      if seen.contains label then false
+      else uniqueFrom? (seen.insert label) rest
+
+def unique? (labels : List Label) : Bool :=
+  uniqueFrom? {} labels
+
+theorem uniqueFrom?_eq_true_iff
+    (seen : Std.HashSet Label) (labels : List Label) :
+    uniqueFrom? seen labels = true ↔
+      labels.Nodup ∧ ∀ label ∈ labels, label ∉ seen := by
+  induction labels generalizing seen with
+  | nil => simp [uniqueFrom?]
+  | cons label rest ih =>
+      by_cases hMem : label ∈ seen
+      · have hContains : seen.contains label = true :=
+          Std.HashSet.mem_iff_contains.mp hMem
+        simp [uniqueFrom?, hContains, hMem]
+      · have hContains : seen.contains label = false :=
+          Std.HashSet.contains_eq_false_iff_not_mem.mpr hMem
+        rw [uniqueFrom?, if_neg (by simpa using hContains), ih]
+        simp only [List.nodup_cons, List.mem_cons, forall_eq_or_imp,
+          Std.HashSet.mem_insert]
+        constructor
+        · rintro ⟨hRestNodup, hFresh⟩
+          refine ⟨⟨?_, hRestNodup⟩, hMem, ?_⟩
+          · intro hLabelRest
+            exact (hFresh label hLabelRest) (Or.inl (by simp))
+          intro candidate hCandidate
+          have hNotInserted := hFresh candidate hCandidate
+          intro hCandidateMem
+          exact hNotInserted (Or.inr hCandidateMem)
+        · rintro ⟨⟨hNotRest, hRestNodup⟩, _hHeadFresh, hRestFresh⟩
+          refine ⟨hRestNodup, ?_⟩
+          intro candidate hCandidate
+          intro hInserted
+          rcases hInserted with hEq | hSeen
+          · apply hNotRest
+            have hLabelEq : label = candidate := by simpa using hEq
+            simpa [hLabelEq] using hCandidate
+          · exact hRestFresh candidate hCandidate hSeen
+
+@[simp] theorem unique?_eq_true_iff (labels : List Label) :
+    unique? labels = true ↔ labels.Nodup := by
+  rw [unique?, uniqueFrom?_eq_true_iff]
+  simp
+
+end LabelList
 
 namespace Program
 
