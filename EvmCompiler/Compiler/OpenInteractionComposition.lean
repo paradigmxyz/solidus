@@ -2266,9 +2266,12 @@ theorem compiledObjectRootToBytecode
       hObject
   exact hCompiled.observedBytecodeReplay hDecoding hTerminal
 
-/-- Public proposition for open-world terminal compiler correctness. Its
-premises are source-facing; all lowering artifacts are hidden inside
-`CompiledOpenWorldRel`. -/
+/-- Legacy proposition for open-world terminal compiler correctness. Lowering
+artifacts are hidden inside `CompiledOpenWorldRel`, but the current
+`SourceSafety` premise is globally quantified and formally uninhabited. This
+proposition cannot be instantiated until that premise is replaced by
+program/run-indexed scratch safety. The separate verified-stack raw-bytecode
+theorem below does not depend on this interface. -/
 def OpenWorldTerminalCorrect : Prop :=
   forall
     (profile : Yul.SolcValidation.DialectProfile)

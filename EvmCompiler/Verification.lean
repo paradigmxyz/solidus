@@ -224,6 +224,8 @@ import EvmCompiler.Yul.StateRelation
 #check EvmCompiler.Functions.AllocationInteractionSafety.SourceSafety
 #check EvmCompiler.Functions.AllocationInteractionSafety.SourceSafety.exprSeq
 #check EvmCompiler.Functions.AllocationInteractionSafety.SourceSafety.argList
+#check EvmCompiler.Functions.AllocationInteractionSafety.SourceSafety.uninhabited
+#print axioms EvmCompiler.Functions.AllocationInteractionSafety.SourceSafety.uninhabited
 #check EvmCompiler.Functions.AllocationInteractionResourceComposition.block_cons_successful
 #check EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.cons_of_parts_successful
 #check EvmCompiler.Functions.AllocationInteractionComposition.cons_successful

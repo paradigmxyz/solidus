@@ -52,12 +52,14 @@ def ArgListSafe (contract : MemoryContract.Contract) :
           (Functions.InteractionSemantics.Expr.openEvalOne arg source)
 
 /--
-Source-facing reservation safety for canonical open execution.
+Legacy globally quantified reservation-safety interface.
 
-The interface is indexed by actual successful source evaluations. It contains
-no lowering result, target state, replay transcript, or recursive compiler
-obligation. Scopedness and live-definedness discharge ordinary variable
-lookups; the remaining content is precisely the source memory contract.
+Although each clause is guarded by a successful source evaluation, the
+quantifiers range over every scoped expression and source state rather than one
+program execution. `SourceSafety.uninhabited` below shows that no contract can
+satisfy this interface. New public theorems must instead use program/run-indexed
+safety; this structure remains temporarily because the legacy mixed-allocation
+proof route still consumes it.
 -/
 structure SourceSafety (contract : MemoryContract.Contract) : Prop where
   expr :
@@ -188,6 +190,50 @@ theorem argList
           exact
             ih (fun expr hMem => hScoped expr (by simp [hMem]))
               (hDefined.congr_vars hOutcome.2) hRestSuccess
+
+private def counterexampleSource : SourceState :=
+  { shared := default
+    vars := fun _ => none }
+
+private def counterexampleAddress : Word :=
+  EvmYul.UInt256.ofNat USize.size
+
+private def counterexampleExpr : Functions.Expr 0 :=
+  .prim .mstore
+    (Locals.ExprSeq.cons (.lit (EvmYul.UInt256.ofNat 0))
+      (Locals.ExprSeq.cons (.lit counterexampleAddress) .nil))
+
+/-- The legacy global interface is inconsistent. Ordinary gasless evaluation
+accepts a closed `mstore` at the host address-space limit, while `ExprSafe`
+correctly rejects that write. The contradiction is independent of the scratch
+reservation, so it applies to every memory contract. -/
+theorem uninhabited (contract : MemoryContract.Contract) :
+    ¬ SourceSafety contract := by
+  intro hSafety
+  have hSafe := hSafety.expr
+    (expr := counterexampleExpr) (source := counterexampleSource)
+    (live := [])
+    (by simp [counterexampleExpr, Functions.Scope.ExprScoped,
+      Functions.Scope.ExprSeqScoped])
+    (by simp [AllocationInteractionRelation.LiveDefined])
+    (by
+      change Simulation.Interaction.AllDone _ (.done (.ok _))
+      exact .done trivial)
+  have hPrim := hSafe.2.2
+  change Simulation.Interaction.AllDone
+    (AllocationInteractionPrimitive.PrimitiveArgsSafe contract .mstore)
+    (.done (.ok (counterexampleSource,
+      [EvmYul.UInt256.ofNat 0, counterexampleAddress]))) at hPrim
+  cases hPrim with
+  | done hArgs =>
+      have hHost := hArgs.2.2.2
+      simp only [Simulation.MemorySafety.PrimitiveHostSafe,
+        List.reverse_cons, List.reverse_nil, List.nil_append,
+        List.singleton_append] at hHost
+      rw [counterexampleAddress,
+        EvmYul.UInt256.toNat_ofNat_of_lt
+          Compiler.MemoryRelation.usize_size_lt_uint256_size] at hHost
+      omega
 
 end SourceSafety
 

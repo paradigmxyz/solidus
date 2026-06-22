@@ -390,9 +390,12 @@ boundaries. Corpus acceptance alone does not discharge them.
   the open-world theorem as the compositional compiler layer.
 - [ ] Verify the solc Yul-AST import and Functions normalization performed by
   the Python bridge, or make that frontend an explicit audited trust boundary.
-- [ ] Make memory safety program/run-indexed and derive host bounds from the
-  gas-aware execution theorem instead of requiring global safety for arbitrary
-  source expressions.
+- [ ] Replace `AllocationInteractionSafety.SourceSafety`, now formally proved
+  uninhabited for every contract, with program/run-indexed safety. Split the
+  public allocator theorem: stack-only artifacts need no source memory premise;
+  scratch-backed artifacts use the canonical parameterized Functions semantics
+  to check only the concrete source run. Later derive host bounds from the
+  gas-aware EVM theorem rather than source-language restrictions.
 - [ ] Carry the selected EVM fork/dialect in checked artifacts. Cover or
   honestly reject every solc-emittable builtin for that profile, including
   Osaka additions and supported `verbatim` forms.

@@ -375,8 +375,10 @@ theorem closedResourceCorrect : ClosedResourceCorrect := by
 abbrev OpenWorldTerminalCorrect :=
   Compiler.OpenInteractionComposition.OpenWorldTerminalCorrect
 
-/-- Public open-world terminal compiler correctness. The end-to-end module is
-only a short alias of the designated horizontal composition theorem. -/
+/-- Legacy open-world terminal composition alias. Its current `SourceSafety`
+premise is formally uninhabited; use the separate checked stack-object theorem
+until the mixed-allocation route receives program/run-indexed scratch safety.
+The end-to-end module remains only a short alias of the horizontal theorem. -/
 theorem openWorldTerminalCorrect : OpenWorldTerminalCorrect :=
   Compiler.OpenInteractionComposition.openWorldTerminalCorrect
 
