@@ -215,6 +215,25 @@ theorem compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
               hParts.2.1, hParts.2.2.1, hParts.2.2.2.1,
               hParts.2.2.2.2.1, hParts.2.2.2.2.2.2⟩
 
+theorem compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
+    {object : Object} {linkerSymbols : List (Name × Word)}
+    {artifact : VerifiedStackObjectArtifact}
+    (hCompile :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact) :
+    ∃ plan : ObjectArtifactPlan,
+      artifact.image.bytes =
+        artifact.codeArtifact.compact.bytes.toList ++
+          verifiedCodeSentinel ++ plan.payload := by
+  obtain ⟨_children, plan, _codeArtifact, _hChildren, _hPlan, _hFinish, hCode,
+      _hArtifactChildren, _hContext, _hChildImages, _hPayload, hImage⟩ :=
+    compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts hCompile
+  obtain ⟨_hResolved, _hOrdered, _hLower, _hStack, _pinnedPushPcs,
+      _hPins, _hCompact, hBytes, _hMarker⟩ :=
+    compileVerifiedStackCodeArtifactIn?_parts hCode
+  refine ⟨plan, ?_⟩
+  rw [hImage, hBytes]
+
 theorem compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
     {object : Object} {linkerSymbols : List (Name × Word)}
     {artifact : VerifiedStackObjectArtifact}
@@ -231,8 +250,9 @@ theorem compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
       _hPins, hCompact, hBytes, _hMarker⟩ :=
     compileVerifiedStackCodeArtifactIn?_parts hCode
   rw [hBytes]
-  exact Assembly.Compact.compile?_decodingCorrect_with_suffix
-    hCompact plan.payload
+  simpa [List.append_assoc] using
+    (Assembly.Compact.compile?_decodingCorrect_with_suffix
+      hCompact (verifiedCodeSentinel ++ plan.payload))
 
 mutual
   inductive VerifiedStackObjectArtifact.ValidFor

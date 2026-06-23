@@ -2389,16 +2389,18 @@ def compile? (source : Assembly.Program)
   if blocksCodeMatches? blocks program.code then
     if labelsConsistent? blocks labels then
       if program.wellFormed? then
-        some
-          { pinnedPushPcs := pinnedPushPcs
-            physicalSource := physicalSource
-            branchWidth := branchWidth
-            labels := labels
-            codeLength := codeLength
-            preparation := preparation
-            blocks := blocks
-            program := program
-            bytes := encode program }
+        if Program.codeByteLength program.code + 1 < 18446744073709551616 then
+          some
+            { pinnedPushPcs := pinnedPushPcs
+              physicalSource := physicalSource
+              branchWidth := branchWidth
+              labels := labels
+              codeLength := codeLength
+              preparation := preparation
+              blocks := blocks
+              program := program
+              bytes := encode program }
+        else none
       else
         none
     else
@@ -2432,6 +2434,8 @@ structure Artifact.ValidFor (artifact : Artifact)
       Program.codeByteLength artifact.program.code < 18446744073709551616 ∧
         artifact.program.PCIndependent
   bytes : artifact.bytes = encode artifact.program
+  sentinelFits : Program.codeByteLength artifact.program.code + 1 <
+    18446744073709551616
 
 theorem compile?_valid {source : Assembly.Program} {pinnedPushPcs : List Nat}
     {artifact : Artifact}
@@ -2480,12 +2484,19 @@ theorem compile?_valid {source : Assembly.Program} {pinnedPushPcs : List Nat}
                                 by_cases hWellFormed :
                                     program.wellFormed? = true
                                 · simp [hWellFormed] at hCompile
-                                  cases hCompile
-                                  exact Artifact.ValidFor.mk hSourceFits hPhysical.symm
-                                    hPreparation hPreparationSafe hWidth hLayout
-                                    hEmit hBlocks hCode
-                                    (labelsConsistent_of_check hLabels)
-                                    (Program.wellFormed_of_check hWellFormed) rfl
+                                  by_cases hSentinel :
+                                      Program.codeByteLength program.code + 1 <
+                                        18446744073709551616
+                                  · simp [hSentinel] at hCompile
+                                    cases hCompile
+                                    exact Artifact.ValidFor.mk hSourceFits
+                                      hPhysical.symm hPreparation
+                                      hPreparationSafe hWidth hLayout hEmit
+                                      hBlocks hCode
+                                      (labelsConsistent_of_check hLabels)
+                                      (Program.wellFormed_of_check hWellFormed)
+                                      rfl hSentinel
+                                  · simp [hSentinel] at hCompile
                                 · simp [hWellFormed] at hCompile
                               · simp [hLabels] at hCompile
                             · simp [hCodeCheck] at hCompile
@@ -3848,6 +3859,64 @@ def openRunNResult (bytes : ByteArray) (fuel : Nat) (state : EVMState) :
     Assembly.InteractionSemantics.OpenStepResult :=
   Assembly.Control.runNResultWith (openStepResult bytes) fuel state
 
+/-- The compiler-sized invalid sentinel makes falloff stop before arbitrary
+object payload bytes. -/
+theorem compile?_sentinel_openStepResult
+    {source : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Artifact}
+    (hCompile : compile? source pinnedPushPcs = some artifact)
+    (payload : List UInt8) {state : EVMState}
+    (hPc : state.pc = EvmYul.UInt256.ofNat
+      (Program.codeByteLength artifact.program.code)) :
+    openStepResult
+        (Bytecode.ofList
+          (artifact.bytes.toList ++ (encodeInstr (.prim .invalid) ++ payload)))
+        state =
+      .done (.error .InvalidInstruction) := by
+  have hValid := compile?_valid hCompile
+  have hBytes : artifact.bytes.toList =
+      artifact.program.code.flatMap encodeLocated := by
+    rw [hValid.bytes]
+    simp [encode, Bytecode.ofList]
+  have hLength : artifact.bytes.toList.length =
+      Program.codeByteLength artifact.program.code := by
+    rw [hBytes, flatMap_encodeLocated_length]
+  have hSentinel := hValid.sentinelFits
+  have hPcNat :
+      (EvmYul.UInt256.ofNat artifact.bytes.toList.length).toNat =
+        artifact.bytes.toList.length := by
+    apply Bytecode.uint256_ofNat_toNat_of_decode_window
+    rw [hLength]
+    omega
+  have hDecode :=
+    decodeInstrAtPrefix artifact.bytes.toList payload (.prim .invalid)
+      (by trivial) hPcNat
+      (by rw [hLength]; omega)
+      (by
+        rw [hLength]
+        simpa [Instr.byteSize] using hValid.sentinelFits)
+  rcases hDecode with ⟨decoded, hDecodedInstr, hDecodedBytes⟩
+  unfold openStepResult
+  have hStatePc : state.pc =
+      EvmYul.UInt256.ofNat artifact.bytes.toList.length := by
+    rw [hPc, hLength]
+  have hDecodedBytes' :
+      EvmYul.EVM.decode
+          (Bytecode.ofList
+            (artifact.bytes.toList ++
+              (encodeInstr (.prim .invalid) ++ payload)))
+          (EvmYul.UInt256.ofNat artifact.bytes.toList.length) =
+        some decoded := by
+    simpa [List.append_assoc] using hDecodedBytes
+  rw [hStatePc, hDecodedBytes']
+  change
+    (match Instr.ofDecoded? decoded.1 decoded.2 with
+    | none => Simulation.Interaction.done (.error .InvalidInstruction)
+    | some instr => instr.openStepResult state) =
+      Simulation.Interaction.done (.error .InvalidInstruction)
+  rw [Instr.ofDecoded?_of_decoded? (by trivial) hDecodedInstr]
+  rfl
+
 theorem openRunNResult_add (bytes : ByteArray) (first second : Nat)
     (state : EVMState) :
     openRunNResult bytes (first + second) state =
@@ -3858,6 +3927,15 @@ theorem openRunNResult_add (bytes : ByteArray) (first second : Nat)
         | .halted halt => Simulation.Interaction.pure (.halted halt)) := by
   exact Assembly.InteractionSemantics.Control.openRunNResultWith_add
     (openStepResult bytes) first second state
+
+theorem openRunNResult_succ (bytes : ByteArray) (fuel : Nat)
+    (state : EVMState) :
+    openRunNResult bytes (fuel + 1) state =
+      (do
+        let result <- openStepResult bytes state
+        match result with
+        | .running mid => openRunNResult bytes fuel mid
+        | .halted halt => Simulation.Interaction.pure (.halted halt)) := rfl
 
 end InteractionSemantics
 
@@ -4523,6 +4601,130 @@ theorem compile?_openRunNResult_terminal_rel
                       targetHalt.output = sourceHalt.output at hResult
                   exact .done (.ok hResult)
 
+/-- Compact encoding preserves every finished branch when an invalid sentinel
+separates code from arbitrary object payload bytes. -/
+theorem compile?_openRunNResult_finished_rel
+    {input : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}
+    (hCompile : compile? input pinnedPushPcs = some artifact)
+    (payload : List UInt8) (fuel extra : Nat) {target source : EVMState}
+    (hBoundary : BoundaryStateRel artifact target source)
+    (hFinished : Simulation.Interaction.AllDone
+      Assembly.InteractionSemantics.Finished
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.physicalSource fuel source)) :
+    Simulation.Interaction.Rel RuntimeOutcomeRel
+      (openRunNResult
+        (Bytecode.ofList
+          (artifact.bytes.toList ++ (encodeInstr (.prim .invalid) ++ payload)))
+        (2 * fuel + extra) target)
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.physicalSource fuel source) := by
+  induction fuel generalizing target source extra with
+  | zero =>
+      change Simulation.Interaction.AllDone
+        Assembly.InteractionSemantics.Finished
+        (.done (.ok (.running source))) at hFinished
+      cases hFinished with
+      | done hDone => exact False.elim hDone
+  | succ fuel ih =>
+      have hFinishedSucc : Simulation.Interaction.AllDone
+          Assembly.InteractionSemantics.Finished
+          (Assembly.InteractionSemantics.Source.openRunNResult
+            artifact.physicalSource (fuel + 1) source) := by
+        simpa [Nat.succ_eq_add_one] using hFinished
+      rcases hBoundary with
+        ⟨sourcePc, compactPc, hPair, hSourcePc, hTargetPc, hRuntime⟩
+      rcases hPair with hBlock | hEnd
+      · rcases hBlock with
+          ⟨block, hBlock, hBlockSource, hBlockCompact⟩
+        have hBlockSourcePc :
+            source.pc = EvmYul.UInt256.ofNat block.sourcePc := by
+          simpa [hBlockSource] using hSourcePc
+        have hBlockTargetPc :
+            target.pc = EvmYul.UInt256.ofNat block.compactPc := by
+          simpa [hBlockCompact] using hTargetPc
+        obtain ⟨stepFuel, hStepFuel, hStep⟩ :=
+          compile?_sourceBlock_open_rel hCompile
+            (encodeInstr (.prim .invalid) ++ payload) hBlock
+            hBlockTargetPc hBlockSourcePc hRuntime
+        have hSourceStep :=
+          compile?_source_openStepResult_eq_block
+            hCompile hBlock hBlockSourcePc
+        have hFinishedExpanded := hFinishedSucc
+        rw [Assembly.InteractionSemantics.Source.openRunNResult_succ,
+          hSourceStep] at hFinishedExpanded
+        have hStepFinished :=
+          Simulation.Interaction.AllDone.bind_inv hFinishedExpanded
+        have hStepStrong :=
+          Simulation.Interaction.Rel.strengthen_right hStep hStepFinished
+        let remaining := 2 * fuel + (extra + (2 - stepFuel))
+        have hFuel : 2 * Nat.succ fuel + extra = stepFuel + remaining := by
+          dsimp [remaining]
+          omega
+        rw [hFuel, openRunNResult_add]
+        rw [Assembly.InteractionSemantics.Source.openRunNResult_succ,
+          hSourceStep]
+        apply Simulation.Interaction.Rel.bind_custom hStepStrong
+        intro targetDone sourceDone hDone
+        rcases hDone with ⟨hRelated, hContinuationFinished⟩
+        cases hRelated with
+        | error hError => exact .done (.error hError)
+        | ok hResult =>
+            rename_i targetResult sourceResult
+            cases targetResult with
+            | running targetMid =>
+                cases sourceResult with
+                | running sourceMid =>
+                    change BoundaryStateRel artifact targetMid sourceMid at hResult
+                    change Simulation.Interaction.AllDone
+                      Assembly.InteractionSemantics.Finished
+                      (Assembly.InteractionSemantics.Source.openRunNResult
+                        artifact.physicalSource fuel sourceMid) at hContinuationFinished
+                    exact ih (extra + (2 - stepFuel)) hResult
+                      hContinuationFinished
+                | halted sourceHalt =>
+                    simp [BoundaryStepResultRel] at hResult
+            | halted targetHalt =>
+                cases sourceResult with
+                | running sourceMid =>
+                    simp [BoundaryStepResultRel] at hResult
+                | halted sourceHalt =>
+                    change targetHalt.kind = sourceHalt.kind /\
+                      SameRuntimeData targetHalt.state sourceHalt.state /\
+                        targetHalt.output = sourceHalt.output at hResult
+                    exact .done (.ok hResult)
+      · rcases hEnd with ⟨hSourceEnd, hCompactEnd⟩
+        have hArtifact := compile?_valid hCompile
+        have hSourceToNat :
+            source.pc.toNat = artifact.physicalSource.byteLength := by
+          rw [hSourcePc, hSourceEnd]
+          exact hArtifact.physicalSourcePCFits
+        have hSourceStep :
+            Assembly.InteractionSemantics.Source.openStepResult
+                artifact.physicalSource source =
+              .done (.error .InvalidInstruction) := by
+          unfold Assembly.InteractionSemantics.Source.openStepResult
+            Assembly.Source.stepResultWith
+          rw [hSourceToNat, instrAtPc_end_eq_none]
+          rfl
+        have hTargetStep :
+            openStepResult
+                (Bytecode.ofList
+                  (artifact.bytes.toList ++
+                    (encodeInstr (.prim .invalid) ++ payload))) target =
+              .done (.error .InvalidInstruction) := by
+          simpa [List.append_assoc] using
+            (compile?_sentinel_openStepResult hCompile payload
+              (state := target)
+              (by simpa [hCompactEnd] using hTargetPc))
+        rw [show 2 * Nat.succ fuel + extra =
+            (2 * fuel + extra + 1) + 1 by omega]
+        rw [openRunNResult_succ]
+        rw [hTargetStep]
+        rw [Assembly.InteractionSemantics.Source.openRunNResult_succ,
+          hSourceStep]
+        exact .done (.error rfl)
+
 theorem stepResultRuntimeRel_trans
     {first second third : StepResult}
     (hFirst : StepResultRuntimeRel first second)
@@ -4581,6 +4783,19 @@ theorem runtimeOutcomeRel_terminal_left
         simp_all [StepResultRuntimeRel,
           Assembly.InteractionSemantics.Terminal, StepResult.IsTerminal]
 
+theorem runtimeOutcomeRel_finished_left
+    {target source : Except EVMException StepResult}
+    (hRel : RuntimeOutcomeRel target source)
+    (hFinished : Assembly.InteractionSemantics.Finished source) :
+    Assembly.InteractionSemantics.Finished target := by
+  cases hRel with
+  | error hError => trivial
+  | ok hResult =>
+      rename_i targetResult sourceResult
+      cases targetResult <;> cases sourceResult <;>
+        simp_all [StepResultRuntimeRel,
+          Assembly.InteractionSemantics.Finished, StepResult.IsTerminal]
+
 /-- The complete Assembly-owned compact boundary. Preprocessing and variable-
 width encoding remain adjacent subproofs, while this theorem only composes
 their exact open interaction trees. -/
@@ -4626,6 +4841,56 @@ theorem compile?_source_openRunNResult_terminal_rel
       hSourcePc, hTargetPc, hInitial⟩
   have hCompact := compile?_openRunNResult_terminal_rel
     hCompile suffix fuel extra hCompactBoundary hPhysicalTerminal
+  apply Simulation.Interaction.Rel.mono
+    (Simulation.Interaction.Rel.trans hCompact hPreparation)
+  intro targetDone sourceDone hDone
+  rcases hDone with ⟨middleDone, hTargetMiddle, hMiddleSource⟩
+  exact runtimeOutcomeRel_trans hTargetMiddle hMiddleSource
+
+/-- The complete all-finished Assembly-owned compact boundary. A checked
+invalid sentinel separates executable bytes from arbitrary object payload. -/
+theorem compile?_source_openRunNResult_finished_rel
+    {sourceProgram : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Artifact}
+    (hCompile : compile? sourceProgram pinnedPushPcs = some artifact)
+    (payload : List UInt8) (fuel extra : Nat) {target source : EVMState}
+    (hTargetPc : target.pc = EvmYul.UInt256.ofNat 0)
+    (hSourcePc : source.pc = EvmYul.UInt256.ofNat 0)
+    (hInitial : SameRuntimeData target source)
+    (hFinished : Simulation.Interaction.AllDone
+      Assembly.InteractionSemantics.Finished
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        sourceProgram fuel source)) :
+    Simulation.Interaction.Rel RuntimeOutcomeRel
+      (openRunNResult
+        (Bytecode.ofList
+          (artifact.bytes.toList ++ (encodeInstr (.prim .invalid) ++ payload)))
+        (2 * fuel + extra) target)
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        sourceProgram fuel source) := by
+  have hPreparationBoundary :
+      PreparationStateRel sourceProgram artifact source source :=
+    ⟨0, 0,
+      (by simpa using
+        (compile?_preparationBlocksValid hCompile).initial_boundary),
+      hSourcePc, hSourcePc, SameRuntimeData.refl source⟩
+  have hPreparation :=
+    compile?_preparation_openRunNResult_finished_rel
+      hCompile fuel 0 hPreparationBoundary hFinished
+  have hPhysicalFinished : Simulation.Interaction.AllDone
+      Assembly.InteractionSemantics.Finished
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.physicalSource fuel source) := by
+    have hStrong := Simulation.Interaction.Rel.strengthen_left
+      (Simulation.Interaction.Rel.symm hPreparation) hFinished
+    apply Simulation.Interaction.Rel.allDone_right hStrong
+    intro sourceDone targetDone hDone
+    exact runtimeOutcomeRel_finished_left hDone.1 hDone.2
+  have hCompactBoundary : BoundaryStateRel artifact target source :=
+    ⟨0, 0, compile?_initial_boundary hCompile,
+      hSourcePc, hTargetPc, hInitial⟩
+  have hCompact := compile?_openRunNResult_finished_rel
+    hCompile payload fuel extra hCompactBoundary hPhysicalFinished
   apply Simulation.Interaction.Rel.mono
     (Simulation.Interaction.Rel.trans hCompact hPreparation)
   intro targetDone sourceDone hDone

@@ -107,7 +107,9 @@ stack-only correctness boundary.
   interfaces. Structured -> TypedCfg now preserves all genuine runtime errors
   and halts through a compiler-owned static budget. TypedCfg -> ordinary
   Assembly source execution now preserves the same all-finished branches;
-  Assembly encoding and public Yul composition remain.
+  compact Assembly encoding now preserves them through a compiler-sized
+  `INVALID` sentinel before object payload. Deriving allocator target
+  non-truncation and public Yul composition remain.
 - [ ] Add pinned real-world suites and generated adversarial cases for uncovered
   semantic families, then fix every backend rejection generically or record an
   honest supported-version/input-boundary rejection.

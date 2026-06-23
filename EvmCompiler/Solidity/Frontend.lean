@@ -2494,14 +2494,17 @@ def immutablePushPlanFor? (object : Object)
           { pinnedPushPcs := pinnedPushPcs
             markerTarget? := some compiled.certified.target }
 
+def verifiedCodeSentinel : List UInt8 :=
+  Assembly.Compact.encodeInstr (.prim .invalid)
+
 def compileImmutableMarkerBytes? (plan : ImmutablePushPlan)
     (actualCompact : Assembly.Compact.Artifact) : Option (List UInt8) :=
   match plan.markerTarget? with
-  | none => some actualCompact.bytes.toList
+  | none => some (actualCompact.bytes.toList ++ verifiedCodeSentinel)
   | some markerTarget => do
       let markerCompact ←
         Assembly.Compact.compile? markerTarget plan.pinnedPushPcs
-      some markerCompact.bytes.toList
+      some (markerCompact.bytes.toList ++ verifiedCodeSentinel)
 
 def compileVerifiedStackCodeArtifactIn? (object : Object)
     (context : ObjectBuiltinContext) : Option VerifiedStackCodeArtifact := do
@@ -2513,7 +2516,7 @@ def compileVerifiedStackCodeArtifactIn? (object : Object)
     object.immutablePushPlanFor? context compiled.certified.target
   let compact ←
     Assembly.Compact.compile? compiled.certified.target pushPlan.pinnedPushPcs
-  let bytes := compact.bytes.toList
+  let bytes := compact.bytes.toList ++ verifiedCodeSentinel
   let immutableMarkerBytes ← compileImmutableMarkerBytes? pushPlan compact
   some
     { resolved, ordered, lower, compiled, compact, bytes,
@@ -2534,7 +2537,8 @@ theorem compileVerifiedStackCodeArtifactIn?_parts
           some pushPlan ∧
         Assembly.Compact.compile? artifact.compiled.certified.target
             pushPlan.pinnedPushPcs = some artifact.compact ∧
-        artifact.bytes = artifact.compact.bytes.toList ∧
+        artifact.bytes =
+          artifact.compact.bytes.toList ++ verifiedCodeSentinel ∧
         compileImmutableMarkerBytes? pushPlan artifact.compact =
           some artifact.immutableMarkerBytes := by
   unfold compileVerifiedStackCodeArtifactIn? at hCompile

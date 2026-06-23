@@ -1189,6 +1189,53 @@ theorem stackAssemblyToCompactBytecode
     (Simulation.Interaction.Rel.symm hCompact)
   simpa [YulStackCompactDoneRel] using hComposed
 
+/-- Compose a finished logical Assembly run with compact bytes protected by the
+compiler-owned invalid sentinel. -/
+theorem stackAssemblyToCompactBytecodeFinished
+    {sourceProgram : Yul.Program}
+    {structured : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {generated : Structured.TypedCfgPreservation.Program.GeneratedContext
+      structured entryShapes cfg}
+    {assembly : Assembly.Program}
+    {pinnedPushPcs : List Nat}
+    {compact : Assembly.Compact.Artifact}
+    {sourceFuel assemblyFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {targetState : Assembly.EVMState}
+    (payload : List UInt8)
+    (hRel : Simulation.Interaction.Rel
+      (YulStackBytecodeDoneRel structured entryShapes cfg generated assembly)
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [sourceProgram.contract.dispatcher])
+        (some sourceProgram.contract) source)
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        assembly assemblyFuel targetState))
+    (hCompile : Assembly.Compact.compile? assembly pinnedPushPcs = some compact)
+    (hTargetPc : targetState.pc = EvmYul.UInt256.ofNat 0)
+    (hAssemblyFinished : Simulation.Interaction.AllDone
+      Assembly.InteractionSemantics.Finished
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        assembly assemblyFuel targetState)) :
+    Simulation.Interaction.Rel
+      (YulStackCompactDoneRel structured entryShapes cfg generated assembly)
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [sourceProgram.contract.dispatcher])
+        (some sourceProgram.contract) source)
+      (Assembly.Compact.InteractionSemantics.openRunNResult
+        (Assembly.Bytecode.ofList
+          (compact.bytes.toList ++
+            (Assembly.Compact.encodeInstr (.prim .invalid) ++ payload)))
+        (2 * assemblyFuel) targetState) := by
+  have hCompact :=
+    Assembly.Compact.InteractionSemantics.compile?_source_openRunNResult_finished_rel
+      hCompile payload assemblyFuel 0 hTargetPc hTargetPc
+        (Assembly.SameRuntimeData.refl targetState) hAssemblyFinished
+  have hComposed := Simulation.Interaction.Rel.trans hRel
+    (Simulation.Interaction.Rel.symm hCompact)
+  simpa [YulStackCompactDoneRel] using hComposed
+
 /-- Final adjacent Assembly-to-raw-bytecode composition for the stack route.
 The decoder relation is owned by Assembly; this theorem only rewrites the
 terminal interaction tree after proving that every target branch halts. -/
@@ -1322,11 +1369,12 @@ theorem compiledVerifiedStackCodeToRawBytecode
   have hAccepted : Assembly.Accepted
       codeArtifact.compiled.certified.target :=
     Assembly.Preservation.compile?_some_accepted hAssembly
-  have hCompactRel := stackAssemblyToCompactBytecode suffix hAssemblySource
+  have hCompactRel := stackAssemblyToCompactBytecode
+    (Solidity.Frontend.Object.verifiedCodeSentinel ++ suffix) hAssemblySource
     hCompact rfl hTerminal
   refine ⟨structuredFuel, hAccepted, generated, ?_⟩
   rw [hBytes]
-  exact hCompactRel
+  simpa [List.append_assoc] using hCompactRel
 
 /-- Recursive Solidity object construction reaches the exact root image. Child
 objects and payload layout are computed by the frontend artifact, while the
