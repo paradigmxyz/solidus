@@ -1287,6 +1287,33 @@ def decodeAndElaborateSolcIrJson (json : Lean.Json)
   let object ← selected.root.elaborate? selected.evmVersion
   pure { source := selected.source, contract := selected.contract, object := object }
 
+theorem decodeAndElaborateSolcIrJson_parts
+    {json : Lean.Json} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIrJson json selection = .ok program) :
+    ∃ (selected : SelectedIr) (object : Frontend.Object),
+      decodeSelectedIr json selection = .ok selected ∧
+        selected.root.elaborate? selected.evmVersion = .ok object ∧
+          program =
+            { source := selected.source
+              contract := selected.contract
+              object := object } := by
+  unfold decodeAndElaborateSolcIrJson at hDecode
+  cases hSelected : decodeSelectedIr json selection with
+  | error err =>
+      simp [hSelected] at hDecode
+  | ok selected =>
+      cases hObject : selected.root.elaborate? selected.evmVersion with
+      | error err =>
+          simp [hSelected, hObject] at hDecode
+      | ok object =>
+          simp [hSelected, hObject] at hDecode
+          subst program
+          refine ⟨selected, object, ?_, ?_, rfl⟩
+          · simp
+          · simp [hObject]
+
 def decodeLinkerSymbolsJson (json : Lean.Json)
     (selection : Selection) : DecodeM (List (Name × Word)) :=
   decodeSelectedLinkerSymbolsJson json selection
