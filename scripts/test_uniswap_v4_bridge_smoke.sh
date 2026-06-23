@@ -9,6 +9,10 @@ if ! "$PYTHON_BIN" -c 'import jsonschema' >/dev/null 2>&1 && \
     [[ -x "$BUNDLED_PYTHON" ]]; then
   PYTHON_BIN="$BUNDLED_PYTHON"
 fi
+# Resolve command names before defining the wrapper, or `python3` recurses into itself.
+if [[ "$PYTHON_BIN" != */* ]]; then
+  PYTHON_BIN="$(command -v "$PYTHON_BIN")"
+fi
 python3() {
   "$PYTHON_BIN" "$@"
 }
