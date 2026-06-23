@@ -534,6 +534,30 @@ def printStackDiagnostics
     (functions : Functions.Program) : IO Unit := do
   let compileStart ← IO.monoMsNow
   let stackArtifact? := Compiler.StackArtifact.compile? functions
+  let sourceAccepted :=
+    Functions.SourceAcceptedCheck.Program.sourceAccepted? functions
+  let normalized := Functions.StackPressureNormalization.Program.normalize functions
+  let normalizedAccepted :=
+    Functions.SourceAcceptedCheck.Program.sourceAccepted? normalized
+  let normalizedLowered? := Functions.StackLowering.lowerProgram? normalized
+  let normalizedExpressions? := normalizedLowered?.bind Locals.Program.toExpressions?
+  let normalizedStructured? := normalizedExpressions?.map Expressions.Program.toStructured
+  let normalizedStructuredWf := normalizedStructured?.any
+    Structured.SourceAcceptedCheck.Program.wf?
+  let normalizedGenerated? := normalizedStructured?.bind fun structured =>
+    Structured.TypedCfgCompiler.artifactWithProcEntryShapes? structured []
+  let normalizedIndependent := normalizedGenerated?.any fun generated =>
+    generated.cfg.programCounterIndependent?
+  let normalizedCertified? := normalizedGenerated?.bind fun generated =>
+    generated.cfg.compileCertified?
+  let normalizedExecutable? := normalizedCertified?.bind fun certified =>
+    Assembly.compileExecutable? certified.target
+  let normalizedDecodeWindow := normalizedExecutable?.any
+    Assembly.Bytecode.targetFitsDecodeWindow?
+  let sourceOpenSupported :=
+    Functions.OpenSupportCheck.Program.openSupported? functions
+  let normalizedOpenSupported :=
+    Functions.OpenSupportCheck.Program.openSupported? normalized
   let lowered? := Functions.StackLowering.lowerProgram? functions
   let expressions? := lowered?.bind Locals.Program.toExpressions?
   let structured? := expressions?.map Expressions.Program.toStructured
@@ -580,6 +604,20 @@ def printStackDiagnostics
   IO.println ("object=" ++ objectName)
   IO.println
     ("stack_program_artifact=" ++ boolString stackArtifact?.isSome)
+  IO.println
+    ("stack_program_production_stages=" ++
+      "source_accepted=" ++ boolString sourceAccepted ++
+      "\tnormalized_accepted=" ++ boolString normalizedAccepted ++
+      "\tnormalized_lowering=" ++ boolString normalizedLowered?.isSome ++
+      "\tnormalized_expressions=" ++ boolString normalizedExpressions?.isSome ++
+      "\tnormalized_structured_wf=" ++ boolString normalizedStructuredWf ++
+      "\tnormalized_cfg=" ++ boolString normalizedGenerated?.isSome ++
+      "\tnormalized_independent=" ++ boolString normalizedIndependent ++
+      "\tnormalized_certified=" ++ boolString normalizedCertified?.isSome ++
+      "\tnormalized_executable=" ++ boolString normalizedExecutable?.isSome ++
+      "\tdecode_window=" ++ boolString normalizedDecodeWindow ++
+      "\tsource_open=" ++ boolString sourceOpenSupported ++
+      "\tnormalized_open=" ++ boolString normalizedOpenSupported)
   IO.println ("stack_program_lowering=" ++ boolString lowered?.isSome)
   IO.println
     ("stack_program_to_expressions=" ++ boolString expressions?.isSome)

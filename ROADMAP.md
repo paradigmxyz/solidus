@@ -88,10 +88,15 @@ stack-only correctness boundary.
   wherever they are computational consequences rather than caller assumptions.
 - [x] Classify every remaining public premise as trusted frontend input,
   source execution/resource fact, or unfinished derivation; remove the latter.
-- [ ] Inventory supported optimized-Yul primitives, control outcomes, object
+- [x] Inventory supported optimized-Yul primitives, control outcomes, object
   features, and compiler passes against executable creation/runtime coverage.
 - [ ] Add pinned real-world suites and generated adversarial cases for uncovered
   semantic families, then fix every backend rejection generically or record an
   honest supported-version/input-boundary rejection.
 - [ ] Keep exact Permit2, Aave Pool, PoolManager, adversarial pressure, broad
   corpus, Lean, architecture, trust, frontend, and diff gates green.
+
+Pinned solc 0.8.26 rejects explicit `msize()` whenever its Yul optimizer is
+enabled. This is an honest trusted-frontend limitation, not a backend semantic
+restriction: the Yul proof retains real ordered `MSIZE`, while optimized
+Solidity coverage records the solc rejection explicitly.

@@ -32,12 +32,14 @@ def supportsOpen (op : Structured.BasicOp) : Bool :=
   | .swap5 | .swap6 | .swap7 | .swap8
   | .swap9 | .swap10 | .swap11 | .swap12
   | .swap13 | .swap14 | .swap15 | .swap16
-  | .invalid => false
-  | .gas | .msize
+      => false
+  | .invalid | .gas | .msize
   | .call | .callcode | .delegatecall | .staticcall
   | .create | .create2 => true
   | op =>
       (Locals.Source.PrimitiveSemantics.sourceContinuingStep? op).isSome
+
+@[simp] theorem supportsOpen_invalid : supportsOpen .invalid = true := rfl
 
 theorem stackArity_of_supportsOpen
     {op : Structured.BasicOp}

@@ -2620,21 +2620,25 @@ end PrimStep
 namespace PrimOp
 
 /--
-The stack transition of any nonterminal primitive.
+The structural stack transition of any non-halting primitive.
 
 This is deliberately broader than `continuingStep?`: the latter is the
 historical closed-world proof whitelist and excludes resource observers,
 PC-dependent instructions, and call/create operations. Typed CFG validation
 only needs the EVM stack contract, so those effects remain admissible while
-terminal instructions must be represented by CFG terminators.
+successful halt instructions must be represented by CFG terminators.
+`INVALID` has structural arity zero-to-zero even though every execution errors.
 -/
 def stackArity? (op : PrimOp) : Option (Nat × Nat) :=
   match op with
-  | .stop | .return | .revert | .selfdestruct | .invalid => none
+  | .stop | .return | .revert | .selfdestruct => none
   | _ =>
       some
         ((EvmYul.EVM.δ op.toEVM).getD 0,
           (EvmYul.EVM.α op.toEVM).getD 0)
+
+@[simp] theorem stackArity?_invalid :
+    stackArity? .invalid = some (0, 0) := rfl
 
 /--
 Continuing primitives admitted by structured control as ordinary statements.
