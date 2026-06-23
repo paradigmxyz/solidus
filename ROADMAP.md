@@ -10,8 +10,12 @@ through `irOptimizedAst`. Solidity lowering, source optimization,
 rematerialization, and source-level memory spilling belong to that frontend.
 The checked backend starts at the resulting Yul program.
 
-The executable adapter matrix currently pins solc 0.8.26 and 0.8.35 to Cancun;
-the exact Permit2 gate retains solc 0.8.17 with an explicit London target.
+The executable raw-frontend adapter matrix currently pins solc 0.8.26 and
+0.8.35 to Cancun because those pins emit structured `irOptimizedAst` for the
+production corpus. Older exact-version suites, including Permit2 on solc
+0.8.17/London, may remain legacy bridge regression coverage, but they do not
+join the raw production theorem unless that solc output contains structured
+`irOptimizedAst`.
 Accepted frontend requests must name London, Paris, Shanghai, or Cancun;
 newer fork targets fail closed until their instruction semantics are modeled.
 
@@ -33,6 +37,130 @@ optimized solc Yul
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object
 artifact. Compilation fails closed when stack-only scheduling fails. The
 backend performs no compiler-owned memory access.
+
+## Raw solc Frontend Migration
+
+Goal: remove Python semantic normalization from the trusted production path.
+Python may invoke solc, transport Standard JSON, and run differential tests,
+but the checked compiler source program must be derived in Lean from raw solc
+Standard JSON `irOptimizedAst`.
+
+Current split:
+
+- Raw decoding: `Solidity.RawAst` owns Standard JSON contract selection,
+  `irOptimizedAst` object selection, pinned fork metadata decoding, raw Yul
+  object/code/data syntax, and fail-closed malformed-node rejection.
+- Checked elaboration: `Solidity.RawAst.Elab` owns literal decoding, canonical
+  call classification, lexical binding checks, nested-function hoisting with
+  alpha-renamed generated functions, and `clz` helper insertion.
+- Source normalization: existing `Solidity.Frontend` still owns memoryguard
+  inference, object-builtin resolution, local data/object layout, linker and
+  immutable resolution, fork spelling validation, and object image planning.
+- Orchestration: Python remains temporarily as solc transport and old-bridge
+  differential tooling; it must stop constructing the theorem's
+  `Solidity.Frontend.Program` before this migration is complete.
+
+Transformation inventory from `scripts/solidity_to_yul_lean.py`:
+
+- [x] Literal decoding moved into Lean for raw numbers, booleans, strings, and
+  hex bytes.
+- [x] Call classification moved into Lean using `Frontend.Primitive.ofName?`,
+  object-builtin, unsupported-dialect, and user-call tables.
+- [x] Lexical scope checking and name resolution moved into Lean for the raw
+  elaborator.
+- [x] Nested-function hoisting and alpha-renamed generated callees implemented
+  in Lean; nested `Stmt.functionDef` nodes are preserved, not erased.
+- [x] `clz` lowering moved into the Lean raw elaborator as a generated helper;
+  semantic preservation remains a separate compiler-owned proof obligation.
+- [x] Object/data ordering preserved and fail-closed in Lean through explicit
+  raw-derived `ObjectItemRef`s plus `itemRefsPreserveOrder?` validation.
+- [ ] Standalone Yul data-name recovery remains Python-only and is not part of
+  the raw Solidity `irOptimizedAst` production theorem.
+- [x] Source/contract/object selection moved into Lean for raw Standard JSON.
+- [x] Fork/linker metadata moved for the raw Standard JSON output path: fork
+  metadata and selected-contract `metadata.settings.libraries` linker symbols
+  are decoded in Lean. Explicit linker-symbol arguments remain only as a
+  transition/differential hook.
+- [x] Memoryguard inference remains reused in `Solidity.Frontend`; Python does
+  not need to normalize it for the raw path.
+
+Next raw frontend layer:
+
+- [x] Add a local raw-vs-normalized bridge differential gate over both pinned
+  solc versions, creation/runtime selection, recursive frontend digests, and
+  checked artifact sizes for representative real fixtures, including a linked
+  library fixture that exercises raw metadata linker-symbol decoding.
+- [x] Add a pinned Aave Pool raw corpus gate over both pinned solc versions and
+  creation/runtime object selection; Lean raw elaboration consumes the raw
+  Standard JSON, preserves seven metadata linker symbols, matches the legacy
+  bridge frontend object shape, and reproduces the checked artifact sizes.
+- [x] Add a pinned Uniswap v4 PoolManager raw corpus gate for the compatible
+  exact-pragma solc 0.8.26 source; creation/runtime raw Lean elaboration
+  matches the legacy bridge frontend object shape and reproduces checked
+  artifact sizes, while solc 0.8.35 fails closed before raw AST production
+  because the source pins `pragma solidity 0.8.26`.
+- [x] Add pinned Safe and ERC-4337 EntryPoint raw corpus gates over both
+  supported solc pins. Safe is covered through raw optimized Yul plus metadata
+  because solc's own bytecode backend rejects the pinned source
+  stack-too-deep; EntryPoint includes solc bytecode and raw Lean artifact
+  checks for creation/runtime. Both now compare raw Standard JSON Lean
+  elaboration against the legacy bridge frontend object shape across both
+  pins and creation/runtime selections.
+- [x] Add a pinned Permit2 version-boundary gate: unmodified full Permit2 pins
+  `pragma solidity 0.8.17`; exact solc 0.8.17 compiles Permit2 bytecode under
+  London but emits no `irOptimizedAst`, so the Lean raw path fails closed.
+  Supported raw solc 0.8.26 and 0.8.35 also fail closed before raw AST
+  production because of the exact pragma. The legacy
+  solc-0.8.17/Python-normalized bridge path remains regression coverage, not
+  production raw-theorem coverage.
+- [ ] Differentially compare raw Lean elaboration against the old bridge over
+  both pinned solc versions and the full corpus: Aave frontend shape now
+  compares raw Standard JSON against the legacy bridge for creation/runtime on
+  both pins, and PoolManager frontend shape now compares raw Standard JSON
+  against the legacy bridge for creation/runtime on its compatible exact
+  solc 0.8.26 pin. Safe and EntryPoint frontend shapes now compare raw
+  Standard JSON against the legacy bridge for creation/runtime on both pins.
+  Permit2 remains fail-closed legacy coverage because solc 0.8.17 emits no
+  structured `irOptimizedAst`. All real suites and adversarial fixtures remain
+  to be widened.
+- [x] Add a raw-bridge transition path: `evm-compiler-backend raw-*` consumes
+  raw solc Standard JSON directly through `RawAstPublic`, and the transition
+  smoke proves normalized-bridge mutations cannot affect raw input compilation.
+- [ ] Add local preservation/validation theorems for raw elaboration,
+  nested-function hoisting, and `clz` expansion. `elaborateCode_parts`
+  reconstructs the checked raw elaboration core state from successful public
+  code elaboration, and `decodeAndElaborateSolcIrJson_parts` reconstructs the
+  selected raw Standard JSON source/contract/object plus checked raw-object
+  elaboration from a successful frontend program decode.
+  `decodeAndElaborateSolcIr?_parts` lifts that evidence to the public raw
+  string interface. `Raw.Object.elaborate?_parts`,
+  `decodeAndElaborateSolcIrJson_objectParts`, and
+  `decodeAndElaborateSolcIr?_objectParts` reconstruct the successful checked
+  code elaboration, object-item elaboration, and final `Frontend.Object`
+  fields. `itemRefsPreserveOrder?` validates that the elaborated frontend
+  object keeps the mixed raw object/data order through raw-derived
+  `ObjectItemRef`s; the raw string and artifact wrapper theorems expose this
+  checked condition. `compileArtifactFromRawSolcIr?_rawParts` and the
+  explicit-linker variant lift the same raw parse/selection/elaboration
+  evidence through the artifact-facing wrappers, including Lean-decoded linker
+  metadata for the default path. First checked `clz` validation invariant:
+  successful code
+  elaboration that returns generated `clz` helper/argument/result names also
+  returns the corresponding generated helper function definition. First checked
+  nested-hoist validation invariant: every function accumulated in the raw
+  elaborator's `hoistedFunctions` state is retained in the successful returned
+  function list. `Raw.Object.ClzExpansionOk` and
+  `Raw.Object.HoistedFunctionsRetained` lift these invariants through raw
+  object elaboration, raw string decoding, and artifact-wrapper success.
+  Semantic preservation of the helper and nested
+  hoist/alpha-renaming passes remains open.
+- [x] Expose the production interface
+  `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
+  public certificate premises, and expose artifact-facing raw wrappers whose
+  success reconstructs the internally selected raw source/contract/object,
+  checked object elaboration, and artifact validity.
+- [ ] Integrate only after the isolated raw theorem is ready; do not create a
+  Yul-to-bytecode proof corridor or depend on the parallel hFinished work.
 
 ## Migration
 
@@ -80,8 +208,11 @@ backend performs no compiler-owned memory access.
 
 ## Completion Gates
 
-- [x] Exact pinned Permit2, linked Aave Pool, PoolManager, and complete strict
-  corpus pass through checked raw-byte artifacts.
+- [x] Raw-capable pinned corpus gates pass through checked raw-byte artifacts,
+  including linked Aave Pool, PoolManager on its compatible exact 0.8.26 pin,
+  Safe, EntryPoint, and adversarial fixtures. Exact Permit2 remains covered as
+  a fail-closed solc-0.8.17 version-boundary/legacy-bridge regression because
+  that compiler emits no structured `irOptimizedAst`.
 - [x] Focused and full `EvmCompiler.Verification` builds pass.
 - [x] Architecture and proof-smoke checks pass.
 - [x] Repository hole, trust, `unsafe`, and axiom audits pass.

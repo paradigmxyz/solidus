@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 smokes=(
+  test_raw_solc_frontend_smoke.sh
+  test_raw_solc_frontend_differential.sh
+  test_raw_solc_backend_transition.sh
   test_solidity_object_tree_smoke.sh
   test_solidity_frontend_decode_smoke.sh
   test_solidity_external_call_decode_smoke.sh

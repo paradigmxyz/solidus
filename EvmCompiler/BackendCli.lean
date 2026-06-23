@@ -1,4 +1,5 @@
 import EvmCompiler.Solidity.BridgeJson
+import EvmCompiler.Solidity.RawAstPublic
 import EvmCompiler.Assembly.Bytecode
 import EvmCompiler.Assembly.Compact
 import EvmCompiler.Functions.StackDiagnostics
@@ -15,6 +16,9 @@ inductive Mode where
   | check
   | stackAnalysis
   | stackDiagnostics
+  | rawImage
+  | rawSummary
+  | rawCheck
   deriving BEq
 
 structure Config where
@@ -22,6 +26,15 @@ structure Config where
   bridgePath : String
   linkerSymbols :
     List (Solidity.Frontend.Name × Solidity.Frontend.Word)
+
+structure RawConfig where
+  mode : Mode
+  rawPath : String
+  selection : Solidity.RawAst.Selection
+
+inductive Command where
+  | bridge (config : Config)
+  | raw (config : RawConfig)
 
 def hexDigit (n : Nat) : Char :=
   if n < 10 then
@@ -42,7 +55,17 @@ def parseMode? : String → Option Mode
   | "check" => some .check
   | "stack-analysis" => some .stackAnalysis
   | "stack-diagnostics" => some .stackDiagnostics
+  | "raw-image" => some .rawImage
+  | "raw-summary" => some .rawSummary
+  | "raw-check" => some .rawCheck
   | _ => none
+
+def Mode.raw? : Mode → Bool
+  | .rawImage | .rawSummary | .rawCheck => true
+  | _ => false
+
+def Mode.bridge? (mode : Mode) : Bool :=
+  !mode.raw?
 
 def parseLinkerSymbol? (arg : String) : Option
     (Solidity.Frontend.Name × Solidity.Frontend.Word) :=
@@ -60,18 +83,50 @@ def parseLinkerSymbols? : List String → Option
       let symbols ← parseLinkerSymbols? rest
       some (symbol :: symbols)
 
-def parseConfig? : List String → Option Config
+def parseRawObjectSelector (value : String) : Solidity.RawAst.ObjectSelector :=
+  match value with
+  | "creation" => .creation
+  | "runtime" => .runtime
+  | name => .named name
+
+def parseBridgeConfig? : List String → Option Config
   | mode :: bridgePath :: linkerArgs => do
       let mode ← parseMode? mode
+      if !mode.bridge? then
+        none
+      else
       let linkerSymbols ← parseLinkerSymbols? linkerArgs
       some { mode, bridgePath, linkerSymbols }
   | _ => none
 
+def parseRawConfig? : List String → Option RawConfig
+  | mode :: rawPath :: source :: contract :: objectSelector :: [] => do
+      let mode ← parseMode? mode
+      if !mode.raw? then
+        none
+      else
+      let selection : Solidity.RawAst.Selection :=
+        { source? := some source
+          contract? := some contract
+          objectSelector := parseRawObjectSelector objectSelector
+          astOutput := "irOptimizedAst" }
+      some { mode, rawPath, selection }
+  | _ => none
+
+def parseCommand? (args : List String) : Option Command :=
+  match parseRawConfig? args with
+  | some config => some (.raw config)
+  | none =>
+      match parseBridgeConfig? args with
+      | some config => some (.bridge config)
+      | none => none
+
 def printImage (mode : Mode)
     (image : Solidity.Frontend.ObjectImage) : IO Unit := do
   match mode with
-  | .image => IO.println ("bytecode=0x" ++ bytesHex image.bytes)
-  | .summary | .check | .stackAnalysis | .stackDiagnostics => pure ()
+  | .image | .rawImage => IO.println ("bytecode=0x" ++ bytesHex image.bytes)
+  | .summary | .rawSummary | .check | .rawCheck | .stackAnalysis
+  | .stackDiagnostics => pure ()
   for entry in image.immutableReferences do
     for reference in entry.snd do
       IO.println
@@ -1057,6 +1112,7 @@ def run (config : Config) : IO Unit := do
       | .image | .summary =>
           throw (IO.userError "unchecked object-image generation returned none")
       | .stackAnalysis | .stackDiagnostics => pure ()
+      | .rawImage | .rawSummary | .rawCheck => pure ()
   | some artifact =>
       match config.mode with
       | .image | .summary => printImage config.mode artifact.image
@@ -1067,20 +1123,70 @@ def run (config : Config) : IO Unit := do
             | none => false
           printCheck program (some artifact.image) solcOk
       | .stackAnalysis | .stackDiagnostics => pure ()
+      | .rawImage | .rawSummary | .rawCheck => pure ()
+
+def runRaw (config : RawConfig) : IO Unit := do
+  let decodeStart ← IO.monoMsNow
+  let input ← IO.FS.readFile config.rawPath
+  let program? :=
+    Solidity.RawAst.decodeAndElaborateSolcIr? input config.selection
+  let decodeFinish ← IO.monoMsNow
+  IO.println ("timing\tdecode\t" ++ toString (decodeFinish - decodeStart))
+  let compileStart ← IO.monoMsNow
+  let artifact? :=
+    Solidity.RawAst.compileArtifactFromRawSolcIr? input config.selection
+  let byteLength :=
+    match artifact? with
+    | some artifact => artifact.image.bytes.length
+    | none => 0
+  let compileFinish ← IO.monoMsNow
+  IO.println
+    ("timing\tobject_image\t" ++ toString (compileFinish - compileStart) ++
+      "\tbytes=" ++ toString byteLength)
+  match artifact? with
+  | none =>
+      match config.mode with
+      | .rawCheck =>
+          match program? with
+          | some program => printCheck program none false
+          | none => throw (IO.userError "raw Standard JSON decode failed")
+      | .rawImage | .rawSummary =>
+          throw (IO.userError "raw object-image generation returned none")
+      | .image | .summary | .check | .stackAnalysis | .stackDiagnostics =>
+          pure ()
+  | some artifact =>
+      match config.mode with
+      | .rawImage | .rawSummary => printImage config.mode artifact.image
+      | .rawCheck =>
+          match program? with
+          | none => throw (IO.userError "raw Standard JSON decode failed")
+          | some program =>
+              let solcOk :=
+                match resolveForSolcValidation? program.object artifact.computed with
+                | some resolved => resolved.toSolcYulProgram?.isSome
+                | none => false
+              printCheck program (some artifact.image) solcOk
+      | .image | .summary | .check | .stackAnalysis | .stackDiagnostics =>
+          pure ()
 
 def usage : String :=
   "usage: evm-compiler-backend " ++
     "(image|summary|check|stack-analysis|stack-diagnostics) " ++
-    "BRIDGE_JSON [NAME=DECIMAL ...]"
+    "BRIDGE_JSON [NAME=DECIMAL ...]\n" ++
+    "   or: evm-compiler-backend " ++
+    "(raw-image|raw-summary|raw-check) " ++
+    "RAW_STANDARD_JSON SOURCE CONTRACT (creation|runtime|OBJECT_NAME)"
 
 def cliMain (args : List String) : IO UInt32 := do
-  match parseConfig? args with
+  match parseCommand? args with
   | none =>
       IO.eprintln usage
       pure 2
-  | some config =>
+  | some command =>
       try
-        run config
+        match command with
+        | .bridge config => run config
+        | .raw config => runRaw config
         pure 0
       catch err =>
         IO.eprintln err.toString
