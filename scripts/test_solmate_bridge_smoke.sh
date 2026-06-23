@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOLC_BIN="${SOLC:-solc}"
+PYTHON_BIN="$("$ROOT/scripts/find_schema_python.sh")"
 if [[ -n "${LAKE:-}" ]]; then
   LAKE_BIN="$LAKE"
 elif [[ -x "$HOME/.elan/bin/lake" ]]; then
@@ -104,7 +105,7 @@ contract SolmateHarness is ERC20, Owned {
 }
 SOL
 
-SOLC_VERSION="$SOLMATE_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+SOLC_VERSION="$SOLMATE_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$FIXTURE" \
   --solc "$SOLC_BIN" \
   --remapping "solmate/=$REPO/src/" \
@@ -115,17 +116,17 @@ SOLC_VERSION="$SOLMATE_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean
   --bridge-json-dir "$SOLMATE_BRIDGE_DIR" \
   --output "$SOLMATE_BATCH_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$SOLMATE_BRIDGE_DIR/manifest.json"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$SOLMATE_BRIDGE_DIR/manifest.json"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$SOLMATE_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --format bridge-json-summary \
   --output "$SOLMATE_SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$SOLMATE_SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$SOLMATE_SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$SOLMATE_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
@@ -133,7 +134,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-json-check \
   --output "$SOLMATE_MANIFEST_CHECK"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$SOLMATE_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
@@ -142,9 +143,9 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-backend-check \
   --output "$SOLMATE_BACKEND_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$SOLMATE_BACKEND_CHECK"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$SOLMATE_BACKEND_CHECK"
 
-SOLC_VERSION="$SOLMATE_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+SOLC_VERSION="$SOLMATE_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$FIXTURE" \
   --solc "$SOLC_BIN" \
   --remapping "solmate/=$REPO/src/" \
@@ -153,7 +154,7 @@ SOLC_VERSION="$SOLMATE_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean
   --bridge-json-dir "$SOLMATE_PACKAGE_DIR" \
   --output "$SOLMATE_PACKAGE_MANIFEST"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$SOLMATE_PACKAGE_MANIFEST"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$SOLMATE_PACKAGE_MANIFEST"
 
 cat > "$FIXED_POINT_FIXTURE" <<'SOL'
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -187,7 +188,7 @@ contract SolmateFixedPointFallback {
 }
 SOL
 
-SOLC_VERSION="$SOLMATE_SOLC_VERSION" python3 "$ROOT/scripts/compare_contract_call_bytecode.py" \
+SOLC_VERSION="$SOLMATE_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
   "$FIXED_POINT_FIXTURE" \
   --solc "$SOLC_BIN" \
   --lake "$LAKE_BIN" \
@@ -207,7 +208,7 @@ printf 'repo_ref=%s\n' "$ACTUAL_REF"
 printf 'fixed_point_fallback_compare_calls=%s\n' "$(
   sed -n 's/^calls=//p' "$FIXED_POINT_COMPARE"
 )"
-python3 - "$SOLMATE_BATCH_CHECK" \
+"$PYTHON_BIN" - "$SOLMATE_BATCH_CHECK" \
   "$SOLMATE_MANIFEST_CHECK" \
   "$SOLMATE_BRIDGE_DIR/manifest.json" \
   "$SOLMATE_PACKAGE_MANIFEST" \

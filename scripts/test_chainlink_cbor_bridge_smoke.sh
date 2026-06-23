@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOLC_BIN="${SOLC:-solc}"
+PYTHON_BIN="$("$ROOT/scripts/find_schema_python.sh")"
 if [[ -n "${LAKE:-}" ]]; then
   LAKE_BIN="$LAKE"
 elif [[ -x "$HOME/.elan/bin/lake" ]]; then
@@ -118,7 +119,7 @@ contract ChainlinkCborBufferFallback {
 }
 SOL
 
-SOLC_VERSION="$CHAINLINK_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+SOLC_VERSION="$CHAINLINK_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$FIXTURE" \
   --solc "$SOLC_BIN" \
   --remapping "chainlink/=$REPO/" \
@@ -127,17 +128,17 @@ SOLC_VERSION="$CHAINLINK_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_le
   --bridge-json-dir "$BRIDGE_DIR" \
   --output "$MANIFEST"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$MANIFEST" \
   --input-format bridge-json-manifest \
   --format bridge-json-summary \
   --output "$SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$MANIFEST" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
@@ -145,7 +146,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-json-check \
   --output "$MANIFEST_CHECK"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$MANIFEST" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
@@ -153,10 +154,10 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-backend-check \
   --output "$BACKEND_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$BACKEND_CHECK"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$BACKEND_CHECK"
 
 RUNTIME_BACKEND_STATUS="$(
-  python3 - "$BACKEND_CHECK" <<'PY'
+  "$PYTHON_BIN" - "$BACKEND_CHECK" <<'PY'
 import json
 import sys
 
@@ -179,7 +180,7 @@ if [[ "$RUNTIME_BACKEND_STATUS" != "pass" ]]; then
   exit 1
 fi
 
-SOLC_VERSION="$CHAINLINK_SOLC_VERSION" python3 "$ROOT/scripts/compare_contract_call_bytecode.py" \
+SOLC_VERSION="$CHAINLINK_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
   "$FIXTURE" \
   --solc "$SOLC_BIN" \
   --lake "$LAKE_BIN" \
@@ -194,7 +195,7 @@ SOLC_VERSION="$CHAINLINK_SOLC_VERSION" python3 "$ROOT/scripts/compare_contract_c
   --calldata 0x04aabbcc \
   --runtime-only > "$CALL_COMPARE"
 
-python3 - "$MANIFEST" "$SUMMARY" "$MANIFEST_CHECK" "$BACKEND_CHECK" "$CALL_COMPARE" <<'PY'
+"$PYTHON_BIN" - "$MANIFEST" "$SUMMARY" "$MANIFEST_CHECK" "$BACKEND_CHECK" "$CALL_COMPARE" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -531,7 +532,7 @@ contract ChainlinkAggregatorRoundFallback is AggregatorV3Interface {
 }
 SOL
 
-SOLC_VERSION="$CHAINLINK_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+SOLC_VERSION="$CHAINLINK_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$AGGREGATOR_FIXTURE" \
   --solc "$SOLC_BIN" \
   --remapping "chainlink/=$REPO/" \
@@ -544,17 +545,17 @@ SOLC_VERSION="$CHAINLINK_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_le
   --optimized \
   --output "$AGGREGATOR_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$AGGREGATOR_BRIDGE_DIR/manifest.json"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$AGGREGATOR_BRIDGE_DIR/manifest.json"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$AGGREGATOR_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --format bridge-json-summary \
   --output "$AGGREGATOR_SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$AGGREGATOR_SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$AGGREGATOR_SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$AGGREGATOR_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
@@ -564,10 +565,10 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-backend-check \
   --output "$AGGREGATOR_BACKEND_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$AGGREGATOR_BACKEND_CHECK"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$AGGREGATOR_BACKEND_CHECK"
 
 AGGREGATOR_RUNTIME_BACKEND_STATUS="$(
-  python3 - "$AGGREGATOR_BACKEND_CHECK" <<'PY'
+  "$PYTHON_BIN" - "$AGGREGATOR_BACKEND_CHECK" <<'PY'
 import json
 import sys
 
@@ -599,7 +600,7 @@ if [[ "$AGGREGATOR_RUNTIME_BACKEND_STATUS" != "pass" ]]; then
   exit 1
 fi
 
-SOLC_VERSION="$CHAINLINK_SOLC_VERSION" python3 "$ROOT/scripts/compare_contract_call_bytecode.py" \
+SOLC_VERSION="$CHAINLINK_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
   "$AGGREGATOR_FIXTURE" \
   --solc "$SOLC_BIN" \
   --lake "$LAKE_BIN" \
@@ -617,7 +618,7 @@ SOLC_VERSION="$CHAINLINK_SOLC_VERSION" python3 "$ROOT/scripts/compare_contract_c
   --runtime-only \
   --optimized > "$AGGREGATOR_COMPARE"
 
-python3 - "$AGGREGATOR_CHECK" "$AGGREGATOR_SUMMARY" \
+"$PYTHON_BIN" - "$AGGREGATOR_CHECK" "$AGGREGATOR_SUMMARY" \
   "$AGGREGATOR_BACKEND_CHECK" "$AGGREGATOR_COMPARE" <<'PY'
 import json
 import sys

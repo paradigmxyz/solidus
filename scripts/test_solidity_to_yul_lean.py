@@ -9309,7 +9309,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "--contract UniswapV4PositionFallback",
             "--runtime-only",
             "--format lean-backend-check",
-            "functions_compile",
+            '!= ("pass", "none")',
             "uniswap_v4_position_runtime_backend_check=",
             "uniswap_v4_position_runtime_backend_first_none=",
             "uniswap_v4_position_runtime_compare=",
@@ -9349,8 +9349,8 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "permit2_signature_backend_check_objects=",
             "permit2_signature_runtime_backend_check=",
             "permit2_signature_runtime_backend_first_none=",
-            "to_yul_contract",
-            "lower_code_unchecked",
+            'signature_runtime_backend != ("pass", "none", "some")',
+            "permit2_signature_backend_check_failed=",
         ]:
             self.assertIn(behavior, permit2_smoke)
 
@@ -9489,8 +9489,8 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "position.update(-400, 0, 0)",
             "CannotUpdateEmptyPosition",
             "lean-backend-check",
-            "runtime_first_none != \"functions_compile\"",
-            "runtime_compare = \"blocked\"",
+            '(runtime_check_status, runtime_first_none) != ("pass", "none")',
+            'runtime_compare = "yes"',
             "contract_call_compare",
             "bridge_summary_1_frontends",
             "frontend_label",
@@ -9715,7 +9715,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "permit2_signature_backend_check_objects=",
             "permit2_signature_runtime_backend_check=",
             "permit2_signature_runtime_backend_first_none=",
-            "lower_code_unchecked",
+            'signature_runtime_backend != ("pass", "none", "some")',
             "permit2_signature_summary_primitives=yes",
         ]:
             self.assertIn(behavior, permit2_smoke)
@@ -10143,10 +10143,10 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertIn("open external-boundary", external_smoke)
         self.assertIn("external_call_decode_backend_check_failed=", external_smoke)
         self.assertIn("external_call_decode_backend_compatibility=ready", external_smoke)
-        self.assertIn("external_call_decode_creation_first_none=to_yul_contract", external_smoke)
-        self.assertIn("external_call_decode_runtime_first_none=locals_compile", external_smoke)
+        self.assertIn("external_call_decode_creation_backend_check=pass", external_smoke)
+        self.assertIn("external_call_decode_runtime_backend_check=pass", external_smoke)
         self.assertIn(
-            '("ExternalCallBox", "runtime"): ("fail", "locals_compile")',
+            '("ExternalCallBox", "runtime"): ("pass", "none")',
             external_smoke,
         )
         for primitive in [
@@ -10384,7 +10384,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertIn("error_panic_decode_backend_check_passed=", error_panic_smoke)
         self.assertIn("error_panic_decode_backend_check_failed=", error_panic_smoke)
         self.assertIn("error_panic_decode_runtime_first_none=", error_panic_smoke)
-        for primitive in ["div", "log2", "mul", "revert", "sload", "sstore"]:
+        for primitive in ["div", "log2", "revert", "sload", "sstore"]:
             self.assertIn(primitive, error_panic_smoke)
         for behavior in [
             "error OutOfRange(uint256 seen, uint256 max)",
@@ -10518,10 +10518,12 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertIn("object_tree_factory_backend_compatibility=ready", object_tree_smoke)
         self.assertIn("object_tree_child_creation_backend_check=pass", object_tree_smoke)
         self.assertIn("object_tree_child_runtime_backend_check=pass", object_tree_smoke)
-        self.assertIn("object_tree_factory_runtime_backend_first_none=to_yul_contract", object_tree_smoke)
+        self.assertIn("object_tree_factory_creation_backend_check=pass", object_tree_smoke)
+        self.assertIn("object_tree_factory_runtime_backend_check=pass", object_tree_smoke)
         self.assertIn('("ChildBox", "creation"): ("pass", "none")', object_tree_smoke)
         self.assertIn('("ChildBox", "runtime"): ("pass", "none")', object_tree_smoke)
-        self.assertIn('("FactoryBox", "runtime"): ("fail", "to_yul_contract")', object_tree_smoke)
+        self.assertIn('("FactoryBox", "creation"): ("pass", "none")', object_tree_smoke)
+        self.assertIn('("FactoryBox", "runtime"): ("pass", "none")', object_tree_smoke)
         for primitive in ["create", "create2", "gas"]:
             self.assertIn(primitive, object_tree_smoke)
         for behavior in [

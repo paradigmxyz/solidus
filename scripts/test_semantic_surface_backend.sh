@@ -148,6 +148,15 @@ def walk(value):
 
 walk(bridge)
 required = {
+    "add", "mul", "sub", "div", "sdiv", "mod", "smod",
+    "addmod", "mulmod", "exp", "signextend",
+    "lt", "gt", "slt", "sgt", "eq", "iszero",
+    "and", "or", "xor", "not", "byte", "shl", "shr", "sar",
+    "address", "balance", "origin", "caller", "callvalue",
+    "calldataload", "calldatasize", "calldatacopy", "gasprice",
+    "blockhash", "coinbase", "timestamp", "number", "prevrandao",
+    "gaslimit", "chainid", "selfbalance", "basefee",
+    "mload", "mstore", "mstore8", "sload", "sstore", "keccak256",
     "tstore", "tload", "blobhash", "blobbasefee", "mcopy",
     "codesize", "codecopy", "extcodesize", "extcodecopy", "extcodehash",
     "call", "callcode", "delegatecall", "staticcall", "gas",

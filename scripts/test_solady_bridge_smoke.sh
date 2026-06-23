@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOLC_BIN="${SOLC:-solc}"
+PYTHON_BIN="$("$ROOT/scripts/find_schema_python.sh")"
 if [[ -n "${LAKE:-}" ]]; then
   LAKE_BIN="$LAKE"
 elif [[ -x "$HOME/.elan/bin/lake" ]]; then
@@ -108,7 +109,7 @@ contract SoladyLibBitFallback {
 }
 SOL
 
-SOLC_VERSION="$SOLADY_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+SOLC_VERSION="$SOLADY_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$FIXTURE" \
   --solc "$SOLC_BIN" \
   --remapping "solady/=$REPO/src/" \
@@ -119,17 +120,17 @@ SOLC_VERSION="$SOLADY_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean.
   --bridge-json-dir "$SOLADY_BRIDGE_DIR" \
   --output "$SOLADY_BATCH_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$SOLADY_BRIDGE_DIR/manifest.json"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$SOLADY_BRIDGE_DIR/manifest.json"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$SOLADY_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --format bridge-json-summary \
   --output "$SOLADY_SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$SOLADY_SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$SOLADY_SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$SOLADY_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
@@ -137,7 +138,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-json-check \
   --output "$SOLADY_MANIFEST_CHECK"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$SOLADY_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
@@ -146,9 +147,9 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-backend-check \
   --output "$SOLADY_BACKEND_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$SOLADY_BACKEND_CHECK"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$SOLADY_BACKEND_CHECK"
 
-SOLC_VERSION="$SOLADY_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+SOLC_VERSION="$SOLADY_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$FIXTURE" \
   --solc "$SOLC_BIN" \
   --remapping "solady/=$REPO/src/" \
@@ -157,9 +158,9 @@ SOLC_VERSION="$SOLADY_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean.
   --bridge-json-dir "$SOLADY_PACKAGE_DIR" \
   --output "$SOLADY_PACKAGE_MANIFEST"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$SOLADY_PACKAGE_MANIFEST"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$SOLADY_PACKAGE_MANIFEST"
 
-SOLC_VERSION="$SOLADY_SOLC_VERSION" python3 "$ROOT/scripts/compare_contract_call_bytecode.py" \
+SOLC_VERSION="$SOLADY_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
   "$FIXTURE" \
   --solc "$SOLC_BIN" \
   --lake "$LAKE_BIN" \
@@ -181,7 +182,7 @@ printf 'repo_ref=%s\n' "$ACTUAL_REF"
 printf 'libbit_fallback_compare_calls=%s\n' "$(
   sed -n 's/^calls=//p' "$LIBBIT_COMPARE"
 )"
-python3 - "$SOLADY_BATCH_CHECK" \
+"$PYTHON_BIN" - "$SOLADY_BATCH_CHECK" \
   "$SOLADY_MANIFEST_CHECK" \
   "$SOLADY_BRIDGE_DIR/manifest.json" \
   "$SOLADY_PACKAGE_MANIFEST" \

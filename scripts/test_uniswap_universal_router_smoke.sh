@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOLC_BIN="${SOLC:-solc}"
+PYTHON_BIN="$("$ROOT/scripts/find_schema_python.sh")"
 if [[ -n "${LAKE:-}" ]]; then
   LAKE_BIN="$LAKE"
 elif [[ -x "$HOME/.elan/bin/lake" ]]; then
@@ -77,7 +78,7 @@ COMMANDS_BACKEND_CHECK="$OUTDIR/UniswapUniversalRouterCommandsFallback.lean-back
 COMMANDS_COMPARE="$OUTDIR/UniswapUniversalRouterCommandsFallback.call-compare.txt"
 
 SOLC_VERSION="$UNISWAP_UNIVERSAL_ROUTER_SOLC_VERSION" \
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$SOURCE" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$SOURCE" \
   --solc "$SOLC_BIN" \
   --contract UnsupportedProtocol \
   --format bridge-json \
@@ -85,10 +86,10 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$SOURCE" \
   --bridge-json-dir "$BRIDGE_DIR" \
   --output "$BRIDGE"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" "$BRIDGE"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" "$BRIDGE"
 
 SOLC_VERSION="$UNISWAP_UNIVERSAL_ROUTER_SOLC_VERSION" \
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$BRIDGE" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$BRIDGE" \
   --input-format bridge-json \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
@@ -96,7 +97,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$BRIDGE" \
   --output "$LEAN_CHECK"
 
 SOLC_VERSION="$UNISWAP_UNIVERSAL_ROUTER_SOLC_VERSION" \
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$SOURCE" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$SOURCE" \
   --solc "$SOLC_BIN" \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
@@ -105,23 +106,23 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$SOURCE" \
   --output "$ARTIFACT"
 
 SOLC_VERSION="$UNISWAP_UNIVERSAL_ROUTER_SOLC_VERSION" \
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$SOURCE" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$SOURCE" \
   --solc "$SOLC_BIN" \
   --format bridge-json \
   --all-contracts \
   --bridge-json-dir "$PACKAGE_DIR" \
   --output "$PACKAGE_MANIFEST"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$PACKAGE_MANIFEST"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$PACKAGE_MANIFEST"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$PACKAGE_MANIFEST" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$PACKAGE_MANIFEST" \
   --input-format bridge-json-manifest \
   --format bridge-json-summary \
   --output "$PACKAGE_SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$PACKAGE_SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$PACKAGE_SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$PACKAGE_MANIFEST" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$PACKAGE_MANIFEST" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
@@ -129,7 +130,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$PACKAGE_MANIFEST" \
   --output "$MANIFEST_CHECK"
 
 SOLC_VERSION="$UNISWAP_UNIVERSAL_ROUTER_SOLC_VERSION" \
-python3 "$ROOT/scripts/compare_contract_call_bytecode.py" "$SOURCE" \
+"$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" "$SOURCE" \
   --solc "$SOLC_BIN" \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
@@ -180,7 +181,7 @@ contract UniswapUniversalRouterCommandsFallback {
 SOL
 
 SOLC_VERSION="$UNISWAP_UNIVERSAL_ROUTER_SOLC_VERSION" \
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$COMMANDS_FIXTURE" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$COMMANDS_FIXTURE" \
   --solc "$SOLC_BIN" \
   --contract UniswapUniversalRouterCommandsFallback \
   --remapping "universal-router/=$REPO/" \
@@ -190,25 +191,25 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$COMMANDS_FIXTURE" \
   --output "$COMMANDS_BRIDGE" \
   --optimized
 
-python3 "$ROOT/scripts/validate_bridge_json.py" "$COMMANDS_BRIDGE"
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet \
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" "$COMMANDS_BRIDGE"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet \
   "$COMMANDS_BRIDGE_DIR/manifest.json"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$COMMANDS_BRIDGE" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$COMMANDS_BRIDGE" \
   --input-format bridge-json \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
   --format lean-json-check \
   --output "$COMMANDS_LEAN_CHECK"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$COMMANDS_BRIDGE" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$COMMANDS_BRIDGE" \
   --input-format bridge-json \
   --format bridge-json-summary \
   --output "$COMMANDS_SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$COMMANDS_SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$COMMANDS_SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$COMMANDS_BRIDGE_DIR/manifest.json" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$COMMANDS_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
@@ -217,10 +218,10 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$COMMANDS_BRIDGE_DIR/manifest.j
   --format lean-backend-check \
   --output "$COMMANDS_BACKEND_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$COMMANDS_BACKEND_CHECK"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$COMMANDS_BACKEND_CHECK"
 
 SOLC_VERSION="$UNISWAP_UNIVERSAL_ROUTER_SOLC_VERSION" \
-python3 "$ROOT/scripts/compare_contract_call_bytecode.py" "$COMMANDS_FIXTURE" \
+"$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" "$COMMANDS_FIXTURE" \
   --solc "$SOLC_BIN" \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
@@ -239,37 +240,37 @@ python3 "$ROOT/scripts/compare_contract_call_bytecode.py" "$COMMANDS_FIXTURE" \
 BRIDGE_BYTES="$(wc -c < "$BRIDGE" | tr -d ' ')"
 LEAN_DECODE="$(sed -n 's/^lean_bridge_json_decode=//p' "$LEAN_CHECK")"
 ARTIFACT_RUNTIME_BYTES="$(
-  python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["sizes"]["runtimeBytes"])' \
+  "$PYTHON_BIN" -c 'import json, sys; print(json.load(open(sys.argv[1]))["sizes"]["runtimeBytes"])' \
     "$ARTIFACT"
 )"
 PACKAGE_ENTRIES="$(
-  python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["counts"]["entries"])' \
+  "$PYTHON_BIN" -c 'import json, sys; print(json.load(open(sys.argv[1]))["counts"]["entries"])' \
     "$PACKAGE_MANIFEST"
 )"
 PACKAGE_SKIPPED="$(
-  python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["counts"]["skippedContracts"])' \
+  "$PYTHON_BIN" -c 'import json, sys; print(json.load(open(sys.argv[1]))["counts"]["skippedContracts"])' \
     "$PACKAGE_MANIFEST"
 )"
 PACKAGE_SUMMARY_OBJECTS="$(
-  python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["counts"]["objects"])' \
+  "$PYTHON_BIN" -c 'import json, sys; print(json.load(open(sys.argv[1]))["counts"]["objects"])' \
     "$PACKAGE_SUMMARY"
 )"
 MANIFEST_OBJECTS="$(
-  python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["counts"]["checkedObjects"])' \
+  "$PYTHON_BIN" -c 'import json, sys; print(json.load(open(sys.argv[1]))["counts"]["checkedObjects"])' \
     "$MANIFEST_CHECK"
 )"
 CALLS="$(
   sed -n 's/^calls=//p' "$CALL_COMPARE"
 )"
 COMMANDS_CALLS="$(
-  python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["counts"]["calls"])' \
+  "$PYTHON_BIN" -c 'import json, sys; print(json.load(open(sys.argv[1]))["counts"]["calls"])' \
     "$COMMANDS_SUMMARY"
 )"
 COMMANDS_LEAN_DECODE="$(
   sed -n 's/^lean_bridge_json_decode=//p' "$COMMANDS_LEAN_CHECK"
 )"
 COMMANDS_BACKEND_FIRST_NONE="$(
-  python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["firstNoneCounts"])' \
+  "$PYTHON_BIN" -c 'import json, sys; print(json.load(open(sys.argv[1]))["firstNoneCounts"])' \
     "$COMMANDS_BACKEND_CHECK"
 )"
 COMMANDS_COMPARE_CALLS="$(
@@ -290,7 +291,7 @@ printf 'universal_router_commands_lean_decode=%s\n' "$COMMANDS_LEAN_DECODE"
 printf 'universal_router_commands_summary_calls=%s\n' "$COMMANDS_CALLS"
 printf 'universal_router_commands_backend_first_none=%s\n' "$COMMANDS_BACKEND_FIRST_NONE"
 printf 'universal_router_commands_compare_calls=%s\n' "$COMMANDS_COMPARE_CALLS"
-python3 - "$PACKAGE_SUMMARY" "$COMMANDS_BRIDGE" "$COMMANDS_SUMMARY" "$COMMANDS_BACKEND_CHECK" "$MANIFEST_CHECK" <<'PY'
+"$PYTHON_BIN" - "$PACKAGE_SUMMARY" "$COMMANDS_BRIDGE" "$COMMANDS_SUMMARY" "$COMMANDS_BACKEND_CHECK" "$MANIFEST_CHECK" <<'PY'
 import json
 import sys
 

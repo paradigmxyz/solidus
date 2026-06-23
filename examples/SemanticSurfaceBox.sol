@@ -4,6 +4,90 @@ pragma solidity ^0.8.26;
 /// @notice Adversarial coverage for low-level operations that ordinary ABI
 /// examples rarely retain in optimized Yul.
 contract SemanticSurfaceBox {
+    function executionContext(address account, uint256 requestedBlock)
+        external
+        payable
+        returns (bytes32 digest)
+    {
+        assembly {
+            let ptr := mload(0x40)
+            mstore(ptr, address())
+            mstore(add(ptr, 0x20), balance(account))
+            mstore(add(ptr, 0x40), origin())
+            mstore(add(ptr, 0x60), caller())
+            mstore(add(ptr, 0x80), callvalue())
+            mstore(add(ptr, 0xa0), calldataload(4))
+            mstore(add(ptr, 0xc0), calldatasize())
+            mstore(add(ptr, 0xe0), gasprice())
+            mstore(add(ptr, 0x100), blockhash(requestedBlock))
+            mstore(add(ptr, 0x120), coinbase())
+            mstore(add(ptr, 0x140), timestamp())
+            mstore(add(ptr, 0x160), number())
+            mstore(add(ptr, 0x180), prevrandao())
+            mstore(add(ptr, 0x1a0), gaslimit())
+            mstore(add(ptr, 0x1c0), chainid())
+            mstore(add(ptr, 0x1e0), selfbalance())
+            mstore(add(ptr, 0x200), basefee())
+            calldatacopy(add(ptr, 0x220), 0, calldatasize())
+            digest := keccak256(ptr, add(0x220, calldatasize()))
+        }
+    }
+
+    function arithmetic(uint256 x, uint256 y, uint256 modulus)
+        external
+        pure
+        returns (bytes32 digest)
+    {
+        assembly {
+            let ptr := mload(0x40)
+            mstore(ptr, add(x, y))
+            mstore(add(ptr, 0x20), mul(x, y))
+            mstore(add(ptr, 0x40), sub(x, y))
+            mstore(add(ptr, 0x60), div(x, y))
+            mstore(add(ptr, 0x80), sdiv(x, y))
+            mstore(add(ptr, 0xa0), mod(x, y))
+            mstore(add(ptr, 0xc0), smod(x, y))
+            mstore(add(ptr, 0xe0), addmod(x, y, modulus))
+            mstore(add(ptr, 0x100), mulmod(x, y, modulus))
+            mstore(add(ptr, 0x120), exp(x, and(y, 0xff)))
+            mstore(add(ptr, 0x140), signextend(x, y))
+            mstore(add(ptr, 0x160), lt(x, y))
+            mstore(add(ptr, 0x180), gt(x, y))
+            mstore(add(ptr, 0x1a0), slt(x, y))
+            mstore(add(ptr, 0x1c0), sgt(x, y))
+            mstore(add(ptr, 0x1e0), eq(x, y))
+            mstore(add(ptr, 0x200), iszero(x))
+            mstore(add(ptr, 0x220), and(x, y))
+            mstore(add(ptr, 0x240), or(x, y))
+            mstore(add(ptr, 0x260), xor(x, y))
+            mstore(add(ptr, 0x280), not(x))
+            mstore(add(ptr, 0x2a0), byte(and(x, 31), y))
+            mstore(add(ptr, 0x2c0), shl(and(x, 255), y))
+            mstore(add(ptr, 0x2e0), shr(and(x, 255), y))
+            mstore(add(ptr, 0x300), sar(and(x, 255), y))
+            digest := keccak256(ptr, 0x320)
+        }
+    }
+
+    function storageAndBytes(bytes32 slot, uint256 value)
+        external
+        returns (bytes32 digest)
+    {
+        assembly {
+            sstore(slot, value)
+            let ptr := mload(0x40)
+            mstore(ptr, sload(slot))
+            mstore8(add(ptr, 31), byte(31, value))
+            digest := keccak256(ptr, 0x20)
+        }
+    }
+
+    function loadStorage(bytes32 slot) external view returns (uint256 value) {
+        assembly {
+            value := sload(slot)
+        }
+    }
+
     function transientAndBlob(bytes32 key, uint256 value, uint256 blobIndex)
         external
         returns (uint256 loaded, bytes32 versionedHash, uint256 blobFee)

@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOLC_BIN="${SOLC:-solc}"
+PYTHON_BIN="$("$ROOT/scripts/find_schema_python.sh")"
 if [[ -n "${LAKE:-}" ]]; then
   LAKE_BIN="$LAKE"
 elif [[ -x "$HOME/.elan/bin/lake" ]]; then
@@ -114,7 +115,7 @@ contract AaveV3MathFallback {
 }
 SOL
 
-SOLC_VERSION="$AAVE_V3_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+SOLC_VERSION="$AAVE_V3_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$MATH_FIXTURE" \
   --solc "$SOLC_BIN" \
   --remapping "aave-v3-core/=$REPO/contracts/" \
@@ -127,17 +128,17 @@ SOLC_VERSION="$AAVE_V3_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean
   --optimized \
   --output "$MATH_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$MATH_BRIDGE_DIR/manifest.json"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$MATH_BRIDGE_DIR/manifest.json"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$MATH_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --format bridge-json-summary \
   --output "$MATH_SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$MATH_SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$MATH_SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$MATH_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
@@ -147,7 +148,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-backend-check \
   --output "$MATH_BACKEND_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$MATH_BACKEND_CHECK"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$MATH_BACKEND_CHECK"
 
 cat > "$INTEREST_FIXTURE" <<'SOL'
 // SPDX-License-Identifier: BUSL-1.1
@@ -175,7 +176,7 @@ contract AaveV3InterestFallback {
 }
 SOL
 
-SOLC_VERSION="$AAVE_V3_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+SOLC_VERSION="$AAVE_V3_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$INTEREST_FIXTURE" \
   --solc "$SOLC_BIN" \
   --remapping "aave-v3-core/=$REPO/contracts/" \
@@ -188,17 +189,17 @@ SOLC_VERSION="$AAVE_V3_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean
   --optimized \
   --output "$INTEREST_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$INTEREST_BRIDGE_DIR/manifest.json"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$INTEREST_BRIDGE_DIR/manifest.json"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$INTEREST_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --format bridge-json-summary \
   --output "$INTEREST_SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$INTEREST_SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$INTEREST_SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$INTEREST_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
@@ -208,9 +209,9 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-backend-check \
   --output "$INTEREST_BACKEND_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$INTEREST_BACKEND_CHECK"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$INTEREST_BACKEND_CHECK"
 
-python3 - "$MATH_CHECK" "$MATH_SUMMARY" "$MATH_BACKEND_CHECK" \
+"$PYTHON_BIN" - "$MATH_CHECK" "$MATH_SUMMARY" "$MATH_BACKEND_CHECK" \
   "$INTEREST_CHECK" "$INTEREST_SUMMARY" "$INTEREST_BACKEND_CHECK" <<'PY'
 import json
 import sys

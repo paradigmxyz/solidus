@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOLC_BIN="${SOLC:-solc}"
 LAKE_BIN="${LAKE:-$HOME/.elan/bin/lake}"
 FORGE_BIN="${FORGE:-forge}"
-PYTHON_BIN="${PYTHON:-python3}"
+PYTHON_BIN="$("$ROOT/scripts/find_schema_python.sh")"
 YUL_AST_SOLC="${YUL_AST_SOLC:-$HOME/.solc-select/artifacts/solc-0.8.26/solc-0.8.26}"
 
 TMPDIR="${TMPDIR:-/tmp}"

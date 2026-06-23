@@ -11,7 +11,7 @@ else
   LAKE_BIN="lake"
 fi
 FORGE_BIN="${FORGE:-forge}"
-PYTHON_BIN="${PYTHON:-python3}"
+PYTHON_BIN="$("$ROOT/scripts/find_schema_python.sh")"
 
 TMPDIR="${TMPDIR:-/tmp}"
 OUTDIR="$(mktemp -d "$TMPDIR/evm-compiler-compound-comet-smoke.XXXXXX")"

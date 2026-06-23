@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOLC_BIN="${SOLC:-solc}"
+PYTHON_BIN="$("$ROOT/scripts/find_schema_python.sh")"
 if [[ -n "${LAKE:-}" ]]; then
   LAKE_BIN="$LAKE"
 elif [[ -x "$HOME/.elan/bin/lake" ]]; then
@@ -84,7 +85,7 @@ contract UniswapV4ExtloadWrapper is Extsload, Exttload {
 SOL
 
 mkdir -p "$EXTLOAD_BRIDGE_DIR"
-SOLC_VERSION="$UNISWAP_V4_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+SOLC_VERSION="$UNISWAP_V4_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$EXTLOAD_FIXTURE" \
   --solc "$SOLC_BIN" \
   --remapping "v4-core/=$REPO/" \
@@ -93,9 +94,9 @@ SOLC_VERSION="$UNISWAP_V4_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_l
   --bridge-json-dir "$EXTLOAD_BRIDGE_DIR" \
   --output "$EXTLOAD_MANIFEST"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$EXTLOAD_MANIFEST"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$EXTLOAD_MANIFEST"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$EXTLOAD_MANIFEST" \
   --input-format bridge-json-manifest \
   --format bridge-json-summary \
@@ -103,9 +104,9 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --object runtime \
   --output "$EXTLOAD_SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$EXTLOAD_SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$EXTLOAD_SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$EXTLOAD_MANIFEST" \
   --input-format bridge-json-manifest \
   --contract UniswapV4ExtloadWrapper \
@@ -115,11 +116,11 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-backend-check \
   --output "$EXTLOAD_BACKEND"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$EXTLOAD_BACKEND"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$EXTLOAD_BACKEND"
 
 printf 'uniswap_v4_extload_summary_smoke=pass\n'
 printf 'repo_ref=%s\n' "$ACTUAL_REF"
-python3 - "$EXTLOAD_MANIFEST" "$EXTLOAD_BRIDGE_DIR" "$EXTLOAD_SUMMARY" \
+"$PYTHON_BIN" - "$EXTLOAD_MANIFEST" "$EXTLOAD_BRIDGE_DIR" "$EXTLOAD_SUMMARY" \
   "$EXTLOAD_BACKEND" <<'PY'
 import json
 import sys
