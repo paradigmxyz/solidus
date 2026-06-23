@@ -433,6 +433,9 @@ boundaries. Corpus acceptance alone does not discharge them.
     - [ ] Statements, loops, and internal calls.
       - [x] Direct/prepared zero-result primitives and terminal primitives.
       - [ ] Declarations, assignments, and abrupt statement leaves.
+        - [x] Uninitialized/initialized declarations, direct assignments, and
+          `break`/`continue`/`leave`.
+        - [ ] Assignment after a compiler-prepared primitive argument prelude.
       - [ ] Recursive blocks, branches, switches, loops, and internal calls.
   - [ ] Replace the scratch-capable public Functions-facing safety premise with
     the Yul-facing execution premise; keep the premise-free stack theorem as a

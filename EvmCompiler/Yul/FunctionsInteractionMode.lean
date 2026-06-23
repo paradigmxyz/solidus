@@ -361,10 +361,73 @@ theorem exec_expr_primitive (mode : Mode) (fuel : Nat)
           (fun argsResult =>
             (sourcePrimitive mode).eval fuel argsResult.1 prim
               argsResult.2.reverse)
-          (fun result =>
-            pure
-              (Yul.InteractionSemantics.stateModel.multifill
-                [] result.1 result.2))).symm
+              (fun result =>
+                pure
+                  (Yul.InteractionSemantics.stateModel.multifill
+                    [] result.1 result.2))).symm
+
+theorem exec_let_none_succ (mode : Mode) (fuel : Nat)
+    (names : List EvmYul.Identifier)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : Yul.InteractionSemantics.State)
+    (hCheck : EvmYul.Yul.checkDeclaration state names = .ok ()) :
+    exec mode (fuel + 1) (.Let names none) code state =
+      pure (state.zeroFill names) := by
+  simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
+    hCheck, Yul.InteractionSemantics.stateModel]
+
+theorem exec_let_one_succ (mode : Mode) (fuel : Nat)
+    (name : EvmYul.Identifier) (expr : EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : Yul.InteractionSemantics.State)
+    (hCheck : EvmYul.Yul.checkDeclaration state [name] = .ok ()) :
+    exec mode (fuel + 1) (.Let [name] (some expr)) code state =
+      Simulation.Interaction.bind (evalValues mode fuel expr code state)
+        (fun result =>
+          pure
+            (Yul.InteractionSemantics.stateModel.multifill
+              [name] result.1 result.2)) := by
+  simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
+    evalValues, hCheck, Yul.Source.Effectful.Control.multifill,
+    Yul.InteractionSemantics.stateModel]
+  rfl
+
+theorem exec_assign_one_succ (mode : Mode) (fuel : Nat)
+    (name : EvmYul.Identifier) (expr : EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : Yul.InteractionSemantics.State)
+    (hCheck : EvmYul.Yul.checkAssignment state [name] = .ok ()) :
+    exec mode (fuel + 1) (.Assign [name] expr) code state =
+      Simulation.Interaction.bind (evalValues mode fuel expr code state)
+        (fun result =>
+          pure
+            (Yul.InteractionSemantics.stateModel.multifill
+              [name] result.1 result.2)) := by
+  simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
+    evalValues, hCheck, Yul.Source.Effectful.Control.multifill,
+    Yul.InteractionSemantics.stateModel]
+  rfl
+
+theorem exec_brk_succ (mode : Mode) (fuel : Nat)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : Yul.InteractionSemantics.State) :
+    exec mode (fuel + 1) .Break code state = pure state.setBreak := by
+  simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
+    Yul.InteractionSemantics.stateModel]
+
+theorem exec_cont_succ (mode : Mode) (fuel : Nat)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : Yul.InteractionSemantics.State) :
+    exec mode (fuel + 1) .Continue code state = pure state.setContinue := by
+  simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
+    Yul.InteractionSemantics.stateModel]
+
+theorem exec_leave_succ (mode : Mode) (fuel : Nat)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : Yul.InteractionSemantics.State) :
+    exec mode (fuel + 1) .Leave code state = pure state.setLeave := by
+  simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
+    Yul.InteractionSemantics.stateModel]
 
 end Source
 
@@ -530,6 +593,22 @@ theorem openRun_let (mode : Mode) (program : Functions.Program)
   | nil => rfl
   | cons value rest =>
       cases rest <;> rfl
+
+theorem openRun_let_lit (mode : Mode) (program : Functions.Program)
+    (ctx : Functions.Source.Ctx) (fuel : Nat) (name : Functions.Name)
+    (value : Word) (state : Functions.InteractionSemantics.State) :
+    openRun mode program ctx fuel (.let_ name (.lit value)) state =
+      pure
+        (Functions.Source.Effectful.Outcome.regular
+          (state.insert name value),
+          { ctx with scope := name :: ctx.scope }) := by
+  rw [openRun_let]
+  simp [Target.Expr.openEval, Locals.Source.Effectful.Expr.Control.eval,
+    Locals.Source.Effectful.Expr.eval,
+    Functions.InteractionSemantics.stateModel,
+    Locals.InteractionSemantics.stateModel,
+    Locals.Source.Effectful.Ordinary.stateModel]
+  rfl
 
 theorem openRun_assign_of_contains (mode : Mode)
     (program : Functions.Program) (ctx : Functions.Source.Ctx)

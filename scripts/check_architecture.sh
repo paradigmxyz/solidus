@@ -1648,7 +1648,8 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionPreparedArgsMode.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedConditionMode.lean \
   EvmCompiler/Yul/FunctionsInteractionStatementMode.lean \
-  EvmCompiler/Yul/FunctionsInteractionPreparedPrimitiveMode.lean
+  EvmCompiler/Yul/FunctionsInteractionPreparedPrimitiveMode.lean \
+  EvmCompiler/Yul/FunctionsInteractionPreparedStatementMode.lean
 if ! sed -n '/^noncomputable def toObjectsWithObservers? (program/,/^[[:space:]]*toObjectsCanonical? program$/p' \
       EvmCompiler/Yul/Compiler.lean |
     rg -q 'toObjectsCanonical\? program'; then
