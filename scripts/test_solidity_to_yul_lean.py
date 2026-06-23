@@ -254,6 +254,8 @@ class SolidityToYulLeanTests(unittest.TestCase):
                 "--calldata",
                 "0x",
                 "--optimized",
+                "--evm-version",
+                "paris",
                 "--optimizer-runs",
                 "999999",
                 "--yul-ast-solc",
@@ -264,6 +266,8 @@ class SolidityToYulLeanTests(unittest.TestCase):
         command = []
         compare_call.append_bridge_compile_options(command, args)
         self.assertIn("--optimizer-runs", command)
+        self.assertIn("--evm-version", command)
+        self.assertIn("paris", command)
         self.assertIn("999999", command)
         self.assertIn("--yul-ast-solc", command)
         self.assertIn("/opt/solc-0.8.26", command)

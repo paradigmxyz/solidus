@@ -212,6 +212,7 @@ run_protocol_case() {
     --remapping "$remapping"
     --contract "$contract"
     --optimized
+    --evm-version "$forge_evm_version"
   )
   local compare_args=(
     "$fixture"
@@ -223,6 +224,7 @@ run_protocol_case() {
     --remapping "$remapping"
     --contract "$contract"
     --optimized
+    --evm-version "$forge_evm_version"
   )
   local calldata_args=()
   local calldata object backend

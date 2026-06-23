@@ -32,6 +32,15 @@ for version in "${VERSIONS[@]}"; do
     exit 1
   fi
   printf '%s\n' "$abi_output"
+
+  effect_output="$(SOLC="$compiler" \
+    "$ROOT/scripts/test_effect_ordering_surface_backend.sh")"
+  if [[ "$effect_output" != *"effect_ordering_surface_backend=pass"* ]]; then
+    printf 'error: pinned solc %s failed ordered-effect coverage\n%s\n' \
+      "$version" "$effect_output" >&2
+    exit 1
+  fi
+  printf '%s\n' "$effect_output"
   printf 'supported_solc_version=%s\n' "$version"
 done
 

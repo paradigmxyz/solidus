@@ -16,6 +16,10 @@ from pathlib import Path
 from typing import Any, Sequence
 
 
+SUPPORTED_EVM_VERSIONS = ("london", "paris", "shanghai", "cancun")
+DEFAULT_EVM_VERSION = "cancun"
+
+
 def load_bridge(script_dir: Path) -> Any:
     bridge_path = script_dir / "solidity_to_yul_lean.py"
     spec = importlib.util.spec_from_file_location("solidity_to_yul_lean", bridge_path)
@@ -195,6 +199,7 @@ def build_full_solc_input(bridge: Any, args: argparse.Namespace) -> dict[str, An
         experimental=args.experimental,
         include_sources=include_sources,
         optimizer_runs=getattr(args, "optimizer_runs", None),
+        evm_version=getattr(args, "evm_version", DEFAULT_EVM_VERSION),
     )
     ensure_output_selection_fields(
         compiler_input,
@@ -246,6 +251,9 @@ def append_bridge_compile_options(
         command.extend(["--source-name", args.source_name])
     if args.optimized:
         command.append("--optimized")
+    evm_version = getattr(args, "evm_version", None)
+    if evm_version is not None:
+        command.extend(["--evm-version", evm_version])
     optimizer_runs = getattr(args, "optimizer_runs", None)
     if optimizer_runs is not None:
         command.extend(["--optimizer-runs", str(optimizer_runs)])
@@ -795,6 +803,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--optimized", action="store_true")
+    parser.add_argument(
+        "--evm-version",
+        choices=SUPPORTED_EVM_VERSIONS,
+        default=DEFAULT_EVM_VERSION,
+    )
     parser.add_argument("--optimizer-runs", type=int, metavar="N")
     parser.add_argument("--no-via-ir", dest="via_ir", action="store_false")
     parser.add_argument("--no-experimental", dest="experimental", action="store_false")
