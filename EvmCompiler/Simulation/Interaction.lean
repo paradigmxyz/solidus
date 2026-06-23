@@ -1685,6 +1685,69 @@ theorem of_successful_executes
                     cases hHead
                     exact ⟨rightDone, hRightTail, hDone⟩
 
+/-- Reconstruct a structural open-world relation from exact preservation of
+every concrete branch, including error outcomes. -/
+theorem of_executes
+    {Error1 : Type u1} {Result1 : Type v1}
+    {Error2 : Type u2} {Result2 : Type v2}
+    {doneRel :
+      Except Error1 Result1 -> Except Error2 Result2 -> Prop}
+    {left : Interaction Error1 Result1}
+    {right : Interaction Error2 Result2}
+    (hExec :
+      forall transcript leftDone,
+        Executes left transcript leftDone ->
+          exists rightDone,
+            Executes right transcript rightDone /\
+              doneRel leftDone rightDone) :
+    Rel doneRel left right := by
+  induction left generalizing right with
+  | done leftDone =>
+      obtain ⟨rightDone, hRightExec, hDone⟩ :=
+        hExec [] leftDone (Executes.done leftDone)
+      cases hRightExec with
+      | done => exact .done hDone
+  | request query resume ih =>
+      cases right with
+      | done rightDone =>
+          obtain ⟨tailTranscript, leftDone, hLeftTail, _⟩ :=
+            AllDone.exists_executes
+              (AllDone.trivial (resume query.defaultAnswer))
+          obtain ⟨targetDone, hTargetExec, _hDone⟩ :=
+            hExec
+              ({ query := query, answer := query.defaultAnswer } ::
+                tailTranscript)
+              leftDone
+              (Executes.request query.defaultAnswer hLeftTail)
+          cases hTargetExec
+      | request targetQuery targetResume =>
+          obtain ⟨tailTranscript, leftDone, hLeftTail, _⟩ :=
+            AllDone.exists_executes
+              (AllDone.trivial (resume query.defaultAnswer))
+          obtain ⟨targetDone, hTargetExec, _hDone⟩ :=
+            hExec
+              ({ query := query, answer := query.defaultAnswer } ::
+                tailTranscript)
+              leftDone
+              (Executes.request query.defaultAnswer hLeftTail)
+          obtain ⟨targetAnswer, hExchange, _hTargetTail⟩ :=
+            Executes.request_inv hTargetExec
+          have hQuery : query = targetQuery :=
+            congrArg Exchange.query hExchange
+          subst targetQuery
+          exact .request fun answer => by
+            apply ih answer
+            intro transcript leftDone hLeftExec
+            obtain ⟨rightDone, hRightExec, hDone⟩ :=
+              hExec
+                ({ query := query, answer := answer } :: transcript)
+                leftDone
+                (Executes.request answer hLeftExec)
+            obtain ⟨rightAnswer, hHead, hRightTail⟩ :=
+              Executes.request_inv hRightExec
+            cases hHead
+            exact ⟨rightDone, hRightTail, hDone⟩
+
 /--
 Structural open equivalence transports every concrete external-world branch
 with the exact same ordered transcript.

@@ -981,6 +981,50 @@ def UniformExecPreservesUnder (result : TypedCfgCompiler.Result)
               Rel result ctx regular source.returns tokens
                 sourceOutcome targetOutcome
 
+/-- Error-branch preservation at one uniform target budget. Error kinds are
+observationally equivalent in the current gas-abstract EVM outcome model; the
+relation still requires the exact ordered external transcript. -/
+def UniformErrorExecPreservesUnder (result : TypedCfgCompiler.Result)
+    (cfg : TypedCfg.Program) (entry : Assembly.Label)
+    (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
+    (source : RunState) (tokens : List Word)
+    (sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome)
+    (targetFuel : Nat) (policy : StopPolicy) : Prop :=
+  forall target,
+    TypedCfgPreservation.StateRel source tokens target ->
+      forall transcript sourceError,
+        Simulation.Interaction.Executes
+            sourceRun transcript (.error sourceError) ->
+          exists targetError,
+            Simulation.Interaction.Executes
+              (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+                policy cfg targetFuel entry target)
+              transcript (.error targetError)
+
+/-- Complete branch preservation at one uniform target budget. This is the
+structural interface required for runtime errors as well as successful exits. -/
+def UniformDoneExecPreservesUnder (result : TypedCfgCompiler.Result)
+    (cfg : TypedCfg.Program) (entry : Assembly.Label)
+    (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
+    (regularExit : RegularExit)
+    (source : RunState) (tokens : List Word)
+    (sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome)
+    (targetFuel : Nat) (policy : StopPolicy) : Prop :=
+  forall target,
+    TypedCfgPreservation.StateRel source tokens target ->
+      forall transcript sourceDone,
+        Simulation.Interaction.Executes sourceRun transcript sourceDone ->
+          exists targetDone,
+            Simulation.Interaction.Executes
+                (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+                  policy cfg targetFuel entry target)
+                transcript targetDone /\
+              SegmentDoneRel result ctx regular source.returns tokens
+                regularExit
+                sourceDone targetDone
+
 /-- Execution-oriented preservation whose internally selected target budget is
 bounded by one source-owned ceiling. -/
 def BoundedExecPreservesUnder (result : TypedCfgCompiler.Result)
@@ -1335,6 +1379,29 @@ theorem uniformExec
               exact False.elim hRun
           | stopped remaining targetOutcome =>
               exact ⟨remaining, targetOutcome, hTargetExec, hRun⟩
+
+theorem uniformErrorExec
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {targetFuel : Nat} {policy : StopPolicy}
+    {regularExit : RegularExit}
+    (hPreserves :
+      PreservesUnder result cfg entry ctx regular regularExit
+        source tokens sourceRun targetFuel policy) :
+    UniformErrorExecPreservesUnder result cfg entry ctx regular
+      source tokens sourceRun targetFuel policy := by
+  intro target hStateRel transcript sourceError hSourceExec
+  obtain ⟨targetDone, hTargetExec, hDone⟩ :=
+    Simulation.Interaction.Rel.executes
+      (hPreserves target hStateRel) hSourceExec
+  cases targetDone with
+  | error targetError => exact ⟨targetError, hTargetExec⟩
+  | ok targetResult => cases hDone
 
 theorem boundedExec
     {result : TypedCfgCompiler.Result}
@@ -2478,7 +2545,68 @@ theorem exec
     hExec target hStateRel transcript sourceOutcome hSourceExec
   exact ⟨targetFuel, remaining, targetOutcome, hTargetExec, hRel⟩
 
+/-- Successful and error execution preservation together cover every source
+leaf at the same compiler-owned target budget. -/
+theorem with_errors
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {targetFuel : Nat} {policy : StopPolicy}
+    {regularExit : RegularExit}
+    (hSuccess :
+      UniformExecPreservesUnder result cfg entry ctx regular
+        source tokens sourceRun targetFuel policy)
+    (hError :
+      UniformErrorExecPreservesUnder result cfg entry ctx regular
+        source tokens sourceRun targetFuel policy) :
+    UniformDoneExecPreservesUnder result cfg entry ctx regular regularExit
+      source tokens sourceRun targetFuel policy := by
+  intro target hStateRel transcript sourceDone hSourceExec
+  cases sourceDone with
+  | error sourceError =>
+      obtain ⟨targetError, hTargetExec⟩ :=
+        hError target hStateRel transcript sourceError hSourceExec
+      exact
+        ⟨.error targetError, hTargetExec,
+          Simulation.Interaction.ExceptRel.error trivial⟩
+  | ok sourceOutcome =>
+      obtain ⟨remaining, targetOutcome, hTargetExec, hRel⟩ :=
+        hSuccess target hStateRel transcript sourceOutcome hSourceExec
+      exact
+        ⟨.ok (.stopped remaining targetOutcome), hTargetExec,
+          Simulation.Interaction.ExceptRel.ok hRel⟩
+
 end UniformExecPreservesUnder
+
+namespace UniformDoneExecPreservesUnder
+
+/-- Complete concrete-branch preservation reconstructs the structural
+open-world relation without a universal-success premise. -/
+theorem preserves
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {targetFuel : Nat} {policy : StopPolicy}
+    {regularExit : RegularExit}
+    (hExec :
+      UniformDoneExecPreservesUnder result cfg entry ctx regular regularExit
+        source tokens sourceRun targetFuel policy) :
+    PreservesUnder result cfg entry ctx regular regularExit
+      source tokens sourceRun targetFuel policy := by
+  intro target hStateRel
+  apply Simulation.Interaction.Rel.of_executes
+  intro transcript sourceDone hSourceExec
+  exact hExec target hStateRel transcript sourceDone hSourceExec
+
+end UniformDoneExecPreservesUnder
 
 namespace ExecPreservesUnder
 
