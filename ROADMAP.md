@@ -166,7 +166,9 @@ suffix. The all-finished theorem remains a corollary, not the primary boundary.
   at the existing compiler-owned uniform target budget.
 - [x] Compose TypedCfg -> Assembly source prefixes with branch-local terminal
   safety and exact structural-truncation reflection.
-- [ ] Compose Assembly -> compact bytecode and recursive objects
+- [x] Compose Assembly -> compact decoded bytecode through pass-owned
+  preparation and physical-encoding prefix theorems.
+- [ ] Compose compact bytecode through recursive objects
   without requiring terminal or finished source trees.
 - [ ] Publish a short canonical `Yul.EndToEnd` forward theorem requiring only
   checked compilation and canonical related initial states.

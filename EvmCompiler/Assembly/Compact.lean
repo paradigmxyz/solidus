@@ -3844,6 +3844,181 @@ theorem compile?_preparation_openRunNResult_finished_rel
           hSourceStep]
         exact .done (.error rfl)
 
+/-- Result interface for one branch of a fuel-bounded physical encoding. -/
+def PrefixBranchResult
+    (targetRun : Assembly.InteractionSemantics.OpenStepResult)
+    (transcript : Simulation.Interaction.Transcript)
+    (sourceDone : Assembly.Source.ExecutionOutcome) : Prop :=
+  match sourceDone with
+  | .ok (.running _) => Simulation.Interaction.Follows targetRun transcript
+  | _ =>
+      exists targetDone,
+        Simulation.Interaction.Executes targetRun transcript targetDone /\
+          RuntimeOutcomeRel targetDone sourceDone
+
+/-- Branch-local preparation preservation. A source branch that exhausts its
+instruction budget preserves its exact transcript prefix; an error or halt is
+reproduced with a runtime-related outcome. -/
+theorem compile?_preparation_openRunNResult_branch
+    {sourceProgram : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Artifact}
+    (hCompile : compile? sourceProgram pinnedPushPcs = some artifact)
+    (fuel extra : Nat) {target source : EVMState}
+    (hBoundary : PreparationStateRel sourceProgram artifact target source)
+    {transcript : Simulation.Interaction.Transcript}
+    {sourceDone : Assembly.Source.ExecutionOutcome}
+    (hExec : Simulation.Interaction.Executes
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        sourceProgram fuel source) transcript sourceDone) :
+    PrefixBranchResult
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.physicalSource (fuel + extra) target)
+      transcript sourceDone := by
+  induction fuel generalizing target source extra transcript sourceDone with
+  | zero =>
+      rw [Assembly.InteractionSemantics.Source.openRunNResult_zero] at hExec
+      cases hExec
+      unfold PrefixBranchResult
+      exact Simulation.Interaction.Follows.nil _
+  | succ fuel ih =>
+      rcases hBoundary with
+        ⟨sourcePc, preparedPc, hPair, hSourcePc, hTargetPc, hRuntime⟩
+      rcases hPair with hBlock | hEnd
+      · rcases hBlock with
+          ⟨block, hBlock, hBlockSource, hBlockPrepared⟩
+        have hBlockSourcePc :
+            source.pc = EvmYul.UInt256.ofNat block.sourcePc := by
+          simpa [hBlockSource] using hSourcePc
+        have hBlockTargetPc :
+            target.pc = EvmYul.UInt256.ofNat block.preparedPc := by
+          simpa [hBlockPrepared] using hTargetPc
+        obtain ⟨stepFuel, hStepFuel, hStep⟩ :=
+          compile?_preparationBlock_open_rel hCompile hBlock
+            hBlockTargetPc hBlockSourcePc hRuntime
+        have hSourceStep :=
+          compile?_preparation_source_openStepResult_eq_block
+            hCompile hBlock hBlockSourcePc
+        rw [Assembly.InteractionSemantics.Source.openRunNResult_succ,
+          hSourceStep] at hExec
+        let remaining := fuel + (extra + (1 - stepFuel))
+        have hFuel : Nat.succ fuel + extra = stepFuel + remaining := by
+          dsimp [remaining]
+          omega
+        rcases Simulation.Interaction.Executes.bind_cases hExec with
+          hStepError | hStepOk
+        · rcases hStepError with ⟨sourceError, hDone, hSourceStepExec⟩
+          subst sourceDone
+          obtain ⟨targetDone, hTargetStepExec, hRelated⟩ :=
+            Simulation.Interaction.Rel.executes
+              (Simulation.Interaction.Rel.symm hStep) hSourceStepExec
+          cases hRelated with
+          | error hError =>
+              rename_i targetError
+              subst targetError
+              have hTargetExec :=
+                Assembly.InteractionSemantics.Source.openRunNResult_error_add_executes
+                  (extra := remaining) hTargetStepExec
+              rw [← hFuel] at hTargetExec
+              exact ⟨.error sourceError, hTargetExec, .error rfl⟩
+        · rcases hStepOk with
+            ⟨sourceResult, headTranscript, restTranscript,
+              hTranscript, hSourceStepExec, hRestExec⟩
+          subst transcript
+          obtain ⟨targetDone, hTargetStepExec, hRelated⟩ :=
+            Simulation.Interaction.Rel.executes
+              (Simulation.Interaction.Rel.symm hStep) hSourceStepExec
+          cases hRelated with
+          | ok hResult =>
+              rename_i targetResult
+              cases targetResult with
+              | running targetMid =>
+                  cases sourceResult with
+                  | running sourceMid =>
+                      change PreparationStateRel sourceProgram artifact
+                        targetMid sourceMid at hResult
+                      have hTail := ih (extra + (1 - stepFuel)) hResult hRestExec
+                      unfold PrefixBranchResult at hTail ⊢
+                      rw [hFuel,
+                        Assembly.InteractionSemantics.Source.openRunNResult_add]
+                      cases sourceDone with
+                      | error sourceError =>
+                          rcases hTail with
+                            ⟨targetTailDone, hTargetTailExec, hTailRel⟩
+                          exact
+                            ⟨targetTailDone,
+                              Simulation.Interaction.Executes.bind_ok
+                                hTargetStepExec hTargetTailExec,
+                              hTailRel⟩
+                      | ok sourceFinal =>
+                          cases sourceFinal with
+                          | running sourceFinal =>
+                              exact Simulation.Interaction.Follows.bind_ok
+                                hTargetStepExec hTail
+                          | halted sourceHalt =>
+                              rcases hTail with
+                                ⟨targetTailDone, hTargetTailExec, hTailRel⟩
+                              exact
+                                ⟨targetTailDone,
+                                  Simulation.Interaction.Executes.bind_ok
+                                    hTargetStepExec hTargetTailExec,
+                                  hTailRel⟩
+                  | halted sourceHalt =>
+                      simp [PreparationStepResultRel] at hResult
+              | halted targetHalt =>
+                  cases sourceResult with
+                  | running sourceMid =>
+                      simp [PreparationStepResultRel] at hResult
+                  | halted sourceHalt =>
+                      cases hRestExec
+                      have hTargetExec :=
+                        Assembly.InteractionSemantics.Source.openRunNResult_halted_add_executes
+                          (extra := remaining) hTargetStepExec
+                      rw [← hFuel] at hTargetExec
+                      exact
+                        ⟨.ok (.halted targetHalt), by simpa using hTargetExec,
+                          .ok hResult⟩
+      · rcases hEnd with ⟨hSourceEnd, hPreparedEnd⟩
+        have hArtifact := compile?_valid hCompile
+        have hSourceToNat : source.pc.toNat = sourceProgram.byteLength := by
+          rw [hSourcePc, hSourceEnd]
+          exact hArtifact.sourcePCFits
+        have hTargetToNat :
+            target.pc.toNat = artifact.physicalSource.byteLength := by
+          rw [hTargetPc, hPreparedEnd]
+          exact hArtifact.physicalSourcePCFits
+        have hSourceStep :
+            Assembly.InteractionSemantics.Source.openStepResult
+                sourceProgram source =
+              .done (.error .InvalidInstruction) := by
+          unfold Assembly.InteractionSemantics.Source.openStepResult
+            Assembly.Source.stepResultWith
+          rw [hSourceToNat, instrAtPc_end_eq_none]
+          rfl
+        have hTargetStep :
+            Assembly.InteractionSemantics.Source.openStepResult
+                artifact.physicalSource target =
+              .done (.error .InvalidInstruction) := by
+          unfold Assembly.InteractionSemantics.Source.openStepResult
+            Assembly.Source.stepResultWith
+          rw [hTargetToNat, instrAtPc_end_eq_none]
+          rfl
+        rw [Assembly.InteractionSemantics.Source.openRunNResult_succ,
+          hSourceStep] at hExec
+        cases hExec
+        have hTargetOne : Simulation.Interaction.Executes
+            (Assembly.InteractionSemantics.Source.openRunNResult
+              artifact.physicalSource 1 target) []
+            (.error .InvalidInstruction) := by
+          rw [Assembly.InteractionSemantics.Source.openRunNResult_one,
+            hTargetStep]
+          exact .done _
+        have hTargetExec :=
+          Assembly.InteractionSemantics.Source.openRunNResult_error_add_executes
+            (extra := fuel + extra) hTargetOne
+        rw [show 1 + (fuel + extra) = Nat.succ fuel + extra by omega]
+          at hTargetExec
+        exact ⟨.error .InvalidInstruction, hTargetExec, .error rfl⟩
+
 /-- Actual compact-byte execution. Decoding is imported from EVMYulLean and
 instruction effects reuse the Assembly target kernels. -/
 def openStepResult (bytes : ByteArray) (state : EVMState) :
@@ -3927,6 +4102,37 @@ theorem openRunNResult_add (bytes : ByteArray) (first second : Nat)
         | .halted halt => Simulation.Interaction.pure (.halted halt)) := by
   exact Assembly.InteractionSemantics.Control.openRunNResultWith_add
     (openStepResult bytes) first second state
+
+theorem openRunNResult_error_add_executes
+    {bytes : ByteArray} {fuel extra : Nat} {state : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    {error : EVMException}
+    (hExec : Simulation.Interaction.Executes
+      (openRunNResult bytes fuel state) transcript (.error error)) :
+    Simulation.Interaction.Executes
+      (openRunNResult bytes (fuel + extra) state)
+      transcript (.error error) := by
+  rw [openRunNResult_add]
+  exact Simulation.Interaction.Executes.bind_error hExec
+
+theorem openRunNResult_halted_add_executes
+    {bytes : ByteArray} {fuel extra : Nat} {state : EVMState}
+    {transcript : Simulation.Interaction.Transcript} {halt : Halt}
+    (hExec : Simulation.Interaction.Executes
+      (openRunNResult bytes fuel state) transcript (.ok (.halted halt))) :
+    Simulation.Interaction.Executes
+      (openRunNResult bytes (fuel + extra) state)
+      transcript (.ok (.halted halt)) := by
+  rw [openRunNResult_add]
+  have hCombined := Simulation.Interaction.Executes.bind_ok
+    (next := fun result =>
+      match result with
+      | .running mid => openRunNResult bytes extra mid
+      | .halted final => Simulation.Interaction.pure (.halted final))
+    hExec
+    (Simulation.Interaction.Executes.done
+      (.ok (.halted halt) : Except EVMException StepResult))
+  simpa using hCombined
 
 theorem openRunNResult_succ (bytes : ByteArray) (fuel : Nat)
     (state : EVMState) :
@@ -4725,6 +4931,166 @@ theorem compile?_openRunNResult_finished_rel
           hSourceStep]
         exact .done (.error rfl)
 
+/-- Branch-local preservation from the prepared physical Assembly program to
+its decoded compact bytecode image. -/
+theorem compile?_openRunNResult_branch
+    {input : Assembly.Program} {pinnedPushPcs : List Nat} {artifact : Artifact}
+    (hCompile : compile? input pinnedPushPcs = some artifact)
+    (payload : List UInt8) (fuel extra : Nat) {target source : EVMState}
+    (hBoundary : BoundaryStateRel artifact target source)
+    {transcript : Simulation.Interaction.Transcript}
+    {sourceDone : Assembly.Source.ExecutionOutcome}
+    (hExec : Simulation.Interaction.Executes
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.physicalSource fuel source) transcript sourceDone) :
+    PrefixBranchResult
+      (openRunNResult
+        (Bytecode.ofList
+          (artifact.bytes.toList ++ (encodeInstr (.prim .invalid) ++ payload)))
+        (2 * fuel + extra) target)
+      transcript sourceDone := by
+  induction fuel generalizing target source extra transcript sourceDone with
+  | zero =>
+      rw [Assembly.InteractionSemantics.Source.openRunNResult_zero] at hExec
+      cases hExec
+      unfold PrefixBranchResult
+      exact Simulation.Interaction.Follows.nil _
+  | succ fuel ih =>
+      rcases hBoundary with
+        ⟨sourcePc, compactPc, hPair, hSourcePc, hTargetPc, hRuntime⟩
+      rcases hPair with hBlock | hEnd
+      · rcases hBlock with
+          ⟨block, hBlock, hBlockSource, hBlockCompact⟩
+        have hBlockSourcePc :
+            source.pc = EvmYul.UInt256.ofNat block.sourcePc := by
+          simpa [hBlockSource] using hSourcePc
+        have hBlockTargetPc :
+            target.pc = EvmYul.UInt256.ofNat block.compactPc := by
+          simpa [hBlockCompact] using hTargetPc
+        obtain ⟨stepFuel, hStepFuel, hStep⟩ :=
+          compile?_sourceBlock_open_rel hCompile
+            (encodeInstr (.prim .invalid) ++ payload) hBlock
+            hBlockTargetPc hBlockSourcePc hRuntime
+        have hSourceStep :=
+          compile?_source_openStepResult_eq_block
+            hCompile hBlock hBlockSourcePc
+        rw [Assembly.InteractionSemantics.Source.openRunNResult_succ,
+          hSourceStep] at hExec
+        let remaining := 2 * fuel + (extra + (2 - stepFuel))
+        have hFuel : 2 * Nat.succ fuel + extra = stepFuel + remaining := by
+          dsimp [remaining]
+          omega
+        rcases Simulation.Interaction.Executes.bind_cases hExec with
+          hStepError | hStepOk
+        · rcases hStepError with ⟨sourceError, hDone, hSourceStepExec⟩
+          subst sourceDone
+          obtain ⟨targetDone, hTargetStepExec, hRelated⟩ :=
+            Simulation.Interaction.Rel.executes
+              (Simulation.Interaction.Rel.symm hStep) hSourceStepExec
+          cases hRelated with
+          | error hError =>
+              rename_i targetError
+              subst targetError
+              have hTargetExec := openRunNResult_error_add_executes
+                (extra := remaining) hTargetStepExec
+              rw [← hFuel] at hTargetExec
+              exact ⟨.error sourceError, hTargetExec, .error rfl⟩
+        · rcases hStepOk with
+            ⟨sourceResult, headTranscript, restTranscript,
+              hTranscript, hSourceStepExec, hRestExec⟩
+          subst transcript
+          obtain ⟨targetDone, hTargetStepExec, hRelated⟩ :=
+            Simulation.Interaction.Rel.executes
+              (Simulation.Interaction.Rel.symm hStep) hSourceStepExec
+          cases hRelated with
+          | ok hResult =>
+              rename_i targetResult
+              cases targetResult with
+              | running targetMid =>
+                  cases sourceResult with
+                  | running sourceMid =>
+                      change BoundaryStateRel artifact targetMid sourceMid
+                        at hResult
+                      have hTail := ih (extra + (2 - stepFuel)) hResult hRestExec
+                      unfold PrefixBranchResult at hTail ⊢
+                      rw [hFuel, openRunNResult_add]
+                      cases sourceDone with
+                      | error sourceError =>
+                          rcases hTail with
+                            ⟨targetTailDone, hTargetTailExec, hTailRel⟩
+                          exact
+                            ⟨targetTailDone,
+                              Simulation.Interaction.Executes.bind_ok
+                                hTargetStepExec hTargetTailExec,
+                              hTailRel⟩
+                      | ok sourceFinal =>
+                          cases sourceFinal with
+                          | running sourceFinal =>
+                              exact Simulation.Interaction.Follows.bind_ok
+                                hTargetStepExec hTail
+                          | halted sourceHalt =>
+                              rcases hTail with
+                                ⟨targetTailDone, hTargetTailExec, hTailRel⟩
+                              exact
+                                ⟨targetTailDone,
+                                  Simulation.Interaction.Executes.bind_ok
+                                    hTargetStepExec hTargetTailExec,
+                                  hTailRel⟩
+                  | halted sourceHalt =>
+                      simp [BoundaryStepResultRel] at hResult
+              | halted targetHalt =>
+                  cases sourceResult with
+                  | running sourceMid =>
+                      simp [BoundaryStepResultRel] at hResult
+                  | halted sourceHalt =>
+                      cases hRestExec
+                      have hTargetExec := openRunNResult_halted_add_executes
+                        (extra := remaining) hTargetStepExec
+                      rw [← hFuel] at hTargetExec
+                      exact
+                        ⟨.ok (.halted targetHalt), by simpa using hTargetExec,
+                          .ok hResult⟩
+      · rcases hEnd with ⟨hSourceEnd, hCompactEnd⟩
+        have hArtifact := compile?_valid hCompile
+        have hSourceToNat :
+            source.pc.toNat = artifact.physicalSource.byteLength := by
+          rw [hSourcePc, hSourceEnd]
+          exact hArtifact.physicalSourcePCFits
+        have hSourceStep :
+            Assembly.InteractionSemantics.Source.openStepResult
+                artifact.physicalSource source =
+              .done (.error .InvalidInstruction) := by
+          unfold Assembly.InteractionSemantics.Source.openStepResult
+            Assembly.Source.stepResultWith
+          rw [hSourceToNat, instrAtPc_end_eq_none]
+          rfl
+        have hTargetStep :
+            openStepResult
+                (Bytecode.ofList
+                  (artifact.bytes.toList ++
+                    (encodeInstr (.prim .invalid) ++ payload))) target =
+              .done (.error .InvalidInstruction) := by
+          simpa [List.append_assoc] using
+            (compile?_sentinel_openStepResult hCompile payload
+              (state := target)
+              (by simpa [hCompactEnd] using hTargetPc))
+        rw [Assembly.InteractionSemantics.Source.openRunNResult_succ,
+          hSourceStep] at hExec
+        cases hExec
+        have hTargetOne : Simulation.Interaction.Executes
+            (openRunNResult
+              (Bytecode.ofList
+                (artifact.bytes.toList ++
+                  (encodeInstr (.prim .invalid) ++ payload))) 1 target)
+            [] (.error .InvalidInstruction) := by
+          rw [openRunNResult_succ, hTargetStep]
+          exact .done _
+        have hTargetExec := openRunNResult_error_add_executes
+          (extra := 2 * fuel + extra + 1) hTargetOne
+        rw [show 1 + (2 * fuel + extra + 1) =
+            2 * Nat.succ fuel + extra by omega] at hTargetExec
+        exact ⟨.error .InvalidInstruction, hTargetExec, .error rfl⟩
+
 theorem stepResultRuntimeRel_trans
     {first second third : StepResult}
     (hFirst : StepResultRuntimeRel first second)
@@ -4769,6 +5135,135 @@ theorem runtimeOutcomeRel_trans
       cases hSecond with
       | ok hSecondResult =>
           exact .ok (stepResultRuntimeRel_trans hFirstResult hSecondResult)
+
+namespace PrefixBranchResult
+
+theorem follows
+    {targetRun : Assembly.InteractionSemantics.OpenStepResult}
+    {transcript : Simulation.Interaction.Transcript}
+    {sourceDone : Assembly.Source.ExecutionOutcome}
+    (hResult : PrefixBranchResult targetRun transcript sourceDone) :
+    Simulation.Interaction.Follows targetRun transcript := by
+  cases sourceDone with
+  | error sourceError =>
+      rcases hResult with ⟨targetDone, hExec, _hRel⟩
+      exact hExec.follows
+  | ok sourceResult =>
+      cases sourceResult with
+      | running sourceFinal => exact hResult
+      | halted sourceHalt =>
+          rcases hResult with ⟨targetDone, hExec, _hRel⟩
+          exact hExec.follows
+
+/-- Compose two branch-local physical encodings without inspecting or
+constraining the suffix after a source running prefix. -/
+theorem trans
+    {middleRun targetRun :
+      Assembly.InteractionSemantics.OpenStepResult}
+    {transcript : Simulation.Interaction.Transcript}
+    {sourceDone : Assembly.Source.ExecutionOutcome}
+    (hFirst : PrefixBranchResult middleRun transcript sourceDone)
+    (hSecond : forall nextTranscript middleDone,
+      Simulation.Interaction.Executes middleRun nextTranscript middleDone ->
+        PrefixBranchResult targetRun nextTranscript middleDone) :
+    PrefixBranchResult targetRun transcript sourceDone := by
+  cases sourceDone with
+  | error sourceError =>
+      rcases hFirst with ⟨middleDone, hMiddleExec, hFirstRel⟩
+      have hTarget := hSecond transcript middleDone hMiddleExec
+      cases hFirstRel with
+      | error hFirstError =>
+          rcases hTarget with ⟨targetDone, hTargetExec, hSecondRel⟩
+          exact
+            ⟨targetDone, hTargetExec,
+              runtimeOutcomeRel_trans hSecondRel (.error hFirstError)⟩
+  | ok sourceResult =>
+      cases sourceResult with
+      | running sourceFinal =>
+          obtain ⟨suffix, middleDone, hMiddleExec⟩ :=
+            hFirst.exists_executes_extension
+          have hTarget :=
+            hSecond (transcript ++ suffix) middleDone hMiddleExec
+          cases middleDone with
+          | error middleError =>
+              rcases hTarget with ⟨targetDone, hTargetExec, _hRel⟩
+              exact Simulation.Interaction.Follows.prefix_of_append
+                transcript suffix hTargetExec.follows
+          | ok middleResult =>
+              cases middleResult with
+              | running middleFinal =>
+                  exact Simulation.Interaction.Follows.prefix_of_append
+                    transcript suffix hTarget
+              | halted middleHalt =>
+                  rcases hTarget with ⟨targetDone, hTargetExec, _hRel⟩
+                  exact Simulation.Interaction.Follows.prefix_of_append
+                    transcript suffix hTargetExec.follows
+      | halted sourceHalt =>
+          rcases hFirst with ⟨middleDone, hMiddleExec, hFirstRel⟩
+          have hTarget := hSecond transcript middleDone hMiddleExec
+          cases middleDone with
+          | error middleError => cases hFirstRel
+          | ok middleResult =>
+              cases middleResult with
+              | running middleFinal =>
+                  cases hFirstRel with
+                  | ok hFirstResult => cases hFirstResult
+              | halted middleHalt =>
+                  cases hFirstRel with
+                  | ok hFirstResult =>
+                      rcases hTarget with
+                        ⟨targetDone, hTargetExec, hSecondRel⟩
+                      exact
+                        ⟨targetDone, hTargetExec,
+                          runtimeOutcomeRel_trans hSecondRel
+                            (.ok hFirstResult)⟩
+
+end PrefixBranchResult
+
+/-- Complete branch-local Assembly-to-compact-bytecode preservation. The
+preparation and physical encoding passes remain adjacent owners and compose
+only through their runtime relation and finite-prefix interface. -/
+theorem compile?_source_openRunNResult_branch
+    {sourceProgram : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Artifact}
+    (hCompile : compile? sourceProgram pinnedPushPcs = some artifact)
+    (payload : List UInt8) (fuel : Nat) {target source : EVMState}
+    (hTargetPc : target.pc = EvmYul.UInt256.ofNat 0)
+    (hSourcePc : source.pc = EvmYul.UInt256.ofNat 0)
+    (hInitial : SameRuntimeData target source)
+    {transcript : Simulation.Interaction.Transcript}
+    {sourceDone : Assembly.Source.ExecutionOutcome}
+    (hExec : Simulation.Interaction.Executes
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        sourceProgram fuel source) transcript sourceDone) :
+    PrefixBranchResult
+      (openRunNResult
+        (Bytecode.ofList
+          (artifact.bytes.toList ++ (encodeInstr (.prim .invalid) ++ payload)))
+        (2 * fuel) target)
+      transcript sourceDone := by
+  have hPreparationBoundary :
+      PreparationStateRel sourceProgram artifact source source :=
+    ⟨0, 0,
+      (by simpa using
+        (compile?_preparationBlocksValid hCompile).initial_boundary),
+      hSourcePc, hSourcePc, SameRuntimeData.refl source⟩
+  have hPreparation :=
+    compile?_preparation_openRunNResult_branch
+      hCompile fuel 0 hPreparationBoundary hExec
+  have hCompactBoundary : BoundaryStateRel artifact target source :=
+    ⟨0, 0, compile?_initial_boundary hCompile,
+      hSourcePc, hTargetPc, hInitial⟩
+  apply PrefixBranchResult.trans
+    (targetRun := openRunNResult
+      (Bytecode.ofList
+        (artifact.bytes.toList ++ (encodeInstr (.prim .invalid) ++ payload)))
+      (2 * fuel) target)
+    (by simpa using hPreparation)
+  intro nextTranscript middleDone hMiddleExec
+  simpa using
+    (compile?_openRunNResult_branch hCompile payload fuel 0
+      hCompactBoundary hMiddleExec)
 
 theorem runtimeOutcomeRel_terminal_left
     {target source : Except EVMException StepResult}

@@ -942,6 +942,131 @@ theorem yulToNormalizedStackAssemblyPrefixForward
         ⟨assemblyDone, hAssemblyExec,
           ⟨cfgDone, ⟨structuredDone, hStack, hPrefix⟩, hAssemblyRel⟩⟩
 
+theorem YulStackAssemblyPrefixDoneRel.targetFinished
+    {structured : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {generated : Structured.TypedCfgPreservation.Program.GeneratedContext
+      structured entryShapes cfg}
+    {assembly : Assembly.Program}
+    {sourceDone : Except Yul.InteractionSemantics.Failure
+      Yul.InteractionSemantics.State}
+    {targetDone : Assembly.Source.ExecutionOutcome}
+    (hRel : YulStackAssemblyPrefixDoneRel structured entryShapes cfg
+      generated assembly sourceDone targetDone) :
+    Assembly.InteractionSemantics.Finished targetDone := by
+  rcases hRel with
+    ⟨cfgDone, ⟨structuredDone, _hStack, hPrefix⟩, hAssembly⟩
+  have hSafe :=
+    Structured.InteractionTruncationOwnerPreservation.OpenOutcome.GeneratedProgram.PrefixDoneRel.targetSafe
+      hPrefix
+  have hSafeFinished :
+      TypedCfg.InteractionSemantics.Program.AssemblySafeFinished cfgDone := by
+    cases cfgDone with
+    | error error => trivial
+    | ok outcome =>
+        cases outcome <;> exact hSafe
+  exact
+    TypedCfg.InteractionPreservation.OpenBlock.finished_of_assemblySafeFinished
+      hSafeFinished hAssembly
+
+/-- Outcome relation after the adjacent compact physical encoding. -/
+def YulStackCompactPrefixDoneRel
+    (structured : Structured.Program)
+    (entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes)
+    (cfg : TypedCfg.Program)
+    (generated : Structured.TypedCfgPreservation.Program.GeneratedContext
+      structured entryShapes cfg)
+    (assembly : Assembly.Program) :
+    Except Yul.InteractionSemantics.Failure
+        Yul.InteractionSemantics.State ->
+      Assembly.Source.ExecutionOutcome -> Prop :=
+  fun sourceDone targetDone =>
+    exists assemblyDone,
+      YulStackAssemblyPrefixDoneRel structured entryShapes cfg generated
+          assembly sourceDone assemblyDone /\
+        Assembly.Compact.RuntimeOutcomeRel targetDone assemblyDone
+
+/-- Compose an unconditional Yul-to-Assembly prefix theorem with the
+Assembly-owned compact encoder. -/
+theorem stackAssemblyPrefixToCompactBytecode
+    {structured : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {generated : Structured.TypedCfgPreservation.Program.GeneratedContext
+      structured entryShapes cfg}
+    {assembly : Assembly.Program}
+    {pinnedPushPcs : List Nat}
+    {compact : Assembly.Compact.Artifact}
+    {sourceRun : Simulation.Interaction
+      Yul.InteractionSemantics.Failure Yul.InteractionSemantics.State}
+    {assemblyFuel : Nat}
+    {assemblyState compactState : Assembly.EVMState}
+    (payload : List UInt8)
+    (hRel : Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated
+      (YulStackAssemblyPrefixDoneRel structured entryShapes cfg generated
+        assembly)
+      sourceRun
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        assembly assemblyFuel assemblyState))
+    (hCompile : Assembly.Compact.compile? assembly pinnedPushPcs = some compact)
+    (hAssemblyPc : assemblyState.pc = EvmYul.UInt256.ofNat 0)
+    (hCompactPc : compactState.pc = EvmYul.UInt256.ofNat 0)
+    (hInitial : Assembly.SameRuntimeData compactState assemblyState) :
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated
+      (YulStackCompactPrefixDoneRel structured entryShapes cfg generated
+        assembly)
+      sourceRun
+      (Assembly.Compact.InteractionSemantics.openRunNResult
+        (Assembly.Bytecode.ofList
+          (compact.bytes.toList ++
+            (Assembly.Compact.encodeInstr (.prim .invalid) ++ payload)))
+        (2 * assemblyFuel) compactState) := by
+  apply Simulation.Interaction.ForwardRel.of_executes_or_follows
+  intro transcript sourceDone hSourceExec
+  rcases Simulation.Interaction.ForwardRel.executes_or_follows
+      hRel hSourceExec with hTruncated | hDone
+  · rcases hTruncated with
+      ⟨sourceError, hSourceDone, hSourceTruncated, hAssemblyFollow⟩
+    obtain ⟨suffix, assemblyDone, hAssemblyExec⟩ :=
+      hAssemblyFollow.exists_executes_extension
+    have hCompactBranch :=
+      Assembly.Compact.InteractionSemantics.compile?_source_openRunNResult_branch
+        hCompile payload assemblyFuel hCompactPc hAssemblyPc hInitial
+          hAssemblyExec
+    have hCompactFollow :=
+      Assembly.Compact.InteractionSemantics.PrefixBranchResult.follows
+        hCompactBranch
+    exact .inl
+      ⟨sourceError, hSourceDone, hSourceTruncated,
+        Simulation.Interaction.Follows.prefix_of_append
+          transcript suffix hCompactFollow⟩
+  · rcases hDone with ⟨assemblyDone, hAssemblyExec, hAssemblyRel⟩
+    have hAssemblyFinished :=
+      YulStackAssemblyPrefixDoneRel.targetFinished hAssemblyRel
+    have hCompactBranch :=
+      Assembly.Compact.InteractionSemantics.compile?_source_openRunNResult_branch
+        hCompile payload assemblyFuel hCompactPc hAssemblyPc hInitial
+          hAssemblyExec
+    cases assemblyDone with
+    | error assemblyError =>
+        rcases hCompactBranch with
+          ⟨compactDone, hCompactExec, hCompactRel⟩
+        exact .inr
+          ⟨compactDone, hCompactExec,
+            ⟨.error assemblyError, hAssemblyRel, hCompactRel⟩⟩
+    | ok assemblyResult =>
+        cases assemblyResult with
+        | running assemblyFinal => cases hAssemblyFinished
+        | halted assemblyHalt =>
+            rcases hCompactBranch with
+              ⟨compactDone, hCompactExec, hCompactRel⟩
+            exact .inr
+              ⟨compactDone, hCompactExec,
+                ⟨.ok (.halted assemblyHalt), hAssemblyRel, hCompactRel⟩⟩
+
 /-- Terminal Yul-to-Structured preservation through the stack allocator. -/
 theorem yulToStackStructuredTerminal
     {profile : Yul.SolcValidation.DialectProfile}
