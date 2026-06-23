@@ -38,6 +38,17 @@
   EvmCompiler.Solidity.RawAstPublic`, `lake build EvmCompiler.Verification`,
   touched raw-file hole/trust scan, and `git diff --check`.
 
+- 2026-06-23 10:32 PDT - test/raw-solc-permit2-version-boundary - Added
+  `scripts/test_raw_solc_permit2_version_boundary.sh`: full pinned Permit2 at
+  `cc56ad0f...` has exact `pragma solidity 0.8.17`, so supported raw solc
+  0.8.26 and 0.8.35 reject it before emitting `contracts`/`irOptimizedAst`.
+  The Lean raw backend fails closed on both rejection JSON outputs. This keeps
+  the legacy solc-0.8.17/Python-normalized bridge green path separate from the
+  production raw theorem source. Validation passed: the new script, `bash -n`,
+  no bridge-json/Yul-transport guard, `lake build evm-compiler-backend
+  EvmCompiler.Solidity.RawAstPublic`, `lake build EvmCompiler.Verification`,
+  touched raw-file hole/trust scan, and `git diff --check`.
+
 - 2026-06-18 18:00 PDT - compaction-resume/generated-terminal-arguments -
   Resumed after the checked direct terminal theorem and `terminal_after_args`;
   the active boundary is the horizontal prepared-argument composition theorem,

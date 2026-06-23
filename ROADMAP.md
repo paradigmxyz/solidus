@@ -99,6 +99,10 @@ Next raw frontend layer:
   because solc's own bytecode backend rejects the pinned source
   stack-too-deep; EntryPoint includes solc bytecode and raw Lean artifact
   checks for creation/runtime.
+- [x] Add a pinned Permit2 version-boundary gate: unmodified full Permit2 pins
+  `pragma solidity 0.8.17`, so supported raw solc 0.8.26 and 0.8.35 fail
+  closed before raw AST production; the legacy solc-0.8.17/Python-normalized
+  bridge path is not counted as production raw coverage.
 - [ ] Differentially compare raw Lean elaboration against the old bridge over
   both pinned solc versions and the full corpus: Aave, Permit2, Safe,
   EntryPoint, PoolManager, all real suites, and adversarial fixtures.
