@@ -250,6 +250,214 @@ theorem exprSeq_openEval_seqCast
   cases h
   rfl
 
+def StableValue (mode : Mode) (expr : Locals.Expr 1)
+    (base : Functions.InteractionSemantics.State) (value : Word) : Prop :=
+  ∀ candidate,
+    TargetExtends base.vars candidate.vars →
+      Target.Expr.openEval mode expr candidate =
+        .done (.ok (candidate, [value]))
+
+inductive StableArgs (mode : Mode) :
+    List (Locals.Expr 1) → Functions.InteractionSemantics.State →
+      List Word → Prop where
+  | nil (base) : StableArgs mode [] base []
+  | cons {head rest base value values} :
+      StableValue mode head base value →
+      StableArgs mode rest base values →
+      StableArgs mode (head :: rest) base (value :: values)
+
+namespace StableValue
+
+theorem mono
+    {mode : Mode} {expr : Locals.Expr 1}
+    {base candidate : Functions.InteractionSemantics.State}
+    {value : Word}
+    (hStable : StableValue mode expr base value)
+    (hExtends : TargetExtends base.vars candidate.vars) :
+    StableValue mode expr candidate value := by
+  intro final hFinal
+  exact hStable final (TargetExtends.trans hExtends hFinal)
+
+theorem lit (mode : Mode) (base : Functions.InteractionSemantics.State)
+    (value : Word) : StableValue mode (.lit value) base value := by
+  intro candidate _hExtends
+  rfl
+
+theorem var
+    {mode : Mode} {base : Functions.InteractionSemantics.State}
+    {name : Functions.Name} {value : Word}
+    (hLookup : base.vars name = some value) :
+    StableValue mode (.var name) base value := by
+  intro candidate hExtends
+  have hCandidate := hExtends name value hLookup
+  simp [Target.Expr.openEval,
+    Locals.Source.Effectful.Expr.Control.eval,
+    Functions.InteractionSemantics.stateModel,
+    Locals.InteractionSemantics.stateModel,
+    Locals.Source.Effectful.Ordinary.stateModel,
+    Locals.Source.Effectful.StateModel.vars, hCandidate,
+    Simulation.Interaction.pure]
+  rfl
+
+end StableValue
+
+namespace StableArgs
+
+theorem length
+    {mode : Mode} {args : List (Locals.Expr 1)}
+    {base : Functions.InteractionSemantics.State} {values : List Word}
+    (hStable : StableArgs mode args base values) :
+    values.length = args.length := by
+  induction hStable with
+  | nil => rfl
+  | cons _hHead _hTail ih => simp [ih]
+
+theorem mono
+    {mode : Mode} {args : List (Locals.Expr 1)}
+    {base candidate : Functions.InteractionSemantics.State}
+    {values : List Word}
+    (hStable : StableArgs mode args base values)
+    (hExtends : TargetExtends base.vars candidate.vars) :
+    StableArgs mode args candidate values := by
+  induction hStable generalizing candidate with
+  | nil => exact .nil candidate
+  | cons hHead hTail ih =>
+      exact .cons (hHead.mono hExtends) (ih hExtends)
+
+theorem append
+    {mode : Mode} {left right : List (Locals.Expr 1)}
+    {base : Functions.InteractionSemantics.State}
+    {leftValues rightValues : List Word}
+    (hLeft : StableArgs mode left base leftValues)
+    (hRight : StableArgs mode right base rightValues) :
+    StableArgs mode (left ++ right) base (leftValues ++ rightValues) := by
+  induction hLeft generalizing right rightValues with
+  | nil => simpa using hRight
+  | cons hHead hTail ih =>
+      simpa using StableArgs.cons hHead (ih hRight)
+
+theorem reverse
+    {mode : Mode} {args : List (Locals.Expr 1)}
+    {base : Functions.InteractionSemantics.State} {values : List Word}
+    (hStable : StableArgs mode args base values) :
+    StableArgs mode args.reverse base values.reverse := by
+  induction hStable with
+  | nil base => simpa using (StableArgs.nil base)
+  | @cons head rest base value values hHead hTail ih =>
+      simpa [List.reverse_cons] using
+        ih.append (StableArgs.cons hHead (.nil base))
+
+theorem openEval
+    {mode : Mode} {args : List (Locals.Expr 1)}
+    {base candidate : Functions.InteractionSemantics.State}
+    {values : List Word}
+    (hStable : StableArgs mode args base values)
+    (hExtends : TargetExtends base.vars candidate.vars) :
+    Target.ArgList.openEval mode args candidate =
+      .done (.ok (candidate, values)) := by
+  induction hStable generalizing candidate with
+  | nil => rfl
+  | @cons head rest base value values hHead hTail ih =>
+      have hHeadEval := hHead candidate hExtends
+      have hHeadOne :
+          Locals.Source.Effectful.Expr.Control.evalOne
+              Functions.InteractionSemantics.stateModel
+              (targetPrimitive mode) head candidate =
+            .done (.ok (candidate, value)) := by
+        unfold Locals.Source.Effectful.Expr.Control.evalOne
+        change
+          Simulation.Interaction.bind
+              (Target.Expr.openEval mode head candidate)
+              (fun result =>
+                match result.2 with
+                | [actual] => pure (result.1, actual)
+                | _ => throw EvmYul.EVM.ExecutionException.InvalidInstruction) =
+            .done (.ok (candidate, value))
+        rw [hHeadEval, Simulation.Interaction.bind_done_ok]
+        rfl
+      unfold Target.ArgList.openEval
+        Functions.Source.Canonical.ArgList.eval
+        Functions.Source.Effectful.ArgList.Control.eval
+      have hTailEval := ih hExtends
+      unfold Target.ArgList.openEval
+        Functions.Source.Canonical.ArgList.eval at hTailEval
+      change
+        Simulation.Interaction.bind
+            (Locals.Source.Effectful.Expr.Control.evalOne
+              Functions.InteractionSemantics.stateModel
+              (targetPrimitive mode) head candidate)
+            (fun headResult =>
+              Simulation.Interaction.bind
+                (Functions.Source.Effectful.ArgList.Control.eval
+                  Functions.InteractionSemantics.stateModel
+                  (targetPrimitive mode) rest headResult.1)
+                (fun tailResult =>
+                  pure (tailResult.1,
+                    headResult.2 :: tailResult.2))) =
+          .done (.ok (candidate, value :: values))
+      rw [hHeadOne, Simulation.Interaction.bind_done_ok,
+        hTailEval, Simulation.Interaction.bind_done_ok]
+      rfl
+
+theorem exprSeq_openEval
+    {mode : Mode} {args : List (Locals.Expr 1)} {results : Nat}
+    {seq : Locals.ExprSeq results}
+    {base candidate : Functions.InteractionSemantics.State}
+    {values : List Word}
+    (hStable : StableArgs mode args base values)
+    (hSeq : EvmCompiler.Yul.Expr.List.toSeq? args results = some seq)
+    (hExtends : TargetExtends base.vars candidate.vars) :
+    Target.ExprSeq.openEval mode seq candidate =
+      .done (.ok (candidate, values)) := by
+  induction hStable generalizing results seq candidate with
+  | nil =>
+      cases results with
+      | zero =>
+          simp [EvmCompiler.Yul.Expr.List.toSeq?] at hSeq
+          subst seq
+          rfl
+      | succ results =>
+          simp [EvmCompiler.Yul.Expr.List.toSeq?] at hSeq
+  | @cons head rest base value values hHead hTail ih =>
+      cases results with
+      | zero =>
+          simp [EvmCompiler.Yul.Expr.List.toSeq?] at hSeq
+      | succ tailResults =>
+          cases hTailSeq :
+              EvmCompiler.Yul.Expr.List.toSeq? rest tailResults with
+          | none =>
+              simp [EvmCompiler.Yul.Expr.List.toSeq?, hTailSeq] at hSeq
+          | some tail =>
+              simp [EvmCompiler.Yul.Expr.List.toSeq?, hTailSeq] at hSeq
+              subst seq
+              rw [exprSeq_openEval_seqCast]
+              have hHeadEval := hHead candidate hExtends
+              unfold Target.Expr.openEval at hHeadEval
+              unfold Target.ExprSeq.openEval
+                Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+              have hTailEval := ih hTailSeq hExtends
+              unfold Target.ExprSeq.openEval at hTailEval
+              change
+                Simulation.Interaction.bind
+                    (Locals.Source.Effectful.Expr.Control.eval
+                      Functions.InteractionSemantics.stateModel
+                      (targetPrimitive mode) head candidate)
+                    (fun headResult =>
+                      Simulation.Interaction.bind
+                        (Locals.Source.Effectful.Expr.Control.ExprSeq.eval
+                          Functions.InteractionSemantics.stateModel
+                          (targetPrimitive mode) tail headResult.1)
+                        (fun tailResult =>
+                          pure
+                            (tailResult.1,
+                              headResult.2 ++ tailResult.2))) =
+                  .done (.ok (candidate, value :: values))
+              rw [hHeadEval, Simulation.Interaction.bind_done_ok,
+                hTailEval, Simulation.Interaction.bind_done_ok]
+              rfl
+
+end StableArgs
+
 structure DirectAt
     (mode : Mode) (hPrimitive : CompilerSelected mode)
     (codeOverride : Option EvmYul.Yul.Ast.YulContract)
