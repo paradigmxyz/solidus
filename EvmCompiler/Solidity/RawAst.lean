@@ -758,6 +758,98 @@ theorem clzHelperStepScheduleOk :
     clzHelperStepScheduleOk? = true := by
   rfl
 
+namespace ClzHelperModel
+
+structure State where
+  arg : Word
+  ret : Word
+  deriving BEq, Repr
+
+def zero : Word :=
+  EvmYul.UInt256.ofNat 0
+
+def word (value : Nat) : Word :=
+  EvmYul.UInt256.ofNat value
+
+def shouldRunStep (checkShift : Nat) (state : State) : Bool :=
+  EvmYul.UInt256.isZero
+      (EvmYul.UInt256.shiftRight state.arg (word checkShift)) != zero
+
+def applyStepBody (addend : Nat) (state : State) : State :=
+  let ret := EvmYul.UInt256.add state.ret (word addend)
+  let arg :=
+    if addend == 1 then state.arg
+    else EvmYul.UInt256.shiftLeft state.arg (word addend)
+  { arg, ret }
+
+def applyStep (state : State) (step : Nat × Nat) : State :=
+  if shouldRunStep step.fst state then
+    applyStepBody step.snd state
+  else
+    state
+
+def runNonzero (value : Word) : State :=
+  clzHelperStepSchedule.foldl applyStep
+    { arg := value, ret := word 0 }
+
+def run (value : Word) : Word :=
+  if value == zero then
+    word 256
+  else
+    (runNonzero value).ret
+
+def reference (value : Word) : Word :=
+  if value == zero then
+    word 256
+  else
+    word (255 - (EvmYul.UInt256.log2 value).toNat)
+
+def applyHighestBitStep (highestBit ret : Nat) (step : Nat × Nat) : Nat :=
+  if highestBit + ret < step.fst then ret + step.snd else ret
+
+def runHighestBit (highestBit : Nat) : Nat :=
+  clzHelperStepSchedule.foldl (applyHighestBitStep highestBit) 0
+
+set_option maxRecDepth 10000 in
+theorem runHighestBit_eq_reference :
+    ∀ highestBit : Fin 256,
+      runHighestBit highestBit.val = 255 - highestBit.val := by
+  decide
+
+def powerOfTwoInputsMatchReference? : Bool :=
+  (List.range 256).all fun highestBit =>
+    run (word (2 ^ highestBit)) == reference (word (2 ^ highestBit))
+
+set_option maxRecDepth 10000 in
+theorem powerOfTwoInputsMatchReference :
+    powerOfTwoInputsMatchReference? = true := by
+  decide
+
+def boundaryInputs : List Word :=
+  [ word 0
+  , word 1
+  , word 2
+  , word (2 ^ 64)
+  , word (2 ^ 127)
+  , word (2 ^ 128)
+  , word (2 ^ 254)
+  , word (2 ^ 255)
+  , word (EvmYul.UInt256.size - 1)
+  ]
+
+def boundaryInputsMatchReference? : Bool :=
+  boundaryInputs.all fun value => run value == reference value
+
+theorem run_zero :
+    run zero = word 256 := by
+  decide
+
+theorem boundaryInputsMatchReference :
+    boundaryInputsMatchReference? = true := by
+  decide
+
+end ClzHelperModel
+
 def clzHelperStepBody (argName returnName : Name)
     (addend : Nat) : List Frontend.Stmt :=
   let stepBody : List Frontend.Stmt :=

@@ -157,7 +157,11 @@ Next raw frontend layer:
   factored through a named `ClzHelperSpec` over the generated binary-search
   schedule and exact helper body. Successful raw object elaboration, raw string
   decoding, and artifact-wrapper compilation now expose
-  `Raw.Object.ClzHelperSpecOk`. Retained nested function-definition statements
+  `Raw.Object.ClzHelperSpecOk`. The local `ClzHelperModel` now gives the
+  generated schedule a checked executable semantic target: it proves the
+  highest-bit schedule returns `255 - highestBit` for all 256 nonzero bit
+  positions and checks representative `UInt256` executions against the
+  `255 - log2(x)` reference. Retained nested function-definition statements
   are alpha-renamed to generated function names before their checked frontend
   no-op lowering. Raw production elaboration now also fail-closes on any
   frontend object that still contains an unlowered callee named exactly `clz`,
