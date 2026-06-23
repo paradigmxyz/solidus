@@ -128,6 +128,64 @@ def Completed {alpha : Type} : Except Failure alpha → Prop
       | .YulHalt _ _ | .Revert _ => True
       | _ => False
 
+namespace Completed
+
+@[simp] theorem ok {alpha : Type} (value : alpha) :
+    Completed (.ok value : Except Failure alpha) := by
+  trivial
+
+@[simp] theorem invalidInstruction_false {alpha : Type} (state : State) :
+    Completed
+        (.error { exception := .InvalidInstruction, state := state } :
+          Except Failure alpha) = False := by
+  rfl
+
+end Completed
+
+/-- Equality of guarded and ordinary prefixes composes through the canonical
+open bind whenever every reached guarded leaf is a valid completion. -/
+theorem bind_eq_of_completed
+    {source target : Type}
+    {prefixGuarded prefixOrdinary : Open source}
+    {nextGuarded nextOrdinary : source → Open target}
+    (hCompleted : Simulation.Interaction.AllDone Completed
+      (Simulation.Interaction.bind prefixGuarded nextGuarded))
+    (hPrefix : Simulation.Interaction.AllDone Completed prefixGuarded →
+      prefixGuarded = prefixOrdinary)
+    (hNext : ∀ value,
+      Simulation.Interaction.AllDone Completed (nextGuarded value) →
+        nextGuarded value = nextOrdinary value) :
+    Simulation.Interaction.bind prefixGuarded nextGuarded =
+      Simulation.Interaction.bind prefixOrdinary nextOrdinary := by
+  have hInv := Simulation.Interaction.AllDone.bind_inv hCompleted
+  have hPrefixCompleted :
+      Simulation.Interaction.AllDone Completed prefixGuarded := by
+    apply Simulation.Interaction.AllDone.mono hInv
+    intro outcome hOutcome
+    cases outcome with
+    | error _ => exact hOutcome
+    | ok _ => trivial
+  have hPrefixEq := hPrefix hPrefixCompleted
+  rw [← hPrefixEq]
+  apply Simulation.Interaction.AllDone.bind_congr hInv
+  intro value hValue
+  exact hNext value hValue
+
+namespace Primitive
+
+theorem openEval_eq_ordinary_of_completed
+    {contract : MemoryContract.Contract} {fuel : Nat} {state : State}
+    {prim : EvmYul.Operation .Yul} {values : List Assembly.Word}
+    (hCompleted : Simulation.Interaction.AllDone Completed
+      (openEval contract fuel state prim values)) :
+    openEval contract fuel state prim values =
+      Yul.InteractionSemantics.Primitive.openEval fuel state prim values := by
+  apply openEval_eq_ordinary
+  exact safe_of_completed
+    (by simp [Completed]) hCompleted
+
+end Primitive
+
 namespace Stmt
 
 /-- Actual-tree source safety for one canonical Yul statement execution. -/

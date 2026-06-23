@@ -185,6 +185,7 @@ import EvmCompiler.Yul.FunctionsInteractionRecursiveBody
 import EvmCompiler.Yul.FunctionsInteractionCompilerCost
 import EvmCompiler.Yul.FunctionsInteractionProgram
 import EvmCompiler.Yul.AllocationInteractionSafeSemantics
+import EvmCompiler.Yul.AllocationInteractionSafeRefinement
 import EvmCompiler.Yul.FunctionsAllocationInteractionSafety
 import EvmCompiler.Compiler.StackArtifact
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
@@ -1714,6 +1715,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.AllocationInteractionSafeSemantics.PrimitiveSafe
 #check EvmCompiler.Yul.AllocationInteractionSafeSemantics.Stmt.ExecutionSafe
 #check EvmCompiler.Yul.AllocationInteractionSafeSemantics.Program.ExecutionSafe
+#check EvmCompiler.Yul.AllocationInteractionSafeRefinement.refinementAt
+#check EvmCompiler.Yul.AllocationInteractionSafeRefinement.exec_eq_ordinary_of_executionSafe
+#print axioms EvmCompiler.Yul.AllocationInteractionSafeRefinement.exec_eq_ordinary_of_executionSafe
+#check EvmCompiler.Yul.FunctionsAllocationInteractionSafety.Primitive.safe_eq_functions
 #check EvmCompiler.Yul.FunctionsAllocationInteractionSafety.Primitive.safe_to_functions
 #check EvmCompiler.Yul.FunctionsAllocationInteractionSafety.compilerSelectedSafe
 #print axioms EvmCompiler.Yul.FunctionsAllocationInteractionSafety.compilerSelectedSafe

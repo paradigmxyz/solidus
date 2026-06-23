@@ -417,6 +417,8 @@ boundaries. Corpus acceptance alone does not discharge them.
   - [x] Prove the adjacent primitive safety transfer under the established
     Yul-to-Functions state relation, including honest GAS/MSIZE and unchanged
     CALL/CREATE/LOG requests.
+  - [x] Prove accepted guarded Yul interaction trees equal ordinary canonical
+    Yul execution through expressions, control, loops, and internal calls.
   - [ ] Lift actual-tree Yul execution safety through recursive expressions,
     control, loops, and internal calls to guarded Functions execution safety.
   - [ ] Replace the scratch-capable public Functions-facing safety premise with

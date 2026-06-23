@@ -1640,6 +1640,7 @@ report_matches \
   'Canonical Yul allocation safety must not depend on observer/replay proof corridors:' \
   '^import EvmCompiler\.Yul\.(Observer|FunctionsObserver)' \
   EvmCompiler/Yul/AllocationInteractionSafeSemantics.lean \
+  EvmCompiler/Yul/AllocationInteractionSafeRefinement.lean \
   EvmCompiler/Yul/FunctionsAllocationInteractionSafety.lean
 if ! sed -n '/^noncomputable def toObjectsWithObservers? (program/,/^[[:space:]]*toObjectsCanonical? program$/p' \
       EvmCompiler/Yul/Compiler.lean |
