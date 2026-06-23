@@ -3,6 +3,7 @@ import EvmCompiler.Functions.StackRecursivePreservation
 import EvmCompiler.Functions.StackPressureNormalizationProgram
 import EvmCompiler.Expressions.InteractionPreservation
 import EvmCompiler.Structured.InteractionTerminalPreservation
+import EvmCompiler.Structured.InteractionTruncationOwnerPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Assembly.InteractionConcreteResources
@@ -548,6 +549,128 @@ theorem yulToNormalizedStackStructuredForward
       hNormalize hWF hScoped hSupported hLower hCompile hYulInitial
       hYulDomain hStackInitial
   exact ⟨targetFuel, stackExpressionsToStructuredForward hForward⟩
+
+/-- Outcome relation obtained by composing the upper stack-only spine with the
+checked Structured-to-TypedCfg generation boundary. -/
+def YulStackTypedCfgDoneRel
+    (structured : Structured.Program)
+    (entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes)
+    (cfg : TypedCfg.Program)
+    (generated : Structured.TypedCfgPreservation.Program.GeneratedContext
+      structured entryShapes cfg) :
+    Except Yul.InteractionSemantics.Failure
+        Yul.InteractionSemantics.State →
+      Except Structured.EVMException
+        TypedCfg.Control.Program.RunResult → Prop :=
+  fun sourceDone targetDone =>
+    ∃ structuredDone,
+      YulStackExpressionsDoneRel sourceDone structuredDone ∧
+        Structured.InteractionControlPreservation.OpenOutcome.SegmentDoneRel
+          generated.main { procs := structured.procs }
+          Structured.ProcLabel.programEnd [] [] .stop
+          structuredDone targetDone
+
+/-- Unconditional finite-prefix preservation from validated Yul through
+checked Structured generation. Compiler-owned CFG context and target fuel are
+existential outputs, never public evidence. -/
+theorem yulToNormalizedStackTypedCfgForward
+    {profile : Yul.SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {objects : Objects.Program}
+    {normalized : Functions.Program}
+    {locals : Locals.Program} {expressions : Expressions.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hDecomposition :
+      Yul.FunctionsCompilerArtifact.PassDecomposition sourceProgram objects)
+    (hProgramOk :
+      Yul.SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
+    (hNormalize : normalized =
+      Functions.StackPressureNormalization.Program.normalize
+        objects.toFunctions)
+    (hWF : normalized.WF)
+    (hScoped : normalized.Scoped)
+    (hSupported :
+      Functions.InteractionSemantics.Program.OpenSupported normalized)
+    (hLower :
+      Functions.StackLowering.lowerProgram? normalized = some locals)
+    (hExpressionsCompile :
+      Locals.Program.toExpressions? locals = some expressions)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial (Yul.Contract.names sourceProgram.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState)
+    (hGenerate :
+      Structured.TypedCfgCompiler.generateWithProcEntryShapes?
+          expressions.toStructured entryShapes = some cfg)
+    (hWellTyped : cfg.WellTyped)
+    (hStructuredWF : expressions.toStructured.WF)
+    (hFrameSafe : expressions.toStructured.FrameSafe) :
+    ∃ structuredFuel,
+      ∃ generated :
+          Structured.TypedCfgPreservation.Program.GeneratedContext
+            expressions.toStructured entryShapes cfg,
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated
+          (YulStackTypedCfgDoneRel expressions.toStructured entryShapes cfg
+            generated)
+          (Yul.InteractionSemantics.exec (sourceFuel + 1)
+            (.Block [sourceProgram.contract.dispatcher])
+            (some sourceProgram.contract) source)
+          (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+            (Structured.InteractionTruncationOwnerPreservation.OpenOutcome.GeneratedProgram.topPolicy
+              generated expressionsState)
+            cfg
+            (Structured.InteractionStaticCost.blockBudget
+              expressions.toStructured structuredFuel
+              expressions.toStructured.body)
+            Structured.TypedCfgCompiler.entryLabel expressionsState.evm) := by
+  obtain ⟨structuredFuel, hUpper⟩ :=
+    yulToNormalizedStackStructuredForward hDecomposition hProgramOk
+      hNormalize hWF hScoped hSupported hLower hExpressionsCompile
+      hYulInitial hYulDomain hStackInitial
+  have hReturns : expressionsState.returns = [] := hStackInitial.returns
+  have hExpressionsInitial :
+      expressionsState = Structured.RunState.initial expressionsState.evm := by
+    rcases expressionsState with ⟨evm, returns⟩
+    simp only [Structured.RunState.initial]
+    simp only at hReturns
+    subst returns
+    rfl
+  have hStructuredInitial :
+      Structured.TypedCfgPreservation.StateRel expressionsState []
+        expressionsState.evm := by
+    rw [hExpressionsInitial]
+    exact Structured.TypedCfgPreservation.StateRel.initial _
+  obtain ⟨generated, hLowerFor⟩ :=
+    Structured.InteractionTruncationOwnerPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_forward
+      hGenerate hWellTyped hStructuredWF hFrameSafe structuredFuel
+        expressionsState
+  have hLower := hLowerFor expressionsState.evm hStructuredInitial
+  have hComposed := Simulation.Interaction.ForwardRel.trans
+    hUpper hLower (fun sourceDone middleError hDone hTruncated => by
+      have hOutOfFuel : middleError = .OutOfFuel := hTruncated
+      subst middleError
+      rcases hDone with ⟨functionsDone, hYul, hStack⟩
+      cases hStack with
+      | @error functionsError targetError hError =>
+          have hFunctionsOutOfFuel : functionsError = .OutOfFuel :=
+            hError rfl
+          subst functionsError
+          exact
+            Yul.FunctionsInteractionProgram.DoneRel.sourceTruncated_of_targetOutOfFuel
+              hYul)
+  refine ⟨structuredFuel, generated, ?_⟩
+  simpa [YulStackTypedCfgDoneRel, hReturns,
+    Structured.InteractionSemantics.Program.openRunState,
+    Structured.InteractionSemantics.Block.openRun] using hComposed
 
 /-- Terminal Yul-to-Structured preservation through the stack allocator. -/
 theorem yulToStackStructuredTerminal

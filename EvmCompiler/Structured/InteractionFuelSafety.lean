@@ -48,6 +48,29 @@ theorem openRun (code : Structured.Code) (state : RunState) :
       exact NotOutOfFuel.bind (BasicInstr.openStep instr state)
         (fun next => ih next)
 
+theorem openPopCondition (state : RunState) :
+    Simulation.Interaction.AllDone NotOutOfFuel
+      (Structured.InteractionSemantics.Code.openPopCondition state) := by
+  unfold Structured.InteractionSemantics.Code.openPopCondition
+    Structured.EffectSemantics.Control.Code.popCondition
+  cases hPop : state.evm.stack.pop with
+  | none =>
+      simp only [Structured.EffectSemantics.Ordinary.runStateModel_evm,
+        hPop]
+      exact .done (by simp [NotOutOfFuel])
+  | some popped =>
+      rcases popped with ⟨stack, value⟩
+      simp only [Structured.EffectSemantics.Ordinary.runStateModel_evm,
+        hPop, Structured.EffectSemantics.Ordinary.runStateModel_withEVM]
+      exact .done trivial
+
+theorem openRunCondition (code : Structured.Code) (state : RunState) :
+    Simulation.Interaction.AllDone NotOutOfFuel
+      (Structured.InteractionSemantics.Code.openRunCondition code state) := by
+  unfold Structured.InteractionSemantics.Code.openRunCondition
+    Structured.EffectSemantics.Control.Code.runCondition
+  exact NotOutOfFuel.bind (openRun code state) openPopCondition
+
 end Code
 end InteractionFuelSafety
 end Structured

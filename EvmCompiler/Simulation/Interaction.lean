@@ -1235,6 +1235,27 @@ theorem bind
   | nil interaction => exact .nil _
   | request tail ih => exact .request ih
 
+/-- A completed left side followed by a prefix of its continuation yields the
+concatenated prefix of the monadic bind. -/
+theorem bind_ok
+    {Error : Type u1} {Source : Type v1} {Target : Type w1}
+    {first : Interaction Error Source}
+    {next : Source -> Interaction Error Target}
+    {firstTranscript restTranscript : Transcript}
+    {value : Source}
+    (hFirst : Executes first firstTranscript (.ok value))
+    (hRest : Follows (next value) restTranscript) :
+    Follows (Interaction.bind first next)
+      (firstTranscript ++ restTranscript) := by
+  generalize hOutcome : (.ok value : Except Error Source) = firstOutcome
+    at hFirst
+  induction hFirst generalizing value restTranscript with
+  | done firstOutcome =>
+      cases hOutcome
+      simpa using hRest
+  | request answer tail ih =>
+      exact .request (ih hRest hOutcome)
+
 /-- Invert one followed request at its first exchange. -/
 theorem request_inv
     {Error : Type u1} {Result : Type v1}

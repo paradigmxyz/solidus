@@ -935,6 +935,26 @@ theorem openRunNResultWithStop_follows_of_le
   rw [<- hFuelEq, openRunNResultWithStop_add]
   exact Simulation.Interaction.Follows.bind hExec.follows
 
+theorem openRunNResultWithStop_follows_of_le_follows
+    (stopJump : Label -> EVMState -> Bool)
+    (program : TypedCfg.Program)
+    {smallerFuel largerFuel : Nat} (label : Label) (state : EVMState)
+    {transcript : Simulation.Interaction.Transcript}
+    (hFuel : smallerFuel <= largerFuel)
+    (hFollow : Simulation.Interaction.Follows
+      (openRunNResultWithStop stopJump
+        program smallerFuel label state)
+      transcript) :
+    Simulation.Interaction.Follows
+      (openRunNResultWithStop stopJump
+        program largerFuel label state)
+      transcript := by
+  let extraFuel := largerFuel - smallerFuel
+  have hFuelEq : smallerFuel + extraFuel = largerFuel :=
+    Nat.add_sub_of_le hFuel
+  rw [<- hFuelEq, openRunNResultWithStop_add]
+  exact Simulation.Interaction.Follows.bind hFollow
+
 def continueOpenRunNResultWithRefinedStop
     (outerStop : Label → EVMState → Bool)
     (program : TypedCfg.Program) (extraFuel : Nat) :
