@@ -117,8 +117,135 @@ for version, solc in solcs.items():
                     "source": source_name,
                     "contract": contract,
                     "selector": selector,
+                    "linker_symbols": [],
                 }
             )
+
+linked_library_sources = {
+    "src/lib/ScaleLib.sol": """
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.20;
+
+library ScaleLib {
+    function scale(uint256 value) internal pure returns (uint256) {
+        return value * 7 + 3;
+    }
+
+    function folded(uint256 first, uint256 second, uint256 third)
+        internal
+        pure
+        returns (uint256)
+    {
+        return scale(first) + scale(second) + scale(third);
+    }
+}
+""",
+    "src/LibraryHarness.sol": """
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.20;
+
+import {ScaleLib} from "./lib/ScaleLib.sol";
+
+contract LibraryHarness {
+    using ScaleLib for uint256;
+
+    function score(uint256 value) public pure returns (uint256) {
+        return value.scale() + (value ^ 0x55);
+    }
+
+    function folded(uint256 first, uint256 second, uint256 third)
+        public
+        pure
+        returns (uint256)
+    {
+        return ScaleLib.folded(first, second, third);
+    }
+}
+""",
+}
+
+linked_library_symbols = [("src/lib/ScaleLib.sol:ScaleLib", 42)]
+for version, solc in solcs.items():
+    label = f"linked-library-{version}"
+    source_name = "src/LibraryHarness.sol"
+    contract = "LibraryHarness"
+    request = {
+        "language": "Solidity",
+        "sources": {
+            name: {"content": content}
+            for name, content in linked_library_sources.items()
+        },
+        "settings": {
+            "viaIR": True,
+            "evmVersion": "cancun",
+            "experimental": True,
+            "optimizer": {"enabled": True, "details": {"yul": True}},
+            "libraries": {
+                "src/lib/ScaleLib.sol": {
+                    "ScaleLib": "0x000000000000000000000000000000000000002a",
+                }
+            },
+            "outputSelection": {
+                "*": {
+                    "*": [
+                        "irOptimizedAst",
+                        "irOptimized",
+                        "metadata",
+                        "evm.bytecode.object",
+                        "evm.deployedBytecode.object",
+                    ],
+                    "": ["ast"],
+                }
+            },
+        },
+    }
+    request_path = outdir / f"{label}.standard-input.json"
+    request_path.write_text(json.dumps(request, separators=(",", ":")))
+
+    raw_output = bridge.run_solc(str(solc), copy.deepcopy(request), ())
+    raw_path = outdir / f"{label}.standard-output.json"
+    raw_path.write_text(json.dumps(raw_output, separators=(",", ":")))
+
+    for selector in ("runtime", "creation"):
+        bridge_json_path = outdir / f"{label}-{selector}.bridge.json"
+        subprocess.run(
+            [
+                str(python_bin),
+                str(bridge_path),
+                str(request_path),
+                "--input-format",
+                "standard-json",
+                "--solc",
+                str(solc),
+                "--lake",
+                str(lake_bin),
+                "--lake-cwd",
+                str(root),
+                "--source-name",
+                source_name,
+                "--contract",
+                contract,
+                "--object",
+                selector,
+                "--optimized",
+                "--format",
+                "bridge-json",
+                "-o",
+                str(bridge_json_path),
+            ],
+            check=True,
+        )
+        lean_cases.append(
+            {
+                "label": f"{label}-{selector}",
+                "raw": str(raw_path),
+                "bridge": str(bridge_json_path),
+                "source": source_name,
+                "contract": contract,
+                "selector": selector,
+                "linker_symbols": linked_library_symbols,
+            }
+        )
 
 def lean_string(value: str) -> str:
     return bridge.lean_string(value)
@@ -129,6 +256,15 @@ def lean_selector(value: str) -> str:
     if value == "runtime":
         return "RawAst.ObjectSelector.runtime"
     raise AssertionError(value)
+
+def lean_linker_symbols(entries) -> str:
+    if not entries:
+        return "[]"
+    rendered = [
+        f"({lean_string(name)}, EvmYul.UInt256.ofNat {value})"
+        for name, value in entries
+    ]
+    return "[" + ", ".join(rendered) + "]"
 
 lean_case_entries = []
 for case in lean_cases:
@@ -142,6 +278,7 @@ for case in lean_cases:
                 f"    source := {lean_string(case['source'])}",
                 f"    contract := {lean_string(case['contract'])}",
                 f"    selector := {lean_selector(case['selector'])}",
+                f"    linkerSymbols := {lean_linker_symbols(case['linker_symbols'])}",
                 "  }",
             ]
         )
@@ -160,6 +297,7 @@ structure DifferentialCase where
   source : String
   contract : String
   selector : RawAst.ObjectSelector
+  linkerSymbols : List (Frontend.Name × Frontend.Word)
 
 def differentialCases : List DifferentialCase :=
 [
@@ -243,9 +381,31 @@ def artifactShapeFuel :
         , joinStrings (artifact.children.map (artifactShapeFuel fuel))
         ]
 
-def artifactShape? (program : Frontend.Program) : Option String := do
-  let artifact <- program.compileArtifact?
+def artifactShapeWith? (program : Frontend.Program)
+    (linkerSymbols : List (Frontend.Name × Frontend.Word)) : Option String := do
+  let artifact <- program.compileArtifactWithLinkerSymbols? linkerSymbols
   some (artifactShapeFuel 100000 artifact)
+
+def selectionFor (case : DifferentialCase) : RawAst.Selection :=
+  {{ source? := some case.source
+    contract? := some case.contract
+    objectSelector := case.selector
+    astOutput := "irOptimizedAst" }}
+
+def rawArtifactShape? (case : DifferentialCase) : IO (Option String) := do
+  let input <- IO.FS.readFile case.rawPath
+  match RawAst.compileArtifactFromRawSolcIr? input (selectionFor case) with
+  | some artifact => pure (some (artifactShapeFuel 100000 artifact))
+  | none => pure none
+
+def expectRawLinkerSymbols (case : DifferentialCase) : IO Unit := do
+  let input <- IO.FS.readFile case.rawPath
+  match RawAst.decodeLinkerSymbols? input (selectionFor case) with
+  | some symbols =>
+      if symbols != case.linkerSymbols then
+        fail (case.label ++ ": linker symbol metadata mismatch " ++
+          reprStr symbols ++ " != " ++ reprStr case.linkerSymbols)
+  | none => fail (case.label ++ ": raw linker metadata decode failed")
 
 def decodeBridgeProgram (path : String) : IO Frontend.Program := do
   let input <- IO.FS.readFile path
@@ -255,17 +415,12 @@ def decodeBridgeProgram (path : String) : IO Frontend.Program := do
 
 def decodeRawProgram (case : DifferentialCase) : IO Frontend.Program := do
   let input <- IO.FS.readFile case.rawPath
-  let selection : RawAst.Selection :=
-    {{ source? := some case.source
-      contract? := some case.contract
-      objectSelector := case.selector
-      astOutput := "irOptimizedAst" }}
-  match RawAst.decodeAndElaborateSolcIr? input selection with
+  match RawAst.decodeAndElaborateSolcIr? input (selectionFor case) with
   | some program => pure program
   | none => fail ("raw decode failed for " ++ case.label)
 
 def comparePrograms (case : DifferentialCase)
-    (raw bridge : Frontend.Program) : IO Unit := do
+    (raw bridge : Frontend.Program) : IO String := do
   if raw.source != bridge.source then
     fail (case.label ++ ": source mismatch " ++ raw.source ++ " != " ++ bridge.source)
   if raw.contract != bridge.contract then
@@ -276,7 +431,9 @@ def comparePrograms (case : DifferentialCase)
     fail (case.label ++ ": object shape mismatch\\n" ++
       reprDiffReport raw.object.dispatcher bridge.object.dispatcher ++
       "\\nraw=" ++ rawShape ++ "\\nbridge=" ++ bridgeShape)
-  match artifactShape? raw, artifactShape? bridge with
+  let rawArtifact <- rawArtifactShape? case
+  let bridgeArtifact := artifactShapeWith? bridge case.linkerSymbols
+  match rawArtifact, bridgeArtifact with
   | some rawArtifact, some bridgeArtifact =>
       if rawArtifact != bridgeArtifact then
         fail (case.label ++ ": artifact mismatch " ++ rawArtifact ++ " != " ++ bridgeArtifact)
@@ -286,16 +443,19 @@ def comparePrograms (case : DifferentialCase)
       fail (case.label ++ ": bridge artifact failed while raw artifact compiled")
   | none, none =>
       fail (case.label ++ ": both artifacts failed")
+  pure (rawArtifact.getD "none")
 
 def runCase (case : DifferentialCase) : IO Unit := do
+  expectRawLinkerSymbols case
   let raw <- decodeRawProgram case
   let bridge <- decodeBridgeProgram case.bridgePath
-  comparePrograms case raw bridge
+  let artifact <- comparePrograms case raw bridge
   IO.println
     ("raw_solc_frontend_differential\\t" ++ case.label ++
       "\\tobject=" ++ raw.object.name ++
       "\\tshape=" ++ objectShape raw.object ++
-      "\\tartifact=" ++ (artifactShape? raw).getD "none")
+      "\\tlinkers=" ++ toString case.linkerSymbols.length ++
+      "\\tartifact=" ++ artifact)
 
 def main : IO Unit := do
   for case in differentialCases do

@@ -185,28 +185,32 @@ def metadataEvmVersion? (contractOutput : Lean.Json) :
           | none => pure none
           | some version => some <$> decodeEvmVersion version
 
-def parseStandardJsonLibraryAddress (value : Lean.Json)
-    (sourceName libraryName : String) : DecodeM Word := do
+def parseStandardJsonLibraryAddressNamed (value : Lean.Json)
+    (symbolName : String) : DecodeM Word := do
   let text ←
     match value.getStr? with
     | .ok text => pure text
     | .error _ =>
         .error
-          s!"malformed Standard JSON metadata settings.libraries entry for {sourceName}:{libraryName}: address must be a hex string"
+          s!"malformed Standard JSON metadata settings.libraries entry for {symbolName}: address must be a hex string"
   let address := text.trim
   let digits := dropHexPrefix address
   if digits == "" then
     .error
-      s!"malformed Standard JSON metadata settings.libraries entry for {sourceName}:{libraryName}: address is empty"
+      s!"malformed Standard JSON metadata settings.libraries entry for {symbolName}: address is empty"
   else if digits.length > 40 then
     .error
-      s!"malformed Standard JSON metadata settings.libraries entry for {sourceName}:{libraryName}: address is wider than 20 bytes"
+      s!"malformed Standard JSON metadata settings.libraries entry for {symbolName}: address is wider than 20 bytes"
   else
     match parseHexNat digits with
     | .ok parsed => pure (EvmYul.UInt256.ofNat parsed)
     | .error _ =>
         .error
-          s!"malformed Standard JSON metadata settings.libraries entry for {sourceName}:{libraryName}: address must be hex"
+          s!"malformed Standard JSON metadata settings.libraries entry for {symbolName}: address must be hex"
+
+def parseStandardJsonLibraryAddress (value : Lean.Json)
+    (sourceName libraryName : String) : DecodeM Word :=
+  parseStandardJsonLibraryAddressNamed value (sourceName ++ ":" ++ libraryName)
 
 def decodeMetadataLibraries (settings : Lean.Json) :
     DecodeM (List (Name × Word)) := do
@@ -217,14 +221,20 @@ def decodeMetadataLibraries (settings : Lean.Json) :
       let mut entries : List (Name × Word) := []
       for sourceEntry in ← objectEntries libraries do
         let sourceName := sourceEntry.fst
-        let contracts := sourceEntry.snd
-        let _ ← contracts.getObj?
-        for libraryEntry in ← objectEntries contracts do
-          let libraryName := libraryEntry.fst
-          let value ←
-            parseStandardJsonLibraryAddress
-              libraryEntry.snd sourceName libraryName
-          entries := (sourceName ++ ":" ++ libraryName, value) :: entries
+        match sourceEntry.snd.getStr? with
+        | .ok _ =>
+            let value ←
+              parseStandardJsonLibraryAddressNamed sourceEntry.snd sourceName
+            entries := (sourceName, value) :: entries
+        | .error _ =>
+            let contracts := sourceEntry.snd
+            let _ ← contracts.getObj?
+            for libraryEntry in ← objectEntries contracts do
+              let libraryName := libraryEntry.fst
+              let value ←
+                parseStandardJsonLibraryAddress
+                  libraryEntry.snd sourceName libraryName
+              entries := (sourceName ++ ":" ++ libraryName, value) :: entries
       pure entries.reverse
 
 def metadataLinkerSymbols? (contractOutput : Lean.Json) :

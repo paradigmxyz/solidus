@@ -84,7 +84,8 @@ Next raw frontend layer:
 
 - [x] Add a local raw-vs-normalized bridge differential gate over both pinned
   solc versions, creation/runtime selection, recursive frontend digests, and
-  checked artifact sizes for representative real fixtures.
+  checked artifact sizes for representative real fixtures, including a linked
+  library fixture that exercises raw metadata linker-symbol decoding.
 - [ ] Differentially compare raw Lean elaboration against the old bridge over
   both pinned solc versions and the full corpus: Aave, Permit2, Safe,
   EntryPoint, PoolManager, all real suites, and adversarial fixtures.
