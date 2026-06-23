@@ -102,6 +102,9 @@ stack-only correctness boundary.
 - [ ] Extend adjacent preservation and the public theorem from halting outcomes
   to all supported non-truncated runtime errors, beginning with intentional
   `INVALID`; do not count executable bytecode generation as execution proof.
+  Yul -> Functions, Functions -> allocated Expressions, and the transparent
+  Expressions -> Structured adapter now expose checked finished/stopped
+  interfaces; Structured -> TypedCfg and the lower physical passes remain.
 - [ ] Add pinned real-world suites and generated adversarial cases for uncovered
   semantic families, then fix every backend rejection generically or record an
   honest supported-version/input-boundary rejection.

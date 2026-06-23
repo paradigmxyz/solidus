@@ -32,6 +32,34 @@ theorem excludes_truncated
 
 end SourceTerminal
 
+/-- Whole-program Yul leaves that have genuinely finished, either through an
+EVM halt/revert or through a supported runtime error. Finite semantic fuel and
+unsupported source failures remain truncation, not observable completion. -/
+def SourceFinished :
+    Except Yul.InteractionSemantics.Failure
+      Yul.InteractionSemantics.State -> Prop
+  | .error failure => Not (Truncated failure)
+  | .ok _ => False
+
+namespace SourceFinished
+
+theorem excludes_truncated
+    {failure : Yul.InteractionSemantics.Failure}
+    (hFinished : SourceFinished (.error failure)) :
+    Not (Truncated failure) :=
+  hFinished
+
+theorem of_terminal
+    {sourceDone : Except Yul.InteractionSemantics.Failure
+      Yul.InteractionSemantics.State}
+    (hTerminal : SourceTerminal sourceDone) :
+    SourceFinished sourceDone := by
+  cases sourceDone with
+  | ok state => cases hTerminal
+  | error failure => exact SourceTerminal.excludes_truncated hTerminal
+
+end SourceFinished
+
 /-- The Functions representation of a terminal Yul whole-program leaf. -/
 def TargetHalted :
     Except EVMException Functions.InteractionSemantics.Outcome -> Prop
@@ -52,6 +80,15 @@ theorem successful
   | ok target => trivial
 
 end TargetHalted
+
+/-- The adjacent Functions execution has stopped in either a real EVM error
+or a halt. `OutOfFuel` is excluded because it is structural source truncation. -/
+def TargetFinished :
+    Except EVMException Functions.InteractionSemantics.Outcome -> Prop
+  | .error .OutOfFuel => False
+  | .error _ => True
+  | .ok { mode := .halt _ , .. } => True
+  | _ => False
 
 /-- Whole-program outcomes hide the compiler's path-independent final
 reservation set while retaining the ordinary open-world outcome relation. -/
@@ -103,6 +140,30 @@ theorem targetHalted_of_sourceTerminal
   | terminal hTerminalRel =>
       cases hTerminalRel <;> trivial
 
+theorem targetFinished_of_sourceFinished
+    {sourceDone : Except Yul.InteractionSemantics.Failure
+      Yul.InteractionSemantics.State}
+    {targetDone : Except EVMException Functions.InteractionSemantics.Outcome}
+    (hRel : DoneRel sourceDone targetDone)
+    (hFinished : SourceFinished sourceDone) :
+    TargetFinished targetDone := by
+  rcases hRel with ⟨used, hRel⟩
+  cases hRel with
+  | @error sourceFailure targetError hError =>
+      rcases sourceFailure with ⟨exception, state⟩
+      cases exception <;> cases targetError <;>
+        simp [SourceFinished, TargetFinished, Truncated, ErrorRel] at *
+  | regular hScoped hDomain =>
+      cases hFinished
+  | brk hScope hMode hAbrupt =>
+      cases hFinished
+  | cont hScope hMode hAbrupt =>
+      cases hFinished
+  | leave hScope hMode hAbrupt =>
+      cases hFinished
+  | terminal hTerminalRel =>
+      cases hTerminalRel <;> trivial
+
 end DoneRel
 
 /-- On universally terminal source branches, the whole-program forward theorem
@@ -126,6 +187,28 @@ theorem terminalRel
   exact Simulation.Interaction.Rel.allDone_right hStrong
     (fun _ _ hDone =>
       DoneRel.targetHalted_of_sourceTerminal hDone.1 hDone.2)
+
+/-- On universally finished source branches, Yul-to-Functions forward
+preservation is a full relation and every target branch has genuinely stopped. -/
+theorem finishedRel
+    {sourceRun : Simulation.Interaction
+      Yul.InteractionSemantics.Failure Yul.InteractionSemantics.State}
+    {targetRun : Simulation.Interaction
+      EVMException Functions.InteractionSemantics.Outcome}
+    (hForward : Simulation.Interaction.ForwardRel Truncated DoneRel
+      sourceRun targetRun)
+    (hFinished : Simulation.Interaction.AllDone SourceFinished sourceRun) :
+    Simulation.Interaction.Rel DoneRel sourceRun targetRun /\
+      Simulation.Interaction.AllDone TargetFinished targetRun := by
+  have hRel := Simulation.Interaction.ForwardRel.rel_of_allDone
+    hForward hFinished
+    (fun failure hSource => SourceFinished.excludes_truncated hSource)
+  refine ⟨hRel, ?_⟩
+  have hStrong :=
+    Simulation.Interaction.Rel.strengthen_left hRel hFinished
+  exact Simulation.Interaction.Rel.allDone_right hStrong
+    (fun _ _ hDone =>
+      DoneRel.targetFinished_of_sourceFinished hDone.1 hDone.2)
 
 /-- A universally successful Yul interaction tree remains universally
 successful after the adjacent Yul-to-Functions forward simulation. -/

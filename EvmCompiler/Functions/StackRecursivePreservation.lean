@@ -1465,6 +1465,24 @@ def ProgramTargetHalted :
   | .ok { mode := .halt _, .. } => True
   | _ => False
 
+/-- A whole-program Functions leaf has genuinely finished rather than merely
+exhausting the interpreter's structural fuel. -/
+def ProgramSourceFinished :
+    Except EVMException Functions.InteractionSemantics.Outcome → Prop
+  | .error .OutOfFuel => False
+  | .error _ => True
+  | .ok { mode := .halt _, .. } => True
+  | _ => False
+
+/-- The allocated Expressions execution has stopped in either an error or a
+halt. Target fuel is compiler-derived; this predicate records the outcome
+shape without conflating source structural truncation with `INVALID`. -/
+def ProgramTargetStopped :
+    Except EVMException Expressions.InteractionSemantics.Outcome → Prop
+  | .error _ => True
+  | .ok { mode := .halt _, .. } => True
+  | _ => False
+
 theorem ControlScopedOutcomeRel.targetHalted_of_sourceHalted
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {sourceDone : Except EVMException Functions.InteractionSemantics.Outcome}
@@ -1476,6 +1494,25 @@ theorem ControlScopedOutcomeRel.targetHalted_of_sourceHalted
     ProgramTargetHalted targetDone := by
   cases hRel with
   | error hError => cases hSource
+  | ok hResult =>
+      cases hResult with
+      | regular hRuntime hState => cases hSource
+      | brk hTarget hState => cases hSource
+      | cont hTarget hState => cases hSource
+      | leave hState => cases hSource
+      | halt hShared => trivial
+
+theorem ControlScopedOutcomeRel.targetStopped_of_sourceFinished
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {sourceDone : Except EVMException Functions.InteractionSemantics.Outcome}
+    {targetDone : Except EVMException Expressions.InteractionSemantics.Outcome}
+    (hRel :
+      ControlScopedOutcomeRel {} [] Locals.Ctx.initial suffix returns
+        Functions.Source.Ctx.initial sourceDone targetDone)
+    (hSource : ProgramSourceFinished sourceDone) :
+    ProgramTargetStopped targetDone := by
+  cases hRel with
+  | error hError => trivial
   | ok hResult =>
       cases hResult with
       | regular hRuntime hState => cases hSource
@@ -1532,6 +1569,60 @@ theorem compiledProgramBodyTerminal
   apply Simulation.Interaction.Rel.allDone_right hStrong
   intro sourceDone targetDone hDone
   exact ControlScopedOutcomeRel.targetHalted_of_sourceHalted hDone.1 hDone.2
+
+/-- Whole-program stack allocation preserves every non-truncated finished
+Functions branch. Unlike the terminal-only theorem, this includes runtime
+errors while still rejecting structural `OutOfFuel` as source completion. -/
+theorem compiledProgramBodyFinished
+    (sourceProgram : Functions.Program)
+    (localsProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceFuel : Nat)
+    (hProgramWF : sourceProgram.WF)
+    (hProgramScoped : sourceProgram.Scoped)
+    (hProgramSupported :
+      Functions.InteractionSemantics.Program.OpenSupported sourceProgram)
+    (hLower :
+      StackLowering.lowerProgram? sourceProgram = some localsProgram)
+    (hCompile :
+      Locals.Program.toExpressions? localsProgram = some targetProgram)
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hInitial :
+      StateRel Locals.Ctx.initial.layout [] [] source target)
+    (hFinished : Simulation.Interaction.AllDone ProgramSourceFinished
+      (Functions.InteractionSemantics.Program.openRunState
+        sourceFuel sourceProgram source)) :
+    ∃ targetFuel,
+      Simulation.Interaction.Rel
+          (ControlScopedOutcomeRel {} [] Locals.Ctx.initial [] []
+            Functions.Source.Ctx.initial)
+          (Functions.InteractionSemantics.Program.openRunState
+            sourceFuel sourceProgram source)
+          (Expressions.InteractionSemantics.Block.openRun
+            targetProgram targetFuel targetProgram.body target) ∧
+        Simulation.Interaction.AllDone ProgramTargetStopped
+          (Expressions.InteractionSemantics.Block.openRun
+            targetProgram targetFuel targetProgram.body target) := by
+  let targetFuel :=
+    Expressions.TargetFuel.budget targetProgram sourceFuel
+      targetProgram.body.stmts
+  have hForward :=
+    compiledProgramBodyAt sourceProgram localsProgram targetProgram sourceFuel
+      hProgramWF hProgramScoped hProgramSupported hLower hCompile targetFuel
+      (by simp [Expressions.TargetFuel.Covers, targetFuel]) hInitial
+  have hRel := Simulation.Interaction.ForwardRel.rel_of_allDone
+    hForward hFinished
+    (fun error hSource hTruncated => by
+      have hOutOfFuel : error = .OutOfFuel := hTruncated
+      subst error
+      simpa [ProgramSourceFinished] using hSource)
+  refine ⟨targetFuel, hRel, ?_⟩
+  have hStrong :=
+    Simulation.Interaction.Rel.strengthen_left hRel hFinished
+  apply Simulation.Interaction.Rel.allDone_right hStrong
+  intro sourceDone targetDone hDone
+  exact
+    ControlScopedOutcomeRel.targetStopped_of_sourceFinished hDone.1 hDone.2
 
 end StackRecursivePreservation
 end Functions

@@ -12,6 +12,14 @@ def SourceHalted : Except EVMException Structured.Outcome -> Prop
   | .ok { mode := .halt _ , .. } => True
   | _ => False
 
+/-- A Structured branch has stopped in either an EVM error or a halt. This is
+the adjacent outcome shape needed before extending generation preservation
+beyond the successful-only owner theorem. -/
+def SourceStopped : Except EVMException Structured.Outcome -> Prop
+  | .error _ => True
+  | .ok { mode := .halt _ , .. } => True
+  | _ => False
+
 namespace SourceHalted
 
 theorem successful
