@@ -167,7 +167,8 @@ Next raw frontend layer:
   elaboration lift theorems expose that fact for generated helper entries
   returned by successful elaboration. Production raw elaboration now fail-closes
   unless the generated `clz` argument/result names are distinct, and exposes the
-  checked condition needed to discharge the helper-execution theorem. Retained
+  checked condition through a wrapper theorem that discharges the
+  helper-execution theorem's name premise. Retained
   nested function-definition statements are alpha-renamed to generated function
   names before their checked frontend no-op lowering. Raw production elaboration
   now also fail-closes on any

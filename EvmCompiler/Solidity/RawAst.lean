@@ -2094,6 +2094,31 @@ theorem Object.elaboratePreservingOrder?_frontendValidated
       Object.elaborate?_clzHelperSpecOk hObject,
       Object.elaborate?_hoistedFunctionsRetained hObject⟩
 
+theorem Object.elaboratePreservingOrder?_clzHelper_exec_ret_eq_run
+    {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
+    {frontend : Frontend.Object} {code : List Raw.Stmt}
+    {helper arg ret : Name}
+    (hElab :
+      Object.elaboratePreservingOrder? obj evmVersion = .ok frontend)
+    (hCode : obj.code? = some code)
+    (hCodeElab :
+      Elab.elaborateCode code =
+        .ok (frontend.dispatcher, frontend.functions,
+          some helper, some arg, some ret)) :
+    ∃ fn,
+      (helper, fn) ∈ frontend.functions ∧
+        ∀ value initialRet : Word,
+          (Elab.ClzHelperExecution.execStmts? arg ret
+              { arg := value, ret := initialRet }
+              fn.body).map (fun state => state.ret) =
+            some (Elab.ClzHelperModel.run value) := by
+  have hDistinctBool :
+      Object.clzHelperNamesDistinct? obj = true :=
+    Object.elaboratePreservingOrder?_clzHelperNamesDistinct hElab
+  have hNames : arg ≠ ret :=
+    Object.clzHelperNamesDistinct?_arg_ne hCode hCodeElab hDistinctBool
+  exact Elab.elaborateCode_clzHelper_exec_ret_eq_run hCodeElab hNames
+
 def walkObjectsFuel : Nat → Object → List Object
   | 0, obj => [obj]
   | fuel + 1, obj =>

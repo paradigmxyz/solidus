@@ -83,6 +83,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_noRawClzCall
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_functionDefStubsRetained
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_frontendValidated
+#check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelper_exec_ret_eq_run
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_parts
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_parts
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_objectParts
@@ -205,6 +206,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_noRawClzCall
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_functionDefStubsRetained
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_frontendValidated
+#print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelper_exec_ret_eq_run
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_objectParts
