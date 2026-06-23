@@ -3078,6 +3078,47 @@ class SolidityToYulLeanTests(unittest.TestCase):
         )
         self.assertEqual(captured[0][2], ("--base-path", "."))
 
+    def test_ast_recovery_skips_empty_abstract_contract_ir(self):
+        abstract_output = {"irOptimized": "  \n"}
+        concrete_output = {
+            "irOptimizedAst": {
+                "nodeType": "YulObject",
+                "name": "Concrete_1",
+            }
+        }
+        output = {
+            "contracts": {
+                "A.sol": {
+                    "Abstract": abstract_output,
+                    "Concrete": concrete_output,
+                }
+            }
+        }
+        old_run_solc = bridge.run_solc
+        try:
+            def unexpected_run_solc(*_args, **_kwargs):
+                raise AssertionError("empty abstract IR must not be reparsed")
+
+            bridge.run_solc = unexpected_run_solc
+            recovered = bridge.recover_missing_contract_yul_asts(
+                output,
+                "A.sol",
+                None,
+                optimized=True,
+                experimental=True,
+                solc="solc",
+                solc_args=(),
+            )
+        finally:
+            bridge.run_solc = old_run_solc
+
+        self.assertEqual(recovered, 0)
+        self.assertNotIn("irOptimizedAst", abstract_output)
+        self.assertEqual(
+            bridge.yul_ir_contract_candidates(output, "A.sol", True),
+            [("A.sol", "Concrete", concrete_output)],
+        )
+
     def test_run_solc_retries_without_experimental_for_older_solc(self):
         calls = []
 

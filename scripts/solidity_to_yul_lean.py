@@ -7455,6 +7455,11 @@ def recover_missing_contract_yul_asts(
         yul_text = contract_output.get(text_key)
         if not isinstance(yul_text, str):
             continue
+        # solc emits an empty IR string for interfaces and some abstract
+        # contracts. There is no object to recover, so keep these candidates
+        # on the ordinary no-Yul-IR skip path.
+        if not yul_text.strip():
+            continue
         yul_source_name = (
             f"{candidate_source}:{candidate_contract}.{text_key}.yul"
         )

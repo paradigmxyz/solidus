@@ -33,6 +33,16 @@ for version in "${VERSIONS[@]}"; do
   fi
   printf '%s\n' "$abi_output"
 
+  advanced_output="$(SOLC="$compiler" \
+    "$ROOT/scripts/test_advanced_type_surface_backend.sh")"
+  if [[ "$advanced_output" != *"advanced_type_surface_backend=pass"* ]] ||
+      [[ "$advanced_output" != *"advanced_type_surface_execution_compare_calls=8"* ]]; then
+    printf 'error: pinned solc %s failed the advanced-type surface\n%s\n' \
+      "$version" "$advanced_output" >&2
+    exit 1
+  fi
+  printf '%s\n' "$advanced_output"
+
   effect_output="$(SOLC="$compiler" \
     "$ROOT/scripts/test_effect_ordering_surface_backend.sh")"
   if [[ "$effect_output" != *"effect_ordering_surface_backend=pass"* ]]; then
