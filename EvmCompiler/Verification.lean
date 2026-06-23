@@ -37,6 +37,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsTerminal
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsFinished
 #check EvmCompiler.Compiler.OpenInteractionComposition.stackExpressionsToStructuredStopped
+#check EvmCompiler.Structured.InteractionTerminalPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_finished
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulNormalizedStackToAssemblySource
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackCodeToRawBytecode
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
@@ -49,4 +50,5 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsFinished
+#print axioms EvmCompiler.Structured.InteractionTerminalPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_finished
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecode

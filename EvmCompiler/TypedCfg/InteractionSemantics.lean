@@ -997,6 +997,13 @@ def Halted : Except EVMException TypedCfg.Outcome -> Prop
   | .ok (.halt _ _) => True
   | _ => False
 
+/-- Errors and EVM halts have both stopped execution; jumps and ordinary
+control exits have not. -/
+def Stopped : Except EVMException TypedCfg.Outcome -> Prop
+  | .error _ => True
+  | .ok (.halt _ _) => True
+  | _ => False
+
 /-- A TypedCfg halt whose corresponding Assembly terminal instruction is safe
 to execute. -/
 def AssemblySafeHalted : Except EVMException TypedCfg.Outcome -> Prop
@@ -1044,6 +1051,50 @@ theorem openRunNWithStop_eq_openRunN_of_allDone_halted
           · rw [show stopJump next nextState = false by
                   exact Bool.eq_false_of_not_eq_true hStop]
               at hContinuation ⊢
+            exact ih next nextState hContinuation
+      | fallthrough final => rfl
+      | returnDispatch final => rfl
+      | halt kind final => rfl
+      | invalid final => rfl
+
+/-- A stop policy is inert when every branch has either errored or halted. -/
+theorem openRunNWithStop_eq_openRunN_of_allDone_stopped
+    (stopJump : Label -> EVMState -> Bool)
+    (program : TypedCfg.Program) (fuel : Nat)
+    (label : Label) (state : EVMState)
+    (hStopped : Simulation.Interaction.AllDone Stopped
+      (openRunNWithStop stopJump program fuel label state)) :
+    openRunNWithStop stopJump program fuel label state =
+      openRunN program fuel label state := by
+  induction fuel generalizing label state with
+  | zero => rfl
+  | succ fuel ih =>
+      rw [openRunNWithStop_succ, openRunN_succ]
+      apply Simulation.Interaction.AllDone.bind_congr
+        (Simulation.Interaction.AllDone.bind_inv hStopped)
+      intro outcome hContinuation
+      cases outcome with
+      | jump next nextState =>
+          change
+            (if stopJump next nextState then
+                pure (.jump next nextState)
+              else
+                openRunNWithStop stopJump program fuel next nextState) =
+              openRunN program fuel next nextState
+          change
+            Simulation.Interaction.AllDone Stopped
+              (if stopJump next nextState then
+                  pure (.jump next nextState)
+                else
+                  openRunNWithStop stopJump program fuel next nextState)
+              at hContinuation
+          by_cases hStop : stopJump next nextState = true
+          · rw [hStop] at hContinuation
+            cases hContinuation with
+            | done hDone => cases hDone
+          · rw [show stopJump next nextState = false by
+                  exact Bool.eq_false_of_not_eq_true hStop]
+                at hContinuation ⊢
             exact ih next nextState hContinuation
       | fallthrough final => rfl
       | returnDispatch final => rfl

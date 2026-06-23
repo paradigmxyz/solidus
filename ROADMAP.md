@@ -104,7 +104,9 @@ stack-only correctness boundary.
   `INVALID`; do not count executable bytecode generation as execution proof.
   Yul -> Functions, Functions -> allocated Expressions, and the transparent
   Expressions -> Structured adapter now expose checked finished/stopped
-  interfaces; Structured -> TypedCfg and the lower physical passes remain.
+  interfaces. Structured -> TypedCfg now preserves all genuine runtime errors
+  and halts through a compiler-owned static budget; the lower physical passes
+  and public composition remain.
 - [ ] Add pinned real-world suites and generated adversarial cases for uncovered
   semantic families, then fix every backend rejection generically or record an
   honest supported-version/input-boundary rejection.

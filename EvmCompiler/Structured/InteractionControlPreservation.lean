@@ -3054,6 +3054,49 @@ theorem with_errors
         ⟨.ok (.stopped remaining targetOutcome), hTargetExec,
           Simulation.Interaction.ExceptRel.ok hRel⟩
 
+/-- Successful branches plus non-structural runtime-error branches cover a run
+whose leaves are known not to be interpreter-fuel truncations. -/
+theorem with_runtime_errors
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {targetFuel : Nat} {policy : StopPolicy}
+    {regularExit : RegularExit}
+    (hSuccess :
+      UniformExecPreservesUnder result cfg entry ctx regular
+        source tokens sourceRun targetFuel policy)
+    (hError :
+      UniformRuntimeErrorExecPreservesUnder result cfg entry ctx regular
+        source tokens sourceRun targetFuel policy)
+    (hFinished : Simulation.Interaction.AllDone
+      (fun done =>
+        match done with
+        | .error error => RuntimeError error
+        | .ok _ => True)
+      sourceRun) :
+    UniformDoneExecPreservesUnder result cfg entry ctx regular regularExit
+      source tokens sourceRun targetFuel policy := by
+  intro target hStateRel transcript sourceDone hSourceExec
+  have hDone :=
+    Simulation.Interaction.AllDone.property_of_executes hFinished hSourceExec
+  cases sourceDone with
+  | error sourceError =>
+      obtain ⟨targetError, hTargetExec⟩ :=
+        hError target hStateRel transcript sourceError hDone hSourceExec
+      exact
+        ⟨.error targetError, hTargetExec,
+          Simulation.Interaction.ExceptRel.error trivial⟩
+  | ok sourceOutcome =>
+      obtain ⟨remaining, targetOutcome, hTargetExec, hRel⟩ :=
+        hSuccess target hStateRel transcript sourceOutcome hSourceExec
+      exact
+        ⟨.ok (.stopped remaining targetOutcome), hTargetExec,
+          Simulation.Interaction.ExceptRel.ok hRel⟩
+
 end UniformExecPreservesUnder
 
 namespace UniformDoneExecPreservesUnder
@@ -3154,6 +3197,34 @@ theorem close_refined
     continue_refined_zero_executes_of_stopped hStopped
   have hCombined :=
     Simulation.Interaction.Executes.bind_ok hHead hContinuation
+  rw [
+    ← TypedCfg.InteractionSemantics.Program.openRunNResultWithRefinedStop_add
+      outer inner cfg headFuel 0 entry target hRefines] at hCombined
+  simpa using hCombined
+
+theorem close_refined_error
+    {outer inner : StopPolicy} {cfg : TypedCfg.Program}
+    {headFuel : Nat} {entry : Assembly.Label} {target : EVMState}
+    {targetError : EVMException}
+    {transcript : Simulation.Interaction.Transcript}
+    (hRefines :
+      forall next nextState,
+        outer next nextState = true -> inner next nextState = true)
+    (hHead :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+          inner cfg headFuel entry target)
+        transcript (.error targetError)) :
+    Simulation.Interaction.Executes
+      (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+        outer cfg headFuel entry target)
+      transcript (.error targetError) := by
+  have hCombined :=
+    Simulation.Interaction.Executes.bind_error
+      (next :=
+        TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithRefinedStop
+          outer cfg 0)
+      hHead
   rw [
     ← TypedCfg.InteractionSemantics.Program.openRunNResultWithRefinedStop_add
       outer inner cfg headFuel 0 entry target hRefines] at hCombined
@@ -3268,6 +3339,57 @@ theorem splice_refined_jump
         tailTranscript
         (.ok
           (.stopped (tailRemaining + headRemaining) targetFinal)) := by
+    simpa [
+      TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithRefinedStop,
+      TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+      hNoStop] using hTailPadded
+  have hCombined :=
+    Simulation.Interaction.Executes.bind_ok hHead hContinuation
+  rw [
+    ← TypedCfg.InteractionSemantics.Program.openRunNResultWithRefinedStop_add
+      outer inner cfg headFuel tailFuel entry target hRefines] at hCombined
+  exact hCombined
+
+theorem splice_refined_jump_error
+    {outer inner : StopPolicy} {cfg : TypedCfg.Program}
+    {headFuel headRemaining tailFuel : Nat}
+    {entry next : Assembly.Label}
+    {target nextTarget : EVMState} {targetError : EVMException}
+    {headTranscript tailTranscript :
+      Simulation.Interaction.Transcript}
+    (hRefines :
+      forall label state,
+        outer label state = true -> inner label state = true)
+    (hHead :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+          inner cfg headFuel entry target)
+        headTranscript
+        (.ok (.stopped headRemaining (.jump next nextTarget))))
+    (hNoStop : outer next nextTarget = false)
+    (hTail :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+          outer cfg tailFuel next nextTarget)
+        tailTranscript (.error targetError)) :
+    Simulation.Interaction.Executes
+      (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+        outer cfg (headFuel + tailFuel) entry target)
+      (headTranscript ++ tailTranscript) (.error targetError) := by
+  have hTailPadded :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+          outer cfg (headRemaining + tailFuel) next nextTarget)
+        tailTranscript (.error targetError) := by
+    rw [show headRemaining + tailFuel = tailFuel + headRemaining by omega]
+    rw [TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_add]
+    exact Simulation.Interaction.Executes.bind_error hTail
+  have hContinuation :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithRefinedStop
+          outer cfg tailFuel
+          (.stopped headRemaining (.jump next nextTarget)))
+        tailTranscript (.error targetError) := by
     simpa [
       TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithRefinedStop,
       TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
@@ -3430,6 +3552,37 @@ theorem prepend_closed_jump
     ⟨tailFuel + 1, remaining, targetOutcome,
       by simpa using hTargetExec,
       by simpa [hReturns] using hTailRel⟩
+
+theorem prepend_step_jump_error
+    {policy : StopPolicy} {cfg : TypedCfg.Program}
+    {tailFuel : Nat} {entry next : Assembly.Label}
+    {target nextTarget : EVMState} {targetError : EVMException}
+    {headTranscript tailTranscript :
+      Simulation.Interaction.Transcript}
+    (hHead :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openStep cfg entry target)
+        headTranscript (.ok (.jump next nextTarget)))
+    (hNoStop : policy next nextTarget = false)
+    (hTail :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+          policy cfg tailFuel next nextTarget)
+        tailTranscript (.error targetError)) :
+    Simulation.Interaction.Executes
+      (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+        policy cfg (tailFuel + 1) entry target)
+      (headTranscript ++ tailTranscript) (.error targetError) := by
+  have hContinuation :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
+          policy cfg tailFuel (.jump next nextTarget))
+        tailTranscript (.error targetError) := by
+    simpa [
+      TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+      hNoStop] using hTail
+  rw [TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_succ_eq_bind]
+  exact Simulation.Interaction.Executes.bind_ok hHead hContinuation
 
 theorem sequence
     {headResult tailResult : TypedCfgCompiler.Result}

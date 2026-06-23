@@ -235,7 +235,7 @@ theorem openRun_cons_runtime_error_bounded_under_of_compileStmtListFuel?
             (.regular middleSource)
             (.jump (TypedCfgCompiler.restLabel supply) targetMiddle) ->
           policy (TypedCfgCompiler.restLabel supply) targetMiddle = false)
-    (hHeadNoTailDone :
+    (hHeadNoTail :
       forall {headResult : TypedCfgCompiler.Result},
         TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
             entry input (TypedCfgCompiler.restLabel supply) = some headResult ->
@@ -243,23 +243,16 @@ theorem openRun_cons_runtime_error_bounded_under_of_compileStmtListFuel?
         TypedCfgPreservation.CallsInProgram headResult generatedCalls ->
         headResult.fallthrough? = none ->
         OpenOutcome.BoundedExecPreservesUnder headResult cfg entry ctx
-          (TypedCfgCompiler.restLabel supply) source tokens
-          (InteractionSemantics.Stmt.openRun
-            sourceProgram sourceFuel stmt source)
-          headBudget policy)
-    (hHeadNoTailError :
-      forall {headResult : TypedCfgCompiler.Result},
-        TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
-            entry input (TypedCfgCompiler.restLabel supply) = some headResult ->
-        TypedCfgPreservation.BlocksInProgram headResult cfg ->
-        TypedCfgPreservation.CallsInProgram headResult generatedCalls ->
-        headResult.fallthrough? = none ->
-        OpenOutcome.BoundedRuntimeErrorExecPreservesUnder headResult cfg entry ctx
-          (TypedCfgCompiler.restLabel supply) source tokens
-          (InteractionSemantics.Stmt.openRun
-            sourceProgram sourceFuel stmt source)
-          headBudget policy)
-    (hHeadWithTailDone :
+            (TypedCfgCompiler.restLabel supply) source tokens
+            (InteractionSemantics.Stmt.openRun
+              sourceProgram sourceFuel stmt source)
+            headBudget policy /\
+          OpenOutcome.BoundedRuntimeErrorExecPreservesUnder headResult cfg entry ctx
+            (TypedCfgCompiler.restLabel supply) source tokens
+            (InteractionSemantics.Stmt.openRun
+              sourceProgram sourceFuel stmt source)
+            headBudget policy)
+    (hHeadWithTail :
       forall {headResult tailResult : TypedCfgCompiler.Result}
           {tailInput : TypedCfg.Shape},
         TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
@@ -273,34 +266,21 @@ theorem openRun_cons_runtime_error_bounded_under_of_compileStmtListFuel?
         TypedCfgPreservation.BlocksInProgram tailResult cfg ->
         result = headResult.append tailResult ->
         OpenOutcome.BoundedExecPreservesUnder headResult cfg entry ctx
-          (TypedCfgCompiler.restLabel supply) source tokens
-          (InteractionSemantics.Stmt.openRun
-            sourceProgram sourceFuel stmt source)
-          headBudget
-          (OpenOutcome.pushStopJump headResult ctx
-            (TypedCfgCompiler.restLabel supply)
-            source.returns tokens policy))
-    (hHeadWithTailError :
-      forall {headResult tailResult : TypedCfgCompiler.Result}
-          {tailInput : TypedCfg.Shape},
-        TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
-            entry input (TypedCfgCompiler.restLabel supply) = some headResult ->
-        TypedCfgPreservation.BlocksInProgram headResult cfg ->
-        TypedCfgPreservation.CallsInProgram headResult generatedCalls ->
-        headResult.fallthrough? = some tailInput ->
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
-            tailInput regular = some tailResult ->
-        TypedCfgPreservation.BlocksInProgram tailResult cfg ->
-        result = headResult.append tailResult ->
-        OpenOutcome.BoundedRuntimeErrorExecPreservesUnder headResult cfg entry ctx
-          (TypedCfgCompiler.restLabel supply) source tokens
-          (InteractionSemantics.Stmt.openRun
-            sourceProgram sourceFuel stmt source)
-          headBudget
-          (OpenOutcome.pushStopJump headResult ctx
-            (TypedCfgCompiler.restLabel supply)
-            source.returns tokens policy))
+            (TypedCfgCompiler.restLabel supply) source tokens
+            (InteractionSemantics.Stmt.openRun
+              sourceProgram sourceFuel stmt source)
+            headBudget
+            (OpenOutcome.pushStopJump headResult ctx
+              (TypedCfgCompiler.restLabel supply)
+              source.returns tokens policy) /\
+          OpenOutcome.BoundedRuntimeErrorExecPreservesUnder headResult cfg entry ctx
+            (TypedCfgCompiler.restLabel supply) source tokens
+            (InteractionSemantics.Stmt.openRun
+              sourceProgram sourceFuel stmt source)
+            headBudget
+            (OpenOutcome.pushStopJump headResult ctx
+              (TypedCfgCompiler.restLabel supply)
+              source.returns tokens policy))
     (hTailError :
       forall {headResult tailResult : TypedCfgCompiler.Result}
           {tailInput : TypedCfg.Shape} {middleSource : RunState},
@@ -333,6 +313,8 @@ theorem openRun_cons_runtime_error_bounded_under_of_compileStmtListFuel?
         hCompile with
     ⟨headResult, hHeadCompile, hNoTail | hWithTail⟩
   · rcases hNoTail with ⟨hFallthrough, rfl⟩
+    have hHeadPair :=
+      hHeadNoTail hHeadCompile hBlocks hResultCalls hFallthrough
     have hIgnored :=
       OpenOutcome.BoundedRuntimeErrorExecPreservesUnder.ignore_tail_of_no_fallthrough
         (resultRegular := regular)
@@ -340,8 +322,7 @@ theorem openRun_cons_runtime_error_bounded_under_of_compileStmtListFuel?
           InteractionSemantics.Block.openRun
             sourceProgram sourceFuel { stmts := rest } middleSource)
         hFallthrough
-        (hHeadNoTailDone hHeadCompile hBlocks hResultCalls hFallthrough)
-        (hHeadNoTailError hHeadCompile hBlocks hResultCalls hFallthrough)
+        hHeadPair.1 hHeadPair.2
     have hPadded :=
       OpenOutcome.BoundedRuntimeErrorExecPreservesUnder.mono_budget hIgnored
         (show headBudget <= headBudget + tailBudget by omega)
@@ -359,12 +340,12 @@ theorem openRun_cons_runtime_error_bounded_under_of_compileStmtListFuel?
       TypedCfgPreservation.CallsInProgram.left_of_append hResultCalls
     have hTailCalls :=
       TypedCfgPreservation.CallsInProgram.right_of_append hResultCalls
+    have hHeadPair :=
+      hHeadWithTail hHeadCompile hHeadBlocks hHeadCalls hFallthrough
+        hTailCompile hTailBlocks rfl
     have hComposed :=
       OpenOutcome.BoundedRuntimeErrorExecPreservesUnder.sequence
-        (hHeadWithTailDone hHeadCompile hHeadBlocks hHeadCalls hFallthrough
-          hTailCompile hTailBlocks rfl)
-        (hHeadWithTailError hHeadCompile hHeadBlocks hHeadCalls hFallthrough
-          hTailCompile hTailBlocks rfl)
+        hHeadPair.1 hHeadPair.2
         (fun hRel =>
           hMiddleNoStop hHeadCompile hFallthrough
             hTailCompile hTailBlocks hRel)
