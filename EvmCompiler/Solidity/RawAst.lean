@@ -1779,6 +1779,31 @@ def Object.ClzHelperSpecOk (raw : Object)
                   Elab.ClzHelperSpec fn arg ret
           | _, _, _ => True
 
+def Object.clzHelperNamesDistinct? (raw : Object) : Bool :=
+  match raw.code? with
+  | none => true
+  | some code =>
+      match Elab.elaborateCode code with
+      | .ok (_dispatcher, _functions, some _helper, some arg, some ret) =>
+          arg != ret
+      | .ok _ => true
+      | .error _ => false
+
+theorem Object.clzHelperNamesDistinct?_arg_ne
+    {raw : Object} {code : List Raw.Stmt}
+    {dispatcher : List Frontend.Stmt}
+    {functions : List (Name × Frontend.FunctionDef)}
+    {helper arg ret : Name}
+    (hCode : raw.code? = some code)
+    (hElab :
+      Elab.elaborateCode code =
+        .ok (dispatcher, functions, some helper, some arg, some ret))
+    (hDistinct : Object.clzHelperNamesDistinct? raw = true) :
+    arg ≠ ret := by
+  unfold Object.clzHelperNamesDistinct? at hDistinct
+  simp [hCode, hElab] at hDistinct
+  simpa using hDistinct
+
 def Object.HoistedFunctionsRetained (raw : Object)
     (frontend : Frontend.Object) : Prop :=
   match raw.code? with
@@ -1901,6 +1926,7 @@ def Object.itemRefsPreserveOrder? (raw : Object)
 def Object.FrontendValidated (raw : Object)
     (frontend : Frontend.Object) : Prop :=
   Object.itemRefsPreserveOrder? raw frontend = true ∧
+    Object.clzHelperNamesDistinct? raw = true ∧
       Frontend.Object.noRawClzCall? frontend = true ∧
       Frontend.Object.functionDefStubsRetained? frontend = true ∧
         Object.ClzExpansionOk raw frontend ∧
@@ -1912,13 +1938,16 @@ def Object.elaboratePreservingOrder? (obj : Object)
     DecodeM Frontend.Object := do
   let frontend ← obj.elaborate? evmVersion
   if Object.itemRefsPreserveOrder? obj frontend then
-    if Frontend.Object.noRawClzCall? frontend then
-      if Frontend.Object.functionDefStubsRetained? frontend then
-        pure frontend
+    if Object.clzHelperNamesDistinct? obj then
+      if Frontend.Object.noRawClzCall? frontend then
+        if Frontend.Object.functionDefStubsRetained? frontend then
+          pure frontend
+        else
+          .error "hoisted function stub mismatch"
       else
-        .error "hoisted function stub mismatch"
+        .error "raw clz call was not normalized"
     else
-      .error "raw clz call was not normalized"
+      .error "clz helper argument/result name collision"
   else
     .error "raw object/data item order mismatch"
 
@@ -1938,20 +1967,46 @@ theorem Object.elaboratePreservingOrder?_parts
       | false =>
           simp [hObject, hOrder] at hElab
       | true =>
-          cases hNoRawClz :
-              Frontend.Object.noRawClzCall? object with
+          cases hNames : Object.clzHelperNamesDistinct? obj with
           | false =>
-              simp [hObject, hOrder, hNoRawClz] at hElab
+              simp [hObject, hOrder, hNames] at hElab
           | true =>
-              cases hStubs :
-                  Frontend.Object.functionDefStubsRetained? object with
+              cases hNoRawClz :
+                  Frontend.Object.noRawClzCall? object with
               | false =>
-                  simp [hObject, hOrder, hNoRawClz, hStubs] at hElab
+                  simp [hObject, hOrder, hNames, hNoRawClz] at hElab
               | true =>
-                  simp [hObject, hOrder, hNoRawClz, hStubs, pure,
-                    Except.pure] at hElab
-                  subst object
-                  simp [hObject, hOrder]
+                  cases hStubs :
+                      Frontend.Object.functionDefStubsRetained? object with
+                  | false =>
+                      simp [hObject, hOrder, hNames, hNoRawClz, hStubs]
+                        at hElab
+                  | true =>
+                      simp [hObject, hOrder, hNames, hNoRawClz, hStubs, pure,
+                        Except.pure] at hElab
+                      subst object
+                      simp [hObject, hOrder]
+
+theorem Object.elaboratePreservingOrder?_clzHelperNamesDistinct
+    {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
+    {frontend : Frontend.Object}
+    (hElab :
+      Object.elaboratePreservingOrder? obj evmVersion = .ok frontend) :
+    Object.clzHelperNamesDistinct? obj = true := by
+  unfold Object.elaboratePreservingOrder? at hElab
+  cases hObject : Object.elaborate? obj evmVersion with
+  | error err =>
+      simp [hObject] at hElab
+  | ok object =>
+      cases hOrder : Object.itemRefsPreserveOrder? obj object with
+      | false =>
+          simp [hObject, hOrder] at hElab
+      | true =>
+          cases hNames : Object.clzHelperNamesDistinct? obj with
+          | false =>
+              simp [hObject, hOrder, hNames] at hElab
+          | true =>
+              rfl
 
 theorem Object.elaboratePreservingOrder?_noRawClzCall
     {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
@@ -1968,19 +2023,24 @@ theorem Object.elaboratePreservingOrder?_noRawClzCall
       | false =>
           simp [hObject, hOrder] at hElab
       | true =>
-          cases hNoRawClz : Frontend.Object.noRawClzCall? object with
+          cases hNames : Object.clzHelperNamesDistinct? obj with
           | false =>
-              simp [hObject, hOrder, hNoRawClz] at hElab
+              simp [hObject, hOrder, hNames] at hElab
           | true =>
-              cases hStubs :
-                  Frontend.Object.functionDefStubsRetained? object with
+              cases hNoRawClz : Frontend.Object.noRawClzCall? object with
               | false =>
-                  simp [hObject, hOrder, hNoRawClz, hStubs] at hElab
+                  simp [hObject, hOrder, hNames, hNoRawClz] at hElab
               | true =>
-                  simp [hObject, hOrder, hNoRawClz, hStubs, pure,
-                    Except.pure] at hElab
-                  subst frontend
-                  exact hNoRawClz
+                  cases hStubs :
+                      Frontend.Object.functionDefStubsRetained? object with
+                  | false =>
+                      simp [hObject, hOrder, hNames, hNoRawClz, hStubs]
+                        at hElab
+                  | true =>
+                      simp [hObject, hOrder, hNames, hNoRawClz, hStubs, pure,
+                        Except.pure] at hElab
+                      subst frontend
+                      exact hNoRawClz
 
 theorem Object.elaboratePreservingOrder?_functionDefStubsRetained
     {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
@@ -1997,19 +2057,24 @@ theorem Object.elaboratePreservingOrder?_functionDefStubsRetained
       | false =>
           simp [hObject, hOrder] at hElab
       | true =>
-          cases hNoRawClz : Frontend.Object.noRawClzCall? object with
+          cases hNames : Object.clzHelperNamesDistinct? obj with
           | false =>
-              simp [hObject, hOrder, hNoRawClz] at hElab
+              simp [hObject, hOrder, hNames] at hElab
           | true =>
-              cases hStubs :
-                  Frontend.Object.functionDefStubsRetained? object with
+              cases hNoRawClz : Frontend.Object.noRawClzCall? object with
               | false =>
-                  simp [hObject, hOrder, hNoRawClz, hStubs] at hElab
+                  simp [hObject, hOrder, hNames, hNoRawClz] at hElab
               | true =>
-                  simp [hObject, hOrder, hNoRawClz, hStubs, pure,
-                    Except.pure] at hElab
-                  subst frontend
-                  exact hStubs
+                  cases hStubs :
+                      Frontend.Object.functionDefStubsRetained? object with
+                  | false =>
+                      simp [hObject, hOrder, hNames, hNoRawClz, hStubs]
+                        at hElab
+                  | true =>
+                      simp [hObject, hOrder, hNames, hNoRawClz, hStubs, pure,
+                        Except.pure] at hElab
+                      subst frontend
+                      exact hStubs
 
 theorem Object.elaboratePreservingOrder?_frontendValidated
     {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
@@ -2022,6 +2087,7 @@ theorem Object.elaboratePreservingOrder?_frontendValidated
     ⟨hObject, hOrder⟩
   exact
     ⟨hObject, hOrder,
+      Object.elaboratePreservingOrder?_clzHelperNamesDistinct hElab,
       Object.elaboratePreservingOrder?_noRawClzCall hElab,
       Object.elaboratePreservingOrder?_functionDefStubsRetained hElab,
       Object.elaborate?_clzExpansionOk hObject,

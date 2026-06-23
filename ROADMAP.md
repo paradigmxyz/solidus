@@ -165,11 +165,12 @@ Next raw frontend layer:
   helper-body frontend fragment over the same `UInt256` primitives and proves
   its returned word equals `ClzHelperModel.run`; the spec and raw-code
   elaboration lift theorems expose that fact for generated helper entries
-  returned by successful elaboration, modulo distinct generated argument/result
-  names. Retained nested
-  function-definition statements are alpha-renamed to generated function names
-  before their checked frontend no-op lowering. Raw production elaboration now
-  also fail-closes on any
+  returned by successful elaboration. Production raw elaboration now fail-closes
+  unless the generated `clz` argument/result names are distinct, and exposes the
+  checked condition needed to discharge the helper-execution theorem. Retained
+  nested function-definition statements are alpha-renamed to generated function
+  names before their checked frontend no-op lowering. Raw production elaboration
+  now also fail-closes on any
   frontend object that still contains an unlowered callee named exactly `clz`,
   with decode and artifact wrapper theorems exposing
   `Frontend.Object.noRawClzCall? = true`. It also fail-closes unless every
