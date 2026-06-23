@@ -1991,6 +1991,57 @@ theorem trans_rel
           exact .request fun answer =>
             ih answer (hRightResume answer)
 
+/--
+Compose two source-truncating forward refinements. The first adjacent boundary
+owns the only extra fact required for composition: if its target outcome is a
+truncation for the second boundary, then the original source outcome was
+already a truncation. No target suffix is inspected or replayed.
+-/
+theorem trans
+    {Error1 : Type u1} {Result1 : Type v1}
+    {Error2 : Type u2} {Result2 : Type v2}
+    {Error3 : Type u3} {Result3 : Type v3}
+    {truncated1 : Error1 → Prop}
+    {truncated2 : Error2 → Prop}
+    {doneRel12 :
+      Except Error1 Result1 → Except Error2 Result2 → Prop}
+    {doneRel23 :
+      Except Error2 Result2 → Except Error3 Result3 → Prop}
+    {left : Interaction Error1 Result1}
+    {middle : Interaction Error2 Result2}
+    {right : Interaction Error3 Result3}
+    (hLeft : ForwardRel truncated1 doneRel12 left middle)
+    (hRight : ForwardRel truncated2 doneRel23 middle right)
+    (hReflect :
+      ∀ leftDone middleError,
+        doneRel12 leftDone (.error middleError) →
+          truncated2 middleError →
+            ∃ leftError,
+              leftDone = .error leftError ∧ truncated1 leftError) :
+    ForwardRel truncated1
+      (fun leftDone rightDone =>
+        ∃ middleDone,
+          doneRel12 leftDone middleDone ∧
+            doneRel23 middleDone rightDone)
+      left right := by
+  induction hLeft generalizing right with
+  | truncated hTruncated =>
+      exact .truncated hTruncated
+  | @done leftDone middleDone hDone =>
+      cases hRight with
+      | truncated hMiddleTruncated =>
+          obtain ⟨leftError, hLeftDone, hLeftTruncated⟩ :=
+            hReflect leftDone _ hDone hMiddleTruncated
+          subst leftDone
+          exact .truncated hLeftTruncated
+      | done hRightDone =>
+          exact .done ⟨middleDone, hDone, hRightDone⟩
+  | @request query leftResume middleResume hResume ih =>
+      cases hRight with
+      | request hRightResume =>
+          exact .request fun answer =>
+            ih answer (hRightResume answer)
+
 /-- Universal source success crosses a forward simulation whenever every
 related successful source leaf has a successful target leaf. -/
 theorem successful_right

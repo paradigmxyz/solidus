@@ -147,3 +147,28 @@ Pinned solc 0.8.26 rejects explicit `msize()` whenever its Yul optimizer is
 enabled. This is an honest trusted-frontend limitation, not a backend semantic
 restriction: the Yul proof retains real ordered `MSIZE`, while optimized
 Solidity coverage records the solc rejection explicitly.
+
+## Unconditional Prefix Theorem
+
+The primary compiler-correctness result will be an unconditional
+`Simulation.Interaction.ForwardRel`. Its truncation constructor is the finite
+prefix boundary: every ordered request before source semantic-fuel exhaustion
+must match exactly, while the theorem makes no claim about the unobserved target
+suffix. The all-finished theorem remains a corollary, not the primary boundary.
+
+- [ ] Add shared composition for adjacent `ForwardRel` theorems when the first
+  pass reflects second-pass truncation back to source truncation.
+- [ ] Expose Yul -> Functions -> allocated Expressions forward preservation
+  with compiler-computed target fuel and no `hFinished` premise.
+- [ ] Lift the transparent Expressions -> Structured adapter without changing
+  the prefix relation.
+- [ ] Extend Structured -> TypedCfg with source-`OutOfFuel` prefix preservation
+  at the existing compiler-owned uniform target budget.
+- [ ] Compose TypedCfg -> Assembly -> compact bytecode and recursive objects
+  without requiring terminal or finished source trees.
+- [ ] Publish a short canonical `Yul.EndToEnd` forward theorem requiring only
+  checked compilation and canonical related initial states.
+- [ ] Derive the existing terminal/all-finished theorems from the forward
+  theorem plus their explicit run properties.
+- [ ] Guard the public theorem against `hFinished`, generated evidence, replay
+  witnesses, or imports that cross nonadjacent compiler owners.

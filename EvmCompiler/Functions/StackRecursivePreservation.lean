@@ -1554,6 +1554,42 @@ theorem ControlScopedOutcomeRel.targetFinished_of_sourceFinished
       | leave hState => cases hSource
       | halt hShared => trivial
 
+/-- Unconditional whole-program allocation preservation. The compiler-owned
+target fuel realizes exactly the finite source prefix selected by `sourceFuel`;
+source `OutOfFuel` remains the explicit prefix boundary. -/
+theorem compiledProgramBodyForward
+    (sourceProgram : Functions.Program)
+    (localsProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceFuel : Nat)
+    (hProgramWF : sourceProgram.WF)
+    (hProgramScoped : sourceProgram.Scoped)
+    (hProgramSupported :
+      Functions.InteractionSemantics.Program.OpenSupported sourceProgram)
+    (hLower :
+      StackLowering.lowerProgram? sourceProgram = some localsProgram)
+    (hCompile :
+      Locals.Program.toExpressions? localsProgram = some targetProgram)
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hInitial :
+      StateRel Locals.Ctx.initial.layout [] [] source target) :
+    ∃ targetFuel,
+      Simulation.Interaction.ForwardRel
+        FuelTruncated
+        (ControlScopedOutcomeRel {} [] Locals.Ctx.initial [] []
+          Functions.Source.Ctx.initial)
+        (Functions.InteractionSemantics.Program.openRunState
+          sourceFuel sourceProgram source)
+        (Expressions.InteractionSemantics.Block.openRun
+          targetProgram targetFuel targetProgram.body target) := by
+  let targetFuel :=
+    Expressions.TargetFuel.budget targetProgram sourceFuel
+      targetProgram.body.stmts
+  refine ⟨targetFuel, ?_⟩
+  exact compiledProgramBodyAt sourceProgram localsProgram targetProgram
+    sourceFuel hProgramWF hProgramScoped hProgramSupported hLower hCompile
+    targetFuel (by simp [Expressions.TargetFuel.Covers, targetFuel]) hInitial
+
 /-- A universally terminal canonical Functions execution yields a full
 open-world relation to the compiled Expressions program. Target meta-fuel is
 computed from the target program and source fuel, not supplied as evidence. -/

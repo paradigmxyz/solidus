@@ -107,6 +107,23 @@ def DoneRel :
 
 namespace DoneRel
 
+/-- A Functions-side structural fuel failure can only be related to the same
+structural Yul failure. This is the adjacent truncation-reflection fact needed
+to compose Yul forward preservation with another fuel-indexed pass. -/
+theorem sourceTruncated_of_targetOutOfFuel
+    {sourceDone : Except Yul.InteractionSemantics.Failure
+      Yul.InteractionSemantics.State}
+    (hRel : DoneRel sourceDone (.error .OutOfFuel)) :
+    ∃ sourceError,
+      sourceDone = .error sourceError ∧ Truncated sourceError := by
+  rcases hRel with ⟨used, hControl⟩
+  cases hControl with
+  | @error sourceError _ hError =>
+      rcases sourceError with ⟨exception, state⟩
+      cases exception <;>
+        simp [FunctionsInteractionPrimitive.ErrorRel,
+          FunctionsInteractionPrimitive.Truncated] at hError ⊢
+
 theorem target_ok_of_source_ok
     {sourceDone : Except Yul.InteractionSemantics.Failure
       Yul.InteractionSemantics.State}

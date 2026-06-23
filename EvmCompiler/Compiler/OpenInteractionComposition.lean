@@ -28,6 +28,81 @@ def YulStackExpressionsDoneRel :
           {} [] Locals.Ctx.initial [] [] Functions.Source.Ctx.initial
           middle target
 
+/-- Unconditional finite-prefix preservation through Functions normalization
+and checked stack allocation. `sourceFuel` selects the observed Yul prefix;
+all ordered open effects before source `OutOfFuel` are preserved exactly. -/
+theorem yulToNormalizedStackExpressionsForward
+    {profile : Yul.SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {objects : Objects.Program}
+    {normalized : Functions.Program}
+    {locals : Locals.Program} {expressions : Expressions.Program}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hDecomposition :
+      Yul.FunctionsCompilerArtifact.PassDecomposition sourceProgram objects)
+    (hProgramOk :
+      Yul.SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
+    (hNormalize : normalized =
+      Functions.StackPressureNormalization.Program.normalize
+        objects.toFunctions)
+    (hWF : normalized.WF)
+    (hScoped : normalized.Scoped)
+    (hSupported :
+      Functions.InteractionSemantics.Program.OpenSupported normalized)
+    (hLower :
+      Functions.StackLowering.lowerProgram? normalized = some locals)
+    (hCompile :
+      Locals.Program.toExpressions? locals = some expressions)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial (Yul.Contract.names sourceProgram.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState) :
+    ∃ targetFuel,
+      Simulation.Interaction.ForwardRel
+        Yul.FunctionsInteractionPrimitive.Truncated
+        YulStackExpressionsDoneRel
+        (Yul.InteractionSemantics.exec (sourceFuel + 1)
+          (.Block [sourceProgram.contract.dispatcher])
+          (some sourceProgram.contract) source)
+        (Expressions.InteractionSemantics.Block.openRun expressions
+          targetFuel expressions.body expressionsState) := by
+  let functionsFuel :=
+    Yul.FunctionsInteractionStaticCost.programBudget
+      sourceProgram (sourceFuel + 1)
+  have hYul := Yul.FunctionsInteractionProgram.dispatcherForward
+    (sourceFuel := sourceFuel)
+    hDecomposition hProgramOk hYulInitial hYulDomain
+  have hYulNormalized : Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated
+      Yul.FunctionsInteractionProgram.DoneRel
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [sourceProgram.contract.dispatcher])
+        (some sourceProgram.contract) source)
+      (Functions.InteractionSemantics.Program.openRunState
+        functionsFuel normalized functionsState) := by
+    rw [hNormalize,
+      Functions.StackPressureNormalization.Program.normalize_openRunState]
+    exact hYul
+  obtain ⟨targetFuel, hStack⟩ :=
+    Functions.StackRecursivePreservation.compiledProgramBodyForward
+      normalized locals expressions functionsFuel hWF hScoped hSupported
+      hLower hCompile hStackInitial
+  refine ⟨targetFuel, ?_⟩
+  have hComposed := Simulation.Interaction.ForwardRel.trans
+    hYulNormalized hStack (fun sourceDone middleError hDone hTruncated => by
+      have hOutOfFuel : middleError = .OutOfFuel := hTruncated
+      subst middleError
+      exact
+        Yul.FunctionsInteractionProgram.DoneRel.sourceTruncated_of_targetOutOfFuel
+          hDone)
+  simpa [YulStackExpressionsDoneRel] using hComposed
+
 /-- Compose the established Yul-to-Functions theorem with the checked
 stack-only Functions allocator. All allocation analysis and recursive calls
 are discharged by the adjacent allocation theorem. -/
@@ -398,6 +473,81 @@ theorem stackExpressionsToStructuredFinished
   simpa [Functions.StackRecursivePreservation.ProgramTargetFinished,
     Structured.InteractionTerminalPreservation.OpenOutcome.SourceFinished]
     using hOutcome
+
+/-- The transparent Expressions-to-Structured adapter preserves the complete
+finite-prefix relation without any terminality premise. -/
+theorem stackExpressionsToStructuredForward
+    {expressions : Expressions.Program} {targetFuel : Nat}
+    {sourceRun : Simulation.Interaction
+      Yul.InteractionSemantics.Failure Yul.InteractionSemantics.State}
+    {target : Expressions.InteractionSemantics.RunState}
+    (hRel : Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated
+      YulStackExpressionsDoneRel sourceRun
+      (Expressions.InteractionSemantics.Block.openRun expressions
+        targetFuel expressions.body target)) :
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated
+      YulStackExpressionsDoneRel sourceRun
+      (Structured.InteractionSemantics.Program.openRunState
+        targetFuel expressions.toStructured target) := by
+  change Simulation.Interaction.ForwardRel
+    Yul.FunctionsInteractionPrimitive.Truncated
+    YulStackExpressionsDoneRel sourceRun
+    (Expressions.InteractionSemantics.Program.openRunState
+      targetFuel expressions target) at hRel
+  rw [Expressions.InteractionPreservation.Program.openRunState_toStructured]
+    at hRel
+  exact hRel
+
+/-- Unconditional finite-prefix preservation through the complete upper
+stack-only spine, ending at the Structured owner boundary. -/
+theorem yulToNormalizedStackStructuredForward
+    {profile : Yul.SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {objects : Objects.Program}
+    {normalized : Functions.Program}
+    {locals : Locals.Program} {expressions : Expressions.Program}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hDecomposition :
+      Yul.FunctionsCompilerArtifact.PassDecomposition sourceProgram objects)
+    (hProgramOk :
+      Yul.SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
+    (hNormalize : normalized =
+      Functions.StackPressureNormalization.Program.normalize
+        objects.toFunctions)
+    (hWF : normalized.WF)
+    (hScoped : normalized.Scoped)
+    (hSupported :
+      Functions.InteractionSemantics.Program.OpenSupported normalized)
+    (hLower :
+      Functions.StackLowering.lowerProgram? normalized = some locals)
+    (hCompile :
+      Locals.Program.toExpressions? locals = some expressions)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial (Yul.Contract.names sourceProgram.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState) :
+    ∃ targetFuel,
+      Simulation.Interaction.ForwardRel
+        Yul.FunctionsInteractionPrimitive.Truncated
+        YulStackExpressionsDoneRel
+        (Yul.InteractionSemantics.exec (sourceFuel + 1)
+          (.Block [sourceProgram.contract.dispatcher])
+          (some sourceProgram.contract) source)
+        (Structured.InteractionSemantics.Program.openRunState
+          targetFuel expressions.toStructured expressionsState) := by
+  obtain ⟨targetFuel, hForward⟩ :=
+    yulToNormalizedStackExpressionsForward hDecomposition hProgramOk
+      hNormalize hWF hScoped hSupported hLower hCompile hYulInitial
+      hYulDomain hStackInitial
+  exact ⟨targetFuel, stackExpressionsToStructuredForward hForward⟩
 
 /-- Terminal Yul-to-Structured preservation through the stack allocator. -/
 theorem yulToStackStructuredTerminal

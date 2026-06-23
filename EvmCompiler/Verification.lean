@@ -29,6 +29,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Functions.StackPressureNormalization.Program.normalize
 #check EvmCompiler.Functions.StackLowering.lowerProgram?
 #check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
+#check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyForward
 #check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyTerminal
 #check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyFinished
 #check EvmCompiler.Functions.StackRecursivePreservation.ProgramTargetFinished
@@ -43,6 +44,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsTerminal
+#check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsForward
+#check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackStructuredForward
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsFinished
 #check EvmCompiler.Compiler.OpenInteractionComposition.stackExpressionsToStructuredFinished
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulNormalizedStackToAssemblySourceFinished
@@ -60,6 +63,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
 
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
+#print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyForward
+#print axioms EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackStructuredForward
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyFinished
 #print axioms EvmCompiler.Assembly.InteractionFuelSafety.PrimOp.openStep
 #print axioms EvmCompiler.Structured.InteractionFuelSafety.Code.openRun
