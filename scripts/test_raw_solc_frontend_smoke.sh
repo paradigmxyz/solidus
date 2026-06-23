@@ -198,7 +198,7 @@ bad_scope["contracts"]["Fixture.sol"]["Fixture"]["irOptimizedAst"]["code"]["bloc
 PY
 
 cat > "$OUTDIR/raw_decode_runner.lean" <<LEAN
-import EvmCompiler.Solidity.RawAst
+import EvmCompiler.Solidity.RawAstPublic
 
 open EvmCompiler
 open EvmCompiler.Solidity
@@ -224,6 +224,20 @@ def decodeSimple (version : String) (selector : RawAst.ObjectSelector) : IO Unit
         " data=" ++ toString program.object.data.length ++
         " children=" ++ toString program.object.objects.length ++
         " items=" ++ toString program.object.items.length
+
+def compileSimpleRuntime (version : String) : IO Unit := do
+  let raw <- readRaw ("simple-" ++ version ++ ".standard-output.json")
+  let selection : RawAst.Selection :=
+    { source? := some "Simple.sol"
+      contract? := some "Simple"
+      objectSelector := .runtime
+      astOutput := "irOptimizedAst" }
+  match RawAst.compileArtifactFromRawSolcIr? raw selection with
+  | none => throw <| IO.userError ("raw artifact compile failed for solc " ++ version)
+  | some artifact =>
+      IO.println <|
+        "raw_solc_frontend_" ++ version ++
+        "_artifact_bytes=" ++ toString artifact.image.bytes.length
 
 def expectMalformedRejected : IO Unit := do
   let raw <- readRaw "malformed-node.standard-output.json"
@@ -306,8 +320,10 @@ def expectBadScopeRejected : IO Unit := do
 def main : IO Unit := do
   decodeSimple "0.8.26" .creation
   decodeSimple "0.8.26" .runtime
+  compileSimpleRuntime "0.8.26"
   decodeSimple "0.8.35" .creation
   decodeSimple "0.8.35" .runtime
+  compileSimpleRuntime "0.8.35"
   expectMalformedRejected
   expectMixedOrder
   expectNestedClz
