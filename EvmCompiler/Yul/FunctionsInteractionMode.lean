@@ -67,6 +67,63 @@ def loop (mode : Mode) :=
   Yul.Source.Canonical.loop Yul.InteractionSemantics.stateModel
     (sourcePrimitive mode)
 
+/-- One argument followed by exhausted list fuel, uniformly for both
+primitive-semantics modes. -/
+theorem evalArgs_one_cons (mode : Mode)
+    (head : EvmYul.Yul.Ast.Expr) (rest : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : Yul.InteractionSemantics.State) :
+    evalArgs mode 1 (head :: rest) code state =
+      Simulation.Interaction.bind
+        (evalValues mode 0 head code state) fun result =>
+          Yul.InteractionSemantics.Primitive.fail result.1 .OutOfFuel := by
+  unfold evalArgs evalValues Yul.Source.Canonical.evalArgs
+    Yul.Source.Canonical.evalValues
+  simp only [Yul.Source.Effectful.evalArgs,
+    Yul.Source.Effectful.evalTail, Yul.Source.Effectful.eval]
+  change
+    Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Yul.Source.Effectful.evalValues Yul.InteractionSemantics.stateModel
+            (sourcePrimitive mode) 0 head code state)
+          (fun result => pure (result.1, result.2.head!)))
+        (fun result =>
+          Yul.InteractionSemantics.Primitive.fail result.1 .OutOfFuel) = _
+  rw [Simulation.Interaction.bind_assoc]
+  rfl
+
+/-- Positive residual list fuel exposes the head value and exact tail for both
+primitive-semantics modes. -/
+theorem evalArgs_succ_succ_cons (mode : Mode) (fuel : Nat)
+    (head : EvmYul.Yul.Ast.Expr) (rest : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : Yul.InteractionSemantics.State) :
+    evalArgs mode (fuel + 2) (head :: rest) code state =
+      Simulation.Interaction.bind
+        (evalValues mode (fuel + 1) head code state) fun headResult =>
+          Simulation.Interaction.bind
+            (evalArgs mode fuel rest code headResult.1) fun tailResult =>
+              pure
+                (tailResult.1, headResult.2.head! :: tailResult.2) := by
+  unfold evalArgs evalValues Yul.Source.Canonical.evalArgs
+    Yul.Source.Canonical.evalValues
+  simp only [Yul.Source.Effectful.evalArgs,
+    Yul.Source.Effectful.evalTail, Yul.Source.Effectful.eval]
+  change
+    Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Yul.Source.Effectful.evalValues Yul.InteractionSemantics.stateModel
+            (sourcePrimitive mode) (fuel + 1) head code state)
+          (fun result => pure (result.1, result.2.head!)))
+        (fun headResult =>
+          Simulation.Interaction.bind
+            (Yul.Source.Effectful.evalArgs Yul.InteractionSemantics.stateModel
+              (sourcePrimitive mode) fuel rest code headResult.1)
+            (fun tailResult =>
+              pure (tailResult.1, headResult.2 :: tailResult.2))) = _
+  rw [Simulation.Interaction.bind_assoc]
+  rfl
+
 end Source
 
 namespace Target

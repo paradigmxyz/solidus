@@ -424,6 +424,9 @@ boundaries. Corpus acceptance alone does not discharge them.
     capabilities for both modes; recursive compiler proof remains shared.
   - [ ] Lift actual-tree Yul execution safety through recursive expressions,
     control, loops, and internal calls to guarded Functions execution safety.
+    - [x] Direct expressions and ordered argument lists, including nested
+      primitive applications and guarded fuel-zero behavior.
+    - [ ] Prepared/bounded arguments, statements, loops, and internal calls.
   - [ ] Replace the scratch-capable public Functions-facing safety premise with
     the Yul-facing execution premise; keep the premise-free stack theorem as a
     separate capability and rerun every completion gate.

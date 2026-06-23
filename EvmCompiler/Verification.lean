@@ -188,6 +188,7 @@ import EvmCompiler.Yul.AllocationInteractionSafeSemantics
 import EvmCompiler.Yul.AllocationInteractionSafeRefinement
 import EvmCompiler.Yul.FunctionsAllocationInteractionSafety
 import EvmCompiler.Yul.FunctionsInteractionMode
+import EvmCompiler.Yul.FunctionsInteractionExpressionMode
 import EvmCompiler.Compiler.StackArtifact
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
 import EvmCompiler.Compiler.OpenInteractionComposition
@@ -1726,6 +1727,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionMode.compilerSelected
 #check EvmCompiler.Yul.FunctionsInteractionMode.terminalSelected
 #print axioms EvmCompiler.Yul.FunctionsInteractionMode.terminalSelected
+#check EvmCompiler.Yul.FunctionsInteractionExpressionMode.Expr.primitive_of_args
+#check EvmCompiler.Yul.FunctionsInteractionExpressionMode.DirectAt
+#check EvmCompiler.Yul.FunctionsInteractionExpressionMode.compilerDirectAt
+#print axioms EvmCompiler.Yul.FunctionsInteractionExpressionMode.compilerDirectAt
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToAllocatedExpressions
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToStackExpressionsTerminal
 #check EvmCompiler.Compiler.OpenInteractionComposition.stackExpressionsToStructuredTerminal
