@@ -312,28 +312,36 @@ mutual
         decodeArrayField (decodeStmt fuel) json "statements"
 
   def decodeCase : Nat → Lean.Json →
-      DecodeM (Option (SwitchCaseValue × List Stmt))
+      DecodeM (Option SwitchCaseValue × List Stmt)
     | 0, _ => .error "raw switch-case decoder ran out of fuel"
     | fuel + 1, json => do
         let body ← decodeBlock fuel (← field json "body")
         let value ← field json "value"
         match value.getStr? with
-        | .ok "default" => pure none
+        | .ok "default" => pure (none, body)
         | .ok other => .error s!"unsupported switch case marker: {other}"
         | .error _ =>
             let value ← decodeSwitchCaseValue value
-            pure (some (value, body))
+            pure (some value, body)
 
-  def decodeCases : Nat → List Lean.Json →
-      DecodeM (List (SwitchCaseValue × List Stmt) × List Stmt)
+  def decodeCasesAux : Nat → List Lean.Json →
+      DecodeM (List (SwitchCaseValue × List Stmt) × Option (List Stmt))
     | 0, _ => .error "raw switch cases decoder ran out of fuel"
-    | _fuel + 1, [] => pure ([], [])
+    | _fuel + 1, [] => pure ([], none)
     | fuel + 1, value :: rest => do
         let head ← decodeCase fuel value
-        let (cases, defaultBody) ← decodeCases fuel rest
+        let (cases, defaultBody?) ← decodeCasesAux fuel rest
         match head with
-        | none => pure (cases, defaultBody)
-        | some case => pure (case :: cases, defaultBody)
+        | (none, body) =>
+            match defaultBody? with
+            | none => pure (cases, some body)
+            | some _ => .error "duplicate Yul switch default case"
+        | (some value, body) => pure ((value, body) :: cases, defaultBody?)
+
+  def decodeCases : Nat → List Lean.Json →
+      DecodeM (List (SwitchCaseValue × List Stmt) × List Stmt) := fun fuel cases => do
+    let (cases, defaultBody?) ← decodeCasesAux fuel cases
+    pure (cases, defaultBody?.getD [])
 
   def decodeStmt : Nat → Lean.Json → DecodeM Stmt
     | 0, _ => .error "raw statement decoder ran out of fuel"
@@ -932,7 +940,7 @@ def elaborateCode (stmts : List Raw.Stmt) :
     popFunctionScope
     popIdentifierScope
     modify fun state =>
-      { state with hoistedFunctions := topFunctions.reverse ++ state.hoistedFunctions }
+      { state with hoistedFunctions := state.hoistedFunctions ++ topFunctions }
     pure dispatcher.reverse
   let (dispatcher, state) ← action.run {}
   let functions := state.hoistedFunctions.reverse

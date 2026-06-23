@@ -81,6 +81,9 @@ Transformation inventory from `scripts/solidity_to_yul_lean.py`:
 
 Next raw frontend layer:
 
+- [x] Add a local raw-vs-normalized bridge differential gate over both pinned
+  solc versions, creation/runtime selection, recursive frontend digests, and
+  checked artifact sizes for representative real fixtures.
 - [ ] Differentially compare raw Lean elaboration against the old bridge over
   both pinned solc versions and the full corpus: Aave, Permit2, Safe,
   EntryPoint, PoolManager, all real suites, and adversarial fixtures.
