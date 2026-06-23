@@ -1,5 +1,19 @@
 # Progress Log
 
+- 2026-06-23 10:12 PDT - compaction-resume/raw-frontend-status - Resumed
+  under `$verifiable-compiler` to report the raw solc frontend migration
+  status from the clean `codex/lean-solc-raw-frontend` checkpoint.
+
+- 2026-06-23 10:17 PDT - test/raw-solc-aave-corpus - Added and validated
+  `scripts/test_raw_solc_aave_corpus.sh`: pinned Aave Pool Standard JSON is
+  generated for solc 0.8.26 and 0.8.35 with 45 imported sources and seven
+  metadata linker symbols, then Lean raw elaboration compiles creation/runtime
+  selections to exact checked sizes 93242/92785 and 93295/92838 with 14
+  immutable references. Validation passed: the new script, `bash -n`, no
+  normalized bridge-generation guard, `lake build evm-compiler-backend
+  EvmCompiler.Solidity.RawAstPublic`, `lake build EvmCompiler.Verification`,
+  touched raw-file hole/trust scan, and `git diff --check`.
+
 - 2026-06-18 18:00 PDT - compaction-resume/generated-terminal-arguments -
   Resumed after the checked direct terminal theorem and `terminal_after_args`;
   the active boundary is the horizontal prepared-argument composition theorem,

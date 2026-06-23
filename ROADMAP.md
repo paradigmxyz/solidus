@@ -86,6 +86,10 @@ Next raw frontend layer:
   solc versions, creation/runtime selection, recursive frontend digests, and
   checked artifact sizes for representative real fixtures, including a linked
   library fixture that exercises raw metadata linker-symbol decoding.
+- [x] Add a pinned Aave Pool raw corpus gate over both pinned solc versions and
+  creation/runtime object selection; Lean raw elaboration consumes the raw
+  Standard JSON, preserves seven metadata linker symbols, and reproduces the
+  checked artifact sizes.
 - [ ] Differentially compare raw Lean elaboration against the old bridge over
   both pinned solc versions and the full corpus: Aave, Permit2, Safe,
   EntryPoint, PoolManager, all real suites, and adversarial fixtures.
