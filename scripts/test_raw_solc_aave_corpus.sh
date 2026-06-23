@@ -53,23 +53,27 @@ else
 fi
 
 "$PYTHON_BIN" - \
-  "$ROOT" "$AAVE_REPO" "$OUTDIR" "$SOLC_826" "$SOLC_835" \
+  "$ROOT" "$AAVE_REPO" "$OUTDIR" "$PYTHON_BIN" "$LAKE_BIN" \
+  "$SOLC_826" "$SOLC_835" \
   "$AAVE_SOURCE" "$AAVE_CONTRACT" <<'PY'
 import copy
 import importlib.util
 import json
 import pathlib
+import subprocess
 import sys
 
 root = pathlib.Path(sys.argv[1])
 aave_repo = pathlib.Path(sys.argv[2])
 outdir = pathlib.Path(sys.argv[3])
+python_bin = pathlib.Path(sys.argv[4])
+lake_bin = pathlib.Path(sys.argv[5])
 solcs = {
-    "0.8.26": pathlib.Path(sys.argv[4]),
-    "0.8.35": pathlib.Path(sys.argv[5]),
+    "0.8.26": pathlib.Path(sys.argv[6]),
+    "0.8.35": pathlib.Path(sys.argv[7]),
 }
-source_name = sys.argv[6]
-contract_name = sys.argv[7]
+source_name = sys.argv[8]
+contract_name = sys.argv[9]
 
 bridge_path = root / "scripts" / "solidity_to_yul_lean.py"
 spec = importlib.util.spec_from_file_location("solidity_to_yul_lean", bridge_path)
@@ -77,6 +81,9 @@ bridge = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 sys.modules[spec.name] = bridge
 spec.loader.exec_module(bridge)
+
+sys.path.insert(0, str(root / "scripts"))
+import raw_bridge_differential
 
 library_addresses = {
     "contracts/protocol/libraries/logic/BorrowLogic.sol:BorrowLogic":
@@ -117,7 +124,12 @@ libraries = {}
 for qualified_name, address in library_addresses.items():
     source, contract = qualified_name.rsplit(":", 1)
     libraries.setdefault(source, {})[contract] = address
+linker_symbols = [
+    (qualified_name, int(address, 16))
+    for qualified_name, address in library_addresses.items()
+]
 
+differential_cases = []
 for version, solc in solcs.items():
     request = bridge.standard_json_input(
         source_name,
@@ -130,6 +142,8 @@ for version, solc in solcs.items():
         evm_version="cancun",
     )
     request["settings"]["libraries"] = copy.deepcopy(libraries)
+    request_path = outdir / f"aave-pool-{version}.standard-input.json"
+    request_path.write_text(json.dumps(request, separators=(",", ":")))
     raw_output = bridge.run_solc(str(solc), request, ())
     contract_output = raw_output["contracts"][source_name][contract_name]
     ast = contract_output.get("irOptimizedAst")
@@ -148,6 +162,47 @@ for version, solc in solcs.items():
         raise SystemExit(f"solc {version} emitted empty Aave bytecode")
     raw_path = outdir / f"aave-pool-{version}.standard-output.json"
     raw_path.write_text(json.dumps(raw_output, separators=(",", ":")))
+    for selector in ("runtime", "creation"):
+        bridge_json_path = outdir / f"aave-pool-{version}-{selector}.bridge.json"
+        subprocess.run(
+            [
+                str(python_bin),
+                str(bridge_path),
+                str(request_path),
+                "--input-format",
+                "standard-json",
+                "--solc",
+                str(solc),
+                "--lake",
+                str(lake_bin),
+                "--lake-cwd",
+                str(root),
+                "--source-name",
+                source_name,
+                "--contract",
+                contract_name,
+                "--object",
+                selector,
+                "--optimized",
+                "--format",
+                "bridge-json",
+                "-o",
+                str(bridge_json_path),
+            ],
+            check=True,
+        )
+        differential_cases.append(
+            {
+                "label": f"aave-pool-{version}-{selector}",
+                "raw": str(raw_path),
+                "bridge": str(bridge_json_path),
+                "source": source_name,
+                "contract": contract_name,
+                "selector": selector,
+                "compare_artifacts": False,
+                "linker_symbols": linker_symbols,
+            }
+        )
     version_key = version.replace(".", "_")
     print(f"aave_raw_solc_{version_key}_included_sources={len(include_sources)}")
     print(
@@ -156,7 +211,20 @@ for version, solc in solcs.items():
     )
     print(f"aave_raw_solc_{version_key}_solc_runtime_bytes={len(runtime_hex) // 2}")
     print(f"aave_raw_solc_{version_key}_solc_creation_bytes={len(creation_hex) // 2}")
+
+raw_bridge_differential.write_runner(
+    outdir / "aave_raw_bridge_differential_runner.lean",
+    differential_cases,
+    lean_string=bridge.lean_string,
+)
 PY
+
+AAVE_DIFFERENTIAL_REPORT="$OUTDIR/aave-raw-bridge-differential.txt"
+"$LAKE_BIN" env lean --run "$OUTDIR/aave_raw_bridge_differential_runner.lean" \
+  > "$AAVE_DIFFERENTIAL_REPORT"
+grep -qx 'raw_solc_frontend_differential_count=4' "$AAVE_DIFFERENTIAL_REPORT"
+grep -qx 'raw_solc_frontend_differential=pass' "$AAVE_DIFFERENTIAL_REPORT"
+grep -E '^raw_solc_frontend_differential(_count|=)' "$AAVE_DIFFERENTIAL_REPORT"
 
 run_raw_summary() {
   local version="$1"
