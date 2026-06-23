@@ -54,21 +54,25 @@ fi
 git -C "$UNISWAP_V4_REPO" submodule update --init --depth 1 lib/solmate
 
 "$PYTHON_BIN" - \
-  "$ROOT" "$UNISWAP_V4_REPO" "$OUTDIR" "$SOLC_826" "$SOLC_835" \
+  "$ROOT" "$UNISWAP_V4_REPO" "$OUTDIR" "$PYTHON_BIN" "$LAKE_BIN" \
+  "$SOLC_826" "$SOLC_835" \
   "$POOLMANAGER_SOURCE" "$POOLMANAGER_CONTRACT" <<'PY'
 import copy
 import importlib.util
 import json
 import pathlib
+import subprocess
 import sys
 
 root = pathlib.Path(sys.argv[1])
 repo = pathlib.Path(sys.argv[2])
 outdir = pathlib.Path(sys.argv[3])
-solc_826 = pathlib.Path(sys.argv[4])
-solc_835 = pathlib.Path(sys.argv[5])
-source_name = sys.argv[6]
-contract_name = sys.argv[7]
+python_bin = pathlib.Path(sys.argv[4])
+lake_bin = pathlib.Path(sys.argv[5])
+solc_826 = pathlib.Path(sys.argv[6])
+solc_835 = pathlib.Path(sys.argv[7])
+source_name = sys.argv[8]
+contract_name = sys.argv[9]
 
 bridge_path = root / "scripts" / "solidity_to_yul_lean.py"
 spec = importlib.util.spec_from_file_location("solidity_to_yul_lean", bridge_path)
@@ -76,6 +80,9 @@ bridge = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 sys.modules[spec.name] = bridge
 spec.loader.exec_module(bridge)
+
+sys.path.insert(0, str(root / "scripts"))
+import raw_bridge_differential
 
 source_path = repo / source_name
 source_content = source_path.read_text()
@@ -109,7 +116,11 @@ def standard_request():
         evm_version="cancun",
     )
 
-raw_output = bridge.run_solc(str(solc_826), standard_request(), ())
+request_826 = standard_request()
+request_path = outdir / "poolmanager-0.8.26.standard-input.json"
+request_path.write_text(json.dumps(request_826, separators=(",", ":")))
+
+raw_output = bridge.run_solc(str(solc_826), copy.deepcopy(request_826), ())
 contract_output = raw_output["contracts"][source_name][contract_name]
 ast = contract_output.get("irOptimizedAst")
 if not isinstance(ast, dict) or ast.get("nodeType") != "YulObject":
@@ -128,6 +139,49 @@ if len(runtime_hex) // 2 != 17151 or len(creation_hex) // 2 != 17336:
     json.dumps(raw_output, separators=(",", ":"))
 )
 
+differential_cases = []
+for selector in ("runtime", "creation"):
+    bridge_json_path = outdir / f"poolmanager-0.8.26-{selector}.bridge.json"
+    subprocess.run(
+        [
+            str(python_bin),
+            str(bridge_path),
+            str(request_path),
+            "--input-format",
+            "standard-json",
+            "--solc",
+            str(solc_826),
+            "--lake",
+            str(lake_bin),
+            "--lake-cwd",
+            str(root),
+            "--source-name",
+            source_name,
+            "--contract",
+            contract_name,
+            "--object",
+            selector,
+            "--optimized",
+            "--format",
+            "bridge-json",
+            "-o",
+            str(bridge_json_path),
+        ],
+        check=True,
+    )
+    differential_cases.append(
+        {
+            "label": f"poolmanager-0.8.26-{selector}",
+            "raw": str(outdir / "poolmanager-0.8.26.standard-output.json"),
+            "bridge": str(bridge_json_path),
+            "source": source_name,
+            "contract": contract_name,
+            "selector": selector,
+            "compare_artifacts": False,
+            "linker_symbols": [],
+        }
+    )
+
 try:
     bridge.run_solc(str(solc_835), copy.deepcopy(standard_request()), ())
 except bridge.ConversionError as exc:
@@ -141,7 +195,20 @@ print("poolmanager_raw_solc_0_8_26_metadata_linker_count=0")
 print(f"poolmanager_raw_solc_0_8_26_solc_runtime_bytes={len(runtime_hex) // 2}")
 print(f"poolmanager_raw_solc_0_8_26_solc_creation_bytes={len(creation_hex) // 2}")
 print("poolmanager_raw_solc_0_8_35_exact_pragma_rejection=pass")
+
+raw_bridge_differential.write_runner(
+    outdir / "poolmanager_raw_bridge_differential_runner.lean",
+    differential_cases,
+    lean_string=bridge.lean_string,
+)
 PY
+
+POOLMANAGER_DIFFERENTIAL_REPORT="$OUTDIR/poolmanager-raw-bridge-differential.txt"
+"$LAKE_BIN" env lean --run "$OUTDIR/poolmanager_raw_bridge_differential_runner.lean" \
+  > "$POOLMANAGER_DIFFERENTIAL_REPORT"
+grep -qx 'raw_solc_frontend_differential_count=2' "$POOLMANAGER_DIFFERENTIAL_REPORT"
+grep -qx 'raw_solc_frontend_differential=pass' "$POOLMANAGER_DIFFERENTIAL_REPORT"
+grep -E '^raw_solc_frontend_differential(_count|=)' "$POOLMANAGER_DIFFERENTIAL_REPORT"
 
 run_raw_summary() {
   local selector="$1"

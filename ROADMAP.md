@@ -96,8 +96,9 @@ Next raw frontend layer:
   bridge frontend object shape, and reproduces the checked artifact sizes.
 - [x] Add a pinned Uniswap v4 PoolManager raw corpus gate for the compatible
   exact-pragma solc 0.8.26 source; creation/runtime raw Lean elaboration
-  reproduces checked artifact sizes, and solc 0.8.35 fails closed before raw
-  AST production because the source pins `pragma solidity 0.8.26`.
+  matches the legacy bridge frontend object shape and reproduces checked
+  artifact sizes, while solc 0.8.35 fails closed before raw AST production
+  because the source pins `pragma solidity 0.8.26`.
 - [x] Add pinned Safe and ERC-4337 EntryPoint raw corpus gates over both
   supported solc pins. Safe is covered through raw optimized Yul plus metadata
   because solc's own bytecode backend rejects the pinned source
@@ -113,9 +114,11 @@ Next raw frontend layer:
 - [ ] Differentially compare raw Lean elaboration against the old bridge over
   both pinned solc versions and the full corpus: Aave frontend shape now
   compares raw Standard JSON against the legacy bridge for creation/runtime on
-  both pins; Permit2 remains fail-closed legacy coverage because solc 0.8.17
-  emits no structured `irOptimizedAst`. Safe, EntryPoint, PoolManager, all
-  real suites, and adversarial fixtures remain to be widened.
+  both pins, and PoolManager frontend shape now compares raw Standard JSON
+  against the legacy bridge for creation/runtime on its compatible exact
+  solc 0.8.26 pin. Permit2 remains fail-closed legacy coverage because solc
+  0.8.17 emits no structured `irOptimizedAst`. Safe, EntryPoint, all real
+  suites, and adversarial fixtures remain to be widened.
 - [x] Add a raw-bridge transition path: `evm-compiler-backend raw-*` consumes
   raw solc Standard JSON directly through `RawAstPublic`, and the transition
   smoke proves normalized-bridge mutations cannot affect raw input compilation.
