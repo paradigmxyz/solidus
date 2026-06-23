@@ -34,6 +34,66 @@ optimized solc Yul
 artifact. Compilation fails closed when stack-only scheduling fails. The
 backend performs no compiler-owned memory access.
 
+## Raw solc Frontend Migration
+
+Goal: remove Python semantic normalization from the trusted production path.
+Python may invoke solc, transport Standard JSON, and run differential tests,
+but the checked compiler source program must be derived in Lean from raw solc
+Standard JSON `irOptimizedAst`.
+
+Current split:
+
+- Raw decoding: `Solidity.RawAst` owns Standard JSON contract selection,
+  `irOptimizedAst` object selection, pinned fork metadata decoding, raw Yul
+  object/code/data syntax, and fail-closed malformed-node rejection.
+- Checked elaboration: `Solidity.RawAst.Elab` owns literal decoding, canonical
+  call classification, lexical binding checks, nested-function hoisting with
+  alpha-renamed generated functions, and `clz` helper insertion.
+- Source normalization: existing `Solidity.Frontend` still owns memoryguard
+  inference, object-builtin resolution, local data/object layout, linker and
+  immutable resolution, fork spelling validation, and object image planning.
+- Orchestration: Python remains temporarily as solc transport and old-bridge
+  differential tooling; it must stop constructing the theorem's
+  `Solidity.Frontend.Program` before this migration is complete.
+
+Transformation inventory from `scripts/solidity_to_yul_lean.py`:
+
+- [x] Literal decoding moved into Lean for raw numbers, booleans, strings, and
+  hex bytes.
+- [x] Call classification moved into Lean using `Frontend.Primitive.ofName?`,
+  object-builtin, unsupported-dialect, and user-call tables.
+- [x] Lexical scope checking and name resolution moved into Lean for the raw
+  elaborator.
+- [x] Nested-function hoisting and alpha-renamed generated callees implemented
+  in Lean; nested `Stmt.functionDef` nodes are preserved, not erased.
+- [x] `clz` lowering moved into the Lean raw elaborator as a generated helper;
+  semantic preservation remains a separate compiler-owned proof obligation.
+- [x] Object/data ordering preserved in Lean through explicit
+  `ObjectItemRef`s.
+- [ ] Standalone Yul data-name recovery remains Python-only and is not part of
+  the raw Solidity `irOptimizedAst` production theorem.
+- [x] Source/contract/object selection moved into Lean for raw Standard JSON.
+- [ ] Fork/linker metadata is only partly moved: fork metadata is decoded from
+  solc metadata in Lean; linker symbol extraction from Standard JSON settings
+  still needs a Lean representation or an explicit transport-only input.
+- [x] Memoryguard inference remains reused in `Solidity.Frontend`; Python does
+  not need to normalize it for the raw path.
+
+Next raw frontend layer:
+
+- [ ] Differentially compare raw Lean elaboration against the old bridge over
+  both pinned solc versions and the full corpus: Aave, Permit2, Safe,
+  EntryPoint, PoolManager, all real suites, and adversarial fixtures.
+- [ ] Add a raw-bridge transition path so normalized-bridge mutations cannot
+  affect production compiler input.
+- [ ] Add local preservation/validation theorems for raw elaboration,
+  nested-function hoisting, and `clz` expansion.
+- [ ] Expose the production interface
+  `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
+  public certificate premises.
+- [ ] Integrate only after the isolated raw theorem is ready; do not create a
+  Yul-to-bytecode proof corridor or depend on the parallel hFinished work.
+
 ## Migration
 
 - [x] Preserve the mixed-allocation research line on
