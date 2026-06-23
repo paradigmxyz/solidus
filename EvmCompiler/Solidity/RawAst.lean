@@ -1443,15 +1443,19 @@ def Object.itemRefsPreserveOrder? (raw : Object)
 def Object.FrontendValidated (raw : Object)
     (frontend : Frontend.Object) : Prop :=
   Object.itemRefsPreserveOrder? raw frontend = true ∧
-    Object.ClzExpansionOk raw frontend ∧
-      Object.HoistedFunctionsRetained raw frontend
+    Frontend.Object.noRawClzCall? frontend = true ∧
+      Object.ClzExpansionOk raw frontend ∧
+        Object.HoistedFunctionsRetained raw frontend
 
 def Object.elaboratePreservingOrder? (obj : Object)
     (evmVersion : Yul.SolcValidation.EvmVersion) :
     DecodeM Frontend.Object := do
   let frontend ← obj.elaborate? evmVersion
   if Object.itemRefsPreserveOrder? obj frontend then
-    pure frontend
+    if Frontend.Object.noRawClzCall? frontend then
+      pure frontend
+    else
+      .error "raw clz call was not normalized"
   else
     .error "raw object/data item order mismatch"
 
@@ -1471,9 +1475,38 @@ theorem Object.elaboratePreservingOrder?_parts
       | false =>
           simp [hObject, hOrder] at hElab
       | true =>
-          simp [hObject, hOrder, pure, Except.pure] at hElab
-          subst object
-          simp [hObject, hOrder]
+          cases hNoRawClz :
+              Frontend.Object.noRawClzCall? object with
+          | false =>
+              simp [hObject, hOrder, hNoRawClz] at hElab
+          | true =>
+              simp [hObject, hOrder, hNoRawClz, pure, Except.pure]
+                at hElab
+              subst object
+              simp [hObject, hOrder]
+
+theorem Object.elaboratePreservingOrder?_noRawClzCall
+    {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
+    {frontend : Frontend.Object}
+    (hElab :
+      Object.elaboratePreservingOrder? obj evmVersion = .ok frontend) :
+    Frontend.Object.noRawClzCall? frontend = true := by
+  unfold Object.elaboratePreservingOrder? at hElab
+  cases hObject : Object.elaborate? obj evmVersion with
+  | error err =>
+      simp [hObject] at hElab
+  | ok object =>
+      cases hOrder : Object.itemRefsPreserveOrder? obj object with
+      | false =>
+          simp [hObject, hOrder] at hElab
+      | true =>
+          cases hNoRawClz : Frontend.Object.noRawClzCall? object with
+          | false =>
+              simp [hObject, hOrder, hNoRawClz] at hElab
+          | true =>
+              simp [hObject, hOrder, hNoRawClz, pure, Except.pure] at hElab
+              subst frontend
+              exact hNoRawClz
 
 theorem Object.elaboratePreservingOrder?_frontendValidated
     {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
@@ -1486,6 +1519,7 @@ theorem Object.elaboratePreservingOrder?_frontendValidated
     ⟨hObject, hOrder⟩
   exact
     ⟨hObject, hOrder,
+      Object.elaboratePreservingOrder?_noRawClzCall hElab,
       Object.elaborate?_clzExpansionOk hObject,
       Object.elaborate?_hoistedFunctionsRetained hObject⟩
 
@@ -1653,6 +1687,40 @@ theorem decodeAndElaborateSolcIrJson_itemRefsPreserveOrder
           · simp [hSelected]
           · exact hParts.1
           · exact hParts.2
+
+theorem decodeAndElaborateSolcIrJson_noRawClzCall
+    {json : Lean.Json} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIrJson json selection = .ok program) :
+    ∃ (selected : SelectedIr) (object : Frontend.Object),
+      decodeSelectedIr json selection = .ok selected ∧
+        selected.root.elaborate? selected.evmVersion = .ok object ∧
+          Frontend.Object.noRawClzCall? object = true ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } := by
+  unfold decodeAndElaborateSolcIrJson at hDecode
+  cases hSelected : decodeSelectedIr json selection with
+  | error err =>
+      simp [hSelected] at hDecode
+  | ok selected =>
+      cases hObject :
+          selected.root.elaboratePreservingOrder? selected.evmVersion with
+      | error err =>
+          simp [hSelected, hObject] at hDecode
+      | ok object =>
+          have hParts :=
+            Raw.Object.elaboratePreservingOrder?_parts hObject
+          have hNoRawClz :=
+            Raw.Object.elaboratePreservingOrder?_noRawClzCall hObject
+          simp [hSelected, hObject] at hDecode
+          subst program
+          refine ⟨selected, object, ?_, ?_, ?_, rfl⟩
+          · simp [hSelected]
+          · exact hParts.1
+          · exact hNoRawClz
 
 theorem decodeAndElaborateSolcIrJson_clzExpansionOk
     {json : Lean.Json} {selection : Selection}
@@ -1849,6 +1917,29 @@ theorem decodeAndElaborateSolcIr?_itemRefsPreserveOrder
     ⟨selected, object, hSelected, hObject, hOrder, hProgram⟩
   exact
     ⟨json, selected, object, hParse, hSelected, hObject, hOrder, hProgram⟩
+
+theorem decodeAndElaborateSolcIr?_noRawClzCall
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            Frontend.Object.noRawClzCall? object = true ∧
+              program =
+                { source := selected.source
+                  contract := selected.contract
+                  object := object } := by
+  rcases decodeAndElaborateSolcIr?_some hDecode with
+    ⟨json, hParse, hJsonDecode⟩
+  rcases decodeAndElaborateSolcIrJson_noRawClzCall hJsonDecode with
+    ⟨selected, object, hSelected, hObject, hNoRawClz, hProgram⟩
+  exact
+    ⟨json, selected, object, hParse, hSelected, hObject, hNoRawClz,
+      hProgram⟩
 
 theorem decodeAndElaborateSolcIr?_clzExpansionOk
     {rawJson : String} {selection : Selection}

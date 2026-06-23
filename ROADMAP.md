@@ -155,7 +155,10 @@ Next raw frontend layer:
   generated `clz` helper theorem now also exposes its one-argument/one-result
   shape plus successful Yul function-definition conversion, and retained nested
   function-definition statements are alpha-renamed to generated function names
-  before their checked frontend no-op lowering.
+  before their checked frontend no-op lowering. Raw production elaboration now
+  also fail-closes on any frontend object that still contains an unlowered
+  callee named exactly `clz`, with decode and artifact wrapper theorems
+  exposing `Frontend.Object.noRawClzCall? = true`.
   Semantic preservation of the helper and nested
   hoist/alpha-renaming passes remains open.
 - [x] Expose the production interface

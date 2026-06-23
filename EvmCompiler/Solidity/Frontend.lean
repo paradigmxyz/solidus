@@ -1068,6 +1068,60 @@ mutual
           Stmt.CaseList.usesObjectBuiltinOtherThanLoadImmutable? rest
 end
 
+mutual
+  def Expr.hasCallNamed? (wanted : Name) : Expr → Bool
+    | .lit _ => false
+    | .stringLit _ => false
+    | .bytesLit _ => false
+    | .var _ => false
+    | .call _ callee args =>
+        callee == wanted || Expr.List.hasCallNamed? wanted args
+
+  def Expr.List.hasCallNamed? (wanted : Name) : List Expr → Bool
+    | [] => false
+    | expr :: rest =>
+        Expr.hasCallNamed? wanted expr ||
+          Expr.List.hasCallNamed? wanted rest
+end
+
+mutual
+  def Stmt.hasCallNamed? (wanted : Name) : Stmt → Bool
+    | .block stmts => Stmt.List.hasCallNamed? wanted stmts
+    | .letDecl _ none => false
+    | .letDecl _ (some value) => Expr.hasCallNamed? wanted value
+    | .assign _ value => Expr.hasCallNamed? wanted value
+    | .exprStmt expr => Expr.hasCallNamed? wanted expr
+    | .functionDef _ _ _ body => Stmt.List.hasCallNamed? wanted body
+    | .switch scrutinee cases default =>
+        Expr.hasCallNamed? wanted scrutinee ||
+          Stmt.CaseList.hasCallNamed? wanted cases ||
+            Stmt.List.hasCallNamed? wanted default
+    | .forLoop pre condition post body =>
+        Stmt.List.hasCallNamed? wanted pre ||
+          Expr.hasCallNamed? wanted condition ||
+            Stmt.List.hasCallNamed? wanted post ||
+              Stmt.List.hasCallNamed? wanted body
+    | .ifThen condition body =>
+        Expr.hasCallNamed? wanted condition ||
+          Stmt.List.hasCallNamed? wanted body
+    | .break => false
+    | .continue => false
+    | .leave => false
+
+  def Stmt.List.hasCallNamed? (wanted : Name) : List Stmt → Bool
+    | [] => false
+    | stmt :: rest =>
+        Stmt.hasCallNamed? wanted stmt ||
+          Stmt.List.hasCallNamed? wanted rest
+
+  def Stmt.CaseList.hasCallNamed? (wanted : Name) :
+      List (SwitchCaseValue × List Stmt) → Bool
+    | [] => false
+    | (_value, body) :: rest =>
+        Stmt.List.hasCallNamed? wanted body ||
+          Stmt.CaseList.hasCallNamed? wanted rest
+end
+
 namespace NameList
 
 def insertUnique (name : Name) : List Name → List Name
@@ -1093,6 +1147,9 @@ def forkSpellingOk? (version : Yul.SolcValidation.EvmVersion)
     (fn : FunctionDef) : Bool :=
   Stmt.List.forkSpellingOk? version fn.body
 
+def hasCallNamed? (wanted : Name) (fn : FunctionDef) : Bool :=
+  Stmt.List.hasCallNamed? wanted fn.body
+
 namespace List
 
 def loadImmutableNames : List (Name × FunctionDef) → List Name
@@ -1105,6 +1162,11 @@ def forkSpellingOk? (version : Yul.SolcValidation.EvmVersion) :
   | [] => true
   | (_name, fn) :: rest =>
       fn.forkSpellingOk? version && forkSpellingOk? version rest
+
+def hasCallNamed? (wanted : Name) : List (Name × FunctionDef) → Bool
+  | [] => false
+  | (_name, fn) :: rest =>
+      fn.hasCallNamed? wanted || hasCallNamed? wanted rest
 
 end List
 end FunctionDef
@@ -1141,6 +1203,30 @@ def usesObjectBuiltinOtherThanLoadImmutable? (object : Object) : Bool :=
     object.functions.any
       (fun entry =>
         Stmt.List.usesObjectBuiltinOtherThanLoadImmutable? entry.snd.body)
+
+def callSearchFuel : Nat := 100000
+
+mutual
+  def hasCallNamedFuel? : Nat → Name → Object → Bool
+    | 0, _, _ => true
+    | fuel + 1, wanted, object =>
+        Stmt.List.hasCallNamed? wanted object.dispatcher ||
+          FunctionDef.List.hasCallNamed? wanted object.functions ||
+            Object.List.hasCallNamedFuel? fuel wanted object.objects
+
+  def List.hasCallNamedFuel? : Nat → Name → List Object → Bool
+    | 0, _, _ => true
+    | _fuel + 1, _, [] => false
+    | fuel + 1, wanted, object :: rest =>
+        object.hasCallNamedFuel? fuel wanted ||
+          List.hasCallNamedFuel? fuel wanted rest
+end
+
+def hasCallNamed? (wanted : Name) (object : Object) : Bool :=
+  object.hasCallNamedFuel? callSearchFuel wanted
+
+def noRawClzCall? (object : Object) : Bool :=
+  !object.hasCallNamed? "clz"
 
 end Object
 
