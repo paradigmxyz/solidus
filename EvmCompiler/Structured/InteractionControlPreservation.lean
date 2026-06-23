@@ -2633,6 +2633,81 @@ end BoundedErrorExecPreservesUnder
 
 namespace BoundedRuntimeErrorExecPreservesUnder
 
+theorem change_result_of_required_fallthrough
+    {left right : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {targetBudget : Nat} {policy : StopPolicy} {expected : TypedCfg.Shape}
+    (hRequire : left.requireFallthrough? expected = some ())
+    (hRight : right.fallthrough? = some expected)
+    (hPreserves :
+      BoundedRuntimeErrorExecPreservesUnder left cfg entry ctx regular
+        source tokens sourceRun targetBudget policy) :
+    BoundedRuntimeErrorExecPreservesUnder right cfg entry ctx regular
+      source tokens sourceRun targetBudget policy := by
+  intro target hStateRel transcript sourceError hRuntime hSourceExec
+  exact hPreserves target hStateRel transcript sourceError hRuntime hSourceExec
+
+theorem prepend_closed_jump
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry next regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source nextSource : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {tailBudget : Nat} {policy : StopPolicy}
+    (hStep :
+      forall target,
+        TypedCfgPreservation.StateRel source tokens target ->
+          exists targetAfter,
+            TypedCfg.InteractionSemantics.Program.openStep
+                cfg entry target = .done (.ok (.jump next targetAfter)) /\
+            TypedCfgPreservation.StateRel nextSource tokens targetAfter)
+    (hNoStop :
+      forall targetAfter,
+        TypedCfgPreservation.StateRel nextSource tokens targetAfter ->
+          policy next targetAfter = false)
+    (hTail :
+      BoundedRuntimeErrorExecPreservesUnder result cfg next ctx regular
+        nextSource tokens sourceRun tailBudget policy) :
+    BoundedRuntimeErrorExecPreservesUnder result cfg entry ctx regular source tokens
+      sourceRun (tailBudget + 1) policy := by
+  intro target hStateRel transcript sourceError hRuntime hSourceExec
+  obtain ⟨targetAfter, hTargetStep, hAfterRel⟩ :=
+    hStep target hStateRel
+  obtain ⟨tailFuel, targetError, hTailFuel, hTargetTailExec⟩ :=
+    hTail targetAfter hAfterRel transcript sourceError hRuntime hSourceExec
+  have hTargetHeadExec :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openStep cfg entry target)
+        [] (.ok (.jump next targetAfter)) := by
+    rw [hTargetStep]
+    exact Simulation.Interaction.Executes.done _
+  have hContinuationExec :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
+          policy cfg tailFuel (.jump next targetAfter))
+        transcript (.error targetError) := by
+    simpa [
+      TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+      hNoStop targetAfter hAfterRel] using hTargetTailExec
+  have hTargetExec :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+          policy cfg (tailFuel + 1) entry target)
+        transcript (.error targetError) := by
+    rw [
+      TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_succ_eq_bind]
+    simpa using
+      Simulation.Interaction.Executes.bind_ok
+        hTargetHeadExec hContinuationExec
+  exact ⟨tailFuel + 1, targetError, by omega, hTargetExec⟩
+
 theorem close_refined_under
     {result : TypedCfgCompiler.Result}
     {cfg : TypedCfg.Program}

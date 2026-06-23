@@ -489,6 +489,117 @@ theorem switch_bounded
                       apply contract.nonregular hMode
                       simpa [hReturns] using hRel }
 
+theorem switch_runtime_error_bounded
+    {compilerFuel sourceFuel : Nat}
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {generated :
+      TypedCfgPreservation.Program.GeneratedContext
+        program entryShapes cfg}
+    {scrutinee : Structured.Code}
+    {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    {source : RunState} {tokens : List Word} {policy : StopPolicy}
+    {canBreak canContinue canLeave : Bool}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.switch scrutinee cases defaultBody) ctx
+          supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hResultCalls :
+      TypedCfgPreservation.CallsInProgram result generated.calls)
+    (hWF :
+      Structured.Stmt.WF canBreak canContinue canLeave
+        (.switch scrutinee cases defaultBody))
+    (hFrameSafe :
+      Structured.Stmt.FrameSafe (.switch scrutinee cases defaultBody))
+    (hCalls :
+      Structured.ProcList.StmtCallsResolved program.procs
+        (.switch scrutinee cases defaultBody))
+    (hSupports :
+      TypedCfgPreservation.OutcomeSimulation.ContextSupports
+        ctx canBreak canContinue canLeave)
+    (hProcs : ctx.procs = program.procs)
+    (hSourceReturns :
+      canLeave = true ->
+        exists frame rest, source.returns = frame :: rest)
+    (hBlockOwner :
+      RuntimeErrorBlockOwnerAt sourceFuel program entryShapes cfg generated)
+    (contract :
+      StmtContract cfg result ctx supply entry regular input
+        source tokens policy) :
+    InteractionControlPreservation.OpenOutcome.BoundedRuntimeErrorExecPreservesUnder
+      result cfg entry ctx regular source tokens
+      (InteractionSemantics.Stmt.openRun program (sourceFuel + 1)
+        (.switch scrutinee cases defaultBody) source)
+      (InteractionStaticCost.stmtBudget program (sourceFuel + 1)
+        (.switch scrutinee cases defaultBody))
+      policy := by
+  cases hWF with
+  | switch hCasesWF hDefaultWF =>
+      cases hFrameSafe with
+      | switch _hScrutineeSafe hCasesSafe hDefaultSafe =>
+          cases hCalls with
+          | switch hCasesCalls hDefaultCalls =>
+              apply
+                InteractionSwitchPreservation.Stmt.openRun_switch_runtime_error_bounded_under_of_compileStmtFuel?
+                  hCompile hBlocks hResultCalls contract.fits
+                  contract.regularAt contract.activation contract.boundary
+              intro bodyCompilerFuel bodySupply bodyEntry bodyInput
+                body bodyResult afterPop value hSelect hBodyCompile
+                hBodyBlocks hBodyResultCalls hBodySupply hReturns
+                hBodyFits hRequire hFallthrough
+              have hSelectedWF :=
+                Structured.Switch.wf_of_select
+                  hCasesWF hDefaultWF hSelect
+              have hSelectedFrameSafe :=
+                TypedCfgCompilerFacts.switch_property_of_select
+                  hCasesSafe hDefaultSafe hSelect
+              have hSelectedCalls :=
+                TypedCfgCompilerFacts.switch_property_of_select
+                  hCasesCalls hDefaultCalls hSelect
+              have hSupply : supply <= bodySupply :=
+                Nat.le_trans (Nat.le_succ supply) hBodySupply
+              have hBefore := contract.before_succ.mono hBodySupply
+              apply
+                hBlockOwner (Nat.le_refl sourceFuel)
+                  hBodyCompile hBodyBlocks hBodyResultCalls
+                  hSelectedWF hSelectedFrameSafe hSelectedCalls
+                  hSupports hProcs
+              · intro hCanLeave
+                obtain ⟨frame, rest, hSourceEq⟩ :=
+                  hSourceReturns hCanLeave
+                exact ⟨frame, rest, hReturns.trans hSourceEq⟩
+              · exact
+                  { fits := hBodyFits
+                    regularAt := Or.inl hBefore.regular
+                    before := hBefore
+                    activation :=
+                      contract.activation.stmtFallthrough
+                        hCompile hFallthrough
+                    boundary :=
+                      (contract.boundary.mono hSupply).congr_returns
+                        hReturns.symm
+                    shapes :=
+                      contract.shapes.of_required_fallthrough
+                        hRequire hFallthrough
+                    stops := by
+                      intro sourceOutcome targetOutcome hRel
+                      apply contract.stops
+                      have hWhole :=
+                        InteractionControlPreservation.OpenOutcome.Rel.change_result_of_required_fallthrough
+                          hRequire hFallthrough hRel
+                      simpa [hReturns] using hWhole
+                    nonregular := by
+                      intro childResult childRegular sourceOutcome
+                        targetOutcome hMode hRel
+                      apply contract.nonregular hMode
+                      simpa [hReturns] using hRel }
+
 theorem for_bounded
     {compilerFuel sourceFuel : Nat}
     {program : Structured.Program}
