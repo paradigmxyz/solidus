@@ -2,7 +2,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SOLC_BIN="${SOLC:-solc}"
+PYTHON_BIN="${PYTHON:-python3}"
+BUNDLED_PYTHON="$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3"
+if ! "$PYTHON_BIN" -c 'import jsonschema' >/dev/null 2>&1 && \
+    [[ -x "$BUNDLED_PYTHON" ]]; then
+  PYTHON_BIN="$BUNDLED_PYTHON"
+fi
+SOLC_BIN="${SOLC_826:-${SOLC:-$HOME/.solc-select/artifacts/solc-0.8.26/solc-0.8.26}}"
 if [[ -n "${LAKE:-}" ]]; then
   LAKE_BIN="$LAKE"
 elif [[ -x "$HOME/.elan/bin/lake" ]]; then
@@ -29,41 +35,43 @@ MANIFEST_CHECK="$OUTDIR/manifest.lean-json-check.json"
 MANIFEST_SUMMARY="$OUTDIR/manifest.bridge-json-summary.json"
 BACKEND_CHECK="$OUTDIR/manifest.lean-backend-check.json"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/MiniToken.sol" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/MiniToken.sol" \
   --solc "$SOLC_BIN" \
+  --yul-ast-solc "$SOLC_BIN" \
+  --optimized \
   --format bridge-json \
   --all-contracts \
   --bridge-json-dir "$BRIDGE_DIR" \
   --output "$MANIFEST"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
   --format lean-json-check \
   --output "$MANIFEST_CHECK"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
   --input-format bridge-json-manifest \
   --format bridge-json-summary \
   --contract MiniToken \
   --object runtime \
   --output "$MANIFEST_SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST_SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST_SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
   --format lean-backend-check \
   --output "$BACKEND_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$BACKEND_CHECK"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$BACKEND_CHECK"
 
-python3 - "$MANIFEST" "$BRIDGE_DIR" "$MANIFEST_CHECK" "$MANIFEST_SUMMARY" \
+"$PYTHON_BIN" - "$MANIFEST" "$BRIDGE_DIR" "$MANIFEST_CHECK" "$MANIFEST_SUMMARY" \
   "$BACKEND_CHECK" <<'PY'
 import json
 import sys
@@ -89,7 +97,7 @@ if len(runtime_entries) != 1:
     raise SystemExit("expected exactly one MiniToken runtime bridge entry")
 
 frontend = runtime_entries[0].get("frontend")
-if frontend != {"producer": "solc", "ast": "irAst"}:
+if frontend != {"producer": "solc", "ast": "irOptimizedAst"}:
     raise SystemExit(f"unexpected MiniToken manifest frontend metadata: {frontend!r}")
 
 runtime_bridge = json.loads((bridge_dir / runtime_entries[0]["path"]).read_text())
@@ -98,8 +106,8 @@ if runtime_bridge.get("frontend") != frontend:
         f"MiniToken bridge frontend drift: {runtime_bridge.get('frontend')!r}"
     )
 functions = runtime_bridge.get("selectedObject", {}).get("functions", [])
-if not isinstance(functions, list) or len(functions) < 1:
-    raise SystemExit("MiniToken runtime bridge has no lowered functions")
+if not isinstance(functions, list):
+    raise SystemExit("MiniToken runtime bridge functions are malformed")
 
 summary = json.loads(summary_path.read_text())
 if summary.get("schema") != "evm-compiler.solc-yul-bridge-manifest-summary.v1":
@@ -173,6 +181,8 @@ if (
     backend_counts.get("checkedObjects") != 2
     or backend_counts.get("checkedContracts") != 1
     or backend_counts.get("skippedContracts") != 0
+    or backend_counts.get("passedObjects") != 2
+    or backend_counts.get("failedObjects") != 0
 ):
     raise SystemExit(f"unexpected MiniToken backend-check counts: {backend_counts!r}")
 
@@ -182,12 +192,8 @@ for item in backend_check.get("checkedObjects", []):
     status = item.get("status")
     first_none = item.get("firstNone")
     backend_status[key] = (status, first_none)
-    if status not in {"pass", "fail"}:
-        raise SystemExit(f"unexpected MiniToken backend status: {item!r}")
-    if status == "pass" and first_none != "none":
-        raise SystemExit(f"MiniToken backend pass mismatch: {item!r}")
-    if status == "fail" and first_none in {"", None, "none"}:
-        raise SystemExit(f"MiniToken backend failure missing firstNone: {item!r}")
+    if (status, first_none) != ("pass", "none"):
+        raise SystemExit(f"MiniToken backend failed: {item!r}")
 
 expected_backend_labels = {
     ("MiniToken", "creation"),

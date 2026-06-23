@@ -2,7 +2,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SOLC_BIN="${SOLC:-solc}"
+PYTHON_BIN="${PYTHON:-python3}"
+BUNDLED_PYTHON="$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3"
+if ! "$PYTHON_BIN" -c 'import jsonschema' >/dev/null 2>&1 && \
+    [[ -x "$BUNDLED_PYTHON" ]]; then
+  PYTHON_BIN="$BUNDLED_PYTHON"
+fi
+SOLC_BIN="${SOLC_826:-${SOLC:-$HOME/.solc-select/artifacts/solc-0.8.26/solc-0.8.26}}"
 if [[ -n "${LAKE:-}" ]]; then
   LAKE_BIN="$LAKE"
 elif [[ -x "$HOME/.elan/bin/lake" ]]; then
@@ -29,41 +35,43 @@ MANIFEST_CHECK="$OUTDIR/manifest.lean-json-check.json"
 MANIFEST_SUMMARY="$OUTDIR/manifest.bridge-json-summary.json"
 BACKEND_CHECK="$OUTDIR/manifest.lean-backend-check.json"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/TryCatchBox.sol" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/TryCatchBox.sol" \
   --solc "$SOLC_BIN" \
+  --yul-ast-solc "$SOLC_BIN" \
+  --optimized \
   --format bridge-json \
   --all-contracts \
   --bridge-json-dir "$BRIDGE_DIR" \
   --output "$MANIFEST"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
   --format lean-json-check \
   --output "$MANIFEST_CHECK"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
   --input-format bridge-json-manifest \
   --format bridge-json-summary \
   --contract TryCatchBox \
   --object runtime \
   --output "$MANIFEST_SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST_SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST_SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
   --format lean-backend-check \
   --output "$BACKEND_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$BACKEND_CHECK"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$BACKEND_CHECK"
 
-python3 - "$MANIFEST" "$BRIDGE_DIR" "$MANIFEST_CHECK" "$MANIFEST_SUMMARY" "$BACKEND_CHECK" <<'PY'
+"$PYTHON_BIN" - "$MANIFEST" "$BRIDGE_DIR" "$MANIFEST_CHECK" "$MANIFEST_SUMMARY" "$BACKEND_CHECK" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -102,8 +110,8 @@ if len(runtime_entries) != 1:
 
 runtime_bridge = json.loads((bridge_dir / runtime_entries[0]["path"]).read_text())
 functions = runtime_bridge.get("selectedObject", {}).get("functions", [])
-if not isinstance(functions, list) or len(functions) < 1:
-    raise SystemExit("TryCatchBox runtime bridge has no lowered functions")
+if not isinstance(functions, list):
+    raise SystemExit("TryCatchBox runtime bridge functions are malformed")
 
 summary = json.loads(summary_path.read_text())
 if summary.get("schema") != "evm-compiler.solc-yul-bridge-manifest-summary.v1":
@@ -174,6 +182,8 @@ if (
     backend_counts.get("checkedObjects") != 4
     or backend_counts.get("checkedContracts") != 2
     or backend_counts.get("skippedContracts") != 0
+    or backend_counts.get("passedObjects") != 4
+    or backend_counts.get("failedObjects") != 0
 ):
     raise SystemExit(f"unexpected try-catch backend-check counts: {backend_counts!r}")
 
@@ -194,19 +204,9 @@ if set(backend_status) != expected_labels:
     raise SystemExit(
         f"unexpected try-catch backend-check labels: {backend_status!r}"
     )
-for label, (status, first_none) in backend_status.items():
-    if status not in {"pass", "fail"}:
-        raise SystemExit(f"unexpected try-catch backend status for {label}: {status!r}")
-    if status == "pass" and first_none != "none":
-        raise SystemExit(
-            f"try-catch backend pass did not report firstNone=none: "
-            f"{label!r} -> {first_none!r}"
-        )
-    if status == "fail" and first_none in {None, "none"}:
-        raise SystemExit(
-            f"try-catch backend failure missed firstNone blocker: "
-            f"{label!r} -> {first_none!r}"
-        )
+for label, result in backend_status.items():
+    if result != ("pass", "none"):
+        raise SystemExit(f"try-catch backend failed for {label}: {result!r}")
 
 box_runtime_status, box_runtime_first_none = backend_status[
     ("TryCatchBox", "runtime")
