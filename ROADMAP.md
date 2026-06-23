@@ -159,8 +159,15 @@ Next raw frontend layer:
   public certificate premises, and expose artifact-facing raw wrappers whose
   success reconstructs the internally selected raw source/contract/object,
   checked object elaboration, and artifact validity.
-- [ ] Integrate only after the isolated raw theorem is ready; do not create a
-  Yul-to-bytecode proof corridor or depend on the parallel hFinished work.
+- [x] Add the isolated raw theorem composition:
+  `Solidity.RawAst.optimizedRawSolcIrToRawBytecode` composes checked raw
+  Standard JSON decoding, Lean-decoded linker metadata, frontend validation,
+  and artifact construction into the unconditional optimized-Yul
+  finite-prefix theorem without a normalized Python program premise.
+- [ ] Close the remaining raw frontend semantic-preservation work for generated
+  `clz` helper expansion and nested-function hoist/alpha-renaming; do not
+  create a Yul-to-bytecode proof corridor or depend on the parallel hFinished
+  work.
 
 ## Migration
 

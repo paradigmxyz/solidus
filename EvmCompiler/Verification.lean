@@ -19,6 +19,7 @@ import EvmCompiler.Assembly.InteractionFuelSafety
 import EvmCompiler.Assembly.Compact
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
 import EvmCompiler.Solidity.RawAstPublic
+import EvmCompiler.Solidity.RawAstEndToEnd
 import EvmCompiler.Yul.FunctionsInteractionProgram
 import EvmCompiler.Yul.EndToEnd
 
@@ -82,6 +83,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_hoistedFunctionsRetained
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_frontendValidated
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_decodingCorrect
+#check EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecode
+#check EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecodeFinished
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsTerminal
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsForward
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackStructuredForward
@@ -171,6 +174,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_hoistedFunctionsRetained
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_frontendValidated
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_decodingCorrect
+#print axioms EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecode
+#print axioms EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecodeFinished
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsFinished
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.yulNormalizedStackToAssemblySourceFinished
