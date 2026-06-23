@@ -77,13 +77,15 @@ fi
 
 "$PYTHON_BIN" - \
   "$ROOT" "$SAFE_SMART_ACCOUNT_REPO" "$ACCOUNT_ABSTRACTION_REPO" \
-  "$OPENZEPPELIN_REPO" "$OUTDIR" "$SOLC_826" "$SOLC_835" \
+  "$OPENZEPPELIN_REPO" "$OUTDIR" "$PYTHON_BIN" "$LAKE_BIN" \
+  "$SOLC_826" "$SOLC_835" \
   "$SAFE_SOURCE" "$SAFE_CONTRACT" "$ENTRYPOINT_SOURCE" "$ENTRYPOINT_CONTRACT" \
   <<'PY'
 import copy
 import importlib.util
 import json
 import pathlib
+import subprocess
 import sys
 
 root = pathlib.Path(sys.argv[1])
@@ -91,14 +93,16 @@ safe_repo = pathlib.Path(sys.argv[2])
 entrypoint_repo = pathlib.Path(sys.argv[3])
 openzeppelin_repo = pathlib.Path(sys.argv[4])
 outdir = pathlib.Path(sys.argv[5])
+python_bin = pathlib.Path(sys.argv[6])
+lake_bin = pathlib.Path(sys.argv[7])
 solcs = {
-    "0.8.26": pathlib.Path(sys.argv[6]),
-    "0.8.35": pathlib.Path(sys.argv[7]),
+    "0.8.26": pathlib.Path(sys.argv[8]),
+    "0.8.35": pathlib.Path(sys.argv[9]),
 }
-safe_source = sys.argv[8]
-safe_contract = sys.argv[9]
-entrypoint_source = sys.argv[10]
-entrypoint_contract = sys.argv[11]
+safe_source = sys.argv[10]
+safe_contract = sys.argv[11]
+entrypoint_source = sys.argv[12]
+entrypoint_contract = sys.argv[13]
 
 bridge_path = root / "scripts" / "solidity_to_yul_lean.py"
 spec = importlib.util.spec_from_file_location("solidity_to_yul_lean", bridge_path)
@@ -106,6 +110,9 @@ bridge = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 sys.modules[spec.name] = bridge
 spec.loader.exec_module(bridge)
+
+sys.path.insert(0, str(root / "scripts"))
+import raw_bridge_differential
 
 def source_closure(repo, source_name, remapping_values=()):
     source_path = repo / source_name
@@ -192,6 +199,7 @@ entrypoint_solc_sizes = {
     "0.8.35": (11976, 12472),
 }
 
+differential_cases = []
 for version, solc in solcs.items():
     try:
         bridge.run_solc(str(solc), copy.deepcopy(safe_request(True)), ())
@@ -202,7 +210,10 @@ for version, solc in solcs.items():
     else:
         raise SystemExit(f"Safe solc {version} unexpectedly emitted bytecode")
 
-    raw_safe = bridge.run_solc(str(solc), copy.deepcopy(safe_request(False)), ())
+    safe_raw_request = safe_request(False)
+    safe_request_path = outdir / f"safe-{version}.standard-input.json"
+    safe_request_path.write_text(json.dumps(safe_raw_request, separators=(",", ":")))
+    raw_safe = bridge.run_solc(str(solc), copy.deepcopy(safe_raw_request), ())
     safe_output = raw_safe["contracts"][safe_source][safe_contract]
     assert_yul_object(safe_output, f"Safe solc {version}")
     safe_linkers = metadata_linker_count(safe_output)
@@ -211,14 +222,60 @@ for version, solc in solcs.items():
     (outdir / f"safe-{version}.standard-output.json").write_text(
         json.dumps(raw_safe, separators=(",", ":"))
     )
+    for selector in ("runtime", "creation"):
+        bridge_json_path = outdir / f"safe-{version}-{selector}.bridge.json"
+        subprocess.run(
+            [
+                str(python_bin),
+                str(bridge_path),
+                str(safe_request_path),
+                "--input-format",
+                "standard-json",
+                "--solc",
+                str(solc),
+                "--lake",
+                str(lake_bin),
+                "--lake-cwd",
+                str(root),
+                "--source-name",
+                safe_source,
+                "--contract",
+                safe_contract,
+                "--object",
+                selector,
+                "--optimized",
+                "--format",
+                "bridge-json",
+                "-o",
+                str(bridge_json_path),
+            ],
+            check=True,
+        )
+        differential_cases.append(
+            {
+                "label": f"safe-{version}-{selector}",
+                "raw": str(outdir / f"safe-{version}.standard-output.json"),
+                "bridge": str(bridge_json_path),
+                "source": safe_source,
+                "contract": safe_contract,
+                "selector": selector,
+                "compare_artifacts": False,
+                "linker_symbols": [],
+            }
+        )
     version_key = version.replace(".", "_")
     print(f"safe_raw_solc_{version_key}_included_sources={len(safe_includes)}")
     print(f"safe_raw_solc_{version_key}_metadata_linker_count={safe_linkers}")
     print(f"safe_raw_solc_{version_key}_solc_bytecode_rejection=stack_too_deep")
 
+    entrypoint_raw_request = entrypoint_request()
+    entrypoint_request_path = outdir / f"entrypoint-{version}.standard-input.json"
+    entrypoint_request_path.write_text(
+        json.dumps(entrypoint_raw_request, separators=(",", ":"))
+    )
     raw_entrypoint = bridge.run_solc(
         str(solc),
-        copy.deepcopy(entrypoint_request()),
+        copy.deepcopy(entrypoint_raw_request),
         (),
     )
     entrypoint_output = raw_entrypoint["contracts"][entrypoint_source][
@@ -238,6 +295,47 @@ for version, solc in solcs.items():
     (outdir / f"entrypoint-{version}.standard-output.json").write_text(
         json.dumps(raw_entrypoint, separators=(",", ":"))
     )
+    for selector in ("runtime", "creation"):
+        bridge_json_path = outdir / f"entrypoint-{version}-{selector}.bridge.json"
+        subprocess.run(
+            [
+                str(python_bin),
+                str(bridge_path),
+                str(entrypoint_request_path),
+                "--input-format",
+                "standard-json",
+                "--solc",
+                str(solc),
+                "--lake",
+                str(lake_bin),
+                "--lake-cwd",
+                str(root),
+                "--source-name",
+                entrypoint_source,
+                "--contract",
+                entrypoint_contract,
+                "--object",
+                selector,
+                "--optimized",
+                "--format",
+                "bridge-json",
+                "-o",
+                str(bridge_json_path),
+            ],
+            check=True,
+        )
+        differential_cases.append(
+            {
+                "label": f"entrypoint-{version}-{selector}",
+                "raw": str(outdir / f"entrypoint-{version}.standard-output.json"),
+                "bridge": str(bridge_json_path),
+                "source": entrypoint_source,
+                "contract": entrypoint_contract,
+                "selector": selector,
+                "compare_artifacts": False,
+                "linker_symbols": [],
+            }
+        )
     print(
         f"entrypoint_raw_solc_{version_key}_included_sources="
         f"{len(entrypoint_includes)}"
@@ -254,7 +352,20 @@ for version, solc in solcs.items():
         f"entrypoint_raw_solc_{version_key}_solc_creation_bytes="
         f"{len(creation_hex) // 2}"
     )
+
+raw_bridge_differential.write_runner(
+    outdir / "safe_entrypoint_raw_bridge_differential_runner.lean",
+    differential_cases,
+    lean_string=bridge.lean_string,
+)
 PY
+
+SAFE_ENTRYPOINT_DIFFERENTIAL_REPORT="$OUTDIR/safe-entrypoint-raw-bridge-differential.txt"
+"$LAKE_BIN" env lean --run "$OUTDIR/safe_entrypoint_raw_bridge_differential_runner.lean" \
+  > "$SAFE_ENTRYPOINT_DIFFERENTIAL_REPORT"
+grep -qx 'raw_solc_frontend_differential_count=8' "$SAFE_ENTRYPOINT_DIFFERENTIAL_REPORT"
+grep -qx 'raw_solc_frontend_differential=pass' "$SAFE_ENTRYPOINT_DIFFERENTIAL_REPORT"
+grep -E '^raw_solc_frontend_differential(_count|=)' "$SAFE_ENTRYPOINT_DIFFERENTIAL_REPORT"
 
 run_raw_summary() {
   local label="$1"

@@ -103,7 +103,9 @@ Next raw frontend layer:
   supported solc pins. Safe is covered through raw optimized Yul plus metadata
   because solc's own bytecode backend rejects the pinned source
   stack-too-deep; EntryPoint includes solc bytecode and raw Lean artifact
-  checks for creation/runtime.
+  checks for creation/runtime. Both now compare raw Standard JSON Lean
+  elaboration against the legacy bridge frontend object shape across both
+  pins and creation/runtime selections.
 - [x] Add a pinned Permit2 version-boundary gate: unmodified full Permit2 pins
   `pragma solidity 0.8.17`; exact solc 0.8.17 compiles Permit2 bytecode under
   London but emits no `irOptimizedAst`, so the Lean raw path fails closed.
@@ -116,9 +118,11 @@ Next raw frontend layer:
   compares raw Standard JSON against the legacy bridge for creation/runtime on
   both pins, and PoolManager frontend shape now compares raw Standard JSON
   against the legacy bridge for creation/runtime on its compatible exact
-  solc 0.8.26 pin. Permit2 remains fail-closed legacy coverage because solc
-  0.8.17 emits no structured `irOptimizedAst`. Safe, EntryPoint, all real
-  suites, and adversarial fixtures remain to be widened.
+  solc 0.8.26 pin. Safe and EntryPoint frontend shapes now compare raw
+  Standard JSON against the legacy bridge for creation/runtime on both pins.
+  Permit2 remains fail-closed legacy coverage because solc 0.8.17 emits no
+  structured `irOptimizedAst`. All real suites and adversarial fixtures remain
+  to be widened.
 - [x] Add a raw-bridge transition path: `evm-compiler-backend raw-*` consumes
   raw solc Standard JSON directly through `RawAstPublic`, and the transition
   smoke proves normalized-bridge mutations cannot affect raw input compilation.
