@@ -184,6 +184,8 @@ import EvmCompiler.Yul.FunctionsInteractionRecursiveStatement
 import EvmCompiler.Yul.FunctionsInteractionRecursiveBody
 import EvmCompiler.Yul.FunctionsInteractionCompilerCost
 import EvmCompiler.Yul.FunctionsInteractionProgram
+import EvmCompiler.Yul.AllocationInteractionSafeSemantics
+import EvmCompiler.Yul.FunctionsAllocationInteractionSafety
 import EvmCompiler.Compiler.StackArtifact
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
 import EvmCompiler.Compiler.OpenInteractionComposition
@@ -1709,6 +1711,12 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsInteractionProgram.dispatcherForward
 #check EvmCompiler.Yul.FunctionsInteractionProgram.dispatcherForward_of_ordered_toObjects?
 #check EvmCompiler.Yul.FunctionsInteractionProgram.targetSuccessful
+#check EvmCompiler.Yul.AllocationInteractionSafeSemantics.PrimitiveSafe
+#check EvmCompiler.Yul.AllocationInteractionSafeSemantics.Stmt.ExecutionSafe
+#check EvmCompiler.Yul.AllocationInteractionSafeSemantics.Program.ExecutionSafe
+#check EvmCompiler.Yul.FunctionsAllocationInteractionSafety.Primitive.safe_to_functions
+#check EvmCompiler.Yul.FunctionsAllocationInteractionSafety.compilerSelectedSafe
+#print axioms EvmCompiler.Yul.FunctionsAllocationInteractionSafety.compilerSelectedSafe
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToAllocatedExpressions
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToStackExpressionsTerminal
 #check EvmCompiler.Compiler.OpenInteractionComposition.stackExpressionsToStructuredTerminal

@@ -411,6 +411,17 @@ boundaries. Corpus acceptance alone does not discharge them.
     the Functions allocation owner.
   - [x] Thread guarded safety through nested control, loops, internal calls,
     stack-only/scratch program composition, and delete the legacy global API.
+  - [x] Define canonical Yul guarded semantics whose reached primitive checks
+    use the same terminal, CALL, CREATE, and ordinary-operation contracts as
+    guarded Functions semantics; safe operations delegate unchanged.
+  - [x] Prove the adjacent primitive safety transfer under the established
+    Yul-to-Functions state relation, including honest GAS/MSIZE and unchanged
+    CALL/CREATE/LOG requests.
+  - [ ] Lift actual-tree Yul execution safety through recursive expressions,
+    control, loops, and internal calls to guarded Functions execution safety.
+  - [ ] Replace the scratch-capable public Functions-facing safety premise with
+    the Yul-facing execution premise; keep the premise-free stack theorem as a
+    separate capability and rerun every completion gate.
 - [ ] Carry the selected EVM fork/dialect in checked artifacts. Cover or
   honestly reject every solc-emittable builtin for that profile, including
   Osaka additions and supported `verbatim` forms.
