@@ -89,8 +89,9 @@ Next raw frontend layer:
 - [ ] Differentially compare raw Lean elaboration against the old bridge over
   both pinned solc versions and the full corpus: Aave, Permit2, Safe,
   EntryPoint, PoolManager, all real suites, and adversarial fixtures.
-- [ ] Add a raw-bridge transition path so normalized-bridge mutations cannot
-  affect production compiler input.
+- [x] Add a raw-bridge transition path: `evm-compiler-backend raw-*` consumes
+  raw solc Standard JSON directly through `RawAstPublic`, and the transition
+  smoke proves normalized-bridge mutations cannot affect raw input compilation.
 - [ ] Add local preservation/validation theorems for raw elaboration,
   nested-function hoisting, and `clz` expansion.
 - [ ] Expose the production interface
