@@ -1,5 +1,8 @@
 # Roadmap
 
+The exact release trust and semantic boundary is maintained in
+[`PRODUCTION_ASSUMPTIONS.md`](PRODUCTION_ASSUMPTIONS.md).
+
 ## Production Boundary
 
 The trusted frontend is a supported pinned `solc` producing optimized Yul
