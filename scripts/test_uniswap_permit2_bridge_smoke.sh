@@ -2,6 +2,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON_BIN="${PYTHON:-python3}"
+BUNDLED_PYTHON="$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3"
+if ! "$PYTHON_BIN" -c 'import jsonschema' >/dev/null 2>&1 && \
+    [[ -x "$BUNDLED_PYTHON" ]]; then
+  PYTHON_BIN="$BUNDLED_PYTHON"
+fi
 SOLC_BIN="${SOLC:-solc}"
 if [[ -n "${LAKE:-}" ]]; then
   LAKE_BIN="$LAKE"
@@ -105,7 +111,7 @@ contract UniswapPermit2SafeCastFallback {
 }
 SOL
 
-SOLC_VERSION="$UNISWAP_PERMIT2_SOLC_VERSION" python3 "$ROOT/scripts/compare_contract_call_bytecode.py" \
+SOLC_VERSION="$UNISWAP_PERMIT2_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
   "$SAFECAST_FIXTURE" \
   --solc "$SOLC_BIN" \
   --lake "$LAKE_BIN" \
@@ -191,7 +197,7 @@ NONCE_BITMAP_REUSE_10="0x02$(nonce_word 10)"
 NONCE_BITMAP_INVALIDATE_WORD_1="0x03$(nonce_word 256)$(nonce_word 3)"
 NONCE_BITMAP_USE_INVALIDATED_257="0x01$(nonce_word 257)"
 
-SOLC_VERSION="$UNISWAP_PERMIT2_SOLC_VERSION" python3 "$ROOT/scripts/compare_contract_call_bytecode.py" \
+SOLC_VERSION="$UNISWAP_PERMIT2_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
   "$NONCE_BITMAP_FIXTURE" \
   --solc "$SOLC_BIN" \
   --lake "$LAKE_BIN" \
@@ -277,7 +283,7 @@ contract UniswapPermit2HashFallback {
 }
 SOL
 
-SOLC_VERSION="$UNISWAP_PERMIT2_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+SOLC_VERSION="$UNISWAP_PERMIT2_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$HASH_FIXTURE" \
   --solc "$SOLC_BIN" \
   --remapping "permit2/=$REPO/src/" \
@@ -289,17 +295,17 @@ SOLC_VERSION="$UNISWAP_PERMIT2_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_
   --optimized \
   --output "$HASH_BATCH_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$HASH_BRIDGE_DIR/manifest.json"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$HASH_BRIDGE_DIR/manifest.json"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$HASH_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --format bridge-json-summary \
   --output "$HASH_SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$HASH_SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$HASH_SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$HASH_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
@@ -307,7 +313,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-json-check \
   --output "$HASH_MANIFEST_CHECK"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$HASH_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
@@ -315,7 +321,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-backend-check \
   --output "$HASH_BACKEND_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$HASH_BACKEND_CHECK"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$HASH_BACKEND_CHECK"
 
 cat > "$SIGNATURE_FIXTURE" <<'SOL'
 // SPDX-License-Identifier: UNLICENSED
@@ -337,7 +343,7 @@ contract UniswapPermit2SignatureVerificationFallback {
 }
 SOL
 
-SOLC_VERSION="$UNISWAP_PERMIT2_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+SOLC_VERSION="$UNISWAP_PERMIT2_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$SIGNATURE_FIXTURE" \
   --solc "$SOLC_BIN" \
   --remapping "permit2/=$REPO/src/" \
@@ -349,17 +355,17 @@ SOLC_VERSION="$UNISWAP_PERMIT2_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_
   --optimized \
   --output "$SIGNATURE_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$SIGNATURE_BRIDGE_DIR/manifest.json"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$SIGNATURE_BRIDGE_DIR/manifest.json"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$SIGNATURE_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --format bridge-json-summary \
   --output "$SIGNATURE_SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$SIGNATURE_SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$SIGNATURE_SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$SIGNATURE_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
@@ -367,9 +373,9 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-backend-check \
   --output "$SIGNATURE_BACKEND_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$SIGNATURE_BACKEND_CHECK"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$SIGNATURE_BACKEND_CHECK"
 
-SOLC_VERSION="$UNISWAP_PERMIT2_SOLC_VERSION" python3 "$ROOT/scripts/compare_contract_call_bytecode.py" \
+SOLC_VERSION="$UNISWAP_PERMIT2_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
   "$SIGNATURE_FIXTURE" \
   --solc "$SOLC_BIN" \
   --lake "$LAKE_BIN" \
@@ -384,7 +390,7 @@ SOLC_VERSION="$UNISWAP_PERMIT2_SOLC_VERSION" python3 "$ROOT/scripts/compare_cont
   --calldata 0x02ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
   > "$SIGNATURE_COMPARE"
 
-python3 - "$HASH_BATCH_CHECK" "$HASH_MANIFEST_CHECK" "$HASH_SUMMARY" \
+"$PYTHON_BIN" - "$HASH_BATCH_CHECK" "$HASH_MANIFEST_CHECK" "$HASH_SUMMARY" \
   "$HASH_BACKEND_CHECK" "$SIGNATURE_CHECK" "$SIGNATURE_SUMMARY" \
   "$SIGNATURE_BACKEND_CHECK" <<'PY'
 import json
@@ -404,6 +410,8 @@ def backend_status(report, expected_count, label, contract):
         counts.get("checkedObjects") != expected_count
         or counts.get("checkedContracts") != 1
         or counts.get("skippedContracts") != 0
+        or counts.get("passedObjects") != expected_count
+        or counts.get("failedObjects") != 0
     ):
         raise SystemExit(f"unexpected {label} backend-check counts: {counts!r}")
 
@@ -416,12 +424,8 @@ def backend_status(report, expected_count, label, contract):
         statuses[key] = (status, first_none, object_image)
         if item.get("contract") != contract:
             raise SystemExit(f"unexpected {label} backend contract: {item!r}")
-        if status not in {"pass", "fail"}:
-            raise SystemExit(f"unexpected {label} backend status: {item!r}")
-        if status == "pass" and first_none != "none":
-            raise SystemExit(f"{label} backend pass mismatch: {item!r}")
-        if status == "fail" and first_none in {"", None, "none"}:
-            raise SystemExit(f"{label} backend failure missing firstNone: {item!r}")
+        if (status, first_none) != ("pass", "none"):
+            raise SystemExit(f"{label} backend failed: {item!r}")
 
     runtime = statuses.get((contract, "runtime"))
     if runtime is None:
@@ -443,7 +447,7 @@ if summary_count != batch_count:
     )
 
 compatibility = summary.get("backendCompatibility", {})
-if compatibility.get("status") not in {"ready", "needs-resolution", "blocked"}:
+if compatibility.get("status") != "ready":
     raise SystemExit(f"unexpected Permit2 compatibility: {compatibility!r}")
 
 primitives = set()
@@ -492,7 +496,7 @@ if missing_signature:
     )
 
 signature_compatibility = signature_summary.get("backendCompatibility", {})
-if signature_compatibility.get("status") not in {"ready", "needs-resolution", "blocked"}:
+if signature_compatibility.get("status") != "ready":
     raise SystemExit(
         f"unexpected SignatureVerification compatibility: {signature_compatibility!r}"
     )
@@ -503,21 +507,9 @@ signature_backend_counts, signature_runtime_backend = backend_status(
     "SignatureVerification",
     "UniswapPermit2SignatureVerificationFallback",
 )
-if (
-    signature_runtime_backend[0] == "fail"
-    and signature_runtime_backend[1] not in {
-        "to_yul_contract",
-        "lower_code_unchecked",
-        "solc_validation",
-    }
-):
+if signature_runtime_backend != ("pass", "none", "some"):
     raise SystemExit(
-        "unexpected SignatureVerification runtime backend blocker: "
-        f"{signature_runtime_backend!r}"
-    )
-if signature_runtime_backend[2] != "some":
-    raise SystemExit(
-        "SignatureVerification runtime did not produce an object image: "
+        "SignatureVerification runtime backend did not pass: "
         f"{signature_runtime_backend!r}"
     )
 
