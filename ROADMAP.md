@@ -162,7 +162,12 @@ Next raw frontend layer:
   every retained nested-function staging node has an identical callable entry
   in the same frontend object's function table, with decode and artifact
   wrapper theorems exposing
-  `Frontend.Object.functionDefStubsRetained? = true`.
+  `Frontend.Object.functionDefStubsRetained? = true`. Production Yul
+  conversion now separately fail-closes unless every retained nested-function
+  staging node lowers through the frontend Yul lowering function to one of the
+  exact ordered Yul function entries consumed by the backend, with
+  `Frontend.Object.toSolcYulOrderedProgram?_functionDefStubsLoweredToEntries`
+  pinned in the verification root.
   Semantic preservation of the helper and nested
   hoist/alpha-renaming passes remains open.
 - [x] Expose the production interface

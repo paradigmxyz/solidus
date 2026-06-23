@@ -1628,6 +1628,87 @@ theorem toYul?_functionDef_erases
 
 end Stmt
 
+namespace FunctionEntries
+
+def containsLoweredStub?
+    (entries : List (Name × AstFunctionDefinition))
+    (name : Name) (params returns : List Name) (body : List Stmt) : Bool :=
+  match Stmt.List.toYul? body with
+  | some yulBody => entries.contains (name, .Def params returns yulBody)
+  | none => false
+
+end FunctionEntries
+
+mutual
+  def Stmt.functionDefStubsLoweredToEntries? :
+      List (Name × AstFunctionDefinition) → Stmt → Bool
+    | entries, .block stmts =>
+        Stmt.List.functionDefStubsLoweredToEntries? entries stmts
+    | _entries, .letDecl _ none => true
+    | _entries, .letDecl _ (some _value) => true
+    | _entries, .assign _ _value => true
+    | _entries, .exprStmt _expr => true
+    | entries, .functionDef name params returns body =>
+        FunctionEntries.containsLoweredStub? entries name params returns body &&
+          Stmt.List.functionDefStubsLoweredToEntries? entries body
+    | entries, .switch _scrutinee cases default =>
+        Stmt.CaseList.functionDefStubsLoweredToEntries? entries cases &&
+          Stmt.List.functionDefStubsLoweredToEntries? entries default
+    | entries, .forLoop pre _condition post body =>
+        Stmt.List.functionDefStubsLoweredToEntries? entries pre &&
+          Stmt.List.functionDefStubsLoweredToEntries? entries post &&
+            Stmt.List.functionDefStubsLoweredToEntries? entries body
+    | entries, .ifThen _condition body =>
+        Stmt.List.functionDefStubsLoweredToEntries? entries body
+    | _entries, .break => true
+    | _entries, .continue => true
+    | _entries, .leave => true
+
+  def Stmt.List.functionDefStubsLoweredToEntries? :
+      List (Name × AstFunctionDefinition) → List Stmt → Bool
+    | _entries, [] => true
+    | entries, stmt :: rest =>
+        Stmt.functionDefStubsLoweredToEntries? entries stmt &&
+          Stmt.List.functionDefStubsLoweredToEntries? entries rest
+
+  def Stmt.CaseList.functionDefStubsLoweredToEntries? :
+      List (Name × AstFunctionDefinition) →
+        List (SwitchCaseValue × List Stmt) → Bool
+    | _entries, [] => true
+    | entries, (_value, body) :: rest =>
+        Stmt.List.functionDefStubsLoweredToEntries? entries body &&
+          Stmt.CaseList.functionDefStubsLoweredToEntries? entries rest
+end
+
+namespace FunctionDef
+
+def functionDefStubsLoweredToEntries?
+    (entries : List (Name × AstFunctionDefinition)) (fn : FunctionDef) :
+    Bool :=
+  Stmt.List.functionDefStubsLoweredToEntries? entries fn.body
+
+namespace List
+
+def functionDefStubsLoweredToEntries?
+    (entries : List (Name × AstFunctionDefinition)) :
+    List (Name × FunctionDef) → Bool
+  | [] => true
+  | (_name, fn) :: rest =>
+      fn.functionDefStubsLoweredToEntries? entries &&
+        functionDefStubsLoweredToEntries? entries rest
+
+end List
+end FunctionDef
+
+namespace Object
+
+def functionDefStubsLoweredToEntries? (object : Object)
+    (entries : List (Name × AstFunctionDefinition)) : Bool :=
+  Stmt.List.functionDefStubsLoweredToEntries? entries object.dispatcher &&
+    FunctionDef.List.functionDefStubsLoweredToEntries? entries object.functions
+
+end Object
+
 mutual
   def Expr.resolveObjectBuiltinsIn? (expr : Expr)
       (context : ObjectBuiltinContext) : Option Expr :=
@@ -2556,12 +2637,15 @@ theorem toYulProgram?_memoryContract
 def toSolcYulProgram? (object : Object) :
     Option Yul.Program := do
   let (contract, functions) ← object.toYulContractWithFunctionEntries?
-  if object.forkSpellingOk? then
-    if Yul.SolcValidation.ContractOkWithEntries?
-        object.dialectProfile contract functions then
-      some
-        { contract := contract
-          memoryContract := object.memoryContract }
+  if object.functionDefStubsLoweredToEntries? functions then
+    if object.forkSpellingOk? then
+      if Yul.SolcValidation.ContractOkWithEntries?
+          object.dialectProfile contract functions then
+        some
+          { contract := contract
+            memoryContract := object.memoryContract }
+      else
+        none
     else
       none
   else
@@ -2570,14 +2654,17 @@ def toSolcYulProgram? (object : Object) :
 def toSolcYulOrderedProgram? (object : Object) :
     Option Yul.OrderedProgram := do
   let (contract, functions) ← object.toYulContractWithFunctionEntries?
-  if object.forkSpellingOk? then
-    if Yul.SolcValidation.ContractOkWithEntries?
-        object.dialectProfile contract functions then
-      some
-        { program :=
-            { contract := contract
-              memoryContract := object.memoryContract }
-          functionEntries := functions }
+  if object.functionDefStubsLoweredToEntries? functions then
+    if object.forkSpellingOk? then
+      if Yul.SolcValidation.ContractOkWithEntries?
+          object.dialectProfile contract functions then
+        some
+          { program :=
+              { contract := contract
+                memoryContract := object.memoryContract }
+            functionEntries := functions }
+      else
+        none
     else
       none
   else
@@ -2601,7 +2688,7 @@ theorem toSolcYulOrderedProgram?_source
           Yul.SolcValidation.ContractOkWithEntries?
             object.dialectProfile contract functions <;>
         simp [hContract, hValid] at hConvert
-      rcases hConvert with ⟨_hSpelling, hConvert⟩
+      rcases hConvert with ⟨_hStubs, _hSpelling, hConvert⟩
       subst ordered
       refine ⟨?_, ?_, hValid, rfl⟩
       · unfold Yul.OrderedProgram.RepresentsSource
@@ -2640,7 +2727,25 @@ theorem toSolcYulOrderedProgram?_forkSpellingOk
           Yul.SolcValidation.ContractOkWithEntries?
             object.dialectProfile contract functions <;>
         simp [hContract, hValid] at hConvert
-      exact hConvert.1
+      exact hConvert.2.1
+
+theorem toSolcYulOrderedProgram?_functionDefStubsLoweredToEntries
+    {object : Object} {ordered : Yul.OrderedProgram}
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    object.functionDefStubsLoweredToEntries? ordered.functionEntries =
+      true := by
+  unfold toSolcYulOrderedProgram? at hConvert
+  cases hContract : object.toYulContractWithFunctionEntries? with
+  | none => simp [hContract] at hConvert
+  | some result =>
+      rcases result with ⟨contract, functions⟩
+      cases hValid :
+          Yul.SolcValidation.ContractOkWithEntries?
+            object.dialectProfile contract functions <;>
+        simp [hContract, hValid] at hConvert
+      rcases hConvert with ⟨hStubs, _hSpelling, hConvert⟩
+      subst ordered
+      exact hStubs
 
 theorem toSolcYulOrderedProgram?_programOkWithEntries
     {object : Object} {ordered : Yul.OrderedProgram}
@@ -2663,7 +2768,7 @@ theorem toSolcYulProgram?_memoryContract
           Yul.SolcValidation.ContractOkWithEntries?
             object.dialectProfile contract functions
       · simp [hContract, hValid] at hConvert
-        rcases hConvert with ⟨_hSpelling, hConvert⟩
+        rcases hConvert with ⟨_hStubs, _hSpelling, hConvert⟩
         subst program
         rfl
       · simp [hContract, hValid] at hConvert
@@ -2710,7 +2815,7 @@ theorem toSolcYulProgram?_eq_some {object : Object}
                   functions := functionMap functions }
                 functions <;>
             simp [hDispatcher, hFunctions, hValid] at hProgram
-          rcases hProgram with ⟨_hSpelling, hProgram⟩
+          rcases hProgram with ⟨_hStubs, _hSpelling, hProgram⟩
           subst program
           exact
             ⟨functions, by simp, rfl, hValid⟩
