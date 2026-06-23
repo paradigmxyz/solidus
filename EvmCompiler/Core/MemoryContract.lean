@@ -10,15 +10,6 @@ def wordBytes : Nat :=
   32
 
 /--
-Default private-memory capacity used by the standard Solidity import route.
-
-One word is reserved for allocator metadata; the remaining 8192 words match
-the current maximum scratch-frame planning budget.
--/
-def defaultReservedWords : Nat :=
-  8193
-
-/--
 A byte interval that the source promises to leave available to the compiler.
 
 The interval is half-open: `[base, endExclusive)`. `memoryguard(size)` gives

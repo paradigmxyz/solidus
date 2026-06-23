@@ -52,30 +52,6 @@
         "type": "string"
       }
     },
-    "memoryContract": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["scratch"],
-      "properties": {
-        "scratch": {
-          "oneOf": [
-            { "type": "null" },
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["base", "words"],
-              "properties": {
-                "base": { "$ref": "#/$defs/uint256" },
-                "words": {
-                  "type": "integer",
-                  "minimum": 1
-                }
-              }
-            }
-          ]
-        }
-      }
-    },
     "expr": {
       "oneOf": [
         {
@@ -525,9 +501,6 @@
           "items": {
             "$ref": "#/$defs/objectItemRef"
           }
-        },
-        "memoryContract": {
-          "$ref": "#/$defs/memoryContract"
         }
       }
     }

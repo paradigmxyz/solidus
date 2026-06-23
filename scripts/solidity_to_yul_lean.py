@@ -1198,7 +1198,6 @@ class YulObject:
     data: List[DataSection]
     subobjects: List["YulObject"]
     items: List[ObjectItemRef] = field(default_factory=list)
-    scratch_reservation: Optional[Tuple[int, int]] = None
 
     def lean_ir(self) -> str:
         functions = lean_list(
@@ -1212,23 +1211,14 @@ class YulObject:
         objects = lean_list([subobject.lean_ir() for subobject in self.subobjects], 1)
         items = lean_list([item.lean_ir() for item in self.items], 1)
         dispatcher = lean_ir_stmt_list(self.dispatcher, 1)
-        memory_contract = self.memory_contract_lean()
         return (
             f"{LEAN_FRONTEND}.Object.mk {lean_string(self.name)} {dispatcher} "
-            f"{functions} {data} {objects} {items} {memory_contract}"
-        )
-
-    def memory_contract_lean(self) -> str:
-        if self.scratch_reservation is None:
-            return "EvmCompiler.MemoryContract.unrestricted"
-        base, words = self.scratch_reservation
-        return (
-            "{ scratch? := some "
-            f"{{ base := {base}, words := {words} }} }}"
+            f"{functions} {data} {objects} {items} "
+            "EvmCompiler.MemoryContract.unrestricted"
         )
 
     def bridge_json(self) -> Json:
-        artifact: Json = {
+        return {
             "node": "object",
             "name": self.name,
             "dispatcher": [stmt.bridge_json() for stmt in self.dispatcher],
@@ -1239,49 +1229,6 @@ class YulObject:
             "subobjects": [subobject.bridge_json() for subobject in self.subobjects],
             "items": [item.bridge_json() for item in self.items],
         }
-        if self.scratch_reservation is not None:
-            base, words = self.scratch_reservation
-            artifact["memoryContract"] = {
-                "scratch": {"base": base, "words": words}
-            }
-        return artifact
-
-
-def requested_scratch_reservation(
-    args: argparse.Namespace,
-) -> Optional[Tuple[int, int]]:
-    base = getattr(args, "scratch_reservation_base", None)
-    words = getattr(args, "scratch_reservation_words", None)
-    if (base is None) != (words is None):
-        fail(
-            "--scratch-reservation-base and --scratch-reservation-words "
-            "must be provided together"
-        )
-    if base is None:
-        return None
-    if words <= 0:
-        fail("--scratch-reservation-words must be positive")
-    end_exclusive = base + 32 * words
-    if base % 32 != 0 or end_exclusive >= 2**256:
-        fail(
-            "The source scratch reservation must be word-aligned and end "
-            "below 2^256"
-        )
-    return base, words
-
-
-def with_requested_scratch_reservation(
-    obj: YulObject, args: argparse.Namespace
-) -> YulObject:
-    reservation = requested_scratch_reservation(args)
-    if reservation is None:
-        return obj
-    if obj.scratch_reservation is not None and obj.scratch_reservation != reservation:
-        fail(
-            "The requested source scratch reservation conflicts with the "
-            "reservation already carried by bridge JSON"
-        )
-    return replace(obj, scratch_reservation=reservation)
 
 
 def expr_linker_symbol_names(expr: Expr) -> List[str]:
@@ -4385,17 +4332,8 @@ def decode_bridge_object(data: Any) -> YulObject:
                 f"Bridge JSON object {name!r} has object item index {item.index} "
                 f"but only {len(subobjects)} subobjects"
             )
-    scratch_reservation = None
-    raw_contract = obj.get("memoryContract")
-    if raw_contract is not None:
-        contract = bridge_object(raw_contract, f"object {name}.memoryContract")
-        raw_scratch = contract.get("scratch")
-        if raw_scratch is not None:
-            scratch = bridge_object(raw_scratch, f"object {name}.memoryContract.scratch")
-            scratch_reservation = (
-                bridge_uint(scratch.get("base"), "scratch reservation base"),
-                bridge_uint(scratch.get("words"), "scratch reservation words"),
-            )
+    if "memoryContract" in obj:
+        fail("Compiler scratch memory contracts are not supported")
     return YulObject(
         name,
         dispatcher,
@@ -4403,7 +4341,6 @@ def decode_bridge_object(data: Any) -> YulObject:
         data_sections,
         subobjects,
         items,
-        scratch_reservation,
     )
 
 
@@ -7725,24 +7662,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--scratch-reservation-base",
-        type=parse_uint256_arg,
-        help=(
-            "Explicit source-facing byte address at which the compiler may "
-            "reserve spill memory. This is a semantic promise, not an "
-            "inference; the correctness theorem requires source execution to "
-            "avoid the reserved interval."
-        ),
-    )
-    parser.add_argument(
-        "--scratch-reservation-words",
-        type=int,
-        help=(
-            "Positive number of 32-byte words in the explicit source scratch "
-            "reservation; requires --scratch-reservation-base."
-        ),
-    )
-    parser.add_argument(
         "--list-objects",
         action="store_true",
         help="List Yul objects/data sections found in solc's IR AST and exit",
@@ -7867,11 +7786,6 @@ def render_bridge_json_input_output(
         )
 
     if args.format == "bytecode-artifact":
-        if requested_scratch_reservation(args) is not None:
-            fail(
-                "An explicit scratch reservation applies to one selected Yul "
-                "object and is not valid with --format bytecode-artifact"
-            )
         if args.object is not None:
             fail(
                 "--object is not valid with --format bytecode-artifact; "
@@ -7925,7 +7839,6 @@ def render_bridge_json_input_output(
         return rendered, source_name, contract_name, selected_name
 
     selected = select_object(root, args.object) if args.object else root
-    selected = with_requested_scratch_reservation(selected, args)
     selected_name = selected.name
     bridge_json = render_bridge_json(
         selected,
@@ -8167,7 +8080,6 @@ def render_standalone_yul_object_output(
         )
 
     selected = select_object(root, args.object or "runtime")
-    selected = with_requested_scratch_reservation(selected, args)
     selected_name = selected.name
     bridge_json = render_bridge_json(selected, source_name, contract_name, ast_output)
     linker_symbols = merged_linker_symbol_entries(args.linker_symbol)
@@ -8730,12 +8642,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             compiler_input,
         )
         if args.all_contracts:
-            if requested_scratch_reservation(args) is not None:
-                fail(
-                    "An explicit scratch reservation must be attached to one "
-                    "selected Yul object; it cannot be combined with "
-                    "--all-contracts"
-                )
             if args.format not in {
                 "standard-json-output",
                 "lean-json-check",
@@ -9169,11 +9075,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "standard-json-output",
         }
         if args.format in artifact_formats:
-            if requested_scratch_reservation(args) is not None:
-                fail(
-                    "An explicit scratch reservation applies to one selected "
-                    f"Yul object and is not valid with --format {args.format}"
-                )
             if args.object is not None:
                 fail(
                     f"--object is not valid with --format {args.format}; "
@@ -9259,7 +9160,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
         else:
             selected = select_object(root, args.object or "runtime")
-            selected = with_requested_scratch_reservation(selected, args)
             selected_name = selected.name
             bridge_json = render_bridge_json(
                 selected,

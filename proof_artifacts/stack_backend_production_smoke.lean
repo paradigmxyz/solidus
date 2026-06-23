@@ -1,0 +1,15 @@
+import EvmCompiler.Verification
+
+#check EvmCompiler.Compiler.StackArtifact.compile?_parts
+#check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
+#check EvmCompiler.Solidity.Frontend.Expr.resolveObjectBuiltins_memoryguard
+#check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
+#check EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
+#check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecode
+
+#print axioms EvmCompiler.Compiler.StackArtifact.compile?_parts
+#print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
+#print axioms EvmCompiler.Solidity.Frontend.Expr.resolveObjectBuiltins_memoryguard
+#print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
+#print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
+#print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecode

@@ -1,4 +1,5 @@
-import EvmCompiler.Objects.Compiler
+import EvmCompiler.Objects.SourceAccepted
+import EvmCompiler.Functions.Compiler
 import EvmCompiler.Assembly.Bytecode
 
 namespace EvmCompiler

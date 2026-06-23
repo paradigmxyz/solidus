@@ -588,50 +588,24 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertEqual(compatibility["status"], "ready")
         self.assertEqual(compatibility["objectBuiltinNames"], ["memoryguard"])
 
-    def test_bridge_json_roundtrips_explicit_source_scratch_reservation(self):
-        obj = bridge.YulObject(
-            "Runtime",
-            [],
-            [],
-            [],
-            [],
-            scratch_reservation=(256, 9),
-        )
-
-        encoded = obj.bridge_json()
-        decoded = bridge.decode_bridge_object(encoded)
-
-        self.assertEqual(decoded.scratch_reservation, (256, 9))
-        self.assertEqual(
-            encoded["memoryContract"],
-            {"scratch": {"base": 256, "words": 9}},
-        )
-        self.assertIn("scratch? := some", obj.lean_ir())
-        self.assertIn("base := 256", obj.lean_ir())
-
-    def test_requested_source_scratch_reservation_is_explicit_and_checked(self):
-        parser = bridge.build_arg_parser()
-        args = parser.parse_args(
-            [
-                "input.sol",
-                "--scratch-reservation-base",
-                "0x100",
-                "--scratch-reservation-words",
-                "9",
-            ]
-        )
+    def test_bridge_json_rejects_compiler_scratch_contract(self):
         obj = bridge.YulObject("Runtime", [], [], [], [])
+        encoded = obj.bridge_json()
 
-        annotated = bridge.with_requested_scratch_reservation(obj, args)
+        self.assertNotIn("memoryContract", encoded)
+        self.assertIn("MemoryContract.unrestricted", obj.lean_ir())
+        encoded["memoryContract"] = {"scratch": {"base": 256, "words": 9}}
+        with self.assertRaisesRegex(
+            bridge.ConversionError, "scratch memory contracts are not supported"
+        ):
+            bridge.decode_bridge_object(encoded)
 
-        self.assertEqual(annotated.scratch_reservation, (256, 9))
-        self.assertIsNone(obj.scratch_reservation)
-
-        incomplete = parser.parse_args(
-            ["input.sol", "--scratch-reservation-base", "0x100"]
-        )
-        with self.assertRaises(bridge.ConversionError):
-            bridge.requested_scratch_reservation(incomplete)
+    def test_scratch_reservation_cli_is_removed(self):
+        parser = bridge.build_arg_parser()
+        with self.assertRaises(SystemExit):
+            parser.parse_args(
+                ["input.sol", "--scratch-reservation-base", "0x100"]
+            )
 
     def test_primitive_call_emits_typed_yul_operation(self):
         expr = bridge.parse_expr(call("add", [identifier("x"), literal("1")]))

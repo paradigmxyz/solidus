@@ -1,6 +1,7 @@
 import EvmCompiler.Yul.Syntax
 import EvmCompiler.Yul.Primitive
-import EvmCompiler.Objects.Compiler
+import EvmCompiler.Objects.SourceAccepted
+import EvmCompiler.Compiler.StackArtifact
 
 namespace EvmCompiler
 namespace Yul
@@ -5106,19 +5107,14 @@ noncomputable def toObjects? (program : Program) : Option Objects.Program :=
 
 noncomputable def toExpressions? (program : Program) : Option Expressions.Program := do
   let lower ← toObjects? program
-  Objects.Program.toExpressions? lower
+  Functions.Inline.Program.toExpressions? lower.toFunctions
 
-abbrev CompileArtifact := Objects.Program.CompileArtifact
-
-noncomputable def compileArtifactWithPolicy?
-    (policy : Objects.Program.BackendPolicy) (program : Program) :
-    Option CompileArtifact := do
-  let lower ← toObjects? program
-  Objects.Program.compileArtifactWithPolicy? policy lower
+abbrev CompileArtifact := Compiler.StackArtifact.Artifact
 
 noncomputable def compileArtifact? (program : Program) :
-    Option CompileArtifact :=
-  compileArtifactWithPolicy? Objects.Program.defaultBackendPolicy program
+    Option CompileArtifact := do
+  let lower ← toObjects? program
+  Compiler.StackArtifact.compile? lower.toFunctions
 
 noncomputable def compile? (program : Program) :
     Option Assembly.TargetProgram := do
@@ -5129,17 +5125,6 @@ noncomputable def toObjectsCanonical? (program : Program) :
     Option Objects.Program :=
   (Contract.toObjectsCanonical? program.contract).map fun lower =>
     lower.withMemoryContract program.memoryContract
-
-/-- Compatibility alias for the former observer-specific entry point. -/
-noncomputable def toObjectsWithObservers? (program : Program) :
-    Option Objects.Program :=
-  toObjectsCanonical? program
-
-noncomputable def compileWithObservers? (program : Program) :
-    Option Assembly.TargetProgram := do
-  let lower ← toObjectsWithObservers? program
-  let artifact ← Objects.Program.compileArtifact? lower
-  some artifact.target
 
 def WF (program : Program) : Prop :=
   ∀ lower : Objects.Program, toObjects? program = some lower → lower.WF

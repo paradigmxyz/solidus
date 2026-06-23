@@ -333,14 +333,6 @@ noncomputable def passDecomposition_of_ordered_toObjects?
       rw [← hRepresents]
       exact Contract.lookup_of_functionEntries_mem hCanonical
 
-theorem decomposition_of_toObjectsWithObservers?
-    {program : Program} {lower : Objects.Program}
-    (hLower :
-      Program.toObjectsWithObservers? program = some lower) :
-    Decomposition program lower := by
-  apply decomposition_of_toObjectsCanonical?
-  simpa [Program.toObjectsWithObservers?] using hLower
-
 theorem memoryContract_of_toObjectsCanonical?
     {program : Program} {lower : Objects.Program}
     (hLower :
@@ -350,14 +342,6 @@ theorem memoryContract_of_toObjectsCanonical?
     ⟨bodyStmts, afterBody, functions, afterFunctions,
       hBody, hFunctions, hProgram⟩
   exact congrArg Functions.Program.memoryContract hProgram
-
-theorem memoryContract_of_toObjectsWithObservers?
-    {program : Program} {lower : Objects.Program}
-    (hLower :
-      Program.toObjectsWithObservers? program = some lower) :
-    lower.toFunctions.memoryContract = program.memoryContract := by
-  apply memoryContract_of_toObjectsCanonical?
-  simpa [Program.toObjectsWithObservers?] using hLower
 
 theorem DecompositionFor.findFunction
     {program : Program} {targetProgram : Objects.Program}

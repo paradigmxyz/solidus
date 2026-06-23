@@ -3,7 +3,6 @@ import EvmCompiler.Assembly.Bytecode
 import EvmCompiler.Assembly.Compact
 import EvmCompiler.Functions.StackDiagnostics
 import EvmCompiler.Compiler.StackArtifact
-import EvmCompiler.Objects.Compiler
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
 
 namespace EvmCompiler.BackendCli

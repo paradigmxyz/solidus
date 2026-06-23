@@ -4,9 +4,7 @@ import EvmCompiler.Functions.Compiler
 import EvmCompiler.Functions.SourceSemantics
 import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.InteractionSemantics
-import EvmCompiler.Functions.AllocationInteractionRelation
-import EvmCompiler.Functions.AllocationContext
-import EvmCompiler.Functions.AllocationInteractionExpression
-import EvmCompiler.Functions.AllocationInteractionPrimitive
-import EvmCompiler.Functions.AllocationInteractionOrdinaryPrimitive
+import EvmCompiler.Functions.StackPressureNormalizationProgram
+import EvmCompiler.Functions.StackLowering
+import EvmCompiler.Functions.StackRecursivePreservation
 import EvmCompiler.Functions.Semantics

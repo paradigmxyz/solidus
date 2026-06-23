@@ -25,23 +25,12 @@ case "$layer" in
     ;;
   allocator)
     modules=(
-      EvmCompiler.Locals.Allocation
-      EvmCompiler.Functions.AllocationSupport
-      EvmCompiler.Functions.MixedAllocation
-      EvmCompiler.Functions.AllocationLowering
-      EvmCompiler.Functions.AllocationObserverRelation
-      EvmCompiler.Functions.AllocationObserverSafety
-      EvmCompiler.Functions.AllocationObserverPreservation
-      EvmCompiler.Functions.AllocationObserverContext
-      EvmCompiler.Functions.AllocationObserverExpression
-      EvmCompiler.Functions.AllocationObserverPrimitive
-      EvmCompiler.Functions.AllocationObserverTerminal
-      EvmCompiler.Functions.AllocationObserverStatement
-      EvmCompiler.Functions.AllocationObserverSwitch
-      EvmCompiler.Functions.AllocationObserverLoop
-      EvmCompiler.Locals.PrimitivePreservation
-      EvmCompiler.Expressions.ObserverPreservation
-      EvmCompiler.Objects.Compiler
+      EvmCompiler.Functions.AllocationLiveness
+      EvmCompiler.Functions.AllocationLayout
+      EvmCompiler.Functions.StackSchedule
+      EvmCompiler.Functions.StackLowering
+      EvmCompiler.Functions.StackRecursivePreservation
+      EvmCompiler.Compiler.StackArtifact
     )
     ;;
   typedcfg)
@@ -55,9 +44,10 @@ case "$layer" in
     ;;
   public)
     modules=(
-      EvmCompiler.Objects.Compiler
-      EvmCompiler.Yul.Compiler
       EvmCompiler.Public
+      EvmCompiler.Compiler.OpenInteractionComposition
+      EvmCompiler.Solidity.Public
+      EvmCompiler.Yul.EndToEnd
       EvmCompiler
     )
     ;;
@@ -96,8 +86,5 @@ if [[ "$layer" == "typedcfg" || "$layer" == "all" ]]; then
 fi
 
 if [[ "$layer" == "proofs" || "$layer" == "all" ]]; then
-  lake env lean proof_artifacts/public_artifact_simulation_smoke.lean
-  lake env lean proof_artifacts/resource_observer_oracle_smoke.lean
-  lake env lean proof_artifacts/memory_contract_smoke.lean
-  lake env lean proof_artifacts/open_effects_smoke.lean
+  lake env lean proof_artifacts/stack_backend_production_smoke.lean
 fi
