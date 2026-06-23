@@ -1358,6 +1358,25 @@ theorem decodeAndElaborateSolcIr?_some
           · simp [hParse]
           · exact hElab
 
+theorem decodeAndElaborateSolcIr?_parts
+    {rawJson : String} {selection : Selection} {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } := by
+  rcases decodeAndElaborateSolcIr?_some hDecode with
+    ⟨json, hParse, hJsonDecode⟩
+  rcases decodeAndElaborateSolcIrJson_parts hJsonDecode with
+    ⟨selected, object, hSelected, hObject, hProgram⟩
+  exact ⟨json, selected, object, hParse, hSelected, hObject, hProgram⟩
+
 end RawAst
 end Solidity
 end EvmCompiler

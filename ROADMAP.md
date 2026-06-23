@@ -121,13 +121,15 @@ Next raw frontend layer:
   reconstructs the checked raw elaboration core state from successful public
   code elaboration, and `decodeAndElaborateSolcIrJson_parts` reconstructs the
   selected raw Standard JSON source/contract/object plus checked raw-object
-  elaboration from a successful frontend program decode. First checked `clz`
-  validation invariant: successful code elaboration that returns generated
-  `clz` helper/argument/result names also returns the corresponding generated
-  helper function definition. First checked nested-hoist validation invariant:
-  every function accumulated in the raw elaborator's `hoistedFunctions` state is
-  retained in the successful returned function list. Semantic preservation of
-  the helper and nested hoist/alpha-renaming passes remains open.
+  elaboration from a successful frontend program decode.
+  `decodeAndElaborateSolcIr?_parts` lifts that evidence to the public raw
+  string interface. First checked `clz` validation invariant: successful code
+  elaboration that returns generated `clz` helper/argument/result names also
+  returns the corresponding generated helper function definition. First checked
+  nested-hoist validation invariant: every function accumulated in the raw
+  elaborator's `hoistedFunctions` state is retained in the successful returned
+  function list. Semantic preservation of the helper and nested
+  hoist/alpha-renaming passes remains open.
 - [ ] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises.
