@@ -1650,6 +1650,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsInteractionStatementMode.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedPrimitiveMode.lean \
   EvmCompiler/Yul/FunctionsInteractionPreparedStatementMode.lean \
+  EvmCompiler/Yul/FunctionsInteractionRecursiveExpressionMode.lean \
   EvmCompiler/Yul/FunctionsInteractionRecursiveStatementMode.lean
 if ! sed -n '/^noncomputable def toObjectsWithObservers? (program/,/^[[:space:]]*toObjectsCanonical? program$/p' \
       EvmCompiler/Yul/Compiler.lean |

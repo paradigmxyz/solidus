@@ -442,7 +442,7 @@ boundaries. Corpus acceptance alone does not discharge them.
         - [ ] Close the mutual statement/list dispatcher.
         - [ ] Conditionals, switches, loops, and internal calls.
           - [x] Mode-parametric prepared-condition `if`/`switch` composition.
-          - [ ] Compiler-selected `if`/`switch` wrappers.
+          - [x] Compiler-selected `if`/`switch` wrappers.
           - [ ] Loops and internal calls.
   - [ ] Replace the scratch-capable public Functions-facing safety premise with
     the Yul-facing execution premise; keep the premise-free stack theorem as a
