@@ -1052,13 +1052,18 @@ def elaborateCode (stmts : List Raw.Stmt) :
   pure (dispatcher, functions, state.clzHelperName?, state.clzArgName?,
     state.clzReturnName?)
 
-theorem elaborateCode_clzExpansionOk
+theorem elaborateCode_parts
     {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
     {functions : List (Name × Frontend.FunctionDef)}
     {helper? arg? ret? : Option Name}
     (hElab :
       elaborateCode stmts = .ok (dispatcher, functions, helper?, arg?, ret?)) :
-    ClzExpansionOk functions helper? arg? ret? := by
+    ∃ state,
+      elaborateCodeCore stmts = .ok (dispatcher, state) ∧
+        functions = finalFunctions state ∧
+          helper? = state.clzHelperName? ∧
+            arg? = state.clzArgName? ∧
+              ret? = state.clzReturnName? := by
   unfold elaborateCode at hElab
   cases hRun : elaborateCodeCore stmts with
   | error err =>
@@ -1066,9 +1071,22 @@ theorem elaborateCode_clzExpansionOk
   | ok result =>
       rcases result with ⟨dispatcher', state⟩
       simp [hRun] at hElab
-      rcases hElab with ⟨_hDispatcher, hFunctions, hHelper, hArg, hRet⟩
-      rw [← hFunctions, ← hHelper, ← hArg, ← hRet]
-      exact finalFunctions_clzExpansionOk state
+      rcases hElab with ⟨hDispatcher, hFunctions, hHelper, hArg, hRet⟩
+      refine
+        ⟨state, ?_, hFunctions.symm, hHelper.symm, hArg.symm, hRet.symm⟩
+      simp [hDispatcher]
+
+theorem elaborateCode_clzExpansionOk
+    {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
+    {functions : List (Name × Frontend.FunctionDef)}
+    {helper? arg? ret? : Option Name}
+    (hElab :
+      elaborateCode stmts = .ok (dispatcher, functions, helper?, arg?, ret?)) :
+    ClzExpansionOk functions helper? arg? ret? := by
+  rcases elaborateCode_parts hElab with
+    ⟨state, _hCore, hFunctions, hHelper, hArg, hRet⟩
+  rw [hFunctions, hHelper, hArg, hRet]
+  exact finalFunctions_clzExpansionOk state
 
 theorem elaborateCode_clzHelper_mem
     {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
@@ -1092,10 +1110,13 @@ theorem elaborateCode_hoistedFunction_mem
       elaborateCode stmts = .ok (dispatcher, functions, helper?, arg?, ret?))
     (hEntry : entry ∈ state.hoistedFunctions) :
     entry ∈ functions := by
-  unfold elaborateCode at hElab
-  simp [hCore] at hElab
-  rcases hElab with ⟨_hDispatcher, hFunctions, _hHelper, _hArg, _hRet⟩
-  rw [← hFunctions]
+  rcases elaborateCode_parts hElab with
+    ⟨state', hCore', hFunctions, _hHelper, _hArg, _hRet⟩
+  have hState : state' = state := by
+    cases hCore.symm.trans hCore'
+    rfl
+  subst state'
+  rw [hFunctions]
   exact finalFunctions_hoistedFunction_mem state hEntry
 
 end Elab

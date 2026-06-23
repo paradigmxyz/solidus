@@ -117,13 +117,15 @@ Next raw frontend layer:
   raw solc Standard JSON directly through `RawAstPublic`, and the transition
   smoke proves normalized-bridge mutations cannot affect raw input compilation.
 - [ ] Add local preservation/validation theorems for raw elaboration,
-  nested-function hoisting, and `clz` expansion. First checked `clz`
-  validation invariant: successful code elaboration that returns generated
-  `clz` helper/argument/result names also returns the corresponding generated
-  helper function definition. First checked nested-hoist validation invariant:
-  every function accumulated in the raw elaborator's `hoistedFunctions` state is
-  retained in the successful returned function list. Semantic preservation of
-  the helper and nested hoist/alpha-renaming passes remains open.
+  nested-function hoisting, and `clz` expansion. `elaborateCode_parts`
+  reconstructs the checked raw elaboration core state from successful public
+  code elaboration. First checked `clz` validation invariant: successful code
+  elaboration that returns generated `clz` helper/argument/result names also
+  returns the corresponding generated helper function definition. First checked
+  nested-hoist validation invariant: every function accumulated in the raw
+  elaborator's `hoistedFunctions` state is retained in the successful returned
+  function list. Semantic preservation of the helper and nested
+  hoist/alpha-renaming passes remains open.
 - [ ] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises.
