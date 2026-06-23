@@ -33,8 +33,9 @@ theorem excludes_truncated
 end SourceTerminal
 
 /-- Whole-program Yul leaves that have genuinely finished, either through an
-EVM halt/revert or through a supported runtime error. Finite semantic fuel and
-unsupported source failures remain truncation, not observable completion. -/
+EVM halt/revert or through a supported runtime error. Only finite semantic-fuel
+exhaustion remains truncation; checked validation and scoped preservation rule
+out malformed-source branches inside the adjacent compiler theorem. -/
 def SourceFinished :
     Except Yul.InteractionSemantics.Failure
       Yul.InteractionSemantics.State -> Prop

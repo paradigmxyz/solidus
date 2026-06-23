@@ -18,13 +18,13 @@ are:
    source-semantics leaf.
 
 `hObject` is an executable compiler equation, not externally supplied proof
-evidence. `hFinished` is an execution condition. Arbitrary recursive Yul need
-not terminate, so no sound compiler can derive it uniformly from syntax.
-At present `SourceFinished` also excludes malformed source-interpreter failures.
-Checked validation and scoped-state invariants have begun deriving those cases
-internally (including deferred and direct pure variable lookup), but a complete
-accepted-Yul validation/progress theorem has not yet separated them from the
-public execution condition.
+evidence. `hFinished` is an execution condition: every open-world branch must
+reach a halt/revert or supported runtime error without exhausting source proof
+fuel. Arbitrary recursive Yul need not terminate, so no sound compiler can
+derive this uniformly from syntax. Malformed-source exclusion is no longer
+part of this premise: `truncated_iff_outOfFuel` proves that public truncation is
+exactly source `OutOfFuel`, while checked validation and scoped preservation
+derive missing-name, arity, expression, and contract/function facts internally.
 
 ## Derived Facts
 

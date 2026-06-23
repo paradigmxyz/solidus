@@ -122,12 +122,12 @@ stack-only correctness boundary.
   in addition to their smaller executable helper probes; Safe is deliberately
   compile-only because solc's own optimized-Yul backend rejects that pinned
   source with stack-too-deep.
-- [ ] Separate source termination from malformed-source exclusion in the
-  all-finished theorem. Accepted-expression validation plus the scoped-state
-  invariant now derives variable lookup in both deferred and direct pure
-  expression owners, and the validated production spine is guarded against the
-  weaker generic interface. A full accepted-Yul validation/progress theorem is
-  still needed to narrow the public truncation predicate itself.
+- [x] Separate genuine source completion/fuel sufficiency from malformed-source
+  exclusion in the all-finished theorem. `truncated_iff_outOfFuel` proves the
+  public truncation predicate is exactly structural source `OutOfFuel`;
+  validation, scoped variable lookup, and compiler-success inversions discharge
+  missing contracts/functions, invalid expressions, unknown identifiers,
+  duplicate declarations, and obsolete unsupported failures internally.
 - [ ] Keep exact Permit2, Aave Pool, PoolManager, adversarial pressure, broad
   corpus, Lean, architecture, trust, frontend, and diff gates green.
 

@@ -16,19 +16,19 @@ def ErrorRel (source : Yul.InteractionSemantics.Failure)
   | .StaticModeViolation, .StaticModeViolation => True
   | _, _ => False
 
-/-- Source-control failures for which finite source semantics intentionally
-makes no target-suffix claim. Runtime failures shared with EVM remain related
-by `ErrorRel`; terminal Yul exceptions are handled by the outcome relation. -/
+/-- Structural source-fuel exhaustion for which finite source semantics makes
+no target-suffix claim. Validation and scoped preservation derive malformed
+source exclusions before this public compiler relation. -/
 def Truncated (failure : Yul.InteractionSemantics.Failure) : Prop :=
   match failure.exception with
-  | .OutOfFuel
-  | .MissingContract _
-  | .MissingContractFunction _
-  | .InvalidExpression
-  | .UnknownIdentifier _
-  | .DuplicateDeclaration _
-  | .YulEXTCODESIZENotImplemented => True
+  | .OutOfFuel => True
   | _ => False
+
+theorem truncated_iff_outOfFuel
+    {failure : Yul.InteractionSemantics.Failure} :
+    Truncated failure ↔ failure.exception = .OutOfFuel := by
+  rcases failure with ⟨exception, state⟩
+  cases exception <;> simp [Truncated]
 
 def ResultRel
     (source : Yul.InteractionSemantics.State × List Word)

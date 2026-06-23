@@ -117,6 +117,11 @@ if rg -n 'FunctionsInteractionExpression\.(compilerDirectAt|directAt)' \
   fail 'validated Yul preservation must retain scoped variable-definedness'
 fi
 
+if ! rg -q '^theorem truncated_iff_outOfFuel' \
+    EvmCompiler/Yul/FunctionsInteractionPrimitive.lean; then
+  fail 'public Yul truncation must remain exactly structural source OutOfFuel'
+fi
+
 if rg -n '\b(sorry|admit|sorryAx)\b' EvmCompiler --glob '*.lean'; then
   fail 'production Lean tree contains a proof hole'
 fi
