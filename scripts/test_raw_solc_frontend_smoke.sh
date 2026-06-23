@@ -347,6 +347,32 @@ def hasFunctionStmtFuel : Nat -> List Frontend.Stmt -> Bool
 def hasFunctionStmt (stmts : List Frontend.Stmt) : Bool :=
   hasFunctionStmtFuel 100000 stmts
 
+def hasFunctionStmtNameFuel (wanted : String) : Nat -> List Frontend.Stmt -> Bool
+  | 0, _ => false
+  | _, [] => false
+  | _fuel + 1, .functionDef name _ _ _ :: rest =>
+      name == wanted || hasFunctionStmtNameFuel wanted _fuel rest
+  | fuel + 1, .block body :: rest =>
+      hasFunctionStmtNameFuel wanted fuel body ||
+        hasFunctionStmtNameFuel wanted fuel rest
+  | fuel + 1, .switch _ cases defaultBody :: rest =>
+      cases.any (fun item => hasFunctionStmtNameFuel wanted fuel item.snd) ||
+        hasFunctionStmtNameFuel wanted fuel defaultBody ||
+          hasFunctionStmtNameFuel wanted fuel rest
+  | fuel + 1, .forLoop pre _ post body :: rest =>
+      hasFunctionStmtNameFuel wanted fuel pre ||
+        hasFunctionStmtNameFuel wanted fuel post ||
+          hasFunctionStmtNameFuel wanted fuel body ||
+            hasFunctionStmtNameFuel wanted fuel rest
+  | fuel + 1, .ifThen _ body :: rest =>
+      hasFunctionStmtNameFuel wanted fuel body ||
+        hasFunctionStmtNameFuel wanted fuel rest
+  | fuel + 1, _ :: rest => hasFunctionStmtNameFuel wanted fuel rest
+
+def hasFunctionStmtName (wanted : String) (stmts : List Frontend.Stmt) :
+    Bool :=
+  hasFunctionStmtNameFuel wanted 100000 stmts
+
 def expectNestedClz : IO Unit := do
   let raw <- readRaw "nested-clz.standard-output.json"
   let selection : RawAst.Selection :=
@@ -366,10 +392,11 @@ def expectNestedClz : IO Unit := do
       match program.object.functions.find? (fun entry => entry.fst == "f") with
       | none => throw <| IO.userError "missing f body"
       | some (_, fn) =>
-          if hasFunctionStmt fn.body then
-            IO.println "raw_solc_frontend_nested_clz=checked"
-          else
+          if !(hasFunctionStmt fn.body) then
             throw <| IO.userError "nested function definition was erased"
+          if !(hasFunctionStmtName "__yul_gen_0_g" fn.body) then
+            throw <| IO.userError "nested function definition was not alpha-renamed"
+          IO.println "raw_solc_frontend_nested_clz=checked"
 
 def expectBadScopeRejected : IO Unit := do
   let raw <- readRaw "bad-scope.standard-output.json"

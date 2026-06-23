@@ -151,7 +151,10 @@ Next raw frontend layer:
   elaborator's `hoistedFunctions` state is retained in the successful returned
   function list. `Raw.Object.ClzExpansionOk` and
   `Raw.Object.HoistedFunctionsRetained` lift these invariants through raw
-  object elaboration, raw string decoding, and artifact-wrapper success.
+  object elaboration, raw string decoding, and artifact-wrapper success. The
+  generated `clz` helper theorem now also exposes its one-argument/one-result
+  shape, and retained nested function-definition statements are alpha-renamed
+  to generated function names before their frontend no-op lowering.
   Semantic preservation of the helper and nested
   hoist/alpha-renaming passes remains open.
 - [x] Expose the production interface

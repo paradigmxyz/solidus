@@ -853,8 +853,9 @@ mutual
         let expr ← Expr.elaborate expr
         pure (.exprStmt expr)
     | .functionDefinition name params returns body => do
+        let generated ← resolveFunction name
         let fn ← FunctionDef.elaborate params returns body
-        pure (.functionDef name params returns fn.body)
+        pure (.functionDef generated params returns fn.body)
     | .switch scrutinee cases defaultBody => do
         let scrutinee ← Expr.elaborate scrutinee
         let cases ← Stmt.CaseList.elaborate cases
@@ -1097,6 +1098,23 @@ theorem elaborateCode_clzHelper_mem
         (dispatcher, functions, some helper, some arg, some ret)) :
     (helper, clzHelperFunctionDef arg ret) ∈ functions := by
   exact elaborateCode_clzExpansionOk hElab
+
+theorem elaborateCode_clzHelper_shape
+    {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
+    {functions : List (Name × Frontend.FunctionDef)}
+    {helper arg ret : Name}
+    (hElab :
+      elaborateCode stmts = .ok
+        (dispatcher, functions, some helper, some arg, some ret)) :
+    ∃ fn,
+      (helper, fn) ∈ functions ∧
+        fn.params = [arg] ∧
+          fn.returns = [ret] := by
+  refine
+    ⟨clzHelperFunctionDef arg ret,
+      elaborateCode_clzHelper_mem hElab, ?_, ?_⟩
+  · exact (clzHelperFunctionDef_shape arg ret).1
+  · exact (clzHelperFunctionDef_shape arg ret).2
 
 theorem elaborateCode_hoistedFunction_mem
     {stmts : List Raw.Stmt}
