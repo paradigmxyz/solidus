@@ -1185,6 +1185,113 @@ def Object.elaborate? (obj : Object)
     DecodeM Frontend.Object :=
   Object.elaborateFuel? maxDecodeFuel obj evmVersion
 
+theorem Object.elaborateFuel?_parts
+    {fuel : Nat} {obj : Object}
+    {evmVersion : Yul.SolcValidation.EvmVersion}
+    {frontend : Frontend.Object}
+    (hElab : Object.elaborateFuel? fuel obj evmVersion = .ok frontend) :
+    ∃ (itemFuel : Nat) (dispatcher : List Frontend.Stmt)
+        (functions : List (Name × Frontend.FunctionDef))
+        (helper? arg? ret? : Option Name)
+        (data : List Frontend.DataSection)
+        (objects : List Frontend.Object)
+        (items : List Frontend.ObjectItemRef),
+      fuel = itemFuel + 1 ∧
+        (match obj.code? with
+        | none =>
+            dispatcher = [] ∧
+              functions = [] ∧
+                helper? = none ∧
+                  arg? = none ∧
+                    ret? = none
+        | some code =>
+            Elab.elaborateCode code =
+              .ok (dispatcher, functions, helper?, arg?, ret?)) ∧
+          Object.elaborateItemsFuel? itemFuel obj.subObjects evmVersion =
+            .ok (data, objects, items) ∧
+            frontend =
+              { name := obj.name
+                dispatcher := dispatcher
+                functions := functions
+                data := data
+                objects := objects
+                items := items
+                memoryContract := MemoryContract.unrestricted
+                evmVersion := evmVersion } := by
+  cases fuel with
+  | zero =>
+      simp [Object.elaborateFuel?] at hElab
+  | succ itemFuel =>
+      unfold Object.elaborateFuel? at hElab
+      cases hCode : obj.code? with
+      | none =>
+          cases hItems :
+              Object.elaborateItemsFuel? itemFuel obj.subObjects evmVersion with
+          | error err =>
+              simp [hCode, hItems] at hElab
+          | ok result =>
+              rcases result with ⟨data, objects, items⟩
+              simp [hCode, hItems] at hElab
+              subst frontend
+              refine
+                ⟨itemFuel, [], [], none, none, none, data, objects, items,
+                  rfl, ?_, ?_, rfl⟩
+              · simp
+              · exact hItems
+      | some code =>
+          cases hCodeElab : Elab.elaborateCode code with
+          | error err =>
+              simp [hCode, hCodeElab] at hElab
+          | ok codeResult =>
+              rcases codeResult with ⟨dispatcher, functions, helper?, arg?, ret?⟩
+              cases hItems :
+                  Object.elaborateItemsFuel? itemFuel obj.subObjects evmVersion with
+              | error err =>
+                  simp [hCode, hCodeElab, hItems] at hElab
+              | ok result =>
+                  rcases result with ⟨data, objects, items⟩
+                  simp [hCode, hCodeElab, hItems] at hElab
+                  subst frontend
+                  refine
+                    ⟨itemFuel, dispatcher, functions, helper?, arg?, ret?,
+                      data, objects, items, rfl, ?_, ?_, rfl⟩
+                  · exact hCodeElab
+                  · exact hItems
+
+theorem Object.elaborate?_parts
+    {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
+    {frontend : Frontend.Object}
+    (hElab : Object.elaborate? obj evmVersion = .ok frontend) :
+    ∃ (itemFuel : Nat) (dispatcher : List Frontend.Stmt)
+        (functions : List (Name × Frontend.FunctionDef))
+        (helper? arg? ret? : Option Name)
+        (data : List Frontend.DataSection)
+        (objects : List Frontend.Object)
+        (items : List Frontend.ObjectItemRef),
+      maxDecodeFuel = itemFuel + 1 ∧
+        (match obj.code? with
+        | none =>
+            dispatcher = [] ∧
+              functions = [] ∧
+                helper? = none ∧
+                  arg? = none ∧
+                    ret? = none
+        | some code =>
+            Elab.elaborateCode code =
+              .ok (dispatcher, functions, helper?, arg?, ret?)) ∧
+          Object.elaborateItemsFuel? itemFuel obj.subObjects evmVersion =
+            .ok (data, objects, items) ∧
+            frontend =
+              { name := obj.name
+                dispatcher := dispatcher
+                functions := functions
+                data := data
+                objects := objects
+                items := items
+                memoryContract := MemoryContract.unrestricted
+                evmVersion := evmVersion } := by
+  exact Object.elaborateFuel?_parts hElab
+
 def walkObjectsFuel : Nat → Object → List Object
   | 0, obj => [obj]
   | fuel + 1, obj =>
@@ -1314,6 +1421,55 @@ theorem decodeAndElaborateSolcIrJson_parts
           · simp
           · simp [hObject]
 
+theorem decodeAndElaborateSolcIrJson_objectParts
+    {json : Lean.Json} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIrJson json selection = .ok program) :
+    ∃ (selected : SelectedIr) (itemFuel : Nat)
+        (dispatcher : List Frontend.Stmt)
+        (functions : List (Name × Frontend.FunctionDef))
+        (helper? arg? ret? : Option Name)
+        (data : List Frontend.DataSection)
+        (objects : List Frontend.Object)
+        (items : List Frontend.ObjectItemRef),
+      decodeSelectedIr json selection = .ok selected ∧
+        maxDecodeFuel = itemFuel + 1 ∧
+          (match selected.root.code? with
+          | none =>
+              dispatcher = [] ∧
+                functions = [] ∧
+                  helper? = none ∧
+                    arg? = none ∧
+                      ret? = none
+          | some code =>
+              Elab.elaborateCode code =
+                .ok (dispatcher, functions, helper?, arg?, ret?)) ∧
+            Raw.Object.elaborateItemsFuel? itemFuel selected.root.subObjects
+              selected.evmVersion = .ok (data, objects, items) ∧
+              program =
+                { source := selected.source
+                  contract := selected.contract
+                  object :=
+                    { name := selected.root.name
+                      dispatcher := dispatcher
+                      functions := functions
+                      data := data
+                      objects := objects
+                      items := items
+                      memoryContract := MemoryContract.unrestricted
+                      evmVersion := selected.evmVersion } } := by
+  rcases decodeAndElaborateSolcIrJson_parts hDecode with
+    ⟨selected, object, hSelected, hObject, hProgram⟩
+  rcases Raw.Object.elaborate?_parts hObject with
+    ⟨itemFuel, dispatcher, functions, helper?, arg?, ret?, data, objects,
+      items, hFuel, hCode, hItems, hFrontend⟩
+  subst program
+  subst object
+  exact
+    ⟨selected, itemFuel, dispatcher, functions, helper?, arg?, ret?,
+      data, objects, items, hSelected, hFuel, hCode, hItems, rfl⟩
+
 def decodeLinkerSymbolsJson (json : Lean.Json)
     (selection : Selection) : DecodeM (List (Name × Word)) :=
   decodeSelectedLinkerSymbolsJson json selection
@@ -1376,6 +1532,54 @@ theorem decodeAndElaborateSolcIr?_parts
   rcases decodeAndElaborateSolcIrJson_parts hJsonDecode with
     ⟨selected, object, hSelected, hObject, hProgram⟩
   exact ⟨json, selected, object, hParse, hSelected, hObject, hProgram⟩
+
+theorem decodeAndElaborateSolcIr?_objectParts
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program) :
+    ∃ (json : Lean.Json) (selected : SelectedIr) (itemFuel : Nat)
+        (dispatcher : List Frontend.Stmt)
+        (functions : List (Name × Frontend.FunctionDef))
+        (helper? arg? ret? : Option Name)
+        (data : List Frontend.DataSection)
+        (objects : List Frontend.Object)
+        (items : List Frontend.ObjectItemRef),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          maxDecodeFuel = itemFuel + 1 ∧
+            (match selected.root.code? with
+            | none =>
+                dispatcher = [] ∧
+                  functions = [] ∧
+                    helper? = none ∧
+                      arg? = none ∧
+                        ret? = none
+            | some code =>
+                Elab.elaborateCode code =
+                  .ok (dispatcher, functions, helper?, arg?, ret?)) ∧
+              Raw.Object.elaborateItemsFuel? itemFuel selected.root.subObjects
+                selected.evmVersion = .ok (data, objects, items) ∧
+                program =
+                  { source := selected.source
+                    contract := selected.contract
+                    object :=
+                      { name := selected.root.name
+                        dispatcher := dispatcher
+                        functions := functions
+                        data := data
+                        objects := objects
+                        items := items
+                        memoryContract := MemoryContract.unrestricted
+                        evmVersion := selected.evmVersion } } := by
+  rcases decodeAndElaborateSolcIr?_some hDecode with
+    ⟨json, hParse, hJsonDecode⟩
+  rcases decodeAndElaborateSolcIrJson_objectParts hJsonDecode with
+    ⟨selected, itemFuel, dispatcher, functions, helper?, arg?, ret?, data,
+      objects, items, hSelected, hFuel, hCode, hItems, hProgram⟩
+  exact
+    ⟨json, selected, itemFuel, dispatcher, functions, helper?, arg?, ret?,
+      data, objects, items, hParse, hSelected, hFuel, hCode, hItems, hProgram⟩
 
 end RawAst
 end Solidity

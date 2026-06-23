@@ -123,7 +123,11 @@ Next raw frontend layer:
   selected raw Standard JSON source/contract/object plus checked raw-object
   elaboration from a successful frontend program decode.
   `decodeAndElaborateSolcIr?_parts` lifts that evidence to the public raw
-  string interface. `compileArtifactFromRawSolcIr?_rawParts` and the
+  string interface. `Raw.Object.elaborate?_parts`,
+  `decodeAndElaborateSolcIrJson_objectParts`, and
+  `decodeAndElaborateSolcIr?_objectParts` reconstruct the successful checked
+  code elaboration, object-item elaboration, and final `Frontend.Object`
+  fields. `compileArtifactFromRawSolcIr?_rawParts` and the
   explicit-linker variant lift the same raw parse/selection/elaboration
   evidence through the artifact-facing wrappers, including Lean-decoded linker
   metadata for the default path. First checked `clz` validation invariant:
