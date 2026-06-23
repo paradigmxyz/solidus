@@ -983,38 +983,90 @@ def collectTopFunctions : List Raw.Stmt → ElabM (List (Name × Name))
           pure ((name, name) :: tail)
       | _ => collectTopFunctions rest
 
+def elaborateCodeAction (stmts : List Raw.Stmt) :
+    ElabM (List Frontend.Stmt) := do
+  pushIdentifierScope
+  let topScope ← collectTopFunctions stmts
+  pushFunctionScope topScope
+  let mut dispatcher : List Frontend.Stmt := []
+  let mut topFunctions : List (Name × Frontend.FunctionDef) := []
+  for stmt in stmts do
+    match stmt with
+    | .functionDefinition name params returns body =>
+        let fn ← FunctionDef.elaborate params returns body
+        topFunctions := (name, fn) :: topFunctions
+    | _ =>
+        let stmt ← Stmt.elaborate stmt
+        dispatcher := stmt :: dispatcher
+  popFunctionScope
+  popIdentifierScope
+  modify fun state =>
+    { state with hoistedFunctions := state.hoistedFunctions ++ topFunctions }
+  pure dispatcher.reverse
+
+def elaborateCodeCore (stmts : List Raw.Stmt) :
+    DecodeM (List Frontend.Stmt × State) :=
+  (elaborateCodeAction stmts).run {}
+
+def finalFunctions (state : State) : List (Name × Frontend.FunctionDef) :=
+  let functions := state.hoistedFunctions.reverse
+  match state.clzHelperName?, state.clzArgName?, state.clzReturnName? with
+  | some helper, some arg, some ret =>
+      functions ++ [(helper, clzHelperFunctionDef arg ret)]
+  | none, none, none => functions
+  | _, _, _ => functions
+
+def ClzExpansionOk (functions : List (Name × Frontend.FunctionDef))
+    (helper? arg? ret? : Option Name) : Prop :=
+  match helper?, arg?, ret? with
+  | some helper, some arg, some ret =>
+      (helper, clzHelperFunctionDef arg ret) ∈ functions
+  | _, _, _ => True
+
+theorem finalFunctions_clzExpansionOk (state : State) :
+    ClzExpansionOk (finalFunctions state) state.clzHelperName?
+      state.clzArgName? state.clzReturnName? := by
+  unfold finalFunctions ClzExpansionOk
+  cases state.clzHelperName? <;>
+    cases state.clzArgName? <;>
+      cases state.clzReturnName? <;>
+        simp
+
 def elaborateCode (stmts : List Raw.Stmt) :
     DecodeM (List Frontend.Stmt × List (Name × Frontend.FunctionDef) ×
       Option Name × Option Name × Option Name) := do
-  let action : ElabM (List Frontend.Stmt) := do
-    pushIdentifierScope
-    let topScope ← collectTopFunctions stmts
-    pushFunctionScope topScope
-    let mut dispatcher : List Frontend.Stmt := []
-    let mut topFunctions : List (Name × Frontend.FunctionDef) := []
-    for stmt in stmts do
-      match stmt with
-      | .functionDefinition name params returns body =>
-          let fn ← FunctionDef.elaborate params returns body
-          topFunctions := (name, fn) :: topFunctions
-      | _ =>
-          let stmt ← Stmt.elaborate stmt
-          dispatcher := stmt :: dispatcher
-    popFunctionScope
-    popIdentifierScope
-    modify fun state =>
-      { state with hoistedFunctions := state.hoistedFunctions ++ topFunctions }
-    pure dispatcher.reverse
-  let (dispatcher, state) ← action.run {}
-  let functions := state.hoistedFunctions.reverse
-  let functions :=
-    match state.clzHelperName?, state.clzArgName?, state.clzReturnName? with
-    | some helper, some arg, some ret =>
-        functions ++ [(helper, clzHelperFunctionDef arg ret)]
-    | none, none, none => functions
-    | _, _, _ => functions
+  let (dispatcher, state) ← elaborateCodeCore stmts
+  let functions := finalFunctions state
   pure (dispatcher, functions, state.clzHelperName?, state.clzArgName?,
     state.clzReturnName?)
+
+theorem elaborateCode_clzExpansionOk
+    {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
+    {functions : List (Name × Frontend.FunctionDef)}
+    {helper? arg? ret? : Option Name}
+    (hElab :
+      elaborateCode stmts = .ok (dispatcher, functions, helper?, arg?, ret?)) :
+    ClzExpansionOk functions helper? arg? ret? := by
+  unfold elaborateCode at hElab
+  cases hRun : elaborateCodeCore stmts with
+  | error err =>
+      simp [hRun] at hElab
+  | ok result =>
+      rcases result with ⟨dispatcher', state⟩
+      simp [hRun] at hElab
+      rcases hElab with ⟨_hDispatcher, hFunctions, hHelper, hArg, hRet⟩
+      rw [← hFunctions, ← hHelper, ← hArg, ← hRet]
+      exact finalFunctions_clzExpansionOk state
+
+theorem elaborateCode_clzHelper_mem
+    {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
+    {functions : List (Name × Frontend.FunctionDef)}
+    {helper arg ret : Name}
+    (hElab :
+      elaborateCode stmts = .ok
+        (dispatcher, functions, some helper, some arg, some ret)) :
+    (helper, clzHelperFunctionDef arg ret) ∈ functions := by
+  exact elaborateCode_clzExpansionOk hElab
 
 end Elab
 
