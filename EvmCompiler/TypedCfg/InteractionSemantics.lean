@@ -556,6 +556,68 @@ theorem openStep_executes_source_bounded
       | jumpDynamic =>
           cases hExec
 
+/-- Every compiler-selected block step exposes a prefix of ordinary Assembly
+source execution at a bounded instruction budget. Unlike the exact successful
+theorem, this also covers fail-closed dispatch errors, which expose no new
+interaction. -/
+theorem openStep_follows_source_bounded
+    {source : TypedCfg.Program} {target : Assembly.Program}
+    {state : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    {outcome : Except EVMException Assembly.StepResult}
+    (hLower : source.lower? = some target)
+    (hExec : Simulation.Interaction.Executes
+      (openStep source target state) transcript outcome) :
+    exists usedFuel,
+      usedFuel ≤ fuelBudget source ∧
+        Simulation.Interaction.Follows
+          (Assembly.InteractionSemantics.Source.openRunNResult
+            target usedFuel state)
+          transcript := by
+  unfold openStep at hExec
+  cases hAt : target.instrAtPc state.pc.toNat with
+  | none =>
+      simp only [hAt] at hExec
+      cases hExec
+      exact ⟨0, by simp, .nil _⟩
+  | some located =>
+      rcases located with ⟨pc, instr⟩
+      simp only [hAt] at hExec
+      cases instr with
+      | label label =>
+          cases hFind : source.findBlock? label with
+          | none =>
+              simp only [hFind] at hExec
+              cases hExec
+              exact ⟨0, by simp, .nil _⟩
+          | some block =>
+              simp only [hFind] at hExec
+              cases outcome with
+              | error error =>
+                  rcases TypedCfg.Program.lower?_fragment_of_findBlock?
+                      hLower hFind with
+                    ⟨fragment⟩
+                  obtain ⟨usedFuel, hUsed, hAssembly⟩ :=
+                    CompiledBlock.openRun_error_executes_source_bounded
+                      (sourceError := error) fragment.lower hExec
+                  exact
+                    ⟨usedFuel,
+                      Nat.le_trans hUsed
+                        (block_fuelBudget_le_of_findBlock? hFind),
+                      hAssembly.follows⟩
+              | ok result =>
+                  obtain ⟨usedFuel, hUsed, hAssembly⟩ :=
+                    CompiledBlock.openRun_executes_source_bounded
+                      hExec
+                  exact
+                    ⟨usedFuel,
+                      Nat.le_trans hUsed
+                        (block_fuelBudget_le_of_findBlock? hFind),
+                      hAssembly.follows⟩
+      | prim op | push op | pushLabel op | jump op | jumpi op | jumpDynamic =>
+          cases hExec
+          exact ⟨0, by simp, .nil _⟩
+
 theorem openRunN_executes_source_bounded
     {source : TypedCfg.Program} {target : Assembly.Program}
     {fuel : Nat} {state : EVMState}
@@ -603,6 +665,60 @@ theorem openRunN_executes_source_bounded
             · rw [
                 Assembly.InteractionSemantics.Source.openRunNResult_add]
               exact Simulation.Interaction.Executes.bind_ok hHead hTail
+
+/-- Every concrete compiled-program execution is a bounded prefix of ordinary
+Assembly source execution, including structural running results and fail-closed
+dispatch errors. -/
+theorem openRunN_follows_source_bounded
+    {source : TypedCfg.Program} {target : Assembly.Program}
+    {fuel : Nat} {state : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    {outcome : Except EVMException Assembly.StepResult}
+    (hLower : source.lower? = some target)
+    (hExec : Simulation.Interaction.Executes
+      (openRunN source target fuel state) transcript outcome) :
+    exists usedFuel,
+      usedFuel ≤ fuel * fuelBudget source ∧
+        Simulation.Interaction.Follows
+          (Assembly.InteractionSemantics.Source.openRunNResult
+            target usedFuel state)
+          transcript := by
+  induction fuel generalizing state transcript outcome with
+  | zero =>
+      rw [openRunN_zero] at hExec
+      cases hExec
+      exact ⟨0, by simp, .nil _⟩
+  | succ fuel ih =>
+      rw [openRunN_succ] at hExec
+      rcases Simulation.Interaction.Executes.bind_cases hExec with
+        hStepError | hStepOk
+      · rcases hStepError with ⟨error, hOutcome, hStep⟩
+        subst outcome
+        obtain ⟨headFuel, hHeadFuel, hHead⟩ :=
+          openStep_follows_source_bounded hLower hStep
+        refine ⟨headFuel, ?_, hHead⟩
+        rw [Nat.add_mul]
+        omega
+      · rcases hStepOk with
+          ⟨stepResult, headTranscript, restTranscript,
+            hTranscript, hStep, hRest⟩
+        subst transcript
+        obtain ⟨headFuel, hHeadFuel, hHead⟩ :=
+          openStep_executes_source_bounded hStep
+        cases stepResult with
+        | halted halt =>
+            cases hRest
+            refine ⟨headFuel, ?_, by simpa using hHead.follows⟩
+            rw [Nat.add_mul]
+            omega
+        | running mid =>
+            obtain ⟨tailFuel, hTailFuel, hTail⟩ := ih hRest
+            refine ⟨headFuel + tailFuel, ?_, ?_⟩
+            · rw [Nat.add_mul]
+              omega
+            · rw [Assembly.InteractionSemantics.Source.openRunNResult_add]
+              exact Simulation.Interaction.Follows.bind_ok
+                hHead hTail
 
 /-- Universally terminal compiler-selected block execution is structurally
 related to one ordinary Assembly source run at a source-program-owned budget. -/
@@ -680,6 +796,39 @@ def openRunN (program : TypedCfg.Program) (fuel : Nat)
     (label : Label) (state : EVMState) : OpenOutcome :=
   openRunNWithStop (fun _ _ => false)
     program fuel label state
+
+/-- Close one fuel-bounded whole-program CFG run. A genuine halt is retained;
+every residual or malformed control outcome denotes structural truncation
+rather than a successful whole-program result. Runtime errors raised while
+executing a block remain ordinary interaction errors. -/
+def finishPrefixOutcome : TypedCfg.Outcome → OpenOutcome
+  | .halt kind state => pure (.halt kind state)
+  | .jump _ _ | .fallthrough _ | .returnDispatch _ | .invalid _ =>
+      Simulation.Interaction.error .OutOfFuel
+
+/-- Canonical finite-prefix semantics for a whole TypedCfg program. It reuses
+the ordinary CFG interpreter and only classifies its final residual outcome. -/
+def openRunNPrefix (program : TypedCfg.Program) (fuel : Nat)
+    (label : Label) (state : EVMState) : OpenOutcome :=
+  Simulation.Interaction.bind
+    (openRunN program fuel label state) finishPrefixOutcome
+
+def PrefixTruncated : EVMException → Prop
+  | .OutOfFuel => True
+  | _ => False
+
+/-- Source-facing condition needed only for a completed prefix halt. Structural
+errors are already final; malformed residual outcomes are classified as
+`OutOfFuel` by `finishPrefixOutcome`. -/
+def PrefixAssemblySafe : Except EVMException TypedCfg.Outcome → Prop
+  | .error _ => True
+  | .ok (.halt kind state) =>
+      Assembly.InteractionSemantics.Terminal.SafeAt kind state
+  | .ok _ => False
+
+@[simp] theorem prefixTruncated_iff (error : EVMException) :
+    PrefixTruncated error ↔ error = .OutOfFuel := by
+  cases error <;> simp [PrefixTruncated]
 
 @[simp] theorem openRunNWithStop_zero
     (stopJump : Label → EVMState → Bool) (program : TypedCfg.Program)
@@ -1125,6 +1274,49 @@ theorem map_openRunNResultWithStop_runResultOutcome
       | halt kind final
       | invalid final =>
           rfl
+
+def finishRunResultPrefix
+    (result : Control.Program.RunResult) : OpenOutcome :=
+  finishPrefixOutcome (runResultOutcome result)
+
+/-- A finer stop policy may expose an adjacent compiler boundary early. One
+outer continuation segment plus ordinary prefix classification recovers the
+same canonical whole-program prefix runner. -/
+theorem openRunNPrefix_eq_refinedStop_add
+    (innerStop : Label → EVMState → Bool)
+    (program : TypedCfg.Program) (firstFuel extraFuel : Nat)
+    (label : Label) (state : EVMState) :
+    openRunNPrefix program (firstFuel + extraFuel) label state =
+      Simulation.Interaction.bind
+        (openRunNResultWithStop innerStop
+          program firstFuel label state)
+        (fun result =>
+          Simulation.Interaction.bind
+            (continueOpenRunNResultWithRefinedStop
+              (fun _ _ => false) program extraFuel result)
+            finishRunResultPrefix) := by
+  unfold openRunNPrefix finishRunResultPrefix
+  unfold openRunN
+  rw [← map_openRunNResultWithStop_runResultOutcome
+    (fun _ _ => false) program (firstFuel + extraFuel) label state]
+  unfold Simulation.Interaction.map
+  rw [Simulation.Interaction.bind_assoc]
+  rw [openRunNResultWithRefinedStop_add
+    (fun _ _ => false) innerStop program firstFuel extraFuel label state]
+  · rw [Simulation.Interaction.bind_assoc]
+    apply Simulation.Interaction.AllDone.bind_congr
+      (Simulation.Interaction.AllDone.trivial
+        (openRunNResultWithStop innerStop
+          program firstFuel label state))
+    intro result _hResult
+    apply Simulation.Interaction.AllDone.bind_congr
+      (Simulation.Interaction.AllDone.trivial
+        (continueOpenRunNResultWithRefinedStop
+          (fun _ _ => false) program extraFuel result))
+    intro resumed _hResumed
+    rfl
+  · intro next nextState hFalse
+    cases hFalse
 
 /-- Successful stop-aware branches are terminal exactly when they halt. -/
 def Halted : Except EVMException TypedCfg.Outcome -> Prop

@@ -508,6 +508,36 @@ theorem openRunNResult_error_add_executes
   rw [openRunNResult_add]
   exact Simulation.Interaction.Executes.bind_error hExec
 
+/-- Increasing an Assembly source instruction budget cannot hide an already
+observed interaction prefix, regardless of whether the smaller run stopped. -/
+theorem openRunNResult_follows_of_executes_of_le
+    {program : Program} {smaller larger : Nat} {state : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    {outcome : Except EVMException StepResult}
+    (hFuel : smaller ≤ larger)
+    (hExec : Simulation.Interaction.Executes
+      (openRunNResult program smaller state) transcript outcome) :
+    Simulation.Interaction.Follows
+      (openRunNResult program larger state) transcript := by
+  let extra := larger - smaller
+  have hFuelEq : smaller + extra = larger := Nat.add_sub_of_le hFuel
+  rw [← hFuelEq, openRunNResult_add]
+  exact Simulation.Interaction.Follows.bind hExec.follows
+
+/-- The prefix-only form of `openRunNResult_follows_of_executes_of_le`. -/
+theorem openRunNResult_follows_of_le_follows
+    {program : Program} {smaller larger : Nat} {state : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    (hFuel : smaller ≤ larger)
+    (hFollow : Simulation.Interaction.Follows
+      (openRunNResult program smaller state) transcript) :
+    Simulation.Interaction.Follows
+      (openRunNResult program larger state) transcript := by
+  let extra := larger - smaller
+  have hFuelEq : smaller + extra = larger := Nat.add_sub_of_le hFuel
+  rw [← hFuelEq, openRunNResult_add]
+  exact Simulation.Interaction.Follows.bind hFollow
+
 def openRunUntilTransferWithPolicy
     (continueTransfer : Instr → Bool)
     (program : Program) (fuel : Nat)

@@ -4588,6 +4588,234 @@ theorem main_forward
     InteractionControlPreservation.OpenOutcome.UniformExecPreservesUnder.with_runtime_errors_and_truncation
       (regularExit := .stop) hSuccess hRuntime hTruncation
 
+/-- Whole-program relation after discharging the generated regular continuation
+through its concrete `STOP` block. -/
+def PrefixOutcomeRel
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (generated : TypedCfgPreservation.Program.GeneratedContext
+      program entryShapes cfg) :
+    Structured.Outcome → TypedCfg.Outcome → Prop
+  | ⟨source, .regular⟩, .halt .stop target =>
+      TypedCfgPreservation.StateRel source [] target ∧
+        InteractionControlPreservation.OpenOutcome.FrameFits
+          generated.main { procs := program.procs } ⟨source, .regular⟩ ∧
+        InteractionControlPreservation.OpenOutcome.ActivationRestored
+          [] ⟨source, .regular⟩
+  | source@⟨_, .halt _⟩, target@(.halt _ _) =>
+      InteractionControlPreservation.OpenOutcome.Rel
+        generated.main { procs := program.procs } ProcLabel.programEnd
+        [] [] source target
+  | _, _ => False
+
+abbrev PrefixDoneRel
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (generated : TypedCfgPreservation.Program.GeneratedContext
+      program entryShapes cfg) :=
+  Simulation.Interaction.ExceptRel
+    (fun _sourceError _targetError : EVMException => True)
+    (PrefixOutcomeRel generated)
+
+private theorem programEnd_prefix
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (generated : TypedCfgPreservation.Program.GeneratedContext
+      program entryShapes cfg)
+    (remaining : Nat) (state : EVMState) :
+    Simulation.Interaction.bind
+        (TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithRefinedStop
+          (fun _ _ => false) cfg 1
+          (.stopped remaining (.jump ProcLabel.programEnd state)))
+        TypedCfg.InteractionSemantics.Program.finishRunResultPrefix =
+      Simulation.Interaction.pure (.halt .stop state) := by
+  have hStep :
+      TypedCfg.InteractionSemantics.Program.openStep
+          cfg ProcLabel.programEnd state =
+        Simulation.Interaction.pure (.halt .stop state) := by
+    unfold TypedCfg.InteractionSemantics.Program.openStep
+      TypedCfg.Control.Program.step
+    rw [generated.programEndBlock]
+    change
+      Simulation.Interaction.bind
+          (.done (.ok
+            (state, generated.main.fallthrough?.getD TypedCfg.Shape.caller)))
+          (fun result =>
+            if result.2 =
+                generated.main.fallthrough?.getD TypedCfg.Shape.caller then
+              .done (.ok
+                (TypedCfg.Outcome.halt Assembly.HaltKind.stop result.1))
+            else Simulation.Interaction.error
+              (Error := EVMException)
+              EvmYul.EVM.ExecutionException.InvalidInstruction) =
+        .done (.ok
+          (TypedCfg.Outcome.halt Assembly.HaltKind.stop state))
+    rw [Simulation.Interaction.bind_done_ok]
+    rw [if_pos rfl]
+  unfold
+    TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithRefinedStop
+    TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
+  simp only [Bool.false_eq_true, ↓reduceIte]
+  rw [TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_succ_eq_bind,
+    hStep]
+  rfl
+
+private def completePrefixRun (cfg : TypedCfg.Program)
+    (result : TypedCfg.Control.Program.RunResult) :
+    TypedCfg.InteractionSemantics.OpenOutcome :=
+  Simulation.Interaction.bind
+    (TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithRefinedStop
+      (fun _ _ => false) cfg 1 result)
+    TypedCfg.InteractionSemantics.Program.finishRunResultPrefix
+
+private def completePrefixDone (cfg : TypedCfg.Program) :
+    Except EVMException TypedCfg.Control.Program.RunResult →
+      TypedCfg.InteractionSemantics.OpenOutcome
+  | .error error => .done (.error error)
+  | .ok result => completePrefixRun cfg result
+
+/-- A related generated boundary result is completed to the canonical TypedCfg
+whole-program prefix outcome without exposing a generated certificate. -/
+private theorem complete_prefix
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (generated : TypedCfgPreservation.Program.GeneratedContext
+      program entryShapes cfg)
+    {sourceDone : Except EVMException Structured.Outcome}
+    {targetDone : Except EVMException TypedCfg.Control.Program.RunResult}
+    (hDone :
+      InteractionControlPreservation.OpenOutcome.SegmentDoneRel
+        generated.main { procs := program.procs }
+        ProcLabel.programEnd [] [] .stop sourceDone targetDone) :
+    Simulation.Interaction.ForwardRel
+      InteractionControlPreservation.OpenOutcome.Truncated
+      (PrefixDoneRel generated)
+      (.done sourceDone)
+      (completePrefixDone cfg targetDone) := by
+  cases hDone with
+  | error hError =>
+      exact .done (Simulation.Interaction.ExceptRel.error trivial)
+  | @ok sourceOutcome targetResult hSegment =>
+      cases targetResult with
+      | exhausted label state =>
+          exact False.elim hSegment
+      | stopped remaining targetOutcome =>
+          change
+            InteractionControlPreservation.OpenOutcome.Rel
+              generated.main { procs := program.procs }
+              ProcLabel.programEnd [] [] sourceOutcome targetOutcome
+            at hSegment
+          obtain ⟨hOutcome, hFits, hRestored⟩ := hSegment
+          rcases sourceOutcome with ⟨source, mode⟩
+          cases mode with
+          | regular =>
+              obtain ⟨target, rfl, hState⟩ :=
+                TypedCfgPreservation.OutcomeSimulation.Rel.regular_elim
+                  hOutcome
+              have hComplete := programEnd_prefix generated remaining target
+              change
+                Simulation.Interaction.ForwardRel
+                  InteractionControlPreservation.OpenOutcome.Truncated
+                  (PrefixDoneRel generated)
+                  (.done (.ok ⟨source, .regular⟩))
+                  (completePrefixRun cfg
+                    (.stopped remaining
+                      (.jump
+                        (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+                          { procs := program.procs } ProcLabel.programEnd).regular
+                        target)))
+              rw [show completePrefixRun cfg
+                    (.stopped remaining
+                      (.jump
+                        (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+                          { procs := program.procs } ProcLabel.programEnd).regular
+                        target)) =
+                    Simulation.Interaction.pure (.halt .stop target) by
+                  simpa [completePrefixRun,
+                    TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext]
+                    using hComplete]
+              exact .done
+                (Simulation.Interaction.ExceptRel.ok
+                  ⟨hState, hFits, hRestored⟩)
+          | brk =>
+              obtain ⟨label, target, hLabel, _hTarget, _hState⟩ :=
+                TypedCfgPreservation.OutcomeSimulation.Rel.brk_elim hOutcome
+              simp [TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext]
+                at hLabel
+          | cont =>
+              obtain ⟨label, target, hLabel, _hTarget, _hState⟩ :=
+                TypedCfgPreservation.OutcomeSimulation.Rel.cont_elim hOutcome
+              simp [TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext]
+                at hLabel
+          | leave =>
+              obtain ⟨label, target, hLabel, _hTarget, _hState⟩ :=
+                TypedCfgPreservation.OutcomeSimulation.Rel.leave_elim hOutcome
+              simp [TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext]
+                at hLabel
+          | halt kind =>
+              obtain ⟨target, targetFinal, rfl, hStep, hState⟩ :=
+                TypedCfgPreservation.OutcomeSimulation.Rel.halt_elim hOutcome
+              change
+                Simulation.Interaction.ForwardRel
+                  InteractionControlPreservation.OpenOutcome.Truncated
+                  (PrefixDoneRel generated)
+                  (.done (.ok ⟨source, .halt kind⟩))
+                  (completePrefixRun cfg
+                    (.stopped remaining (.halt kind target)))
+              rw [show completePrefixRun cfg
+                    (.stopped remaining (.halt kind target)) =
+                    Simulation.Interaction.pure (.halt kind target) by rfl]
+              exact .done
+                (Simulation.Interaction.ExceptRel.ok
+                  ⟨hOutcome, hFits, hRestored⟩)
+
+/-- Complete unconditional Structured-to-TypedCfg preservation in the canonical
+whole-program prefix semantics. -/
+theorem main_prefix_forward
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (generated : TypedCfgPreservation.Program.GeneratedContext
+      program entryShapes cfg)
+    (hProgramWF : program.WF)
+    (hProgramFrameSafe : program.FrameSafe)
+    (sourceFuel : Nat) (source : RunState) (target : EVMState)
+    (hStateRel : TypedCfgPreservation.StateRel source [] target) :
+    Simulation.Interaction.ForwardRel
+      InteractionControlPreservation.OpenOutcome.Truncated
+      (PrefixDoneRel generated)
+      (InteractionSemantics.Block.openRun
+        program sourceFuel program.body source)
+      (TypedCfg.InteractionSemantics.Program.openRunNPrefix cfg
+        (InteractionStaticCost.blockBudget
+          program sourceFuel program.body + 1)
+        TypedCfgCompiler.entryLabel target) := by
+  have hReturns : source.returns = [] := by
+    rcases hStateRel with ⟨realized, hRealize, _hRuntime⟩
+    cases hSourceReturns : source.returns with
+    | nil => rfl
+    | cons frame returns =>
+        simp [hSourceReturns, TypedCfgPreservation.realizeStack] at hRealize
+  have hBase :=
+    main_forward generated hProgramWF hProgramFrameSafe sourceFuel source
+      target hStateRel
+  rw [hReturns] at hBase
+  have hBound := Simulation.Interaction.ForwardRel.bind_right
+    (targetDoneRel := PrefixDoneRel generated)
+    (rightNext := completePrefixRun cfg) hBase
+    (fun _leftDone _rightDone hDone => by
+      cases _rightDone with
+      | error error =>
+          exact complete_prefix (cfg := cfg) generated hDone
+      | ok result =>
+          exact complete_prefix (cfg := cfg) generated hDone)
+  rw [TypedCfg.InteractionSemantics.Program.openRunNPrefix_eq_refinedStop_add]
+  exact hBound
+
 /-- Compiler-facing adjacent theorem. The generated context and all recursive
 ownership evidence are computed and discharged inside the pass. -/
 theorem generateWithProcEntryShapes?_main_forward
