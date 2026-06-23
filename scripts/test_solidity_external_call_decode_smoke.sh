@@ -2,7 +2,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SOLC_BIN="${SOLC:-solc}"
+PYTHON_BIN="${PYTHON:-python3}"
+BUNDLED_PYTHON="$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3"
+if ! "$PYTHON_BIN" -c 'import jsonschema' >/dev/null 2>&1 && \
+    [[ -x "$BUNDLED_PYTHON" ]]; then
+  PYTHON_BIN="$BUNDLED_PYTHON"
+fi
+SOLC_BIN="${SOLC_826:-${SOLC:-$HOME/.solc-select/artifacts/solc-0.8.26/solc-0.8.26}}"
 if [[ -n "${LAKE:-}" ]]; then
   LAKE_BIN="$LAKE"
 elif [[ -x "$HOME/.elan/bin/lake" ]]; then
@@ -29,41 +35,43 @@ MANIFEST_CHECK="$OUTDIR/manifest.lean-json-check.json"
 MANIFEST_SUMMARY="$OUTDIR/manifest.bridge-json-summary.json"
 BACKEND_CHECK="$OUTDIR/manifest.lean-backend-check.json"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/ExternalCallBox.sol" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/ExternalCallBox.sol" \
   --solc "$SOLC_BIN" \
+  --yul-ast-solc "$SOLC_BIN" \
+  --optimized \
   --format bridge-json \
   --all-contracts \
   --bridge-json-dir "$BRIDGE_DIR" \
   --output "$MANIFEST"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
   --format lean-json-check \
   --output "$MANIFEST_CHECK"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
   --input-format bridge-json-manifest \
   --format bridge-json-summary \
   --contract ExternalCallBox \
   --object runtime \
   --output "$MANIFEST_SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST_SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST_SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
   --format lean-backend-check \
   --output "$BACKEND_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$BACKEND_CHECK"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$BACKEND_CHECK"
 
-python3 - "$MANIFEST" "$BRIDGE_DIR" "$MANIFEST_CHECK" "$MANIFEST_SUMMARY" "$BACKEND_CHECK" <<'PY'
+"$PYTHON_BIN" - "$MANIFEST" "$BRIDGE_DIR" "$MANIFEST_CHECK" "$MANIFEST_SUMMARY" "$BACKEND_CHECK" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -157,21 +165,15 @@ if (
     backend_counts.get("checkedObjects") != 2
     or backend_counts.get("checkedContracts") != 1
     or backend_counts.get("skippedContracts") != 0
-    or backend_counts.get("passedObjects") != 0
-    or backend_counts.get("failedObjects") != 2
+    or backend_counts.get("passedObjects") != 2
+    or backend_counts.get("failedObjects") != 0
 ):
     raise SystemExit(f"unexpected external-call backend-check counts: {backend_counts!r}")
 
 first_none_counts = backend_check.get("firstNoneCounts", {})
-if first_none_counts.get("to_yul_contract") != 1:
+if first_none_counts:
     raise SystemExit(
-        f"expected one external-call to_yul_contract backend blocker: "
-        f"{first_none_counts!r}"
-    )
-if first_none_counts.get("locals_compile") != 1:
-    raise SystemExit(
-        f"expected one external-call legacy locals_compile blocker: "
-        f"{first_none_counts!r}"
+        f"external-call backend unexpectedly reported blockers: {first_none_counts!r}"
     )
 
 backend_status = {
@@ -182,8 +184,8 @@ backend_status = {
     for item in backend_check.get("checkedObjects", [])
 }
 expected_backend_status = {
-    ("ExternalCallBox", "creation"): ("fail", "to_yul_contract"),
-    ("ExternalCallBox", "runtime"): ("fail", "locals_compile"),
+    ("ExternalCallBox", "creation"): ("pass", "none"),
+    ("ExternalCallBox", "runtime"): ("pass", "none"),
 }
 if backend_status != expected_backend_status:
     raise SystemExit(
@@ -194,8 +196,8 @@ print(f"external_call_decode_bridge_entries={counts['entries']}")
 print(f"external_call_decode_lean_objects={check_counts['checkedObjects']}")
 print(f"external_call_decode_backend_check_objects={backend_counts['checkedObjects']}")
 print(f"external_call_decode_backend_check_failed={backend_counts['failedObjects']}")
-print("external_call_decode_creation_first_none=to_yul_contract")
-print("external_call_decode_runtime_first_none=locals_compile")
+print("external_call_decode_creation_backend_check=pass")
+print("external_call_decode_runtime_backend_check=pass")
 print(f"external_call_decode_runtime_functions={len(functions)}")
 print(f"external_call_decode_summary_calls={runtime_summary['counts']['calls']}")
 print("external_call_decode_primitives=yes")

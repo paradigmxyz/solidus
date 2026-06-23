@@ -2,7 +2,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SOLC_BIN="${SOLC:-solc}"
+PYTHON_BIN="${PYTHON:-python3}"
+BUNDLED_PYTHON="$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3"
+if ! "$PYTHON_BIN" -c 'import jsonschema' >/dev/null 2>&1 && \
+    [[ -x "$BUNDLED_PYTHON" ]]; then
+  PYTHON_BIN="$BUNDLED_PYTHON"
+fi
+SOLC_BIN="${SOLC_826:-${SOLC:-$HOME/.solc-select/artifacts/solc-0.8.26/solc-0.8.26}}"
 if [[ -n "${LAKE:-}" ]]; then
   LAKE_BIN="$LAKE"
 elif [[ -x "$HOME/.elan/bin/lake" ]]; then
@@ -29,41 +35,43 @@ MANIFEST_CHECK="$OUTDIR/manifest.lean-json-check.json"
 MANIFEST_SUMMARY="$OUTDIR/manifest.bridge-json-summary.json"
 BACKEND_CHECK="$OUTDIR/manifest.lean-backend-check.json"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/FactoryBox.sol" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/FactoryBox.sol" \
   --solc "$SOLC_BIN" \
+  --yul-ast-solc "$SOLC_BIN" \
+  --optimized \
   --format bridge-json \
   --all-contracts \
   --bridge-json-dir "$BRIDGE_DIR" \
   --output "$MANIFEST"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
   --format lean-json-check \
   --output "$MANIFEST_CHECK"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
   --input-format bridge-json-manifest \
   --format bridge-json-summary \
   --contract FactoryBox \
   --object runtime \
   --output "$MANIFEST_SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST_SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$MANIFEST_SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
   --format lean-backend-check \
   --output "$BACKEND_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$BACKEND_CHECK"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$BACKEND_CHECK"
 
-python3 - "$MANIFEST" "$BRIDGE_DIR" "$MANIFEST_CHECK" "$MANIFEST_SUMMARY" "$BACKEND_CHECK" <<'PY'
+"$PYTHON_BIN" - "$MANIFEST" "$BRIDGE_DIR" "$MANIFEST_CHECK" "$MANIFEST_SUMMARY" "$BACKEND_CHECK" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -160,8 +168,8 @@ if (
     backend_counts.get("checkedObjects") != 4
     or backend_counts.get("checkedContracts") != 2
     or backend_counts.get("skippedContracts") != 0
-    or backend_counts.get("passedObjects") != 3
-    or backend_counts.get("failedObjects") != 1
+    or backend_counts.get("passedObjects") != 4
+    or backend_counts.get("failedObjects") != 0
 ):
     raise SystemExit(f"unexpected object-tree backend check counts: {backend_counts!r}")
 
@@ -176,7 +184,7 @@ expected_backend_status = {
     ("ChildBox", "creation"): ("pass", "none"),
     ("ChildBox", "runtime"): ("pass", "none"),
     ("FactoryBox", "creation"): ("pass", "none"),
-    ("FactoryBox", "runtime"): ("fail", "to_yul_contract"),
+    ("FactoryBox", "runtime"): ("pass", "none"),
 }
 if backend_status != expected_backend_status:
     raise SystemExit(
@@ -192,7 +200,7 @@ print(f"object_tree_backend_check_failed={backend_counts['failedObjects']}")
 print("object_tree_child_creation_backend_check=pass")
 print("object_tree_child_runtime_backend_check=pass")
 print("object_tree_factory_creation_backend_check=pass")
-print("object_tree_factory_runtime_backend_first_none=to_yul_contract")
+print("object_tree_factory_runtime_backend_check=pass")
 print(f"object_tree_summary_calls={runtime_summary['counts']['calls']}")
 print("object_tree_factory_runtime_child_subobjects=yes")
 print("object_tree_factory_runtime_data_payloads=yes")
