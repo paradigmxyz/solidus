@@ -1002,6 +1002,27 @@ def UniformErrorExecPreservesUnder (result : TypedCfgCompiler.Result)
                 policy cfg targetFuel entry target)
               transcript (.error targetError)
 
+/-- Error preservation whose internally selected target fuel is bounded by a
+source-owned ceiling. -/
+def BoundedErrorExecPreservesUnder (result : TypedCfgCompiler.Result)
+    (cfg : TypedCfg.Program) (entry : Assembly.Label)
+    (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
+    (source : RunState) (tokens : List Word)
+    (sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome)
+    (targetBudget : Nat) (policy : StopPolicy) : Prop :=
+  forall target,
+    TypedCfgPreservation.StateRel source tokens target ->
+      forall transcript sourceError,
+        Simulation.Interaction.Executes
+            sourceRun transcript (.error sourceError) ->
+          exists targetFuel targetError,
+            targetFuel <= targetBudget /\
+              Simulation.Interaction.Executes
+                (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+                  policy cfg targetFuel entry target)
+                transcript (.error targetError)
+
 /-- Complete branch preservation at one uniform target budget. This is the
 structural interface required for runtime errors as well as successful exits. -/
 def UniformDoneExecPreservesUnder (result : TypedCfgCompiler.Result)
@@ -2495,6 +2516,37 @@ theorem uniform
     hRel⟩
 
 end BoundedExecPreservesUnder
+
+namespace BoundedErrorExecPreservesUnder
+
+/-- Pad an error branch to its common source-owned target ceiling. Once the
+target has errored, extra interpreter fuel is inert by monadic propagation. -/
+theorem uniform
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {targetBudget : Nat} {policy : StopPolicy}
+    (hBounded :
+      BoundedErrorExecPreservesUnder result cfg entry ctx regular
+        source tokens sourceRun targetBudget policy) :
+    UniformErrorExecPreservesUnder result cfg entry ctx regular
+      source tokens sourceRun targetBudget policy := by
+  intro target hStateRel transcript sourceError hSourceExec
+  obtain ⟨targetFuel, targetError, hFuel, hTargetExec⟩ :=
+    hBounded target hStateRel transcript sourceError hSourceExec
+  let extra := targetBudget - targetFuel
+  have hFuelEq : targetFuel + extra = targetBudget := by
+    omega
+  refine ⟨targetError, ?_⟩
+  rw [← hFuelEq,
+    TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_add]
+  exact Simulation.Interaction.Executes.bind_error hTargetExec
+
+end BoundedErrorExecPreservesUnder
 
 namespace UniformExecPreservesUnder
 
