@@ -14,6 +14,18 @@
   EvmCompiler.Solidity.RawAstPublic`, `lake build EvmCompiler.Verification`,
   touched raw-file hole/trust scan, and `git diff --check`.
 
+- 2026-06-23 10:20 PDT - test/raw-solc-poolmanager-corpus - Added and
+  validated `scripts/test_raw_solc_poolmanager_corpus.sh`: pinned Uniswap v4
+  PoolManager raw Standard JSON is generated for exact-compatible solc 0.8.26
+  with 44 imported sources and no linker metadata, then Lean raw elaboration
+  compiles runtime/creation selections to exact checked sizes 114118 and
+  114434 with one immutable reference. The same unmodified source fails closed
+  under solc 0.8.35 because it pins `pragma solidity 0.8.26`; no source
+  mutation is used. Validation passed: the new script, `bash -n`, no
+  normalized bridge-generation guard, `lake build evm-compiler-backend
+  EvmCompiler.Solidity.RawAstPublic`, `lake build EvmCompiler.Verification`,
+  touched raw-file hole/trust scan, and `git diff --check`.
+
 - 2026-06-18 18:00 PDT - compaction-resume/generated-terminal-arguments -
   Resumed after the checked direct terminal theorem and `terminal_after_args`;
   the active boundary is the horizontal prepared-argument composition theorem,

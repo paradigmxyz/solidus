@@ -90,6 +90,10 @@ Next raw frontend layer:
   creation/runtime object selection; Lean raw elaboration consumes the raw
   Standard JSON, preserves seven metadata linker symbols, and reproduces the
   checked artifact sizes.
+- [x] Add a pinned Uniswap v4 PoolManager raw corpus gate for the compatible
+  exact-pragma solc 0.8.26 source; creation/runtime raw Lean elaboration
+  reproduces checked artifact sizes, and solc 0.8.35 fails closed before raw
+  AST production because the source pins `pragma solidity 0.8.26`.
 - [ ] Differentially compare raw Lean elaboration against the old bridge over
   both pinned solc versions and the full corpus: Aave, Permit2, Safe,
   EntryPoint, PoolManager, all real suites, and adversarial fixtures.
