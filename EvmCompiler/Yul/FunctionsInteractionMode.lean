@@ -37,6 +37,19 @@ def targetPrimitive : Mode →
   | .guarded contract =>
       Functions.AllocationInteractionSafeSemantics.primitiveSemantics contract
 
+theorem targetPrimitive_iszero (mode : Mode)
+    (state : Functions.InteractionSemantics.State) (values : List Word) :
+    (targetPrimitive mode).eval .iszero state values =
+      Locals.InteractionSemantics.Primitive.openEval
+        .iszero state values := by
+  cases mode with
+  | ordinary => rfl
+  | guarded contract =>
+      apply
+        Functions.AllocationInteractionSafeSemantics.Primitive.openEval_eq_ordinary
+      change True
+      trivial
+
 namespace Source
 
 def evalArgs (mode : Mode) :=
@@ -273,17 +286,6 @@ end Source
 
 namespace Target
 
-namespace Expr
-
-def openEval {results : Nat} (mode : Mode)
-    (expr : Functions.Expr results)
-    (state : Functions.InteractionSemantics.State) :=
-  Locals.Source.Effectful.Expr.Control.eval
-    Functions.InteractionSemantics.stateModel (targetPrimitive mode)
-    expr state
-
-end Expr
-
 namespace ExprSeq
 
 def openEval {results : Nat} (mode : Mode)
@@ -295,6 +297,67 @@ def openEval {results : Nat} (mode : Mode)
 
 end ExprSeq
 
+namespace Expr
+
+def openEval {results : Nat} (mode : Mode)
+    (expr : Functions.Expr results)
+    (state : Functions.InteractionSemantics.State) :=
+  Locals.Source.Effectful.Expr.Control.eval
+    Functions.InteractionSemantics.stateModel (targetPrimitive mode)
+    expr state
+
+def openEvalOne {results : Nat} (mode : Mode)
+    (expr : Functions.Expr results)
+    (state : Functions.InteractionSemantics.State) :=
+  Locals.Source.Effectful.Expr.Control.evalOne
+    Functions.InteractionSemantics.stateModel (targetPrimitive mode)
+    expr state
+
+theorem openEvalOne_eq_bind {results : Nat} (mode : Mode)
+    (expr : Functions.Expr results)
+    (state : Functions.InteractionSemantics.State) :
+    openEvalOne mode expr state =
+      Simulation.Interaction.bind (openEval mode expr state) fun result =>
+        match result.2 with
+        | [value] => pure (result.1, value)
+        | _ => throw .InvalidInstruction := by
+  rfl
+
+def openEvalCondition (mode : Mode) (expr : Functions.Expr 1)
+    (state : Functions.InteractionSemantics.State) :=
+  Locals.Source.Effectful.Expr.Control.evalCondition
+    Functions.InteractionSemantics.stateModel (targetPrimitive mode)
+    expr state
+
+theorem openEvalCondition_eq_map_openEvalOne (mode : Mode)
+    (expr : Functions.Expr 1)
+    (state : Functions.InteractionSemantics.State) :
+    openEvalCondition mode expr state =
+      Simulation.Interaction.map
+        (fun result =>
+          (result.1, result.2 != EvmYul.UInt256.ofNat 0))
+        (openEvalOne mode expr state) := by
+  rfl
+
+theorem openEval_vars_eq (mode : Mode) {results : Nat}
+    (expr : Functions.Expr results)
+    (state : Functions.InteractionSemantics.State) :
+    Simulation.Interaction.AllDone
+      (fun outcome =>
+        match outcome with
+        | .error _ => True
+        | .ok result => result.1.vars = state.vars)
+      (openEval mode expr state) := by
+  cases mode with
+  | ordinary =>
+      exact Locals.InteractionSemantics.Expr.openEval_vars_eq expr state
+  | guarded contract =>
+      exact
+        Functions.AllocationInteractionSafeSemantics.Expr.openEval_vars_eq
+          contract expr state
+
+end Expr
+
 namespace ArgList
 
 def openEval (mode : Mode) (args : List (Functions.Expr 1))
@@ -304,6 +367,17 @@ def openEval (mode : Mode) (args : List (Functions.Expr 1))
     args state
 
 end ArgList
+
+namespace Block
+
+def openRun (mode : Mode) (program : Functions.Program)
+    (ctx : Functions.Source.Ctx) (fuel : Nat) (block : Functions.Block)
+    (state : Functions.InteractionSemantics.State) :=
+  Functions.Source.Canonical.Block.runOpen
+    Functions.InteractionSemantics.stateModel (targetPrimitive mode)
+    program ctx fuel block state
+
+end Block
 
 namespace Stmt
 
@@ -373,16 +447,124 @@ theorem openRun_let (mode : Mode) (program : Functions.Program)
   | cons value rest =>
       cases rest <;> rfl
 
+theorem openRun_assign_of_contains (mode : Mode)
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (name : Functions.Name) (expr : Functions.Expr 1)
+    (state : Functions.InteractionSemantics.State)
+    (hContains : state.vars.contains name = true) :
+    openRun mode program ctx fuel (.assign name expr) state =
+      Simulation.Interaction.bind (Target.Expr.openEvalOne mode expr state)
+        (fun result =>
+          pure
+            (Functions.Source.Effectful.Outcome.regular
+              (result.1.insert name result.2), ctx)) := by
+  unfold openRun Target.Expr.openEvalOne
+    Functions.Source.Canonical.Stmt.run
+  simp only [Functions.Source.Effectful.Control.Stmt.run,
+    Functions.InteractionSemantics.stateModel,
+    Locals.InteractionSemantics.stateModel,
+    Locals.Source.Effectful.Ordinary.stateModel,
+    Locals.Source.Effectful.StateModel.vars, id_eq, hContains,
+    ↓reduceIte, Locals.Source.Effectful.StateModel.withVars,
+    Locals.Source.State.withVars,
+    Locals.Source.Effectful.StateModel.insert]
+  rfl
+
+theorem openRun_if (mode : Mode) (program : Functions.Program)
+    (ctx : Functions.Source.Ctx) (fuel : Nat)
+    (cond : Functions.Expr 1) (body : Functions.Block)
+    (state : Functions.InteractionSemantics.State) :
+    openRun mode program ctx (fuel + 1) (.if_ cond body) state =
+      Simulation.Interaction.bind
+        (Target.Expr.openEvalCondition mode cond state)
+        (fun result =>
+          if result.2 then
+            openRun mode program ctx fuel (.block body) result.1
+          else
+            pure
+              (Functions.Source.Effectful.Outcome.regular result.1, ctx)) := by
+  unfold openRun Target.Expr.openEvalCondition
+    Functions.Source.Canonical.Stmt.run
+  simp only [Functions.Source.Effectful.Control.Stmt.run]
+  rfl
+
+theorem openRun_switch (mode : Mode) (program : Functions.Program)
+    (ctx : Functions.Source.Ctx) (fuel : Nat)
+    (scrutinee : Functions.Expr 1)
+    (cases : List (Word × Functions.Block))
+    (defaultBody : Option Functions.Block)
+    (state : Functions.InteractionSemantics.State) :
+    openRun mode program ctx (fuel + 1)
+        (.switch scrutinee cases defaultBody) state =
+      Simulation.Interaction.bind
+        (Target.Expr.openEvalOne mode scrutinee state)
+        (fun result =>
+          match Functions.Source.Switch.select
+              result.2 cases defaultBody with
+          | some body =>
+              openRun mode program ctx fuel (.block body) result.1
+          | none =>
+              pure
+                (Functions.Source.Effectful.Outcome.regular result.1, ctx)) := by
+  unfold openRun Target.Expr.openEvalOne
+    Functions.Source.Canonical.Stmt.run
+  simp only [Functions.Source.Effectful.Control.Stmt.run]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Locals.Source.Effectful.Expr.Control.evalOne
+        Functions.InteractionSemantics.stateModel (targetPrimitive mode)
+        scrutinee state))
+  intro result _hResult
+  cases Functions.Source.Switch.select result.2 cases defaultBody <;> rfl
+
+theorem openRun_block (mode : Mode) (program : Functions.Program)
+    (ctx : Functions.Source.Ctx) (fuel : Nat)
+    (body : Functions.Block)
+    (state : Functions.InteractionSemantics.State) :
+    openRun mode program ctx fuel (.block body) state =
+      Simulation.Interaction.bind
+        (Target.Block.openRun mode program ctx fuel body state)
+        (fun result =>
+          match result.1.mode with
+          | .regular =>
+              pure
+                (Functions.Source.Effectful.Outcome.regular
+                  (Functions.InteractionSemantics.stateModel.restrictTo
+                    ctx.scope result.1.state), ctx)
+          | .brk | .cont | .leave | .halt _ =>
+              pure (result.1, ctx)) := by
+  unfold openRun Target.Block.openRun
+    Functions.Source.Canonical.Stmt.run
+    Functions.Source.Canonical.Block.runOpen
+  simp only [Functions.Source.Effectful.Control.Stmt.run]
+  unfold Functions.Source.Effectful.Control.Block.runScoped
+  change
+    Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Functions.Source.Effectful.Control.Block.runOpen
+            Functions.InteractionSemantics.stateModel (targetPrimitive mode)
+            program ctx fuel body state)
+          (fun result =>
+            match result.1.mode with
+            | .regular =>
+                pure
+                  (Functions.Source.Effectful.Outcome.regular
+                    (Functions.InteractionSemantics.stateModel.restrictTo
+                      ctx.scope result.1.state))
+            | .brk | .cont | .leave | .halt _ => pure result.1))
+        (fun outcome => pure (outcome, ctx)) = _
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Functions.Source.Effectful.Control.Block.runOpen
+        Functions.InteractionSemantics.stateModel (targetPrimitive mode)
+        program ctx fuel body state))
+  intro result _hResult
+  cases result.1.mode <;> rfl
+
 end Stmt
 
 namespace Block
-
-def openRun (mode : Mode) (program : Functions.Program)
-    (ctx : Functions.Source.Ctx) (fuel : Nat) (block : Functions.Block)
-    (state : Functions.InteractionSemantics.State) :=
-  Functions.Source.Canonical.Block.runOpen
-    Functions.InteractionSemantics.stateModel (targetPrimitive mode)
-    program ctx fuel block state
 
 theorem openRun_cons (mode : Mode) (program : Functions.Program)
     (ctx : Functions.Source.Ctx) (fuel : Nat) (stmt : Functions.Stmt)

@@ -1643,8 +1643,10 @@ report_matches \
   EvmCompiler/Yul/AllocationInteractionSafeRefinement.lean \
   EvmCompiler/Yul/FunctionsAllocationInteractionSafety.lean \
   EvmCompiler/Yul/FunctionsInteractionMode.lean \
+  EvmCompiler/Yul/FunctionsInteractionArityMode.lean \
   EvmCompiler/Yul/FunctionsInteractionExpressionMode.lean \
-  EvmCompiler/Yul/FunctionsInteractionPreparedArgsMode.lean
+  EvmCompiler/Yul/FunctionsInteractionPreparedArgsMode.lean \
+  EvmCompiler/Yul/FunctionsInteractionPreparedConditionMode.lean
 if ! sed -n '/^noncomputable def toObjectsWithObservers? (program/,/^[[:space:]]*toObjectsCanonical? program$/p' \
       EvmCompiler/Yul/Compiler.lean |
     rg -q 'toObjectsCanonical\? program'; then

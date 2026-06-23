@@ -250,6 +250,16 @@ theorem exprSeq_openEval_seqCast
   cases h
   rfl
 
+theorem expr_openEval_cast
+    (mode : Mode) {left right : Nat} (h : left = right)
+    (expr : Locals.Expr left)
+    (state : Functions.InteractionSemantics.State) :
+    Target.Expr.openEval mode
+        (EvmCompiler.Yul.Expr.cast h expr) state =
+      Target.Expr.openEval mode expr state := by
+  cases h
+  rfl
+
 def StableValue (mode : Mode) (expr : Locals.Expr 1)
     (base : Functions.InteractionSemantics.State) (value : Word) : Prop :=
   ∀ candidate,
