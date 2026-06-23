@@ -813,6 +813,21 @@ theorem word_toNat_of_lt {value : Nat} (h : value < 256) :
   have : 256 < EvmYul.UInt256.size := by decide
   exact Nat.lt_trans h this
 
+theorem add_word_eq_of_lt {a b : Nat} (h : a + b < 256) :
+    EvmYul.UInt256.add (word a) (word b) = word (a + b) := by
+  unfold EvmYul.UInt256.add word EvmYul.UInt256.ofNat
+  congr
+  apply Fin.ext
+  simp only [Fin.val_add, Id.run]
+  rw [Fin.val_ofNat, Fin.val_ofNat]
+  have hlt : a + b < EvmYul.UInt256.size := by
+    have : 256 < EvmYul.UInt256.size := by decide
+    exact Nat.lt_trans h this
+  have ha : a < EvmYul.UInt256.size := by omega
+  have hb : b < EvmYul.UInt256.size := by omega
+  rw [Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt hb, Nat.mod_eq_of_lt hlt]
+  rw [Fin.val_ofNat, Nat.mod_eq_of_lt hlt]
+
 theorem toNat_eq_zero_iff (value : Word) :
     value.toNat = 0 ↔ value = zero := by
   constructor
@@ -948,6 +963,33 @@ theorem log2_shiftLeft_word_toNat
   rw [Nat.log2_eq_log_two]
   exact hLog
 
+theorem shiftLeft_noOverflow_of_log2_add_lt
+    (value : Word) {shift : Nat}
+    (hValue : value ≠ zero)
+    (hBound : value.toNat.log2 + shift < 256) :
+    value.toNat <<< shift < EvmYul.UInt256.size := by
+  have hValueNat : value.toNat ≠ 0 := by
+    intro hz
+    exact hValue ((toNat_eq_zero_iff value).mp hz)
+  rw [Nat.shiftLeft_eq]
+  have hValLt : value.toNat < 2 ^ (value.toNat.log2 + 1) :=
+    Nat.lt_log2_self (n := value.toNat)
+  have hMulLt : value.toNat * 2 ^ shift <
+      2 ^ (value.toNat.log2 + 1) * 2 ^ shift :=
+    Nat.mul_lt_mul_of_pos_right hValLt
+      (Nat.pow_pos (by decide : 0 < 2) (n := shift))
+  have hPowEq : 2 ^ (value.toNat.log2 + 1) * 2 ^ shift =
+      2 ^ (value.toNat.log2 + shift + 1) := by
+    rw [← Nat.pow_add]
+    congr 1
+    omega
+  have hPowLe : 2 ^ (value.toNat.log2 + shift + 1) ≤ 2 ^ 256 := by
+    apply Nat.pow_le_pow_right (by decide : 0 < 2)
+    omega
+  have hLtPow : value.toNat * 2 ^ shift < 2 ^ 256 :=
+    lt_of_lt_of_le (by simpa [hPowEq] using hMulLt) hPowLe
+  simpa [EvmYul.UInt256.size] using hLtPow
+
 theorem isZero_truthy_iff (value : Word) :
     (EvmYul.UInt256.isZero value != zero) = true ↔ value = zero := by
   constructor
@@ -1007,11 +1049,226 @@ def applyHighestBitStep (highestBit ret : Nat) (step : Nat × Nat) : Nat :=
 def runHighestBit (highestBit : Nat) : Nat :=
   clzHelperStepSchedule.foldl (applyHighestBitStep highestBit) 0
 
+theorem applyStep_prefix_refines
+    {state : State} {highest ret checkShift addend : Nat}
+    (hArg : state.arg ≠ zero)
+    (hRet : state.ret = word ret)
+    (hLog : state.arg.toNat.log2 = highest + ret)
+    (hBound : highest + ret < 256)
+    (hCheck : checkShift < 256)
+    (hAdd : addend < 256)
+    (hStep : checkShift + addend = 256)
+    (hAddNeOne : addend ≠ 1) :
+    let state' := applyStep state (checkShift, addend)
+    state'.ret = word (applyHighestBitStep highest ret (checkShift, addend)) ∧
+      state'.arg ≠ zero ∧
+      state'.arg.toNat.log2 =
+        highest + applyHighestBitStep highest ret (checkShift, addend) ∧
+      highest + applyHighestBitStep highest ret (checkShift, addend) < 256 := by
+  dsimp only
+  have hShould := shouldRunStep_eq_log2_lt state.arg state.ret hArg hCheck
+  rw [hLog] at hShould
+  by_cases hRun : highest + ret < checkShift
+  · have hRetAddBound : ret + addend < 256 := by omega
+    have hLogAddBound : state.arg.toNat.log2 + addend < 256 := by omega
+    have hNoOverflow :=
+      shiftLeft_noOverflow_of_log2_add_lt state.arg hArg hLogAddBound
+    have hShiftLog :=
+      log2_shiftLeft_word_toNat state.arg hArg hAdd hNoOverflow
+    have hShiftLogNat :
+        (EvmYul.UInt256.shiftLeft state.arg (word addend)).toNat.log2 =
+          state.arg.toNat.log2 + addend := by
+      simpa [log2_toNat_eq] using hShiftLog
+    have hShiftNat := shiftLeft_word_toNat_of_lt state.arg hAdd hNoOverflow
+    have hShiftNe :
+        EvmYul.UInt256.shiftLeft state.arg (word addend) ≠ zero := by
+      intro hZero
+      have hNatZero :
+          (EvmYul.UInt256.shiftLeft state.arg (word addend)).toNat = 0 :=
+        (toNat_eq_zero_iff _).mpr hZero
+      have hArgNatNe : state.arg.toNat ≠ 0 := by
+        intro hz
+        exact hArg ((toNat_eq_zero_iff state.arg).mp hz)
+      rw [hShiftNat, Nat.shiftLeft_eq] at hNatZero
+      exact Nat.mul_ne_zero hArgNatNe
+        (Nat.ne_of_gt (Nat.pow_pos (by decide : 0 < 2) (n := addend)))
+        hNatZero
+    have hRetAdd := add_word_eq_of_lt (a := ret) (b := addend)
+      hRetAddBound
+    simp [applyStep, hShould, hRun, applyStepBody, applyHighestBitStep,
+      hAddNeOne, hRet, hRetAdd, hShiftNe, hShiftLogNat]
+    omega
+  · simp [applyStep, hShould, hRun, applyHighestBitStep, hRet, hArg, hLog,
+      hBound]
+
+theorem applyStep_final_ret_refines
+    {state : State} {highest ret : Nat}
+    (hArg : state.arg ≠ zero)
+    (hRet : state.ret = word ret)
+    (hLog : state.arg.toNat.log2 = highest + ret)
+    (hBound : highest + ret < 256) :
+    (applyStep state (255, 1)).ret =
+      word (applyHighestBitStep highest ret (255, 1)) := by
+  have hShould := shouldRunStep_eq_log2_lt state.arg state.ret hArg
+    (by decide : 255 < 256)
+  rw [hLog] at hShould
+  by_cases hRun : highest + ret < 255
+  · have hRetAddBound : ret + 1 < 256 := by omega
+    have hRetAdd := add_word_eq_of_lt (a := ret) (b := 1) hRetAddBound
+    simp [applyStep, hShould, hRun, applyStepBody, applyHighestBitStep,
+      hRet, hRetAdd]
+  · simp [applyStep, hShould, hRun, applyHighestBitStep, hRet]
+
 set_option maxRecDepth 10000 in
 theorem runHighestBit_eq_reference :
     ∀ highestBit : Fin 256,
       runHighestBit highestBit.val = 255 - highestBit.val := by
   decide
+
+theorem runNonzero_ret_eq_runHighestBit
+    (value : Word) (hValue : value ≠ zero) :
+    (runNonzero value).ret = word (runHighestBit value.toNat.log2) := by
+  let highest := value.toNat.log2
+  have hHighest : highest < 256 := by
+    have h := log2_toNat_lt_256_of_ne_zero hValue
+    simpa [highest, log2_toNat_eq] using h
+  let state0 : State := { arg := value, ret := word 0 }
+  let ret0 : Nat := 0
+  have h0Arg : state0.arg ≠ zero := by simpa [state0] using hValue
+  have h0Ret : state0.ret = word ret0 := by rfl
+  have h0Log : state0.arg.toNat.log2 = highest + ret0 := by
+    simp [state0, highest, ret0]
+  have h0Bound : highest + ret0 < 256 := by simpa [ret0] using hHighest
+  let ret1 := applyHighestBitStep highest ret0 (128, 128)
+  let state1 := applyStep state0 (128, 128)
+  have step1 := applyStep_prefix_refines (state := state0)
+    (highest := highest) (ret := ret0) (checkShift := 128) (addend := 128)
+    h0Arg h0Ret h0Log h0Bound (by decide) (by decide) (by decide)
+    (by decide)
+  have h1Ret : state1.ret = word ret1 := by
+    simpa [state1, ret1] using step1.1
+  have h1Arg : state1.arg ≠ zero := by
+    simpa [state1] using step1.2.1
+  have h1Log : state1.arg.toNat.log2 = highest + ret1 := by
+    simpa [state1, ret1] using step1.2.2.1
+  have h1Bound : highest + ret1 < 256 := by
+    simpa [ret1] using step1.2.2.2
+  let ret2 := applyHighestBitStep highest ret1 (192, 64)
+  let state2 := applyStep state1 (192, 64)
+  have step2 := applyStep_prefix_refines (state := state1)
+    (highest := highest) (ret := ret1) (checkShift := 192) (addend := 64)
+    h1Arg h1Ret h1Log h1Bound (by decide) (by decide) (by decide)
+    (by decide)
+  have h2Ret : state2.ret = word ret2 := by
+    simpa [state2, ret2] using step2.1
+  have h2Arg : state2.arg ≠ zero := by
+    simpa [state2] using step2.2.1
+  have h2Log : state2.arg.toNat.log2 = highest + ret2 := by
+    simpa [state2, ret2] using step2.2.2.1
+  have h2Bound : highest + ret2 < 256 := by
+    simpa [ret2] using step2.2.2.2
+  let ret3 := applyHighestBitStep highest ret2 (224, 32)
+  let state3 := applyStep state2 (224, 32)
+  have step3 := applyStep_prefix_refines (state := state2)
+    (highest := highest) (ret := ret2) (checkShift := 224) (addend := 32)
+    h2Arg h2Ret h2Log h2Bound (by decide) (by decide) (by decide)
+    (by decide)
+  have h3Ret : state3.ret = word ret3 := by
+    simpa [state3, ret3] using step3.1
+  have h3Arg : state3.arg ≠ zero := by
+    simpa [state3] using step3.2.1
+  have h3Log : state3.arg.toNat.log2 = highest + ret3 := by
+    simpa [state3, ret3] using step3.2.2.1
+  have h3Bound : highest + ret3 < 256 := by
+    simpa [ret3] using step3.2.2.2
+  let ret4 := applyHighestBitStep highest ret3 (240, 16)
+  let state4 := applyStep state3 (240, 16)
+  have step4 := applyStep_prefix_refines (state := state3)
+    (highest := highest) (ret := ret3) (checkShift := 240) (addend := 16)
+    h3Arg h3Ret h3Log h3Bound (by decide) (by decide) (by decide)
+    (by decide)
+  have h4Ret : state4.ret = word ret4 := by
+    simpa [state4, ret4] using step4.1
+  have h4Arg : state4.arg ≠ zero := by
+    simpa [state4] using step4.2.1
+  have h4Log : state4.arg.toNat.log2 = highest + ret4 := by
+    simpa [state4, ret4] using step4.2.2.1
+  have h4Bound : highest + ret4 < 256 := by
+    simpa [ret4] using step4.2.2.2
+  let ret5 := applyHighestBitStep highest ret4 (248, 8)
+  let state5 := applyStep state4 (248, 8)
+  have step5 := applyStep_prefix_refines (state := state4)
+    (highest := highest) (ret := ret4) (checkShift := 248) (addend := 8)
+    h4Arg h4Ret h4Log h4Bound (by decide) (by decide) (by decide)
+    (by decide)
+  have h5Ret : state5.ret = word ret5 := by
+    simpa [state5, ret5] using step5.1
+  have h5Arg : state5.arg ≠ zero := by
+    simpa [state5] using step5.2.1
+  have h5Log : state5.arg.toNat.log2 = highest + ret5 := by
+    simpa [state5, ret5] using step5.2.2.1
+  have h5Bound : highest + ret5 < 256 := by
+    simpa [ret5] using step5.2.2.2
+  let ret6 := applyHighestBitStep highest ret5 (252, 4)
+  let state6 := applyStep state5 (252, 4)
+  have step6 := applyStep_prefix_refines (state := state5)
+    (highest := highest) (ret := ret5) (checkShift := 252) (addend := 4)
+    h5Arg h5Ret h5Log h5Bound (by decide) (by decide) (by decide)
+    (by decide)
+  have h6Ret : state6.ret = word ret6 := by
+    simpa [state6, ret6] using step6.1
+  have h6Arg : state6.arg ≠ zero := by
+    simpa [state6] using step6.2.1
+  have h6Log : state6.arg.toNat.log2 = highest + ret6 := by
+    simpa [state6, ret6] using step6.2.2.1
+  have h6Bound : highest + ret6 < 256 := by
+    simpa [ret6] using step6.2.2.2
+  let ret7 := applyHighestBitStep highest ret6 (254, 2)
+  let state7 := applyStep state6 (254, 2)
+  have step7 := applyStep_prefix_refines (state := state6)
+    (highest := highest) (ret := ret6) (checkShift := 254) (addend := 2)
+    h6Arg h6Ret h6Log h6Bound (by decide) (by decide) (by decide)
+    (by decide)
+  have h7Ret : state7.ret = word ret7 := by
+    simpa [state7, ret7] using step7.1
+  have h7Arg : state7.arg ≠ zero := by
+    simpa [state7] using step7.2.1
+  have h7Log : state7.arg.toNat.log2 = highest + ret7 := by
+    simpa [state7, ret7] using step7.2.2.1
+  have h7Bound : highest + ret7 < 256 := by
+    simpa [ret7] using step7.2.2.2
+  let ret8 := applyHighestBitStep highest ret7 (255, 1)
+  let state8 := applyStep state7 (255, 1)
+  have step8 := applyStep_final_ret_refines (state := state7)
+    (highest := highest) (ret := ret7) h7Arg h7Ret h7Log h7Bound
+  have h8Ret : state8.ret = word ret8 := by
+    simpa [state8, ret8] using step8
+  simpa [runNonzero, runHighestBit, clzHelperStepSchedule, state0, state1,
+    state2, state3, state4, state5, state6, state7, state8, ret0, ret1,
+    ret2, ret3, ret4, ret5, ret6, ret7, ret8, highest] using h8Ret
+
+theorem run_eq_reference (value : Word) :
+    run value = reference value := by
+  by_cases hValue : value = zero
+  · subst hValue
+    simp [run, reference, zero, EvmYul.instBEqUInt256,
+      EvmYul.instBEqUInt256.beq, EvmYul.UInt256.ofNat, Id.run]
+  · have hValueBool : (value == zero) = false := by
+      cases value with
+      | mk valueFin =>
+          simp [zero, EvmYul.instBEqUInt256, EvmYul.instBEqUInt256.beq,
+            EvmYul.UInt256.ofNat, Id.run] at hValue ⊢
+          exact hValue
+    have hRet := runNonzero_ret_eq_runHighestBit value hValue
+    have hHighestNat : value.toNat.log2 < 256 := by
+      have h := log2_toNat_lt_256_of_ne_zero hValue
+      simpa [log2_toNat_eq] using h
+    have hRunHighest :
+        runHighestBit value.toNat.log2 = 255 - value.toNat.log2 :=
+      runHighestBit_eq_reference ⟨value.toNat.log2, hHighestNat⟩
+    rw [run, reference, hValueBool]
+    rw [hRet, hRunHighest]
+    simp [log2_toNat_eq]
 
 def powerOfTwoInputsMatchReference? : Bool :=
   (List.range 256).all fun highestBit =>
@@ -1378,6 +1635,11 @@ abbrev Env := Name → Option Word
 def clzModel (value : Word) : Word :=
   ClzHelperModel.run value
 
+theorem clzModel_eq_reference (value : Word) :
+    clzModel value = ClzHelperModel.reference value := by
+  unfold clzModel
+  exact ClzHelperModel.run_eq_reference value
+
 mutual
   def evalPureExpr? (env : Env) : Frontend.Expr → Option Word
     | .lit value => some value
@@ -1437,6 +1699,28 @@ theorem evalHelperCallExpr_eq_clzModel
       some (clzModel value) := by
   simp [evalHelperCallExpr?, hArg,
     evalGeneratedHelperCall_eq_clzModel hSpec hNames, clzModel]
+
+theorem evalGeneratedHelperCall_eq_reference
+    {fn : Frontend.FunctionDef} {argName returnName : Name}
+    (hSpec : ClzHelperSpec fn argName returnName)
+    (hNames : argName ≠ returnName)
+    (value initialRet : Word) :
+    evalGeneratedHelperCall? argName returnName fn value initialRet =
+      some (ClzHelperModel.reference value) := by
+  rw [evalGeneratedHelperCall_eq_clzModel hSpec hNames]
+  simp [clzModel_eq_reference]
+
+theorem evalHelperCallExpr_eq_reference
+    {helper argName returnName : Name} {fn : Frontend.FunctionDef}
+    {env : Env} {argExpr : Frontend.Expr} {value initialRet : Word}
+    (hSpec : ClzHelperSpec fn argName returnName)
+    (hNames : argName ≠ returnName)
+    (hArg : evalPureExpr? env argExpr = some value) :
+    evalHelperCallExpr? helper argName returnName fn env
+        (.call .user helper [argExpr]) initialRet =
+      some (ClzHelperModel.reference value) := by
+  rw [evalHelperCallExpr_eq_clzModel hSpec hNames hArg]
+  simp [clzModel_eq_reference]
 
 end ClzCallReplacement
 
@@ -2411,6 +2695,31 @@ theorem Object.elaboratePreservingOrder?_clzHelperCall_eq_clzModel
   simp [Elab.ClzCallReplacement.evalHelperCallExpr?,
     Elab.ClzCallReplacement.evalGeneratedHelperCall?,
     Elab.ClzCallReplacement.clzModel, hArg, hExec]
+
+theorem Object.elaboratePreservingOrder?_clzHelperCall_eq_reference
+    {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
+    {frontend : Frontend.Object} {code : List Raw.Stmt}
+    {helper arg ret : Name} {env : Elab.ClzCallReplacement.Env}
+    {argExpr : Frontend.Expr} {value initialRet : Word}
+    (hElab :
+      Object.elaboratePreservingOrder? obj evmVersion = .ok frontend)
+    (hCode : obj.code? = some code)
+    (hCodeElab :
+      Elab.elaborateCode code =
+        .ok (frontend.dispatcher, frontend.functions,
+          some helper, some arg, some ret))
+    (hArg :
+      Elab.ClzCallReplacement.evalPureExpr? env argExpr = some value) :
+    ∃ fn,
+      (helper, fn) ∈ frontend.functions ∧
+        Elab.ClzCallReplacement.evalHelperCallExpr?
+            helper arg ret fn env (.call .user helper [argExpr]) initialRet =
+          some (Elab.ClzHelperModel.reference value) := by
+  rcases Object.elaboratePreservingOrder?_clzHelperCall_eq_clzModel
+      hElab hCode hCodeElab hArg with
+    ⟨fn, hMem, hEval⟩
+  refine ⟨fn, hMem, ?_⟩
+  simpa [Elab.ClzCallReplacement.clzModel_eq_reference] using hEval
 
 def walkObjectsFuel : Nat → Object → List Object
   | 0, obj => [obj]

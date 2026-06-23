@@ -67,11 +67,14 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.shiftRight_word_eq_zero_iff_log2_lt
 #check EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.log2_shiftLeft_word_toNat
 #check EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.shouldRunStep_eq_log2_lt
+#check EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.runNonzero_ret_eq_runHighestBit
+#check EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.run_eq_reference
 #check EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.powerOfTwoInputsMatchReference
 #check EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.boundaryInputsMatchReference
 #check EvmCompiler.Solidity.RawAst.Elab.ClzHelperExecution.exec_clzHelperBody_ret_eq_run
 #check EvmCompiler.Solidity.RawAst.Elab.ClzHelperExecution.exec_clzHelperSpec_ret_eq_run
 #check EvmCompiler.Solidity.RawAst.Elab.ClzCallReplacement.evalHelperCallExpr_eq_clzModel
+#check EvmCompiler.Solidity.RawAst.Elab.ClzCallReplacement.evalHelperCallExpr_eq_reference
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_parts
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_mem
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_shape
@@ -90,6 +93,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_frontendValidated
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelper_exec_ret_eq_run
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelperCall_eq_clzModel
+#check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelperCall_eq_reference
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_parts
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_parts
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_objectParts
@@ -196,11 +200,14 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.shiftRight_word_eq_zero_iff_log2_lt
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.log2_shiftLeft_word_toNat
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.shouldRunStep_eq_log2_lt
+#print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.runNonzero_ret_eq_runHighestBit
+#print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.run_eq_reference
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.powerOfTwoInputsMatchReference
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.boundaryInputsMatchReference
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperExecution.exec_clzHelperBody_ret_eq_run
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperExecution.exec_clzHelperSpec_ret_eq_run
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzCallReplacement.evalHelperCallExpr_eq_clzModel
+#print axioms EvmCompiler.Solidity.RawAst.Elab.ClzCallReplacement.evalHelperCallExpr_eq_reference
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_parts
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_shape
@@ -219,6 +226,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_frontendValidated
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelper_exec_ret_eq_run
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelperCall_eq_clzModel
+#print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelperCall_eq_reference
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_objectParts

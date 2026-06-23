@@ -71,7 +71,8 @@ Transformation inventory from `scripts/solidity_to_yul_lean.py`:
 - [x] Nested-function hoisting and alpha-renamed generated callees implemented
   in Lean; nested `Stmt.functionDef` nodes are preserved, not erased.
 - [x] `clz` lowering moved into the Lean raw elaborator as a generated helper;
-  semantic preservation remains a separate compiler-owned proof obligation.
+  the generated helper/call now has a local source-reference preservation
+  theorem, with broader frontend theorem composition still tracked below.
 - [x] Object/data ordering preserved and fail-closed in Lean through explicit
   raw-derived `ObjectItemRef`s plus `itemRefsPreserveOrder?` validation.
 - [ ] Standalone Yul data-name recovery remains Python-only and is not part of
@@ -173,6 +174,13 @@ Next raw frontend layer:
   shifts below 256, the generated `shr`/`iszero` test is equivalent to
   `log2(value) < checkShift`. It also proves that checked non-overflowing
   helper left shifts add the shift amount to `log2`. Production raw elaboration
+  now composes those branch/shift facts through the generated eight-step
+  schedule: `ClzHelperModel.runNonzero_ret_eq_runHighestBit` proves the nonzero
+  fold result, `ClzHelperModel.run_eq_reference` proves the all-word model
+  equals the declared `255 - log2(x)` source reference, and
+  `ClzCallReplacement.evalHelperCallExpr_eq_reference` plus the production raw
+  object wrapper expose that a generated helper-call replacement returns the
+  source reference value. Production raw elaboration
   now fail-closes unless the generated `clz` argument/result names are distinct,
   and exposes the checked condition through a wrapper theorem that discharges
   the helper-execution theorem's name premise. Retained
@@ -191,10 +199,8 @@ Next raw frontend layer:
   exact ordered Yul function entries consumed by the backend, with
   `Frontend.Object.toSolcYulOrderedProgram?_functionDefStubsLoweredToEntries`
   pinned in the verification root.
-  The remaining `clz` semantic gap is the fold composition over the generated
-  eight-step schedule and the final all-word equation between
-  `ClzHelperModel.run` and the declared source/reference meaning; nested
-  hoist/alpha-renaming semantic preservation also remains open.
+  The remaining raw frontend semantic gap is nested hoist/alpha-renaming
+  preservation plus broader composition into the final source theorem.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose
@@ -205,11 +211,10 @@ Next raw frontend layer:
   Standard JSON decoding, Lean-decoded linker metadata, frontend validation,
   and artifact construction into the unconditional optimized-Yul
   finite-prefix theorem without a normalized Python program premise.
-- [ ] Close the remaining raw frontend semantic-preservation work by composing
-  the generated `clz` helper replacement theorem with the all-word source
-  reference equation and proving nested-function hoist/alpha-renaming
-  preservation; do not create a Yul-to-bytecode proof corridor or depend on the
-  parallel hFinished work.
+- [ ] Close the remaining raw frontend semantic-preservation work by proving
+  nested-function hoist/alpha-renaming preservation and composing the local raw
+  frontend facts into the final source theorem; do not create a Yul-to-bytecode
+  proof corridor or depend on the parallel hFinished work.
 
 ## Migration
 
