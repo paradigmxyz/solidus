@@ -123,16 +123,22 @@ Next raw frontend layer:
   selected raw Standard JSON source/contract/object plus checked raw-object
   elaboration from a successful frontend program decode.
   `decodeAndElaborateSolcIr?_parts` lifts that evidence to the public raw
-  string interface. First checked `clz` validation invariant: successful code
+  string interface. `compileArtifactFromRawSolcIr?_rawParts` and the
+  explicit-linker variant lift the same raw parse/selection/elaboration
+  evidence through the artifact-facing wrappers, including Lean-decoded linker
+  metadata for the default path. First checked `clz` validation invariant:
+  successful code
   elaboration that returns generated `clz` helper/argument/result names also
   returns the corresponding generated helper function definition. First checked
   nested-hoist validation invariant: every function accumulated in the raw
   elaborator's `hoistedFunctions` state is retained in the successful returned
   function list. Semantic preservation of the helper and nested
   hoist/alpha-renaming passes remains open.
-- [ ] Expose the production interface
+- [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
-  public certificate premises.
+  public certificate premises, and expose artifact-facing raw wrappers whose
+  success reconstructs the internally selected raw source/contract/object,
+  checked object elaboration, and artifact validity.
 - [ ] Integrate only after the isolated raw theorem is ready; do not create a
   Yul-to-bytecode proof corridor or depend on the parallel hFinished work.
 
@@ -182,8 +188,11 @@ Next raw frontend layer:
 
 ## Completion Gates
 
-- [x] Exact pinned Permit2, linked Aave Pool, PoolManager, and complete strict
-  corpus pass through checked raw-byte artifacts.
+- [x] Raw-capable pinned corpus gates pass through checked raw-byte artifacts,
+  including linked Aave Pool, PoolManager on its compatible exact 0.8.26 pin,
+  Safe, EntryPoint, and adversarial fixtures. Exact Permit2 remains covered as
+  a fail-closed solc-0.8.17 version-boundary/legacy-bridge regression because
+  that compiler emits no structured `irOptimizedAst`.
 - [x] Focused and full `EvmCompiler.Verification` builds pass.
 - [x] Architecture and proof-smoke checks pass.
 - [x] Repository hole, trust, `unsafe`, and axiom audits pass.

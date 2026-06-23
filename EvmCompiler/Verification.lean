@@ -52,8 +52,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_parts
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decoded
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_valid
+#check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_rawParts
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decodingCorrect
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_valid
+#check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_rawParts
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_decodingCorrect
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsTerminal
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsForward
@@ -97,8 +99,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_parts
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decoded
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_valid
+#print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_rawParts
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decodingCorrect
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_valid
+#print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_rawParts
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_decodingCorrect
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsFinished
