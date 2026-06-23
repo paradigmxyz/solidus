@@ -1088,6 +1088,19 @@ def ExecutionSafe (contract : MemoryContract.Contract) (fuel : Nat)
   Simulation.Interaction.Successful
     (openRunState contract fuel program state)
 
+/-- Whole-program guarded success exposes guarded success of the canonical
+main block before top-level lexical restriction. -/
+theorem ExecutionSafe.body
+    {contract : MemoryContract.Contract} {fuel : Nat}
+    {program : Functions.Program} {state : State}
+    (hSafe : ExecutionSafe contract fuel program state) :
+    Block.ExecutionSafe contract program Functions.Source.Ctx.initial fuel
+      program.body state := by
+  unfold ExecutionSafe openRunState Functions.Source.Canonical.Program.runState
+    Functions.Source.Effectful.Control.Program.runState at hSafe
+  unfold Functions.Source.Effectful.Control.Block.runScoped at hSafe
+  exact Simulation.Interaction.Successful.bind_left hSafe
+
 theorem openRunState_eq_ordinary_of_executionSafe
     (contract : MemoryContract.Contract) (fuel : Nat)
     (program : Functions.Program) (state : State)

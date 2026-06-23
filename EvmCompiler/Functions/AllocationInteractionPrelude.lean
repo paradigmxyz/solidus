@@ -1,4 +1,5 @@
 import EvmCompiler.Functions.AllocationInteractionLeaf
+import EvmCompiler.Functions.AllocationInteractionSafeSuccessful
 import EvmCompiler.Functions.AllocationInteractionSuccessful
 
 namespace EvmCompiler
@@ -114,15 +115,13 @@ theorem forward
       Locals.Block.compileOpen localsCtx { stmts := loweredPrefix } =
         some (compiledPrefix, finalLocals))
     (hScoped : Functions.Scope.StmtList.Scoped [] sourcePrefix)
-    (hSafety : AllocationInteractionSafety.SourceSafety contract)
     (hInvariant :
       AllocationContext.ActivationInvariant contract lowerCtx lowerState
         localsCtx plan [] frameBase mode source target)
     (hTargetFuel : sourcePrefix.length + 1 ≤ targetFuel)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun sourceProgram sourceCtx
-          sourceFuel { stmts := sourcePrefix } source)) :
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+        sourceProgram sourceCtx sourceFuel { stmts := sourcePrefix } source) :
     Simulation.Interaction.Rel
       (OpenControlResultRel contract lowerCtx lowerState localsCtx plan [] []
         frameBase mode sourceCtx sourceCtx)
@@ -144,7 +143,7 @@ theorem forward
       subst finalLocals
       have hSourceFuel :=
         Functions.InteractionSemantics.Block.successful_openRun_fuel_pos
-          hSuccess
+          hExecutionSafe.ordinarySuccessful
       obtain ⟨sourceExtra, hSourceFuelEq⟩ :=
         Nat.exists_eq_add_of_le hSourceFuel
       obtain ⟨targetExtra, hTargetFuelEq⟩ :=
@@ -193,13 +192,17 @@ theorem forward
               subst finalLocals
               have hSourceFuel :=
                 Functions.InteractionSemantics.Block.successful_openRun_fuel_pos
-                  hSuccess
-              have hHeadSuccess := successful_head hSourceFuel hSuccess
-              have hEvalSuccess := successful_expr_eval hHeadSuccess
+                  hExecutionSafe.ordinarySuccessful
+              have hHeadSafe :=
+                AllocationInteractionSafeSuccessful.successful_head
+                  hSourceFuel hExecutionSafe
               have hExprScoped : Functions.Scope.ExprScoped [] expr := by
                 simpa [Functions.Scope.Stmt.Scoped] using hScoped.1
               have hSafe :=
-                hSafety.expr hExprScoped hInvariant.defined hEvalSuccess
+                (AllocationInteractionSafeExpression.exprChecked_of_successful
+                  hExprScoped hInvariant.defined
+                  (AllocationInteractionSafeSuccessful.successful_expr_eval
+                    hHeadSafe)).safety
               obtain ⟨loweredExpr, hLowerExpr, hCompileExpr⟩ :=
                 AllocationLowering.compileNoVarExprCode?_of_lowerExpr
                   hNoVar lowerCtx lowerState localsCtx 0
@@ -238,7 +241,7 @@ theorem forward
               have hSourceFuelEq : sourceFuel - 1 + 1 = sourceFuel := by
                 omega
               have hResult :=
-                AllocationInteractionComposition.block_cons_successful
+                AllocationInteractionComposition.block_cons_executionSafe
                   (sourceFuel := sourceFuel - 1)
                   (targetFuel := targetFuel)
                   (headCode := [.code code])
@@ -254,16 +257,16 @@ theorem forward
                   (frameBase := frameBase) (entryMode := mode)
                   (controlCtx := sourceCtx) (midCtx := sourceCtx)
                   (finalCtx := sourceCtx) hHead'
-                  (by simpa [hSourceFuelEq] using hSuccess)
+                  (by simpa [hSourceFuelEq] using hExecutionSafe)
                   (fun {sourceMid targetMid tailMode} hTailInvariant
-                      hSameFrame hReturns hTailSuccess => by
+                      hSameFrame hReturns hTailSuccess hTailSafe => by
                     have hTailTargetFuel :
                         rest.length + 1 ≤ targetFuel - 1 := by
                       have hTargetFuel' : rest.length + 2 ≤ targetFuel := by
                         simpa using hTargetFuel
                       omega
                     exact ih hTailCompile hScoped.2 hTailInvariant
-                      hTailTargetFuel hTailSuccess)
+                      hTailTargetFuel hTailSafe)
               simpa [hSourceFuelEq] using hResult
       | let_ name value | assign name value | block block
       | if_ cond block | switch scrutinee cases defaultBody

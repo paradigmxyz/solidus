@@ -1,5 +1,6 @@
 import EvmCompiler.Functions.AllocationInteractionProgramArtifact
 import EvmCompiler.Functions.AllocationInteractionFramePreservation
+import EvmCompiler.Functions.AllocationInteractionExecutionRuntime
 import EvmCompiler.Functions.AllocationInteractionStackRuntime
 import EvmCompiler.Functions.AllocationInteractionPrelude
 
@@ -1201,8 +1202,10 @@ theorem body
       ScratchSetupResult prepared config source target
         frameBase mode targetFinal targetFuel)
     (hProgramScoped : program.Scoped)
-    (hSafety :
-      AllocationInteractionSafety.SourceSafety program.memoryContract)
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe
+        program.memoryContract program Functions.Source.Ctx.initial sourceFuel
+          mainRoot.root.sourceBlock source)
     (hFrameConfig : compilation.frameConfig? = some config)
     (hFuelBudget :
       Budget config (mainSetupDepth compilation + sourceFuel))
@@ -1211,12 +1214,7 @@ theorem body
           sourceFuel
           (AllocationInteractionTargetFuel.stmtListNestedSize
             mainRoot.root.cursor.compiled) ≤
-        bodyTargetFuel)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program
-          Functions.Source.Ctx.initial sourceFuel
-          mainRoot.root.sourceBlock source)) :
+        bodyTargetFuel) :
     Simulation.Interaction.Rel
       (AllocationInteractionResourceComposition.RuntimeResultRel
         program.memoryContract mainRoot.root.lowerCtx
@@ -1240,17 +1238,17 @@ theorem body
         bodyTargetFuel
         { stmts := mainRoot.root.cursor.compiled } targetFinal) := by
   have hRecursive :
-      AllocationInteractionRecursiveResource.RecursiveOpenRuntime
+      AllocationInteractionRecursiveResource.ExecutionSafeRecursiveOpenRuntime
         (compilation := compilation) program.memoryContract
         compilation.recipe.frameWords (sourceFuel + 1) :=
-    AllocationInteractionRecursiveRuntime.complete
-      (compilation := compilation) hProgramScoped hSafety (sourceFuel + 1)
+    AllocationInteractionExecutionRuntime.complete
+      (compilation := compilation) hProgramScoped (sourceFuel + 1)
   have hBoundary :=
     hSetup.boundary mainRoot hFrameConfig hFuelBudget
   exact
-    AllocationInteractionRecursiveResource.RecursiveOpenRuntime.at_targetFuel
+    AllocationInteractionRecursiveResource.ExecutionSafeRecursiveOpenRuntime.at_targetFuel
       hRecursive mainRoot.root.cursor (by omega) hTargetCapacity
-      hBoundary hFuelBudget hSuccess
+      hBoundary hFuelBudget hExecutionSafe
 
 /-- Compose scratch allocator/frame setup, the recursively preserved main body,
 and exact top-level cleanup while keeping allocator evidence internal. -/
@@ -1271,8 +1269,10 @@ theorem closedBody
       ScratchSetupResult prepared config source target frameBase mode
         targetFinal setupFuel)
     (hProgramScoped : program.Scoped)
-    (hSafety :
-      AllocationInteractionSafety.SourceSafety program.memoryContract)
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe
+        program.memoryContract program Functions.Source.Ctx.initial sourceFuel
+          mainRoot.root.sourceBlock source)
     (hFrameConfig : compilation.frameConfig? = some config)
     (hFuelBudget :
       Budget config (mainSetupDepth compilation + sourceFuel))
@@ -1283,12 +1283,7 @@ theorem closedBody
             mainRoot.root.cursor.compiled) ≤
         bodyTargetFuel)
     (hCleanupFuel :
-      2 ≤ bodyTargetFuel - mainRoot.root.cursor.compiled.length)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program
-          Functions.Source.Ctx.initial sourceFuel
-          mainRoot.root.sourceBlock source)) :
+      2 ≤ bodyTargetFuel - mainRoot.root.cursor.compiled.length) :
     Simulation.Interaction.Rel (OpenOutcomeRel program.memoryContract)
       (Functions.InteractionSemantics.Block.openRunScoped program
         Functions.Source.Ctx.initial mainRoot.root.sourceBlock sourceFuel
@@ -1302,8 +1297,8 @@ theorem closedBody
                 Locals.codeStmt prepared.cleanup }
         target) := by
   have hBodyRaw :=
-    hSetup.body mainRoot hProgramScoped hSafety hFrameConfig hFuelBudget
-      hTargetCapacity hSuccess
+    hSetup.body mainRoot hProgramScoped hExecutionSafe hFrameConfig hFuelBudget
+      hTargetCapacity
   have hBody :=
     Simulation.Interaction.Rel.mono hBodyRaw
       (fun _left _right hDone => hDone.1)
@@ -1389,25 +1384,43 @@ theorem mainForward
           mainRoot.root.cursor.compiled) + 2
   let setupCode := prepared.allocatorCode ++ prepared.frameCode
   let targetFuel := sourcePrefix.length + setupCode.length + bodyTargetFuel
+  have hExecutionSafe :
+      AllocationInteractionSafeSemantics.Program.ExecutionSafe
+        program.memoryContract sourceFuel program source :=
+    False.elim
+      (AllocationInteractionSafety.SourceSafety.uninhabited
+        program.memoryContract hSafety)
   have hOpenSuccess :=
     Functions.InteractionSemantics.Program.successful_openRunState_open hSuccess
+  have hOpenSafe := hExecutionSafe.body
   rw [hProgramBody,
     Functions.InteractionSemantics.Block.openRun_append] at hOpenSuccess
+  unfold AllocationInteractionSafeSemantics.Block.ExecutionSafe at hOpenSafe
+  rw [hProgramBody,
+    AllocationInteractionSafeSemantics.Block.openRun_append] at hOpenSafe
   have hPrefixSuccess :=
     Simulation.Interaction.Successful.bind_left hOpenSuccess
+  have hPrefixSafe := Simulation.Interaction.Successful.bind_left hOpenSafe
   have hContinuationSuccess :=
     Simulation.Interaction.Successful.bind_inv hOpenSuccess
+  have hContinuationSafe :=
+    Simulation.Interaction.Successful.bind_inv hOpenSafe
+  rw [AllocationInteractionSafeSemantics.Block.openRun_eq_ordinary_of_successful
+    program.memoryContract program Functions.Source.Ctx.initial sourceFuel
+      { stmts := sourcePrefix } source hPrefixSafe] at hContinuationSafe
   have hPrefix :=
     AllocationInteractionPrelude.forward (targetProgram := expressions)
       hPrelude prepared.compileSource
-      hPrefixScoped hSafety (InitialRel.invariant artifact hInitial)
+      hPrefixScoped (InitialRel.invariant artifact hInitial)
       (targetFuel := targetFuel) (by
         dsimp [targetFuel, setupCode, bodyTargetFuel]
-        omega) hPrefixSuccess
+        omega) hPrefixSafe
   have hPrefixStrong :=
     Simulation.Interaction.Rel.strengthen_right
-      (Simulation.Interaction.Rel.strengthen_left hPrefix
-        hContinuationSuccess)
+      (Simulation.Interaction.Rel.strengthen_left
+        (Simulation.Interaction.Rel.strengthen_left hPrefix
+          hContinuationSuccess)
+        hContinuationSafe)
       (Expressions.InteractionReturns.Block.openRun_returns expressions
         targetFuel { stmts := prepared.sourceCode } target)
   refine ⟨targetFuel, ?_⟩
@@ -1435,7 +1448,8 @@ theorem mainForward
     targetFuel target]
   apply Simulation.Interaction.Rel.bind_custom hPrefixStrong
   intro sourceDone targetDone hDone
-  rcases hDone with ⟨⟨hRelated, hTailSuccess⟩, hTargetReturns⟩
+  rcases hDone with
+    ⟨⟨⟨hRelated, hTailSuccess⟩, hTailSafe⟩, hTargetReturns⟩
   cases hRelated with
   | error hError => exact False.elim hTailSuccess
   | @ok sourceResult targetOutcome hResult =>
@@ -1463,6 +1477,11 @@ theorem mainForward
                       Functions.Source.Ctx.initial tailSourceFuel
                       mainRoot.root.sourceBlock sourceAfter) := by
                 simpa [tailSourceFuel, mainRoot.sourceBlock] using hTailSuccess
+              have hTailSafe' :
+                  AllocationInteractionSafeSemantics.Block.ExecutionSafe
+                    program.memoryContract program Functions.Source.Ctx.initial
+                      tailSourceFuel mainRoot.root.sourceBlock sourceAfter := by
+                simpa [tailSourceFuel, mainRoot.sourceBlock] using hTailSafe
               have hCapacity :
                   AllocationInteractionRecursive.targetBudget
                       mainRoot.root.cursor tailSourceFuel
@@ -1513,8 +1532,8 @@ theorem mainForward
                       (hResourceSafe.compilation hFrameConfig)
                   have hClosed :=
                     ScratchSetupResult.closedBody mainRoot hSetup
-                      hProgramScoped hSafety hFrameConfig hBudget hCapacity
-                      hCleanupFuel hTailSuccess'
+                      hProgramScoped hTailSafe' hFrameConfig hBudget hCapacity
+                      hCleanupFuel
                   have hTargetTailFuel :
                       targetFuel - prepared.sourceCode.length =
                         setupCode.length + bodyTargetFuel := by
