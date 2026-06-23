@@ -195,6 +195,7 @@ import EvmCompiler.Yul.FunctionsInteractionPreparedConditionMode
 import EvmCompiler.Yul.FunctionsInteractionStatementMode
 import EvmCompiler.Yul.FunctionsInteractionPreparedPrimitiveMode
 import EvmCompiler.Yul.FunctionsInteractionPreparedStatementMode
+import EvmCompiler.Yul.FunctionsInteractionRecursiveStatementMode
 import EvmCompiler.Compiler.StackArtifact
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
 import EvmCompiler.Compiler.OpenInteractionComposition
@@ -1770,6 +1771,10 @@ or audit-alias corridor.
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedStatementMode.assignOneOfConditionDirect
 #print axioms EvmCompiler.Yul.FunctionsInteractionPreparedStatementMode.assignOneOfPreparedPrimitive
 #print axioms EvmCompiler.Yul.FunctionsInteractionStatementMode.block
+#check EvmCompiler.Yul.FunctionsInteractionRecursiveStatementMode.CompoundForward.block
+#check EvmCompiler.Yul.FunctionsInteractionRecursiveStatementMode.RecursiveListForward.ofStmt
+#print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveStatementMode.CompoundForward.block
+#print axioms EvmCompiler.Yul.FunctionsInteractionRecursiveStatementMode.RecursiveListForward.ofStmt
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToAllocatedExpressions
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToStackExpressionsTerminal
 #check EvmCompiler.Compiler.OpenInteractionComposition.stackExpressionsToStructuredTerminal

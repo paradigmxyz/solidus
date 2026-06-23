@@ -436,6 +436,17 @@ theorem execSeq_nil_succ (mode : Mode) (fuel : Nat)
   simp [execSeq, Yul.Source.Canonical.execSeq,
     Yul.Source.Effectful.execSeq]
 
+theorem execSeq_zero (mode : Mode) (stmts : List EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : Yul.InteractionSemantics.State) :
+    execSeq mode 0 stmts code state =
+      Yul.InteractionSemantics.Primitive.fail state .OutOfFuel := by
+  simp [execSeq, Yul.Source.Canonical.execSeq,
+    Yul.Source.Effectful.execSeq,
+    Yul.InteractionSemantics.Primitive.fail,
+    Yul.Source.Effectful.Control.fail]
+  rfl
+
 theorem execSeq_cons_succ (mode : Mode) (fuel : Nat)
     (stmt : EvmYul.Yul.Ast.Stmt) (rest : List EvmYul.Yul.Ast.Stmt)
     (code : Option EvmYul.Yul.Ast.YulContract)
