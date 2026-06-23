@@ -7,10 +7,13 @@ import EvmCompiler.Functions.StackPressureNormalizationProgram
 import EvmCompiler.Functions.StackLowering
 import EvmCompiler.Functions.StackRecursivePreservation
 import EvmCompiler.Expressions.InteractionPreservation
+import EvmCompiler.Expressions.TargetFuelSafety
 import EvmCompiler.Structured.InteractionTerminalPreservation
+import EvmCompiler.Structured.InteractionFuelSafety
 import EvmCompiler.Structured.TypedCfgPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.Assembly.InteractionBytecode
+import EvmCompiler.Assembly.InteractionFuelSafety
 import EvmCompiler.Assembly.Compact
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
 import EvmCompiler.Yul.FunctionsInteractionProgram
@@ -28,6 +31,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
 #check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyTerminal
 #check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyFinished
+#check EvmCompiler.Assembly.InteractionFuelSafety.PrimOp.openStep
+#check EvmCompiler.Structured.InteractionFuelSafety.Code.openRun
+#check EvmCompiler.Expressions.TargetFuelSafety.expressionOpenRun
 #check EvmCompiler.Compiler.StackArtifact.compile?_parts
 #check EvmCompiler.Compiler.StackArtifact.compile?_decodingCorrect
 #check EvmCompiler.Solidity.Frontend.Expr.resolveObjectBuiltins_memoryguard
@@ -50,6 +56,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyFinished
+#print axioms EvmCompiler.Assembly.InteractionFuelSafety.PrimOp.openStep
+#print axioms EvmCompiler.Structured.InteractionFuelSafety.Code.openRun
+#print axioms EvmCompiler.Expressions.TargetFuelSafety.expressionOpenRun
 #print axioms EvmCompiler.Compiler.StackArtifact.compile?_decodingCorrect
 #print axioms EvmCompiler.Solidity.Frontend.Expr.resolveObjectBuiltins_memoryguard
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
