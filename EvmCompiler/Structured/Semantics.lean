@@ -645,7 +645,7 @@ mutual
       Block.Eval program fuel block state outcome := by
     cases fuel with
     | zero =>
-        simp [Block.run, EffectSemantics.Block.run, invalid] at hRun
+        simp [Block.run, EffectSemantics.Block.run, outOfFuel] at hRun
     | succ fuel =>
         cases block with
         | mk stmts =>
@@ -714,7 +714,7 @@ mutual
     | if_ cond body =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, EffectSemantics.Stmt.run, invalid] at hRun
+            simp [Stmt.run, EffectSemantics.Stmt.run, outOfFuel] at hRun
         | succ fuel =>
             unfold Stmt.run at hRun
             rw [EffectSemantics.Stmt.run_if_succ,
@@ -738,7 +738,7 @@ mutual
     | switch scrutinee cases defaultBody =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, EffectSemantics.Stmt.run, invalid] at hRun
+            simp [Stmt.run, EffectSemantics.Stmt.run, outOfFuel] at hRun
         | succ fuel =>
             unfold Stmt.run at hRun
             rw [EffectSemantics.Stmt.run_switch_succ,
@@ -774,7 +774,7 @@ mutual
     | for_ init cond post body =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, EffectSemantics.Stmt.run, invalid] at hRun
+            simp [Stmt.run, EffectSemantics.Stmt.run, outOfFuel] at hRun
         | succ fuel =>
             unfold Stmt.run at hRun
             rw [EffectSemantics.Stmt.run_for_succ,
@@ -839,7 +839,7 @@ mutual
     | call name =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, EffectSemantics.Stmt.run, invalid] at hRun
+            simp [Stmt.run, EffectSemantics.Stmt.run, outOfFuel] at hRun
         | succ fuel =>
             unfold Stmt.run at hRun
             rw [EffectSemantics.Stmt.run_call_succ] at hRun
@@ -964,7 +964,7 @@ mutual
       For.Eval program fuel cond post body state outcome := by
     cases fuel with
     | zero =>
-        simp [Stmt.runForLoop, EffectSemantics.Stmt.runForLoop, invalid] at hRun
+        simp [Stmt.runForLoop, EffectSemantics.Stmt.runForLoop, outOfFuel] at hRun
     | succ fuel =>
         unfold Stmt.runForLoop at hRun
         rw [EffectSemantics.Stmt.runForLoop_succ,

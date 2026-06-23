@@ -516,7 +516,7 @@ mutual
       (ctx : Source.Ctx) : Nat → Locals.Block → σ →
       M (Outcome σ × Source.Ctx)
     | 0, _block, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | _fuel + 1, ⟨[]⟩, state =>
         pure (Outcome.regular state, ctx)
     | fuel + 1, ⟨stmt :: rest⟩, state => do
@@ -561,7 +561,7 @@ mutual
       (bodyBase : Source.Ctx) (body : Locals.Block) :
       Nat → σ → M (Outcome σ)
     | 0, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, state => do
         let (stateAfterCond, condTrue) ←
           Expr.Control.evalCondition model prim cond state
@@ -641,7 +641,7 @@ mutual
           Block.runScoped model prim program ctx body fuel state
         pure (outcome, ctx)
     | 0, .if_ _cond _body, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, .if_ cond body, state => do
         let (stateAfterCond, condTrue) ←
           Expr.Control.evalCondition model prim cond state
@@ -653,7 +653,7 @@ mutual
         else
           pure (Outcome.regular stateAfterCond, ctx)
     | 0, .switch _scrutinee _cases _defaultBody, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, .switch scrutinee cases defaultBody, state => do
         let (stateAfterScrutinee, value) ←
           Expr.Control.evalOne model prim scrutinee state
@@ -665,7 +665,7 @@ mutual
                 stateAfterScrutinee
             pure (outcome, ctx)
     | 0, .for_ _init _cond _post _body, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, .for_ init cond post body, state => do
         let initBase := ctx.withoutLoopControl
         let (initOutcome, initCtx) ←

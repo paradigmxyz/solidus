@@ -1842,6 +1842,7 @@ theorem compiledOfCompilersAtSucc
       ∀ (fn : Functions.FunDef),
         Functions.Source.FunList.find? functionName sourceProgram.functions =
             some fn →
+        args.length = fn.params.length →
         ∀ (targetFuel : Nat)
           {suffix : List Word} {returns : List Structured.ReturnDest}
           {source sourceAfterArgs : Locals.Source.State}
@@ -1870,7 +1871,7 @@ theorem compiledOfCompilersAtSucc
         (.call targets functionName args) code retain.schedule.target
         (sourceFuel + 1) := by
   obtain ⟨fn, retain, argCode, writebackCode, transitionCode, hFind,
-      _hArgsLength, hTargetsLength, hTargetsNodup, _hAccess, _hFalls,
+      hArgsLength, hTargetsLength, hTargetsNodup, _hAccess, _hFalls,
       _hRegions, hRetain, hArgCompile, hWritebackCompile,
       hTransitionCompile, hCode⟩ :=
     StackLoweringCompilation.callPoint_components hLower hCompile
@@ -1884,7 +1885,7 @@ theorem compiledOfCompilersAtSucc
       targetCtx sourceFuel targets functionName args fn argCode writebackCode
       hFind' hLayoutNodup hTargetsNodup hTargetsLength hTargetsLayout
       hArgScoped hArgSupported hArgCompile hWritebackCompile
-      (hCallee fn hFind')
+      (hCallee fn hFind' hArgsLength)
   have hSource := hRetainSource hRetain
   have hCode' :
       code =

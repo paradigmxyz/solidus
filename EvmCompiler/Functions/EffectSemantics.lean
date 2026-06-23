@@ -454,7 +454,7 @@ mutual
       (ctx : Source.Ctx) : Nat → Functions.Block → σ →
       M (Outcome σ × Source.Ctx)
     | 0, _block, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | _fuel + 1, ⟨[]⟩, state =>
         pure (Outcome.regular state, ctx)
     | fuel + 1, ⟨stmt :: rest⟩, state => do
@@ -497,7 +497,7 @@ mutual
       (fn : Functions.FunDef) (args : List Word) :
       Nat → σ → M (CallResult σ)
     | 0, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, state => do
         let paramStore ←
           (Source.Store.insertMany fn.params args
@@ -538,7 +538,7 @@ mutual
       (bodyBase : Source.Ctx) (body : Functions.Block) :
       Nat → σ → M (Outcome σ)
     | 0, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, state => do
         let (stateAfterCond, condTrue) ←
           Locals.Source.Effectful.Expr.Control.evalCondition
@@ -608,7 +608,7 @@ mutual
           Block.runScoped model prim program ctx body fuel state
         pure (outcome, ctx)
     | 0, .if_ _cond _body, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, .if_ cond body, state => do
         let (stateAfterCond, condTrue) ←
           Locals.Source.Effectful.Expr.Control.evalCondition
@@ -620,7 +620,7 @@ mutual
         else
           pure (Outcome.regular stateAfterCond, ctx)
     | 0, .switch _scrutinee _cases _defaultBody, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, .switch scrutinee cases defaultBody, state => do
         let (stateAfterScrutinee, value) ←
           Locals.Source.Effectful.Expr.Control.evalOne
@@ -633,7 +633,7 @@ mutual
                 stateAfterScrutinee
             pure (outcome, ctx)
     | 0, .for_ _init _cond _post _body, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, .for_ init cond post body, state => do
         let initBase := ctx.withoutLoopControl
         let (initOutcome, initCtx) ←
@@ -677,7 +677,7 @@ mutual
         | some scope =>
             pure (Outcome.leave (model.restrictTo scope state), ctx)
     | 0, .call _targets _functionName _args, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, .call targets functionName args, state => do
         if targets.Nodup then
           let (stateAfterArgs, argValues) ←

@@ -92,7 +92,7 @@ mutual
       (program : Program) :
       Nat → Block → σ → M (OutcomeT σ)
     | 0, _block, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | _fuel + 1, ⟨[]⟩, state =>
         pure (Structured.EffectSemantics.Outcome.regular state)
     | fuel + 1, ⟨stmt :: rest⟩, state => do
@@ -110,7 +110,7 @@ mutual
       (post body : Block) (state : σ) : M (OutcomeT σ) :=
     match fuel with
     | 0 =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel' + 1 => do
         let (stateAfterCond, condTrue) ←
           Expr.runCondition model handler cond state
@@ -152,7 +152,7 @@ mutual
         let state' ← Expr.run handler expr state
         pure (Structured.EffectSemantics.Outcome.regular state')
     | 0, .if_ _cond _body, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, .if_ cond body, state => do
         let (stateAfterCond, condTrue) ←
           Expr.runCondition model handler cond state
@@ -162,7 +162,7 @@ mutual
           pure
             (Structured.EffectSemantics.Outcome.regular stateAfterCond)
     | 0, .switch _scrutinee _cases _defaultBody, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, .switch scrutinee cases defaultBody, state => do
         let stateAfterScrutinee ← Expr.run handler scrutinee state
         match (model.evm stateAfterScrutinee).stack.pop with
@@ -179,7 +179,7 @@ mutual
                 pure
                   (Structured.EffectSemantics.Outcome.regular stateAfterPop)
     | 0, .for_ _init _cond _post _body, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, .for_ init cond post body, state => do
         let initOutcome ←
           Block.run model handler program fuel init state
@@ -201,7 +201,7 @@ mutual
         | _ :: _ =>
             pure (Structured.EffectSemantics.Outcome.leave state)
     | 0, .call _name, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, .call name, state =>
         match ProcList.lookup? name program.procs with
         | none =>

@@ -232,7 +232,7 @@ theorem successful_openRun_fuel_pos
       simp only [Functions.Source.Effectful.Control.Block.runOpen] at hSuccess
       exact False.elim
         (Simulation.Interaction.Successful.error_false
-          (.InvalidInstruction : EVMException) hSuccess)
+          (.OutOfFuel : EVMException) hSuccess)
   | succ fuel => omega
 
 /-- One source statement followed by its exact residual block. -/
@@ -491,7 +491,7 @@ theorem successful_openRunBody_fuel_pos
       simp only [Functions.Source.Effectful.Control.FunDef.runBody] at hSuccess
       exact False.elim
         (Simulation.Interaction.Successful.error_false
-          (.InvalidInstruction : EVMException) hSuccess)
+          (.OutOfFuel : EVMException) hSuccess)
   | succ fuel => omega
 
 /-- Successful canonical function execution exposes the real initialized body
@@ -1043,7 +1043,7 @@ theorem successful_openRun_call_fuel_pos
       simp only [Functions.Source.Effectful.Control.Stmt.run] at hSuccess
       exact False.elim
         (Simulation.Interaction.Successful.error_false
-          (.InvalidInstruction : EVMException) hSuccess)
+          (.OutOfFuel : EVMException) hSuccess)
   | succ fuel => omega
 
 /-- Successful canonical `for` execution has positive statement meta-fuel. -/
@@ -1061,7 +1061,7 @@ theorem successful_openRun_for_fuel_pos
       simp only [Functions.Source.Effectful.Control.Stmt.run] at hSuccess
       exact False.elim
         (Simulation.Interaction.Successful.error_false
-          (.InvalidInstruction : EVMException) hSuccess)
+          (.OutOfFuel : EVMException) hSuccess)
   | succ fuel => omega
 
 /-- A successful positive-fuel `for` statement exposes its initializer run. -/

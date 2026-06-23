@@ -453,7 +453,7 @@ theorem openRunForLoop_exec_under
       change
         Simulation.Interaction.Executes
           (Simulation.Interaction.error
-            (Error := EVMException) .InvalidInstruction)
+            (Error := EVMException) .OutOfFuel)
           transcript (.ok sourceOutcome) at hSourceExec
       cases hSourceExec
   | succ fuel ih =>

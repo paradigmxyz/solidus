@@ -590,6 +590,7 @@ private def CalleePreservesAt
     (callCtx : Locals.Ctx) (fn : Functions.FunDef),
     Functions.Source.FunList.find? functionName sourceProgram.functions =
         some fn →
+    args.length = fn.params.length →
     ∀ (targetFuel : Nat)
       {suffix : List Word} {returns : List Structured.ReturnDest}
       {source sourceAfterArgs : Locals.Source.State}
@@ -997,9 +998,9 @@ private theorem compilerCalleePreservesAt
   intro sourceFuel
   induction sourceFuel using Nat.strong_induction_on with
   | h sourceFuel ih =>
-      intro functionName args callCtx fn hFind targetFuel suffix returns source
-        sourceAfterArgs target targetAfterArgs argValues hInitial hArgResult
-        hProcFuel
+      intro functionName args callCtx fn hFind hArgsLength targetFuel suffix
+        returns source sourceAfterArgs target targetAfterArgs argValues hInitial
+        hArgResult hProcFuel
       cases sourceFuel with
       | zero =>
           unfold Functions.InteractionSemantics.FunDef.openRunBody
@@ -1092,15 +1093,17 @@ private theorem compilerCalleePreservesAt
             dsimp [calleeTargetFuel]
             rw [hPreludeLength] at hFullLength
             omega
+          have hArgValuesLength : argValues.length = fn.params.length :=
+            hArgResult.length.trans hArgsLength
           cases hInsert :
               Functions.Source.Store.insertMany fn.params argValues
                 Locals.Source.Store.empty with
           | none =>
-              unfold Functions.InteractionSemantics.FunDef.openRunBody
-                Functions.Source.Canonical.FunDef.runBody
-                Functions.Source.Effectful.Control.FunDef.runBody
-              rw [hInsert]
-              exact Simulation.Interaction.ForwardRel.truncated rfl
+              obtain ⟨paramStore, hParamStore⟩ :=
+                Functions.Source.Store.insertMany_exists_of_length
+                  (store := Locals.Source.Store.empty) hArgValuesLength
+              rw [hInsert] at hParamStore
+              contradiction
           | some paramStore =>
               let bodyCtx :=
                 Locals.Ctx.procEntryWithLayoutAndRetc

@@ -3768,7 +3768,7 @@ end Stmt
 namespace Block
 
 def FuelTruncated (error : EVMException) : Prop :=
-  error = .InvalidInstruction
+  error = .OutOfFuel
 
 /--
 The empty source block is the base case of fuel-indexed forward preservation.

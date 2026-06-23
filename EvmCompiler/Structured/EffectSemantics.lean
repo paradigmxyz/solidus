@@ -7,6 +7,9 @@ namespace Structured
 def invalid {α : Type} : Except EVMException α :=
   .error .InvalidInstruction
 
+def outOfFuel {α : Type} : Except EVMException α :=
+  .error .OutOfFuel
+
 namespace BasicOp
 
 def step (op : BasicOp) (state : EVMState) : Except EVMException EVMState :=
@@ -398,7 +401,7 @@ mutual
       (program : Program) :
       Nat → Block → σ → M (OutcomeT σ)
     | 0, _block, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | _fuel + 1, ⟨[]⟩, state =>
         pure (Outcome.regular state)
     | fuel + 1, ⟨stmt :: rest⟩, state => do
@@ -417,7 +420,7 @@ mutual
       M (OutcomeT σ) :=
     match fuel with
     | 0 =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel' + 1 => do
         let (stateAfterCond, condTrue) ←
           Code.runCondition model handler cond state
@@ -453,7 +456,7 @@ mutual
         let state' ← Code.run handler code state
         pure (Outcome.regular state')
     | 0, .if_ _cond _body, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, .if_ cond body, state => do
         let (stateAfterCond, condTrue) ←
           Code.runCondition model handler cond state
@@ -462,7 +465,7 @@ mutual
         else
           pure (Outcome.regular stateAfterCond)
     | 0, .switch _scrutinee _cases _defaultBody, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, .switch scrutinee cases defaultBody, state => do
         let stateAfterScrutinee ← Code.run handler scrutinee state
         match (model.evm stateAfterScrutinee).stack.pop with
@@ -478,7 +481,7 @@ mutual
             | none =>
                 pure (Outcome.regular stateAfterPop)
     | 0, .for_ _init _cond _post _body, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, .for_ init cond post body, state => do
         let initOutcome ←
           Block.run model handler program fuel init state
@@ -499,7 +502,7 @@ mutual
         | [] => throw .InvalidInstruction
         | _ :: _ => pure (Outcome.leave state)
     | 0, .call _name, _state =>
-        throw .InvalidInstruction
+        throw .OutOfFuel
     | fuel + 1, .call name, state =>
         match ProcList.lookup? name program.procs with
         | none =>
@@ -678,7 +681,7 @@ namespace Block
 @[simp] theorem run_zero
     {σ : Type} (model : StateModel σ) (handler : Handler σ)
     (program : Program) (block : Block) (state : σ) :
-    run model handler program 0 block state = invalid := rfl
+    run model handler program 0 block state = outOfFuel := rfl
 
 @[simp] theorem run_nil
     {σ : Type} (model : StateModel σ) (handler : Handler σ)
@@ -709,7 +712,7 @@ namespace Stmt
     (program : Program) (cond : Structured.Code)
     (post body : Block) (state : σ) :
     runForLoop model handler program 0 cond post body state =
-      invalid := rfl
+      outOfFuel := rfl
 
 @[simp] theorem runForLoop_succ
     {σ : Type} (model : StateModel σ) (handler : Handler σ)
@@ -827,7 +830,7 @@ namespace Stmt
     (program : Program) (cond : Structured.Code)
     (body : Block) (state : σ) :
     run model handler program 0 (.if_ cond body) state =
-      invalid := rfl
+      outOfFuel := rfl
 
 @[simp] theorem run_if_succ
     {σ : Type} (model : StateModel σ) (handler : Handler σ)
@@ -849,7 +852,7 @@ namespace Stmt
     (state : σ) :
     run model handler program 0
         (.switch scrutinee cases defaultBody) state =
-      invalid := rfl
+      outOfFuel := rfl
 
 @[simp] theorem run_switch_succ
     {σ : Type} (model : StateModel σ) (handler : Handler σ)
@@ -880,7 +883,7 @@ namespace Stmt
     (program : Program) (init : Block) (cond : Structured.Code)
     (post body : Block) (state : σ) :
     run model handler program 0 (.for_ init cond post body) state =
-      invalid := rfl
+      outOfFuel := rfl
 
 @[simp] theorem run_for_succ
     {σ : Type} (model : StateModel σ) (handler : Handler σ)
@@ -927,7 +930,7 @@ namespace Stmt
     {σ : Type} (model : StateModel σ) (handler : Handler σ)
     (program : Program) (name : Name) (state : σ) :
     run model handler program 0 (.call name) state =
-      invalid := rfl
+      outOfFuel := rfl
 
 @[simp] theorem run_call_succ
     {σ : Type} (model : StateModel σ) (handler : Handler σ)
@@ -2018,7 +2021,7 @@ mutual
       Block.Eval model handler program fuel block state outcome := by
     cases fuel with
     | zero =>
-        simp [Block.run, invalid] at hRun
+        simp [Block.run, outOfFuel] at hRun
     | succ fuel =>
         cases block with
         | mk stmts =>
@@ -2085,7 +2088,7 @@ mutual
     | if_ cond body =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, invalid] at hRun
+            simp [Stmt.run, outOfFuel] at hRun
         | succ fuel =>
             rw [Stmt.run_if_succ] at hRun
             cases hCond :
@@ -2108,7 +2111,7 @@ mutual
     | switch scrutinee cases defaultBody =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, invalid] at hRun
+            simp [Stmt.run, outOfFuel] at hRun
         | succ fuel =>
             rw [Stmt.run_switch_succ] at hRun
             cases hScrutinee :
@@ -2147,7 +2150,7 @@ mutual
     | for_ init cond post body =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, invalid] at hRun
+            simp [Stmt.run, outOfFuel] at hRun
         | succ fuel =>
             rw [Stmt.run_for_succ] at hRun
             cases hInitRun :
@@ -2207,7 +2210,7 @@ mutual
     | call name =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, invalid] at hRun
+            simp [Stmt.run, outOfFuel] at hRun
         | succ fuel =>
             rw [Stmt.run_call_succ] at hRun
             cases hLookup : ProcList.lookup? name program.procs with
@@ -2319,7 +2322,7 @@ mutual
       For.Eval model handler program fuel cond post body state outcome := by
     cases fuel with
     | zero =>
-        simp [Stmt.runForLoop, invalid] at hRun
+        simp [Stmt.runForLoop, outOfFuel] at hRun
     | succ fuel =>
         rw [Stmt.runForLoop_succ] at hRun
         cases hCond :

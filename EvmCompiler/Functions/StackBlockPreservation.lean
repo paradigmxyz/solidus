@@ -3876,6 +3876,7 @@ theorem callConsAtSucc_of_compilers
       ∀ (callCtx : Locals.Ctx) (fn : Functions.FunDef),
         Functions.Source.FunList.find? functionName sourceProgram.functions =
             some fn →
+        args.length = fn.params.length →
         ∀ (targetFuel : Nat)
           {suffix : List Word} {returns : List Structured.ReturnDest}
           {source sourceAfterArgs : Locals.Source.State}
