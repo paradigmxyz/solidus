@@ -758,6 +758,115 @@ theorem compiled_leave_control
   apply ControlDoneRel.singleton mode
   exact leave_control hEnabled hControl hRel
 
+/-- Final visible assignment after a compiler-owned argument prelude has
+produced the exact primitive inputs. This leaf handles arbitrary primitive fuel,
+including guarded failures that precede ordinary fuel exhaustion. -/
+theorem assign_after_args
+    {mode : Mode} (hPrimitive : CompilerSelected mode)
+    {primitiveFuel targetFuel : Nat}
+    {name : EvmYul.Identifier}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {values : List Word}
+    {seq : Locals.ExprSeq (Expressions.Structured.BasicOp.inputs op)}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {used layout : List Functions.Name}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hOp : Prim.toUncheckedBasicOp? prim = some op)
+    (hOutputs : Expressions.Structured.BasicOp.outputs op = 1)
+    (hLength : values.length = Expressions.Structured.BasicOp.inputs op)
+    (hEval : Target.ExprSeq.openEval mode seq target =
+      .done (.ok (target, values)))
+    (hName : identName name ∈ layout)
+    (hNameUsed : identName name ∈ used)
+    (hRel : ScopedStateRel layout source target)
+    (hDomain : TargetDomainWithin used target.vars)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
+    (hTargetScope : TargetScopeWithin used ctx) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel used layout sourceScopes
+        canBreak canContinue canLeave)
+      (Simulation.Interaction.bind
+        ((sourcePrimitive mode).eval
+          primitiveFuel source prim values.reverse)
+        (fun result =>
+          pure
+            (Yul.InteractionSemantics.stateModel.multifill
+              [name] result.1 result.2)))
+      (Target.Stmt.openRun mode program ctx targetFuel
+        (.assign (identName name)
+          (Expr.cast hOutputs (.prim op seq))) target) := by
+  have hTargetEval :
+      Target.Expr.openEval mode
+          (Expr.cast hOutputs (.prim op seq)) target =
+        (targetPrimitive mode).eval op target values := by
+    rw [FunctionsInteractionExpressionMode.expr_openEval_cast]
+    unfold Target.Expr.openEval Locals.Source.Effectful.Expr.Control.eval
+    unfold Target.ExprSeq.openEval at hEval
+    rw [hEval]
+    rfl
+  have hArgsDone :
+      FunctionsInteractionExpressionMode.DoneRel source
+          (Expressions.Structured.BasicOp.inputs op)
+          (.ok (source, values)) (.ok (target, values)) :=
+    .ok (FunctionsInteractionExpression.ResultRel.of_state
+      hRel.state hLength)
+  have hArgsRel :
+      Simulation.Interaction.ForwardRel Truncated
+        (FunctionsInteractionExpressionMode.DoneRel source
+          (Expressions.Structured.BasicOp.inputs op))
+        (pure (source, values)) (pure (target, values)) :=
+    Simulation.Interaction.ForwardRel.done hArgsDone
+  have hPrimitiveRel :=
+    FunctionsInteractionExpressionMode.Expr.primitive_of_args
+      mode hPrimitive (primitiveFuel := primitiveFuel)
+      hOp hOutputs hArgsRel
+  have hEvalRel :
+      Simulation.Interaction.ForwardRel Truncated
+        (FunctionsInteractionExpressionMode.DoneRel source 1)
+        ((sourcePrimitive mode).eval
+          primitiveFuel source prim values.reverse)
+        ((targetPrimitive mode).eval op target values) := by
+    simpa using hPrimitiveRel
+  have hEvalRelVars := hEvalRel.strengthen_right
+    (targetPrimitive_eval_vars_eq mode op target values)
+  have hContains := hRel.targetContains hName
+  rw [Target.Stmt.openRun_assign_of_contains mode program ctx targetFuel
+    (identName name) (Expr.cast hOutputs (.prim op seq)) target hContains]
+  rw [Target.Expr.openEvalOne_eq_bind,
+    Simulation.Interaction.bind_assoc, hTargetEval]
+  apply Simulation.Interaction.ForwardRel.bind_custom hEvalRelVars
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hDone, hTargetVars⟩
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ForwardRel.done
+        (ControlDoneRel.error hError)
+  | @ok sourceResult targetResult hResult =>
+      have hResultLength : sourceResult.2.length = 1 := hResult.2.2.1
+      obtain ⟨value, hSourceValues⟩ :=
+        List.length_eq_one_iff.mp hResultLength
+      have hTargetValues : targetResult.2 = [value] := by
+        rw [← hResult.2.1, hSourceValues]
+      simp only [Simulation.Interaction.bind_done_ok]
+      rw [hSourceValues, hTargetValues]
+      have hFinalScoped :=
+        ScopedStateRel.of_state_store_eq hRel hResult.1 hResult.2.2.2
+      have hFinal :=
+        hFinalScoped.multifill_single_visible hName value
+      have hTargetVarsEq : targetResult.1.vars = target.vars := by
+        simpa using hTargetVars
+      have hDomainResult : TargetDomainWithin used targetResult.1.vars := by
+        simpa [hTargetVarsEq] using hDomain
+      have hFinalDomain : TargetDomainWithin used
+          (targetResult.1.insert (identName name) value).vars :=
+        hDomainResult.insert_used hNameUsed value
+      exact Simulation.Interaction.ForwardRel.done
+        (ControlDoneRel.regular hFinal hFinalDomain hControl hTargetScope)
+
 /-- Control-indexed terminal leaf after prepared arguments, at arbitrary source
 primitive fuel and in either semantic mode. -/
 theorem terminal_after_args_control

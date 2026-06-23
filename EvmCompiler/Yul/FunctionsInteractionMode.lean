@@ -442,6 +442,23 @@ def openEval {results : Nat} (mode : Mode)
     Functions.InteractionSemantics.stateModel (targetPrimitive mode)
     exprs state
 
+theorem openEval_vars_eq (mode : Mode) {results : Nat}
+    (exprs : Locals.ExprSeq results)
+    (state : Functions.InteractionSemantics.State) :
+    Simulation.Interaction.AllDone
+      (fun outcome =>
+        match outcome with
+        | .error _ => True
+        | .ok result => result.1.vars = state.vars)
+      (openEval mode exprs state) := by
+  cases mode with
+  | ordinary =>
+      exact Locals.InteractionSemantics.ExprSeq.openEval_vars_eq exprs state
+  | guarded contract =>
+      exact
+        Functions.AllocationInteractionSafeSemantics.ExprSeq.openEval_vars_eq
+          contract exprs state
+
 end ExprSeq
 
 namespace Expr
