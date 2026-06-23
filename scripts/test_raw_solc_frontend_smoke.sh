@@ -195,6 +195,70 @@ bad_scope["contracts"]["Fixture.sol"]["Fixture"]["irOptimizedAst"]["code"]["bloc
     }
 ]
 (outdir / "bad-scope.standard-output.json").write_text(json.dumps(bad_scope))
+
+linker_metadata = {
+    "contracts": {
+        "Fixture.sol": {
+            "Fixture": {
+                "metadata": json.dumps(
+                    {
+                        "settings": {
+                            "evmVersion": "cancun",
+                            "libraries": {
+                                "MathLib.sol": {
+                                    "MathLib": "000000000000000000000000000000000000002a",
+                                }
+                            },
+                        }
+                    }
+                ),
+                "irOptimizedAst": {
+                    "nodeType": "YulObject",
+                    "name": "Fixture",
+                    "code": {
+                        "block": {
+                            "nodeType": "YulBlock",
+                            "statements": [
+                                {
+                                    "nodeType": "YulVariableDeclaration",
+                                    "variables": [{"name": "linked"}],
+                                    "value": {
+                                        "nodeType": "YulFunctionCall",
+                                        "functionName": {"name": "linkersymbol"},
+                                        "arguments": [
+                                            {
+                                                "nodeType": "YulLiteral",
+                                                "kind": "string",
+                                                "value": "MathLib.sol:MathLib",
+                                            }
+                                        ],
+                                    },
+                                }
+                            ],
+                        }
+                    },
+                    "subObjects": [],
+                },
+            }
+        }
+    }
+}
+(outdir / "linker-metadata.standard-output.json").write_text(
+    json.dumps(linker_metadata)
+)
+
+bad_linker_metadata = json.loads(json.dumps(linker_metadata))
+bad_linker_metadata["contracts"]["Fixture.sol"]["Fixture"]["metadata"] = json.dumps(
+    {
+        "settings": {
+            "evmVersion": "cancun",
+            "libraries": {"MathLib.sol": {"MathLib": "not-hex"}},
+        }
+    }
+)
+(outdir / "bad-linker-metadata.standard-output.json").write_text(
+    json.dumps(bad_linker_metadata)
+)
 PY
 
 cat > "$OUTDIR/raw_decode_runner.lean" <<LEAN
@@ -317,6 +381,43 @@ def expectBadScopeRejected : IO Unit := do
   | none => IO.println "raw_solc_frontend_bad_scope=rejected"
   | some _ => throw <| IO.userError "bad lexical scope was accepted"
 
+def expectLinkerMetadata : IO Unit := do
+  let raw <- readRaw "linker-metadata.standard-output.json"
+  let selection : RawAst.Selection :=
+    { source? := some "Fixture.sol"
+      contract? := some "Fixture"
+      astOutput := "irOptimizedAst" }
+  match RawAst.decodeLinkerSymbols? raw selection with
+  | some [("MathLib.sol:MathLib", value)] =>
+      if value != EvmYul.UInt256.ofNat 42 then
+        throw <| IO.userError ("unexpected linker value: " ++ reprStr value)
+  | other =>
+      throw <| IO.userError ("unexpected linker metadata: " ++ reprStr other)
+  match RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols? raw selection [] with
+  | none => IO.println "raw_solc_frontend_linker_empty_symbols=rejected"
+  | some _ =>
+      throw <| IO.userError "explicit empty linker symbols unexpectedly compiled"
+  match RawAst.compileArtifactFromRawSolcIr? raw selection with
+  | none => throw <| IO.userError "embedded linker metadata artifact compile failed"
+  | some artifact =>
+      IO.println <|
+        "raw_solc_frontend_linker_metadata_artifact_bytes=" ++
+          toString artifact.image.bytes.length
+
+def expectBadLinkerMetadataRejected : IO Unit := do
+  let raw <- readRaw "bad-linker-metadata.standard-output.json"
+  let selection : RawAst.Selection :=
+    { source? := some "Fixture.sol"
+      contract? := some "Fixture"
+      astOutput := "irOptimizedAst" }
+  match RawAst.decodeLinkerSymbols? raw selection with
+  | none => IO.println "raw_solc_frontend_bad_linker_metadata=rejected"
+  | some symbols =>
+      throw <| IO.userError ("bad linker metadata was accepted: " ++ reprStr symbols)
+  match RawAst.compileArtifactFromRawSolcIr? raw selection with
+  | none => pure ()
+  | some _ => throw <| IO.userError "bad linker metadata artifact compiled"
+
 def main : IO Unit := do
   decodeSimple "0.8.26" .creation
   decodeSimple "0.8.26" .runtime
@@ -328,6 +429,8 @@ def main : IO Unit := do
   expectMixedOrder
   expectNestedClz
   expectBadScopeRejected
+  expectLinkerMetadata
+  expectBadLinkerMetadataRejected
   IO.println "raw_solc_frontend_smoke=pass"
 LEAN
 

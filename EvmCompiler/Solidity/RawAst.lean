@@ -185,6 +185,59 @@ def metadataEvmVersion? (contractOutput : Lean.Json) :
           | none => pure none
           | some version => some <$> decodeEvmVersion version
 
+def parseStandardJsonLibraryAddress (value : Lean.Json)
+    (sourceName libraryName : String) : DecodeM Word := do
+  let text ←
+    match value.getStr? with
+    | .ok text => pure text
+    | .error _ =>
+        .error
+          s!"malformed Standard JSON metadata settings.libraries entry for {sourceName}:{libraryName}: address must be a hex string"
+  let address := text.trim
+  let digits := dropHexPrefix address
+  if digits == "" then
+    .error
+      s!"malformed Standard JSON metadata settings.libraries entry for {sourceName}:{libraryName}: address is empty"
+  else if digits.length > 40 then
+    .error
+      s!"malformed Standard JSON metadata settings.libraries entry for {sourceName}:{libraryName}: address is wider than 20 bytes"
+  else
+    match parseHexNat digits with
+    | .ok parsed => pure (EvmYul.UInt256.ofNat parsed)
+    | .error _ =>
+        .error
+          s!"malformed Standard JSON metadata settings.libraries entry for {sourceName}:{libraryName}: address must be hex"
+
+def decodeMetadataLibraries (settings : Lean.Json) :
+    DecodeM (List (Name × Word)) := do
+  let _ ← settings.getObj?
+  match ← optionalField settings "libraries" with
+  | none => pure []
+  | some libraries => do
+      let mut entries : List (Name × Word) := []
+      for sourceEntry in ← objectEntries libraries do
+        let sourceName := sourceEntry.fst
+        let contracts := sourceEntry.snd
+        let _ ← contracts.getObj?
+        for libraryEntry in ← objectEntries contracts do
+          let libraryName := libraryEntry.fst
+          let value ←
+            parseStandardJsonLibraryAddress
+              libraryEntry.snd sourceName libraryName
+          entries := (sourceName ++ ":" ++ libraryName, value) :: entries
+      pure entries.reverse
+
+def metadataLinkerSymbols? (contractOutput : Lean.Json) :
+    DecodeM (List (Name × Word)) := do
+  match ← optionalStringField contractOutput "metadata" with
+  | none => pure []
+  | some text =>
+      let metadata ← Lean.Json.parse text
+      let _ ← metadata.getObj?
+      match ← optionalField metadata "settings" with
+      | none => pure []
+      | some settings => decodeMetadataLibraries settings
+
 namespace Raw
 
 inductive Literal where
@@ -1110,11 +1163,29 @@ def decodeSelectedIr (json : Lean.Json) (selection : Selection) :
             .error "raw frontend selection requires evmVersion metadata"
   pure { source, contract, evmVersion, root := selected }
 
+def decodeSelectedLinkerSymbolsJson (json : Lean.Json)
+    (selection : Selection) : DecodeM (List (Name × Word)) := do
+  let (_, _, contractOutput) ← selectUniqueContract json selection
+  metadataLinkerSymbols? contractOutput
+
 def decodeAndElaborateSolcIrJson (json : Lean.Json)
     (selection : Selection) : DecodeM Frontend.Program := do
   let selected ← decodeSelectedIr json selection
   let object ← selected.root.elaborate? selected.evmVersion
   pure { source := selected.source, contract := selected.contract, object := object }
+
+def decodeLinkerSymbolsJson (json : Lean.Json)
+    (selection : Selection) : DecodeM (List (Name × Word)) :=
+  decodeSelectedLinkerSymbolsJson json selection
+
+def decodeLinkerSymbols? (rawJson : String)
+    (selection : Selection) : Option (List (Name × Word)) :=
+  match Lean.Json.parse rawJson with
+  | .error _ => none
+  | .ok json =>
+      match decodeLinkerSymbolsJson json selection with
+      | .ok symbols => some symbols
+      | .error _ => none
 
 def decodeAndElaborateSolcIr? (rawJson : String)
     (selection : Selection) : Option Frontend.Program :=

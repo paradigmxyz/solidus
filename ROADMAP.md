@@ -73,9 +73,10 @@ Transformation inventory from `scripts/solidity_to_yul_lean.py`:
 - [ ] Standalone Yul data-name recovery remains Python-only and is not part of
   the raw Solidity `irOptimizedAst` production theorem.
 - [x] Source/contract/object selection moved into Lean for raw Standard JSON.
-- [ ] Fork/linker metadata is only partly moved: fork metadata is decoded from
-  solc metadata in Lean; linker symbol extraction from Standard JSON settings
-  still needs a Lean representation or an explicit transport-only input.
+- [x] Fork/linker metadata moved for the raw Standard JSON output path: fork
+  metadata and selected-contract `metadata.settings.libraries` linker symbols
+  are decoded in Lean. Explicit linker-symbol arguments remain only as a
+  transition/differential hook.
 - [x] Memoryguard inference remains reused in `Solidity.Frontend`; Python does
   not need to normalize it for the raw path.
 
