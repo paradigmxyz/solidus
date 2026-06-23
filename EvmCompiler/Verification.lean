@@ -16,6 +16,7 @@ import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Assembly.InteractionFuelSafety
 import EvmCompiler.Assembly.Compact
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
+import EvmCompiler.Solidity.RawAstPublic
 import EvmCompiler.Yul.FunctionsInteractionProgram
 import EvmCompiler.Yul.EndToEnd
 
@@ -43,6 +44,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
+#check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_some
+#check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_valid
+#check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_decodingCorrect
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsTerminal
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsForward
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackStructuredForward
@@ -77,6 +81,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.Frontend.Expr.resolveObjectBuiltins_memoryguard
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
+#print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_some
+#print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_valid
+#print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_decodingCorrect
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsFinished
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.yulNormalizedStackToAssemblySourceFinished
