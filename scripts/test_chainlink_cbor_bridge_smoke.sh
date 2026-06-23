@@ -247,7 +247,7 @@ runtime_entries = [
 if len(runtime_entries) != 1:
     raise SystemExit(f"expected one Chainlink runtime entry, got {runtime_entries!r}")
 frontend = runtime_entries[0].get("frontend")
-if frontend != {"producer": "solc", "ast": "irAst"}:
+if frontend != {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"}:
     raise SystemExit(f"unexpected Chainlink runtime frontend metadata: {frontend!r}")
 
 runtime_summaries = [
@@ -672,7 +672,7 @@ if len(runtime_summaries) != 1:
     )
 runtime = runtime_summaries[0]
 frontend = runtime.get("frontend")
-if frontend != {"producer": "solc", "ast": "irOptimizedAst"}:
+if frontend != {"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"}:
     raise SystemExit(
         f"unexpected Chainlink aggregator frontend metadata: {frontend!r}"
     )

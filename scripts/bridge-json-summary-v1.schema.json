@@ -51,13 +51,16 @@
     "frontend": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["producer", "ast"],
+      "required": ["producer", "ast", "evmVersion"],
       "properties": {
         "producer": {
           "const": "solc"
         },
         "ast": {
           "enum": ["irAst", "irOptimizedAst", "yulAst"]
+        },
+        "evmVersion": {
+          "enum": ["london", "paris", "shanghai", "cancun"]
         }
       }
     },

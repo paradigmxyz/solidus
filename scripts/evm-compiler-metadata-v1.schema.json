@@ -87,7 +87,8 @@
             "additionalProperties": false,
             "required": [
                 "producer",
-                "ast"
+                "ast",
+                "evmVersion"
             ],
             "properties": {
                 "producer": {
@@ -98,6 +99,14 @@
                         "irAst",
                         "irOptimizedAst",
                         "yulAst"
+                    ]
+                },
+                "evmVersion": {
+                    "enum": [
+                        "london",
+                        "paris",
+                        "shanghai",
+                        "cancun"
                     ]
                 }
             }

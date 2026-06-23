@@ -424,7 +424,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertEqual(source_name, "Object.yul")
         self.assertEqual(contract_name, "Object")
         self.assertEqual(selected_name, "Object")
-        self.assertEqual(decoded["frontend"], {"producer": "solc", "ast": "yulAst"})
+        self.assertEqual(decoded["frontend"], {"producer": "solc", "ast": "yulAst", "evmVersion": "cancun"})
         self.assertEqual(decoded["selectedObject"]["data"][0]["name"], "blob")
 
     def test_import_path_scanner_handles_common_forms_and_comments(self):
@@ -1713,7 +1713,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         )
         self.assertEqual(
             rendered_with_frontend["frontend"],
-            {"producer": "solc", "ast": "irOptimizedAst"},
+            {"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"},
         )
 
     def test_ordered_subobjects_preserve_solc_payload_order(self):
@@ -2220,7 +2220,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertEqual(summary["objects"][0]["source"], "Input.sol")
         self.assertEqual(
             summary["objects"][0]["frontend"],
-            {"producer": "solc", "ast": "irAst"},
+            {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
         )
         self.assertEqual(summary["objects"][0]["calls"]["primitive"]["names"][0]["name"], "sstore")
 
@@ -2288,7 +2288,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertEqual(selected, "runtime")
         self.assertEqual(
             summary["frontend"],
-            {"producer": "solc", "ast": "irOptimizedAst"},
+            {"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"},
         )
 
     def test_bridge_json_manifest_summary_aggregates_backend_compatibility(self):
@@ -3242,7 +3242,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                         "subobjects": 0,
                         "items": 1,
                     },
-                    frontend={"producer": "solc", "ast": "irAst"},
+                    frontend={"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
                 )
             ],
             ["A.sol:I"],
@@ -3262,7 +3262,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertEqual(parsed["checkedObjects"][0]["functions"], 3)
         self.assertEqual(
             parsed["checkedObjects"][0]["frontend"],
-            {"producer": "solc", "ast": "irAst"},
+            {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
         )
         self.assertEqual(parsed["checkedContracts"], ["A.sol:A"])
         self.assertEqual(parsed["skippedContracts"], ["A.sol:I"])
@@ -3322,7 +3322,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                             }
                         ],
                     },
-                    frontend={"producer": "solc", "ast": "irAst"},
+                    frontend={"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
                 ),
                 bridge.LeanBackendCheckArtifact(
                     source_name="B.sol",
@@ -3338,7 +3338,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                         "stages": {"object_image": "some"},
                         "bytecode_bytes": 12,
                     },
-                    frontend={"producer": "solc", "ast": "irOptimizedAst"},
+                    frontend={"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"},
                 ),
             ],
             ["I.sol:I"],
@@ -3809,7 +3809,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
 
         jsonschema.Draft202012Validator.check_schema(schema)
         jsonschema.validate(rendered, schema)
-        self.assertEqual(rendered["frontend"], {"producer": "solc", "ast": "yulAst"})
+        self.assertEqual(rendered["frontend"], {"producer": "solc", "ast": "yulAst", "evmVersion": "cancun"})
 
     @unittest.skipIf(jsonschema is None, "jsonschema package is unavailable")
     def test_bridge_json_schema_rejects_unknown_statement_property(self):
@@ -3858,7 +3858,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "Simple.sol",
             "Simple",
             "runtime",
-            {"producer": "solc", "ast": "irAst"},
+            {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
         )
         manifest_summary = json.loads(
             bridge.render_bridge_json_summary_outputs(
@@ -3872,7 +3872,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         jsonschema.validate(manifest_summary, schema)
         self.assertEqual(
             object_summary["frontend"],
-            {"producer": "solc", "ast": "irAst"},
+            {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
         )
         self.assertEqual(
             manifest_summary["skippedContractEntries"],
@@ -3911,7 +3911,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                                 "object_image": "none",
                             },
                         },
-                        frontend={"producer": "solc", "ast": "irAst"},
+                        frontend={"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
                     ),
                     bridge.LeanBackendCheckArtifact(
                         source_name="B.sol",
@@ -3930,7 +3930,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                             },
                             "bytecode_bytes": 12,
                         },
-                        frontend={"producer": "solc", "ast": "irOptimizedAst"},
+                        frontend={"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"},
                     ),
                 ],
                 ["I.sol:I"],
@@ -4061,7 +4061,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                     "object": "Simple_14",
                     "path": "Simple.creation.bridge.json",
                     "sha256": "0" * 64,
-                    "frontend": {"producer": "solc", "ast": "irAst"},
+                    "frontend": {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
                 },
                 "runtime": {
                     "source": "Simple.sol",
@@ -4070,7 +4070,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                     "object": "Simple_14_deployed",
                     "path": "Simple.runtime.bridge.json",
                     "sha256": "1" * 64,
-                    "frontend": {"producer": "solc", "ast": "irOptimizedAst"},
+                    "frontend": {"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"},
                 },
             },
         }
@@ -4211,7 +4211,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(
             provenance["entries"]["creation"]["frontend"],
-            {"producer": "solc", "ast": "irAst"},
+            {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
         )
         self.assertIn("ok provenance", output)
         self.assertIn("entries=2", output)
@@ -4653,7 +4653,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                             "object_image": "none",
                         },
                     },
-                    frontend={"producer": "solc", "ast": "irAst"},
+                    frontend={"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
                 ),
                 bridge.LeanBackendCheckArtifact(
                     source_name="B.sol",
@@ -4669,7 +4669,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                         "stages": {"object_image": "some"},
                         "bytecode_bytes": 3,
                     },
-                    frontend={"producer": "solc", "ast": "irOptimizedAst"},
+                    frontend={"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"},
                 ),
             ],
             [],
@@ -7088,7 +7088,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                 rendered_json = json.loads(rendered_path.read_text())
                 self.assertEqual(
                     rendered_json["frontend"],
-                    {"producer": "solc", "ast": "irAst"},
+                    {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
                 )
                 selected = rendered_json["selectedObject"]
                 return (
@@ -7163,9 +7163,9 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertEqual(
             [item["frontend"] for item in output["checkedObjects"]],
             [
-                {"producer": "solc", "ast": "irAst"},
-                {"producer": "solc", "ast": "irAst"},
-                {"producer": "solc", "ast": "irAst"},
+                {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
+                {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
+                {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
             ],
         )
 
@@ -7204,7 +7204,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                 rendered_json = json.loads(json_path.read_text())
                 self.assertEqual(
                     rendered_json["frontend"],
-                    {"producer": "solc", "ast": "irAst"},
+                    {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
                 )
                 selected = rendered_json["selectedObject"]
                 object_name = selected["name"]
@@ -7285,9 +7285,9 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertEqual(
             [item["frontend"] for item in output["checkedObjects"]],
             [
-                {"producer": "solc", "ast": "irAst"},
-                {"producer": "solc", "ast": "irAst"},
-                {"producer": "solc", "ast": "irAst"},
+                {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
+                {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
+                {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
             ],
         )
 
@@ -7462,15 +7462,15 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertEqual(
             [entry["frontend"] for entry in manifest["entries"]],
             [
-                {"producer": "solc", "ast": "irOptimizedAst"},
-                {"producer": "solc", "ast": "irOptimizedAst"},
+                {"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"},
+                {"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"},
             ],
         )
         self.assertEqual(
             [payload["frontend"] for payload in bridge_payloads],
             [
-                {"producer": "solc", "ast": "irOptimizedAst"},
-                {"producer": "solc", "ast": "irOptimizedAst"},
+                {"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"},
+                {"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"},
             ],
         )
 
@@ -7807,8 +7807,8 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertEqual(
             [item["frontend"] for item in output["objects"]],
             [
-                {"producer": "solc", "ast": "irAst"},
-                {"producer": "solc", "ast": "irAst"},
+                {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
+                {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"},
             ],
         )
 

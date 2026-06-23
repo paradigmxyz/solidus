@@ -62,7 +62,7 @@ from collections import Counter
 from pathlib import Path
 
 root = json.loads(Path(sys.argv[1]).read_text())
-if root.get("frontend") != {"producer": "solc", "ast": "irOptimizedAst"}:
+if root.get("frontend") != {"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"}:
     raise SystemExit(f"unexpected frontend boundary: {root.get('frontend')!r}")
 
 calls = Counter()
@@ -277,7 +277,7 @@ for entry in manifest.get("entries", []):
     selector = entry.get("selector")
     path = bridge_dir / entry["path"]
     bridge = json.loads(path.read_text())
-    if bridge.get("frontend") != {"producer": "solc", "ast": "irOptimizedAst"}:
+    if bridge.get("frontend") != {"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"}:
         raise SystemExit(f"{contract}/{selector}: frontend provenance drift")
     completed = subprocess.run(
         [lake, "exe", "evm-compiler-backend", "summary", str(path)],

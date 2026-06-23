@@ -169,7 +169,11 @@ def require_backend(name, lines, expected_units):
 permit_bytes = require_backend("Permit2", permit_backend, 39)
 aave_bytes = require_backend("Aave Pool", aave_backend, 189)
 
-if permit_bridge.get("frontend") != {"producer": "solc", "ast": "yulAst"}:
+if permit_bridge.get("frontend") != {
+    "producer": "solc",
+    "ast": "yulAst",
+    "evmVersion": "london",
+}:
     raise SystemExit("Permit2 did not use the exact-text parser boundary")
 
 print("full_contract_backend_smoke=pass")

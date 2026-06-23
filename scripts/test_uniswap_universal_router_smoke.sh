@@ -351,7 +351,7 @@ manifest_frontends = {
     for item in manifest_check.get("checkedObjects", [])
 }
 expected_manifest_frontend = tuple(
-    {"producer": "solc", "ast": "irAst"}.items()
+    {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"}.items()
 )
 if manifest_frontends != {expected_manifest_frontend}:
     raise SystemExit(
@@ -365,7 +365,7 @@ print("unsupported_runtime_summary_primitives=yes")
 print("unsupported_manifest_report_frontend_metadata=yes")
 
 frontend = commands_bridge.get("frontend", {})
-if frontend != {"producer": "solc", "ast": "irOptimizedAst"}:
+if frontend != {"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"}:
     raise SystemExit(f"unexpected Commands frontend metadata: {frontend!r}")
 summary_frontend = commands_summary.get("frontend", {})
 if summary_frontend != frontend:

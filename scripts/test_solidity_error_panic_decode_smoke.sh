@@ -96,7 +96,7 @@ if len(runtime_entries) != 1:
     raise SystemExit("expected exactly one ErrorPanicBox runtime bridge entry")
 
 frontend = runtime_entries[0].get("frontend")
-if frontend != {"producer": "solc", "ast": "irOptimizedAst"}:
+if frontend != {"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"}:
     raise SystemExit(f"unexpected ErrorPanicBox manifest frontend metadata: {frontend!r}")
 
 runtime_bridge = json.loads((bridge_dir / runtime_entries[0]["path"]).read_text())

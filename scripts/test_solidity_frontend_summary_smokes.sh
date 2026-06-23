@@ -96,7 +96,7 @@ if len(runtime_entries) != 1:
     raise SystemExit(f"{name}: expected exactly one runtime bridge entry for {contract}")
 
 frontend = runtime_entries[0].get("frontend")
-if frontend != {"producer": "solc", "ast": "irAst"}:
+if frontend != {"producer": "solc", "ast": "irAst", "evmVersion": "cancun"}:
     raise SystemExit(f"{name}: unexpected manifest frontend metadata: {frontend!r}")
 
 runtime_bridge = json.loads((bridge_dir / runtime_entries[0]["path"]).read_text())

@@ -593,14 +593,20 @@ def contract_frontend_ast_output(
     )
 
 
-def bridge_json_frontend_metadata(ast_output: Optional[str]) -> Optional[Json]:
+def bridge_json_frontend_metadata(
+    ast_output: Optional[str],
+    evm_version: str = SUPPORTED_EVM_VERSION,
+) -> Optional[Json]:
     if ast_output is None:
         return None
     if ast_output not in {"irAst", "irOptimizedAst", "yulAst"}:
         fail(f"Unsupported solc Yul AST output kind: {ast_output!r}")
+    if evm_version not in SUPPORTED_EVM_VERSIONS:
+        fail(f"Unsupported bridge JSON evmVersion: {evm_version!r}")
     return {
         "producer": BRIDGE_JSON_FRONTEND_PRODUCER,
         "ast": ast_output,
+        "evmVersion": evm_version,
     }
 
 
@@ -613,9 +619,13 @@ def normalize_bridge_json_frontend_metadata(
     frontend_obj = bridge_object(frontend, label)
     producer = bridge_string(frontend_obj.get("producer"), f"{label}.producer")
     ast_output = bridge_string(frontend_obj.get("ast"), f"{label}.ast")
+    evm_version = bridge_string(
+        frontend_obj.get("evmVersion"),
+        f"{label}.evmVersion",
+    )
     if producer != BRIDGE_JSON_FRONTEND_PRODUCER:
         fail(f"Unsupported bridge JSON frontend producer: {producer!r}")
-    return bridge_json_frontend_metadata(ast_output)
+    return bridge_json_frontend_metadata(ast_output, evm_version)
 
 
 @dataclass(frozen=True)
@@ -2984,6 +2994,7 @@ def render_bridge_json(
     source_name: str,
     contract_name: str,
     ast_output: Optional[str] = None,
+    evm_version: str = SUPPORTED_EVM_VERSION,
 ) -> str:
     artifact: Json = {
         "schema": BRIDGE_JSON_SCHEMA,
@@ -2991,7 +3002,7 @@ def render_bridge_json(
         "contract": contract_name,
         "selectedObject": obj.bridge_json(),
     }
-    frontend = bridge_json_frontend_metadata(ast_output)
+    frontend = bridge_json_frontend_metadata(ast_output, evm_version)
     if frontend is not None:
         artifact["frontend"] = frontend
     return (
@@ -3778,6 +3789,7 @@ def write_bridge_json_manifest_entry(
     object_layout: Sequence[ObjectLayoutEntry] = (),
     local_data_base: Optional[int] = None,
     ast_output: Optional[str] = None,
+    evm_version: str = SUPPORTED_EVM_VERSION,
 ) -> None:
     manifest = read_bridge_json_manifest(directory)
     entries = manifest["entries"]
@@ -3789,7 +3801,7 @@ def write_bridge_json_manifest_entry(
         "path": path.name,
         "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
     }
-    frontend = bridge_json_frontend_metadata(ast_output)
+    frontend = bridge_json_frontend_metadata(ast_output, evm_version)
     if frontend is not None:
         entry["frontend"] = frontend
     if object_layout:
@@ -3912,6 +3924,7 @@ def write_bridge_json_output(
     object_layout: Sequence[ObjectLayoutEntry] = (),
     local_data_base: Optional[int] = None,
     ast_output: Optional[str] = None,
+    evm_version: str = SUPPORTED_EVM_VERSION,
 ) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     path = bridge_json_output_path(
@@ -3921,7 +3934,15 @@ def write_bridge_json_output(
         role,
         obj.name,
     )
-    path.write_text(render_bridge_json(obj, source_name, contract_name, ast_output))
+    path.write_text(
+        render_bridge_json(
+            obj,
+            source_name,
+            contract_name,
+            ast_output,
+            evm_version,
+        )
+    )
     write_bridge_json_manifest_entry(
         directory,
         source_name,
@@ -3933,6 +3954,7 @@ def write_bridge_json_output(
         object_layout,
         local_data_base,
         ast_output,
+        evm_version,
     )
     return path
 
@@ -3946,6 +3968,7 @@ def write_artifact_bridge_json_outputs(
     object_layout: Sequence[ObjectLayoutEntry] = (),
     local_data_base: Optional[int] = None,
     ast_output: Optional[str] = None,
+    evm_version: str = SUPPORTED_EVM_VERSION,
 ) -> None:
     if directory is None:
         return
@@ -3959,6 +3982,7 @@ def write_artifact_bridge_json_outputs(
         object_layout,
         local_data_base,
         ast_output,
+        evm_version,
     )
     write_bridge_json_output(
         directory,
@@ -3968,6 +3992,7 @@ def write_artifact_bridge_json_outputs(
         "runtime",
         linker_symbols,
         ast_output=ast_output,
+        evm_version=evm_version,
     )
 
 
@@ -7784,6 +7809,11 @@ def render_bridge_json_input_output(
     source_name, contract_name, root, frontend = read_bridge_json_input_with_frontend(
         args.input
     )
+    frontend_evm_version = (
+        frontend["evmVersion"]
+        if frontend is not None
+        else SUPPORTED_EVM_VERSION
+    )
     if args.source_name is not None and args.source_name != source_name:
         fail(
             f"Bridge JSON source is {source_name!r}, not requested "
@@ -7839,6 +7869,7 @@ def render_bridge_json_input_output(
             explicit_layout,
             args.data_base,
             ast_output=frontend.get("ast") if frontend is not None else None,
+            evm_version=frontend_evm_version,
         )
         artifact = compile_contract_bytecode_artifact(
             root,
@@ -7874,6 +7905,7 @@ def render_bridge_json_input_output(
         source_name,
         contract_name,
         frontend.get("ast") if frontend is not None else None,
+        frontend_evm_version,
     )
     if args.bridge_json:
         args.bridge_json.write_text(bridge_json)
@@ -7886,6 +7918,7 @@ def render_bridge_json_input_output(
                 args.object or "selected",
                 merged_linker_symbol_entries(args.linker_symbol),
                 ast_output=frontend.get("ast") if frontend is not None else None,
+                evm_version=frontend_evm_version,
             )
 
     if args.format == "bridge-json":
@@ -8093,6 +8126,7 @@ def render_standalone_yul_object_output(
     contract_name: str,
 ) -> Tuple[str, str, str, str]:
     ast_output = solc_standalone_yul_ast_output()
+    evm_version = getattr(args, "evm_version", SUPPORTED_EVM_VERSION)
     if args.list_objects:
         if args.check:
             fail("--check is only valid when emitting Lean")
@@ -8110,7 +8144,13 @@ def render_standalone_yul_object_output(
 
     selected = select_object(root, args.object or "runtime")
     selected_name = selected.name
-    bridge_json = render_bridge_json(selected, source_name, contract_name, ast_output)
+    bridge_json = render_bridge_json(
+        selected,
+        source_name,
+        contract_name,
+        ast_output,
+        evm_version,
+    )
     linker_symbols = merged_linker_symbol_entries(args.linker_symbol)
 
     if args.bridge_json:
@@ -8124,6 +8164,7 @@ def render_standalone_yul_object_output(
             args.object or "runtime",
             linker_symbols,
             ast_output=ast_output,
+            evm_version=evm_version,
         )
 
     if args.format == "bridge-json":
@@ -8161,7 +8202,7 @@ def render_standalone_yul_object_output(
                 source_name,
                 contract_name,
                 args.object or "runtime",
-                bridge_json_frontend_metadata(ast_output),
+                bridge_json_frontend_metadata(ast_output, evm_version),
             ),
             source_name,
             contract_name,
@@ -8649,6 +8690,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 optimizer_runs=args.optimizer_runs,
                 evm_version=args.evm_version,
             )
+        frontend_evm_version = compiler_input["settings"]["evmVersion"]
         if args.optimizer_runs is not None:
             settings = compiler_input.setdefault("settings", {})
             if not isinstance(settings, dict):
@@ -8755,6 +8797,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         candidate_contract_name,
                         compiler_input_linker_symbols,
                         ast_output=candidate_ast_output,
+                        evm_version=frontend_evm_version,
                     )
                 write_bridge_json_manifest_skipped_contracts(
                     args.bridge_json_dir,
@@ -8825,6 +8868,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             candidate_contract_name,
                             compiler_input_linker_symbols,
                             ast_output=candidate_ast_output,
+                            evm_version=frontend_evm_version,
                         )
                     objects_to_summarize = [("creation", root)]
                     runtime = select_object(root, "runtime")
@@ -8837,7 +8881,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 candidate_source_name,
                                 candidate_contract_name,
                                 object_selector,
-                                bridge_json_frontend_metadata(candidate_ast_output),
+                                bridge_json_frontend_metadata(
+                                    candidate_ast_output,
+                                    frontend_evm_version,
+                                ),
                             )
                         )
                 if args.bridge_json_dir is not None:
@@ -8904,6 +8951,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         candidate_contract_name,
                         compiler_input_linker_symbols,
                         ast_output=candidate_ast_output,
+                        evm_version=frontend_evm_version,
                     )
                     objects_to_check = [("creation", root)]
                     runtime = select_object(root, "runtime")
@@ -8918,7 +8966,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 object_selector,
                                 args.lake,
                                 args.lake_cwd,
-                                bridge_json_frontend_metadata(candidate_ast_output),
+                                bridge_json_frontend_metadata(
+                                    candidate_ast_output,
+                                    frontend_evm_version,
+                                ),
                             )
                         )
                 if args.bridge_json_dir is not None:
@@ -8978,6 +9029,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         candidate_contract_name,
                         compiler_input_linker_symbols,
                         ast_output=candidate_ast_output,
+                        evm_version=frontend_evm_version,
                     )
                     objects_to_check = [("creation", root)]
                     runtime = select_object(root, "runtime")
@@ -8993,7 +9045,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 args.lake,
                                 args.lake_cwd,
                                 linker_symbols,
-                                bridge_json_frontend_metadata(candidate_ast_output),
+                                bridge_json_frontend_metadata(
+                                    candidate_ast_output,
+                                    frontend_evm_version,
+                                ),
                             )
                         )
                 if args.bridge_json_dir is not None:
@@ -9051,6 +9106,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     object_layout,
                     args.data_base,
                     candidate_ast_output,
+                    frontend_evm_version,
                 )
                 artifact = compile_contract_bytecode_artifact(
                     root,
@@ -9135,6 +9191,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 object_layout,
                 args.data_base,
                 ast_output,
+                frontend_evm_version,
             )
             artifact = compile_contract_bytecode_artifact(
                 root,
@@ -9198,6 +9255,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 source_name,
                 contract_name,
                 ast_output,
+                frontend_evm_version,
             )
             if args.bridge_json:
                 args.bridge_json.write_text(bridge_json)
@@ -9210,6 +9268,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     args.object or "runtime",
                     compiler_input_linker_symbols,
                     ast_output=ast_output,
+                    evm_version=frontend_evm_version,
                 )
 
             if args.format == "bridge-json":
@@ -9259,7 +9318,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     source_name,
                     contract_name,
                     args.object or "runtime",
-                    bridge_json_frontend_metadata(ast_output),
+                    bridge_json_frontend_metadata(
+                        ast_output,
+                        frontend_evm_version,
+                    ),
                 )
             elif args.format == "lean-json-check":
                 if args.object_layout:

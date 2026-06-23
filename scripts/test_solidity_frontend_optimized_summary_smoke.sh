@@ -83,7 +83,7 @@ contract = sys.argv[5]
 expected_entries = int(sys.argv[6])
 required_primitives = csv_set(sys.argv[7])
 required_blockers = csv_set(sys.argv[8])
-expected_frontend = {"producer": "solc", "ast": "irOptimizedAst"}
+expected_frontend = {"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"}
 
 manifest = json.loads(manifest_path.read_text())
 counts = manifest.get("counts", {})
