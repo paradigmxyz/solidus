@@ -913,6 +913,27 @@ def YulStackCompactDoneRel
         Assembly.Compact.RuntimeOutcomeRel
           compactDone assemblyDone
 
+/-- Public terminal relation for a checked recursive object artifact. The
+TypedCfg generation witness is compiler-produced proof machinery and is hidden
+behind the artifact-level relation rather than exposed by the end-to-end API. -/
+def VerifiedStackObjectDoneRel
+    (artifact : Solidity.Frontend.VerifiedStackObjectArtifact) :
+    Except Yul.InteractionSemantics.Failure
+        Yul.InteractionSemantics.State →
+      Assembly.Source.ExecutionOutcome → Prop :=
+  fun sourceDone targetDone =>
+    ∃ generated :
+        Structured.TypedCfgPreservation.Program.GeneratedContext
+          artifact.codeArtifact.compiled.expressions.toStructured
+          artifact.codeArtifact.compiled.entryShapes
+          artifact.codeArtifact.compiled.cfg,
+      YulStackCompactDoneRel
+        artifact.codeArtifact.compiled.expressions.toStructured
+        artifact.codeArtifact.compiled.entryShapes
+        artifact.codeArtifact.compiled.cfg generated
+        artifact.codeArtifact.compiled.certified.target
+        sourceDone targetDone
+
 /-- Compose the logical Assembly source run with the checked compact physical
 encoding. The byte suffix is caller-owned object data and is proved irrelevant
 to every decoded code instruction by the Assembly pass. -/
@@ -1173,6 +1194,60 @@ theorem compiledVerifiedStackObjectToRawBytecode
       (suffix := plan.payload) hCode hYulInitial hYulDomain hStackInitial
       hTerminal
   simpa [hImage] using hResult
+
+/-- Public object composition with all compiler-generated TypedCfg evidence
+discharged behind `VerifiedStackObjectDoneRel`. -/
+theorem compiledVerifiedStackObjectToRawBytecodePublic
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial
+        (Yul.Contract.names
+          artifact.codeArtifact.ordered.program.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState)
+    (hTerminal : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceTerminal
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [artifact.codeArtifact.ordered.program.contract.dispatcher])
+        (some artifact.codeArtifact.ordered.program.contract) source)) :
+    ∃ structuredFuel,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.Rel
+          (VerifiedStackObjectDoneRel artifact)
+          (Yul.InteractionSemantics.exec (sourceFuel + 1)
+            (.Block
+              [artifact.codeArtifact.ordered.program.contract.dispatcher])
+            (some artifact.codeArtifact.ordered.program.contract) source)
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              (Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { expressionsState.evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  obtain ⟨structuredFuel, hAccepted, generated, hRel⟩ :=
+    compiledVerifiedStackObjectToRawBytecode hObject hYulInitial hYulDomain
+      hStackInitial hTerminal
+  refine ⟨structuredFuel, hAccepted, ?_⟩
+  exact Simulation.Interaction.Rel.mono hRel
+    (fun _ _ hDone => ⟨generated, hDone⟩)
 
 end OpenInteractionComposition
 end Compiler

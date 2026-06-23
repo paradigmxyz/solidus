@@ -84,6 +84,12 @@ rg -q 'theorem resolveObjectBuiltins_memoryguard' \
 rg -q '^import EvmCompiler\.Compiler\.OpenInteractionComposition$' \
   EvmCompiler/Yul/EndToEnd.lean ||
   fail 'Yul.EndToEnd must compose only the adjacent public stack spine'
+if rg -n 'GeneratedContext|YulStackCompactDoneRel' \
+    EvmCompiler/Yul/EndToEnd.lean; then
+  fail 'Yul.EndToEnd must not expose lower-pass generated evidence'
+fi
+rg -q 'VerifiedStackObjectDoneRel' EvmCompiler/Yul/EndToEnd.lean ||
+  fail 'Yul.EndToEnd must use the artifact-level public outcome relation'
 
 if rg -ni 'permit2|aave|poolmanager' \
     EvmCompiler/Functions/Stack*.lean \

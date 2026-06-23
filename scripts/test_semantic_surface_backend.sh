@@ -177,6 +177,7 @@ def walk(value):
 
 walk(bridge)
 required = {
+    "pop",
     "add", "mul", "sub", "div", "sdiv", "mod", "smod",
     "addmod", "mulmod", "exp", "signextend",
     "lt", "gt", "slt", "sgt", "eq", "iszero",
@@ -191,7 +192,7 @@ required = {
     "call", "callcode", "delegatecall", "staticcall", "gas",
     "returndatasize", "returndatacopy", "create", "create2",
     "log0", "log1", "log2", "log3", "log4",
-    "stop", "selfdestruct", "invalid",
+    "stop", "return", "revert", "selfdestruct", "invalid",
 }
 missing = sorted(required - callees)
 if missing:

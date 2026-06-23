@@ -40,33 +40,25 @@ theorem optimizedSolcYulToRawBytecodeOfRelatedInitial
         (some artifact.codeArtifact.ordered.program.contract) source)) :
     ∃ structuredFuel,
       Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
-        ∃ generated :
-            Structured.TypedCfgPreservation.Program.GeneratedContext
-              artifact.codeArtifact.compiled.expressions.toStructured
-              artifact.codeArtifact.compiled.entryShapes
-              artifact.codeArtifact.compiled.cfg,
-          Simulation.Interaction.Rel
-            (Compiler.OpenInteractionComposition.YulStackCompactDoneRel
-              artifact.codeArtifact.compiled.expressions.toStructured
-              artifact.codeArtifact.compiled.entryShapes
-              artifact.codeArtifact.compiled.cfg generated
-              artifact.codeArtifact.compiled.certified.target)
-            (InteractionSemantics.exec (sourceFuel + 1)
-              (.Block
-                [artifact.codeArtifact.ordered.program.contract.dispatcher])
-              (some artifact.codeArtifact.ordered.program.contract) source)
-            (Assembly.Compact.InteractionSemantics.openRunNResult
-              (Assembly.Bytecode.ofList artifact.image.bytes)
-              (2 *
-                (Structured.InteractionStaticCost.blockBudget
-                    artifact.codeArtifact.compiled.expressions.toStructured
-                    structuredFuel
-                    artifact.codeArtifact.compiled.expressions.toStructured.body *
-                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                    artifact.codeArtifact.compiled.cfg))
-              { expressionsState.evm with
-                pc := EvmYul.UInt256.ofNat 0 }) :=
-  Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
+        Simulation.Interaction.Rel
+          (Compiler.OpenInteractionComposition.VerifiedStackObjectDoneRel
+            artifact)
+          (InteractionSemantics.exec (sourceFuel + 1)
+            (.Block
+              [artifact.codeArtifact.ordered.program.contract.dispatcher])
+            (some artifact.codeArtifact.ordered.program.contract) source)
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              (Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { expressionsState.evm with
+              pc := EvmYul.UInt256.ofNat 0 }) :=
+  Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecodePublic
     hObject hYulInitial hYulDomain hStackInitial hTerminal
 
 /-- Canonical source state for the checked object's active code. The exact raw
@@ -116,33 +108,25 @@ theorem optimizedSolcYulToRawBytecode
         (installedSourceState artifact baseSource))) :
     ∃ structuredFuel,
       Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
-        ∃ generated :
-            Structured.TypedCfgPreservation.Program.GeneratedContext
-              artifact.codeArtifact.compiled.expressions.toStructured
-              artifact.codeArtifact.compiled.entryShapes
-              artifact.codeArtifact.compiled.cfg,
-          Simulation.Interaction.Rel
-            (Compiler.OpenInteractionComposition.YulStackCompactDoneRel
-              artifact.codeArtifact.compiled.expressions.toStructured
-              artifact.codeArtifact.compiled.entryShapes
-              artifact.codeArtifact.compiled.cfg generated
-              artifact.codeArtifact.compiled.certified.target)
-            (InteractionSemantics.exec (sourceFuel + 1)
-              (.Block
-                [artifact.codeArtifact.ordered.program.contract.dispatcher])
-              (some artifact.codeArtifact.ordered.program.contract)
-              (installedSourceState artifact baseSource))
-            (Assembly.Compact.InteractionSemantics.openRunNResult
-              (Assembly.Bytecode.ofList artifact.image.bytes)
-              (2 *
-                (Structured.InteractionStaticCost.blockBudget
-                    artifact.codeArtifact.compiled.expressions.toStructured
-                    structuredFuel
-                    artifact.codeArtifact.compiled.expressions.toStructured.body *
-                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                    artifact.codeArtifact.compiled.cfg))
-              { (initialExpressionsState artifact baseSource).evm with
-                pc := EvmYul.UInt256.ofNat 0 }) := by
+        Simulation.Interaction.Rel
+          (Compiler.OpenInteractionComposition.VerifiedStackObjectDoneRel
+            artifact)
+          (InteractionSemantics.exec (sourceFuel + 1)
+            (.Block
+              [artifact.codeArtifact.ordered.program.contract.dispatcher])
+            (some artifact.codeArtifact.ordered.program.contract)
+            (installedSourceState artifact baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              (Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (initialExpressionsState artifact baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
   apply optimizedSolcYulToRawBytecodeOfRelatedInitial hObject
   · exact FunctionsInteractionRelation.ScopedStateRel.initial _
   · exact

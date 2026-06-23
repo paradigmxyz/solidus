@@ -154,6 +154,7 @@ contract SemanticSurfaceBox {
             staticOk := staticcall(
                 gas(), target, payload.offset, payload.length, ptr, 0x20
             )
+            pop(call(gas(), target, 0, 0, 0, 0, 0))
             let size := returndatasize()
             returndatacopy(ptr, 0, size)
             returnHash := keccak256(ptr, size)
