@@ -103,6 +103,18 @@ for version in "${VERSIONS[@]}"; do
     exit 1
   fi
   printf '%s\n' "$proxy_output"
+
+  fork_output="$(SOLC="$compiler" \
+    "$ROOT/scripts/test_fork_validation_backend.sh")"
+  if [[ "$fork_output" != *"fork_validation_backend=pass"* ]] ||
+      [[ "$fork_output" != *"fork_validation_honest_london=pass"* ]] ||
+      [[ "$fork_output" != *"fork_validation_honest_cancun=pass"* ]] ||
+      [[ "$fork_output" != *"fork_validation_cancun_as_london=rejected"* ]]; then
+    printf 'error: pinned solc %s failed fork validation coverage\n%s\n' \
+      "$version" "$fork_output" >&2
+    exit 1
+  fi
+  printf '%s\n' "$fork_output"
   printf 'supported_solc_version=%s\n' "$version"
 done
 

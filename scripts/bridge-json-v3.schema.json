@@ -4,7 +4,7 @@
   "title": "evm-compiler solc Yul bridge JSON v3",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema", "source", "contract", "selectedObject"],
+  "required": ["schema", "source", "contract", "frontend", "selectedObject"],
   "properties": {
     "schema": {
       "const": "evm-compiler.solc-yul-bridge.v3"

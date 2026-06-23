@@ -1537,7 +1537,7 @@ theorem compiledVerifiedStackCodeToRawBytecode
       hLower hSource.1 hSource.2.1
   have hProgramOk :
       Yul.SolcValidation.ProgramOkWithEntries?
-          Yul.SolcValidation.defaultDialectProfile
+          codeArtifact.resolved.dialectProfile
           codeArtifact.ordered.program decomposition.functionEntries = true := by
     simpa [decomposition,
       Yul.FunctionsCompilerArtifact.passDecomposition_of_ordered_toObjects?]
@@ -1628,7 +1628,7 @@ theorem compiledVerifiedStackCodeToRawBytecodeFinished
       hLower hSource.1 hSource.2.1
   have hProgramOk :
       Yul.SolcValidation.ProgramOkWithEntries?
-          Yul.SolcValidation.defaultDialectProfile
+          codeArtifact.resolved.dialectProfile
           codeArtifact.ordered.program decomposition.functionEntries = true := by
     simpa [decomposition,
       Yul.FunctionsCompilerArtifact.passDecomposition_of_ordered_toObjects?]

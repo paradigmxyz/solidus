@@ -79,6 +79,21 @@ rg -q 'theorem resolveObjectBuiltins_memoryguard' \
   EvmCompiler/Solidity/Frontend.lean ||
   fail 'the frontend must own the checked memoryguard identity theorem'
 
+if rg -n 'defaultDialectProfile' \
+    EvmCompiler/Solidity/Frontend.lean \
+    EvmCompiler/Compiler/OpenInteractionComposition.lean; then
+  fail 'production frontend composition must validate the declared EVM fork'
+fi
+rg -q 'evmVersion : Yul\.SolcValidation\.EvmVersion' \
+  EvmCompiler/Solidity/Frontend.lean ||
+  fail 'frontend objects must retain their declared EVM fork'
+rg -q 'codeArtifact\.resolved\.dialectProfile' \
+  EvmCompiler/Compiler/OpenInteractionComposition.lean ||
+  fail 'public composition must use the resolved object fork profile'
+rg -q '"required": \["schema", "source", "contract", "frontend", "selectedObject"\]' \
+  scripts/bridge-json-v3.schema.json ||
+  fail 'bridge JSON must require explicit frontend/fork metadata'
+
 [[ "$(rg -c '^import ' EvmCompiler/Yul/EndToEnd.lean)" == "1" ]] ||
   fail 'Yul.EndToEnd must remain a short one-import composition module'
 rg -q '^import EvmCompiler\.Compiler\.OpenInteractionComposition$' \

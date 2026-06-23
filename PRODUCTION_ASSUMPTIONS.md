@@ -32,6 +32,8 @@ Successful artifact construction internally derives all of the following:
 
 - optimized-Yul validation, source well-formedness, scoping, and supported
   primitive checks;
+- primitive availability for the bridge-declared London, Paris, Shanghai, or
+  Cancun target, propagated through every recursive frontend object;
 - Functions normalization and its preservation theorem;
 - liveness, symbolic layouts, schedules, joins, dormant frames, stack depth,
   and top-16 accessibility;
@@ -77,6 +79,10 @@ trusted:
 
 The Lean frontend validates the normalized object and fails closed, but there
 is not yet a proof that the Python normalization preserves arbitrary solc JSON.
+The requested fork is therefore still an external compilation input, but its
+consequences are checked rather than trusted: missing metadata is rejected, and
+an object containing instructions unavailable in its declared fork cannot
+produce a checked artifact.
 
 ## Open World
 
@@ -126,3 +132,5 @@ creation/runtime, and fourteen pinned real-repository suites. Safe and
 EntryPoint are compile gates; only cases for which solc emits a reference image
 are counted as differential execution tests. The kernel proof gate reports
 only `propext`, `Classical.choice`, and `Quot.sound` for the public theorem.
+The supported-version matrix also compiles honest London and Cancun fixtures
+and rejects Cancun-only `MCOPY`/transient-storage syntax relabeled as London.

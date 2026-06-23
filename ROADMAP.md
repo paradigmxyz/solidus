@@ -61,6 +61,9 @@ backend performs no compiler-owned memory access.
   calls, and pressure normalization.
 - [x] Legitimate gas/OOG, host-memory, fork, initial-state, and trusted-frontend
   assumptions remain explicit.
+- [x] Carry the requested EVM version through recursive frontend objects and
+  validate primitive availability against that exact profile in Lean; bridge
+  inputs without metadata and Cancun operations relabeled as London fail closed.
 
 ## Adversarial Coverage
 
@@ -125,6 +128,8 @@ stack-only correctness boundary.
   upgradeable EIP-1967-style proxy with delegated storage, reentrant self-calls,
   revert rollback, event ordering, CREATE-based upgrade, and post-upgrade
   dispatch under both supported solc pins.
+  A separate fork-adversarial gate checks honest London and Cancun compilation
+  and rejects a schema-valid Cancun object whose metadata is changed to London.
 - [x] Separate genuine source completion/fuel sufficiency from malformed-source
   exclusion in the all-finished theorem. `truncated_iff_outOfFuel` proves the
   public truncation predicate is exactly structural source `OutOfFuel`;

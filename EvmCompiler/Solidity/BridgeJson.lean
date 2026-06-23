@@ -99,6 +99,13 @@ def decodeCallKind : String → DecodeM CallKind
   | "dialectBuiltin" => .ok .dialectBuiltin
   | other => .error s!"unknown call kind: {other}"
 
+def decodeEvmVersion : String → DecodeM Yul.SolcValidation.EvmVersion
+  | "london" => .ok .london
+  | "paris" => .ok .paris
+  | "shanghai" => .ok .shanghai
+  | "cancun" => .ok .cancun
+  | other => .error s!"unsupported frontend evmVersion: {other}"
+
 def decodeOptionalName (json : Lean.Json) (name : String) :
     DecodeM (Option Name) := do
   match ← optionalField json name with
@@ -233,15 +240,17 @@ mutual
         | "object" => .ok (.object index)
         | other => .error s!"unknown object item kind: {other}"
 
-  def decodeObject : Nat → Lean.Json → DecodeM Object
-    | 0, _ => .error "object JSON decoder ran out of fuel"
-    | fuel + 1, json => do
+  def decodeObject : Nat → Yul.SolcValidation.EvmVersion →
+      Lean.Json → DecodeM Object
+    | 0, _, _ => .error "object JSON decoder ran out of fuel"
+    | fuel + 1, evmVersion, json => do
         expectNode json "object"
         let name ← stringField json "name"
         let dispatcher ← decodeArrayField (decodeStmt fuel) json "dispatcher"
         let functions ← decodeArrayField (decodeNamedFunction fuel) json "functions"
         let data ← decodeArrayField (decodeDataSection fuel) json "data"
-        let objects ← decodeArrayField (decodeObject fuel) json "subobjects"
+        let objects ←
+          decodeArrayField (decodeObject fuel evmVersion) json "subobjects"
         let items ← decodeArrayField (decodeObjectItemRef fuel) json "items"
         match json.getObjVal? "memoryContract" with
         | .ok _ =>
@@ -254,7 +263,8 @@ mutual
                 data := data
                 objects := objects
                 items := items
-                memoryContract := MemoryContract.unrestricted }
+                memoryContract := MemoryContract.unrestricted
+                evmVersion := evmVersion }
 end
 
 def decodeProgram (json : Lean.Json) : DecodeM Program := do
@@ -264,9 +274,19 @@ def decodeProgram (json : Lean.Json) : DecodeM Program := do
   else
     let source ← stringField json "source"
     let contract ← stringField json "contract"
-    let objectJson ← field json "selectedObject"
-    let object ← decodeObject maxDecodeFuel objectJson
-    .ok { source := source, contract := contract, object := object }
+    let frontend ← field json "frontend"
+    let producer ← stringField frontend "producer"
+    if producer != "solc" then
+      .error s!"unsupported frontend producer: {producer}"
+    else
+      let ast ← stringField frontend "ast"
+      if ast != "irOptimizedAst" && ast != "irAst" && ast != "yulAst" then
+        .error s!"unsupported frontend AST: {ast}"
+      else
+        let evmVersion ← decodeEvmVersion (← stringField frontend "evmVersion")
+        let objectJson ← field json "selectedObject"
+        let object ← decodeObject maxDecodeFuel evmVersion objectJson
+        .ok { source := source, contract := contract, object := object }
 
 def parseProgram? (input : String) : DecodeM Program := do
   let json ← Lean.Json.parse input

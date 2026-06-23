@@ -75,6 +75,12 @@ def lean_list(items: Sequence[str], level: int = 0) -> str:
     return "[\n" + ",\n".join(rendered) + "\n" + pad + "]"
 
 
+def lean_evm_version(evm_version: str) -> str:
+    if evm_version not in SUPPORTED_EVM_VERSIONS:
+        fail(f"Unsupported Lean frontend evmVersion: {evm_version!r}")
+    return f"EvmCompiler.Yul.SolcValidation.EvmVersion.{evm_version}"
+
+
 def parse_uint256(value: str) -> int:
     value = value.strip()
     if value.startswith(("0x", "0X")):
@@ -1211,7 +1217,7 @@ class YulObject:
     subobjects: List["YulObject"]
     items: List[ObjectItemRef] = field(default_factory=list)
 
-    def lean_ir(self) -> str:
+    def lean_ir(self, evm_version: str = SUPPORTED_EVM_VERSION) -> str:
         functions = lean_list(
             [
                 "(" + lean_string(name) + ", " + fn.lean_ir() + ")"
@@ -1220,13 +1226,16 @@ class YulObject:
             1,
         )
         data = lean_list([section.lean_ir() for section in self.data], 1)
-        objects = lean_list([subobject.lean_ir() for subobject in self.subobjects], 1)
+        objects = lean_list(
+            [subobject.lean_ir(evm_version) for subobject in self.subobjects], 1
+        )
         items = lean_list([item.lean_ir() for item in self.items], 1)
         dispatcher = lean_ir_stmt_list(self.dispatcher, 1)
         return (
             f"{LEAN_FRONTEND}.Object.mk {lean_string(self.name)} {dispatcher} "
             f"{functions} {data} {objects} {items} "
-            "EvmCompiler.MemoryContract.unrestricted"
+            "EvmCompiler.MemoryContract.unrestricted "
+            f"{lean_evm_version(evm_version)}"
         )
 
     def bridge_json(self) -> Json:
@@ -2451,6 +2460,7 @@ def render_frontend_module(
     object_layout: Optional[Sequence[ObjectLayoutEntry]] = None,
     local_data_base: Optional[int] = None,
     linker_symbols: Optional[Sequence[LinkerSymbolEntry]] = None,
+    evm_version: str = SUPPORTED_EVM_VERSION,
 ) -> str:
     validate_lean_name(definition, "definition name")
     to_yul_definition = definition + "ToYul"
@@ -2510,7 +2520,7 @@ def render_frontend_module(
 
     program = (
         f"{LEAN_FRONTEND}.Program.mk {lean_string(source_name)} "
-        f"{lean_string(contract_name)} ({obj.lean_ir()})"
+        f"{lean_string(contract_name)} ({obj.lean_ir(evm_version)})"
     )
     header = f"""import EvmCompiler.Solidity.Frontend
 import EvmCompiler.Assembly.Bytecode
@@ -2993,7 +3003,7 @@ def render_bridge_json(
     obj: YulObject,
     source_name: str,
     contract_name: str,
-    ast_output: Optional[str] = None,
+    ast_output: Optional[str] = "irOptimizedAst",
     evm_version: str = SUPPORTED_EVM_VERSION,
 ) -> str:
     artifact: Json = {
@@ -3788,7 +3798,7 @@ def write_bridge_json_manifest_entry(
     linker_symbols: Sequence[LinkerSymbolEntry] = (),
     object_layout: Sequence[ObjectLayoutEntry] = (),
     local_data_base: Optional[int] = None,
-    ast_output: Optional[str] = None,
+    ast_output: Optional[str] = "irOptimizedAst",
     evm_version: str = SUPPORTED_EVM_VERSION,
 ) -> None:
     manifest = read_bridge_json_manifest(directory)
@@ -3923,7 +3933,7 @@ def write_bridge_json_output(
     linker_symbols: Sequence[LinkerSymbolEntry] = (),
     object_layout: Sequence[ObjectLayoutEntry] = (),
     local_data_base: Optional[int] = None,
-    ast_output: Optional[str] = None,
+    ast_output: Optional[str] = "irOptimizedAst",
     evm_version: str = SUPPORTED_EVM_VERSION,
 ) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
@@ -3967,7 +3977,7 @@ def write_artifact_bridge_json_outputs(
     linker_symbols: Sequence[LinkerSymbolEntry] = (),
     object_layout: Sequence[ObjectLayoutEntry] = (),
     local_data_base: Optional[int] = None,
-    ast_output: Optional[str] = None,
+    ast_output: Optional[str] = "irOptimizedAst",
     evm_version: str = SUPPORTED_EVM_VERSION,
 ) -> None:
     if directory is None:
@@ -4371,14 +4381,29 @@ def decode_bridge_object(data: Any) -> YulObject:
     )
 
 
-def decode_bridge_program(data: Any) -> Tuple[str, str, YulObject]:
+def decode_bridge_program_with_frontend(
+    data: Any,
+) -> Tuple[str, str, YulObject, Json]:
     root = bridge_object(data, "root")
     schema = bridge_string(root.get("schema"), "schema")
     if schema != BRIDGE_JSON_SCHEMA:
         fail(f"Unsupported bridge JSON schema: {schema!r}")
     source_name = bridge_string(root.get("source"), "source")
     contract_name = bridge_string(root.get("contract"), "contract")
+    frontend = normalize_bridge_json_frontend_metadata(
+        root.get("frontend"),
+        "frontend",
+    )
+    if frontend is None:
+        fail("Bridge JSON frontend metadata is required")
     selected_object = decode_bridge_object(root.get("selectedObject"))
+    return source_name, contract_name, selected_object, frontend
+
+
+def decode_bridge_program(data: Any) -> Tuple[str, str, YulObject]:
+    source_name, contract_name, selected_object, _ = (
+        decode_bridge_program_with_frontend(data)
+    )
     return source_name, contract_name, selected_object
 
 
@@ -4393,18 +4418,13 @@ def read_bridge_json_input(input_path: Path) -> Tuple[str, str, YulObject]:
 
 def read_bridge_json_input_with_frontend(
     input_path: Path,
-) -> Tuple[str, str, YulObject, Optional[Json]]:
+) -> Tuple[str, str, YulObject, Json]:
     text = sys.stdin.read() if str(input_path) == "-" else input_path.read_text()
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError as exc:
         fail(f"Could not parse bridge JSON input: {exc}")
-    source_name, contract_name, obj = decode_bridge_program(parsed)
-    frontend = normalize_bridge_json_frontend_metadata(
-        bridge_object(parsed, "root").get("frontend"),
-        "frontend",
-    )
-    return source_name, contract_name, obj, frontend
+    return decode_bridge_program_with_frontend(parsed)
 
 
 def bridge_json_from_text(text: str, path: Path) -> Tuple[str, str, YulObject]:
@@ -8043,6 +8063,7 @@ def render_bridge_json_input_output(
                 explicit_layout,
                 args.data_base,
                 linker_symbols,
+                evm_version=frontend_evm_version,
             )
         elif args.format == "lean-json-ir":
             rendered = render_frontend_json_module(
@@ -8263,6 +8284,7 @@ def render_standalone_yul_object_output(
                 object_layout,
                 args.data_base,
                 linker_symbols,
+                evm_version=evm_version,
             )
         elif args.format == "lean-json-ir":
             rendered = render_frontend_json_module(
@@ -9387,6 +9409,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         object_layout,
                         args.data_base,
                         linker_symbols,
+                        evm_version=frontend_evm_version,
                     )
                 elif args.format == "lean-json-ir":
                     rendered = render_frontend_json_module(

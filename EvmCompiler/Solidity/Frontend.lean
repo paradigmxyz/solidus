@@ -99,6 +99,7 @@ structure Object where
   items : List ObjectItemRef
   memoryContract : MemoryContract.Contract :=
     MemoryContract.unrestricted
+  evmVersion : Yul.SolcValidation.EvmVersion := .cancun
   deriving Inhabited, Repr
 
 structure Program where
@@ -1012,6 +1013,10 @@ end List
 end FunctionDef
 
 namespace Object
+
+def dialectProfile (object : Object) :
+    Yul.SolcValidation.DialectProfile :=
+  object.evmVersion.dialectProfile
 
 def loadImmutableNames (object : Object) : List Name :=
   NameList.unique
@@ -1985,7 +1990,8 @@ def resolveObjectBuiltinsIn? (object : Object)
       data := object.data
       objects := object.objects
       items := object.items
-      memoryContract := memoryContract }
+      memoryContract := memoryContract
+      evmVersion := object.evmVersion }
 
 def resolveObjectBuiltins? (object : Object)
     (layout : ObjectLayout) : Option Object :=
@@ -2264,7 +2270,7 @@ def toSolcYulProgram? (object : Object) :
     Option Yul.Program := do
   let (contract, functions) ← object.toYulContractWithFunctionEntries?
   if Yul.SolcValidation.ContractOkWithEntries?
-      Yul.SolcValidation.defaultDialectProfile contract functions then
+      object.dialectProfile contract functions then
     some
       { contract := contract
         memoryContract := object.memoryContract }
@@ -2275,7 +2281,7 @@ def toSolcYulOrderedProgram? (object : Object) :
     Option Yul.OrderedProgram := do
   let (contract, functions) ← object.toYulContractWithFunctionEntries?
   if Yul.SolcValidation.ContractOkWithEntries?
-      Yul.SolcValidation.defaultDialectProfile contract functions then
+      object.dialectProfile contract functions then
     some
       { program :=
           { contract := contract
@@ -2287,10 +2293,10 @@ def toSolcYulOrderedProgram? (object : Object) :
 theorem toSolcYulOrderedProgram?_source
     {object : Object} {ordered : Yul.OrderedProgram}
     (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
-    ordered.RepresentsSource ∧
+      ordered.RepresentsSource ∧
       ordered.FunctionNamesNodup ∧
       Yul.SolcValidation.ContractOkWithEntries?
-          Yul.SolcValidation.defaultDialectProfile
+          object.dialectProfile
           ordered.program.contract ordered.functionEntries = true ∧
       ordered.program.memoryContract = object.memoryContract := by
   unfold toSolcYulOrderedProgram? at hConvert
@@ -2300,7 +2306,7 @@ theorem toSolcYulOrderedProgram?_source
       rcases result with ⟨contract, functions⟩
       cases hValid :
           Yul.SolcValidation.ContractOkWithEntries?
-            Yul.SolcValidation.defaultDialectProfile contract functions <;>
+            object.dialectProfile contract functions <;>
         simp [hContract, hValid] at hConvert
       subst ordered
       refine ⟨?_, ?_, hValid, rfl⟩
@@ -2331,7 +2337,7 @@ theorem toSolcYulOrderedProgram?_programOkWithEntries
     {object : Object} {ordered : Yul.OrderedProgram}
     (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
     Yul.SolcValidation.ProgramOkWithEntries?
-        Yul.SolcValidation.defaultDialectProfile ordered.program
+        object.dialectProfile ordered.program
         ordered.functionEntries = true := by
   exact (toSolcYulOrderedProgram?_source hConvert).2.2.1
 
@@ -2346,7 +2352,7 @@ theorem toSolcYulProgram?_memoryContract
       rcases result with ⟨contract, functions⟩
       by_cases hValid :
           Yul.SolcValidation.ContractOkWithEntries?
-            Yul.SolcValidation.defaultDialectProfile contract functions
+            object.dialectProfile contract functions
       · simp [hContract, hValid] at hConvert
         subst program
         rfl
@@ -2375,7 +2381,7 @@ theorem toSolcYulProgram?_eq_some {object : Object}
       object.toYulProgram? = some program ∧
         FunctionDef.List.toYul? object.functions = some functions ∧
           Yul.SolcValidation.ContractOkWithEntries?
-            Yul.SolcValidation.defaultDialectProfile
+            object.dialectProfile
             program.contract functions = true := by
   unfold toSolcYulProgram? toYulContractWithFunctionEntries? at hProgram
   unfold toYulProgram? toYulContract? toYulContractWithFunctionEntries?
@@ -2389,7 +2395,7 @@ theorem toSolcYulProgram?_eq_some {object : Object}
       | some functions =>
           cases hValid :
               Yul.SolcValidation.ContractOkWithEntries?
-                Yul.SolcValidation.defaultDialectProfile
+                object.dialectProfile
                 { dispatcher := dispatcher
                   functions := functionMap functions }
                 functions <;>

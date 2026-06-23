@@ -606,6 +606,31 @@ class SolidityToYulLeanTests(unittest.TestCase):
         ):
             bridge.decode_bridge_object(encoded)
 
+    def test_bridge_json_requires_explicit_frontend_metadata(self):
+        obj = bridge.YulObject("Runtime", [], [], [], [])
+        encoded = json.loads(
+            bridge.render_bridge_json(obj, "Simple.sol", "Simple")
+        )
+        self.assertEqual(
+            encoded["frontend"],
+            {
+                "producer": "solc",
+                "ast": "irOptimizedAst",
+                "evmVersion": "cancun",
+            },
+        )
+        del encoded["frontend"]
+        with self.assertRaisesRegex(
+            bridge.ConversionError, "frontend metadata is required"
+        ):
+            bridge.decode_bridge_program(encoded)
+
+    def test_yul_object_lean_ir_records_declared_fork(self):
+        obj = bridge.YulObject("Runtime", [], [], [], [])
+        rendered = obj.lean_ir("london")
+        self.assertIn("EvmVersion.london", rendered)
+        self.assertNotIn("EvmVersion.cancun", rendered)
+
     def test_scratch_reservation_cli_is_removed(self):
         parser = bridge.build_arg_parser()
         with self.assertRaises(SystemExit):

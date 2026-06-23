@@ -34,9 +34,10 @@ inductive EvmVersion where
   | istanbul
   | london
   | paris
+  | shanghai
   | cancun
   | osaka
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Inhabited, Repr
 
 namespace EvmVersion
 
@@ -48,8 +49,9 @@ def rank : EvmVersion → Nat
   | .istanbul => 4
   | .london => 5
   | .paris => 6
-  | .cancun => 7
-  | .osaka => 8
+  | .shanghai => 7
+  | .cancun => 8
+  | .osaka => 9
 
 def atLeast? (version minimum : EvmVersion) : Bool :=
   decide (minimum.rank ≤ version.rank)
@@ -63,6 +65,9 @@ structure DialectProfile where
 
 def defaultDialectProfile : DialectProfile :=
   { evmVersion := .cancun, eof := false }
+
+def EvmVersion.dialectProfile (version : EvmVersion) : DialectProfile :=
+  { evmVersion := version, eof := false }
 
 def primitiveSignature : EvmYul.Operation .Yul → Signature
   | .StopArith .STOP => sig 0 0
