@@ -18,7 +18,8 @@ for version in "${VERSIONS[@]}"; do
   output="$(SOLC="$compiler" "$ROOT/scripts/test_semantic_surface_backend.sh")"
   if [[ "$output" != *"semantic_surface_backend=pass"* ]] ||
       [[ "$output" != *"arithmetic_execution_compare_calls=3"* ]] ||
-      [[ "$output" != *"terminal_execution_compare=stop-success,invalid-failure"* ]]; then
+      [[ "$output" != *"semantic_execution_compare_calls=8"* ]] ||
+      [[ "$output" != *"terminal_execution_compare=stop-success,invalid-failure,selfdestruct-success"* ]]; then
     printf 'error: pinned solc %s failed the checked semantic surface\n%s\n' \
       "$version" "$output" >&2
     exit 1
@@ -27,7 +28,8 @@ for version in "${VERSIONS[@]}"; do
 
   abi_output="$(SOLC="$compiler" "$ROOT/scripts/test_abi_control_surface_backend.sh")"
   if [[ "$abi_output" != *"abi_control_surface_backend=pass"* ]] ||
-      [[ "$abi_output" != *"abi_control_surface_execution_compare_calls=5"* ]]; then
+      [[ "$abi_output" != *"abi_control_surface_execution_compare_calls=5"* ]] ||
+      [[ "$abi_output" != *"abi_control_surface_malformed_compare_calls=6"* ]]; then
     printf 'error: pinned solc %s failed the ABI/control surface\n%s\n' \
       "$version" "$abi_output" >&2
     exit 1
@@ -37,7 +39,8 @@ for version in "${VERSIONS[@]}"; do
   advanced_output="$(SOLC="$compiler" \
     "$ROOT/scripts/test_advanced_type_surface_backend.sh")"
   if [[ "$advanced_output" != *"advanced_type_surface_backend=pass"* ]] ||
-      [[ "$advanced_output" != *"advanced_type_surface_execution_compare_calls=8"* ]]; then
+      [[ "$advanced_output" != *"advanced_type_surface_execution_compare_calls=9"* ]] ||
+      [[ "$advanced_output" != *"advanced_type_surface_invalid_enum=true"* ]]; then
     printf 'error: pinned solc %s failed the advanced-type surface\n%s\n' \
       "$version" "$advanced_output" >&2
     exit 1
@@ -69,7 +72,8 @@ for version in "${VERSIONS[@]}"; do
 
   effect_output="$(SOLC="$compiler" \
     "$ROOT/scripts/test_effect_ordering_surface_backend.sh")"
-  if [[ "$effect_output" != *"effect_ordering_surface_backend=pass"* ]]; then
+  if [[ "$effect_output" != *"effect_ordering_surface_backend=pass"* ]] ||
+      [[ "$effect_output" != *"effect_ordering_execution_compare_calls=2"* ]]; then
     printf 'error: pinned solc %s failed ordered-effect coverage\n%s\n' \
       "$version" "$effect_output" >&2
     exit 1

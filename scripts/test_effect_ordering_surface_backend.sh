@@ -5,6 +5,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="$("$ROOT/scripts/find_schema_python.sh")"
 LAKE_BIN="${LAKE:-$HOME/.elan/bin/lake}"
 SOLC_BIN="${SOLC:-$HOME/.solc-select/artifacts/solc-0.8.26/solc-0.8.26}"
+FORGE_BIN="${FORGE:-forge}"
+CAST_BIN="${CAST:-cast}"
 TMPDIR="${TMPDIR:-/tmp}"
 OUTDIR="$(mktemp -d "$TMPDIR/evm-compiler-effect-ordering.XXXXXX")"
 
@@ -20,6 +22,7 @@ trap cleanup EXIT
 RUNTIME_BRIDGE="$OUTDIR/effect-ordering.runtime.bridge.json"
 RUNTIME_DIAGNOSTICS="$OUTDIR/effect-ordering.runtime.diagnostics.txt"
 CREATION_IMAGE="$OUTDIR/effect-ordering.creation.image.txt"
+EXECUTION_COMPARE="$OUTDIR/effect-ordering.execution.compare.txt"
 
 "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$ROOT/examples/EffectOrderingSurfaceBox.sol" \
@@ -48,8 +51,27 @@ CREATION_IMAGE="$OUTDIR/effect-ordering.creation.image.txt"
 "$LAKE_BIN" exe evm-compiler-backend image \
   "$OUTDIR/effect-ordering.creation.bridge.json" > "$CREATION_IMAGE"
 
+"$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
+  "$ROOT/examples/EffectOrderingSurfaceBox.sol" \
+  --solc "$SOLC_BIN" \
+  --lake "$LAKE_BIN" \
+  --lake-cwd "$ROOT" \
+  --forge "$FORGE_BIN" \
+  --contract EffectOrderingSurfaceBox \
+  --optimized \
+  --calldata "$("$CAST_BIN" calldata \
+    'interleave(address,bytes,bytes,bytes32)' \
+    0x0000000000000000000000000000000000000000 \
+    0x 0xfe \
+    0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)" \
+  --calldata "$("$CAST_BIN" calldata \
+    'proxy(address,bytes)' \
+    0x0000000000000000000000000000000000000000 0x)" \
+  > "$EXECUTION_COMPARE"
+
 "$PYTHON_BIN" - \
-  "$RUNTIME_BRIDGE" "$RUNTIME_DIAGNOSTICS" "$CREATION_IMAGE" <<'PY'
+  "$RUNTIME_BRIDGE" "$RUNTIME_DIAGNOSTICS" "$CREATION_IMAGE" \
+  "$EXECUTION_COMPARE" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -57,6 +79,11 @@ from pathlib import Path
 bridge = json.loads(Path(sys.argv[1]).read_text())
 runtime = Path(sys.argv[2]).read_text().splitlines()
 creation = Path(sys.argv[3]).read_text().splitlines()
+execution = dict(
+    line.split("=", 1)
+    for line in Path(sys.argv[4]).read_text().splitlines()
+    if "=" in line
+)
 
 calls = []
 
@@ -101,8 +128,15 @@ for expected in (
 creation_bytes = [line for line in creation if line.startswith("bytecode_bytes=")]
 if len(creation_bytes) != 1 or int(creation_bytes[0].split("=", 1)[1]) <= 0:
     raise SystemExit("creation checked artifact emitted no bytecode")
+if execution.get("contract_call_compare") != "pass":
+    raise SystemExit(f"ordered-effect execution mismatch: {execution!r}")
+if execution.get("calls") != "2":
+    raise SystemExit(f"ordered-effect execution call count changed: {execution!r}")
+if execution.get("bridge_summary_1_unsupported_primitives") != "none":
+    raise SystemExit(f"ordered-effect execution has unsupported primitives: {execution!r}")
 
 print("effect_ordering_surface_backend=pass")
 print("effect_ordering_subsequence=log1,call,log2,create2,log3")
 print("proxy_terminal_effects=delegatecall,returndatacopy,revert,return")
+print("effect_ordering_execution_compare_calls=2")
 PY

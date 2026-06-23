@@ -21,6 +21,7 @@ trap cleanup EXIT
 
 REPORT="$OUTDIR/abi-control.lean-backend-check.json"
 COMPARE="$OUTDIR/abi-control.compare.txt"
+MALFORMED_COMPARE="$OUTDIR/abi-control-malformed.compare.txt"
 
 "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$ROOT/examples/AbiControlSurfaceBox.sol" \
@@ -52,7 +53,32 @@ COMPARE="$OUTDIR/abi-control.compare.txt"
   --calldata "$("$CAST_BIN" calldata 'indirect(uint256)' 13)" \
   > "$COMPARE"
 
-"$PYTHON_BIN" - "$REPORT" "$COMPARE" <<'PY'
+RECURSIVE_CALL="$("$CAST_BIN" calldata 'recursive(uint256)' 7)"
+CONTROL_CALL="$("$CAST_BIN" calldata 'control(uint256[])' '[]')"
+INDIRECT_CALL="$("$CAST_BIN" calldata 'indirect(uint256)' 13)"
+RECURSIVE_SELECTOR="${RECURSIVE_CALL:0:10}"
+RECURSIVE_TRUNCATED="${RECURSIVE_CALL:0:${#RECURSIVE_CALL}-2}"
+CONTROL_WITHOUT_TAIL="${CONTROL_CALL:0:74}"
+INDIRECT_SELECTOR="${INDIRECT_CALL:0:10}"
+
+"$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
+  "$ROOT/examples/AbiControlSurfaceBox.sol" \
+  --solc "$SOLC_BIN" \
+  --lake "$LAKE_BIN" \
+  --lake-cwd "$ROOT" \
+  --forge "$FORGE_BIN" \
+  --contract AbiControlSurfaceBox \
+  --runtime-only \
+  --optimized \
+  --calldata 0x \
+  --calldata 0xdeadbeef \
+  --calldata "$RECURSIVE_SELECTOR" \
+  --calldata "$RECURSIVE_TRUNCATED" \
+  --calldata "$CONTROL_WITHOUT_TAIL" \
+  --calldata "$INDIRECT_SELECTOR" \
+  > "$MALFORMED_COMPARE"
+
+"$PYTHON_BIN" - "$REPORT" "$COMPARE" "$MALFORMED_COMPARE" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -61,6 +87,11 @@ report = json.loads(Path(sys.argv[1]).read_text())
 compare = dict(
     line.split("=", 1)
     for line in Path(sys.argv[2]).read_text().splitlines()
+    if "=" in line
+)
+malformed = dict(
+    line.split("=", 1)
+    for line in Path(sys.argv[3]).read_text().splitlines()
     if "=" in line
 )
 
@@ -79,8 +110,15 @@ if compare.get("calls") != "5":
     raise SystemExit(f"ABI/control execution count changed: {compare!r}")
 if compare.get("bridge_summary_1_backend_compatibility") != "ready":
     raise SystemExit(f"ABI/control runtime is not backend-ready: {compare!r}")
+if malformed.get("contract_call_compare") != "pass":
+    raise SystemExit(f"malformed ABI execution mismatch: {malformed!r}")
+if malformed.get("calls") != "6":
+    raise SystemExit(f"malformed ABI execution count changed: {malformed!r}")
+if malformed.get("bridge_summary_1_unsupported_primitives") != "none":
+    raise SystemExit(f"malformed ABI runtime has unsupported calls: {malformed!r}")
 
 print("abi_control_surface_backend=pass")
 print("abi_control_surface_checked_objects=2")
 print("abi_control_surface_execution_compare_calls=5")
+print("abi_control_surface_malformed_compare_calls=6")
 PY

@@ -52,6 +52,7 @@ COMPARE="$OUTDIR/advanced-types.compare.txt"
   --calldata "$("$CAST_BIN" calldata 'hashPrecompiles(bytes)' 0x010203040506)" \
   --calldata "$("$CAST_BIN" calldata 'encodeTargetCall(bytes32,uint256)' 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 17)" \
   --calldata "$("$CAST_BIN" calldata 'select(uint8,uint256,uint256)' 2 11 13)" \
+  --calldata "$("$CAST_BIN" calldata 'select(uint8,uint256,uint256)' 3 11 13)" \
   > "$COMPARE"
 
 "$PYTHON_BIN" - "$REPORT" "$COMPARE" <<'PY'
@@ -77,12 +78,13 @@ for item in report.get("checkedObjects", []):
 
 if compare.get("contract_call_compare") != "pass":
     raise SystemExit(f"advanced-type execution mismatch: {compare!r}")
-if compare.get("calls") != "8":
+if compare.get("calls") != "9":
     raise SystemExit(f"advanced-type execution count changed: {compare!r}")
 if compare.get("bridge_summary_1_backend_compatibility") != "ready":
     raise SystemExit(f"advanced-type runtime is not backend-ready: {compare!r}")
 
 print("advanced_type_surface_backend=pass")
 print("advanced_type_surface_checked_objects=4")
-print("advanced_type_surface_execution_compare_calls=8")
+print("advanced_type_surface_execution_compare_calls=9")
+print("advanced_type_surface_invalid_enum=true")
 PY

@@ -4,6 +4,36 @@ pragma solidity ^0.8.26;
 /// @notice Adversarial coverage for low-level operations that ordinary ABI
 /// examples rarely retain in optimized Yul.
 contract SemanticSurfaceBox {
+    function contextSummary(address account, uint256 requestedBlock)
+        external
+        payable
+        returns (bytes32 digest)
+    {
+        assembly {
+            let ptr := mload(0x40)
+            // Normalize the deployment-specific address while still executing ADDRESS.
+            mstore(ptr, iszero(iszero(address())))
+            mstore(add(ptr, 0x20), balance(account))
+            mstore(add(ptr, 0x40), origin())
+            mstore(add(ptr, 0x60), caller())
+            mstore(add(ptr, 0x80), callvalue())
+            mstore(add(ptr, 0xa0), calldataload(4))
+            mstore(add(ptr, 0xc0), calldatasize())
+            mstore(add(ptr, 0xe0), gasprice())
+            mstore(add(ptr, 0x100), blockhash(requestedBlock))
+            mstore(add(ptr, 0x120), coinbase())
+            mstore(add(ptr, 0x140), timestamp())
+            mstore(add(ptr, 0x160), number())
+            mstore(add(ptr, 0x180), prevrandao())
+            mstore(add(ptr, 0x1a0), gaslimit())
+            mstore(add(ptr, 0x1c0), chainid())
+            mstore(add(ptr, 0x1e0), selfbalance())
+            mstore(add(ptr, 0x200), basefee())
+            calldatacopy(add(ptr, 0x220), 0, calldatasize())
+            digest := keccak256(ptr, add(0x220, calldatasize()))
+        }
+    }
+
     function executionContext(address account, uint256 requestedBlock)
         external
         payable
@@ -129,6 +159,20 @@ contract SemanticSurfaceBox {
         }
     }
 
+    function memoryCopy(uint256 left, uint256 right)
+        external
+        pure
+        returns (bytes32 digest)
+    {
+        assembly {
+            let ptr := mload(0x40)
+            mstore(ptr, left)
+            mstore(add(ptr, 0x20), right)
+            mcopy(add(ptr, 0x40), ptr, 0x40)
+            digest := keccak256(add(ptr, 0x40), 0x40)
+        }
+    }
+
     function calls(address target, bytes calldata payload)
         external
         payable
@@ -171,6 +215,31 @@ contract SemanticSurfaceBox {
             let size := mload(initCode)
             first := create(callvalue(), start, size)
             second := create2(0, start, size, salt)
+        }
+    }
+
+    function createsSummary(bytes memory initCode, bytes32 salt)
+        external
+        returns (
+            bool firstOk,
+            bool secondOk,
+            uint256 firstSize,
+            uint256 secondSize,
+            bytes32 firstHash,
+            bytes32 secondHash
+        )
+    {
+        assembly {
+            let start := add(initCode, 0x20)
+            let size := mload(initCode)
+            let first := create(0, start, size)
+            let second := create2(0, start, size, salt)
+            firstOk := iszero(iszero(first))
+            secondOk := iszero(iszero(second))
+            firstSize := extcodesize(first)
+            secondSize := extcodesize(second)
+            firstHash := extcodehash(first)
+            secondHash := extcodehash(second)
         }
     }
 

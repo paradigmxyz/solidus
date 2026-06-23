@@ -1084,6 +1084,22 @@ dynamic memory, CALL/CREATE/CREATE2, and memory-unsafe assembly:
 scripts/test_solc_stack_spill_adversarial.sh
 ```
 
+The semantic and ordered-effect surface gates retain all supported low-level
+primitive families and also execute their address-independent behavior against
+full solc. The differential lane covers arithmetic, environment queries,
+storage/transient storage, `MCOPY`, CALL/CALLCODE/DELEGATECALL/STATICCALL,
+successful CREATE/CREATE2, LOG0-LOG4, STOP, INVALID, SELFDESTRUCT, and explicit
+LOG/CALL/CREATE interleaving. ABI/control coverage separately includes empty,
+unknown-selector, truncated-static, missing-dynamic-tail, and invalid-enum
+failures:
+
+```sh
+scripts/test_semantic_surface_backend.sh
+scripts/test_effect_ordering_surface_backend.sh
+scripts/test_abi_control_surface_backend.sh
+scripts/test_advanced_type_surface_backend.sh
+```
+
 The dynamic-storage surface gate compiles both creation and runtime objects and
 replays one persistent 15-call sequence against full-solc and checked backend
 bytecode. It covers short/long `bytes` storage at the 31/32-byte boundary,
