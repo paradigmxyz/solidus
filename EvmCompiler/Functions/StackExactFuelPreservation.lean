@@ -3163,7 +3163,7 @@ theorem compiledNonfallPointAt_of_compilers
     (hPoint :
       ∀ {order rawPoint pointLowered pointCode middleCtx},
         AllocationLayout.Ordering.build? targetCtx.layout
-            (StackSchedule.orderPriority targetCtx.layout stmt fact) =
+            (StackSchedule.orderPriority pinned targetCtx.layout stmt fact) =
           some order →
         StackSchedule.scheduleStmtFuelWithTargets targets scheduleFuel pinned
             order.target stmt fact = some rawPoint →

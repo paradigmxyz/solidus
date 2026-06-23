@@ -523,7 +523,7 @@ theorem boundDirectOfLowering
         hFresh hLayout hTargetFuel hScoped hDomain hTargetScope hEval
       exact singletonOfValues hValue
 
-/-- The real bounded primitive-lowering artifact supplies a complete spilled
+/-- The real bounded primitive-lowering artifact supplies a complete bound
 head once recursively generated operand heads are available at smaller fuel. -/
 theorem boundOfLowering
     (hPrimitive : FunctionsInteractionPrimitive.CompilerSelected)

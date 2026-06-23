@@ -326,9 +326,9 @@ mutual
   Maximum number of already-evaluated sibling values above a leaf while an
   expression is evaluated in Yul's right-to-left argument order.
 
-  A scratch-frame load needs one `DUP` beyond this pending prefix to recover
-  the frame pointer. Keeping this value below 16 guarantees that the all-scratch
-  backend can still reach the frame with `DUP16`.
+  A variable leaf needs one `DUP` beyond this pending prefix. Keeping this
+  value below 16 guarantees that direct stack-only lowering can still reach
+  the leaf with `DUP16`.
   -/
   def pendingStackDepth : AstExpr → Nat
     | .Lit _value => 0

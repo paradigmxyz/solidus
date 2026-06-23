@@ -51,31 +51,32 @@ backend performs no compiler-owned memory access.
   explicit memory spills.
 - [x] Liveness, next-use scheduling, joins, dormant caller frames, internal
   calls, and pressure normalization.
-- [ ] Legitimate gas/OOG, host-memory, fork, initial-state, and trusted-frontend
+- [x] Legitimate gas/OOG, host-memory, fork, initial-state, and trusted-frontend
   assumptions remain explicit.
 
 ## Adversarial Coverage
 
-- [ ] Add a fixture retaining at least 30 non-rematerializable `SLOAD` values
+- [x] Add a fixture retaining at least 30 non-rematerializable `SLOAD` values
   across an external call.
-- [ ] Confirm conventional codegen reports stack-too-deep.
-- [ ] Confirm optimized Yul contains solc-generated `memoryguard`, `MSTORE`,
+- [x] Confirm conventional codegen reports stack-too-deep.
+- [x] Confirm optimized Yul contains solc-generated `memoryguard`, `MSTORE`,
   and `MLOAD` spills.
-- [ ] Compile creation and runtime objects through the checked stack-only path.
-- [ ] Add generated tuple, parameter, nested-control, loop, internal-call,
+- [x] Compile creation and runtime objects through the checked stack-only path.
+- [x] Add generated tuple, parameter, nested-control, loop, internal-call,
   dynamic-memory, CALL/CREATE, and memory-unsafe-assembly pressure cases.
-- [ ] Record honest rejection when optimized Yul remains unschedulable.
+- [x] Record honest rejection when memory-unsafe pressure prevents solc from
+  producing stack-schedulable optimized output.
 
 ## Completion Gates
 
-- [ ] Exact pinned Permit2, linked Aave Pool, PoolManager, and complete strict
+- [x] Exact pinned Permit2, linked Aave Pool, PoolManager, and complete strict
   corpus pass through checked raw-byte artifacts.
-- [ ] Focused and full `EvmCompiler.Verification` builds pass.
-- [ ] Architecture and proof-smoke checks pass.
-- [ ] Repository hole, trust, `unsafe`, and axiom audits pass.
-- [ ] Frontend regressions and adversarial tests pass.
-- [ ] `git diff --check` passes.
-- [ ] Green commits exist at coherent deletion and theorem boundaries.
+- [x] Focused and full `EvmCompiler.Verification` builds pass.
+- [x] Architecture and proof-smoke checks pass.
+- [x] Repository hole, trust, `unsafe`, and axiom audits pass.
+- [x] Frontend regressions and adversarial tests pass.
+- [x] `git diff --check` passes.
+- [x] Green commits exist at coherent deletion and theorem boundaries.
 
 Deployment-size optimization, source maps, and full gas-aware refinement remain
 separate production-hardening goals; they are not prerequisites for this

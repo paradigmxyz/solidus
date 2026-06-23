@@ -23,8 +23,13 @@ fi
 for removed in \
   EvmCompiler/Objects/Compiler.lean \
   EvmCompiler/Compiler/AllocatedTypedCfg.lean \
+  EvmCompiler/Compiler/MemoryRelation.lean \
+  EvmCompiler/Functions/ObserverSafety.lean \
+  EvmCompiler/Locals/Allocation.lean \
   EvmCompiler/Public/Observer.lean \
-  EvmCompiler/Public/ObserverComposition.lean; do
+  EvmCompiler/Public/ObserverComposition.lean \
+  EvmCompiler/Simulation/MemorySafety.lean \
+  EvmCompiler/Yul/ObserverSafety.lean; do
   [[ ! -e "$removed" ]] || fail "obsolete production module returned: $removed"
 done
 
@@ -56,6 +61,16 @@ if rg -n 'defaultReservedWords|8193|scratch-reservation|scratch_reservation' \
     "${production_roots[@]}" scripts/solidity_to_yul_lean.py \
     scripts/bridge-json-v3.schema.json; then
   fail 'fixed or user-supplied compiler scratch reservations are forbidden'
+fi
+
+if rg -n 'ScratchReservation|allocatorCell|ofMemoryGuard\?' EvmCompiler; then
+  fail 'compiler scratch reservation machinery must remain deleted'
+fi
+
+if rg -n 'bindScratch' EvmCompiler/Functions EvmCompiler/Locals \
+    EvmCompiler/Expressions EvmCompiler/Yul EvmCompiler/Solidity \
+    EvmCompiler/Compiler/StackArtifact.lean; then
+  fail 'the production upper pipeline must not emit lower-IR scratch operations'
 fi
 
 rg -q 'some \(\.lit size\)' EvmCompiler/Solidity/Frontend.lean ||

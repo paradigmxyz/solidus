@@ -758,8 +758,8 @@ namespace Frame
 Statement-boundary realization of the stack-free Locals state.
 
 The active compiler layout occupies exactly the target stack prefix; `suffix`
-is caller-owned and remains abstract. The relation owns no allocation plan or
-scratch-frame data, which belong to the upper Functions allocation pass.
+is caller-owned and remains abstract. The relation owns no allocation plan;
+physical stack scheduling belongs to the upper Functions allocation pass.
 -/
 structure StateRel (layout : Layout) (suffix : List Word)
     (returns : List Structured.ReturnDest)

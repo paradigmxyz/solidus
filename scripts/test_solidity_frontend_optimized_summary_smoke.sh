@@ -3,6 +3,12 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOLC_BIN="${SOLC:-solc}"
+PYTHON_BIN="${PYTHON:-python3}"
+BUNDLED_PYTHON="$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3"
+if ! "$PYTHON_BIN" -c 'import jsonschema' >/dev/null 2>&1 && \
+    [[ -x "$BUNDLED_PYTHON" ]]; then
+  PYTHON_BIN="$BUNDLED_PYTHON"
+fi
 
 TMPDIR="${TMPDIR:-/tmp}"
 OUTDIR="$(mktemp -d "$TMPDIR/evm-compiler-frontend-optimized-summary-smoke.XXXXXX")"
@@ -32,7 +38,7 @@ run_optimized_summary_case() {
   mkdir -p "$case_dir"
   printf 'frontend_optimized_summary_smoke=%s\n' "$name"
 
-  python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/$source" \
+  "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/$source" \
     --solc "$SOLC_BIN" \
     --optimized \
     --format bridge-json \
@@ -40,18 +46,18 @@ run_optimized_summary_case() {
     --bridge-json-dir "$bridge_dir" \
     --output "$manifest"
 
-  python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$manifest"
+  "$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$manifest"
 
-  python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$manifest" \
+  "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$manifest" \
     --input-format bridge-json-manifest \
     --format bridge-json-summary \
     --contract "$contract" \
     --object runtime \
     --output "$summary"
 
-  python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$summary"
+  "$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$summary"
 
-  python3 - \
+  "$PYTHON_BIN" - \
     "$name" \
     "$manifest" \
     "$bridge_dir" \
@@ -153,7 +159,7 @@ run_optimized_summary_case \
   ExternalCallBox \
   2 \
   call,delegatecall,staticcall,returndatacopy,returndatasize,gas \
-  gas
+  ""
 
 run_optimized_summary_case \
   event_matrix \

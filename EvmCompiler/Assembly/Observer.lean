@@ -8,7 +8,7 @@ Resource observers whose source value is allowed to be supplied by a replay
 oracle instead of by the ordinary source state.
 
 `gas` and `msize` are the two current nullary EVM/Yul observers whose exact
-values can be changed by compiler-inserted code or private scratch allocation.
+values can be changed by compiler-inserted code before the observation.
 -/
 inductive ResourceObserver where
   | gas

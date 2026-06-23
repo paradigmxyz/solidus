@@ -166,14 +166,6 @@ aave_bytes = require_backend("Aave Pool", aave_backend, 189)
 if permit_bridge.get("frontend") != {"producer": "solc", "ast": "yulAst"}:
     raise SystemExit("Permit2 did not use the exact-text parser boundary")
 
-reservation = (
-    aave_bridge.get("selectedObject", {})
-    .get("memoryContract", {})
-    .get("scratch")
-)
-if reservation is not None:
-    raise SystemExit(f"Aave Pool unexpectedly has scratch reservation: {reservation!r}")
-
 print("full_contract_backend_smoke=pass")
 print(f"permit2_ref={sys.argv[5]}")
 print(f"permit2_bytecode_bytes={permit_bytes}")

@@ -716,7 +716,7 @@ theorem direct
   rw [hTargetPure] at hBound
   exact hBound
 
-/-- Recursive capability needed by the spilling branch of bounded argument
+/-- Recursive capability needed by the binding branch of bounded argument
 lowering. The expression owner proves this for one generated head; the list
 owner only sequences it after the already prepared tail. -/
 def BoundHeadForward
@@ -1016,7 +1016,7 @@ theorem bindHeadValue
   rw [hSourcePure] at hBound
   exact hBound
 
-/-- A deferred expression can still enter the compiler's spilling branch when
+/-- A deferred expression can still enter the compiler's binding branch when
 the delayed argument window is full. -/
 theorem boundDeferred
     {fuel targetFuel : Nat}

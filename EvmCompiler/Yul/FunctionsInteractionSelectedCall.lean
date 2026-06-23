@@ -401,7 +401,7 @@ theorem headValueOfUncheckedFunctionCallLowering
   simpa [hFuelEq] using hSingleton
 
 /-- A compiler-selected call head followed by the bounded-argument owner's
-fresh spill binding. This is the call-family sibling of
+fresh temporary binding. This is the call-family sibling of
 `FunctionsInteractionPreparedPrimitive.boundPrimitive`. -/
 theorem boundCall
     {profile : SolcValidation.DialectProfile}

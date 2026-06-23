@@ -281,15 +281,19 @@ mutual
     | source :: rest, facts :: restFacts, index =>
         let pointPath := path ++ "/stmt[" ++ toString index ++ "]"
         match Ordering.build? layout
-            (StackSchedule.orderPriority layout source facts) with
+            (StackSchedule.orderPriority pinned layout source facts) with
         | none =>
             some
               { path := pointPath
                 phase := "statement-ordering"
                 reason :=
-                  "priority ordering cannot reach a requested value; layout=" ++
-                    reprStr layout ++ "; priority=" ++
-                    reprStr (StackSchedule.orderPriority layout source facts) }
+                  "priority ordering cannot reach a requested value; statement=" ++
+                    scheduleStmtKind source ++ "; accesses=" ++
+                    reprStr (StackAccess.Stmt.accessPriority source) ++
+                    "; layout=" ++ reprStr layout ++
+                    "; nextUse=" ++ reprStr facts.nextUse ++
+                    "; priority=" ++
+                      reprStr (StackSchedule.orderPriority pinned layout source facts) }
         | some order =>
             let resident := StackSchedule.residentBefore source facts
             if !StackSchedule.covers order.target resident then
@@ -777,24 +781,27 @@ def accessible (layout : Locals.Layout) (name : Name) : Bool :=
   | some depth => depth ≤ 17
   | none => false
 
-def priority (ctx : StackLowering.Ctx) (layout : Locals.Layout)
+def priority (ctx : StackLowering.Ctx) (pinned : LiveSet)
+    (layout : Locals.Layout)
     (source : Stmt) (facts : AllocationLivenessFacts.Point)
     (rest : List Stmt) : List Name :=
   let immediate :=
     unique
       (statementPriority ctx source ++
-        layout.filter fun name => decide (name ∉ facts.liveAfter))
+        layout.filter fun name =>
+          decide (name ∉ StackSchedule.required pinned facts.liveAfter))
   let future :=
     (unique (futurePriority ctx rest)).filter (accessible layout)
   ((unique (immediate ++ future)).filter
       fun name => decide (name ∈ layout)).take 16
 
-def order? (ctx : StackLowering.Ctx) (layout : Locals.Layout)
+def order? (ctx : StackLowering.Ctx) (pinned : LiveSet)
+    (layout : Locals.Layout)
     (source : Stmt) (facts : AllocationLivenessFacts.Point)
     (rest : List Stmt) :
     Option AllocationLayout.Ordering :=
   AllocationLayout.Ordering.build? layout
-    (priority ctx layout source facts rest)
+    (priority ctx pinned layout source facts rest)
 
 def firstOrderFailure? (layout : Locals.Layout) : List Name →
     Option (Name × Nat)
@@ -885,12 +892,12 @@ mutual
     | source :: rest, facts :: restFacts, index => do
         let pointPath := path ++ "/stmt[" ++ toString index ++ "]"
         let ordering ←
-          match order? ctx layout source facts rest with
+          match order? ctx pinned layout source facts rest with
           | some ordering => .ok ordering
           | none =>
               let reason :=
                 match firstOrderFailure? layout
-                    (priority ctx layout source facts rest).reverse with
+                    (priority ctx pinned layout source facts rest).reverse with
                 | some (name, depth) =>
                     "ordered value " ++ name ++ " is at depth " ++
                       toString depth

@@ -38,10 +38,9 @@ scripts/verify_layer.sh public
 scripts/verify_layer.sh proofs
 ```
 
-The `allocator` layer includes the scoped allocation model and the public
-allocation-consuming Objects lowerer. The `typedcfg` layer includes both the
-Structured-to-TypedCfg compiler and the checked `AllocatedTypedCfg` pass that
-pairs a well-formed program allocation with its CFG certificate.
+The `allocator` layer checks Functions liveness, symbolic stack layouts,
+top-16 accessibility, scheduling, and stack-only lowering. The `typedcfg`
+layer checks the Structured-to-TypedCfg compiler and its CFG certificate.
 
 The production backend uses `Functions.StackPressureNormalization` followed by
 `Functions.StackLowering`. Scheduling is stack-only and fails closed when no
@@ -1063,23 +1062,28 @@ The script defaults to Aave v3 Core commit
 to keep the generated bridge JSON files.
 
 The full-contract backend gate compiles the actual Permit2 runtime and linked
-Aave v3 Pool runtime through the native executable object-image path and
-separately checks solc-profile acceptance. The executable path is not yet
-proved equal to the checked canonical Yul/artifact path, so this gate is
-compilation and performance evidence rather than an instance of the public
-correctness theorem. Permit2 is sourced from solc 0.8.17 and parsed, without
-changing its Yul text, by solc 0.8.26. Aave's old unguarded Yul receives an
-explicit source reservation; this remains an undischarged `SourceSafety`
-premise of the correctness theorem rather than an inferred compiler fact:
+Aave v3 Pool runtime through the checked recursive stack-object artifact.
+Permit2 is sourced from solc 0.8.17 and parsed, without changing its Yul text,
+by solc 0.8.26. Aave compiles stack-only and requires no compiler memory
+reservation:
 
 ```sh
 PYTHON=/path/to/python LAKE=/path/to/lake \
   scripts/test_full_contract_backend_smoke.sh
 ```
 
-Use `PERMIT2_DIR` and `AAVE_V3_DIR` to reuse pinned local checkouts. The
-default reservation can be changed with `AAVE_SCRATCH_BASE` and
-`AAVE_SCRATCH_WORDS`; doing so changes the source-facing proof premise.
+Use `PERMIT2_DIR` and `AAVE_V3_DIR` to reuse pinned local checkouts.
+
+The adversarial stack-pressure gate confirms conventional stack-too-deep on a
+fixture retaining 32 `SLOAD` values across an external call, checks solc's
+optimized `memoryguard`/`MSTORE`/`MLOAD` output, and compiles both object
+selectors through the verified stack-only backend. It also generates pressure
+coverage for tuples, parameters, nested control, loops, internal calls,
+dynamic memory, CALL/CREATE/CREATE2, and memory-unsafe assembly:
+
+```sh
+scripts/test_solc_stack_spill_adversarial.sh
+```
 
 A networked smoke targets a pinned Compound v3 Comet checkout.  It builds an
 ABI-shaped wrapper around the real `CometMath` internal functions and compares
@@ -1420,17 +1424,9 @@ Current bridge limits are intentionally explicit:
   value)` expands to `mstore(add(base, offset), value)` for each computed
   placeholder offset, so constructor-patched immutable values work without
   trusting solc byte offsets.
-- `memoryguard(n)` is treated as a source memory-ownership promise rather than
-  an EVM opcode. The checked frontend reserves its configured spill interval
-  beginning at `n` and replaces the builtin result with the first address after
-  that interval, matching the pointer role of solc's builtin.
-- Old or hand-written Yul without `memoryguard` may carry the same promise
-  explicitly with `--scratch-reservation-base` and
-  `--scratch-reservation-words`. These flags do not infer safety: they annotate
-  the selected source object, and the public correctness theorem still requires
-  `SourceSafety` for every execution being related. This makes high-liveness
-  compilation available without hiding a generated reservation certificate or
-  claiming that arbitrary source memory avoids the interval.
+- `memoryguard(n)` is validated as a consistent literal object builtin and
+  resolves to exactly `n`. The stack-only backend reserves and accesses no
+  compiler memory; solc-generated memory spills are ordinary source Yul.
 - `--optimized` requests solc's `irOptimizedAst` output and enables the Yul
   optimizer in generated Standard JSON.  That path is covered separately from
   default `irAst` because older solc versions may emit only textual optimized
@@ -1448,12 +1444,9 @@ Current bridge limits are intentionally explicit:
   word-valued cases.
 - Yul object builtins such as `datasize`, `dataoffset`, `loadimmutable`, and
   `setimmutable` are preserved in bridge JSON and resolved by the computed
-  object-image path before conversion to core Yul.  `memoryguard` is normalized
-  to its guarded value by the solc AST parser, and bridge JSON inputs that carry
-  it explicitly as an object builtin are accepted and resolved the same way by
-  the Lean frontend. Bridge JSON can also carry an explicit
-  `memoryContract.scratch` object with `base` and `words`; the Lean decoder
-  checks positivity, alignment, and UInt256 range before accepting it.
+  object-image path before conversion to core Yul. `memoryguard` is preserved
+  as an object builtin and resolved to its literal argument by the Lean
+  frontend. Compiler scratch contracts in bridge JSON are rejected.
   `linkersymbol("name")` can be resolved with explicit
   `--linker-symbol name=value` entries.  Checked object lowering runs
   solc-style Yul validation after these resolutions and before compiler
