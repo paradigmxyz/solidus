@@ -117,7 +117,11 @@ stack-only correctness boundary.
   the exact recursive object image.
 - [ ] Add pinned real-world suites and generated adversarial cases for uncovered
   semantic families, then fix every backend rejection generically or record an
-  honest supported-version/input-boundary rejection.
+  honest supported-version/input-boundary rejection. The strict corpus now
+  includes full pinned Safe and ERC-4337 EntryPoint creation/runtime objects,
+  in addition to their smaller executable helper probes; Safe is deliberately
+  compile-only because solc's own optimized-Yul backend rejects that pinned
+  source with stack-too-deep.
 - [ ] Separate source termination from malformed-source exclusion in the
   all-finished theorem. Accepted-expression validation plus the scoped-state
   invariant now derives variable lookup in both deferred and direct pure

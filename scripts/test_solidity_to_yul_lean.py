@@ -9485,6 +9485,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "SAFE_SMART_ACCOUNT_REF",
             "ENS_CONTRACTS_REF",
             "ACCOUNT_ABSTRACTION_REF",
+            "OPENZEPPELIN_REF",
         ]:
             self.assertRegex(
                 smoke,
@@ -9498,14 +9499,18 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "--yul-ast-solc",
             "contract SafeCreateCorpus is CreateCall",
             "performCreate(uint256,bytes)",
+            "contracts/Safe.sol",
+            "safe_account",
             "ENSBytesCorpus",
             "data.substring(5, 20)",
             "AccountAbstractionCorpus",
             "UserOperationLib.unpackPaymasterStaticFields",
+            "contracts/core/EntryPoint.sol",
+            "account_abstraction_entrypoint",
             "--format lean-backend-check",
             "first_none=none",
             "compare_contract_call_bytecode.py",
-            "protocol_diversity_strict_backend_objects=8",
+            "protocol_diversity_strict_backend_objects=12",
             "protocol_diversity_compare_calls=14",
         ]:
             self.assertIn(behavior, smoke)

@@ -20,6 +20,8 @@ ENS_CONTRACTS_REPO_URL="${ENS_CONTRACTS_REPO_URL:-https://github.com/ensdomains/
 ENS_CONTRACTS_REF="${ENS_CONTRACTS_REF:-9b034936a42f462fc04bc0a929a419ede5e18d59}"
 ACCOUNT_ABSTRACTION_REPO_URL="${ACCOUNT_ABSTRACTION_REPO_URL:-https://github.com/eth-infinitism/account-abstraction.git}"
 ACCOUNT_ABSTRACTION_REF="${ACCOUNT_ABSTRACTION_REF:-7af70c8993a6f42973f520ae0752386a5032abe7}"
+OPENZEPPELIN_REPO_URL="${OPENZEPPELIN_REPO_URL:-https://github.com/OpenZeppelin/openzeppelin-contracts.git}"
+OPENZEPPELIN_REF="${OPENZEPPELIN_REF:-932fddf69a699a9a80fd2396fd1a2ab91cdda123}"
 
 cleanup() {
   if [[ "${KEEP_TMP:-0}" == "1" ]]; then
@@ -99,10 +101,19 @@ else
     "$ACCOUNT_ABSTRACTION_REPO_URL" "$ACCOUNT_ABSTRACTION_REF"
 fi
 
+if [[ -n "${OPENZEPPELIN_DIR:-}" ]]; then
+  OPENZEPPELIN_REPO="$OPENZEPPELIN_DIR"
+else
+  OPENZEPPELIN_REPO="$OUTDIR/openzeppelin-contracts"
+  checkout_repo "$OPENZEPPELIN_REPO" "$OPENZEPPELIN_REPO_URL" \
+    "$OPENZEPPELIN_REF"
+fi
+
 MORPHO_BLUE_ACTUAL_REF="$(git -C "$MORPHO_BLUE_REPO" rev-parse HEAD)"
 SAFE_SMART_ACCOUNT_ACTUAL_REF="$(git -C "$SAFE_SMART_ACCOUNT_REPO" rev-parse HEAD)"
 ENS_CONTRACTS_ACTUAL_REF="$(git -C "$ENS_CONTRACTS_REPO" rev-parse HEAD)"
 ACCOUNT_ABSTRACTION_ACTUAL_REF="$(git -C "$ACCOUNT_ABSTRACTION_REPO" rev-parse HEAD)"
+OPENZEPPELIN_ACTUAL_REF="$(git -C "$OPENZEPPELIN_REPO" rev-parse HEAD)"
 
 MORPHO_FIXTURE="$OUTDIR/MorphoCorpus.sol"
 SAFE_FIXTURE="$OUTDIR/SafeCreateCorpus.sol"
@@ -265,6 +276,68 @@ run_protocol_case() {
   printf '%s_compare_calls=%s\n' "$label" "$expected_calls"
 }
 
+run_strict_backend_case() {
+  local label="$1"
+  local workdir="$2"
+  local source="$3"
+  local source_name="$4"
+  local contract="$5"
+  local solc_version="$6"
+  local remapping="$7"
+  local optimizer_runs="$8"
+  local yul_ast_solc="$9"
+  local evm_version="${10}"
+  local case_dir="$OUTDIR/$label"
+  local object backend bytes
+  local total_bytes=0
+  local compile_args=(
+    "$source"
+    --source-name "$source_name"
+    --solc "$SOLC_BIN"
+    --lake "$LAKE_BIN"
+    --lake-cwd "$ROOT"
+    --contract "$contract"
+    --optimized
+    --evm-version "$evm_version"
+  )
+
+  mkdir -p "$case_dir"
+  if [[ "$remapping" != "none" ]]; then
+    compile_args+=(--remapping "$remapping")
+  fi
+  if [[ "$optimizer_runs" != "none" ]]; then
+    compile_args+=(--optimizer-runs "$optimizer_runs")
+  fi
+  if [[ "$yul_ast_solc" != "none" ]]; then
+    compile_args+=(--yul-ast-solc "$yul_ast_solc")
+  fi
+
+  for object in creation runtime; do
+    backend="$case_dir/$object.lean-backend-check.txt"
+    (
+      cd "$workdir"
+      SOLC_VERSION="$solc_version" "$PYTHON_BIN" \
+        "$ROOT/scripts/solidity_to_yul_lean.py" \
+        "${compile_args[@]}" \
+        --object "$object" \
+        --format lean-backend-check \
+        --output "$backend"
+    )
+    grep -qx 'lean_backend_check=pass' "$backend"
+    grep -qx 'first_none=none' "$backend"
+    bytes="$(sed -n 's/^bytecode_bytes=//p' "$backend")"
+    if [[ ! "$bytes" =~ ^[1-9][0-9]*$ ]]; then
+      printf 'error: %s %s emitted no checked bytecode\n' \
+        "$label" "$object" >&2
+      return 1
+    fi
+    total_bytes=$((total_bytes + bytes))
+  done
+
+  printf '%s_strict_backend_objects=2\n' "$label"
+  printf '%s_checked_bytecode_bytes=%s\n' "$label" "$total_bytes"
+}
+
 run_protocol_case \
   morpho_blue \
   "$MORPHO_FIXTURE" \
@@ -293,6 +366,22 @@ run_protocol_case \
   2 \
   0x4c8c9ea1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000001fe00000000000000000000000000000000000000000000000000000000000000 \
   0x4847be6f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000001fe00000000000000000000000000000000000000000000000000000000000000
+
+# The full Safe implementation is a deliberate compile-only gate. Its pinned
+# optimized Yul reaches our checked stack-only backend, while solc's own Yul
+# bytecode stage rejects the source with stack-too-deep because legacy assembly
+# prevents a memoryguard reservation.
+run_strict_backend_case \
+  safe_account \
+  "$SAFE_SMART_ACCOUNT_REPO" \
+  contracts/Safe.sol \
+  contracts/Safe.sol \
+  Safe \
+  0.8.26 \
+  none \
+  none \
+  none \
+  cancun
 
 ENS_PAYLOAD=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
 run_protocol_case \
@@ -323,11 +412,26 @@ run_protocol_case \
   "0x02$ACCOUNT_ABSTRACTION_PAYLOAD" \
   "0x03$ACCOUNT_ABSTRACTION_PAYLOAD"
 
+# Full ERC-4337 EntryPoint combines constructor-created children, immutable
+# references, nested calls, signature-heavy calldata, and dense control flow.
+run_strict_backend_case \
+  account_abstraction_entrypoint \
+  "$ACCOUNT_ABSTRACTION_REPO" \
+  contracts/core/EntryPoint.sol \
+  contracts/core/EntryPoint.sol \
+  EntryPoint \
+  0.8.26 \
+  "@openzeppelin/contracts/=$OPENZEPPELIN_REPO/contracts/" \
+  none \
+  none \
+  cancun
+
 printf 'protocol_diversity_bridge_smoke=pass\n'
 printf 'morpho_blue_repo_ref=%s\n' "$MORPHO_BLUE_ACTUAL_REF"
 printf 'safe_smart_account_repo_ref=%s\n' "$SAFE_SMART_ACCOUNT_ACTUAL_REF"
 printf 'ens_contracts_repo_ref=%s\n' "$ENS_CONTRACTS_ACTUAL_REF"
 printf 'account_abstraction_repo_ref=%s\n' "$ACCOUNT_ABSTRACTION_ACTUAL_REF"
-printf 'protocol_diversity_repositories=4\n'
-printf 'protocol_diversity_strict_backend_objects=8\n'
+printf 'openzeppelin_repo_ref=%s\n' "$OPENZEPPELIN_ACTUAL_REF"
+printf 'protocol_diversity_repositories=5\n'
+printf 'protocol_diversity_strict_backend_objects=12\n'
 printf 'protocol_diversity_compare_calls=14\n'
