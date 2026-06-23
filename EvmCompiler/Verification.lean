@@ -47,7 +47,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
+#check EvmCompiler.Solidity.Frontend.FunctionDef.matchesStub?_parts
+#check EvmCompiler.Solidity.Frontend.FunctionDefList.containsStub?_mem
+#check EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsRetained?_functionDef_entry
 #check EvmCompiler.Solidity.Frontend.Stmt.toYul?_functionDef_erases
+#check EvmCompiler.Solidity.Frontend.FunctionEntries.containsLoweredStub?_mem
+#check EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsLoweredToEntries?_functionDef_entry
 #check EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_functionDefStubsLoweredToEntries
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_some
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_parts
@@ -180,7 +185,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.Frontend.Expr.resolveObjectBuiltins_memoryguard
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
+#print axioms EvmCompiler.Solidity.Frontend.FunctionDef.matchesStub?_parts
+#print axioms EvmCompiler.Solidity.Frontend.FunctionDefList.containsStub?_mem
+#print axioms EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsRetained?_functionDef_entry
 #print axioms EvmCompiler.Solidity.Frontend.Stmt.toYul?_functionDef_erases
+#print axioms EvmCompiler.Solidity.Frontend.FunctionEntries.containsLoweredStub?_mem
+#print axioms EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsLoweredToEntries?_functionDef_entry
 #print axioms EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_functionDefStubsLoweredToEntries
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_some
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_parts

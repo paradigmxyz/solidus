@@ -198,9 +198,14 @@ Next raw frontend layer:
   staging node lowers through the frontend Yul lowering function to one of the
   exact ordered Yul function entries consumed by the backend, with
   `Frontend.Object.toSolcYulOrderedProgram?_functionDefStubsLoweredToEntries`
-  pinned in the verification root.
-  The remaining raw frontend semantic gap is nested hoist/alpha-renaming
-  preservation plus broader composition into the final source theorem.
+  pinned in the verification root. The nested-stub no-silent-erasure facts now
+  expose the local boolean evidence at the exact erased node: a retained
+  `functionDef` staging node has a matching callable `FunctionDef` entry, and
+  a staging node erased during Yul conversion has an ordered lowered Yul
+  function entry for its body.
+  The remaining raw frontend semantic gap is source-level preservation for
+  alpha-renamed nested-function call resolution plus broader composition into
+  the final source theorem.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose

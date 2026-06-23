@@ -1128,6 +1128,14 @@ def matchesStub? (fn : FunctionDef) (params returns : List Name)
     (body : List Stmt) : Bool :=
   fn.params == params && fn.returns == returns && fn.body == body
 
+theorem matchesStub?_parts
+    {fn : FunctionDef} {params returns : List Name} {body : List Stmt}
+    (h : fn.matchesStub? params returns body = true) :
+    fn.params = params ∧ fn.returns = returns ∧ (fn.body == body) = true := by
+  unfold matchesStub? at h
+  simp at h
+  exact ⟨h.1.1, h.1.2, h.2⟩
+
 end FunctionDef
 
 namespace FunctionDefList
@@ -1136,6 +1144,15 @@ def containsStub? (functions : List (Name × FunctionDef))
     (name : Name) (params returns : List Name) (body : List Stmt) : Bool :=
   functions.any fun entry =>
     entry.fst == name && entry.snd.matchesStub? params returns body
+
+theorem containsStub?_mem
+    {functions : List (Name × FunctionDef)} {name : Name}
+    {params returns : List Name} {body : List Stmt}
+    (h : containsStub? functions name params returns body = true) :
+    ∃ fn,
+      (name, fn) ∈ functions ∧ fn.matchesStub? params returns body = true := by
+  unfold containsStub? at h
+  simpa using h
 
 end FunctionDefList
 
@@ -1179,6 +1196,25 @@ mutual
         Stmt.List.functionDefStubsRetained? functions body &&
           Stmt.CaseList.functionDefStubsRetained? functions rest
 end
+
+namespace Stmt
+
+theorem functionDefStubsRetained?_functionDef_entry
+    {functions : List (Name × FunctionDef)} {name : Name}
+    {params returns : List Name} {body : List Stmt}
+    (h : Stmt.functionDefStubsRetained? functions
+        (.functionDef name params returns body) = true) :
+    (∃ fn,
+      (name, fn) ∈ functions ∧
+        fn.params = params ∧ fn.returns = returns ∧
+          (fn.body == body) = true) ∧
+      Stmt.List.functionDefStubsRetained? functions body = true := by
+  simp [Stmt.functionDefStubsRetained?] at h
+  rcases FunctionDefList.containsStub?_mem h.1 with ⟨fn, hMem, hMatch⟩
+  rcases FunctionDef.matchesStub?_parts hMatch with ⟨hParams, hReturns, hBody⟩
+  exact ⟨⟨fn, hMem, hParams, hReturns, hBody⟩, h.2⟩
+
+end Stmt
 
 namespace NameList
 
@@ -1637,6 +1673,20 @@ def containsLoweredStub?
   | some yulBody => entries.contains (name, .Def params returns yulBody)
   | none => false
 
+theorem containsLoweredStub?_mem
+    {entries : List (Name × AstFunctionDefinition)} {name : Name}
+    {params returns : List Name} {body : List Stmt}
+    (h : containsLoweredStub? entries name params returns body = true) :
+    ∃ yulBody,
+      Stmt.List.toYul? body = some yulBody ∧
+        entries.contains (name, .Def params returns yulBody) = true := by
+  unfold containsLoweredStub? at h
+  cases hBody : Stmt.List.toYul? body with
+  | none => simp [hBody] at h
+  | some yulBody =>
+      simp [hBody] at h
+      exact ⟨yulBody, by simp [hBody], h⟩
+
 end FunctionEntries
 
 mutual
@@ -1679,6 +1729,22 @@ mutual
         Stmt.List.functionDefStubsLoweredToEntries? entries body &&
           Stmt.CaseList.functionDefStubsLoweredToEntries? entries rest
 end
+
+namespace Stmt
+
+theorem functionDefStubsLoweredToEntries?_functionDef_entry
+    {entries : List (Name × AstFunctionDefinition)} {name : Name}
+    {params returns : List Name} {body : List Stmt}
+    (h : Stmt.functionDefStubsLoweredToEntries? entries
+        (.functionDef name params returns body) = true) :
+    (∃ yulBody,
+      Stmt.List.toYul? body = some yulBody ∧
+        entries.contains (name, .Def params returns yulBody) = true) ∧
+      Stmt.List.functionDefStubsLoweredToEntries? entries body = true := by
+  simp [Stmt.functionDefStubsLoweredToEntries?] at h
+  exact ⟨FunctionEntries.containsLoweredStub?_mem h.1, h.2⟩
+
+end Stmt
 
 namespace FunctionDef
 
