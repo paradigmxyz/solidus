@@ -72,8 +72,8 @@ Transformation inventory from `scripts/solidity_to_yul_lean.py`:
   in Lean; nested `Stmt.functionDef` nodes are preserved, not erased.
 - [x] `clz` lowering moved into the Lean raw elaborator as a generated helper;
   semantic preservation remains a separate compiler-owned proof obligation.
-- [x] Object/data ordering preserved in Lean through explicit
-  `ObjectItemRef`s.
+- [x] Object/data ordering preserved and fail-closed in Lean through explicit
+  raw-derived `ObjectItemRef`s plus `itemRefsPreserveOrder?` validation.
 - [ ] Standalone Yul data-name recovery remains Python-only and is not part of
   the raw Solidity `irOptimizedAst` production theorem.
 - [x] Source/contract/object selection moved into Lean for raw Standard JSON.
@@ -127,7 +127,10 @@ Next raw frontend layer:
   `decodeAndElaborateSolcIrJson_objectParts`, and
   `decodeAndElaborateSolcIr?_objectParts` reconstruct the successful checked
   code elaboration, object-item elaboration, and final `Frontend.Object`
-  fields. `compileArtifactFromRawSolcIr?_rawParts` and the
+  fields. `itemRefsPreserveOrder?` validates that the elaborated frontend
+  object keeps the mixed raw object/data order through raw-derived
+  `ObjectItemRef`s; the raw string and artifact wrapper theorems expose this
+  checked condition. `compileArtifactFromRawSolcIr?_rawParts` and the
   explicit-linker variant lift the same raw parse/selection/elaboration
   evidence through the artifact-facing wrappers, including Lean-decoded linker
   metadata for the default path. First checked `clz` validation invariant:

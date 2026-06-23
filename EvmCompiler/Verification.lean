@@ -47,18 +47,23 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_some
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_parts
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_objectParts
+#check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_itemRefsPreserveOrder
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_parts
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_mem
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
+#check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_parts
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_parts
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_parts
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_objectParts
+#check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_itemRefsPreserveOrder
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decoded
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_valid
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_rawParts
+#check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_itemRefsPreserveOrder
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decodingCorrect
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_valid
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_rawParts
+#check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_itemRefsPreserveOrder
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_decodingCorrect
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsTerminal
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsForward
@@ -97,18 +102,23 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_some
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_objectParts
+#print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_itemRefsPreserveOrder
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_parts
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
+#print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_parts
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_objectParts
+#print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_itemRefsPreserveOrder
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decoded
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_valid
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_rawParts
+#print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_itemRefsPreserveOrder
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decodingCorrect
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_valid
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_rawParts
+#print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_itemRefsPreserveOrder
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_decodingCorrect
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsFinished

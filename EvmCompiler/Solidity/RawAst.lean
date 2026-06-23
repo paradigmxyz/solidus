@@ -1292,6 +1292,69 @@ theorem Object.elaborate?_parts
                 evmVersion := evmVersion } := by
   exact Object.elaborateFuel?_parts hElab
 
+namespace ObjectItem
+
+def refShapeAux : Nat → Nat → List ObjectItem → List Frontend.ObjectItemRef
+  | _, _, [] => []
+  | dataIndex, objectIndex, .data _ _ :: rest =>
+      .data dataIndex :: refShapeAux (dataIndex + 1) objectIndex rest
+  | dataIndex, objectIndex, .object _ :: rest =>
+      .object objectIndex :: refShapeAux dataIndex (objectIndex + 1) rest
+
+def refShape (items : List ObjectItem) : List Frontend.ObjectItemRef :=
+  refShapeAux 0 0 items
+
+end ObjectItem
+
+def Object.itemRefsPreserveOrderFuel? :
+    Nat → Object → Frontend.Object → Bool
+  | 0, _, _ => false
+  | fuel + 1, raw, frontend =>
+      let rec checkChildren :
+          List ObjectItem → List Frontend.Object → Bool
+        | [], [] => true
+        | [], _ :: _ => false
+        | .data _ _ :: rest, fronts => checkChildren rest fronts
+        | .object _ :: _, [] => false
+        | .object rawChild :: rest, frontChild :: fronts =>
+            Object.itemRefsPreserveOrderFuel? fuel rawChild frontChild &&
+              checkChildren rest fronts
+      (frontend.items == ObjectItem.refShape raw.subObjects) &&
+        checkChildren raw.subObjects frontend.objects
+
+def Object.itemRefsPreserveOrder? (raw : Object)
+    (frontend : Frontend.Object) : Bool :=
+  Object.itemRefsPreserveOrderFuel? maxDecodeFuel raw frontend
+
+def Object.elaboratePreservingOrder? (obj : Object)
+    (evmVersion : Yul.SolcValidation.EvmVersion) :
+    DecodeM Frontend.Object := do
+  let frontend ← obj.elaborate? evmVersion
+  if Object.itemRefsPreserveOrder? obj frontend then
+    pure frontend
+  else
+    .error "raw object/data item order mismatch"
+
+theorem Object.elaboratePreservingOrder?_parts
+    {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
+    {frontend : Frontend.Object}
+    (hElab :
+      Object.elaboratePreservingOrder? obj evmVersion = .ok frontend) :
+    Object.elaborate? obj evmVersion = .ok frontend ∧
+      Object.itemRefsPreserveOrder? obj frontend = true := by
+  unfold Object.elaboratePreservingOrder? at hElab
+  cases hObject : Object.elaborate? obj evmVersion with
+  | error err =>
+      simp [hObject] at hElab
+  | ok object =>
+      cases hOrder : Object.itemRefsPreserveOrder? obj object with
+      | false =>
+          simp [hObject, hOrder] at hElab
+      | true =>
+          simp [hObject, hOrder, pure, Except.pure] at hElab
+          subst object
+          simp [hObject, hOrder]
+
 def walkObjectsFuel : Nat → Object → List Object
   | 0, obj => [obj]
   | fuel + 1, obj =>
@@ -1391,7 +1454,7 @@ def decodeSelectedLinkerSymbolsJson (json : Lean.Json)
 def decodeAndElaborateSolcIrJson (json : Lean.Json)
     (selection : Selection) : DecodeM Frontend.Program := do
   let selected ← decodeSelectedIr json selection
-  let object ← selected.root.elaborate? selected.evmVersion
+  let object ← selected.root.elaboratePreservingOrder? selected.evmVersion
   pure { source := selected.source, contract := selected.contract, object := object }
 
 theorem decodeAndElaborateSolcIrJson_parts
@@ -1411,15 +1474,51 @@ theorem decodeAndElaborateSolcIrJson_parts
   | error err =>
       simp [hSelected] at hDecode
   | ok selected =>
-      cases hObject : selected.root.elaborate? selected.evmVersion with
+      cases hObject :
+          selected.root.elaboratePreservingOrder? selected.evmVersion with
       | error err =>
           simp [hSelected, hObject] at hDecode
       | ok object =>
+          have hRawObject :
+              selected.root.elaborate? selected.evmVersion = .ok object :=
+            (Raw.Object.elaboratePreservingOrder?_parts hObject).1
           simp [hSelected, hObject] at hDecode
           subst program
           refine ⟨selected, object, ?_, ?_, rfl⟩
           · simp
-          · simp [hObject]
+          · exact hRawObject
+
+theorem decodeAndElaborateSolcIrJson_itemRefsPreserveOrder
+    {json : Lean.Json} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIrJson json selection = .ok program) :
+    ∃ (selected : SelectedIr) (object : Frontend.Object),
+      decodeSelectedIr json selection = .ok selected ∧
+        selected.root.elaborate? selected.evmVersion = .ok object ∧
+          Raw.Object.itemRefsPreserveOrder? selected.root object = true ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } := by
+  unfold decodeAndElaborateSolcIrJson at hDecode
+  cases hSelected : decodeSelectedIr json selection with
+  | error err =>
+      simp [hSelected] at hDecode
+  | ok selected =>
+      cases hObject :
+          selected.root.elaboratePreservingOrder? selected.evmVersion with
+      | error err =>
+          simp [hSelected, hObject] at hDecode
+      | ok object =>
+          have hParts :=
+            Raw.Object.elaboratePreservingOrder?_parts hObject
+          simp [hSelected, hObject] at hDecode
+          subst program
+          refine ⟨selected, object, ?_, ?_, ?_, rfl⟩
+          · simp [hSelected]
+          · exact hParts.1
+          · exact hParts.2
 
 theorem decodeAndElaborateSolcIrJson_objectParts
     {json : Lean.Json} {selection : Selection}
@@ -1532,6 +1631,28 @@ theorem decodeAndElaborateSolcIr?_parts
   rcases decodeAndElaborateSolcIrJson_parts hJsonDecode with
     ⟨selected, object, hSelected, hObject, hProgram⟩
   exact ⟨json, selected, object, hParse, hSelected, hObject, hProgram⟩
+
+theorem decodeAndElaborateSolcIr?_itemRefsPreserveOrder
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            Raw.Object.itemRefsPreserveOrder? selected.root object = true ∧
+              program =
+                { source := selected.source
+                  contract := selected.contract
+                  object := object } := by
+  rcases decodeAndElaborateSolcIr?_some hDecode with
+    ⟨json, hParse, hJsonDecode⟩
+  rcases decodeAndElaborateSolcIrJson_itemRefsPreserveOrder hJsonDecode with
+    ⟨selected, object, hSelected, hObject, hOrder, hProgram⟩
+  exact
+    ⟨json, selected, object, hParse, hSelected, hObject, hOrder, hProgram⟩
 
 theorem decodeAndElaborateSolcIr?_objectParts
     {rawJson : String} {selection : Selection}
