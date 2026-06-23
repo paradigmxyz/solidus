@@ -7,6 +7,11 @@ through `irOptimizedAst`. Solidity lowering, source optimization,
 rematerialization, and source-level memory spilling belong to that frontend.
 The checked backend starts at the resulting Yul program.
 
+The executable adapter matrix currently pins solc 0.8.26 and 0.8.35 to Cancun;
+the exact Permit2 gate retains solc 0.8.17 with an explicit London target.
+Accepted frontend requests must name London, Paris, Shanghai, or Cancun;
+newer fork targets fail closed until their instruction semantics are modeled.
+
 ## Public Spine
 
 ```text

@@ -565,6 +565,8 @@ BACKEND_BLOCKING_PRIMITIVES: Set[str] = set()
 BRIDGE_JSON_SCHEMA = "evm-compiler.solc-yul-bridge.v3"
 BRIDGE_JSON_PROVENANCE_SCHEMA = "evm-compiler.bridge-json-provenance.v1"
 BRIDGE_JSON_FRONTEND_PRODUCER = "solc"
+SUPPORTED_EVM_VERSION = "cancun"
+SUPPORTED_EVM_VERSIONS = ("london", "paris", "shanghai", "cancun")
 RECOVERED_YUL_AST_OUTPUTS: Dict[Tuple[str, str], str] = {}
 
 
@@ -4821,9 +4823,11 @@ def standard_json_input(
     include_sources: Optional[Dict[str, str]] = None,
     require_bytecode: bool = True,
     optimizer_runs: Optional[int] = None,
+    evm_version: str = SUPPORTED_EVM_VERSION,
 ) -> Json:
     settings: Json = {
         "viaIR": via_ir,
+        "evmVersion": evm_version,
         "outputSelection": {"*": {"*": [], "": []}},
     }
     if optimized:
@@ -4848,6 +4852,7 @@ def standard_json_input(
         optimized=optimized,
         default_via_ir=via_ir,
         default_experimental=experimental,
+        default_evm_version=evm_version,
         require_bytecode=require_bytecode,
     )
     return compiler_input
@@ -4857,11 +4862,13 @@ def yul_standard_json_input(
     source_name: str,
     content: str,
     experimental: bool,
+    evm_version: str = SUPPORTED_EVM_VERSION,
 ) -> Json:
     compiler_input = {
         "language": "Yul",
         "sources": {source_name: {"content": content}},
         "settings": {
+            "evmVersion": evm_version,
             "outputSelection": {"*": {"*": ["ast"]}},
         },
     }
@@ -4911,6 +4918,7 @@ def ensure_standard_json_frontend_outputs(
     optimized: bool,
     default_via_ir: bool,
     default_experimental: bool,
+    default_evm_version: str = SUPPORTED_EVM_VERSION,
     require_bytecode: bool = True,
 ) -> Json:
     if not isinstance(compiler_input, dict):
@@ -4920,6 +4928,13 @@ def ensure_standard_json_frontend_outputs(
     if not isinstance(settings, dict):
         fail("Malformed solc Standard JSON input: settings must be an object")
     settings.setdefault("viaIR", default_via_ir)
+    evm_version = settings.setdefault("evmVersion", default_evm_version)
+    if evm_version not in SUPPORTED_EVM_VERSIONS:
+        fail(
+            f"Unsupported Standard JSON evmVersion {evm_version!r}; "
+            "the checked backend accepts only the explicit fork ladder "
+            f"{SUPPORTED_EVM_VERSIONS!r}"
+        )
     if default_experimental:
         settings.setdefault("experimental", True)
     output_selection = settings.setdefault("outputSelection", {})
@@ -4940,6 +4955,7 @@ def ensure_standard_json_frontend_outputs(
 def ensure_standard_json_yul_outputs(
     compiler_input: Json,
     default_experimental: bool,
+    default_evm_version: str = SUPPORTED_EVM_VERSION,
 ) -> Json:
     if not isinstance(compiler_input, dict):
         fail("Expected solc Standard JSON input to be a JSON object")
@@ -4947,6 +4963,13 @@ def ensure_standard_json_yul_outputs(
     settings = compiler_input.setdefault("settings", {})
     if not isinstance(settings, dict):
         fail("Malformed solc Standard JSON input: settings must be an object")
+    evm_version = settings.setdefault("evmVersion", default_evm_version)
+    if evm_version not in SUPPORTED_EVM_VERSIONS:
+        fail(
+            f"Unsupported Standard JSON evmVersion {evm_version!r}; "
+            "the checked backend accepts only the explicit fork ladder "
+            f"{SUPPORTED_EVM_VERSIONS!r}"
+        )
     if default_experimental:
         settings.setdefault("experimental", True)
     output_selection = settings.setdefault("outputSelection", {})
@@ -7572,6 +7595,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--evm-version",
+        choices=SUPPORTED_EVM_VERSIONS,
+        default=SUPPORTED_EVM_VERSION,
+        help="Pinned EVM fork targeted by solc and the checked backend",
+    )
+    parser.add_argument(
         "--optimizer-runs",
         type=int,
         metavar="N",
@@ -8541,6 +8570,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 compiler_input = ensure_standard_json_yul_outputs(
                     compiler_input,
                     default_experimental=args.experimental,
+                    default_evm_version=args.evm_version,
                 )
                 output = run_solc(args.solc, compiler_input, args.solc_arg)
                 source_name, root_ast = load_yul_source_ast(output, args.source_name)
@@ -8579,6 +8609,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 optimized=args.optimized,
                 default_via_ir=args.via_ir,
                 default_experimental=args.experimental,
+                default_evm_version=args.evm_version,
                 require_bytecode=require_solc_bytecode,
             )
             source_name: Optional[str] = args.source_name
@@ -8616,6 +8647,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 include_sources=include_sources,
                 require_bytecode=require_solc_bytecode,
                 optimizer_runs=args.optimizer_runs,
+                evm_version=args.evm_version,
             )
         if args.optimizer_runs is not None:
             settings = compiler_input.setdefault("settings", {})

@@ -9,7 +9,9 @@ if ! "$PYTHON_BIN" -c 'import jsonschema' >/dev/null 2>&1 && \
   PYTHON_BIN="$BUNDLED_PYTHON"
 fi
 LAKE_BIN="${LAKE:-$HOME/.elan/bin/lake}"
-SOLC_BIN="${SOLC_826:-$HOME/.solc-select/artifacts/solc-0.8.26/solc-0.8.26}"
+SOLC_BIN="${SOLC:-${SOLC_826:-$HOME/.solc-select/artifacts/solc-0.8.26/solc-0.8.26}}"
+FORGE_BIN="${FORGE:-forge}"
+CAST_BIN="${CAST:-cast}"
 TMPDIR="${TMPDIR:-/tmp}"
 OUTDIR="$(mktemp -d "$TMPDIR/evm-compiler-semantic-surface.XXXXXX")"
 
@@ -22,7 +24,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for executable in "$PYTHON_BIN" "$LAKE_BIN" "$SOLC_BIN"; do
+for executable in "$PYTHON_BIN" "$LAKE_BIN" "$SOLC_BIN" "$FORGE_BIN" "$CAST_BIN"; do
   if [[ ! -x "$executable" ]] && ! command -v "$executable" >/dev/null 2>&1; then
     printf 'error: required executable is unavailable: %s\n' "$executable" >&2
     exit 1
@@ -58,6 +60,27 @@ compile_object() {
 compile_object runtime
 compile_object creation
 
+ARITHMETIC_COMPARE="$OUTDIR/semantic-surface-arithmetic.compare.txt"
+"$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
+  "$ROOT/examples/SemanticSurfaceBox.sol" \
+  --solc "$SOLC_BIN" \
+  --lake "$LAKE_BIN" \
+  --lake-cwd "$ROOT" \
+  --forge "$FORGE_BIN" \
+  --contract SemanticSurfaceBox \
+  --runtime-only \
+  --optimized \
+  --calldata "$("$CAST_BIN" calldata \
+    'arithmetic(uint256,uint256,uint256)' 0 0 0)" \
+  --calldata "$("$CAST_BIN" calldata \
+    'arithmetic(uint256,uint256,uint256)' 2 256 17)" \
+  --calldata "$("$CAST_BIN" calldata \
+    'arithmetic(uint256,uint256,uint256)' \
+    0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+    1 \
+    0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)" \
+  > "$ARITHMETIC_COMPARE"
+
 MSIZE_ERROR="$OUTDIR/optimized-msize.stderr"
 if "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
     "$ROOT/examples/ResourceObserverBox.sol" \
@@ -79,7 +102,8 @@ fi
   "$OUTDIR/semantic-surface-runtime.bridge.json" \
   "$OUTDIR/semantic-surface-runtime.diagnostics.txt" \
   "$OUTDIR/semantic-surface-creation.diagnostics.txt" \
-  "$MSIZE_ERROR" <<'PY'
+  "$MSIZE_ERROR" \
+  "$ARITHMETIC_COMPARE" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -88,6 +112,11 @@ bridge = json.loads(Path(sys.argv[1]).read_text())
 runtime = Path(sys.argv[2]).read_text().splitlines()
 creation = Path(sys.argv[3]).read_text().splitlines()
 msize_error = Path(sys.argv[4]).read_text()
+arithmetic_compare = dict(
+    line.split("=", 1)
+    for line in Path(sys.argv[5]).read_text().splitlines()
+    if "=" in line
+)
 
 
 def require_line(lines, expected):
@@ -171,6 +200,13 @@ if missing:
 if "msize instruction cannot be used when the Yul optimizer is activated" not in msize_error:
     raise SystemExit("optimized explicit msize rejection changed unexpectedly")
 
+if arithmetic_compare.get("contract_call_compare") != "pass":
+    raise SystemExit(f"semantic-surface arithmetic mismatch: {arithmetic_compare!r}")
+if arithmetic_compare.get("calls") != "3":
+    raise SystemExit(f"semantic-surface arithmetic call count changed: {arithmetic_compare!r}")
+if arithmetic_compare.get("bridge_summary_1_unsupported_primitives") != "none":
+    raise SystemExit(f"semantic-surface arithmetic reported unsupported calls: {arithmetic_compare!r}")
+
 bytecode_lines = [
     line for line in runtime
     if line.startswith("stack_frontend_object_bytecode_bytes=")
@@ -182,5 +218,6 @@ print("semantic_surface_backend=pass")
 print(f"retained_primitives={len(required)}")
 print(f"runtime_bytecode_bytes={bytecode_lines[0].split('=', 1)[1]}")
 print("creation_artifact=true")
+print("arithmetic_execution_compare_calls=3")
 print("optimized_explicit_msize=solc_rejected")
 PY

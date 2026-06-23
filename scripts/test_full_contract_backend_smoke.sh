@@ -72,6 +72,7 @@ AAVE_BACKEND="$OUTDIR/aave-pool-runtime.backend.txt"
     --source-name src/Permit2.sol \
     --solc "$SOLC_817" \
     --yul-ast-solc "$SOLC_826" \
+    --evm-version london \
     --contract Permit2 \
     --object runtime \
     --optimized \

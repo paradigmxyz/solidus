@@ -220,6 +220,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         )
         self.assertIn("UsesLibrary.sol", request["sources"])
         self.assertIn("MathLib.sol", request["sources"])
+        self.assertEqual(request["settings"]["evmVersion"], "cancun")
         self.assertEqual(
             request["sources"]["MathLib.sol"]["content"],
             "library MathLib {}",
@@ -277,6 +278,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
 
         self.assertEqual(request["language"], "Yul")
         self.assertNotIn("viaIR", request["settings"])
+        self.assertEqual(request["settings"]["evmVersion"], "cancun")
         self.assertTrue(request["settings"]["experimental"])
         self.assertEqual(
             request["settings"]["outputSelection"]["*"]["*"],
@@ -2974,6 +2976,41 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertIn("evm.bytecode.object", selected)
         self.assertTrue(augmented["settings"]["viaIR"])
         self.assertTrue(augmented["settings"]["experimental"])
+        self.assertEqual(augmented["settings"]["evmVersion"], "cancun")
+
+    def test_standard_json_rejects_an_unsupported_evm_version(self):
+        request = {
+            "language": "Solidity",
+            "sources": {"A.sol": {"content": "contract A {}"}},
+            "settings": {
+                "evmVersion": "prague",
+                "outputSelection": {"*": {"*": []}},
+            },
+        }
+        with self.assertRaisesRegex(bridge.ConversionError, "evmVersion"):
+            bridge.ensure_standard_json_frontend_outputs(
+                request,
+                optimized=True,
+                default_via_ir=True,
+                default_experimental=True,
+            )
+
+    def test_standard_json_preserves_a_supported_older_evm_version(self):
+        request = {
+            "language": "Solidity",
+            "sources": {"A.sol": {"content": "contract A {}"}},
+            "settings": {
+                "evmVersion": "london",
+                "outputSelection": {"*": {"*": []}},
+            },
+        }
+        augmented = bridge.ensure_standard_json_frontend_outputs(
+            request,
+            optimized=True,
+            default_via_ir=True,
+            default_experimental=True,
+        )
+        self.assertEqual(augmented["settings"]["evmVersion"], "london")
 
     def test_bridge_only_standard_json_requests_yul_without_solc_bytecode(self):
         request = {
