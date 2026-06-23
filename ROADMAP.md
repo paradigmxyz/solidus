@@ -419,6 +419,9 @@ boundaries. Corpus acceptance alone does not discharge them.
     CALL/CREATE/LOG requests.
   - [x] Prove accepted guarded Yul interaction trees equal ordinary canonical
     Yul execution through expressions, control, loops, and internal calls.
+  - [x] Define one adjacent semantics-mode interface selecting only ordinary or
+    guarded primitive handlers, with checked primitive and terminal
+    capabilities for both modes; recursive compiler proof remains shared.
   - [ ] Lift actual-tree Yul execution safety through recursive expressions,
     control, loops, and internal calls to guarded Functions execution safety.
   - [ ] Replace the scratch-capable public Functions-facing safety premise with
