@@ -1085,6 +1085,18 @@ dynamic memory, CALL/CREATE/CREATE2, and memory-unsafe assembly:
 scripts/test_solc_stack_spill_adversarial.sh
 ```
 
+The dynamic-storage surface gate compiles both creation and runtime objects and
+replays one persistent 15-call sequence against full-solc and checked backend
+bytecode. It covers short/long `bytes` storage at the 31/32-byte boundary,
+long-to-empty cleanup, packed structs with dynamic members, nested storage and
+calldata arrays, dynamic ABI returns, events, and an intentional bounds panic.
+It is included in the supported solc `0.8.26`/`0.8.35` matrix:
+
+```sh
+scripts/test_dynamic_storage_surface_backend.sh
+scripts/test_supported_solc_versions.sh
+```
+
 A networked smoke targets a pinned Compound v3 Comet checkout.  It builds an
 ABI-shaped wrapper around the real `CometMath` internal functions and compares
 safe-cast, signed/unsigned conversion, boolean conversion, and custom-error

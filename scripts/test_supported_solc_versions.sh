@@ -17,7 +17,8 @@ for version in "${VERSIONS[@]}"; do
 
   output="$(SOLC="$compiler" "$ROOT/scripts/test_semantic_surface_backend.sh")"
   if [[ "$output" != *"semantic_surface_backend=pass"* ]] ||
-      [[ "$output" != *"arithmetic_execution_compare_calls=3"* ]]; then
+      [[ "$output" != *"arithmetic_execution_compare_calls=3"* ]] ||
+      [[ "$output" != *"terminal_execution_compare=stop-success,invalid-failure"* ]]; then
     printf 'error: pinned solc %s failed the checked semantic surface\n%s\n' \
       "$version" "$output" >&2
     exit 1
@@ -42,6 +43,18 @@ for version in "${VERSIONS[@]}"; do
     exit 1
   fi
   printf '%s\n' "$advanced_output"
+
+  storage_output="$(SOLC="$compiler" \
+    "$ROOT/scripts/test_dynamic_storage_surface_backend.sh")"
+  if [[ "$storage_output" != *"dynamic_storage_surface_backend=pass"* ]] ||
+      [[ "$storage_output" != *"dynamic_storage_surface_execution_compare_calls=15"* ]] ||
+      [[ "$storage_output" != *"dynamic_storage_short_long_boundary=true"* ]] ||
+      [[ "$storage_output" != *"dynamic_storage_intentional_panic=true"* ]]; then
+    printf 'error: pinned solc %s failed the dynamic-storage surface\n%s\n' \
+      "$version" "$storage_output" >&2
+    exit 1
+  fi
+  printf '%s\n' "$storage_output"
 
   effect_output="$(SOLC="$compiler" \
     "$ROOT/scripts/test_effect_ordering_surface_backend.sh")"
