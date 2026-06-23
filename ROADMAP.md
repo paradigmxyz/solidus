@@ -163,7 +163,10 @@ Next raw frontend layer:
   positions and checks representative `UInt256` executions against the
   `255 - log2(x)` reference. `ClzHelperExecution` executes the exact generated
   helper-body frontend fragment over the same `UInt256` primitives and proves
-  its returned word equals `ClzHelperModel.run`. Retained nested
+  its returned word equals `ClzHelperModel.run`; the spec and raw-code
+  elaboration lift theorems expose that fact for generated helper entries
+  returned by successful elaboration, modulo distinct generated argument/result
+  names. Retained nested
   function-definition statements are alpha-renamed to generated function names
   before their checked frontend no-op lowering. Raw production elaboration now
   also fail-closes on any

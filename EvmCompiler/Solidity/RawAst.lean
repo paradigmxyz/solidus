@@ -1159,6 +1159,19 @@ theorem exec_clzHelperBody_ret_eq_run
   rw [exec_clzHelperBody_eq_expectedFinalState argName returnName hNames]
   simp [expectedFinalState_ret_eq_run]
 
+theorem exec_clzHelperSpec_ret_eq_run
+    {fn : Frontend.FunctionDef} {argName returnName : Name}
+    (hSpec : ClzHelperSpec fn argName returnName)
+    (hNames : argName ≠ returnName)
+    (value initialRet : Word) :
+    (execStmts? argName returnName
+        { arg := value, ret := initialRet }
+        fn.body).map (fun state => state.ret) =
+      some (ClzHelperModel.run value) := by
+  rw [hSpec.body_eq]
+  exact exec_clzHelperBody_ret_eq_run argName returnName hNames value
+    initialRet
+
 end ClzHelperExecution
 
 mutual
@@ -1509,6 +1522,27 @@ theorem elaborateCode_clzHelper_spec
     ⟨clzHelperFunctionDef arg ret,
       elaborateCode_clzHelper_mem hElab,
       clzHelperFunctionDef_spec arg ret⟩
+
+theorem elaborateCode_clzHelper_exec_ret_eq_run
+    {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
+    {functions : List (Name × Frontend.FunctionDef)}
+    {helper arg ret : Name}
+    (hElab :
+      elaborateCode stmts = .ok
+        (dispatcher, functions, some helper, some arg, some ret))
+    (hNames : arg ≠ ret) :
+    ∃ fn,
+      (helper, fn) ∈ functions ∧
+        ∀ value initialRet : Word,
+          (ClzHelperExecution.execStmts? arg ret
+              { arg := value, ret := initialRet }
+              fn.body).map (fun state => state.ret) =
+            some (ClzHelperModel.run value) := by
+  rcases elaborateCode_clzHelper_spec hElab with ⟨fn, hMem, hSpec⟩
+  exact
+    ⟨fn, hMem, fun value initialRet =>
+      ClzHelperExecution.exec_clzHelperSpec_ret_eq_run hSpec hNames value
+        initialRet⟩
 
 theorem elaborateCode_clzHelper_toYul?_some
     {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
