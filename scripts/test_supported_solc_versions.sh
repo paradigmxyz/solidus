@@ -109,7 +109,9 @@ for version in "${VERSIONS[@]}"; do
   if [[ "$fork_output" != *"fork_validation_backend=pass"* ]] ||
       [[ "$fork_output" != *"fork_validation_honest_london=pass"* ]] ||
       [[ "$fork_output" != *"fork_validation_honest_cancun=pass"* ]] ||
-      [[ "$fork_output" != *"fork_validation_cancun_as_london=rejected"* ]]; then
+      [[ "$fork_output" != *"fork_validation_cancun_as_london=rejected"* ]] ||
+      [[ "$fork_output" != *"fork_validation_difficulty_as_paris=rejected"* ]] ||
+      [[ "$fork_output" != *"fork_validation_prevrandao_as_london=rejected"* ]]; then
     printf 'error: pinned solc %s failed fork validation coverage\n%s\n' \
       "$version" "$fork_output" >&2
     exit 1

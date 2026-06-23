@@ -173,9 +173,9 @@ def primitiveAvailable? (profile : DialectProfile)
   | .Block .BASEFEE =>
       profile.evmVersion.atLeast? .london
   -- The core AST erases solc's `difficulty()`/`prevrandao()` spelling split
-  -- into the same operation.  Source importers must enforce the spelling gate
-  -- before lowering; direct core validation accepts the shared operation so it
-  -- does not reject valid pre-Paris `difficulty()` programs.
+  -- into the same operation.  Solidity.Frontend checks the spelling before
+  -- lowering; direct core validation accepts the shared operation so it does
+  -- not reject valid pre-Paris `difficulty()` programs.
   | .Block .PREVRANDAO =>
       true
   | .Block .BLOBHASH

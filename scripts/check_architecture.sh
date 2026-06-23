@@ -90,6 +90,11 @@ rg -q 'evmVersion : Yul\.SolcValidation\.EvmVersion' \
 rg -q 'codeArtifact\.resolved\.dialectProfile' \
   EvmCompiler/Compiler/OpenInteractionComposition.lean ||
   fail 'public composition must use the resolved object fork profile'
+rg -q '^theorem toSolcYulOrderedProgram\?_forkSpellingOk' \
+  EvmCompiler/Solidity/Frontend.lean ||
+  fail 'checked frontend conversion must derive raw fork-spelling validity'
+rg -q 'object\.forkSpellingOk?' EvmCompiler/Solidity/Frontend.lean ||
+  fail 'frontend conversion must validate difficulty/prevrandao before erasure'
 rg -q '"required": \["schema", "source", "contract", "frontend", "selectedObject"\]' \
   scripts/bridge-json-v3.schema.json ||
   fail 'bridge JSON must require explicit frontend/fork metadata'

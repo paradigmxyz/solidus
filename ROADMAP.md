@@ -130,6 +130,10 @@ stack-only correctness boundary.
   dispatch under both supported solc pins.
   A separate fork-adversarial gate checks honest London and Cancun compilation
   and rejects a schema-valid Cancun object whose metadata is changed to London.
+  Raw frontend validation also preserves solc's opcode `0x44` spelling split:
+  London accepts `difficulty()`, Paris and later accept `prevrandao()`, and the
+  opposite cross-fork relabelings fail before those names reach the shared core
+  operation.
 - [x] Separate genuine source completion/fuel sufficiency from malformed-source
   exclusion in the all-finished theorem. `truncated_iff_outOfFuel` proves the
   public truncation predicate is exactly structural source `OutOfFuel`;

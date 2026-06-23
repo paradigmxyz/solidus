@@ -83,6 +83,9 @@ The requested fork is therefore still an external compilation input, but its
 consequences are checked rather than trusted: missing metadata is rejected, and
 an object containing instructions unavailable in its declared fork cannot
 produce a checked artifact.
+The raw frontend additionally checks solc's `difficulty()`/`prevrandao()` split
+before both spellings lower to opcode `0x44`; successful conversion derives
+that check internally.
 
 ## Open World
 
@@ -134,3 +137,5 @@ are counted as differential execution tests. The kernel proof gate reports
 only `propext`, `Classical.choice`, and `Quot.sound` for the public theorem.
 The supported-version matrix also compiles honest London and Cancun fixtures
 and rejects Cancun-only `MCOPY`/transient-storage syntax relabeled as London.
+It separately compiles London `difficulty()` and Paris `prevrandao()`, then
+rejects both cross-fork relabelings.

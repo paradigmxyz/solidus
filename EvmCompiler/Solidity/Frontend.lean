@@ -740,6 +740,93 @@ def objectBuiltinNameArg? : Expr → Option Name
 
 end Expr
 
+namespace ForkSpelling
+
+def primitiveAvailable? (version : Yul.SolcValidation.EvmVersion)
+    (callee : Name) : Bool :=
+  if callee == "difficulty" then
+    !version.atLeast? .paris
+  else if callee == "prevrandao" then
+    version.atLeast? .paris
+  else
+    true
+
+theorem difficulty_london : primitiveAvailable? .london "difficulty" = true :=
+  rfl
+
+theorem prevrandao_london : primitiveAvailable? .london "prevrandao" = false :=
+  rfl
+
+theorem difficulty_paris : primitiveAvailable? .paris "difficulty" = false :=
+  rfl
+
+theorem prevrandao_paris : primitiveAvailable? .paris "prevrandao" = true :=
+  rfl
+
+end ForkSpelling
+
+mutual
+  def Expr.forkSpellingOk? (version : Yul.SolcValidation.EvmVersion) :
+      Expr → Bool
+    | .lit _ => true
+    | .stringLit _ => true
+    | .bytesLit _ => true
+    | .var _ => true
+    | .call kind callee args =>
+        (match kind with
+          | .primitive => ForkSpelling.primitiveAvailable? version callee
+          | _ => true) &&
+          Expr.List.forkSpellingOk? version args
+
+  def Expr.List.forkSpellingOk? (version : Yul.SolcValidation.EvmVersion) :
+      List Expr → Bool
+    | [] => true
+    | expr :: rest =>
+        expr.forkSpellingOk? version &&
+          Expr.List.forkSpellingOk? version rest
+end
+
+mutual
+  def Stmt.forkSpellingOk? (version : Yul.SolcValidation.EvmVersion) :
+      Stmt → Bool
+    | .block stmts => Stmt.List.forkSpellingOk? version stmts
+    | .letDecl _ none => true
+    | .letDecl _ (some value) => value.forkSpellingOk? version
+    | .assign _ value => value.forkSpellingOk? version
+    | .exprStmt expr => expr.forkSpellingOk? version
+    | .functionDef _ _ _ body => Stmt.List.forkSpellingOk? version body
+    | .switch scrutinee cases default =>
+        scrutinee.forkSpellingOk? version &&
+          (Stmt.CaseList.forkSpellingOk? version cases &&
+            Stmt.List.forkSpellingOk? version default)
+    | .forLoop pre condition post body =>
+        Stmt.List.forkSpellingOk? version pre &&
+          (condition.forkSpellingOk? version &&
+            (Stmt.List.forkSpellingOk? version post &&
+              Stmt.List.forkSpellingOk? version body))
+    | .ifThen condition body =>
+        condition.forkSpellingOk? version &&
+          Stmt.List.forkSpellingOk? version body
+    | .break => true
+    | .continue => true
+    | .leave => true
+
+  def Stmt.List.forkSpellingOk? (version : Yul.SolcValidation.EvmVersion) :
+      List Stmt → Bool
+    | [] => true
+    | stmt :: rest =>
+        stmt.forkSpellingOk? version &&
+          Stmt.List.forkSpellingOk? version rest
+
+  def Stmt.CaseList.forkSpellingOk?
+      (version : Yul.SolcValidation.EvmVersion) :
+      List (SwitchCaseValue × List Stmt) → Bool
+    | [] => true
+    | (_value, body) :: rest =>
+        Stmt.List.forkSpellingOk? version body &&
+          Stmt.CaseList.forkSpellingOk? version rest
+end
+
 mutual
   def Expr.loadImmutableNames : Expr → List Name
     | .lit _ => []
@@ -1002,12 +1089,22 @@ namespace FunctionDef
 def loadImmutableNames (fn : FunctionDef) : List Name :=
   Stmt.List.loadImmutableNames fn.body
 
+def forkSpellingOk? (version : Yul.SolcValidation.EvmVersion)
+    (fn : FunctionDef) : Bool :=
+  Stmt.List.forkSpellingOk? version fn.body
+
 namespace List
 
 def loadImmutableNames : List (Name × FunctionDef) → List Name
   | [] => []
   | (_name, fn) :: rest =>
       fn.loadImmutableNames ++ loadImmutableNames rest
+
+def forkSpellingOk? (version : Yul.SolcValidation.EvmVersion) :
+    List (Name × FunctionDef) → Bool
+  | [] => true
+  | (_name, fn) :: rest =>
+      fn.forkSpellingOk? version && forkSpellingOk? version rest
 
 end List
 end FunctionDef
@@ -1017,6 +1114,10 @@ namespace Object
 def dialectProfile (object : Object) :
     Yul.SolcValidation.DialectProfile :=
   object.evmVersion.dialectProfile
+
+def forkSpellingOk? (object : Object) : Bool :=
+  Stmt.List.forkSpellingOk? object.evmVersion object.dispatcher &&
+    FunctionDef.List.forkSpellingOk? object.evmVersion object.functions
 
 def loadImmutableNames (object : Object) : List Name :=
   NameList.unique
@@ -2269,24 +2370,30 @@ theorem toYulProgram?_memoryContract
 def toSolcYulProgram? (object : Object) :
     Option Yul.Program := do
   let (contract, functions) ← object.toYulContractWithFunctionEntries?
-  if Yul.SolcValidation.ContractOkWithEntries?
-      object.dialectProfile contract functions then
-    some
-      { contract := contract
-        memoryContract := object.memoryContract }
+  if object.forkSpellingOk? then
+    if Yul.SolcValidation.ContractOkWithEntries?
+        object.dialectProfile contract functions then
+      some
+        { contract := contract
+          memoryContract := object.memoryContract }
+    else
+      none
   else
     none
 
 def toSolcYulOrderedProgram? (object : Object) :
     Option Yul.OrderedProgram := do
   let (contract, functions) ← object.toYulContractWithFunctionEntries?
-  if Yul.SolcValidation.ContractOkWithEntries?
-      object.dialectProfile contract functions then
-    some
-      { program :=
-          { contract := contract
-            memoryContract := object.memoryContract }
-        functionEntries := functions }
+  if object.forkSpellingOk? then
+    if Yul.SolcValidation.ContractOkWithEntries?
+        object.dialectProfile contract functions then
+      some
+        { program :=
+            { contract := contract
+              memoryContract := object.memoryContract }
+          functionEntries := functions }
+    else
+      none
   else
     none
 
@@ -2308,6 +2415,7 @@ theorem toSolcYulOrderedProgram?_source
           Yul.SolcValidation.ContractOkWithEntries?
             object.dialectProfile contract functions <;>
         simp [hContract, hValid] at hConvert
+      rcases hConvert with ⟨_hSpelling, hConvert⟩
       subst ordered
       refine ⟨?_, ?_, hValid, rfl⟩
       · unfold Yul.OrderedProgram.RepresentsSource
@@ -2333,6 +2441,21 @@ theorem toSolcYulOrderedProgram?_source
           Yul.SolcValidation.namesNodup?] at hParts
         exact hParts.2
 
+theorem toSolcYulOrderedProgram?_forkSpellingOk
+    {object : Object} {ordered : Yul.OrderedProgram}
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    object.forkSpellingOk? = true := by
+  unfold toSolcYulOrderedProgram? at hConvert
+  cases hContract : object.toYulContractWithFunctionEntries? with
+  | none => simp [hContract] at hConvert
+  | some result =>
+      rcases result with ⟨contract, functions⟩
+      cases hValid :
+          Yul.SolcValidation.ContractOkWithEntries?
+            object.dialectProfile contract functions <;>
+        simp [hContract, hValid] at hConvert
+      exact hConvert.1
+
 theorem toSolcYulOrderedProgram?_programOkWithEntries
     {object : Object} {ordered : Yul.OrderedProgram}
     (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
@@ -2354,6 +2477,7 @@ theorem toSolcYulProgram?_memoryContract
           Yul.SolcValidation.ContractOkWithEntries?
             object.dialectProfile contract functions
       · simp [hContract, hValid] at hConvert
+        rcases hConvert with ⟨_hSpelling, hConvert⟩
         subst program
         rfl
       · simp [hContract, hValid] at hConvert
@@ -2400,6 +2524,7 @@ theorem toSolcYulProgram?_eq_some {object : Object}
                   functions := functionMap functions }
                 functions <;>
             simp [hDispatcher, hFunctions, hValid] at hProgram
+          rcases hProgram with ⟨_hSpelling, hProgram⟩
           subst program
           exact
             ⟨functions, by simp, rfl, hValid⟩
