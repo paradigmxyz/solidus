@@ -923,6 +923,244 @@ theorem clzHelperFunctionDef_toYul?_some (argName returnName : Name) :
     Frontend.Expr.toYul?, Frontend.Expr.List.toYul?,
     Frontend.Primitive.ofName?]
 
+namespace ClzHelperExecution
+
+def truthy (value : Word) : Bool :=
+  value != ClzHelperModel.zero
+
+def readName? (argName returnName name : Name)
+    (state : ClzHelperModel.State) : Option Word :=
+  if name = argName then
+    some state.arg
+  else if name = returnName then
+    some state.ret
+  else
+    none
+
+def writeName? (argName returnName name : Name) (value : Word)
+    (state : ClzHelperModel.State) : Option ClzHelperModel.State :=
+  if name = argName then
+    some { state with arg := value }
+  else if name = returnName then
+    some { state with ret := value }
+  else
+    none
+
+def evalPrimitive? (callee : Name) (args : List Word) : Option Word :=
+  match callee, args with
+  | "add", [left, right] => some (EvmYul.UInt256.add left right)
+  | "shl", [shift, value] => some (EvmYul.UInt256.shiftLeft value shift)
+  | "shr", [shift, value] => some (EvmYul.UInt256.shiftRight value shift)
+  | "iszero", [value] => some (EvmYul.UInt256.isZero value)
+  | _, _ => none
+
+mutual
+  def evalExpr? (argName returnName : Name)
+      (state : ClzHelperModel.State) : Frontend.Expr → Option Word
+    | .lit value => some value
+    | .var name => readName? argName returnName name state
+    | .call .primitive callee args => do
+        let values ← evalExprList? argName returnName state args
+        evalPrimitive? callee values
+    | _ => none
+
+  def evalExprList? (argName returnName : Name)
+      (state : ClzHelperModel.State) :
+      List Frontend.Expr → Option (List Word)
+    | [] => some []
+    | expr :: rest => do
+        let head ← evalExpr? argName returnName state expr
+        let tail ← evalExprList? argName returnName state rest
+        some (head :: tail)
+end
+
+mutual
+  def execStmt? (argName returnName : Name)
+      (state : ClzHelperModel.State) : Frontend.Stmt →
+      Option ClzHelperModel.State
+    | .block stmts => execStmts? argName returnName state stmts
+    | .assign [name] value => do
+        let value' ← evalExpr? argName returnName state value
+        writeName? argName returnName name value' state
+    | .ifThen condition body => do
+        let value ← evalExpr? argName returnName state condition
+        if truthy value then
+          execStmts? argName returnName state body
+        else
+          some state
+    | _ => none
+
+  def execStmts? (argName returnName : Name)
+      (state : ClzHelperModel.State) :
+      List Frontend.Stmt → Option ClzHelperModel.State
+    | [] => some state
+    | stmt :: rest => do
+        let state' ← execStmt? argName returnName state stmt
+        execStmts? argName returnName state' rest
+end
+
+theorem execStmts_append_some
+    {argName returnName : Name}
+    {pre suffix : List Frontend.Stmt}
+    {state mid : ClzHelperModel.State}
+    (hPre : execStmts? argName returnName state pre = some mid) :
+    execStmts? argName returnName state (pre ++ suffix) =
+      execStmts? argName returnName mid suffix := by
+  induction pre generalizing state with
+  | nil =>
+      simp [execStmts?] at hPre ⊢
+      exact hPre ▸ rfl
+  | cons stmt rest ih =>
+      simp [execStmts?] at hPre ⊢
+      cases hStmt : execStmt? argName returnName state stmt with
+      | none =>
+          simp [hStmt] at hPre
+      | some after =>
+          simp [hStmt] at hPre ⊢
+          exact ih hPre
+
+theorem exec_clzHelperStepBody_eq_applyStepBody
+    (argName returnName : Name) (hNames : argName ≠ returnName)
+    (state : ClzHelperModel.State) (addend : Nat) :
+    execStmts? argName returnName state
+        (clzHelperStepBody argName returnName addend) =
+      some (ClzHelperModel.applyStepBody addend state) := by
+  by_cases hAdd : addend == 1
+  · simp [clzHelperStepBody, ClzHelperModel.applyStepBody, hAdd,
+      execStmts?, execStmt?, evalExpr?, evalExprList?, evalPrimitive?,
+      readName?, writeName?, clzPrim, clzValue, clzWord, ClzHelperModel.word,
+      hNames, Ne.symm hNames]
+  · simp [clzHelperStepBody, ClzHelperModel.applyStepBody, hAdd,
+      execStmts?, execStmt?, evalExpr?, evalExprList?, evalPrimitive?,
+      readName?, writeName?, clzPrim, clzValue, clzWord, ClzHelperModel.word,
+      hNames, Ne.symm hNames]
+
+theorem exec_clzHelperStep_eq_applyStep
+    (argName returnName : Name) (hNames : argName ≠ returnName)
+    (state : ClzHelperModel.State) (step : Nat × Nat) :
+    execStmts? argName returnName state
+        [Frontend.Stmt.ifThen
+          (clzPrim "iszero"
+            [clzPrim "shr" [clzWord step.fst, clzValue argName]])
+          (clzHelperStepBody argName returnName step.snd)] =
+      some (ClzHelperModel.applyStep state step) := by
+  cases step with
+  | mk checkShift addend =>
+      by_cases hCond :
+          (EvmYul.UInt256.isZero
+              (EvmYul.UInt256.shiftRight state.arg
+                (EvmYul.UInt256.ofNat checkShift)) !=
+            ClzHelperModel.zero) = true
+      · simp [execStmts?, execStmt?, evalExpr?, evalExprList?,
+          evalPrimitive?, readName?, writeName?, truthy,
+          ClzHelperModel.applyStep, ClzHelperModel.shouldRunStep,
+          clzPrim, clzValue, clzWord, ClzHelperModel.word,
+          hNames, Ne.symm hNames, hCond,
+          exec_clzHelperStepBody_eq_applyStepBody]
+      · simp [execStmts?, execStmt?, evalExpr?, evalExprList?,
+          evalPrimitive?, readName?, writeName?, truthy,
+          ClzHelperModel.applyStep, ClzHelperModel.shouldRunStep,
+          clzPrim, clzValue, clzWord, ClzHelperModel.word,
+          hNames, Ne.symm hNames, hCond,
+          exec_clzHelperStepBody_eq_applyStepBody]
+
+theorem exec_clzHelperAppendStep_eq_applyStep
+    (argName returnName : Name) (hNames : argName ≠ returnName)
+    {body : List Frontend.Stmt} {state mid : ClzHelperModel.State}
+    (step : Nat × Nat)
+    (hBody : execStmts? argName returnName state body = some mid) :
+    execStmts? argName returnName state
+        (clzHelperAppendStep argName returnName body step) =
+      some (ClzHelperModel.applyStep mid step) := by
+  cases step with
+  | mk checkShift addend =>
+      unfold clzHelperAppendStep
+      rw [execStmts_append_some hBody]
+      exact exec_clzHelperStep_eq_applyStep argName returnName hNames mid
+        (checkShift, addend)
+
+theorem exec_clzHelperStepFold_eq_model
+    (argName returnName : Name) (hNames : argName ≠ returnName)
+    (steps : List (Nat × Nat)) {body : List Frontend.Stmt}
+    {state mid : ClzHelperModel.State}
+    (hBody : execStmts? argName returnName state body = some mid) :
+    execStmts? argName returnName state
+        (steps.foldl (clzHelperAppendStep argName returnName) body) =
+      some (steps.foldl ClzHelperModel.applyStep mid) := by
+  induction steps generalizing body mid with
+  | nil =>
+      simpa using hBody
+  | cons step rest ih =>
+      exact ih
+        (body := clzHelperAppendStep argName returnName body step)
+        (mid := ClzHelperModel.applyStep mid step)
+        (exec_clzHelperAppendStep_eq_applyStep argName returnName hNames
+          step hBody)
+
+theorem exec_clzHelperNonzeroBody_eq_runNonzero
+    (argName returnName : Name) (hNames : argName ≠ returnName)
+    (value : Word) (initialRet : Word) :
+    execStmts? argName returnName
+        { arg := value, ret := initialRet }
+        (clzHelperNonzeroBody argName returnName) =
+      some (ClzHelperModel.runNonzero value) := by
+  unfold clzHelperNonzeroBody ClzHelperModel.runNonzero
+  exact exec_clzHelperStepFold_eq_model argName returnName hNames
+    clzHelperStepSchedule
+    (body := [Frontend.Stmt.assign [returnName] (clzWord 0)])
+    (state := { arg := value, ret := initialRet })
+    (mid := { arg := value, ret := ClzHelperModel.word 0 })
+    (by
+      simp [execStmts?, execStmt?, evalExpr?, readName?, writeName?,
+        clzWord, ClzHelperModel.word, hNames, Ne.symm hNames])
+
+def expectedFinalState (value : Word) : ClzHelperModel.State :=
+  if truthy value then
+    ClzHelperModel.runNonzero value
+  else
+    { arg := value, ret := ClzHelperModel.word 256 }
+
+theorem exec_clzHelperBody_eq_expectedFinalState
+    (argName returnName : Name) (hNames : argName ≠ returnName)
+    (value initialRet : Word) :
+    execStmts? argName returnName
+        { arg := value, ret := initialRet }
+        (clzHelperBody argName returnName) =
+      some (expectedFinalState value) := by
+  by_cases hTruthy : truthy value
+  · simp [clzHelperBody, expectedFinalState, hTruthy,
+      execStmts?, execStmt?, evalExpr?, readName?, writeName?, clzWord,
+      clzValue, hNames, Ne.symm hNames,
+      exec_clzHelperNonzeroBody_eq_runNonzero]
+  · simp [clzHelperBody, expectedFinalState, hTruthy,
+      execStmts?, execStmt?, evalExpr?, readName?, writeName?, clzWord,
+      clzValue, ClzHelperModel.word, hNames, Ne.symm hNames]
+
+theorem expectedFinalState_ret_eq_run (value : Word) :
+    (expectedFinalState value).ret = ClzHelperModel.run value := by
+  by_cases hZero : value == ClzHelperModel.zero
+  · have hTruthy : truthy value = false := by
+      simp [truthy, bne, hZero]
+    simp [expectedFinalState, ClzHelperModel.run, hZero, hTruthy]
+  · have hTruthy : truthy value = true := by
+      have hEqFalse :
+          (value == ClzHelperModel.zero) = false :=
+        Bool.eq_false_of_not_eq_true hZero
+      simp [truthy, bne, hEqFalse]
+    simp [expectedFinalState, ClzHelperModel.run, hZero, hTruthy]
+
+theorem exec_clzHelperBody_ret_eq_run
+    (argName returnName : Name) (hNames : argName ≠ returnName)
+    (value initialRet : Word) :
+    (execStmts? argName returnName
+        { arg := value, ret := initialRet }
+        (clzHelperBody argName returnName)).map (fun state => state.ret) =
+      some (ClzHelperModel.run value) := by
+  rw [exec_clzHelperBody_eq_expectedFinalState argName returnName hNames]
+  simp [expectedFinalState_ret_eq_run]
+
+end ClzHelperExecution
+
 mutual
   def Literal.elaborate : Raw.Literal → DecodeM Frontend.Expr
     | .number value => .ok (.lit value)

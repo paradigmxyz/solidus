@@ -161,9 +161,12 @@ Next raw frontend layer:
   generated schedule a checked executable semantic target: it proves the
   highest-bit schedule returns `255 - highestBit` for all 256 nonzero bit
   positions and checks representative `UInt256` executions against the
-  `255 - log2(x)` reference. Retained nested function-definition statements
-  are alpha-renamed to generated function names before their checked frontend
-  no-op lowering. Raw production elaboration now also fail-closes on any
+  `255 - log2(x)` reference. `ClzHelperExecution` executes the exact generated
+  helper-body frontend fragment over the same `UInt256` primitives and proves
+  its returned word equals `ClzHelperModel.run`. Retained nested
+  function-definition statements are alpha-renamed to generated function names
+  before their checked frontend no-op lowering. Raw production elaboration now
+  also fail-closes on any
   frontend object that still contains an unlowered callee named exactly `clz`,
   with decode and artifact wrapper theorems exposing
   `Frontend.Object.noRawClzCall? = true`. It also fail-closes unless every
