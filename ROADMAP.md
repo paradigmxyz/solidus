@@ -139,7 +139,10 @@ Next raw frontend layer:
   returns the corresponding generated helper function definition. First checked
   nested-hoist validation invariant: every function accumulated in the raw
   elaborator's `hoistedFunctions` state is retained in the successful returned
-  function list. Semantic preservation of the helper and nested
+  function list. `Raw.Object.ClzExpansionOk` and
+  `Raw.Object.HoistedFunctionsRetained` lift these invariants through raw
+  object elaboration, raw string decoding, and artifact-wrapper success.
+  Semantic preservation of the helper and nested
   hoist/alpha-renaming passes remains open.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without

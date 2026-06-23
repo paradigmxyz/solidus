@@ -156,6 +156,48 @@ theorem compileArtifactFromRawSolcIr?_itemRefsPreserveOrder
     ⟨json, selected, object, program, linkerSymbols,
       hParse, hSelected, hObject, hOrder, hProgram, hLinker, hValid⟩
 
+theorem compileArtifactFromRawSolcIr?_clzExpansionOk
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (hCompile :
+      compileArtifactFromRawSolcIr? rawJson selection = some artifact) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (program : Frontend.Program)
+        (linkerSymbols : List (Frontend.Name × Frontend.Word)),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          Raw.Object.ClzExpansionOk selected.root program.object ∧
+            decodeLinkerSymbolsJson json selection = .ok linkerSymbols ∧
+              Frontend.Object.VerifiedStackObjectArtifact.ValidFor
+                linkerSymbols program.object artifact := by
+  rcases compileArtifactFromRawSolcIr?_valid hCompile with
+    ⟨json, program, linkerSymbols, hParse, hDecode, hLinker, hValid⟩
+  rcases decodeAndElaborateSolcIrJson_clzExpansionOk hDecode with
+    ⟨selected, hSelected, hClz⟩
+  exact ⟨json, selected, program, linkerSymbols,
+    hParse, hSelected, hClz, hLinker, hValid⟩
+
+theorem compileArtifactFromRawSolcIr?_hoistedFunctionsRetained
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (hCompile :
+      compileArtifactFromRawSolcIr? rawJson selection = some artifact) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (program : Frontend.Program)
+        (linkerSymbols : List (Frontend.Name × Frontend.Word)),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          Raw.Object.HoistedFunctionsRetained selected.root program.object ∧
+            decodeLinkerSymbolsJson json selection = .ok linkerSymbols ∧
+              Frontend.Object.VerifiedStackObjectArtifact.ValidFor
+                linkerSymbols program.object artifact := by
+  rcases compileArtifactFromRawSolcIr?_valid hCompile with
+    ⟨json, program, linkerSymbols, hParse, hDecode, hLinker, hValid⟩
+  rcases decodeAndElaborateSolcIrJson_hoistedFunctionsRetained hDecode with
+    ⟨selected, hSelected, hHoisted⟩
+  exact ⟨json, selected, program, linkerSymbols,
+    hParse, hSelected, hHoisted, hLinker, hValid⟩
+
 theorem compileArtifactFromRawSolcIr?_decodingCorrect
     {rawJson : String} {selection : Selection}
     {artifact : Frontend.Program.Artifact}
@@ -264,6 +306,46 @@ theorem compileArtifactFromRawSolcIrWithLinkerSymbols?_itemRefsPreserveOrder
   exact
     ⟨json, selected, object, program,
       hParse, hSelected, hObject, hOrder, hProgram, hValid⟩
+
+theorem compileArtifactFromRawSolcIrWithLinkerSymbols?_clzExpansionOk
+    {rawJson : String} {selection : Selection}
+    {linkerSymbols : List (Frontend.Name × Frontend.Word)}
+    {artifact : Frontend.Program.Artifact}
+    (hCompile :
+      compileArtifactFromRawSolcIrWithLinkerSymbols? rawJson selection
+        linkerSymbols = some artifact) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (program : Frontend.Program),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          Raw.Object.ClzExpansionOk selected.root program.object ∧
+            Frontend.Object.VerifiedStackObjectArtifact.ValidFor
+              linkerSymbols program.object artifact := by
+  rcases compileArtifactFromRawSolcIrWithLinkerSymbols?_valid hCompile with
+    ⟨program, hDecode, hValid⟩
+  rcases decodeAndElaborateSolcIr?_clzExpansionOk hDecode with
+    ⟨json, selected, hParse, hSelected, hClz⟩
+  exact ⟨json, selected, program, hParse, hSelected, hClz, hValid⟩
+
+theorem compileArtifactFromRawSolcIrWithLinkerSymbols?_hoistedFunctionsRetained
+    {rawJson : String} {selection : Selection}
+    {linkerSymbols : List (Frontend.Name × Frontend.Word)}
+    {artifact : Frontend.Program.Artifact}
+    (hCompile :
+      compileArtifactFromRawSolcIrWithLinkerSymbols? rawJson selection
+        linkerSymbols = some artifact) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (program : Frontend.Program),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          Raw.Object.HoistedFunctionsRetained selected.root program.object ∧
+            Frontend.Object.VerifiedStackObjectArtifact.ValidFor
+              linkerSymbols program.object artifact := by
+  rcases compileArtifactFromRawSolcIrWithLinkerSymbols?_valid hCompile with
+    ⟨program, hDecode, hValid⟩
+  rcases decodeAndElaborateSolcIr?_hoistedFunctionsRetained hDecode with
+    ⟨json, selected, hParse, hSelected, hHoisted⟩
+  exact ⟨json, selected, program, hParse, hSelected, hHoisted, hValid⟩
 
 theorem compileArtifactFromRawSolcIrWithLinkerSymbols?_decodingCorrect
     {rawJson : String} {selection : Selection}

@@ -1292,6 +1292,79 @@ theorem Object.elaborate?_parts
                 evmVersion := evmVersion } := by
   exact Object.elaborateFuel?_parts hElab
 
+def Object.ClzExpansionOk (raw : Object)
+    (frontend : Frontend.Object) : Prop :=
+  match raw.code? with
+  | none => True
+  | some code =>
+      ∃ (helper? arg? ret? : Option Name),
+        Elab.elaborateCode code =
+          .ok (frontend.dispatcher, frontend.functions,
+            helper?, arg?, ret?) ∧
+          Elab.ClzExpansionOk frontend.functions helper? arg? ret?
+
+def Object.HoistedFunctionsRetained (raw : Object)
+    (frontend : Frontend.Object) : Prop :=
+  match raw.code? with
+  | none => True
+  | some code =>
+      ∃ (coreDispatcher : List Frontend.Stmt) (state : Elab.State)
+          (helper? arg? ret? : Option Name),
+        Elab.elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+          Elab.elaborateCode code =
+            .ok (frontend.dispatcher, frontend.functions,
+              helper?, arg?, ret?) ∧
+            ∀ entry, entry ∈ state.hoistedFunctions →
+              entry ∈ frontend.functions
+
+theorem Object.elaborate?_clzExpansionOk
+    {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
+    {frontend : Frontend.Object}
+    (hElab : Object.elaborate? obj evmVersion = .ok frontend) :
+    Object.ClzExpansionOk obj frontend := by
+  rcases Object.elaborate?_parts hElab with
+    ⟨itemFuel, dispatcher, functions, helper?, arg?, ret?, data, objects,
+      items, _hFuel, hCode, _hItems, hFrontend⟩
+  subst frontend
+  cases hRawCode : obj.code? with
+  | none =>
+      simp [Object.ClzExpansionOk, hRawCode]
+  | some code =>
+      have hCodeElab :
+          Elab.elaborateCode code =
+            .ok (dispatcher, functions, helper?, arg?, ret?) := by
+        simpa [hRawCode] using hCode
+      unfold Object.ClzExpansionOk
+      rw [hRawCode]
+      exact
+        ⟨helper?, arg?, ret?, hCodeElab,
+          Elab.elaborateCode_clzExpansionOk hCodeElab⟩
+
+theorem Object.elaborate?_hoistedFunctionsRetained
+    {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
+    {frontend : Frontend.Object}
+    (hElab : Object.elaborate? obj evmVersion = .ok frontend) :
+    Object.HoistedFunctionsRetained obj frontend := by
+  rcases Object.elaborate?_parts hElab with
+    ⟨itemFuel, dispatcher, functions, helper?, arg?, ret?, data, objects,
+      items, _hFuel, hCode, _hItems, hFrontend⟩
+  subst frontend
+  cases hRawCode : obj.code? with
+  | none =>
+      simp [Object.HoistedFunctionsRetained, hRawCode]
+  | some code =>
+      have hCodeElab :
+          Elab.elaborateCode code =
+            .ok (dispatcher, functions, helper?, arg?, ret?) := by
+        simpa [hRawCode] using hCode
+      rcases Elab.elaborateCode_parts hCodeElab with
+        ⟨state, hCore, _hFunctions, _hHelper, _hArg, _hRet⟩
+      unfold Object.HoistedFunctionsRetained
+      rw [hRawCode]
+      refine ⟨dispatcher, state, helper?, arg?, ret?, hCore, hCodeElab, ?_⟩
+      intro entry hEntry
+      exact Elab.elaborateCode_hoistedFunction_mem hCore hCodeElab hEntry
+
 namespace ObjectItem
 
 def refShapeAux : Nat → Nat → List ObjectItem → List Frontend.ObjectItemRef
@@ -1520,6 +1593,36 @@ theorem decodeAndElaborateSolcIrJson_itemRefsPreserveOrder
           · exact hParts.1
           · exact hParts.2
 
+theorem decodeAndElaborateSolcIrJson_clzExpansionOk
+    {json : Lean.Json} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIrJson json selection = .ok program) :
+    ∃ selected : SelectedIr,
+      decodeSelectedIr json selection = .ok selected ∧
+        Raw.Object.ClzExpansionOk selected.root program.object := by
+  rcases decodeAndElaborateSolcIrJson_parts hDecode with
+    ⟨selected, object, hSelected, hObject, hProgram⟩
+  subst program
+  exact
+    ⟨selected, hSelected,
+      Raw.Object.elaborate?_clzExpansionOk hObject⟩
+
+theorem decodeAndElaborateSolcIrJson_hoistedFunctionsRetained
+    {json : Lean.Json} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIrJson json selection = .ok program) :
+    ∃ selected : SelectedIr,
+      decodeSelectedIr json selection = .ok selected ∧
+        Raw.Object.HoistedFunctionsRetained selected.root program.object := by
+  rcases decodeAndElaborateSolcIrJson_parts hDecode with
+    ⟨selected, object, hSelected, hObject, hProgram⟩
+  subst program
+  exact
+    ⟨selected, hSelected,
+      Raw.Object.elaborate?_hoistedFunctionsRetained hObject⟩
+
 theorem decodeAndElaborateSolcIrJson_objectParts
     {json : Lean.Json} {selection : Selection}
     {program : Frontend.Program}
@@ -1653,6 +1756,36 @@ theorem decodeAndElaborateSolcIr?_itemRefsPreserveOrder
     ⟨selected, object, hSelected, hObject, hOrder, hProgram⟩
   exact
     ⟨json, selected, object, hParse, hSelected, hObject, hOrder, hProgram⟩
+
+theorem decodeAndElaborateSolcIr?_clzExpansionOk
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program) :
+    ∃ (json : Lean.Json) (selected : SelectedIr),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          Raw.Object.ClzExpansionOk selected.root program.object := by
+  rcases decodeAndElaborateSolcIr?_some hDecode with
+    ⟨json, hParse, hJsonDecode⟩
+  rcases decodeAndElaborateSolcIrJson_clzExpansionOk hJsonDecode with
+    ⟨selected, hSelected, hClz⟩
+  exact ⟨json, selected, hParse, hSelected, hClz⟩
+
+theorem decodeAndElaborateSolcIr?_hoistedFunctionsRetained
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program) :
+    ∃ (json : Lean.Json) (selected : SelectedIr),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          Raw.Object.HoistedFunctionsRetained selected.root program.object := by
+  rcases decodeAndElaborateSolcIr?_some hDecode with
+    ⟨json, hParse, hJsonDecode⟩
+  rcases decodeAndElaborateSolcIrJson_hoistedFunctionsRetained hJsonDecode with
+    ⟨selected, hSelected, hHoisted⟩
+  exact ⟨json, selected, hParse, hSelected, hHoisted⟩
 
 theorem decodeAndElaborateSolcIr?_objectParts
     {rawJson : String} {selection : Selection}
