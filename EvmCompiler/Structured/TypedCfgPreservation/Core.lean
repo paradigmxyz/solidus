@@ -3352,7 +3352,7 @@ theorem components_of_generateWithProcEntryShapes?
                  body := []
                  output :=
                    main.fallthrough?.getD TypedCfg.Shape.caller
-                 term := .invalid }] } := by
+                 term := .halt .stop }] } := by
   unfold TypedCfgCompiler.generateWithProcEntryShapes? at hGenerate
   cases hMain :
       TypedCfgCompiler.compileBlock? source.body
@@ -3417,7 +3417,7 @@ structure GeneratedContext
                body := []
                output :=
                  main.fallthrough?.getD TypedCfg.Shape.caller
-               term := .invalid }] }
+               term := .halt .stop }] }
   wellTyped : cfg.WellTyped
 
 namespace GeneratedContext
@@ -3451,13 +3451,13 @@ theorem programEndBlock
           body := []
           output :=
             context.main.fallthrough?.getD TypedCfg.Shape.caller
-          term := .invalid } := by
+          term := .halt .stop } := by
   let block : TypedCfg.Block :=
     { label := ProcLabel.programEnd
       input := context.main.fallthrough?.getD TypedCfg.Shape.caller
       body := []
       output := context.main.fallthrough?.getD TypedCfg.Shape.caller
-      term := .invalid }
+      term := .halt .stop }
   have hMem : block ∈ cfg.blocks := by
     rw [context.cfgEq]
     simp [block, List.append_assoc]
@@ -3578,7 +3578,7 @@ theorem dispatchBlock
                body := []
                output :=
                  context.main.fallthrough?.getD TypedCfg.Shape.caller
-               term := .invalid }] :=
+               term := .halt .stop }] :=
       congrArg TypedCfg.Program.blocks context.cfgEq
     rw [hBlocksEq]
     have hDispatchMem :
@@ -3628,7 +3628,7 @@ theorem eventually_procEntry
                  body := []
                  output :=
                    context.main.fallthrough?.getD TypedCfg.Shape.caller
-                 term := .invalid }] :=
+                 term := .halt .stop }] :=
         congrArg TypedCfg.Program.blocks context.cfgEq
       rw [hBlocksEq]
       simp [hAdapterMem]

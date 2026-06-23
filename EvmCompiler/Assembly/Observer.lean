@@ -1771,7 +1771,6 @@ theorem primOp_step_pc_of_nonterminal_success
   cases op <;>
     try exact PrimOp.step_pc_of_stackArity (by rfl) hRun
   all_goals simp [PrimOp.haltKind?] at hHalt
-  simp [PrimOp.step, PrimOp.continuingStep?, PrimStep.run] at hRun
 
 theorem runListResultWithObservers_single
     (instr : TargetInstr) (state : EVMState) :

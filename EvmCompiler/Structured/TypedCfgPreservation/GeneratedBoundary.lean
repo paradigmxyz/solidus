@@ -144,7 +144,7 @@ theorem procEntry
                  output :=
                    generated.main.fallthrough?.getD
                      TypedCfg.Shape.caller
-                 term := .invalid }] :=
+                 term := .halt .stop }] :=
         congrArg TypedCfg.Program.blocks generated.cfgEq
       rw [hBlocksEq]
       simp [hAdapterMem, List.append_assoc]
@@ -168,7 +168,7 @@ theorem programEnd
      input := generated.main.fallthrough?.getD TypedCfg.Shape.caller
      body := []
      output := generated.main.fallthrough?.getD TypedCfg.Shape.caller
-     term := .invalid },
+     term := .halt .stop },
     generated.programEndBlock, rfl⟩
 
 end LabelShape

@@ -3655,7 +3655,7 @@ theorem eventually_procEntry
                  body := []
                  output :=
                    context.main.fallthrough?.getD TypedCfg.Shape.caller
-                 term := .invalid }] :=
+                 term := .halt .stop }] :=
         congrArg TypedCfg.Program.blocks context.cfgEq
       rw [hBlocksEq]
       simp [hAdapterMem]

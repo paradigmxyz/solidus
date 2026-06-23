@@ -371,7 +371,7 @@ private theorem openStep_procEntry_of_adapter
                body := []
                output :=
                  context.main.fallthrough?.getD TypedCfg.Shape.caller
-               term := .invalid }] :=
+               term := .halt .stop }] :=
       congrArg TypedCfg.Program.blocks context.cfgEq
     rw [hBlocksEq]
     simp [hAdapterMem]
@@ -686,7 +686,7 @@ theorem openRunNResult_procEntry
                  body := []
                  output :=
                    context.main.fallthrough?.getD TypedCfg.Shape.caller
-                 term := .invalid }] :=
+                 term := .halt .stop }] :=
         congrArg TypedCfg.Program.blocks context.cfgEq
       rw [hBlocksEq]
       simp [hAdapterMem]

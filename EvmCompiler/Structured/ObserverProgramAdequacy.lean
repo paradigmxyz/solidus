@@ -14,6 +14,23 @@ private def TopBoundary {transcript : Trace}
     (endShape : TypedCfg.Shape) : TypedCfg.Outcome → Prop :=
   OutcomeSimulation.JumpAt source [] ProcLabel.programEnd endShape Terminal
 
+/-- Whole-program outcomes discharge the generated regular continuation by
+executing its `STOP` block. Explicit source terminals retain the ordinary
+adjacent-pass terminal relation. -/
+def TopRel {transcript : Trace}
+    (source : ObserverSemantics.Outcome (transcript := transcript))
+    (target : TypedCfg.Outcome) (trace : Trace) : Prop :=
+  match source.mode, target with
+  | .regular, .halt .stop target =>
+      ObserverPreservation.StateRel source.state [] target trace
+  | .halt kind, .halt targetKind target =>
+      targetKind = kind ∧
+        ∃ targetFinal,
+          Structured.Terminal.step kind target = .ok targetFinal ∧
+            ObserverPreservation.OutcomeSimulation.HaltStateRel
+              source.state targetFinal trace
+  | _, _ => False
+
 namespace GeneratedProgram
 
 theorem programEndShape
@@ -30,7 +47,7 @@ theorem programEndShape
        input := generated.main.fallthrough?.getD TypedCfg.Shape.caller
        body := []
        output := generated.main.fallthrough?.getD TypedCfg.Shape.caller
-       term := .invalid },
+       term := .halt .stop },
       generated.programEndBlock, rfl⟩
 
 theorem programEnd_step
@@ -43,30 +60,24 @@ theorem programEnd_step
     (state : EVMState) (trace : Trace) :
     TypedCfg.ObserverSemantics.Program.step
         cfg ProcLabel.programEnd state trace =
-      .ok (.invalid state, trace) := by
+      .ok (.halt .stop state, trace) := by
   simp [TypedCfg.ObserverSemantics.Program.step,
     generated.programEndBlock, TypedCfg.ObserverSemantics.Block.run,
     TypedCfg.Block.runTerm, Bind.bind, Except.bind]
 
-theorem programEnd_runN_ne_halt
+theorem programEnd_runN_succ
     {program : Structured.Program}
     {entryShapes : TypedCfgCompiler.ProcEntryShapes}
     {cfg : TypedCfg.Program}
     (generated :
       TypedCfgPreservation.Program.GeneratedContext
         program entryShapes cfg)
-    (fuel : Nat) (state final : EVMState)
-    (trace finalTrace : Trace) (kind : Assembly.HaltKind) :
+    (fuel : Nat) (state : EVMState) (trace : Trace) :
     TypedCfg.ObserverSemantics.Program.runN
-        cfg fuel ProcLabel.programEnd state trace ≠
-      .ok (.halt kind final, finalTrace) := by
-  cases fuel with
-  | zero =>
-      simp
-  | succ fuel =>
-      rw [TypedCfg.ObserverSemantics.Program.runN_succ,
-        programEnd_step generated]
-      simp
+        cfg (fuel + 1) ProcLabel.programEnd state trace =
+      .ok (.halt .stop state, trace) := by
+  rw [TypedCfg.ObserverSemantics.Program.runN_succ,
+    programEnd_step generated]
 
 end GeneratedProgram
 
@@ -101,10 +112,7 @@ theorem generateWithProcEntryShapes?_terminal_backward
     ∃ sourceFuel sourceOutcome,
       ObserverSemantics.Block.Eval
           program sourceFuel program.body source sourceOutcome ∧
-        ObserverPreservation.OutcomeSimulation.Rel
-          (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
-            { procs := program.procs } ProcLabel.programEnd)
-          [] sourceOutcome (.halt kind final) finalTrace := by
+        TopRel sourceOutcome (.halt kind final) finalTrace := by
   let generated :=
     TypedCfgPreservation.Program.GeneratedContext.of_generate
       hGenerate hWellTyped
@@ -256,11 +264,42 @@ theorem generateWithProcEntryShapes?_terminal_backward
             have hRemaining :=
               OutcomeSimulation.FirstReaches.remaining_run_of_jump
                 hRunEntry hPrefix hPrefixLe
-            exact
-              False.elim
-                ((GeneratedProgram.programEnd_runN_ne_halt generated
-                  (fuel - (targetFuel + 1)) middle final
-                  prefixTrace finalTrace kind) hRemaining)
+            cases hRemainingFuel : fuel - (targetFuel + 1) with
+            | zero =>
+                rw [hRemainingFuel] at hRemaining
+                simp at hRemaining
+            | succ remainingFuel =>
+                rw [hRemainingFuel,
+                  GeneratedProgram.programEnd_runN_succ generated] at hRemaining
+                have hPair := Except.ok.inj hRemaining
+                have hOutcomeEq := congrArg Prod.fst hPair
+                have hTraceEq := congrArg Prod.snd hPair
+                injection hOutcomeEq with hKind hFinal
+                subst kind
+                subst final
+                change prefixTrace = finalTrace at hTraceEq
+                subst finalTrace
+                refine ⟨sourceFuel, sourceOutcome, hEval, ?_⟩
+                rcases sourceOutcome with ⟨sourceFinal, sourceMode⟩
+                cases sourceMode with
+                | regular =>
+                    exact
+                      (ObserverPreservation.OutcomeSimulation.Rel.regular_iff.mp
+                        hOutcome).2
+                | brk =>
+                    simp [ObserverPreservation.OutcomeSimulation.Rel,
+                      TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext]
+                      at hOutcome
+                | cont =>
+                    simp [ObserverPreservation.OutcomeSimulation.Rel,
+                      TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext]
+                      at hOutcome
+                | leave =>
+                    simp [ObserverPreservation.OutcomeSimulation.Rel,
+                      TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext]
+                      at hOutcome
+                | halt sourceKind =>
+                    simp [ObserverPreservation.OutcomeSimulation.Rel] at hOutcome
           · simp [Terminal] at hTerminal
       | halt prefixKind prefixFinal =>
           have hExtended :=
@@ -291,7 +330,13 @@ theorem generateWithProcEntryShapes?_terminal_backward
           subst prefixFinal
           change prefixTrace = finalTrace at hTraceEq
           subst prefixTrace
-          exact ⟨sourceFuel, sourceOutcome, hEval, hOutcome⟩
+          exact
+            ⟨sourceFuel, sourceOutcome, hEval,
+              by
+                rcases sourceOutcome with ⟨sourceFinal, sourceMode⟩
+                cases sourceMode <;>
+                  simpa [TopRel,
+                    ObserverPreservation.OutcomeSimulation.Rel] using hOutcome⟩
       | fallthrough state =>
           have hImpossible := hPrefix.boundary
           simp [accept, TopBoundary, Terminal,

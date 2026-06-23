@@ -734,7 +734,7 @@ def generateWithProcEntryShapes? (program : Program)
         input := endInput
         body := []
         output := endInput
-        term := .invalid }
+        term := .halt .stop }
     let cfg : TypedCfg.Program :=
       { entry := entryLabel
         blocks :=
