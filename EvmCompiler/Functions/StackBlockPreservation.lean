@@ -5190,7 +5190,7 @@ theorem RegularListPreserves.toOpenList
   apply Simulation.Interaction.Rel.mono hRun
   intro sourceDone targetDone hDone
   cases hDone with
-  | error _ => exact Simulation.Interaction.ExceptRel.error trivial
+  | error hError => exact Simulation.Interaction.ExceptRel.error hError
   | ok hResult =>
       exact Simulation.Interaction.ExceptRel.ok hResult.toOpen
 

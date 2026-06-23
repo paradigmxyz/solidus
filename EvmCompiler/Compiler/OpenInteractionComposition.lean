@@ -237,7 +237,7 @@ theorem yulToNormalizedStackExpressionsFinished
           (Expressions.InteractionSemantics.Block.openRun expressions
             targetFuel expressions.body expressionsState) ∧
         Simulation.Interaction.AllDone
-          Functions.StackRecursivePreservation.ProgramTargetStopped
+          Functions.StackRecursivePreservation.ProgramTargetFinished
           (Expressions.InteractionSemantics.Block.openRun expressions
             targetFuel expressions.body expressionsState) := by
   let functionsFuel :=
@@ -270,11 +270,11 @@ theorem yulToNormalizedStackExpressionsFinished
       Yul.FunctionsInteractionProgram.TargetFinished,
       Functions.StackRecursivePreservation.ProgramSourceFinished] using
       hOutcome
-  obtain ⟨targetFuel, hStackRel, hStackStopped⟩ :=
+  obtain ⟨targetFuel, hStackRel, hStackFinished⟩ :=
     Functions.StackRecursivePreservation.compiledProgramBodyFinished
       normalized locals expressions functionsFuel hWF hScoped
       hSupported hLower hCompile hStackInitial hFunctionsFinished
-  refine ⟨targetFuel, ?_, hStackStopped⟩
+  refine ⟨targetFuel, ?_, hStackFinished⟩
   simpa [YulStackExpressionsDoneRel] using
     Simulation.Interaction.Rel.trans hYulRelNormalized hStackRel
 
@@ -357,6 +357,46 @@ theorem stackExpressionsToStructuredStopped
   intro outcome hOutcome
   simpa [Functions.StackRecursivePreservation.ProgramTargetStopped,
     Structured.InteractionTerminalPreservation.OpenOutcome.SourceStopped]
+    using hOutcome
+
+/-- The transparent Expressions-to-Structured adapter preserves genuine
+completion, excluding structural `OutOfFuel` on both sides. -/
+theorem stackExpressionsToStructuredFinished
+    {expressions : Expressions.Program} {targetFuel : Nat}
+    {sourceRun : Simulation.Interaction
+      Yul.InteractionSemantics.Failure Yul.InteractionSemantics.State}
+    {target : Expressions.InteractionSemantics.RunState}
+    (hRel : Simulation.Interaction.Rel
+      YulStackExpressionsDoneRel sourceRun
+      (Expressions.InteractionSemantics.Block.openRun expressions
+        targetFuel expressions.body target))
+    (hFinished : Simulation.Interaction.AllDone
+      Functions.StackRecursivePreservation.ProgramTargetFinished
+      (Expressions.InteractionSemantics.Block.openRun expressions
+        targetFuel expressions.body target)) :
+    Simulation.Interaction.Rel
+        YulStackExpressionsDoneRel sourceRun
+        (Structured.InteractionSemantics.Program.openRunState
+          targetFuel expressions.toStructured target) ∧
+      Simulation.Interaction.AllDone
+        Structured.InteractionTerminalPreservation.OpenOutcome.SourceFinished
+        (Structured.InteractionSemantics.Program.openRunState
+          targetFuel expressions.toStructured target) := by
+  change Simulation.Interaction.Rel
+    YulStackExpressionsDoneRel sourceRun
+    (Expressions.InteractionSemantics.Program.openRunState
+      targetFuel expressions target) at hRel
+  change Simulation.Interaction.AllDone
+    Functions.StackRecursivePreservation.ProgramTargetFinished
+    (Expressions.InteractionSemantics.Program.openRunState
+      targetFuel expressions target) at hFinished
+  rw [Expressions.InteractionPreservation.Program.openRunState_toStructured]
+    at hRel hFinished
+  refine ⟨hRel, ?_⟩
+  apply Simulation.Interaction.AllDone.mono hFinished
+  intro outcome hOutcome
+  simpa [Functions.StackRecursivePreservation.ProgramTargetFinished,
+    Structured.InteractionTerminalPreservation.OpenOutcome.SourceFinished]
     using hOutcome
 
 /-- Terminal Yul-to-Structured preservation through the stack allocator. -/
@@ -512,6 +552,30 @@ theorem StructuredBytecodeDoneRel.targetTerminal
       hStructured hSourceHalted
   exact
     TypedCfg.InteractionPreservation.OpenBlock.terminal_of_assemblySafeHalted
+      hSafe hAssembly
+
+theorem StructuredBytecodeDoneRel.targetFinished
+    {source : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {generated : Structured.TypedCfgPreservation.Program.GeneratedContext
+      source entryShapes cfg}
+    {assembly : Assembly.Program}
+    {returns : List Structured.ReturnDest}
+    {sourceDone : Except Structured.EVMException Structured.Outcome}
+    {targetDone : Assembly.Source.ExecutionOutcome}
+    (hSourceFinished :
+      Structured.InteractionTerminalPreservation.OpenOutcome.SourceFinished
+        sourceDone)
+    (hRel : StructuredBytecodeDoneRel source entryShapes cfg generated
+      assembly returns sourceDone targetDone) :
+    Assembly.InteractionSemantics.Finished targetDone := by
+  rcases hRel with ⟨cfgDone, hStructured, hAssembly⟩
+  have hSafe :=
+    Structured.InteractionTerminalPreservation.OpenOutcome.assemblySafeFinished_of_related
+      hStructured hSourceFinished
+  exact
+    TypedCfg.InteractionPreservation.OpenBlock.finished_of_assemblySafeFinished
       hSafe hAssembly
 
 /-- Compose the checked terminal Structured lowering through certified
@@ -1095,6 +1159,133 @@ theorem yulNormalizedStackToAssemblySource
   have hReturns : expressionsState.returns = [] := hStackInitial.returns
   simpa [YulStackBytecodeDoneRel, hReturns] using hComposed
 
+/-- All-finished normalized Yul composition through the logical Assembly
+source semantics. Every compiler artifact is discharged by its adjacent
+owner, and the computed allocation budget cannot truncate a finished source
+branch. -/
+theorem yulNormalizedStackToAssemblySourceFinished
+    {profile : Yul.SolcValidation.DialectProfile}
+    {sourceProgram : Yul.Program} {objects : Objects.Program}
+    {normalized : Functions.Program}
+    {locals : Locals.Program} {expressions : Expressions.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {artifact : TypedCfg.Program.CertifiedArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hDecomposition :
+      Yul.FunctionsCompilerArtifact.PassDecomposition sourceProgram objects)
+    (hProgramOk :
+      Yul.SolcValidation.ProgramOkWithEntries? profile sourceProgram
+        hDecomposition.functionEntries = true)
+    (hNormalize : normalized =
+      Functions.StackPressureNormalization.Program.normalize
+        objects.toFunctions)
+    (hWF : normalized.WF)
+    (hScoped : normalized.Scoped)
+    (hSupported :
+      Functions.InteractionSemantics.Program.OpenSupported normalized)
+    (hLower :
+      Functions.StackLowering.lowerProgram? normalized = some locals)
+    (hExpressionsCompile :
+      Locals.Program.toExpressions? locals = some expressions)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial (Yul.Contract.names sourceProgram.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState)
+    (hGenerate :
+      Structured.TypedCfgCompiler.generateWithProcEntryShapes?
+          expressions.toStructured entryShapes = some cfg)
+    (hCompile : cfg.compileCertified? = some artifact)
+    (hStructuredWF : expressions.toStructured.WF)
+    (hFrameSafe : expressions.toStructured.FrameSafe)
+    (hIndependent : cfg.ProgramCounterIndependent)
+    (hFinished : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceFinished
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [sourceProgram.contract.dispatcher])
+        (some sourceProgram.contract) source)) :
+    ∃ structuredFuel,
+      ∃ generated :
+          Structured.TypedCfgPreservation.Program.GeneratedContext
+            expressions.toStructured entryShapes cfg,
+        Simulation.Interaction.Rel
+            (YulStackBytecodeDoneRel expressions.toStructured entryShapes cfg
+              generated artifact.target)
+            (Yul.InteractionSemantics.exec (sourceFuel + 1)
+              (.Block [sourceProgram.contract.dispatcher])
+              (some sourceProgram.contract) source)
+            (Assembly.InteractionSemantics.Source.openRunNResult
+              artifact.target
+              (Structured.InteractionStaticCost.blockBudget
+                  expressions.toStructured structuredFuel
+                  expressions.toStructured.body *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg)
+              { expressionsState.evm with
+                pc := EvmYul.UInt256.ofNat 0 }) ∧
+          Simulation.Interaction.AllDone
+            Assembly.InteractionSemantics.Finished
+            (Assembly.InteractionSemantics.Source.openRunNResult
+              artifact.target
+              (Structured.InteractionStaticCost.blockBudget
+                  expressions.toStructured structuredFuel
+                  expressions.toStructured.body *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg)
+              { expressionsState.evm with
+                pc := EvmYul.UInt256.ofNat 0 }) := by
+  obtain ⟨structuredFuel, hExpressions, hExpressionsFinished⟩ :=
+    yulToNormalizedStackExpressionsFinished hDecomposition hProgramOk
+      hNormalize hWF hScoped hSupported hLower hExpressionsCompile
+      hYulInitial hYulDomain hStackInitial hFinished
+  obtain ⟨hUpper, hStructuredFinished⟩ :=
+    stackExpressionsToStructuredFinished hExpressions hExpressionsFinished
+  have hExpressionsInitial :
+      expressionsState = Structured.RunState.initial expressionsState.evm := by
+    rcases expressionsState with ⟨evm, returns⟩
+    have hReturns : returns = [] := hStackInitial.returns
+    subst returns
+    rfl
+  have hStructuredInitial :
+      Structured.TypedCfgPreservation.StateRel expressionsState []
+        expressionsState.evm := by
+    rw [hExpressionsInitial]
+    exact Structured.TypedCfgPreservation.StateRel.initial _
+  have hAssemblyInitial : Assembly.SameRuntimeData expressionsState.evm
+      ({ expressionsState.evm with
+          pc := EvmYul.UInt256.ofNat 0 } : Structured.EVMState).incrPC := by
+    apply Assembly.SameRuntimeData.incrPC_right
+    apply Assembly.SameRuntimeData.with_pc_right
+    exact Assembly.SameRuntimeData.refl _
+  obtain ⟨generated, hLowerRel⟩ :=
+    structuredToAssemblySourceFinished hGenerate hCompile hStructuredWF
+      hFrameSafe hIndependent hStructuredFinished hStructuredInitial rfl
+      hAssemblyInitial
+  let assemblyFuel :=
+    Structured.InteractionStaticCost.blockBudget
+        expressions.toStructured structuredFuel
+        expressions.toStructured.body *
+      TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg
+  have hAssemblyFinished : Simulation.Interaction.AllDone
+      Assembly.InteractionSemantics.Finished
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.target assemblyFuel
+        { expressionsState.evm with pc := EvmYul.UInt256.ofNat 0 }) := by
+    have hStrong := Simulation.Interaction.Rel.strengthen_left
+      hLowerRel hStructuredFinished
+    apply Simulation.Interaction.Rel.allDone_right hStrong
+    intro sourceDone targetDone hDone
+    exact StructuredBytecodeDoneRel.targetFinished hDone.2 hDone.1
+  refine ⟨structuredFuel, generated, ?_, ?_⟩
+  · have hComposed := Simulation.Interaction.Rel.trans hUpper hLowerRel
+    have hReturns : expressionsState.returns = [] := hStackInitial.returns
+    simpa [YulStackBytecodeDoneRel, hReturns, assemblyFuel] using hComposed
+  · simpa [assemblyFuel] using hAssemblyFinished
+
 /-- Terminal relation after the Assembly-owned compact physical encoding. -/
 def YulStackCompactDoneRel
     (structured : Structured.Program)
@@ -1376,6 +1567,98 @@ theorem compiledVerifiedStackCodeToRawBytecode
   rw [hBytes]
   simpa [List.append_assoc] using hCompactRel
 
+/-- A checked frontend stack-code artifact preserves every genuinely finished
+source branch through its sentinel-protected compact bytes. -/
+theorem compiledVerifiedStackCodeToRawBytecodeFinished
+    {object : Solidity.Frontend.Object}
+    {context : Solidity.Frontend.ObjectBuiltinContext}
+    {codeArtifact : Solidity.Frontend.Object.VerifiedStackCodeArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (payload : List UInt8 := [])
+    (hCode : object.compileVerifiedStackCodeArtifactIn? context =
+      some codeArtifact)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial
+        (Yul.Contract.names codeArtifact.ordered.program.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState)
+    (hFinished : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceFinished
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [codeArtifact.ordered.program.contract.dispatcher])
+        (some codeArtifact.ordered.program.contract) source)) :
+    ∃ structuredFuel,
+      Assembly.Accepted codeArtifact.compiled.certified.target ∧
+        ∃ generated :
+            Structured.TypedCfgPreservation.Program.GeneratedContext
+              codeArtifact.compiled.expressions.toStructured
+              codeArtifact.compiled.entryShapes codeArtifact.compiled.cfg,
+          Simulation.Interaction.Rel
+            (YulStackCompactDoneRel
+              codeArtifact.compiled.expressions.toStructured
+              codeArtifact.compiled.entryShapes codeArtifact.compiled.cfg
+              generated codeArtifact.compiled.certified.target)
+            (Yul.InteractionSemantics.exec (sourceFuel + 1)
+              (.Block [codeArtifact.ordered.program.contract.dispatcher])
+              (some codeArtifact.ordered.program.contract) source)
+            (Assembly.Compact.InteractionSemantics.openRunNResult
+              (Assembly.Bytecode.ofList (codeArtifact.bytes ++ payload))
+              (2 *
+                (Structured.InteractionStaticCost.blockBudget
+                    codeArtifact.compiled.expressions.toStructured
+                    structuredFuel
+                    codeArtifact.compiled.expressions.toStructured.body *
+                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                    codeArtifact.compiled.cfg))
+              { expressionsState.evm with
+                pc := EvmYul.UInt256.ofNat 0 }) := by
+  obtain ⟨_hResolved, hOrdered, hLower, hStackArtifact, _pinnedPushPcs,
+      _hPins, hCompact, hBytes, _hMarker⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts hCode
+  have hSource :=
+    Solidity.Frontend.Object.toSolcYulOrderedProgram?_source hOrdered
+  let decomposition :=
+    Yul.FunctionsCompilerArtifact.passDecomposition_of_ordered_toObjects?
+      hLower hSource.1 hSource.2.1
+  have hProgramOk :
+      Yul.SolcValidation.ProgramOkWithEntries?
+          Yul.SolcValidation.defaultDialectProfile
+          codeArtifact.ordered.program decomposition.functionEntries = true := by
+    simpa [decomposition,
+      Yul.FunctionsCompilerArtifact.passDecomposition_of_ordered_toObjects?]
+      using
+        Solidity.Frontend.Object.toSolcYulOrderedProgram?_programOkWithEntries
+          hOrdered
+  obtain ⟨hNormalize, _hSourceSupported, hNormalizedSupported, hStackLower,
+      hExpressions, hStructuredWF, _hShapes, hGenerate, _hWellTyped,
+      hIndependent, hCertified, _hTarget, _hWindow, hNormalizedAccepted,
+      _hSourceAccepted⟩ :=
+    Compiler.StackArtifact.compile?_parts hStackArtifact
+  have hAssembly := Compiler.StackArtifact.compile?_assembly hStackArtifact
+  have hFrameSafe :=
+    Compiler.StackArtifact.compile?_frameSafe hStackArtifact
+  obtain ⟨structuredFuel, generated, hAssemblySource,
+      hAssemblyFinished⟩ :=
+    yulNormalizedStackToAssemblySourceFinished decomposition hProgramOk
+      hNormalize hNormalizedAccepted.1 hNormalizedAccepted.2
+      hNormalizedSupported hStackLower hExpressions hYulInitial hYulDomain
+      hStackInitial hGenerate hCertified hStructuredWF hFrameSafe
+      hIndependent hFinished
+  have hAccepted : Assembly.Accepted
+      codeArtifact.compiled.certified.target :=
+    Assembly.Preservation.compile?_some_accepted hAssembly
+  have hCompactRel := stackAssemblyToCompactBytecodeFinished payload
+    hAssemblySource hCompact rfl hAssemblyFinished
+  refine ⟨structuredFuel, hAccepted, generated, ?_⟩
+  rw [hBytes]
+  simpa [List.append_assoc] using hCompactRel
+
 /-- Recursive Solidity object construction reaches the exact root image. Child
 objects and payload layout are computed by the frontend artifact, while the
 root code proof remains the adjacent checked stack-code theorem above. -/
@@ -1443,6 +1726,73 @@ theorem compiledVerifiedStackObjectToRawBytecode
       hTerminal
   simpa [hImage] using hResult
 
+/-- Recursive checked object construction preserves all finished source
+branches through the exact root image, including its invalid code/data
+sentinel and computed payload. -/
+theorem compiledVerifiedStackObjectToRawBytecodeFinished
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial
+        (Yul.Contract.names
+          artifact.codeArtifact.ordered.program.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState)
+    (hFinished : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceFinished
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [artifact.codeArtifact.ordered.program.contract.dispatcher])
+        (some artifact.codeArtifact.ordered.program.contract) source)) :
+    ∃ structuredFuel,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        ∃ generated :
+            Structured.TypedCfgPreservation.Program.GeneratedContext
+              artifact.codeArtifact.compiled.expressions.toStructured
+              artifact.codeArtifact.compiled.entryShapes
+              artifact.codeArtifact.compiled.cfg,
+          Simulation.Interaction.Rel
+            (YulStackCompactDoneRel
+              artifact.codeArtifact.compiled.expressions.toStructured
+              artifact.codeArtifact.compiled.entryShapes
+              artifact.codeArtifact.compiled.cfg generated
+              artifact.codeArtifact.compiled.certified.target)
+            (Yul.InteractionSemantics.exec (sourceFuel + 1)
+              (.Block
+                [artifact.codeArtifact.ordered.program.contract.dispatcher])
+              (some artifact.codeArtifact.ordered.program.contract) source)
+            (Assembly.Compact.InteractionSemantics.openRunNResult
+              (Assembly.Bytecode.ofList artifact.image.bytes)
+              (2 *
+                (Structured.InteractionStaticCost.blockBudget
+                    artifact.codeArtifact.compiled.expressions.toStructured
+                    structuredFuel
+                    artifact.codeArtifact.compiled.expressions.toStructured.body *
+                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                    artifact.codeArtifact.compiled.cfg))
+              { expressionsState.evm with
+                pc := EvmYul.UInt256.ofNat 0 }) := by
+  obtain ⟨_children, plan, _codeArtifact, _hChildren, _hPlan, _hFinish, hCode,
+      _hArtifactChildren, _hContext, _hChildImages, _hPayload, hImage⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+      hObject
+  have hResult :=
+    compiledVerifiedStackCodeToRawBytecodeFinished
+      (payload := plan.payload) hCode hYulInitial hYulDomain hStackInitial
+      hFinished
+  simpa [hImage] using hResult
+
 /-- Public object composition with all compiler-generated TypedCfg evidence
 discharged behind `VerifiedStackObjectDoneRel`. -/
 theorem compiledVerifiedStackObjectToRawBytecodePublic
@@ -1493,6 +1843,60 @@ theorem compiledVerifiedStackObjectToRawBytecodePublic
   obtain ⟨structuredFuel, hAccepted, generated, hRel⟩ :=
     compiledVerifiedStackObjectToRawBytecode hObject hYulInitial hYulDomain
       hStackInitial hTerminal
+  refine ⟨structuredFuel, hAccepted, ?_⟩
+  exact Simulation.Interaction.Rel.mono hRel
+    (fun _ _ hDone => ⟨generated, hDone⟩)
+
+/-- Public all-finished object composition. Compiler-generated TypedCfg
+evidence remains hidden behind `VerifiedStackObjectDoneRel`. -/
+theorem compiledVerifiedStackObjectToRawBytecodeFinishedPublic
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial
+        (Yul.Contract.names
+          artifact.codeArtifact.ordered.program.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState)
+    (hFinished : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceFinished
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [artifact.codeArtifact.ordered.program.contract.dispatcher])
+        (some artifact.codeArtifact.ordered.program.contract) source)) :
+    ∃ structuredFuel,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.Rel
+          (VerifiedStackObjectDoneRel artifact)
+          (Yul.InteractionSemantics.exec (sourceFuel + 1)
+            (.Block
+              [artifact.codeArtifact.ordered.program.contract.dispatcher])
+            (some artifact.codeArtifact.ordered.program.contract) source)
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              (Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { expressionsState.evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  obtain ⟨structuredFuel, hAccepted, generated, hRel⟩ :=
+    compiledVerifiedStackObjectToRawBytecodeFinished hObject hYulInitial
+      hYulDomain hStackInitial hFinished
   refine ⟨structuredFuel, hAccepted, ?_⟩
   exact Simulation.Interaction.Rel.mono hRel
     (fun _ _ hDone => ⟨generated, hDone⟩)

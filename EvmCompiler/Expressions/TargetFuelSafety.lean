@@ -41,6 +41,27 @@ theorem expressionSeqOpenRun {results : Nat}
 
 end
 
+theorem expressionOpenRunOne (expr : Expressions.Expr 1)
+    (state : Structured.RunState) :
+    Simulation.Interaction.AllDone NotOutOfFuel
+      (Expressions.InteractionSemantics.Expr.openRunOne expr state) := by
+  unfold Expressions.InteractionSemantics.Expr.openRunOne
+  apply NotOutOfFuel.bind (expressionOpenRun expr state)
+  intro final
+  cases final.evm.stack.pop <;> exact .done (by simp [NotOutOfFuel])
+
+theorem expressionOpenRunCondition (expr : Expressions.Expr 1)
+    (state : Structured.RunState) :
+    Simulation.Interaction.AllDone NotOutOfFuel
+      (Expressions.InteractionSemantics.Expr.openRunCondition expr state) := by
+  unfold Expressions.InteractionSemantics.Expr.openRunCondition
+    Expressions.EffectSemantics.Control.Expr.runCondition
+  apply NotOutOfFuel.bind (expressionOpenRun expr state)
+  intro final
+  unfold Structured.EffectSemantics.Control.Code.popCondition
+  simp only [Structured.EffectSemantics.Ordinary.runStateModel_evm]
+  cases final.evm.stack.pop <;> exact .done (by simp [NotOutOfFuel])
+
 end TargetFuelSafety
 end Expressions
 end EvmCompiler

@@ -99,7 +99,7 @@ stack-only correctness boundary.
   `INVALID` execution (`InvalidInstruction`) at every upper interpreter and
   derive checked call-arity facts instead of classifying malformed calls as
   truncation.
-- [ ] Extend adjacent preservation and the public theorem from halting outcomes
+- [x] Extend adjacent preservation and the public theorem from halting outcomes
   to all supported non-truncated runtime errors, beginning with intentional
   `INVALID`; do not count executable bytecode generation as execution proof.
   Yul -> Functions, Functions -> allocated Expressions, and the transparent
@@ -108,8 +108,10 @@ stack-only correctness boundary.
   and halts through a compiler-owned static budget. TypedCfg -> ordinary
   Assembly source execution now preserves the same all-finished branches;
   compact Assembly encoding now preserves them through a compiler-sized
-  `INVALID` sentinel before object payload. Deriving allocator target
-  non-truncation and public Yul composition remain.
+  `INVALID` sentinel before object payload. The allocation relation now proves
+  the one-way structural invariant `target OutOfFuel -> source OutOfFuel`, and
+  the public optimized-solc-Yul theorem composes all finished branches through
+  the exact recursive object image.
 - [ ] Add pinned real-world suites and generated adversarial cases for uncovered
   semantic families, then fix every backend rejection generically or record an
   honest supported-version/input-boundary rejection.

@@ -11,6 +11,7 @@ namespace Functions
 namespace StackStatementPreservation
 
 open StackRelation
+open Assembly.InteractionFuelSafety
 
 @[simp] private theorem openEvalSeq_cast
     {left right : Nat} (h : left = right)
@@ -724,7 +725,7 @@ structure RegularResultRel (targetCtx : Locals.Ctx)
 abbrev RegularOutcomeRel (targetCtx : Locals.Ctx)
     (suffix : List Word) (returns : List Structured.ReturnDest) :=
   Simulation.Interaction.ExceptRel
-    (fun (_ : EVMException) (_ : EVMException) => True)
+    StructuralErrorRel
     (RegularResultRel targetCtx suffix returns)
 
 inductive OpenResultRel (finalCtx : Locals.Ctx)
@@ -762,7 +763,7 @@ inductive OpenResultRel (finalCtx : Locals.Ctx)
 abbrev OpenOutcomeRel (finalCtx : Locals.Ctx)
     (suffix : List Word) (returns : List Structured.ReturnDest) :=
   Simulation.Interaction.ExceptRel
-    (fun (_ : EVMException) (_ : EVMException) => True)
+    StructuralErrorRel
     (OpenResultRel finalCtx suffix returns)
 
 inductive ControlOpenResultRel (targets : StackSchedule.ControlTargets)
@@ -806,7 +807,7 @@ abbrev ControlOpenOutcomeRel (targets : StackSchedule.ControlTargets)
     (finalCtx : Locals.Ctx)
     (suffix : List Word) (returns : List Structured.ReturnDest) :=
   Simulation.Interaction.ExceptRel
-    (fun (_ : EVMException) (_ : EVMException) => True)
+    StructuralErrorRel
     (ControlOpenResultRel targets returnNames finalCtx suffix returns)
 
 theorem controlOpenOutcome_rebase_of_nonregular
@@ -901,7 +902,7 @@ abbrev ControlScopedOutcomeRel (targets : StackSchedule.ControlTargets)
     (suffix : List Word) (returns : List Structured.ReturnDest)
     (sourceCtx : Functions.Source.Ctx) :=
   Simulation.Interaction.ExceptRel
-    (fun (_ : EVMException) (_ : EVMException) => True)
+    StructuralErrorRel
     (fun sourceOutcome targetOutcome =>
       ControlOpenResultRel targets returnNames finalCtx suffix returns
         (sourceOutcome, sourceCtx) targetOutcome)
@@ -1161,7 +1162,7 @@ abbrev ForCoreOutcomeRel (sourceCtx : Functions.Source.Ctx)
     (returnNames : List Name) (loopTargetCtx : Locals.Ctx)
     (suffix : List Word) (returns : List Structured.ReturnDest) :=
   Simulation.Interaction.ExceptRel
-    (fun (_ : EVMException) (_ : EVMException) => True)
+    StructuralErrorRel
     (ForCoreResultRel sourceCtx returnNames loopTargetCtx suffix returns)
 
 def ControlPointPreserves
@@ -3600,6 +3601,9 @@ theorem openRun_terminal_generated
   have hTerminal :=
     Locals.InteractionPreservation.Primitive.openTerminal_frame
       (source := source) hLength hCleanupRel.shared hCleanupStack
+  have hTerminalSafe :=
+    NotOutOfFuel.refineExceptRel hTerminal
+      (Structured.InteractionFuelSafety.Terminal.openStep kind afterCleanup)
   have hWrapped :
       Simulation.Interaction.Rel
         (OpenOutcomeRel targetCtx suffix returns)
@@ -3616,7 +3620,7 @@ theorem openRun_terminal_generated
           (fun final =>
             Simulation.Interaction.pure
               (Structured.Outcome.halt kind final))) := by
-    apply Simulation.Interaction.Rel.bind hTerminal
+    apply Simulation.Interaction.Rel.bind hTerminalSafe
     intro sourceFinal targetFinal hTerminalResult
     apply Simulation.Interaction.Rel.done
     apply Simulation.Interaction.ExceptRel.ok
@@ -3766,6 +3770,9 @@ theorem openRun_terminalArgs_generated
   have hArgs :=
     StackExpressionPreservation.openEvalSeq_compileCode args targetCtx
       hScoped hSupported hCompile hInitial
+  have hArgsSafe :=
+    NotOutOfFuel.refineExceptRel hArgs
+      (Structured.InteractionFuelSafety.Code.openRun argsCode target)
   have hCore :
       Simulation.Interaction.Rel
         (OpenOutcomeRel targetCtx suffix returns)
@@ -3788,13 +3795,16 @@ theorem openRun_terminalArgs_generated
               (fun final =>
                 Simulation.Interaction.pure
                   (Structured.Outcome.halt kind final)))) := by
-    apply Simulation.Interaction.Rel.bind hArgs
+    apply Simulation.Interaction.Rel.bind hArgsSafe
     intro sourceAfterArgs targetAfterArgs hArgsResult
     rcases sourceAfterArgs with ⟨sourceAfterArgs, values⟩
     have hTerminal :=
       Locals.InteractionPreservation.Primitive.openTerminal_frame
         hArgsResult.length hArgsResult.shared hArgsResult.stack
-    apply Simulation.Interaction.Rel.bind hTerminal
+    have hTerminalSafe :=
+      NotOutOfFuel.refineExceptRel hTerminal
+        (Structured.InteractionFuelSafety.Terminal.openStep kind targetAfterArgs)
+    apply Simulation.Interaction.Rel.bind hTerminalSafe
     intro sourceFinal targetFinal hTerminalResult
     apply Simulation.Interaction.Rel.done
     apply Simulation.Interaction.ExceptRel.ok
@@ -4290,6 +4300,9 @@ theorem openRun_assign_generated
     StackExpressionPreservation.openEvalOne_compileCode
       valueExpr targetCtx hValueScoped hValueSupported
       hValueCompile hInitial
+  have hValueSafe :=
+    NotOutOfFuel.refineExceptRel hValue
+      (Structured.InteractionFuelSafety.Code.openRun valueCode target)
   have hAt : targetCtx.layout[depth]? = some name :=
     Locals.Layout.getElem?_eq_some_of_lookupDepth?_eq_some hDepth
   have hMem : name ∈ targetCtx.layout :=
@@ -4330,7 +4343,7 @@ theorem openRun_assign_generated
     rw [List.append_assoc,
       Structured.InteractionSemantics.Code.openRun_append,
       Simulation.Interaction.bind_assoc]
-    apply Simulation.Interaction.Rel.bind hValue
+    apply Simulation.Interaction.Rel.bind hValueSafe
     intro sourceAfterValue targetAfterValue hValueResult
     rcases sourceAfterValue with ⟨sourceFinal, value⟩
     have hValueStack :

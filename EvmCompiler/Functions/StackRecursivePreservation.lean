@@ -1483,6 +1483,15 @@ def ProgramTargetStopped :
   | .ok { mode := .halt _, .. } => True
   | _ => False
 
+/-- Compiler-derived target fuel is sufficient for every source-finished
+branch. Structural target `OutOfFuel` is not a runtime error. -/
+def ProgramTargetFinished :
+    Except EVMException Expressions.InteractionSemantics.Outcome → Prop
+  | .error .OutOfFuel => False
+  | .error _ => True
+  | .ok { mode := .halt _, .. } => True
+  | _ => False
+
 theorem ControlScopedOutcomeRel.targetHalted_of_sourceHalted
     {suffix : List Word} {returns : List Structured.ReturnDest}
     {sourceDone : Except EVMException Functions.InteractionSemantics.Outcome}
@@ -1513,6 +1522,30 @@ theorem ControlScopedOutcomeRel.targetStopped_of_sourceFinished
     ProgramTargetStopped targetDone := by
   cases hRel with
   | error hError => trivial
+  | ok hResult =>
+      cases hResult with
+      | regular hRuntime hState => cases hSource
+      | brk hTarget hState => cases hSource
+      | cont hTarget hState => cases hSource
+      | leave hState => cases hSource
+      | halt hShared => trivial
+
+theorem ControlScopedOutcomeRel.targetFinished_of_sourceFinished
+    {suffix : List Word} {returns : List Structured.ReturnDest}
+    {sourceDone : Except EVMException Functions.InteractionSemantics.Outcome}
+    {targetDone : Except EVMException Expressions.InteractionSemantics.Outcome}
+    (hRel :
+      ControlScopedOutcomeRel {} [] Locals.Ctx.initial suffix returns
+        Functions.Source.Ctx.initial sourceDone targetDone)
+    (hSource : ProgramSourceFinished sourceDone) :
+    ProgramTargetFinished targetDone := by
+  cases hRel with
+  | @error sourceError targetError hError =>
+      cases targetError <;> try trivial
+      have hSourceError : sourceError = .OutOfFuel :=
+        hError rfl
+      subst sourceError
+      exact False.elim hSource
   | ok hResult =>
       cases hResult with
       | regular hRuntime hState => cases hSource
@@ -1600,7 +1633,7 @@ theorem compiledProgramBodyFinished
             sourceFuel sourceProgram source)
           (Expressions.InteractionSemantics.Block.openRun
             targetProgram targetFuel targetProgram.body target) ∧
-        Simulation.Interaction.AllDone ProgramTargetStopped
+        Simulation.Interaction.AllDone ProgramTargetFinished
           (Expressions.InteractionSemantics.Block.openRun
             targetProgram targetFuel targetProgram.body target) := by
   let targetFuel :=
@@ -1622,7 +1655,7 @@ theorem compiledProgramBodyFinished
   apply Simulation.Interaction.Rel.allDone_right hStrong
   intro sourceDone targetDone hDone
   exact
-    ControlScopedOutcomeRel.targetStopped_of_sourceFinished hDone.1 hDone.2
+    ControlScopedOutcomeRel.targetFinished_of_sourceFinished hDone.1 hDone.2
 
 end StackRecursivePreservation
 end Functions

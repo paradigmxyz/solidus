@@ -31,6 +31,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
 #check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyTerminal
 #check EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyFinished
+#check EvmCompiler.Functions.StackRecursivePreservation.ProgramTargetFinished
 #check EvmCompiler.Assembly.InteractionFuelSafety.PrimOp.openStep
 #check EvmCompiler.Structured.InteractionFuelSafety.Code.openRun
 #check EvmCompiler.Expressions.TargetFuelSafety.expressionOpenRun
@@ -43,6 +44,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsTerminal
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsFinished
+#check EvmCompiler.Compiler.OpenInteractionComposition.stackExpressionsToStructuredFinished
+#check EvmCompiler.Compiler.OpenInteractionComposition.yulNormalizedStackToAssemblySourceFinished
+#check EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecodeFinishedPublic
 #check EvmCompiler.Compiler.OpenInteractionComposition.stackExpressionsToStructuredStopped
 #check EvmCompiler.Structured.InteractionTerminalPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_finished
 #check EvmCompiler.TypedCfg.InteractionPreservation.Program.compileCertified?_entry_openRunN_assembly_finished_rel
@@ -53,6 +57,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackCodeToRawBytecode
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
 #check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecode
+#check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
 
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyFinished
@@ -65,9 +70,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsFinished
+#print axioms EvmCompiler.Compiler.OpenInteractionComposition.yulNormalizedStackToAssemblySourceFinished
+#print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecodeFinishedPublic
 #print axioms EvmCompiler.Structured.InteractionTerminalPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_finished
 #print axioms EvmCompiler.TypedCfg.InteractionPreservation.Program.compileCertified?_entry_openRunN_assembly_finished_rel
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.structuredToAssemblySourceFinished
 #print axioms EvmCompiler.Assembly.Compact.InteractionSemantics.compile?_source_openRunNResult_finished_rel
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.stackAssemblyToCompactBytecodeFinished
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecode
+#print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished

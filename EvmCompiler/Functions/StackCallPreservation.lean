@@ -18,6 +18,7 @@ namespace Functions
 namespace StackCallPreservation
 
 open StackRelation
+open Assembly.InteractionFuelSafety
 
 @[simp] private theorem openEvalSeq_cast
     {left right : Nat} (h : left = right)
@@ -238,7 +239,7 @@ abbrev OpenArgBlockResultRel
     (arity : Nat) (sourceInitial : Locals.Source.State)
     (targetInitial : Structured.RunState) :=
   Simulation.Interaction.ExceptRel
-    (fun (_ : EVMException) (_ : EVMException) => True)
+    StructuralErrorRel
     (ArgBlockResultRel arity sourceInitial targetInitial)
 
 theorem openEvalArgs_compileBlock
@@ -262,6 +263,9 @@ theorem openEvalArgs_compileBlock
         targetFuel { stmts := [.code code] } target) := by
   have hArgs :=
     openEvalArgs_compileCode args ctx hScoped hSupported hCompile hInitial
+  have hArgsSafe :=
+    NotOutOfFuel.refineExceptRel hArgs
+      (Structured.InteractionFuelSafety.Code.openRun code target)
   rw [Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_stmt_of_fuel
     targetProgram targetFuel (.code code) target hFuel]
   unfold Expressions.InteractionSemantics.Stmt.openRun
@@ -276,7 +280,7 @@ theorem openEvalArgs_compileBlock
           Simulation.Interaction.pure (Structured.Outcome.regular final)))
   rw [← Simulation.Interaction.bind_pure
     (Functions.InteractionSemantics.ArgList.openEval args source)]
-  apply Simulation.Interaction.Rel.bind hArgs
+  apply Simulation.Interaction.Rel.bind hArgsSafe
   intro sourceResult targetResult hResult
   exact Simulation.Interaction.Rel.done
     (Simulation.Interaction.ExceptRel.ok (.regular hResult))
@@ -587,7 +591,7 @@ abbrev OpenCallResultRel
     (frame : Structured.ReturnDest)
     (callerReturns : List Structured.ReturnDest) :=
   Simulation.Interaction.ExceptRel
-    (fun (_ : EVMException) (_ : EVMException) => True)
+    StructuralErrorRel
     (CallResultRel frame callerReturns)
 
 /-- Semantic internal-call result after the ordinary Expressions call wrapper
@@ -615,7 +619,7 @@ abbrev OpenAttachedCallResultRel
     (retc : Nat) (callerStack : List Word)
     (callerReturns : List Structured.ReturnDest) :=
   Simulation.Interaction.ExceptRel
-    (fun (_ : EVMException) (_ : EVMException) => True)
+    StructuralErrorRel
     (AttachedCallResultRel retc callerStack callerReturns)
 
 namespace CallResultRel

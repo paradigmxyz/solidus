@@ -8,6 +8,24 @@ def NotOutOfFuel {α : Type} : Except EVMException α -> Prop
   | .error error => error ≠ .OutOfFuel
   | .ok _ => True
 
+/-- The target may report any runtime error, but target structural truncation
+must come only from source structural truncation. -/
+def StructuralErrorRel (source target : EVMException) : Prop :=
+  target = .OutOfFuel → source = .OutOfFuel
+
+namespace StructuralErrorRel
+
+theorem of_target_not {source target : EVMException}
+    (hTarget : target ≠ .OutOfFuel) : StructuralErrorRel source target := by
+  intro hOutOfFuel
+  exact False.elim (hTarget hOutOfFuel)
+
+theorem refl (error : EVMException) : StructuralErrorRel error error := by
+  intro hOutOfFuel
+  exact hOutOfFuel
+
+end StructuralErrorRel
+
 namespace NotOutOfFuel
 
 theorem bind {α β : Type}
@@ -28,6 +46,29 @@ theorem map {α β : Type} (f : α → β)
       (Simulation.Interaction.map f interaction) := by
   exact Simulation.Interaction.AllDone.map f hInteraction
     (fun _ hError => hError) (fun _ _ => trivial)
+
+/-- Refine a legacy coarse error relation once the target owner has proved
+that its interaction cannot produce structural `OutOfFuel`. -/
+theorem refineExceptRel {α β : Type} {valueRel : α → β → Prop}
+    {source : Simulation.Interaction EVMException α}
+    {target : Simulation.Interaction EVMException β}
+    (hRel : Simulation.Interaction.Rel
+      (Simulation.Interaction.ExceptRel (fun _ _ => True) valueRel)
+      source target)
+    (hTarget : Simulation.Interaction.AllDone NotOutOfFuel target) :
+    Simulation.Interaction.Rel
+      (Simulation.Interaction.ExceptRel StructuralErrorRel valueRel)
+      source target := by
+  apply Simulation.Interaction.Rel.mono
+    (Simulation.Interaction.Rel.strengthen_right hRel hTarget)
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hRelated, hSafe⟩
+  cases hRelated with
+  | error _ =>
+      exact Simulation.Interaction.ExceptRel.error
+        (StructuralErrorRel.of_target_not hSafe)
+  | ok hValue =>
+      exact Simulation.Interaction.ExceptRel.ok hValue
 
 end NotOutOfFuel
 
