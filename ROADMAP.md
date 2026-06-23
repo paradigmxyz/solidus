@@ -81,3 +81,17 @@ backend performs no compiler-owned memory access.
 Deployment-size optimization, source maps, and full gas-aware refinement remain
 separate production-hardening goals; they are not prerequisites for this
 stack-only correctness boundary.
+
+## Release Hardening
+
+- [x] Derive public initial-state/domain relations from canonical constructors
+  wherever they are computational consequences rather than caller assumptions.
+- [x] Classify every remaining public premise as trusted frontend input,
+  source execution/resource fact, or unfinished derivation; remove the latter.
+- [ ] Inventory supported optimized-Yul primitives, control outcomes, object
+  features, and compiler passes against executable creation/runtime coverage.
+- [ ] Add pinned real-world suites and generated adversarial cases for uncovered
+  semantic families, then fix every backend rejection generically or record an
+  honest supported-version/input-boundary rejection.
+- [ ] Keep exact Permit2, Aave Pool, PoolManager, adversarial pressure, broad
+  corpus, Lean, architecture, trust, frontend, and diff gates green.

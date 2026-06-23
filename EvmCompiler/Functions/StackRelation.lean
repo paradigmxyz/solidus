@@ -44,6 +44,21 @@ structure StateRel (layout : Locals.Layout) (suffix : List Word)
   defined :
     ∀ {name : Name}, name ∈ layout → ∃ value, source.vars name = some value
 
+/-- Canonical empty EVM stack/frame for top-level Functions execution. -/
+def initialTarget (source : Locals.Source.State) : Structured.RunState :=
+  Structured.RunState.initial
+    { toSharedState := source.shared
+      pc := EvmYul.UInt256.ofNat 0
+      stack := []
+      execLength := 0 }
+
+theorem initial (source : Locals.Source.State) :
+    StateRel Locals.Ctx.initial.layout [] [] source (initialTarget source) := by
+  refine ⟨rfl, rfl, ?_, ?_⟩
+  · simp [initialTarget, values, Locals.Ctx.initial]
+  · intro name hName
+    simp [Locals.Ctx.initial] at hName
+
 theorem list_eq_take_cons_drop_of_getElem?_eq_some
     {α : Type} {items : List α} {index : Nat} {value : α}
     (hAt : items[index]? = some value) :

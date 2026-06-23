@@ -1,5 +1,6 @@
 import EvmCompiler.Functions.InteractionSemantics
 import EvmCompiler.Yul.InteractionSemantics
+import EvmCompiler.Yul.Installation
 import EvmCompiler.Yul.VarStoreRestriction
 
 namespace EvmCompiler
@@ -112,6 +113,27 @@ def TerminalStateRel (source : SourceState) (target : TargetState) : Prop :=
       VarsRel sourceVars target.vars
 
 namespace ExecutionEnvRel
+
+/-- Canonical EVM execution environment carrying the source frame and its
+serialized active-code image. -/
+def toEVM (source : EvmYul.ExecutionEnv .Yul) :
+    EvmYul.ExecutionEnv .EVM where
+  codeOwner := source.codeOwner
+  sender := source.sender
+  source := source.source
+  weiValue := source.weiValue
+  calldata := source.calldata
+  code := source.codeBytes
+  gasPrice := source.gasPrice
+  header := source.header
+  depth := source.depth
+  perm := source.perm
+  blobVersionedHashes := source.blobVersionedHashes
+  codeBytes := source.codeBytes
+
+theorem toEVM_rel (source : EvmYul.ExecutionEnv .Yul) :
+    ExecutionEnvRel source (toEVM source) := by
+  constructor <;> rfl
 
 theorem externalFrame_eq
     {source : EvmYul.ExecutionEnv .Yul}
@@ -1127,6 +1149,38 @@ end TerminalSharedRel
 
 namespace SharedRel
 
+/-- Canonical code-erased EVM shared state for a Yul shared state. External
+accounts are translated through the common open-world representation; the
+active frame and machine state are copied exactly. -/
+def toEVM (source : EvmYul.SharedState .Yul) :
+    EvmYul.SharedState .EVM :=
+  Simulation.OpenWorld.installEVMShared
+    { toState :=
+        { accountMap := default
+          σ₀ := source.σ₀
+          totalGasUsedInBlock := source.totalGasUsedInBlock
+          transactionReceipts := source.transactionReceipts
+          substate := source.substate
+          executionEnv := ExecutionEnvRel.toEVM source.executionEnv
+          blocks := source.blocks
+          genesisBlockHeader := source.genesisBlockHeader
+          createdAccounts := source.createdAccounts }
+      toMachineState := source.toMachineState }
+    (Simulation.OpenWorld.ofYulShared source)
+
+theorem toEVM_rel (source : EvmYul.SharedState .Yul) :
+    SharedRel source (toEVM source) := by
+  refine
+    { openWorld := by simp [toEVM]
+      machine := by simp [toEVM]
+      initialAccounts := by rfl
+      totalGasUsedInBlock := by rfl
+      transactionReceipts := by rfl
+      executionEnv := by
+        simpa [toEVM] using ExecutionEnvRel.toEVM_rel source.executionEnv
+      blocks := by rfl
+      genesisBlockHeader := by rfl }
+
 theorem externalFrame_eq
     {source : EvmYul.SharedState .Yul}
     {target : EvmYul.SharedState .EVM}
@@ -1509,6 +1563,38 @@ structure ScopedStateRel (layout : List Functions.Name)
         VarsDefinedOn layout sourceVars
 
 namespace ScopedStateRel
+
+def installedSourceShared (contract : AstContract) (codeImage : ByteArray)
+    (base : EvmYul.SharedState .Yul) : EvmYul.SharedState .Yul :=
+  Source.Installation.installContractWithCodeImage contract codeImage base
+
+def installedSourceState (contract : AstContract) (codeImage : ByteArray)
+    (base : EvmYul.SharedState .Yul) : SourceState :=
+  .Ok (installedSourceShared contract codeImage base) default
+
+/-- Canonical empty Functions frame related to a top-level Yul state. -/
+def initialTarget (source : EvmYul.SharedState .Yul) : TargetState :=
+  { shared := SharedRel.toEVM source
+    vars := Locals.Source.Store.empty }
+
+theorem initial (source : EvmYul.SharedState .Yul) :
+    ScopedStateRel [] (.Ok source default) (initialTarget source) := by
+  refine ⟨?_, ?_, ?_⟩
+  · exact ⟨source, default, rfl, SharedRel.toEVM_rel source, VarsRel.empty⟩
+  · intro sourceShared sourceVars hState name value hLookup
+    simp only [Except.ok.injEq] at hState
+    rcases hState with ⟨rfl, rfl⟩
+    change (none : Option Word) = some value at hLookup
+    contradiction
+  · intro sourceShared sourceVars hState name hName
+    simp at hName
+
+theorem initial_targetDomainWithin (source : EvmYul.SharedState .Yul)
+    (used : List Functions.Name) :
+    TargetDomainWithin used (initialTarget source).vars := by
+  intro name value hLookup
+  change (none : Option Word) = some value at hLookup
+  contradiction
 
 theorem targetCodeImage
     {layout : List Functions.Name}

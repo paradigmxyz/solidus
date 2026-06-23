@@ -16,9 +16,9 @@ namespace StackArtifact
 /-!
 Compiler-owned artifact for the checked stack-allocation path.
 
-Unlike the legacy allocation artifact, this record does not claim that an
-`Allocation.ProgramPlan` produced the target. It retains the actual output of
-each adjacent compiler pass and the existing TypedCfg certificate.
+The record retains the actual output of each adjacent compiler pass and the
+existing TypedCfg certificate. It contains no memory-allocation policy, spill
+plan, or source memory-safety evidence.
 -/
 
 structure Artifact where

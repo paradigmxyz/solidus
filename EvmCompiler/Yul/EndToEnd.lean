@@ -13,7 +13,7 @@ The Solidity-to-optimized-Yul transformation is the declared trusted solc
 frontend boundary.
 -/
 
-theorem optimizedSolcYulToRawBytecode
+theorem optimizedSolcYulToRawBytecodeOfRelatedInitial
     {object : Solidity.Frontend.Object}
     {linkerSymbols : List
       (Solidity.Frontend.Name × Solidity.Frontend.Word)}
@@ -68,6 +68,88 @@ theorem optimizedSolcYulToRawBytecode
                 pc := EvmYul.UInt256.ofNat 0 }) :=
   Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
     hObject hYulInitial hYulDomain hStackInitial hTerminal
+
+/-- Canonical source state for the checked object's active code. The exact raw
+byte image is installed before source execution, so source `CODESIZE` and
+`CODECOPY` observe the same image decoded by the target machine. -/
+def installedSourceState
+    (artifact : Solidity.Frontend.VerifiedStackObjectArtifact)
+    (base : EvmYul.SharedState .Yul) : Yul.InteractionSemantics.State :=
+  FunctionsInteractionRelation.ScopedStateRel.installedSourceState
+    artifact.codeArtifact.ordered.program.contract
+    (Assembly.Bytecode.ofList artifact.image.bytes) base
+
+def initialFunctionsState
+    (artifact : Solidity.Frontend.VerifiedStackObjectArtifact)
+    (base : EvmYul.SharedState .Yul) :
+    Functions.InteractionSemantics.State :=
+  FunctionsInteractionRelation.ScopedStateRel.initialTarget
+    (FunctionsInteractionRelation.ScopedStateRel.installedSourceShared
+      artifact.codeArtifact.ordered.program.contract
+      (Assembly.Bytecode.ofList artifact.image.bytes) base)
+
+def initialExpressionsState
+    (artifact : Solidity.Frontend.VerifiedStackObjectArtifact)
+    (base : EvmYul.SharedState .Yul) :
+    Expressions.InteractionSemantics.RunState :=
+  Functions.StackRelation.initialTarget
+    (initialFunctionsState artifact base)
+
+/-- Public optimized-solc-Yul theorem with all initial cross-layer relations
+computed canonically. Its only semantic premise is an actual terminal source
+execution from an empty top-level lexical frame. -/
+theorem optimizedSolcYulToRawBytecode
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {sourceFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hTerminal : Simulation.Interaction.AllDone
+      FunctionsInteractionProgram.SourceTerminal
+      (InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [artifact.codeArtifact.ordered.program.contract.dispatcher])
+        (some artifact.codeArtifact.ordered.program.contract)
+        (installedSourceState artifact baseSource))) :
+    ∃ structuredFuel,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        ∃ generated :
+            Structured.TypedCfgPreservation.Program.GeneratedContext
+              artifact.codeArtifact.compiled.expressions.toStructured
+              artifact.codeArtifact.compiled.entryShapes
+              artifact.codeArtifact.compiled.cfg,
+          Simulation.Interaction.Rel
+            (Compiler.OpenInteractionComposition.YulStackCompactDoneRel
+              artifact.codeArtifact.compiled.expressions.toStructured
+              artifact.codeArtifact.compiled.entryShapes
+              artifact.codeArtifact.compiled.cfg generated
+              artifact.codeArtifact.compiled.certified.target)
+            (InteractionSemantics.exec (sourceFuel + 1)
+              (.Block
+                [artifact.codeArtifact.ordered.program.contract.dispatcher])
+              (some artifact.codeArtifact.ordered.program.contract)
+              (installedSourceState artifact baseSource))
+            (Assembly.Compact.InteractionSemantics.openRunNResult
+              (Assembly.Bytecode.ofList artifact.image.bytes)
+              (2 *
+                (Structured.InteractionStaticCost.blockBudget
+                    artifact.codeArtifact.compiled.expressions.toStructured
+                    structuredFuel
+                    artifact.codeArtifact.compiled.expressions.toStructured.body *
+                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                    artifact.codeArtifact.compiled.cfg))
+              { (initialExpressionsState artifact baseSource).evm with
+                pc := EvmYul.UInt256.ofNat 0 }) := by
+  apply optimizedSolcYulToRawBytecodeOfRelatedInitial hObject
+  · exact FunctionsInteractionRelation.ScopedStateRel.initial _
+  · exact
+      FunctionsInteractionRelation.ScopedStateRel.initial_targetDomainWithin
+        _ _
+  · exact Functions.StackRelation.initial _
+  · exact hTerminal
 
 end EndToEnd
 end Yul
