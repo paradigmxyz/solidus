@@ -24,6 +24,30 @@ abbrev ScopedDoneRel := FunctionsInteractionStatement.ScopedDoneRel
 
 namespace ControlDoneRel
 
+theorem nil
+    (mode : Mode)
+    {used layout : List Functions.Name} {sourceFuel targetFuel : Nat}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hRel : ScopedStateRel layout source target)
+    (hDomain : TargetDomainWithin used target.vars)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
+    (hTargetScope : TargetScopeWithin used ctx) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel used layout sourceScopes
+        canBreak canContinue canLeave)
+      (Source.execSeq mode (sourceFuel + 1) [] codeOverride source)
+      (Target.Block.openRun mode program ctx (targetFuel + 1)
+        { stmts := [] } target) := by
+  rw [Source.execSeq_nil_succ, Target.Block.openRun_nil]
+  exact Simulation.Interaction.ForwardRel.done
+    (.regular hRel hDomain hControl hTargetScope)
+
 theorem singleton
     (mode : Mode)
     {used layout : List Functions.Name} {targetFuel : Nat}
@@ -107,7 +131,203 @@ theorem singleton
   rw [hSourceBind] at hBound
   simpa [Target.Stmt.openRun, Target.Block.openRun] using hBound
 
+theorem cons
+    (mode : Mode)
+    {headUsed finalUsed headLayout finalLayout : List Functions.Name}
+    {sourceFuel targetFuel : Nat}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {stmt : AstStmt} {rest : List AstStmt}
+    {lowerHead lowerRest : List Functions.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hHead :
+      Simulation.Interaction.ForwardRel Truncated
+        (ControlDoneRel headUsed headLayout sourceScopes
+          canBreak canContinue canLeave)
+        (Source.exec mode sourceFuel stmt codeOverride source)
+        (Target.Block.openRun mode program ctx targetFuel
+          { stmts := lowerHead } target))
+    (hTail :
+      ∀ {sourceMid : Yul.InteractionSemantics.State}
+        {targetMid : Functions.InteractionSemantics.State}
+        {ctxMid : Functions.Source.Ctx},
+        ScopedStateRel headLayout sourceMid targetMid →
+          TargetDomainWithin headUsed targetMid.vars →
+          ControlContextRel sourceScopes headLayout
+              canBreak canContinue canLeave ctxMid →
+          TargetScopeWithin headUsed ctxMid →
+          Simulation.Interaction.ForwardRel Truncated
+            (ControlDoneRel finalUsed finalLayout sourceScopes
+              canBreak canContinue canLeave)
+            (Source.execSeq mode sourceFuel rest codeOverride sourceMid)
+            (Target.Block.openRun mode program ctxMid
+              (targetFuel - lowerHead.length)
+              { stmts := lowerRest } targetMid)) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel finalUsed finalLayout sourceScopes
+        canBreak canContinue canLeave)
+      (Source.execSeq mode (sourceFuel + 1) (stmt :: rest)
+        codeOverride source)
+      (Target.Block.openRun mode program ctx targetFuel
+        { stmts := lowerHead ++ lowerRest } target) := by
+  rw [Source.execSeq_cons_succ, Target.Block.openRun_append]
+  apply Simulation.Interaction.ForwardRel.bind_custom hHead
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ForwardRel.done (.error hError)
+  | @regular sourceMid targetMid ctxMid hState hDomain hControl hTargetScope =>
+      rcases hState.state with
+        ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
+      subst sourceMid
+      simpa using hTail hState hDomain hControl hTargetScope
+  | @brk sourceMid targetOutcome ctxMid scope hScope hMode hAbrupt =>
+      obtain ⟨jump, hSource⟩ :=
+        ModeRel.target_nonregular_source_checkpoint
+          hAbrupt.mode (by simpa [hMode])
+      subst sourceMid
+      simpa [hMode] using
+        (Simulation.Interaction.ForwardRel.done
+          (ControlDoneRel.brk hScope hMode hAbrupt))
+  | @cont sourceMid targetOutcome ctxMid scope hScope hMode hAbrupt =>
+      obtain ⟨jump, hSource⟩ :=
+        ModeRel.target_nonregular_source_checkpoint
+          hAbrupt.mode (by simpa [hMode])
+      subst sourceMid
+      simpa [hMode] using
+        (Simulation.Interaction.ForwardRel.done
+          (ControlDoneRel.cont hScope hMode hAbrupt))
+  | @leave sourceMid targetOutcome ctxMid scope hScope hMode hAbrupt =>
+      obtain ⟨jump, hSource⟩ :=
+        ModeRel.target_nonregular_source_checkpoint
+          hAbrupt.mode (by simpa [hMode])
+      subst sourceMid
+      simpa [hMode] using
+        (Simulation.Interaction.ForwardRel.done
+          (ControlDoneRel.leave hScope hMode hAbrupt))
+  | terminal hTerminal =>
+      cases hTerminal with
+      | stop hState =>
+          simpa using
+            (Simulation.Interaction.ForwardRel.done
+              (ControlDoneRel.terminal (TerminalFailureRel.stop hState)))
+      | return_ hState =>
+          simpa using
+            (Simulation.Interaction.ForwardRel.done
+              (ControlDoneRel.terminal (TerminalFailureRel.return_ hState)))
+      | selfdestruct hState =>
+          simpa using
+            (Simulation.Interaction.ForwardRel.done
+              (ControlDoneRel.terminal
+                (TerminalFailureRel.selfdestruct hState)))
+      | revert hState =>
+          simpa using
+            (Simulation.Interaction.ForwardRel.done
+              (ControlDoneRel.terminal (TerminalFailureRel.revert hState)))
+
 end ControlDoneRel
+
+theorem block
+    {mode : Mode}
+    {used entryLayout bodyLayout : List Functions.Name}
+    {sourceFuel targetFuel : Nat}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {body : List AstStmt} {lowerBody : Functions.Block}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hEntry : ScopedStateRel entryLayout source target)
+    (hControl : ControlContextRel sourceScopes entryLayout
+      canBreak canContinue canLeave ctx)
+    (hTargetScope : TargetScopeWithin used ctx)
+    (hBodyLayout : ∀ name, name ∈ entryLayout → name ∈ bodyLayout)
+    (hBody :
+      Simulation.Interaction.ForwardRel Truncated
+        (ControlDoneRel used bodyLayout sourceScopes
+          canBreak canContinue canLeave)
+        (Source.execSeq mode sourceFuel body codeOverride source)
+        (Target.Block.openRun mode program ctx targetFuel lowerBody target)) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel used entryLayout sourceScopes
+        canBreak canContinue canLeave)
+      (Source.exec mode (sourceFuel + 1) (.Block body) codeOverride source)
+      (Target.Stmt.openRun mode program ctx targetFuel
+        (.block lowerBody) target) := by
+  rcases hEntry.state with
+    ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
+  subst source
+  rw [Source.exec_block_succ, Target.Stmt.openRun_block]
+  apply Simulation.Interaction.ForwardRel.bind_custom hBody
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ForwardRel.done
+        (ControlDoneRel.error hError)
+  | @regular sourceAfter targetAfter ctxAfter
+      hState hDomain _hBodyControl _hBodyTargetScope =>
+      have hFinal := hState.restrictBoth
+        (hEntry.domain sourceShared sourceVars rfl)
+        (hEntry.defined sourceShared sourceVars rfl)
+        hBodyLayout hControl.scope
+      simpa using
+        (Simulation.Interaction.ForwardRel.done
+          (ControlDoneRel.regular hFinal hDomain.restrictTo hControl
+            hTargetScope))
+  | @brk sourceAfter targetOutcome ctxAfter scope hScope hMode hAbrupt =>
+      have hSubset := hControl.breakScope.source_subset_of_some hScope
+      have hOuterDefined : ∀ name, name ∈ scope.layout →
+          ∃ value, sourceVars.lookup name = some value := by
+        intro name hName
+        exact hEntry.defined sourceShared sourceVars rfl name
+          (hSubset name hName)
+      have hAbrupt' := hAbrupt.restrict_outer
+        (by simp [hMode]) hOuterDefined
+      simpa [hMode] using
+        (Simulation.Interaction.ForwardRel.done
+          (ControlDoneRel.brk hScope hMode hAbrupt'))
+  | @cont sourceAfter targetOutcome ctxAfter scope hScope hMode hAbrupt =>
+      have hSubset := hControl.continueScope.source_subset_of_some hScope
+      have hOuterDefined : ∀ name, name ∈ scope.layout →
+          ∃ value, sourceVars.lookup name = some value := by
+        intro name hName
+        exact hEntry.defined sourceShared sourceVars rfl name
+          (hSubset name hName)
+      have hAbrupt' := hAbrupt.restrict_outer
+        (by simp [hMode]) hOuterDefined
+      simpa [hMode] using
+        (Simulation.Interaction.ForwardRel.done
+          (ControlDoneRel.cont hScope hMode hAbrupt'))
+  | @leave sourceAfter targetOutcome ctxAfter scope hScope hMode hAbrupt =>
+      have hSubset := hControl.leaveScope.source_subset_of_some hScope
+      have hOuterDefined : ∀ name, name ∈ scope.layout →
+          ∃ value, sourceVars.lookup name = some value := by
+        intro name hName
+        exact hEntry.defined sourceShared sourceVars rfl name
+          (hSubset name hName)
+      have hAbrupt' := hAbrupt.restrict_outer
+        (by simp [hMode]) hOuterDefined
+      simpa [hMode] using
+        (Simulation.Interaction.ForwardRel.done
+          (ControlDoneRel.leave hScope hMode hAbrupt'))
+  | terminal hTerminal =>
+      cases hTerminal with
+      | stop hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (ControlDoneRel.terminal (.stop hState))
+      | return_ hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (ControlDoneRel.terminal (.return_ hState))
+      | selfdestruct hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (ControlDoneRel.terminal (.selfdestruct hState))
+      | revert hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (ControlDoneRel.terminal (.revert hState))
 
 /-- Lift a zero-result expression relation through the Functions expression
 statement wrapper in either primitive mode. -/

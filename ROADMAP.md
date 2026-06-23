@@ -437,6 +437,9 @@ boundaries. Corpus acceptance alone does not discharge them.
           `break`/`continue`/`leave`.
         - [x] Assignment after a compiler-prepared primitive argument prelude.
       - [ ] Recursive blocks, branches, switches, loops, and internal calls.
+        - [x] Shared mode-parametric list sequencing and lexical-block closure.
+        - [ ] Compiler-selected recursive block/list dispatcher.
+        - [ ] Conditionals, switches, loops, and internal calls.
   - [ ] Replace the scratch-capable public Functions-facing safety premise with
     the Yul-facing execution premise; keep the premise-free stack theorem as a
     separate capability and rerun every completion gate.

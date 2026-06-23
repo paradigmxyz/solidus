@@ -429,6 +429,39 @@ theorem exec_leave_succ (mode : Mode) (fuel : Nat)
   simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
     Yul.InteractionSemantics.stateModel]
 
+theorem execSeq_nil_succ (mode : Mode) (fuel : Nat)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : Yul.InteractionSemantics.State) :
+    execSeq mode (fuel + 1) [] code state = pure state := by
+  simp [execSeq, Yul.Source.Canonical.execSeq,
+    Yul.Source.Effectful.execSeq]
+
+theorem execSeq_cons_succ (mode : Mode) (fuel : Nat)
+    (stmt : EvmYul.Yul.Ast.Stmt) (rest : List EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : Yul.InteractionSemantics.State) :
+    execSeq mode (fuel + 1) (stmt :: rest) code state =
+      Simulation.Interaction.bind (exec mode fuel stmt code state)
+        (fun stateAfterStmt =>
+          match stateAfterStmt with
+          | .Ok _ _ => execSeq mode fuel rest code stateAfterStmt
+          | .OutOfFuel | .Checkpoint _ => pure stateAfterStmt) := by
+  simp only [execSeq, exec, Yul.Source.Canonical.execSeq,
+    Yul.Source.Canonical.exec, Yul.Source.Effectful.execSeq]
+  rfl
+
+theorem exec_block_succ (mode : Mode) (fuel : Nat)
+    (body : List EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : Yul.InteractionSemantics.State) :
+    exec mode (fuel + 1) (.Block body) code state =
+      Simulation.Interaction.bind (execSeq mode fuel body code state)
+        (fun stateAfterBody =>
+          pure (stateAfterBody.restrictStoreTo state.store)) := by
+  simp only [exec, execSeq, Yul.Source.Canonical.exec,
+    Yul.Source.Canonical.execSeq, Yul.Source.Effectful.exec]
+  rfl
+
 end Source
 
 namespace Target
