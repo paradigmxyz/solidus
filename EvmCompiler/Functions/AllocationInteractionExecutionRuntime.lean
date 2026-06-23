@@ -1,4 +1,5 @@
 import EvmCompiler.Functions.AllocationInteractionRecursiveResource
+import EvmCompiler.Functions.AllocationInteractionRecursiveCallResource
 import EvmCompiler.Functions.AllocationInteractionSafeSuccessful
 
 namespace EvmCompiler
@@ -1279,6 +1280,96 @@ theorem for_
     (fun {afterState} tail hExact {sourceMid targetMid tailMode} hTailBoundary
         hTailSafe =>
       hTailForward tail hExact hTailBoundary hTailSafe)
+
+/-- A reached internal call derives local argument safety from its guarded
+execution, preserves the compiler-selected stack or scratch callee frame, and
+restores the dormant caller frame before its regular continuation. -/
+theorem call
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live targets : List Functions.Name}
+    {functionName : Functions.Name}
+    {args : List (Functions.Expr 1)} {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {allocatorDepth frameBase sourceFuel targetExtra : Nat}
+    {config : Config} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : SourceState} {target : TargetState}
+    (cursor : CoreCursor root scope live
+      { stmts := .call targets functionName args :: rest }
+      lowerState localsCtx)
+    (hProgramScoped : program.Scoped)
+    (hSourceFuel : 2 < sourceFuel)
+    (hBoundary :
+      Boundary cursor program.memoryContract compilation.recipe.frameWords config
+        allocatorDepth frameBase mode sourceCtx source target)
+    (hFuelBudget :
+      AllocationInteractionFrame.Budget config
+        (allocatorDepth + sourceFuel))
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe
+        program.memoryContract program sourceCtx sourceFuel
+          { stmts := .call targets functionName args :: rest } source)
+    (hRecursive :
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
+        program.memoryContract compilation.recipe.frameWords sourceFuel)
+    (hTailForward :
+      ∀ (tail : CoreCursor root scope live { stmts := rest }
+          lowerState localsCtx),
+        ExactTail cursor tail →
+        ∀ {sourceMid targetMid tailMode},
+          Boundary tail program.memoryContract compilation.recipe.frameWords config
+              allocatorDepth frameBase tailMode sourceCtx sourceMid
+              targetMid →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe
+              program.memoryContract program sourceCtx
+                (sourceFuel - 1) { stmts := rest } sourceMid →
+            CursorRuntimeAt tail program.memoryContract config allocatorDepth
+              frameBase (sourceFuel - 1)
+                (targetExtra + callStride expressions)
+              tailMode sourceCtx sourceMid targetMid) :
+    CursorRuntimeAt cursor program.memoryContract config allocatorDepth
+      frameBase sourceFuel targetExtra mode sourceCtx source target := by
+  have hHeadSafe :=
+    AllocationInteractionSafeSuccessful.successful_head
+      (contract := program.memoryContract) (program := program)
+      (stmt := .call targets functionName args) (rest := rest)
+      (by omega) hExecutionSafe
+  have hTargets : targets.Nodup := by
+    simpa [Functions.Scope.Stmt.Scoped] using cursor.headScoped.1
+  have hHeadFuelEq : sourceFuel - 2 + 1 = sourceFuel - 1 := by omega
+  have hCallContinuations :=
+    AllocationInteractionSafeSemantics.Stmt.successful_openRun_call_continuations
+      program.memoryContract program sourceCtx (sourceFuel - 2) targets
+      functionName args source hTargets
+      (by simpa [hHeadFuelEq] using hHeadSafe)
+  have hArgSuccess :
+      Simulation.Interaction.Successful
+        (AllocationInteractionSafeSemantics.ArgList.openEval
+          program.memoryContract args source) := by
+    apply Simulation.Interaction.AllDone.mono hCallContinuations
+    intro outcome hOutcome
+    cases outcome with
+    | error _ => exact hOutcome
+    | ok _ => trivial
+  have hArgsScoped :
+      ∀ arg, arg ∈ args → Functions.Scope.ExprScoped live arg := by
+    simpa [Functions.Scope.Stmt.Scoped] using cursor.headScoped.2.2
+  have hArgSafe :=
+    AllocationInteractionSafety.argList_of_successful hArgsScoped
+      hBoundary.semantic.invariant.defined hArgSuccess
+  exact
+    AllocationInteractionRecursiveCallResource.CursorRuntimeAt.call
+      cursor hProgramScoped hSourceFuel hArgSafe hBoundary hFuelBudget
+      hHeadSafe hExecutionSafe hRecursive
+      (fun tail hExact {sourceMid targetMid tailMode} hTailBoundary
+          _hTailSuccess hTailSafe =>
+        hTailForward tail hExact hTailBoundary hTailSafe)
 
 
 end AllocationInteractionExecutionRuntime

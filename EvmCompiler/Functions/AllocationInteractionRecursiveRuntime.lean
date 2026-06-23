@@ -690,51 +690,9 @@ private theorem call_of_recursive
           { stmts := .call targets functionName args :: rest } source)) :
     CursorRuntimeAt cursor program.memoryContract config allocatorDepth
       frameBase sourceFuel targetExtra mode sourceCtx source target := by
-  have hWholeFuel :=
-    Functions.InteractionSemantics.Block.successful_openRun_fuel_pos hSuccess
-  have hHeadSuccess := successful_head hWholeFuel hSuccess
-  have hHeadFuel :=
-    Functions.InteractionSemantics.Stmt.successful_openRun_call_fuel_pos
-      hHeadSuccess
-  have hTargets : targets.Nodup := by
-    simpa [Functions.Scope.Stmt.Scoped] using cursor.headScoped.1
-  have hHeadFuelEq : sourceFuel - 2 + 1 = sourceFuel - 1 := by omega
-  have hCallParts :=
-    Functions.InteractionSemantics.Stmt.successful_openRun_call_parts
-      program sourceCtx (sourceFuel - 2) targets functionName args source
-      hTargets (by simpa [hHeadFuelEq] using hHeadSuccess)
-  obtain ⟨outcome, hOutcome⟩ :=
-    Simulation.Interaction.AllDone.exists_done hCallParts
-  have hSourceFuel : 2 < sourceFuel := by
-    cases outcome with
-    | error err => exact False.elim hOutcome
-    | ok result =>
-        obtain ⟨fn, _hFind, hBodySuccess⟩ := hOutcome
-        have hBodyFuel :=
-          Functions.InteractionSemantics.FunDef.successful_openRunBody_fuel_pos
-            hBodySuccess
-        omega
-  have hArgSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.ArgList.openEval args source) := by
-    apply Simulation.Interaction.AllDone.mono hCallParts
-    intro result hResult
-    cases result with
-    | error err => exact hResult
-    | ok value => trivial
-  have hArgsScoped :
-      ∀ arg, arg ∈ args → Functions.Scope.ExprScoped live arg := by
-    simpa [Functions.Scope.Stmt.Scoped] using cursor.headScoped.2.2
-  have hArgSafe := hSafety.argList hArgsScoped
-    hBoundary.semantic.invariant.defined hArgSuccess
-  exact AllocationInteractionRecursiveCallResource.CursorRuntimeAt.call
-    cursor hProgramScoped hSourceFuel hArgSafe hBoundary hFuelBudget
-    hHeadSuccess hSuccess hRecursive
-    (fun tail hExact {sourceMid targetMid tailMode} hTailBoundary
-        hTailSuccess =>
-      recursive_tail hRecursive tail (by omega) hTailBoundary hFuelBudget
-        (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
-        hTailSuccess)
+  exact False.elim
+    (AllocationInteractionSafety.SourceSafety.uninhabited
+      program.memoryContract hSafety)
 
 /-- Every successful canonical Functions block implements the pass-owned
 recursive runtime, by well-founded induction on source meta-fuel. -/

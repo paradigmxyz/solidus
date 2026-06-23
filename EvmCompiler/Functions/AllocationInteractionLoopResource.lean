@@ -23,6 +23,10 @@ noncomputable def guardedSourceSemantics
         contract cond source)
     intro outcome hOutcome
     cases outcome <;> exact hOutcome
+  argumentVars := by
+    intro args source
+    exact AllocationInteractionSafeSemantics.ArgList.openEval_vars_eq
+      contract args source
 
 def outcomeEffectAlgebra
     (config : Config) (allocatorDepth frameBase : Nat) :

@@ -855,12 +855,11 @@ theorem body_of_cursor
         sourceLive sourceCtx)
     (hSourceBreak : sourceCtx.breakScope? = none)
     (hSourceContinue : sourceCtx.continueScope? = none)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel fn.body source))
+    (hSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+        program sourceCtx sourceFuel fn.body source)
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         contract globalFrameWords fuelBound) :
     ∃ targetFuel,
       0 < targetFuel ∧
@@ -986,7 +985,7 @@ theorem body_of_cursor
           (by
             simpa [AllocationInteractionTargetFuel.Reserve, bodyCursor] using
               hTargetReserve)
-          hSuccess (targetExtra := targetExtra)
+          hSafe (targetExtra := targetExtra)
     let bodyFuel :=
       targetBudget bodyCursor sourceFuel targetExtra
     have hBodyFuel : 0 < bodyFuel := by
@@ -1107,7 +1106,7 @@ theorem body_of_cursor
           (by
             simpa [AllocationInteractionTargetFuel.Reserve, bodyCursor] using
               hTargetReserve)
-          hSuccess (targetExtra := targetExtra)
+          hSafe (targetExtra := targetExtra)
     let bodyFuel :=
       targetBudget bodyCursor sourceFuel targetExtra
     have hBodyFuel : 0 < bodyFuel := by
@@ -1205,13 +1204,12 @@ theorem body_of_function_context
       AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode ≤
         targetExtra)
     (hSourceFuel : sourceFuel < fuelBound)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program
-          (Functions.Source.Effectful.FunDef.bodyCtx fn)
-          sourceFuel fn.body source))
+    (hSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+        program (Functions.Source.Effectful.FunDef.bodyCtx fn)
+          sourceFuel fn.body source)
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         contract globalFrameWords fuelBound) :
     ∃ targetFuel,
       0 < targetFuel ∧
@@ -1269,7 +1267,7 @@ theorem body_of_function_context
   exact body_of_cursor prepared hProgramScoped hEntry hZero hStackLength
     hReturnFrame
     hReservation hConfig hReady hOwned hBudget hFuelBudget hTargetReserve
-    hSourceFuel hLive hScope hControl hSourceBreak hSourceContinue hSuccess
+    hSourceFuel hLive hScope hControl hSourceBreak hSourceContinue hSafe
     hRecursive
 
 end SelectedCallee

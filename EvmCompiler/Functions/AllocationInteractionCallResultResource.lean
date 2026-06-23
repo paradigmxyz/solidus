@@ -744,13 +744,12 @@ theorem complete_body
       AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode ≤
         targetExtra)
     (hSourceFuel : sourceFuel < fuelBound)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program
-          (Functions.Source.Effectful.FunDef.bodyCtx fn)
-          sourceFuel fn.body source))
+    (hSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+        program (Functions.Source.Effectful.FunDef.bodyCtx fn)
+          sourceFuel fn.body source)
     (hRecursive :
-      AllocationInteractionRecursiveResource.RecursiveOpenRuntime
+      AllocationInteractionRecursiveResource.ExecutionSafeRecursiveOpenRuntime
         (compilation := compilation)
         contract globalFrameWords fuelBound) :
     exists targetFuel,
@@ -774,7 +773,7 @@ theorem complete_body
       (targetExtra := targetExtra) prepared hProgramScoped hEntry hZero hStackLength
       hReturnFrame
       hReservation hConfig hReady hOwned hBudget hFuelBudget hTargetReserve
-      hSourceFuel hSuccess hRecursive
+      hSourceFuel hSafe hRecursive
   have hReturnsLive :
       forall localName,
         localName ∈ fn.returns ->
@@ -854,15 +853,14 @@ theorem complete_call
       AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode ≤
         targetExtra)
     (hSourceFuel : sourceFuel < fuelBound)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program
-          (Functions.Source.Effectful.FunDef.bodyCtx fn)
+    (hSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+        program (Functions.Source.Effectful.FunDef.bodyCtx fn)
           sourceFuel fn.body
           (AllocationInteractionCall.CalleeEntry.sourceState
-            sourceAfterArgs fn.returns paramStore)))
+            sourceAfterArgs fn.returns paramStore))
     (hRecursive :
-      AllocationInteractionRecursiveResource.RecursiveOpenRuntime
+      AllocationInteractionRecursiveResource.ExecutionSafeRecursiveOpenRuntime
         (compilation := compilation)
         contract globalFrameWords fuelBound) :
     exists targetFuel,
@@ -889,7 +887,7 @@ theorem complete_call
         simp [AllocationInteractionCall.CalleeEntry.structuredState,
           Structured.RunState.pushReturn])
       hReservation hConfig hReady hOwned hBudget hFuelBudget hTargetExtra
-      hTargetReserve hSourceFuel hSuccess
+      hTargetReserve hSourceFuel hSafe
       hRecursive
   refine ⟨targetFuel, hTargetFuel, hTargetFuelEq, ?_⟩
   exact CallAttachment.of_body hInsert artifact.targetLookup

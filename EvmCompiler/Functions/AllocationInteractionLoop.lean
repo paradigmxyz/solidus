@@ -146,6 +146,15 @@ structure SourceSemantics where
           (α := Bool) source)
         (Locals.Source.Effectful.Expr.Control.evalCondition
           Functions.InteractionSemantics.stateModel primitive cond source)
+  argumentVars :
+    ∀ (args : List (Functions.Expr 1)) (source : SourceState),
+      Simulation.Interaction.AllDone
+        (fun outcome =>
+          match outcome with
+          | .error _ => True
+          | .ok result => result.1.vars = source.vars)
+        (Functions.Source.Canonical.ArgList.eval
+          Functions.InteractionSemantics.stateModel primitive args source)
 
 namespace SourceSemantics
 
@@ -175,6 +184,18 @@ def openRunStmt (semantics : SourceSemantics)
     Functions.InteractionSemantics.stateModel semantics.primitive
     program ctx fuel stmt source
 
+def openArgList (semantics : SourceSemantics)
+    (args : List (Functions.Expr 1)) (source : SourceState) :=
+  Functions.Source.Canonical.ArgList.eval
+    Functions.InteractionSemantics.stateModel semantics.primitive args source
+
+def openFunBody (semantics : SourceSemantics)
+    (program : Functions.Program) (fn : Functions.FunDef)
+    (args : List Word) (fuel : Nat) (source : SourceState) :=
+  Functions.Source.Canonical.FunDef.runBody
+    Functions.InteractionSemantics.stateModel semantics.primitive
+    program fn args fuel source
+
 def openRunForLoop (semantics : SourceSemantics)
     (program : Functions.Program) (loopCtx : Functions.Source.Ctx)
     (cond : Functions.Expr 1) (postCtx : Functions.Source.Ctx)
@@ -188,6 +209,7 @@ def ordinary : SourceSemantics where
   primitive := Functions.InteractionSemantics.primitiveSemantics
   conditionVars :=
     Locals.InteractionStatePreservation.expr_openEvalCondition_vars
+  argumentVars := Functions.InteractionSemantics.ArgList.openEval_vars_eq
 
 end SourceSemantics
 

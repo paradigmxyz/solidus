@@ -790,14 +790,14 @@ theorem stack_after_arguments
       AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode ≤
         targetExtra)
     (hBodyFuel : bodyFuel < fuelBound)
-    (hBodySuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program
-          (Functions.Source.Effectful.FunDef.bodyCtx fn) bodyFuel fn.body
+    (hBodySafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+        program (Functions.Source.Effectful.FunDef.bodyCtx fn)
+          bodyFuel fn.body
           (AllocationInteractionCall.CalleeEntry.sourceState
-            sourceAfterArgs fn.returns paramStore)))
+            sourceAfterArgs fn.returns paramStore))
     (hRecursive :
-      AllocationInteractionRecursiveResource.RecursiveOpenRuntime
+      AllocationInteractionRecursiveResource.ExecutionSafeRecursiveOpenRuntime
         (compilation := compilation)
         contract compilation.recipe.frameWords fuelBound) :
     ∃ callerBase targetEntry targetFuel,
@@ -855,7 +855,7 @@ theorem stack_after_arguments
         AllocationInteractionCall.SelectedCallee.Artifact.mode,
         hNeedsFrame] using hEntry)
       hZero hEntryStackLength hReservation hConfig hEntryReady hEntryOwned
-      hBudget hFuelBudget hTargetExtra hTargetReserve hBodyFuel hBodySuccess
+      hBudget hFuelBudget hTargetExtra hTargetReserve hBodyFuel hBodySafe
       hRecursive
   let callerBase :=
     AllocationInteractionCall.PreparedArguments.callerState
@@ -932,14 +932,14 @@ theorem scratch_after_arguments
       AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode ≤
         targetExtra)
     (hBodyFuel : bodyFuel < fuelBound)
-    (hBodySuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program
-          (Functions.Source.Effectful.FunDef.bodyCtx fn) bodyFuel fn.body
+    (hBodySafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+        program (Functions.Source.Effectful.FunDef.bodyCtx fn)
+          bodyFuel fn.body
           (AllocationInteractionCall.CalleeEntry.sourceState
-            sourceAfterArgs fn.returns paramStore)))
+            sourceAfterArgs fn.returns paramStore))
     (hRecursive :
-      AllocationInteractionRecursiveResource.RecursiveOpenRuntime
+      AllocationInteractionRecursiveResource.ExecutionSafeRecursiveOpenRuntime
         (compilation := compilation)
         contract compilation.recipe.frameWords fuelBound) :
     ∃ callerBase targetEntry targetFuel,
@@ -1017,7 +1017,7 @@ theorem scratch_after_arguments
         hNeedsFrame, hFrameWords] using hEntry)
       hZero hEntryStackLength hReservation hConfig hEntryReady hEntryOwned
       hCalleeBudget hFuelBudget hTargetExtra hTargetReserve hBodyFuel
-      hBodySuccess hRecursive
+      hBodySafe hRecursive
   let callerBase :=
     AllocationInteractionCall.PreparedArguments.callerState
       targetAfterArgs targetInitial
