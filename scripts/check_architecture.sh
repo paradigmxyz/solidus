@@ -91,6 +91,18 @@ fi
 rg -q 'VerifiedStackObjectDoneRel' EvmCompiler/Yul/EndToEnd.lean ||
   fail 'Yul.EndToEnd must use the artifact-level public outcome relation'
 
+public_finished_theorem="$(sed -n \
+  '/^theorem optimizedSolcYulToRawBytecodeFinished$/,/^end EndToEnd$/p' \
+  EvmCompiler/Yul/EndToEnd.lean)"
+[[ "$public_finished_theorem" == *"(hObject :"* ]] ||
+  fail 'the canonical all-finished theorem must be driven by checked compilation'
+[[ "$public_finished_theorem" == *"(hFinished :"* ]] ||
+  fail 'the canonical all-finished theorem must state its actual source-run condition'
+if printf '%s\n' "$public_finished_theorem" | rg -n \
+    'hYulInitial|hYulDomain|hStackInitial|ExecutionSafe|SourceSafety|Scratch|GeneratedContext|certificate|oracle'; then
+  fail 'the canonical all-finished theorem regained a derived or generated premise'
+fi
+
 if rg -ni 'permit2|aave|poolmanager' \
     EvmCompiler/Functions/Stack*.lean \
     EvmCompiler/Compiler/StackArtifact.lean; then
