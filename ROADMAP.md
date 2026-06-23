@@ -156,15 +156,17 @@ prefix boundary: every ordered request before source semantic-fuel exhaustion
 must match exactly, while the theorem makes no claim about the unobserved target
 suffix. The all-finished theorem remains a corollary, not the primary boundary.
 
-- [ ] Add shared composition for adjacent `ForwardRel` theorems when the first
+- [x] Add shared composition for adjacent `ForwardRel` theorems when the first
   pass reflects second-pass truncation back to source truncation.
-- [ ] Expose Yul -> Functions -> allocated Expressions forward preservation
+- [x] Expose Yul -> Functions -> allocated Expressions forward preservation
   with compiler-computed target fuel and no `hFinished` premise.
-- [ ] Lift the transparent Expressions -> Structured adapter without changing
+- [x] Lift the transparent Expressions -> Structured adapter without changing
   the prefix relation.
-- [ ] Extend Structured -> TypedCfg with source-`OutOfFuel` prefix preservation
+- [x] Extend Structured -> TypedCfg with source-`OutOfFuel` prefix preservation
   at the existing compiler-owned uniform target budget.
-- [ ] Compose TypedCfg -> Assembly -> compact bytecode and recursive objects
+- [x] Compose TypedCfg -> Assembly source prefixes with branch-local terminal
+  safety and exact structural-truncation reflection.
+- [ ] Compose Assembly -> compact bytecode and recursive objects
   without requiring terminal or finished source trees.
 - [ ] Publish a short canonical `Yul.EndToEnd` forward theorem requiring only
   checked compilation and canonical related initial states.

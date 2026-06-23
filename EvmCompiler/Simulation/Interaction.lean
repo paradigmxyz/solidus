@@ -1269,6 +1269,46 @@ theorem request_inv
   cases hFollow with
   | request tail => exact ⟨_, rfl, tail⟩
 
+/-- A followed prefix can always be extended to one complete concrete branch
+by selecting default answers after the prefix. -/
+theorem exists_executes_extension
+    {Error : Type u1} {Result : Type v1}
+    {interaction : Interaction Error Result}
+    {head : Transcript}
+    (hFollow : Follows interaction head) :
+    ∃ suffix outcome,
+      Executes interaction (head ++ suffix) outcome := by
+  induction hFollow with
+  | nil interaction =>
+      induction interaction with
+      | done outcome =>
+          exact ⟨[], outcome, Executes.done outcome⟩
+      | request query resume ih =>
+          obtain ⟨suffix, outcome, hExec⟩ := ih query.defaultAnswer
+          exact
+            ⟨{ query := query, answer := query.defaultAnswer } :: suffix,
+              outcome, Executes.request query.defaultAnswer hExec⟩
+  | @request query resume answer transcript hTail ih =>
+      obtain ⟨suffix, outcome, hExec⟩ := ih
+      exact ⟨suffix, outcome, by simpa using Executes.request answer hExec⟩
+
+/-- Forget a suffix from an already followed transcript. -/
+theorem prefix_of_append
+    {Error : Type u1} {Result : Type v1}
+    {interaction : Interaction Error Result}
+    (head suffix : Transcript)
+    (hFollow : Follows interaction (head ++ suffix)) :
+    Follows interaction head := by
+  induction head generalizing interaction with
+  | nil => exact .nil interaction
+  | cons exchange head ih =>
+      cases interaction with
+      | done outcome => cases hFollow
+      | request query resume =>
+          obtain ⟨answer, hExchange, hTail⟩ := request_inv hFollow
+          subst exchange
+          exact .request (ih hTail)
+
 end Follows
 
 namespace AllDone
@@ -1888,6 +1928,45 @@ inductive ForwardRel
         (.request query left) (.request query right)
 
 namespace ForwardRel
+
+/-- Execute one source branch of a forward refinement. A truncated branch
+retains its exact target transcript prefix; every other branch reaches a
+related target leaf. -/
+theorem executes_or_follows
+    {Error₁ : Type u1} {Result₁ : Type v1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    {truncated : Error₁ → Prop}
+    {doneRel :
+      Except Error₁ Result₁ → Except Error₂ Result₂ → Prop}
+    {left : Interaction Error₁ Result₁}
+    {right : Interaction Error₂ Result₂}
+    {transcript : Transcript}
+    {leftDone : Except Error₁ Result₁}
+    (hRel : ForwardRel truncated doneRel left right)
+    (hExec : Executes left transcript leftDone) :
+    (∃ error,
+        leftDone = .error error ∧ truncated error ∧
+          Follows right transcript) ∨
+      ∃ rightDone,
+        Executes right transcript rightDone ∧ doneRel leftDone rightDone := by
+  induction hExec generalizing right with
+  | done outcome =>
+      cases hRel with
+      | truncated hTruncated =>
+          exact .inl ⟨_, rfl, hTruncated, .nil _⟩
+      | done hDone =>
+          exact .inr ⟨_, Executes.done _, hDone⟩
+  | @request query resume answer transcript outcome hTail ih =>
+      cases hRel with
+      | request hResume =>
+          rcases ih (hResume answer) with hTruncated | hDone
+          · rcases hTruncated with
+              ⟨error, hError, hTruncated, hFollow⟩
+            exact .inl
+              ⟨error, hError, hTruncated, Follows.request hFollow⟩
+          · rcases hDone with ⟨rightDone, hRight, hRelated⟩
+            exact .inr
+              ⟨rightDone, Executes.request answer hRight, hRelated⟩
 
 /--
 Reconstruct source-truncating forward refinement from concrete branches.

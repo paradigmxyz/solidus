@@ -1,5 +1,6 @@
 import EvmCompiler.Structured.InteractionBoundedOwnerPreservation
 import EvmCompiler.Structured.InteractionFuelSafety
+import EvmCompiler.TypedCfg.InteractionFuelSafety
 
 namespace EvmCompiler
 namespace Structured
@@ -4616,8 +4617,59 @@ abbrev PrefixDoneRel
     (generated : TypedCfgPreservation.Program.GeneratedContext
       program entryShapes cfg) :=
   Simulation.Interaction.ExceptRel
-    (fun _sourceError _targetError : EVMException => True)
+    Assembly.InteractionFuelSafety.StructuralErrorRel
     (PrefixOutcomeRel generated)
+
+/-- Every completed generated whole-program prefix carries exactly the terminal
+safety needed by the adjacent Assembly lowering. -/
+theorem PrefixDoneRel.targetSafe
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {generated : TypedCfgPreservation.Program.GeneratedContext
+      program entryShapes cfg}
+    {sourceDone : Except EVMException Structured.Outcome}
+    {targetDone : Except EVMException TypedCfg.Outcome}
+    (hRel : PrefixDoneRel generated sourceDone targetDone) :
+    TypedCfg.InteractionSemantics.Program.PrefixAssemblySafe targetDone := by
+  cases hRel with
+  | error hError => trivial
+  | @ok sourceOutcome targetOutcome hOutcome =>
+      rcases sourceOutcome with ⟨source, mode⟩
+      cases mode with
+      | regular =>
+          cases targetOutcome with
+          | halt kind target =>
+              cases kind with
+              | stop =>
+                  change Assembly.InteractionSemantics.Terminal.SafeAt
+                    .stop target
+                  unfold Assembly.InteractionSemantics.Terminal.SafeAt
+                  change ∃ final, Assembly.PrimOp.stop.step target = .ok final
+                  refine ⟨
+                    { target with
+                      toMachineState :=
+                        (target.toMachineState.setReturnData ByteArray.empty).setHReturn
+                          ByteArray.empty }, ?_⟩
+                  rfl
+              | «return» | revert | selfdestruct => cases hOutcome
+          | jump label target
+          | fallthrough target
+          | returnDispatch target
+          | invalid target => cases hOutcome
+      | halt kind =>
+          cases targetOutcome with
+          | halt targetKind target =>
+              obtain ⟨hTerminal, _hFits, _hRestored⟩ := hOutcome
+              obtain ⟨targetState, targetFinal, hTarget, hStep, _hState⟩ :=
+                TypedCfgPreservation.OutcomeSimulation.Rel.halt_elim hTerminal
+              cases hTarget
+              exact ⟨targetFinal, hStep⟩
+          | jump label target
+          | fallthrough target
+          | returnDispatch target
+          | invalid target => cases hOutcome
+      | brk | cont | leave => cases hOutcome
 
 private theorem programEnd_prefix
     {program : Structured.Program}
@@ -4690,7 +4742,8 @@ private theorem complete_prefix
     (hDone :
       InteractionControlPreservation.OpenOutcome.SegmentDoneRel
         generated.main { procs := program.procs }
-        ProcLabel.programEnd [] [] .stop sourceDone targetDone) :
+        ProcLabel.programEnd [] [] .stop sourceDone targetDone)
+    (hTargetSafe : Assembly.InteractionFuelSafety.NotOutOfFuel targetDone) :
     Simulation.Interaction.ForwardRel
       InteractionControlPreservation.OpenOutcome.Truncated
       (PrefixDoneRel generated)
@@ -4698,7 +4751,9 @@ private theorem complete_prefix
       (completePrefixDone cfg targetDone) := by
   cases hDone with
   | error hError =>
-      exact .done (Simulation.Interaction.ExceptRel.error trivial)
+      exact .done (Simulation.Interaction.ExceptRel.error
+        (Assembly.InteractionFuelSafety.StructuralErrorRel.of_target_not
+          hTargetSafe))
   | @ok sourceOutcome targetResult hSegment =>
       cases targetResult with
       | exhausted label state =>
@@ -4804,15 +4859,21 @@ theorem main_prefix_forward
     main_forward generated hProgramWF hProgramFrameSafe sourceFuel source
       target hStateRel
   rw [hReturns] at hBase
+  have hBaseSafe := Simulation.Interaction.ForwardRel.strengthen_right hBase
+    (TypedCfg.InteractionFuelSafety.Program.openRunNResultWithStop
+      (topPolicy generated source) cfg
+      (InteractionStaticCost.blockBudget program sourceFuel program.body)
+      TypedCfgCompiler.entryLabel target)
   have hBound := Simulation.Interaction.ForwardRel.bind_right
     (targetDoneRel := PrefixDoneRel generated)
-    (rightNext := completePrefixRun cfg) hBase
+    (rightNext := completePrefixRun cfg) hBaseSafe
     (fun _leftDone _rightDone hDone => by
+      rcases hDone with ⟨hRelated, hSafe⟩
       cases _rightDone with
       | error error =>
-          exact complete_prefix (cfg := cfg) generated hDone
+          exact complete_prefix (cfg := cfg) generated hRelated hSafe
       | ok result =>
-          exact complete_prefix (cfg := cfg) generated hDone)
+          exact complete_prefix (cfg := cfg) generated hRelated hSafe)
   rw [TypedCfg.InteractionSemantics.Program.openRunNPrefix_eq_refinedStop_add]
   exact hBound
 

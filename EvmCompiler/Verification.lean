@@ -13,6 +13,7 @@ import EvmCompiler.Structured.InteractionFuelSafety
 import EvmCompiler.Structured.TypedCfgPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.TypedCfg.InteractionPrefixPreservation
+import EvmCompiler.TypedCfg.InteractionFuelSafety
 import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Assembly.InteractionFuelSafety
 import EvmCompiler.Assembly.Compact
@@ -53,6 +54,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Simulation.Interaction.ForwardRel.of_executes_or_follows
 #check EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_follows_of_le
 #check EvmCompiler.TypedCfg.InteractionPrefixPreservation.Program.compileCertified?_entry_openRunNPrefix_assembly_forward
+#check EvmCompiler.TypedCfg.InteractionFuelSafety.Program.openRunNResultWithStop
+#check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackAssemblyPrefixForward
 #check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.UniformExecPreservesUnder.with_runtime_errors_and_truncation
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsFinished
 #check EvmCompiler.Compiler.OpenInteractionComposition.stackExpressionsToStructuredFinished
@@ -77,6 +80,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Structured.InteractionTruncationOwnerPreservation.OpenOutcome.GeneratedProgram.main_prefix_forward
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackTypedCfgForward
 #print axioms EvmCompiler.TypedCfg.InteractionPrefixPreservation.Program.compileCertified?_entry_openRunNPrefix_assembly_forward
+#print axioms EvmCompiler.TypedCfg.InteractionFuelSafety.Program.openRunNResultWithStop
+#print axioms EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackAssemblyPrefixForward
 #print axioms EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.UniformExecPreservesUnder.with_runtime_errors_and_truncation
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyFinished
 #print axioms EvmCompiler.Assembly.InteractionFuelSafety.PrimOp.openStep
