@@ -31,7 +31,7 @@ inductive CallKind where
   | user
   | objectBuiltin
   | dialectBuiltin
-  deriving BEq, DecidableEq, Inhabited, Repr
+  deriving BEq, Inhabited, Repr
 
 namespace CallKind
 
@@ -49,14 +49,14 @@ inductive Expr where
   | bytesLit (bytes : List UInt8)
   | var (name : Name)
   | call (kind : CallKind) (callee : Name) (args : List Expr)
-  deriving Inhabited, Repr
+  deriving BEq, Inhabited, Repr
 
 inductive SwitchCaseValue where
   | word (value : Word)
   | stringLit (value : String)
   | bytesLit (bytes : List UInt8)
   | boolLit (value : Bool)
-  deriving Inhabited, Repr
+  deriving BEq, Inhabited, Repr
 
 inductive Stmt where
   | block (stmts : List Stmt)
@@ -72,13 +72,13 @@ inductive Stmt where
   | break
   | continue
   | leave
-  deriving Inhabited, Repr
+  deriving BEq, Inhabited, Repr
 
 structure FunctionDef where
   params : List Name
   returns : List Name
   body : List Stmt
-  deriving Inhabited, Repr
+  deriving BEq, Inhabited, Repr
 
 structure DataSection where
   name? : Option Name
@@ -1122,6 +1122,64 @@ mutual
           Stmt.CaseList.hasCallNamed? wanted rest
 end
 
+namespace FunctionDef
+
+def matchesStub? (fn : FunctionDef) (params returns : List Name)
+    (body : List Stmt) : Bool :=
+  fn.params == params && fn.returns == returns && fn.body == body
+
+end FunctionDef
+
+namespace FunctionDefList
+
+def containsStub? (functions : List (Name × FunctionDef))
+    (name : Name) (params returns : List Name) (body : List Stmt) : Bool :=
+  functions.any fun entry =>
+    entry.fst == name && entry.snd.matchesStub? params returns body
+
+end FunctionDefList
+
+mutual
+  def Stmt.functionDefStubsRetained? :
+      List (Name × FunctionDef) → Stmt → Bool
+    | functions, .block stmts =>
+        Stmt.List.functionDefStubsRetained? functions stmts
+    | _functions, .letDecl _ none => true
+    | _functions, .letDecl _ (some _value) => true
+    | _functions, .assign _ _value => true
+    | _functions, .exprStmt _expr => true
+    | functions, .functionDef name params returns body =>
+        FunctionDefList.containsStub? functions name params returns body &&
+          Stmt.List.functionDefStubsRetained? functions body
+    | functions, .switch _scrutinee cases default =>
+        Stmt.CaseList.functionDefStubsRetained? functions cases &&
+          Stmt.List.functionDefStubsRetained? functions default
+    | functions, .forLoop pre _condition post body =>
+        Stmt.List.functionDefStubsRetained? functions pre &&
+          Stmt.List.functionDefStubsRetained? functions post &&
+            Stmt.List.functionDefStubsRetained? functions body
+    | functions, .ifThen _condition body =>
+        Stmt.List.functionDefStubsRetained? functions body
+    | _functions, .break => true
+    | _functions, .continue => true
+    | _functions, .leave => true
+
+  def Stmt.List.functionDefStubsRetained? :
+      List (Name × FunctionDef) → List Stmt → Bool
+    | _functions, [] => true
+    | functions, stmt :: rest =>
+        Stmt.functionDefStubsRetained? functions stmt &&
+          Stmt.List.functionDefStubsRetained? functions rest
+
+  def Stmt.CaseList.functionDefStubsRetained? :
+      List (Name × FunctionDef) →
+        List (SwitchCaseValue × List Stmt) → Bool
+    | _functions, [] => true
+    | functions, (_value, body) :: rest =>
+        Stmt.List.functionDefStubsRetained? functions body &&
+          Stmt.CaseList.functionDefStubsRetained? functions rest
+end
+
 namespace NameList
 
 def insertUnique (name : Name) : List Name → List Name
@@ -1150,6 +1208,10 @@ def forkSpellingOk? (version : Yul.SolcValidation.EvmVersion)
 def hasCallNamed? (wanted : Name) (fn : FunctionDef) : Bool :=
   Stmt.List.hasCallNamed? wanted fn.body
 
+def functionDefStubsRetained? (functions : List (Name × FunctionDef))
+    (fn : FunctionDef) : Bool :=
+  Stmt.List.functionDefStubsRetained? functions fn.body
+
 namespace List
 
 def loadImmutableNames : List (Name × FunctionDef) → List Name
@@ -1167,6 +1229,13 @@ def hasCallNamed? (wanted : Name) : List (Name × FunctionDef) → Bool
   | [] => false
   | (_name, fn) :: rest =>
       fn.hasCallNamed? wanted || hasCallNamed? wanted rest
+
+def functionDefStubsRetained? (functions : List (Name × FunctionDef)) :
+    List (Name × FunctionDef) → Bool
+  | [] => true
+  | (_name, fn) :: rest =>
+      fn.functionDefStubsRetained? functions &&
+        functionDefStubsRetained? functions rest
 
 end List
 end FunctionDef
@@ -1227,6 +1296,27 @@ def hasCallNamed? (wanted : Name) (object : Object) : Bool :=
 
 def noRawClzCall? (object : Object) : Bool :=
   !object.hasCallNamed? "clz"
+
+mutual
+  def functionDefStubsRetainedFuel? : Nat → Object → Bool
+    | 0, _ => false
+    | fuel + 1, object =>
+        Stmt.List.functionDefStubsRetained? object.functions
+            object.dispatcher &&
+          FunctionDef.List.functionDefStubsRetained? object.functions
+            object.functions &&
+            Object.List.functionDefStubsRetainedFuel? fuel object.objects
+
+  def List.functionDefStubsRetainedFuel? : Nat → List Object → Bool
+    | 0, _ => false
+    | _fuel + 1, [] => true
+    | fuel + 1, object :: rest =>
+        object.functionDefStubsRetainedFuel? fuel &&
+          List.functionDefStubsRetainedFuel? fuel rest
+end
+
+def functionDefStubsRetained? (object : Object) : Bool :=
+  object.functionDefStubsRetainedFuel? callSearchFuel
 
 end Object
 

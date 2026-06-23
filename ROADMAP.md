@@ -158,7 +158,11 @@ Next raw frontend layer:
   before their checked frontend no-op lowering. Raw production elaboration now
   also fail-closes on any frontend object that still contains an unlowered
   callee named exactly `clz`, with decode and artifact wrapper theorems
-  exposing `Frontend.Object.noRawClzCall? = true`.
+  exposing `Frontend.Object.noRawClzCall? = true`. It also fail-closes unless
+  every retained nested-function staging node has an identical callable entry
+  in the same frontend object's function table, with decode and artifact
+  wrapper theorems exposing
+  `Frontend.Object.functionDefStubsRetained? = true`.
   Semantic preservation of the helper and nested
   hoist/alpha-renaming passes remains open.
 - [x] Expose the production interface
