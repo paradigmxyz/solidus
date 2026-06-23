@@ -193,6 +193,39 @@ theorem terminal_of_assemblySafeHalted
           rw [hKind]
           trivial
 
+/-- A source-safe finished CFG outcome is realized as either the same Assembly
+error or a terminal Assembly result. -/
+theorem finished_of_assemblySafeFinished
+    {program : Assembly.Program}
+    {source : Except EVMException TypedCfg.Outcome}
+    {target : Assembly.Source.ExecutionOutcome}
+    (hSafe :
+      TypedCfg.InteractionSemantics.Program.AssemblySafeFinished source)
+    (hSim : RunSimulates program source target) :
+    Assembly.InteractionSemantics.Finished target := by
+  cases source with
+  | error sourceError =>
+      unfold RunSimulates at hSim
+      subst target
+      trivial
+  | ok sourceOutcome =>
+      cases sourceOutcome with
+      | fallthrough state => cases hSafe
+      | jump label state => cases hSafe
+      | returnDispatch state => cases hSafe
+      | invalid state => cases hSafe
+      | halt kind state =>
+          have hHalted :
+              TypedCfg.InteractionSemantics.Program.AssemblySafeHalted
+                (.ok (.halt kind state)) := by
+            simpa [TypedCfg.InteractionSemantics.Program.AssemblySafeFinished,
+              TypedCfg.InteractionSemantics.Program.AssemblySafeHalted] using
+              hSafe
+          have hTerminal := terminal_of_assemblySafeHalted hHalted hSim
+          cases target with
+          | error targetError => cases hTerminal
+          | ok targetResult => exact hTerminal
+
 end OpenBlock
 
 theorem runPops_source_openRunNResult
@@ -3630,6 +3663,137 @@ theorem lower?_openRunN_rel
                   rcases hSim with ⟨error, hError⟩
                   cases hError
 
+/-- A concrete TypedCfg error branch lowers to an exact bounded error branch of
+the ordinary Assembly source runner. All selected block fragments and recursive
+PC facts are derived from successful lowering. -/
+theorem lower?_openRunN_error_executes_source_bounded
+    {program : TypedCfg.Program} {target : Assembly.Program}
+    {label : Label} {targetState sourceState : EVMState}
+    {entryPc : Nat} {fuel : Nat}
+    {transcript : Simulation.Interaction.Transcript}
+    {sourceError : EVMException}
+    (hLower : program.lower? = some target)
+    (hAccepted : target.accepted = true)
+    (hFits : target.PCFits)
+    (hTyped : program.WellTyped)
+    (hIndependent : program.ProgramCounterIndependent)
+    (hLabelPc : target.labelPc label = some entryPc)
+    (hPc : targetState.pc = EvmYul.UInt256.ofNat entryPc)
+    (hRuntime :
+      Assembly.SameRuntimeData sourceState targetState.incrPC)
+    (hExec : Simulation.Interaction.Executes
+      (TypedCfg.InteractionSemantics.Program.openRunN
+        program fuel label sourceState)
+      transcript (.error sourceError)) :
+    exists usedFuel,
+      usedFuel <=
+          fuel *
+            TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget program /\
+        Simulation.Interaction.Executes
+          (Assembly.InteractionSemantics.Source.openRunNResult
+            target usedFuel targetState)
+          transcript (.error sourceError) := by
+  induction fuel generalizing label targetState sourceState entryPc transcript with
+  | zero =>
+      rw [TypedCfg.InteractionSemantics.Program.openRunN_zero] at hExec
+      cases hExec
+  | succ fuel ih =>
+      rw [TypedCfg.InteractionSemantics.Program.openRunN_succ] at hExec
+      rcases Simulation.Interaction.Executes.bind_cases hExec with
+        hStepError | hStepOk
+      · rcases hStepError with ⟨error, hOutcome, hSourceStep⟩
+        cases hOutcome
+        cases hFind : program.findBlock? label with
+        | none =>
+            simp only [TypedCfg.InteractionSemantics.Program.openStep,
+              TypedCfg.Control.Program.step, hFind] at hSourceStep
+            cases hSourceStep
+        | some block =>
+            have hStepRel :=
+              lower?_step_openRunSimulates_rel_of_related
+                hLower hAccepted hFits hTyped hIndependent
+                hFind hLabelPc hPc hRuntime
+            obtain ⟨targetDone, hTargetStep, hSim⟩ :=
+              Simulation.Interaction.Rel.executes hStepRel hSourceStep
+            cases targetDone with
+            | error targetError =>
+                unfold OpenBlock.RunSimulates at hSim
+                cases hSim
+                rcases TypedCfg.Program.lower?_fragment_of_findBlock?
+                    hLower hFind with ⟨fragment⟩
+                obtain ⟨usedFuel, hUsedFuel, hAssemblyExec⟩ :=
+                  TypedCfg.InteractionSemantics.CompiledBlock.openRun_error_executes_source_bounded
+                    fragment.lower hTargetStep
+                refine ⟨usedFuel, ?_, hAssemblyExec⟩
+                have hBlockFuel :=
+                  TypedCfg.InteractionSemantics.CompiledProgram.block_fuelBudget_le_of_findBlock?
+                    hFind
+                rw [Nat.add_mul]
+                omega
+            | ok targetResult =>
+                unfold OpenBlock.RunSimulates at hSim
+                cases hSim
+      · rcases hStepOk with
+          ⟨sourceOutcome, headTranscript, restTranscript,
+            hTranscript, hSourceStep, hSourceRest⟩
+        subst transcript
+        cases sourceOutcome with
+        | fallthrough final => cases hSourceRest
+        | returnDispatch final => cases hSourceRest
+        | halt kind final => cases hSourceRest
+        | invalid final => cases hSourceRest
+        | jump next sourceAfter =>
+            cases hFind : program.findBlock? label with
+            | none =>
+                simp only [TypedCfg.InteractionSemantics.Program.openStep,
+                  TypedCfg.Control.Program.step, hFind] at hSourceStep
+                cases hSourceStep
+            | some block =>
+                have hStepRel :=
+                  lower?_step_openRunSimulates_rel_of_related
+                    hLower hAccepted hFits hTyped hIndependent
+                    hFind hLabelPc hPc hRuntime
+                obtain ⟨targetDone, hTargetStep, hSim⟩ :=
+                  Simulation.Interaction.Rel.executes hStepRel hSourceStep
+                cases targetDone with
+                | error targetError =>
+                    unfold OpenBlock.RunSimulates OpenOutcome.Simulates
+                      Preservation.Outcome.Simulates
+                      Preservation.Outcome.RunningAt at hSim
+                    rcases hSim with ⟨dest, hDest, hImpossible⟩
+                    exact hImpossible.elim
+                | ok targetResult =>
+                    cases targetResult with
+                    | halted halt =>
+                        unfold OpenBlock.RunSimulates OpenOutcome.Simulates
+                          Preservation.Outcome.Simulates
+                          Preservation.Outcome.RunningAt at hSim
+                        rcases hSim with ⟨dest, hDest, hImpossible⟩
+                        exact hImpossible.elim
+                    | running targetAfter =>
+                        unfold OpenBlock.RunSimulates OpenOutcome.Simulates
+                          Preservation.Outcome.Simulates
+                          Preservation.Outcome.RunningAt at hSim
+                        rcases hSim with
+                          ⟨dest, hDest, hTargetPc, hData⟩
+                        obtain ⟨headFuel, hHeadFuel, hAssemblyHead⟩ :=
+                          TypedCfg.InteractionSemantics.CompiledBlock.openRun_executes_source_bounded
+                            hTargetStep
+                        obtain ⟨tailFuel, hTailFuel, hAssemblyTail⟩ :=
+                          ih hDest hTargetPc
+                            (Assembly.SameRuntimeData.incrPC_right hData.symm)
+                            hSourceRest
+                        refine ⟨headFuel + tailFuel, ?_, ?_⟩
+                        · have hBlockFuel :=
+                            TypedCfg.InteractionSemantics.CompiledProgram.block_fuelBudget_le_of_findBlock?
+                              hFind
+                          rw [Nat.add_mul]
+                          omega
+                        · rw [
+                            Assembly.InteractionSemantics.Source.openRunNResult_add]
+                          exact Simulation.Interaction.Executes.bind_ok
+                            hAssemblyHead hAssemblyTail
+
 /--
 Certified entry-point open preservation. All compiler-selected facts are
 derived from the checked artifact; callers provide only the source-facing
@@ -3708,6 +3872,108 @@ theorem compileCertified?_entry_openRunN_assembly_rel
     TypedCfg.InteractionSemantics.CompiledProgram.openRunN_rel_source_terminal
       hBlockTerminal
   exact Simulation.Interaction.Rel.trans_eq_right hBlocks hFlatten
+
+/-- Certified entry preservation to the ordinary Assembly source runner for
+all source-safe finished branches, including exact runtime errors. -/
+theorem compileCertified?_entry_openRunN_assembly_finished_rel
+    {program : TypedCfg.Program}
+    {artifact : TypedCfg.Program.CertifiedArtifact}
+    {targetState sourceState : EVMState} (fuel : Nat)
+    (hCompile : program.compileCertified? = some artifact)
+    (hIndependent : program.ProgramCounterIndependent)
+    (hPc : targetState.pc = EvmYul.UInt256.ofNat 0)
+    (hRuntime :
+      Assembly.SameRuntimeData sourceState targetState.incrPC)
+    (hSafe : Simulation.Interaction.AllDone
+      TypedCfg.InteractionSemantics.Program.AssemblySafeFinished
+      (TypedCfg.InteractionSemantics.Program.openRunN
+        program fuel program.entry sourceState)) :
+    Simulation.Interaction.Rel
+      (OpenBlock.RunSimulates artifact.target)
+      (TypedCfg.InteractionSemantics.Program.openRunN
+        program fuel program.entry sourceState)
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.target
+        (fuel *
+          TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget program)
+        targetState) := by
+  have hLower : program.lower? = some artifact.target :=
+    TypedCfg.Program.compileCertified?_target hCompile
+  have hAccepted :=
+    TypedCfg.Program.compileCertified?_targetAccepted hCompile
+  have hFits := TypedCfg.Program.compileCertified?_pcFits hCompile
+  have hTyped := TypedCfg.Program.compileCertified?_wellTyped hCompile
+  have hLabelPc := TypedCfg.Program.lower?_entry_labelPc_zero hLower
+  have hBlocks :=
+    compileCertified?_entry_openRunN_rel fuel
+      hCompile hIndependent hPc hRuntime
+  apply Simulation.Interaction.Rel.of_executes
+  intro transcript sourceDone hSourceExec
+  have hSafeDone :=
+    Simulation.Interaction.AllDone.property_of_executes hSafe hSourceExec
+  cases sourceDone with
+  | error sourceError =>
+      obtain ⟨usedFuel, hUsedFuel, hAssemblyExec⟩ :=
+        lower?_openRunN_error_executes_source_bounded
+          hLower hAccepted hFits hTyped hIndependent
+          hLabelPc hPc hRuntime hSourceExec
+      let extra :=
+        fuel *
+            TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget program -
+          usedFuel
+      have hFuel :
+          usedFuel + extra =
+            fuel *
+              TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                program :=
+        Nat.add_sub_of_le hUsedFuel
+      have hPadded :=
+        Assembly.InteractionSemantics.Source.openRunNResult_error_add_executes
+          (extra := extra) hAssemblyExec
+      rw [hFuel] at hPadded
+      exact ⟨.error sourceError, hPadded, rfl⟩
+  | ok sourceOutcome =>
+      cases sourceOutcome with
+      | fallthrough state => cases hSafeDone
+      | jump label state => cases hSafeDone
+      | returnDispatch state => cases hSafeDone
+      | invalid state => cases hSafeDone
+      | halt kind state =>
+          obtain ⟨targetDone, hTargetExec, hSim⟩ :=
+            Simulation.Interaction.Rel.executes hBlocks hSourceExec
+          have hHalted :
+              TypedCfg.InteractionSemantics.Program.AssemblySafeHalted
+                (.ok (.halt kind state)) := by
+            simpa [
+              TypedCfg.InteractionSemantics.Program.AssemblySafeFinished,
+              TypedCfg.InteractionSemantics.Program.AssemblySafeHalted] using
+              hSafeDone
+          have hTerminal :=
+            OpenBlock.terminal_of_assemblySafeHalted hHalted hSim
+          cases targetDone with
+          | error targetError => cases hTerminal
+          | ok targetResult =>
+              cases targetResult with
+              | running targetAfter => cases hTerminal
+              | halted halt =>
+                  obtain ⟨usedFuel, hUsedFuel, hAssemblyExec⟩ :=
+                    TypedCfg.InteractionSemantics.CompiledProgram.openRunN_executes_source_bounded
+                      hTargetExec
+                  let extra :=
+                    fuel *
+                        TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                          program - usedFuel
+                  have hFuel :
+                      usedFuel + extra =
+                        fuel *
+                          TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                            program :=
+                    Nat.add_sub_of_le hUsedFuel
+                  have hPadded :=
+                    Assembly.InteractionSemantics.Source.openRunNResult_halted_add_executes
+                      (extra := extra) hAssemblyExec
+                  rw [hFuel] at hPadded
+                  exact ⟨.ok (.halted halt), hPadded, hSim⟩
 
 end Program
 

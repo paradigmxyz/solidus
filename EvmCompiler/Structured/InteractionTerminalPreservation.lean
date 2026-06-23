@@ -123,6 +123,39 @@ theorem assemblySafeHalted_of_related
                   subst targetOutcome
                   exact ⟨targetFinal, hStep⟩
 
+theorem assemblySafeFinished_of_related
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
+    {returns : List ReturnDest} {tokens : List Word}
+    {source : Except EVMException Structured.Outcome}
+    {target : Except EVMException TypedCfg.Outcome}
+    (hRel : OutcomeDoneRel result ctx regular returns tokens source target)
+    (hSourceFinished : SourceFinished source) :
+    TypedCfg.InteractionSemantics.Program.AssemblySafeFinished target := by
+  cases source with
+  | error sourceError =>
+      cases target with
+      | error targetError => trivial
+      | ok targetOutcome => cases hRel
+  | ok sourceOutcome =>
+      rcases sourceOutcome with ⟨sourceState, sourceMode⟩
+      cases sourceMode with
+      | regular | brk | cont | leave => cases hSourceFinished
+      | halt kind =>
+          have hSourceHalted :
+              SourceHalted (.ok ⟨sourceState, .halt kind⟩) := trivial
+          have hSafe :=
+            assemblySafeHalted_of_related hRel hSourceHalted
+          cases target with
+          | error targetError => cases hSafe
+          | ok targetOutcome =>
+              cases targetOutcome with
+              | fallthrough state => cases hSafe
+              | jump label state => cases hSafe
+              | returnDispatch state => cases hSafe
+              | invalid state => cases hSafe
+              | halt targetKind state => exact hSafe
+
 /-- A terminal Structured-to-TypedCfg relation supplies the source-facing
 safety needed to execute the adjacent Assembly halt instruction. -/
 theorem allDone_assemblySafeHalted
@@ -145,6 +178,27 @@ theorem allDone_assemblySafeHalted
   intro sourceDone targetDone hDone
   rcases hDone with ⟨hRelated, hSourceDone⟩
   exact assemblySafeHalted_of_related hRelated hSourceDone
+
+theorem allDone_assemblySafeFinished
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
+    {returns : List ReturnDest} {tokens : List Word}
+    {sourceRun : Simulation.Interaction EVMException Structured.Outcome}
+    {targetRun : Simulation.Interaction EVMException TypedCfg.Outcome}
+    (hRel : Simulation.Interaction.Rel
+      (OutcomeDoneRel result ctx regular returns tokens)
+      sourceRun targetRun)
+    (hSourceFinished :
+      Simulation.Interaction.AllDone SourceFinished sourceRun) :
+    Simulation.Interaction.AllDone
+      TypedCfg.InteractionSemantics.Program.AssemblySafeFinished
+      targetRun := by
+  have hStrong :=
+    Simulation.Interaction.Rel.strengthen_left hRel hSourceFinished
+  apply Simulation.Interaction.Rel.allDone_right hStrong
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hRelated, hSourceDone⟩
+  exact assemblySafeFinished_of_related hRelated hSourceDone
 
 namespace PreservesUnder
 

@@ -685,6 +685,77 @@ theorem structuredToAssemblySource
   simpa [StructuredBytecodeDoneRel, cfgFuel, assemblyFuel] using
     Simulation.Interaction.Rel.trans hStructured hCfgAssembly
 
+/-- All-finished Structured-to-Assembly source preservation, composed from the
+adjacent generated-CFG and certified-lowering theorems. -/
+theorem structuredToAssemblySourceFinished
+    {source : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {artifact : TypedCfg.Program.CertifiedArtifact}
+    {sourceFuel : Nat}
+    {sourceState : Structured.RunState}
+    {cfgState assemblyState : Structured.EVMState}
+    (hGenerate :
+      Structured.TypedCfgCompiler.generateWithProcEntryShapes?
+          source entryShapes = some cfg)
+    (hCompile : cfg.compileCertified? = some artifact)
+    (hSourceWF : source.WF)
+    (hFrameSafe : source.FrameSafe)
+    (hIndependent : cfg.ProgramCounterIndependent)
+    (hSourceFinished : Simulation.Interaction.AllDone
+      Structured.InteractionTerminalPreservation.OpenOutcome.SourceFinished
+      (Structured.InteractionSemantics.Block.openRun
+        source sourceFuel source.body sourceState))
+    (hStructuredInitial :
+      Structured.TypedCfgPreservation.StateRel sourceState [] cfgState)
+    (hAssemblyPc : assemblyState.pc = EvmYul.UInt256.ofNat 0)
+    (hAssemblyInitial :
+      Assembly.SameRuntimeData cfgState assemblyState.incrPC) :
+    ∃ generated :
+        Structured.TypedCfgPreservation.Program.GeneratedContext
+          source entryShapes cfg,
+      Simulation.Interaction.Rel
+        (StructuredBytecodeDoneRel source entryShapes cfg generated
+          artifact.target sourceState.returns)
+        (Structured.InteractionSemantics.Block.openRun
+          source sourceFuel source.body sourceState)
+        (Assembly.InteractionSemantics.Source.openRunNResult
+          artifact.target
+          (Structured.InteractionStaticCost.blockBudget
+              source sourceFuel source.body *
+            TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg)
+          assemblyState) := by
+  let cfgFuel :=
+    Structured.InteractionStaticCost.blockBudget
+      source sourceFuel source.body
+  let assemblyFuel :=
+    cfgFuel * TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg
+  obtain ⟨generated, hStructuredFor⟩ :=
+    Structured.InteractionTerminalPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_finished
+      hGenerate
+      (TypedCfg.Program.compileCertified?_wellTyped hCompile)
+      hSourceWF hFrameSafe sourceFuel sourceState hSourceFinished
+  have hEntry : cfg.entry = Structured.TypedCfgCompiler.entryLabel := by
+    simpa using congrArg TypedCfg.Program.entry generated.cfgEq
+  have hStructured := hStructuredFor cfgState hStructuredInitial
+  have hCfgSafe :=
+    Structured.InteractionTerminalPreservation.OpenOutcome.allDone_assemblySafeFinished
+      hStructured hSourceFinished
+  have hCfgSafeAtEntry : Simulation.Interaction.AllDone
+      TypedCfg.InteractionSemantics.Program.AssemblySafeFinished
+      (TypedCfg.InteractionSemantics.Program.openRunN
+        cfg cfgFuel cfg.entry cfgState) := by
+    rw [hEntry]
+    simpa [cfgFuel] using hCfgSafe
+  have hCfgAssembly :=
+    TypedCfg.InteractionPreservation.Program.compileCertified?_entry_openRunN_assembly_finished_rel
+      cfgFuel hCompile hIndependent hAssemblyPc hAssemblyInitial
+        hCfgSafeAtEntry
+  refine ⟨generated, ?_⟩
+  rw [hEntry] at hCfgAssembly
+  simpa [StructuredBytecodeDoneRel, cfgFuel, assemblyFuel] using
+    Simulation.Interaction.Rel.trans hStructured hCfgAssembly
+
 /-- End-to-end terminal outcome relation obtained by composing the upper Yul
 relation with the lower Structured-to-bytecode relation. -/
 def YulStackBytecodeDoneRel

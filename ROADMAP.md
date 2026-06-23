@@ -105,8 +105,9 @@ stack-only correctness boundary.
   Yul -> Functions, Functions -> allocated Expressions, and the transparent
   Expressions -> Structured adapter now expose checked finished/stopped
   interfaces. Structured -> TypedCfg now preserves all genuine runtime errors
-  and halts through a compiler-owned static budget; the lower physical passes
-  and public composition remain.
+  and halts through a compiler-owned static budget. TypedCfg -> ordinary
+  Assembly source execution now preserves the same all-finished branches;
+  Assembly encoding and public Yul composition remain.
 - [ ] Add pinned real-world suites and generated adversarial cases for uncovered
   semantic families, then fix every backend rejection generically or record an
   honest supported-version/input-boundary rejection.

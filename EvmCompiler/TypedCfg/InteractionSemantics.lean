@@ -354,6 +354,94 @@ theorem openRun_executes_source_bounded
       · rw [if_neg hOutput] at hExec
         cases hExec
 
+/-- For a successfully lowered block, every compiler-selected error execution
+is an exact bounded prefix of ordinary Assembly source execution. -/
+theorem openRun_error_executes_source_bounded
+    {block : TypedCfg.Block} {program code : Assembly.Program}
+    {state : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    {sourceError : EVMException}
+    (hLower : block.lower? = some code)
+    (hExec : Simulation.Interaction.Executes
+      (openRun block program state) transcript (.error sourceError)) :
+    exists usedFuel,
+      usedFuel <= fuelBudget block /\
+        Simulation.Interaction.Executes
+          (Assembly.InteractionSemantics.Source.openRunNResult
+            program usedFuel state)
+          transcript (.error sourceError) := by
+  unfold TypedCfg.Block.lower? at hLower
+  unfold openRun at hExec
+  cases hBody : TypedCfg.Block.lowerBodyFrom?
+      block.body block.input with
+  | none => simp [hBody] at hLower
+  | some bodyResult =>
+      rcases bodyResult with ⟨bodyCode, output⟩
+      simp only [hBody] at hExec hLower
+      by_cases hOutput : output = block.output
+      · rw [if_pos hOutput] at hExec
+        subst output
+        cases hTerm : block.term.lowerAt? block.output with
+        | none => simp [hTerm] at hLower
+        | some termCode =>
+            simp only [hTerm] at hExec hLower
+            have hBudget : fuelBudget block =
+                1 + bodyCode.length + termCode.length := by
+              simp [fuelBudget, hBody, hTerm]
+            rcases Simulation.Interaction.Executes.bind_cases hExec with
+              hLabelError | hLabelOk
+            · rcases hLabelError with ⟨error, hOutcome, hLabel⟩
+              cases hOutcome
+              refine ⟨1, by rw [hBudget]; omega, ?_⟩
+              simpa using hLabel
+            · rcases hLabelOk with
+                ⟨labelResult, labelTranscript, restTranscript,
+                  hTranscript, hLabel, hRest⟩
+              subst transcript
+              cases labelResult with
+              | halted halt => cases hRest
+              | running entry =>
+                  rcases Simulation.Interaction.Executes.bind_cases hRest with
+                    hBodyError | hBodyOk
+                  · rcases hBodyError with
+                      ⟨error, hOutcome, hBodyRun⟩
+                    cases hOutcome
+                    refine
+                      ⟨1 + bodyCode.length,
+                        by rw [hBudget]; omega, ?_⟩
+                    rw [
+                      Assembly.InteractionSemantics.Source.openRunNResult_add]
+                    exact Simulation.Interaction.Executes.bind_ok
+                      hLabel hBodyRun
+                  · rcases hBodyOk with
+                      ⟨bodyResult, bodyTranscript, termTranscript,
+                        hRestTranscript, hBodyRun, hTermRun⟩
+                    subst restTranscript
+                    cases bodyResult with
+                    | halted halt => cases hTermRun
+                    | running mid =>
+                        obtain ⟨termFuel, hTermFuel, hTermExec⟩ :=
+                          Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy_error_executes_openRunNResult_bounded
+                            hTermRun
+                        have hLabelBody : Simulation.Interaction.Executes
+                            (Assembly.InteractionSemantics.Source.openRunNResult
+                              program (1 + bodyCode.length) state)
+                            (labelTranscript ++ bodyTranscript)
+                            (.ok (.running mid)) := by
+                          rw [
+                            Assembly.InteractionSemantics.Source.openRunNResult_add]
+                          exact Simulation.Interaction.Executes.bind_ok
+                            hLabel hBodyRun
+                        refine
+                          ⟨1 + bodyCode.length + termFuel,
+                            by rw [hBudget]; omega, ?_⟩
+                        rw [
+                          Assembly.InteractionSemantics.Source.openRunNResult_add]
+                        simpa [List.append_assoc] using
+                          Simulation.Interaction.Executes.bind_ok
+                            hLabelBody hTermExec
+      · simp [hOutput] at hLower
+
 end CompiledBlock
 
 namespace CompiledProgram
@@ -1007,6 +1095,14 @@ def Stopped : Except EVMException TypedCfg.Outcome -> Prop
 /-- A TypedCfg halt whose corresponding Assembly terminal instruction is safe
 to execute. -/
 def AssemblySafeHalted : Except EVMException TypedCfg.Outcome -> Prop
+  | .ok (.halt kind state) =>
+      Assembly.InteractionSemantics.Terminal.SafeAt kind state
+  | _ => False
+
+/-- Runtime errors are already final; successful halts additionally require
+the source-facing safety needed to execute their Assembly terminal primitive. -/
+def AssemblySafeFinished : Except EVMException TypedCfg.Outcome -> Prop
+  | .error _ => True
   | .ok (.halt kind state) =>
       Assembly.InteractionSemantics.Terminal.SafeAt kind state
   | _ => False
