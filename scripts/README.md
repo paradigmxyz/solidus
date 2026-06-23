@@ -1097,6 +1097,17 @@ scripts/test_dynamic_storage_surface_backend.sh
 scripts/test_supported_solc_versions.sh
 ```
 
+The EigenLayer BN254 gate pins the official `v1.12.0` source commit and executes
+its real `BN254.sol` library. Checked creation and runtime images are compared
+against full solc for modular exponentiation, curve addition, scalar
+multiplication, pairing, gas-limited pairing, tiny-scalar loops, and point
+hashing. This concretely exercises precompiles `0x05` through `0x08`, including
+the library's ordered `gas()`/`STATICCALL` pattern:
+
+```sh
+scripts/test_eigenlayer_bn254_bridge_smoke.sh
+```
+
 A networked smoke targets a pinned Compound v3 Comet checkout.  It builds an
 ABI-shaped wrapper around the real `CometMath` internal functions and compares
 safe-cast, signed/unsigned conversion, boolean conversion, and custom-error
