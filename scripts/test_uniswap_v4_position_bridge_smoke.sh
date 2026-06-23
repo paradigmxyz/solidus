@@ -2,6 +2,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON_BIN="${PYTHON:-python3}"
+BUNDLED_PYTHON="$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3"
+if ! "$PYTHON_BIN" -c 'import jsonschema' >/dev/null 2>&1 && \
+    [[ -x "$BUNDLED_PYTHON" ]]; then
+  PYTHON_BIN="$BUNDLED_PYTHON"
+fi
 SOLC_BIN="${SOLC:-solc}"
 if [[ -n "${LAKE:-}" ]]; then
   LAKE_BIN="$LAKE"
@@ -138,7 +144,7 @@ contract UniswapV4PositionFallback {
 }
 SOL
 
-SOLC_VERSION="$UNISWAP_V4_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+SOLC_VERSION="$UNISWAP_V4_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$POSITION_FIXTURE" \
   --solc "$SOLC_BIN" \
   --lake "$LAKE_BIN" \
@@ -151,9 +157,9 @@ SOLC_VERSION="$UNISWAP_V4_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_l
   --optimized \
   --output "$POSITION_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$POSITION_MANIFEST"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$POSITION_MANIFEST"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$POSITION_MANIFEST" \
   --input-format bridge-json-manifest \
   --format bridge-json-summary \
@@ -161,9 +167,9 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --object runtime \
   --output "$POSITION_SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$POSITION_SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$POSITION_SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$POSITION_MANIFEST" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
@@ -173,10 +179,10 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-backend-check \
   --output "$POSITION_BACKEND_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$POSITION_BACKEND_CHECK"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$POSITION_BACKEND_CHECK"
 
 RUNTIME_BACKEND_STATUS="$(
-  python3 - "$POSITION_BACKEND_CHECK" <<'PY'
+  "$PYTHON_BIN" - "$POSITION_BACKEND_CHECK" <<'PY'
 import json
 import sys
 
@@ -195,7 +201,7 @@ PY
 
 if [[ "$RUNTIME_BACKEND_STATUS" == "pass" ]]; then
   SOLC_VERSION="$UNISWAP_V4_SOLC_VERSION" \
-  python3 "$ROOT/scripts/compare_contract_call_bytecode.py" \
+  "$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
     "$POSITION_FIXTURE" \
     --solc "$SOLC_BIN" \
     --lake "$LAKE_BIN" \
@@ -212,7 +218,7 @@ if [[ "$RUNTIME_BACKEND_STATUS" == "pass" ]]; then
     --optimized > "$POSITION_COMPARE"
 fi
 
-python3 - "$POSITION_MANIFEST" "$POSITION_CHECK" "$POSITION_SUMMARY" \
+"$PYTHON_BIN" - "$POSITION_MANIFEST" "$POSITION_CHECK" "$POSITION_SUMMARY" \
   "$POSITION_BACKEND_CHECK" "$POSITION_COMPARE" <<'PY'
 import json
 import sys
@@ -318,33 +324,21 @@ if len(runtime_checks) != 1:
 runtime_check = runtime_checks[0]
 runtime_check_status = runtime_check.get("status")
 runtime_first_none = runtime_check.get("firstNone")
-if runtime_check_status == "pass":
-    if runtime_first_none != "none":
-        raise SystemExit(f"position runtime backend pass mismatch: {runtime_check!r}")
-    if compare.get("contract_call_compare") != "pass":
-        raise SystemExit(f"position runtime compare did not pass: {compare!r}")
-    if compare.get("calls") != "5":
-        raise SystemExit(f"position runtime compare call count mismatch: {compare!r}")
-    if compare.get("bridge_summary_1_frontends") != frontend_label:
-        raise SystemExit(f"position compare frontend drift: {compare!r}")
-    if (
-        compare.get("bridge_summary_1_object_selectors")
-        != "UniswapV4PositionFallback:runtime"
-    ):
-        raise SystemExit(f"position compare selector mismatch: {compare!r}")
-    runtime_compare = "yes"
-    runtime_compare_calls = compare["calls"]
-elif runtime_check_status == "fail":
-    if runtime_first_none != "functions_compile":
-        raise SystemExit(f"unexpected position runtime blocker: {runtime_check!r}")
-    if compare:
-        raise SystemExit(
-            f"position runtime compare ran despite backend blocker: {compare!r}"
-        )
-    runtime_compare = "blocked"
-    runtime_compare_calls = "0"
-else:
-    raise SystemExit(f"unexpected position backend status: {runtime_check!r}")
+if (runtime_check_status, runtime_first_none) != ("pass", "none"):
+    raise SystemExit(f"position runtime backend failed: {runtime_check!r}")
+if compare.get("contract_call_compare") != "pass":
+    raise SystemExit(f"position runtime compare did not pass: {compare!r}")
+if compare.get("calls") != "5":
+    raise SystemExit(f"position runtime compare call count mismatch: {compare!r}")
+if compare.get("bridge_summary_1_frontends") != frontend_label:
+    raise SystemExit(f"position compare frontend drift: {compare!r}")
+if (
+    compare.get("bridge_summary_1_object_selectors")
+    != "UniswapV4PositionFallback:runtime"
+):
+    raise SystemExit(f"position compare selector mismatch: {compare!r}")
+runtime_compare = "yes"
+runtime_compare_calls = compare["calls"]
 
 print("uniswap_v4_position_decode_objects=1")
 print(f"uniswap_v4_position_summary_objects={summary['counts']['objects']}")
