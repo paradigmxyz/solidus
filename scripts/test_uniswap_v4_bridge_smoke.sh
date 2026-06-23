@@ -1173,6 +1173,9 @@ run_strict_backend hooks_runtime bridge-json-manifest \
 run_strict_backend poolmanager_creation bridge-json-manifest \
   "$POOLMANAGER_PACKAGE_MANIFEST" \
   --contract PoolManager --object creation "${POOL_LINKER_ARGS[@]}"
+run_strict_backend poolmanager_runtime bridge-json-manifest \
+  "$POOLMANAGER_PACKAGE_MANIFEST" \
+  --contract PoolManager --object runtime "${POOL_LINKER_ARGS[@]}"
 
 SQRT_PRICE_BACKEND_STATUS="pass"
 SQRT_PRICE_BACKEND_FIRST_NONE="none"

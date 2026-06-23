@@ -6,6 +6,7 @@ import EvmCompiler.Verification
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
 #check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecode
+#check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
 
 #print axioms EvmCompiler.Compiler.StackArtifact.compile?_parts
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
@@ -13,3 +14,4 @@ import EvmCompiler.Verification
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecode
+#print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished

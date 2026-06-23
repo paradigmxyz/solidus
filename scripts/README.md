@@ -917,11 +917,10 @@ SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
 There is also a networked real-repository smoke against a pinned Uniswap
 v4-core checkout.  It generates and validates bridge JSON for
 `SwapMath` creation code and the real `PoolManager` runtime object, then
-replays the smaller `SwapMath` bridge file through the Lean bytecode path and
-runs decode-only Lean sidecar checks over the larger `PoolManager` runtime
-bridge file, a root-source all-contracts `PoolManager.sol` batch that checks
-both creation/runtime objects, the generated bridge manifest, and a Lean-free
-bridge package for `PoolManager.sol`.  It also compiles a tiny wrapper around
+replays the smaller `SwapMath` bridge file through the Lean bytecode path. The
+larger linked `PoolManager` creation and runtime objects each pass the strict
+checked-artifact path independently; decode sidecars and the all-contracts
+package remain as front-half diagnostics. It also compiles a tiny wrapper around
 the real Uniswap v4 `SwapMath.getSqrtPriceTarget` helper, a second wrapper
 around `FullMath`, `LiquidityMath`, and `LPFeeLibrary`, a `BitMath` wrapper
 covering most/least-significant-bit scans and the zero-input revert path in
