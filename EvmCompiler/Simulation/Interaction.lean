@@ -734,6 +734,18 @@ structure Exchange where
 
 abbrev Transcript := List Exchange
 
+/-- A concrete ordered transcript is a prefix of an interaction tree. Unlike
+`Executes`, this relation need not end at a terminal leaf. -/
+inductive Follows {Error : Type u1} {Result : Type v1} :
+    Interaction Error Result → Transcript → Prop where
+  | nil (interaction : Interaction Error Result) : Follows interaction []
+  | request {query : Query}
+      {resume : Answer query → Interaction Error Result}
+      {answer : Answer query} {transcript : Transcript} :
+      Follows (resume answer) transcript →
+      Follows (.request query resume)
+        ({ query := query, answer := answer } :: transcript)
+
 def pure {Error : Type u1} {Result : Type v1}
     (value : Result) : Interaction Error Result :=
   .done (.ok value)
@@ -1111,6 +1123,17 @@ inductive Executes
 
 namespace Executes
 
+/-- Every terminal execution also witnesses its transcript as a prefix. -/
+theorem follows
+    {Error : Type u1} {Result : Type v1}
+    {interaction : Interaction Error Result}
+    {transcript : Transcript} {outcome : Except Error Result}
+    (hExec : Executes interaction transcript outcome) :
+    Follows interaction transcript := by
+  induction hExec with
+  | done outcome => exact .nil _
+  | request answer tail ih => exact .request ih
+
 theorem bind_ok
     {Error : Type u1} {Source : Type v1} {Target : Type w1}
     {first : Interaction Error Source}
@@ -1197,6 +1220,35 @@ theorem bind_cases
                   hRest⟩
 
 end Executes
+
+namespace Follows
+
+/-- Binding after an interaction cannot erase an already exposed transcript. -/
+theorem bind
+    {Error : Type u1} {Source : Type v1} {Target : Type w1}
+    {first : Interaction Error Source}
+    {next : Source -> Interaction Error Target}
+    {transcript : Transcript}
+    (hFollow : Follows first transcript) :
+    Follows (Interaction.bind first next) transcript := by
+  induction hFollow with
+  | nil interaction => exact .nil _
+  | request tail ih => exact .request ih
+
+/-- Invert one followed request at its first exchange. -/
+theorem request_inv
+    {Error : Type u1} {Result : Type v1}
+    {query : Query}
+    {resume : Answer query -> Interaction Error Result}
+    {exchange : Exchange} {transcript : Transcript}
+    (hFollow : Follows (.request query resume) (exchange :: transcript)) :
+    exists answer,
+      exchange = { query := query, answer := answer } /\
+        Follows (resume answer) transcript := by
+  cases hFollow with
+  | request tail => exact ⟨_, rfl, tail⟩
+
+end Follows
 
 namespace AllDone
 
@@ -1815,6 +1867,95 @@ inductive ForwardRel
         (.request query left) (.request query right)
 
 namespace ForwardRel
+
+/--
+Reconstruct source-truncating forward refinement from concrete branches.
+
+A non-truncated source branch must execute to a related target outcome. A
+truncated source branch only requires its exact ordered transcript to remain a
+prefix of the target interaction. This is the branchwise interface needed when
+the compiler gives the target more fuel than the source.
+-/
+theorem of_executes_or_follows
+    {Error₁ : Type u1} {Result₁ : Type v1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    {truncated : Error₁ -> Prop}
+    {doneRel :
+      Except Error₁ Result₁ -> Except Error₂ Result₂ -> Prop}
+    {left : Interaction Error₁ Result₁}
+    {right : Interaction Error₂ Result₂}
+    (hBranches :
+      forall transcript leftDone,
+        Executes left transcript leftDone ->
+          (exists error,
+              leftDone = .error error /\
+                truncated error /\ Follows right transcript) \/
+            exists rightDone,
+              Executes right transcript rightDone /\
+                doneRel leftDone rightDone) :
+    ForwardRel truncated doneRel left right := by
+  induction left generalizing right with
+  | done leftDone =>
+      rcases hBranches [] leftDone (Executes.done leftDone) with
+        hTruncated | hDone
+      · obtain ⟨error, hError, hTruncated, _hFollow⟩ := hTruncated
+        subst leftDone
+        exact .truncated hTruncated
+      · obtain ⟨rightDone, hRight, hDone⟩ := hDone
+        cases hRight with
+        | done => exact .done hDone
+  | request query resume ih =>
+      cases right with
+      | done rightDone =>
+          obtain ⟨transcript, leftDone, hLeft, _⟩ :=
+            AllDone.exists_executes
+              (AllDone.trivial (resume query.defaultAnswer))
+          rcases hBranches
+              ({ query := query, answer := query.defaultAnswer } :: transcript)
+              leftDone
+              (Executes.request query.defaultAnswer hLeft) with
+            hTruncated | hDone
+          · obtain ⟨_error, _hError, _hTruncated, hFollow⟩ := hTruncated
+            cases hFollow
+          · obtain ⟨_rightDone, hRight, _hDone⟩ := hDone
+            cases hRight
+      | request targetQuery targetResume =>
+          obtain ⟨transcript, leftDone, hLeft, _⟩ :=
+            AllDone.exists_executes
+              (AllDone.trivial (resume query.defaultAnswer))
+          have hQuery : query = targetQuery := by
+            rcases hBranches
+                ({ query := query, answer := query.defaultAnswer } :: transcript)
+                leftDone
+                (Executes.request query.defaultAnswer hLeft) with
+              hTruncated | hDone
+            · obtain ⟨_error, _hError, _hTruncated, hFollow⟩ := hTruncated
+              obtain ⟨_answer, hHead, _hTail⟩ :=
+                Follows.request_inv hFollow
+              exact congrArg Exchange.query hHead
+            · obtain ⟨_rightDone, hRight, _hDone⟩ := hDone
+              obtain ⟨_answer, hHead, _hTail⟩ :=
+                Executes.request_inv hRight
+              exact congrArg Exchange.query hHead
+          subst targetQuery
+          exact .request fun answer => by
+            apply ih answer
+            intro tailTranscript tailDone hTail
+            rcases hBranches
+                ({ query := query, answer := answer } :: tailTranscript)
+                tailDone
+                (Executes.request answer hTail) with
+              hTruncated | hDone
+            · obtain ⟨error, hError, hTruncated, hFollow⟩ := hTruncated
+              obtain ⟨_targetAnswer, hHead, hTargetTail⟩ :=
+                Follows.request_inv hFollow
+              cases hHead
+              exact .inl ⟨error, hError, hTruncated, hTargetTail⟩
+            · obtain ⟨rightDone, hRight, hDone⟩ := hDone
+              obtain ⟨_targetAnswer, hHead, hTargetTail⟩ :=
+                Executes.request_inv hRight
+              cases hHead
+              exact .inr ⟨rightDone, hTargetTail, hDone⟩
 
 /-- Strengthen every related target leaf with a universal target invariant.
 Source truncation remains truncation and therefore needs no target relation. -/

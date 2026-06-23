@@ -46,6 +46,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsTerminal
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsForward
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackStructuredForward
+#check EvmCompiler.Simulation.Interaction.ForwardRel.of_executes_or_follows
+#check EvmCompiler.TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_follows_of_le
+#check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.UniformExecPreservesUnder.with_runtime_errors_and_truncation
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsFinished
 #check EvmCompiler.Compiler.OpenInteractionComposition.stackExpressionsToStructuredFinished
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulNormalizedStackToAssemblySourceFinished
@@ -65,6 +68,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyForward
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackStructuredForward
+#print axioms EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.UniformExecPreservesUnder.with_runtime_errors_and_truncation
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyFinished
 #print axioms EvmCompiler.Assembly.InteractionFuelSafety.PrimOp.openStep
 #print axioms EvmCompiler.Structured.InteractionFuelSafety.Code.openRun

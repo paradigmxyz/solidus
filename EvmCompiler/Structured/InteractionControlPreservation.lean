@@ -1027,6 +1027,31 @@ def BoundedErrorExecPreservesUnder (result : TypedCfgCompiler.Result)
 def RuntimeError (error : EVMException) : Prop :=
   error ≠ .OutOfFuel
 
+/-- Structural source-interpreter exhaustion. This is not an EVM runtime
+outcome and therefore preserves only the already exposed interaction prefix. -/
+def Truncated (error : EVMException) : Prop :=
+  error = .OutOfFuel
+
+def BoundedTruncationExecPreservesUnder
+    (result : TypedCfgCompiler.Result)
+    (cfg : TypedCfg.Program) (entry : Assembly.Label)
+    (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
+    (source : RunState) (tokens : List Word)
+    (sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome)
+    (targetBudget : Nat) (policy : StopPolicy) : Prop :=
+  forall target,
+    TypedCfgPreservation.StateRel source tokens target ->
+      forall transcript,
+        Simulation.Interaction.Executes
+            sourceRun transcript (.error .OutOfFuel) ->
+          exists targetFuel targetDone,
+            targetFuel <= targetBudget /\
+              Simulation.Interaction.Executes
+                (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+                  policy cfg targetFuel entry target)
+                transcript targetDone
+
 def UniformRuntimeErrorExecPreservesUnder
     (result : TypedCfgCompiler.Result)
     (cfg : TypedCfg.Program) (entry : Assembly.Label)
@@ -1090,6 +1115,25 @@ def UniformDoneExecPreservesUnder (result : TypedCfgCompiler.Result)
               SegmentDoneRel result ctx regular source.returns tokens
                 regularExit
                 sourceDone targetDone
+
+/-- Unconditional finite-prefix preservation at one compiler-owned target
+budget. Terminal source outcomes remain related; source interpreter exhaustion
+only releases the target suffix after the exact preceding transcript. -/
+def ForwardPreservesUnder (result : TypedCfgCompiler.Result)
+    (cfg : TypedCfg.Program) (entry : Assembly.Label)
+    (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
+    (regularExit : RegularExit)
+    (source : RunState) (tokens : List Word)
+    (sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome)
+    (targetFuel : Nat) (policy : StopPolicy) : Prop :=
+  forall target,
+    TypedCfgPreservation.StateRel source tokens target ->
+      Simulation.Interaction.ForwardRel Truncated
+        (SegmentDoneRel result ctx regular source.returns tokens regularExit)
+        sourceRun
+        (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+          policy cfg targetFuel entry target)
 
 /-- Execution-oriented preservation whose internally selected target budget is
 bounded by one source-owned ceiling. -/
@@ -2970,6 +3014,40 @@ theorem uniform
 
 end BoundedRuntimeErrorExecPreservesUnder
 
+namespace BoundedTruncationExecPreservesUnder
+
+/-- Pad a branch-specific truncation witness to the common target budget.
+Only the exact transcript is retained; the larger target run may continue. -/
+theorem follows
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {targetBudget : Nat} {policy : StopPolicy}
+    (hBounded :
+      BoundedTruncationExecPreservesUnder result cfg entry ctx regular
+        source tokens sourceRun targetBudget policy) :
+    forall target,
+      TypedCfgPreservation.StateRel source tokens target ->
+        forall transcript,
+          Simulation.Interaction.Executes
+              sourceRun transcript (.error .OutOfFuel) ->
+            Simulation.Interaction.Follows
+              (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+                policy cfg targetBudget entry target)
+              transcript := by
+  intro target hStateRel transcript hSourceExec
+  obtain ⟨targetFuel, targetDone, hFuel, hTargetExec⟩ :=
+    hBounded target hStateRel transcript hSourceExec
+  exact
+    TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_follows_of_le
+      policy cfg entry target hFuel hTargetExec
+
+end BoundedTruncationExecPreservesUnder
+
 namespace UniformExecPreservesUnder
 
 /-- Universal source success upgrades uniform branch preservation to the
@@ -3094,6 +3172,57 @@ theorem with_runtime_errors
       obtain ⟨remaining, targetOutcome, hTargetExec, hRel⟩ :=
         hSuccess target hStateRel transcript sourceOutcome hSourceExec
       exact
+        ⟨.ok (.stopped remaining targetOutcome), hTargetExec,
+          Simulation.Interaction.ExceptRel.ok hRel⟩
+
+/-- Successful outcomes, runtime errors, and source-fuel truncation together
+yield the unconditional structural prefix theorem for this adjacent pass. -/
+theorem with_runtime_errors_and_truncation
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {targetFuel : Nat} {policy : StopPolicy}
+    {regularExit : RegularExit}
+    (hSuccess :
+      UniformExecPreservesUnder result cfg entry ctx regular
+        source tokens sourceRun targetFuel policy)
+    (hRuntimeError :
+      UniformRuntimeErrorExecPreservesUnder result cfg entry ctx regular
+        source tokens sourceRun targetFuel policy)
+    (hTruncation :
+      BoundedTruncationExecPreservesUnder result cfg entry ctx regular
+        source tokens sourceRun targetFuel policy) :
+    ForwardPreservesUnder result cfg entry ctx regular regularExit
+      source tokens sourceRun targetFuel policy := by
+  intro target hStateRel
+  apply Simulation.Interaction.ForwardRel.of_executes_or_follows
+  intro transcript sourceDone hSourceExec
+  cases sourceDone with
+  | error sourceError =>
+      by_cases hTruncated : Truncated sourceError
+      · have hError : sourceError = .OutOfFuel := hTruncated
+        subst sourceError
+        exact .inl
+          ⟨.OutOfFuel, rfl, rfl,
+            BoundedTruncationExecPreservesUnder.follows
+              hTruncation target hStateRel transcript hSourceExec⟩
+      · have hRuntime : RuntimeError sourceError := by
+          intro hError
+          exact hTruncated hError
+        obtain ⟨targetError, hTargetExec⟩ :=
+          hRuntimeError target hStateRel transcript sourceError
+            hRuntime hSourceExec
+        exact .inr
+          ⟨.error targetError, hTargetExec,
+            Simulation.Interaction.ExceptRel.error trivial⟩
+  | ok sourceOutcome =>
+      obtain ⟨remaining, targetOutcome, hTargetExec, hRel⟩ :=
+        hSuccess target hStateRel transcript sourceOutcome hSourceExec
+      exact .inr
         ⟨.ok (.stopped remaining targetOutcome), hTargetExec,
           Simulation.Interaction.ExceptRel.ok hRel⟩
 

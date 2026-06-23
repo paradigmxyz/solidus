@@ -909,6 +909,32 @@ theorem openRunNResultWithStop_add
       | invalid state' =>
           rfl
 
+/--
+Increasing a control-run budget cannot hide an interaction already exposed by
+the smaller run. The smaller run may end in structural fuel exhaustion; no
+terminal-outcome claim is made in that case.
+-/
+theorem openRunNResultWithStop_follows_of_le
+    (stopJump : Label -> EVMState -> Bool)
+    (program : TypedCfg.Program)
+    {smallerFuel largerFuel : Nat} (label : Label) (state : EVMState)
+    {transcript : Simulation.Interaction.Transcript}
+    {outcome : Except EVMException Control.Program.RunResult}
+    (hFuel : smallerFuel <= largerFuel)
+    (hExec : Simulation.Interaction.Executes
+      (openRunNResultWithStop stopJump
+        program smallerFuel label state)
+      transcript outcome) :
+    Simulation.Interaction.Follows
+      (openRunNResultWithStop stopJump
+        program largerFuel label state)
+      transcript := by
+  let extraFuel := largerFuel - smallerFuel
+  have hFuelEq : smallerFuel + extraFuel = largerFuel :=
+    Nat.add_sub_of_le hFuel
+  rw [<- hFuelEq, openRunNResultWithStop_add]
+  exact Simulation.Interaction.Follows.bind hExec.follows
+
 def continueOpenRunNResultWithRefinedStop
     (outerStop : Label → EVMState → Bool)
     (program : TypedCfg.Program) (extraFuel : Nat) :
