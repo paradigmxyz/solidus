@@ -1032,6 +1032,18 @@ theorem finalFunctions_clzExpansionOk (state : State) :
       cases state.clzReturnName? <;>
         simp
 
+theorem finalFunctions_hoistedFunction_mem (state : State)
+    {entry : Name × Frontend.FunctionDef}
+    (hEntry : entry ∈ state.hoistedFunctions) :
+    entry ∈ finalFunctions state := by
+  unfold finalFunctions
+  have hReverse : entry ∈ state.hoistedFunctions.reverse := by
+    simpa using hEntry
+  cases state.clzHelperName? <;>
+    cases state.clzArgName? <;>
+      cases state.clzReturnName? <;>
+        simp [hReverse]
+
 def elaborateCode (stmts : List Raw.Stmt) :
     DecodeM (List Frontend.Stmt × List (Name × Frontend.FunctionDef) ×
       Option Name × Option Name × Option Name) := do
@@ -1067,6 +1079,24 @@ theorem elaborateCode_clzHelper_mem
         (dispatcher, functions, some helper, some arg, some ret)) :
     (helper, clzHelperFunctionDef arg ret) ∈ functions := by
   exact elaborateCode_clzExpansionOk hElab
+
+theorem elaborateCode_hoistedFunction_mem
+    {stmts : List Raw.Stmt}
+    {dispatcher coreDispatcher : List Frontend.Stmt}
+    {state : State}
+    {functions : List (Name × Frontend.FunctionDef)}
+    {helper? arg? ret? : Option Name}
+    {entry : Name × Frontend.FunctionDef}
+    (hCore : elaborateCodeCore stmts = .ok (coreDispatcher, state))
+    (hElab :
+      elaborateCode stmts = .ok (dispatcher, functions, helper?, arg?, ret?))
+    (hEntry : entry ∈ state.hoistedFunctions) :
+    entry ∈ functions := by
+  unfold elaborateCode at hElab
+  simp [hCore] at hElab
+  rcases hElab with ⟨_hDispatcher, hFunctions, _hHelper, _hArg, _hRet⟩
+  rw [← hFunctions]
+  exact finalFunctions_hoistedFunction_mem state hEntry
 
 end Elab
 

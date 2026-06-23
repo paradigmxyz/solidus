@@ -120,7 +120,10 @@ Next raw frontend layer:
   nested-function hoisting, and `clz` expansion. First checked `clz`
   validation invariant: successful code elaboration that returns generated
   `clz` helper/argument/result names also returns the corresponding generated
-  helper function definition. Semantic preservation of the helper remains open.
+  helper function definition. First checked nested-hoist validation invariant:
+  every function accumulated in the raw elaborator's `hoistedFunctions` state is
+  retained in the successful returned function list. Semantic preservation of
+  the helper and nested hoist/alpha-renaming passes remains open.
 - [ ] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises.
