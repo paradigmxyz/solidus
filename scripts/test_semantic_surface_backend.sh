@@ -81,6 +81,22 @@ ARITHMETIC_COMPARE="$OUTDIR/semantic-surface-arithmetic.compare.txt"
     0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)" \
   > "$ARITHMETIC_COMPARE"
 
+TERMINAL_COMPARE="$OUTDIR/semantic-surface-terminal.compare.txt"
+"$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
+  "$ROOT/examples/SemanticSurfaceBox.sol" \
+  --solc "$SOLC_BIN" \
+  --lake "$LAKE_BIN" \
+  --lake-cwd "$ROOT" \
+  --forge "$FORGE_BIN" \
+  --contract SemanticSurfaceBox \
+  --runtime-only \
+  --optimized \
+  --calldata "$("$CAST_BIN" calldata \
+    'terminate(uint256,address)' 0 0x0000000000000000000000000000000000000000)" \
+  --calldata "$("$CAST_BIN" calldata \
+    'terminate(uint256,address)' 2 0x0000000000000000000000000000000000000000)" \
+  > "$TERMINAL_COMPARE"
+
 MSIZE_ERROR="$OUTDIR/optimized-msize.stderr"
 if "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
     "$ROOT/examples/ResourceObserverBox.sol" \
@@ -103,7 +119,8 @@ fi
   "$OUTDIR/semantic-surface-runtime.diagnostics.txt" \
   "$OUTDIR/semantic-surface-creation.diagnostics.txt" \
   "$MSIZE_ERROR" \
-  "$ARITHMETIC_COMPARE" <<'PY'
+  "$ARITHMETIC_COMPARE" \
+  "$TERMINAL_COMPARE" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -115,6 +132,11 @@ msize_error = Path(sys.argv[4]).read_text()
 arithmetic_compare = dict(
     line.split("=", 1)
     for line in Path(sys.argv[5]).read_text().splitlines()
+    if "=" in line
+)
+terminal_compare = dict(
+    line.split("=", 1)
+    for line in Path(sys.argv[6]).read_text().splitlines()
     if "=" in line
 )
 
@@ -208,6 +230,13 @@ if arithmetic_compare.get("calls") != "3":
 if arithmetic_compare.get("bridge_summary_1_unsupported_primitives") != "none":
     raise SystemExit(f"semantic-surface arithmetic reported unsupported calls: {arithmetic_compare!r}")
 
+if terminal_compare.get("contract_call_compare") != "pass":
+    raise SystemExit(f"semantic-surface terminal mismatch: {terminal_compare!r}")
+if terminal_compare.get("calls") != "2":
+    raise SystemExit(f"semantic-surface terminal call count changed: {terminal_compare!r}")
+if terminal_compare.get("bridge_summary_1_unsupported_primitives") != "none":
+    raise SystemExit(f"semantic-surface terminal reported unsupported calls: {terminal_compare!r}")
+
 bytecode_lines = [
     line for line in runtime
     if line.startswith("stack_frontend_object_bytecode_bytes=")
@@ -220,5 +249,6 @@ print(f"retained_primitives={len(required)}")
 print(f"runtime_bytecode_bytes={bytecode_lines[0].split('=', 1)[1]}")
 print("creation_artifact=true")
 print("arithmetic_execution_compare_calls=3")
+print("terminal_execution_compare=stop-success,invalid-failure")
 print("optimized_explicit_msize=solc_rejected")
 PY
