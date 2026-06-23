@@ -94,6 +94,11 @@ Next raw frontend layer:
   exact-pragma solc 0.8.26 source; creation/runtime raw Lean elaboration
   reproduces checked artifact sizes, and solc 0.8.35 fails closed before raw
   AST production because the source pins `pragma solidity 0.8.26`.
+- [x] Add pinned Safe and ERC-4337 EntryPoint raw corpus gates over both
+  supported solc pins. Safe is covered through raw optimized Yul plus metadata
+  because solc's own bytecode backend rejects the pinned source
+  stack-too-deep; EntryPoint includes solc bytecode and raw Lean artifact
+  checks for creation/runtime.
 - [ ] Differentially compare raw Lean elaboration against the old bridge over
   both pinned solc versions and the full corpus: Aave, Permit2, Safe,
   EntryPoint, PoolManager, all real suites, and adversarial fixtures.

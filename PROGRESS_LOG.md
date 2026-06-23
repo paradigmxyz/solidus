@@ -26,6 +26,18 @@
   EvmCompiler.Solidity.RawAstPublic`, `lake build EvmCompiler.Verification`,
   touched raw-file hole/trust scan, and `git diff --check`.
 
+- 2026-06-23 10:27 PDT - test/raw-solc-safe-entrypoint-corpus - Added
+  `scripts/test_raw_solc_safe_entrypoint_corpus.sh`: pinned Safe emits raw
+  optimized Yul plus metadata for solc 0.8.26 and 0.8.35 while solc's own
+  bytecode backend fails stack-too-deep; Lean raw elaboration compiles
+  creation/runtime to exact checked sizes 64882/64843 and 64896/64857. Pinned
+  ERC-4337 EntryPoint emits raw AST and solc bytecode under both pins, and Lean
+  raw elaboration compiles creation/runtime to 78182/76897 and 78210/76911
+  with two immutable references. Validation passed: the new script, `bash -n`,
+  no normalized bridge-generation guard, `lake build evm-compiler-backend
+  EvmCompiler.Solidity.RawAstPublic`, `lake build EvmCompiler.Verification`,
+  touched raw-file hole/trust scan, and `git diff --check`.
+
 - 2026-06-18 18:00 PDT - compaction-resume/generated-terminal-arguments -
   Resumed after the checked direct terminal theorem and `terminal_after_args`;
   the active boundary is the horizontal prepared-argument composition theorem,
