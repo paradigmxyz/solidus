@@ -1096,6 +1096,16 @@ scripts/test_dynamic_storage_surface_backend.sh
 scripts/test_supported_solc_versions.sh
 ```
 
+The reentrant try/catch surface runs a persistent self-call sequence through
+checked creation/runtime images and full solc. Nested successful calls commit
+storage, while reason strings, panics, custom errors, raw revert bytes, and a
+child `INVALID` must all roll back storage and reach the matching catch arm. It
+is also part of the supported solc matrix:
+
+```sh
+scripts/test_reentrant_try_catch_surface_backend.sh
+```
+
 The EigenLayer BN254 gate pins the official `v1.12.0` source commit and executes
 its real `BN254.sol` library. Checked creation and runtime images are compared
 against full solc for modular exponentiation, curve addition, scalar

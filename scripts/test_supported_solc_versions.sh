@@ -56,6 +56,17 @@ for version in "${VERSIONS[@]}"; do
   fi
   printf '%s\n' "$storage_output"
 
+  reentrant_output="$(SOLC="$compiler" \
+    "$ROOT/scripts/test_reentrant_try_catch_surface_backend.sh")"
+  if [[ "$reentrant_output" != *"reentrant_try_catch_surface_backend=pass"* ]] ||
+      [[ "$reentrant_output" != *"reentrant_try_catch_compare_calls=8"* ]] ||
+      [[ "$reentrant_output" != *"reentrant_try_catch_storage_rollback=true"* ]]; then
+    printf 'error: pinned solc %s failed reentrant try/catch coverage\n%s\n' \
+      "$version" "$reentrant_output" >&2
+    exit 1
+  fi
+  printf '%s\n' "$reentrant_output"
+
   effect_output="$(SOLC="$compiler" \
     "$ROOT/scripts/test_effect_ordering_surface_backend.sh")"
   if [[ "$effect_output" != *"effect_ordering_surface_backend=pass"* ]]; then
