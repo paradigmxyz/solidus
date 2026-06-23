@@ -39,9 +39,9 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #check EvmCompiler.Functions.AllocationInteractionCall.CallTargets.forward
 #check EvmCompiler.Functions.AllocationInteractionCall.CallTargets.forward_bounded
 #check EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.combine
-#check EvmCompiler.Functions.AllocationInteractionSafety.SourceSafety
-#check EvmCompiler.Functions.AllocationInteractionSafety.SourceSafety.exprSeq
-#check EvmCompiler.Functions.AllocationInteractionSafety.SourceSafety.argList
+#check EvmCompiler.Functions.AllocationInteractionSafeSemantics.Program.ExecutionSafe
+#check EvmCompiler.Functions.AllocationInteractionSafeExpression.exprSeqChecked_of_successful
+#check EvmCompiler.Functions.AllocationInteractionSafety.argList_of_successful
 #check EvmCompiler.Functions.AllocationInteractionResourceComposition.block_cons_successful
 #check EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.cons_of_parts_successful
 #check EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.expr
@@ -341,8 +341,8 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.terminalArgs
 #print axioms EvmCompiler.Functions.AllocationInteractionFrame.OutcomeEffect.prepend_activation
 #print axioms EvmCompiler.Functions.AllocationInteractionFrame.Budget.mono
-#print axioms EvmCompiler.Functions.AllocationInteractionLoop.forward_effect
-#print axioms EvmCompiler.Functions.AllocationInteractionFor.forward_effect
+#print axioms EvmCompiler.Functions.AllocationInteractionLoop.forward_effect_with
+#print axioms EvmCompiler.Functions.AllocationInteractionFor.forward_effect_with
 #print axioms EvmCompiler.Functions.AllocationSupport.planRecipeCore?_find?_of_lookupFun?
 #print axioms EvmCompiler.Functions.AllocationInteractionCall.CallComponents.selectedCallee
 #print axioms EvmCompiler.Functions.AllocationInteractionRecursiveResource.RecursiveOpenRuntime.at_targetFuel
@@ -356,8 +356,8 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Functions.AllocationInteractionCallStatementResource.SelectedCallee.scratch_after_arguments
 #print axioms EvmCompiler.Functions.AllocationInteractionRecursiveCallResource.CoreCursor.call_runtime_head
 #print axioms EvmCompiler.Functions.AllocationInteractionRecursiveCallResource.CursorRuntimeAt.call
-#print axioms EvmCompiler.Functions.AllocationInteractionSafety.SourceSafety.exprSeq
-#print axioms EvmCompiler.Functions.AllocationInteractionSafety.SourceSafety.argList
+#print axioms EvmCompiler.Functions.AllocationInteractionSafeExpression.exprSeqChecked_of_successful
+#print axioms EvmCompiler.Functions.AllocationInteractionSafety.argList_of_successful
 #print axioms EvmCompiler.Functions.AllocationInteractionResourceComposition.block_cons_successful
 #print axioms EvmCompiler.Functions.AllocationInteractionRecursiveResource.CursorRuntimeAt.cons_of_parts_successful
 #print axioms EvmCompiler.Functions.AllocationInteractionComposition.cons_successful

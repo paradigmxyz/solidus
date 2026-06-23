@@ -1,4 +1,5 @@
-import EvmCompiler.Functions.AllocationInteractionRecursiveRuntime
+import EvmCompiler.Functions.AllocationInteractionRecursiveCallResource
+import EvmCompiler.Functions.AllocationInteractionSuccessful
 
 namespace EvmCompiler
 namespace Functions

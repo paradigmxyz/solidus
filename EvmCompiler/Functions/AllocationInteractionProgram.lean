@@ -984,19 +984,16 @@ theorem body
       AllocationLowering.mainNeedsAllocator
           compilation.recipe compilation.stackSlots = false)
     (hProgramScoped : program.Scoped)
-    (hSafety :
-      AllocationInteractionSafety.SourceSafety program.memoryContract)
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe
+        program.memoryContract program Functions.Source.Ctx.initial sourceFuel
+          mainRoot.root.sourceBlock source)
     (hTargetCapacity :
       AllocationInteractionRecursive.targetBudget mainRoot.root.cursor
           sourceFuel
           (AllocationInteractionTargetFuel.stmtListNestedSize
             mainRoot.root.cursor.compiled) ≤
-        bodyTargetFuel)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program
-          Functions.Source.Ctx.initial sourceFuel
-          mainRoot.root.sourceBlock source)) :
+        bodyTargetFuel) :
     Simulation.Interaction.Rel
       (AllocationInteractionComposition.OpenControlResultRel
         program.memoryContract mainRoot.root.lowerCtx
@@ -1022,15 +1019,14 @@ theorem body
       AllocationInteractionStackRuntime.AllFunctionsStack compilation :=
     (artifact.components.stackOnly_of_no_allocator hNoAllocator).2.1
   have hRecursive :
-      AllocationInteractionStackRuntime.RecursiveOpenRuntime
+      AllocationInteractionStackRuntime.ExecutionSafeRecursiveOpenRuntime
         (compilation := compilation) program.memoryContract (sourceFuel + 1) :=
     AllocationInteractionStackRuntime.complete
-      (compilation := compilation) hAllStack hProgramScoped hSafety
-        (sourceFuel + 1)
+      (compilation := compilation) hAllStack hProgramScoped (sourceFuel + 1)
   exact
-    AllocationInteractionStackRuntime.RecursiveOpenRuntime.at_targetFuel
+    AllocationInteractionStackRuntime.ExecutionSafeRecursiveOpenRuntime.at_targetFuel
       hRecursive mainRoot.root.cursor (by omega) hTargetCapacity
-      (hSetup.boundary mainRoot) hSuccess
+      (hSetup.boundary mainRoot) hExecutionSafe
 
 /-- Compose empty stack setup, the recursively preserved main body, and exact
 top-level cleanup at one retained target fuel. -/
@@ -1050,8 +1046,10 @@ theorem closedBody
       AllocationLowering.mainNeedsAllocator
           compilation.recipe compilation.stackSlots = false)
     (hProgramScoped : program.Scoped)
-    (hSafety :
-      AllocationInteractionSafety.SourceSafety program.memoryContract)
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe
+        program.memoryContract program Functions.Source.Ctx.initial sourceFuel
+          mainRoot.root.sourceBlock source)
     (hTargetCapacity :
       AllocationInteractionRecursive.targetBudget mainRoot.root.cursor
           sourceFuel
@@ -1059,12 +1057,7 @@ theorem closedBody
             mainRoot.root.cursor.compiled) ≤
         bodyTargetFuel)
     (hCleanupFuel :
-      2 ≤ bodyTargetFuel - mainRoot.root.cursor.compiled.length)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program
-          Functions.Source.Ctx.initial sourceFuel
-          mainRoot.root.sourceBlock source)) :
+      2 ≤ bodyTargetFuel - mainRoot.root.cursor.compiled.length) :
     Simulation.Interaction.Rel (OpenOutcomeRel program.memoryContract)
       (Functions.InteractionSemantics.Block.openRunScoped program
         Functions.Source.Ctx.initial mainRoot.root.sourceBlock sourceFuel
@@ -1078,8 +1071,8 @@ theorem closedBody
                 Locals.codeStmt prepared.cleanup }
         target) := by
   have hBody :=
-    hSetup.body mainRoot hNoAllocator hProgramScoped hSafety hTargetCapacity
-      hSuccess
+    hSetup.body mainRoot hNoAllocator hProgramScoped hExecutionSafe
+      hTargetCapacity
   have hClosed :=
     closeBody
       (hCleanup := by
@@ -1346,14 +1339,11 @@ theorem mainForward
     {source : Functions.InteractionSemantics.State}
     {target : Expressions.InteractionSemantics.RunState}
     (hProgramScoped : program.Scoped)
-    (hSafety :
-      AllocationInteractionSafety.SourceSafety program.memoryContract)
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Program.ExecutionSafe
+        program.memoryContract sourceFuel program source)
     (hResourceSafe : ResourceSafe allocation program sourceFuel)
-    (hInitial : InitialRel program.memoryContract source target)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Program.openRunState
-          sourceFuel program source)) :
+    (hInitial : InitialRel program.memoryContract source target) :
     ∃ targetFuel,
       Simulation.Interaction.Rel (OpenOutcomeRel program.memoryContract)
         (Functions.InteractionSemantics.Program.openRunState
@@ -1384,12 +1374,14 @@ theorem mainForward
           mainRoot.root.cursor.compiled) + 2
   let setupCode := prepared.allocatorCode ++ prepared.frameCode
   let targetFuel := sourcePrefix.length + setupCode.length + bodyTargetFuel
-  have hExecutionSafe :
-      AllocationInteractionSafeSemantics.Program.ExecutionSafe
-        program.memoryContract sourceFuel program source :=
-    False.elim
-      (AllocationInteractionSafety.SourceSafety.uninhabited
-        program.memoryContract hSafety)
+  have hSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Program.openRunState
+          sourceFuel program source) := by
+    rw [←
+      AllocationInteractionSafeSemantics.Program.openRunState_eq_ordinary_of_executionSafe
+        program.memoryContract sourceFuel program source hExecutionSafe]
+    exact hExecutionSafe
   have hOpenSuccess :=
     Functions.InteractionSemantics.Program.successful_openRunState_open hSuccess
   have hOpenSafe := hExecutionSafe.body
@@ -1503,8 +1495,7 @@ theorem mainForward
                       prepared hSourceCtx hNoAllocator hNoFrame hAfterInitial
                   have hClosed :=
                     StackSetupResult.closedBody mainRoot hSetup hNoAllocator
-                      hProgramScoped hSafety hCapacity hCleanupFuel
-                      hTailSuccess'
+                      hProgramScoped hTailSafe' hCapacity hCleanupFuel
                   have hTargetTailFuel :
                       targetFuel - prepared.sourceCode.length =
                         setupCode.length + bodyTargetFuel := by

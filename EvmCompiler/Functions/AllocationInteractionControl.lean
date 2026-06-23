@@ -1,5 +1,6 @@
 import EvmCompiler.Functions.AllocationInteractionCleanup
 import EvmCompiler.Functions.AllocationInteractionComposition
+import EvmCompiler.Functions.AllocationInteractionSafeSemantics
 import EvmCompiler.Locals.InteractionPreservation
 
 namespace EvmCompiler
@@ -596,6 +597,121 @@ theorem if_of_components_successful
                 using hTargetReturns)
             hContinuationSuccess
 
+/-- Preserve a conditional while carrying ordinary and guarded success into
+the exact dynamically selected true branch. -/
+theorem if_of_components_executionSafe
+    {program : Functions.Program} {expressions : Expressions.Program}
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State} {localsCtx : Locals.Ctx}
+    {plan : Plan} {returns live : List Functions.Name}
+    {frameBase sourceBodyFuel targetBodyFuel : Nat}
+    {mode : ActivationMode} {sourceCtx : Functions.Source.Ctx}
+    {cond : Functions.Expr 1} {body : Functions.Block}
+    {targetCond : Expressions.Expr 1} {targetBody : Expressions.Block}
+    {source : SourceState} {target : TargetState}
+    (hInitial : AllocationContext.ActivationInvariant contract lowerCtx
+      lowerState localsCtx plan live frameBase mode source target)
+    (hCond :
+      Simulation.Interaction.Rel
+        (Simulation.Interaction.ExceptRel
+          (fun left right : EVMException => left = right)
+          (ActivationConditionResultRel contract plan live frameBase mode
+            target))
+        (Functions.InteractionSemantics.Expr.openEvalCondition cond source)
+        (Expressions.InteractionSemantics.Expr.openRunCondition
+          targetCond target))
+    (hVars : Simulation.Interaction.AllDone
+      (Locals.InteractionStatePreservation.ResultVars (α := Bool) source)
+      (Functions.InteractionSemantics.Expr.openEvalCondition cond source))
+    (hSuccess : Simulation.Interaction.Successful
+      (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+        (sourceBodyFuel + 1) (.if_ cond body) source))
+    (hSafeSuccess : Simulation.Interaction.Successful
+      (AllocationInteractionSafeSemantics.Stmt.openRun contract program
+        sourceCtx (sourceBodyFuel + 1) (.if_ cond body) source))
+    (hSafeConditionOrdinary :
+      AllocationInteractionSafeSemantics.Expr.openEvalCondition
+          contract cond source =
+        Functions.InteractionSemantics.Expr.openEvalCondition cond source)
+    (hTrue :
+      ∀ {sourceAfter targetAfter},
+        AllocationContext.ActivationInvariant contract lowerCtx lowerState
+            localsCtx plan live frameBase mode sourceAfter targetAfter →
+          targetAfter.returns = target.returns →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+              sourceBodyFuel (.block body) sourceAfter) →
+          Simulation.Interaction.Successful
+            (AllocationInteractionSafeSemantics.Stmt.openRun contract program
+              sourceCtx sourceBodyFuel (.block body) sourceAfter) →
+          Simulation.Interaction.Rel
+            (OpenControlResultRel contract lowerCtx lowerState localsCtx plan
+              returns live frameBase mode sourceCtx sourceCtx)
+            (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+              sourceBodyFuel (.block body) sourceAfter)
+            (Expressions.InteractionSemantics.Block.openRun expressions
+              targetBodyFuel targetBody targetAfter)) :
+    Simulation.Interaction.Rel
+      (OpenControlResultRel contract lowerCtx lowerState localsCtx plan
+        returns live frameBase mode sourceCtx sourceCtx)
+      (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+        (sourceBodyFuel + 1) (.if_ cond body) source)
+      (Expressions.InteractionSemantics.Block.openRun expressions
+        (targetBodyFuel + 2) { stmts := [.if_ targetCond targetBody] }
+        target) := by
+  rw [Functions.InteractionSemantics.Stmt.openRun_if,
+    Expressions.InteractionSemantics.Block.openRun_single_if]
+  rw [Functions.InteractionSemantics.Stmt.openRun_if] at hSuccess
+  rw [AllocationInteractionSafeSemantics.Stmt.openRun_if] at hSafeSuccess
+  have hCondSuccess := Simulation.Interaction.Successful.bind_inv hSuccess
+  have hSafeCondSuccess :=
+    Simulation.Interaction.Successful.bind_inv hSafeSuccess
+  rw [hSafeConditionOrdinary] at hSafeCondSuccess
+  have hCondStrong :=
+    Simulation.Interaction.Rel.strengthen_right
+      (Simulation.Interaction.Rel.strengthen_left
+        (Simulation.Interaction.Rel.strengthen_left
+          (Simulation.Interaction.Rel.strengthen_left hCond hVars)
+          hCondSuccess)
+        hSafeCondSuccess)
+      (Expressions.InteractionReturns.Expr.openRunCondition_returns
+        targetCond target)
+  apply Simulation.Interaction.Rel.bind_custom hCondStrong
+  intro sourceDone targetDone hDone
+  rcases hDone with
+    ⟨⟨⟨⟨hRelated, hVarsDone⟩, hContinuationSuccess⟩,
+      hContinuationSafe⟩, hTargetReturns⟩
+  cases hRelated with
+  | error hError => exact .done (.error hError)
+  | @ok sourceResult targetResult hResult =>
+      rcases sourceResult with ⟨sourceAfter, sourceCondition⟩
+      rcases targetResult with ⟨targetAfter, targetCondition⟩
+      cases hResult.condition
+      have hDefined : LiveDefined live sourceAfter :=
+        hInitial.defined.congr_vars hVarsDone
+      have hAfter : AllocationContext.ActivationInvariant contract lowerCtx
+          lowerState localsCtx plan live frameBase mode sourceAfter
+            targetAfter :=
+        { compiler := hInitial.compiler
+          planWF := hInitial.planWF
+          defined := hDefined
+          state := hResult.state
+          stackLength :=
+            (congrArg List.length hResult.stack).trans hInitial.stackLength }
+      cases sourceCondition with
+      | false =>
+          apply Simulation.Interaction.Rel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact ControlResultRel.regular hAfter (SameFrame.refl mode)
+            (Functions.Source.Ctx.SameControl.refl sourceCtx)
+      | true =>
+          exact hTrue hAfter
+            (by
+              simpa [Structured.InteractionSemantics.Code.ConditionReturnsEq]
+                using hTargetReturns)
+            hContinuationSuccess hContinuationSafe
+
 /-- Exact source/target branch selected by one compiled switch. -/
 inductive SwitchSelection
     (sourceCases : List (Word × Functions.Block))
@@ -850,6 +966,157 @@ theorem switch_of_components_successful
             simpa [hSource] using hContinuationSuccess
           exact hSelected hSource hTarget hAfter hTargetReturns
             hSelectedSuccess
+
+/-- Preserve a switch while carrying ordinary and guarded success into exactly
+the dynamically selected source branch. -/
+theorem switch_of_components_executionSafe
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx} {plan : Plan}
+    {returns live : List Functions.Name}
+    {frameBase sourceBodyFuel targetBodyFuel : Nat}
+    {mode : ActivationMode} {sourceCtx : Functions.Source.Ctx}
+    {scrutinee : Functions.Expr 1}
+    {sourceCases : List (Word × Functions.Block)}
+    {sourceDefault : Option Functions.Block}
+    {targetScrutinee : Expressions.Expr 1}
+    {targetCases : List (Word × Expressions.Block)}
+    {targetDefault : Option Expressions.Block}
+    {source : SourceState} {target : TargetState}
+    (hInitial :
+      AllocationContext.ActivationInvariant contract lowerCtx lowerState
+        localsCtx plan live frameBase mode source target)
+    (hScrutinee :
+      Simulation.Interaction.Rel
+        (Simulation.Interaction.ExceptRel
+          (fun left right : EVMException => left = right)
+          (ActivationValueResultRel contract plan live frameBase mode target))
+        (Functions.InteractionSemantics.Expr.openEvalOne scrutinee source)
+        (Expressions.InteractionSemantics.Expr.openRunOne
+          targetScrutinee target))
+    (hVars :
+      Simulation.Interaction.AllDone
+        (Locals.InteractionStatePreservation.ResultVars
+          (α := Word) source)
+        (Functions.InteractionSemantics.Expr.openEvalOne scrutinee source))
+    (hSuccess :
+      Simulation.Interaction.Successful
+        (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+          (sourceBodyFuel + 1)
+          (.switch scrutinee sourceCases sourceDefault) source))
+    (hSafeSuccess :
+      Simulation.Interaction.Successful
+        (AllocationInteractionSafeSemantics.Stmt.openRun contract program
+          sourceCtx (sourceBodyFuel + 1)
+          (.switch scrutinee sourceCases sourceDefault) source))
+    (hSafeScrutineeOrdinary :
+      AllocationInteractionSafeSemantics.Expr.openEvalOne
+          contract scrutinee source =
+        Functions.InteractionSemantics.Expr.openEvalOne scrutinee source)
+    (hSelection :
+      ∀ value,
+        SwitchSelection sourceCases sourceDefault targetCases targetDefault
+          value)
+    (hSelected :
+      ∀ {value sourceBody targetBody sourceAfter targetAfter},
+        Functions.Source.Switch.select value sourceCases sourceDefault =
+            some sourceBody →
+        Expressions.EffectSemantics.Switch.select value targetCases
+            targetDefault = some targetBody →
+        AllocationContext.ActivationInvariant contract lowerCtx lowerState
+            localsCtx plan live frameBase mode sourceAfter targetAfter →
+        targetAfter.returns = target.returns →
+        Simulation.Interaction.Successful
+          (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+            sourceBodyFuel (.block sourceBody) sourceAfter) →
+        Simulation.Interaction.Successful
+          (AllocationInteractionSafeSemantics.Stmt.openRun contract program
+            sourceCtx sourceBodyFuel (.block sourceBody) sourceAfter) →
+        Simulation.Interaction.Rel
+          (OpenControlResultRel contract lowerCtx lowerState localsCtx plan
+            returns live frameBase mode sourceCtx sourceCtx)
+          (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+            sourceBodyFuel (.block sourceBody) sourceAfter)
+          (Expressions.InteractionSemantics.Block.openRun expressions
+            targetBodyFuel targetBody targetAfter)) :
+    Simulation.Interaction.Rel
+      (OpenControlResultRel contract lowerCtx lowerState localsCtx plan
+        returns live frameBase mode sourceCtx sourceCtx)
+      (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+        (sourceBodyFuel + 1)
+        (.switch scrutinee sourceCases sourceDefault) source)
+      (Expressions.InteractionSemantics.Block.openRun expressions
+        (targetBodyFuel + 2)
+        { stmts := [.switch targetScrutinee targetCases targetDefault] }
+        target) := by
+  rw [Functions.InteractionSemantics.Stmt.openRun_switch,
+    Expressions.InteractionSemantics.Block.openRun_single_switch]
+  rw [Functions.InteractionSemantics.Stmt.openRun_switch] at hSuccess
+  rw [AllocationInteractionSafeSemantics.Stmt.openRun_switch] at hSafeSuccess
+  have hScrutineeSuccess :=
+    Simulation.Interaction.Successful.bind_inv hSuccess
+  have hSafeScrutineeSuccess :=
+    Simulation.Interaction.Successful.bind_inv hSafeSuccess
+  rw [hSafeScrutineeOrdinary] at hSafeScrutineeSuccess
+  have hScrutineeStrong :=
+    Simulation.Interaction.Rel.strengthen_right
+      (Simulation.Interaction.Rel.strengthen_left
+        (Simulation.Interaction.Rel.strengthen_left
+          (Simulation.Interaction.Rel.strengthen_left hScrutinee hVars)
+          hScrutineeSuccess)
+        hSafeScrutineeSuccess)
+      (Expressions.InteractionReturns.Expr.openRunOne_returns
+        targetScrutinee target)
+  apply Simulation.Interaction.Rel.bind_custom hScrutineeStrong
+  intro sourceDone targetDone hDone
+  rcases hDone with
+    ⟨⟨⟨⟨hRelated, hVarsDone⟩, hContinuationSuccess⟩,
+      hContinuationSafe⟩, hTargetReturns⟩
+  cases hRelated with
+  | error hError => exact .done (.error hError)
+  | @ok sourceResult targetResult hResult =>
+      rcases sourceResult with ⟨sourceAfter, sourceValue⟩
+      rcases targetResult with ⟨targetAfter, targetValue⟩
+      cases hResult.value
+      have hDefined : LiveDefined live sourceAfter :=
+        hInitial.defined.congr_vars hVarsDone
+      have hAfter :
+          AllocationContext.ActivationInvariant contract lowerCtx lowerState
+            localsCtx plan live frameBase mode sourceAfter targetAfter :=
+        { compiler := hInitial.compiler
+          planWF := hInitial.planWF
+          defined := hDefined
+          state := hResult.state
+          stackLength :=
+            (congrArg List.length hResult.stack).trans hInitial.stackLength }
+      cases hSelection sourceValue with
+      | none hSource hTarget =>
+          simp only
+          rw [hSource, hTarget]
+          apply Simulation.Interaction.Rel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact ControlResultRel.regular hAfter (SameFrame.refl mode)
+            (Functions.Source.Ctx.SameControl.refl sourceCtx)
+      | some sourceBody targetBody hSource hTarget =>
+          simp only
+          rw [hSource, hTarget]
+          have hSelectedSuccess :
+              Simulation.Interaction.Successful
+                (Functions.InteractionSemantics.Stmt.openRun program
+                  sourceCtx sourceBodyFuel (.block sourceBody)
+                  sourceAfter) := by
+            simpa [hSource] using hContinuationSuccess
+          have hSelectedSafe :
+              Simulation.Interaction.Successful
+                (AllocationInteractionSafeSemantics.Stmt.openRun contract
+                  program sourceCtx sourceBodyFuel (.block sourceBody)
+                  sourceAfter) := by
+            simpa [hSource] using hContinuationSafe
+          exact hSelected hSource hTarget hAfter hTargetReturns
+            hSelectedSuccess hSelectedSafe
 
 end AllocationInteractionControl
 end Functions

@@ -14,19 +14,8 @@ open AllocationInteractionResource
 primitive semantics. This changes only primitive capability, not control. -/
 noncomputable def guardedSourceSemantics
     (contract : MemoryContract.Contract) :
-    AllocationInteractionLoop.SourceSemantics where
-  primitive := AllocationInteractionSafeSemantics.primitiveSemantics contract
-  conditionVars := by
-    intro cond source
-    apply Simulation.Interaction.AllDone.mono
-      (AllocationInteractionSafeSemantics.Expr.openEvalCondition_vars_eq
-        contract cond source)
-    intro outcome hOutcome
-    cases outcome <;> exact hOutcome
-  argumentVars := by
-    intro args source
-    exact AllocationInteractionSafeSemantics.ArgList.openEval_vars_eq
-      contract args source
+    AllocationInteractionLoop.SourceSemantics :=
+  AllocationInteractionLoop.SourceSemantics.guarded contract
 
 def outcomeEffectAlgebra
     (config : Config) (allocatorDepth frameBase : Nat) :

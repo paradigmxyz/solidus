@@ -224,8 +224,11 @@ theorem yulToAllocatedExpressions
       Functions.AllocationLowering.lowerExpressionsFromAllocation?
         allocation objects.toFunctions = some expressions)
     (hScoped : objects.toFunctions.Scoped)
-    (hSafety : Functions.AllocationInteractionSafety.SourceSafety
-      objects.toFunctions.memoryContract)
+    (hExecutionSafe :
+      Functions.AllocationInteractionSafeSemantics.Program.ExecutionSafe
+        objects.toFunctions.memoryContract
+        (Yul.FunctionsInteractionStaticCost.programBudget
+          sourceProgram (sourceFuel + 1)) objects.toFunctions functionsState)
     (hResourceSafe : Functions.AllocationInteractionProgram.ResourceSafe
       allocation objects.toFunctions
       (Yul.FunctionsInteractionStaticCost.programBudget
@@ -253,12 +256,9 @@ theorem yulToAllocatedExpressions
   have hYul := Yul.FunctionsInteractionProgram.dispatcherForward
     (sourceFuel := sourceFuel)
     hDecomposition hProgramOk hYulInitial hYulDomain
-  have hFunctionsSuccessful :=
-    Yul.FunctionsInteractionProgram.targetSuccessful hYul hSuccessful
   obtain ⟨targetFuel, hAllocation⟩ :=
     Functions.AllocationInteractionProgram.mainForward
-      hLower hScoped hSafety hResourceSafe hAllocationInitial
-      hFunctionsSuccessful
+      hLower hScoped hExecutionSafe hResourceSafe hAllocationInitial
   exact ⟨targetFuel, by
     simpa [YulExpressionsDoneRel] using
       Simulation.Interaction.ForwardRel.trans_rel hYul hAllocation⟩
@@ -285,8 +285,11 @@ theorem yulToAllocatedExpressionsTerminal
       Functions.AllocationLowering.lowerExpressionsFromAllocation?
         allocation objects.toFunctions = some expressions)
     (hScoped : objects.toFunctions.Scoped)
-    (hSafety : Functions.AllocationInteractionSafety.SourceSafety
-      objects.toFunctions.memoryContract)
+    (hExecutionSafe :
+      Functions.AllocationInteractionSafeSemantics.Program.ExecutionSafe
+        objects.toFunctions.memoryContract
+        (Yul.FunctionsInteractionStaticCost.programBudget
+          sourceProgram (sourceFuel + 1)) objects.toFunctions functionsState)
     (hResourceSafe : Functions.AllocationInteractionProgram.ResourceSafe
       allocation objects.toFunctions
       (Yul.FunctionsInteractionStaticCost.programBudget
@@ -333,9 +336,7 @@ theorem yulToAllocatedExpressionsTerminal
       Functions.AllocationInteractionProgram.SourceHalted] using hOutcome
   obtain ⟨targetFuel, hAllocation⟩ :=
     Functions.AllocationInteractionProgram.mainForward
-      hLower hScoped hSafety hResourceSafe hAllocationInitial
-      (Functions.AllocationInteractionProgram.SourceHalted.successful
-        hFunctionsHalted)
+      hLower hScoped hExecutionSafe hResourceSafe hAllocationInitial
   have hExpressionsHalted :=
     Functions.AllocationInteractionProgram.OpenOutcomeRel.allDone_targetHalted
       hAllocation hFunctionsHalted
@@ -553,8 +554,11 @@ theorem yulToStructuredTerminal
       Functions.AllocationLowering.lowerExpressionsFromAllocation?
         allocation objects.toFunctions = some expressions)
     (hScoped : objects.toFunctions.Scoped)
-    (hSafety : Functions.AllocationInteractionSafety.SourceSafety
-      objects.toFunctions.memoryContract)
+    (hExecutionSafe :
+      Functions.AllocationInteractionSafeSemantics.Program.ExecutionSafe
+        objects.toFunctions.memoryContract
+        (Yul.FunctionsInteractionStaticCost.programBudget
+          sourceProgram (sourceFuel + 1)) objects.toFunctions functionsState)
     (hResourceSafe : Functions.AllocationInteractionProgram.ResourceSafe
       allocation objects.toFunctions
       (Yul.FunctionsInteractionStaticCost.programBudget
@@ -586,7 +590,7 @@ theorem yulToStructuredTerminal
             targetFuel expressions.toStructured expressionsState) := by
   obtain ⟨targetFuel, hRel, hHalted⟩ :=
     yulToAllocatedExpressionsTerminal
-      hDecomposition hProgramOk hLower hScoped hSafety hResourceSafe
+      hDecomposition hProgramOk hLower hScoped hExecutionSafe hResourceSafe
       hYulInitial hYulDomain hAllocationInitial hTerminal
   exact ⟨targetFuel,
     allocatedExpressionsToStructuredTerminal hRel hHalted⟩
@@ -954,8 +958,11 @@ theorem yulToEncodedBytecode
       Functions.AllocationLowering.lowerExpressionsFromAllocation?
         allocation objects.toFunctions = some expressions)
     (hScoped : objects.toFunctions.Scoped)
-    (hSafety : Functions.AllocationInteractionSafety.SourceSafety
-      objects.toFunctions.memoryContract)
+    (hExecutionSafe :
+      Functions.AllocationInteractionSafeSemantics.Program.ExecutionSafe
+        objects.toFunctions.memoryContract
+        (Yul.FunctionsInteractionStaticCost.programBudget
+          sourceProgram (sourceFuel + 1)) objects.toFunctions functionsState)
     (hResourceSafe : Functions.AllocationInteractionProgram.ResourceSafe
       allocation objects.toFunctions
       (Yul.FunctionsInteractionStaticCost.programBudget
@@ -1007,7 +1014,7 @@ theorem yulToEncodedBytecode
                 pc := EvmYul.UInt256.ofNat 0 }) := by
   obtain ⟨structuredFuel, hUpper, hStructuredHalted⟩ :=
     yulToStructuredTerminal
-      hDecomposition hProgramOk hLower hScoped hSafety hResourceSafe
+      hDecomposition hProgramOk hLower hScoped hExecutionSafe hResourceSafe
       hYulInitial hYulDomain hAllocationInitial hTerminal
   have hExpressionsInitial :
       expressionsState = Structured.RunState.initial expressionsState.evm := by
@@ -1868,8 +1875,11 @@ theorem compiledWithPassToEncodedBytecode
       Yul.SolcValidation.ProgramOkWithEntries? profile sourceProgram
         hDecomposition.functionEntries = true)
     (hScoped : objects.toFunctions.Scoped)
-    (hSafety : Functions.AllocationInteractionSafety.SourceSafety
-      objects.toFunctions.memoryContract)
+    (hExecutionSafe :
+      Functions.AllocationInteractionSafeSemantics.Program.ExecutionSafe
+        objects.toFunctions.memoryContract
+        (Yul.FunctionsInteractionStaticCost.programBudget
+          sourceProgram (sourceFuel + 1)) objects.toFunctions functionsState)
     (hResourceSafe : Functions.AllocationInteractionProgram.ResourceSafe
       compiledArtifact.metadata.allocation objects.toFunctions
       (Yul.FunctionsInteractionStaticCost.programBudget
@@ -1944,7 +1954,8 @@ theorem compiledWithPassToEncodedBytecode
   obtain ⟨structuredFuel, hAccepted, generated, hRel⟩ :=
     yulToEncodedBytecode
       hDecomposition
-      hProgramOk hLower hScoped hSafety hResourceSafe hYulInitial hYulDomain
+      hProgramOk hLower hScoped hExecutionSafe hResourceSafe hYulInitial
+      hYulDomain
       hAllocationInitial hGenerate hCfgCompile hStructuredWF
       hSelectedFrameSafe hIndependent hAssemblyCompile hByteLength hTerminal
   exact ⟨expressions, entryShapes, cfgArtifact, structuredFuel,
@@ -1966,8 +1977,11 @@ theorem compiledYulToEncodedBytecode
     (hProgramOk :
       Yul.SolcValidation.ProgramOkWith? profile sourceProgram = true)
     (hScoped : objects.toFunctions.Scoped)
-    (hSafety : Functions.AllocationInteractionSafety.SourceSafety
-      objects.toFunctions.memoryContract)
+    (hExecutionSafe :
+      Functions.AllocationInteractionSafeSemantics.Program.ExecutionSafe
+        objects.toFunctions.memoryContract
+        (Yul.FunctionsInteractionStaticCost.programBudget
+          sourceProgram (sourceFuel + 1)) objects.toFunctions functionsState)
     (hResourceSafe : Functions.AllocationInteractionProgram.ResourceSafe
       compiledArtifact.metadata.allocation objects.toFunctions
       (Yul.FunctionsInteractionStaticCost.programBudget
@@ -2002,7 +2016,7 @@ theorem compiledYulToEncodedBytecode
       Yul.SolcValidation.ProgramOkWith?,
       Yul.SolcValidation.ContractOkWith?] using hProgramOk
   exact compiledWithPassToEncodedBytecode decomposition
-    hCompile hEntriesOk hScoped hSafety hResourceSafe hFrameSafe
+    hCompile hEntriesOk hScoped hExecutionSafe hResourceSafe hFrameSafe
     hYulInitial hYulDomain hAllocationInitial hTerminal
 
 /-- Executable ordered Yul lowering composes through every adjacent pass to
@@ -2025,8 +2039,11 @@ theorem compiledOrderedYulToEncodedBytecode
       Yul.SolcValidation.ProgramOkWithEntries? profile ordered.program
         ordered.functionEntries = true)
     (hScoped : objects.toFunctions.Scoped)
-    (hSafety : Functions.AllocationInteractionSafety.SourceSafety
-      objects.toFunctions.memoryContract)
+    (hExecutionSafe :
+      Functions.AllocationInteractionSafeSemantics.Program.ExecutionSafe
+        objects.toFunctions.memoryContract
+        (Yul.FunctionsInteractionStaticCost.programBudget
+          ordered.program (sourceFuel + 1)) objects.toFunctions functionsState)
     (hResourceSafe : Functions.AllocationInteractionProgram.ResourceSafe
       compiledArtifact.metadata.allocation objects.toFunctions
       (Yul.FunctionsInteractionStaticCost.programBudget
@@ -2060,7 +2077,7 @@ theorem compiledOrderedYulToEncodedBytecode
       Yul.FunctionsCompilerArtifact.passDecomposition_of_ordered_toObjects?]
       using hProgramOk
   exact compiledWithPassToEncodedBytecode decomposition
-    hCompile hEntriesOk hScoped hSafety hResourceSafe hFrameSafe
+    hCompile hEntriesOk hScoped hExecutionSafe hResourceSafe hFrameSafe
     hYulInitial hYulDomain hAllocationInitial hTerminal
 
 /-- One executable Solidity-frontend object code artifact reaches the resolved
@@ -2078,8 +2095,12 @@ theorem compiledFrontendCodeToAssemblyTarget
     (hCode : object.compileOrderedCodeArtifactIn? context =
       some codeArtifact)
     (hScoped : codeArtifact.lower.toFunctions.Scoped)
-    (hSafety : Functions.AllocationInteractionSafety.SourceSafety
-      codeArtifact.lower.toFunctions.memoryContract)
+    (hExecutionSafe :
+      Functions.AllocationInteractionSafeSemantics.Program.ExecutionSafe
+        codeArtifact.lower.toFunctions.memoryContract
+        (Yul.FunctionsInteractionStaticCost.programBudget
+          codeArtifact.ordered.program (sourceFuel + 1))
+        codeArtifact.lower.toFunctions functionsState)
     (hResourceSafe : Functions.AllocationInteractionProgram.ResourceSafe
       codeArtifact.compiled.metadata.allocation
       codeArtifact.lower.toFunctions
@@ -2114,7 +2135,7 @@ theorem compiledFrontendCodeToAssemblyTarget
     Solidity.Frontend.Object.toSolcYulOrderedProgram?_programOkWithEntries
       hOrdered
   exact compiledOrderedYulToEncodedBytecode
-    hLower hSource.1 hSource.2.1 hCompile hProgramOk hScoped hSafety
+    hLower hSource.1 hSource.2.1 hCompile hProgramOk hScoped hExecutionSafe
     hResourceSafe hFrameSafe hYulInitial hYulDomain hAllocationInitial
     hTerminal
 
@@ -2133,8 +2154,12 @@ theorem compiledObjectRootToAssemblyTarget
     (hObject : object.compileObjectArtifactWithLinkerSymbols?
       linkerSymbols = some objectArtifact)
     (hScoped : objectArtifact.codeArtifact.lower.toFunctions.Scoped)
-    (hSafety : Functions.AllocationInteractionSafety.SourceSafety
-      objectArtifact.codeArtifact.lower.toFunctions.memoryContract)
+    (hExecutionSafe :
+      Functions.AllocationInteractionSafeSemantics.Program.ExecutionSafe
+        objectArtifact.codeArtifact.lower.toFunctions.memoryContract
+        (Yul.FunctionsInteractionStaticCost.programBudget
+          objectArtifact.codeArtifact.ordered.program (sourceFuel + 1))
+        objectArtifact.codeArtifact.lower.toFunctions functionsState)
     (hResourceSafe : Functions.AllocationInteractionProgram.ResourceSafe
       objectArtifact.codeArtifact.compiled.metadata.allocation
       objectArtifact.codeArtifact.lower.toFunctions
@@ -2167,7 +2192,7 @@ theorem compiledObjectRootToAssemblyTarget
       hArtifactChildren, hContext, hChildImages, hPayload, hImage⟩ :=
     Solidity.Frontend.Object.compileObjectArtifactWithLinkerSymbols?_parts
       hObject
-  exact compiledFrontendCodeToAssemblyTarget hCode hScoped hSafety
+  exact compiledFrontendCodeToAssemblyTarget hCode hScoped hExecutionSafe
     hResourceSafe hFrameSafe hYulInitial hYulDomain hAllocationInitial
     hTerminal
 
@@ -2186,8 +2211,12 @@ theorem compiledObjectRootToBytecode
     (hObject : object.compileObjectArtifactWithLinkerSymbols?
       linkerSymbols = some objectArtifact)
     (hScoped : objectArtifact.codeArtifact.lower.toFunctions.Scoped)
-    (hSafety : Functions.AllocationInteractionSafety.SourceSafety
-      objectArtifact.codeArtifact.lower.toFunctions.memoryContract)
+    (hExecutionSafe :
+      Functions.AllocationInteractionSafeSemantics.Program.ExecutionSafe
+        objectArtifact.codeArtifact.lower.toFunctions.memoryContract
+        (Yul.FunctionsInteractionStaticCost.programBudget
+          objectArtifact.codeArtifact.ordered.program (sourceFuel + 1))
+        objectArtifact.codeArtifact.lower.toFunctions functionsState)
     (hResourceSafe : Functions.AllocationInteractionProgram.ResourceSafe
       objectArtifact.codeArtifact.compiled.metadata.allocation
       objectArtifact.codeArtifact.lower.toFunctions
@@ -2259,7 +2288,8 @@ theorem compiledObjectRootToBytecode
   refine ⟨hValid,
     hAllocationInitial.targetCodeImage hFunctionsCodeImage, ?_⟩
   have hCompiled := compiledObjectRootToAssemblyTarget
-    hObject hScoped hSafety hResourceSafe hFrameSafe hYulInitial hYulDomain
+    hObject hScoped hExecutionSafe hResourceSafe hFrameSafe hYulInitial
+      hYulDomain
     hAllocationInitial hTerminal
   have hDecoding :=
     Solidity.Frontend.Object.compileObjectArtifactWithLinkerSymbols?_decodingCorrect

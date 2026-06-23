@@ -1626,8 +1626,16 @@ if rg -q '(OpenWorldTerminalCorrect|openWorldTerminalCorrect)' \
   printf '%s\n\n' \
     'The uninstantiable global-SourceSafety public theorem must not be reintroduced.' \
     >&2
-  failed=1
+    failed=1
 fi
+report_matches \
+  'The impossible globally quantified SourceSafety interface must not return:' \
+  'SourceSafety' \
+  EvmCompiler
+report_matches \
+  'The obsolete contradiction-based recursive allocation runtime must not return:' \
+  'AllocationInteractionRecursiveRuntime' \
+  EvmCompiler
 if ! sed -n '/^noncomputable def toObjectsWithObservers? (program/,/^[[:space:]]*toObjectsCanonical? program$/p' \
       EvmCompiler/Yul/Compiler.lean |
     rg -q 'toObjectsCanonical\? program'; then

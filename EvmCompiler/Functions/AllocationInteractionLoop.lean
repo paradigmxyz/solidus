@@ -211,6 +211,23 @@ def ordinary : SourceSemantics where
     Locals.InteractionStatePreservation.expr_openEvalCondition_vars
   argumentVars := Functions.InteractionSemantics.ArgList.openEval_vars_eq
 
+/-- Canonical Functions control instantiated with allocation-safe primitives.
+Only primitive capability changes; loop and call control remain shared. -/
+noncomputable def guarded
+    (contract : MemoryContract.Contract) : SourceSemantics where
+  primitive := AllocationInteractionSafeSemantics.primitiveSemantics contract
+  conditionVars := by
+    intro cond source
+    apply Simulation.Interaction.AllDone.mono
+      (AllocationInteractionSafeSemantics.Expr.openEvalCondition_vars_eq
+        contract cond source)
+    intro outcome hOutcome
+    cases outcome <;> exact hOutcome
+  argumentVars := by
+    intro args source
+    exact AllocationInteractionSafeSemantics.ArgList.openEval_vars_eq
+      contract args source
+
 end SourceSemantics
 
 /--

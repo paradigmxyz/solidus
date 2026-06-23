@@ -3,6 +3,7 @@ import EvmCompiler.Functions.AllocationInteractionControlAgreement
 import EvmCompiler.Functions.AllocationInteractionTargetFuel
 import EvmCompiler.Functions.AllocationInteractionCallResult
 import EvmCompiler.Functions.AllocationInteractionCallStatement
+import EvmCompiler.Functions.AllocationInteractionSafeSuccessful
 import EvmCompiler.Functions.AllocationInteractionSuccessful
 
 namespace EvmCompiler
@@ -564,6 +565,81 @@ theorem at_targetFuel
 
 end RecursiveOpenRuntime
 
+/-- Fuel-bounded stack-only preservation restricted to the exact guarded
+source executions reached. -/
+def ExecutionSafeRecursiveOpenRuntime
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    (contract : MemoryContract.Contract) (fuelBound : Nat) : Prop :=
+  ∀ {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId} {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State} {localsCtx : Locals.Ctx}
+    {frameBase sourceFuel targetExtra : Nat} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx} {source : SourceState}
+    {target : TargetState}
+    (cursor : CoreCursor root scope live sourceBlock lowerState localsCtx),
+    sourceFuel < fuelBound →
+    Boundary cursor contract frameBase mode sourceCtx source target →
+    AllocationInteractionTargetFuel.Reserve cursor targetExtra →
+    AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+      sourceCtx sourceFuel sourceBlock source →
+    CursorRuntimeAt cursor contract frameBase sourceFuel targetExtra mode
+      sourceCtx source target
+
+namespace ExecutionSafeRecursiveOpenRuntime
+
+theorem at_targetFuel
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program} {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation} {contract : MemoryContract.Contract}
+    {fuelBound : Nat}
+    (hRecursive : ExecutionSafeRecursiveOpenRuntime
+      (compilation := compilation) contract fuelBound)
+    {scope : Locals.Allocation.ScopeId} {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State} {localsCtx : Locals.Ctx}
+    {frameBase sourceFuel targetFuel : Nat} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx} {source : SourceState}
+    {target : TargetState}
+    (cursor : CoreCursor root scope live sourceBlock lowerState localsCtx)
+    (hFuel : sourceFuel < fuelBound)
+    (hTargetFuel :
+      targetBudget cursor sourceFuel
+          (AllocationInteractionTargetFuel.stmtListNestedSize cursor.compiled) ≤
+        targetFuel)
+    (hBoundary : Boundary cursor contract frameBase mode sourceCtx source target)
+    (hSafe : AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+      program sourceCtx sourceFuel sourceBlock source) :
+    Simulation.Interaction.Rel
+      (OpenControlResultRel contract root.lowerCtx cursor.finalState
+        cursor.finalLocals cursor.plan root.returns
+        (Functions.Scope.Block.outEnv live sourceBlock) frameBase mode
+        sourceCtx { sourceCtx with
+          scope := Functions.Scope.Block.outEnv live sourceBlock })
+      (Functions.InteractionSemantics.Block.openRun program sourceCtx
+        sourceFuel sourceBlock source)
+      (Expressions.InteractionSemantics.Block.openRun expressions targetFuel
+        { stmts := cursor.compiled } target) := by
+  let targetExtra := targetFuel - targetBudget cursor sourceFuel 0
+  have hReserve : AllocationInteractionTargetFuel.Reserve cursor targetExtra := by
+    change AllocationInteractionTargetFuel.stmtListNestedSize cursor.compiled ≤
+      targetExtra
+    simp only [targetExtra, targetBudget] at hTargetFuel ⊢
+    omega
+  have hForward := hRecursive cursor hFuel hBoundary hReserve hSafe
+    (targetExtra := targetExtra)
+  have hExact : targetBudget cursor sourceFuel targetExtra = targetFuel := by
+    simp [targetBudget, targetExtra, callStride, Nat.mul_succ]
+      at hTargetFuel ⊢
+    omega
+  simpa [CursorRuntimeAt, CursorForwardAt, hExact] using hForward
+
+end ExecutionSafeRecursiveOpenRuntime
+
 namespace CursorRuntimeAt
 
 /-- Empty canonical stack-only cursor. -/
@@ -679,6 +755,85 @@ theorem cons_same_live
           hTailSuccess)
   simpa [CursorRuntimeAt, hFuel] using hResult
 
+/-- Stack-only head composition with guarded safety attached only to the
+regular tail selected by the source/target interaction. -/
+theorem cons_same_live_executionSafe
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program} {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation} {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name} {stmt : Functions.Stmt}
+    {rest : List Functions.Stmt}
+    {beforeState afterState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx}
+    {contract : MemoryContract.Contract}
+    {frameBase sourceFuel targetExtra : Nat} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx} {source : SourceState}
+    {target : TargetState} {headCode : List Expressions.Stmt}
+    (cursor : CoreCursor root scope live { stmts := stmt :: rest }
+      beforeState beforeLocals)
+    (tail : CoreCursor root scope (Functions.Scope.Stmt.outEnv live stmt)
+      { stmts := rest } afterState afterLocals)
+    (hExact : ExactTail cursor tail)
+    (hOut : Functions.Scope.Stmt.outEnv live stmt = live)
+    (hCompiled : cursor.compiled = headCode ++ tail.compiled)
+    (hBoundary : Boundary cursor contract frameBase mode sourceCtx source target)
+    (hHead :
+      Simulation.Interaction.Rel
+        (OpenControlResultRel contract root.lowerCtx afterState afterLocals
+          cursor.plan root.returns live frameBase mode sourceCtx sourceCtx)
+        (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+          (sourceFuel - 1) stmt source)
+        (Expressions.InteractionSemantics.Block.openRun expressions
+          (targetBudget cursor sourceFuel targetExtra)
+          { stmts := headCode } target))
+    (hSafe : AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+      program sourceCtx sourceFuel { stmts := stmt :: rest } source)
+    (hTailForward :
+      ∀ {sourceMid targetMid tailMode},
+        Boundary tail contract frameBase tailMode sourceCtx sourceMid
+            targetMid →
+          Simulation.Interaction.Successful
+            (Functions.InteractionSemantics.Block.openRun program sourceCtx
+              (sourceFuel - 1) { stmts := rest } sourceMid) →
+          AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+            program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
+          CursorRuntimeAt tail contract frameBase (sourceFuel - 1)
+            (targetExtra + callStride expressions) tailMode sourceCtx
+            sourceMid targetMid) :
+    CursorRuntimeAt cursor contract frameBase sourceFuel targetExtra mode
+      sourceCtx source target := by
+  have hFuel : sourceFuel - 1 + 1 = sourceFuel := by
+    have hPositive :=
+      Functions.InteractionSemantics.Block.successful_openRun_fuel_pos
+        hSafe.ordinarySuccessful
+    omega
+  have hMidCtx : sourceCtx = { sourceCtx with
+      scope := Functions.Scope.Stmt.outEnv live stmt } := by
+    have hCtx : { sourceCtx with scope := live } = sourceCtx := by
+      cases sourceCtx
+      have hScope := hBoundary.semantic.sourceScope
+      simp only at hScope
+      cases hScope
+      rfl
+    rw [hOut]
+    exact hCtx.symm
+  have hResult :=
+    AllocationInteractionRecursive.CursorForwardAt.cons_of_parts_executionSafe
+      (contract := contract) (childFuel := sourceFuel - 1)
+      (targetExtra := targetExtra) (frameBase := frameBase)
+      (entryMode := mode) (source := source) (target := target)
+      cursor tail hExact hCompiled hMidCtx
+      (by simpa [hFuel, hOut] using hHead)
+      (by simpa [hFuel] using hSafe)
+      (fun {sourceMid targetMid tailMode} hInvariant hSame hReturns
+          hTailSuccess hTailSafe =>
+        hTailForward
+          (Boundary.tail_same_live cursor tail hBoundary hExact hOut
+            hInvariant hSame hReturns)
+          hTailSuccess hTailSafe)
+  simpa [CursorRuntimeAt, hFuel] using hResult
+
 /-- Successful resource-free expression statement followed by its exact tail. -/
 theorem expr
     {allocation : Locals.Allocation.ProgramPlan}
@@ -698,10 +853,9 @@ theorem expr
     (hSafe : AllocationInteractionSafety.ExprSafe contract expr source)
     (hBoundary :
       Boundary cursor contract frameBase mode sourceCtx source target)
-    (hSuccessful :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .expr expr :: rest } source))
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        sourceCtx sourceFuel { stmts := .expr expr :: rest } source)
     (hTailForward :
       ∀ {afterState : AllocationLowering.State} {afterLocals : Locals.Ctx}
         (tail : CoreCursor root scope live { stmts := rest }
@@ -713,6 +867,8 @@ theorem expr
             Simulation.Interaction.Successful
               (Functions.InteractionSemantics.Block.openRun program sourceCtx
                 (sourceFuel - 1) { stmts := rest } sourceMid) →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
             CursorRuntimeAt tail contract frameBase (sourceFuel - 1)
               (targetExtra + callStride expressions) tailMode sourceCtx
               sourceMid targetMid) :
@@ -743,9 +899,9 @@ theorem expr
           (targetBudget cursor sourceFuel targetExtra)
           { stmts := headCode } target) := by
     simpa [childFuel, totalFuel, hHeadFuel] using hHead
-  exact cons_same_live cursor tail hExact
+  exact cons_same_live_executionSafe cursor tail hExact
     (by simp [Functions.Scope.Stmt.outEnv]) hCompiled hBoundary hHead'
-    hSuccessful (hTailForward tail hExact)
+    hExecutionSafe (hTailForward tail hExact)
 
 /-- Successful resource-free assignment followed by its exact tail. -/
 theorem assign
@@ -767,10 +923,9 @@ theorem assign
     (hSafe : AllocationInteractionSafety.ExprSafe contract value source)
     (hBoundary :
       Boundary cursor contract frameBase mode sourceCtx source target)
-    (hSuccessful :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .assign name value :: rest } source))
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        sourceCtx sourceFuel { stmts := .assign name value :: rest } source)
     (hTailForward :
       ∀ {afterState : AllocationLowering.State} {afterLocals : Locals.Ctx}
         (tail : CoreCursor root scope live { stmts := rest }
@@ -782,6 +937,8 @@ theorem assign
             Simulation.Interaction.Successful
               (Functions.InteractionSemantics.Block.openRun program sourceCtx
                 (sourceFuel - 1) { stmts := rest } sourceMid) →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
             CursorRuntimeAt tail contract frameBase (sourceFuel - 1)
               (targetExtra + callStride expressions) tailMode sourceCtx
               sourceMid targetMid) :
@@ -811,9 +968,9 @@ theorem assign
           (targetBudget cursor sourceFuel targetExtra)
           { stmts := headCode } target) := by
     simpa [childFuel, totalFuel, hHeadFuel] using hHead
-  exact cons_same_live cursor tail hExact
+  exact cons_same_live_executionSafe cursor tail hExact
     (by simp [Functions.Scope.Stmt.outEnv]) hCompiled hBoundary hHead'
-    hSuccessful (hTailForward tail hExact)
+    hExecutionSafe (hTailForward tail hExact)
 
 /-- Successful stack-only declaration followed by its exact enlarged-scope
 tail. -/
@@ -836,10 +993,9 @@ theorem let_
     (hSafe : AllocationInteractionSafety.ExprSafe contract value source)
     (hBoundary :
       Boundary cursor contract frameBase mode sourceCtx source target)
-    (hSuccessful :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .let_ name value :: rest } source))
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        sourceCtx sourceFuel { stmts := .let_ name value :: rest } source)
     (hTailForward :
       ∀ {afterState : AllocationLowering.State} {afterLocals : Locals.Ctx}
         (tail : CoreCursor root scope (name :: live) { stmts := rest }
@@ -853,6 +1009,9 @@ theorem let_
               (Functions.InteractionSemantics.Block.openRun program
                 { sourceCtx with scope := name :: sourceCtx.scope }
                 (sourceFuel - 1) { stmts := rest } sourceMid) →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program { sourceCtx with scope := name :: sourceCtx.scope }
+                (sourceFuel - 1) { stmts := rest } sourceMid →
             CursorRuntimeAt tail contract frameBase (sourceFuel - 1)
               (targetExtra + callStride expressions) tailMode
               { sourceCtx with scope := name :: sourceCtx.scope }
@@ -896,19 +1055,19 @@ theorem let_
     cases hScope
     rfl
   have hResult :=
-    AllocationInteractionRecursive.CursorForwardAt.cons_of_parts_successful
+    AllocationInteractionRecursive.CursorForwardAt.cons_of_parts_executionSafe
       (contract := contract) (childFuel := sourceFuel - 1)
       (targetExtra := targetExtra) (frameBase := frameBase)
       (entryMode := mode) (source := source) (target := target)
       cursor tail hExact hCompiled hMidCtx
       (by simpa [hFuel', nextCtx, Functions.Scope.Stmt.outEnv] using hHead')
-      (by simpa [hFuel'] using hSuccessful)
+      (by simpa [hFuel'] using hExecutionSafe)
       (fun {sourceMid targetMid tailMode} hInvariant hSame hReturns
-          hTailSuccess =>
+          hTailSuccess hTailSafe =>
         hTailForward tail hExact
           (Boundary.tail_after_declaration cursor tail hBoundary hExact
             hPlacement hInvariant hSame hReturns)
-          hTailSuccess)
+          hTailSuccess hTailSafe)
   simpa [CursorRuntimeAt, hFuel'] using hResult
 
 /-- Successful stack-only `break` followed by its statically present tail. -/
@@ -935,10 +1094,9 @@ theorem brk
         targetDepth beforeMode afterMode)
     (hBoundary :
       Boundary cursor contract frameBase beforeMode sourceCtx source target)
-    (hSuccessful :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .brk :: rest } source))
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        sourceCtx sourceFuel { stmts := .brk :: rest } source)
     (hTailForward :
       ∀ {afterState : AllocationLowering.State} {afterLocals : Locals.Ctx}
         (tail : CoreCursor root scope live { stmts := rest }
@@ -950,6 +1108,8 @@ theorem brk
             Simulation.Interaction.Successful
               (Functions.InteractionSemantics.Block.openRun program sourceCtx
                 (sourceFuel - 1) { stmts := rest } sourceMid) →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
             CursorRuntimeAt tail contract frameBase (sourceFuel - 1)
               (targetExtra + callStride expressions) tailMode sourceCtx
               sourceMid targetMid) :
@@ -977,9 +1137,9 @@ theorem brk
           (targetBudget cursor sourceFuel targetExtra)
           { stmts := headCode } target) := by
     simpa [childFuel, totalFuel, hHeadFuel] using hHead
-  exact cons_same_live cursor tail hExact
+  exact cons_same_live_executionSafe cursor tail hExact
     (by simp [Functions.Scope.Stmt.outEnv]) hCompiled hBoundary hHead'
-    hSuccessful (hTailForward tail hExact)
+    hExecutionSafe (hTailForward tail hExact)
 
 /-- Successful stack-only `continue` followed by its statically present tail. -/
 theorem cont
@@ -1005,10 +1165,9 @@ theorem cont
         targetDepth beforeMode afterMode)
     (hBoundary :
       Boundary cursor contract frameBase beforeMode sourceCtx source target)
-    (hSuccessful :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .cont :: rest } source))
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        sourceCtx sourceFuel { stmts := .cont :: rest } source)
     (hTailForward :
       ∀ {afterState : AllocationLowering.State} {afterLocals : Locals.Ctx}
         (tail : CoreCursor root scope live { stmts := rest }
@@ -1020,6 +1179,8 @@ theorem cont
             Simulation.Interaction.Successful
               (Functions.InteractionSemantics.Block.openRun program sourceCtx
                 (sourceFuel - 1) { stmts := rest } sourceMid) →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
             CursorRuntimeAt tail contract frameBase (sourceFuel - 1)
               (targetExtra + callStride expressions) tailMode sourceCtx
               sourceMid targetMid) :
@@ -1047,9 +1208,9 @@ theorem cont
           (targetBudget cursor sourceFuel targetExtra)
           { stmts := headCode } target) := by
     simpa [childFuel, totalFuel, hHeadFuel] using hHead
-  exact cons_same_live cursor tail hExact
+  exact cons_same_live_executionSafe cursor tail hExact
     (by simp [Functions.Scope.Stmt.outEnv]) hCompiled hBoundary hHead'
-    hSuccessful (hTailForward tail hExact)
+    hExecutionSafe (hTailForward tail hExact)
 
 /-- Successful stack-only function `leave` with exact return cleanup. -/
 theorem leave
@@ -1075,10 +1236,9 @@ theorem leave
     (hReturnFrame : target.returns ≠ [])
     (hBoundary :
       Boundary cursor contract frameBase mode sourceCtx source target)
-    (hSuccessful :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .leave :: rest } source))
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        sourceCtx sourceFuel { stmts := .leave :: rest } source)
     (hTailForward :
       ∀ {afterState : AllocationLowering.State} {afterLocals : Locals.Ctx}
         (tail : CoreCursor root scope live { stmts := rest }
@@ -1090,6 +1250,8 @@ theorem leave
             Simulation.Interaction.Successful
               (Functions.InteractionSemantics.Block.openRun program sourceCtx
                 (sourceFuel - 1) { stmts := rest } sourceMid) →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
             CursorRuntimeAt tail contract frameBase (sourceFuel - 1)
               (targetExtra + callStride expressions) tailMode sourceCtx
               sourceMid targetMid) :
@@ -1117,9 +1279,9 @@ theorem leave
           (targetBudget cursor sourceFuel targetExtra)
           { stmts := headCode } target) := by
     simpa [childFuel, totalFuel, hHeadFuel] using hHead
-  exact cons_same_live cursor tail hExact
+  exact cons_same_live_executionSafe cursor tail hExact
     (by simp [Functions.Scope.Stmt.outEnv]) hCompiled hBoundary hHead'
-    hSuccessful (hTailForward tail hExact)
+    hExecutionSafe (hTailForward tail hExact)
 
 /-- Successful plain terminal statement with an unreachable exact tail. -/
 theorem terminal
@@ -1140,10 +1302,9 @@ theorem terminal
     (hMemory : Simulation.MemorySafety.TerminalMemorySafe contract kind [])
     (hBoundary :
       Boundary cursor contract frameBase mode sourceCtx source target)
-    (hSuccessful :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .terminal kind :: rest } source))
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        sourceCtx sourceFuel { stmts := .terminal kind :: rest } source)
     (hTailForward :
       ∀ {afterState : AllocationLowering.State} {afterLocals : Locals.Ctx}
         (tail : CoreCursor root scope live { stmts := rest }
@@ -1155,6 +1316,8 @@ theorem terminal
             Simulation.Interaction.Successful
               (Functions.InteractionSemantics.Block.openRun program sourceCtx
                 (sourceFuel - 1) { stmts := rest } sourceMid) →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
             CursorRuntimeAt tail contract frameBase (sourceFuel - 1)
               (targetExtra + callStride expressions) tailMode sourceCtx
               sourceMid targetMid) :
@@ -1181,9 +1344,9 @@ theorem terminal
           (targetBudget cursor sourceFuel targetExtra)
           { stmts := headCode } target) := by
     simpa [childFuel, totalFuel, hHeadFuel] using hHead
-  exact cons_same_live cursor tail hExact
+  exact cons_same_live_executionSafe cursor tail hExact
     (by simp [Functions.Scope.Stmt.outEnv]) hCompiled hBoundary hHead'
-    hSuccessful (hTailForward tail hExact)
+    hExecutionSafe (hTailForward tail hExact)
 
 /-- Successful argument-bearing terminal statement with exact memory safety. -/
 theorem terminalArgs
@@ -1213,10 +1376,9 @@ theorem terminalArgs
         (Functions.InteractionSemantics.ExprSeq.openEval args source))
     (hBoundary :
       Boundary cursor contract frameBase mode sourceCtx source target)
-    (hSuccessful :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .terminalArgs kind args :: rest } source))
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        sourceCtx sourceFuel { stmts := .terminalArgs kind args :: rest } source)
     (hTailForward :
       ∀ {afterState : AllocationLowering.State} {afterLocals : Locals.Ctx}
         (tail : CoreCursor root scope live { stmts := rest }
@@ -1228,6 +1390,8 @@ theorem terminalArgs
             Simulation.Interaction.Successful
               (Functions.InteractionSemantics.Block.openRun program sourceCtx
                 (sourceFuel - 1) { stmts := rest } sourceMid) →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
             CursorRuntimeAt tail contract frameBase (sourceFuel - 1)
               (targetExtra + callStride expressions) tailMode sourceCtx
               sourceMid targetMid) :
@@ -1254,9 +1418,9 @@ theorem terminalArgs
           (targetBudget cursor sourceFuel targetExtra)
           { stmts := headCode } target) := by
     simpa [childFuel, totalFuel, hHeadFuel] using hHead
-  exact cons_same_live cursor tail hExact
+  exact cons_same_live_executionSafe cursor tail hExact
     (by simp [Functions.Scope.Stmt.outEnv]) hCompiled hBoundary hHead'
-    hSuccessful (hTailForward tail hExact)
+    hExecutionSafe (hTailForward tail hExact)
 
 /-- Successful lexical block using the same stack-only recursive capability
 for its selected body and exact outer tail. -/
@@ -1279,10 +1443,9 @@ theorem block
       AllocationInteractionTargetFuel.Reserve cursor targetExtra)
     (hBoundary :
       Boundary cursor contract frameBase mode sourceCtx source target)
-    (hSuccessful :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .block body :: rest } source))
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        sourceCtx sourceFuel { stmts := .block body :: rest } source)
     (hBodyForward :
       ∀ (bodyCursor : CoreCursor root
           (.lexical scope cursor.planning.nextScope) live body
@@ -1290,9 +1453,8 @@ theorem block
         (bodyExtra : Nat),
         AllocationInteractionTargetFuel.Reserve bodyCursor bodyExtra →
           Boundary bodyCursor contract frameBase mode sourceCtx source target →
-          Simulation.Interaction.Successful
-            (Functions.InteractionSemantics.Block.openRun program sourceCtx
-              (sourceFuel - 1) body source) →
+          AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+            program sourceCtx (sourceFuel - 1) body source →
           CursorRuntimeAt bodyCursor contract frameBase (sourceFuel - 1)
             bodyExtra mode sourceCtx source target)
     (hTailForward :
@@ -1306,6 +1468,8 @@ theorem block
             Simulation.Interaction.Successful
               (Functions.InteractionSemantics.Block.openRun program sourceCtx
                 (sourceFuel - 1) { stmts := rest } sourceMid) →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
             CursorRuntimeAt tail contract frameBase (sourceFuel - 1)
               (targetExtra + callStride expressions) tailMode sourceCtx
               sourceMid targetMid) :
@@ -1343,7 +1507,7 @@ theorem block
           (Functions.InteractionSemantics.Block.openRun program sourceCtx
             (childFuel + 1) { stmts := .block body :: rest } source) := by
       rw [hFuel]
-      exact hSuccessful
+      exact hExecutionSafe.ordinarySuccessful
     have hHead :=
       Functions.InteractionSemantics.Block.successful_openRun_cons_head hWhole
     simpa [Functions.InteractionSemantics.Stmt.openRun] using hHead
@@ -1353,6 +1517,13 @@ theorem block
           childFuel body source) := by
     rw [Functions.InteractionSemantics.Stmt.openRun_block] at hHeadSuccess
     exact Simulation.Interaction.Successful.bind_left hHeadSuccess
+  have hHeadSafe := AllocationInteractionSafeSuccessful.successful_head
+    hSourceFuel hExecutionSafe
+  have hBodySafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        sourceCtx childFuel body source := by
+    rw [AllocationInteractionSafeSemantics.Stmt.openRun_block] at hHeadSafe
+    exact Simulation.Interaction.Successful.bind_left hHeadSafe
   obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
     AllocationInteractionCleanup.Plain.finishScoped_shape hFinish
   have hHeadLength : headCode.length = bodyCursor.compiled.length + 1 := by
@@ -1405,7 +1576,7 @@ theorem block
     omega
   have hBodyRecursive :=
     hBodyForward bodyCursor bodyExtra hBodyReserve hBodyBoundary
-      (by simpa [childFuel] using hBodySuccess)
+      (by simpa [childFuel] using hBodySafe)
   have hBodyRel :
       Simulation.Interaction.Rel
         (OpenControlResultRel contract root.lowerCtx bodyCursor.finalState
@@ -1451,9 +1622,9 @@ theorem block
           { stmts := headCode } target) := by
     cases targetBlock
     simpa [hHeadCode] using hHead
-  exact cons_same_live cursor tail hExact
+  exact cons_same_live_executionSafe cursor tail hExact
     (by simp [Functions.Scope.Stmt.outEnv]) hCompiled hBoundary
-    (by simpa [childFuel, totalFuel] using hHead') hSuccessful
+    (by simpa [childFuel, totalFuel] using hHead') hExecutionSafe
     (hTailForward tail hExact)
 
 /-- Successful conditional with recursion only through the selected true
@@ -1479,10 +1650,9 @@ theorem if_
     (hCondSafe : AllocationInteractionSafety.ExprSafe contract cond source)
     (hBoundary :
       Boundary cursor contract frameBase mode sourceCtx source target)
-    (hSuccessful :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .if_ cond body :: rest } source))
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        sourceCtx sourceFuel { stmts := .if_ cond body :: rest } source)
     (hBodyForward :
       ∀ (bodyCursor : CoreCursor root
           (.lexical scope cursor.planning.nextScope) live body
@@ -1497,6 +1667,8 @@ theorem if_
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Block.openRun program sourceCtx
               (sourceFuel - 2) body sourceAfter) →
+          AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+            program sourceCtx (sourceFuel - 2) body sourceAfter →
           2 ≤
               (targetBudget cursor sourceFuel targetExtra - 2) -
                 bodyCursor.compiled.length ∧
@@ -1523,6 +1695,8 @@ theorem if_
             Simulation.Interaction.Successful
               (Functions.InteractionSemantics.Block.openRun program sourceCtx
                 (sourceFuel - 1) { stmts := rest } sourceMid) →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
             CursorRuntimeAt tail contract frameBase (sourceFuel - 1)
               (targetExtra + callStride expressions) tailMode sourceCtx
               sourceMid targetMid) :
@@ -1550,7 +1724,7 @@ theorem if_
           (Functions.InteractionSemantics.Block.openRun program sourceCtx
             (childFuel + 1) { stmts := .if_ cond body :: rest } source) := by
       rw [hFuel]
-      exact hSuccessful
+      exact hExecutionSafe.ordinarySuccessful
     have hHead :=
       Functions.InteractionSemantics.Block.successful_openRun_cons_head hWhole
     simpa [Functions.InteractionSemantics.Stmt.openRun] using hHead
@@ -1558,6 +1732,28 @@ theorem if_
       targetBody, bodyCursor, hCompiled, _hLower, _hCompile,
       hHeadCode, hLowerCond, hCompileCond, hFinish, hAfterEnv,
       hAfterLayout, hCondScoped, hExact⟩ := cursor.ifCursors
+  have hSafeHead := AllocationInteractionSafeSuccessful.successful_head
+    (by omega) hExecutionSafe
+  have hSafeHeadAtBody :
+      Simulation.Interaction.Successful
+        (AllocationInteractionSafeSemantics.Stmt.openRun contract program
+          sourceCtx (bodyFuel + 1) (.if_ cond body) source) := by
+    have hFuelEq : bodyFuel + 1 = sourceFuel - 1 := by
+      simp [bodyFuel]
+      omega
+    rw [hFuelEq]
+    exact hSafeHead
+  have hSafeCondSuccess :
+      Simulation.Interaction.Successful
+        (AllocationInteractionSafeSemantics.Expr.openEvalCondition
+          contract cond source) := by
+    have hSafeHeadForCond := hSafeHeadAtBody
+    rw [AllocationInteractionSafeSemantics.Stmt.openRun_if]
+      at hSafeHeadForCond
+    exact Simulation.Interaction.Successful.bind_left hSafeHeadForCond
+  have hCondChecked :=
+    AllocationInteractionSafeExpression.conditionChecked_of_successful
+      hCondScoped hBoundary.semantic.invariant.defined hSafeCondSuccess
   have hBodyAgree : PlanAgreesOn bodyCursor.plan cursor.plan live :=
     bodyCursor.planAgreesOn cursor rfl
   have hAfterInvariant :=
@@ -1639,6 +1835,9 @@ theorem if_
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
               bodyFuel (.block body) sourceAfter) →
+          Simulation.Interaction.Successful
+            (AllocationInteractionSafeSemantics.Stmt.openRun contract program
+              sourceCtx bodyFuel (.block body) sourceAfter) →
           Simulation.Interaction.Rel
             (OpenControlResultRel contract root.lowerCtx afterState
               beforeLocals cursor.plan root.returns live frameBase mode
@@ -1648,6 +1847,7 @@ theorem if_
             (Expressions.InteractionSemantics.Block.openRun expressions
               targetBodyFuel targetBody targetAfter) := by
     intro sourceAfter targetAfter hAfter hReturns hSelectedSuccess
+      hSelectedSafe
     have hBefore := hAfter.transport_state hAfterEnv.symm hAfterLayout.symm
     have hNestedInvariant :=
       hBefore.transport_plan hBodyAgree.symm bodyCursor.planWF
@@ -1670,9 +1870,17 @@ theorem if_
       rw [Functions.InteractionSemantics.Stmt.openRun_block]
         at hSelectedSuccess
       exact Simulation.Interaction.Successful.bind_left hSelectedSuccess
+    have hBodySafe :
+        AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+          program sourceCtx bodyFuel body sourceAfter := by
+      unfold AllocationInteractionSafeSemantics.Block.ExecutionSafe
+      rw [AllocationInteractionSafeSemantics.Stmt.openRun_block]
+        at hSelectedSafe
+      exact Simulation.Interaction.Successful.bind_left hSelectedSafe
     obtain ⟨hCleanupFuel, hBody⟩ :=
       hBodyForward bodyCursor hBodyTargetCapacity hNestedBoundary
         (by simpa [bodyFuel] using hBodySuccess)
+        (by simpa [bodyFuel] using hBodySafe)
     exact
       AllocationInteractionControl.block_of_components_or_abrupt
         (bodyLive := Functions.Scope.Block.outEnv live body)
@@ -1680,10 +1888,11 @@ theorem if_
         hAfter bodyCursor.lower hExtendsAfter hBodyAgree hFinish hCleanupFuel
         (by simpa [bodyFuel, targetBodyFuel, totalFuel] using hBody)
   have hHead :=
-    AllocationInteractionControl.if_of_components_successful
+    AllocationInteractionControl.if_of_components_executionSafe
       (sourceBodyFuel := bodyFuel) (targetBodyFuel := targetBodyFuel)
       hAfterInvariant hCond hVars
-      (by simpa [bodyFuel, hBodyFuel] using hHeadSuccess) hTrue
+      (by simpa [bodyFuel, hBodyFuel] using hHeadSuccess)
+      hSafeHeadAtBody hCondChecked.ordinary hTrue
   have hHead' :
       Simulation.Interaction.Rel
         (OpenControlResultRel contract root.lowerCtx afterState beforeLocals
@@ -1693,9 +1902,9 @@ theorem if_
         (Expressions.InteractionSemantics.Block.openRun expressions totalFuel
           { stmts := headCode } target) := by
     simpa [hBodyFuel, hTargetFuel, hHeadCode] using hHead
-  exact cons_same_live cursor tail hExact
+  exact cons_same_live_executionSafe cursor tail hExact
     (by simp [Functions.Scope.Stmt.outEnv]) hCompiled hBoundary
-    (by simpa [childFuel, totalFuel] using hHead') hSuccessful
+    (by simpa [childFuel, totalFuel] using hHead') hExecutionSafe
     (hTailForward tail hExact)
 
 /-- Successful switch with recursion only through the exact selected branch. -/
@@ -1723,11 +1932,10 @@ theorem switch
       AllocationInteractionSafety.ExprSafe contract scrutinee source)
     (hBoundary :
       Boundary cursor contract frameBase mode sourceCtx source target)
-    (hSuccessful :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel
-          { stmts := .switch scrutinee cases defaultBody :: rest } source))
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        sourceCtx sourceFuel
+          { stmts := .switch scrutinee cases defaultBody :: rest } source)
     (hBodyForward :
       ∀ {value} {selected : Functions.Block}
         {selectedStart : AllocationLowering.State}
@@ -1748,6 +1956,8 @@ theorem switch
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Block.openRun program sourceCtx
               (sourceFuel - 2) selected sourceAfter) →
+          AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+            program sourceCtx (sourceFuel - 2) selected sourceAfter →
           2 ≤
               (targetBudget cursor sourceFuel targetExtra - 2) -
                 bodyCursor.compiled.length ∧
@@ -1774,6 +1984,8 @@ theorem switch
             Simulation.Interaction.Successful
               (Functions.InteractionSemantics.Block.openRun program sourceCtx
                 (sourceFuel - 1) { stmts := rest } sourceMid) →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
             CursorRuntimeAt tail contract frameBase (sourceFuel - 1)
               (targetExtra + callStride expressions) tailMode sourceCtx
               sourceMid targetMid) :
@@ -1803,13 +2015,38 @@ theorem switch
             { stmts := .switch scrutinee cases defaultBody :: rest }
             source) := by
       rw [hFuel]
-      exact hSuccessful
+      exact hExecutionSafe.ordinarySuccessful
     have hHead :=
       Functions.InteractionSemantics.Block.successful_openRun_cons_head hWhole
     simpa [Functions.InteractionSemantics.Stmt.openRun] using hHead
   obtain ⟨afterState, headLower, headCode, tail, loweredScrutinee,
       loweredCases, afterCases, loweredDefault, scrutineeCode,
       compiledCases, compiledDefault, components⟩ := cursor.switchCursors
+  have hSafeHead := AllocationInteractionSafeSuccessful.successful_head
+    (by omega) hExecutionSafe
+  have hSafeHeadAtBody :
+      Simulation.Interaction.Successful
+        (AllocationInteractionSafeSemantics.Stmt.openRun contract program
+          sourceCtx (bodyFuel + 1)
+            (.switch scrutinee cases defaultBody) source) := by
+    have hFuelEq : bodyFuel + 1 = sourceFuel - 1 := by
+      simp [bodyFuel]
+      omega
+    rw [hFuelEq]
+    exact hSafeHead
+  have hSafeScrutineeSuccess :
+      Simulation.Interaction.Successful
+        (AllocationInteractionSafeSemantics.Expr.openEvalOne contract
+          scrutinee source) := by
+    have hSafeHeadForScrutinee := hSafeHeadAtBody
+    rw [AllocationInteractionSafeSemantics.Stmt.openRun_switch]
+      at hSafeHeadForScrutinee
+    exact Simulation.Interaction.Successful.bind_left
+      hSafeHeadForScrutinee
+  have hScrutineeChecked :=
+    AllocationInteractionSafeExpression.valueChecked_of_successful
+      components.scrutineeScoped hBoundary.semantic.invariant.defined
+        hSafeScrutineeSuccess
   have hAfterInvariant :=
     hBoundary.semantic.invariant.transport_state
       components.afterEnv components.afterLayout
@@ -1860,6 +2097,9 @@ theorem switch
         Simulation.Interaction.Successful
           (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
             bodyFuel (.block selected) sourceAfter) →
+        Simulation.Interaction.Successful
+          (AllocationInteractionSafeSemantics.Stmt.openRun contract program
+            sourceCtx bodyFuel (.block selected) sourceAfter) →
         Simulation.Interaction.Rel
           (OpenControlResultRel contract root.lowerCtx afterState beforeLocals
             cursor.plan root.returns live frameBase mode sourceCtx sourceCtx)
@@ -1869,6 +2109,7 @@ theorem switch
             targetBodyFuel selectedTarget targetAfter) := by
     intro value selected selectedTarget sourceAfter targetAfter
       hSourceSelect hTargetSelect hAfter hReturns hSelectedSuccess
+        hSelectedSafe
     obtain ⟨selectedAfter, selectedHeadLower, selectedHeadCode, selectedTail,
         selectedScrutineeCode, selectedCases, selectedDefault,
         selectedStart, selectedPlanning, actualTarget, bodyCursor,
@@ -1928,6 +2169,13 @@ theorem switch
       rw [Functions.InteractionSemantics.Stmt.openRun_block]
         at hSelectedSuccess
       exact Simulation.Interaction.Successful.bind_left hSelectedSuccess
+    have hBodySafe :
+        AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+          program sourceCtx bodyFuel selected sourceAfter := by
+      unfold AllocationInteractionSafeSemantics.Block.ExecutionSafe
+      rw [AllocationInteractionSafeSemantics.Stmt.openRun_block]
+        at hSelectedSafe
+      exact Simulation.Interaction.Successful.bind_left hSelectedSafe
     obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
       AllocationInteractionCleanup.Plain.finishScoped_shape hFinish
     have hActualTargetSize :
@@ -1988,6 +2236,7 @@ theorem switch
     obtain ⟨hCleanupFuel, hBody⟩ :=
       hBodyForward hSourceSelect bodyCursor hBodyTargetCapacity
         hNestedBoundary (by simpa [bodyFuel] using hBodySuccess)
+          (by simpa [bodyFuel] using hBodySafe)
     exact
       AllocationInteractionControl.block_of_components
         (bodyLive := Functions.Scope.Block.outEnv live selected)
@@ -1995,10 +2244,11 @@ theorem switch
         hAfter hExtendsAfter hBodyAgree hFinish hCleanupFuel
         (by simpa [bodyFuel, targetBodyFuel, totalFuel] using hBody)
   have hHead :=
-    AllocationInteractionControl.switch_of_components_successful
+    AllocationInteractionControl.switch_of_components_executionSafe
       (sourceBodyFuel := bodyFuel) (targetBodyFuel := targetBodyFuel)
       hAfterInvariant hScrutinee hVars
       (by simpa [bodyFuel, hBodyFuel] using hHeadSuccess)
+      hSafeHeadAtBody hScrutineeChecked.ordinary
       hSelection hSelected
   have hHead' :
       Simulation.Interaction.Rel
@@ -2009,9 +2259,9 @@ theorem switch
         (Expressions.InteractionSemantics.Block.openRun expressions totalFuel
           { stmts := headCode } target) := by
     simpa [hBodyFuel, hTargetFuel, components.codeHead] using hHead
-  exact cons_same_live cursor tail components.exactTail
+  exact cons_same_live_executionSafe cursor tail components.exactTail
     (by simp [Functions.Scope.Stmt.outEnv]) components.compiled hBoundary
-    (by simpa [childFuel, totalFuel] using hHead') hSuccessful
+    (by simpa [childFuel, totalFuel] using hHead') hExecutionSafe
     (hTailForward tail components.exactTail)
 
 /-- Successful stack-only `for`, reusing the shared effect-indexed loop owner
@@ -2033,25 +2283,15 @@ theorem for_
       { stmts := .for_ init cond post body :: rest }
       beforeState beforeLocals)
     (hSourceFuel : 2 < sourceFuel)
-    (hCondSafe :
-      ∀ sourceState,
-        LiveDefined cursor.forArtifact.loopLive sourceState →
-        Simulation.Interaction.Successful
-          (Functions.InteractionSemantics.Expr.openEvalCondition
-            cond sourceState) →
-        AllocationInteractionSafety.ExprSafe contract cond sourceState)
     (hBoundary :
       Boundary cursor contract frameBase mode sourceCtx source target)
-    (hHeadSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
-          (sourceFuel - 1) (.for_ init cond post body) source))
-    (hSuccessful :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .for_ init cond post body :: rest } source))
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        sourceCtx sourceFuel
+          { stmts := .for_ init cond post body :: rest } source)
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation) contract sourceFuel)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
+        contract sourceFuel)
     (hCapacity :
       ForFuelCapacity cursor.forArtifact (sourceFuel - 2)
         ((targetBudget cursor sourceFuel targetExtra - 2) -
@@ -2067,12 +2307,17 @@ theorem for_
             Simulation.Interaction.Successful
               (Functions.InteractionSemantics.Block.openRun program sourceCtx
                 (sourceFuel - 1) { stmts := rest } sourceMid) →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+              program sourceCtx (sourceFuel - 1) { stmts := rest } sourceMid →
             CursorRuntimeAt tail contract frameBase (sourceFuel - 1)
               (targetExtra + callStride expressions) tailMode sourceCtx
               sourceMid targetMid) :
     CursorRuntimeAt cursor contract frameBase sourceFuel targetExtra mode
       sourceCtx source target := by
   classical
+  have hSafeHead :=
+    AllocationInteractionSafeSuccessful.successful_head
+      (by omega) hExecutionSafe
   let components := cursor.forArtifact
   let childFuel := sourceFuel - 1
   let loopFuel := sourceFuel - 2
@@ -2105,6 +2350,8 @@ theorem for_
   let postCtx := loopCtx.withoutLoopControl
   let bodyCtx :=
     loopCtx.withLoopControl components.loopLive components.loopLive
+  let guardedSource :=
+    AllocationInteractionLoop.SourceSemantics.guarded contract
   have hOuterSubset :
       ∀ name, name ∈ live → name ∈ components.loopLive := by
     rw [components.loopLive_eq]
@@ -2116,23 +2363,23 @@ theorem for_
     have hLiveControl := hBoundary.semantic.control.mono hOuterSubset
     simpa [loopCtx, initCtx] using
       hLiveControl.withoutLoopControl.scopeUpdate components.loopLive
-  have hInitSuccess :
+  have hSafeHeadAtLoop :
       Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program initCtx
-          loopFuel init source) := by
-    have hSuccess := hHeadSuccess
+        (AllocationInteractionSafeSemantics.Stmt.openRun contract program
+          sourceCtx (loopFuel + 1) (.for_ init cond post body) source) := by
     have hFuelEq : loopFuel + 1 = sourceFuel - 1 := by
-      simpa [childFuel] using hLoopFuel
-    rw [← hFuelEq] at hSuccess
-    unfold Functions.InteractionSemantics.Stmt.openRun
-      Functions.Source.Canonical.Stmt.run at hSuccess
-    simp only [Functions.Source.Effectful.Control.Stmt.run] at hSuccess
-    have hInitDone := Simulation.Interaction.Successful.bind_inv hSuccess
-    apply Simulation.Interaction.AllDone.mono hInitDone
-    intro outcome hOutcome
-    cases outcome with
-    | error err => exact hOutcome
-    | ok value => trivial
+      simp [loopFuel]
+      omega
+    rw [hFuelEq]
+    exact hSafeHead
+  have hInitSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+        program initCtx loopFuel init source := by
+    unfold AllocationInteractionSafeSemantics.Block.ExecutionSafe
+    have hSafeFor := hSafeHeadAtLoop
+    rw [AllocationInteractionSafeSemantics.Stmt.openRun_for] at hSafeFor
+    simpa [initCtx] using
+      Simulation.Interaction.Successful.bind_left hSafeFor
   have hInitBoundary :
       Boundary components.initCursor contract frameBase mode initCtx
         source target :=
@@ -2157,11 +2404,12 @@ theorem for_
             |>.withoutLoopControl
       stackMode := hBoundary.stackMode }
   have hInitRaw :=
-    RecursiveOpenRuntime.at_targetFuel hRecursive components.initCursor
+    ExecutionSafeRecursiveOpenRuntime.at_targetFuel hRecursive
+      components.initCursor
       (sourceFuel := loopFuel) (targetFuel := nestedFuel)
       (by simp [loopFuel]; omega)
       (by simpa [hNestedFuel] using hCapacity.init)
-      hInitBoundary hInitSuccess
+      hInitBoundary hInitSafe
   have hInit :
       Simulation.Interaction.Rel
         (OpenControlResultRel contract root.lowerCtx components.loopState
@@ -2212,16 +2460,16 @@ theorem for_
             components.initCursor.plan components.loopLive frameBase
             loopMode sourceAfter targetAfter →
           Simulation.Interaction.Successful
-            (Functions.InteractionSemantics.Stmt.openRunForLoop program
-              loopCtx cond postCtx post bodyCtx body loopFuel sourceAfter) →
+            (guardedSource.openRunForLoop program loopCtx cond postCtx post
+              bodyCtx body loopFuel sourceAfter) →
           Simulation.Interaction.Rel
             (AllocationInteractionLoop.OpenLoopEffectResultRel
               (fun _ _ _ _ => True) contract root.lowerCtx
               components.loopState components.initLocals
               components.initCursor.plan root.returns components.loopLive
               frameBase loopMode loopCtx targetAfter)
-            (Functions.InteractionSemantics.Stmt.openRunForLoop program
-              loopCtx cond postCtx post bodyCtx body loopFuel sourceAfter)
+            (guardedSource.openRunForLoop program loopCtx cond postCtx post
+              bodyCtx body loopFuel sourceAfter)
             (Expressions.InteractionSemantics.Stmt.openRunForLoop expressions
               (loopFuel + slack) (.code components.condCode)
                 components.compiledPost components.compiledBody targetAfter) := by
@@ -2253,7 +2501,7 @@ theorem for_
       rfl
     subst loopMode
     apply AllocationInteractionLoop.forward_effect_with
-      AllocationInteractionLoop.SourceSemantics.ordinary
+      guardedSource
       (Effect := fun _ _ _ _ => True)
       AllocationInteractionLoop.EffectAlgebra.trivial
       (program := program) (expressions := expressions)
@@ -2269,38 +2517,58 @@ theorem for_
       (by rfl) hLoopReturns (SameFrame.refl (.stack : ActivationMode)) hInvariant
       (by trivial) (by trivial) hSuccess
     · intro nextMode nextSource nextTarget hNext _hReady hCondSuccess
-      apply Simulation.Interaction.Rel.mono
-        (AllocationInteractionExpressionRecursive.forwardCondition
-          (hCondSafe nextSource hNext.defined hCondSuccess) hNext.compiler
-          components.condScoped components.lowerCond components.compileCond
-          hNext.state)
+      have hCondChecked :=
+        AllocationInteractionSafeExpression.conditionChecked_of_successful
+          components.condScoped hNext.defined
+          (by
+            simpa [guardedSource,
+              AllocationInteractionLoop.SourceSemantics.guarded,
+              AllocationInteractionLoop.SourceSemantics.openEvalCondition,
+              AllocationInteractionSafeSemantics.Expr.openEvalCondition] using
+              hCondSuccess)
+      have hForward :=
+        AllocationInteractionExpressionRecursive.forwardCondition
+          hCondChecked.safety hNext.compiler components.condScoped
+          components.lowerCond components.compileCond hNext.state
+      have hGuardedEq :
+          guardedSource.openEvalCondition cond nextSource =
+            Functions.InteractionSemantics.Expr.openEvalCondition
+              cond nextSource := by
+        simpa [guardedSource,
+          AllocationInteractionLoop.SourceSemantics.guarded,
+          AllocationInteractionLoop.SourceSemantics.openEvalCondition,
+          AllocationInteractionSafeSemantics.Expr.openEvalCondition] using
+          hCondChecked.ordinary
+      rw [hGuardedEq]
+      apply Simulation.Interaction.Rel.mono hForward
       intro sourceDone targetDone hDone
       cases hDone with
       | error hError => exact .error hError
       | ok hResult => exact .ok ⟨hResult, trivial⟩
     · intro fuel nextMode nextSource nextTarget effectInitial hFuelLt
         _hOwned hRootSame _hCondEffect hCondReturns hNext hBodySuccess
+      have hBodyScopedSafe :
+          Simulation.Interaction.Successful
+            (AllocationInteractionSafeSemantics.Block.openRunScoped
+              contract program bodyCtx body fuel nextSource) := by
+        simpa [guardedSource,
+          AllocationInteractionLoop.SourceSemantics.guarded,
+          AllocationInteractionLoop.SourceSemantics.openRunScoped,
+          AllocationInteractionSafeSemantics.Block.openRunScoped] using
+          hBodySuccess
+      have hBodySafe :
+          AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+            program bodyCtx fuel body nextSource := by
+        unfold AllocationInteractionSafeSemantics.Block.ExecutionSafe
+        have hScoped := hBodyScopedSafe
+        unfold AllocationInteractionSafeSemantics.Block.openRunScoped
+          Functions.Source.Canonical.Block.runScoped
+          Functions.Source.Effectful.Control.Block.runScoped at hScoped
+        exact Simulation.Interaction.Successful.bind_left hScoped
       have hBodyOpenSuccess :
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Block.openRun program bodyCtx
-              fuel body nextSource) := by
-        have hBodySuccess' :
-            Simulation.Interaction.Successful
-              (Functions.InteractionSemantics.Block.openRunScoped
-                program bodyCtx body fuel nextSource) := by
-          simpa [AllocationInteractionLoop.SourceSemantics.openRunScoped,
-            AllocationInteractionLoop.SourceSemantics.ordinary,
-            Functions.InteractionSemantics.Block.openRunScoped] using
-            hBodySuccess
-        unfold Functions.InteractionSemantics.Block.openRunScoped
-          Functions.Source.Canonical.Block.runScoped
-          Functions.Source.Effectful.Control.Block.runScoped at hBodySuccess'
-        have hDone := Simulation.Interaction.Successful.bind_inv hBodySuccess'
-        apply Simulation.Interaction.AllDone.mono hDone
-        intro outcome hOutcome
-        cases outcome with
-        | error err => exact hOutcome
-        | ok value => trivial
+              fuel body nextSource) := hBodySafe.ordinarySuccessful
       have hAtBodyState := hNext.transport_state hPostShape.1 hPostShape.2
       have hBodyInvariant :=
         (by
@@ -2333,10 +2601,11 @@ theorem for_
                   (hCondReturns.trans hLoopReturns.symm)
           stackMode := rfl }
       have hBodyRaw :=
-        RecursiveOpenRuntime.at_targetFuel hRecursive components.bodyCursor
+        ExecutionSafeRecursiveOpenRuntime.at_targetFuel hRecursive
+          components.bodyCursor
           (sourceFuel := fuel) (targetFuel := fuel + slack)
           (by simp [loopFuel] at *; omega)
-          (hCapacity.body fuel hFuelLt) hBodyBoundary hBodyOpenSuccess
+          (hCapacity.body fuel hFuelLt) hBodyBoundary hBodySafe
       have hExtends :
           AllocationLowering.StateExtends components.loopLive
             components.afterPost components.bodyCursor.finalState :=
@@ -2376,6 +2645,19 @@ theorem for_
           (source := nextSource) (target := nextTarget)
           rfl rfl rfl hOuterControl.withLoopControl hNext hExtendsLoop
           hBodyAgree components.finishBody hCleanupFuel hBodyRaw
+      have hScopedEq :=
+        AllocationInteractionSafeSemantics.Block.openRunScoped_eq_ordinary_of_successful
+          contract program bodyCtx body fuel nextSource hBodyScopedSafe
+      have hGuardedScopedEq :
+          guardedSource.openRunScoped program bodyCtx body fuel nextSource =
+            Functions.InteractionSemantics.Block.openRunScoped
+              program bodyCtx body fuel nextSource := by
+        simpa [guardedSource,
+          AllocationInteractionLoop.SourceSemantics.guarded,
+          AllocationInteractionLoop.SourceSemantics.openRunScoped,
+          AllocationInteractionSafeSemantics.Block.openRunScoped] using
+          hScopedEq
+      rw [hGuardedScopedEq]
       apply Simulation.Interaction.Rel.mono hSemantic
       intro sourceDone targetDone hDone
       constructor
@@ -2386,27 +2668,28 @@ theorem for_
     · intro fuel effectMode nextMode nextSource nextTarget effectInitial
         hFuelLt _hOwned hRootSame hSame _hBodyEffect hBodyReturns hNext
         hPostSuccess
+      have hPostScopedSafe :
+          Simulation.Interaction.Successful
+            (AllocationInteractionSafeSemantics.Block.openRunScoped
+              contract program postCtx post fuel nextSource) := by
+        simpa [guardedSource,
+          AllocationInteractionLoop.SourceSemantics.guarded,
+          AllocationInteractionLoop.SourceSemantics.openRunScoped,
+          AllocationInteractionSafeSemantics.Block.openRunScoped] using
+          hPostSuccess
+      have hPostSafe :
+          AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+            program postCtx fuel post nextSource := by
+        unfold AllocationInteractionSafeSemantics.Block.ExecutionSafe
+        have hScoped := hPostScopedSafe
+        unfold AllocationInteractionSafeSemantics.Block.openRunScoped
+          Functions.Source.Canonical.Block.runScoped
+          Functions.Source.Effectful.Control.Block.runScoped at hScoped
+        exact Simulation.Interaction.Successful.bind_left hScoped
       have hPostOpenSuccess :
           Simulation.Interaction.Successful
             (Functions.InteractionSemantics.Block.openRun program postCtx
-              fuel post nextSource) := by
-        have hPostSuccess' :
-            Simulation.Interaction.Successful
-              (Functions.InteractionSemantics.Block.openRunScoped
-                program postCtx post fuel nextSource) := by
-          simpa [AllocationInteractionLoop.SourceSemantics.openRunScoped,
-            AllocationInteractionLoop.SourceSemantics.ordinary,
-            Functions.InteractionSemantics.Block.openRunScoped] using
-            hPostSuccess
-        unfold Functions.InteractionSemantics.Block.openRunScoped
-          Functions.Source.Canonical.Block.runScoped
-          Functions.Source.Effectful.Control.Block.runScoped at hPostSuccess'
-        have hDone := Simulation.Interaction.Successful.bind_inv hPostSuccess'
-        apply Simulation.Interaction.AllDone.mono hDone
-        intro outcome hOutcome
-        cases outcome with
-        | error err => exact hOutcome
-        | ok value => trivial
+              fuel post nextSource) := hPostSafe.ordinarySuccessful
       have hPostInvariant :=
         (by
           exact
@@ -2442,10 +2725,11 @@ theorem for_
               hPostAtTarget.transport_plan hPostAgree.symm
           stackMode := rfl }
       have hPostRaw :=
-        RecursiveOpenRuntime.at_targetFuel hRecursive components.postCursor
+        ExecutionSafeRecursiveOpenRuntime.at_targetFuel hRecursive
+          components.postCursor
           (sourceFuel := fuel) (targetFuel := fuel + slack)
           (by simp [loopFuel] at *; omega)
-          (hCapacity.post fuel hFuelLt) hPostBoundary hPostOpenSuccess
+          (hCapacity.post fuel hFuelLt) hPostBoundary hPostSafe
       have hExtends :
           AllocationLowering.StateExtends components.loopLive
             components.loopState components.postCursor.finalState :=
@@ -2476,6 +2760,19 @@ theorem for_
           (source := nextSource) (target := nextTarget)
           rfl rfl rfl hOuterControl.withoutLoopControl hNext hExtends
           hPostAgree components.finishPost hCleanupFuel hPostRaw
+      have hScopedEq :=
+        AllocationInteractionSafeSemantics.Block.openRunScoped_eq_ordinary_of_successful
+          contract program postCtx post fuel nextSource hPostScopedSafe
+      have hGuardedScopedEq :
+          guardedSource.openRunScoped program postCtx post fuel nextSource =
+            Functions.InteractionSemantics.Block.openRunScoped
+              program postCtx post fuel nextSource := by
+        simpa [guardedSource,
+          AllocationInteractionLoop.SourceSemantics.guarded,
+          AllocationInteractionLoop.SourceSemantics.openRunScoped,
+          AllocationInteractionSafeSemantics.Block.openRunScoped] using
+          hScopedEq
+      rw [hGuardedScopedEq]
       apply Simulation.Interaction.Rel.mono hSemantic
       intro sourceDone targetDone hDone
       constructor
@@ -2504,17 +2801,24 @@ theorem for_
     · intro name hLive
       exact (hSlots name hLive).trans
         (congrArg (AllocationSupport.lookupSlot? name) hAfterEnv.symm)
-  have hHeadSuccess' :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
-          (loopFuel + 1) (.for_ init cond post body) source) := by
-    rw [hLoopFuel]
-    exact hHeadSuccess
-  have hInit' := hInitEffect
+  have hInitEq :=
+    AllocationInteractionSafeSemantics.Block.openRun_eq_ordinary_of_successful
+      contract program initCtx loopFuel init source hInitSafe
+  have hGuardedInitEq :
+      guardedSource.openRunBlock program initCtx loopFuel init source =
+        Functions.InteractionSemantics.Block.openRun
+          program initCtx loopFuel init source := by
+    simpa [guardedSource,
+      AllocationInteractionLoop.SourceSemantics.guarded,
+      AllocationInteractionLoop.SourceSemantics.openRunBlock,
+      AllocationInteractionSafeSemantics.Block.openRun] using hInitEq
+  have hInitGuarded := hInitEffect
+  rw [← hGuardedInitEq] at hInitGuarded
+  have hInit' := hInitGuarded
   rw [← hNestedFuel] at hInit'
   have hHeadEffect :=
     AllocationInteractionFor.forward_effect_with
-      AllocationInteractionLoop.SourceSemantics.ordinary
+      guardedSource
       (Effect := fun _ _ _ _ => True)
       AllocationInteractionLoop.EffectAlgebra.trivial
       (sourceFuel := loopFuel) (slack := slack)
@@ -2535,7 +2839,26 @@ theorem for_
       hInit'
       (Expressions.InteractionReturns.Block.openRun_returns expressions
         (loopFuel + slack) { stmts := components.initCursor.compiled } target)
-      hLoopEffect (by intros; trivial) hHeadSuccess'
+      hLoopEffect (by intros; trivial)
+      (by
+        simpa [guardedSource,
+          AllocationInteractionLoop.SourceSemantics.guarded,
+          AllocationInteractionLoop.SourceSemantics.openRunStmt,
+          AllocationInteractionSafeSemantics.Stmt.openRun] using
+          hSafeHeadAtLoop)
+  have hHeadEqSafe :=
+    AllocationInteractionSafeSemantics.Stmt.openRun_eq_ordinary_of_successful
+      contract program sourceCtx (loopFuel + 1)
+        (.for_ init cond post body) source hSafeHeadAtLoop
+  have hHeadEq :
+      guardedSource.openRunStmt program sourceCtx (loopFuel + 1)
+          (.for_ init cond post body) source =
+        Functions.InteractionSemantics.Stmt.openRun program sourceCtx
+          (loopFuel + 1) (.for_ init cond post body) source := by
+    simpa [guardedSource,
+      AllocationInteractionLoop.SourceSemantics.guarded,
+      AllocationInteractionLoop.SourceSemantics.openRunStmt,
+      AllocationInteractionSafeSemantics.Stmt.openRun] using hHeadEqSafe
   have hHead :
       Simulation.Interaction.Rel
         (OpenControlResultRel contract root.lowerCtx components.afterState
@@ -2545,6 +2868,7 @@ theorem for_
           childFuel (.for_ init cond post body) source)
         (Expressions.InteractionSemantics.Block.openRun expressions totalFuel
           { stmts := components.headCode } target) := by
+    rw [← hLoopFuel, ← hHeadEq]
     apply Simulation.Interaction.Rel.mono
       (by
         simpa [childFuel, loopFuel, nestedFuel, slack, totalFuel,
@@ -2552,9 +2876,10 @@ theorem for_
           Locals.codeStmt] using hHeadEffect)
     intro sourceDone targetDone hDone
     exact hDone.1
-  exact cons_same_live cursor components.tail components.exactTail
+  exact cons_same_live_executionSafe cursor components.tail
+    components.exactTail
     (by simp [Functions.Scope.Stmt.outEnv]) components.compiled hBoundary
-    (by simpa [childFuel, totalFuel] using hHead) hSuccessful
+    (by simpa [childFuel, totalFuel] using hHead) hExecutionSafe
     (hTailForward components.tail components.exactTail)
 
 end CursorRuntimeAt
@@ -2706,13 +3031,13 @@ theorem body_of_function_context
       AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode <=
         targetExtra)
     (hSourceFuel : sourceFuel < fuelBound)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program
-          (Functions.Source.Effectful.FunDef.bodyCtx fn)
-          sourceFuel fn.body source))
+    (hSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        (Functions.Source.Effectful.FunDef.bodyCtx fn) sourceFuel fn.body
+          source)
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation) contract fuelBound) :
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
+        contract fuelBound) :
     ∃ targetFuel,
       0 < targetFuel ∧
       targetFuel =
@@ -2822,7 +3147,7 @@ theorem body_of_function_context
       (by
         simpa [AllocationInteractionTargetFuel.Reserve, bodyCursor] using
           hTargetReserve)
-      hSuccess (targetExtra := targetExtra)
+      hSafe (targetExtra := targetExtra)
   let bodyFuel := targetBudget bodyCursor sourceFuel targetExtra
   have hBodyFuel : 0 < bodyFuel := by
     simp [bodyFuel, targetBudget, callStride, Nat.mul_succ]
@@ -2886,13 +3211,13 @@ theorem complete_body
       AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode <=
         targetExtra)
     (hSourceFuel : sourceFuel < fuelBound)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program
-          (Functions.Source.Effectful.FunDef.bodyCtx fn)
-          sourceFuel fn.body source))
+    (hSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        (Functions.Source.Effectful.FunDef.bodyCtx fn) sourceFuel fn.body
+          source)
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation) contract fuelBound) :
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
+        contract fuelBound) :
     ∃ targetFuel,
       0 < targetFuel ∧
       targetFuel =
@@ -2910,7 +3235,7 @@ theorem complete_body
           artifact.lowerProc.body target) := by
   obtain ⟨targetFuel, hTargetFuel, hTargetFuelEq, hBody⟩ :=
     body_of_function_context prepared hProgramScoped hNeedsFrame hEntry hZero
-      hStackLength hReturnFrame hTargetReserve hSourceFuel hSuccess hRecursive
+      hStackLength hReturnFrame hTargetReserve hSourceFuel hSafe hRecursive
   have hReturnsLive :
       forall localName,
         localName ∈ fn.returns ->
@@ -2974,15 +3299,14 @@ theorem complete_call
       AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode <=
         targetExtra)
     (hSourceFuel : sourceFuel < fuelBound)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program
-          (Functions.Source.Effectful.FunDef.bodyCtx fn)
-          sourceFuel fn.body
+    (hSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        (Functions.Source.Effectful.FunDef.bodyCtx fn) sourceFuel fn.body
           (AllocationInteractionCall.CalleeEntry.sourceState
-            sourceAfterArgs fn.returns paramStore)))
+            sourceAfterArgs fn.returns paramStore))
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation) contract fuelBound) :
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
+        contract fuelBound) :
     ∃ targetFuel,
       0 < targetFuel ∧
       targetFuel =
@@ -3007,7 +3331,7 @@ theorem complete_call
         simp [targetEntry,
           AllocationInteractionCall.CalleeEntry.structuredState,
           Structured.RunState.pushReturn])
-      hTargetExtra hTargetReserve hSourceFuel hSuccess hRecursive
+      hTargetExtra hTargetReserve hSourceFuel hSafe hRecursive
   refine ⟨targetFuel, hTargetFuel, hTargetFuelEq, ?_⟩
   exact
     AllocationInteractionCallResult.CallAttachment.of_body
@@ -3045,14 +3369,14 @@ theorem stack_after_arguments
       AllocationInteractionTargetFuel.stmtListNestedSize prepared.bodyCode <=
         targetExtra)
     (hBodyFuel : bodyFuel < fuelBound)
-    (hBodySuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program
-          (Functions.Source.Effectful.FunDef.bodyCtx fn) bodyFuel fn.body
+    (hBodySafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        (Functions.Source.Effectful.FunDef.bodyCtx fn) bodyFuel fn.body
           (AllocationInteractionCall.CalleeEntry.sourceState
-            sourceAfterArgs fn.returns paramStore)))
+            sourceAfterArgs fn.returns paramStore))
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation) contract fuelBound) :
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
+        contract fuelBound) :
     ∃ callerBase : TargetState,
       ∃ targetEntry : TargetState,
       ∃ targetFuel : Nat,
@@ -3088,7 +3412,7 @@ theorem stack_after_arguments
   obtain ⟨targetFuel, _hPositive, hTargetFuel, hCall⟩ :=
     complete_call prepared hProgramScoped hNeedsFrame hInsert hSplit
       (by simpa [targetEntry] using hEntry) hZero hEntryStackLength
-      hTargetExtra hTargetReserve hBodyFuel hBodySuccess hRecursive
+      hTargetExtra hTargetReserve hBodyFuel hBodySafe hRecursive
   let callerBase :=
     AllocationInteractionCall.PreparedArguments.callerState
       targetAfterArgs targetInitial
@@ -3138,12 +3462,13 @@ theorem stack_runtime_head
     (hBoundary :
       Boundary cursor program.memoryContract frameBase .stack sourceCtx
         source target)
-    (hHeadSuccess :
+    (hHeadSafe :
       Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
-          (sourceFuel - 1) (.call targets functionName args) source))
+        (AllocationInteractionSafeSemantics.Stmt.openRun
+          program.memoryContract program sourceCtx (sourceFuel - 1)
+            (.call targets functionName args) source))
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         program.memoryContract sourceFuel) :
     Simulation.Interaction.Rel
       (OpenControlResultRel program.memoryContract root.lowerCtx lowerState
@@ -3180,16 +3505,40 @@ theorem stack_runtime_head
   have hArgsScoped :
       forall arg, arg ∈ args -> Functions.Scope.ExprScoped live arg :=
     hStmtScoped.2.2
+  have hHeadSafe' :
+      Simulation.Interaction.Successful
+        (AllocationInteractionSafeSemantics.Stmt.openRun
+          program.memoryContract program sourceCtx (callFuel + 1)
+            (.call targets functionName args) source) := by
+    rw [hChildFuel]
+    exact hHeadSafe
   have hHeadSuccess' :
       Simulation.Interaction.Successful
         (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
           (callFuel + 1) (.call targets functionName args) source) := by
-    rw [hChildFuel]
-    exact hHeadSuccess
+    rw [← AllocationInteractionSafeSemantics.Stmt.openRun_eq_ordinary_of_successful
+      program.memoryContract program sourceCtx (callFuel + 1)
+        (.call targets functionName args) source hHeadSafe']
+    exact hHeadSafe'
   have hContinuations :=
     Functions.InteractionSemantics.Stmt.successful_openRun_call_continuations
       program sourceCtx callFuel targets functionName args source
       hTargetsNodup hHeadSuccess'
+  have hSafeContinuations :=
+    AllocationInteractionSafeSemantics.Stmt.successful_openRun_call_continuations
+      program.memoryContract program sourceCtx callFuel targets functionName
+      args source hTargetsNodup hHeadSafe'
+  have hArgsSafe : Simulation.Interaction.Successful
+      (AllocationInteractionSafeSemantics.ArgList.openEval
+        program.memoryContract args source) := by
+    apply Simulation.Interaction.AllDone.mono hSafeContinuations
+    intro outcome hOutcome
+    cases outcome with
+    | error _ => exact hOutcome
+    | ok _ => trivial
+  have hSafeContinuations' := hSafeContinuations
+  rw [AllocationInteractionSafeSemantics.ArgList.openEval_eq_ordinary_of_successful
+    program.memoryContract args source hArgsSafe] at hSafeContinuations'
   have hVars :=
     Functions.InteractionSemantics.ArgList.openEval_vars_eq args source
   have hArgsCompile := stack_compileArgs components hNeedsFrame
@@ -3201,6 +3550,9 @@ theorem stack_runtime_head
     Simulation.Interaction.Rel.strengthen_left hArgsRel hContinuations
   have hArgsStrong :=
     Simulation.Interaction.Rel.strengthen_left hArgsWithContinuations hVars
+  have hArgsGuarded :=
+    Simulation.Interaction.Rel.strengthen_left hArgsStrong
+      hSafeContinuations'
   have hExtra := selected_call_extra (cursor := cursor)
     (targetExtra := targetExtra) prepared hSourceFuel
   change 2 * callStride expressions + 3 <= selectedExtra ∧
@@ -3238,9 +3590,10 @@ theorem stack_runtime_head
           (fun targetAfterArgs =>
             Expressions.InteractionSemantics.Block.openRun expressions
               (totalFuel - 1) { stmts := callRest } targetAfterArgs)) := by
-    apply Simulation.Interaction.Rel.bind_custom hArgsStrong
+    apply Simulation.Interaction.Rel.bind_custom hArgsGuarded
     intro sourceDone targetDone hDone
-    rcases hDone with ⟨⟨hArgsDone, hContinuation⟩, hVarsDone⟩
+    rcases hDone with
+      ⟨⟨⟨hArgsDone, hContinuation⟩, hVarsDone⟩, hSafeContinuation⟩
     cases hArgsDone with
     | error _ => exact False.elim hContinuation
     | @ok sourceResult targetAfterArgs hArgRel =>
@@ -3250,6 +3603,12 @@ theorem stack_runtime_head
           rw [hFind] at hSelectedFind
           exact (Option.some.inj hSelectedFind).symm
         subst selectedFn
+        obtain ⟨safeFn, hSafeSelectedFind, hSafeFinish⟩ :=
+          hSafeContinuation
+        have hSafeFn : safeFn = fn := by
+          rw [hFind] at hSafeSelectedFind
+          exact (Option.some.inj hSafeSelectedFind).symm
+        subst safeFn
         have hRunBodySuccess :
             Simulation.Interaction.Successful
               (Functions.InteractionSemantics.FunDef.openRunBody
@@ -3264,6 +3623,23 @@ theorem stack_runtime_head
             program fn argValues bodyFuel sourceAfterArgs (by
               rw [hBodyFuel]
               exact hRunBodySuccess)
+        have hRunBodySafe : Simulation.Interaction.Successful
+            (AllocationInteractionSafeSemantics.FunDef.openRunBody
+              program.memoryContract program fn argValues callFuel
+                sourceAfterArgs) := by
+          apply Simulation.Interaction.AllDone.mono hSafeFinish
+          intro callDone hDone
+          cases callDone with
+          | error _ => exact hDone
+          | ok _ => trivial
+        obtain ⟨safeParamStore, hSafeInsert, hBodySafe⟩ :=
+          AllocationInteractionSafeSemantics.FunDef.successful_openRunBody_parts
+            program.memoryContract program fn argValues bodyFuel
+              sourceAfterArgs (by rw [hBodyFuel]; exact hRunBodySafe)
+        have hSafeParamStore : safeParamStore = paramStore := by
+          rw [hInsert] at hSafeInsert
+          exact (Option.some.inj hSafeInsert).symm
+        subst safeParamStore
         have hValuesLength : argValues.length = args.length :=
           hArgRel.valuesLength
         have hArgRel' :
@@ -3278,7 +3654,7 @@ theorem stack_runtime_head
           SelectedCallee.stack_after_arguments
             (targetExtra := selectedExtra) prepared hProgramScoped
             hNeedsFrame hArgRel' hInsert (by omega) hSelectedReserve
-            (by omega) hBodySuccess hRecursive
+            (by omega) hBodySafe hRecursive
         have hSelectedTargetFuel : selectedTargetFuel = callTargetFuel := by
           rw [hSelectedFuel]
           dsimp [callBase] at hExtra
@@ -3348,12 +3724,13 @@ theorem call_runtime_head
     (hBoundary :
       Boundary cursor program.memoryContract frameBase .stack sourceCtx
         source target)
-    (hHeadSuccess :
+    (hHeadSafe :
       Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
-          (sourceFuel - 1) (.call targets functionName args) source))
+        (AllocationInteractionSafeSemantics.Stmt.openRun
+          program.memoryContract program sourceCtx (sourceFuel - 1)
+            (.call targets functionName args) source))
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         program.memoryContract sourceFuel) :
     ∃ (headCode : List Expressions.Stmt)
       (tail : CoreCursor root scope live { stmts := rest }
@@ -3376,7 +3753,7 @@ theorem call_runtime_head
     selectedCallee_stack components hAllStack
   have hHead :=
     CallComponents.stack_runtime_head components prepared hProgramScoped
-      hFind hNeedsFrame hSourceFuel hSafe hBoundary hHeadSuccess hRecursive
+      hFind hNeedsFrame hSourceFuel hSafe hBoundary hHeadSafe hRecursive
       (targetExtra := targetExtra)
   exact
     ⟨components.headCode, components.tail, components.compiled,
@@ -3410,17 +3787,17 @@ theorem call
     (hBoundary :
       Boundary cursor program.memoryContract frameBase mode sourceCtx
         source target)
-    (hHeadSuccess :
+    (hHeadSafe :
       Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Stmt.openRun program sourceCtx
-          (sourceFuel - 1) (.call targets functionName args) source))
-    (hSuccessful :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel
-          { stmts := .call targets functionName args :: rest } source))
+        (AllocationInteractionSafeSemantics.Stmt.openRun
+          program.memoryContract program sourceCtx (sourceFuel - 1)
+            (.call targets functionName args) source))
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe
+        program.memoryContract program sourceCtx sourceFuel
+          { stmts := .call targets functionName args :: rest } source)
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         program.memoryContract sourceFuel)
     (hTailForward :
       ∀ (tail : CoreCursor root scope live { stmts := rest }
@@ -3432,6 +3809,9 @@ theorem call
             Simulation.Interaction.Successful
               (Functions.InteractionSemantics.Block.openRun program sourceCtx
                 (sourceFuel - 1) { stmts := rest } sourceMid) →
+            AllocationInteractionSafeSemantics.Block.ExecutionSafe
+              program.memoryContract program sourceCtx (sourceFuel - 1)
+                { stmts := rest } sourceMid →
             CursorRuntimeAt tail program.memoryContract frameBase
               (sourceFuel - 1) (targetExtra + callStride expressions)
               tailMode sourceCtx sourceMid targetMid) :
@@ -3441,7 +3821,7 @@ theorem call
   subst mode
   obtain ⟨headCode, tail, hCompiled, hExact, hHead⟩ :=
     CoreCursor.call_runtime_head cursor hAllStack hProgramScoped hSourceFuel
-      hSafe hBoundary hHeadSuccess hRecursive (targetExtra := targetExtra)
+      hSafe hBoundary hHeadSafe hRecursive (targetExtra := targetExtra)
   have hFuel : sourceFuel - 1 + 1 = sourceFuel := by omega
   have hMidCtx :
       sourceCtx =
@@ -3456,16 +3836,16 @@ theorem call
       rfl
     simpa [Functions.Scope.Stmt.outEnv] using hCtx.symm
   have hResult :=
-    AllocationInteractionRecursive.CursorForwardAt.cons_of_parts_successful
+    AllocationInteractionRecursive.CursorForwardAt.cons_of_parts_executionSafe
       (contract := program.memoryContract)
       (childFuel := sourceFuel - 1) (targetExtra := targetExtra)
       (frameBase := frameBase) (entryMode := .stack)
       (source := source) (target := target)
       cursor tail hExact hCompiled hMidCtx
       (by simpa [hFuel, Functions.Scope.Stmt.outEnv] using hHead)
-      (by simpa [hFuel] using hSuccessful)
+      (by simpa [hFuel] using hExecutionSafe)
       (fun {sourceMid targetMid tailMode} hInvariant hSame hReturns
-          hTailSuccess => by
+          hTailSuccess hTailSafe => by
         have hTailStack : tailMode = .stack := by
           cases hSame
           rfl
@@ -3483,7 +3863,7 @@ theorem call
                 hSame (Functions.Source.Ctx.SameControl.refl sourceCtx)
                 hReturns
             stackMode := hTailStack }
-          hTailSuccess)
+          hTailSuccess hTailSafe)
   simpa [CursorRuntimeAt, hFuel] using hResult
 
 end CursorRuntimeAt
@@ -3521,6 +3901,30 @@ private theorem recursive_tail
       sourceCtx source target := by
   exact hRecursive cursor (by omega) hBoundary hReserve hSuccess
 
+private theorem executionSafe_recursive_tail
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program} {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation} {contract : MemoryContract.Contract}
+    {sourceFuel : Nat}
+    (hRecursive : ExecutionSafeRecursiveOpenRuntime
+      (compilation := compilation) contract sourceFuel)
+    {scope : Locals.Allocation.ScopeId} {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State} {localsCtx : Locals.Ctx}
+    {frameBase targetExtra : Nat} {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx} {source : SourceState}
+    {target : TargetState}
+    (cursor : CoreCursor root scope live sourceBlock lowerState localsCtx)
+    (hSourceFuel : 0 < sourceFuel)
+    (hBoundary : Boundary cursor contract frameBase mode sourceCtx source target)
+    (hReserve : AllocationInteractionTargetFuel.Reserve cursor targetExtra)
+    (hSafe : AllocationInteractionSafeSemantics.Block.ExecutionSafe contract
+      program sourceCtx (sourceFuel - 1) sourceBlock source) :
+    CursorRuntimeAt cursor contract frameBase (sourceFuel - 1) targetExtra mode
+      sourceCtx source target := by
+  exact hRecursive cursor (by omega) hBoundary hReserve hSafe
+
 private theorem expr_of_recursive
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
@@ -3537,9 +3941,8 @@ private theorem expr_of_recursive
     {mode : ActivationMode}
     {sourceCtx : Functions.Source.Ctx}
     {source : SourceState} {target : TargetState}
-    (hSafety : AllocationInteractionSafety.SourceSafety contract)
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         contract sourceFuel)
     (cursor :
       CoreCursor root scope live { stmts := .expr expr :: rest }
@@ -3550,25 +3953,27 @@ private theorem expr_of_recursive
         mode sourceCtx source target)
     (hReserve :
       AllocationInteractionTargetFuel.Reserve cursor targetExtra)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .expr expr :: rest } source)) :
+    (hExecutionSafe : AllocationInteractionSafeSemantics.Block.ExecutionSafe
+      contract program sourceCtx sourceFuel
+        { stmts := .expr expr :: rest } source) :
     CursorRuntimeAt cursor contract frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
-  have hHeadSuccess := successful_head hSourceFuel hSuccess
+  have hHeadSafe := AllocationInteractionSafeSuccessful.successful_head
+    hSourceFuel hExecutionSafe
   have hExprScoped : Functions.Scope.ExprScoped live expr := by
     simpa [Functions.Scope.Stmt.Scoped] using cursor.headScoped
-  have hSafe := hSafety.expr hExprScoped
-    hBoundary.semantic.invariant.defined
-    (successful_expr_eval hHeadSuccess)
-  exact CursorRuntimeAt.expr cursor hSourceFuel hSafe hBoundary hSuccess
+  have hSafe :=
+    (AllocationInteractionSafeExpression.exprChecked_of_successful hExprScoped
+      hBoundary.semantic.invariant.defined
+      (AllocationInteractionSafeSuccessful.successful_expr_eval
+        hHeadSafe)).safety
+  exact CursorRuntimeAt.expr cursor hSourceFuel hSafe hBoundary hExecutionSafe
     (fun {afterState afterLocals} tail hExact
         {sourceMid targetMid tailMode} hTailBoundary
-        hTailSuccess =>
-      recursive_tail hRecursive tail (by omega) hTailBoundary
+        _hTailSuccess hTailSafe =>
+      executionSafe_recursive_tail hRecursive tail (by omega) hTailBoundary
         (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
-        hTailSuccess)
+        hTailSafe)
 
 private theorem assign_of_recursive
     {allocation : Locals.Allocation.ProgramPlan}
@@ -3587,9 +3992,8 @@ private theorem assign_of_recursive
     {mode : ActivationMode}
     {sourceCtx : Functions.Source.Ctx}
     {source : SourceState} {target : TargetState}
-    (hSafety : AllocationInteractionSafety.SourceSafety contract)
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         contract sourceFuel)
     (cursor :
       CoreCursor root scope live { stmts := .assign name value :: rest }
@@ -3600,25 +4004,28 @@ private theorem assign_of_recursive
         mode sourceCtx source target)
     (hReserve :
       AllocationInteractionTargetFuel.Reserve cursor targetExtra)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .assign name value :: rest } source)) :
+    (hExecutionSafe : AllocationInteractionSafeSemantics.Block.ExecutionSafe
+      contract program sourceCtx sourceFuel
+        { stmts := .assign name value :: rest } source) :
     CursorRuntimeAt cursor contract frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
-  have hHeadSuccess := successful_head hSourceFuel hSuccess
+  have hHeadSafe := AllocationInteractionSafeSuccessful.successful_head
+    hSourceFuel hExecutionSafe
   have hExprScoped : Functions.Scope.ExprScoped live value := by
     simpa [Functions.Scope.Stmt.Scoped] using cursor.headScoped.2
-  have hSafe := hSafety.expr hExprScoped
-    hBoundary.semantic.invariant.defined
-    (successful_assign_eval hHeadSuccess)
-  exact CursorRuntimeAt.assign cursor hSourceFuel hSafe hBoundary hSuccess
+  have hSafe :=
+    (AllocationInteractionSafeExpression.valueChecked_of_successful hExprScoped
+      hBoundary.semantic.invariant.defined
+      (AllocationInteractionSafeSuccessful.successful_assign_value
+        hHeadSafe)).safety
+  exact CursorRuntimeAt.assign cursor hSourceFuel hSafe hBoundary
+    hExecutionSafe
     (fun {afterState afterLocals} tail hExact
         {sourceMid targetMid tailMode} hTailBoundary
-        hTailSuccess =>
-      recursive_tail hRecursive tail hSourceFuel hTailBoundary
+        _hTailSuccess hTailSafe =>
+      executionSafe_recursive_tail hRecursive tail hSourceFuel hTailBoundary
         (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
-        hTailSuccess)
+        hTailSafe)
 
 private theorem let_of_recursive
     {allocation : Locals.Allocation.ProgramPlan}
@@ -3637,9 +4044,8 @@ private theorem let_of_recursive
     {mode : ActivationMode}
     {sourceCtx : Functions.Source.Ctx}
     {source : SourceState} {target : TargetState}
-    (hSafety : AllocationInteractionSafety.SourceSafety contract)
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         contract sourceFuel)
     (cursor :
       CoreCursor root scope live { stmts := .let_ name value :: rest }
@@ -3650,25 +4056,27 @@ private theorem let_of_recursive
         mode sourceCtx source target)
     (hReserve :
       AllocationInteractionTargetFuel.Reserve cursor targetExtra)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .let_ name value :: rest } source)) :
+    (hExecutionSafe : AllocationInteractionSafeSemantics.Block.ExecutionSafe
+      contract program sourceCtx sourceFuel
+        { stmts := .let_ name value :: rest } source) :
     CursorRuntimeAt cursor contract frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
-  have hHeadSuccess := successful_head hSourceFuel hSuccess
+  have hHeadSafe := AllocationInteractionSafeSuccessful.successful_head
+    hSourceFuel hExecutionSafe
   have hExprScoped : Functions.Scope.ExprScoped live value := by
     simpa [Functions.Scope.Stmt.Scoped] using cursor.headScoped.2
-  have hSafe := hSafety.expr hExprScoped
-    hBoundary.semantic.invariant.defined
-    (successful_let_eval hHeadSuccess)
-  exact CursorRuntimeAt.let_ cursor hSourceFuel hSafe hBoundary hSuccess
+  have hSafe :=
+    (AllocationInteractionSafeExpression.valueChecked_of_successful hExprScoped
+      hBoundary.semantic.invariant.defined
+      (AllocationInteractionSafeSuccessful.successful_let_value
+        hHeadSafe)).safety
+  exact CursorRuntimeAt.let_ cursor hSourceFuel hSafe hBoundary hExecutionSafe
     (fun {afterState afterLocals} tail hExact
         {sourceMid targetMid tailMode} hTailBoundary
-        hTailSuccess =>
-      recursive_tail hRecursive tail hSourceFuel hTailBoundary
+        _hTailSuccess hTailSafe =>
+      executionSafe_recursive_tail hRecursive tail hSourceFuel hTailBoundary
         (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
-        hTailSuccess)
+        hTailSafe)
 
 private theorem brk_of_recursive
     {allocation : Locals.Allocation.ProgramPlan}
@@ -3686,7 +4094,7 @@ private theorem brk_of_recursive
     {sourceCtx : Functions.Source.Ctx}
     {source : SourceState} {target : TargetState}
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         contract sourceFuel)
     (cursor : CoreCursor root scope live { stmts := .brk :: rest }
       lowerState localsCtx)
@@ -3696,23 +4104,22 @@ private theorem brk_of_recursive
         mode sourceCtx source target)
     (hReserve :
       AllocationInteractionTargetFuel.Reserve cursor targetExtra)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .brk :: rest } source)) :
+    (hExecutionSafe : AllocationInteractionSafeSemantics.Block.ExecutionSafe
+      contract program sourceCtx sourceFuel { stmts := .brk :: rest } source) :
     CursorRuntimeAt cursor contract frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
-  have hHeadSuccess := successful_head hSourceFuel hSuccess
+  have hHeadSuccess := successful_head hSourceFuel
+    hExecutionSafe.ordinarySuccessful
   obtain ⟨afterLive, hSourceScope⟩ := successful_brk_scope hHeadSuccess
   obtain ⟨targetDepth, afterMode, hTargetDepth, ⟨hTransition⟩⟩ :=
     hBoundary.controlAgreement.brk hSourceScope
   exact CursorRuntimeAt.brk cursor hSourceFuel hSourceScope hTargetDepth
-    hTransition hBoundary hSuccess
+    hTransition hBoundary hExecutionSafe
     (fun {afterState afterLocals} tail hExact
-        {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
-      recursive_tail hRecursive tail hSourceFuel hTailBoundary
+        {sourceMid targetMid tailMode} hTailBoundary _hTailSuccess hTailSafe =>
+      executionSafe_recursive_tail hRecursive tail hSourceFuel hTailBoundary
         (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
-        hTailSuccess)
+        hTailSafe)
 
 private theorem cont_of_recursive
     {allocation : Locals.Allocation.ProgramPlan}
@@ -3730,7 +4137,7 @@ private theorem cont_of_recursive
     {sourceCtx : Functions.Source.Ctx}
     {source : SourceState} {target : TargetState}
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         contract sourceFuel)
     (cursor : CoreCursor root scope live { stmts := .cont :: rest }
       lowerState localsCtx)
@@ -3740,23 +4147,22 @@ private theorem cont_of_recursive
         mode sourceCtx source target)
     (hReserve :
       AllocationInteractionTargetFuel.Reserve cursor targetExtra)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .cont :: rest } source)) :
+    (hExecutionSafe : AllocationInteractionSafeSemantics.Block.ExecutionSafe
+      contract program sourceCtx sourceFuel { stmts := .cont :: rest } source) :
     CursorRuntimeAt cursor contract frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
-  have hHeadSuccess := successful_head hSourceFuel hSuccess
+  have hHeadSuccess := successful_head hSourceFuel
+    hExecutionSafe.ordinarySuccessful
   obtain ⟨afterLive, hSourceScope⟩ := successful_cont_scope hHeadSuccess
   obtain ⟨targetDepth, afterMode, hTargetDepth, ⟨hTransition⟩⟩ :=
     hBoundary.controlAgreement.cont hSourceScope
   exact CursorRuntimeAt.cont cursor hSourceFuel hSourceScope hTargetDepth
-    hTransition hBoundary hSuccess
+    hTransition hBoundary hExecutionSafe
     (fun {afterState afterLocals} tail hExact
-        {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
-      recursive_tail hRecursive tail hSourceFuel hTailBoundary
+        {sourceMid targetMid tailMode} hTailBoundary _hTailSuccess hTailSafe =>
+      executionSafe_recursive_tail hRecursive tail hSourceFuel hTailBoundary
         (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
-        hTailSuccess)
+        hTailSafe)
 
 private theorem leave_of_recursive
     {allocation : Locals.Allocation.ProgramPlan}
@@ -3774,7 +4180,7 @@ private theorem leave_of_recursive
     {sourceCtx : Functions.Source.Ctx}
     {source : SourceState} {target : TargetState}
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         contract sourceFuel)
     (cursor : CoreCursor root scope live { stmts := .leave :: rest }
       lowerState localsCtx)
@@ -3784,13 +4190,12 @@ private theorem leave_of_recursive
         mode sourceCtx source target)
     (hReserve :
       AllocationInteractionTargetFuel.Reserve cursor targetExtra)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .leave :: rest } source)) :
+    (hExecutionSafe : AllocationInteractionSafeSemantics.Block.ExecutionSafe
+      contract program sourceCtx sourceFuel { stmts := .leave :: rest } source) :
     CursorRuntimeAt cursor contract frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
-  have hHeadSuccess := successful_head hSourceFuel hSuccess
+  have hHeadSuccess := successful_head hSourceFuel
+    hExecutionSafe.ordinarySuccessful
   obtain ⟨functionScope, hSourceScope⟩ :=
     successful_leave_scope hHeadSuccess
   obtain ⟨hTargetDepth, hRetc, hReturnFrame⟩ :=
@@ -3798,12 +4203,12 @@ private theorem leave_of_recursive
   exact CursorRuntimeAt.leave cursor hSourceFuel hSourceScope
     hBoundary.semantic.control.returnsLive
     (hBoundary.semantic.control.leaveScope functionScope hSourceScope)
-    hTargetDepth hRetc hReturnFrame hBoundary hSuccess
+    hTargetDepth hRetc hReturnFrame hBoundary hExecutionSafe
     (fun {afterState afterLocals} tail hExact
-        {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
-      recursive_tail hRecursive tail hSourceFuel hTailBoundary
+        {sourceMid targetMid tailMode} hTailBoundary _hTailSuccess hTailSafe =>
+      executionSafe_recursive_tail hRecursive tail hSourceFuel hTailBoundary
         (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
-        hTailSuccess)
+        hTailSafe)
 
 private theorem terminal_of_recursive
     {allocation : Locals.Allocation.ProgramPlan}
@@ -3821,9 +4226,8 @@ private theorem terminal_of_recursive
     {mode : ActivationMode}
     {sourceCtx : Functions.Source.Ctx}
     {source : SourceState} {target : TargetState}
-    (hSafety : AllocationInteractionSafety.SourceSafety contract)
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         contract sourceFuel)
     (cursor : CoreCursor root scope live
       { stmts := .terminal kind :: rest } lowerState localsCtx)
@@ -3833,25 +4237,23 @@ private theorem terminal_of_recursive
         mode sourceCtx source target)
     (hReserve :
       AllocationInteractionTargetFuel.Reserve cursor targetExtra)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .terminal kind :: rest } source)) :
+    (hExecutionSafe : AllocationInteractionSafeSemantics.Block.ExecutionSafe
+      contract program sourceCtx sourceFuel
+        { stmts := .terminal kind :: rest } source) :
     CursorRuntimeAt cursor contract frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
-  have hHeadSuccess := successful_head hSourceFuel hSuccess
-  unfold Functions.InteractionSemantics.Stmt.openRun
-    Functions.Source.Canonical.Stmt.run at hHeadSuccess
-  simp only [Functions.Source.Effectful.Control.Stmt.run] at hHeadSuccess
+  have hHeadSafe := AllocationInteractionSafeSuccessful.successful_head
+    hSourceFuel hExecutionSafe
   have hTerminalSuccess :=
-    Simulation.Interaction.Successful.bind_left hHeadSuccess
+    AllocationInteractionSafeSuccessful.successful_terminal hHeadSafe
   exact CursorRuntimeAt.terminal cursor hSourceFuel
-    (hSafety.terminal hTerminalSuccess) hBoundary hSuccess
+    (AllocationInteractionSafeSemantics.Primitive.terminalSafe_of_successful
+      hTerminalSuccess) hBoundary hExecutionSafe
     (fun {afterState afterLocals} tail hExact
-        {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
-      recursive_tail hRecursive tail hSourceFuel hTailBoundary
+        {sourceMid targetMid tailMode} hTailBoundary _hTailSuccess hTailSafe =>
+      executionSafe_recursive_tail hRecursive tail hSourceFuel hTailBoundary
         (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
-        hTailSuccess)
+        hTailSafe)
 
 private theorem terminalArgs_of_recursive
     {allocation : Locals.Allocation.ProgramPlan}
@@ -3871,9 +4273,8 @@ private theorem terminalArgs_of_recursive
     {mode : ActivationMode}
     {sourceCtx : Functions.Source.Ctx}
     {source : SourceState} {target : TargetState}
-    (hSafety : AllocationInteractionSafety.SourceSafety contract)
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         contract sourceFuel)
     (cursor : CoreCursor root scope live
       { stmts := .terminalArgs kind args :: rest } lowerState localsCtx)
@@ -3883,25 +4284,26 @@ private theorem terminalArgs_of_recursive
         mode sourceCtx source target)
     (hReserve :
       AllocationInteractionTargetFuel.Reserve cursor targetExtra)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .terminalArgs kind args :: rest } source)) :
+    (hExecutionSafe : AllocationInteractionSafeSemantics.Block.ExecutionSafe
+      contract program sourceCtx sourceFuel
+        { stmts := .terminalArgs kind args :: rest } source) :
     CursorRuntimeAt cursor contract frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
-  have hHeadSuccess := successful_head hSourceFuel hSuccess
-  unfold Functions.InteractionSemantics.Stmt.openRun
-    Functions.Source.Canonical.Stmt.run at hHeadSuccess
-  simp only [Functions.Source.Effectful.Control.Stmt.run] at hHeadSuccess
+  have hHeadSafe := AllocationInteractionSafeSuccessful.successful_head
+    hSourceFuel hExecutionSafe
+  unfold AllocationInteractionSafeSemantics.Stmt.openRun
+    Functions.Source.Canonical.Stmt.run at hHeadSafe
+  simp only [Functions.Source.Effectful.Control.Stmt.run] at hHeadSafe
   have hArgsSuccess :=
-    Simulation.Interaction.Successful.bind_left hHeadSuccess
+    Simulation.Interaction.Successful.bind_left hHeadSafe
   have hArgsScoped : Functions.Scope.ExprSeqScoped live args := by
     simpa [Functions.Scope.Stmt.Scoped] using cursor.headScoped
-  have hArgsSafe := hSafety.exprSeq hArgsScoped
-    hBoundary.semantic.invariant.defined hArgsSuccess
+  have hArgsChecked :=
+    AllocationInteractionSafeExpression.exprSeqChecked_of_successful
+      hArgsScoped hBoundary.semantic.invariant.defined hArgsSuccess
   have hTerminalContinuations :=
-    Simulation.Interaction.Successful.bind_inv hHeadSuccess
-  have hTerminalSafe :
+    Simulation.Interaction.Successful.bind_inv hHeadSafe
+  have hTerminalSafeGuarded :
       Simulation.Interaction.AllDone
         (fun outcome =>
           match outcome with
@@ -3909,21 +4311,27 @@ private theorem terminalArgs_of_recursive
           | .ok result =>
               Simulation.MemorySafety.TerminalMemorySafe
                 contract kind result.2)
-        (Functions.InteractionSemantics.ExprSeq.openEval args source) := by
+        (AllocationInteractionSafeSemantics.ExprSeq.openEval
+          contract args source) := by
     apply Simulation.Interaction.AllDone.mono hTerminalContinuations
     intro outcome hOutcome
     cases outcome with
-    | error err => trivial
+    | error _ => trivial
     | ok result =>
-        exact hSafety.terminal
+        exact AllocationInteractionSafeSemantics.Primitive.terminalSafe_of_successful
           (Simulation.Interaction.Successful.bind_left hOutcome)
-  exact CursorRuntimeAt.terminalArgs cursor hSourceFuel hArgsSafe
-    hTerminalSafe hBoundary hSuccess
+  have hTerminalSafe := hTerminalSafeGuarded
+  rw [hArgsChecked.ordinary] at hTerminalSafe
+  exact CursorRuntimeAt.terminalArgs cursor hSourceFuel hArgsChecked.safety
+    (by
+      simpa [Functions.InteractionSemantics.ExprSeq.openEval,
+        Locals.InteractionSemantics.ExprSeq.openEval] using hTerminalSafe)
+    hBoundary hExecutionSafe
     (fun {afterState afterLocals} tail hExact
-        {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
-      recursive_tail hRecursive tail hSourceFuel hTailBoundary
+        {sourceMid targetMid tailMode} hTailBoundary _hTailSuccess hTailSafe =>
+      executionSafe_recursive_tail hRecursive tail hSourceFuel hTailBoundary
         (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
-        hTailSuccess)
+        hTailSafe)
 
 private theorem block_of_recursive
     {allocation : Locals.Allocation.ProgramPlan}
@@ -3942,7 +4350,7 @@ private theorem block_of_recursive
     {sourceCtx : Functions.Source.Ctx}
     {source : SourceState} {target : TargetState}
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         contract sourceFuel)
     (cursor : CoreCursor root scope live
       { stmts := .block body :: rest } lowerState localsCtx)
@@ -3952,20 +4360,20 @@ private theorem block_of_recursive
         mode sourceCtx source target)
     (hReserve :
       AllocationInteractionTargetFuel.Reserve cursor targetExtra)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .block body :: rest } source)) :
+    (hExecutionSafe : AllocationInteractionSafeSemantics.Block.ExecutionSafe
+      contract program sourceCtx sourceFuel
+        { stmts := .block body :: rest } source) :
     CursorRuntimeAt cursor contract frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
-  exact CursorRuntimeAt.block cursor hSourceFuel hReserve hBoundary hSuccess
-    (fun bodyCursor bodyExtra hBodyReserve hBodyBoundary hBodySuccess =>
-      hRecursive bodyCursor (by omega) hBodyBoundary hBodyReserve hBodySuccess)
+  exact CursorRuntimeAt.block cursor hSourceFuel hReserve hBoundary
+    hExecutionSafe
+    (fun bodyCursor bodyExtra hBodyReserve hBodyBoundary hBodySafe =>
+      hRecursive bodyCursor (by omega) hBodyBoundary hBodyReserve hBodySafe)
     (fun {afterState} tail hExact
-        {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
-      recursive_tail hRecursive tail (by omega) hTailBoundary
+        {sourceMid targetMid tailMode} hTailBoundary _hTailSuccess hTailSafe =>
+      executionSafe_recursive_tail hRecursive tail (by omega) hTailBoundary
         (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
-        hTailSuccess)
+        hTailSafe)
 
 private theorem if_of_recursive
     {allocation : Locals.Allocation.ProgramPlan}
@@ -3984,9 +4392,8 @@ private theorem if_of_recursive
     {mode : ActivationMode}
     {sourceCtx : Functions.Source.Ctx}
     {source : SourceState} {target : TargetState}
-    (hSafety : AllocationInteractionSafety.SourceSafety contract)
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         contract sourceFuel)
     (cursor : CoreCursor root scope live
       { stmts := .if_ cond body :: rest } lowerState localsCtx)
@@ -3995,30 +4402,44 @@ private theorem if_of_recursive
         mode sourceCtx source target)
     (hReserve :
       AllocationInteractionTargetFuel.Reserve cursor targetExtra)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel { stmts := .if_ cond body :: rest } source)) :
+    (hExecutionSafe : AllocationInteractionSafeSemantics.Block.ExecutionSafe
+      contract program sourceCtx sourceFuel
+        { stmts := .if_ cond body :: rest } source) :
     CursorRuntimeAt cursor contract frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
   have hWholeFuel :=
-    Functions.InteractionSemantics.Block.successful_openRun_fuel_pos hSuccess
-  have hHeadSuccess := successful_head hWholeFuel hSuccess
+    Functions.InteractionSemantics.Block.successful_openRun_fuel_pos
+      hExecutionSafe.ordinarySuccessful
+  have hHeadSuccess := successful_head hWholeFuel
+    hExecutionSafe.ordinarySuccessful
   have hSourceFuel : 1 < sourceFuel := by
     have hHeadFuel := (successful_if_condition hHeadSuccess).1
     omega
   have hCondScoped : Functions.Scope.ExprScoped live cond := by
     simpa [Functions.Scope.Stmt.Scoped] using cursor.headScoped.1
-  have hCondSafe := hSafety.expr hCondScoped
-    hBoundary.semantic.invariant.defined
-    (successful_if_condition hHeadSuccess).2
+  have hHeadSafe := AllocationInteractionSafeSuccessful.successful_head
+    hWholeFuel hExecutionSafe
+  have hCondSuccess : Simulation.Interaction.Successful
+      (AllocationInteractionSafeSemantics.Expr.openEvalCondition
+        contract cond source) := by
+    have hFuelEq : sourceFuel - 2 + 1 = sourceFuel - 1 := by omega
+    have hHeadSafe' : Simulation.Interaction.Successful
+        (AllocationInteractionSafeSemantics.Stmt.openRun contract program
+          sourceCtx (sourceFuel - 2 + 1) (.if_ cond body) source) := by
+      rw [hFuelEq]
+      exact hHeadSafe
+    rw [AllocationInteractionSafeSemantics.Stmt.openRun_if] at hHeadSafe'
+    exact Simulation.Interaction.Successful.bind_left hHeadSafe'
+  have hCondSafe :=
+    (AllocationInteractionSafeExpression.conditionChecked_of_successful
+      hCondScoped hBoundary.semantic.invariant.defined hCondSuccess).safety
   exact CursorRuntimeAt.if_ cursor hSourceFuel hReserve hCondSafe hBoundary
-    hSuccess
+    hExecutionSafe
     (fun bodyCursor {sourceAfter targetAfter} hTargetCapacity hBodyBoundary
-        hBodySuccess => by
+        _hBodySuccess hBodySafe => by
       have hBodyRel :=
-        RecursiveOpenRuntime.at_targetFuel hRecursive bodyCursor
-          (by omega) hTargetCapacity hBodyBoundary hBodySuccess
+        ExecutionSafeRecursiveOpenRuntime.at_targetFuel hRecursive bodyCursor
+          (by omega) hTargetCapacity hBodyBoundary hBodySafe
       have hCleanupFuel :
           2 ≤
             (targetBudget cursor sourceFuel targetExtra - 2) -
@@ -4035,10 +4456,10 @@ private theorem if_of_recursive
         omega
       exact ⟨hCleanupFuel, hBodyRel⟩)
     (fun {afterState} tail hExact
-        {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
-      recursive_tail hRecursive tail (by omega) hTailBoundary
+        {sourceMid targetMid tailMode} hTailBoundary _hTailSuccess hTailSafe =>
+      executionSafe_recursive_tail hRecursive tail (by omega) hTailBoundary
         (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
-        hTailSuccess)
+        hTailSafe)
 
 private theorem switch_of_recursive
     {allocation : Locals.Allocation.ProgramPlan}
@@ -4059,9 +4480,8 @@ private theorem switch_of_recursive
     {mode : ActivationMode}
     {sourceCtx : Functions.Source.Ctx}
     {source : SourceState} {target : TargetState}
-    (hSafety : AllocationInteractionSafety.SourceSafety contract)
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         contract sourceFuel)
     (cursor : CoreCursor root scope live
       { stmts := .switch scrutinee cases defaultBody :: rest }
@@ -4071,34 +4491,50 @@ private theorem switch_of_recursive
         mode sourceCtx source target)
     (hReserve :
       AllocationInteractionTargetFuel.Reserve cursor targetExtra)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel
-          { stmts := .switch scrutinee cases defaultBody :: rest }
-          source)) :
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        sourceCtx sourceFuel
+          { stmts := .switch scrutinee cases defaultBody :: rest } source) :
     CursorRuntimeAt cursor contract frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
   have hWholeFuel :=
-    Functions.InteractionSemantics.Block.successful_openRun_fuel_pos hSuccess
-  have hHeadSuccess := successful_head hWholeFuel hSuccess
+    Functions.InteractionSemantics.Block.successful_openRun_fuel_pos
+      hExecutionSafe.ordinarySuccessful
+  have hHeadSuccess := successful_head hWholeFuel
+    hExecutionSafe.ordinarySuccessful
   have hSourceFuel : 1 < sourceFuel := by
     have hHeadFuel := (successful_switch_scrutinee hHeadSuccess).1
     omega
   have hScrutineeScoped :
       Functions.Scope.ExprScoped live scrutinee := by
     simpa [Functions.Scope.Stmt.Scoped] using cursor.headScoped.1
-  have hScrutineeSafe := hSafety.expr hScrutineeScoped
-    hBoundary.semantic.invariant.defined
-    (successful_switch_scrutinee hHeadSuccess).2
+  have hHeadSafe := AllocationInteractionSafeSuccessful.successful_head
+    hWholeFuel hExecutionSafe
+  have hScrutineeSuccess : Simulation.Interaction.Successful
+      (AllocationInteractionSafeSemantics.Expr.openEvalOne
+        contract scrutinee source) := by
+    have hFuelEq : sourceFuel - 2 + 1 = sourceFuel - 1 := by omega
+    have hHeadSafe' : Simulation.Interaction.Successful
+        (AllocationInteractionSafeSemantics.Stmt.openRun contract program
+          sourceCtx (sourceFuel - 2 + 1)
+            (.switch scrutinee cases defaultBody) source) := by
+      rw [hFuelEq]
+      exact hHeadSafe
+    rw [AllocationInteractionSafeSemantics.Stmt.openRun_switch]
+      at hHeadSafe'
+    exact Simulation.Interaction.Successful.bind_left hHeadSafe'
+  have hScrutineeSafe :=
+    (AllocationInteractionSafeExpression.valueChecked_of_successful
+      hScrutineeScoped hBoundary.semantic.invariant.defined
+        hScrutineeSuccess).safety
   exact CursorRuntimeAt.switch cursor hSourceFuel hReserve hScrutineeSafe
-    hBoundary hSuccess
+    hBoundary hExecutionSafe
     (fun {value selected selectedStart selectedPlanning} hSelect bodyCursor
         {sourceAfter targetAfter} hTargetCapacity hBodyBoundary
-        hBodySuccess => by
+        _hBodySuccess hBodySafe => by
       have hBodyRel :=
-        RecursiveOpenRuntime.at_targetFuel hRecursive bodyCursor
-          (by omega) hTargetCapacity hBodyBoundary hBodySuccess
+        ExecutionSafeRecursiveOpenRuntime.at_targetFuel hRecursive bodyCursor
+          (by omega) hTargetCapacity hBodyBoundary hBodySafe
       have hCleanupFuel :
           2 ≤
             (targetBudget cursor sourceFuel targetExtra - 2) -
@@ -4115,10 +4551,10 @@ private theorem switch_of_recursive
         omega
       exact ⟨hCleanupFuel, hBodyRel⟩)
     (fun {afterState} tail hExact
-        {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
-      recursive_tail hRecursive tail (by omega) hTailBoundary
+        {sourceMid targetMid tailMode} hTailBoundary _hTailSuccess hTailSafe =>
+      executionSafe_recursive_tail hRecursive tail (by omega) hTailBoundary
         (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
-        hTailSuccess)
+        hTailSafe)
 
 private theorem for_of_recursive
     {allocation : Locals.Allocation.ProgramPlan}
@@ -4137,9 +4573,8 @@ private theorem for_of_recursive
     {mode : ActivationMode}
     {sourceCtx : Functions.Source.Ctx}
     {source : SourceState} {target : TargetState}
-    (hSafety : AllocationInteractionSafety.SourceSafety contract)
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         contract sourceFuel)
     (cursor : CoreCursor root scope live
       { stmts := .for_ init cond post body :: rest }
@@ -4149,16 +4584,17 @@ private theorem for_of_recursive
         mode sourceCtx source target)
     (hReserve :
       AllocationInteractionTargetFuel.Reserve cursor targetExtra)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel
-          { stmts := .for_ init cond post body :: rest } source)) :
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe contract program
+        sourceCtx sourceFuel
+          { stmts := .for_ init cond post body :: rest } source) :
     CursorRuntimeAt cursor contract frameBase sourceFuel
       targetExtra mode sourceCtx source target := by
   have hWholeFuel :=
-    Functions.InteractionSemantics.Block.successful_openRun_fuel_pos hSuccess
-  have hHeadSuccess := successful_head hWholeFuel hSuccess
+    Functions.InteractionSemantics.Block.successful_openRun_fuel_pos
+      hExecutionSafe.ordinarySuccessful
+  have hHeadSuccess := successful_head hWholeFuel
+    hExecutionSafe.ordinarySuccessful
   have hHeadFuel :=
     Functions.InteractionSemantics.Stmt.successful_openRun_for_fuel_pos
       hHeadSuccess
@@ -4170,17 +4606,14 @@ private theorem for_of_recursive
   have hInitFuel :=
     Functions.InteractionSemantics.Block.successful_openRun_fuel_pos hInitSuccess
   have hSourceFuel : 2 < sourceFuel := by omega
-  exact CursorRuntimeAt.for_ cursor hSourceFuel
-    (fun nextSource hDefined hCondSuccess =>
-      hSafety.expr cursor.forArtifact.condScoped hDefined
-        (successful_condition_eval hCondSuccess))
-    hBoundary hHeadSuccess hSuccess hRecursive
+  exact CursorRuntimeAt.for_ cursor hSourceFuel hBoundary hExecutionSafe
+    hRecursive
     (ForFuelCapacity.of_reserve cursor hSourceFuel hReserve)
     (fun {afterState} tail hExact
-        {sourceMid targetMid tailMode} hTailBoundary hTailSuccess =>
-      recursive_tail hRecursive tail (by omega) hTailBoundary
+        {sourceMid targetMid tailMode} hTailBoundary _hTailSuccess hTailSafe =>
+      executionSafe_recursive_tail hRecursive tail (by omega) hTailBoundary
         (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
-        hTailSuccess)
+        hTailSafe)
 
 private theorem call_of_recursive
     {allocation : Locals.Allocation.ProgramPlan}
@@ -4200,10 +4633,8 @@ private theorem call_of_recursive
     {source : SourceState} {target : TargetState}
     (hAllStack : AllFunctionsStack compilation)
     (hProgramScoped : program.Scoped)
-    (hSafety :
-      AllocationInteractionSafety.SourceSafety program.memoryContract)
     (hRecursive :
-      RecursiveOpenRuntime (compilation := compilation)
+      ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
         program.memoryContract sourceFuel)
     (cursor : CoreCursor root scope live
       { stmts := .call targets functionName args :: rest }
@@ -4212,15 +4643,18 @@ private theorem call_of_recursive
       Boundary cursor program.memoryContract frameBase mode sourceCtx source target)
     (hReserve :
       AllocationInteractionTargetFuel.Reserve cursor targetExtra)
-    (hSuccess :
-      Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.Block.openRun program sourceCtx
-          sourceFuel
-          { stmts := .call targets functionName args :: rest } source)) :
+    (hExecutionSafe :
+      AllocationInteractionSafeSemantics.Block.ExecutionSafe
+        program.memoryContract program sourceCtx sourceFuel
+          { stmts := .call targets functionName args :: rest } source) :
     CursorRuntimeAt cursor program.memoryContract frameBase sourceFuel targetExtra mode sourceCtx source target := by
   have hWholeFuel :=
-    Functions.InteractionSemantics.Block.successful_openRun_fuel_pos hSuccess
-  have hHeadSuccess := successful_head hWholeFuel hSuccess
+    Functions.InteractionSemantics.Block.successful_openRun_fuel_pos
+      hExecutionSafe.ordinarySuccessful
+  have hHeadSuccess := successful_head hWholeFuel
+    hExecutionSafe.ordinarySuccessful
+  have hHeadSafe := AllocationInteractionSafeSuccessful.successful_head
+    hWholeFuel hExecutionSafe
   have hHeadFuel :=
     Functions.InteractionSemantics.Stmt.successful_openRun_call_fuel_pos
       hHeadSuccess
@@ -4242,10 +4676,21 @@ private theorem call_of_recursive
           Functions.InteractionSemantics.FunDef.successful_openRunBody_fuel_pos
             hBodySuccess
         omega
+  have hHeadSafe' : Simulation.Interaction.Successful
+      (AllocationInteractionSafeSemantics.Stmt.openRun
+        program.memoryContract program sourceCtx (sourceFuel - 2 + 1)
+          (.call targets functionName args) source) := by
+    rw [hHeadFuelEq]
+    exact hHeadSafe
+  have hSafeCallParts :=
+    AllocationInteractionSafeSemantics.Stmt.successful_openRun_call_continuations
+      program.memoryContract program sourceCtx (sourceFuel - 2) targets
+        functionName args source hTargets hHeadSafe'
   have hArgSuccess :
       Simulation.Interaction.Successful
-        (Functions.InteractionSemantics.ArgList.openEval args source) := by
-    apply Simulation.Interaction.AllDone.mono hCallParts
+        (AllocationInteractionSafeSemantics.ArgList.openEval
+          program.memoryContract args source) := by
+    apply Simulation.Interaction.AllDone.mono hSafeCallParts
     intro result hResult
     cases result with
     | error err => exact hResult
@@ -4253,19 +4698,19 @@ private theorem call_of_recursive
   have hArgsScoped :
       ∀ arg, arg ∈ args → Functions.Scope.ExprScoped live arg := by
     simpa [Functions.Scope.Stmt.Scoped] using cursor.headScoped.2.2
-  have hArgSafe := hSafety.argList hArgsScoped
-    hBoundary.semantic.invariant.defined hArgSuccess
+  have hArgSafe := AllocationInteractionSafety.argList_of_successful
+    hArgsScoped hBoundary.semantic.invariant.defined hArgSuccess
   exact CursorRuntimeAt.call
     cursor hAllStack hProgramScoped hSourceFuel hArgSafe hBoundary
-    hHeadSuccess hSuccess hRecursive
+    hHeadSafe hExecutionSafe hRecursive
     (fun tail hExact {sourceMid targetMid tailMode} hTailBoundary
-        hTailSuccess =>
-      recursive_tail hRecursive tail (by omega) hTailBoundary
+        _hTailSuccess hTailSafe =>
+      executionSafe_recursive_tail hRecursive tail (by omega) hTailBoundary
         (AllocationInteractionTargetFuel.Reserve.tail hReserve hExact)
-        hTailSuccess)
+        hTailSafe)
 
 
-/-- Every successful canonical all-stack Functions block implements the
+/-- Every guarded canonical all-stack Functions block implements the
 pass-owned recursive runtime, by well-founded induction on source meta-fuel. -/
 private theorem complete_at
     {allocation : Locals.Allocation.ProgramPlan}
@@ -4273,9 +4718,7 @@ private theorem complete_at
     {expressions : Expressions.Program}
     {compilation : Compilation allocation program expressions}
     (hAllStack : AllFunctionsStack compilation)
-    (hProgramScoped : program.Scoped)
-    (hSafety :
-      AllocationInteractionSafety.SourceSafety program.memoryContract) :
+    (hProgramScoped : program.Scoped) :
     ∀ sourceFuel : Nat,
       ∀ {root : RootArtifact compilation}
         {scope : Locals.Allocation.ScopeId}
@@ -4292,9 +4735,9 @@ private theorem complete_at
         Boundary cursor program.memoryContract frameBase mode sourceCtx
             source target →
         AllocationInteractionTargetFuel.Reserve cursor targetExtra →
-        Simulation.Interaction.Successful
-            (Functions.InteractionSemantics.Block.openRun program sourceCtx
-              sourceFuel sourceBlock source) →
+        AllocationInteractionSafeSemantics.Block.ExecutionSafe
+            program.memoryContract program sourceCtx sourceFuel sourceBlock
+              source →
         CursorRuntimeAt cursor program.memoryContract frameBase sourceFuel
           targetExtra mode sourceCtx source target := by
   intro sourceFuel
@@ -4302,66 +4745,67 @@ private theorem complete_at
   | h sourceFuel ih =>
       intro root scope live sourceBlock lowerState localsCtx frameBase
         targetExtra mode sourceCtx source target cursor hBoundary hReserve
-        hSuccess
+          hExecutionSafe
       have hSourceFuel :=
-        Functions.InteractionSemantics.Block.successful_openRun_fuel_pos hSuccess
-      have hRecursive :
-          RecursiveOpenRuntime (compilation := compilation)
+        Functions.InteractionSemantics.Block.successful_openRun_fuel_pos
+          hExecutionSafe.ordinarySuccessful
+      let hRecursive :
+          ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
             program.memoryContract sourceFuel := by
         intro childRoot childScope childLive childBlock childState childLocals
           childFrameBase childSourceFuel childTargetExtra childMode
           childSourceCtx childSource childTarget childCursor hChildFuel
-          hChildBoundary hChildReserve hChildSuccess
+          hChildBoundary hChildReserve hChildSafe
         exact ih childSourceFuel hChildFuel childCursor hChildBoundary
-          hChildReserve hChildSuccess
+          hChildReserve hChildSafe
       rcases sourceBlock with ⟨stmts⟩
       cases stmts with
       | nil =>
           exact CursorRuntimeAt.nil cursor hSourceFuel hBoundary
       | cons stmt rest =>
           cases stmt with
-          | expr expr =>
-              exact expr_of_recursive hSafety hRecursive cursor hSourceFuel
-                hBoundary hReserve hSuccess
+          | expr value =>
+              exact expr_of_recursive hRecursive cursor hSourceFuel hBoundary
+                hReserve hExecutionSafe
           | let_ name value =>
-              exact let_of_recursive hSafety hRecursive cursor hSourceFuel
-                hBoundary hReserve hSuccess
+              exact let_of_recursive hRecursive cursor hSourceFuel hBoundary
+                hReserve hExecutionSafe
           | assign name value =>
-              exact assign_of_recursive hSafety hRecursive cursor hSourceFuel
-                hBoundary hReserve hSuccess
+              exact assign_of_recursive hRecursive cursor hSourceFuel
+                hBoundary hReserve hExecutionSafe
           | block body =>
               exact block_of_recursive hRecursive cursor hSourceFuel hBoundary
-                hReserve hSuccess
+                hReserve hExecutionSafe
           | if_ cond body =>
-              exact if_of_recursive hSafety hRecursive cursor hBoundary
-                hReserve hSuccess
+              exact if_of_recursive hRecursive cursor hBoundary hReserve
+                hExecutionSafe
           | switch scrutinee cases defaultBody =>
-              exact switch_of_recursive hSafety hRecursive cursor hBoundary
-                hReserve hSuccess
+              exact switch_of_recursive hRecursive cursor hBoundary hReserve
+                hExecutionSafe
           | for_ init cond post body =>
-              exact for_of_recursive hSafety hRecursive cursor hBoundary
-                hReserve hSuccess
+              exact for_of_recursive hRecursive cursor hBoundary hReserve
+                hExecutionSafe
           | brk =>
               exact brk_of_recursive hRecursive cursor hSourceFuel hBoundary
-                hReserve hSuccess
+                hReserve hExecutionSafe
           | cont =>
               exact cont_of_recursive hRecursive cursor hSourceFuel hBoundary
-                hReserve hSuccess
+                hReserve hExecutionSafe
           | leave =>
               exact leave_of_recursive hRecursive cursor hSourceFuel hBoundary
-                hReserve hSuccess
+                hReserve hExecutionSafe
           | call targets functionName args =>
-              exact call_of_recursive hAllStack hProgramScoped hSafety
-                hRecursive cursor hBoundary hReserve hSuccess
+              exact call_of_recursive hAllStack hProgramScoped hRecursive
+                cursor hBoundary hReserve hExecutionSafe
           | terminal kind =>
-              exact terminal_of_recursive hSafety hRecursive cursor hSourceFuel
-                hBoundary hReserve hSuccess
+              exact terminal_of_recursive hRecursive cursor hSourceFuel
+                hBoundary hReserve hExecutionSafe
           | terminalArgs kind args =>
-              exact terminalArgs_of_recursive hSafety hRecursive cursor
-                hSourceFuel hBoundary hReserve hSuccess
+              exact terminalArgs_of_recursive hRecursive cursor hSourceFuel
+                hBoundary hReserve hExecutionSafe
 
-/-- Fuel-bounded root-polymorphic all-stack Functions preservation, with
-recursive calls discharged internally from the successful source run. -/
+/-- Fuel-bounded root-polymorphic all-stack Functions preservation for exactly
+the guarded source executions reached by the canonical semantics. -/
 theorem complete
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
@@ -4369,16 +4813,14 @@ theorem complete
     {compilation : Compilation allocation program expressions}
     (hAllStack : AllFunctionsStack compilation)
     (hProgramScoped : program.Scoped)
-    (hSafety :
-      AllocationInteractionSafety.SourceSafety program.memoryContract)
     (fuelBound : Nat) :
-    RecursiveOpenRuntime (compilation := compilation)
+    ExecutionSafeRecursiveOpenRuntime (compilation := compilation)
       program.memoryContract fuelBound := by
   intro root scope live sourceBlock lowerState localsCtx frameBase sourceFuel
     targetExtra mode sourceCtx source target cursor _hFuelBound hBoundary
-    hReserve hSuccess
-  exact complete_at hAllStack hProgramScoped hSafety sourceFuel cursor hBoundary
-    hReserve hSuccess
+    hReserve hExecutionSafe
+  exact complete_at hAllStack hProgramScoped sourceFuel cursor hBoundary
+    hReserve hExecutionSafe
 
 end AllocationInteractionStackRuntime
 end Functions

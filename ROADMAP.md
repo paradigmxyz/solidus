@@ -390,12 +390,13 @@ boundaries. Corpus acceptance alone does not discharge them.
   the open-world theorem as the compositional compiler layer.
 - [ ] Verify the solc Yul-AST import and Functions normalization performed by
   the Python bridge, or make that frontend an explicit audited trust boundary.
-- [ ] Replace `AllocationInteractionSafety.SourceSafety`, now formally proved
-  uninhabited for every contract, with program/run-indexed safety. Split the
-  public allocator theorem: stack-only artifacts need no source memory premise;
-  scratch-backed artifacts use the canonical parameterized Functions semantics
-  to check only the concrete source run. Later derive host bounds from the
-  gas-aware EVM theorem rather than source-language restrictions.
+- [x] Replace the now-deleted, globally quantified
+  `AllocationInteractionSafety.SourceSafety` with program/run-indexed safety.
+  Stack-only artifacts require no scratch-reservation/non-alias promise;
+  scratch-backed artifacts check only the concrete source run. The shared
+  execution-safety premise still states host representability and EVM memory
+  expansion bounds for actually reached operations; later derive those bounds
+  from the gas-aware EVM theorem rather than unrelated source states.
   The replacement semantics is the ordinary parameterized Functions control
   interpreter instantiated with a primitive guard: safe operations delegate to
   the ordinary open primitive unchanged, while an actually reached violation
@@ -408,8 +409,8 @@ boundaries. Corpus acceptance alone does not discharge them.
     is the sole production-facing compiler result and needs no memory premise.
   - [x] Prove guarded-run equality and reached-continuation composition through
     the Functions allocation owner.
-  - [ ] Finish guarded safety threading through nested control, internal calls,
-    and the scratch-backed program theorem; then delete the legacy global API.
+  - [x] Thread guarded safety through nested control, loops, internal calls,
+    stack-only/scratch program composition, and delete the legacy global API.
 - [ ] Carry the selected EVM fork/dialect in checked artifacts. Cover or
   honestly reject every solc-emittable builtin for that profile, including
   Osaka additions and supported `verbatim` forms.
