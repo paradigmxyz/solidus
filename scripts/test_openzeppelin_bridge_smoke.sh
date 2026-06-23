@@ -2,6 +2,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON_BIN="${PYTHON:-python3}"
+BUNDLED_PYTHON="$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3"
+if ! "$PYTHON_BIN" -c 'import jsonschema' >/dev/null 2>&1 && \
+    [[ -x "$BUNDLED_PYTHON" ]]; then
+  PYTHON_BIN="$BUNDLED_PYTHON"
+fi
 SOLC_BIN="${SOLC:-solc}"
 if [[ -n "${LAKE:-}" ]]; then
   LAKE_BIN="$LAKE"
@@ -104,7 +110,7 @@ contract OzToken is ERC20, Ownable, Pausable {
 }
 SOL
 
-SOLC_VERSION="$OPENZEPPELIN_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+SOLC_VERSION="$OPENZEPPELIN_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$FIXTURE" \
   --solc "$SOLC_BIN" \
   --remapping "@openzeppelin/contracts/=$REPO/contracts/" \
@@ -115,18 +121,18 @@ SOLC_VERSION="$OPENZEPPELIN_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul
   --bridge-json-dir "$OZ_BRIDGE_DIR" \
   --output "$OZ_BATCH_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$OZ_BRIDGE_DIR/manifest.json"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$OZ_BRIDGE_DIR/manifest.json"
 bridge_json_files="$(find "$OZ_BRIDGE_DIR" -name '*.bridge.json' -type f | wc -l | tr -d ' ')"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$OZ_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --format bridge-json-summary \
   --output "$OZ_SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$OZ_SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$OZ_SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$OZ_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
@@ -134,7 +140,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-json-check \
   --output "$OZ_MANIFEST_CHECK"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$OZ_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
@@ -142,7 +148,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-backend-check \
   --output "$OZ_BACKEND_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$OZ_BACKEND_CHECK"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$OZ_BACKEND_CHECK"
 
 cat > "$SAFECAST_FIXTURE" <<'SOL'
 // SPDX-License-Identifier: UNLICENSED
@@ -174,7 +180,7 @@ contract OzSafeCastFallback {
 }
 SOL
 
-SOLC_VERSION="$OPENZEPPELIN_SOLC_VERSION" python3 "$ROOT/scripts/compare_contract_call_bytecode.py" \
+SOLC_VERSION="$OPENZEPPELIN_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
   "$SAFECAST_FIXTURE" \
   --solc "$SOLC_BIN" \
   --lake "$LAKE_BIN" \
@@ -229,7 +235,7 @@ contract OzStringsFallback {
 }
 SOL
 
-SOLC_VERSION="$OPENZEPPELIN_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+SOLC_VERSION="$OPENZEPPELIN_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$STRINGS_FIXTURE" \
   --solc "$SOLC_BIN" \
   --lake "$LAKE_BIN" \
@@ -241,17 +247,17 @@ SOLC_VERSION="$OPENZEPPELIN_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul
   --bridge-json-dir "$STRINGS_BRIDGE_DIR" \
   --output "$STRINGS_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$STRINGS_BRIDGE_DIR/manifest.json"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$STRINGS_BRIDGE_DIR/manifest.json"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$STRINGS_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --format bridge-json-summary \
   --output "$STRINGS_SUMMARY"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$STRINGS_SUMMARY"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$STRINGS_SUMMARY"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$STRINGS_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
@@ -259,7 +265,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-json-check \
   --output "$STRINGS_MANIFEST_CHECK"
 
-python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
+"$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
   "$STRINGS_BRIDGE_DIR/manifest.json" \
   --input-format bridge-json-manifest \
   --lake "$LAKE_BIN" \
@@ -269,13 +275,13 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
   --format lean-backend-check \
   --output "$STRINGS_BACKEND_CHECK"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$STRINGS_BACKEND_CHECK"
+"$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$STRINGS_BACKEND_CHECK"
 
 printf 'openzeppelin_bridge_smoke=pass\n'
 printf 'repo_ref=%s\n' "$ACTUAL_REF"
 printf 'bridge_json_files=%s\n' "$bridge_json_files"
 printf 'safecast_fallback_compare_calls=%s\n' "$(sed -n 's/^calls=//p' "$SAFECAST_COMPARE")"
-python3 - "$OZ_BATCH_CHECK" "$OZ_MANIFEST_CHECK" "$OZ_BRIDGE_DIR/manifest.json" \
+"$PYTHON_BIN" - "$OZ_BATCH_CHECK" "$OZ_MANIFEST_CHECK" "$OZ_BRIDGE_DIR/manifest.json" \
   "$OZ_SUMMARY" "$OZ_BACKEND_CHECK" <<'PY'
 import json
 import sys
@@ -370,6 +376,8 @@ if (
     backend_counts.get("checkedObjects") != batch_count
     or backend_counts.get("checkedContracts") != 1
     or backend_counts.get("skippedContracts") != 0
+    or backend_counts.get("passedObjects") != batch_count
+    or backend_counts.get("failedObjects") != 0
 ):
     raise SystemExit(f"unexpected OzToken backend-check counts: {backend_counts!r}")
 backend_status = {}
@@ -378,12 +386,8 @@ for item in backend_check.get("checkedObjects", []):
     status = item.get("status")
     first_none = item.get("firstNone")
     backend_status[key] = (status, first_none)
-    if status not in {"pass", "fail"}:
-        raise SystemExit(f"unexpected OzToken backend status: {item!r}")
-    if status == "pass" and first_none != "none":
-        raise SystemExit(f"OzToken backend pass mismatch: {item!r}")
-    if status == "fail" and first_none in {"", None, "none"}:
-        raise SystemExit(f"OzToken backend failure missing firstNone: {item!r}")
+    if (status, first_none) != ("pass", "none"):
+        raise SystemExit(f"OzToken backend failed: {item!r}")
 if set(backend_status) != {("OzToken", "creation"), ("OzToken", "runtime")}:
     raise SystemExit(f"unexpected OzToken backend labels: {backend_status!r}")
 runtime_backend_status, runtime_first_none = backend_status[("OzToken", "runtime")]
@@ -398,7 +402,7 @@ print(f"openzeppelin_backend_check_failed={backend_counts['failedObjects']}")
 print(f"openzeppelin_runtime_backend_check={runtime_backend_status}")
 print(f"openzeppelin_runtime_backend_first_none={runtime_first_none}")
 PY
-python3 - "$STRINGS_CHECK" "$STRINGS_MANIFEST_CHECK" "$STRINGS_SUMMARY" \
+"$PYTHON_BIN" - "$STRINGS_CHECK" "$STRINGS_MANIFEST_CHECK" "$STRINGS_SUMMARY" \
   "$STRINGS_BACKEND_CHECK" <<'PY'
 import json
 import sys
