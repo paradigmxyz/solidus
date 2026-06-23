@@ -898,6 +898,56 @@ theorem shiftRight_word_eq_zero_iff_log2_lt
     rw [shiftRight_word_toNat value hShift, Nat.shiftRight_eq_div_pow]
     exact Nat.div_eq_of_lt hLtPow
 
+theorem shiftLeft_word_toNat_of_lt (value : Word) {shift : Nat}
+    (hShift : shift < 256)
+    (hNoOverflow : value.toNat <<< shift < EvmYul.UInt256.size) :
+    (EvmYul.UInt256.shiftLeft value (word shift)).toNat =
+      value.toNat <<< shift := by
+  have hWord : (word shift).toNat = shift := word_toNat_of_lt hShift
+  have hWordVal : (word shift).val.val = shift := by
+    simpa [EvmYul.UInt256.toNat] using hWord
+  have hBranch :
+      ¬ (word shift).val ≥ (256 : Fin EvmYul.UInt256.size) := by
+    change ¬ (256 : Fin EvmYul.UInt256.size).val ≤ (word shift).val.val
+    have h256 : (256 : Fin EvmYul.UInt256.size).val = 256 := by decide
+    rw [h256, hWordVal]
+    exact Nat.not_le_of_gt hShift
+  unfold EvmYul.UInt256.shiftLeft EvmYul.UInt256.toNat
+  simp [hBranch]
+  rw [hWordVal]
+  exact Nat.mod_eq_of_lt hNoOverflow
+
+theorem log2_shiftLeft_word_toNat
+    (value : Word) {shift : Nat}
+    (hValue : value ≠ zero) (hShift : shift < 256)
+    (hNoOverflow : value.toNat <<< shift < EvmYul.UInt256.size) :
+    (EvmYul.UInt256.log2
+      (EvmYul.UInt256.shiftLeft value (word shift))).toNat =
+      value.toNat.log2 + shift := by
+  have hValueNat : value.toNat ≠ 0 := by
+    intro hz
+    exact hValue ((toNat_eq_zero_iff value).mp hz)
+  have hShiftToNat := shiftLeft_word_toNat_of_lt value hShift hNoOverflow
+  have hLow : 2 ^ (value.toNat.log2 + shift) ≤
+      value.toNat <<< shift := by
+    rw [Nat.shiftLeft_eq, Nat.pow_add]
+    exact Nat.mul_le_mul_right _ (Nat.log2_self_le hValueNat)
+  have hHigh : value.toNat <<< shift <
+      2 ^ (value.toNat.log2 + shift + 1) := by
+    rw [Nat.shiftLeft_eq]
+    have hMul := Nat.mul_lt_mul_of_pos_right
+      (Nat.lt_log2_self (n := value.toNat))
+      (Nat.pow_pos (by decide : 0 < 2) (n := shift))
+    simpa [Nat.pow_add, Nat.mul_assoc, Nat.mul_comm, Nat.mul_left_comm,
+      Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hMul
+  have hLog :
+      Nat.log 2 (value.toNat <<< shift) =
+        value.toNat.log2 + shift := by
+    exact Nat.log_eq_of_pow_le_of_lt_pow hLow hHigh
+  rw [log2_toNat_eq, hShiftToNat]
+  rw [Nat.log2_eq_log_two]
+  exact hLog
+
 theorem isZero_truthy_iff (value : Word) :
     (EvmYul.UInt256.isZero value != zero) = true ↔ value = zero := by
   constructor

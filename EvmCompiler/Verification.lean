@@ -65,6 +65,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.runHighestBit_eq_reference
 #check EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.log2_toNat_lt_256_of_ne_zero
 #check EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.shiftRight_word_eq_zero_iff_log2_lt
+#check EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.log2_shiftLeft_word_toNat
 #check EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.shouldRunStep_eq_log2_lt
 #check EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.powerOfTwoInputsMatchReference
 #check EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.boundaryInputsMatchReference
@@ -193,6 +194,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.runHighestBit_eq_reference
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.log2_toNat_lt_256_of_ne_zero
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.shiftRight_word_eq_zero_iff_log2_lt
+#print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.log2_shiftLeft_word_toNat
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.shouldRunStep_eq_log2_lt
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.powerOfTwoInputsMatchReference
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.boundaryInputsMatchReference
