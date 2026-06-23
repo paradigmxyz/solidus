@@ -168,9 +168,12 @@ Next raw frontend layer:
   returned by successful elaboration. `ClzCallReplacement` now proves that an
   evaluated raw `clz(x)` replacement call to the generated helper returns
   `ClzHelperModel.run x`, and successful production raw object elaboration
-  exposes that theorem for its generated helper entry. Production raw elaboration
-  now fail-closes unless the generated `clz` argument/result names are distinct,
-  and exposes the checked condition through a wrapper theorem that discharges the
+  exposes that theorem for its generated helper entry. The word/log bridge now
+  proves the helper branch condition: for nonzero values and solc's checked
+  shifts below 256, the generated `shr`/`iszero` test is equivalent to
+  `log2(value) < checkShift`. Production raw elaboration now fail-closes unless
+  the generated `clz` argument/result names are distinct, and exposes the
+  checked condition through a wrapper theorem that discharges the
   helper-execution theorem's name premise. Retained
   nested function-definition statements are alpha-renamed to generated function
   names before their checked frontend no-op lowering. Raw production elaboration
@@ -187,9 +190,10 @@ Next raw frontend layer:
   exact ordered Yul function entries consumed by the backend, with
   `Frontend.Object.toSolcYulOrderedProgram?_functionDefStubsLoweredToEntries`
   pinned in the verification root.
-  The remaining `clz` semantic gap is the all-word equation between
-  `ClzHelperModel.run` and the declared source/reference meaning; nested
-  hoist/alpha-renaming semantic preservation also remains open.
+  The remaining `clz` semantic gap is the fold invariant through the helper's
+  left shifts and the final all-word equation between `ClzHelperModel.run` and
+  the declared source/reference meaning; nested hoist/alpha-renaming semantic
+  preservation also remains open.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose

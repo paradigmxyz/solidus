@@ -804,6 +804,153 @@ def reference (value : Word) : Word :=
   else
     word (255 - (EvmYul.UInt256.log2 value).toNat)
 
+theorem word_toNat_of_lt {value : Nat} (h : value < 256) :
+    (word value).toNat = value := by
+  unfold word EvmYul.UInt256.toNat EvmYul.UInt256.ofNat
+  change (Fin.ofNat EvmYul.UInt256.size value).val = value
+  rw [Fin.val_ofNat]
+  apply Nat.mod_eq_of_lt
+  have : 256 < EvmYul.UInt256.size := by decide
+  exact Nat.lt_trans h this
+
+theorem toNat_eq_zero_iff (value : Word) :
+    value.toNat = 0 ↔ value = zero := by
+  constructor
+  · intro hz
+    cases value with
+    | mk val =>
+        unfold zero EvmYul.UInt256.ofNat
+        apply congrArg EvmYul.UInt256.mk
+        apply Fin.ext
+        simpa [EvmYul.UInt256.toNat] using hz
+  · intro h
+    rw [h]
+    exact word_toNat_of_lt (by decide : 0 < 256)
+
+theorem log2_toNat_eq (value : Word) :
+    (EvmYul.UInt256.log2 value).toNat = value.toNat.log2 := by
+  rfl
+
+theorem log2_toNat_lt_256_of_ne_zero
+    {value : Word} (hValue : value ≠ zero) :
+    (EvmYul.UInt256.log2 value).toNat < 256 := by
+  have hValLt : value.toNat < 2 ^ 256 := by
+    have hv : value.toNat < EvmYul.UInt256.size := by
+      unfold EvmYul.UInt256.toNat
+      exact value.val.isLt
+    simpa [EvmYul.UInt256.size] using hv
+  have hValNe : value.toNat ≠ 0 := by
+    intro hz
+    exact hValue ((toNat_eq_zero_iff value).mp hz)
+  have hLogBound : value.toNat.log2 + 1 ≤ 256 := by
+    by_contra hnot
+    have hle : 256 ≤ value.toNat.log2 := by omega
+    have hpows : 2 ^ 256 ≤ 2 ^ value.toNat.log2 := by
+      exact Nat.pow_le_pow_right (by decide : 0 < 2) hle
+    have hleVal : 2 ^ value.toNat.log2 ≤ value.toNat := by
+      exact Nat.log2_self_le hValNe
+    exact Nat.not_le_of_gt hValLt (Nat.le_trans hpows hleVal)
+  have : value.toNat.log2 < 256 := Nat.lt_of_succ_le hLogBound
+  simpa [log2_toNat_eq] using this
+
+theorem shiftRight_word_toNat (value : Word) {shift : Nat}
+    (hShift : shift < 256) :
+    (EvmYul.UInt256.shiftRight value (word shift)).toNat =
+      value.toNat >>> shift := by
+  have hWord : (word shift).toNat = shift := word_toNat_of_lt hShift
+  have hWordVal : (word shift).val.val = shift := by
+    simpa [EvmYul.UInt256.toNat] using hWord
+  have hBranch :
+      ¬ (word shift).val ≥ (256 : Fin EvmYul.UInt256.size) := by
+    change ¬ (256 : Fin EvmYul.UInt256.size).val ≤ (word shift).val.val
+    have h256 : (256 : Fin EvmYul.UInt256.size).val = 256 := by decide
+    rw [h256, hWordVal]
+    exact Nat.not_le_of_gt hShift
+  unfold EvmYul.UInt256.shiftRight EvmYul.UInt256.toNat
+  simp [hBranch]
+  rw [hWordVal]
+
+theorem shiftRight_word_eq_zero_iff_log2_lt
+    (value : Word) {shift : Nat}
+    (hValue : value ≠ zero) (hShift : shift < 256) :
+    EvmYul.UInt256.shiftRight value (word shift) = zero ↔
+      value.toNat.log2 < shift := by
+  have hValueNat : value.toNat ≠ 0 := by
+    intro hz
+    exact hValue ((toNat_eq_zero_iff value).mp hz)
+  constructor
+  · intro hZero
+    have hNatZero :
+        (EvmYul.UInt256.shiftRight value (word shift)).toNat = 0 := by
+      rw [hZero]
+      exact word_toNat_of_lt (by decide : 0 < 256)
+    have hDivZero : value.toNat >>> shift = 0 := by
+      simpa [shiftRight_word_toNat value hShift] using hNatZero
+    have hLtPow : value.toNat < 2 ^ shift := by
+      rw [Nat.shiftRight_eq_div_pow] at hDivZero
+      exact Nat.lt_of_div_eq_zero (Nat.pow_pos (by decide : 0 < 2))
+        hDivZero
+    exact (Nat.log2_lt hValueNat).mpr hLtPow
+  · intro hLogLt
+    have hLtPow : value.toNat < 2 ^ shift :=
+      (Nat.log2_lt hValueNat).mp hLogLt
+    apply (toNat_eq_zero_iff _).mp
+    rw [shiftRight_word_toNat value hShift, Nat.shiftRight_eq_div_pow]
+    exact Nat.div_eq_of_lt hLtPow
+
+theorem isZero_truthy_iff (value : Word) :
+    (EvmYul.UInt256.isZero value != zero) = true ↔ value = zero := by
+  constructor
+  · intro h
+    by_cases hz : value = zero
+    · exact hz
+    · have hEq0 : EvmYul.UInt256.eq0 value = false := by
+        cases value with
+        | mk value =>
+            simp [EvmYul.UInt256.eq0, EvmYul.instBEqUInt256,
+              EvmYul.instBEqUInt256.beq, zero, EvmYul.UInt256.ofNat,
+              Id.run] at hz ⊢
+            exact hz
+      have hIszeroZero : EvmYul.UInt256.isZero value = zero := by
+        simp [EvmYul.UInt256.isZero, hEq0, EvmYul.UInt256.fromBool,
+          zero]
+      simp [hIszeroZero, zero, bne, EvmYul.instBEqUInt256,
+        EvmYul.instBEqUInt256.beq, EvmYul.UInt256.ofNat, Id.run] at h
+  · intro hz
+    subst hz
+    simp [EvmYul.UInt256.isZero, EvmYul.UInt256.eq0,
+      EvmYul.UInt256.fromBool, Bool.toUInt256, zero, bne,
+      EvmYul.instBEqUInt256, EvmYul.instBEqUInt256.beq,
+      EvmYul.UInt256.ofNat, Id.run]
+    decide
+
+theorem shouldRunStep_eq_log2_lt (value ret : Word)
+    {checkShift : Nat} (hValue : value ≠ zero) (hShift : checkShift < 256) :
+    shouldRunStep checkShift { arg := value, ret := ret } =
+      decide (value.toNat.log2 < checkShift) := by
+  by_cases hLog : value.toNat.log2 < checkShift
+  · have hShiftZero :
+        EvmYul.UInt256.shiftRight value (word checkShift) = zero :=
+      (shiftRight_word_eq_zero_iff_log2_lt value hValue hShift).mpr hLog
+    simp [hLog, shouldRunStep, (isZero_truthy_iff _).mpr hShiftZero]
+  · have hShiftNonzero :
+        EvmYul.UInt256.shiftRight value (word checkShift) ≠ zero := by
+      intro hZero
+      exact hLog
+        ((shiftRight_word_eq_zero_iff_log2_lt value hValue hShift).mp hZero)
+    have hBoolFalse :
+        (EvmYul.UInt256.isZero
+          (EvmYul.UInt256.shiftRight value (word checkShift)) != zero) =
+          false := by
+      have hNotTrue :
+          ¬ (EvmYul.UInt256.isZero
+            (EvmYul.UInt256.shiftRight value (word checkShift)) != zero) =
+              true := by
+        intro hTrue
+        exact hShiftNonzero ((isZero_truthy_iff _).mp hTrue)
+      exact Bool.eq_false_of_not_eq_true hNotTrue
+    simp [hLog, shouldRunStep, hBoolFalse]
+
 def applyHighestBitStep (highestBit ret : Nat) (step : Nat × Nat) : Nat :=
   if highestBit + ret < step.fst then ret + step.snd else ret
 
