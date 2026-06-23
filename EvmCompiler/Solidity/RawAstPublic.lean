@@ -33,6 +33,38 @@ def compileArtifactFromRawSolcIr? (rawJson : String)
           | .ok linkerSymbols =>
               program.compileArtifactWithLinkerSymbols? linkerSymbols
 
+theorem compileArtifactFromRawSolcIr?_decoded
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (hCompile :
+      compileArtifactFromRawSolcIr? rawJson selection = some artifact) :
+    ∃ (program : Frontend.Program)
+        (linkerSymbols : List (Frontend.Name × Frontend.Word)),
+      decodeAndElaborateSolcIr? rawJson selection = some program ∧
+        decodeLinkerSymbols? rawJson selection = some linkerSymbols ∧
+          program.compileArtifactWithLinkerSymbols? linkerSymbols =
+            some artifact := by
+  unfold compileArtifactFromRawSolcIr? at hCompile
+  cases hParse : Lean.Json.parse rawJson with
+  | error err =>
+      simp [hParse] at hCompile
+  | ok json =>
+      cases hDecode : decodeAndElaborateSolcIrJson json selection with
+      | error err =>
+          simp [hParse, hDecode] at hCompile
+      | ok program =>
+          cases hLinker : decodeLinkerSymbolsJson json selection with
+          | error err =>
+              simp [hParse, hDecode, hLinker] at hCompile
+          | ok linkerSymbols =>
+              have hProgramCompile :
+                  program.compileArtifactWithLinkerSymbols? linkerSymbols =
+                    some artifact := by
+                simpa [hParse, hDecode, hLinker] using hCompile
+              refine ⟨program, linkerSymbols, ?_, ?_, hProgramCompile⟩
+              · simp [decodeAndElaborateSolcIr?, hParse, hDecode]
+              · simp [decodeLinkerSymbols?, hParse, hLinker]
+
 theorem compileArtifactFromRawSolcIr?_valid
     {rawJson : String} {selection : Selection}
     {artifact : Frontend.Program.Artifact}

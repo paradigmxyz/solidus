@@ -10,8 +10,12 @@ through `irOptimizedAst`. Solidity lowering, source optimization,
 rematerialization, and source-level memory spilling belong to that frontend.
 The checked backend starts at the resulting Yul program.
 
-The executable adapter matrix currently pins solc 0.8.26 and 0.8.35 to Cancun;
-the exact Permit2 gate retains solc 0.8.17 with an explicit London target.
+The executable raw-frontend adapter matrix currently pins solc 0.8.26 and
+0.8.35 to Cancun because those pins emit structured `irOptimizedAst` for the
+production corpus. Older exact-version suites, including Permit2 on solc
+0.8.17/London, may remain legacy bridge regression coverage, but they do not
+join the raw production theorem unless that solc output contains structured
+`irOptimizedAst`.
 Accepted frontend requests must name London, Paris, Shanghai, or Cancun;
 newer fork targets fail closed until their instruction semantics are modeled.
 
@@ -100,9 +104,12 @@ Next raw frontend layer:
   stack-too-deep; EntryPoint includes solc bytecode and raw Lean artifact
   checks for creation/runtime.
 - [x] Add a pinned Permit2 version-boundary gate: unmodified full Permit2 pins
-  `pragma solidity 0.8.17`, so supported raw solc 0.8.26 and 0.8.35 fail
-  closed before raw AST production; the legacy solc-0.8.17/Python-normalized
-  bridge path is not counted as production raw coverage.
+  `pragma solidity 0.8.17`; exact solc 0.8.17 compiles Permit2 bytecode under
+  London but emits no `irOptimizedAst`, so the Lean raw path fails closed.
+  Supported raw solc 0.8.26 and 0.8.35 also fail closed before raw AST
+  production because of the exact pragma. The legacy
+  solc-0.8.17/Python-normalized bridge path remains regression coverage, not
+  production raw-theorem coverage.
 - [ ] Differentially compare raw Lean elaboration against the old bridge over
   both pinned solc versions and the full corpus: Aave, Permit2, Safe,
   EntryPoint, PoolManager, all real suites, and adversarial fixtures.
