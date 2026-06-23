@@ -8,23 +8,48 @@ full production EVM.
 ## Public Theorem
 
 The primary theorem is
-`Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished`. Its explicit hypotheses
-are:
+`Yul.EndToEnd.optimizedSolcYulToRawBytecode`. Its only explicit hypothesis is:
 
 1. `hObject`: running the checked recursive object compiler produced the named
    artifact.
-2. `hFinished`: the canonical parameterized Yul execution reached only genuine
-   terminal or runtime-error leaves, rather than a structurally truncated
-   source-semantics leaf.
 
-`hObject` is an executable compiler equation, not externally supplied proof
-evidence. `hFinished` is an execution condition: every open-world branch must
-reach a halt/revert or supported runtime error without exhausting source proof
-fuel. Arbitrary recursive Yul need not terminate, so no sound compiler can
-derive this uniformly from syntax. Malformed-source exclusion is no longer
-part of this premise: `truncated_iff_outOfFuel` proves that public truncation is
-exactly source `OutOfFuel`, while checked validation and scoped preservation
-derive missing-name, arity, expression, and contract/function facts internally.
+`hObject` is the graph equation of an executable partial compiler, not
+externally supplied proof evidence. The theorem names an `artifact`, so the
+equation ties that value to the exact result computed from `object` and
+`linkerSymbols`; an arbitrary artifact cannot satisfy it. A caller obtains the
+equation directly by evaluating and case-splitting on the compiler:
+
+```lean
+match hCompile :
+    object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+      linkerSymbols with
+| none => -- checked rejection; there is no artifact to execute
+| some artifact =>
+    Yul.EndToEnd.optimizedSolcYulToRawBytecode hCompile
+```
+
+The equation cannot be derived for every input because the checked compiler is
+intentionally fail-closed: malformed, unsupported, or unschedulable inputs
+return `none`. An unconditional theorem returning an artifact for every object
+would incorrectly assert compiler totality. A theorem stated by matching on the
+compiler result could hide `hObject` syntactically, but would have exactly the
+same logical content.
+
+The primary theorem has no `hFinished`, `hTerminal`, or source-completion
+premise. For every source semantic-fuel bound it preserves the exact ordered
+interaction prefix up to source `OutOfFuel`; at truncation it makes no claim
+about the target suffix. The derived theorem
+`Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished` accepts `hFinished` only
+when a caller wants to upgrade that prefix result to a related final outcome.
+There `hFinished` is an execution fact saying every open-world branch reaches a
+genuine halt or supported runtime error without exhausting the chosen source
+semantic fuel. It is not an assumption of primary compiler correctness, and
+arbitrary recursive Yul cannot satisfy it uniformly.
+
+Malformed-source exclusion is not hidden in either theorem:
+`truncated_iff_outOfFuel` proves that public truncation is exactly source
+`OutOfFuel`, while checked validation and scoped preservation derive
+missing-name, arity, expression, and contract/function facts internally.
 
 ## Derived Facts
 
@@ -41,8 +66,8 @@ Successful artifact construction internally derives all of the following:
 - `memoryguard(size) = size` for the stack-only backend;
 - canonical Yul-to-Functions and Functions-to-Expressions initial relations;
 - exact installation of the compiled byte image for `CODESIZE`/`CODECOPY`;
-- target-fuel bounds and exclusion of compiler-introduced structural
-  `OutOfFuel` whenever the source run is finished;
+- target-fuel bounds preserving every source-visible prefix, plus exclusion of
+  compiler-introduced structural `OutOfFuel` in the derived all-finished result;
 - TypedCfg generation, certification, assembly acceptance, compact relocation,
   byte decoding, the code/data `INVALID` sentinel, child-object layout, linker
   substitution, and the exact final image.
