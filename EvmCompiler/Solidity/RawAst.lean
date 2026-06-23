@@ -1174,6 +1174,75 @@ theorem exec_clzHelperSpec_ret_eq_run
 
 end ClzHelperExecution
 
+namespace ClzCallReplacement
+
+abbrev Env := Name → Option Word
+
+def clzModel (value : Word) : Word :=
+  ClzHelperModel.run value
+
+mutual
+  def evalPureExpr? (env : Env) : Frontend.Expr → Option Word
+    | .lit value => some value
+    | .var name => env name
+    | .call .primitive callee args => do
+        let values ← evalPureExprList? env args
+        ClzHelperExecution.evalPrimitive? callee values
+    | _ => none
+
+  def evalPureExprList? (env : Env) :
+      List Frontend.Expr → Option (List Word)
+    | [] => some []
+    | expr :: rest => do
+        let head ← evalPureExpr? env expr
+        let tail ← evalPureExprList? env rest
+        some (head :: tail)
+end
+
+def evalGeneratedHelperCall? (argName returnName : Name)
+    (fn : Frontend.FunctionDef) (value initialRet : Word) : Option Word :=
+  (ClzHelperExecution.execStmts? argName returnName
+      { arg := value, ret := initialRet }
+      fn.body).map (fun state => state.ret)
+
+def evalHelperCallExpr? (helper argName returnName : Name)
+    (fn : Frontend.FunctionDef) (env : Env)
+    (expr : Frontend.Expr) (initialRet : Word) : Option Word :=
+  match expr with
+  | .call .user callee [argExpr] =>
+      if callee = helper then do
+        let value ← evalPureExpr? env argExpr
+        evalGeneratedHelperCall? argName returnName fn value initialRet
+      else
+        none
+  | _ => none
+
+theorem evalGeneratedHelperCall_eq_clzModel
+    {fn : Frontend.FunctionDef} {argName returnName : Name}
+    (hSpec : ClzHelperSpec fn argName returnName)
+    (hNames : argName ≠ returnName)
+    (value initialRet : Word) :
+    evalGeneratedHelperCall? argName returnName fn value initialRet =
+      some (clzModel value) := by
+  unfold evalGeneratedHelperCall? clzModel
+  exact
+    ClzHelperExecution.exec_clzHelperSpec_ret_eq_run
+      hSpec hNames value initialRet
+
+theorem evalHelperCallExpr_eq_clzModel
+    {helper argName returnName : Name} {fn : Frontend.FunctionDef}
+    {env : Env} {argExpr : Frontend.Expr} {value initialRet : Word}
+    (hSpec : ClzHelperSpec fn argName returnName)
+    (hNames : argName ≠ returnName)
+    (hArg : evalPureExpr? env argExpr = some value) :
+    evalHelperCallExpr? helper argName returnName fn env
+        (.call .user helper [argExpr]) initialRet =
+      some (clzModel value) := by
+  simp [evalHelperCallExpr?, hArg,
+    evalGeneratedHelperCall_eq_clzModel hSpec hNames, clzModel]
+
+end ClzCallReplacement
+
 mutual
   def Literal.elaborate : Raw.Literal → DecodeM Frontend.Expr
     | .number value => .ok (.lit value)
@@ -2118,6 +2187,33 @@ theorem Object.elaboratePreservingOrder?_clzHelper_exec_ret_eq_run
   have hNames : arg ≠ ret :=
     Object.clzHelperNamesDistinct?_arg_ne hCode hCodeElab hDistinctBool
   exact Elab.elaborateCode_clzHelper_exec_ret_eq_run hCodeElab hNames
+
+theorem Object.elaboratePreservingOrder?_clzHelperCall_eq_clzModel
+    {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
+    {frontend : Frontend.Object} {code : List Raw.Stmt}
+    {helper arg ret : Name} {env : Elab.ClzCallReplacement.Env}
+    {argExpr : Frontend.Expr} {value initialRet : Word}
+    (hElab :
+      Object.elaboratePreservingOrder? obj evmVersion = .ok frontend)
+    (hCode : obj.code? = some code)
+    (hCodeElab :
+      Elab.elaborateCode code =
+        .ok (frontend.dispatcher, frontend.functions,
+          some helper, some arg, some ret))
+    (hArg :
+      Elab.ClzCallReplacement.evalPureExpr? env argExpr = some value) :
+    ∃ fn,
+      (helper, fn) ∈ frontend.functions ∧
+        Elab.ClzCallReplacement.evalHelperCallExpr?
+            helper arg ret fn env (.call .user helper [argExpr]) initialRet =
+          some (Elab.ClzCallReplacement.clzModel value) := by
+  rcases Object.elaboratePreservingOrder?_clzHelper_exec_ret_eq_run
+      hElab hCode hCodeElab with
+    ⟨fn, hMem, hExec⟩
+  refine ⟨fn, hMem, ?_⟩
+  simp [Elab.ClzCallReplacement.evalHelperCallExpr?,
+    Elab.ClzCallReplacement.evalGeneratedHelperCall?,
+    Elab.ClzCallReplacement.clzModel, hArg, hExec]
 
 def walkObjectsFuel : Nat → Object → List Object
   | 0, obj => [obj]

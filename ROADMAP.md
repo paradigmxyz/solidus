@@ -165,9 +165,12 @@ Next raw frontend layer:
   helper-body frontend fragment over the same `UInt256` primitives and proves
   its returned word equals `ClzHelperModel.run`; the spec and raw-code
   elaboration lift theorems expose that fact for generated helper entries
-  returned by successful elaboration. Production raw elaboration now fail-closes
-  unless the generated `clz` argument/result names are distinct, and exposes the
-  checked condition through a wrapper theorem that discharges the
+  returned by successful elaboration. `ClzCallReplacement` now proves that an
+  evaluated raw `clz(x)` replacement call to the generated helper returns
+  `ClzHelperModel.run x`, and successful production raw object elaboration
+  exposes that theorem for its generated helper entry. Production raw elaboration
+  now fail-closes unless the generated `clz` argument/result names are distinct,
+  and exposes the checked condition through a wrapper theorem that discharges the
   helper-execution theorem's name premise. Retained
   nested function-definition statements are alpha-renamed to generated function
   names before their checked frontend no-op lowering. Raw production elaboration
@@ -184,8 +187,9 @@ Next raw frontend layer:
   exact ordered Yul function entries consumed by the backend, with
   `Frontend.Object.toSolcYulOrderedProgram?_functionDefStubsLoweredToEntries`
   pinned in the verification root.
-  Semantic preservation of the helper and nested
-  hoist/alpha-renaming passes remains open.
+  The remaining `clz` semantic gap is the all-word equation between
+  `ClzHelperModel.run` and the declared source/reference meaning; nested
+  hoist/alpha-renaming semantic preservation also remains open.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose
@@ -196,10 +200,11 @@ Next raw frontend layer:
   Standard JSON decoding, Lean-decoded linker metadata, frontend validation,
   and artifact construction into the unconditional optimized-Yul
   finite-prefix theorem without a normalized Python program premise.
-- [ ] Close the remaining raw frontend semantic-preservation work for generated
-  `clz` helper expansion and nested-function hoist/alpha-renaming; do not
-  create a Yul-to-bytecode proof corridor or depend on the parallel hFinished
-  work.
+- [ ] Close the remaining raw frontend semantic-preservation work by composing
+  the generated `clz` helper replacement theorem with the all-word source
+  reference equation and proving nested-function hoist/alpha-renaming
+  preservation; do not create a Yul-to-bytecode proof corridor or depend on the
+  parallel hFinished work.
 
 ## Migration
 

@@ -67,6 +67,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.boundaryInputsMatchReference
 #check EvmCompiler.Solidity.RawAst.Elab.ClzHelperExecution.exec_clzHelperBody_ret_eq_run
 #check EvmCompiler.Solidity.RawAst.Elab.ClzHelperExecution.exec_clzHelperSpec_ret_eq_run
+#check EvmCompiler.Solidity.RawAst.Elab.ClzCallReplacement.evalHelperCallExpr_eq_clzModel
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_parts
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_mem
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_shape
@@ -84,6 +85,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_functionDefStubsRetained
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_frontendValidated
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelper_exec_ret_eq_run
+#check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelperCall_eq_clzModel
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_parts
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_parts
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_objectParts
@@ -190,6 +192,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.boundaryInputsMatchReference
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperExecution.exec_clzHelperBody_ret_eq_run
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperExecution.exec_clzHelperSpec_ret_eq_run
+#print axioms EvmCompiler.Solidity.RawAst.Elab.ClzCallReplacement.evalHelperCallExpr_eq_clzModel
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_parts
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_shape
@@ -207,6 +210,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_functionDefStubsRetained
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_frontendValidated
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelper_exec_ret_eq_run
+#print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelperCall_eq_clzModel
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_objectParts
