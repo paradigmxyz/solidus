@@ -70,10 +70,15 @@ theorem recursiveBoundHeads
       | Lit value =>
           exact FunctionsInteractionPreparedArgs.boundDeferred
             (by simp [Expr.deferredBoundArgSafe?])
+            (by intro name hEq; simp at hEq)
             hLayoutHead hTargetFuel
       | Var name =>
           exact FunctionsInteractionPreparedArgs.boundDeferred
             (by simp [Expr.deferredBoundArgSafe?])
+            (by
+              intro queried hEq
+              cases hEq
+              exact SolcValidation.exprOk_var_mem hExprOk)
             hLayoutHead hTargetFuel
       | Call callee args =>
           cases callee with
@@ -191,8 +196,9 @@ theorem recursiveCondition
             (targetFuel := remaining)
             (codeOverride := some sourceProgram.contract)
             (program := targetProgram.toFunctions) (ctx := ctx)
-            (by simp [Expr.deferredBoundArgSafe?]) hLower hScoped hDomain
-            hTargetScope
+            (by simp [Expr.deferredBoundArgSafe?])
+            (by intro name hEq; simp at hEq)
+            hLower hScoped hDomain hTargetScope
           exact FunctionsInteractionPreparedCondition.ofStablePrepared hPrepared
       | Var name =>
           obtain ⟨remaining, rfl⟩ : ∃ remaining, targetFuel = remaining + 1 :=
@@ -202,8 +208,12 @@ theorem recursiveCondition
             (targetFuel := remaining)
             (codeOverride := some sourceProgram.contract)
             (program := targetProgram.toFunctions) (ctx := ctx)
-            (by simp [Expr.deferredBoundArgSafe?]) hLower hScoped hDomain
-            hTargetScope
+            (by simp [Expr.deferredBoundArgSafe?])
+            (by
+              intro queried hEq
+              cases hEq
+              exact SolcValidation.exprOk_var_mem hExprOk)
+            hLower hScoped hDomain hTargetScope
           exact FunctionsInteractionPreparedCondition.ofStablePrepared hPrepared
       | Call callee args =>
           cases callee with

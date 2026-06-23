@@ -994,7 +994,8 @@ compares a fallback call against full solc bytecode through Forge.  It also runs
 Lean decode, bridge-summary, and backend-check preflight over a wrapper around
 the real `Commands` library, covering command-byte flag masking, command-type
 masking, nested dispatch bands, `EXECUTE_SUB_PLAN`, and the reserved/third-party
-command range while recording the current runtime `functions_compile` blocker:
+command range. The runtime reaches a strict checked bytecode artifact and is
+compared against full solc through Forge:
 
 ```sh
 SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
@@ -1019,10 +1020,10 @@ That summary lane exercises EIP-712 style struct hashing, dynamic memory arrays,
 solc's Yul AST.  A second decode/summary fixture around the real
 `SignatureVerification` library covers calldata signature slicing, compact and
 full signature decoding, `ecrecover` lowering through the precompile
- `staticcall` path, and timestamp/deadline checks surfaced by solc's Yul.  Both
- summary-only fixtures also report their runtime backend-check status and first
- failing stage so they can graduate into Forge comparison once the backend
- accepts the emitted Yul shape:
+`staticcall` path, and timestamp/deadline checks surfaced by solc's Yul. Both
+helper fixtures now require strict runtime backend checks with no failing stage.
+The signature lane also runs its Forge comparison; the PermitHash lane remains
+a checked-artifact and semantic-inventory gate:
 
 ```sh
 SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
@@ -1087,7 +1088,8 @@ scripts/test_solc_stack_spill_adversarial.sh
 The semantic and ordered-effect surface gates retain all supported low-level
 primitive families and also execute their address-independent behavior against
 full solc. The differential lane covers arithmetic, environment queries,
-storage/transient storage, `MCOPY`, CALL/CALLCODE/DELEGATECALL/STATICCALL,
+storage/transient storage, `MCOPY`, local `CODESIZE`/`CODECOPY`, external
+`EXTCODESIZE`/`EXTCODECOPY`/`EXTCODEHASH`, CALL/CALLCODE/DELEGATECALL/STATICCALL,
 successful CREATE/CREATE2, LOG0-LOG4, STOP, INVALID, SELFDESTRUCT, and explicit
 LOG/CALL/CREATE interleaving. ABI/control coverage separately includes empty,
 unknown-selector, truncated-static, missing-dynamic-tail, and invalid-enum
@@ -1110,6 +1112,16 @@ It is included in the supported solc `0.8.26`/`0.8.35` matrix:
 ```sh
 scripts/test_dynamic_storage_surface_backend.sh
 scripts/test_supported_solc_versions.sh
+```
+
+The CREATE lifecycle surface compiles both deployable contracts and both object
+selectors, then compares a persistent five-call sequence. It covers successful
+value-bearing constructor execution, constructor storage and logs, constructor
+revert-data copying, rollback of failed creation value/effects, and a repeated
+CREATE2 salt/initcode collision:
+
+```sh
+scripts/test_create_lifecycle_surface_backend.sh
 ```
 
 The reentrant try/catch surface runs a persistent self-call sequence through
@@ -1236,18 +1248,9 @@ unsigned/signed/string/bytes encoding, indefinite arrays, calldata copying,
 The same pinned checkout now also builds an `AggregatorV3Interface`-shaped
 fallback wrapper that records signed oracle rounds in storage, emits
 `AnswerUpdated`, returns ABI-encoded `latestRoundData`/`getRoundData` tuples,
-and exercises stale/no-data custom error reverts.  That lane runs Lean decode,
-bridge-summary validation, backend-check preflight, and a runtime-only Forge
-comparison automatically when the backend check reaches bytecode generation.
-
-The current pinned Chainlink runtime reaches bridge-summary compatibility
-`ready`, but the Lean backend-check still blocks at `functions_compile`.  The
-runtime-only full-solc-vs-Lean bytecode comparison is wired into the smoke and
-will run automatically once that backend check passes; until then the smoke
-reports `chainlink_cbor_runtime_compare=blocked` and
-`chainlink_cbor_runtime_backend_first_none=functions_compile`.  The aggregator
-lane reports its own `chainlink_aggregator_runtime_backend_check` and
-`chainlink_aggregator_runtime_backend_first_none` fields:
+and exercises stale/no-data custom error reverts. Both Chainlink lanes require
+strict runtime backend checks with `firstNone = none` and run runtime-only Forge
+comparisons against full solc:
 
 ```sh
 SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake INSTALL_SOLC=0 \
@@ -1262,7 +1265,8 @@ or `KEEP_TMP=1` to keep the generated bridge JSON files.
 The famous-repo smoke runner executes the pinned Uniswap v4 extload summary,
 Uniswap v4 bridge, Uniswap v4 Position, Uniswap Universal Router, Uniswap
 Permit2, Aave v3, Compound Comet, Solmate, Solady, OpenZeppelin, Chainlink,
-PRBMath, Solbase, Balancer v3, and OpenSea Seaport bridge smokes in one pass:
+PRBMath, Solbase, Balancer v3, OpenSea Seaport, Morpho, Safe, ENS, account
+abstraction, and EigenLayer BN254 bridge smokes in one pass:
 
 ```sh
 SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \

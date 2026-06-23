@@ -106,6 +106,9 @@ SURFACE_COMPARE="$OUTDIR/semantic-surface-execution.compare.txt"
     456 0)" \
   --calldata "$("$CAST_BIN" calldata 'memoryCopy(uint256,uint256)' 11 22)" \
   --calldata "$("$CAST_BIN" calldata \
+    'codeSummary(address)' \
+    0x0000000000000000000000000000000000000000)" \
+  --calldata "$("$CAST_BIN" calldata \
     'calls(address,bytes)' \
     0x0000000000000000000000000000000000000000 0x)" \
   --calldata "$("$CAST_BIN" calldata \
@@ -279,7 +282,7 @@ if arithmetic_compare.get("bridge_summary_1_unsupported_primitives") != "none":
 
 if surface_compare.get("contract_call_compare") != "pass":
     raise SystemExit(f"semantic-surface execution mismatch: {surface_compare!r}")
-if surface_compare.get("calls") != "8":
+if surface_compare.get("calls") != "9":
     raise SystemExit(f"semantic-surface execution call count changed: {surface_compare!r}")
 if surface_compare.get("bridge_summary_1_unsupported_primitives") != "none":
     raise SystemExit(f"semantic-surface execution reported unsupported calls: {surface_compare!r}")
@@ -303,7 +306,7 @@ print(f"retained_primitives={len(required)}")
 print(f"runtime_bytecode_bytes={bytecode_lines[0].split('=', 1)[1]}")
 print("creation_artifact=true")
 print("arithmetic_execution_compare_calls=3")
-print("semantic_execution_compare_calls=8")
+print("semantic_execution_compare_calls=9")
 print("terminal_execution_compare=stop-success,invalid-failure,selfdestruct-success")
 print("optimized_explicit_msize=solc_rejected")
 PY

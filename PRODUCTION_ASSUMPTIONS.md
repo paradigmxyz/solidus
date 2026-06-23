@@ -20,6 +20,11 @@ are:
 `hObject` is an executable compiler equation, not externally supplied proof
 evidence. `hFinished` is an execution condition. Arbitrary recursive Yul need
 not terminate, so no sound compiler can derive it uniformly from syntax.
+At present `SourceFinished` also excludes malformed source-interpreter failures.
+Checked validation and scoped-state invariants have begun deriving those cases
+internally (including deferred variable lookup), but a complete accepted-Yul
+validation/progress theorem has not yet separated them from the public
+execution condition.
 
 ## Derived Facts
 
@@ -113,7 +118,8 @@ inflate the optimized-Yul end-to-end theorem.
 
 Tests are evidence of implementation coverage, not substitutes for theorem
 scope. The release gates currently include both supported solc pins, generated
-pressure and semantic surfaces, exact Permit2, linked Aave Pool, linked
-PoolManager creation/runtime, and fourteen pinned real-repository suites. The
-kernel proof gate reports only `propext`, `Classical.choice`, and `Quot.sound`
-for the public theorem.
+pressure and semantic surfaces, executable local/external code inspection,
+constructor success/revert/rollback and CREATE2 collision, exact Permit2,
+linked Aave Pool, linked PoolManager creation/runtime, and fourteen pinned
+real-repository suites. The kernel proof gate reports only `propext`,
+`Classical.choice`, and `Quot.sound` for the public theorem.

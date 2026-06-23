@@ -159,6 +159,31 @@ contract SemanticSurfaceBox {
         }
     }
 
+    function codeSummary(address account)
+        external
+        view
+        returns (
+            bool localCodePresent,
+            bool localCopyHashed,
+            uint256 externalSize,
+            bytes32 externalHash,
+            bytes32 externalCopyHash
+        )
+    {
+        assembly {
+            let ptr := mload(0x40)
+            let localSize := codesize()
+            codecopy(ptr, 0, localSize)
+            localCodePresent := iszero(iszero(localSize))
+            localCopyHashed := iszero(iszero(keccak256(ptr, localSize)))
+
+            externalSize := extcodesize(account)
+            extcodecopy(account, ptr, 0, externalSize)
+            externalCopyHash := keccak256(ptr, externalSize)
+            externalHash := extcodehash(account)
+        }
+    }
+
     function memoryCopy(uint256 left, uint256 right)
         external
         pure

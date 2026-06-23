@@ -232,6 +232,7 @@ theorem deferred
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
     (hSafe : Expr.deferredBoundArgSafe? expr = true)
+    (hVisible : ∀ name, expr = .Var name → identName name ∈ layout)
     (hLower : Expr.lower1Unchecked? before expr =
       some (pre, lower, after))
     (hRel : FunctionsInteractionRelation.ScopedStateRel
@@ -296,24 +297,12 @@ theorem deferred
           subst lower
           cases hLookup : source.lookup? name with
           | none =>
-              have hTruncated :
-                  Truncated
-                    ({ exception := .UnknownIdentifier name,
-                        state := source } :
-                      Yul.InteractionSemantics.Failure) := by
-                trivial
-              simpa [Yul.InteractionSemantics.evalValues,
-                Yul.InteractionSemantics.stateModel,
-                Yul.Source.Canonical.evalValues,
-                Yul.Source.Effectful.evalValues,
-                Yul.Source.Effectful.Control.fail, hLookup] using
-                (Simulation.Interaction.ForwardRel.truncated
-                  (doneRel := DoneRel layout after [.var (identName name)]
-                    target ctx)
-                  (right := pure
-                    (Functions.Source.Effectful.Outcome.regular target,
-                      ctx))
-                  hTruncated)
+              obtain ⟨value, hDefined⟩ :=
+                hRel.sourceLookup_of_mem (hVisible name rfl)
+              have hDefined' : source.lookup? name = some value := by
+                simpa [identName] using hDefined
+              rw [hLookup] at hDefined'
+              cases hDefined'
           | some value =>
               have hTarget := hRel.state.lookup hLookup
               have hDone :
@@ -354,6 +343,7 @@ theorem deferred_arg
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
     (hSafe : Expr.deferredBoundArgSafe? expr = true)
+    (hVisible : ∀ name, expr = .Var name → identName name ∈ layout)
     (hLower : Expr.lower1Unchecked? before expr =
       some (pre, lower, after))
     (hRel : FunctionsInteractionRelation.ScopedStateRel
@@ -395,7 +385,7 @@ theorem deferred_arg
           have hHead := deferred
             (fuel := 0) (targetFuel := targetFuel)
             (codeOverride := codeOverride) (program := program) (ctx := ctx)
-            hSafe hLower hRel hDomain hTargetScope
+            hSafe hVisible hLower hRel hDomain hTargetScope
           rw [Functions.InteractionSemantics.Block.openRun_nil] at hHead
           apply Simulation.Interaction.ForwardRel.bind_custom hHead
           intro sourceDone targetDone hDone
@@ -427,7 +417,7 @@ theorem deferred_arg
           have hHead := deferred
             (fuel := residualFuel + 1) (targetFuel := targetFuel)
             (codeOverride := codeOverride) (program := program) (ctx := ctx)
-            hSafe hLower hRel hDomain hTargetScope
+            hSafe hVisible hLower hRel hDomain hTargetScope
           rw [Functions.InteractionSemantics.Block.openRun_nil] at hHead
           have hBound :
               Simulation.Interaction.ForwardRel Truncated
@@ -625,6 +615,7 @@ theorem direct
     {source : Yul.InteractionSemantics.State}
     {target : Functions.InteractionSemantics.State}
     (hSafe : Expr.deferredBoundArgSafe? expr = true)
+    (hVisible : ∀ name, expr = .Var name → identName name ∈ layout)
     (hHead : Expr.lower1Unchecked? stateRest expr =
       some (preHead, lowerHead, stateHead))
     (hRest :
@@ -678,7 +669,7 @@ theorem direct
           (targetFuel := 0)
           (codeOverride := codeOverride) (program := program)
           (ctx := ctxRest)
-          hSafe hHead hScopedRest hDomainRest hTargetScopeRest
+          hSafe hVisible hHead hScopedRest hDomainRest hTargetScopeRest
         rw [Functions.InteractionSemantics.Block.openRun_nil] at hHeadRel
         apply Simulation.Interaction.ForwardRel.bind_custom hHeadRel
         intro headSourceDone headTargetDone hHeadDone
@@ -833,7 +824,8 @@ theorem deferredHeadValue
     {codeOverride : Option EvmYul.Yul.Ast.YulContract}
     {program : Functions.Program} {layout : List Functions.Name}
     (hTargetFuel : 0 < targetFuel)
-    (hSafe : Expr.deferredBoundArgSafe? expr = true) :
+    (hSafe : Expr.deferredBoundArgSafe? expr = true)
+    (hVisible : ∀ name, expr = .Var name → identName name ∈ layout) :
     HeadValueForward fuel targetFuel expr pre lower before after
       codeOverride program layout := by
   intro hLower source target ctx hScoped hDomain hTargetScope
@@ -844,7 +836,7 @@ theorem deferredHeadValue
         (deferred_arg
           (fuel := fuel) (targetFuel := remaining)
           (codeOverride := codeOverride) (program := program) (ctx := ctx)
-          hSafe hLower hScoped hDomain hTargetScope)
+          hSafe hVisible hLower hScoped hDomain hTargetScope)
 
 /-- Store an expression owner's stable delayed value in the fresh temporary
 owned by bounded-argument lowering. -/
@@ -1026,12 +1018,13 @@ theorem boundDeferred
     {codeOverride : Option EvmYul.Yul.Ast.YulContract}
     {program : Functions.Program} {layout : List Functions.Name}
     (hSafe : Expr.deferredBoundArgSafe? expr = true)
+    (hVisible : ∀ name, expr = .Var name → identName name ∈ layout)
     (hLayout : ∀ name, name ∈ layout → name ∈ after.used)
     (hTargetFuel : pre.length + 1 < targetFuel) :
     BoundHeadForward fuel targetFuel expr pre lower before after final tmp
       codeOverride program layout :=
   bindHeadValue hLayout hTargetFuel
-    (deferredHeadValue (by omega) hSafe)
+    (deferredHeadValue (by omega) hSafe hVisible)
 
 /-- Compose a recursively prepared tail with one generated, fresh-bound head.
 This is the semantic counterpart of `UncheckedBoundLowering.bound`; recursive
@@ -1250,7 +1243,11 @@ theorem ofUncheckedLowering
               preRest.length + 2 ≤ targetFuel := by
         simpa using hProgramBudget
       have hRestForward := ih hRestOk hRestBudget hRestFuel
-      exact direct (initial := initial) hDirect.1 hHead hRestForward
+      exact direct (initial := initial) hDirect.1
+        (fun name hEq => by
+          subst expr
+          exact SolcValidation.exprOk_var_mem hOkParts.1)
+        hHead hRestForward
   | @bound stateRest stateHead stateFresh expr rest preRest preHead
       lowerRest lowerHead tmp hRest hHead _hDirect hFresh ih =>
       have hOkParts :

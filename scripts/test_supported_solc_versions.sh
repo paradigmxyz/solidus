@@ -18,7 +18,7 @@ for version in "${VERSIONS[@]}"; do
   output="$(SOLC="$compiler" "$ROOT/scripts/test_semantic_surface_backend.sh")"
   if [[ "$output" != *"semantic_surface_backend=pass"* ]] ||
       [[ "$output" != *"arithmetic_execution_compare_calls=3"* ]] ||
-      [[ "$output" != *"semantic_execution_compare_calls=8"* ]] ||
+      [[ "$output" != *"semantic_execution_compare_calls=9"* ]] ||
       [[ "$output" != *"terminal_execution_compare=stop-success,invalid-failure,selfdestruct-success"* ]]; then
     printf 'error: pinned solc %s failed the checked semantic surface\n%s\n' \
       "$version" "$output" >&2
@@ -69,6 +69,18 @@ for version in "${VERSIONS[@]}"; do
     exit 1
   fi
   printf '%s\n' "$reentrant_output"
+
+  create_output="$(SOLC="$compiler" \
+    "$ROOT/scripts/test_create_lifecycle_surface_backend.sh")"
+  if [[ "$create_output" != *"create_lifecycle_surface_backend=pass"* ]] ||
+      [[ "$create_output" != *"create_lifecycle_compare_calls=5"* ]] ||
+      [[ "$create_output" != *"create_lifecycle_constructor_rollback=true"* ]] ||
+      [[ "$create_output" != *"create_lifecycle_create2_collision=true"* ]]; then
+    printf 'error: pinned solc %s failed CREATE lifecycle coverage\n%s\n' \
+      "$version" "$create_output" >&2
+    exit 1
+  fi
+  printf '%s\n' "$create_output"
 
   effect_output="$(SOLC="$compiler" \
     "$ROOT/scripts/test_effect_ordering_surface_backend.sh")"

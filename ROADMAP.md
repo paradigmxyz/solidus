@@ -118,6 +118,11 @@ stack-only correctness boundary.
 - [ ] Add pinned real-world suites and generated adversarial cases for uncovered
   semantic families, then fix every backend rejection generically or record an
   honest supported-version/input-boundary rejection.
+- [ ] Separate source termination from malformed-source exclusion in the
+  all-finished theorem. Accepted-expression validation plus the scoped-state
+  invariant now derives deferred-variable lookup in the bounded-argument
+  owner; the remaining generic direct-expression path and full accepted-Yul
+  validation/progress theorem are not yet discharged.
 - [ ] Keep exact Permit2, Aave Pool, PoolManager, adversarial pressure, broad
   corpus, Lean, architecture, trust, frontend, and diff gates green.
 

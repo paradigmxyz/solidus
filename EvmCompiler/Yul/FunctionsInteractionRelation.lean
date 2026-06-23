@@ -1881,6 +1881,20 @@ theorem assignmentCheck
   simp [EvmYul.Yul.checkAssignment, EvmYul.Yul.firstDuplicate?,
     EvmYul.Yul.firstUndeclared?, EvmYul.Yul.State.lookup?, hLookup]
 
+theorem sourceLookup_of_mem
+    {layout : List Functions.Name}
+    {source : SourceState} {target : TargetState}
+    (hRel : ScopedStateRel layout source target)
+    {name : Functions.Name} (hName : name ∈ layout) :
+    ∃ value, source.lookup? name = some value := by
+  rcases hRel.state with
+    ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
+  obtain ⟨value, hLookup⟩ :=
+    hRel.defined sourceShared sourceVars hSource name hName
+  refine ⟨value, ?_⟩
+  subst source
+  simpa [EvmYul.Yul.State.lookup?] using hLookup
+
 theorem assignmentCheck_many
     {layout names : List Functions.Name}
     {source : SourceState} {target : TargetState}

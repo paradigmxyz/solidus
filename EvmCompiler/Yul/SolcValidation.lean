@@ -460,6 +460,15 @@ theorem exprOk_functionCall_lookup_exists
       | Def params returns body =>
           exact ⟨params, returns, body, rfl⟩
 
+theorem exprOk_var_mem
+    {profile : DialectProfile} {contract : AstContract}
+    {vars : List Name} {expected : Nat}
+    {name : EvmYul.Identifier}
+    (hOk : ExprOk? profile contract vars expected (.Var name) = true) :
+    identName name ∈ vars := by
+  simp [ExprOk?] at hOk
+  exact hOk.2
+
 theorem exprOk_functionCall_parts
     {profile : DialectProfile} {contract : AstContract}
     {vars : List Name} {expected : Nat}
