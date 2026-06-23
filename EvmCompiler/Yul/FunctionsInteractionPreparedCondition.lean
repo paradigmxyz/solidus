@@ -768,6 +768,8 @@ condition evaluation. Arguments stay inline, while the primitive effect still
 uses the shared compiler-selected open-world theorem. -/
 theorem ofDirectPrimitiveLowering
     (hPrimitive : FunctionsInteractionPrimitive.CompilerSelected)
+    {profile : SolcValidation.DialectProfile}
+    {contract : AstContract}
     {argsFuel targetFuel : Nat}
     {prim : EvmYul.Operation .Yul} {args : List AstExpr}
     {lower : Locals.Expr 1} {before : Fresh.State}
@@ -778,6 +780,8 @@ theorem ofDirectPrimitiveLowering
     {target : Functions.InteractionSemantics.State}
     (hLowering : Expr.UncheckedDirectPrimitiveLowering
       before prim args lower)
+    (hArgsOk : SolcValidation.ExprsOk?
+      profile contract layout args = true)
     (hTargetFuel : 0 < targetFuel)
     (hScoped : ScopedStateRel layout source target)
     (hDomain : TargetDomainWithin before.used target.vars)
@@ -797,10 +801,14 @@ theorem ofDirectPrimitiveLowering
           Expr.List.toSeq? lowerArgs.reverse
               (Expressions.Structured.BasicOp.inputs op) = some seq := by
         simpa [Expr.List.toStackSeq?] using hSeq
+      have hArgsOkReverse :
+          SolcValidation.ExprsOk? profile contract layout args.reverse =
+            true :=
+        SolcValidation.exprsOk_reverse hArgsOk
       have hArgsRel :=
-        (FunctionsInteractionExpression.compilerDirectAt
-          codeOverride argsFuel).evalArgs
-          hLowerReverse hDirectSeq hScoped.state
+        (FunctionsInteractionExpression.compilerScopedDirectAt
+          profile contract codeOverride argsFuel).evalArgs
+          hArgsOkReverse hLowerReverse hDirectSeq hScoped
       have hPrimitiveRel :=
         FunctionsInteractionExpression.Expr.primitive_of_args
           hPrimitive (primitiveFuel := argsFuel) hOp hOutputs hArgsRel

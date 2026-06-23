@@ -470,6 +470,8 @@ theorem bindDirectEval
 only the outer bounded-argument result is materialized in a fresh local. -/
 theorem boundDirectOfLowering
     (hPrimitive : FunctionsInteractionPrimitive.CompilerSelected)
+    {profile : SolcValidation.DialectProfile}
+    {contract : AstContract}
     {argsFuel targetFuel : Nat}
     {prim : EvmYul.Operation .Yul} {args : List AstExpr}
     {lower : Locals.Expr 1}
@@ -478,6 +480,8 @@ theorem boundDirectOfLowering
     {program : Functions.Program} {layout : List Functions.Name}
     (hLowering : Expr.UncheckedDirectPrimitiveLowering
       before prim args lower)
+    (hArgsOk : SolcValidation.ExprsOk?
+      profile contract layout args = true)
     (hFresh : Fresh.fresh? before = some (tmp, final))
     (hLayout : ∀ name, name ∈ layout → name ∈ before.used)
     (hTargetFuel : 1 < targetFuel) :
@@ -495,10 +499,14 @@ theorem boundDirectOfLowering
           Expr.List.toSeq? lowerArgs.reverse
               (Expressions.Structured.BasicOp.inputs op) = some seq := by
         simpa [Expr.List.toStackSeq?] using hSeq
+      have hArgsOkReverse :
+          SolcValidation.ExprsOk? profile contract layout args.reverse =
+            true :=
+        SolcValidation.exprsOk_reverse hArgsOk
       have hArgsRel :=
-        (FunctionsInteractionExpression.compilerDirectAt
-          codeOverride argsFuel).evalArgs
-          hLowerReverse hDirectSeq hScoped.state
+        (FunctionsInteractionExpression.compilerScopedDirectAt
+          profile contract codeOverride argsFuel).evalArgs
+          hArgsOkReverse hLowerReverse hDirectSeq hScoped
       have hPrimitiveRel :=
         FunctionsInteractionExpression.Expr.primitive_of_args
           hPrimitive (primitiveFuel := argsFuel) hOp hOutputs hArgsRel
@@ -601,10 +609,13 @@ theorem boundPrimitive
     subst fuel
     cases hLowering with
     | direct hDirect hOp hArgs hSeq hOutputs =>
+        have hArgsOk :=
+          SolcValidation.exprsOk_of_exprOk_primitive hExprOk
         exact
           boundDirectOfLowering hPrimitive
             (Expr.UncheckedDirectPrimitiveLowering.primitive
               hOp hArgs hSeq hOutputs)
+            hArgsOk
             hFresh hLayoutBefore (by simpa using hTargetFuel)
     | bound hBound hOp hArgs hSeq hOutputs =>
         have hArgsOk :=
@@ -688,17 +699,23 @@ theorem zeroOfLowering
       cases hLowering with
       | direct hDirect hOp hArgs hSeq hOutputs =>
           rename_i op lowerArgs seq
+          have hArgsOk :=
+            SolcValidation.exprsOk_of_exprOk_primitive hExprOk
           have hLowerReverse :
               Expr.List.toLocals1? args.reverse = some lowerArgs.reverse :=
             Expr.List.toLocals1?_reverse hArgs
           have hDirectSeq :
-              Expr.List.toSeq? lowerArgs.reverse
-                  (Expressions.Structured.BasicOp.inputs op) = some seq := by
-            simpa [Expr.List.toStackSeq?] using hSeq
+            Expr.List.toSeq? lowerArgs.reverse
+                (Expressions.Structured.BasicOp.inputs op) = some seq := by
+              simpa [Expr.List.toStackSeq?] using hSeq
+          have hArgsOkReverse :
+              SolcValidation.ExprsOk? profile sourceProgram.contract layout
+                  args.reverse = true :=
+            SolcValidation.exprsOk_reverse hArgsOk
           have hArgsRel :=
-            (FunctionsInteractionExpression.compilerDirectAt
-              codeOverride argsFuel).evalArgs
-              hLowerReverse hDirectSeq hRel.state
+            (FunctionsInteractionExpression.compilerScopedDirectAt
+              profile sourceProgram.contract codeOverride argsFuel).evalArgs
+              hArgsOkReverse hLowerReverse hDirectSeq hRel
           have hPrimitiveRel :=
             FunctionsInteractionExpression.Expr.primitive_of_args
               hPrimitive (primitiveFuel := argsFuel) hOp hOutputs hArgsRel

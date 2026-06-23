@@ -120,9 +120,10 @@ stack-only correctness boundary.
   honest supported-version/input-boundary rejection.
 - [ ] Separate source termination from malformed-source exclusion in the
   all-finished theorem. Accepted-expression validation plus the scoped-state
-  invariant now derives deferred-variable lookup in the bounded-argument
-  owner; the remaining generic direct-expression path and full accepted-Yul
-  validation/progress theorem are not yet discharged.
+  invariant now derives variable lookup in both deferred and direct pure
+  expression owners, and the validated production spine is guarded against the
+  weaker generic interface. A full accepted-Yul validation/progress theorem is
+  still needed to narrow the public truncation predicate itself.
 - [ ] Keep exact Permit2, Aave Pool, PoolManager, adversarial pressure, broad
   corpus, Lean, architecture, trust, frontend, and diff gates green.
 

@@ -22,9 +22,9 @@ evidence. `hFinished` is an execution condition. Arbitrary recursive Yul need
 not terminate, so no sound compiler can derive it uniformly from syntax.
 At present `SourceFinished` also excludes malformed source-interpreter failures.
 Checked validation and scoped-state invariants have begun deriving those cases
-internally (including deferred variable lookup), but a complete accepted-Yul
-validation/progress theorem has not yet separated them from the public
-execution condition.
+internally (including deferred and direct pure variable lookup), but a complete
+accepted-Yul validation/progress theorem has not yet separated them from the
+public execution condition.
 
 ## Derived Facts
 

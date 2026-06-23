@@ -529,6 +529,33 @@ theorem exprOk_of_exprsOk_of_mem
       · exact hOk.1
       · exact exprOk_of_exprsOk_of_mem hOk.2 hTail
 
+theorem exprsOk_append
+    {profile : DialectProfile} {contract : AstContract}
+    {vars : List Name} :
+    ∀ (left right : List AstExpr),
+      ExprsOk? profile contract vars (left ++ right) = true ↔
+        ExprsOk? profile contract vars left = true ∧
+          ExprsOk? profile contract vars right = true
+  | [], right => by simp [ExprsOk?]
+  | head :: tail, right => by
+      simp [ExprsOk?, exprsOk_append tail right, and_assoc]
+
+theorem exprsOk_reverse
+    {profile : DialectProfile} {contract : AstContract}
+    {vars : List Name} :
+    ∀ {args : List AstExpr},
+      ExprsOk? profile contract vars args = true →
+        ExprsOk? profile contract vars args.reverse = true
+  | [], _ => by simp [ExprsOk?]
+  | head :: tail, hOk => by
+      have hParts :
+          ExprOk? profile contract vars 1 head = true ∧
+            ExprsOk? profile contract vars tail = true := by
+        simpa [ExprsOk?] using hOk
+      rw [List.reverse_cons, (exprsOk_append tail.reverse [head])]
+      refine ⟨exprsOk_reverse hParts.2, ?_⟩
+      simpa [ExprsOk?] using hParts.1
+
 theorem returns_singleton_of_exprOk_functionCall
     {profile : DialectProfile} {contract : AstContract}
     {vars : List Name} {functionName : Name} {args : List AstExpr}

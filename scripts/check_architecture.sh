@@ -109,6 +109,14 @@ if rg -ni 'permit2|aave|poolmanager' \
   fail 'stack allocation must not contain contract-specific behavior'
 fi
 
+if rg -n 'FunctionsInteractionExpression\.(compilerDirectAt|directAt)' \
+    EvmCompiler/Yul/FunctionsInteractionPrepared*.lean \
+    EvmCompiler/Yul/FunctionsInteractionRecursive*.lean \
+    EvmCompiler/Yul/FunctionsInteractionSelected*.lean \
+    EvmCompiler/Yul/FunctionsInteractionProgram.lean; then
+  fail 'validated Yul preservation must retain scoped variable-definedness'
+fi
+
 if rg -n '\b(sorry|admit|sorryAx)\b' EvmCompiler --glob '*.lean'; then
   fail 'production Lean tree contains a proof hole'
 fi

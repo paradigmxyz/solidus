@@ -225,12 +225,15 @@ theorem recursiveCondition
                   (by simpa [Expr.lower1Unchecked?] using hLower)
               cases hPrimitiveLower with
               | direct hDirect hOp hArgs hSeq hOutputs =>
+                  have hArgsOk :=
+                    SolcValidation.exprsOk_of_exprOk_primitive hExprOk
                   exact
                     FunctionsInteractionPreparedCondition.ofDirectPrimitiveLowering
                       FunctionsInteractionClosedPrimitive.compilerSelected
                       (argsFuel := previous)
                       (Expr.UncheckedDirectPrimitiveLowering.primitive
                         hOp hArgs hSeq hOutputs)
+                      hArgsOk
                       hTargetPositive hScoped hDomain hTargetScope
               | bound hBound hOp hArgs hSeq hOutputs =>
                   have hArgsOk :=
