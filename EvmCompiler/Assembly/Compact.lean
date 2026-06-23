@@ -3708,6 +3708,131 @@ theorem compile?_preparation_openRunNResult_terminal_rel
                       targetHalt.output = sourceHalt.output at hResult
                   exact .done (.ok hResult)
 
+/-- Preparation preserves every finished branch. Unlike the terminal-only
+theorem, this also handles source falloff at the preparation boundary by
+matching the same `InvalidInstruction` in the prepared program. -/
+theorem compile?_preparation_openRunNResult_finished_rel
+    {sourceProgram : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Artifact}
+    (hCompile : compile? sourceProgram pinnedPushPcs = some artifact)
+    (fuel extra : Nat) {target source : EVMState}
+    (hBoundary : PreparationStateRel sourceProgram artifact target source)
+    (hFinished : Simulation.Interaction.AllDone
+      Assembly.InteractionSemantics.Finished
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        sourceProgram fuel source)) :
+    Simulation.Interaction.Rel RuntimeOutcomeRel
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        artifact.physicalSource (fuel + extra) target)
+      (Assembly.InteractionSemantics.Source.openRunNResult
+        sourceProgram fuel source) := by
+  induction fuel generalizing target source extra with
+  | zero =>
+      change Simulation.Interaction.AllDone
+        Assembly.InteractionSemantics.Finished
+        (.done (.ok (.running source))) at hFinished
+      cases hFinished with
+      | done hDone => exact False.elim hDone
+  | succ fuel ih =>
+      have hFinishedSucc : Simulation.Interaction.AllDone
+          Assembly.InteractionSemantics.Finished
+          (Assembly.InteractionSemantics.Source.openRunNResult
+            sourceProgram (fuel + 1) source) := by
+        simpa [Nat.succ_eq_add_one] using hFinished
+      rcases hBoundary with
+        ⟨sourcePc, preparedPc, hPair, hSourcePc, hTargetPc, hRuntime⟩
+      rcases hPair with hBlock | hEnd
+      · rcases hBlock with
+          ⟨block, hBlock, hBlockSource, hBlockPrepared⟩
+        have hBlockSourcePc :
+            source.pc = EvmYul.UInt256.ofNat block.sourcePc := by
+          simpa [hBlockSource] using hSourcePc
+        have hBlockTargetPc :
+            target.pc = EvmYul.UInt256.ofNat block.preparedPc := by
+          simpa [hBlockPrepared] using hTargetPc
+        obtain ⟨stepFuel, hStepFuel, hStep⟩ :=
+          compile?_preparationBlock_open_rel hCompile hBlock
+            hBlockTargetPc hBlockSourcePc hRuntime
+        have hSourceStep :=
+          compile?_preparation_source_openStepResult_eq_block
+            hCompile hBlock hBlockSourcePc
+        have hFinishedExpanded := hFinishedSucc
+        rw [Assembly.InteractionSemantics.Source.openRunNResult_succ,
+          hSourceStep] at hFinishedExpanded
+        have hStepFinished :=
+          Simulation.Interaction.AllDone.bind_inv hFinishedExpanded
+        have hStepStrong :=
+          Simulation.Interaction.Rel.strengthen_right hStep hStepFinished
+        let remaining := fuel + (extra + (1 - stepFuel))
+        have hFuel : Nat.succ fuel + extra = stepFuel + remaining := by
+          dsimp [remaining]
+          omega
+        rw [hFuel,
+          Assembly.InteractionSemantics.Source.openRunNResult_add]
+        rw [Assembly.InteractionSemantics.Source.openRunNResult_succ,
+          hSourceStep]
+        apply Simulation.Interaction.Rel.bind_custom hStepStrong
+        intro targetDone sourceDone hDone
+        rcases hDone with ⟨hRelated, hContinuationFinished⟩
+        cases hRelated with
+        | error hError => exact .done (.error hError)
+        | ok hResult =>
+            rename_i targetResult sourceResult
+            cases targetResult with
+            | running targetMid =>
+                cases sourceResult with
+                | running sourceMid =>
+                    change PreparationStateRel sourceProgram artifact
+                      targetMid sourceMid at hResult
+                    change Simulation.Interaction.AllDone
+                      Assembly.InteractionSemantics.Finished
+                      (Assembly.InteractionSemantics.Source.openRunNResult
+                        sourceProgram fuel sourceMid) at hContinuationFinished
+                    exact ih (extra + (1 - stepFuel)) hResult
+                      hContinuationFinished
+                | halted sourceHalt =>
+                    simp [PreparationStepResultRel] at hResult
+            | halted targetHalt =>
+                cases sourceResult with
+                | running sourceMid =>
+                    simp [PreparationStepResultRel] at hResult
+                | halted sourceHalt =>
+                    change targetHalt.kind = sourceHalt.kind /\
+                      SameRuntimeData targetHalt.state sourceHalt.state /\
+                        targetHalt.output = sourceHalt.output at hResult
+                    exact .done (.ok hResult)
+      · rcases hEnd with ⟨hSourceEnd, hPreparedEnd⟩
+        have hArtifact := compile?_valid hCompile
+        have hSourceToNat : source.pc.toNat = sourceProgram.byteLength := by
+          rw [hSourcePc, hSourceEnd]
+          exact hArtifact.sourcePCFits
+        have hTargetToNat :
+            target.pc.toNat = artifact.physicalSource.byteLength := by
+          rw [hTargetPc, hPreparedEnd]
+          exact hArtifact.physicalSourcePCFits
+        have hSourceStep :
+            Assembly.InteractionSemantics.Source.openStepResult
+                sourceProgram source =
+              .done (.error .InvalidInstruction) := by
+          unfold Assembly.InteractionSemantics.Source.openStepResult
+            Assembly.Source.stepResultWith
+          rw [hSourceToNat, instrAtPc_end_eq_none]
+          rfl
+        have hTargetStep :
+            Assembly.InteractionSemantics.Source.openStepResult
+                artifact.physicalSource target =
+              .done (.error .InvalidInstruction) := by
+          unfold Assembly.InteractionSemantics.Source.openStepResult
+            Assembly.Source.stepResultWith
+          rw [hTargetToNat, instrAtPc_end_eq_none]
+          rfl
+        rw [show Nat.succ fuel + extra = (fuel + extra) + 1 by omega,
+          Assembly.InteractionSemantics.Source.openRunNResult_succ,
+          hTargetStep]
+        rw [Assembly.InteractionSemantics.Source.openRunNResult_succ,
+          hSourceStep]
+        exact .done (.error rfl)
+
 /-- Actual compact-byte execution. Decoding is imported from EVMYulLean and
 instruction effects reuse the Assembly target kernels. -/
 def openStepResult (bytes : ByteArray) (state : EVMState) :
