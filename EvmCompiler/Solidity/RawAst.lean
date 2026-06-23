@@ -782,6 +782,15 @@ theorem clzHelperFunctionDef_shape (argName returnName : Name) :
       (clzHelperFunctionDef argName returnName).returns = [returnName] := by
   simp [clzHelperFunctionDef]
 
+theorem clzHelperFunctionDef_toYul?_some (argName returnName : Name) :
+    ∃ body,
+      Frontend.FunctionDef.toYul? (clzHelperFunctionDef argName returnName) =
+        some (.Def [argName] [returnName] body) := by
+  unfold clzHelperFunctionDef Frontend.FunctionDef.toYul?
+  simp [Frontend.Stmt.List.toYul?, Frontend.Stmt.toYul?,
+    Frontend.Expr.toYul?, Frontend.Expr.List.toYul?,
+    Frontend.Primitive.ofName?]
+
 mutual
   def Literal.elaborate : Raw.Literal → DecodeM Frontend.Expr
     | .number value => .ok (.lit value)
@@ -1115,6 +1124,20 @@ theorem elaborateCode_clzHelper_shape
       elaborateCode_clzHelper_mem hElab, ?_, ?_⟩
   · exact (clzHelperFunctionDef_shape arg ret).1
   · exact (clzHelperFunctionDef_shape arg ret).2
+
+theorem elaborateCode_clzHelper_toYul?_some
+    {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
+    {functions : List (Name × Frontend.FunctionDef)}
+    {helper arg ret : Name}
+    (hElab :
+      elaborateCode stmts = .ok
+        (dispatcher, functions, some helper, some arg, some ret)) :
+    ∃ body,
+      (helper, clzHelperFunctionDef arg ret) ∈ functions ∧
+        Frontend.FunctionDef.toYul? (clzHelperFunctionDef arg ret) =
+          some (.Def [arg] [ret] body) := by
+  rcases clzHelperFunctionDef_toYul?_some arg ret with ⟨body, hYul⟩
+  exact ⟨body, elaborateCode_clzHelper_mem hElab, hYul⟩
 
 theorem elaborateCode_hoistedFunction_mem
     {stmts : List Raw.Stmt}

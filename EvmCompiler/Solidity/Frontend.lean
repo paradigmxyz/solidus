@@ -1442,6 +1442,16 @@ mutual
         some ((name, fn') :: rest')
 end
 
+namespace Stmt
+
+theorem toYul?_functionDef_erases
+    (name : Name) (params returns : List Name) (body : List Stmt) :
+    Stmt.toYul? (.functionDef name params returns body) =
+      some (.Block []) := by
+  rfl
+
+end Stmt
+
 mutual
   def Expr.resolveObjectBuiltinsIn? (expr : Expr)
       (context : ObjectBuiltinContext) : Option Expr :=
