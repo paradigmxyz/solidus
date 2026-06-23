@@ -119,10 +119,10 @@ inflate the optimized-Yul end-to-end theorem.
 Tests are evidence of implementation coverage, not substitutes for theorem
 scope. The release gates currently include both supported solc pins, generated
 pressure and semantic surfaces, executable local/external code inspection,
-constructor success/revert/rollback and CREATE2 collision, exact Permit2,
-linked Aave Pool, linked PoolManager creation/runtime, full pinned Safe and
-ERC-4337 EntryPoint creation/runtime, and fourteen pinned real-repository
-suites. Safe and EntryPoint are compile gates; only cases for which solc emits
-a reference image are counted as differential execution tests. The kernel
-proof gate reports only `propext`, `Classical.choice`, and `Quot.sound` for the
-public theorem.
+constructor success/revert/rollback and CREATE2 collision, delegated proxy
+state/reentrancy/rollback/upgrade execution, exact Permit2, linked Aave Pool,
+linked PoolManager creation/runtime, full pinned Safe and ERC-4337 EntryPoint
+creation/runtime, and fourteen pinned real-repository suites. Safe and
+EntryPoint are compile gates; only cases for which solc emits a reference image
+are counted as differential execution tests. The kernel proof gate reports
+only `propext`, `Classical.choice`, and `Quot.sound` for the public theorem.

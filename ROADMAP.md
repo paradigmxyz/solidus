@@ -121,7 +121,10 @@ stack-only correctness boundary.
   includes full pinned Safe and ERC-4337 EntryPoint creation/runtime objects,
   in addition to their smaller executable helper probes; Safe is deliberately
   compile-only because solc's own optimized-Yul backend rejects that pinned
-  source with stack-too-deep.
+  source with stack-too-deep. The generated execution matrix also covers an
+  upgradeable EIP-1967-style proxy with delegated storage, reentrant self-calls,
+  revert rollback, event ordering, CREATE-based upgrade, and post-upgrade
+  dispatch under both supported solc pins.
 - [x] Separate genuine source completion/fuel sufficiency from malformed-source
   exclusion in the all-finished theorem. `truncated_iff_outOfFuel` proves the
   public truncation predicate is exactly structural source `OutOfFuel`;

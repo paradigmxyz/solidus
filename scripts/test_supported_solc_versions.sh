@@ -91,6 +91,18 @@ for version in "${VERSIONS[@]}"; do
     exit 1
   fi
   printf '%s\n' "$effect_output"
+
+  proxy_output="$(SOLC="$compiler" \
+    "$ROOT/scripts/test_proxy_lifecycle_surface_backend.sh")"
+  if [[ "$proxy_output" != *"proxy_lifecycle_surface_backend=pass"* ]] ||
+      [[ "$proxy_output" != *"proxy_lifecycle_compare_calls=11"* ]] ||
+      [[ "$proxy_output" != *"proxy_lifecycle_reentrant_self_call=true"* ]] ||
+      [[ "$proxy_output" != *"proxy_lifecycle_revert_rollback=true"* ]]; then
+    printf 'error: pinned solc %s failed proxy lifecycle coverage\n%s\n' \
+      "$version" "$proxy_output" >&2
+    exit 1
+  fi
+  printf '%s\n' "$proxy_output"
   printf 'supported_solc_version=%s\n' "$version"
 done
 

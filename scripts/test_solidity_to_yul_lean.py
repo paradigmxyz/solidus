@@ -9515,6 +9515,39 @@ class SolidityToYulLeanTests(unittest.TestCase):
         ]:
             self.assertIn(behavior, smoke)
 
+    def test_proxy_lifecycle_surface_keeps_executed_delegate_state_coverage(self):
+        scripts_dir = Path(__file__).resolve().parent
+        fixture = (
+            scripts_dir.parent / "examples" / "ProxyLifecycleSurfaceBox.sol"
+        ).read_text()
+        smoke = (
+            scripts_dir / "test_proxy_lifecycle_surface_backend.sh"
+        ).read_text()
+        matrix = (scripts_dir / "test_supported_solc_versions.sh").read_text()
+
+        for behavior in [
+            "contract ProxyLifecycleLogicV1",
+            "contract ProxyLifecycleLogicV2",
+            "contract ProxyLifecycleSurfaceBox",
+            "eip1967.proxy.implementation",
+            "delegatecall(gas(), target",
+            "address(this).call",
+            "failAfterStore",
+            "new ProxyLifecycleLogicV2",
+        ]:
+            self.assertIn(behavior, fixture)
+        for behavior in [
+            "--all-contracts",
+            "--format lean-backend-check",
+            "compare_contract_call_bytecode.py",
+            "proxy_lifecycle_checked_objects=6",
+            "proxy_lifecycle_compare_calls=11",
+            "proxy_lifecycle_reentrant_self_call=true",
+            "proxy_lifecycle_revert_rollback=true",
+        ]:
+            self.assertIn(behavior, smoke)
+        self.assertIn("test_proxy_lifecycle_surface_backend.sh", matrix)
+
     def test_uniswap_universal_router_smoke_covers_command_byte_dispatch(self):
         scripts_dir = Path(__file__).resolve().parent
         universal_router_smoke = (
