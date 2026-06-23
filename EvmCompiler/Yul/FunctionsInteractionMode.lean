@@ -50,6 +50,24 @@ theorem targetPrimitive_iszero (mode : Mode)
       change True
       trivial
 
+theorem targetPrimitive_eval_vars_eq (mode : Mode)
+    (op : Structured.BasicOp)
+    (state : Functions.InteractionSemantics.State) (values : List Word) :
+    Simulation.Interaction.AllDone
+      (fun outcome =>
+        match outcome with
+        | .error _ => True
+        | .ok result => result.1.vars = state.vars)
+      ((targetPrimitive mode).eval op state values) := by
+  cases mode with
+  | ordinary =>
+      exact Locals.InteractionSemantics.Primitive.openEval_vars_eq
+        op state values
+  | guarded contract =>
+      exact
+        Functions.AllocationInteractionSafeSemantics.Primitive.openEval_vars_eq
+          contract op state values
+
 namespace Source
 
 def evalArgs (mode : Mode) :=
@@ -281,6 +299,72 @@ theorem evalArgs_append (mode : Mode) {fuel : Nat}
                     (headResult.2.head! :: restResult.2) ++ rightResult.2)
               rw [Simulation.Interaction.bind_done_ok]
               rfl
+
+theorem exec_zero (mode : Mode) (stmt : EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : Yul.InteractionSemantics.State) :
+    exec mode 0 stmt code state =
+      Yul.InteractionSemantics.Primitive.fail state .OutOfFuel := by
+  simp [exec, Yul.Source.Canonical.exec, Yul.Source.Effectful.exec,
+    Yul.InteractionSemantics.Primitive.fail,
+    Yul.Source.Effectful.Control.fail]
+  rfl
+
+theorem exec_expr_primitive (mode : Mode) (fuel : Nat)
+    (prim : EvmYul.Operation .Yul)
+    (args : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : Yul.InteractionSemantics.State) :
+    exec mode fuel (.ExprStmtCall (.Call (.inl prim) args)) code state =
+      Simulation.Interaction.bind
+        (evalValues mode fuel (.Call (.inl prim) args) code state)
+        (fun result =>
+          pure
+            (Yul.InteractionSemantics.stateModel.multifill
+              [] result.1 result.2)) := by
+  cases fuel with
+  | zero =>
+      simp only [exec, evalValues, Yul.Source.Canonical.exec,
+        Yul.Source.Canonical.evalValues, Yul.Source.Effectful.exec,
+        Yul.Source.Effectful.evalValues]
+      unfold Yul.Source.Effectful.Control.fail
+      rfl
+  | succ fuel =>
+      simp only [exec, evalValues, Yul.Source.Canonical.exec,
+        Yul.Source.Canonical.evalValues, Yul.Source.Effectful.exec,
+        Yul.Source.Effectful.evalValues,
+        Yul.Source.Effectful.Control.multifill]
+      change
+        Simulation.Interaction.bind
+            (evalArgs mode fuel args.reverse code state)
+            (fun argsResult =>
+              Simulation.Interaction.bind
+                ((sourcePrimitive mode).eval fuel argsResult.1 prim
+                  argsResult.2.reverse)
+                (fun result =>
+                  pure
+                    (Yul.InteractionSemantics.stateModel.multifill
+                      [] result.1 result.2))) =
+          Simulation.Interaction.bind
+            (Simulation.Interaction.bind
+              (evalArgs mode fuel args.reverse code state)
+              (fun argsResult =>
+                (sourcePrimitive mode).eval fuel argsResult.1 prim
+                  argsResult.2.reverse))
+            (fun result =>
+              pure
+                (Yul.InteractionSemantics.stateModel.multifill
+                  [] result.1 result.2))
+      exact
+        (Simulation.Interaction.bind_assoc
+          (evalArgs mode fuel args.reverse code state)
+          (fun argsResult =>
+            (sourcePrimitive mode).eval fuel argsResult.1 prim
+              argsResult.2.reverse)
+          (fun result =>
+            pure
+              (Yul.InteractionSemantics.stateModel.multifill
+                [] result.1 result.2))).symm
 
 end Source
 
@@ -562,6 +646,87 @@ theorem openRun_block (mode : Mode) (program : Functions.Program)
   intro result _hResult
   cases result.1.mode <;> rfl
 
+theorem openRun_expr (mode : Mode) (program : Functions.Program)
+    (ctx : Functions.Source.Ctx) (fuel : Nat)
+    (expr : Functions.Expr 0)
+    (state : Functions.InteractionSemantics.State) :
+    openRun mode program ctx fuel (.expr expr) state =
+      Simulation.Interaction.bind (Target.Expr.openEval mode expr state)
+        (fun result =>
+          pure
+            (Functions.Source.Effectful.Outcome.regular result.1, ctx)) := by
+  unfold openRun Target.Expr.openEval Functions.Source.Canonical.Stmt.run
+  simp only [Functions.Source.Effectful.Control.Stmt.run]
+  rfl
+
+theorem openRun_terminalArgs (mode : Mode)
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (kind : Assembly.HaltKind)
+    (args : Locals.ExprSeq kind.argCount)
+    (state : Functions.InteractionSemantics.State) :
+    openRun mode program ctx fuel (.terminalArgs kind args) state =
+      Simulation.Interaction.bind
+        (Target.ExprSeq.openEval mode args state)
+        (fun argsResult =>
+          Simulation.Interaction.bind
+            ((targetPrimitive mode).terminal
+              kind argsResult.1 argsResult.2)
+            (fun final =>
+              pure
+                (Functions.Source.Effectful.Outcome.halt kind final, ctx))) := by
+  unfold openRun Target.ExprSeq.openEval
+    Functions.Source.Canonical.Stmt.run
+  simp only [Functions.Source.Effectful.Control.Stmt.run]
+  rfl
+
+theorem openRun_brk (mode : Mode) (program : Functions.Program)
+    (ctx : Functions.Source.Ctx) (fuel : Nat)
+    (state : Functions.InteractionSemantics.State)
+    {scope : List Functions.Name}
+    (hScope : ctx.breakScope? = some scope) :
+    openRun mode program ctx fuel .brk state =
+      pure
+        (Functions.Source.Effectful.Outcome.brk
+          (state.restrictTo scope), ctx) := by
+  unfold openRun Functions.Source.Canonical.Stmt.run
+  simp [Functions.Source.Effectful.Control.Stmt.run, hScope,
+    Functions.InteractionSemantics.stateModel,
+    Locals.InteractionSemantics.stateModel,
+    Locals.Source.Effectful.Ordinary.stateModel,
+    Locals.Source.Effectful.StateModel.restrictTo]
+
+theorem openRun_cont (mode : Mode) (program : Functions.Program)
+    (ctx : Functions.Source.Ctx) (fuel : Nat)
+    (state : Functions.InteractionSemantics.State)
+    {scope : List Functions.Name}
+    (hScope : ctx.continueScope? = some scope) :
+    openRun mode program ctx fuel .cont state =
+      pure
+        (Functions.Source.Effectful.Outcome.cont
+          (state.restrictTo scope), ctx) := by
+  unfold openRun Functions.Source.Canonical.Stmt.run
+  simp [Functions.Source.Effectful.Control.Stmt.run, hScope,
+    Functions.InteractionSemantics.stateModel,
+    Locals.InteractionSemantics.stateModel,
+    Locals.Source.Effectful.Ordinary.stateModel,
+    Locals.Source.Effectful.StateModel.restrictTo]
+
+theorem openRun_leave (mode : Mode) (program : Functions.Program)
+    (ctx : Functions.Source.Ctx) (fuel : Nat)
+    (state : Functions.InteractionSemantics.State)
+    {scope : List Functions.Name}
+    (hScope : ctx.leaveScope? = some scope) :
+    openRun mode program ctx fuel .leave state =
+      pure
+        (Functions.Source.Effectful.Outcome.leave
+          (state.restrictTo scope), ctx) := by
+  unfold openRun Functions.Source.Canonical.Stmt.run
+  simp [Functions.Source.Effectful.Control.Stmt.run, hScope,
+    Functions.InteractionSemantics.stateModel,
+    Locals.InteractionSemantics.stateModel,
+    Locals.Source.Effectful.Ordinary.stateModel,
+    Locals.Source.Effectful.StateModel.restrictTo]
+
 end Stmt
 
 namespace Block
@@ -711,6 +876,148 @@ theorem terminalSelected (mode : Mode) : TerminalSelected mode := by
       · have hTargetUnsafe :
             ¬ Simulation.MemorySafety.TerminalMemorySafe
               contract kind values.reverse := by
+          intro hTargetSafe
+          apply hSourceSafe
+          simpa [AllocationInteractionSafeSemantics.PrimitiveSafe, hTerminal]
+            using hTargetSafe
+        unfold AllocationInteractionSafeSemantics.openEval
+          Functions.AllocationInteractionSafeSemantics.openTerminal
+        simp only [hSourceSafe, hTargetUnsafe, ↓reduceIte]
+        exact Simulation.Interaction.ForwardRel.done
+          (.error (by simp [FunctionsInteractionPrimitive.ErrorRel]))
+
+theorem terminalOrdinaryAnyFuel
+    {primitiveFuel : Nat} {prim : EvmYul.Operation .Yul}
+    {kind : Assembly.HaltKind} {sourceValues : List Assembly.Word}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hTerminal : Prim.terminal? prim = some kind)
+    (hLength : sourceValues.length = kind.argCount)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (FunctionsInteractionTerminal.PrimitiveDoneRel kind)
+      (Yul.InteractionSemantics.Primitive.openEval
+        primitiveFuel source prim sourceValues)
+      (Functions.InteractionSemantics.primitiveSemantics.terminal
+        kind target sourceValues.reverse) := by
+  cases primitiveFuel with
+  | zero =>
+      have hTruncated : Truncated
+          ({ exception := .OutOfFuel, state := source } :
+            Yul.InteractionSemantics.Failure) := by
+        trivial
+      simpa [Yul.InteractionSemantics.Primitive.openEval,
+        Yul.InteractionSemantics.Primitive.fail] using
+        (Simulation.Interaction.ForwardRel.truncated
+          (doneRel := FunctionsInteractionTerminal.PrimitiveDoneRel kind)
+          (right :=
+            Functions.InteractionSemantics.primitiveSemantics.terminal
+              kind target sourceValues.reverse)
+          hTruncated)
+  | succ fuel =>
+      cases fuel with
+      | zero =>
+          have hTruncated : Truncated
+              ({ exception := .OutOfFuel, state := source } :
+                Yul.InteractionSemantics.Failure) := by
+            trivial
+          rw [FunctionsInteractionTerminal.openEval_one_of_terminal?
+            hTerminal source sourceValues]
+          simpa [Yul.InteractionSemantics.Primitive.fail] using
+            (Simulation.Interaction.ForwardRel.truncated
+              (doneRel := FunctionsInteractionTerminal.PrimitiveDoneRel kind)
+              (right :=
+                Functions.InteractionSemantics.primitiveSemantics.terminal
+                  kind target sourceValues.reverse)
+              hTruncated)
+      | succ fuel =>
+          exact terminalSelected .ordinary
+            (fuel := fuel) hTerminal hLength hRel
+
+/-- Terminal preservation at arbitrary source primitive fuel. Guarded safety
+is checked before ordinary fuel exhaustion, so unsafe operations yield matching
+`InvalidInstruction`; safe operations retain the ordinary low-fuel truncation.
+-/
+theorem terminalSelectedAnyFuel (mode : Mode)
+    {primitiveFuel : Nat} {prim : EvmYul.Operation .Yul}
+    {kind : Assembly.HaltKind} {sourceValues : List Assembly.Word}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hTerminal : Prim.terminal? prim = some kind)
+    (hLength : sourceValues.length = kind.argCount)
+    (hRel : FunctionsInteractionRelation.StateRel source target) :
+    Simulation.Interaction.ForwardRel Truncated
+      (FunctionsInteractionTerminal.PrimitiveDoneRel kind)
+      ((sourcePrimitive mode).eval
+        primitiveFuel source prim sourceValues)
+      ((targetPrimitive mode).terminal
+        kind target sourceValues.reverse) := by
+  cases mode with
+  | ordinary =>
+      change Simulation.Interaction.ForwardRel Truncated
+        (FunctionsInteractionTerminal.PrimitiveDoneRel kind)
+        (Yul.InteractionSemantics.Primitive.openEval
+          primitiveFuel source prim sourceValues)
+        (Functions.InteractionSemantics.primitiveSemantics.terminal
+          kind target sourceValues.reverse)
+      cases primitiveFuel with
+      | zero =>
+          have hTruncated : Truncated
+              ({ exception := .OutOfFuel, state := source } :
+                Yul.InteractionSemantics.Failure) := by
+            trivial
+          simpa [sourcePrimitive,
+            Yul.InteractionSemantics.Primitive.openEval,
+            Yul.InteractionSemantics.Primitive.fail] using
+            (Simulation.Interaction.ForwardRel.truncated
+              (doneRel := FunctionsInteractionTerminal.PrimitiveDoneRel kind)
+              (right :=
+                Functions.InteractionSemantics.primitiveSemantics.terminal
+                  kind target sourceValues.reverse)
+              hTruncated)
+      | succ fuel =>
+          cases fuel with
+          | zero =>
+              have hTruncated : Truncated
+                  ({ exception := .OutOfFuel, state := source } :
+                    Yul.InteractionSemantics.Failure) := by
+                trivial
+              rw [FunctionsInteractionTerminal.openEval_one_of_terminal?
+                hTerminal source sourceValues]
+              simpa [sourcePrimitive,
+                Yul.InteractionSemantics.Primitive.fail] using
+                (Simulation.Interaction.ForwardRel.truncated
+                  (doneRel :=
+                    FunctionsInteractionTerminal.PrimitiveDoneRel kind)
+                  (right :=
+                    Functions.InteractionSemantics.primitiveSemantics.terminal
+                      kind target sourceValues.reverse)
+                  hTruncated)
+          | succ fuel =>
+              simpa [sourcePrimitive, targetPrimitive] using
+                (terminalSelected .ordinary
+                  (fuel := fuel) hTerminal hLength hRel)
+  | guarded contract =>
+      change Simulation.Interaction.ForwardRel Truncated
+        (FunctionsInteractionTerminal.PrimitiveDoneRel kind)
+        (AllocationInteractionSafeSemantics.openEval
+          contract primitiveFuel source prim sourceValues)
+        (Functions.AllocationInteractionSafeSemantics.openTerminal
+          contract kind target sourceValues.reverse)
+      by_cases hSourceSafe :
+          AllocationInteractionSafeSemantics.PrimitiveSafe
+            contract prim source sourceValues
+      · have hTargetSafe :=
+          FunctionsAllocationInteractionSafety.Primitive.terminalSafe_to_functions
+            hTerminal hSourceSafe
+        rw [AllocationInteractionSafeSemantics.Primitive.openEval_eq_ordinary
+            hSourceSafe,
+          Functions.AllocationInteractionSafeSemantics.Primitive.openTerminal_eq_ordinary
+            hTargetSafe]
+        exact terminalOrdinaryAnyFuel hTerminal hLength hRel
+      · have hTargetUnsafe :
+            ¬ Simulation.MemorySafety.TerminalMemorySafe
+              contract kind sourceValues.reverse := by
           intro hTargetSafe
           apply hSourceSafe
           simpa [AllocationInteractionSafeSemantics.PrimitiveSafe, hTerminal]

@@ -431,6 +431,9 @@ boundaries. Corpus acceptance alone does not discharge them.
     - [x] Prepared conditions for declarations, assignments, branches,
       switches, loop guards, and direct/prepared primitive calls.
     - [ ] Statements, loops, and internal calls.
+      - [x] Direct/prepared zero-result primitives and terminal primitives.
+      - [ ] Declarations, assignments, and abrupt statement leaves.
+      - [ ] Recursive blocks, branches, switches, loops, and internal calls.
   - [ ] Replace the scratch-capable public Functions-facing safety premise with
     the Yul-facing execution premise; keep the premise-free stack theorem as a
     separate capability and rerun every completion gate.

@@ -69,6 +69,28 @@ theorem transport_entry
         hTargetScope
   | terminal hTerminal => exact .terminal hTerminal
 
+theorem transport_target_entry
+    {mode : Mode} {layout : List Functions.Name} {fresh : Fresh.State}
+    {lower : List (Locals.Expr 1)}
+    {before entry : Functions.InteractionSemantics.State}
+    {entryCtx : Functions.Source.Ctx}
+    {sourceDone : Except Yul.InteractionSemantics.Failure
+      (Yul.InteractionSemantics.State × List Word)}
+    {targetDone : Except EVMException
+      (Functions.InteractionSemantics.Outcome × Functions.Source.Ctx)}
+    (hEntry : FunctionsInteractionRelation.TargetExtends
+      before.vars entry.vars)
+    (hDone : DoneRel mode layout fresh lower entry entryCtx
+      sourceDone targetDone) :
+    DoneRel mode layout fresh lower before entryCtx sourceDone targetDone := by
+  cases hDone with
+  | error hError => exact .error hError
+  | regular hStable hScoped hDomain hExtends hScope hControl hTargetScope =>
+      exact .regular hStable hScoped hDomain
+        (FunctionsInteractionRelation.TargetExtends.trans hEntry hExtends)
+        hScope hControl hTargetScope
+  | terminal hTerminal => exact .terminal hTerminal
+
 end DoneRel
 
 inductive PreparedArgsDoneRel (mode : Mode)
