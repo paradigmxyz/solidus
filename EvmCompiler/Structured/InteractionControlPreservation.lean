@@ -1023,6 +1023,51 @@ def BoundedErrorExecPreservesUnder (result : TypedCfgCompiler.Result)
                   policy cfg targetFuel entry target)
                 transcript (.error targetError)
 
+/-- Runtime errors exclude structural interpreter-fuel exhaustion. -/
+def RuntimeError (error : EVMException) : Prop :=
+  error ≠ .OutOfFuel
+
+def UniformRuntimeErrorExecPreservesUnder
+    (result : TypedCfgCompiler.Result)
+    (cfg : TypedCfg.Program) (entry : Assembly.Label)
+    (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
+    (source : RunState) (tokens : List Word)
+    (sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome)
+    (targetFuel : Nat) (policy : StopPolicy) : Prop :=
+  forall target,
+    TypedCfgPreservation.StateRel source tokens target ->
+      forall transcript sourceError,
+        RuntimeError sourceError ->
+          Simulation.Interaction.Executes
+              sourceRun transcript (.error sourceError) ->
+            exists targetError,
+              Simulation.Interaction.Executes
+                (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+                  policy cfg targetFuel entry target)
+                transcript (.error targetError)
+
+def BoundedRuntimeErrorExecPreservesUnder
+    (result : TypedCfgCompiler.Result)
+    (cfg : TypedCfg.Program) (entry : Assembly.Label)
+    (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
+    (source : RunState) (tokens : List Word)
+    (sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome)
+    (targetBudget : Nat) (policy : StopPolicy) : Prop :=
+  forall target,
+    TypedCfgPreservation.StateRel source tokens target ->
+      forall transcript sourceError,
+        RuntimeError sourceError ->
+          Simulation.Interaction.Executes
+              sourceRun transcript (.error sourceError) ->
+            exists targetFuel targetError,
+              targetFuel <= targetBudget /\
+                Simulation.Interaction.Executes
+                  (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+                    policy cfg targetFuel entry target)
+                  transcript (.error targetError)
+
 /-- Complete branch preservation at one uniform target budget. This is the
 structural interface required for runtime errors as well as successful exits. -/
 def UniformDoneExecPreservesUnder (result : TypedCfgCompiler.Result)
@@ -1423,6 +1468,27 @@ theorem uniformErrorExec
   cases targetDone with
   | error targetError => exact ⟨targetError, hTargetExec⟩
   | ok targetResult => cases hDone
+
+theorem boundedErrorExec
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {targetFuel : Nat} {policy : StopPolicy}
+    {regularExit : RegularExit}
+    (hPreserves :
+      PreservesUnder result cfg entry ctx regular regularExit
+        source tokens sourceRun targetFuel policy) :
+    BoundedErrorExecPreservesUnder result cfg entry ctx regular
+      source tokens sourceRun targetFuel policy := by
+  intro target hStateRel transcript sourceError hSourceExec
+  obtain ⟨targetError, hTargetExec⟩ :=
+    uniformErrorExec hPreserves target hStateRel transcript sourceError
+      hSourceExec
+  exact ⟨targetFuel, targetError, Nat.le_refl _, hTargetExec⟩
 
 theorem boundedExec
     {result : TypedCfgCompiler.Result}
@@ -2519,6 +2585,23 @@ end BoundedExecPreservesUnder
 
 namespace BoundedErrorExecPreservesUnder
 
+theorem runtime
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {targetBudget : Nat} {policy : StopPolicy}
+    (hError :
+      BoundedErrorExecPreservesUnder result cfg entry ctx regular
+        source tokens sourceRun targetBudget policy) :
+    BoundedRuntimeErrorExecPreservesUnder result cfg entry ctx regular
+      source tokens sourceRun targetBudget policy := by
+  intro target hStateRel transcript sourceError _hRuntime hSourceExec
+  exact hError target hStateRel transcript sourceError hSourceExec
+
 /-- Pad an error branch to its common source-owned target ceiling. Once the
 target has errored, extra interpreter fuel is inert by monadic propagation. -/
 theorem uniform
@@ -2547,6 +2630,270 @@ theorem uniform
   exact Simulation.Interaction.Executes.bind_error hTargetExec
 
 end BoundedErrorExecPreservesUnder
+
+namespace BoundedRuntimeErrorExecPreservesUnder
+
+theorem close_refined_under
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {targetBudget : Nat} {outer inner : StopPolicy}
+    (hPreserves :
+      BoundedRuntimeErrorExecPreservesUnder result cfg entry ctx regular
+        source tokens sourceRun targetBudget inner)
+    (hRefines :
+      forall label state,
+        outer label state = true -> inner label state = true) :
+    BoundedRuntimeErrorExecPreservesUnder result cfg entry ctx regular
+      source tokens sourceRun targetBudget outer := by
+  intro target hStateRel transcript sourceError hRuntime hSourceExec
+  obtain ⟨targetFuel, targetError, hFuel, hTargetExec⟩ :=
+    hPreserves target hStateRel transcript sourceError hRuntime hSourceExec
+  have hCombined :=
+    Simulation.Interaction.Executes.bind_error
+      (next :=
+        TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithRefinedStop
+          outer cfg 0)
+      hTargetExec
+  have hClosed :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+          outer cfg targetFuel entry target)
+        transcript (.error targetError) := by
+    have hClosedWithZero :
+        Simulation.Interaction.Executes
+          (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+            outer cfg (targetFuel + 0) entry target)
+          transcript (.error targetError) := by
+      rw [
+        TypedCfg.InteractionSemantics.Program.openRunNResultWithRefinedStop_add
+          outer inner cfg targetFuel 0 entry target hRefines]
+      simpa using hCombined
+    simpa using hClosedWithZero
+  exact ⟨targetFuel, targetError, hFuel, hClosed⟩
+
+theorem sequence
+    {headResult tailResult : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry middle regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {headRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {tailRun :
+      RunState -> Simulation.Interaction EVMException Structured.Outcome}
+    {headBudget tailBudget : Nat} {policy : StopPolicy}
+    (hHeadDone :
+      BoundedExecPreservesUnder headResult cfg entry ctx middle
+        source tokens headRun headBudget
+        (pushStopJump headResult ctx middle
+          source.returns tokens policy))
+    (hHeadError :
+      BoundedRuntimeErrorExecPreservesUnder headResult cfg entry ctx middle
+        source tokens headRun headBudget
+        (pushStopJump headResult ctx middle
+          source.returns tokens policy))
+    (hMiddleNoStop :
+      forall {middleSource : RunState} {targetMiddle : EVMState},
+        Rel headResult ctx middle source.returns tokens
+            (.regular middleSource) (.jump middle targetMiddle) ->
+          policy middle targetMiddle = false)
+    (hTailError :
+      forall middleSource,
+        middleSource.returns = source.returns ->
+          FrameFits headResult ctx
+            (Structured.Outcome.regular middleSource) ->
+          BoundedRuntimeErrorExecPreservesUnder tailResult cfg middle ctx regular
+            middleSource tokens (tailRun middleSource) tailBudget policy) :
+    BoundedRuntimeErrorExecPreservesUnder (headResult.append tailResult)
+      cfg entry ctx regular source tokens
+      (Simulation.Interaction.bind headRun
+        (fun outcome =>
+          match outcome.mode with
+          | .regular => tailRun outcome.state
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure outcome))
+      (headBudget + tailBudget) policy := by
+  intro target hStateRel transcript sourceError hRuntime hSourceExec
+  rcases Simulation.Interaction.Executes.bind_cases hSourceExec with
+    ⟨headError, hOutcome, hHeadSourceError⟩ |
+      ⟨headOutcome, headTranscript, restTranscript,
+        hTranscript, hHeadSourceExec, hRestSourceExec⟩
+  · cases hOutcome
+    have hRefines :
+        forall next nextState,
+          policy next nextState = true ->
+            pushStopJump headResult ctx middle
+                source.returns tokens policy next nextState = true := by
+      intro next nextState hOuter
+      simp [pushStopJump, hOuter]
+    obtain ⟨targetFuel, targetError, hFuel, hTargetExec⟩ :=
+      close_refined_under hHeadError hRefines target hStateRel
+        transcript sourceError hRuntime hHeadSourceError
+    exact ⟨targetFuel, targetError, by omega, hTargetExec⟩
+  · subst transcript
+    obtain
+        ⟨headFuel, headRemaining, targetHead, hHeadFuel,
+          hTargetHeadExec, hHeadRel⟩ :=
+      hHeadDone target hStateRel headTranscript headOutcome hHeadSourceExec
+    rcases headOutcome with ⟨middleSource, headMode⟩
+    cases headMode with
+    | regular =>
+        obtain ⟨targetMiddle, rfl, hMiddleStateRel⟩ :=
+          TypedCfgPreservation.OutcomeSimulation.Rel.regular_elim hHeadRel.1
+        have hReturns : middleSource.returns = source.returns := by
+          simpa [ActivationRestored] using hHeadRel.2.2
+        obtain ⟨tailFuel, targetError, hTailFuel, hTargetTailExec⟩ :=
+          hTailError middleSource hReturns hHeadRel.2.1
+            targetMiddle hMiddleStateRel restTranscript sourceError
+            hRuntime hRestSourceExec
+        have hTargetTailPadded :
+            Simulation.Interaction.Executes
+              (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+                policy cfg (headRemaining + tailFuel) middle targetMiddle)
+              restTranscript (.error targetError) := by
+          rw [show headRemaining + tailFuel = tailFuel + headRemaining by omega]
+          rw [
+            TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_add]
+          exact Simulation.Interaction.Executes.bind_error hTargetTailExec
+        have hContinuationExec :
+            Simulation.Interaction.Executes
+              (TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithRefinedStop
+                policy cfg tailFuel
+                (.stopped headRemaining (.jump middle targetMiddle)))
+              restTranscript (.error targetError) := by
+          simpa [
+            TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithRefinedStop,
+            TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+            hMiddleNoStop hHeadRel] using hTargetTailPadded
+        have hCombined :=
+          Simulation.Interaction.Executes.bind_ok
+            hTargetHeadExec hContinuationExec
+        have hRefines :
+            forall next nextState,
+              policy next nextState = true ->
+                pushStopJump headResult ctx middle
+                    source.returns tokens policy next nextState = true := by
+          intro next nextState hOuter
+          simp [pushStopJump, hOuter]
+        have hTargetExec :
+            Simulation.Interaction.Executes
+              (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+                policy cfg (headFuel + tailFuel) entry target)
+              (headTranscript ++ restTranscript) (.error targetError) := by
+          rw [
+            TypedCfg.InteractionSemantics.Program.openRunNResultWithRefinedStop_add
+              policy
+              (pushStopJump headResult ctx middle
+                source.returns tokens policy)
+              cfg headFuel tailFuel entry target hRefines]
+          exact hCombined
+        exact ⟨headFuel + tailFuel, targetError, by omega, hTargetExec⟩
+    | brk => cases hRestSourceExec
+    | cont => cases hRestSourceExec
+    | leave => cases hRestSourceExec
+    | halt kind => cases hRestSourceExec
+
+theorem mono_budget
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {smaller larger : Nat} {policy : StopPolicy}
+    (hPreserves :
+      BoundedRuntimeErrorExecPreservesUnder result cfg entry ctx regular
+        source tokens sourceRun smaller policy)
+    (hLe : smaller <= larger) :
+    BoundedRuntimeErrorExecPreservesUnder result cfg entry ctx regular
+      source tokens sourceRun larger policy := by
+  intro target hStateRel transcript sourceError hRuntime hSourceExec
+  obtain ⟨targetFuel, targetError, hFuel, hTargetExec⟩ :=
+    hPreserves target hStateRel transcript sourceError hRuntime hSourceExec
+  exact ⟨targetFuel, targetError, Nat.le_trans hFuel hLe, hTargetExec⟩
+
+theorem ignore_tail_of_no_fallthrough
+    {headResult : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry headRegular resultRegular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {headRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {tailRun :
+      RunState -> Simulation.Interaction EVMException Structured.Outcome}
+    {targetBudget : Nat} {policy : StopPolicy}
+    (hFallthrough : headResult.fallthrough? = none)
+    (hHeadDone :
+      BoundedExecPreservesUnder headResult cfg entry ctx headRegular
+        source tokens headRun targetBudget policy)
+    (hHeadError :
+      BoundedRuntimeErrorExecPreservesUnder headResult cfg entry ctx headRegular
+        source tokens headRun targetBudget policy) :
+    BoundedRuntimeErrorExecPreservesUnder headResult cfg entry ctx resultRegular
+      source tokens
+      (Simulation.Interaction.bind headRun
+        (fun outcome =>
+          match outcome.mode with
+          | .regular => tailRun outcome.state
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure outcome))
+      targetBudget policy := by
+  intro target hStateRel transcript sourceError hRuntime hSourceExec
+  rcases Simulation.Interaction.Executes.bind_cases hSourceExec with
+    ⟨headError, hOutcome, hHeadSourceError⟩ |
+      ⟨headOutcome, headTranscript, restTranscript,
+        hTranscript, hHeadSourceExec, hRestSourceExec⟩
+  · cases hOutcome
+    exact hHeadError target hStateRel transcript sourceError
+      hRuntime hHeadSourceError
+  · subst transcript
+    obtain
+        ⟨targetFuel, remaining, targetOutcome, hFuel,
+          hTargetExec, hHeadRel⟩ :=
+      hHeadDone target hStateRel headTranscript headOutcome hHeadSourceExec
+    rcases headOutcome with ⟨middleSource, headMode⟩
+    cases headMode with
+    | regular =>
+        exact False.elim
+          (Rel.not_regular_of_fallthrough_none hFallthrough hHeadRel)
+    | brk => cases hRestSourceExec
+    | cont => cases hRestSourceExec
+    | leave => cases hRestSourceExec
+    | halt kind => cases hRestSourceExec
+
+theorem uniform
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {targetBudget : Nat} {policy : StopPolicy}
+    (hBounded :
+      BoundedRuntimeErrorExecPreservesUnder result cfg entry ctx regular
+        source tokens sourceRun targetBudget policy) :
+    UniformRuntimeErrorExecPreservesUnder result cfg entry ctx regular
+      source tokens sourceRun targetBudget policy := by
+  intro target hStateRel transcript sourceError hRuntime hSourceExec
+  obtain ⟨targetFuel, targetError, hFuel, hTargetExec⟩ :=
+    hBounded target hStateRel transcript sourceError hRuntime hSourceExec
+  let extra := targetBudget - targetFuel
+  have hFuelEq : targetFuel + extra = targetBudget := by
+    omega
+  refine ⟨targetError, ?_⟩
+  rw [← hFuelEq,
+    TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_add]
+  exact Simulation.Interaction.Executes.bind_error hTargetExec
+
+end BoundedRuntimeErrorExecPreservesUnder
 
 namespace UniformExecPreservesUnder
 

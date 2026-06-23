@@ -71,6 +71,46 @@ def BlockOwnerAt
         program blockSourceFuel block)
       policy
 
+/-- Runtime-error counterpart to `BlockOwnerAt`. It preserves every concrete
+error except structural interpreter-fuel exhaustion. -/
+def RuntimeErrorBlockOwnerAt
+    (sourceFuel : Nat)
+    (program : Structured.Program)
+    (entryShapes : TypedCfgCompiler.ProcEntryShapes)
+    (cfg : TypedCfg.Program)
+    (generated :
+      TypedCfgPreservation.Program.GeneratedContext
+        program entryShapes cfg) : Prop :=
+  forall {blockSourceFuel compilerFuel : Nat} {block : Structured.Block}
+      {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+      {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+      {result : TypedCfgCompiler.Result}
+      {source : RunState} {tokens : List Word}
+      {policy : StopPolicy}
+      {canBreak canContinue canLeave : Bool},
+    blockSourceFuel <= sourceFuel ->
+    TypedCfgCompiler.compileBlockFuel? compilerFuel block ctx
+        supply entry input regular = some result ->
+    TypedCfgPreservation.BlocksInProgram result cfg ->
+    TypedCfgPreservation.CallsInProgram result generated.calls ->
+    Structured.Block.WF canBreak canContinue canLeave block ->
+    block.FrameSafe ->
+    Structured.ProcList.BlockCallsResolved program.procs block ->
+    TypedCfgPreservation.OutcomeSimulation.ContextSupports
+      ctx canBreak canContinue canLeave ->
+    ctx.procs = program.procs ->
+    (canLeave = true ->
+      exists frame rest, source.returns = frame :: rest) ->
+    FragmentContract cfg result ctx supply entry regular input
+      source tokens policy ->
+    InteractionControlPreservation.OpenOutcome.BoundedRuntimeErrorExecPreservesUnder
+      result cfg entry ctx regular source tokens
+      (InteractionSemantics.Block.openRun
+        program blockSourceFuel block source)
+      (InteractionStaticCost.blockBudget
+        program blockSourceFuel block)
+      policy
+
 theorem BlockOwnerAt.mono
     {smaller larger : Nat}
     {program : Structured.Program}
@@ -82,6 +122,21 @@ theorem BlockOwnerAt.mono
     (hOwner : BlockOwnerAt larger program entryShapes cfg generated)
     (hLe : smaller <= larger) :
     BlockOwnerAt smaller program entryShapes cfg generated := by
+  intro blockSourceFuel compilerFuel block ctx supply entry regular input
+    result source tokens policy canBreak canContinue canLeave hBlockLe
+  exact hOwner (Nat.le_trans hBlockLe hLe)
+
+theorem RuntimeErrorBlockOwnerAt.mono
+    {smaller larger : Nat}
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {generated :
+      TypedCfgPreservation.Program.GeneratedContext
+        program entryShapes cfg}
+    (hOwner : RuntimeErrorBlockOwnerAt larger program entryShapes cfg generated)
+    (hLe : smaller <= larger) :
+    RuntimeErrorBlockOwnerAt smaller program entryShapes cfg generated := by
   intro blockSourceFuel compilerFuel block ctx supply entry regular input
     result source tokens policy canBreak canContinue canLeave hBlockLe
   exact hOwner (Nat.le_trans hBlockLe hLe)
@@ -109,6 +164,33 @@ theorem code_bounded
       policy := by
   simpa only [InteractionStaticCost.stmtBudget_code] using
     InteractionControlPreservation.OpenOutcome.PreservesUnder.boundedExec
+      (InteractionControlPreservation.Stmt.openRun_code_under_of_compileStmtFuel?
+        (sourceProgram := program) (sourceFuel := sourceFuel)
+        (regularExit := .stop)
+        hCompile hBlocks contract.fits contract.stops)
+
+theorem code_error_bounded
+    {compilerFuel sourceFuel : Nat}
+    {program : Structured.Program} {code : Structured.Code}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : RunState} {tokens : List Word} {policy : StopPolicy}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.code code) ctx supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (contract :
+      StmtContract cfg result ctx supply entry regular input
+        source tokens policy) :
+    InteractionControlPreservation.OpenOutcome.BoundedErrorExecPreservesUnder
+      result cfg entry ctx regular source tokens
+      (InteractionSemantics.Stmt.openRun
+        program sourceFuel (.code code) source)
+      (InteractionStaticCost.stmtBudget program sourceFuel (.code code))
+      policy := by
+  simpa only [InteractionStaticCost.stmtBudget_code] using
+    InteractionControlPreservation.OpenOutcome.PreservesUnder.boundedErrorExec
       (InteractionControlPreservation.Stmt.openRun_code_under_of_compileStmtFuel?
         (sourceProgram := program) (sourceFuel := sourceFuel)
         (regularExit := .stop)
@@ -168,6 +250,97 @@ theorem if_bounded
                   hCompile hBlocks hResultCalls contract.fits
                   contract.regularAt contract.activation
                   contract.boundary contract.stops
+              intro output bodyResult afterCond
+                hBodyCompile hBodyBlocks hBodyCalls hReturns
+                hBodyFits hRequire hFallthrough
+              apply
+                hBlockOwner (Nat.le_refl sourceFuel)
+                  hBodyCompile hBodyBlocks hBodyCalls
+                  hBodyWF hBodySafe hBodyCallsResolved hSupports hProcs
+              · intro hCanLeave
+                obtain ⟨frame, rest, hSourceEq⟩ :=
+                  hSourceReturns hCanLeave
+                exact ⟨frame, rest, hReturns.trans hSourceEq⟩
+              · exact
+                  { fits := hBodyFits
+                    regularAt := Or.inl contract.before_succ.regular
+                    before := contract.before_succ
+                    activation :=
+                      contract.activation.stmtFallthrough
+                        hCompile hFallthrough
+                    boundary :=
+                      (contract.boundary.mono
+                        (Nat.le_succ supply)).congr_returns hReturns.symm
+                    shapes :=
+                      contract.shapes.of_required_fallthrough
+                        hRequire hFallthrough
+                    stops := by
+                      intro sourceOutcome targetOutcome hRel
+                      apply contract.stops
+                      have hWhole :=
+                        InteractionControlPreservation.OpenOutcome.Rel.change_result_of_required_fallthrough
+                          hRequire hFallthrough hRel
+                      simpa [hReturns] using hWhole
+                    nonregular := by
+                      intro childResult childRegular sourceOutcome
+                        targetOutcome hMode hRel
+                      apply contract.nonregular hMode
+                      simpa [hReturns] using hRel }
+
+theorem if_runtime_error_bounded
+    {compilerFuel sourceFuel : Nat}
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {generated :
+      TypedCfgPreservation.Program.GeneratedContext
+        program entryShapes cfg}
+    {cond : Structured.Code} {body : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    {source : RunState} {tokens : List Word} {policy : StopPolicy}
+    {canBreak canContinue canLeave : Bool}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.if_ cond body) ctx supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hResultCalls :
+      TypedCfgPreservation.CallsInProgram result generated.calls)
+    (hWF :
+      Structured.Stmt.WF canBreak canContinue canLeave (.if_ cond body))
+    (hFrameSafe : Structured.Stmt.FrameSafe (.if_ cond body))
+    (hCalls :
+      Structured.ProcList.StmtCallsResolved program.procs (.if_ cond body))
+    (hSupports :
+      TypedCfgPreservation.OutcomeSimulation.ContextSupports
+        ctx canBreak canContinue canLeave)
+    (hProcs : ctx.procs = program.procs)
+    (hSourceReturns :
+      canLeave = true ->
+        exists frame rest, source.returns = frame :: rest)
+    (hBlockOwner :
+      RuntimeErrorBlockOwnerAt sourceFuel program entryShapes cfg generated)
+    (contract :
+      StmtContract cfg result ctx supply entry regular input
+        source tokens policy) :
+    InteractionControlPreservation.OpenOutcome.BoundedRuntimeErrorExecPreservesUnder
+      result cfg entry ctx regular source tokens
+      (InteractionSemantics.Stmt.openRun
+        program (sourceFuel + 1) (.if_ cond body) source)
+      (InteractionStaticCost.stmtBudget
+        program (sourceFuel + 1) (.if_ cond body))
+      policy := by
+  cases hWF with
+  | if_ hBodyWF =>
+      cases hFrameSafe with
+      | if_ _hCondSafe hBodySafe =>
+          cases hCalls with
+          | if_ hBodyCallsResolved =>
+              apply
+                InteractionBranchPreservation.Stmt.openRun_if_runtime_error_bounded_under_of_compileStmtFuel?
+                  hCompile hBlocks hResultCalls contract.fits
+                  contract.regularAt contract.activation contract.boundary
               intro output bodyResult afterCond
                 hBodyCompile hBodyBlocks hBodyCalls hReturns
                 hBodyFits hRequire hFallthrough
@@ -823,6 +996,40 @@ theorem brk_bounded
             (regularExit := .stop)
             hExit hCompile hBlocks contract.fits contract.nonregular)
 
+theorem brk_error_bounded
+    {compilerFuel sourceFuel : Nat}
+    {program : Structured.Program}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : RunState} {tokens : List Word} {policy : StopPolicy}
+    {canBreak canContinue canLeave : Bool}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          .brk ctx supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hWF : Structured.Stmt.WF canBreak canContinue canLeave .brk)
+    (hSupports :
+      TypedCfgPreservation.OutcomeSimulation.ContextSupports
+        ctx canBreak canContinue canLeave)
+    (contract :
+      StmtContract cfg result ctx supply entry regular input
+        source tokens policy) :
+    InteractionControlPreservation.OpenOutcome.BoundedErrorExecPreservesUnder
+      result cfg entry ctx regular source tokens
+      (InteractionSemantics.Stmt.openRun program sourceFuel .brk source)
+      (InteractionStaticCost.stmtBudget program sourceFuel .brk)
+      policy := by
+  cases hWF with
+  | brk hAllowed =>
+      obtain ⟨exitLabel, hExit⟩ := hSupports.breakLabel hAllowed
+      simpa only [InteractionStaticCost.stmtBudget_brk] using
+        InteractionControlPreservation.OpenOutcome.PreservesUnder.boundedErrorExec
+          (InteractionLeafPreservation.Stmt.openRun_brk_under_of_compileStmtFuel?
+            (sourceProgram := program) (sourceFuel := sourceFuel)
+            (regularExit := .stop)
+            hExit hCompile hBlocks contract.fits contract.nonregular)
+
 theorem cont_bounded
     {compilerFuel sourceFuel : Nat}
     {program : Structured.Program}
@@ -851,6 +1058,40 @@ theorem cont_bounded
       obtain ⟨exitLabel, hExit⟩ := hSupports.continueLabel hAllowed
       simpa only [InteractionStaticCost.stmtBudget_cont] using
         InteractionControlPreservation.OpenOutcome.PreservesUnder.boundedExec
+          (InteractionLeafPreservation.Stmt.openRun_cont_under_of_compileStmtFuel?
+            (sourceProgram := program) (sourceFuel := sourceFuel)
+            (regularExit := .stop)
+            hExit hCompile hBlocks contract.fits contract.nonregular)
+
+theorem cont_error_bounded
+    {compilerFuel sourceFuel : Nat}
+    {program : Structured.Program}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : RunState} {tokens : List Word} {policy : StopPolicy}
+    {canBreak canContinue canLeave : Bool}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          .cont ctx supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hWF : Structured.Stmt.WF canBreak canContinue canLeave .cont)
+    (hSupports :
+      TypedCfgPreservation.OutcomeSimulation.ContextSupports
+        ctx canBreak canContinue canLeave)
+    (contract :
+      StmtContract cfg result ctx supply entry regular input
+        source tokens policy) :
+    InteractionControlPreservation.OpenOutcome.BoundedErrorExecPreservesUnder
+      result cfg entry ctx regular source tokens
+      (InteractionSemantics.Stmt.openRun program sourceFuel .cont source)
+      (InteractionStaticCost.stmtBudget program sourceFuel .cont)
+      policy := by
+  cases hWF with
+  | cont hAllowed =>
+      obtain ⟨exitLabel, hExit⟩ := hSupports.continueLabel hAllowed
+      simpa only [InteractionStaticCost.stmtBudget_cont] using
+        InteractionControlPreservation.OpenOutcome.PreservesUnder.boundedErrorExec
           (InteractionLeafPreservation.Stmt.openRun_cont_under_of_compileStmtFuel?
             (sourceProgram := program) (sourceFuel := sourceFuel)
             (regularExit := .stop)
@@ -894,6 +1135,45 @@ theorem leave_bounded
             hExit hReturns hCompile hBlocks contract.fits
             contract.nonregular)
 
+theorem leave_error_bounded
+    {compilerFuel sourceFuel : Nat}
+    {program : Structured.Program}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : RunState} {tokens : List Word} {policy : StopPolicy}
+    {canBreak canContinue canLeave : Bool}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          .leave ctx supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hWF : Structured.Stmt.WF canBreak canContinue canLeave .leave)
+    (hSupports :
+      TypedCfgPreservation.OutcomeSimulation.ContextSupports
+        ctx canBreak canContinue canLeave)
+    (hSourceReturns :
+      canLeave = true ->
+        exists frame rest, source.returns = frame :: rest)
+    (contract :
+      StmtContract cfg result ctx supply entry regular input
+        source tokens policy) :
+    InteractionControlPreservation.OpenOutcome.BoundedErrorExecPreservesUnder
+      result cfg entry ctx regular source tokens
+      (InteractionSemantics.Stmt.openRun program sourceFuel .leave source)
+      (InteractionStaticCost.stmtBudget program sourceFuel .leave)
+      policy := by
+  cases hWF with
+  | leave hAllowed =>
+      obtain ⟨exitLabel, hExit⟩ := hSupports.leaveLabel hAllowed
+      obtain ⟨frame, rest, hReturns⟩ := hSourceReturns hAllowed
+      simpa only [InteractionStaticCost.stmtBudget_leave] using
+        InteractionControlPreservation.OpenOutcome.PreservesUnder.boundedErrorExec
+          (InteractionLeafPreservation.Stmt.openRun_leave_under_of_compileStmtFuel?
+            (sourceProgram := program) (sourceFuel := sourceFuel)
+            (regularExit := .stop)
+            hExit hReturns hCompile hBlocks contract.fits
+            contract.nonregular)
+
 theorem terminal_bounded
     {compilerFuel sourceFuel : Nat}
     {program : Structured.Program} {kind : Assembly.HaltKind}
@@ -916,6 +1196,34 @@ theorem terminal_bounded
       policy := by
   simpa only [InteractionStaticCost.stmtBudget_terminal] using
     InteractionControlPreservation.OpenOutcome.PreservesUnder.boundedExec
+      (InteractionLeafPreservation.Stmt.openRun_terminal_under_of_compileStmtFuel?
+        (sourceProgram := program) (sourceFuel := sourceFuel)
+        (regularExit := .stop)
+        hCompile hBlocks contract.fits contract.nonregular)
+
+theorem terminal_error_bounded
+    {compilerFuel sourceFuel : Nat}
+    {program : Structured.Program} {kind : Assembly.HaltKind}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : RunState} {tokens : List Word} {policy : StopPolicy}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.terminal kind) ctx supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (contract :
+      StmtContract cfg result ctx supply entry regular input
+        source tokens policy) :
+    InteractionControlPreservation.OpenOutcome.BoundedErrorExecPreservesUnder
+      result cfg entry ctx regular source tokens
+      (InteractionSemantics.Stmt.openRun
+        program sourceFuel (.terminal kind) source)
+      (InteractionStaticCost.stmtBudget
+        program sourceFuel (.terminal kind))
+      policy := by
+  simpa only [InteractionStaticCost.stmtBudget_terminal] using
+    InteractionControlPreservation.OpenOutcome.PreservesUnder.boundedErrorExec
       (InteractionLeafPreservation.Stmt.openRun_terminal_under_of_compileStmtFuel?
         (sourceProgram := program) (sourceFuel := sourceFuel)
         (regularExit := .stop)
@@ -1036,6 +1344,66 @@ theorem bounded_zero
       exact
         leave_bounded hCompile hBlocks hWF hSupports hSourceReturns contract
   | terminal kind => exact terminal_bounded hCompile hBlocks contract
+
+theorem runtime_error_bounded_zero
+    {compilerFuel : Nat}
+    {program : Structured.Program} {stmt : Structured.Stmt}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : RunState} {tokens : List Word} {policy : StopPolicy}
+    {canBreak canContinue canLeave : Bool}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          stmt ctx supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hWF : Structured.Stmt.WF canBreak canContinue canLeave stmt)
+    (hSupports :
+      TypedCfgPreservation.OutcomeSimulation.ContextSupports
+        ctx canBreak canContinue canLeave)
+    (hSourceReturns :
+      canLeave = true ->
+        exists frame rest, source.returns = frame :: rest)
+    (contract :
+      StmtContract cfg result ctx supply entry regular input
+        source tokens policy) :
+    InteractionControlPreservation.OpenOutcome.BoundedRuntimeErrorExecPreservesUnder
+      result cfg entry ctx regular source tokens
+      (InteractionSemantics.Stmt.openRun program 0 stmt source)
+      (InteractionStaticCost.stmtBudget program 0 stmt)
+      policy := by
+  cases stmt with
+  | code code =>
+      exact
+        InteractionControlPreservation.OpenOutcome.BoundedErrorExecPreservesUnder.runtime
+          (code_error_bounded hCompile hBlocks contract)
+  | if_ cond body
+  | switch cond body defaultBody
+  | for_ body cond defaultBody body_1
+  | call cond =>
+      intro target hStateRel transcript sourceError hRuntime hExec
+      simp only [
+        InteractionSemantics.Stmt.openRun,
+        EffectSemantics.Control.Stmt.run] at hExec
+      cases hExec
+      exact False.elim (hRuntime rfl)
+  | brk =>
+      exact
+        InteractionControlPreservation.OpenOutcome.BoundedErrorExecPreservesUnder.runtime
+          (brk_error_bounded hCompile hBlocks hWF hSupports contract)
+  | cont =>
+      exact
+        InteractionControlPreservation.OpenOutcome.BoundedErrorExecPreservesUnder.runtime
+          (cont_error_bounded hCompile hBlocks hWF hSupports contract)
+  | leave =>
+      exact
+        InteractionControlPreservation.OpenOutcome.BoundedErrorExecPreservesUnder.runtime
+          (leave_error_bounded hCompile hBlocks hWF hSupports
+            hSourceReturns contract)
+  | terminal kind =>
+      exact
+        InteractionControlPreservation.OpenOutcome.BoundedErrorExecPreservesUnder.runtime
+          (terminal_error_bounded hCompile hBlocks contract)
 
 end Stmt
 
