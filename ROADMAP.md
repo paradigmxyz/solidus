@@ -441,6 +441,9 @@ boundaries. Corpus acceptance alone does not discharge them.
         - [x] Compiler-selected recursive block wrapper and exact-tail list edge.
         - [ ] Close the mutual statement/list dispatcher.
         - [ ] Conditionals, switches, loops, and internal calls.
+          - [x] Mode-parametric prepared-condition `if`/`switch` composition.
+          - [ ] Compiler-selected `if`/`switch` wrappers.
+          - [ ] Loops and internal calls.
   - [ ] Replace the scratch-capable public Functions-facing safety premise with
     the Yul-facing execution premise; keep the premise-free stack theorem as a
     separate capability and rerun every completion gate.

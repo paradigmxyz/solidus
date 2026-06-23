@@ -473,6 +473,49 @@ theorem exec_block_succ (mode : Mode) (fuel : Nat)
     Yul.Source.Canonical.execSeq, Yul.Source.Effectful.exec]
   rfl
 
+theorem eval_eq_bind (mode : Mode) (fuel : Nat)
+    (expr : EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : Yul.InteractionSemantics.State) :
+    eval mode fuel expr code state =
+      Simulation.Interaction.bind
+        (evalValues mode fuel expr code state)
+        (fun result => pure (result.1, result.2.head!)) := by
+  unfold eval evalValues Yul.Source.Canonical.eval
+    Yul.Source.Canonical.evalValues Yul.Source.Effectful.eval
+  rfl
+
+theorem exec_if_succ (mode : Mode) (fuel : Nat)
+    (cond : EvmYul.Yul.Ast.Expr) (body : List EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : Yul.InteractionSemantics.State) :
+    exec mode (fuel + 1) (.If cond body) code state =
+      Simulation.Interaction.bind (eval mode fuel cond code state)
+        (fun result =>
+          if result.2 ≠ EvmYul.UInt256.ofNat 0 then
+            exec mode fuel (.Block body) code result.1
+          else pure result.1) := by
+  simp only [exec, eval, Yul.Source.Canonical.exec,
+    Yul.Source.Canonical.eval, Yul.Source.Effectful.exec]
+  rfl
+
+theorem exec_switch_succ (mode : Mode) (fuel : Nat)
+    (cond : EvmYul.Yul.Ast.Expr)
+    (cases : List (Word × List EvmYul.Yul.Ast.Stmt))
+    (defaultBody : List EvmYul.Yul.Ast.Stmt)
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (state : Yul.InteractionSemantics.State) :
+    exec mode (fuel + 1) (.Switch cond cases defaultBody) code state =
+      Simulation.Interaction.bind (eval mode fuel cond code state)
+        (fun result =>
+          exec mode fuel
+            (.Block
+              (EvmYul.Yul.selectSwitchCase result.2 defaultBody cases))
+            code result.1) := by
+  simp only [exec, eval, Yul.Source.Canonical.exec,
+    Yul.Source.Canonical.eval, Yul.Source.Effectful.exec]
+  rfl
+
 end Source
 
 namespace Target

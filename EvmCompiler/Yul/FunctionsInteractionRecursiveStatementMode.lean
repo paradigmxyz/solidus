@@ -148,6 +148,231 @@ theorem layoutWithinStmtsOutVars
 
 namespace CompoundForward
 
+theorem ifFromCondition
+    {mode : Mode}
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    {conditionFuel targetFuel : Nat}
+    {layout conditionUsed finalUsed : List Functions.Name}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {cond : AstExpr} {body : List AstStmt}
+    {pre : List Functions.Stmt} {lowerCond : Locals.Expr 1}
+    {lowerBody : Functions.Block}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {ctx : Functions.Source.Ctx}
+    (hTargetFuel : pre.length + 1 < targetFuel)
+    (hUsedSubset : ∀ name, name ∈ conditionUsed → name ∈ finalUsed)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
+    (hCondition :
+      Simulation.Interaction.ForwardRel Truncated
+        (FunctionsInteractionPreparedConditionMode.DoneRel
+          layout conditionUsed ctx)
+        (Source.evalValues mode conditionFuel cond
+          (some sourceProgram.contract) source)
+        (FunctionsInteractionPreparedConditionMode.run mode
+          targetProgram.toFunctions ctx targetFuel pre lowerCond target))
+    (hBody :
+      ∀ {sourceAfter : Yul.InteractionSemantics.State}
+        {targetAfter : Functions.InteractionSemantics.State}
+        {ctxAfter : Functions.Source.Ctx},
+        ScopedStateRel layout sourceAfter targetAfter →
+        TargetDomainWithin conditionUsed targetAfter.vars →
+        ControlContextRel sourceScopes layout
+            canBreak canContinue canLeave ctxAfter →
+        TargetScopeWithin conditionUsed ctxAfter →
+        Simulation.Interaction.ForwardRel Truncated
+          (ControlDoneRel finalUsed layout sourceScopes
+            canBreak canContinue canLeave)
+          (Source.exec mode conditionFuel (.Block body)
+            (some sourceProgram.contract) sourceAfter)
+          (Target.Stmt.openRun mode targetProgram.toFunctions ctxAfter
+            (targetFuel - pre.length - 2) (.block lowerBody) targetAfter)) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel finalUsed layout sourceScopes
+        canBreak canContinue canLeave)
+      (Source.exec mode (conditionFuel + 1) (.If cond body)
+        (some sourceProgram.contract) source)
+      (Target.Block.openRun mode targetProgram.toFunctions ctx targetFuel
+        { stmts := pre ++ [.if_ lowerCond lowerBody] } target) := by
+  rw [Source.exec_if_succ, Source.eval_eq_bind,
+    Simulation.Interaction.bind_assoc]
+  rw [FunctionsInteractionPreparedConditionMode.run_if mode
+    targetProgram.toFunctions ctx targetFuel pre lowerCond lowerBody target
+    hTargetFuel]
+  apply Simulation.Interaction.ForwardRel.bind_custom hCondition
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ForwardRel.done (.error hError)
+  | terminal hTerminal =>
+      cases hTerminal with
+      | stop hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.stop hState))
+      | return_ hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.return_ hState))
+      | selfdestruct hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.selfdestruct hState))
+      | revert hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.revert hState))
+  | @regular sourceAfter values targetAfter truth ctxAfter value
+      hValues hTruth hScoped hDomain hScope hSameControl hTargetScopeAfter =>
+      have hControlAfter : ControlContextRel sourceScopes layout
+          canBreak canContinue canLeave ctxAfter := by
+        apply ControlContextRel.transport hControl
+        · exact fun _name hName => hName
+        · exact hSameControl
+        · intro name hName
+          exact hScope name (hControl.scope name hName)
+      subst values
+      simp only [List.head!_cons, Simulation.Interaction.bind_done_ok]
+      by_cases hNonzero : value ≠ EvmYul.UInt256.ofNat 0
+      · have hTruthTrue : truth = true :=
+          FunctionsInteractionPreparedCondition.DoneRel.truth_eq_true_of_ne
+            hTruth hNonzero
+        have hBne : (value != EvmYul.UInt256.ofNat 0) = true :=
+          hTruth.symm.trans hTruthTrue
+        subst truth
+        simp only [Simulation.Interaction.bind_done_ok, pure_bind,
+          hNonzero, hBne, ↓reduceIte]
+        rw [show
+          (pure (sourceAfter, value) :
+              Yul.InteractionSemantics.Open
+                (Yul.InteractionSemantics.State × Word)) =
+            Simulation.Interaction.pure (sourceAfter, value) by rfl]
+        unfold Simulation.Interaction.pure
+        rw [Simulation.Interaction.bind_done_ok]
+        rw [if_pos hNonzero]
+        change
+          Simulation.Interaction.ForwardRel Truncated
+            (ControlDoneRel finalUsed layout sourceScopes
+              canBreak canContinue canLeave)
+            (Source.exec mode conditionFuel (.Block body)
+              (some sourceProgram.contract) sourceAfter)
+            (Target.Stmt.openRun mode targetProgram.toFunctions ctxAfter
+              (targetFuel - pre.length - 2) (.block lowerBody) targetAfter)
+        exact hBody hScoped hDomain hControlAfter hTargetScopeAfter
+      · have hZero : value = EvmYul.UInt256.ofNat 0 := by
+          simpa using hNonzero
+        subst value
+        have hTruthFalse : truth = false := by simpa using hTruth
+        subst truth
+        simp only [ne_eq, not_true_eq_false, ↓reduceIte,
+          Bool.false_eq_true, Simulation.Interaction.bind_done_ok]
+        exact Simulation.Interaction.ForwardRel.done
+          (.regular hScoped (hDomain.mono hUsedSubset) hControlAfter
+            (hTargetScopeAfter.mono hUsedSubset))
+
+theorem switchFromCondition
+    {mode : Mode}
+    {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
+    {conditionFuel targetFuel : Nat}
+    {layout conditionUsed finalUsed : List Functions.Name}
+    {sourceScopes : SourceScopes}
+    {canBreak canContinue canLeave : Bool}
+    {cond : AstExpr} {cases : List (Word × List AstStmt)}
+    {defaultBody : List AstStmt}
+    {pre : List Functions.Stmt} {lowerCond : Locals.Expr 1}
+    {lowerCases : List (Word × Functions.Block)}
+    {lowerDefault : Option Functions.Block}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {ctx : Functions.Source.Ctx}
+    (hTargetFuel : pre.length + 1 < targetFuel)
+    (hControl : ControlContextRel sourceScopes layout
+      canBreak canContinue canLeave ctx)
+    (hCondition :
+      Simulation.Interaction.ForwardRel Truncated
+        (FunctionsInteractionPreparedConditionMode.DoneRel
+          layout conditionUsed ctx)
+        (Source.evalValues mode conditionFuel cond
+          (some sourceProgram.contract) source)
+        (FunctionsInteractionPreparedConditionMode.run mode
+          targetProgram.toFunctions ctx targetFuel pre lowerCond target))
+    (hSelected :
+      ∀ (value : Word)
+        {sourceAfter : Yul.InteractionSemantics.State}
+        {targetAfter : Functions.InteractionSemantics.State}
+        {ctxAfter : Functions.Source.Ctx},
+        ScopedStateRel layout sourceAfter targetAfter →
+        TargetDomainWithin conditionUsed targetAfter.vars →
+        ControlContextRel sourceScopes layout
+            canBreak canContinue canLeave ctxAfter →
+        TargetScopeWithin conditionUsed ctxAfter →
+        Simulation.Interaction.ForwardRel Truncated
+          (ControlDoneRel finalUsed layout sourceScopes
+            canBreak canContinue canLeave)
+          (Source.exec mode conditionFuel
+            (.Block
+              (EvmYul.Yul.selectSwitchCase value defaultBody cases))
+            (some sourceProgram.contract) sourceAfter)
+          (match Functions.Source.Switch.select
+              value lowerCases lowerDefault with
+            | some body =>
+                Target.Stmt.openRun mode targetProgram.toFunctions ctxAfter
+                  (targetFuel - pre.length - 2) (.block body) targetAfter
+            | none =>
+                Simulation.Interaction.pure
+                  (Functions.Source.Effectful.Outcome.regular targetAfter,
+                    ctxAfter))) :
+    Simulation.Interaction.ForwardRel Truncated
+      (ControlDoneRel finalUsed layout sourceScopes
+        canBreak canContinue canLeave)
+      (Source.exec mode (conditionFuel + 1)
+        (.Switch cond cases defaultBody)
+        (some sourceProgram.contract) source)
+      (Target.Block.openRun mode targetProgram.toFunctions ctx targetFuel
+        { stmts := pre ++
+            [.switch lowerCond lowerCases lowerDefault] } target) := by
+  rw [Source.exec_switch_succ, Source.eval_eq_bind,
+    Simulation.Interaction.bind_assoc]
+  rw [FunctionsInteractionPreparedConditionMode.run_switch mode
+    targetProgram.toFunctions ctx targetFuel pre lowerCond lowerCases
+    lowerDefault target hTargetFuel]
+  apply Simulation.Interaction.ForwardRel.bind_custom hCondition
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ForwardRel.done (.error hError)
+  | terminal hTerminal =>
+      cases hTerminal with
+      | stop hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.stop hState))
+      | return_ hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.return_ hState))
+      | selfdestruct hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.selfdestruct hState))
+      | revert hState =>
+          exact Simulation.Interaction.ForwardRel.done
+            (.terminal (.revert hState))
+  | @regular sourceAfter values targetAfter truth ctxAfter value
+      hValues _hTruth hScoped hDomain hScope hSameControl hTargetScopeAfter =>
+      have hControlAfter : ControlContextRel sourceScopes layout
+          canBreak canContinue canLeave ctxAfter := by
+        apply ControlContextRel.transport hControl
+        · exact fun _name hName => hName
+        · exact hSameControl
+        · intro name hName
+          exact hScope name (hControl.scope name hName)
+      subst values
+      simp only [List.head!_cons, Simulation.Interaction.bind_done_ok]
+      rw [show
+        (pure (sourceAfter, value) :
+            Yul.InteractionSemantics.Open
+              (Yul.InteractionSemantics.State × Word)) =
+          Simulation.Interaction.pure (sourceAfter, value) by rfl]
+      unfold Simulation.Interaction.pure
+      rw [Simulation.Interaction.bind_done_ok]
+      exact hSelected value hScoped hDomain hControlAfter hTargetScopeAfter
+
 theorem block
     {mode : Mode} {profile : SolcValidation.DialectProfile}
     {sourceProgram : Yul.Program} {targetProgram : Objects.Program}
