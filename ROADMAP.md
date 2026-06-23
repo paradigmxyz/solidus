@@ -155,7 +155,8 @@ Next raw frontend layer:
   generated `clz` helper theorem now also exposes its one-argument/one-result
   shape plus successful Yul function-definition conversion. The helper is
   factored through a named `ClzHelperSpec` over the generated binary-search
-  schedule and exact helper body, and successful raw object elaboration exposes
+  schedule and exact helper body. Successful raw object elaboration, raw string
+  decoding, and artifact-wrapper compilation now expose
   `Raw.Object.ClzHelperSpecOk`. Retained nested function-definition statements
   are alpha-renamed to generated function names before their checked frontend
   no-op lowering. Raw production elaboration now also fail-closes on any

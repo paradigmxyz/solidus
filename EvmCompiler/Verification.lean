@@ -56,6 +56,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_noRawClzCall
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_functionDefStubsRetained
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_clzExpansionOk
+#check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_clzHelperSpecOk
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_hoistedFunctionsRetained
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_frontendValidated
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperFunctionDef_spec
@@ -80,6 +81,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_noRawClzCall
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_functionDefStubsRetained
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_clzExpansionOk
+#check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_clzHelperSpecOk
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_hoistedFunctionsRetained
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_frontendValidated
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decoded
@@ -89,6 +91,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_noRawClzCall
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_functionDefStubsRetained
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_clzExpansionOk
+#check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_clzHelperSpecOk
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_hoistedFunctionsRetained
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_frontendValidated
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decodingCorrect
@@ -98,6 +101,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_noRawClzCall
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_functionDefStubsRetained
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_clzExpansionOk
+#check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_clzHelperSpecOk
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_hoistedFunctionsRetained
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_frontendValidated
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_decodingCorrect
@@ -165,6 +169,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_noRawClzCall
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_functionDefStubsRetained
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_clzExpansionOk
+#print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_clzHelperSpecOk
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_hoistedFunctionsRetained
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_frontendValidated
 #print axioms EvmCompiler.Solidity.RawAst.Elab.clzHelperFunctionDef_spec
@@ -189,6 +194,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_noRawClzCall
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_functionDefStubsRetained
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_clzExpansionOk
+#print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_clzHelperSpecOk
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_hoistedFunctionsRetained
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_frontendValidated
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decoded
@@ -198,6 +204,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_noRawClzCall
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_functionDefStubsRetained
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_clzExpansionOk
+#print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_clzHelperSpecOk
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_hoistedFunctionsRetained
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_frontendValidated
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decodingCorrect
@@ -207,6 +214,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_noRawClzCall
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_functionDefStubsRetained
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_clzExpansionOk
+#print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_clzHelperSpecOk
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_hoistedFunctionsRetained
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_frontendValidated
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_decodingCorrect

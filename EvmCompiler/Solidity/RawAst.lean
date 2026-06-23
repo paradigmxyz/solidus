@@ -1913,6 +1913,21 @@ theorem decodeAndElaborateSolcIrJson_clzExpansionOk
     ⟨selected, hSelected,
       Raw.Object.elaborate?_clzExpansionOk hObject⟩
 
+theorem decodeAndElaborateSolcIrJson_clzHelperSpecOk
+    {json : Lean.Json} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIrJson json selection = .ok program) :
+    ∃ selected : SelectedIr,
+      decodeSelectedIr json selection = .ok selected ∧
+        Raw.Object.ClzHelperSpecOk selected.root program.object := by
+  rcases decodeAndElaborateSolcIrJson_parts hDecode with
+    ⟨selected, object, hSelected, hObject, hProgram⟩
+  subst program
+  exact
+    ⟨selected, hSelected,
+      Raw.Object.elaborate?_clzHelperSpecOk hObject⟩
+
 theorem decodeAndElaborateSolcIrJson_hoistedFunctionsRetained
     {json : Lean.Json} {selection : Selection}
     {program : Frontend.Program}
@@ -2155,6 +2170,21 @@ theorem decodeAndElaborateSolcIr?_clzExpansionOk
   rcases decodeAndElaborateSolcIrJson_clzExpansionOk hJsonDecode with
     ⟨selected, hSelected, hClz⟩
   exact ⟨json, selected, hParse, hSelected, hClz⟩
+
+theorem decodeAndElaborateSolcIr?_clzHelperSpecOk
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program) :
+    ∃ (json : Lean.Json) (selected : SelectedIr),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          Raw.Object.ClzHelperSpecOk selected.root program.object := by
+  rcases decodeAndElaborateSolcIr?_some hDecode with
+    ⟨json, hParse, hJsonDecode⟩
+  rcases decodeAndElaborateSolcIrJson_clzHelperSpecOk hJsonDecode with
+    ⟨selected, hSelected, hClzSpec⟩
+  exact ⟨json, selected, hParse, hSelected, hClzSpec⟩
 
 theorem decodeAndElaborateSolcIr?_hoistedFunctionsRetained
     {rawJson : String} {selection : Selection}
