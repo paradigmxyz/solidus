@@ -153,16 +153,19 @@ Next raw frontend layer:
   `Raw.Object.HoistedFunctionsRetained` lift these invariants through raw
   object elaboration, raw string decoding, and artifact-wrapper success. The
   generated `clz` helper theorem now also exposes its one-argument/one-result
-  shape plus successful Yul function-definition conversion, and retained nested
-  function-definition statements are alpha-renamed to generated function names
-  before their checked frontend no-op lowering. Raw production elaboration now
-  also fail-closes on any frontend object that still contains an unlowered
-  callee named exactly `clz`, with decode and artifact wrapper theorems
-  exposing `Frontend.Object.noRawClzCall? = true`. It also fail-closes unless
-  every retained nested-function staging node has an identical callable entry
-  in the same frontend object's function table, with decode and artifact
-  wrapper theorems exposing
-  `Frontend.Object.functionDefStubsRetained? = true`. Production Yul
+  shape plus successful Yul function-definition conversion. The helper is
+  factored through a named `ClzHelperSpec` over the generated binary-search
+  schedule and exact helper body, and successful raw object elaboration exposes
+  `Raw.Object.ClzHelperSpecOk`. Retained nested function-definition statements
+  are alpha-renamed to generated function names before their checked frontend
+  no-op lowering. Raw production elaboration now also fail-closes on any
+  frontend object that still contains an unlowered callee named exactly `clz`,
+  with decode and artifact wrapper theorems exposing
+  `Frontend.Object.noRawClzCall? = true`. It also fail-closes unless every
+  retained nested-function staging node has an identical callable entry in the
+  same frontend object's function table, with decode and artifact wrapper
+  theorems exposing `Frontend.Object.functionDefStubsRetained? = true`.
+  Production Yul
   conversion now separately fail-closes unless every retained nested-function
   staging node lowers through the frontend Yul lowering function to one of the
   exact ordered Yul function entries consumed by the backend, with

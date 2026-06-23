@@ -58,13 +58,16 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_clzExpansionOk
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_hoistedFunctionsRetained
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_frontendValidated
+#check EvmCompiler.Solidity.RawAst.Elab.clzHelperFunctionDef_spec
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperFunctionDef_toYul?_some
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_parts
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_mem
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_shape
+#check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_spec
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_toYul?_some
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzExpansionOk
+#check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzHelperSpecOk
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_hoistedFunctionsRetained
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_parts
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_noRawClzCall
@@ -164,13 +167,16 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_clzExpansionOk
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_hoistedFunctionsRetained
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_frontendValidated
+#print axioms EvmCompiler.Solidity.RawAst.Elab.clzHelperFunctionDef_spec
 #print axioms EvmCompiler.Solidity.RawAst.Elab.clzHelperFunctionDef_toYul?_some
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_parts
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_shape
+#print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_spec
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_toYul?_some
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzExpansionOk
+#print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzHelperSpecOk
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_hoistedFunctionsRetained
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_parts
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_noRawClzCall

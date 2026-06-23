@@ -738,55 +738,95 @@ def ensureClzHelper : ElabM Name := do
           clzReturnName? := some ret }
       pure helper
 
+def clzPrim (name : Name) (args : List Frontend.Expr) : Frontend.Expr :=
+  Frontend.Expr.call .primitive name args
+
+def clzValue (name : Name) : Frontend.Expr :=
+  Frontend.Expr.var name
+
+def clzWord (value : Nat) : Frontend.Expr :=
+  Frontend.Expr.lit (EvmYul.UInt256.ofNat value)
+
+def clzHelperStepSchedule : List (Nat × Nat) :=
+  [(128, 128), (192, 64), (224, 32), (240, 16), (248, 8),
+    (252, 4), (254, 2), (255, 1)]
+
+def clzHelperStepScheduleOk? : Bool :=
+  clzHelperStepSchedule.all fun step => step.fst + step.snd == 256
+
+theorem clzHelperStepScheduleOk :
+    clzHelperStepScheduleOk? = true := by
+  rfl
+
+def clzHelperStepBody (argName returnName : Name)
+    (addend : Nat) : List Frontend.Stmt :=
+  let stepBody : List Frontend.Stmt :=
+    [Frontend.Stmt.assign [returnName]
+      (clzPrim "add" [clzValue returnName, clzWord addend])]
+  if addend == 1 then
+    stepBody
+  else
+    stepBody ++
+      [Frontend.Stmt.assign [argName]
+        (clzPrim "shl" [clzWord addend, clzValue argName])]
+
+def clzHelperAppendStep (argName returnName : Name)
+    (body : List Frontend.Stmt) (step : Nat × Nat) : List Frontend.Stmt :=
+  let checkShift := step.fst
+  let addend := step.snd
+  body ++
+    [Frontend.Stmt.ifThen
+      (clzPrim "iszero"
+        [clzPrim "shr" [clzWord checkShift, clzValue argName]])
+      (clzHelperStepBody argName returnName addend)]
+
+def clzHelperNonzeroBody (argName returnName : Name) :
+    List Frontend.Stmt :=
+  clzHelperStepSchedule.foldl
+    (clzHelperAppendStep argName returnName)
+    [Frontend.Stmt.assign [returnName] (clzWord 0)]
+
+def clzHelperBody (argName returnName : Name) :
+    List Frontend.Stmt :=
+  [Frontend.Stmt.assign [returnName] (clzWord 256),
+    Frontend.Stmt.ifThen (clzValue argName)
+      (clzHelperNonzeroBody argName returnName)]
+
 def clzHelperFunctionDef (argName returnName : Name) :
     Frontend.FunctionDef :=
-  let prim (name : Name) (args : List Frontend.Expr) :=
-    Frontend.Expr.call .primitive name args
-  let value (name : Name) := Frontend.Expr.var name
-  let word (value : Nat) :=
-    Frontend.Expr.lit (EvmYul.UInt256.ofNat value)
-  let nonzeroBody :=
-    let steps : List (Nat × Nat) :=
-      [(128, 128), (192, 64), (224, 32), (240, 16), (248, 8),
-        (252, 4), (254, 2), (255, 1)]
-    let init : List Frontend.Stmt :=
-      [Frontend.Stmt.assign [returnName] (word 0)]
-    steps.foldl
-      (fun body step =>
-        let checkShift := step.fst
-        let addend := step.snd
-        let stepBody : List Frontend.Stmt :=
-          [Frontend.Stmt.assign [returnName]
-            (prim "add" [value returnName, word addend])]
-        let stepBody :=
-          if addend == 1 then
-            stepBody
-          else
-            stepBody ++
-              [Frontend.Stmt.assign [argName]
-                (prim "shl" [word addend, value argName])]
-        body ++
-          [Frontend.Stmt.ifThen
-            (prim "iszero"
-              [prim "shr" [word checkShift, value argName]])
-            stepBody])
-      init
   { params := [argName]
     returns := [returnName]
-    body :=
-      [Frontend.Stmt.assign [returnName] (word 256),
-        Frontend.Stmt.ifThen (value argName) nonzeroBody] }
+    body := clzHelperBody argName returnName }
+
+structure ClzHelperSpec (fn : Frontend.FunctionDef)
+    (argName returnName : Name) : Prop where
+  params_eq : fn.params = [argName]
+  returns_eq : fn.returns = [returnName]
+  body_eq : fn.body = clzHelperBody argName returnName
+  schedule_ok : clzHelperStepScheduleOk? = true
+
+theorem clzHelperFunctionDef_spec (argName returnName : Name) :
+    ClzHelperSpec (clzHelperFunctionDef argName returnName)
+      argName returnName := by
+  exact
+    { params_eq := rfl
+      returns_eq := rfl
+      body_eq := rfl
+      schedule_ok := clzHelperStepScheduleOk }
 
 theorem clzHelperFunctionDef_shape (argName returnName : Name) :
     (clzHelperFunctionDef argName returnName).params = [argName] ∧
       (clzHelperFunctionDef argName returnName).returns = [returnName] := by
-  simp [clzHelperFunctionDef]
+  have hSpec := clzHelperFunctionDef_spec argName returnName
+  exact ⟨hSpec.params_eq, hSpec.returns_eq⟩
 
 theorem clzHelperFunctionDef_toYul?_some (argName returnName : Name) :
     ∃ body,
       Frontend.FunctionDef.toYul? (clzHelperFunctionDef argName returnName) =
         some (.Def [argName] [returnName] body) := by
-  unfold clzHelperFunctionDef Frontend.FunctionDef.toYul?
+  unfold clzHelperFunctionDef clzHelperBody clzHelperNonzeroBody
+    clzHelperAppendStep clzHelperStepBody clzHelperStepSchedule clzPrim
+    clzValue clzWord Frontend.FunctionDef.toYul?
   simp [Frontend.Stmt.List.toYul?, Frontend.Stmt.toYul?,
     Frontend.Expr.toYul?, Frontend.Expr.List.toYul?,
     Frontend.Primitive.ofName?]
@@ -1125,6 +1165,21 @@ theorem elaborateCode_clzHelper_shape
   · exact (clzHelperFunctionDef_shape arg ret).1
   · exact (clzHelperFunctionDef_shape arg ret).2
 
+theorem elaborateCode_clzHelper_spec
+    {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
+    {functions : List (Name × Frontend.FunctionDef)}
+    {helper arg ret : Name}
+    (hElab :
+      elaborateCode stmts = .ok
+        (dispatcher, functions, some helper, some arg, some ret)) :
+    ∃ fn,
+      (helper, fn) ∈ functions ∧
+        ClzHelperSpec fn arg ret := by
+  exact
+    ⟨clzHelperFunctionDef arg ret,
+      elaborateCode_clzHelper_mem hElab,
+      clzHelperFunctionDef_spec arg ret⟩
+
 theorem elaborateCode_clzHelper_toYul?_some
     {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
     {functions : List (Name × Frontend.FunctionDef)}
@@ -1344,6 +1399,22 @@ def Object.ClzExpansionOk (raw : Object)
             helper?, arg?, ret?) ∧
           Elab.ClzExpansionOk frontend.functions helper? arg? ret?
 
+def Object.ClzHelperSpecOk (raw : Object)
+    (frontend : Frontend.Object) : Prop :=
+  match raw.code? with
+  | none => True
+  | some code =>
+      ∃ (helper? arg? ret? : Option Name),
+        Elab.elaborateCode code =
+          .ok (frontend.dispatcher, frontend.functions,
+            helper?, arg?, ret?) ∧
+          match helper?, arg?, ret? with
+          | some helper, some arg, some ret =>
+              ∃ fn,
+                (helper, fn) ∈ frontend.functions ∧
+                  Elab.ClzHelperSpec fn arg ret
+          | _, _, _ => True
+
 def Object.HoistedFunctionsRetained (raw : Object)
     (frontend : Frontend.Object) : Prop :=
   match raw.code? with
@@ -1380,6 +1451,29 @@ theorem Object.elaborate?_clzExpansionOk
       exact
         ⟨helper?, arg?, ret?, hCodeElab,
           Elab.elaborateCode_clzExpansionOk hCodeElab⟩
+
+theorem Object.elaborate?_clzHelperSpecOk
+    {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
+    {frontend : Frontend.Object}
+    (hElab : Object.elaborate? obj evmVersion = .ok frontend) :
+    Object.ClzHelperSpecOk obj frontend := by
+  rcases Object.elaborate?_parts hElab with
+    ⟨itemFuel, dispatcher, functions, helper?, arg?, ret?, data, objects,
+      items, _hFuel, hCode, _hItems, hFrontend⟩
+  subst frontend
+  cases hRawCode : obj.code? with
+  | none =>
+      simp [Object.ClzHelperSpecOk, hRawCode]
+  | some code =>
+      have hCodeElab :
+          Elab.elaborateCode code =
+            .ok (dispatcher, functions, helper?, arg?, ret?) := by
+        simpa [hRawCode] using hCode
+      unfold Object.ClzHelperSpecOk
+      rw [hRawCode]
+      refine ⟨helper?, arg?, ret?, hCodeElab, ?_⟩
+      cases helper? <;> cases arg? <;> cases ret? <;> simp
+      exact Elab.elaborateCode_clzHelper_spec hCodeElab
 
 theorem Object.elaborate?_hoistedFunctionsRetained
     {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
@@ -1443,10 +1537,11 @@ def Object.itemRefsPreserveOrder? (raw : Object)
 def Object.FrontendValidated (raw : Object)
     (frontend : Frontend.Object) : Prop :=
   Object.itemRefsPreserveOrder? raw frontend = true ∧
-    Frontend.Object.noRawClzCall? frontend = true ∧
+      Frontend.Object.noRawClzCall? frontend = true ∧
       Frontend.Object.functionDefStubsRetained? frontend = true ∧
         Object.ClzExpansionOk raw frontend ∧
-          Object.HoistedFunctionsRetained raw frontend
+          Object.ClzHelperSpecOk raw frontend ∧
+            Object.HoistedFunctionsRetained raw frontend
 
 def Object.elaboratePreservingOrder? (obj : Object)
     (evmVersion : Yul.SolcValidation.EvmVersion) :
@@ -1566,6 +1661,7 @@ theorem Object.elaboratePreservingOrder?_frontendValidated
       Object.elaboratePreservingOrder?_noRawClzCall hElab,
       Object.elaboratePreservingOrder?_functionDefStubsRetained hElab,
       Object.elaborate?_clzExpansionOk hObject,
+      Object.elaborate?_clzHelperSpecOk hObject,
       Object.elaborate?_hoistedFunctionsRetained hObject⟩
 
 def walkObjectsFuel : Nat → Object → List Object
