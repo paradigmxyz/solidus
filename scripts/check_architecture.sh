@@ -110,6 +110,22 @@ if rg -n 'GeneratedContext|YulStackCompactDoneRel' \
 fi
 rg -q 'VerifiedStackObjectDoneRel' EvmCompiler/Yul/EndToEnd.lean ||
   fail 'Yul.EndToEnd must use the artifact-level public outcome relation'
+rg -q 'VerifiedStackObjectPrefixDoneRel' EvmCompiler/Yul/EndToEnd.lean ||
+  fail 'Yul.EndToEnd must use the artifact-level finite-prefix relation'
+
+public_forward_theorem="$(sed -n \
+  '/^theorem optimizedSolcYulToRawBytecode$/,/^theorem optimizedSolcYulToRawBytecodeFinished$/p' \
+  EvmCompiler/Yul/EndToEnd.lean)"
+[[ "$public_forward_theorem" == *"(hObject :"* ]] ||
+  fail 'the canonical forward theorem must be driven by checked compilation'
+[[ "$public_forward_theorem" == *"Simulation.Interaction.ForwardRel"* ]] ||
+  fail 'the canonical theorem must expose unconditional finite-prefix preservation'
+[[ "$public_forward_theorem" == *"VerifiedStackObjectPrefixDoneRel"* ]] ||
+  fail 'the canonical theorem must hide generated context behind the artifact prefix relation'
+if printf '%s\n' "$public_forward_theorem" | rg -n \
+    'hFinished|hTerminal|hYulInitial|hYulDomain|hStackInitial|ExecutionSafe|SourceSafety|Scratch|GeneratedContext|certificate|oracle|replay'; then
+  fail 'the canonical forward theorem regained a completion, derived, generated, or replay premise'
+fi
 
 public_finished_theorem="$(sed -n \
   '/^theorem optimizedSolcYulToRawBytecodeFinished$/,/^end EndToEnd$/p' \

@@ -1993,6 +1993,234 @@ def VerifiedStackObjectDoneRel
         artifact.codeArtifact.compiled.certified.target
         sourceDone targetDone
 
+/-- Public finite-prefix relation for a checked recursive object artifact.
+Compiler-generated CFG context remains an existential implementation detail. -/
+def VerifiedStackObjectPrefixDoneRel
+    (artifact : Solidity.Frontend.VerifiedStackObjectArtifact) :
+    Except Yul.InteractionSemantics.Failure
+        Yul.InteractionSemantics.State ->
+      Assembly.Source.ExecutionOutcome -> Prop :=
+  fun sourceDone targetDone =>
+    exists generated :
+        Structured.TypedCfgPreservation.Program.GeneratedContext
+          artifact.codeArtifact.compiled.expressions.toStructured
+          artifact.codeArtifact.compiled.entryShapes
+          artifact.codeArtifact.compiled.cfg,
+      YulStackCompactPrefixDoneRel
+        artifact.codeArtifact.compiled.expressions.toStructured
+        artifact.codeArtifact.compiled.entryShapes
+        artifact.codeArtifact.compiled.cfg generated
+        artifact.codeArtifact.compiled.certified.target
+        sourceDone targetDone
+
+/-- A checked frontend stack-code artifact preserves every finite source
+prefix through its exact compact bytes, without a terminality premise. -/
+theorem compiledVerifiedStackCodeToRawBytecodeForward
+    {object : Solidity.Frontend.Object}
+    {context : Solidity.Frontend.ObjectBuiltinContext}
+    {codeArtifact : Solidity.Frontend.Object.VerifiedStackCodeArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (payload : List UInt8 := [])
+    (hCode : object.compileVerifiedStackCodeArtifactIn? context =
+      some codeArtifact)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial
+        (Yul.Contract.names codeArtifact.ordered.program.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState) :
+    exists structuredFuel,
+      Assembly.Accepted codeArtifact.compiled.certified.target /\
+        exists generated :
+            Structured.TypedCfgPreservation.Program.GeneratedContext
+              codeArtifact.compiled.expressions.toStructured
+              codeArtifact.compiled.entryShapes codeArtifact.compiled.cfg,
+          Simulation.Interaction.ForwardRel
+            Yul.FunctionsInteractionPrimitive.Truncated
+            (YulStackCompactPrefixDoneRel
+              codeArtifact.compiled.expressions.toStructured
+              codeArtifact.compiled.entryShapes codeArtifact.compiled.cfg
+              generated codeArtifact.compiled.certified.target)
+            (Yul.InteractionSemantics.exec (sourceFuel + 1)
+              (.Block [codeArtifact.ordered.program.contract.dispatcher])
+              (some codeArtifact.ordered.program.contract) source)
+            (Assembly.Compact.InteractionSemantics.openRunNResult
+              (Assembly.Bytecode.ofList (codeArtifact.bytes ++ payload))
+              (2 *
+                ((Structured.InteractionStaticCost.blockBudget
+                    codeArtifact.compiled.expressions.toStructured
+                    structuredFuel
+                    codeArtifact.compiled.expressions.toStructured.body + 1) *
+                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                    codeArtifact.compiled.cfg))
+              { expressionsState.evm with
+                pc := EvmYul.UInt256.ofNat 0 }) := by
+  obtain ⟨_hResolved, hOrdered, hLower, hStackArtifact, _pinnedPushPcs,
+      _hPins, hCompact, hBytes, _hMarker⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts hCode
+  have hSource :=
+    Solidity.Frontend.Object.toSolcYulOrderedProgram?_source hOrdered
+  let decomposition :=
+    Yul.FunctionsCompilerArtifact.passDecomposition_of_ordered_toObjects?
+      hLower hSource.1 hSource.2.1
+  have hProgramOk :
+      Yul.SolcValidation.ProgramOkWithEntries?
+          codeArtifact.resolved.dialectProfile
+          codeArtifact.ordered.program decomposition.functionEntries = true := by
+    simpa [decomposition,
+      Yul.FunctionsCompilerArtifact.passDecomposition_of_ordered_toObjects?]
+      using
+        Solidity.Frontend.Object.toSolcYulOrderedProgram?_programOkWithEntries
+          hOrdered
+  obtain ⟨hNormalize, _hSourceSupported, hNormalizedSupported, hStackLower,
+      hExpressions, hStructuredWF, _hShapes, hGenerate, hWellTyped,
+      hIndependent, hCertified, _hTarget, _hWindow, hNormalizedAccepted,
+      _hSourceAccepted⟩ :=
+    Compiler.StackArtifact.compile?_parts hStackArtifact
+  have hAssembly := Compiler.StackArtifact.compile?_assembly hStackArtifact
+  have hFrameSafe := Compiler.StackArtifact.compile?_frameSafe hStackArtifact
+  let targetState : Assembly.EVMState :=
+    { expressionsState.evm with pc := EvmYul.UInt256.ofNat 0 }
+  have hAssemblyInitial : Assembly.SameRuntimeData expressionsState.evm
+      targetState.incrPC := by
+    apply Assembly.SameRuntimeData.incrPC_right
+    apply Assembly.SameRuntimeData.with_pc_right
+    exact Assembly.SameRuntimeData.refl _
+  obtain ⟨structuredFuel, generated, hAssemblyForward⟩ :=
+    yulToNormalizedStackAssemblyPrefixForward decomposition hProgramOk
+      hNormalize hNormalizedAccepted.1 hNormalizedAccepted.2
+      hNormalizedSupported hStackLower hExpressions hYulInitial hYulDomain
+      hStackInitial hGenerate hWellTyped hStructuredWF hFrameSafe hCertified
+      hIndependent rfl hAssemblyInitial
+  have hCompactForward := stackAssemblyPrefixToCompactBytecode payload
+    hAssemblyForward hCompact rfl rfl (Assembly.SameRuntimeData.refl targetState)
+  have hAccepted : Assembly.Accepted
+      codeArtifact.compiled.certified.target :=
+    Assembly.Preservation.compile?_some_accepted hAssembly
+  refine ⟨structuredFuel, hAccepted, generated, ?_⟩
+  rw [hBytes]
+  simpa [targetState, List.append_assoc] using hCompactForward
+
+/-- Recursive object construction preserves the root code prefix through the
+exact checked object image. Child objects and data remain compiler-owned
+payload bytes behind the root sentinel. -/
+theorem compiledVerifiedStackObjectToRawBytecodeForward
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial
+        (Yul.Contract.names
+          artifact.codeArtifact.ordered.program.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState) :
+    exists structuredFuel,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target /\
+        exists generated :
+            Structured.TypedCfgPreservation.Program.GeneratedContext
+              artifact.codeArtifact.compiled.expressions.toStructured
+              artifact.codeArtifact.compiled.entryShapes
+              artifact.codeArtifact.compiled.cfg,
+          Simulation.Interaction.ForwardRel
+            Yul.FunctionsInteractionPrimitive.Truncated
+            (YulStackCompactPrefixDoneRel
+              artifact.codeArtifact.compiled.expressions.toStructured
+              artifact.codeArtifact.compiled.entryShapes
+              artifact.codeArtifact.compiled.cfg generated
+              artifact.codeArtifact.compiled.certified.target)
+            (Yul.InteractionSemantics.exec (sourceFuel + 1)
+              (.Block
+                [artifact.codeArtifact.ordered.program.contract.dispatcher])
+              (some artifact.codeArtifact.ordered.program.contract) source)
+            (Assembly.Compact.InteractionSemantics.openRunNResult
+              (Assembly.Bytecode.ofList artifact.image.bytes)
+              (2 *
+                ((Structured.InteractionStaticCost.blockBudget
+                    artifact.codeArtifact.compiled.expressions.toStructured
+                    structuredFuel
+                    artifact.codeArtifact.compiled.expressions.toStructured.body +
+                      1) *
+                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                    artifact.codeArtifact.compiled.cfg))
+              { expressionsState.evm with
+                pc := EvmYul.UInt256.ofNat 0 }) := by
+  obtain ⟨_children, plan, _codeArtifact, _hChildren, _hPlan, _hFinish, hCode,
+      _hArtifactChildren, _hContext, _hChildImages, _hPayload, hImage⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+      hObject
+  have hResult :=
+    compiledVerifiedStackCodeToRawBytecodeForward
+      (sourceFuel := sourceFuel) (payload := plan.payload)
+      hCode hYulInitial hYulDomain hStackInitial
+  simpa [hImage] using hResult
+
+/-- Public recursive-object prefix theorem with generated CFG context hidden
+behind the artifact-level outcome relation. -/
+theorem compiledVerifiedStackObjectToRawBytecodeForwardPublic
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial
+        (Yul.Contract.names
+          artifact.codeArtifact.ordered.program.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState) :
+    exists structuredFuel,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target /\
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated
+          (VerifiedStackObjectPrefixDoneRel artifact)
+          (Yul.InteractionSemantics.exec (sourceFuel + 1)
+            (.Block
+              [artifact.codeArtifact.ordered.program.contract.dispatcher])
+            (some artifact.codeArtifact.ordered.program.contract) source)
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { expressionsState.evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  obtain ⟨structuredFuel, hAccepted, generated, hForward⟩ :=
+    compiledVerifiedStackObjectToRawBytecodeForward hObject hYulInitial
+      hYulDomain hStackInitial
+  refine ⟨structuredFuel, hAccepted, ?_⟩
+  exact Simulation.Interaction.ForwardRel.mono hForward
+    (fun _sourceDone _targetDone hDone => ⟨generated, hDone⟩)
+
 /-- Compose the logical Assembly source run with the checked compact physical
 encoding. The byte suffix is caller-owned object data and is proved irrelevant
 to every decoded code instruction by the Assembly pass. -/

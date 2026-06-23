@@ -58,6 +58,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackAssemblyPrefixForward
 #check EvmCompiler.Assembly.Compact.InteractionSemantics.compile?_source_openRunNResult_branch
 #check EvmCompiler.Compiler.OpenInteractionComposition.stackAssemblyPrefixToCompactBytecode
+#check EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecodeForwardPublic
 #check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.UniformExecPreservesUnder.with_runtime_errors_and_truncation
 #check EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackExpressionsFinished
 #check EvmCompiler.Compiler.OpenInteractionComposition.stackExpressionsToStructuredFinished
@@ -74,6 +75,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
 #check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecode
 #check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
+#check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedLegacy
 
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyForward
@@ -86,6 +88,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.yulToNormalizedStackAssemblyPrefixForward
 #print axioms EvmCompiler.Assembly.Compact.InteractionSemantics.compile?_source_openRunNResult_branch
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.stackAssemblyPrefixToCompactBytecode
+#print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecodeForwardPublic
 #print axioms EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.UniformExecPreservesUnder.with_runtime_errors_and_truncation
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyFinished
 #print axioms EvmCompiler.Assembly.InteractionFuelSafety.PrimOp.openStep
@@ -106,3 +109,4 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.stackAssemblyToCompactBytecodeFinished
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecode
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
+#print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedLegacy

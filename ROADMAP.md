@@ -168,11 +168,11 @@ suffix. The all-finished theorem remains a corollary, not the primary boundary.
   safety and exact structural-truncation reflection.
 - [x] Compose Assembly -> compact decoded bytecode through pass-owned
   preparation and physical-encoding prefix theorems.
-- [ ] Compose compact bytecode through recursive objects
+- [x] Compose compact bytecode through recursive objects
   without requiring terminal or finished source trees.
-- [ ] Publish a short canonical `Yul.EndToEnd` forward theorem requiring only
+- [x] Publish a short canonical `Yul.EndToEnd` forward theorem requiring only
   checked compilation and canonical related initial states.
-- [ ] Derive the existing terminal/all-finished theorems from the forward
+- [x] Derive the canonical all-finished theorem from the forward
   theorem plus their explicit run properties.
-- [ ] Guard the public theorem against `hFinished`, generated evidence, replay
+- [x] Guard the public theorem against `hFinished`, generated evidence, replay
   witnesses, or imports that cross nonadjacent compiler owners.
