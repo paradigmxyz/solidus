@@ -477,6 +477,9 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_assignLet_outerArg_seqHead_call_occurrence_routes_succ`
   exposes those outer assignment/declaration writeback contexts in direct
   `execSeq` form for recursive statement-list composition.
+  `alphaRenamedLocalCallPreserved_assignLet_outerArg_seqPrefix_call_occurrence_routes_succ`
+  composes those returned-value writeback sequence-head facts after arbitrary
+  regularly executed prefixes.
   `alphaRenamedLocalCallPreserved_exprStmt_outerArg_call_occurrence_routes_succ`
   covers the no-target expression-statement sibling, including the extra fuel
   step in Yul's user-function expression-statement rule.
