@@ -316,9 +316,17 @@ Next raw frontend layer:
   elaboration. Function-definition bodies now also have no-shadow wrappers
   through `FunctionDef.elaborate` and the enclosing statement elaboration,
   carrying body occurrences to frontend `functionBody` user-call occurrences.
-  Recursive source-side nested block/body occurrence
-  traversal, including fully shadow-aware post/body wrapper composition,
-  remains the next statement/control-layer proof work.
+  Recursive source-side nested block/body occurrence traversal is now checked
+  by the no-shadow theorem family
+  `Elab.Stmt.elaborate_noShadow_resolved_source_stmt_call`,
+  `Elab.Stmt.List.elaborate_noShadow_resolved_source_stmt_list_call`,
+  `Elab.Stmt.List.elaborateBlock_noShadow_resolved_source_stmt_list_call`,
+  `Elab.Stmt.List.elaborateForInitBlockWithScope_noShadow_resolved_source_stmt_list_call`,
+  `Elab.Stmt.CaseList.elaborate_noShadow_resolved_source_case_list_call`,
+  and
+  `Elab.FunctionDef.elaborate_noShadow_resolved_source_stmt_list_call`,
+  including block/function/switch/for/if bodies and shadow-aware post/body
+  composition.
   Successful `FunctionDef.elaborate` now also realizes source local-function
   declarations in the raw function body as generated hoisted callee entries in
   the final elaborator state, without exposing the block's internal scope
