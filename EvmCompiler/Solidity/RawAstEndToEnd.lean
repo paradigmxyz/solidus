@@ -1809,6 +1809,27 @@ structure StmtListOccurrenceRun
 
 namespace StmtListOccurrenceRun
 
+theorem occurrence
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {stmts : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      StmtListOccurrenceRun hEvidence model prim
+        prefixFuel stmts state) :
+    YulOccurrence.StmtListUserCall stmts
+      hEvidence.generated hEvidence.yulArgs := by
+  rw [hRun.hSplit]
+  exact
+    YulOccurrence.StmtListUserCall.append_right hRun.pre
+      (YulOccurrence.StmtListUserCall.head hRun.hOccurrence)
+
 theorem execSeq
     {object : Frontend.Object}
     {ordered : Yul.OrderedProgram}
@@ -1906,6 +1927,92 @@ def ofOuter
   hRest := hRun.hRest
 
 end StmtListOccurrenceRun
+
+/-- Executed `.Block` context whose body contains the focused generated-call
+occurrence. -/
+structure BlockContextRun
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    (prefixFuel : Nat)
+    (body : List Frontend.AstStmt)
+    (state : σ) where
+  bodyRun :
+    StmtListOccurrenceRun hEvidence model prim
+      prefixFuel body state
+  afterBlock : σ
+  hAfterBlock :
+    afterBlock =
+      model.withSource bodyRun.afterRest
+        ((model.source bodyRun.afterRest).restrictStoreTo
+          (model.source state).store)
+
+namespace BlockContextRun
+
+theorem context
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {body : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      BlockContextRun hEvidence model prim prefixFuel body state) :
+    YulOccurrence.StmtUserCall.Context (.Block body)
+      hEvidence.generated hEvidence.yulArgs :=
+  .block hRun.bodyRun.occurrence
+
+theorem exec
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {body : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      BlockContextRun hEvidence model prim prefixFuel body state) :
+    Yul.Source.Effectful.exec model prim
+        (((prefixFuel + 1) + hRun.bodyRun.pre.length) + 1)
+        (.Block body)
+        (some ordered.program.contract) state =
+      .ok hRun.afterBlock := by
+  have hBody := hRun.bodyRun.execSeq
+  have hExec :=
+    Yul.Source.Effectful.exec_block_of_execSeq model prim hBody
+  rw [hRun.hAfterBlock]
+  exact hExec
+
+def focusedStmt
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {body : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      BlockContextRun hEvidence model prim prefixFuel body state) :
+    FocusedStmtRun hEvidence model prim state
+      (((prefixFuel + 1) + hRun.bodyRun.pre.length) + 1)
+      (.Block body) hRun.afterBlock :=
+  .context hRun.context hRun.exec
+
+end BlockContextRun
 
 /-- Direct assignment statement execution for a generated alpha-renamed call
 from the bundled Yul evidence. -/
