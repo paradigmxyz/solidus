@@ -1659,8 +1659,166 @@ theorem loop_ok_parts
                                           hPost
                                           (by simp [LoopPostRecurs,
                                             hPostSource])
-                                          hLoop
-                                          (Except.ok.inj hRun).symm⟩
+                                                  hLoop
+                                                  (Except.ok.inj hRun).symm⟩
+
+theorem loop_of_eval_after_cond_case
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {cond : EvmYul.Yul.Ast.Expr}
+    {post body : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state afterCond final : σ} {condValue : Word}
+    (hEval :
+      eval model prim fuel cond codeOverride
+          (model.withSource state
+            (EvmYul.Yul.State.mkOk (model.source state))) =
+        .ok (afterCond, condValue))
+    (hCase :
+      LoopAfterCondCase model prim fuel cond post body codeOverride
+        (model.source state) afterCond condValue final) :
+    loop model prim (fuel + 1 + 1) cond post body codeOverride state =
+      .ok final := by
+  cases hCase with
+  | false hZero hFinal =>
+      have hZeroLit : condValue = (⟨0⟩ : Word) := by
+        simpa using hZero
+      simp [loop, hEval, hZeroLit, hFinal]
+  | bodyOutOfFuel hNonzero hBody hBodySource hFinal =>
+      have hNonzeroLit : condValue ≠ (⟨0⟩ : Word) := by
+        simpa using hNonzero
+      simp [loop, hEval, hNonzeroLit, hBody, hBodySource, hFinal]
+  | bodyBreak hNonzero hBody hBodySource hFinal =>
+      have hNonzeroLit : condValue ≠ (⟨0⟩ : Word) := by
+        simpa using hNonzero
+      simp [loop, hEval, hNonzeroLit, hBody, hBodySource, hFinal]
+  | bodyLeave hNonzero hBody hBodySource hFinal =>
+      have hNonzeroLit : condValue ≠ (⟨0⟩ : Word) := by
+        simpa using hNonzero
+      simp [loop, hEval, hNonzeroLit, hBody, hBodySource, hFinal]
+  | @postOutOfFuel hNonzero afterBody afterPost hBody hBodyContinues
+      hPost hPostSource hFinal =>
+      have hNonzeroLit : condValue ≠ (⟨0⟩ : Word) := by
+        simpa using hNonzero
+      cases hBodySource : model.source afterBody with
+      | OutOfFuel =>
+          simp [LoopBodyContinues, hBodySource] at hBodyContinues
+      | Checkpoint jump =>
+          cases jump with
+          | Break shared store =>
+              simp [LoopBodyContinues, hBodySource] at hBodyContinues
+          | Leave shared store =>
+              simp [LoopBodyContinues, hBodySource] at hBodyContinues
+          | Continue shared store =>
+              have hPost' := hPost
+              simp only [hBodySource] at hPost'
+              simp [loop, hEval, hNonzeroLit, hBody, hBodySource,
+                hPost', hPostSource, hFinal]
+      | Ok shared store =>
+          have hPost' := hPost
+          simp only [hBodySource] at hPost'
+          simp [loop, hEval, hNonzeroLit, hBody, hBodySource,
+            hPost', hPostSource, hFinal]
+  | @postLeave hNonzero afterBody afterPost shared store hBody
+      hBodyContinues hPost hPostSource hFinal =>
+      have hNonzeroLit : condValue ≠ (⟨0⟩ : Word) := by
+        simpa using hNonzero
+      cases hBodySource : model.source afterBody with
+      | OutOfFuel =>
+          simp [LoopBodyContinues, hBodySource] at hBodyContinues
+      | Checkpoint jump =>
+          cases jump with
+          | Break shared store =>
+              simp [LoopBodyContinues, hBodySource] at hBodyContinues
+          | Leave shared store =>
+              simp [LoopBodyContinues, hBodySource] at hBodyContinues
+          | Continue shared store =>
+              have hPost' := hPost
+              simp only [hBodySource] at hPost'
+              simp [loop, hEval, hNonzeroLit, hBody, hBodySource,
+                hPost', hPostSource, hFinal]
+      | Ok shared store =>
+          have hPost' := hPost
+          simp only [hBodySource] at hPost'
+          simp [loop, hEval, hNonzeroLit, hBody, hBodySource,
+            hPost', hPostSource, hFinal]
+  | @recurse hNonzero afterBody afterPost afterLoop hBody hBodyContinues
+      hPost hPostRecurs hLoop hFinal =>
+      have hNonzeroLit : condValue ≠ (⟨0⟩ : Word) := by
+        simpa using hNonzero
+      cases hBodySource : model.source afterBody with
+      | OutOfFuel =>
+          simp [LoopBodyContinues, hBodySource] at hBodyContinues
+      | Checkpoint jump =>
+          cases jump with
+          | Break shared store =>
+              simp [LoopBodyContinues, hBodySource] at hBodyContinues
+          | Leave shared store =>
+              simp [LoopBodyContinues, hBodySource] at hBodyContinues
+          | Continue shared store =>
+              have hPost' := hPost
+              simp only [hBodySource] at hPost'
+              cases hPostSource : model.source afterPost with
+              | OutOfFuel =>
+                  simp [LoopPostRecurs, hPostSource] at hPostRecurs
+              | Checkpoint postJump =>
+                  cases postJump with
+                  | Leave postShared postStore =>
+                      simp [LoopPostRecurs, hPostSource] at hPostRecurs
+                  | Break postShared postStore =>
+                      have hLoop' := hLoop
+                      simp only [hPostSource] at hLoop'
+                      simp [loop, hEval, hNonzeroLit, hBody, hBodySource,
+                        hPost', hPostSource, hLoop', hFinal]
+                  | Continue postShared postStore =>
+                      have hLoop' := hLoop
+                      simp only [hPostSource] at hLoop'
+                      simp [loop, hEval, hNonzeroLit, hBody, hBodySource,
+                        hPost', hPostSource, hLoop', hFinal]
+              | Ok postShared postStore =>
+                  have hLoop' := hLoop
+                  simp only [hPostSource] at hLoop'
+                  simp [loop, hEval, hNonzeroLit, hBody, hBodySource,
+                    hPost', hPostSource, hLoop', hFinal]
+      | Ok shared store =>
+          have hPost' := hPost
+          simp only [hBodySource] at hPost'
+          cases hPostSource : model.source afterPost with
+          | OutOfFuel =>
+              simp [LoopPostRecurs, hPostSource] at hPostRecurs
+          | Checkpoint postJump =>
+              cases postJump with
+              | Leave postShared postStore =>
+                  simp [LoopPostRecurs, hPostSource] at hPostRecurs
+              | Break postShared postStore =>
+                  have hLoop' := hLoop
+                  simp only [hPostSource] at hLoop'
+                  simp [loop, hEval, hNonzeroLit, hBody, hBodySource,
+                    hPost', hPostSource, hLoop', hFinal]
+              | Continue postShared postStore =>
+                  have hLoop' := hLoop
+                  simp only [hPostSource] at hLoop'
+                  simp [loop, hEval, hNonzeroLit, hBody, hBodySource,
+                    hPost', hPostSource, hLoop', hFinal]
+          | Ok postShared postStore =>
+              have hLoop' := hLoop
+              simp only [hPostSource] at hLoop'
+              simp [loop, hEval, hNonzeroLit, hBody, hBodySource,
+                hPost', hPostSource, hLoop', hFinal]
+
+theorem exec_for_of_loop
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {cond : EvmYul.Yul.Ast.Expr}
+    {post body : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ}
+    (hLoop :
+      loop model prim fuel cond post body codeOverride state =
+        .ok final) :
+    exec model prim (fuel + 1) (.For cond post body) codeOverride state =
+      .ok final := by
+  simp [exec, hLoop]
 
 theorem exec_leave_ok_parts
     {σ : Type} (model : StateModel σ)

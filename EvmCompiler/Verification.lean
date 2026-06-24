@@ -421,6 +421,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Yul.Source.Effectful.evalArgs_split_focus_of_parts
 #check EvmCompiler.Yul.Source.Effectful.evalValues_primitive_split_focus_of_parts
 #check EvmCompiler.Yul.Source.Effectful.evalValues_function_split_focus_of_parts
+#check EvmCompiler.Yul.Source.Effectful.loop_of_eval_after_cond_case
+#check EvmCompiler.Yul.Source.Effectful.exec_for_of_loop
 #check EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_outerArg_evalValues_call_occurrence_routes_succ
 #check EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_outerArg_eval_call_occurrence_routes_succ
 #check EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_ifCondition_outerArg_call_occurrence_routes_succ
@@ -845,6 +847,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_split_focus_of_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.evalValues_primitive_split_focus_of_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.evalValues_function_split_focus_of_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.loop_of_eval_after_cond_case
+#print axioms EvmCompiler.Yul.Source.Effectful.exec_for_of_loop
 #print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_outerArg_evalValues_call_occurrence_routes_succ
 #print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_outerArg_eval_call_occurrence_routes_succ
 #print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_ifCondition_outerArg_call_occurrence_routes_succ
