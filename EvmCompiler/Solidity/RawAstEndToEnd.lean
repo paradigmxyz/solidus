@@ -2014,6 +2014,131 @@ def focusedStmt
 
 end BlockContextRun
 
+/-- Executed `.Switch` context whose selected body contains the focused
+generated-call occurrence.  The selected-body equality is semantic: occurrences
+in unselected cases/defaults do not inhabit this run. -/
+structure SwitchContextRun
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    (prefixFuel : Nat)
+    (scrutinee : Frontend.AstExpr)
+    (cases : List (Frontend.Word × List Frontend.AstStmt))
+    (defaultBody selectedBody : List Frontend.AstStmt)
+    (state : σ) where
+  stateAfterScrutinee : σ
+  scrutineeValue : Frontend.Word
+  bodyRun :
+    StmtListOccurrenceRun hEvidence model prim
+      prefixFuel selectedBody stateAfterScrutinee
+  hEval :
+    Yul.Source.Effectful.eval model prim
+        (((prefixFuel + 1) + bodyRun.pre.length) + 1)
+        scrutinee (some ordered.program.contract) state =
+      .ok (stateAfterScrutinee, scrutineeValue)
+  hSelected :
+    EvmYul.Yul.selectSwitchCase scrutineeValue defaultBody cases =
+      selectedBody
+  hContext :
+    YulOccurrence.StmtUserCall.Context
+      (.Switch scrutinee cases defaultBody)
+      hEvidence.generated hEvidence.yulArgs
+  afterSwitch : σ
+  hAfterSwitch :
+    afterSwitch =
+      model.withSource bodyRun.afterRest
+        ((model.source bodyRun.afterRest).restrictStoreTo
+          (model.source stateAfterScrutinee).store)
+
+namespace SwitchContextRun
+
+theorem context
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {scrutinee : Frontend.AstExpr}
+    {cases : List (Frontend.Word × List Frontend.AstStmt)}
+    {defaultBody selectedBody : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      SwitchContextRun hEvidence model prim prefixFuel
+        scrutinee cases defaultBody selectedBody state) :
+    YulOccurrence.StmtUserCall.Context
+      (.Switch scrutinee cases defaultBody)
+      hEvidence.generated hEvidence.yulArgs :=
+  hRun.hContext
+
+theorem exec
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {scrutinee : Frontend.AstExpr}
+    {cases : List (Frontend.Word × List Frontend.AstStmt)}
+    {defaultBody selectedBody : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      SwitchContextRun hEvidence model prim prefixFuel
+        scrutinee cases defaultBody selectedBody state) :
+    Yul.Source.Effectful.exec model prim
+        ((((prefixFuel + 1) + hRun.bodyRun.pre.length) + 1) + 1)
+        (.Switch scrutinee cases defaultBody)
+        (some ordered.program.contract) state =
+      .ok hRun.afterSwitch := by
+  have hBodySeq := hRun.bodyRun.execSeq
+  have hBodyBlockSelected :
+      Yul.Source.Effectful.exec model prim
+          (((prefixFuel + 1) + hRun.bodyRun.pre.length) + 1)
+          (.Block
+            (EvmYul.Yul.selectSwitchCase
+              hRun.scrutineeValue defaultBody cases))
+          (some ordered.program.contract) hRun.stateAfterScrutinee =
+        .ok hRun.afterSwitch := by
+    rw [hRun.hSelected]
+    have hBodyBlock :=
+      Yul.Source.Effectful.exec_block_of_execSeq model prim hBodySeq
+    rw [hRun.hAfterSwitch]
+    exact hBodyBlock
+  exact
+    Yul.Source.Effectful.exec_switch_of_eval
+      model prim hRun.hEval hBodyBlockSelected
+
+def focusedStmt
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {scrutinee : Frontend.AstExpr}
+    {cases : List (Frontend.Word × List Frontend.AstStmt)}
+    {defaultBody selectedBody : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      SwitchContextRun hEvidence model prim prefixFuel
+        scrutinee cases defaultBody selectedBody state) :
+    FocusedStmtRun hEvidence model prim state
+      ((((prefixFuel + 1) + hRun.bodyRun.pre.length) + 1) + 1)
+      (.Switch scrutinee cases defaultBody) hRun.afterSwitch :=
+  .context hRun.context hRun.exec
+
+end SwitchContextRun
+
 /-- Direct assignment statement execution for a generated alpha-renamed call
 from the bundled Yul evidence. -/
 theorem assign_succ

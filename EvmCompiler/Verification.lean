@@ -373,6 +373,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BlockContextRun.context
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BlockContextRun.exec
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BlockContextRun.focusedStmt
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.SwitchContextRun
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.SwitchContextRun.context
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.SwitchContextRun.exec
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.SwitchContextRun.focusedStmt
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.assign_succ
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.let_succ
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.exprStmt_succ
@@ -791,6 +795,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BlockContextRun.context
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BlockContextRun.exec
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BlockContextRun.focusedStmt
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.SwitchContextRun.context
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.SwitchContextRun.exec
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.SwitchContextRun.focusedStmt
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.assign_succ
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.let_succ
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.exprStmt_succ
