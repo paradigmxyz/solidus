@@ -440,6 +440,11 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_ifCondition_call_occurrence_routes_succ` and
   `alphaRenamedLocalCallPreserved_switchScrutinee_call_occurrence_routes_succ`
   compose that view through direct Yul `if` and `switch` condition contexts.
+  `alphaRenamedLocalCallPreserved_ifCondition_seqHead_call_occurrence_routes_succ`
+  and
+  `alphaRenamedLocalCallPreserved_switchScrutinee_seqHead_call_occurrence_routes_succ`
+  expose those direct control contexts in `execSeq` form for recursive
+  statement-list composition.
   `alphaRenamedLocalCallPreserved_ifCondition_blockHead_call_occurrence_routes_succ`
   and
   `alphaRenamedLocalCallPreserved_switchScrutinee_blockHead_call_occurrence_routes_succ`
