@@ -1240,6 +1240,48 @@ inductive OuterArg : Frontend.AstStmt → Name → List Frontend.AstExpr → Pro
           (.If (.Call callee (left ++ focus :: right)) body)
           generated args
 
+namespace Direct
+
+theorem toIncoming
+    {stmt : Frontend.AstStmt} {generated : Name}
+    {args : List Frontend.AstExpr}
+    (hDirect : Direct stmt generated args) :
+    StmtIncomingUserCall stmt generated args := by
+  cases hDirect with
+  | letValue =>
+      exact .letValue .here
+  | assignmentValue =>
+      exact .assignmentValue .here
+  | expressionStatement =>
+      exact .expressionStatement .here
+  | switchScrutinee =>
+      exact .switchScrutinee .here
+  | ifCondition =>
+      exact .ifCondition .here
+
+end Direct
+
+namespace OuterArg
+
+theorem toIncoming
+    {stmt : Frontend.AstStmt} {generated : Name}
+    {args : List Frontend.AstExpr}
+    (hOuter : OuterArg stmt generated args) :
+    StmtIncomingUserCall stmt generated args := by
+  cases hOuter with
+  | letValue hFocus =>
+      exact .letValue (.arg (by simp) hFocus)
+  | assignmentValue hFocus =>
+      exact .assignmentValue (.arg (by simp) hFocus)
+  | expressionStatement hFocus =>
+      exact .expressionStatement (.arg (by simp) hFocus)
+  | switchScrutinee hFocus =>
+      exact .switchScrutinee (.arg (by simp) hFocus)
+  | ifCondition hFocus =>
+      exact .ifCondition (.arg (by simp) hFocus)
+
+end OuterArg
+
 theorem direct_or_outerArg
     {stmt : Frontend.AstStmt} {generated : Name}
     {args : List Frontend.AstExpr}
@@ -1371,6 +1413,31 @@ inductive Context : Frontend.AstStmt → Name → List Frontend.AstExpr → Prop
   | ifBody {condition body generated args} :
       StmtListUserCall body generated args →
         Context (.If condition body) generated args
+
+namespace Context
+
+theorem toStmtUserCall
+    {stmt : Frontend.AstStmt} {generated : Name}
+    {args : List Frontend.AstExpr}
+    (hContext : Context stmt generated args) :
+    StmtUserCall stmt generated args := by
+  cases hContext with
+  | block hBody =>
+      exact .block hBody
+  | switchCase hCases =>
+      exact .switchCase hCases
+  | switchDefault hDefault =>
+      exact .switchDefault hDefault
+  | forCondition hCondition =>
+      exact .forCondition hCondition
+  | forPost hPost =>
+      exact .forPost hPost
+  | forBody hBody =>
+      exact .forBody hBody
+  | ifBody hBody =>
+      exact .ifBody hBody
+
+end Context
 
 theorem direct_or_outerArg_or_context
     {stmt : Frontend.AstStmt} {generated : Name}

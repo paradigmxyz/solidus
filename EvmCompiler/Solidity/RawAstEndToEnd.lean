@@ -1671,6 +1671,31 @@ theorem exec
   | context _ hExec =>
       exact hExec
 
+theorem occurrence
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {state : σ}
+    {fuel : Nat}
+    {stmt : Frontend.AstStmt}
+    {afterStmt : σ}
+    (hRun :
+      FocusedStmtRun hEvidence model prim state
+        fuel stmt afterStmt) :
+    YulOccurrence.StmtUserCall stmt
+      hEvidence.generated hEvidence.yulArgs := by
+  cases hRun with
+  | direct hDirect _ =>
+      exact .incoming hDirect.toIncoming
+  | outer hOuter _ =>
+      exact .incoming hOuter.toIncoming
+  | context hContext _ =>
+      exact hContext.toStmtUserCall
+
 theorem execSeq_prefix
     {object : Frontend.Object}
     {ordered : Yul.OrderedProgram}
@@ -1851,6 +1876,94 @@ theorem execSeq
   FocusedStmtRun.execSeq_of_split
     hRun.hSplit hRun.hPrefix hRun.hPrefixSource hRun.hStmt
     hRun.hStmtSource hRun.hRest
+
+def ofFocusedSplit
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {stmts pre rest : List Frontend.AstStmt}
+    {stmt : Frontend.AstStmt}
+    {state stateBeforeStmt afterStmt afterRest : σ}
+    {prefixShared stmtShared : EvmYul.SharedState .Yul}
+    {prefixVars stmtVars : EvmYul.Yul.VarStore}
+    (hSplit : stmts = pre ++ stmt :: rest)
+    (hPrefix :
+      Yul.Source.Effectful.execSeq model prim
+          ((prefixFuel + 1) + pre.length) pre
+          (some ordered.program.contract) state =
+        .ok stateBeforeStmt)
+    (hPrefixSource :
+      model.source stateBeforeStmt = .Ok prefixShared prefixVars)
+    (hStmt :
+      FocusedStmtRun hEvidence model prim stateBeforeStmt
+        prefixFuel stmt afterStmt)
+    (hStmtSource :
+      model.source afterStmt = .Ok stmtShared stmtVars)
+    (hRest :
+      Yul.Source.Effectful.execSeq model prim prefixFuel rest
+          (some ordered.program.contract) afterStmt =
+        .ok afterRest) :
+    StmtListOccurrenceRun hEvidence model prim
+      prefixFuel stmts state where
+  pre := pre
+  stmt := stmt
+  rest := rest
+  hSplit := hSplit
+  hOccurrence := hStmt.occurrence
+  stateBeforeStmt := stateBeforeStmt
+  afterStmt := afterStmt
+  afterRest := afterRest
+  prefixShared := prefixShared
+  prefixVars := prefixVars
+  stmtShared := stmtShared
+  stmtVars := stmtVars
+  hPrefix := hPrefix
+  hPrefixSource := hPrefixSource
+  hStmt := hStmt
+  hStmtSource := hStmtSource
+  hRest := hRest
+
+theorem execSeq_of_focused_split
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {stmts pre rest : List Frontend.AstStmt}
+    {stmt : Frontend.AstStmt}
+    {state stateBeforeStmt afterStmt afterRest : σ}
+    {prefixShared stmtShared : EvmYul.SharedState .Yul}
+    {prefixVars stmtVars : EvmYul.Yul.VarStore}
+    (hSplit : stmts = pre ++ stmt :: rest)
+    (hPrefix :
+      Yul.Source.Effectful.execSeq model prim
+          ((prefixFuel + 1) + pre.length) pre
+          (some ordered.program.contract) state =
+        .ok stateBeforeStmt)
+    (hPrefixSource :
+      model.source stateBeforeStmt = .Ok prefixShared prefixVars)
+    (hStmt :
+      FocusedStmtRun hEvidence model prim stateBeforeStmt
+        prefixFuel stmt afterStmt)
+    (hStmtSource :
+      model.source afterStmt = .Ok stmtShared stmtVars)
+    (hRest :
+      Yul.Source.Effectful.execSeq model prim prefixFuel rest
+          (some ordered.program.contract) afterStmt =
+        .ok afterRest) :
+    Yul.Source.Effectful.execSeq model prim
+        ((prefixFuel + 1) + pre.length) stmts
+        (some ordered.program.contract) state =
+      .ok afterRest :=
+  (ofFocusedSplit hSplit hPrefix hPrefixSource hStmt hStmtSource hRest).execSeq
 
 def ofDirect
     {object : Frontend.Object}
