@@ -344,7 +344,10 @@ Next raw frontend layer:
   declarations in the raw function body as generated hoisted callee entries in
   the final elaborator state, without exposing the block's internal scope
   construction witnesses. The top-level raw-code elaborator loop is now a
-  structural helper with preservation/source-local-entry theorems, and raw
+  structural helper with preservation/source-local-entry theorems; its
+  no-shadow caller/callee wrappers now carry both the top-level caller function
+  containing the generated frontend user-call occurrence and the generated
+  hoisted callee entry through raw code and checked object elaboration. Raw
   object elaboration carries source local-function declarations through the
   returned frontend function table to the ordered Yul function-entry list
   consumed by the backend.

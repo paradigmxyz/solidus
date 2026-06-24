@@ -12041,6 +12041,135 @@ theorem elaborateTopLevel_preserves_hoistedFunction_mem
               (fun stmt =>
                 ih (stmt :: dispatcher) topFunctions)
 
+theorem elaborateTopLevel_preserves_topFunction_mem
+    {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
+    {topFunctions : List (Name × Frontend.FunctionDef)}
+    {state finalState : State}
+    {result : List Frontend.Stmt × List (Name × Frontend.FunctionDef)}
+    {entry : Name × Frontend.FunctionDef}
+    (hRun :
+      (elaborateTopLevel stmts dispatcher topFunctions).run state =
+        .ok (result, finalState))
+    (hEntry : entry ∈ topFunctions) :
+    entry ∈ result.2 := by
+  induction stmts generalizing dispatcher topFunctions state finalState result with
+  | nil =>
+      unfold elaborateTopLevel at hRun
+      simp [StateT.run_pure] at hRun
+      cases hRun
+      exact hEntry
+  | cons stmt rest ih =>
+      cases stmt with
+      | block stmts =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt : (Stmt.elaborate (.block stmts)).run state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              exact ih hRun hEntry
+      | variableDeclaration names value? =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt :
+              (Stmt.elaborate (.variableDeclaration names value?)).run
+                state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              exact ih hRun hEntry
+      | assignment names value =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt :
+              (Stmt.elaborate (.assignment names value)).run state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              exact ih hRun hEntry
+      | expressionStatement expr =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt :
+              (Stmt.elaborate (.expressionStatement expr)).run state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              exact ih hRun hEntry
+      | functionDefinition name params returns body =>
+          unfold elaborateTopLevel at hRun
+          cases hFn :
+              (FunctionDef.elaborate params returns body).run state with
+          | error err =>
+              simp [hFn] at hRun
+          | ok fnResult =>
+              rcases fnResult with ⟨fn, fnState⟩
+              simp [hFn] at hRun
+              exact ih hRun (by simp [hEntry])
+      | switch scrutinee cases default =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt :
+              (Stmt.elaborate (.switch scrutinee cases default)).run
+                state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              exact ih hRun hEntry
+      | forLoop pre condition post body =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt :
+              (Stmt.elaborate (.forLoop pre condition post body)).run
+                state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              exact ih hRun hEntry
+      | ifThen condition body =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt :
+              (Stmt.elaborate (.ifThen condition body)).run state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              exact ih hRun hEntry
+      | «break» =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt : (Stmt.elaborate .break).run state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              exact ih hRun hEntry
+      | «continue» =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt : (Stmt.elaborate .continue).run state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              exact ih hRun hEntry
+      | «leave» =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt : (Stmt.elaborate .leave).run state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              exact ih hRun hEntry
+
 theorem elaborateTopLevel_sourceLocalFunction_entry
     {stmts : List Raw.Stmt}
     {dispatcher : List Frontend.Stmt}
@@ -12229,6 +12358,204 @@ theorem elaborateTopLevel_sourceLocalFunction_entry
                 simpa using hTop
               exact ih hTail hRun
 
+theorem elaborateTopLevel_sourceLocalFunction_noShadow_function_entries
+    {stmts : List Raw.Stmt}
+    {dispatcher : List Frontend.Stmt}
+    {topFunctions : List (Name × Frontend.FunctionDef)}
+    {state finalState : State}
+    {result : List Frontend.Stmt × List (Name × Frontend.FunctionDef)}
+    {topName : Name} {topParams topReturns : List Name}
+    {topBody : List Raw.Stmt}
+    {name : Name} {localParams localReturns : List Name}
+    {localBody : List Raw.Stmt} {args : List Raw.Expr}
+    (hTop :
+      .functionDefinition topName topParams topReturns topBody ∈ stmts)
+    (hLocal :
+      Raw.Source.LocalFunction topBody
+        name localParams localReturns localBody)
+    (hOccurs : Raw.Source.NoShadowStmtListCall topBody name args)
+    (hRun :
+      (elaborateTopLevel stmts dispatcher topFunctions).run state =
+        .ok (result, finalState)) :
+    ∃ generated localFn args' topFn,
+      (topName, topFn) ∈ result.2 ∧
+        FrontendOccurrence.StmtListUserCall topFn.body generated args' ∧
+          (generated, localFn) ∈ finalState.hoistedFunctions := by
+  induction stmts generalizing dispatcher topFunctions state finalState result with
+  | nil =>
+      simp at hTop
+  | cons stmt rest ih =>
+      cases stmt with
+      | block stmts =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt : (Stmt.elaborate (.block stmts)).run state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              have hTail :
+                  .functionDefinition topName topParams topReturns
+                    topBody ∈ rest := by
+                simpa using hTop
+              exact ih hTail hRun
+      | variableDeclaration names value? =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt :
+              (Stmt.elaborate (.variableDeclaration names value?)).run
+                state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              have hTail :
+                  .functionDefinition topName topParams topReturns
+                    topBody ∈ rest := by
+                simpa using hTop
+              exact ih hTail hRun
+      | assignment names value =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt :
+              (Stmt.elaborate (.assignment names value)).run state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              have hTail :
+                  .functionDefinition topName topParams topReturns
+                    topBody ∈ rest := by
+                simpa using hTop
+              exact ih hTail hRun
+      | expressionStatement expr =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt :
+              (Stmt.elaborate (.expressionStatement expr)).run state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              have hTail :
+                  .functionDefinition topName topParams topReturns
+                    topBody ∈ rest := by
+                simpa using hTop
+              exact ih hTail hRun
+      | functionDefinition headName headParams headReturns headBody =>
+          unfold elaborateTopLevel at hRun
+          cases hFn :
+              (FunctionDef.elaborate headParams headReturns headBody).run
+                state with
+          | error err =>
+              simp [hFn] at hRun
+          | ok fnResult =>
+              rcases fnResult with ⟨headFn, headState⟩
+              simp [hFn] at hRun
+              rcases List.mem_cons.mp hTop with hHead | hTail
+              · cases hHead
+                rcases
+                  FunctionDef.elaborate_sourceLocalFunction_noShadow_stmtUserCall_entry
+                    hLocal hOccurs hFn with
+                  ⟨generated, localFn, args', hOccurrence, hEntryHead⟩
+                have hEntryFinal :
+                    (generated, localFn) ∈
+                      finalState.hoistedFunctions :=
+                  elaborateTopLevel_preserves_hoistedFunction_mem
+                    rest dispatcher ((topName, headFn) :: topFunctions)
+                    hRun hEntryHead
+                have hTopFunction :
+                    (topName, headFn) ∈ result.2 :=
+                  elaborateTopLevel_preserves_topFunction_mem
+                    hRun (by simp)
+                exact
+                  ⟨generated, localFn, args', headFn, hTopFunction,
+                    hOccurrence, hEntryFinal⟩
+              · exact ih hTail hRun
+      | switch scrutinee cases default =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt :
+              (Stmt.elaborate (.switch scrutinee cases default)).run
+                state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              have hTail :
+                  .functionDefinition topName topParams topReturns
+                    topBody ∈ rest := by
+                simpa using hTop
+              exact ih hTail hRun
+      | forLoop pre condition post body =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt :
+              (Stmt.elaborate (.forLoop pre condition post body)).run
+                state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              have hTail :
+                  .functionDefinition topName topParams topReturns
+                    topBody ∈ rest := by
+                simpa using hTop
+              exact ih hTail hRun
+      | ifThen condition body =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt :
+              (Stmt.elaborate (.ifThen condition body)).run state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              have hTail :
+                  .functionDefinition topName topParams topReturns
+                    topBody ∈ rest := by
+                simpa using hTop
+              exact ih hTail hRun
+      | «break» =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt : (Stmt.elaborate .break).run state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              have hTail :
+                  .functionDefinition topName topParams topReturns
+                    topBody ∈ rest := by
+                simpa using hTop
+              exact ih hTail hRun
+      | «continue» =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt : (Stmt.elaborate .continue).run state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              have hTail :
+                  .functionDefinition topName topParams topReturns
+                    topBody ∈ rest := by
+                simpa using hTop
+              exact ih hTail hRun
+      | «leave» =>
+          unfold elaborateTopLevel at hRun
+          cases hStmt : (Stmt.elaborate .leave).run state with
+          | error err =>
+              simp [hStmt] at hRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmt, stmtState⟩
+              simp [hStmt] at hRun
+              have hTail :
+                  .functionDefinition topName topParams topReturns
+                    topBody ∈ rest := by
+                simpa using hTop
+              exact ih hTail hRun
+
 def elaborateCodeAction (stmts : List Raw.Stmt) :
     ElabM (List Frontend.Stmt) := do
   pushIdentifierScope
@@ -12327,6 +12654,99 @@ theorem elaborateCodeAction_sourceLocalFunction_entry
                             ⟨generated, localFn,
                               by simp [hEntryIdentifierPopped]⟩
 
+theorem elaborateCodeAction_sourceLocalFunction_noShadow_function_entries
+    {stmts : List Raw.Stmt}
+    {state finalState : State} {dispatcher : List Frontend.Stmt}
+    {topName : Name} {topParams topReturns : List Name}
+    {topBody : List Raw.Stmt}
+    {name : Name} {localParams localReturns : List Name}
+    {localBody : List Raw.Stmt} {args : List Raw.Expr}
+    (hTop :
+      .functionDefinition topName topParams topReturns topBody ∈ stmts)
+    (hLocal :
+      Raw.Source.LocalFunction topBody
+        name localParams localReturns localBody)
+    (hOccurs : Raw.Source.NoShadowStmtListCall topBody name args)
+    (hRun :
+      (elaborateCodeAction stmts).run state =
+        .ok (dispatcher, finalState)) :
+    ∃ generated localFn args' topFn,
+      (topName, topFn) ∈ finalState.hoistedFunctions ∧
+        FrontendOccurrence.StmtListUserCall topFn.body generated args' ∧
+          (generated, localFn) ∈ finalState.hoistedFunctions := by
+  unfold elaborateCodeAction at hRun
+  simp [StateT.run_bind] at hRun
+  cases hPushIdentifier : pushIdentifierScope.run state with
+  | error err =>
+      simp [hPushIdentifier] at hRun
+  | ok pushIdentifierResult =>
+      rcases pushIdentifierResult with ⟨_, identifierPushedState⟩
+      simp [hPushIdentifier] at hRun
+      cases hCollect :
+          (collectTopFunctions stmts).run identifierPushedState with
+      | error err =>
+          simp [hCollect] at hRun
+      | ok collectResult =>
+          rcases collectResult with ⟨topScope, collectState⟩
+          simp [hCollect] at hRun
+          cases hPushFunction :
+              (pushFunctionScope topScope).run collectState with
+          | error err =>
+              simp [hPushFunction] at hRun
+          | ok pushFunctionResult =>
+              rcases pushFunctionResult with ⟨_, functionPushedState⟩
+              simp [hPushFunction] at hRun
+              cases hTopLevel :
+                  (elaborateTopLevel stmts [] []).run
+                    functionPushedState with
+              | error err =>
+                  simp [hTopLevel] at hRun
+              | ok topLevelResult =>
+                  rcases topLevelResult with
+                    ⟨topLevelValue, topLevelState⟩
+                  rcases topLevelValue with
+                    ⟨topDispatcher, topFunctions⟩
+                  rcases
+                    elaborateTopLevel_sourceLocalFunction_noShadow_function_entries
+                      hTop hLocal hOccurs hTopLevel with
+                    ⟨generated, localFn, args', topFn,
+                      hTopFunction, hOccurrence, hEntryTop⟩
+                  simp [hTopLevel] at hRun
+                  cases hPopFunction :
+                      popFunctionScope.run topLevelState with
+                  | error err =>
+                      simp [hPopFunction] at hRun
+                  | ok popFunctionResult =>
+                      rcases popFunctionResult with
+                        ⟨_, functionPoppedState⟩
+                      have hEntryFunctionPopped :
+                          (generated, localFn) ∈
+                            functionPoppedState.hoistedFunctions :=
+                        popFunctionScope_preserves_hoistedFunction_mem
+                          hPopFunction hEntryTop
+                      simp [hPopFunction] at hRun
+                      cases hPopIdentifier :
+                          popIdentifierScope.run functionPoppedState with
+                      | error err =>
+                          simp [hPopIdentifier] at hRun
+                      | ok popIdentifierResult =>
+                          rcases popIdentifierResult with
+                            ⟨_, identifierPoppedState⟩
+                          have hEntryIdentifierPopped :
+                              (generated, localFn) ∈
+                                identifierPoppedState.hoistedFunctions :=
+                            popIdentifierScope_preserves_hoistedFunction_mem
+                              hPopIdentifier hEntryFunctionPopped
+                          simp [hPopIdentifier, StateT.run_bind,
+                            StateT.run_get, StateT.run_set] at hRun
+                          rcases hRun with ⟨_hDispatcher, hFinal⟩
+                          cases hFinal
+                          exact
+                            ⟨generated, localFn, args', topFn,
+                              by simp [hTopFunction],
+                              hOccurrence,
+                              by simp [hEntryIdentifierPopped]⟩
+
 def elaborateCodeCore (stmts : List Raw.Stmt) :
     DecodeM (List Frontend.Stmt × State) :=
   (elaborateCodeAction stmts).run {}
@@ -12349,6 +12769,30 @@ theorem elaborateCodeCore_sourceLocalFunction_entry
       (generated, localFn) ∈ state.hoistedFunctions := by
   unfold elaborateCodeCore at hCore
   exact elaborateCodeAction_sourceLocalFunction_entry hTop hLocal hCore
+
+theorem elaborateCodeCore_sourceLocalFunction_noShadow_function_entries
+    {stmts : List Raw.Stmt}
+    {state : State} {dispatcher : List Frontend.Stmt}
+    {topName : Name} {topParams topReturns : List Name}
+    {topBody : List Raw.Stmt}
+    {name : Name} {localParams localReturns : List Name}
+    {localBody : List Raw.Stmt} {args : List Raw.Expr}
+    (hTop :
+      .functionDefinition topName topParams topReturns topBody ∈ stmts)
+    (hLocal :
+      Raw.Source.LocalFunction topBody
+        name localParams localReturns localBody)
+    (hOccurs : Raw.Source.NoShadowStmtListCall topBody name args)
+    (hCore :
+      elaborateCodeCore stmts = .ok (dispatcher, state)) :
+    ∃ generated localFn args' topFn,
+      (topName, topFn) ∈ state.hoistedFunctions ∧
+        FrontendOccurrence.StmtListUserCall topFn.body generated args' ∧
+          (generated, localFn) ∈ state.hoistedFunctions := by
+  unfold elaborateCodeCore at hCore
+  exact
+    elaborateCodeAction_sourceLocalFunction_noShadow_function_entries
+      hTop hLocal hOccurs hCore
 
 def finalFunctions (state : State) : List (Name × Frontend.FunctionDef) :=
   let functions := state.hoistedFunctions.reverse
@@ -12443,6 +12887,41 @@ theorem elaborateCode_sourceLocalFunction_entry
     ⟨generated, localFn, hEntry⟩
   rw [hFunctions]
   exact ⟨generated, localFn, finalFunctions_hoistedFunction_mem state hEntry⟩
+
+theorem elaborateCode_sourceLocalFunction_noShadow_function_entries
+    {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
+    {functions : List (Name × Frontend.FunctionDef)}
+    {helper? arg? ret? : Option Name}
+    {topName : Name} {topParams topReturns : List Name}
+    {topBody : List Raw.Stmt}
+    {name : Name} {localParams localReturns : List Name}
+    {localBody : List Raw.Stmt} {args : List Raw.Expr}
+    (hTop :
+      .functionDefinition topName topParams topReturns topBody ∈ stmts)
+    (hLocal :
+      Raw.Source.LocalFunction topBody
+        name localParams localReturns localBody)
+    (hOccurs : Raw.Source.NoShadowStmtListCall topBody name args)
+    (hElab :
+      elaborateCode stmts =
+        .ok (dispatcher, functions, helper?, arg?, ret?)) :
+    ∃ generated localFn args' topFn,
+      (topName, topFn) ∈ functions ∧
+        FrontendOccurrence.StmtListUserCall topFn.body generated args' ∧
+          (generated, localFn) ∈ functions := by
+  rcases elaborateCode_parts hElab with
+    ⟨state, hCore, hFunctions, _hHelper, _hArg, _hRet⟩
+  rcases
+    elaborateCodeCore_sourceLocalFunction_noShadow_function_entries
+      hTop hLocal hOccurs hCore with
+    ⟨generated, localFn, args', topFn,
+      hTopEntry, hOccurrence, hLocalEntry⟩
+  rw [hFunctions]
+  exact
+    ⟨generated, localFn, args', topFn,
+      finalFunctions_hoistedFunction_mem state hTopEntry,
+      hOccurrence,
+      finalFunctions_hoistedFunction_mem state hLocalEntry⟩
 
 theorem elaborateCode_clzExpansionOk
     {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
@@ -12752,6 +13231,39 @@ theorem Object.elaborate?_sourceLocalFunction_entry
     ⟨generated, localFn, hEntry⟩
   subst frontend
   exact ⟨generated, localFn, hEntry⟩
+
+theorem Object.elaborate?_sourceLocalFunction_noShadow_function_entries
+    {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
+    {frontend : Frontend.Object} {code : List Raw.Stmt}
+    {topName : Name} {topParams topReturns : List Name}
+    {topBody : List Raw.Stmt}
+    {name : Name} {localParams localReturns : List Name}
+    {localBody : List Raw.Stmt} {args : List Raw.Expr}
+    (hCode : obj.code? = some code)
+    (hTop :
+      .functionDefinition topName topParams topReturns topBody ∈ code)
+    (hLocal :
+      Raw.Source.LocalFunction topBody
+        name localParams localReturns localBody)
+    (hOccurs : Raw.Source.NoShadowStmtListCall topBody name args)
+    (hElab : Object.elaborate? obj evmVersion = .ok frontend) :
+    ∃ generated localFn args' topFn,
+      (topName, topFn) ∈ frontend.functions ∧
+        FrontendOccurrence.StmtListUserCall topFn.body generated args' ∧
+          (generated, localFn) ∈ frontend.functions := by
+  rcases Object.elaborate?_parts hElab with
+    ⟨_itemFuel, dispatcher, functions, helper?, arg?, ret?,
+      data, objects, items, _hFuel, hCodeElab, _hItems, hFrontend⟩
+  rw [hCode] at hCodeElab
+  rcases
+    Elab.elaborateCode_sourceLocalFunction_noShadow_function_entries
+      hTop hLocal hOccurs hCodeElab with
+    ⟨generated, localFn, args', topFn,
+      hTopEntry, hOccurrence, hLocalEntry⟩
+  subst frontend
+  exact
+    ⟨generated, localFn, args', topFn,
+      hTopEntry, hOccurrence, hLocalEntry⟩
 
 def Object.ClzExpansionOk (raw : Object)
     (frontend : Frontend.Object) : Prop :=
@@ -13223,6 +13735,31 @@ theorem Object.elaboratePreservingOrder?_sourceLocalFunction_ordered_entry
     ⟨yulBody, hBody, hEntry⟩
   exact
     ⟨generated, localFn, yulBody, hFrontendMem, hBody, hEntry⟩
+
+theorem Object.elaboratePreservingOrder?_sourceLocalFunction_noShadow_function_entries
+    {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
+    {frontend : Frontend.Object} {code : List Raw.Stmt}
+    {topName : Name} {topParams topReturns : List Name}
+    {topBody : List Raw.Stmt}
+    {name : Name} {localParams localReturns : List Name}
+    {localBody : List Raw.Stmt} {args : List Raw.Expr}
+    (hElab :
+      Object.elaboratePreservingOrder? obj evmVersion = .ok frontend)
+    (hCode : obj.code? = some code)
+    (hTop :
+      .functionDefinition topName topParams topReturns topBody ∈ code)
+    (hLocal :
+      Raw.Source.LocalFunction topBody
+        name localParams localReturns localBody)
+    (hOccurs : Raw.Source.NoShadowStmtListCall topBody name args) :
+    ∃ generated localFn args' topFn,
+      (topName, topFn) ∈ frontend.functions ∧
+        FrontendOccurrence.StmtListUserCall topFn.body generated args' ∧
+          (generated, localFn) ∈ frontend.functions := by
+  have hObject := (Object.elaboratePreservingOrder?_parts hElab).1
+  exact
+    Object.elaborate?_sourceLocalFunction_noShadow_function_entries
+      hCode hTop hLocal hOccurs hObject
 
 theorem Object.elaboratePreservingOrder?_clzHelper_exec_ret_eq_run
     {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
