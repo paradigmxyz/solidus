@@ -486,6 +486,42 @@ end
 def decodeRootObject (json : Lean.Json) : DecodeM Object :=
   decodeObject maxDecodeFuel json
 
+namespace Source
+
+/-- Source-facing local function declaration relation for a raw Yul block.
+
+This is intentionally independent of the elaborator state and generated names:
+it only records that a raw block syntactically declares a local function with
+the given source name, signature, and body.  Successful elaboration later
+proves that such a source declaration is realized by a generated callable
+frontend entry. -/
+inductive LocalFunction :
+    List Stmt → Name → List Name → List Name → List Stmt → Prop where
+  | here {name params returns body rest} :
+      LocalFunction
+        (.functionDefinition name params returns body :: rest)
+        name params returns body
+  | tail {stmt rest name params returns body} :
+      LocalFunction rest name params returns body →
+        LocalFunction (stmt :: rest) name params returns body
+
+namespace LocalFunction
+
+theorem mem
+    {stmts : List Stmt} {name : Name} {params returns : List Name}
+    {body : List Stmt}
+    (hLocal : LocalFunction stmts name params returns body) :
+    .functionDefinition name params returns body ∈ stmts := by
+  induction hLocal with
+  | here =>
+      simp
+  | tail hLocal ih =>
+      exact List.mem_cons_of_mem _ ih
+
+end LocalFunction
+
+end Source
+
 end Raw
 
 namespace CallClass
@@ -3158,6 +3194,153 @@ theorem localFunctionScope_lookup_functionDefinition
           rcases ih hScope hLookup with ⟨params, returns, body, hMem⟩
           exact ⟨params, returns, body, List.mem_cons_of_mem _ hMem⟩
 
+theorem lookupFunctionInScope_any_eq_true
+    {scope : List (Name × Name)} {name generated : Name}
+    (hLookup : lookupFunctionInScope name scope = some generated) :
+    (scope.any fun entry => entry.fst == name) = true := by
+  induction scope with
+  | nil =>
+      simp [lookupFunctionInScope] at hLookup
+  | cons entry rest ih =>
+      rcases entry with ⟨source, target⟩
+      by_cases hName : source = name
+      · subst name
+        simp [lookupFunctionInScope]
+      · simp [lookupFunctionInScope, hName] at hLookup
+        have hTailAny := ih hLookup
+        change (((source == name) ||
+          (rest.any fun entry => entry.fst == name)) = true)
+        simp [hName, hTailAny]
+
+theorem localFunctionScope_functionDefinition_lookup
+    {stmts : List Raw.Stmt} {state scopeState : State}
+    {scope : List (Name × Name)} {name : Name}
+    {params returns : List Name} {body : List Raw.Stmt}
+    (hScope :
+      (Stmt.List.localFunctionScope stmts).run state =
+        .ok (scope, scopeState))
+    (hMem :
+      .functionDefinition name params returns body ∈ stmts) :
+    ∃ generated, lookupFunctionInScope name scope = some generated := by
+  induction stmts generalizing state scopeState scope with
+  | nil =>
+      simp at hMem
+  | cons stmt rest ih =>
+      cases stmt with
+      | functionDefinition head headParams headReturns headBody =>
+          unfold Stmt.List.localFunctionScope at hScope
+          simp [StateT.run_bind] at hScope
+          cases hTail : (Stmt.List.localFunctionScope rest).run state with
+          | error err =>
+              simp [hTail] at hScope
+          | ok tailResult =>
+              rcases tailResult with ⟨tailScope, tailState⟩
+              simp [hTail] at hScope
+              cases hDuplicate :
+                  (tailScope.any fun entry => entry.fst == head) with
+              | true =>
+                  simp [hDuplicate] at hScope
+                  unfold EvmCompiler.Solidity.RawAst.Elab.throw at hScope
+                  cases hScope
+              | false =>
+                  simp [hDuplicate] at hScope
+                  cases hDeclare :
+                      (declareIdentifiers [head] "function").run tailState with
+                  | error err =>
+                      simp [hDeclare] at hScope
+                  | ok declareResult =>
+                      rcases declareResult with ⟨_, declaredState⟩
+                      simp [hDeclare] at hScope
+                      cases hFresh :
+                          (freshGeneratedFunctionName head).run declaredState with
+                      | error err =>
+                          simp [hFresh] at hScope
+                      | ok freshResult =>
+                          rcases freshResult with ⟨headGenerated, freshState⟩
+                          simp [hFresh] at hScope
+                          rcases hScope with ⟨hScopeEq, _hStateEq⟩
+                          subst scope
+                          simp at hMem
+                          rcases hMem with hHead | hTailMem
+                          · rcases hHead with
+                              ⟨hName, hParams, hReturns, hBody⟩
+                            subst head
+                            subst headParams
+                            subst headReturns
+                            subst headBody
+                            exact
+                              ⟨headGenerated,
+                                by simp [lookupFunctionInScope]⟩
+                          · rcases ih hTail hTailMem with
+                              ⟨generated, hLookupTail⟩
+                            by_cases hName : head = name
+                            · subst name
+                              have hAny :
+                                  (tailScope.any fun entry =>
+                                    entry.fst == head) = true :=
+                                lookupFunctionInScope_any_eq_true hLookupTail
+                              rw [hAny] at hDuplicate
+                              cases hDuplicate
+                            · exact
+                                ⟨generated,
+                                  by
+                                    simp [lookupFunctionInScope, hName,
+                                      hLookupTail]⟩
+      | block stmts =>
+          unfold Stmt.List.localFunctionScope at hScope
+          simp at hMem
+          exact ih hScope hMem
+      | variableDeclaration names value? =>
+          unfold Stmt.List.localFunctionScope at hScope
+          simp at hMem
+          exact ih hScope hMem
+      | assignment names value =>
+          unfold Stmt.List.localFunctionScope at hScope
+          simp at hMem
+          exact ih hScope hMem
+      | expressionStatement expr =>
+          unfold Stmt.List.localFunctionScope at hScope
+          simp at hMem
+          exact ih hScope hMem
+      | switch scrutinee cases default =>
+          unfold Stmt.List.localFunctionScope at hScope
+          simp at hMem
+          exact ih hScope hMem
+      | forLoop pre condition post body =>
+          unfold Stmt.List.localFunctionScope at hScope
+          simp at hMem
+          exact ih hScope hMem
+      | ifThen condition body =>
+          unfold Stmt.List.localFunctionScope at hScope
+          simp at hMem
+          exact ih hScope hMem
+      | «break» =>
+          unfold Stmt.List.localFunctionScope at hScope
+          simp at hMem
+          exact ih hScope hMem
+      | «continue» =>
+          unfold Stmt.List.localFunctionScope at hScope
+          simp at hMem
+          exact ih hScope hMem
+      | «leave» =>
+          unfold Stmt.List.localFunctionScope at hScope
+          simp at hMem
+          exact ih hScope hMem
+
+theorem localFunctionScope_sourceLocalFunction_lookup
+    {stmts : List Raw.Stmt} {state scopeState : State}
+    {scope : List (Name × Name)} {name : Name}
+    {params returns : List Name} {body : List Raw.Stmt}
+    (hScope :
+      (Stmt.List.localFunctionScope stmts).run state =
+        .ok (scope, scopeState))
+    (hLocal :
+      Raw.Source.LocalFunction stmts name params returns body) :
+    ∃ generated, lookupFunctionInScope name scope = some generated := by
+  exact
+    localFunctionScope_functionDefinition_lookup hScope
+      (Raw.Source.LocalFunction.mem hLocal)
+
 theorem hoistLocalFunctions_functionDefinition_entry
     {stmts : List Raw.Stmt} {scope : List (Name × Name)}
     {state finalState : State}
@@ -3446,6 +3629,55 @@ theorem localFunctionScope_elaborateBlock_true_lookup_entry
                       exact
                         ⟨params, returns, body, fn, hRawMem,
                           hEntryFinalState⟩
+
+theorem sourceLocalFunction_elaborateBlock_false_entry
+    {stmts : List Raw.Stmt}
+    {state scopeState finalState : State}
+    {scope : List (Name × Name)} {name : Name}
+    {params returns : List Name} {body : List Raw.Stmt}
+    {front : List Frontend.Stmt}
+    (hLocal :
+      Raw.Source.LocalFunction stmts name params returns body)
+    (hScope :
+      (Stmt.List.localFunctionScope stmts).run state =
+        .ok (scope, scopeState))
+    (hBlock :
+      (Stmt.List.elaborateBlock stmts false).run state =
+        .ok (front, finalState)) :
+    ∃ generated fn,
+      lookupFunctionInScope name scope = some generated ∧
+        (generated, fn) ∈ finalState.hoistedFunctions := by
+  rcases localFunctionScope_sourceLocalFunction_lookup hScope hLocal with
+    ⟨generated, hLookup⟩
+  rcases localFunctionScope_elaborateBlock_false_lookup_entry
+      hScope hBlock hLookup with
+    ⟨_params, _returns, _body, fn, _hMem, hEntry⟩
+  exact ⟨generated, fn, hLookup, hEntry⟩
+
+theorem sourceLocalFunction_elaborateBlock_true_entry
+    {stmts : List Raw.Stmt}
+    {state pushedState scopeState finalState : State}
+    {scope : List (Name × Name)} {name : Name}
+    {params returns : List Name} {body : List Raw.Stmt}
+    {front : List Frontend.Stmt}
+    (hLocal :
+      Raw.Source.LocalFunction stmts name params returns body)
+    (hPushScope : pushIdentifierScope.run state = .ok ((), pushedState))
+    (hScope :
+      (Stmt.List.localFunctionScope stmts).run pushedState =
+        .ok (scope, scopeState))
+    (hBlock :
+      (Stmt.List.elaborateBlock stmts true).run state =
+        .ok (front, finalState)) :
+    ∃ generated fn,
+      lookupFunctionInScope name scope = some generated ∧
+        (generated, fn) ∈ finalState.hoistedFunctions := by
+  rcases localFunctionScope_sourceLocalFunction_lookup hScope hLocal with
+    ⟨generated, hLookup⟩
+  rcases localFunctionScope_elaborateBlock_true_lookup_entry
+      hPushScope hScope hBlock hLookup with
+    ⟨_params, _returns, _body, fn, _hMem, hEntry⟩
+  exact ⟨generated, fn, hLookup, hEntry⟩
 
 end Stmt.List
 
