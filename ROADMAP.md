@@ -433,7 +433,9 @@ Next raw frontend layer:
   proof interface for the upcoming statement-context semantic dispatcher.
   The evidence interface now owns the generated call/evaluation semantic facts
   and direct assignment/declaration/expression-statement execution facts,
-  preparing the incoming-statement dispatcher to consume one checked bundle.
+  plus sequence-head and arbitrary-prefix composition for those direct
+  non-control incoming cases, preparing the incoming-statement dispatcher to
+  consume one checked bundle.
   `YulOccurrence.UserCall.direct_or_arg_split` now separates a lowered
   expression occurrence into either the direct generated call or an outer call
   with the recursive occurrence isolated inside its argument list, matching
