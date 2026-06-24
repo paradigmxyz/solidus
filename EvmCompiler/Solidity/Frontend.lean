@@ -2107,6 +2107,23 @@ theorem resolveObjectBuiltinsIn?_parts
       subst fn'
       exact ⟨rfl, rfl⟩
 
+theorem resolveObjectBuiltinsIn?_body
+    {fn fn' : FunctionDef} {context : ObjectBuiltinContext}
+    (hResolve :
+      FunctionDef.resolveObjectBuiltinsIn? fn context = some fn') :
+    ∃ body,
+      Stmt.List.resolveObjectBuiltinsIn? fn.body context = some body ∧
+        fn' = { params := fn.params, returns := fn.returns, body := body } := by
+  unfold FunctionDef.resolveObjectBuiltinsIn? at hResolve
+  cases hBody : Stmt.List.resolveObjectBuiltinsIn? fn.body context with
+  | none =>
+      simp [hBody] at hResolve
+  | some body =>
+      simp [hBody] at hResolve
+      refine ⟨body, ?_, ?_⟩
+      · simpa using hBody
+      · simpa using hResolve.symm
+
 end FunctionDef
 
 namespace FunctionDef.List
@@ -2156,6 +2173,25 @@ theorem resolveObjectBuiltinsIn?_function_mem
                 exact
                   ⟨fn', hFnResolve, by simp [hResolvedMem],
                     hParams, hReturns⟩
+
+theorem resolveObjectBuiltinsIn?_function_mem_body
+    {functions resolved : List (Name × FunctionDef)}
+    {context : ObjectBuiltinContext} {name : Name} {fn : FunctionDef}
+    (hResolve :
+      FunctionDef.List.resolveObjectBuiltinsIn? functions context =
+        some resolved)
+    (hMem : (name, fn) ∈ functions) :
+    ∃ fn' body,
+      FunctionDef.resolveObjectBuiltinsIn? fn context = some fn' ∧
+        (name, fn') ∈ resolved ∧
+          Stmt.List.resolveObjectBuiltinsIn? fn.body context = some body ∧
+            fn' =
+              { params := fn.params, returns := fn.returns, body := body } := by
+  rcases resolveObjectBuiltinsIn?_function_mem hResolve hMem with
+    ⟨fn', hFnResolve, hResolvedMem, _hParams, _hReturns⟩
+  rcases FunctionDef.resolveObjectBuiltinsIn?_body hFnResolve with
+    ⟨body, hBody, hEq⟩
+  exact ⟨fn', body, hFnResolve, hResolvedMem, hBody, hEq⟩
 
 end FunctionDef.List
 

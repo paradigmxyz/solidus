@@ -55,7 +55,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.Frontend.FunctionDef.List.toYul?_function_mem
 #check EvmCompiler.Solidity.Frontend.FunctionDef.List.toYul?_function_name_entry
 #check EvmCompiler.Solidity.Frontend.FunctionDef.resolveObjectBuiltinsIn?_parts
+#check EvmCompiler.Solidity.Frontend.FunctionDef.resolveObjectBuiltinsIn?_body
 #check EvmCompiler.Solidity.Frontend.FunctionDef.List.resolveObjectBuiltinsIn?_function_mem
+#check EvmCompiler.Solidity.Frontend.FunctionDef.List.resolveObjectBuiltinsIn?_function_mem_body
 #check EvmCompiler.Solidity.Frontend.FunctionEntries.containsLoweredStub?_mem
 #check EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsLoweredToEntries?_functionDef_entry
 #check EvmCompiler.Solidity.Frontend.Object.resolveObjectBuiltinsIn?_function_entry
@@ -563,7 +565,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.Frontend.FunctionDef.List.toYul?_function_mem
 #print axioms EvmCompiler.Solidity.Frontend.FunctionDef.List.toYul?_function_name_entry
 #print axioms EvmCompiler.Solidity.Frontend.FunctionDef.resolveObjectBuiltinsIn?_parts
+#print axioms EvmCompiler.Solidity.Frontend.FunctionDef.resolveObjectBuiltinsIn?_body
 #print axioms EvmCompiler.Solidity.Frontend.FunctionDef.List.resolveObjectBuiltinsIn?_function_mem
+#print axioms EvmCompiler.Solidity.Frontend.FunctionDef.List.resolveObjectBuiltinsIn?_function_mem_body
 #print axioms EvmCompiler.Solidity.Frontend.FunctionEntries.containsLoweredStub?_mem
 #print axioms EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsLoweredToEntries?_functionDef_entry
 #print axioms EvmCompiler.Solidity.Frontend.Object.resolveObjectBuiltinsIn?_function_entry
