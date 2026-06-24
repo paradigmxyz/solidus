@@ -430,10 +430,13 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_call_occurrence_routes_succ` composes that
   route split with the Yul `Effectful.call` rule, so both occurrence routes now
   share the exact generated callee lookup used by the interpreter.
+  `alphaRenamedLocalCallPreserved_evalValues_call_occurrence_routes_succ`
+  extends this through lowered Yul argument evaluation for the generated call
+  expression itself.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call execution/observation in caller context,
-  including source argument evaluation and caller writeback, and broader
-  composition into the final source theorem.
+  including caller statement-context writeback and broader composition into the
+  final source theorem.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose
