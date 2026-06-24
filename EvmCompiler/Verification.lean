@@ -385,6 +385,13 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForConditionContextRun.context
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForConditionContextRun.exec
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForConditionContextRun.focusedStmt
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForBodyContinuationRun
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForBodyContinuationRun.loopAfterCondCase
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForBodyContextRun
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForBodyContextRun.context
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForBodyContextRun.bodyBlock
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForBodyContextRun.exec
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForBodyContextRun.focusedStmt
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.assign_succ
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.let_succ
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.exprStmt_succ
@@ -814,6 +821,11 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForConditionContextRun.context
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForConditionContextRun.exec
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForConditionContextRun.focusedStmt
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForBodyContinuationRun.loopAfterCondCase
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForBodyContextRun.context
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForBodyContextRun.bodyBlock
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForBodyContextRun.exec
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ForBodyContextRun.focusedStmt
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.assign_succ
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.let_succ
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.exprStmt_succ

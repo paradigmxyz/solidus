@@ -2348,6 +2348,314 @@ def focusedStmt
 
 end ForConditionContextRun
 
+/-- Remaining loop behavior after an executed loop body.  The body block
+execution itself is supplied by the enclosing body-context run; this relation
+packages the possible Yul continuations without re-opening the frontend
+occurrence proof. -/
+inductive ForBodyContinuationRun
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    (loopFuel : Nat)
+    (condition : Frontend.AstExpr)
+    (post body : List Frontend.AstStmt)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (state stateAfterCondition : σ)
+    (conditionValue : Frontend.Word)
+    (afterBody : σ) :
+    σ → Prop where
+  | bodyOutOfFuel
+      (hBodySource : model.source afterBody = .OutOfFuel)
+      {afterFor : σ}
+      (hFinal :
+        afterFor =
+          model.withSource afterBody
+            ((model.source afterBody).overwrite? (model.source state))) :
+      ForBodyContinuationRun model prim loopFuel condition post body
+        codeOverride state stateAfterCondition conditionValue afterBody
+        afterFor
+  | bodyBreak
+      {shared : EvmYul.SharedState .Yul}
+      {store : EvmYul.Yul.VarStore}
+      (hBodySource :
+        model.source afterBody = .Checkpoint (.Break shared store))
+      {afterFor : σ}
+      (hFinal :
+        afterFor =
+          model.withSource afterBody
+            ((model.source afterBody).reviveJump.overwrite?
+              (model.source state))) :
+      ForBodyContinuationRun model prim loopFuel condition post body
+        codeOverride state stateAfterCondition conditionValue afterBody
+        afterFor
+  | bodyLeave
+      {shared : EvmYul.SharedState .Yul}
+      {store : EvmYul.Yul.VarStore}
+      (hBodySource :
+        model.source afterBody = .Checkpoint (.Leave shared store))
+      {afterFor : σ}
+      (hFinal :
+        afterFor =
+          model.withSource afterBody
+            ((model.source afterBody).overwrite? (model.source state))) :
+      ForBodyContinuationRun model prim loopFuel condition post body
+        codeOverride state stateAfterCondition conditionValue afterBody
+        afterFor
+  | postOutOfFuel
+      (hBodyContinues :
+        Yul.Source.Effectful.LoopBodyContinues (model.source afterBody))
+      {afterPost afterFor : σ}
+      (hPost :
+        Yul.Source.Effectful.exec model prim loopFuel (.Block post)
+            codeOverride
+            (model.withSource afterBody
+              (model.source afterBody).reviveJump) =
+          .ok afterPost)
+      (hPostSource : model.source afterPost = .OutOfFuel)
+      (hFinal :
+        afterFor =
+          model.withSource afterPost
+            ((model.source afterPost).overwrite? (model.source state))) :
+      ForBodyContinuationRun model prim loopFuel condition post body
+        codeOverride state stateAfterCondition conditionValue afterBody
+        afterFor
+  | postLeave
+      (hBodyContinues :
+        Yul.Source.Effectful.LoopBodyContinues (model.source afterBody))
+      {afterPost afterFor : σ}
+      {shared : EvmYul.SharedState .Yul}
+      {store : EvmYul.Yul.VarStore}
+      (hPost :
+        Yul.Source.Effectful.exec model prim loopFuel (.Block post)
+            codeOverride
+            (model.withSource afterBody
+              (model.source afterBody).reviveJump) =
+          .ok afterPost)
+      (hPostSource :
+        model.source afterPost = .Checkpoint (.Leave shared store))
+      (hFinal :
+        afterFor =
+          model.withSource afterPost
+            ((model.source afterPost).overwrite? (model.source state))) :
+      ForBodyContinuationRun model prim loopFuel condition post body
+        codeOverride state stateAfterCondition conditionValue afterBody
+        afterFor
+  | recurse
+      (hBodyContinues :
+        Yul.Source.Effectful.LoopBodyContinues (model.source afterBody))
+      {afterPost afterLoop afterFor : σ}
+      (hPost :
+        Yul.Source.Effectful.exec model prim loopFuel (.Block post)
+            codeOverride
+            (model.withSource afterBody
+              (model.source afterBody).reviveJump) =
+          .ok afterPost)
+      (hPostRecurs :
+        Yul.Source.Effectful.LoopPostRecurs (model.source afterPost))
+      (hLoop :
+        Yul.Source.Effectful.exec model prim loopFuel
+            (.For condition post body) codeOverride
+            (model.withSource afterPost
+              ((model.source afterPost).overwrite? (model.source state))) =
+          .ok afterLoop)
+      (hFinal :
+        afterFor =
+          model.withSource afterLoop
+            ((model.source afterLoop).overwrite? (model.source state))) :
+      ForBodyContinuationRun model prim loopFuel condition post body
+        codeOverride state stateAfterCondition conditionValue afterBody
+        afterFor
+
+namespace ForBodyContinuationRun
+
+theorem loopAfterCondCase
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {loopFuel : Nat}
+    {condition : Frontend.AstExpr}
+    {post body : List Frontend.AstStmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterCondition : σ}
+    {conditionValue : Frontend.Word}
+    {afterBody afterFor : σ}
+    (hNonzero : conditionValue ≠ EvmYul.UInt256.ofNat 0)
+    (hBody :
+      Yul.Source.Effectful.exec model prim loopFuel (.Block body)
+          codeOverride stateAfterCondition =
+        .ok afterBody)
+    (hRun :
+      ForBodyContinuationRun model prim loopFuel condition post body
+        codeOverride state stateAfterCondition conditionValue afterBody
+        afterFor) :
+    Yul.Source.Effectful.LoopAfterCondCase model prim loopFuel
+      condition post body codeOverride (model.source state)
+      stateAfterCondition conditionValue afterFor := by
+  cases hRun with
+  | bodyOutOfFuel hBodySource hFinal =>
+      exact .bodyOutOfFuel hNonzero hBody hBodySource hFinal
+  | bodyBreak hBodySource hFinal =>
+      exact .bodyBreak hNonzero hBody hBodySource hFinal
+  | bodyLeave hBodySource hFinal =>
+      exact .bodyLeave hNonzero hBody hBodySource hFinal
+  | postOutOfFuel hBodyContinues hPost hPostSource hFinal =>
+      exact
+        .postOutOfFuel hNonzero hBody hBodyContinues
+          hPost hPostSource hFinal
+  | postLeave hBodyContinues hPost hPostSource hFinal =>
+      exact
+        .postLeave hNonzero hBody hBodyContinues
+          hPost hPostSource hFinal
+  | recurse hBodyContinues hPost hPostRecurs hLoop hFinal =>
+      exact
+        .recurse hNonzero hBody hBodyContinues
+          hPost hPostRecurs hLoop hFinal
+
+end ForBodyContinuationRun
+
+/-- Executed `.For` context whose body contains the focused generated-call
+occurrence.  The nested body run supplies the exact body block execution used
+by the loop continuation case. -/
+structure ForBodyContextRun
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    (prefixFuel : Nat)
+    (condition : Frontend.AstExpr)
+    (post body : List Frontend.AstStmt)
+    (state : σ) where
+  stateAfterCondition : σ
+  conditionValue : Frontend.Word
+  bodyRun :
+    StmtListOccurrenceRun hEvidence model prim
+      prefixFuel body stateAfterCondition
+  hEval :
+    Yul.Source.Effectful.eval model prim
+        (((prefixFuel + 1) + bodyRun.pre.length) + 1)
+        condition (some ordered.program.contract)
+        (model.withSource state
+          (EvmYul.Yul.State.mkOk (model.source state))) =
+      .ok (stateAfterCondition, conditionValue)
+  hNonzero :
+    conditionValue ≠ EvmYul.UInt256.ofNat 0
+  afterBody : σ
+  hAfterBody :
+    afterBody =
+      model.withSource bodyRun.afterRest
+        ((model.source bodyRun.afterRest).restrictStoreTo
+          (model.source stateAfterCondition).store)
+  afterFor : σ
+  hContinuation :
+    ForBodyContinuationRun model prim
+      (((prefixFuel + 1) + bodyRun.pre.length) + 1)
+      condition post body (some ordered.program.contract)
+      state stateAfterCondition conditionValue afterBody afterFor
+
+namespace ForBodyContextRun
+
+theorem context
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {condition : Frontend.AstExpr}
+    {post body : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      ForBodyContextRun hEvidence model prim prefixFuel
+        condition post body state) :
+    YulOccurrence.StmtUserCall.Context (.For condition post body)
+      hEvidence.generated hEvidence.yulArgs :=
+  .forBody hRun.bodyRun.occurrence
+
+theorem bodyBlock
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {condition : Frontend.AstExpr}
+    {post body : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      ForBodyContextRun hEvidence model prim prefixFuel
+        condition post body state) :
+    Yul.Source.Effectful.exec model prim
+        (((prefixFuel + 1) + hRun.bodyRun.pre.length) + 1)
+        (.Block body)
+        (some ordered.program.contract) hRun.stateAfterCondition =
+      .ok hRun.afterBody := by
+  have hBodySeq := hRun.bodyRun.execSeq
+  have hBlock :=
+    Yul.Source.Effectful.exec_block_of_execSeq model prim hBodySeq
+  rw [hRun.hAfterBody]
+  exact hBlock
+
+theorem exec
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {condition : Frontend.AstExpr}
+    {post body : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      ForBodyContextRun hEvidence model prim prefixFuel
+        condition post body state) :
+    Yul.Source.Effectful.exec model prim
+        ((((((prefixFuel + 1) + hRun.bodyRun.pre.length) + 1) + 1) + 1) + 1)
+        (.For condition post body)
+        (some ordered.program.contract) state =
+      .ok hRun.afterFor := by
+  have hCase :=
+    ForBodyContinuationRun.loopAfterCondCase
+      hRun.hNonzero hRun.bodyBlock hRun.hContinuation
+  have hLoop :
+      Yul.Source.Effectful.loop model prim
+          ((((prefixFuel + 1) + hRun.bodyRun.pre.length) + 1) + 1 + 1)
+          condition post body (some ordered.program.contract) state =
+        .ok hRun.afterFor :=
+    Yul.Source.Effectful.loop_of_eval_after_cond_case
+      model prim hRun.hEval hCase
+  exact Yul.Source.Effectful.exec_for_of_loop model prim hLoop
+
+def focusedStmt
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {condition : Frontend.AstExpr}
+    {post body : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      ForBodyContextRun hEvidence model prim prefixFuel
+        condition post body state) :
+    FocusedStmtRun hEvidence model prim state
+      ((((((prefixFuel + 1) + hRun.bodyRun.pre.length) + 1) + 1) + 1) + 1)
+      (.For condition post body) hRun.afterFor :=
+  .context hRun.context hRun.exec
+
+end ForBodyContextRun
+
 /-- Direct assignment statement execution for a generated alpha-renamed call
 from the bundled Yul evidence. -/
 theorem assign_succ
