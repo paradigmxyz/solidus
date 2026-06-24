@@ -279,9 +279,12 @@ Next raw frontend layer:
   those occurrences into the returned frontend statement list. Successful
   scope-creating and non-scope-creating block elaboration now also exposes the
   generated frontend occurrence plus the retained generated callee entry for
-  such incoming-scope source occurrences. Recursive nested block/body
-  occurrence traversal and `for` initializer scope handoff remain the next
-  statement/control-layer proof work.
+  such incoming-scope source occurrences, and
+  `FrontendOccurrence.StmtUserCall`/`StmtListUserCall` provide the recursive
+  frontend occurrence target needed to carry those calls through nested
+  statements. Recursive source-side nested block/body occurrence traversal and
+  `for` initializer scope handoff remain the next statement/control-layer proof
+  work.
   Successful `FunctionDef.elaborate` now also realizes source local-function
   declarations in the raw function body as generated hoisted callee entries in
   the final elaborator state, without exposing the block's internal scope

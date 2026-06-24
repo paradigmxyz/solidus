@@ -67,6 +67,23 @@
   touched-file trust scans, and `git diff --check`; theorem axiom audits
   report only `[propext, Classical.choice, Quot.sound]`.
 
+- 2026-06-24 02:24:25 PDT - proof/raw-recursive-frontend-call-occurrence -
+  Added recursive frontend occurrence relations
+  `FrontendOccurrence.StmtUserCall`, `StmtListUserCall`, and
+  `CaseListUserCall`, plus membership bridges from incoming-scope statement
+  occurrences. Proved block wrappers
+  `Elab.Stmt.List.sourceLocalFunction_elaborateBlock_false_stmtUserCall_entry`
+  and
+  `Elab.Stmt.List.sourceLocalFunction_elaborateBlock_true_stmtUserCall_entry`
+  so successful block elaboration exposes a recursive frontend statement-list
+  user-call occurrence plus the retained generated callee entry. Source-side
+  recursive nested block/body traversal remains the next proof. Validation
+  passed: `lake build EvmCompiler.Solidity.RawAst`,
+  `lake build EvmCompiler.Verification`, `lake build`,
+  `scripts/check_architecture.sh`, touched-file trust scans, and
+  `git diff --check`; theorem axiom audits report only
+  `[propext, Classical.choice, Quot.sound]`.
+
 - 2026-06-23 10:12 PDT - compaction-resume/raw-frontend-status - Resumed
   under `$verifiable-compiler` to report the raw solc frontend migration
   status from the clean `codex/lean-solc-raw-frontend` checkpoint.

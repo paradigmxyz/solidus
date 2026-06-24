@@ -655,6 +655,105 @@ inductive StmtIncomingUserCall :
       UserCall condition generated args →
         StmtIncomingUserCall (.ifThen condition body) generated args
 
+mutual
+
+/-- Recursive generated frontend user-call occurrence in a statement. -/
+inductive StmtUserCall : Frontend.Stmt → Name → List Frontend.Expr → Prop where
+  | incoming {stmt generated args} :
+      StmtIncomingUserCall stmt generated args →
+        StmtUserCall stmt generated args
+  | block {stmts generated args} :
+      StmtListUserCall stmts generated args →
+        StmtUserCall (.block stmts) generated args
+  | functionBody {name params returns body generated args} :
+      StmtListUserCall body generated args →
+        StmtUserCall (.functionDef name params returns body) generated args
+  | switchCase {scrutinee cases default generated args} :
+      CaseListUserCall cases generated args →
+        StmtUserCall (.switch scrutinee cases default) generated args
+  | switchDefault {scrutinee cases default generated args} :
+      StmtListUserCall default generated args →
+        StmtUserCall (.switch scrutinee cases default) generated args
+  | forCondition {pre condition post body generated args} :
+      UserCall condition generated args →
+        StmtUserCall (.forLoop pre condition post body) generated args
+  | forPre {pre condition post body generated args} :
+      StmtListUserCall pre generated args →
+        StmtUserCall (.forLoop pre condition post body) generated args
+  | forPost {pre condition post body generated args} :
+      StmtListUserCall post generated args →
+        StmtUserCall (.forLoop pre condition post body) generated args
+  | forBody {pre condition post body generated args} :
+      StmtListUserCall body generated args →
+        StmtUserCall (.forLoop pre condition post body) generated args
+  | ifBody {condition body generated args} :
+      StmtListUserCall body generated args →
+        StmtUserCall (.ifThen condition body) generated args
+
+/-- Recursive generated frontend user-call occurrence in a statement list. -/
+inductive StmtListUserCall :
+    List Frontend.Stmt → Name → List Frontend.Expr → Prop where
+  | head {stmt rest generated args} :
+      StmtUserCall stmt generated args →
+        StmtListUserCall (stmt :: rest) generated args
+  | tail {stmt rest generated args} :
+      StmtListUserCall rest generated args →
+        StmtListUserCall (stmt :: rest) generated args
+
+/-- Recursive generated frontend user-call occurrence in switch case bodies. -/
+inductive CaseListUserCall :
+    List (Frontend.SwitchCaseValue × List Frontend.Stmt) →
+      Name → List Frontend.Expr → Prop where
+  | head {value body rest generated args} :
+      StmtListUserCall body generated args →
+        CaseListUserCall ((value, body) :: rest) generated args
+  | tail {case rest generated args} :
+      CaseListUserCall rest generated args →
+        CaseListUserCall (case :: rest) generated args
+
+end
+
+namespace StmtUserCall
+
+theorem ofIncoming
+    {stmt : Frontend.Stmt} {generated : Name}
+    {args : List Frontend.Expr}
+    (hOccurrence :
+      StmtIncomingUserCall stmt generated args) :
+    StmtUserCall stmt generated args :=
+  .incoming hOccurrence
+
+end StmtUserCall
+
+namespace StmtListUserCall
+
+theorem of_mem_stmt
+    {stmts : List Frontend.Stmt} {stmt : Frontend.Stmt}
+    {generated : Name} {args : List Frontend.Expr}
+    (hMem : stmt ∈ stmts)
+    (hOccurrence : StmtUserCall stmt generated args) :
+    StmtListUserCall stmts generated args := by
+  induction stmts with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      simp at hMem
+      rcases hMem with hHead | hTail
+      · subst stmt
+        exact .head hOccurrence
+      · exact .tail (ih hTail)
+
+theorem of_mem_incoming
+    {stmts : List Frontend.Stmt} {stmt : Frontend.Stmt}
+    {generated : Name} {args : List Frontend.Expr}
+    (hMem : stmt ∈ stmts)
+    (hOccurrence :
+      StmtIncomingUserCall stmt generated args) :
+    StmtListUserCall stmts generated args :=
+  of_mem_stmt hMem (StmtUserCall.ofIncoming hOccurrence)
+
+end StmtListUserCall
+
 end FrontendOccurrence
 
 namespace CallClass
@@ -6420,6 +6519,31 @@ theorem sourceLocalFunction_elaborateBlock_false_incoming_call_mem_entry
                         ⟨generated, fn, args', frontStmt, hMemFront,
                           hOccurrence, hEntryFinal⟩
 
+theorem sourceLocalFunction_elaborateBlock_false_stmtUserCall_entry
+    {stmts : List Raw.Stmt} {stmt : Raw.Stmt}
+    {state finalState : State} {front : List Frontend.Stmt}
+    {name : Name} {params returns : List Name} {body : List Raw.Stmt}
+    {args : List Raw.Expr}
+    (hLocal :
+      Raw.Source.LocalFunction stmts name params returns body)
+    (hMem : stmt ∈ stmts)
+    (hOccurs :
+      Raw.Source.StmtExprCall.IncomingScope stmt name args)
+    (hBlock :
+      (Stmt.List.elaborateBlock stmts false).run state =
+        .ok (front, finalState)) :
+    ∃ generated fn args',
+      FrontendOccurrence.StmtListUserCall front generated args' ∧
+        (generated, fn) ∈ finalState.hoistedFunctions := by
+  rcases sourceLocalFunction_elaborateBlock_false_incoming_call_mem_entry
+      hLocal hMem hOccurs hBlock with
+    ⟨generated, fn, args', frontStmt, hMemFront, hOccurrence, hEntry⟩
+  exact
+    ⟨generated, fn, args',
+      FrontendOccurrence.StmtListUserCall.of_mem_incoming
+        hMemFront hOccurrence,
+      hEntry⟩
+
 theorem sourceLocalFunction_elaborateBlock_true_entry
     {stmts : List Raw.Stmt}
     {state pushedState scopeState finalState : State}
@@ -6917,6 +7041,31 @@ theorem sourceLocalFunction_elaborateBlock_true_incoming_call_mem_entry
                               exact
                                 ⟨generated, fn, args', frontStmt,
                                   hMemFront, hOccurrence, hEntryFinal⟩
+
+theorem sourceLocalFunction_elaborateBlock_true_stmtUserCall_entry
+    {stmts : List Raw.Stmt} {stmt : Raw.Stmt}
+    {state finalState : State} {front : List Frontend.Stmt}
+    {name : Name} {params returns : List Name} {body : List Raw.Stmt}
+    {args : List Raw.Expr}
+    (hLocal :
+      Raw.Source.LocalFunction stmts name params returns body)
+    (hMem : stmt ∈ stmts)
+    (hOccurs :
+      Raw.Source.StmtExprCall.IncomingScope stmt name args)
+    (hBlock :
+      (Stmt.List.elaborateBlock stmts true).run state =
+        .ok (front, finalState)) :
+    ∃ generated fn args',
+      FrontendOccurrence.StmtListUserCall front generated args' ∧
+        (generated, fn) ∈ finalState.hoistedFunctions := by
+  rcases sourceLocalFunction_elaborateBlock_true_incoming_call_mem_entry
+      hLocal hMem hOccurs hBlock with
+    ⟨generated, fn, args', frontStmt, hMemFront, hOccurrence, hEntry⟩
+  exact
+    ⟨generated, fn, args',
+      FrontendOccurrence.StmtListUserCall.of_mem_incoming
+        hMemFront hOccurrence,
+      hEntry⟩
 
 theorem sourceLocalFunction_elaborateBlock_false_entry_of_run
     {stmts : List Raw.Stmt}
