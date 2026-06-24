@@ -1316,6 +1316,285 @@ inductive LowerableCaseListUserCall :
 
 end
 
+mutual
+
+/--
+Generated frontend user-call occurrence that is inside a retained
+`functionDef` staging body.
+
+Such occurrences are not lowerable in the current statement body: the staging
+node lowers to `Block []`, and the body must be followed through the generated
+function entry validated by `functionDefStubsLoweredToEntries?`.
+-/
+inductive StubBodyStmtUserCall :
+    Frontend.Stmt → Name → List Frontend.Expr → Prop where
+  | functionBody {name params returns body generated args} :
+      StmtListUserCall body generated args →
+        StubBodyStmtUserCall (.functionDef name params returns body)
+          generated args
+  | block {stmts generated args} :
+      StubBodyStmtListUserCall stmts generated args →
+        StubBodyStmtUserCall (.block stmts) generated args
+  | switchCase {scrutinee cases default generated args} :
+      StubBodyCaseListUserCall cases generated args →
+        StubBodyStmtUserCall (.switch scrutinee cases default) generated args
+  | switchDefault {scrutinee cases default generated args} :
+      StubBodyStmtListUserCall default generated args →
+        StubBodyStmtUserCall (.switch scrutinee cases default) generated args
+  | forPre {pre condition post body generated args} :
+      StubBodyStmtListUserCall pre generated args →
+        StubBodyStmtUserCall (.forLoop pre condition post body) generated args
+  | forPost {pre condition post body generated args} :
+      StubBodyStmtListUserCall post generated args →
+        StubBodyStmtUserCall (.forLoop pre condition post body) generated args
+  | forBody {pre condition post body generated args} :
+      StubBodyStmtListUserCall body generated args →
+        StubBodyStmtUserCall (.forLoop pre condition post body) generated args
+  | ifBody {condition body generated args} :
+      StubBodyStmtListUserCall body generated args →
+        StubBodyStmtUserCall (.ifThen condition body) generated args
+
+/-- Recursive retained-stub-body occurrence in a frontend statement list. -/
+inductive StubBodyStmtListUserCall :
+    List Frontend.Stmt → Name → List Frontend.Expr → Prop where
+  | head {stmt rest generated args} :
+      StubBodyStmtUserCall stmt generated args →
+        StubBodyStmtListUserCall (stmt :: rest) generated args
+  | tail {stmt rest generated args} :
+      StubBodyStmtListUserCall rest generated args →
+        StubBodyStmtListUserCall (stmt :: rest) generated args
+
+/-- Recursive retained-stub-body occurrence in frontend switch case bodies. -/
+inductive StubBodyCaseListUserCall :
+    List (Frontend.SwitchCaseValue × List Frontend.Stmt) →
+      Name → List Frontend.Expr → Prop where
+  | head {value body rest generated args} :
+      StubBodyStmtListUserCall body generated args →
+        StubBodyCaseListUserCall ((value, body) :: rest) generated args
+  | tail {case rest generated args} :
+      StubBodyCaseListUserCall rest generated args →
+        StubBodyCaseListUserCall (case :: rest) generated args
+
+end
+
+namespace StmtListUserCall
+
+theorem lowerable_or_stubBody
+    {front : List Frontend.Stmt}
+    {generated : Name} {args : List Frontend.Expr}
+    (hOccurrence : StmtListUserCall front generated args) :
+    LowerableStmtListUserCall front generated args ∨
+      StubBodyStmtListUserCall front generated args :=
+  StmtListUserCall.rec
+    (motive_1 := fun stmt generated args _ =>
+      LowerableStmtUserCall stmt generated args ∨
+        StubBodyStmtUserCall stmt generated args)
+    (motive_2 := fun stmts generated args _ =>
+      LowerableStmtListUserCall stmts generated args ∨
+        StubBodyStmtListUserCall stmts generated args)
+    (motive_3 := fun cases generated args _ =>
+      LowerableCaseListUserCall cases generated args ∨
+        StubBodyCaseListUserCall cases generated args)
+    (incoming := by
+      intro stmt generated args hIncoming
+      exact Or.inl (LowerableStmtUserCall.incoming hIncoming))
+    (block := by
+      intro stmts generated args hList ih
+      rcases ih with hLowerable | hStub
+      · exact Or.inl (LowerableStmtUserCall.block hLowerable)
+      · exact Or.inr (StubBodyStmtUserCall.block hStub))
+    (functionBody := by
+      intro name params returns body generated args hBody _ih
+      exact
+        Or.inr (StubBodyStmtUserCall.functionBody hBody))
+    (switchCase := by
+      intro scrutinee cases default generated args hCases ih
+      rcases ih with hLowerable | hStub
+      · exact Or.inl (LowerableStmtUserCall.switchCase hLowerable)
+      · exact Or.inr (StubBodyStmtUserCall.switchCase hStub))
+    (switchDefault := by
+      intro scrutinee cases default generated args hDefault ih
+      rcases ih with hLowerable | hStub
+      · exact Or.inl (LowerableStmtUserCall.switchDefault hLowerable)
+      · exact Or.inr (StubBodyStmtUserCall.switchDefault hStub))
+    (forCondition := by
+      intro pre condition post body generated args hCondition
+      exact Or.inl (LowerableStmtUserCall.forCondition hCondition))
+    (forPre := by
+      intro pre condition post body generated args hPre ih
+      rcases ih with hLowerable | hStub
+      · exact Or.inl (LowerableStmtUserCall.forPre hLowerable)
+      · exact Or.inr (StubBodyStmtUserCall.forPre hStub))
+    (forPost := by
+      intro pre condition post body generated args hPost ih
+      rcases ih with hLowerable | hStub
+      · exact Or.inl (LowerableStmtUserCall.forPost hLowerable)
+      · exact Or.inr (StubBodyStmtUserCall.forPost hStub))
+    (forBody := by
+      intro pre condition post body generated args hBody ih
+      rcases ih with hLowerable | hStub
+      · exact Or.inl (LowerableStmtUserCall.forBody hLowerable)
+      · exact Or.inr (StubBodyStmtUserCall.forBody hStub))
+    (ifBody := by
+      intro condition body generated args hBody ih
+      rcases ih with hLowerable | hStub
+      · exact Or.inl (LowerableStmtUserCall.ifBody hLowerable)
+      · exact Or.inr (StubBodyStmtUserCall.ifBody hStub))
+    (head := by
+      intro stmt rest generated args hHead ih
+      rcases ih with hLowerable | hStub
+      · exact Or.inl (LowerableStmtListUserCall.head hLowerable)
+      · exact Or.inr (StubBodyStmtListUserCall.head hStub))
+    (tail := by
+      intro stmt rest generated args hTail ih
+      rcases ih with hLowerable | hStub
+      · exact Or.inl (LowerableStmtListUserCall.tail hLowerable)
+      · exact Or.inr (StubBodyStmtListUserCall.tail hStub))
+    (by
+      intro value body rest generated args hBody ih
+      rcases ih with hLowerable | hStub
+      · exact Or.inl (LowerableCaseListUserCall.head hLowerable)
+      · exact Or.inr (StubBodyCaseListUserCall.head hStub))
+    (by
+      intro caseEntry rest generated args hTail ih
+      rcases ih with hLowerable | hStub
+      · exact Or.inl (LowerableCaseListUserCall.tail hLowerable)
+      · exact Or.inr (StubBodyCaseListUserCall.tail hStub))
+    hOccurrence
+
+end StmtListUserCall
+
+namespace StubBodyStmtListUserCall
+
+theorem lowered_function_entry
+    {front : List Frontend.Stmt}
+    {entries : List (Name × Frontend.AstFunctionDefinition)}
+    {generated : Name} {args : List Frontend.Expr}
+    (hStub : StubBodyStmtListUserCall front generated args)
+    (hValid :
+      Frontend.Stmt.List.functionDefStubsLoweredToEntries?
+        entries front = true) :
+    ∃ (stubName : Name)
+        (params returns : List Name)
+        (body : List Frontend.Stmt)
+        (yulBody : List Frontend.AstStmt),
+      StmtListUserCall body generated args ∧
+        Frontend.Stmt.List.toYul? body = some yulBody ∧
+          entries.contains
+            (stubName,
+              EvmYul.Yul.Ast.FunctionDefinition.Def
+                params returns yulBody) = true :=
+  StubBodyStmtListUserCall.rec
+    (motive_1 := fun stmt generated args _ =>
+      ∀ {entries : List (Name × Frontend.AstFunctionDefinition)},
+        Frontend.Stmt.functionDefStubsLoweredToEntries?
+          entries stmt = true →
+          ∃ (stubName : Name)
+              (params returns : List Name)
+              (body : List Frontend.Stmt)
+              (yulBody : List Frontend.AstStmt),
+            StmtListUserCall body generated args ∧
+              Frontend.Stmt.List.toYul? body = some yulBody ∧
+                entries.contains
+                  (stubName,
+                    EvmYul.Yul.Ast.FunctionDefinition.Def
+                      params returns yulBody) = true)
+    (motive_2 := fun stmts generated args _ =>
+      ∀ {entries : List (Name × Frontend.AstFunctionDefinition)},
+        Frontend.Stmt.List.functionDefStubsLoweredToEntries?
+          entries stmts = true →
+          ∃ (stubName : Name)
+              (params returns : List Name)
+              (body : List Frontend.Stmt)
+              (yulBody : List Frontend.AstStmt),
+            StmtListUserCall body generated args ∧
+              Frontend.Stmt.List.toYul? body = some yulBody ∧
+                entries.contains
+                  (stubName,
+                    EvmYul.Yul.Ast.FunctionDefinition.Def
+                      params returns yulBody) = true)
+    (motive_3 := fun cases generated args _ =>
+      ∀ {entries : List (Name × Frontend.AstFunctionDefinition)},
+        Frontend.Stmt.CaseList.functionDefStubsLoweredToEntries?
+          entries cases = true →
+          ∃ (stubName : Name)
+              (params returns : List Name)
+              (body : List Frontend.Stmt)
+              (yulBody : List Frontend.AstStmt),
+            StmtListUserCall body generated args ∧
+              Frontend.Stmt.List.toYul? body = some yulBody ∧
+                entries.contains
+                  (stubName,
+                    EvmYul.Yul.Ast.FunctionDefinition.Def
+                      params returns yulBody) = true)
+    (functionBody := by
+      intro name params returns body generated args hBody entries hValid
+      rcases Frontend.Stmt.functionDefStubsLoweredToEntries?_functionDef_entry
+          hValid with
+        ⟨⟨yulBody, hBodyYul, hContains⟩, _hBodyValid⟩
+      exact
+        ⟨name, params, returns, body, yulBody,
+          hBody, hBodyYul, hContains⟩)
+    (block := by
+      intro stmts generated args hList ih entries hValid
+      exact ih (by
+        simpa [Frontend.Stmt.functionDefStubsLoweredToEntries?]
+          using hValid))
+    (switchCase := by
+      intro scrutinee cases default generated args hCases ih entries hValid
+      have hParts := hValid
+      simp [Frontend.Stmt.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.1)
+    (switchDefault := by
+      intro scrutinee cases default generated args hDefault ih entries hValid
+      have hParts := hValid
+      simp [Frontend.Stmt.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.2)
+    (forPre := by
+      intro pre condition post body generated args hPre ih entries hValid
+      have hParts := hValid
+      simp [Frontend.Stmt.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.1.1)
+    (forPost := by
+      intro pre condition post body generated args hPost ih entries hValid
+      have hParts := hValid
+      simp [Frontend.Stmt.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.1.2)
+    (forBody := by
+      intro pre condition post body generated args hBody ih entries hValid
+      have hParts := hValid
+      simp [Frontend.Stmt.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.2)
+    (ifBody := by
+      intro condition body generated args hBody ih entries hValid
+      exact ih (by
+        simpa [Frontend.Stmt.functionDefStubsLoweredToEntries?]
+          using hValid))
+    (head := by
+      intro stmt rest generated args hHead ih entries hValid
+      have hParts := hValid
+      simp [Frontend.Stmt.List.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.1)
+    (tail := by
+      intro stmt rest generated args hTail ih entries hValid
+      have hParts := hValid
+      simp [Frontend.Stmt.List.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.2)
+    (by
+      intro value body rest generated args hBody ih entries hValid
+      have hParts := hValid
+      simp [Frontend.Stmt.CaseList.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.1)
+    (by
+      intro caseEntry rest generated args hTail ih entries hValid
+      rcases caseEntry with ⟨value, body⟩
+      have hParts := hValid
+      simp [Frontend.Stmt.CaseList.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.2)
+    hStub hValid
+
+end StubBodyStmtListUserCall
+
 namespace ExprListToYul
 
 theorem mem
@@ -1913,6 +2192,45 @@ def LowerableResolvedLocalCall
     (topName, topFn) ∈ functions ∧
       LowerableStmtListUserCall topFn.body generated args ∧
         (generated, localFn) ∈ functions
+
+/--
+Resolved local call whose occurrence is inside a retained `functionDef` staging
+body, and therefore must be followed through the generated function-entry route.
+-/
+def StubBodyResolvedLocalCall
+    (functions : List (Name × Frontend.FunctionDef))
+    (topName : Name) : Prop :=
+  ∃ (generated : Name)
+      (localFn : Frontend.FunctionDef)
+      (args : List Frontend.Expr)
+      (topFn : Frontend.FunctionDef),
+    (topName, topFn) ∈ functions ∧
+      StubBodyStmtListUserCall topFn.body generated args ∧
+        (generated, localFn) ∈ functions
+
+namespace ResolvedLocalCall
+
+theorem lowerable_or_stubBody
+    {functions : List (Name × Frontend.FunctionDef)}
+    {topName : Name}
+    (hResolved : ResolvedLocalCall functions topName) :
+    LowerableResolvedLocalCall functions topName ∨
+      StubBodyResolvedLocalCall functions topName := by
+  rcases hResolved with
+    ⟨generated, localFn, args, topFn,
+      hTopMem, hOccurrence, hCalleeMem⟩
+  rcases StmtListUserCall.lowerable_or_stubBody hOccurrence with
+    hLowerable | hStub
+  · exact
+      Or.inl
+        ⟨generated, localFn, args, topFn,
+          hTopMem, hLowerable, hCalleeMem⟩
+  · exact
+      Or.inr
+        ⟨generated, localFn, args, topFn,
+          hTopMem, hStub, hCalleeMem⟩
+
+end ResolvedLocalCall
 
 namespace LowerableResolvedLocalCall
 

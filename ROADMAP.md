@@ -399,6 +399,13 @@ Next raw frontend layer:
   now packages the lowerable caller-body occurrence with ordered-Yul conversion,
   yielding the concrete lowered caller-body occurrence plus the generated callee
   ordered function entry.
+  `FrontendOccurrence.StmtListUserCall.lowerable_or_stubBody` and
+  `FrontendOccurrence.ResolvedLocalCall.lowerable_or_stubBody` now split the
+  broad resolved-call relation into lowerable caller-body and retained
+  `functionDef` body routes, while
+  `FrontendOccurrence.StubBodyStmtListUserCall.lowered_function_entry` uses the
+  existing `functionDefStubsLoweredToEntries?` validator to expose the concrete
+  lowered function entry for the first retained-stub body branch.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call execution/observation in caller context,
   including source argument evaluation and caller writeback, and broader

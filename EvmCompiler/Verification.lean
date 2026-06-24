@@ -83,10 +83,16 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.StmtListUserCall
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableStmtUserCall
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableStmtListUserCall
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.StubBodyStmtUserCall
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.StubBodyStmtListUserCall
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.StmtListUserCall.lowerable_or_stubBody
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.StubBodyStmtListUserCall.lowered_function_entry
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.toYul?_occurrence
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.StmtIncomingUserCall.toYul?_occurrence
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableStmtListUserCall.toYul?_occurrence
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableResolvedLocalCall
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.StubBodyResolvedLocalCall
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.ResolvedLocalCall.lowerable_or_stubBody
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableResolvedLocalCall.toSolcYulOrderedProgram?_entries
 #check EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved
 #check EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_entries
@@ -570,6 +576,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.toYul?_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.StmtIncomingUserCall.toYul?_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableStmtListUserCall.toYul?_occurrence
+#print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.StmtListUserCall.lowerable_or_stubBody
+#print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.ResolvedLocalCall.lowerable_or_stubBody
+#print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.StubBodyStmtListUserCall.lowered_function_entry
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableResolvedLocalCall.toSolcYulOrderedProgram?_entries
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_entries
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_callable_entries
