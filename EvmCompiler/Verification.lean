@@ -360,6 +360,14 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.OuterIncomingStmtRun.execSeq_of_split
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.OuterStmtListOccurrenceRun
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.OuterStmtListOccurrenceRun.execSeq
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedStmtRun
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedStmtRun.exec
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedStmtRun.execSeq_prefix
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedStmtRun.execSeq_of_split
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.StmtListOccurrenceRun
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.StmtListOccurrenceRun.execSeq
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.StmtListOccurrenceRun.ofDirect
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.StmtListOccurrenceRun.ofOuter
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.assign_succ
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.let_succ
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.exprStmt_succ
@@ -768,6 +776,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.OuterIncomingStmtRun.execSeq_prefix
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.OuterIncomingStmtRun.execSeq_of_split
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.OuterStmtListOccurrenceRun.execSeq
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedStmtRun.exec
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedStmtRun.execSeq_prefix
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedStmtRun.execSeq_of_split
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.StmtListOccurrenceRun.execSeq
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.StmtListOccurrenceRun.ofDirect
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.StmtListOccurrenceRun.ofOuter
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.assign_succ
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.let_succ
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.exprStmt_succ
