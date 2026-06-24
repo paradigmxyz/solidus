@@ -282,6 +282,102 @@ theorem alphaRenamedLocalCallPreserved_call_succ_of_local_body
     Yul.Source.Effectful.call_succ_of_explicit_parts
       model prim hCalleeLookup hBody
 
+/-- Semantic call corollary that also exposes the concrete generated Yul call
+occurrence route.
+
+This packages the two frontend cases behind the source-facing
+`AlphaRenamedLocalCallPreserved` relation: either the generated call occurs in
+the lowered caller body, or it occurs in an emitted retained-stub function body.
+Both routes share the same generated callee lookup used by the Yul call rule. -/
+theorem alphaRenamedLocalCallPreserved_call_occurrence_routes_succ
+    {topBody : List Raw.Stmt}
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName name : Frontend.Name}
+    {localParams localReturns : List Frontend.Name}
+    {localBody : List Raw.Stmt}
+    {args : List Raw.Expr}
+    (hAlpha :
+      Raw.Source.AlphaRenamedLocalCallPreserved
+        topBody object.functions topName name
+          localParams localReturns localBody args)
+    (hConvert :
+      object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (generated : Frontend.Name)
+        (localFn : Frontend.FunctionDef)
+        (frontArgs : List Frontend.Expr)
+        (localYulBody : List Frontend.AstStmt)
+        (yulArgs : List Frontend.AstExpr),
+      (generated, localFn) ∈ object.functions ∧
+        Frontend.Stmt.List.toYul? localFn.body = some localYulBody ∧
+        Frontend.Expr.List.toYul? frontArgs = some yulArgs ∧
+        ordered.program.contract.functions.lookup generated =
+          some
+            (EvmYul.Yul.Ast.FunctionDefinition.Def
+              localFn.params localFn.returns localYulBody) ∧
+        ((∃ (topFn : Frontend.FunctionDef)
+            (topYulBody : List Frontend.AstStmt),
+          (topName, topFn) ∈ object.functions ∧
+            FrontendOccurrence.LowerableStmtListUserCall
+              topFn.body generated frontArgs ∧
+            Frontend.Stmt.List.toYul? topFn.body = some topYulBody ∧
+            YulOccurrence.StmtListUserCall
+              topYulBody generated yulArgs ∧
+            (topName,
+              EvmYul.Yul.Ast.FunctionDefinition.Def
+                topFn.params topFn.returns topYulBody) ∈
+              ordered.functionEntries) ∨
+          ∃ (topFn : Frontend.FunctionDef)
+            (stubName : Frontend.Name)
+            (params returns : List Frontend.Name)
+            (body : List Frontend.Stmt)
+            (yulBody : List Frontend.AstStmt),
+          (topName, topFn) ∈ object.functions ∧
+            FrontendOccurrence.StubBodyStmtListUserCall
+              topFn.body generated frontArgs ∧
+            Frontend.Stmt.List.toYul? body = some yulBody ∧
+            ordered.functionEntries.contains
+              (stubName,
+                EvmYul.Yul.Ast.FunctionDefinition.Def
+                  params returns yulBody) = true ∧
+            YulOccurrence.StmtListUserCall
+              yulBody generated yulArgs) ∧
+        ∀ {σ : Type}
+          (model : Yul.Source.Effectful.StateModel σ)
+          (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+          {fuel : Nat} {callArgs : List Frontend.Word}
+          {state stateAfterBody : σ},
+          Yul.Source.Effectful.exec model prim fuel
+              (.Block localYulBody)
+              (some ordered.program.contract)
+              (model.withSource state
+                (EvmYul.Yul.State.mkOk
+                  ((model.source state).initcall
+                    localFn.params localFn.returns callArgs))) =
+            .ok stateAfterBody →
+          Yul.Source.Effectful.call model prim (fuel + 1)
+              callArgs (some generated)
+              (some ordered.program.contract) state =
+            .ok
+              (model.withSource stateAfterBody
+                  (((model.source stateAfterBody).reviveJump.overwrite?
+                      (model.source state)).setStore (model.source state)),
+                List.map (model.source stateAfterBody).lookup!
+                  localFn.returns) := by
+  rcases
+      Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_call_occurrence_routes_lookup
+        hAlpha hConvert with
+    ⟨generated, localFn, frontArgs, localYulBody, yulArgs,
+      hCalleeMem, hLocalYul, hArgsYul, hCalleeLookup, hRoutes⟩
+  refine
+    ⟨generated, localFn, frontArgs, localYulBody, yulArgs,
+      hCalleeMem, hLocalYul, hArgsYul, hCalleeLookup,
+      hRoutes, ?_⟩
+  intro σ model prim fuel callArgs state stateAfterBody hBody
+  exact
+    Yul.Source.Effectful.call_succ_of_explicit_parts
+      model prim hCalleeLookup hBody
+
 /-- Finished-source corollary for the raw-solc theorem. This retains the
 unconditional theorem as primary; the source-finished premise is only used to
 upgrade finite-prefix preservation to a full open-world relation. -/
