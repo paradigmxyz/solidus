@@ -437,7 +437,8 @@ Next raw frontend layer:
   incoming cases, preparing the incoming-statement dispatcher to consume one
   checked bundle. It also owns the primitive and user-function outer-call
   `evalValues`/single-value `eval` facts for one focused generated-call
-  argument.
+  argument, plus assignment/declaration/expression-statement execution for
+  those outer calls.
   `YulOccurrence.UserCall.direct_or_arg_split` now separates a lowered
   expression occurrence into either the direct generated call or an outer call
   with the recursive occurrence isolated inside its argument list, matching
