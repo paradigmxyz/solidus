@@ -1022,6 +1022,320 @@ theorem alphaRenamedLocalCallPreserved_outerArg_eval_call_occurrence_routes_succ
       Yul.Source.Effectful.eval_of_evalValues_singleton model prim
         (hFunctionOuter model prim hRight hArgs hBody hLeft hCall)
 
+/-- If-condition execution for outer calls containing a generated call.
+
+This lifts the outer-call single-value theorem through ordinary Yul `if`
+semantics.  Both primitive and user-function outer calls are covered, and the
+zero/nonzero branch split is kept explicit for later sequence/block composition. -/
+theorem alphaRenamedLocalCallPreserved_ifCondition_outerArg_call_occurrence_routes_succ
+    {topBody : List Raw.Stmt}
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName name : Frontend.Name}
+    {localParams localReturns : List Frontend.Name}
+    {localBody : List Raw.Stmt}
+    {args : List Raw.Expr}
+    (hAlpha :
+      Raw.Source.AlphaRenamedLocalCallPreserved
+        topBody object.functions topName name
+          localParams localReturns localBody args)
+    (hConvert :
+      object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (generated : Frontend.Name)
+        (localFn : Frontend.FunctionDef)
+        (frontArgs : List Frontend.Expr)
+        (localYulBody : List Frontend.AstStmt)
+        (yulArgs : List Frontend.AstExpr),
+      (generated, localFn) ∈ object.functions ∧
+        Frontend.Stmt.List.toYul? localFn.body = some localYulBody ∧
+        Frontend.Expr.List.toYul? frontArgs = some yulArgs ∧
+        ordered.program.contract.functions.lookup generated =
+          some
+            (EvmYul.Yul.Ast.FunctionDefinition.Def
+              localFn.params localFn.returns localYulBody) ∧
+        ((∃ (topFn : Frontend.FunctionDef)
+            (topYulBody : List Frontend.AstStmt),
+          (topName, topFn) ∈ object.functions ∧
+            FrontendOccurrence.LowerableStmtListUserCall
+              topFn.body generated frontArgs ∧
+            Frontend.Stmt.List.toYul? topFn.body = some topYulBody ∧
+            YulOccurrence.StmtListUserCall
+              topYulBody generated yulArgs ∧
+            (topName,
+              EvmYul.Yul.Ast.FunctionDefinition.Def
+                topFn.params topFn.returns topYulBody) ∈
+              ordered.functionEntries) ∨
+          ∃ (topFn : Frontend.FunctionDef)
+            (stubName : Frontend.Name)
+            (params returns : List Frontend.Name)
+            (body : List Frontend.Stmt)
+            (yulBody : List Frontend.AstStmt),
+          (topName, topFn) ∈ object.functions ∧
+            FrontendOccurrence.StubBodyStmtListUserCall
+              topFn.body generated frontArgs ∧
+            Frontend.Stmt.List.toYul? body = some yulBody ∧
+            ordered.functionEntries.contains
+              (stubName,
+                EvmYul.Yul.Ast.FunctionDefinition.Def
+                  params returns yulBody) = true ∧
+            YulOccurrence.StmtListUserCall
+              yulBody generated yulArgs) ∧
+        (∀ {σ : Type}
+          (model : Yul.Source.Effectful.StateModel σ)
+          (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+          {bodyFuel : Nat} {outerPrim : EvmYul.Operation .Yul}
+          {left right : List Frontend.AstExpr}
+          {ifBody : List Frontend.AstStmt}
+          {state stateBeforeFocus stateAfterArgs stateAfterBody
+            stateAfterOuterArgs stateAfterCond : σ}
+          {rightValues leftValues reversedValues : List Frontend.Word}
+          {condValue : Frontend.Word},
+          Yul.Source.Effectful.evalArgs model prim
+              (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+              right.reverse
+              (some ordered.program.contract) state =
+            .ok (stateBeforeFocus, rightValues) →
+          Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+              yulArgs.reverse
+              (some ordered.program.contract) stateBeforeFocus =
+            .ok (stateAfterArgs, reversedValues) →
+          Yul.Source.Effectful.exec model prim bodyFuel
+              (.Block localYulBody)
+              (some ordered.program.contract)
+              (model.withSource stateAfterArgs
+                (EvmYul.Yul.State.mkOk
+                  ((model.source stateAfterArgs).initcall
+                    localFn.params localFn.returns
+                    reversedValues.reverse))) =
+            .ok stateAfterBody →
+          Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+              left.reverse
+              (some ordered.program.contract)
+              (model.withSource stateAfterBody
+                (((model.source stateAfterBody).reviveJump.overwrite?
+                    (model.source stateAfterArgs)).setStore
+                      (model.source stateAfterArgs))) =
+            .ok (stateAfterOuterArgs, leftValues) →
+          prim.eval (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+              stateAfterOuterArgs outerPrim
+              (rightValues ++
+                ((List.map (model.source stateAfterBody).lookup!
+                  localFn.returns).head! :: leftValues)).reverse =
+            .ok (stateAfterCond, [condValue]) →
+          condValue = EvmYul.UInt256.ofNat 0 →
+          Yul.Source.Effectful.exec model prim
+              (((((bodyFuel + 1) + 2) + 2 * right.reverse.length) + 1) + 1)
+              (.If
+                (.Call (.inl outerPrim)
+                  (left ++ (.Call (.inr generated) yulArgs) :: right))
+                ifBody)
+              (some ordered.program.contract) state =
+            .ok stateAfterCond) ∧
+        (∀ {σ : Type}
+          (model : Yul.Source.Effectful.StateModel σ)
+          (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+          {bodyFuel : Nat} {outerPrim : EvmYul.Operation .Yul}
+          {left right : List Frontend.AstExpr}
+          {ifBody : List Frontend.AstStmt}
+          {state stateBeforeFocus stateAfterArgs stateAfterBody
+            stateAfterOuterArgs stateAfterCond final : σ}
+          {rightValues leftValues reversedValues : List Frontend.Word}
+          {condValue : Frontend.Word},
+          Yul.Source.Effectful.evalArgs model prim
+              (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+              right.reverse
+              (some ordered.program.contract) state =
+            .ok (stateBeforeFocus, rightValues) →
+          Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+              yulArgs.reverse
+              (some ordered.program.contract) stateBeforeFocus =
+            .ok (stateAfterArgs, reversedValues) →
+          Yul.Source.Effectful.exec model prim bodyFuel
+              (.Block localYulBody)
+              (some ordered.program.contract)
+              (model.withSource stateAfterArgs
+                (EvmYul.Yul.State.mkOk
+                  ((model.source stateAfterArgs).initcall
+                    localFn.params localFn.returns
+                    reversedValues.reverse))) =
+            .ok stateAfterBody →
+          Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+              left.reverse
+              (some ordered.program.contract)
+              (model.withSource stateAfterBody
+                (((model.source stateAfterBody).reviveJump.overwrite?
+                    (model.source stateAfterArgs)).setStore
+                      (model.source stateAfterArgs))) =
+            .ok (stateAfterOuterArgs, leftValues) →
+          prim.eval (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+              stateAfterOuterArgs outerPrim
+              (rightValues ++
+                ((List.map (model.source stateAfterBody).lookup!
+                  localFn.returns).head! :: leftValues)).reverse =
+            .ok (stateAfterCond, [condValue]) →
+          condValue ≠ EvmYul.UInt256.ofNat 0 →
+          Yul.Source.Effectful.exec model prim
+              ((((bodyFuel + 1) + 2) + 2 * right.reverse.length) + 1)
+              (.Block ifBody)
+              (some ordered.program.contract) stateAfterCond =
+            .ok final →
+          Yul.Source.Effectful.exec model prim
+              (((((bodyFuel + 1) + 2) + 2 * right.reverse.length) + 1) + 1)
+              (.If
+                (.Call (.inl outerPrim)
+                  (left ++ (.Call (.inr generated) yulArgs) :: right))
+                ifBody)
+              (some ordered.program.contract) state =
+            .ok final) ∧
+        (∀ {σ : Type}
+          (model : Yul.Source.Effectful.StateModel σ)
+          (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+          {bodyFuel : Nat} {functionName : Frontend.Name}
+          {left right : List Frontend.AstExpr}
+          {ifBody : List Frontend.AstStmt}
+          {state stateBeforeFocus stateAfterArgs stateAfterBody
+            stateAfterOuterArgs stateAfterCond : σ}
+          {rightValues leftValues reversedValues : List Frontend.Word}
+          {condValue : Frontend.Word},
+          Yul.Source.Effectful.evalArgs model prim
+              (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+              right.reverse
+              (some ordered.program.contract) state =
+            .ok (stateBeforeFocus, rightValues) →
+          Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+              yulArgs.reverse
+              (some ordered.program.contract) stateBeforeFocus =
+            .ok (stateAfterArgs, reversedValues) →
+          Yul.Source.Effectful.exec model prim bodyFuel
+              (.Block localYulBody)
+              (some ordered.program.contract)
+              (model.withSource stateAfterArgs
+                (EvmYul.Yul.State.mkOk
+                  ((model.source stateAfterArgs).initcall
+                    localFn.params localFn.returns
+                    reversedValues.reverse))) =
+            .ok stateAfterBody →
+          Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+              left.reverse
+              (some ordered.program.contract)
+              (model.withSource stateAfterBody
+                (((model.source stateAfterBody).reviveJump.overwrite?
+                    (model.source stateAfterArgs)).setStore
+                      (model.source stateAfterArgs))) =
+            .ok (stateAfterOuterArgs, leftValues) →
+          Yul.Source.Effectful.call model prim
+              (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+              (rightValues ++
+                ((List.map (model.source stateAfterBody).lookup!
+                  localFn.returns).head! :: leftValues)).reverse
+              (some functionName)
+              (some ordered.program.contract) stateAfterOuterArgs =
+            .ok (stateAfterCond, [condValue]) →
+          condValue = EvmYul.UInt256.ofNat 0 →
+          Yul.Source.Effectful.exec model prim
+              (((((bodyFuel + 1) + 2) + 2 * right.reverse.length) + 1) + 1)
+              (.If
+                (.Call (.inr functionName)
+                  (left ++ (.Call (.inr generated) yulArgs) :: right))
+                ifBody)
+              (some ordered.program.contract) state =
+            .ok stateAfterCond) ∧
+        (∀ {σ : Type}
+          (model : Yul.Source.Effectful.StateModel σ)
+          (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+          {bodyFuel : Nat} {functionName : Frontend.Name}
+          {left right : List Frontend.AstExpr}
+          {ifBody : List Frontend.AstStmt}
+          {state stateBeforeFocus stateAfterArgs stateAfterBody
+            stateAfterOuterArgs stateAfterCond final : σ}
+          {rightValues leftValues reversedValues : List Frontend.Word}
+          {condValue : Frontend.Word},
+          Yul.Source.Effectful.evalArgs model prim
+              (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+              right.reverse
+              (some ordered.program.contract) state =
+            .ok (stateBeforeFocus, rightValues) →
+          Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+              yulArgs.reverse
+              (some ordered.program.contract) stateBeforeFocus =
+            .ok (stateAfterArgs, reversedValues) →
+          Yul.Source.Effectful.exec model prim bodyFuel
+              (.Block localYulBody)
+              (some ordered.program.contract)
+              (model.withSource stateAfterArgs
+                (EvmYul.Yul.State.mkOk
+                  ((model.source stateAfterArgs).initcall
+                    localFn.params localFn.returns
+                    reversedValues.reverse))) =
+            .ok stateAfterBody →
+          Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+              left.reverse
+              (some ordered.program.contract)
+              (model.withSource stateAfterBody
+                (((model.source stateAfterBody).reviveJump.overwrite?
+                    (model.source stateAfterArgs)).setStore
+                      (model.source stateAfterArgs))) =
+            .ok (stateAfterOuterArgs, leftValues) →
+          Yul.Source.Effectful.call model prim
+              (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+              (rightValues ++
+                ((List.map (model.source stateAfterBody).lookup!
+                  localFn.returns).head! :: leftValues)).reverse
+              (some functionName)
+              (some ordered.program.contract) stateAfterOuterArgs =
+            .ok (stateAfterCond, [condValue]) →
+          condValue ≠ EvmYul.UInt256.ofNat 0 →
+          Yul.Source.Effectful.exec model prim
+              ((((bodyFuel + 1) + 2) + 2 * right.reverse.length) + 1)
+              (.Block ifBody)
+              (some ordered.program.contract) stateAfterCond =
+            .ok final →
+          Yul.Source.Effectful.exec model prim
+              (((((bodyFuel + 1) + 2) + 2 * right.reverse.length) + 1) + 1)
+              (.If
+                (.Call (.inr functionName)
+                  (left ++ (.Call (.inr generated) yulArgs) :: right))
+                ifBody)
+              (some ordered.program.contract) state =
+            .ok final) := by
+  rcases alphaRenamedLocalCallPreserved_outerArg_eval_call_occurrence_routes_succ
+      hAlpha hConvert with
+    ⟨generated, localFn, frontArgs, localYulBody, yulArgs,
+      hCalleeMem, hLocalYul, hArgsYul, hCalleeLookup, hRoutes,
+      hPrimOuter, hFunctionOuter⟩
+  refine
+    ⟨generated, localFn, frontArgs, localYulBody, yulArgs,
+      hCalleeMem, hLocalYul, hArgsYul, hCalleeLookup,
+      hRoutes, ?_, ?_, ?_, ?_⟩
+  · intro σ model prim bodyFuel outerPrim left right ifBody state
+      stateBeforeFocus stateAfterArgs stateAfterBody stateAfterOuterArgs
+      stateAfterCond rightValues leftValues reversedValues condValue
+      hRight hArgs hBody hLeft hPrim hZero
+    have hEval := hPrimOuter model prim hRight hArgs hBody hLeft hPrim
+    exact Yul.Source.Effectful.exec_if_false_of_eval model prim hEval hZero
+  · intro σ model prim bodyFuel outerPrim left right ifBody state
+      stateBeforeFocus stateAfterArgs stateAfterBody stateAfterOuterArgs
+      stateAfterCond final rightValues leftValues reversedValues condValue
+      hRight hArgs hBody hLeft hPrim hNonzero hIfBody
+    have hEval := hPrimOuter model prim hRight hArgs hBody hLeft hPrim
+    exact
+      Yul.Source.Effectful.exec_if_true_of_eval model prim hEval hNonzero
+        hIfBody
+  · intro σ model prim bodyFuel functionName left right ifBody state
+      stateBeforeFocus stateAfterArgs stateAfterBody stateAfterOuterArgs
+      stateAfterCond rightValues leftValues reversedValues condValue
+      hRight hArgs hBody hLeft hCall hZero
+    have hEval := hFunctionOuter model prim hRight hArgs hBody hLeft hCall
+    exact Yul.Source.Effectful.exec_if_false_of_eval model prim hEval hZero
+  · intro σ model prim bodyFuel functionName left right ifBody state
+      stateBeforeFocus stateAfterArgs stateAfterBody stateAfterOuterArgs
+      stateAfterCond final rightValues leftValues reversedValues condValue
+      hRight hArgs hBody hLeft hCall hNonzero hIfBody
+    have hEval := hFunctionOuter model prim hRight hArgs hBody hLeft hCall
+    exact
+      Yul.Source.Effectful.exec_if_true_of_eval model prim hEval hNonzero
+        hIfBody
+
 /-- Assignment/declaration contexts for outer calls containing a generated call.
 
 This composes the outer-call argument theorem with ordinary Yul
