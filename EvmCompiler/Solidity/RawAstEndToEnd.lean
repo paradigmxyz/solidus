@@ -2248,6 +2248,106 @@ def focusedStmt
 
 end IfContextRun
 
+/-- Executed `.For` context whose condition expression contains the focused
+generated-call occurrence.  The condition run is the loop's actual first
+condition evaluation; the remaining loop behavior is summarized by the generic
+Yul `LoopAfterCondCase` interface. -/
+structure ForConditionContextRun
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    (conditionFuel : Nat)
+    (condition : Frontend.AstExpr)
+    (post body : List Frontend.AstStmt)
+    (state : σ) where
+  conditionRun :
+    FocusedExprRun hEvidence model prim conditionFuel condition
+      (model.withSource state
+        (EvmYul.Yul.State.mkOk (model.source state)))
+  afterFor : σ
+  hCase :
+    Yul.Source.Effectful.LoopAfterCondCase model prim
+      conditionFuel condition post body
+      (some ordered.program.contract)
+      (model.source state) conditionRun.afterFocus
+      conditionRun.value afterFor
+
+namespace ForConditionContextRun
+
+theorem context
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {conditionFuel : Nat}
+    {condition : Frontend.AstExpr}
+    {post body : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      ForConditionContextRun hEvidence model prim conditionFuel
+        condition post body state) :
+    YulOccurrence.StmtUserCall.Context (.For condition post body)
+      hEvidence.generated hEvidence.yulArgs :=
+  .forCondition hRun.conditionRun.hOccurrence
+
+theorem exec
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {conditionFuel : Nat}
+    {condition : Frontend.AstExpr}
+    {post body : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      ForConditionContextRun hEvidence model prim conditionFuel
+        condition post body state) :
+    Yul.Source.Effectful.exec model prim
+        ((conditionFuel + 1 + 1) + 1)
+        (.For condition post body)
+        (some ordered.program.contract) state =
+      .ok hRun.afterFor := by
+  have hLoop :
+      Yul.Source.Effectful.loop model prim
+          (conditionFuel + 1 + 1) condition post body
+          (some ordered.program.contract) state =
+        .ok hRun.afterFor :=
+    Yul.Source.Effectful.loop_of_eval_after_cond_case
+      model prim hRun.conditionRun.hEval hRun.hCase
+  exact Yul.Source.Effectful.exec_for_of_loop model prim hLoop
+
+def focusedStmt
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {conditionFuel : Nat}
+    {condition : Frontend.AstExpr}
+    {post body : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      ForConditionContextRun hEvidence model prim conditionFuel
+        condition post body state) :
+    FocusedStmtRun hEvidence model prim state
+      ((conditionFuel + 1 + 1) + 1)
+      (.For condition post body) hRun.afterFor :=
+  .context hRun.context hRun.exec
+
+end ForConditionContextRun
+
 /-- Direct assignment statement execution for a generated alpha-renamed call
 from the bundled Yul evidence. -/
 theorem assign_succ
