@@ -282,6 +282,94 @@ theorem alphaRenamedLocalCallPreserved_call_succ_of_local_body
     Yul.Source.Effectful.call_succ_of_explicit_parts
       model prim hCalleeLookup hBody
 
+/-- Common lowered-Yul evidence for an alpha-renamed raw local call.
+
+This bundles the generated callee entry, lowered argument list, exact Yul
+lookup, and the lowerable/retained-stub occurrence route split.  Later
+statement-context theorems can consume one evidence object instead of repeating
+the same existential spine. -/
+structure AlphaRenamedLocalCallYulEvidence
+    (object : Frontend.Object)
+    (ordered : Yul.OrderedProgram)
+    (topName : Frontend.Name) where
+  generated : Frontend.Name
+  localFn : Frontend.FunctionDef
+  frontArgs : List Frontend.Expr
+  localYulBody : List Frontend.AstStmt
+  yulArgs : List Frontend.AstExpr
+  calleeMem : (generated, localFn) ∈ object.functions
+  localYul :
+    Frontend.Stmt.List.toYul? localFn.body = some localYulBody
+  argsYul :
+    Frontend.Expr.List.toYul? frontArgs = some yulArgs
+  calleeLookup :
+    ordered.program.contract.functions.lookup generated =
+      some
+        (EvmYul.Yul.Ast.FunctionDefinition.Def
+          localFn.params localFn.returns localYulBody)
+  routes :
+    ((∃ (topFn : Frontend.FunctionDef)
+        (topYulBody : List Frontend.AstStmt),
+      (topName, topFn) ∈ object.functions ∧
+        FrontendOccurrence.LowerableStmtListUserCall
+          topFn.body generated frontArgs ∧
+        Frontend.Stmt.List.toYul? topFn.body = some topYulBody ∧
+        YulOccurrence.StmtListUserCall
+          topYulBody generated yulArgs ∧
+        (topName,
+          EvmYul.Yul.Ast.FunctionDefinition.Def
+            topFn.params topFn.returns topYulBody) ∈
+          ordered.functionEntries) ∨
+      ∃ (topFn : Frontend.FunctionDef)
+        (stubName : Frontend.Name)
+        (params returns : List Frontend.Name)
+        (body : List Frontend.Stmt)
+        (yulBody : List Frontend.AstStmt),
+      (topName, topFn) ∈ object.functions ∧
+        FrontendOccurrence.StubBodyStmtListUserCall
+          topFn.body generated frontArgs ∧
+        Frontend.Stmt.List.toYul? body = some yulBody ∧
+        ordered.functionEntries.contains
+          (stubName,
+            EvmYul.Yul.Ast.FunctionDefinition.Def
+              params returns yulBody) = true ∧
+        YulOccurrence.StmtListUserCall
+          yulBody generated yulArgs)
+
+/-- The source-facing alpha-preservation relation supplies the common lowered
+Yul evidence used by all generated-call semantic context lemmas. -/
+theorem alphaRenamedLocalCallPreserved_yulEvidence
+    {topBody : List Raw.Stmt}
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName name : Frontend.Name}
+    {localParams localReturns : List Frontend.Name}
+    {localBody : List Raw.Stmt}
+    {args : List Raw.Expr}
+    (hAlpha :
+      Raw.Source.AlphaRenamedLocalCallPreserved
+        topBody object.functions topName name
+          localParams localReturns localBody args)
+    (hConvert :
+      object.toSolcYulOrderedProgram? = some ordered) :
+    Nonempty (AlphaRenamedLocalCallYulEvidence object ordered topName) := by
+  rcases
+      Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_call_occurrence_routes_lookup
+        hAlpha hConvert with
+    ⟨generated, localFn, frontArgs, localYulBody, yulArgs,
+      hCalleeMem, hLocalYul, hArgsYul, hCalleeLookup, hRoutes⟩
+  exact
+    ⟨{ generated := generated
+       localFn := localFn
+       frontArgs := frontArgs
+       localYulBody := localYulBody
+       yulArgs := yulArgs
+       calleeMem := hCalleeMem
+       localYul := hLocalYul
+       argsYul := hArgsYul
+       calleeLookup := hCalleeLookup
+       routes := hRoutes }⟩
+
 /-- Semantic call corollary that also exposes the concrete generated Yul call
 occurrence route.
 
