@@ -457,6 +457,9 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_outerArg_evalValues_call_occurrence_routes_succ`
   now composes that single-value generated-call view through one surrounding
   primitive or user-function call argument list.
+  `alphaRenamedLocalCallPreserved_assignLet_outerArg_call_occurrence_routes_succ`
+  composes the same outer-call argument view through assignment and declaration
+  statement writeback for both primitive and user-function outer calls.
   `alphaRenamedLocalCallPreserved_ifCondition_call_occurrence_routes_succ` and
   `alphaRenamedLocalCallPreserved_switchScrutinee_call_occurrence_routes_succ`
   compose that view through direct Yul `if` and `switch` condition contexts.
