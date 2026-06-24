@@ -3518,6 +3518,45 @@ theorem occurrence
 
 end BodyRoute
 
+/-- Compiler-derived route evidence for an alpha-renamed local call.
+
+This keeps the generated Yul evidence and its selected lowerable/stub body
+route together, so later public theorems do not need to expose or replay the
+route disjunction stored in `AlphaRenamedLocalCallYulEvidence.routes`. -/
+structure BodyRouteEvidence
+    (object : Frontend.Object)
+    (ordered : Yul.OrderedProgram)
+    (topName : Frontend.Name) where
+  yulEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName
+  yulBody : List Frontend.AstStmt
+  route : BodyRoute yulEvidence yulBody
+
+namespace BodyRouteEvidence
+
+theorem ofYulEvidence
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName) :
+    Nonempty (BodyRouteEvidence object ordered topName) := by
+  rcases BodyRoute.exists_of_routes hEvidence with
+    ⟨yulBody, hRoute⟩
+  exact
+    ⟨{ yulEvidence := hEvidence
+       yulBody := yulBody
+       route := hRoute }⟩
+
+theorem occurrence
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : BodyRouteEvidence object ordered topName) :
+    YulOccurrence.StmtListUserCall hEvidence.yulBody
+      hEvidence.yulEvidence.generated hEvidence.yulEvidence.yulArgs :=
+  hEvidence.route.occurrence
+
+end BodyRouteEvidence
+
 /-- Semantic execution package for the concrete route body selected by
 `AlphaRenamedLocalCallYulEvidence.routes`.
 
@@ -6057,6 +6096,34 @@ theorem switch_outerArgFunction_succ
   exact Yul.Source.Effectful.exec_switch_of_eval model prim hEval hSelected
 
 end AlphaRenamedLocalCallYulEvidence
+
+/-- The source-facing alpha-preservation relation supplies the compiler-derived
+Yul evidence and selects the concrete lowered body route internally.
+
+This is the route-level successor to the older public theorem family that
+returned generated names plus a lowerable/stub occurrence-route disjunction. -/
+theorem alphaRenamedLocalCallPreserved_bodyRouteEvidence
+    {topBody : List Raw.Stmt}
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName name : Frontend.Name}
+    {localParams localReturns : List Frontend.Name}
+    {localBody : List Raw.Stmt}
+    {args : List Raw.Expr}
+    (hAlpha :
+      Raw.Source.AlphaRenamedLocalCallPreserved
+        topBody object.functions topName name
+          localParams localReturns localBody args)
+    (hConvert :
+      object.toSolcYulOrderedProgram? = some ordered) :
+    Nonempty
+      (AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence
+        object ordered topName) := by
+  rcases alphaRenamedLocalCallPreserved_yulEvidence hAlpha hConvert with
+    ⟨hEvidence⟩
+  exact
+    AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence.ofYulEvidence
+      hEvidence
 
 /-- Semantic call corollary that also exposes the concrete generated Yul call
 occurrence route.

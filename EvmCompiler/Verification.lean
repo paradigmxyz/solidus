@@ -419,6 +419,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRoute
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRoute.exists_of_routes
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRoute.occurrence
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence.ofYulEvidence
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence.occurrence
+#check EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_bodyRouteEvidence
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.occurrence
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.route_occurrence
@@ -880,6 +884,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.StmtListOccurrenceRun.ofContext
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRoute.exists_of_routes
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRoute.occurrence
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence.ofYulEvidence
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence.occurrence
+#print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_bodyRouteEvidence
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.occurrence
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.route_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.execSeq
