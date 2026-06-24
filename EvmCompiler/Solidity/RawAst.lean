@@ -1193,6 +1193,52 @@ theorem of_entries
       ⟨generated, localFn, frontArgs, topFn,
         hTop, hOccurrence, hCallee⟩ }
 
+theorem toSolcYulOrderedProgram?_entries
+    {topBody : List Stmt}
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName name : Name}
+    {localParams localReturns : List Name}
+    {localBody : List Stmt}
+    {args : List Expr}
+    (hAlpha :
+      AlphaRenamedLocalCallPreserved topBody object.functions topName name
+        localParams localReturns localBody args)
+    (hConvert :
+      object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (generated : Name)
+        (localFn : Frontend.FunctionDef)
+        (frontArgs : List Frontend.Expr)
+        (topFn : Frontend.FunctionDef)
+        (topYulBody localYulBody : List Frontend.AstStmt),
+      (topName, topFn) ∈ object.functions ∧
+        FrontendOccurrence.StmtListUserCall
+          topFn.body generated frontArgs ∧
+        (generated, localFn) ∈ object.functions ∧
+        Frontend.Stmt.List.toYul? topFn.body = some topYulBody ∧
+        Frontend.Stmt.List.toYul? localFn.body = some localYulBody ∧
+        (topName,
+          EvmYul.Yul.Ast.FunctionDefinition.Def
+            topFn.params topFn.returns topYulBody) ∈
+          ordered.functionEntries ∧
+        (generated,
+          EvmYul.Yul.Ast.FunctionDefinition.Def
+            localFn.params localFn.returns localYulBody) ∈
+          ordered.functionEntries := by
+  rcases hAlpha.resolved with
+    ⟨generated, localFn, frontArgs, topFn,
+      hTopMem, hOccurrence, hCalleeMem⟩
+  rcases Frontend.Object.toSolcYulOrderedProgram?_function_entry
+      hConvert hTopMem with
+    ⟨topYulBody, hTopYul, hTopEntry⟩
+  rcases Frontend.Object.toSolcYulOrderedProgram?_function_entry
+      hConvert hCalleeMem with
+    ⟨localYulBody, hLocalYul, hLocalEntry⟩
+  exact
+    ⟨generated, localFn, frontArgs, topFn, topYulBody, localYulBody,
+      hTopMem, hOccurrence, hCalleeMem, hTopYul, hLocalYul,
+      hTopEntry, hLocalEntry⟩
+
 end AlphaRenamedLocalCallPreserved
 
 end Source

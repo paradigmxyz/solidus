@@ -374,7 +374,11 @@ Next raw frontend layer:
   `Raw.Source.AlphaRenamedLocalCallPreserved`, a source-facing relation that
   bundles the raw local declaration, resolver-safe source call, and generated
   frontend caller/callee resolution without exposing the generated alpha name
-  as separate public plumbing.
+  as separate public plumbing. That relation now has a checked ordered-Yul
+  lowering theorem:
+  `AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_entries` proves the
+  alpha-preserved caller and generated callee are both emitted as exact ordered
+  Yul function entries consumed by the backend.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call execution/observation, beyond this
   resolution-preservation relation, and broader composition into the final

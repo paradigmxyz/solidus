@@ -78,6 +78,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_sourceLocalFunction_noShadow_function_entries
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.ResolvedLocalCall
 #check EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved
+#check EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_entries
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_sourceLocalFunction_noShadow_alphaPreserved
 #check EvmCompiler.Solidity.RawAst.Raw.Source.StmtCall
 #check EvmCompiler.Solidity.RawAst.Raw.Source.StmtListCall
@@ -553,6 +554,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_frontendValidated
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_sourceLocalFunction_noShadow_function_entries
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_sourceLocalFunction_noShadow_alphaPreserved
+#print axioms EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_entries
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decoded
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_valid
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_rawParts
