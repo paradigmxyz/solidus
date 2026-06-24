@@ -2157,6 +2157,48 @@ theorem toYul?_occurrence
 
 end LowerableStmtListUserCall
 
+namespace StubBodyStmtListUserCall
+
+theorem lowered_function_entry_step
+    {front : List Frontend.Stmt}
+    {entries : List (Name × Frontend.AstFunctionDefinition)}
+    {generated : Name} {args : List Frontend.Expr}
+    (hStub : StubBodyStmtListUserCall front generated args)
+    (hValid :
+      Frontend.Stmt.List.functionDefStubsLoweredToEntries?
+        entries front = true) :
+    ∃ (stubName : Name)
+        (params returns : List Name)
+        (body : List Frontend.Stmt)
+        (yulBody : List Frontend.AstStmt),
+      Frontend.Stmt.List.toYul? body = some yulBody ∧
+        entries.contains
+          (stubName,
+            EvmYul.Yul.Ast.FunctionDefinition.Def
+              params returns yulBody) = true ∧
+          ((∃ yulArgs,
+              Frontend.Expr.List.toYul? args = some yulArgs ∧
+                YulOccurrence.StmtListUserCall
+                  yulBody generated yulArgs) ∨
+            StubBodyStmtListUserCall body generated args) := by
+  rcases lowered_function_entry hStub hValid with
+    ⟨stubName, params, returns, body, yulBody,
+      hBodyOccurrence, hBodyYul, hContains⟩
+  rcases StmtListUserCall.lowerable_or_stubBody hBodyOccurrence with
+    hLowerable | hNestedStub
+  · rcases LowerableStmtListUserCall.toYul?_occurrence
+      hLowerable hBodyYul with
+      ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+    exact
+      ⟨stubName, params, returns, body, yulBody,
+        hBodyYul, hContains,
+        Or.inl ⟨yulArgs, hArgsYul, hYulOccurrence⟩⟩
+  · exact
+      ⟨stubName, params, returns, body, yulBody,
+        hBodyYul, hContains, Or.inr hNestedStub⟩
+
+end StubBodyStmtListUserCall
+
 /--
 Generated frontend realization of a raw source-local call.
 

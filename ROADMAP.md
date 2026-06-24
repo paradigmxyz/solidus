@@ -405,7 +405,11 @@ Next raw frontend layer:
   `functionDef` body routes, while
   `FrontendOccurrence.StubBodyStmtListUserCall.lowered_function_entry` uses the
   existing `functionDefStubsLoweredToEntries?` validator to expose the concrete
-  lowered function entry for the first retained-stub body branch.
+  lowered function entry for the first retained-stub body branch. The
+  one-step theorem
+  `FrontendOccurrence.StubBodyStmtListUserCall.lowered_function_entry_step`
+  then either exposes a concrete generated Yul call occurrence inside that
+  lowered stub body or returns the next retained-stub body branch to chase.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call execution/observation in caller context,
   including source argument evaluation and caller writeback, and broader
