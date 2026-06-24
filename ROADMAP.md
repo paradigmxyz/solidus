@@ -445,6 +445,9 @@ Next raw frontend layer:
   call contexts using `multifill`.
   `alphaRenamedLocalCallPreserved_exprStmt_call_occurrence_routes_succ`
   covers the expression-statement/no-target call context.
+  `alphaRenamedLocalCallPreserved_exprStmt_blockHead_call_occurrence_routes_succ`
+  lifts that expression-statement context through the head of a surrounding
+  Yul block, leaving the remaining sequence as the next composition premise.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call execution/observation in the full caller
   statement/control context and broader composition into the final source
