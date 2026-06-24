@@ -436,10 +436,12 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_assignLet_call_occurrence_routes_succ`
   adds the ordinary Yul statement writeback for assignment and declaration
   call contexts using `multifill`.
+  `alphaRenamedLocalCallPreserved_exprStmt_call_occurrence_routes_succ`
+  covers the expression-statement/no-target call context.
   The remaining raw frontend semantic gap is source-level preservation for
-  alpha-renamed nested-function call execution/observation in caller context,
-  including expression-statement/no-target context and broader composition into
-  the final source theorem.
+  alpha-renamed nested-function call execution/observation in the full caller
+  statement/control context and broader composition into the final source
+  theorem.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose
