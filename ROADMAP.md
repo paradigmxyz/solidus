@@ -236,7 +236,10 @@ Next raw frontend layer:
   generated-name lookups through production nested-function hoisting,
   statement elaboration, and scope popping to a generated hoisted callee entry
   in the block final state, for both scope-creating and non-scope-creating
-  blocks. Hoisted frontend function entries now also have a
+  blocks. Successful ordered-Yul conversion now also exposes a checked
+  function entry for every name present in `object.functions.map Prod.fst`,
+  giving resolved user-call names a concrete emitted callee entry at the
+  frontend/Yul boundary. Hoisted frontend function entries now also have a
   checked path through `toSolcYulOrderedProgram?` to the emitted ordered Yul
   function-entry list consumed by the backend, and successful raw artifact
   compilation now carries hoisted raw callees through object-builtin

@@ -1813,6 +1813,28 @@ theorem toYul?_function_mem
               · rcases ih hRest hTailMem with ⟨yulBody, hBody, hEntry⟩
                 exact ⟨yulBody, hBody, by simp [hEntry]⟩
 
+theorem toYul?_function_name_entry
+    {functions : List (Name × FunctionDef)}
+    {entries : List (Name × AstFunctionDefinition)}
+    {name : Name}
+    (hConvert : FunctionDef.List.toYul? functions = some entries)
+    (hContains : (functions.map Prod.fst).contains name = true) :
+    ∃ fn yulBody,
+      (name, fn) ∈ functions ∧
+        Stmt.List.toYul? fn.body = some yulBody ∧
+          (name,
+            EvmYul.Yul.Ast.FunctionDefinition.Def
+              fn.params fn.returns yulBody) ∈ entries := by
+  have hNameMem : name ∈ functions.map Prod.fst := by
+    simpa using hContains
+  rcases List.mem_map.mp hNameMem with ⟨entry, hEntryMem, hEntryName⟩
+  rcases entry with ⟨entryName, fn⟩
+  simp at hEntryName
+  subst entryName
+  rcases toYul?_function_mem hConvert hEntryMem with
+    ⟨yulBody, hBody, hYulEntry⟩
+  exact ⟨fn, yulBody, hEntryMem, hBody, hYulEntry⟩
+
 end FunctionDef.List
 
 namespace Stmt
@@ -3111,6 +3133,39 @@ theorem toSolcYulOrderedProgram?_function_entry
           rcases hConvert with ⟨_hStubs, _hSpelling, hConvert⟩
           subst ordered
           exact FunctionDef.List.toYul?_function_mem hFunctions hMem
+
+theorem toSolcYulOrderedProgram?_function_name_entry
+    {object : Object} {ordered : Yul.OrderedProgram}
+    {name : Name}
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered)
+    (hContains : (object.functions.map Prod.fst).contains name = true) :
+    ∃ fn yulBody,
+      (name, fn) ∈ object.functions ∧
+        Stmt.List.toYul? fn.body = some yulBody ∧
+          (name,
+            EvmYul.Yul.Ast.FunctionDefinition.Def
+              fn.params fn.returns yulBody) ∈ ordered.functionEntries := by
+  unfold toSolcYulOrderedProgram? toYulContractWithFunctionEntries? at hConvert
+  cases hDispatcher : Stmt.toYul? (.block object.dispatcher) with
+  | none =>
+      simp [hDispatcher] at hConvert
+  | some dispatcher =>
+      cases hFunctions : FunctionDef.List.toYul? object.functions with
+      | none =>
+          simp [hDispatcher, hFunctions] at hConvert
+      | some functions =>
+          cases hValid :
+              Yul.SolcValidation.ContractOkWithEntries?
+                object.dialectProfile
+                { dispatcher := dispatcher
+                  functions := functionMap functions }
+                functions <;>
+            simp [hDispatcher, hFunctions, hValid] at hConvert
+          rcases hConvert with ⟨_hStubs, _hSpelling, hConvert⟩
+          subst ordered
+          exact
+            FunctionDef.List.toYul?_function_name_entry
+              hFunctions hContains
 
 theorem toSolcYulOrderedProgram?_programOkWithEntries
     {object : Object} {ordered : Yul.OrderedProgram}
