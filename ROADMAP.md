@@ -463,6 +463,9 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_ifCondition_outerArg_call_occurrence_routes_succ`
   composes that one-return outer-call view through zero and nonzero Yul `if`
   condition execution.
+  `alphaRenamedLocalCallPreserved_switchScrutinee_outerArg_call_occurrence_routes_succ`
+  composes the same outer-call view through Yul `switch` scrutinee evaluation
+  and selected case/default execution.
   `alphaRenamedLocalCallPreserved_assignLet_outerArg_call_occurrence_routes_succ`
   composes the same outer-call argument view through assignment and declaration
   statement writeback for both primitive and user-function outer calls.
