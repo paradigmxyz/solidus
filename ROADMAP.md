@@ -253,6 +253,10 @@ Next raw frontend layer:
   function-definition elaboration now preserve/restore the active
   `functionScopes` stack, giving the source-call proof a checked way to carry
   actual source-name local call scopes through production block elaboration.
+  Direct head source-name calls in both scope-creating and non-scope-creating
+  raw blocks now have checked occurrence theorems: successful production block
+  elaboration emits the generated frontend `.user` call and retains the
+  matching generated callee entry.
   Successful `FunctionDef.elaborate` now also realizes source local-function
   declarations in the raw function body as generated hoisted callee entries in
   the final elaborator state, without exposing the block's internal scope
