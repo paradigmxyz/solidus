@@ -256,7 +256,12 @@ Next raw frontend layer:
   Direct head source-name calls in both scope-creating and non-scope-creating
   raw blocks now have checked occurrence theorems: successful production block
   elaboration emits the generated frontend `.user` call and retains the
-  matching generated callee entry.
+  matching generated callee entry. This has been generalized to arbitrary
+  direct expression-statement source calls in a block: `Raw.Source.LocalCall`
+  records the source occurrence, `elaborate_source_local_call_mem` carries it
+  through statement-list elaboration under the active generated function scope,
+  and block wrappers expose the generated frontend call occurrence plus the
+  retained generated callee entry.
   Successful `FunctionDef.elaborate` now also realizes source local-function
   declarations in the raw function body as generated hoisted callee entries in
   the final elaborator state, without exposing the block's internal scope
