@@ -435,6 +435,10 @@ Next raw frontend layer:
   argument evaluation, focused generated-call evaluation, and left-side
   argument evaluation for the reversed Yul argument order used by
   `evalValues`.
+  `Yul.Source.Effectful.evalValues_primitive_split_focus_of_parts` and
+  `Yul.Source.Effectful.evalValues_function_split_focus_of_parts` lift the
+  same focused-argument composition through primitive and user-function outer
+  calls.
   `YulOccurrence.StmtListUserCall.exists_split_stmt` and
   `YulOccurrence.CaseListUserCall.exists_split_body` now decompose recursive
   lowered Yul occurrences into the concrete focused statement or switch case
@@ -450,6 +454,9 @@ Next raw frontend layer:
   the single-value `eval` view used by condition-like expression contexts,
   returning the generated call's head value after argument evaluation and
   generated callee execution.
+  `alphaRenamedLocalCallPreserved_outerArg_evalValues_call_occurrence_routes_succ`
+  now composes that single-value generated-call view through one surrounding
+  primitive or user-function call argument list.
   `alphaRenamedLocalCallPreserved_ifCondition_call_occurrence_routes_succ` and
   `alphaRenamedLocalCallPreserved_switchScrutinee_call_occurrence_routes_succ`
   compose that view through direct Yul `if` and `switch` condition contexts.

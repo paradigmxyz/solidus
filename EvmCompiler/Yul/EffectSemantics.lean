@@ -2734,6 +2734,124 @@ theorem evalArgs_split_focus_of_parts {σ : Type}
   simpa [List.reverse_append, List.singleton_append, List.append_assoc] using
     hAll
 
+theorem evalValues_primitive_split_focus_of_parts {σ : Type}
+    (model : StateModel σ) (primSemantics : PrimitiveSemantics σ)
+    {tailFuel : Nat} {prim : EvmYul.Operation .Yul}
+    {left right : List EvmYul.Yul.Ast.Expr}
+    {focus : EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state beforeFocus afterFocus stateAfterArgs final : σ}
+    {rightValues leftValues : List Word}
+    {focusValue : Word} {outputs : List Word}
+    (hTailFuel : 1 ≤ tailFuel)
+    (hRight :
+      evalArgs model primSemantics
+          ((tailFuel + 2) + 2 * right.reverse.length)
+          right.reverse codeOverride state =
+        .ok (beforeFocus, rightValues))
+    (hFocus :
+      eval model primSemantics (tailFuel + 1)
+          focus codeOverride beforeFocus =
+        .ok (afterFocus, focusValue))
+    (hLeft :
+      evalArgs model primSemantics tailFuel left.reverse
+          codeOverride afterFocus =
+        .ok (stateAfterArgs, leftValues))
+    (hPrim :
+      primSemantics.eval
+          ((tailFuel + 2) + 2 * right.reverse.length)
+          stateAfterArgs prim
+          (rightValues ++ focusValue :: leftValues).reverse =
+        .ok (final, outputs)) :
+    evalValues model primSemantics
+        (((tailFuel + 2) + 2 * right.reverse.length) + 1)
+        (.Call (.inl prim) (left ++ focus :: right))
+        codeOverride state =
+      .ok (final, outputs) := by
+  have hArgs :
+      evalArgs model primSemantics
+          ((tailFuel + 2) + 2 * right.reverse.length)
+          (left ++ focus :: right).reverse codeOverride state =
+        .ok
+          (stateAfterArgs, rightValues ++ focusValue :: leftValues) :=
+    evalArgs_split_focus_of_parts model primSemantics
+      hTailFuel hRight hFocus hLeft
+  have hArgs' :
+      evalArgs model primSemantics
+          (tailFuel + 2 + 2 * right.length)
+          (right.reverse ++ focus :: left.reverse) codeOverride state =
+        .ok
+          (stateAfterArgs, rightValues ++ focusValue :: leftValues) := by
+    simpa [List.reverse_append, List.length_reverse, Nat.add_assoc] using
+      hArgs
+  have hPrim' :
+      primSemantics.eval
+          (tailFuel + 2 + 2 * right.length)
+          stateAfterArgs prim
+          (rightValues ++ focusValue :: leftValues).reverse =
+        .ok (final, outputs) := by
+    simpa [List.length_reverse, Nat.add_assoc] using hPrim
+  simpa [evalValues, hArgs', List.reverse_append] using hPrim'
+
+theorem evalValues_function_split_focus_of_parts {σ : Type}
+    (model : StateModel σ) (primSemantics : PrimitiveSemantics σ)
+    {tailFuel : Nat} {functionName : EvmYul.Yul.Ast.YulFunctionName}
+    {left right : List EvmYul.Yul.Ast.Expr}
+    {focus : EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state beforeFocus afterFocus stateAfterArgs final : σ}
+    {rightValues leftValues : List Word}
+    {focusValue : Word} {outputs : List Word}
+    (hTailFuel : 1 ≤ tailFuel)
+    (hRight :
+      evalArgs model primSemantics
+          ((tailFuel + 2) + 2 * right.reverse.length)
+          right.reverse codeOverride state =
+        .ok (beforeFocus, rightValues))
+    (hFocus :
+      eval model primSemantics (tailFuel + 1)
+          focus codeOverride beforeFocus =
+        .ok (afterFocus, focusValue))
+    (hLeft :
+      evalArgs model primSemantics tailFuel left.reverse
+          codeOverride afterFocus =
+        .ok (stateAfterArgs, leftValues))
+    (hCall :
+      call model primSemantics
+          ((tailFuel + 2) + 2 * right.reverse.length)
+          (rightValues ++ focusValue :: leftValues).reverse
+          (some functionName) codeOverride stateAfterArgs =
+        .ok (final, outputs)) :
+    evalValues model primSemantics
+        (((tailFuel + 2) + 2 * right.reverse.length) + 1)
+        (.Call (.inr functionName) (left ++ focus :: right))
+        codeOverride state =
+      .ok (final, outputs) := by
+  have hArgs :
+      evalArgs model primSemantics
+          ((tailFuel + 2) + 2 * right.reverse.length)
+          (left ++ focus :: right).reverse codeOverride state =
+        .ok
+          (stateAfterArgs, rightValues ++ focusValue :: leftValues) :=
+    evalArgs_split_focus_of_parts model primSemantics
+      hTailFuel hRight hFocus hLeft
+  have hArgs' :
+      evalArgs model primSemantics
+          (tailFuel + 2 + 2 * right.length)
+          (right.reverse ++ focus :: left.reverse) codeOverride state =
+        .ok
+          (stateAfterArgs, rightValues ++ focusValue :: leftValues) := by
+    simpa [List.reverse_append, List.length_reverse, Nat.add_assoc] using
+      hArgs
+  have hCall' :
+      call model primSemantics
+          (tailFuel + 2 + 2 * right.length)
+          (rightValues ++ focusValue :: leftValues).reverse
+          (some functionName) codeOverride stateAfterArgs =
+        .ok (final, outputs) := by
+    simpa [List.length_reverse, Nat.add_assoc] using hCall
+  simpa [evalValues, hArgs', List.reverse_append] using hCall'
+
 theorem evalArgs_append_error_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ) :
     ∀ {fuel : Nat} {left right : List EvmYul.Yul.Ast.Expr}
