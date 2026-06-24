@@ -310,7 +310,10 @@ Next raw frontend layer:
   `forPre` user-call occurrences and condition expression occurrences to
   frontend `forCondition` user-call occurrences. Post-block occurrences now
   also have a no-shadow wrapper when neither the initializer nor the post block
-  shadows the callee. Recursive source-side nested block/body occurrence
+  shadows the callee, and body-block occurrences have a wrapper when the
+  initializer and body do not shadow the callee; post-local functions are
+  allowed because the post block restores the function-scope stack before body
+  elaboration. Recursive source-side nested block/body occurrence
   traversal, including fully shadow-aware post/body wrapper composition,
   remains the next statement/control-layer proof work.
   Successful `FunctionDef.elaborate` now also realizes source local-function
