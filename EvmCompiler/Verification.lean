@@ -125,6 +125,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_lookup_functionDefinition
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_functionDefinition_lookup
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_sourceLocalFunction_lookup
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_noLocalFunctionNamed_lookup_none
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_lookup_bindingNameOk
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_sourceLocalFunction_bindingNameOk
 #check EvmCompiler.Solidity.RawAst.Elab.bindingNameOk_classifyCall_user
@@ -138,6 +139,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hasImmediateFunctionDefinition_of_sourceLocalFunction
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_elaborateForInitBlockWithScope_entry
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.sourceLocalFunction_forLoop_condition_stmtUserCall_entry
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateBlock_true_noShadow_resolved_incoming_call_mem
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.sourceLocalFunction_forLoop_post_stmtUserCall_entry
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.sourceLocalFunction_forLoop_body_stmtUserCall_entry
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_elaborateBlock_false_lookup_entry
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_elaborateBlock_true_lookup_entry
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_elaborateBlock_false_entry
@@ -367,6 +371,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_lookup_functionDefinition
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_functionDefinition_lookup
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_sourceLocalFunction_lookup
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_noLocalFunctionNamed_lookup_none
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_lookup_bindingNameOk
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_sourceLocalFunction_bindingNameOk
 #print axioms EvmCompiler.Solidity.RawAst.Elab.bindingNameOk_classifyCall_user
@@ -380,6 +385,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hasImmediateFunctionDefinition_of_sourceLocalFunction
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_elaborateForInitBlockWithScope_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.sourceLocalFunction_forLoop_condition_stmtUserCall_entry
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateBlock_true_noShadow_resolved_incoming_call_mem
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.sourceLocalFunction_forLoop_post_stmtUserCall_entry
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.sourceLocalFunction_forLoop_body_stmtUserCall_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_elaborateBlock_false_lookup_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_elaborateBlock_true_lookup_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_elaborateBlock_false_entry

@@ -1,5 +1,33 @@
 # Progress Log
 
+- 2026-06-24 05:11:47 PDT - proof/raw-for-post-body-no-shadow-handoff -
+  Added the no-shadow `for` post/body handoff slice for raw nested-function
+  call resolution. `Raw.Source.NoLocalFunctionNamed` records that a post/body
+  block does not redeclare the initializer local-function source name,
+  `Elab.Stmt.List.localFunctionScope_noLocalFunctionNamed_lookup_none`
+  proves the block-local scope does not shadow that name, and
+  `Elab.Stmt.List.elaborateBlock_true_noShadow_resolved_incoming_call_mem`
+  carries incoming-scope calls through scope creation, local-function hoisting,
+  statement elaboration, and scope popping using the outer resolver entry.
+  `Elab.Stmt.sourceLocalFunction_forLoop_post_stmtUserCall_entry` and
+  `Elab.Stmt.sourceLocalFunction_forLoop_body_stmtUserCall_entry` lift the
+  initializer-declared local function to generated frontend user calls in the
+  post/body positions while retaining the generated hoisted callee. Validation
+  passed: `lake build EvmCompiler.Solidity.RawAst`,
+  `lake build EvmCompiler.Verification`, `lake build`,
+  `scripts/check_architecture.sh`, `scripts/test_raw_solc_frontend_smoke.sh`,
+  touched-file sorry/admit/axiom/unsafe/partial scans, and
+  `git diff --check`; new theorem axiom audits report
+  `[propext, Classical.choice, Quot.sound]`. Remaining frontier: the general
+  recursive nested block/body traversal with shadow-aware wrapper composition.
+
+- 2026-06-24 04:45:00 PDT - compaction-resume/raw-frontend-distance -
+  Resumed under `$verifiable-compiler` to answer completion distance for the
+  raw solc frontend migration. Current mainline state is commit `ceea7325`
+  plus uncommitted no-shadow `for` post/body call-handoff proof work in
+  `RawAst.lean`/`Verification.lean`; the remaining frontier is the general
+  nested-function traversal/preservation theorem and final release gate.
+
 - 2026-06-24 03:32:20 PDT - proof/raw-for-init-condition-call-handoff -
   Added the first checked `for` initializer function-scope handoff theorem.
   `Elab.Stmt.List.hasImmediateFunctionDefinition_of_sourceLocalFunction`

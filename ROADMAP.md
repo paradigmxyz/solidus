@@ -288,11 +288,13 @@ Next raw frontend layer:
   shadowing nested scopes instead of assuming the callee is found in the head
   scope. Incoming statement expression fields and statement lists have matching
   resolver-stack occurrence theorems. `for` initializer local-function scope
-  handoff is now checked for condition calls: a source local function declared
-  in the initializer is retained as a hoisted generated callee and calls to it
-  in the condition elaborate to the generated frontend user call. Recursive
-  source-side nested block/body occurrence traversal, plus shadow-aware
-  `for` post/body handoff, remains the next statement/control-layer proof work.
+  handoff is now checked for condition calls, and for post/body calls when the
+  post/body block does not declare a shadowing local function with the same
+  source name: a source local function declared in the initializer is retained
+  as a hoisted generated callee and these calls elaborate to the generated
+  frontend user call. Recursive source-side nested block/body occurrence
+  traversal, including fully shadow-aware post/body wrapper composition,
+  remains the next statement/control-layer proof work.
   Successful `FunctionDef.elaborate` now also realizes source local-function
   declarations in the raw function body as generated hoisted callee entries in
   the final elaborator state, without exposing the block's internal scope
