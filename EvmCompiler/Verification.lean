@@ -48,6 +48,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
 #check EvmCompiler.Solidity.Frontend.Object.Expr.userCallsResolved?_user_call
+#check EvmCompiler.Solidity.Frontend.Expr.List.resolveObjectBuiltinsIn?_mem
+#check EvmCompiler.Solidity.Frontend.Stmt.List.resolveObjectBuiltinsIn?_mem
+#check EvmCompiler.Solidity.Frontend.Stmt.CaseList.resolveObjectBuiltinsIn?_body_mem
 #check EvmCompiler.Solidity.Frontend.FunctionDef.matchesStub?_parts
 #check EvmCompiler.Solidity.Frontend.FunctionDefList.containsStub?_mem
 #check EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsRetained?_functionDef_entry
@@ -558,6 +561,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
 #print axioms EvmCompiler.Solidity.Frontend.Object.Expr.userCallsResolved?_user_call
+#print axioms EvmCompiler.Solidity.Frontend.Expr.List.resolveObjectBuiltinsIn?_mem
+#print axioms EvmCompiler.Solidity.Frontend.Stmt.List.resolveObjectBuiltinsIn?_mem
+#print axioms EvmCompiler.Solidity.Frontend.Stmt.CaseList.resolveObjectBuiltinsIn?_body_mem
 #print axioms EvmCompiler.Solidity.Frontend.FunctionDef.matchesStub?_parts
 #print axioms EvmCompiler.Solidity.Frontend.FunctionDefList.containsStub?_mem
 #print axioms EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsRetained?_functionDef_entry

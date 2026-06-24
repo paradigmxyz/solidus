@@ -2197,6 +2197,41 @@ end FunctionDef.List
 
 namespace Expr
 
+namespace List
+
+theorem resolveObjectBuiltinsIn?_mem
+    {exprs exprs' : List Expr} {context : ObjectBuiltinContext}
+    {expr : Expr}
+    (hResolve :
+      Expr.List.resolveObjectBuiltinsIn? exprs context = some exprs')
+    (hMem : expr ∈ exprs) :
+    ∃ expr',
+      Expr.resolveObjectBuiltinsIn? expr context = some expr' ∧
+        expr' ∈ exprs' := by
+  induction exprs generalizing exprs' with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      unfold Expr.List.resolveObjectBuiltinsIn? at hResolve
+      cases hHead : Expr.resolveObjectBuiltinsIn? head context with
+      | none =>
+          simp [hHead] at hResolve
+      | some head' =>
+          cases hRest : Expr.List.resolveObjectBuiltinsIn? rest context with
+          | none =>
+              simp [hHead, hRest] at hResolve
+          | some rest' =>
+              simp [hHead, hRest] at hResolve
+              subst exprs'
+              simp at hMem
+              rcases hMem with hHere | hTail
+              · subst expr
+                exact ⟨head', hHead, by simp⟩
+              · rcases ih hRest hTail with ⟨expr', hExpr, hExprMem⟩
+                exact ⟨expr', hExpr, by simp [hExprMem]⟩
+
+end List
+
 def resolveObjectBuiltins? (expr : Expr) (layout : ObjectLayout) :
     Option Expr :=
   expr.resolveObjectBuiltinsIn? (ObjectBuiltinContext.ofLayout layout)
@@ -2212,6 +2247,80 @@ end List
 end Expr
 
 namespace Stmt
+
+namespace List
+
+theorem resolveObjectBuiltinsIn?_mem
+    {stmts stmts' : List Stmt} {context : ObjectBuiltinContext}
+    {stmt : Stmt}
+    (hResolve :
+      Stmt.List.resolveObjectBuiltinsIn? stmts context = some stmts')
+    (hMem : stmt ∈ stmts) :
+    ∃ stmt',
+      Stmt.resolveObjectBuiltinsIn? stmt context = some stmt' ∧
+        stmt' ∈ stmts' := by
+  induction stmts generalizing stmts' with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      unfold Stmt.List.resolveObjectBuiltinsIn? at hResolve
+      cases hHead : Stmt.resolveObjectBuiltinsIn? head context with
+      | none =>
+          simp [hHead] at hResolve
+      | some head' =>
+          cases hRest : Stmt.List.resolveObjectBuiltinsIn? rest context with
+          | none =>
+              simp [hHead, hRest] at hResolve
+          | some rest' =>
+              simp [hHead, hRest] at hResolve
+              subst stmts'
+              simp at hMem
+              rcases hMem with hHere | hTail
+              · subst stmt
+                exact ⟨head', hHead, by simp⟩
+              · rcases ih hRest hTail with ⟨stmt', hStmt, hStmtMem⟩
+                exact ⟨stmt', hStmt, by simp [hStmtMem]⟩
+
+end List
+
+namespace CaseList
+
+theorem resolveObjectBuiltinsIn?_body_mem
+    {cases cases' : List (SwitchCaseValue × List Stmt)}
+    {context : ObjectBuiltinContext}
+    {value : SwitchCaseValue} {body : List Stmt}
+    (hResolve :
+      Stmt.CaseList.resolveObjectBuiltinsIn? cases context = some cases')
+    (hMem : (value, body) ∈ cases) :
+    ∃ body',
+      Stmt.List.resolveObjectBuiltinsIn? body context = some body' ∧
+        (value, body') ∈ cases' := by
+  induction cases generalizing cases' with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      rcases head with ⟨headValue, headBody⟩
+      unfold Stmt.CaseList.resolveObjectBuiltinsIn? at hResolve
+      cases hHead :
+          Stmt.List.resolveObjectBuiltinsIn? headBody context with
+      | none =>
+          simp [hHead] at hResolve
+      | some headBody' =>
+          cases hRest :
+              Stmt.CaseList.resolveObjectBuiltinsIn? rest context with
+          | none =>
+              simp [hHead, hRest] at hResolve
+          | some rest' =>
+              simp [hHead, hRest] at hResolve
+              subst cases'
+              simp at hMem
+              rcases hMem with hHere | hTail
+              · rcases hHere with ⟨rfl, rfl⟩
+                exact ⟨headBody', hHead, by simp⟩
+              · rcases ih hRest hTail with ⟨body', hBody, hBodyMem⟩
+                exact ⟨body', hBody, by simp [hBodyMem]⟩
+
+end CaseList
 
 def resolveObjectBuiltins? (stmt : Stmt) (layout : ObjectLayout) :
     Option Stmt :=
