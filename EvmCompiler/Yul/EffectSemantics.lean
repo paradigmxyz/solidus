@@ -2678,6 +2678,62 @@ theorem evalArgs_singleton_of_eval {σ : Type}
       | succ remaining =>
           simp [evalArgs, evalTail, hEval]
 
+theorem evalArgs_split_focus_of_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    {tailFuel : Nat}
+    {left right : List EvmYul.Yul.Ast.Expr}
+    {focus : EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {source beforeFocus afterFocus final : σ}
+    {rightValues leftValues : List Word}
+    {focusValue : Word}
+    (hTailFuel : 1 ≤ tailFuel)
+    (hRight :
+      evalArgs model prim ((tailFuel + 2) + 2 * right.reverse.length)
+          right.reverse codeOverride source =
+        .ok (beforeFocus, rightValues))
+    (hFocus :
+      eval model prim (tailFuel + 1) focus codeOverride beforeFocus =
+        .ok (afterFocus, focusValue))
+    (hLeft :
+      evalArgs model prim tailFuel left.reverse codeOverride afterFocus =
+        .ok (final, leftValues)) :
+    evalArgs model prim ((tailFuel + 2) + 2 * right.reverse.length)
+        (left ++ focus :: right).reverse codeOverride source =
+      .ok (final, rightValues ++ focusValue :: leftValues) := by
+  have hFocusArgs :
+      evalArgs model prim (tailFuel + 2) [focus] codeOverride
+          beforeFocus =
+        .ok (afterFocus, [focusValue]) :=
+    evalArgs_singleton_of_eval model prim
+      (fuel := tailFuel + 1)
+      (by omega) hFocus
+  have hFocusLeft :
+      evalArgs model prim (tailFuel + 2)
+          ([focus] ++ left.reverse) codeOverride beforeFocus =
+        .ok (final, [focusValue] ++ leftValues) :=
+    evalArgs_append_of_parts model prim
+      (fuel := tailFuel + 2) (remainingFuel := tailFuel)
+      (left := [focus]) (right := left.reverse)
+      (source := beforeFocus) (middle := afterFocus)
+      (final := final) (leftValues := [focusValue])
+      (rightValues := leftValues)
+      (by simp) hFocusArgs hLeft
+  have hAll :
+      evalArgs model prim ((tailFuel + 2) + 2 * right.reverse.length)
+          (right.reverse ++ ([focus] ++ left.reverse)) codeOverride source =
+        .ok (final, rightValues ++ ([focusValue] ++ leftValues)) :=
+    evalArgs_append_of_parts model prim
+      (fuel := (tailFuel + 2) + 2 * right.reverse.length)
+      (remainingFuel := tailFuel + 2)
+      (left := right.reverse) (right := [focus] ++ left.reverse)
+      (source := source) (middle := beforeFocus)
+      (final := final) (leftValues := rightValues)
+      (rightValues := [focusValue] ++ leftValues)
+      (by simp) hRight hFocusLeft
+  simpa [List.reverse_append, List.singleton_append, List.append_assoc] using
+    hAll
+
 theorem evalArgs_append_error_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ) :
     ∀ {fuel : Nat} {left right : List EvmYul.Yul.Ast.Expr}
