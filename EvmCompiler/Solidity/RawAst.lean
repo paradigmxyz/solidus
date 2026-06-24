@@ -2106,6 +2106,59 @@ theorem PreservesHoisted.throw {α : Type} (message : String) :
     .ok (value, state') at hRun
   cases hRun
 
+def PreservesFunctionScopes {α : Type} (action : ElabM α) : Prop :=
+  ∀ {state state' : State} {value : α},
+    action.run state = .ok (value, state') →
+      state'.functionScopes = state.functionScopes
+
+theorem PreservesFunctionScopes.bind {α β : Type}
+    {action : ElabM α} {next : α → ElabM β}
+    (hAction : PreservesFunctionScopes action)
+    (hNext : ∀ value, PreservesFunctionScopes (next value)) :
+    PreservesFunctionScopes (action >>= next) := by
+  intro state state' value hRun
+  simp [StateT.run_bind] at hRun
+  cases hActionRun : action.run state with
+  | error _ =>
+      simp [hActionRun] at hRun
+  | ok result =>
+      rcases result with ⟨midValue, midState⟩
+      have hMid := hAction hActionRun
+      simp [hActionRun] at hRun
+      have hFinal := hNext midValue hRun
+      exact hFinal.trans hMid
+
+theorem PreservesFunctionScopes.map {α β : Type} {action : ElabM α}
+    (f : α → β) (hAction : PreservesFunctionScopes action) :
+    PreservesFunctionScopes (f <$> action) := by
+  intro state state' value hRun
+  simp [StateT.run_map] at hRun
+  cases hActionRun : action.run state with
+  | error _ =>
+      simp [hActionRun] at hRun
+  | ok result =>
+      rcases result with ⟨_midValue, midState⟩
+      have hMid := hAction hActionRun
+      simp [hActionRun] at hRun
+      rcases hRun with ⟨_hValue, hState⟩
+      subst state'
+      exact hMid
+
+theorem PreservesFunctionScopes.pure {α : Type} (value : α) :
+    PreservesFunctionScopes (pure value : ElabM α) := by
+  intro state state' result hRun
+  simp [StateT.run_pure] at hRun
+  cases hRun
+  rfl
+
+theorem PreservesFunctionScopes.throw {α : Type} (message : String) :
+    PreservesFunctionScopes (throw message : ElabM α) := by
+  intro state state' value hRun
+  unfold EvmCompiler.Solidity.RawAst.Elab.throw at hRun
+  change (Except.error message : DecodeM (α × State)) =
+    .ok (value, state') at hRun
+  cases hRun
+
 theorem requireIdentifierVisible_preserves_hoistedFunction_mem
     (name : Name) (what : String) :
     PreservesHoisted (requireIdentifierVisible name what) := by
@@ -2123,6 +2176,24 @@ theorem requireIdentifierVisible_preserves_hoistedFunction_mem
       simp [hVisible] at hRun
       cases hRun
       exact hEntry
+
+theorem requireIdentifierVisible_preserves_functionScopes
+    (name : Name) (what : String) :
+    PreservesFunctionScopes (requireIdentifierVisible name what) := by
+  intro state state' value hRun
+  unfold requireIdentifierVisible identifierVisible at hRun
+  simp [StateT.run_bind, StateT.run_get] at hRun
+  cases hVisible : identifierVisibleIn name state.identifierScopes with
+  | false =>
+      simp [hVisible] at hRun
+      unfold EvmCompiler.Solidity.RawAst.Elab.throw at hRun
+      change (Except.error s!"unknown Yul identifier {name} in {what}" :
+        DecodeM (Unit × State)) = .ok (value, state') at hRun
+      cases hRun
+  | true =>
+      simp [hVisible] at hRun
+      cases hRun
+      rfl
 
 theorem requireIdentifiersVisible_preserves_hoistedFunction_mem
     (names : List Name) (what : String) :
@@ -2253,6 +2324,23 @@ theorem resolveFunction_preserves_hoistedFunction_mem (name : Name) :
       cases hRun
       exact hEntry
 
+theorem resolveFunction_preserves_functionScopes (name : Name) :
+    PreservesFunctionScopes (resolveFunction name) := by
+  intro state state' value hRun
+  unfold resolveFunction at hRun
+  simp [StateT.run_bind, StateT.run_get] at hRun
+  cases hResolve : resolveFunctionIn name state.functionScopes with
+  | none =>
+      simp [hResolve] at hRun
+      unfold EvmCompiler.Solidity.RawAst.Elab.throw at hRun
+      change (Except.error s!"unknown Yul function {name}" :
+        DecodeM (Name × State)) = .ok (value, state') at hRun
+      cases hRun
+  | some _ =>
+      simp [hResolve] at hRun
+      cases hRun
+      rfl
+
 theorem freshGeneratedFunctionNameFrom_preserves_hoistedFunction_mem
     (stem : Name) (fuel : Nat) :
     PreservesHoisted (freshGeneratedFunctionNameFrom stem fuel) := by
@@ -2299,6 +2387,53 @@ theorem freshGeneratedFunctionName_preserves_hoistedFunction_mem
     freshGeneratedFunctionNameFrom_preserves_hoistedFunction_mem
       (generatedIdentifierPart base) maxDecodeFuel
 
+theorem freshGeneratedFunctionNameFrom_preserves_functionScopes
+    (stem : Name) (fuel : Nat) :
+    PreservesFunctionScopes (freshGeneratedFunctionNameFrom stem fuel) := by
+  induction fuel with
+  | zero =>
+      intro state state' value hRun
+      unfold freshGeneratedFunctionNameFrom at hRun
+      unfold EvmCompiler.Solidity.RawAst.Elab.throw at hRun
+      change (Except.error
+        "could not allocate fresh generated Yul function name" :
+          DecodeM (Name × State)) = .ok (value, state') at hRun
+      cases hRun
+  | succ fuel ih =>
+      intro state state' value hRun
+      unfold freshGeneratedFunctionNameFrom at hRun
+      simp [StateT.run_bind, StateT.run_get, StateT.run_set] at hRun
+      let candidate : Name :=
+        "__yul_gen_" ++ toString state.nextGeneratedFunctionId ++ "_" ++ stem
+      let bumpedState : State :=
+        { state with
+          nextGeneratedFunctionId := state.nextGeneratedFunctionId + 1 }
+      change StateT.run
+          (if candidate ∈ state.usedFunctionNames then
+            freshGeneratedFunctionNameFrom stem fuel
+          else
+            (fun _ => candidate) <$> set
+              { bumpedState with
+                usedFunctionNames := candidate :: state.usedFunctionNames })
+          bumpedState = .ok (value, state') at hRun
+      by_cases hContains : candidate ∈ state.usedFunctionNames
+      · simp [hContains] at hRun
+        have hMid := ih hRun
+        simpa [bumpedState] using hMid
+      · simp [hContains, StateT.run_map, StateT.run_set] at hRun
+        simp [pure, Except.pure] at hRun
+        rcases hRun with ⟨_hValue, hState⟩
+        subst state'
+        rfl
+
+theorem freshGeneratedFunctionName_preserves_functionScopes
+    (base : Name) :
+    PreservesFunctionScopes (freshGeneratedFunctionName base) := by
+  unfold freshGeneratedFunctionName
+  exact
+    freshGeneratedFunctionNameFrom_preserves_functionScopes
+      (generatedIdentifierPart base) maxDecodeFuel
+
 theorem freshNonFunctionBindingNameFrom_preserves_hoistedFunction_mem
     (stem : Name) (index fuel : Nat) :
     PreservesHoisted (freshNonFunctionBindingNameFrom stem index fuel) := by
@@ -2341,6 +2476,51 @@ theorem freshNonFunctionBindingName_preserves_hoistedFunction_mem
   unfold freshNonFunctionBindingName
   exact
     freshNonFunctionBindingNameFrom_preserves_hoistedFunction_mem
+      (generatedIdentifierPart base) 0 maxDecodeFuel
+
+theorem freshNonFunctionBindingNameFrom_preserves_functionScopes
+    (stem : Name) (index fuel : Nat) :
+    PreservesFunctionScopes
+      (freshNonFunctionBindingNameFrom stem index fuel) := by
+  induction fuel generalizing index with
+  | zero =>
+      intro state state' value hRun
+      unfold freshNonFunctionBindingNameFrom at hRun
+      unfold EvmCompiler.Solidity.RawAst.Elab.throw at hRun
+      change (Except.error
+        "could not allocate fresh generated Yul binding name" :
+          DecodeM (Name × State)) = .ok (value, state') at hRun
+      cases hRun
+  | succ fuel ih =>
+      intro state state' value hRun
+      unfold freshNonFunctionBindingNameFrom at hRun
+      simp [StateT.run_bind, StateT.run_get] at hRun
+      let candidate : Name :=
+        if index = 0 then "__yul_" ++ stem else
+          "__yul_" ++ stem ++ "_" ++ toString index
+      change StateT.run
+          (if candidate ∈ state.usedFunctionNames then
+            freshNonFunctionBindingNameFrom stem (index + 1) fuel
+          else
+            (fun _ => candidate) <$> set
+              { state with
+                usedFunctionNames := candidate :: state.usedFunctionNames })
+          state = .ok (value, state') at hRun
+      by_cases hContains : candidate ∈ state.usedFunctionNames
+      · simp [hContains] at hRun
+        exact ih (index + 1) hRun
+      · simp [hContains, StateT.run_map, StateT.run_set] at hRun
+        simp [pure, Except.pure] at hRun
+        rcases hRun with ⟨_hValue, hState⟩
+        subst state'
+        rfl
+
+theorem freshNonFunctionBindingName_preserves_functionScopes
+    (base : Name) :
+    PreservesFunctionScopes (freshNonFunctionBindingName base) := by
+  unfold freshNonFunctionBindingName
+  exact
+    freshNonFunctionBindingNameFrom_preserves_functionScopes
       (generatedIdentifierPart base) 0 maxDecodeFuel
 
 theorem ensureClzHelper_preserves_hoistedFunction_mem :
@@ -2391,6 +2571,55 @@ theorem ensureClzHelper_preserves_hoistedFunction_mem :
                   rcases hRun with ⟨_hValue, hState⟩
                   subst state'
                   simpa using hEntryRet
+
+theorem ensureClzHelper_preserves_functionScopes :
+    PreservesFunctionScopes ensureClzHelper := by
+  intro state state' value hRun
+  unfold ensureClzHelper at hRun
+  simp [StateT.run_bind, StateT.run_get] at hRun
+  cases hHelper : state.clzHelperName? with
+  | some _ =>
+      simp [hHelper] at hRun
+      cases hRun
+      rfl
+  | none =>
+      simp [hHelper] at hRun
+      cases hFreshHelper :
+          (freshGeneratedFunctionName "clz").run state with
+      | error _ =>
+          simp [hFreshHelper] at hRun
+      | ok helperResult =>
+          rcases helperResult with ⟨helper, helperState⟩
+          have hHelperScopes :
+              helperState.functionScopes = state.functionScopes :=
+            freshGeneratedFunctionName_preserves_functionScopes
+              "clz" hFreshHelper
+          simp [hFreshHelper] at hRun
+          cases hFreshArg :
+              (freshNonFunctionBindingName "clz_arg").run helperState with
+          | error _ =>
+              simp [hFreshArg] at hRun
+          | ok argResult =>
+              rcases argResult with ⟨arg, argState⟩
+              have hArgScopes :
+                  argState.functionScopes = helperState.functionScopes :=
+                freshNonFunctionBindingName_preserves_functionScopes
+                  "clz_arg" hFreshArg
+              simp [hFreshArg] at hRun
+              cases hFreshRet :
+                  (freshNonFunctionBindingName "clz_ret").run argState with
+              | error _ =>
+                  simp [hFreshRet] at hRun
+              | ok retResult =>
+                  rcases retResult with ⟨ret, retState⟩
+                  have hRetScopes :
+                      retState.functionScopes = argState.functionScopes :=
+                    freshNonFunctionBindingName_preserves_functionScopes
+                      "clz_ret" hFreshRet
+                  simp [hFreshRet, StateT.run_modify] at hRun
+                  rcases hRun with ⟨_hValue, hState⟩
+                  subst state'
+                  exact hRetScopes.trans (hArgScopes.trans hHelperScopes)
 
 namespace Expr
 
@@ -2517,6 +2746,138 @@ theorem List.elaborate_preserves_hoistedFunction_mem
               (List.elaborate_preserves_hoistedFunction_mem rest)
               (fun tail => PreservesHoisted.pure (head :: tail)))
           hRun hEntry
+  termination_by 2 * sizeOf exprs + 1
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+end
+
+mutual
+
+theorem elaborate_preserves_functionScopes
+    (expr : Raw.Expr) : PreservesFunctionScopes (Expr.elaborate expr) := by
+  intro state state' value hRun
+  cases expr with
+  | literal literal =>
+      cases literal <;>
+        simp [Expr.elaborate, Literal.elaborate] at hRun <;>
+        cases hRun <;>
+        rfl
+  | identifier name =>
+      unfold Expr.elaborate at hRun
+      exact
+        PreservesFunctionScopes.map (fun _ => Frontend.Expr.var name)
+          (requireIdentifierVisible_preserves_functionScopes
+            name "expression") hRun
+  | functionCall name args =>
+      by_cases hMemoryguard : name = "memoryguard"
+      · subst name
+        cases args with
+        | nil =>
+            unfold Expr.elaborate at hRun
+            exact PreservesFunctionScopes.throw
+              "memoryguard expects one argument" hRun
+        | cons arg rest =>
+            cases rest with
+            | nil =>
+                unfold Expr.elaborate at hRun
+                exact
+                  PreservesFunctionScopes.map
+                    (fun arg =>
+                      Frontend.Expr.call .objectBuiltin "memoryguard" [arg])
+                    (elaborate_preserves_functionScopes arg)
+                    hRun
+            | cons _ _ =>
+                unfold Expr.elaborate at hRun
+                exact PreservesFunctionScopes.throw
+                  "memoryguard expects one argument" hRun
+      · by_cases hClz : name = "clz"
+        · subst name
+          cases args with
+          | nil =>
+              unfold Expr.elaborate at hRun
+              exact PreservesFunctionScopes.throw "clz expects one argument"
+                hRun
+          | cons arg rest =>
+              cases rest with
+              | nil =>
+                  unfold Expr.elaborate at hRun
+                  exact
+                    PreservesFunctionScopes.bind
+                      (elaborate_preserves_functionScopes arg)
+                      (fun arg =>
+                        PreservesFunctionScopes.bind
+                          ensureClzHelper_preserves_functionScopes
+                          (fun helper => PreservesFunctionScopes.pure
+                            (Frontend.Expr.call .user helper [arg])))
+                      hRun
+              | cons _ _ =>
+                  unfold Expr.elaborate at hRun
+                  exact PreservesFunctionScopes.throw "clz expects one argument"
+                    hRun
+        · unfold Expr.elaborate at hRun
+          simp [hMemoryguard, hClz, StateT.run_bind] at hRun
+          cases hArgs : (Expr.List.elaborate args).run state with
+          | error _ =>
+              simp [hArgs] at hRun
+          | ok result =>
+              rcases result with ⟨args', argState⟩
+              have hArgsScopes :
+                  argState.functionScopes = state.functionScopes :=
+                List.elaborate_preserves_functionScopes args hArgs
+              simp [hArgs] at hRun
+              cases hClass : CallClass.classifyCall name with
+              | primitive =>
+                  simp [hClass] at hRun
+                  cases hRun
+                  exact hArgsScopes
+              | user =>
+                  simp [hClass] at hRun
+                  have hResolveScopes :
+                      state'.functionScopes = argState.functionScopes :=
+                    PreservesFunctionScopes.map
+                      (fun callee =>
+                        Frontend.Expr.call .user callee args')
+                      (resolveFunction_preserves_functionScopes name)
+                      hRun
+                  exact hResolveScopes.trans hArgsScopes
+              | objectBuiltin =>
+                  simp [hClass] at hRun
+                  cases hRun
+                  exact hArgsScopes
+              | dialectBuiltin =>
+                  simp [hClass] at hRun
+                  cases hRun
+                  exact hArgsScopes
+  termination_by 2 * sizeOf expr
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+theorem List.elaborate_preserves_functionScopes
+    (exprs : List Raw.Expr) :
+    PreservesFunctionScopes (Expr.List.elaborate exprs) := by
+  cases exprs with
+  | nil =>
+      intro state state' value hRun
+      unfold Expr.List.elaborate at hRun
+      simp [StateT.run_pure] at hRun
+      cases hRun
+      rfl
+  | cons expr rest =>
+      intro state state' value hRun
+      unfold Expr.List.elaborate at hRun
+      exact
+        PreservesFunctionScopes.bind
+          (elaborate_preserves_functionScopes expr)
+          (fun head =>
+            PreservesFunctionScopes.bind
+              (List.elaborate_preserves_functionScopes rest)
+              (fun tail => PreservesFunctionScopes.pure (head :: tail)))
+          hRun
   termination_by 2 * sizeOf exprs + 1
   decreasing_by
     all_goals subst_vars
@@ -3751,7 +4112,7 @@ theorem sourceLocalFunction_hoistLocalFunctions_elaborate_user_call_entry_failCl
         .ok ((), hoistState))
     (hArgs :
       (Expr.List.elaborate args).run callState = .ok (args', argState))
-    (hArgScopes : argState.functionScopes = scope :: outer) :
+    (hCallScopes : callState.functionScopes = scope :: outer) :
     ∃ generated fn,
       (Expr.elaborate (.functionCall name args)).run callState =
           .ok (.call .user generated args', argState) ∧
@@ -3760,6 +4121,9 @@ theorem sourceLocalFunction_hoistLocalFunctions_elaborate_user_call_entry_failCl
     localFunctionScope_sourceLocalFunction_bindingNameOk hScope hLocal
   have hClass :=
     bindingNameOk_classifyCall_user hNameOk
+  have hArgScopes : argState.functionScopes = scope :: outer := by
+    rw [Expr.List.elaborate_preserves_functionScopes args hArgs,
+      hCallScopes]
   exact
     sourceLocalFunction_hoistLocalFunctions_elaborate_user_call_entry
       hLocal (bindingNameOk_ne_memoryguard hNameOk)
@@ -3979,7 +4343,7 @@ theorem sourceLocalFunction_elaborateBlock_false_elaborate_user_call_entry_failC
         .ok (front, finalState))
     (hArgs :
       (Expr.List.elaborate args).run callState = .ok (args', argState))
-    (hArgScopes : argState.functionScopes = scope :: outer) :
+    (hCallScopes : callState.functionScopes = scope :: outer) :
     ∃ generated fn,
       (Expr.elaborate (.functionCall name args)).run callState =
           .ok (.call .user generated args', argState) ∧
@@ -3988,6 +4352,9 @@ theorem sourceLocalFunction_elaborateBlock_false_elaborate_user_call_entry_failC
     localFunctionScope_sourceLocalFunction_bindingNameOk hScope hLocal
   have hClass :=
     bindingNameOk_classifyCall_user hNameOk
+  have hArgScopes : argState.functionScopes = scope :: outer := by
+    rw [Expr.List.elaborate_preserves_functionScopes args hArgs,
+      hCallScopes]
   exact
     sourceLocalFunction_elaborateBlock_false_elaborate_user_call_entry
       hLocal (bindingNameOk_ne_memoryguard hNameOk)
@@ -4076,7 +4443,7 @@ theorem sourceLocalFunction_elaborateBlock_true_elaborate_user_call_entry_failCl
         .ok (front, finalState))
     (hArgs :
       (Expr.List.elaborate args).run callState = .ok (args', argState))
-    (hArgScopes : argState.functionScopes = scope :: outer) :
+    (hCallScopes : callState.functionScopes = scope :: outer) :
     ∃ generated fn,
       (Expr.elaborate (.functionCall name args)).run callState =
           .ok (.call .user generated args', argState) ∧
@@ -4085,6 +4452,9 @@ theorem sourceLocalFunction_elaborateBlock_true_elaborate_user_call_entry_failCl
     localFunctionScope_sourceLocalFunction_bindingNameOk hScope hLocal
   have hClass :=
     bindingNameOk_classifyCall_user hNameOk
+  have hArgScopes : argState.functionScopes = scope :: outer := by
+    rw [Expr.List.elaborate_preserves_functionScopes args hArgs,
+      hCallScopes]
   exact
     sourceLocalFunction_elaborateBlock_true_elaborate_user_call_entry
       hLocal (bindingNameOk_ne_memoryguard hNameOk)

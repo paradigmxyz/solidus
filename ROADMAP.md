@@ -245,7 +245,11 @@ Next raw frontend layer:
   elaboration and scope popping; the bridge derives reserved-name exclusions
   from successful scope construction rather than exposing them as caller
   premises, and successful source local-function validation now also derives
-  `CallClass.classifyCall name = .user` for those source names. Successful
+  `CallClass.classifyCall name = .user` for those source names. Raw
+  expression/list argument elaboration now also preserves the active function
+  scope stack, so the source-call bridge requires only the pre-argument active
+  local scope and derives the post-argument resolver scope internally.
+  Successful
   ordered-Yul conversion now also
   exposes a checked
   function entry for every name present in `object.functions.map Prod.fst`,
