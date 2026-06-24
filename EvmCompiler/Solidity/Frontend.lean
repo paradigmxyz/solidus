@@ -2069,6 +2069,74 @@ mutual
         some ((name, fn') :: rest')
 end
 
+namespace FunctionDef
+
+theorem resolveObjectBuiltinsIn?_parts
+    {fn fn' : FunctionDef} {context : ObjectBuiltinContext}
+    (hResolve :
+      FunctionDef.resolveObjectBuiltinsIn? fn context = some fn') :
+    fn'.params = fn.params ∧ fn'.returns = fn.returns := by
+  unfold FunctionDef.resolveObjectBuiltinsIn? at hResolve
+  cases hBody : Stmt.List.resolveObjectBuiltinsIn? fn.body context with
+  | none =>
+      simp [hBody] at hResolve
+  | some body =>
+      simp [hBody] at hResolve
+      subst fn'
+      exact ⟨rfl, rfl⟩
+
+end FunctionDef
+
+namespace FunctionDef.List
+
+theorem resolveObjectBuiltinsIn?_function_mem
+    {functions resolved : List (Name × FunctionDef)}
+    {context : ObjectBuiltinContext} {name : Name} {fn : FunctionDef}
+    (hResolve :
+      FunctionDef.List.resolveObjectBuiltinsIn? functions context =
+        some resolved)
+    (hMem : (name, fn) ∈ functions) :
+    ∃ fn',
+      FunctionDef.resolveObjectBuiltinsIn? fn context = some fn' ∧
+        (name, fn') ∈ resolved ∧
+          fn'.params = fn.params ∧
+            fn'.returns = fn.returns := by
+  induction functions generalizing resolved with
+  | nil =>
+      cases hMem
+  | cons head rest ih =>
+      rcases head with ⟨headName, headFn⟩
+      unfold FunctionDef.List.resolveObjectBuiltinsIn? at hResolve
+      cases hHead :
+          FunctionDef.resolveObjectBuiltinsIn? headFn context with
+      | none =>
+          simp [hHead] at hResolve
+      | some headResolved =>
+          cases hRest :
+              FunctionDef.List.resolveObjectBuiltinsIn? rest context with
+          | none =>
+              simp [hHead, hRest] at hResolve
+          | some restResolved =>
+              simp [hHead, hRest] at hResolve
+              subst resolved
+              have hMemCases :
+                  (name, fn) = (headName, headFn) ∨
+                    (name, fn) ∈ rest := by
+                simpa using hMem
+              rcases hMemCases with hHeadMem | hTailMem
+              · cases hHeadMem
+                have hParts :=
+                  FunctionDef.resolveObjectBuiltinsIn?_parts hHead
+                exact
+                  ⟨headResolved, hHead, by simp, hParts.1, hParts.2⟩
+              · rcases ih hRest hTailMem with
+                  ⟨fn', hFnResolve, hResolvedMem, hParams, hReturns⟩
+                exact
+                  ⟨fn', hFnResolve, by simp [hResolvedMem],
+                    hParams, hReturns⟩
+
+end FunctionDef.List
+
 namespace Expr
 
 def resolveObjectBuiltins? (expr : Expr) (layout : ObjectLayout) :
@@ -2609,6 +2677,46 @@ def resolveObjectBuiltinsWithLocalDataBaseAndLinkerSymbols? (object : Object)
   object.resolveObjectBuiltinsIn?
     (object.builtinContextWithLocalDataBaseAndLinkerSymbols
       layout base linkerSymbols)
+
+theorem resolveObjectBuiltinsIn?_function_entry
+    {object resolved : Object} {context : ObjectBuiltinContext}
+    {name : Name} {fn : FunctionDef}
+    (hResolve : object.resolveObjectBuiltinsIn? context = some resolved)
+    (hMem : (name, fn) ∈ object.functions) :
+    ∃ memoryContract resolvedFn,
+      MemoryGuard.Object.inferredContract? object = some memoryContract ∧
+        FunctionDef.resolveObjectBuiltinsIn? fn
+            { context with memoryContract := memoryContract } =
+          some resolvedFn ∧
+        (name, resolvedFn) ∈ resolved.functions ∧
+          resolvedFn.params = fn.params ∧
+            resolvedFn.returns = fn.returns := by
+  unfold resolveObjectBuiltinsIn? at hResolve
+  cases hMemory : MemoryGuard.Object.inferredContract? object with
+  | none =>
+      simp [hMemory] at hResolve
+  | some memoryContract =>
+      cases hDispatcher :
+          Stmt.List.resolveObjectBuiltinsIn? object.dispatcher
+            { context with memoryContract := memoryContract } with
+      | none =>
+          simp [hMemory, hDispatcher] at hResolve
+      | some dispatcher =>
+          cases hFunctions :
+              FunctionDef.List.resolveObjectBuiltinsIn?
+                object.functions
+                  { context with memoryContract := memoryContract } with
+          | none =>
+              simp [hMemory, hDispatcher, hFunctions] at hResolve
+          | some functions =>
+              simp [hMemory, hDispatcher, hFunctions] at hResolve
+              cases hResolve
+              rcases FunctionDef.List.resolveObjectBuiltinsIn?_function_mem
+                  hFunctions hMem with
+                ⟨resolvedFn, hFnResolve, hResolvedMem, hParams, hReturns⟩
+              exact
+                ⟨memoryContract, resolvedFn, rfl, hFnResolve,
+                  hResolvedMem, hParams, hReturns⟩
 
 end Object
 
@@ -3266,6 +3374,39 @@ theorem compileVerifiedStackCodeArtifactIn?_parts
                                   pushPlan, by simpa using hPlan,
                                   by simpa using hCompact, by simp,
                                   by simpa using hMarker⟩
+
+theorem compileVerifiedStackCodeArtifactIn?_function_entry
+    {object : Object} {context : ObjectBuiltinContext}
+    {artifact : VerifiedStackCodeArtifact}
+    {name : Name} {fn : FunctionDef}
+    (hCompile :
+      object.compileVerifiedStackCodeArtifactIn? context = some artifact)
+    (hMem : (name, fn) ∈ object.functions) :
+    ∃ memoryContract resolvedFn yulBody,
+      MemoryGuard.Object.inferredContract? object = some memoryContract ∧
+        FunctionDef.resolveObjectBuiltinsIn? fn
+            { context with memoryContract := memoryContract } =
+          some resolvedFn ∧
+        (name, resolvedFn) ∈ artifact.resolved.functions ∧
+          resolvedFn.params = fn.params ∧
+            resolvedFn.returns = fn.returns ∧
+              Stmt.List.toYul? resolvedFn.body = some yulBody ∧
+                (name,
+                  EvmYul.Yul.Ast.FunctionDefinition.Def
+                    resolvedFn.params resolvedFn.returns yulBody) ∈
+                  artifact.ordered.functionEntries := by
+  obtain ⟨hResolved, hOrdered, _hLower, _hStack, _pushPlan,
+      _hPlan, _hCompact, _hBytes, _hMarker⟩ :=
+    compileVerifiedStackCodeArtifactIn?_parts hCompile
+  rcases Object.resolveObjectBuiltinsIn?_function_entry hResolved hMem with
+    ⟨memoryContract, resolvedFn, hMemory, hFnResolve, hResolvedMem,
+      hParams, hReturns⟩
+  rcases Object.toSolcYulOrderedProgram?_function_entry
+      hOrdered hResolvedMem with
+    ⟨yulBody, hBodyYul, hEntry⟩
+  exact
+    ⟨memoryContract, resolvedFn, yulBody, hMemory, hFnResolve,
+      hResolvedMem, hParams, hReturns, hBodyYul, hEntry⟩
 
 theorem compileVerifiedStackCodeArtifactIn?_decodingCorrect
     {object : Object} {context : ObjectBuiltinContext}

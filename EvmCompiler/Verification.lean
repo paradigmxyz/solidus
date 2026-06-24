@@ -53,10 +53,14 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsRetained?_functionDef_entry
 #check EvmCompiler.Solidity.Frontend.Stmt.toYul?_functionDef_erases
 #check EvmCompiler.Solidity.Frontend.FunctionDef.List.toYul?_function_mem
+#check EvmCompiler.Solidity.Frontend.FunctionDef.resolveObjectBuiltinsIn?_parts
+#check EvmCompiler.Solidity.Frontend.FunctionDef.List.resolveObjectBuiltinsIn?_function_mem
 #check EvmCompiler.Solidity.Frontend.FunctionEntries.containsLoweredStub?_mem
 #check EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsLoweredToEntries?_functionDef_entry
+#check EvmCompiler.Solidity.Frontend.Object.resolveObjectBuiltinsIn?_function_entry
 #check EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_functionDefStubsLoweredToEntries
 #check EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_function_entry
+#check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_function_entry
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_some
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_parts
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_objectParts
@@ -149,6 +153,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_clzExpansionOk
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_clzHelperSpecOk
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_hoistedFunctionsRetained
+#check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_hoistedFunction_ordered_entry
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_frontendValidated
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decodingCorrect
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_valid
@@ -223,10 +228,14 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsRetained?_functionDef_entry
 #print axioms EvmCompiler.Solidity.Frontend.Stmt.toYul?_functionDef_erases
 #print axioms EvmCompiler.Solidity.Frontend.FunctionDef.List.toYul?_function_mem
+#print axioms EvmCompiler.Solidity.Frontend.FunctionDef.resolveObjectBuiltinsIn?_parts
+#print axioms EvmCompiler.Solidity.Frontend.FunctionDef.List.resolveObjectBuiltinsIn?_function_mem
 #print axioms EvmCompiler.Solidity.Frontend.FunctionEntries.containsLoweredStub?_mem
 #print axioms EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsLoweredToEntries?_functionDef_entry
+#print axioms EvmCompiler.Solidity.Frontend.Object.resolveObjectBuiltinsIn?_function_entry
 #print axioms EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_functionDefStubsLoweredToEntries
 #print axioms EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_function_entry
+#print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_function_entry
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_some
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_objectParts
@@ -319,6 +328,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_clzExpansionOk
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_clzHelperSpecOk
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_hoistedFunctionsRetained
+#print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_hoistedFunction_ordered_entry
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_frontendValidated
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decodingCorrect
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_valid

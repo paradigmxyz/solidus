@@ -234,7 +234,9 @@ Next raw frontend layer:
   checked bridge to both the generated frontend call target and the generated
   hoisted callee entry. Hoisted frontend function entries now also have a
   checked path through `toSolcYulOrderedProgram?` to the emitted ordered Yul
-  function-entry list consumed by the backend.
+  function-entry list consumed by the backend, and successful raw artifact
+  compilation now carries hoisted raw callees through object-builtin
+  resolution into the artifact's production ordered Yul function entries.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call resolution and broader composition into
   the final source theorem.
