@@ -1577,6 +1577,129 @@ theorem of_mem_body
 
 end CaseListUserCall
 
+namespace ImmutablePatchOccurrence
+
+theorem patchStmt?_base
+    {reference : Frontend.ImmutableReference}
+    {base value : Frontend.Expr} {stmt : Frontend.Stmt}
+    {generated : Name} {args : List Frontend.Expr}
+    (hPatch :
+      Frontend.ImmutableReference.patchStmt? reference base value =
+        some stmt)
+    (hOccurrence : UserCall base generated args) :
+    StmtUserCall stmt generated args := by
+  unfold Frontend.ImmutableReference.patchStmt? at hPatch
+  by_cases hPatchable : reference.isPatchable
+  · simp [hPatchable] at hPatch
+    cases hPatch
+    let offset :=
+      Frontend.Expr.lit (EvmYul.UInt256.ofNat reference.start)
+    let addExpr : Frontend.Expr :=
+      .call .primitive "add" [base, offset]
+    have hBaseMem : base ∈ [base, offset] := by
+      simp [offset]
+    have hAddOccurrence :
+        UserCall addExpr generated args :=
+      UserCall.arg hBaseMem hOccurrence
+    have hAddMem : addExpr ∈ [addExpr, value] := by
+      simp [addExpr]
+    exact
+      StmtUserCall.ofIncoming
+        (StmtIncomingUserCall.expressionStatement
+          (UserCall.arg hAddMem hAddOccurrence))
+  · simp [hPatchable] at hPatch
+
+theorem patchStmt?_value
+    {reference : Frontend.ImmutableReference}
+    {base value : Frontend.Expr} {stmt : Frontend.Stmt}
+    {generated : Name} {args : List Frontend.Expr}
+    (hPatch :
+      Frontend.ImmutableReference.patchStmt? reference base value =
+        some stmt)
+    (hOccurrence : UserCall value generated args) :
+    StmtUserCall stmt generated args := by
+  unfold Frontend.ImmutableReference.patchStmt? at hPatch
+  by_cases hPatchable : reference.isPatchable
+  · simp [hPatchable] at hPatch
+    cases hPatch
+    let offset :=
+      Frontend.Expr.lit (EvmYul.UInt256.ofNat reference.start)
+    let addExpr : Frontend.Expr :=
+      .call .primitive "add" [base, offset]
+    have hValueMem : value ∈ [addExpr, value] := by
+      simp [addExpr]
+    exact
+      StmtUserCall.ofIncoming
+        (StmtIncomingUserCall.expressionStatement
+          (UserCall.arg hValueMem hOccurrence))
+  · simp [hPatchable] at hPatch
+
+theorem patchStmts?_base
+    {references : List Frontend.ImmutableReference}
+    {base value : Frontend.Expr} {stmts : List Frontend.Stmt}
+    {generated : Name} {args : List Frontend.Expr}
+    (hPatch :
+      Frontend.ImmutableReference.List.patchStmts?
+        references base value = some stmts)
+    (hNonempty : references ≠ [])
+    (hOccurrence : UserCall base generated args) :
+    StmtListUserCall stmts generated args := by
+  cases references with
+  | nil =>
+      exact False.elim (hNonempty rfl)
+  | cons reference rest =>
+      unfold Frontend.ImmutableReference.List.patchStmts? at hPatch
+      cases hHead :
+          Frontend.ImmutableReference.patchStmt? reference base value with
+      | none =>
+          simp [hHead] at hPatch
+      | some headStmt =>
+          cases hTail :
+              Frontend.ImmutableReference.List.patchStmts?
+                rest base value with
+          | none =>
+              simp [hHead, hTail] at hPatch
+          | some tailStmts =>
+              simp [hHead, hTail] at hPatch
+              cases hPatch
+              exact
+                StmtListUserCall.head
+                  (patchStmt?_base hHead hOccurrence)
+
+theorem patchStmts?_value
+    {references : List Frontend.ImmutableReference}
+    {base value : Frontend.Expr} {stmts : List Frontend.Stmt}
+    {generated : Name} {args : List Frontend.Expr}
+    (hPatch :
+      Frontend.ImmutableReference.List.patchStmts?
+        references base value = some stmts)
+    (hNonempty : references ≠ [])
+    (hOccurrence : UserCall value generated args) :
+    StmtListUserCall stmts generated args := by
+  cases references with
+  | nil =>
+      exact False.elim (hNonempty rfl)
+  | cons reference rest =>
+      unfold Frontend.ImmutableReference.List.patchStmts? at hPatch
+      cases hHead :
+          Frontend.ImmutableReference.patchStmt? reference base value with
+      | none =>
+          simp [hHead] at hPatch
+      | some headStmt =>
+          cases hTail :
+              Frontend.ImmutableReference.List.patchStmts?
+                rest base value with
+          | none =>
+              simp [hHead, hTail] at hPatch
+          | some tailStmts =>
+              simp [hHead, hTail] at hPatch
+              cases hPatch
+              exact
+                StmtListUserCall.head
+                  (patchStmt?_value hHead hOccurrence)
+
+end ImmutablePatchOccurrence
+
 end FrontendOccurrence
 
 namespace YulOccurrence

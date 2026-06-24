@@ -2026,7 +2026,7 @@ mutual
         let name ← Expr.objectBuiltinNameArg? nameArg
         let base' ← base.resolveObjectBuiltinsIn? context
         let value' ← value.resolveObjectBuiltinsIn? context
-        let references := context.immutableReferencesFor name
+        let references ← context.findImmutableReferences? name
         let stmts ←
           ImmutableReference.List.patchStmts? references base' value'
         some (.block stmts)

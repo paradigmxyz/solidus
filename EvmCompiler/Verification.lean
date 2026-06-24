@@ -92,6 +92,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.resolveObjectBuiltinsIn?_occurrence
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.resolveObjectBuiltinsIn?_list_mem_occurrence
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.resolveObjectBuiltinsIn?_not_lit
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.ImmutablePatchOccurrence.patchStmt?_base
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.ImmutablePatchOccurrence.patchStmt?_value
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.ImmutablePatchOccurrence.patchStmts?_base
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.ImmutablePatchOccurrence.patchStmts?_value
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.UserCall
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.UserCall.headArg
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.UserCall.direct_or_arg_split
@@ -614,6 +618,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.resolveObjectBuiltinsIn?_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.resolveObjectBuiltinsIn?_list_mem_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.resolveObjectBuiltinsIn?_not_lit
+#print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.ImmutablePatchOccurrence.patchStmt?_base
+#print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.ImmutablePatchOccurrence.patchStmt?_value
+#print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.ImmutablePatchOccurrence.patchStmts?_base
+#print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.ImmutablePatchOccurrence.patchStmts?_value
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowStmtCall.toStmtCall
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowStmtListCall.toStmtListCall
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowCaseListCall.toCaseListCall
