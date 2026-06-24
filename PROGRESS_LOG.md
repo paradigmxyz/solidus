@@ -1,5 +1,18 @@
 # Progress Log
 
+- 2026-06-24 06:01:18 PDT - theorem-boundary/raw-for-initializer-no-shadow -
+  Strengthened `Raw.Source.NoShadowStmtCall` for `for` condition/post/body
+  paths to require that the initializer statement list does not declare a
+  shadowing local function with the selected source name. This fixes the
+  remaining false theorem shape for outer-resolver transport through `for`:
+  solc-emitted initializer local functions stay in scope for the condition,
+  post, and body, so an arbitrary outer `resolveFunctionIn` entry is preserved
+  only when the initializer does not shadow that name. Focused validation
+  passed: `lake build EvmCompiler.Solidity.RawAst` and
+  `lake build EvmCompiler.Verification`; the no-shadow erasure wrappers remain
+  axiom-free. Remaining frontier: prove structural transport over the
+  corrected resolver-safe relation.
+
 - 2026-06-24 05:57:16 PDT - theorem-boundary/raw-no-shadow-source-call-relation -
   Added resolver-safe source occurrence relations
   `Raw.Source.NoShadowStmtCall`, `NoShadowStmtListCall`, and

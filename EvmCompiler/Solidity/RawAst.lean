@@ -771,6 +771,7 @@ inductive NoShadowStmtCall : Stmt → Name → List Expr → Prop where
         NoShadowStmtListCall default name args →
           NoShadowStmtCall (.switch scrutinee cases default) name args
   | forCondition {pre condition post body name args} :
+      NoLocalFunctionNamed pre name →
       ExprCall.Occurs condition name args →
         NoShadowStmtCall (.forLoop pre condition post body) name args
   | forPre {pre condition post body name args} :
@@ -778,13 +779,15 @@ inductive NoShadowStmtCall : Stmt → Name → List Expr → Prop where
         NoShadowStmtListCall pre name args →
           NoShadowStmtCall (.forLoop pre condition post body) name args
   | forPost {pre condition post body name args} :
+      NoLocalFunctionNamed pre name →
       NoLocalFunctionNamed post name →
-        NoShadowStmtListCall post name args →
-          NoShadowStmtCall (.forLoop pre condition post body) name args
+      NoShadowStmtListCall post name args →
+        NoShadowStmtCall (.forLoop pre condition post body) name args
   | forBody {pre condition post body name args} :
+      NoLocalFunctionNamed pre name →
       NoLocalFunctionNamed body name →
-        NoShadowStmtListCall body name args →
-          NoShadowStmtCall (.forLoop pre condition post body) name args
+      NoShadowStmtListCall body name args →
+        NoShadowStmtCall (.forLoop pre condition post body) name args
   | ifBody {condition body name args} :
       NoLocalFunctionNamed body name →
         NoShadowStmtListCall body name args →
@@ -898,12 +901,12 @@ def noShadowStmtCallToStmtCall (name : Name) (args : List Expr) :
       .switchCase (noShadowCaseListCallToCaseListCall name args hCases)
   | _, .switchDefault _ hList =>
       .switchDefault (noShadowStmtListCallToStmtListCall name args hList)
-  | _, .forCondition hCondition => .forCondition hCondition
+  | _, .forCondition _ hCondition => .forCondition hCondition
   | _, .forPre _ hList =>
       .forPre (noShadowStmtListCallToStmtListCall name args hList)
-  | _, .forPost _ hList =>
+  | _, .forPost _ _ hList =>
       .forPost (noShadowStmtListCallToStmtListCall name args hList)
-  | _, .forBody _ hList =>
+  | _, .forBody _ _ hList =>
       .forBody (noShadowStmtListCallToStmtListCall name args hList)
   | _, .ifBody _ hList =>
       .ifBody (noShadowStmtListCallToStmtListCall name args hList)
