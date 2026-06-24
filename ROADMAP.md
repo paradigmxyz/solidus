@@ -276,8 +276,11 @@ Next raw frontend layer:
   expression facts into incoming-scope statement expression fields:
   variable declarations, assignments, expression statements, switch scrutinees,
   and `if` conditions, and successful statement-list elaboration preserves
-  those occurrences into the returned frontend statement list. Nested
-  block/body occurrences and `for` initializer scope handoff remain the next
+  those occurrences into the returned frontend statement list. Successful
+  scope-creating and non-scope-creating block elaboration now also exposes the
+  generated frontend occurrence plus the retained generated callee entry for
+  such incoming-scope source occurrences. Recursive nested block/body
+  occurrence traversal and `for` initializer scope handoff remain the next
   statement/control-layer proof work.
   Successful `FunctionDef.elaborate` now also realizes source local-function
   declarations in the raw function body as generated hoisted callee entries in

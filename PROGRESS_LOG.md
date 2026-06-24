@@ -51,6 +51,22 @@
   `git diff --check`; theorem axiom audit reports only
   `[propext, Classical.choice, Quot.sound]`.
 
+- 2026-06-24 02:19:11 PDT - proof/raw-block-incoming-call-occurrence -
+  Added block-level wrappers
+  `Elab.Stmt.List.sourceLocalFunction_elaborateBlock_false_incoming_call_mem_entry`
+  and
+  `Elab.Stmt.List.sourceLocalFunction_elaborateBlock_true_incoming_call_mem_entry`.
+  Successful non-scope-creating and scope-creating raw block elaboration now
+  exposes a generated frontend statement occurrence plus the retained generated
+  callee entry for incoming-scope raw source call occurrences in the block's
+  immediate statement list. Recursive nested block/body traversal and `for`
+  initializer scope handoff remain open. Validation passed:
+  `lake build EvmCompiler.Solidity.RawAst`,
+  `lake build EvmCompiler.Verification`, `lake build`,
+  `scripts/check_architecture.sh`, `scripts/test_raw_solc_frontend_smoke.sh`,
+  touched-file trust scans, and `git diff --check`; theorem axiom audits
+  report only `[propext, Classical.choice, Quot.sound]`.
+
 - 2026-06-23 10:12 PDT - compaction-resume/raw-frontend-status - Resumed
   under `$verifiable-compiler` to report the raw solc frontend migration
   status from the clean `codex/lean-solc-raw-frontend` checkpoint.
