@@ -302,7 +302,11 @@ Next raw frontend layer:
   post/body block does not declare a shadowing local function with the same
   source name: a source local function declared in the initializer is retained
   as a hoisted generated callee and these calls elaborate to the generated
-  frontend user call. Recursive source-side nested block/body occurrence
+  frontend user call. Non-scope-creating blocks and `for` initializer blocks
+  now also have no-shadow resolver transport helpers, so outer resolved calls
+  in initializer statements survive local function-scope construction when the
+  initializer does not shadow the callee name. Recursive source-side nested
+  block/body occurrence
   traversal, including fully shadow-aware post/body wrapper composition,
   remains the next statement/control-layer proof work.
   Successful `FunctionDef.elaborate` now also realizes source local-function
