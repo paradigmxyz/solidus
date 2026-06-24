@@ -86,6 +86,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.toYul?_occurrence
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.StmtIncomingUserCall.toYul?_occurrence
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableStmtListUserCall.toYul?_occurrence
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableResolvedLocalCall
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableResolvedLocalCall.toSolcYulOrderedProgram?_entries
 #check EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved
 #check EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_entries
 #check EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_callable_entries
@@ -568,6 +570,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.toYul?_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.StmtIncomingUserCall.toYul?_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableStmtListUserCall.toYul?_occurrence
+#print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableResolvedLocalCall.toSolcYulOrderedProgram?_entries
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_entries
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_callable_entries
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decoded

@@ -395,6 +395,10 @@ Next raw frontend layer:
   fact through lowerable frontend statement-list contexts, including blocks,
   switches, loops, and if bodies, while still excluding erased `functionDef`
   staging nodes from the current-body claim.
+  `FrontendOccurrence.LowerableResolvedLocalCall.toSolcYulOrderedProgram?_entries`
+  now packages the lowerable caller-body occurrence with ordered-Yul conversion,
+  yielding the concrete lowered caller-body occurrence plus the generated callee
+  ordered function entry.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call execution/observation in caller context,
   including source argument evaluation and caller writeback, and broader

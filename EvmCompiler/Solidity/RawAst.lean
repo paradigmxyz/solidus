@@ -1897,6 +1897,73 @@ def ResolvedLocalCall
       StmtListUserCall topFn.body generated args ∧
         (generated, localFn) ∈ functions
 
+/--
+Resolved local call whose occurrence lowers into the current caller function
+body. This is deliberately stricter than `ResolvedLocalCall`: retained
+`functionDef` staging-node bodies are emitted as separate generated functions,
+not as statements in the caller's lowered body.
+-/
+def LowerableResolvedLocalCall
+    (functions : List (Name × Frontend.FunctionDef))
+    (topName : Name) : Prop :=
+  ∃ (generated : Name)
+      (localFn : Frontend.FunctionDef)
+      (args : List Frontend.Expr)
+      (topFn : Frontend.FunctionDef),
+    (topName, topFn) ∈ functions ∧
+      LowerableStmtListUserCall topFn.body generated args ∧
+        (generated, localFn) ∈ functions
+
+namespace LowerableResolvedLocalCall
+
+theorem toSolcYulOrderedProgram?_entries
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Name}
+    (hResolved :
+      LowerableResolvedLocalCall object.functions topName)
+    (hConvert :
+      object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (generated : Name)
+        (localFn : Frontend.FunctionDef)
+        (frontArgs : List Frontend.Expr)
+        (topFn : Frontend.FunctionDef)
+        (topYulBody localYulBody : List Frontend.AstStmt)
+        (yulArgs : List Frontend.AstExpr),
+      (topName, topFn) ∈ object.functions ∧
+        LowerableStmtListUserCall topFn.body generated frontArgs ∧
+        (generated, localFn) ∈ object.functions ∧
+        Frontend.Stmt.List.toYul? topFn.body = some topYulBody ∧
+        Frontend.Stmt.List.toYul? localFn.body = some localYulBody ∧
+        Frontend.Expr.List.toYul? frontArgs = some yulArgs ∧
+        YulOccurrence.StmtListUserCall topYulBody generated yulArgs ∧
+        (topName,
+          EvmYul.Yul.Ast.FunctionDefinition.Def
+            topFn.params topFn.returns topYulBody) ∈
+          ordered.functionEntries ∧
+        (generated,
+          EvmYul.Yul.Ast.FunctionDefinition.Def
+            localFn.params localFn.returns localYulBody) ∈
+          ordered.functionEntries := by
+  rcases hResolved with
+    ⟨generated, localFn, frontArgs, topFn,
+      hTopMem, hOccurrence, hCalleeMem⟩
+  rcases Frontend.Object.toSolcYulOrderedProgram?_function_entry
+      hConvert hTopMem with
+    ⟨topYulBody, hTopYul, hTopEntry⟩
+  rcases Frontend.Object.toSolcYulOrderedProgram?_function_entry
+      hConvert hCalleeMem with
+    ⟨localYulBody, hLocalYul, hLocalEntry⟩
+  rcases LowerableStmtListUserCall.toYul?_occurrence
+      hOccurrence hTopYul with
+    ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+  exact
+    ⟨generated, localFn, frontArgs, topFn, topYulBody, localYulBody,
+      yulArgs, hTopMem, hOccurrence, hCalleeMem, hTopYul, hLocalYul,
+      hArgsYul, hYulOccurrence, hTopEntry, hLocalEntry⟩
+
+end LowerableResolvedLocalCall
+
 end FrontendOccurrence
 
 namespace Raw
