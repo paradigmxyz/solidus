@@ -1951,6 +1951,26 @@ end Stmt
 
 namespace Stmt.List
 
+theorem localFunctionScope_single_functionDefinition
+    {state declaredState state' : State}
+    {name generated : Name} {params returns : List Name}
+    {body : List Raw.Stmt}
+    (hDeclare :
+      (declareIdentifiers [name] "function").run state =
+        .ok ((), declaredState))
+    (hFresh :
+      (freshGeneratedFunctionName name).run declaredState =
+        .ok (generated, state')) :
+    (Stmt.List.localFunctionScope
+      [.functionDefinition name params returns body]).run state =
+        .ok ([(name, generated)], state') := by
+  change declareIdentifiers [name] "function" state =
+    .ok ((), declaredState) at hDeclare
+  change freshGeneratedFunctionName name declaredState =
+    .ok (generated, state') at hFresh
+  simp [Stmt.List.localFunctionScope, hDeclare, hFresh, StateT.run,
+    StateT.instMonad, StateT.bind, StateT.pure, pure, Except.pure]
+
 theorem hoistLocalFunctions_single_functionDefinition_resolved
     {state state' : State} {scope : List (Name × Name)}
     {name generated : Name} {params returns : List Name}
