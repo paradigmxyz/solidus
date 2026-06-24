@@ -1593,6 +1593,141 @@ theorem lowered_function_entry
       exact ih hParts.2)
     hStub hValid
 
+theorem lowered_function_entry_with_body_valid
+    {front : List Frontend.Stmt}
+    {entries : List (Name × Frontend.AstFunctionDefinition)}
+    {generated : Name} {args : List Frontend.Expr}
+    (hStub : StubBodyStmtListUserCall front generated args)
+    (hValid :
+      Frontend.Stmt.List.functionDefStubsLoweredToEntries?
+        entries front = true) :
+    ∃ (stubName : Name)
+        (params returns : List Name)
+        (body : List Frontend.Stmt)
+        (yulBody : List Frontend.AstStmt),
+      StmtListUserCall body generated args ∧
+        Frontend.Stmt.List.toYul? body = some yulBody ∧
+          entries.contains
+            (stubName,
+              EvmYul.Yul.Ast.FunctionDefinition.Def
+                params returns yulBody) = true ∧
+            Frontend.Stmt.List.functionDefStubsLoweredToEntries?
+              entries body = true :=
+  StubBodyStmtListUserCall.rec
+    (motive_1 := fun stmt generated args _ =>
+      ∀ {entries : List (Name × Frontend.AstFunctionDefinition)},
+        Frontend.Stmt.functionDefStubsLoweredToEntries?
+          entries stmt = true →
+          ∃ (stubName : Name)
+              (params returns : List Name)
+              (body : List Frontend.Stmt)
+              (yulBody : List Frontend.AstStmt),
+            StmtListUserCall body generated args ∧
+              Frontend.Stmt.List.toYul? body = some yulBody ∧
+                entries.contains
+                  (stubName,
+                    EvmYul.Yul.Ast.FunctionDefinition.Def
+                      params returns yulBody) = true ∧
+                  Frontend.Stmt.List.functionDefStubsLoweredToEntries?
+                    entries body = true)
+    (motive_2 := fun stmts generated args _ =>
+      ∀ {entries : List (Name × Frontend.AstFunctionDefinition)},
+        Frontend.Stmt.List.functionDefStubsLoweredToEntries?
+          entries stmts = true →
+          ∃ (stubName : Name)
+              (params returns : List Name)
+              (body : List Frontend.Stmt)
+              (yulBody : List Frontend.AstStmt),
+            StmtListUserCall body generated args ∧
+              Frontend.Stmt.List.toYul? body = some yulBody ∧
+                entries.contains
+                  (stubName,
+                    EvmYul.Yul.Ast.FunctionDefinition.Def
+                      params returns yulBody) = true ∧
+                  Frontend.Stmt.List.functionDefStubsLoweredToEntries?
+                    entries body = true)
+    (motive_3 := fun cases generated args _ =>
+      ∀ {entries : List (Name × Frontend.AstFunctionDefinition)},
+        Frontend.Stmt.CaseList.functionDefStubsLoweredToEntries?
+          entries cases = true →
+          ∃ (stubName : Name)
+              (params returns : List Name)
+              (body : List Frontend.Stmt)
+              (yulBody : List Frontend.AstStmt),
+            StmtListUserCall body generated args ∧
+              Frontend.Stmt.List.toYul? body = some yulBody ∧
+                entries.contains
+                  (stubName,
+                    EvmYul.Yul.Ast.FunctionDefinition.Def
+                      params returns yulBody) = true ∧
+                  Frontend.Stmt.List.functionDefStubsLoweredToEntries?
+                    entries body = true)
+    (functionBody := by
+      intro name params returns body generated args hBody entries hValid
+      rcases Frontend.Stmt.functionDefStubsLoweredToEntries?_functionDef_entry
+          hValid with
+        ⟨⟨yulBody, hBodyYul, hContains⟩, hBodyValid⟩
+      exact
+        ⟨name, params, returns, body, yulBody,
+          hBody, hBodyYul, hContains, hBodyValid⟩)
+    (block := by
+      intro stmts generated args hList ih entries hValid
+      exact ih (by
+        simpa [Frontend.Stmt.functionDefStubsLoweredToEntries?]
+          using hValid))
+    (switchCase := by
+      intro scrutinee cases default generated args hCases ih entries hValid
+      have hParts := hValid
+      simp [Frontend.Stmt.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.1)
+    (switchDefault := by
+      intro scrutinee cases default generated args hDefault ih entries hValid
+      have hParts := hValid
+      simp [Frontend.Stmt.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.2)
+    (forPre := by
+      intro pre condition post body generated args hPre ih entries hValid
+      have hParts := hValid
+      simp [Frontend.Stmt.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.1.1)
+    (forPost := by
+      intro pre condition post body generated args hPost ih entries hValid
+      have hParts := hValid
+      simp [Frontend.Stmt.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.1.2)
+    (forBody := by
+      intro pre condition post body generated args hBody ih entries hValid
+      have hParts := hValid
+      simp [Frontend.Stmt.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.2)
+    (ifBody := by
+      intro condition body generated args hBody ih entries hValid
+      exact ih (by
+        simpa [Frontend.Stmt.functionDefStubsLoweredToEntries?]
+          using hValid))
+    (head := by
+      intro stmt rest generated args hHead ih entries hValid
+      have hParts := hValid
+      simp [Frontend.Stmt.List.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.1)
+    (tail := by
+      intro stmt rest generated args hTail ih entries hValid
+      have hParts := hValid
+      simp [Frontend.Stmt.List.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.2)
+    (by
+      intro value body rest generated args hBody ih entries hValid
+      have hParts := hValid
+      simp [Frontend.Stmt.CaseList.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.1)
+    (by
+      intro caseEntry rest generated args hTail ih entries hValid
+      rcases caseEntry with ⟨value, body⟩
+      have hParts := hValid
+      simp [Frontend.Stmt.CaseList.functionDefStubsLoweredToEntries?] at hParts
+      exact ih hParts.2)
+    hStub hValid
+
 end StubBodyStmtListUserCall
 
 namespace ExprListToYul
@@ -2196,6 +2331,94 @@ theorem lowered_function_entry_step
   · exact
       ⟨stubName, params, returns, body, yulBody,
         hBodyYul, hContains, Or.inr hNestedStub⟩
+
+theorem lowered_function_entry_step_with_valid
+    {front : List Frontend.Stmt}
+    {entries : List (Name × Frontend.AstFunctionDefinition)}
+    {generated : Name} {args : List Frontend.Expr}
+    (hStub : StubBodyStmtListUserCall front generated args)
+    (hValid :
+      Frontend.Stmt.List.functionDefStubsLoweredToEntries?
+        entries front = true) :
+    (∃ (stubName : Name)
+        (params returns : List Name)
+        (body : List Frontend.Stmt)
+        (yulBody : List Frontend.AstStmt)
+        (yulArgs : List Frontend.AstExpr),
+      Frontend.Stmt.List.toYul? body = some yulBody ∧
+        entries.contains
+          (stubName,
+            EvmYul.Yul.Ast.FunctionDefinition.Def
+              params returns yulBody) = true ∧
+          Frontend.Expr.List.toYul? args = some yulArgs ∧
+            YulOccurrence.StmtListUserCall
+              yulBody generated yulArgs) ∨
+      ∃ (stubName : Name)
+        (params returns : List Name)
+        (body : List Frontend.Stmt)
+        (yulBody : List Frontend.AstStmt),
+        Frontend.Stmt.List.toYul? body = some yulBody ∧
+          entries.contains
+            (stubName,
+              EvmYul.Yul.Ast.FunctionDefinition.Def
+                params returns yulBody) = true ∧
+            StubBodyStmtListUserCall body generated args ∧
+              Frontend.Stmt.List.functionDefStubsLoweredToEntries?
+                entries body = true := by
+  rcases lowered_function_entry_with_body_valid hStub hValid with
+    ⟨stubName, params, returns, body, yulBody,
+      hBodyOccurrence, hBodyYul, hContains, hBodyValid⟩
+  rcases StmtListUserCall.lowerable_or_stubBody hBodyOccurrence with
+    hLowerable | hNestedStub
+  · rcases LowerableStmtListUserCall.toYul?_occurrence
+      hLowerable hBodyYul with
+      ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+    exact
+      Or.inl
+        ⟨stubName, params, returns, body, yulBody, yulArgs,
+          hBodyYul, hContains, hArgsYul, hYulOccurrence⟩
+  · exact
+      Or.inr
+        ⟨stubName, params, returns, body, yulBody,
+          hBodyYul, hContains, hNestedStub, hBodyValid⟩
+
+theorem lowered_function_entry_chaseFuel
+    (fuel : Nat)
+    {front : List Frontend.Stmt}
+    {entries : List (Name × Frontend.AstFunctionDefinition)}
+    {generated : Name} {args : List Frontend.Expr}
+    (hStub : StubBodyStmtListUserCall front generated args)
+    (hValid :
+      Frontend.Stmt.List.functionDefStubsLoweredToEntries?
+        entries front = true) :
+    (∃ (stubName : Name)
+        (params returns : List Name)
+        (body : List Frontend.Stmt)
+        (yulBody : List Frontend.AstStmt)
+        (yulArgs : List Frontend.AstExpr),
+      Frontend.Stmt.List.toYul? body = some yulBody ∧
+        entries.contains
+          (stubName,
+            EvmYul.Yul.Ast.FunctionDefinition.Def
+              params returns yulBody) = true ∧
+          Frontend.Expr.List.toYul? args = some yulArgs ∧
+            YulOccurrence.StmtListUserCall
+              yulBody generated yulArgs) ∨
+      ∃ body,
+        StubBodyStmtListUserCall body generated args ∧
+          Frontend.Stmt.List.functionDefStubsLoweredToEntries?
+            entries body = true := by
+  induction fuel generalizing front with
+  | zero =>
+      exact Or.inr ⟨front, hStub, hValid⟩
+  | succ fuel ih =>
+      rcases lowered_function_entry_step_with_valid hStub hValid with
+        hFound | hNext
+      · exact Or.inl hFound
+      · rcases hNext with
+          ⟨_stubName, _params, _returns, body, _yulBody,
+            _hBodyYul, _hContains, hNestedStub, hBodyValid⟩
+        exact ih hNestedStub hBodyValid
 
 end StubBodyStmtListUserCall
 
