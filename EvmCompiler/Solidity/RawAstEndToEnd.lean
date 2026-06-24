@@ -870,6 +870,81 @@ theorem execSeq_of_split
 
 end DirectIncomingStmtRun
 
+/-- Statement-list execution package for the direct incoming occurrence branch.
+
+This ties the syntactic split from `YulOccurrence.StmtListUserCall` to the
+generic direct-statement semantic interface.  The focused statement is known to
+contain the generated call directly in its incoming expression field; all
+statement-specific runtime facts are carried by `DirectIncomingStmtRun`.
+-/
+structure DirectStmtListOccurrenceRun
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    (prefixFuel : Nat)
+    (stmts : List Frontend.AstStmt)
+    (state : σ) where
+  pre : List Frontend.AstStmt
+  stmt : Frontend.AstStmt
+  rest : List Frontend.AstStmt
+  hSplit : stmts = pre ++ stmt :: rest
+  hDirect :
+    YulOccurrence.StmtIncomingUserCall.Direct
+      stmt hEvidence.generated hEvidence.yulArgs
+  stateBeforeStmt : σ
+  afterStmt : σ
+  afterRest : σ
+  prefixShared : EvmYul.SharedState .Yul
+  prefixVars : EvmYul.Yul.VarStore
+  stmtShared : EvmYul.SharedState .Yul
+  stmtVars : EvmYul.Yul.VarStore
+  hPrefix :
+    Yul.Source.Effectful.execSeq model prim
+        ((prefixFuel + 1) + pre.length) pre
+        (some ordered.program.contract) state =
+      .ok stateBeforeStmt
+  hPrefixSource :
+    model.source stateBeforeStmt = .Ok prefixShared prefixVars
+  hStmt :
+    DirectIncomingStmtRun hEvidence model prim stateBeforeStmt
+      prefixFuel stmt afterStmt
+  hStmtSource :
+    model.source afterStmt = .Ok stmtShared stmtVars
+  hRest :
+    Yul.Source.Effectful.execSeq model prim prefixFuel rest
+        (some ordered.program.contract) afterStmt =
+      .ok afterRest
+
+namespace DirectStmtListOccurrenceRun
+
+theorem execSeq
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {stmts : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      DirectStmtListOccurrenceRun hEvidence model prim
+        prefixFuel stmts state) :
+    Yul.Source.Effectful.execSeq model prim
+        ((prefixFuel + 1) + hRun.pre.length) stmts
+        (some ordered.program.contract) state =
+      .ok hRun.afterRest :=
+  DirectIncomingStmtRun.execSeq_of_split
+    hRun.hSplit hRun.hPrefix hRun.hPrefixSource hRun.hStmt
+    hRun.hStmtSource hRun.hRest
+
+end DirectStmtListOccurrenceRun
+
 /-- Direct assignment statement execution for a generated alpha-renamed call
 from the bundled Yul evidence. -/
 theorem assign_succ

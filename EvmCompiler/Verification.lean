@@ -344,6 +344,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.DirectIncomingStmtRun.exec
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.DirectIncomingStmtRun.execSeq_prefix
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.DirectIncomingStmtRun.execSeq_of_split
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.DirectStmtListOccurrenceRun
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.DirectStmtListOccurrenceRun.execSeq
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.assign_succ
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.let_succ
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.exprStmt_succ
@@ -742,6 +744,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.DirectIncomingStmtRun.exec
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.DirectIncomingStmtRun.execSeq_prefix
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.DirectIncomingStmtRun.execSeq_of_split
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.DirectStmtListOccurrenceRun.execSeq
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.assign_succ
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.let_succ
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.exprStmt_succ

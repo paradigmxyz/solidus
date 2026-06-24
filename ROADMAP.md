@@ -445,7 +445,10 @@ Next raw frontend layer:
   first consolidated statement interface: one generic `exec` theorem and one
   generic split/prefix `execSeq` theorem cover direct assignment/declaration,
   expression-statement, `if`, and `switch` contexts without adding more
-  bespoke direct-case siblings.
+  bespoke direct-case siblings. `DirectStmtListOccurrenceRun` now ties that
+  direct statement interface to the concrete
+  `YulOccurrence.StmtListUserCall` split/prefix proof, closing the direct
+  branch shape needed by the recursive statement-list dispatcher.
   `YulOccurrence.UserCall.direct_or_arg_split` now separates a lowered
   expression occurrence into either the direct generated call or an outer call
   with the recursive occurrence isolated inside its argument list, matching
