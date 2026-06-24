@@ -135,6 +135,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_hoistLocalFunctions_elaborate_user_call_entry
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_hoistLocalFunctions_elaborate_user_call_entry
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_hoistLocalFunctions_elaborate_user_call_entry_failClosed
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hasImmediateFunctionDefinition_of_sourceLocalFunction
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_elaborateForInitBlockWithScope_entry
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.sourceLocalFunction_forLoop_condition_stmtUserCall_entry
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_elaborateBlock_false_lookup_entry
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_elaborateBlock_true_lookup_entry
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_elaborateBlock_false_entry
@@ -374,6 +377,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_hoistLocalFunctions_elaborate_user_call_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_hoistLocalFunctions_elaborate_user_call_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_hoistLocalFunctions_elaborate_user_call_entry_failClosed
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hasImmediateFunctionDefinition_of_sourceLocalFunction
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_elaborateForInitBlockWithScope_entry
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.sourceLocalFunction_forLoop_condition_stmtUserCall_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_elaborateBlock_false_lookup_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_elaborateBlock_true_lookup_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_elaborateBlock_false_entry

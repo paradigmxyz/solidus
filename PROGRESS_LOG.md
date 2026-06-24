@@ -1,5 +1,26 @@
 # Progress Log
 
+- 2026-06-24 03:32:20 PDT - proof/raw-for-init-condition-call-handoff -
+  Added the first checked `for` initializer function-scope handoff theorem.
+  `Elab.Stmt.List.hasImmediateFunctionDefinition_of_sourceLocalFunction`
+  proves a source local function in the initializer selects the scope-retaining
+  initializer path, and
+  `Elab.Stmt.List.sourceLocalFunction_elaborateForInitBlockWithScope_entry`
+  exposes the pushed generated function scope, generated-name lookup, and
+  retained hoisted callee entry after successful initializer elaboration.
+  `Elab.Stmt.sourceLocalFunction_forLoop_condition_stmtUserCall_entry`
+  then proves that a condition call to that source local function elaborates to
+  the generated frontend `.user` call and retains the generated callee through
+  post/body elaboration and scope popping. This closes the
+  initializer-to-condition handoff slice; shadow-aware post/body and
+  nested-block traversal remain. Validation passed:
+  `lake build EvmCompiler.Solidity.RawAst`,
+  `lake build EvmCompiler.Verification`, `lake build`,
+  `scripts/check_architecture.sh`, `scripts/test_raw_solc_frontend_smoke.sh`,
+  touched-file sorry/admit/axiom scans, and `git diff --check`; new theorem
+  axiom audits report only `[propext, Classical.choice, Quot.sound]` except
+  the branch fact, which uses `[propext]`.
+
 - 2026-06-24 03:22:09 PDT - proof/raw-resolver-stack-call-occurrence -
   Generalized raw source-call occurrence preservation from head-scope lookup
   to the full function resolver stack. Added expression/list theorems
