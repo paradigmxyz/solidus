@@ -2139,6 +2139,115 @@ def focusedStmt
 
 end SwitchContextRun
 
+/-- Executed `.If` context whose body contains the focused generated-call
+occurrence.  The nonzero condition premise makes this an executed-body
+interface, not merely a syntactic occurrence in the branch. -/
+structure IfContextRun
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    (prefixFuel : Nat)
+    (condition : Frontend.AstExpr)
+    (body : List Frontend.AstStmt)
+    (state : σ) where
+  stateAfterCondition : σ
+  conditionValue : Frontend.Word
+  bodyRun :
+    StmtListOccurrenceRun hEvidence model prim
+      prefixFuel body stateAfterCondition
+  hEval :
+    Yul.Source.Effectful.eval model prim
+        (((prefixFuel + 1) + bodyRun.pre.length) + 1)
+        condition (some ordered.program.contract) state =
+      .ok (stateAfterCondition, conditionValue)
+  hNonzero :
+    conditionValue ≠ EvmYul.UInt256.ofNat 0
+  afterIf : σ
+  hAfterIf :
+    afterIf =
+      model.withSource bodyRun.afterRest
+        ((model.source bodyRun.afterRest).restrictStoreTo
+          (model.source stateAfterCondition).store)
+
+namespace IfContextRun
+
+theorem context
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {condition : Frontend.AstExpr}
+    {body : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      IfContextRun hEvidence model prim prefixFuel condition body state) :
+    YulOccurrence.StmtUserCall.Context (.If condition body)
+      hEvidence.generated hEvidence.yulArgs :=
+  .ifBody hRun.bodyRun.occurrence
+
+theorem exec
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {condition : Frontend.AstExpr}
+    {body : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      IfContextRun hEvidence model prim prefixFuel condition body state) :
+    Yul.Source.Effectful.exec model prim
+        ((((prefixFuel + 1) + hRun.bodyRun.pre.length) + 1) + 1)
+        (.If condition body)
+        (some ordered.program.contract) state =
+      .ok hRun.afterIf := by
+  have hBodySeq := hRun.bodyRun.execSeq
+  have hBodyBlock :
+      Yul.Source.Effectful.exec model prim
+          (((prefixFuel + 1) + hRun.bodyRun.pre.length) + 1)
+          (.Block body)
+          (some ordered.program.contract) hRun.stateAfterCondition =
+        .ok hRun.afterIf := by
+    have hBlock :=
+      Yul.Source.Effectful.exec_block_of_execSeq model prim hBodySeq
+    rw [hRun.hAfterIf]
+    exact hBlock
+  exact
+    Yul.Source.Effectful.exec_if_true_of_eval
+      model prim hRun.hEval hRun.hNonzero hBodyBlock
+
+def focusedStmt
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {condition : Frontend.AstExpr}
+    {body : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      IfContextRun hEvidence model prim prefixFuel condition body state) :
+    FocusedStmtRun hEvidence model prim state
+      ((((prefixFuel + 1) + hRun.bodyRun.pre.length) + 1) + 1)
+      (.If condition body) hRun.afterIf :=
+  .context hRun.context hRun.exec
+
+end IfContextRun
+
 /-- Direct assignment statement execution for a generated alpha-renamed call
 from the bundled Yul evidence. -/
 theorem assign_succ
