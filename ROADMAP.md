@@ -275,8 +275,10 @@ Next raw frontend layer:
   and `FrontendOccurrence.StmtIncomingUserCall` now lift those recursive
   expression facts into incoming-scope statement expression fields:
   variable declarations, assignments, expression statements, switch scrutinees,
-  and `if` conditions. Nested block/body occurrences and `for` initializer
-  scope handoff remain the next statement/control-layer proof work.
+  and `if` conditions, and successful statement-list elaboration preserves
+  those occurrences into the returned frontend statement list. Nested
+  block/body occurrences and `for` initializer scope handoff remain the next
+  statement/control-layer proof work.
   Successful `FunctionDef.elaborate` now also realizes source local-function
   declarations in the raw function body as generated hoisted callee entries in
   the final elaborator state, without exposing the block's internal scope

@@ -37,6 +37,20 @@
   touched-file trust scans, and `git diff --check`; theorem axiom audit
   reports only `[propext, Classical.choice, Quot.sound]`.
 
+- 2026-06-24 02:13:32 PDT - proof/raw-incoming-statement-list-call-occurrence -
+  Lifted incoming-scope statement call occurrences through successful
+  statement-list elaboration with
+  `Elab.Stmt.List.elaborate_incoming_scope_source_user_call_occurrence`.
+  The theorem carries a raw statement membership plus checked incoming-scope
+  source occurrence to a generated frontend statement occurrence in the
+  returned frontend list, preserving the active function-scope resolver through
+  earlier statements. Validation passed:
+  `lake build EvmCompiler.Solidity.RawAst`,
+  `lake build EvmCompiler.Verification`, `lake build`,
+  `scripts/check_architecture.sh`, touched-file trust scans, and
+  `git diff --check`; theorem axiom audit reports only
+  `[propext, Classical.choice, Quot.sound]`.
+
 - 2026-06-23 10:12 PDT - compaction-resume/raw-frontend-status - Resumed
   under `$verifiable-compiler` to report the raw solc frontend migration
   status from the clean `codex/lean-solc-raw-frontend` checkpoint.

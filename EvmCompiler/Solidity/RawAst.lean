@@ -5137,6 +5137,76 @@ end
 
 namespace Stmt.List
 
+theorem elaborate_incoming_scope_source_user_call_occurrence
+    {stmts : List Raw.Stmt} {stmt : Raw.Stmt}
+    {state finalState : State} {fronts : List Frontend.Stmt}
+    {scope : List (Name × Name)}
+    {outer : List (List (Name × Name))}
+    {name generated : Name} {args : List Raw.Expr}
+    (hMem : stmt ∈ stmts)
+    (hOccurs : Raw.Source.StmtExprCall.IncomingScope stmt name args)
+    (hNameOk : bindingNameOk? name = true)
+    (hLookup : lookupFunctionInScope name scope = some generated)
+    (hScopes : state.functionScopes = scope :: outer)
+    (hElab : (Stmt.List.elaborate stmts).run state =
+      .ok (fronts, finalState)) :
+    ∃ args' front,
+      front ∈ fronts ∧
+        FrontendOccurrence.StmtIncomingUserCall front generated args' := by
+  induction stmts generalizing state finalState fronts outer with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      unfold Stmt.List.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      simp at hMem
+      rcases hMem with hHeadMem | hTailMem
+      · subst stmt
+        cases hHead : (Stmt.elaborate head).run state with
+        | error err =>
+            simp [hHead] at hElab
+        | ok headResult =>
+            rcases headResult with ⟨headFront, headState⟩
+            rcases
+              EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_incoming_scope_source_user_call_occurrence
+                hOccurs hNameOk hLookup hScopes hHead with
+              ⟨args', hOccurrence⟩
+            simp [hHead] at hElab
+            cases hTail :
+                (Stmt.List.elaborate rest).run headState with
+            | error err =>
+                simp [hTail] at hElab
+            | ok tailResult =>
+                rcases tailResult with ⟨tailFronts, tailState⟩
+                simp [hTail] at hElab
+                have hMemFront : headFront ∈ fronts := by
+                  rw [← hElab.1]
+                  simp
+                exact ⟨args', headFront, hMemFront, hOccurrence⟩
+      · cases hHead : (Stmt.elaborate head).run state with
+        | error err =>
+            simp [hHead] at hElab
+        | ok headResult =>
+            rcases headResult with ⟨headFront, headState⟩
+            have hHeadScopes :
+                headState.functionScopes = scope :: outer := by
+              rw [Stmt.elaborate_preserves_functionScopes head hHead,
+                hScopes]
+            simp [hHead] at hElab
+            cases hTail :
+                (Stmt.List.elaborate rest).run headState with
+            | error err =>
+                simp [hTail] at hElab
+            | ok tailResult =>
+                rcases tailResult with ⟨tailFronts, tailState⟩
+                simp [hTail] at hElab
+                rcases ih hTailMem hHeadScopes hTail with
+                  ⟨args', front, hMemTail, hOccurrence⟩
+                have hMemFront : front ∈ fronts := by
+                  rw [← hElab.1]
+                  exact List.mem_cons_of_mem _ hMemTail
+                exact ⟨args', front, hMemFront, hOccurrence⟩
+
 theorem localFunctionScope_lookup_functionDefinition
     {stmts : List Raw.Stmt} {state scopeState : State}
     {scope : List (Name × Name)} {name generated : Name}

@@ -106,6 +106,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_incoming_scope_source_user_call_occurrence
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_preserves_hoistedFunction_mem
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_preserves_functionScopes
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_incoming_scope_source_user_call_occurrence
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_single_functionDefinition
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_cons_functionDefinition
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_preserves_hoistedFunction_mem
@@ -332,6 +333,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_incoming_scope_source_user_call_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_preserves_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_preserves_functionScopes
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_incoming_scope_source_user_call_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_single_functionDefinition
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_cons_functionDefinition
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_preserves_hoistedFunction_mem
