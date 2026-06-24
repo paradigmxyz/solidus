@@ -271,7 +271,12 @@ Next raw frontend layer:
   recursive raw function-call argument occurrences; successful expression/list
   elaboration carries those source occurrences to generated frontend user-call
   occurrences, including through ordinary calls and the one-argument
-  `memoryguard`/`clz` special elaboration paths.
+  `memoryguard`/`clz` special elaboration paths. `Raw.Source.StmtExprCall`
+  and `FrontendOccurrence.StmtIncomingUserCall` now lift those recursive
+  expression facts into incoming-scope statement expression fields:
+  variable declarations, assignments, expression statements, switch scrutinees,
+  and `if` conditions. Nested block/body occurrences and `for` initializer
+  scope handoff remain the next statement/control-layer proof work.
   Successful `FunctionDef.elaborate` now also realizes source local-function
   declarations in the raw function body as generated hoisted callee entries in
   the final elaborator state, without exposing the block's internal scope

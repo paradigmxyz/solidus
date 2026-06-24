@@ -580,6 +580,35 @@ inductive ListOccurs : List Expr → Name → List Expr → Prop where
 
 end ExprCall
 
+namespace StmtExprCall
+
+/--
+Source-facing raw call occurrence in a statement expression that is elaborated
+under the statement's incoming function scope.
+
+This deliberately excludes nested block bodies and `for` conditions, whose
+active function scope can be extended by surrounding block/initializer
+elaboration and needs a separate scope-handoff theorem.
+-/
+inductive IncomingScope : Stmt → Name → List Expr → Prop where
+  | variableValue {names value name args} :
+      ExprCall.Occurs value name args →
+        IncomingScope (.variableDeclaration names (some value)) name args
+  | assignmentValue {names value name args} :
+      ExprCall.Occurs value name args →
+        IncomingScope (.assignment names value) name args
+  | expressionStatement {expr name args} :
+      ExprCall.Occurs expr name args →
+        IncomingScope (.expressionStatement expr) name args
+  | switchScrutinee {scrutinee cases default name args} :
+      ExprCall.Occurs scrutinee name args →
+        IncomingScope (.switch scrutinee cases default) name args
+  | ifCondition {condition body name args} :
+      ExprCall.Occurs condition name args →
+        IncomingScope (.ifThen condition body) name args
+
+end StmtExprCall
+
 end Source
 
 end Raw
@@ -606,6 +635,25 @@ theorem headArg
   .arg (by simp) hArg
 
 end UserCall
+
+/-- Generated frontend user-call occurrence in a statement expression field. -/
+inductive StmtIncomingUserCall :
+    Frontend.Stmt → Name → List Frontend.Expr → Prop where
+  | letValue {names value generated args} :
+      UserCall value generated args →
+        StmtIncomingUserCall (.letDecl names (some value)) generated args
+  | assignmentValue {names value generated args} :
+      UserCall value generated args →
+        StmtIncomingUserCall (.assign names value) generated args
+  | expressionStatement {expr generated args} :
+      UserCall expr generated args →
+        StmtIncomingUserCall (.exprStmt expr) generated args
+  | switchScrutinee {scrutinee cases default generated args} :
+      UserCall scrutinee generated args →
+        StmtIncomingUserCall (.switch scrutinee cases default) generated args
+  | ifCondition {condition body generated args} :
+      UserCall condition generated args →
+        StmtIncomingUserCall (.ifThen condition body) generated args
 
 end FrontendOccurrence
 
@@ -3564,6 +3612,154 @@ theorem elaborate_functionDefinition_resolved_stub
       state =
         .ok (.functionDef generated params returns fn.body, state') := by
   simp [Stmt.elaborate, resolveFunction, hResolve, hFn]
+
+theorem elaborate_incoming_scope_source_user_call_occurrence
+    {stmt : Raw.Stmt} {state finalState : State}
+    {front : Frontend.Stmt} {scope : List (Name × Name)}
+    {outer : List (List (Name × Name))}
+    {name generated : Name} {args : List Raw.Expr}
+    (hOccurs : Raw.Source.StmtExprCall.IncomingScope stmt name args)
+    (hNameOk : bindingNameOk? name = true)
+    (hLookup : lookupFunctionInScope name scope = some generated)
+    (hScopes : state.functionScopes = scope :: outer)
+    (hElab : (Stmt.elaborate stmt).run state = .ok (front, finalState)) :
+    ∃ args',
+      FrontendOccurrence.StmtIncomingUserCall front generated args' := by
+  cases hOccurs with
+  | @variableValue names value name args hExprOccurs =>
+      unfold Stmt.elaborate at hElab
+      simp [StateT.run_bind, StateT.run_map] at hElab
+      cases hValue : (Expr.elaborate value).run state with
+      | error err =>
+          simp [hValue] at hElab
+      | ok valueResult =>
+          rcases valueResult with ⟨frontValue, valueState⟩
+          rcases
+            Expr.elaborate_source_user_call_occurrence
+              hExprOccurs hNameOk hLookup hScopes hValue with
+            ⟨args', hOccurrence⟩
+          simp [hValue] at hElab
+          cases hDeclare :
+              (declareIdentifiers names "variable").run valueState with
+          | error err =>
+              simp [hDeclare] at hElab
+          | ok declareResult =>
+              rcases declareResult with ⟨_, declaredState⟩
+              simp [hDeclare] at hElab
+              rcases hElab with ⟨hFront, _hState⟩
+              rw [← hFront]
+              exact
+                ⟨args',
+                  FrontendOccurrence.StmtIncomingUserCall.letValue
+                    hOccurrence⟩
+  | @assignmentValue names value name args hExprOccurs =>
+      unfold Stmt.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hVisible :
+          (requireIdentifiersVisible names "assignment").run state with
+      | error err =>
+          simp [hVisible] at hElab
+      | ok visibleResult =>
+          rcases visibleResult with ⟨_, visibleState⟩
+          have hVisibleScopes :
+              visibleState.functionScopes = scope :: outer := by
+            rw [requireIdentifiersVisible_preserves_functionScopes
+              names "assignment" hVisible, hScopes]
+          simp [hVisible] at hElab
+          cases hValue : (Expr.elaborate value).run visibleState with
+          | error err =>
+              simp [hValue] at hElab
+          | ok valueResult =>
+              rcases valueResult with ⟨frontValue, valueState⟩
+              rcases
+                Expr.elaborate_source_user_call_occurrence
+                  hExprOccurs hNameOk hLookup hVisibleScopes hValue with
+                ⟨args', hOccurrence⟩
+              simp [hValue] at hElab
+              rcases hElab with ⟨hFront, _hState⟩
+              rw [← hFront]
+              exact
+                ⟨args',
+                  FrontendOccurrence.StmtIncomingUserCall.assignmentValue
+                    hOccurrence⟩
+  | @expressionStatement expr name args hExprOccurs =>
+      unfold Stmt.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hExpr : (Expr.elaborate expr).run state with
+      | error err =>
+          simp [hExpr] at hElab
+      | ok exprResult =>
+          rcases exprResult with ⟨frontExpr, exprState⟩
+          rcases
+            Expr.elaborate_source_user_call_occurrence
+              hExprOccurs hNameOk hLookup hScopes hExpr with
+            ⟨args', hOccurrence⟩
+          simp [hExpr] at hElab
+          rcases hElab with ⟨hFront, _hState⟩
+          rw [← hFront]
+          exact
+            ⟨args',
+              FrontendOccurrence.StmtIncomingUserCall.expressionStatement
+                hOccurrence⟩
+  | @switchScrutinee scrutinee cases default name args hExprOccurs =>
+      unfold Stmt.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hScrutinee : (Expr.elaborate scrutinee).run state with
+      | error err =>
+          simp [hScrutinee] at hElab
+      | ok scrutineeResult =>
+          rcases scrutineeResult with ⟨frontScrutinee, scrutineeState⟩
+          rcases
+            Expr.elaborate_source_user_call_occurrence
+              hExprOccurs hNameOk hLookup hScopes hScrutinee with
+            ⟨args', hOccurrence⟩
+          simp [hScrutinee] at hElab
+          cases hCases : (Stmt.CaseList.elaborate cases).run
+              scrutineeState with
+          | error err =>
+              simp [hCases] at hElab
+          | ok casesResult =>
+              rcases casesResult with ⟨frontCases, casesState⟩
+              simp [hCases] at hElab
+              cases hDefault :
+                  (Stmt.List.elaborateBlock default true).run casesState with
+              | error err =>
+                  simp [hDefault] at hElab
+              | ok defaultResult =>
+                  rcases defaultResult with ⟨frontDefault, defaultState⟩
+                  simp [hDefault] at hElab
+                  rcases hElab with ⟨hFront, _hState⟩
+                  rw [← hFront]
+                  exact
+                    ⟨args',
+                      FrontendOccurrence.StmtIncomingUserCall.switchScrutinee
+                        hOccurrence⟩
+  | @ifCondition condition body name args hExprOccurs =>
+      unfold Stmt.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hCondition : (Expr.elaborate condition).run state with
+      | error err =>
+          simp [hCondition] at hElab
+      | ok conditionResult =>
+          rcases conditionResult with ⟨frontCondition, conditionState⟩
+          rcases
+            Expr.elaborate_source_user_call_occurrence
+              hExprOccurs hNameOk hLookup hScopes hCondition with
+            ⟨args', hOccurrence⟩
+          simp [hCondition] at hElab
+          cases hBody :
+              (Stmt.List.elaborateBlock body true).run conditionState with
+          | error err =>
+              simp [hBody] at hElab
+          | ok bodyResult =>
+              rcases bodyResult with ⟨frontBody, bodyState⟩
+              simp [hBody] at hElab
+              rcases hElab with ⟨hFront, _hState⟩
+              rw [← hFront]
+              exact
+                ⟨args',
+                  FrontendOccurrence.StmtIncomingUserCall.ifCondition
+                    hOccurrence⟩
 
 end Stmt
 
