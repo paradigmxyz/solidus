@@ -82,6 +82,13 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_frontendValidated
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_sourceLocalFunction_noShadow_function_entries
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.ResolvedLocalCall
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.objectBuiltinNameArg?_none
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.not_lit
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.not_stringLit
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.not_bytesLit
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.not_var
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.resolveObjectBuiltinsIn?_here
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.resolveObjectBuiltinsIn?_nonObjectBuiltin_call
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.UserCall
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.UserCall.headArg
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.UserCall.direct_or_arg_split
@@ -594,6 +601,13 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_hoistedFunctionsRetained
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_frontendValidated
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_sourceLocalFunction_noShadow_function_entries
+#print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.objectBuiltinNameArg?_none
+#print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.not_lit
+#print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.not_stringLit
+#print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.not_bytesLit
+#print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.not_var
+#print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.resolveObjectBuiltinsIn?_here
+#print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.resolveObjectBuiltinsIn?_nonObjectBuiltin_call
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowStmtCall.toStmtCall
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowStmtListCall.toStmtListCall
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowCaseListCall.toCaseListCall

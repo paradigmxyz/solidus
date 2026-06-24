@@ -973,6 +973,108 @@ theorem headArg
     UserCall (.call kind callee (arg :: args)) generated generatedArgs :=
   .arg (by simp) hArg
 
+theorem objectBuiltinNameArg?_none
+    {expr : Frontend.Expr} {generated : Name}
+    {args : List Frontend.Expr}
+    (hOccurrence : UserCall expr generated args) :
+    Frontend.Expr.objectBuiltinNameArg? expr = none := by
+  cases hOccurrence <;> rfl
+
+theorem not_lit
+    {value : Frontend.Word} {generated : Name}
+    {args : List Frontend.Expr} :
+    ¬ UserCall (.lit value) generated args := by
+  intro hOccurrence
+  cases hOccurrence
+
+theorem not_stringLit
+    {value : String} {generated : Name}
+    {args : List Frontend.Expr} :
+    ¬ UserCall (.stringLit value) generated args := by
+  intro hOccurrence
+  cases hOccurrence
+
+theorem not_bytesLit
+    {bytes : List UInt8} {generated : Name}
+    {args : List Frontend.Expr} :
+    ¬ UserCall (.bytesLit bytes) generated args := by
+  intro hOccurrence
+  cases hOccurrence
+
+theorem not_var
+    {name : Name} {generated : Name}
+    {args : List Frontend.Expr} :
+    ¬ UserCall (.var name) generated args := by
+  intro hOccurrence
+  cases hOccurrence
+
+theorem resolveObjectBuiltinsIn?_here
+    {generated : Name} {args : List Frontend.Expr}
+    {context : Frontend.ObjectBuiltinContext} {expr' : Frontend.Expr}
+    (hResolve :
+      (Frontend.Expr.call .user generated args).resolveObjectBuiltinsIn?
+          context =
+        some expr') :
+    ∃ args',
+      Frontend.Expr.List.resolveObjectBuiltinsIn? args context = some args' ∧
+        expr' = .call .user generated args' ∧
+          UserCall expr' generated args' := by
+  unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+  cases hArgs :
+      Frontend.Expr.List.resolveObjectBuiltinsIn? args context with
+  | none =>
+      simp [hArgs] at hResolve
+  | some args' =>
+      simp [hArgs] at hResolve
+      cases hResolve
+      exact ⟨args', by simpa using hArgs, rfl, UserCall.here⟩
+
+theorem resolveObjectBuiltinsIn?_nonObjectBuiltin_call
+    {kind : Frontend.CallKind} {callee : Name}
+    {args : List Frontend.Expr}
+    {context : Frontend.ObjectBuiltinContext} {expr' : Frontend.Expr}
+    (hKind : kind ≠ .objectBuiltin)
+    (hResolve :
+      (Frontend.Expr.call kind callee args).resolveObjectBuiltinsIn?
+          context =
+        some expr') :
+    ∃ args',
+      Frontend.Expr.List.resolveObjectBuiltinsIn? args context = some args' ∧
+        expr' = .call kind callee args' := by
+  cases kind with
+  | primitive =>
+      unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+      cases hArgs :
+          Frontend.Expr.List.resolveObjectBuiltinsIn? args context with
+      | none =>
+          simp [hArgs] at hResolve
+      | some args' =>
+          simp [hArgs] at hResolve
+          cases hResolve
+          exact ⟨args', by simpa using hArgs, rfl⟩
+  | user =>
+      unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+      cases hArgs :
+          Frontend.Expr.List.resolveObjectBuiltinsIn? args context with
+      | none =>
+          simp [hArgs] at hResolve
+      | some args' =>
+          simp [hArgs] at hResolve
+          cases hResolve
+          exact ⟨args', by simpa using hArgs, rfl⟩
+  | objectBuiltin =>
+      exact False.elim (hKind rfl)
+  | dialectBuiltin =>
+      unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+      cases hArgs :
+          Frontend.Expr.List.resolveObjectBuiltinsIn? args context with
+      | none =>
+          simp [hArgs] at hResolve
+      | some args' =>
+          simp [hArgs] at hResolve
+          cases hResolve
+          exact ⟨args', by simpa using hArgs, rfl⟩
+
 end UserCall
 
 /-- Generated frontend user-call occurrence in a statement expression field. -/
