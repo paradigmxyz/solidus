@@ -252,7 +252,11 @@ Next raw frontend layer:
   Successful `FunctionDef.elaborate` now also realizes source local-function
   declarations in the raw function body as generated hoisted callee entries in
   the final elaborator state, without exposing the block's internal scope
-  construction witnesses.
+  construction witnesses. The top-level raw-code elaborator loop is now a
+  structural helper with preservation/source-local-entry theorems, and raw
+  object elaboration carries source local-function declarations through the
+  returned frontend function table to the ordered Yul function-entry list
+  consumed by the backend.
   Successful
   ordered-Yul conversion now also
   exposes a checked

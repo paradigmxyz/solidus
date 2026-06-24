@@ -136,7 +136,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.lookupFunctionInScope_cons_self
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.resolveFunctionIn_cons_scope_self
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_single_functionDefinition_preserves_body_entry
+#check EvmCompiler.Solidity.RawAst.Elab.elaborateTopLevel_preserves_hoistedFunction_mem
+#check EvmCompiler.Solidity.RawAst.Elab.elaborateTopLevel_sourceLocalFunction_entry
+#check EvmCompiler.Solidity.RawAst.Elab.elaborateCodeAction_sourceLocalFunction_entry
+#check EvmCompiler.Solidity.RawAst.Elab.elaborateCodeCore_sourceLocalFunction_entry
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_parts
+#check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_sourceLocalFunction_entry
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_mem
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_shape
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_spec
@@ -144,6 +149,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_toYul?_some
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
 #check EvmCompiler.Solidity.RawAst.Raw.Object.clzHelperNamesDistinct?_arg_ne
+#check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_sourceLocalFunction_entry
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzExpansionOk
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzHelperSpecOk
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_hoistedFunctionsRetained
@@ -156,6 +162,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelper_exec_ret_eq_run
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelperCall_eq_clzModel
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelperCall_eq_reference
+#check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_sourceLocalFunction_ordered_entry
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_parts
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_parts
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_objectParts
@@ -336,7 +343,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.lookupFunctionInScope_cons_self
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.resolveFunctionIn_cons_scope_self
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_single_functionDefinition_preserves_body_entry
+#print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateTopLevel_preserves_hoistedFunction_mem
+#print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateTopLevel_sourceLocalFunction_entry
+#print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCodeAction_sourceLocalFunction_entry
+#print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCodeCore_sourceLocalFunction_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_parts
+#print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_sourceLocalFunction_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_shape
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_spec
@@ -344,6 +356,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_clzHelper_toYul?_some
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.clzHelperNamesDistinct?_arg_ne
+#print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_sourceLocalFunction_entry
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzExpansionOk
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzHelperSpecOk
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_hoistedFunctionsRetained
@@ -356,6 +369,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelper_exec_ret_eq_run
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelperCall_eq_clzModel
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_clzHelperCall_eq_reference
+#print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_sourceLocalFunction_ordered_entry
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_objectParts
