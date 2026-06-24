@@ -335,6 +335,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecodeFinished
 #check EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecode_sourceLocalFunction_noShadow
 #check EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecodeFinished_sourceLocalFunction_noShadow
+#check EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecode_sourceLocalFunction_noShadow_bodyRouteEvidence
 #check EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_call_succ_of_local_body
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence
 #check EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_yulEvidence
@@ -822,6 +823,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecodeFinished
 #print axioms EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecode_sourceLocalFunction_noShadow
 #print axioms EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecodeFinished_sourceLocalFunction_noShadow
+#print axioms EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecode_sourceLocalFunction_noShadow_bodyRouteEvidence
 #print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_call_succ_of_local_body
 #print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_yulEvidence
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.call_succ

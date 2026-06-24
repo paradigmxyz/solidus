@@ -6125,6 +6125,86 @@ theorem alphaRenamedLocalCallPreserved_bodyRouteEvidence
     AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence.ofYulEvidence
       hEvidence
 
+/-- Raw-solc finite-prefix theorem with internally derived body-route evidence
+for a source-local nested call.
+
+The generated callee name, lowered arguments, and lowerable/stub body route are
+kept inside `BodyRouteEvidence`. Consumers only provide the ordinary checked
+ordered-Yul conversion of the decoded frontend object when they need to open
+the route for a semantic statement-list proof. -/
+theorem optimizedRawSolcIrToRawBytecode_sourceLocalFunction_noShadow_bodyRouteEvidence
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {sourceFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    {json : Lean.Json} {selected : SelectedIr}
+    {code : List Raw.Stmt}
+    {topName : Frontend.Name} {topParams topReturns : List Frontend.Name}
+    {topBody : List Raw.Stmt}
+    {name : Frontend.Name} {localParams localReturns : List Frontend.Name}
+    {localBody : List Raw.Stmt} {args : List Raw.Expr}
+    (hCompile :
+      compileArtifactFromRawSolcIr? rawJson selection = some artifact)
+    (hParse : Lean.Json.parse rawJson = .ok json)
+    (hSelected : decodeSelectedIr json selection = .ok selected)
+    (hCode : selected.root.code? = some code)
+    (hTop :
+      .functionDefinition topName topParams topReturns topBody ∈ code)
+    (hLocal :
+      Raw.Source.LocalFunction topBody
+        name localParams localReturns localBody)
+    (hOccurs : Raw.Source.NoShadowStmtListCall topBody name args) :
+    ∃ (program : Frontend.Program)
+        (linkerSymbols : List (Frontend.Name × Frontend.Word))
+        (structuredFuel : Nat),
+      decodeAndElaborateSolcIr? rawJson selection = some program ∧
+        decodeLinkerSymbols? rawJson selection = some linkerSymbols ∧
+        program.compileArtifactWithLinkerSymbols? linkerSymbols =
+          some artifact ∧
+        Frontend.Object.VerifiedStackObjectArtifact.ValidFor
+          linkerSymbols program.object artifact ∧
+        (∀ {ordered : Yul.OrderedProgram},
+          program.object.toSolcYulOrderedProgram? = some ordered →
+            Nonempty
+              (AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence
+                program.object ordered topName)) ∧
+        Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated
+          (Compiler.OpenInteractionComposition.VerifiedStackObjectPrefixDoneRel
+            artifact)
+          (Yul.InteractionSemantics.exec (sourceFuel + 1)
+            (.Block
+              [artifact.codeArtifact.ordered.program.contract.dispatcher])
+            (some artifact.codeArtifact.ordered.program.contract)
+            (Yul.EndToEnd.installedSourceState artifact baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (Yul.EndToEnd.initialExpressionsState artifact baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  rcases compileArtifactFromRawSolcIr?_sourceLocalFunction_noShadow_alphaPreserved
+      hCompile hParse hSelected hCode hTop hLocal hOccurs with
+    ⟨program, linkerSymbols, hDecode, hLinker, hProgramCompile,
+      hValid, hAlpha⟩
+  rcases optimizedRawSolcIrToRawBytecode
+      (sourceFuel := sourceFuel) (baseSource := baseSource) hCompile with
+    ⟨structuredFuel, hAccepted, hForward⟩
+  refine
+    ⟨program, linkerSymbols, structuredFuel, hDecode, hLinker,
+      hProgramCompile, hValid, ?_, hAccepted, hForward⟩
+  intro ordered hConvert
+  exact
+    alphaRenamedLocalCallPreserved_bodyRouteEvidence
+      hAlpha hConvert
+
 /-- Semantic call corollary that also exposes the concrete generated Yul call
 occurrence route.
 
