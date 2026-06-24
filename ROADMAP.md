@@ -439,6 +439,13 @@ Next raw frontend layer:
   `evalValues`/single-value `eval` facts for one focused generated-call
   argument, plus assignment/declaration/expression-statement execution for
   those outer calls and their `if`/`switch` control-statement execution.
+  `GeneratedCallRun` now packages the dynamic argument evaluation, generated
+  callee-body execution, return/revive/store state, return values, and
+  generated-call `evalValues`/`eval` facts. `DirectIncomingStmtRun` is the
+  first consolidated statement interface: one generic `exec` theorem and one
+  generic split/prefix `execSeq` theorem cover direct assignment/declaration,
+  expression-statement, `if`, and `switch` contexts without adding more
+  bespoke direct-case siblings.
   `YulOccurrence.UserCall.direct_or_arg_split` now separates a lowered
   expression occurrence into either the direct generated call or an outer call
   with the recursive occurrence isolated inside its argument list, matching

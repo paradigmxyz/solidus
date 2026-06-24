@@ -338,6 +338,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.call_succ
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.evalValues_succ
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.eval_succ
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.GeneratedCallRun
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.generatedCallRun_of_parts
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.DirectIncomingStmtRun
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.DirectIncomingStmtRun.exec
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.DirectIncomingStmtRun.execSeq_prefix
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.DirectIncomingStmtRun.execSeq_of_split
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.assign_succ
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.let_succ
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.exprStmt_succ
@@ -732,6 +738,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.call_succ
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.evalValues_succ
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.eval_succ
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.generatedCallRun_of_parts
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.DirectIncomingStmtRun.exec
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.DirectIncomingStmtRun.execSeq_prefix
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.DirectIncomingStmtRun.execSeq_of_split
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.assign_succ
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.let_succ
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.exprStmt_succ

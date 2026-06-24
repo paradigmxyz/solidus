@@ -511,6 +511,365 @@ theorem eval_succ
     hEvidence.call_succ model prim hBody
   exact Yul.Source.Effectful.eval_function_of_parts model prim hArgs hCall
 
+/-- Runtime semantics for one focused generated local-call occurrence.
+
+The static `AlphaRenamedLocalCallYulEvidence` identifies the generated callee
+and lowered Yul arguments.  This structure packages the dynamic part shared by
+all statement contexts: Yul argument evaluation, generated callee-body
+execution, revived/store-restored return state, return values, and the
+resulting `evalValues`/single-value `eval` facts for the generated call
+expression. -/
+structure GeneratedCallRun
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    (bodyFuel : Nat)
+    (state : σ) where
+  stateAfterArgs : σ
+  stateAfterBody : σ
+  reversedValues : List Frontend.Word
+  hArgs :
+    Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+        hEvidence.yulArgs.reverse
+        (some ordered.program.contract) state =
+      .ok (stateAfterArgs, reversedValues)
+  hBody :
+    Yul.Source.Effectful.exec model prim bodyFuel
+        (.Block hEvidence.localYulBody)
+        (some ordered.program.contract)
+        (model.withSource stateAfterArgs
+          (EvmYul.Yul.State.mkOk
+            ((model.source stateAfterArgs).initcall
+              hEvidence.localFn.params hEvidence.localFn.returns
+              reversedValues.reverse))) =
+      .ok stateAfterBody
+  postState : σ
+  returns : List Frontend.Word
+  postState_eq :
+    postState =
+      model.withSource stateAfterBody
+        (((model.source stateAfterBody).reviveJump.overwrite?
+            (model.source stateAfterArgs)).setStore
+              (model.source stateAfterArgs))
+  returns_eq :
+    returns =
+      List.map (model.source stateAfterBody).lookup!
+        hEvidence.localFn.returns
+  hEvalValues :
+    Yul.Source.Effectful.evalValues model prim (bodyFuel + 2)
+        (.Call (.inr hEvidence.generated) hEvidence.yulArgs)
+        (some ordered.program.contract) state =
+      .ok (postState, returns)
+  hEval :
+    Yul.Source.Effectful.eval model prim (bodyFuel + 2)
+        (.Call (.inr hEvidence.generated) hEvidence.yulArgs)
+        (some ordered.program.contract) state =
+      .ok (postState, returns.head!)
+
+def generatedCallRun_of_parts
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat}
+    {state stateAfterArgs stateAfterBody : σ}
+    {reversedValues : List Frontend.Word}
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          hEvidence.yulArgs.reverse
+          (some ordered.program.contract) state =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hEvidence.localFn.params hEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody) :
+    GeneratedCallRun hEvidence model prim bodyFuel state := by
+  let postState :=
+    model.withSource stateAfterBody
+      (((model.source stateAfterBody).reviveJump.overwrite?
+          (model.source stateAfterArgs)).setStore
+            (model.source stateAfterArgs))
+  let returns :=
+    List.map (model.source stateAfterBody).lookup!
+      hEvidence.localFn.returns
+  refine
+    { stateAfterArgs := stateAfterArgs
+      stateAfterBody := stateAfterBody
+      reversedValues := reversedValues
+      hArgs := hArgs
+      hBody := hBody
+      postState := postState
+      returns := returns
+      postState_eq := rfl
+      returns_eq := rfl
+      hEvalValues := ?_
+      hEval := ?_ }
+  · dsimp [postState, returns]
+    exact hEvidence.evalValues_succ model prim hArgs hBody
+  · dsimp [postState, returns]
+    exact hEvidence.eval_succ model prim hArgs hBody
+
+/-- Generic execution relation for a direct incoming statement whose focused
+expression is the generated local call.
+
+This relation is deliberately statement-shaped rather than theorem-name-shaped:
+assignment, declaration, expression statement, `if`, and `switch` consume the
+same focused-call facts through the ordinary Yul semantic constructors. -/
+inductive DirectIncomingStmtRun
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    (state : σ) :
+    Nat → Frontend.AstStmt → σ → Prop where
+  | assign
+      {fuel : Nat} {names : List Frontend.Name}
+      {stateAfterValue : σ} {values : List Frontend.Word}
+      (hCheck :
+        EvmYul.Yul.checkAssignment (model.source state) names = .ok ())
+      (hValues :
+        Yul.Source.Effectful.evalValues model prim fuel
+            (.Call (.inr hEvidence.generated) hEvidence.yulArgs)
+            (some ordered.program.contract) state =
+          .ok (stateAfterValue, values)) :
+      DirectIncomingStmtRun hEvidence model prim state (fuel + 1)
+        (.Assign names
+          (.Call (.inr hEvidence.generated) hEvidence.yulArgs))
+        (model.multifill names stateAfterValue values)
+  | letValue
+      {fuel : Nat} {names : List Frontend.Name}
+      {stateAfterValue : σ} {values : List Frontend.Word}
+      (hCheck :
+        EvmYul.Yul.checkDeclaration (model.source state) names = .ok ())
+      (hValues :
+        Yul.Source.Effectful.evalValues model prim fuel
+            (.Call (.inr hEvidence.generated) hEvidence.yulArgs)
+            (some ordered.program.contract) state =
+          .ok (stateAfterValue, values)) :
+      DirectIncomingStmtRun hEvidence model prim state (fuel + 1)
+        (.Let names
+          (some (.Call (.inr hEvidence.generated) hEvidence.yulArgs)))
+        (model.multifill names stateAfterValue values)
+  | exprStmt
+      {fuel : Nat}
+      {stateAfterArgs final : σ}
+      {reversedValues values : List Frontend.Word}
+      (hArgs :
+        Yul.Source.Effectful.evalArgs model prim (fuel + 1)
+            hEvidence.yulArgs.reverse
+            (some ordered.program.contract) state =
+          .ok (stateAfterArgs, reversedValues))
+      (hCall :
+        Yul.Source.Effectful.call model prim fuel
+            reversedValues.reverse
+            (some hEvidence.generated)
+            (some ordered.program.contract) stateAfterArgs =
+          .ok (final, values)) :
+      DirectIncomingStmtRun hEvidence model prim state (fuel + 2)
+        (.ExprStmtCall
+          (.Call (.inr hEvidence.generated) hEvidence.yulArgs))
+        (model.multifill [] final values)
+  | ifFalse
+      {fuel : Nat} {ifBody : List Frontend.AstStmt}
+      {stateAfterCond : σ} {condValue : Frontend.Word}
+      (hEval :
+        Yul.Source.Effectful.eval model prim fuel
+            (.Call (.inr hEvidence.generated) hEvidence.yulArgs)
+            (some ordered.program.contract) state =
+          .ok (stateAfterCond, condValue))
+      (hZero : condValue = EvmYul.UInt256.ofNat 0) :
+      DirectIncomingStmtRun hEvidence model prim state (fuel + 1)
+        (.If (.Call (.inr hEvidence.generated) hEvidence.yulArgs) ifBody)
+        stateAfterCond
+  | ifTrue
+      {fuel : Nat} {ifBody : List Frontend.AstStmt}
+      {stateAfterCond final : σ} {condValue : Frontend.Word}
+      (hEval :
+        Yul.Source.Effectful.eval model prim fuel
+            (.Call (.inr hEvidence.generated) hEvidence.yulArgs)
+            (some ordered.program.contract) state =
+          .ok (stateAfterCond, condValue))
+      (hNonzero : condValue ≠ EvmYul.UInt256.ofNat 0)
+      (hIfBody :
+        Yul.Source.Effectful.exec model prim fuel
+            (.Block ifBody)
+            (some ordered.program.contract) stateAfterCond =
+          .ok final) :
+      DirectIncomingStmtRun hEvidence model prim state (fuel + 1)
+        (.If (.Call (.inr hEvidence.generated) hEvidence.yulArgs) ifBody)
+        final
+  | switch
+      {fuel : Nat}
+      {cases : List (Frontend.Word × List Frontend.AstStmt)}
+      {defaultBody : List Frontend.AstStmt}
+      {stateAfterScrutinee final : σ} {scrutineeValue : Frontend.Word}
+      (hEval :
+        Yul.Source.Effectful.eval model prim fuel
+            (.Call (.inr hEvidence.generated) hEvidence.yulArgs)
+            (some ordered.program.contract) state =
+          .ok (stateAfterScrutinee, scrutineeValue))
+      (hSelected :
+        Yul.Source.Effectful.exec model prim fuel
+            (.Block
+              (EvmYul.Yul.selectSwitchCase
+                scrutineeValue defaultBody cases))
+            (some ordered.program.contract) stateAfterScrutinee =
+          .ok final) :
+      DirectIncomingStmtRun hEvidence model prim state (fuel + 1)
+        (.Switch (.Call (.inr hEvidence.generated) hEvidence.yulArgs)
+          cases defaultBody)
+        final
+
+namespace DirectIncomingStmtRun
+
+theorem exec
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {state : σ}
+    {fuel : Nat}
+    {stmt : Frontend.AstStmt}
+    {afterStmt : σ}
+    (hRun :
+      DirectIncomingStmtRun hEvidence model prim state
+        fuel stmt afterStmt) :
+    Yul.Source.Effectful.exec model prim fuel stmt
+        (some ordered.program.contract) state =
+      .ok afterStmt := by
+  cases hRun with
+  | assign hCheck hValues =>
+      exact
+        Yul.Source.Effectful.exec_assign_of_evalValues
+          model prim hCheck hValues
+  | letValue hCheck hValues =>
+      exact
+        Yul.Source.Effectful.exec_let_some_of_evalValues
+          model prim hCheck hValues
+  | exprStmt hArgs hCall =>
+      exact
+        Yul.Source.Effectful.exec_expr_function_of_parts
+          model prim hArgs hCall
+  | ifFalse hEval hZero =>
+      exact
+        Yul.Source.Effectful.exec_if_false_of_eval
+          model prim hEval hZero
+  | ifTrue hEval hNonzero hIfBody =>
+      exact
+        Yul.Source.Effectful.exec_if_true_of_eval
+          model prim hEval hNonzero hIfBody
+  | switch hEval hSelected =>
+      exact
+        Yul.Source.Effectful.exec_switch_of_eval
+          model prim hEval hSelected
+
+theorem execSeq_prefix
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {pre rest : List Frontend.AstStmt}
+    {stmt : Frontend.AstStmt}
+    {state stateBeforeStmt afterStmt afterRest : σ}
+    {prefixShared stmtShared : EvmYul.SharedState .Yul}
+    {prefixVars stmtVars : EvmYul.Yul.VarStore}
+    (hPrefix :
+      Yul.Source.Effectful.execSeq model prim
+          ((prefixFuel + 1) + pre.length) pre
+          (some ordered.program.contract) state =
+        .ok stateBeforeStmt)
+    (hPrefixSource :
+      model.source stateBeforeStmt = .Ok prefixShared prefixVars)
+    (hStmt :
+      DirectIncomingStmtRun hEvidence model prim stateBeforeStmt
+        prefixFuel stmt afterStmt)
+    (hStmtSource :
+      model.source afterStmt = .Ok stmtShared stmtVars)
+    (hRest :
+      Yul.Source.Effectful.execSeq model prim prefixFuel rest
+          (some ordered.program.contract) afterStmt =
+        .ok afterRest) :
+    Yul.Source.Effectful.execSeq model prim
+        ((prefixFuel + 1) + pre.length) (pre ++ stmt :: rest)
+        (some ordered.program.contract) state =
+      .ok afterRest := by
+  have hSuffix :
+      Yul.Source.Effectful.execSeq model prim (prefixFuel + 1)
+          (stmt :: rest)
+          (some ordered.program.contract) stateBeforeStmt =
+        .ok afterRest :=
+    Yul.Source.Effectful.execSeq_cons_of_regular
+      model prim hStmt.exec hStmtSource hRest
+  exact
+    Yul.Source.Effectful.execSeq_append_of_regular_prefix
+      model prim
+      (fuel := prefixFuel + 1) (pre := pre)
+      (suffix := stmt :: rest)
+      hPrefix hPrefixSource hSuffix
+
+theorem execSeq_of_split
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {stmts pre rest : List Frontend.AstStmt}
+    {stmt : Frontend.AstStmt}
+    {state stateBeforeStmt afterStmt afterRest : σ}
+    {prefixShared stmtShared : EvmYul.SharedState .Yul}
+    {prefixVars stmtVars : EvmYul.Yul.VarStore}
+    (hSplit : stmts = pre ++ stmt :: rest)
+    (hPrefix :
+      Yul.Source.Effectful.execSeq model prim
+          ((prefixFuel + 1) + pre.length) pre
+          (some ordered.program.contract) state =
+        .ok stateBeforeStmt)
+    (hPrefixSource :
+      model.source stateBeforeStmt = .Ok prefixShared prefixVars)
+    (hStmt :
+      DirectIncomingStmtRun hEvidence model prim stateBeforeStmt
+        prefixFuel stmt afterStmt)
+    (hStmtSource :
+      model.source afterStmt = .Ok stmtShared stmtVars)
+    (hRest :
+      Yul.Source.Effectful.execSeq model prim prefixFuel rest
+          (some ordered.program.contract) afterStmt =
+        .ok afterRest) :
+    Yul.Source.Effectful.execSeq model prim
+        ((prefixFuel + 1) + pre.length) stmts
+        (some ordered.program.contract) state =
+      .ok afterRest := by
+  subst stmts
+  exact execSeq_prefix hPrefix hPrefixSource hStmt hStmtSource hRest
+
+end DirectIncomingStmtRun
+
 /-- Direct assignment statement execution for a generated alpha-renamed call
 from the bundled Yul evidence. -/
 theorem assign_succ
