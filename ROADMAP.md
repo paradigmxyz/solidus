@@ -326,7 +326,16 @@ Next raw frontend layer:
   and
   `Elab.FunctionDef.elaborate_noShadow_resolved_source_stmt_list_call`,
   including block/function/switch/for/if bodies and shadow-aware post/body
-  composition.
+  composition. Source-local block composition now also combines these
+  recursive occurrence facts with local-function scope construction and hoist
+  retention:
+  `Elab.Stmt.List.sourceLocalFunction_elaborateBlock_false_noShadow_stmtUserCall_entry`,
+  `Elab.Stmt.List.sourceLocalFunction_elaborateBlock_true_noShadow_stmtUserCall_entry`,
+  and
+  `Elab.Stmt.List.sourceLocalFunction_elaborateForInitBlockWithScope_noShadow_stmtUserCall_entry`
+  prove that a block declaring the source local function and containing a
+  resolver-safe recursive call elaborates to the generated frontend user-call
+  occurrence while retaining the generated callee entry.
   Successful `FunctionDef.elaborate` now also realizes source local-function
   declarations in the raw function body as generated hoisted callee entries in
   the final elaborator state, without exposing the block's internal scope
