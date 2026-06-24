@@ -381,11 +381,16 @@ Next raw frontend layer:
   Yul function entries consumed by the backend, and
   `AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_callable_entries`
   proves those same entries populate the ordered program's function map, which
-  is the lookup used by `Yul.InteractionSemantics.call`.
+  is the lookup used by `Yul.InteractionSemantics.call`. The end-to-end layer
+  now also has
+  `alphaRenamedLocalCallPreserved_call_succ_of_local_body`, a semantic
+  corollary showing that, once the generated callee body executes from the
+  initialized call frame, the generic Yul call rule returns exactly through
+  that generated callee body.
   The remaining raw frontend semantic gap is source-level preservation for
-  alpha-renamed nested-function call execution/observation, beyond this
-  resolution-preservation relation, and broader composition into the final
-  source theorem.
+  alpha-renamed nested-function call execution/observation in caller context,
+  including source argument evaluation and caller writeback, and broader
+  composition into the final source theorem.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose

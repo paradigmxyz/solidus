@@ -209,6 +209,79 @@ theorem optimizedRawSolcIrToRawBytecode_sourceLocalFunction_noShadow_alphaPreser
     ⟨program, linkerSymbols, structuredFuel, hDecode, hLinker,
       hProgramCompile, hValid, hAlpha, hAccepted, hForward⟩
 
+/-- Semantic call corollary for an alpha-preserved raw local call.
+
+Once frontend ordered-Yul conversion has populated the active contract's
+function map with the generated local callee, the generic Yul call semantics
+uses that exact callee body.  This is the first source-local-call bridge to the
+interpreter rule itself; the surrounding same-observation theorem still needs
+the caller context and source argument evaluation relation. -/
+theorem alphaRenamedLocalCallPreserved_call_succ_of_local_body
+    {topBody : List Raw.Stmt}
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName name : Frontend.Name}
+    {localParams localReturns : List Frontend.Name}
+    {localBody : List Raw.Stmt}
+    {args : List Raw.Expr}
+    (hAlpha :
+      Raw.Source.AlphaRenamedLocalCallPreserved
+        topBody object.functions topName name
+          localParams localReturns localBody args)
+    (hConvert :
+      object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (generated : Frontend.Name)
+        (localFn : Frontend.FunctionDef)
+        (frontArgs : List Frontend.Expr)
+        (topFn : Frontend.FunctionDef)
+        (topYulBody localYulBody : List Frontend.AstStmt),
+      (topName, topFn) ∈ object.functions ∧
+        FrontendOccurrence.StmtListUserCall
+          topFn.body generated frontArgs ∧
+        (generated, localFn) ∈ object.functions ∧
+        Frontend.Stmt.List.toYul? topFn.body = some topYulBody ∧
+        Frontend.Stmt.List.toYul? localFn.body = some localYulBody ∧
+        ordered.program.contract.functions.lookup generated =
+          some
+            (EvmYul.Yul.Ast.FunctionDefinition.Def
+              localFn.params localFn.returns localYulBody) ∧
+        ∀ {σ : Type}
+          (model : Yul.Source.Effectful.StateModel σ)
+          (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+          {fuel : Nat} {callArgs : List Frontend.Word}
+          {state stateAfterBody : σ},
+          Yul.Source.Effectful.exec model prim fuel
+              (.Block localYulBody)
+              (some ordered.program.contract)
+              (model.withSource state
+                (EvmYul.Yul.State.mkOk
+                  ((model.source state).initcall
+                    localFn.params localFn.returns callArgs))) =
+            .ok stateAfterBody →
+          Yul.Source.Effectful.call model prim (fuel + 1)
+              callArgs (some generated)
+              (some ordered.program.contract) state =
+            .ok
+              (model.withSource stateAfterBody
+                  (((model.source stateAfterBody).reviveJump.overwrite?
+                      (model.source state)).setStore (model.source state)),
+                List.map (model.source stateAfterBody).lookup!
+                  localFn.returns) := by
+  rcases
+      Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_callable_entries
+        hAlpha hConvert with
+    ⟨generated, localFn, frontArgs, topFn, topYulBody, localYulBody,
+      hTopMem, hOccurrence, hCalleeMem, hTopYul, hLocalYul,
+      _hTopLookup, hCalleeLookup⟩
+  refine
+    ⟨generated, localFn, frontArgs, topFn, topYulBody, localYulBody,
+      hTopMem, hOccurrence, hCalleeMem, hTopYul, hLocalYul,
+      hCalleeLookup, ?_⟩
+  intro σ model prim fuel callArgs state stateAfterBody hBody
+  exact
+    Yul.Source.Effectful.call_succ_of_explicit_parts
+      model prim hCalleeLookup hBody
+
 /-- Finished-source corollary for the raw-solc theorem. This retains the
 unconditional theorem as primary; the source-finished premise is only used to
 upgrade finite-prefix preservation to a full open-world relation. -/
