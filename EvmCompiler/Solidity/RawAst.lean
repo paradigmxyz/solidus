@@ -1193,6 +1193,97 @@ inductive StmtIncomingUserCall :
       UserCall condition generated args →
         StmtIncomingUserCall (.If condition body) generated args
 
+namespace StmtIncomingUserCall
+
+/-- Incoming statement expression field whose occurrence is exactly the
+generated call. -/
+inductive Direct : Frontend.AstStmt → Name → List Frontend.AstExpr → Prop where
+  | letValue {names generated args} :
+      Direct (.Let names (some (.Call (.inr generated) args))) generated args
+  | assignmentValue {names generated args} :
+      Direct (.Assign names (.Call (.inr generated) args)) generated args
+  | expressionStatement {generated args} :
+      Direct (.ExprStmtCall (.Call (.inr generated) args)) generated args
+  | switchScrutinee {cases default generated args} :
+      Direct (.Switch (.Call (.inr generated) args) cases default) generated args
+  | ifCondition {body generated args} :
+      Direct (.If (.Call (.inr generated) args) body) generated args
+
+/-- Incoming statement expression field whose occurrence is inside one
+surrounding call argument. The focused argument still carries the recursive
+occurrence, so deeper expression nesting remains explicit. -/
+inductive OuterArg : Frontend.AstStmt → Name → List Frontend.AstExpr → Prop where
+  | letValue {names callee left focus right generated args} :
+      UserCall focus generated args →
+        OuterArg
+          (.Let names (some (.Call callee (left ++ focus :: right))))
+          generated args
+  | assignmentValue {names callee left focus right generated args} :
+      UserCall focus generated args →
+        OuterArg
+          (.Assign names (.Call callee (left ++ focus :: right)))
+          generated args
+  | expressionStatement {callee left focus right generated args} :
+      UserCall focus generated args →
+        OuterArg
+          (.ExprStmtCall (.Call callee (left ++ focus :: right)))
+          generated args
+  | switchScrutinee
+      {callee left focus right cases default generated args} :
+      UserCall focus generated args →
+        OuterArg
+          (.Switch (.Call callee (left ++ focus :: right)) cases default)
+          generated args
+  | ifCondition {callee left focus right body generated args} :
+      UserCall focus generated args →
+        OuterArg
+          (.If (.Call callee (left ++ focus :: right)) body)
+          generated args
+
+theorem direct_or_outerArg
+    {stmt : Frontend.AstStmt} {generated : Name}
+    {args : List Frontend.AstExpr}
+    (hOccurrence : StmtIncomingUserCall stmt generated args) :
+    Direct stmt generated args ∨ OuterArg stmt generated args := by
+  cases hOccurrence with
+  | letValue hValue =>
+      rcases UserCall.direct_or_arg_split hValue with hDirect | hOuter
+      · cases hDirect
+        exact Or.inl Direct.letValue
+      · rcases hOuter with ⟨callee, left, focus, right, hEq, hFocus⟩
+        cases hEq
+        exact Or.inr (OuterArg.letValue hFocus)
+  | assignmentValue hValue =>
+      rcases UserCall.direct_or_arg_split hValue with hDirect | hOuter
+      · cases hDirect
+        exact Or.inl Direct.assignmentValue
+      · rcases hOuter with ⟨callee, left, focus, right, hEq, hFocus⟩
+        cases hEq
+        exact Or.inr (OuterArg.assignmentValue hFocus)
+  | expressionStatement hExpr =>
+      rcases UserCall.direct_or_arg_split hExpr with hDirect | hOuter
+      · cases hDirect
+        exact Or.inl Direct.expressionStatement
+      · rcases hOuter with ⟨callee, left, focus, right, hEq, hFocus⟩
+        cases hEq
+        exact Or.inr (OuterArg.expressionStatement hFocus)
+  | switchScrutinee hScrutinee =>
+      rcases UserCall.direct_or_arg_split hScrutinee with hDirect | hOuter
+      · cases hDirect
+        exact Or.inl Direct.switchScrutinee
+      · rcases hOuter with ⟨callee, left, focus, right, hEq, hFocus⟩
+        cases hEq
+        exact Or.inr (OuterArg.switchScrutinee hFocus)
+  | ifCondition hCondition =>
+      rcases UserCall.direct_or_arg_split hCondition with hDirect | hOuter
+      · cases hDirect
+        exact Or.inl Direct.ifCondition
+      · rcases hOuter with ⟨callee, left, focus, right, hEq, hFocus⟩
+        cases hEq
+        exact Or.inr (OuterArg.ifCondition hFocus)
+
+end StmtIncomingUserCall
+
 mutual
 
 /-- Recursive generated Yul user-call occurrence in a lowered statement. -/

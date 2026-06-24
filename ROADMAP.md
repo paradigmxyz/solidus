@@ -431,6 +431,9 @@ Next raw frontend layer:
   expression occurrence into either the direct generated call or an outer call
   with the recursive occurrence isolated inside its argument list, matching
   the existing `evalArgs_append_*` semantic interface.
+  `YulOccurrence.StmtIncomingUserCall.direct_or_outerArg` lifts that split to
+  statement expression fields, classifying incoming let/assign/expr/switch/if
+  occurrences while keeping deeper focused expression occurrences explicit.
   `Yul.Source.Effectful.evalArgs_split_focus_of_parts` now composes right-side
   argument evaluation, focused generated-call evaluation, and left-side
   argument evaluation for the reversed Yul argument order used by
