@@ -1696,6 +1696,35 @@ theorem occurrence
   | context hContext _ =>
       exact hContext.toStmtUserCall
 
+theorem direct_or_outerArg_or_context
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {state : σ}
+    {fuel : Nat}
+    {stmt : Frontend.AstStmt}
+    {afterStmt : σ}
+    (hRun :
+      FocusedStmtRun hEvidence model prim state
+        fuel stmt afterStmt) :
+    YulOccurrence.StmtIncomingUserCall.Direct stmt
+        hEvidence.generated hEvidence.yulArgs ∨
+      YulOccurrence.StmtIncomingUserCall.OuterArg stmt
+          hEvidence.generated hEvidence.yulArgs ∨
+        YulOccurrence.StmtUserCall.Context stmt
+          hEvidence.generated hEvidence.yulArgs := by
+  cases hRun with
+  | direct hDirect _ =>
+      exact Or.inl hDirect
+  | outer hOuter _ =>
+      exact Or.inr (Or.inl hOuter)
+  | context hContext _ =>
+      exact Or.inr (Or.inr hContext)
+
 theorem execSeq_prefix
     {object : Frontend.Object}
     {ordered : Yul.OrderedProgram}
@@ -1855,6 +1884,33 @@ theorem occurrence
     YulOccurrence.StmtListUserCall.append_right hRun.pre
       (YulOccurrence.StmtListUserCall.head hRun.hOccurrence)
 
+theorem exists_split_direct_or_outerArg_or_context
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {stmts : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      StmtListOccurrenceRun hEvidence model prim
+        prefixFuel stmts state) :
+    ∃ (pre : List Frontend.AstStmt)
+        (stmt : Frontend.AstStmt)
+        (rest : List Frontend.AstStmt),
+      stmts = pre ++ stmt :: rest ∧
+        (YulOccurrence.StmtIncomingUserCall.Direct stmt
+            hEvidence.generated hEvidence.yulArgs ∨
+          YulOccurrence.StmtIncomingUserCall.OuterArg stmt
+              hEvidence.generated hEvidence.yulArgs ∨
+            YulOccurrence.StmtUserCall.Context stmt
+              hEvidence.generated hEvidence.yulArgs) :=
+  ⟨hRun.pre, hRun.stmt, hRun.rest, hRun.hSplit,
+    hRun.hStmt.direct_or_outerArg_or_context⟩
+
 theorem execSeq
     {object : Frontend.Object}
     {ordered : Yul.OrderedProgram}
@@ -1876,6 +1932,37 @@ theorem execSeq
   FocusedStmtRun.execSeq_of_split
     hRun.hSplit hRun.hPrefix hRun.hPrefixSource hRun.hStmt
     hRun.hStmtSource hRun.hRest
+
+theorem classified_split_execSeq
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {stmts : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      StmtListOccurrenceRun hEvidence model prim
+        prefixFuel stmts state) :
+    ∃ (pre : List Frontend.AstStmt)
+        (stmt : Frontend.AstStmt)
+        (rest : List Frontend.AstStmt),
+      stmts = pre ++ stmt :: rest ∧
+        (YulOccurrence.StmtIncomingUserCall.Direct stmt
+            hEvidence.generated hEvidence.yulArgs ∨
+          YulOccurrence.StmtIncomingUserCall.OuterArg stmt
+              hEvidence.generated hEvidence.yulArgs ∨
+            YulOccurrence.StmtUserCall.Context stmt
+              hEvidence.generated hEvidence.yulArgs) ∧
+        Yul.Source.Effectful.execSeq model prim
+            ((prefixFuel + 1) + pre.length) stmts
+            (some ordered.program.contract) state =
+          .ok hRun.afterRest :=
+  ⟨hRun.pre, hRun.stmt, hRun.rest, hRun.hSplit,
+    hRun.hStmt.direct_or_outerArg_or_context, hRun.execSeq⟩
 
 def ofFocusedSplit
     {object : Frontend.Object}
