@@ -2487,6 +2487,464 @@ theorem exprStmt_outerArgFunction_succ
       (values := outputs)
       hOuterArgs' hCall
 
+/-- False-branch `if` execution for a primitive outer call containing the
+generated alpha-renamed call as one argument. -/
+theorem ifFalse_outerArgPrimitive_succ
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat} {outerPrim : EvmYul.Operation .Yul}
+    {left right : List Frontend.AstExpr}
+    {ifBody : List Frontend.AstStmt}
+    {state stateBeforeFocus stateAfterArgs stateAfterBody
+      stateAfterOuterArgs stateAfterCond : σ}
+    {rightValues leftValues reversedValues : List Frontend.Word}
+    {condValue : Frontend.Word}
+    (hRight :
+      Yul.Source.Effectful.evalArgs model prim
+          (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+          right.reverse
+          (some ordered.program.contract) state =
+        .ok (stateBeforeFocus, rightValues))
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          hEvidence.yulArgs.reverse
+          (some ordered.program.contract) stateBeforeFocus =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hEvidence.localFn.params hEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody)
+    (hLeft :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          left.reverse
+          (some ordered.program.contract)
+          (model.withSource stateAfterBody
+            (((model.source stateAfterBody).reviveJump.overwrite?
+                (model.source stateAfterArgs)).setStore
+                  (model.source stateAfterArgs))) =
+        .ok (stateAfterOuterArgs, leftValues))
+    (hPrim :
+      prim.eval (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+          stateAfterOuterArgs outerPrim
+          (rightValues ++
+            ((List.map (model.source stateAfterBody).lookup!
+              hEvidence.localFn.returns).head! :: leftValues)).reverse =
+        .ok (stateAfterCond, [condValue]))
+    (hZero : condValue = EvmYul.UInt256.ofNat 0) :
+    Yul.Source.Effectful.exec model prim
+        (((((bodyFuel + 1) + 2) + 2 * right.reverse.length) + 1) + 1)
+        (.If
+          (.Call (.inl outerPrim)
+            (left ++
+              (.Call (.inr hEvidence.generated) hEvidence.yulArgs) ::
+                right))
+          ifBody)
+        (some ordered.program.contract) state =
+      .ok stateAfterCond := by
+  have hEval :=
+    hEvidence.outerArgPrimitive_eval_succ model prim
+      hRight hArgs hBody hLeft hPrim
+  exact Yul.Source.Effectful.exec_if_false_of_eval model prim hEval hZero
+
+/-- True-branch `if` execution for a primitive outer call containing the
+generated alpha-renamed call as one argument. -/
+theorem ifTrue_outerArgPrimitive_succ
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat} {outerPrim : EvmYul.Operation .Yul}
+    {left right : List Frontend.AstExpr}
+    {ifBody : List Frontend.AstStmt}
+    {state stateBeforeFocus stateAfterArgs stateAfterBody
+      stateAfterOuterArgs stateAfterCond final : σ}
+    {rightValues leftValues reversedValues : List Frontend.Word}
+    {condValue : Frontend.Word}
+    (hRight :
+      Yul.Source.Effectful.evalArgs model prim
+          (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+          right.reverse
+          (some ordered.program.contract) state =
+        .ok (stateBeforeFocus, rightValues))
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          hEvidence.yulArgs.reverse
+          (some ordered.program.contract) stateBeforeFocus =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hEvidence.localFn.params hEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody)
+    (hLeft :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          left.reverse
+          (some ordered.program.contract)
+          (model.withSource stateAfterBody
+            (((model.source stateAfterBody).reviveJump.overwrite?
+                (model.source stateAfterArgs)).setStore
+                  (model.source stateAfterArgs))) =
+        .ok (stateAfterOuterArgs, leftValues))
+    (hPrim :
+      prim.eval (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+          stateAfterOuterArgs outerPrim
+          (rightValues ++
+            ((List.map (model.source stateAfterBody).lookup!
+              hEvidence.localFn.returns).head! :: leftValues)).reverse =
+        .ok (stateAfterCond, [condValue]))
+    (hNonzero : condValue ≠ EvmYul.UInt256.ofNat 0)
+    (hIfBody :
+      Yul.Source.Effectful.exec model prim
+          ((((bodyFuel + 1) + 2) + 2 * right.reverse.length) + 1)
+          (.Block ifBody)
+          (some ordered.program.contract) stateAfterCond =
+        .ok final) :
+    Yul.Source.Effectful.exec model prim
+        (((((bodyFuel + 1) + 2) + 2 * right.reverse.length) + 1) + 1)
+        (.If
+          (.Call (.inl outerPrim)
+            (left ++
+              (.Call (.inr hEvidence.generated) hEvidence.yulArgs) ::
+                right))
+          ifBody)
+        (some ordered.program.contract) state =
+      .ok final := by
+  have hEval :=
+    hEvidence.outerArgPrimitive_eval_succ model prim
+      hRight hArgs hBody hLeft hPrim
+  exact
+    Yul.Source.Effectful.exec_if_true_of_eval model prim hEval hNonzero
+      hIfBody
+
+/-- False-branch `if` execution for a user-function outer call containing the
+generated alpha-renamed call as one argument. -/
+theorem ifFalse_outerArgFunction_succ
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat} {functionName : Frontend.Name}
+    {left right : List Frontend.AstExpr}
+    {ifBody : List Frontend.AstStmt}
+    {state stateBeforeFocus stateAfterArgs stateAfterBody
+      stateAfterOuterArgs stateAfterCond : σ}
+    {rightValues leftValues reversedValues : List Frontend.Word}
+    {condValue : Frontend.Word}
+    (hRight :
+      Yul.Source.Effectful.evalArgs model prim
+          (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+          right.reverse
+          (some ordered.program.contract) state =
+        .ok (stateBeforeFocus, rightValues))
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          hEvidence.yulArgs.reverse
+          (some ordered.program.contract) stateBeforeFocus =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hEvidence.localFn.params hEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody)
+    (hLeft :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          left.reverse
+          (some ordered.program.contract)
+          (model.withSource stateAfterBody
+            (((model.source stateAfterBody).reviveJump.overwrite?
+                (model.source stateAfterArgs)).setStore
+                  (model.source stateAfterArgs))) =
+        .ok (stateAfterOuterArgs, leftValues))
+    (hCall :
+      Yul.Source.Effectful.call model prim
+          (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+          (rightValues ++
+            ((List.map (model.source stateAfterBody).lookup!
+              hEvidence.localFn.returns).head! :: leftValues)).reverse
+          (some functionName)
+          (some ordered.program.contract) stateAfterOuterArgs =
+        .ok (stateAfterCond, [condValue]))
+    (hZero : condValue = EvmYul.UInt256.ofNat 0) :
+    Yul.Source.Effectful.exec model prim
+        (((((bodyFuel + 1) + 2) + 2 * right.reverse.length) + 1) + 1)
+        (.If
+          (.Call (.inr functionName)
+            (left ++
+              (.Call (.inr hEvidence.generated) hEvidence.yulArgs) ::
+                right))
+          ifBody)
+        (some ordered.program.contract) state =
+      .ok stateAfterCond := by
+  have hEval :=
+    hEvidence.outerArgFunction_eval_succ model prim
+      hRight hArgs hBody hLeft hCall
+  exact Yul.Source.Effectful.exec_if_false_of_eval model prim hEval hZero
+
+/-- True-branch `if` execution for a user-function outer call containing the
+generated alpha-renamed call as one argument. -/
+theorem ifTrue_outerArgFunction_succ
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat} {functionName : Frontend.Name}
+    {left right : List Frontend.AstExpr}
+    {ifBody : List Frontend.AstStmt}
+    {state stateBeforeFocus stateAfterArgs stateAfterBody
+      stateAfterOuterArgs stateAfterCond final : σ}
+    {rightValues leftValues reversedValues : List Frontend.Word}
+    {condValue : Frontend.Word}
+    (hRight :
+      Yul.Source.Effectful.evalArgs model prim
+          (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+          right.reverse
+          (some ordered.program.contract) state =
+        .ok (stateBeforeFocus, rightValues))
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          hEvidence.yulArgs.reverse
+          (some ordered.program.contract) stateBeforeFocus =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hEvidence.localFn.params hEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody)
+    (hLeft :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          left.reverse
+          (some ordered.program.contract)
+          (model.withSource stateAfterBody
+            (((model.source stateAfterBody).reviveJump.overwrite?
+                (model.source stateAfterArgs)).setStore
+                  (model.source stateAfterArgs))) =
+        .ok (stateAfterOuterArgs, leftValues))
+    (hCall :
+      Yul.Source.Effectful.call model prim
+          (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+          (rightValues ++
+            ((List.map (model.source stateAfterBody).lookup!
+              hEvidence.localFn.returns).head! :: leftValues)).reverse
+          (some functionName)
+          (some ordered.program.contract) stateAfterOuterArgs =
+        .ok (stateAfterCond, [condValue]))
+    (hNonzero : condValue ≠ EvmYul.UInt256.ofNat 0)
+    (hIfBody :
+      Yul.Source.Effectful.exec model prim
+          ((((bodyFuel + 1) + 2) + 2 * right.reverse.length) + 1)
+          (.Block ifBody)
+          (some ordered.program.contract) stateAfterCond =
+        .ok final) :
+    Yul.Source.Effectful.exec model prim
+        (((((bodyFuel + 1) + 2) + 2 * right.reverse.length) + 1) + 1)
+        (.If
+          (.Call (.inr functionName)
+            (left ++
+              (.Call (.inr hEvidence.generated) hEvidence.yulArgs) ::
+                right))
+          ifBody)
+        (some ordered.program.contract) state =
+      .ok final := by
+  have hEval :=
+    hEvidence.outerArgFunction_eval_succ model prim
+      hRight hArgs hBody hLeft hCall
+  exact
+    Yul.Source.Effectful.exec_if_true_of_eval model prim hEval hNonzero
+      hIfBody
+
+/-- `switch` execution for a primitive outer call containing the generated
+alpha-renamed call as one argument. -/
+theorem switch_outerArgPrimitive_succ
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat} {outerPrim : EvmYul.Operation .Yul}
+    {left right : List Frontend.AstExpr}
+    {cases : List (Frontend.Word × List Frontend.AstStmt)}
+    {defaultBody : List Frontend.AstStmt}
+    {state stateBeforeFocus stateAfterArgs stateAfterBody
+      stateAfterOuterArgs stateAfterScrutinee final : σ}
+    {rightValues leftValues reversedValues : List Frontend.Word}
+    {scrutineeValue : Frontend.Word}
+    (hRight :
+      Yul.Source.Effectful.evalArgs model prim
+          (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+          right.reverse
+          (some ordered.program.contract) state =
+        .ok (stateBeforeFocus, rightValues))
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          hEvidence.yulArgs.reverse
+          (some ordered.program.contract) stateBeforeFocus =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hEvidence.localFn.params hEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody)
+    (hLeft :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          left.reverse
+          (some ordered.program.contract)
+          (model.withSource stateAfterBody
+            (((model.source stateAfterBody).reviveJump.overwrite?
+                (model.source stateAfterArgs)).setStore
+                  (model.source stateAfterArgs))) =
+        .ok (stateAfterOuterArgs, leftValues))
+    (hPrim :
+      prim.eval (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+          stateAfterOuterArgs outerPrim
+          (rightValues ++
+            ((List.map (model.source stateAfterBody).lookup!
+              hEvidence.localFn.returns).head! :: leftValues)).reverse =
+        .ok (stateAfterScrutinee, [scrutineeValue]))
+    (hSelected :
+      Yul.Source.Effectful.exec model prim
+          ((((bodyFuel + 1) + 2) + 2 * right.reverse.length) + 1)
+          (.Block
+            (EvmYul.Yul.selectSwitchCase
+              scrutineeValue defaultBody cases))
+          (some ordered.program.contract) stateAfterScrutinee =
+        .ok final) :
+    Yul.Source.Effectful.exec model prim
+        (((((bodyFuel + 1) + 2) + 2 * right.reverse.length) + 1) + 1)
+        (.Switch
+          (.Call (.inl outerPrim)
+            (left ++
+              (.Call (.inr hEvidence.generated) hEvidence.yulArgs) ::
+                right))
+          cases defaultBody)
+        (some ordered.program.contract) state =
+      .ok final := by
+  have hEval :=
+    hEvidence.outerArgPrimitive_eval_succ model prim
+      hRight hArgs hBody hLeft hPrim
+  exact Yul.Source.Effectful.exec_switch_of_eval model prim hEval hSelected
+
+/-- `switch` execution for a user-function outer call containing the generated
+alpha-renamed call as one argument. -/
+theorem switch_outerArgFunction_succ
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat} {functionName : Frontend.Name}
+    {left right : List Frontend.AstExpr}
+    {cases : List (Frontend.Word × List Frontend.AstStmt)}
+    {defaultBody : List Frontend.AstStmt}
+    {state stateBeforeFocus stateAfterArgs stateAfterBody
+      stateAfterOuterArgs stateAfterScrutinee final : σ}
+    {rightValues leftValues reversedValues : List Frontend.Word}
+    {scrutineeValue : Frontend.Word}
+    (hRight :
+      Yul.Source.Effectful.evalArgs model prim
+          (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+          right.reverse
+          (some ordered.program.contract) state =
+        .ok (stateBeforeFocus, rightValues))
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          hEvidence.yulArgs.reverse
+          (some ordered.program.contract) stateBeforeFocus =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hEvidence.localFn.params hEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody)
+    (hLeft :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          left.reverse
+          (some ordered.program.contract)
+          (model.withSource stateAfterBody
+            (((model.source stateAfterBody).reviveJump.overwrite?
+                (model.source stateAfterArgs)).setStore
+                  (model.source stateAfterArgs))) =
+        .ok (stateAfterOuterArgs, leftValues))
+    (hCall :
+      Yul.Source.Effectful.call model prim
+          (((bodyFuel + 1) + 2) + 2 * right.reverse.length)
+          (rightValues ++
+            ((List.map (model.source stateAfterBody).lookup!
+              hEvidence.localFn.returns).head! :: leftValues)).reverse
+          (some functionName)
+          (some ordered.program.contract) stateAfterOuterArgs =
+        .ok (stateAfterScrutinee, [scrutineeValue]))
+    (hSelected :
+      Yul.Source.Effectful.exec model prim
+          ((((bodyFuel + 1) + 2) + 2 * right.reverse.length) + 1)
+          (.Block
+            (EvmYul.Yul.selectSwitchCase
+              scrutineeValue defaultBody cases))
+          (some ordered.program.contract) stateAfterScrutinee =
+        .ok final) :
+    Yul.Source.Effectful.exec model prim
+        (((((bodyFuel + 1) + 2) + 2 * right.reverse.length) + 1) + 1)
+        (.Switch
+          (.Call (.inr functionName)
+            (left ++
+              (.Call (.inr hEvidence.generated) hEvidence.yulArgs) ::
+                right))
+          cases defaultBody)
+        (some ordered.program.contract) state =
+      .ok final := by
+  have hEval :=
+    hEvidence.outerArgFunction_eval_succ model prim
+      hRight hArgs hBody hLeft hCall
+  exact Yul.Source.Effectful.exec_switch_of_eval model prim hEval hSelected
+
 end AlphaRenamedLocalCallYulEvidence
 
 /-- Semantic call corollary that also exposes the concrete generated Yul call

@@ -438,7 +438,7 @@ Next raw frontend layer:
   checked bundle. It also owns the primitive and user-function outer-call
   `evalValues`/single-value `eval` facts for one focused generated-call
   argument, plus assignment/declaration/expression-statement execution for
-  those outer calls.
+  those outer calls and their `if`/`switch` control-statement execution.
   `YulOccurrence.UserCall.direct_or_arg_split` now separates a lowered
   expression occurrence into either the direct generated call or an outer call
   with the recursive occurrence isolated inside its argument list, matching
