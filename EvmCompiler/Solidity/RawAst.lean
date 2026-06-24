@@ -4461,7 +4461,118 @@ theorem sourceLocalFunction_elaborateBlock_true_elaborate_user_call_entry_failCl
       (bindingNameOk_ne_clz hNameOk) hPushScope hScope hBlock hArgs
       hArgScopes hClass
 
+theorem sourceLocalFunction_elaborateBlock_false_entry_of_run
+    {stmts : List Raw.Stmt}
+    {state finalState : State} {front : List Frontend.Stmt}
+    {name : Name} {params returns : List Name} {body : List Raw.Stmt}
+    (hLocal :
+      Raw.Source.LocalFunction stmts name params returns body)
+    (hBlock :
+      (Stmt.List.elaborateBlock stmts false).run state =
+        .ok (front, finalState)) :
+    ∃ generated fn,
+      (generated, fn) ∈ finalState.hoistedFunctions := by
+  have hBlockRun := hBlock
+  unfold Stmt.List.elaborateBlock at hBlock
+  simp [StateT.run_bind] at hBlock
+  cases hScope :
+      (Stmt.List.localFunctionScope stmts).run state with
+  | error err =>
+      simp [hScope] at hBlock
+  | ok scopeResult =>
+      rcases scopeResult with ⟨scope, scopeState⟩
+      simp [hScope] at hBlock
+      rcases sourceLocalFunction_elaborateBlock_false_entry
+          hLocal hScope hBlockRun with
+        ⟨generated, fn, hLookup, hEntry⟩
+      exact ⟨generated, fn, hEntry⟩
+
+theorem sourceLocalFunction_elaborateBlock_true_entry_of_run
+    {stmts : List Raw.Stmt}
+    {state finalState : State} {front : List Frontend.Stmt}
+    {name : Name} {params returns : List Name} {body : List Raw.Stmt}
+    (hLocal :
+      Raw.Source.LocalFunction stmts name params returns body)
+    (hBlock :
+      (Stmt.List.elaborateBlock stmts true).run state =
+        .ok (front, finalState)) :
+    ∃ generated fn,
+      (generated, fn) ∈ finalState.hoistedFunctions := by
+  have hBlockRun := hBlock
+  unfold Stmt.List.elaborateBlock at hBlock
+  simp [StateT.run_bind] at hBlock
+  cases hPush : pushIdentifierScope.run state with
+  | error err =>
+      simp [hPush] at hBlock
+  | ok pushResult =>
+      rcases pushResult with ⟨_, pushedState⟩
+      simp [hPush] at hBlock
+      cases hScope :
+          (Stmt.List.localFunctionScope stmts).run pushedState with
+      | error err =>
+          simp [hScope] at hBlock
+      | ok scopeResult =>
+          rcases scopeResult with ⟨scope, scopeState⟩
+          simp [hScope] at hBlock
+          rcases sourceLocalFunction_elaborateBlock_true_entry
+              hLocal hPush hScope hBlockRun with
+            ⟨generated, fn, hLookup, hEntry⟩
+          exact ⟨generated, fn, hEntry⟩
+
 end Stmt.List
+
+theorem FunctionDef.elaborate_sourceLocalFunction_entry
+    {params returns : List Name} {body : List Raw.Stmt}
+    {state finalState : State} {fn : Frontend.FunctionDef}
+    {name : Name} {localParams localReturns : List Name}
+    {localBody : List Raw.Stmt}
+    (hLocal :
+      Raw.Source.LocalFunction body name localParams localReturns localBody)
+    (hElab :
+      (FunctionDef.elaborate params returns body).run state =
+        .ok (fn, finalState)) :
+    ∃ generated localFn,
+      (generated, localFn) ∈ finalState.hoistedFunctions := by
+  unfold FunctionDef.elaborate at hElab
+  simp [StateT.run_bind] at hElab
+  cases hPush : pushIdentifierScope.run state with
+  | error err =>
+      simp [hPush] at hElab
+  | ok pushResult =>
+      rcases pushResult with ⟨_, pushedState⟩
+      simp [hPush] at hElab
+      cases hDeclare :
+          (declareIdentifiers (params ++ returns)
+            "function parameter/result").run pushedState with
+      | error err =>
+          simp [hDeclare] at hElab
+      | ok declareResult =>
+          rcases declareResult with ⟨_, declaredState⟩
+          simp [hDeclare] at hElab
+          cases hBlock :
+              (Stmt.List.elaborateBlock body true).run declaredState with
+          | error err =>
+              simp [hBlock] at hElab
+          | ok blockResult =>
+              rcases blockResult with ⟨front, blockState⟩
+              rcases Stmt.List.sourceLocalFunction_elaborateBlock_true_entry_of_run
+                  hLocal hBlock with
+                ⟨generated, localFn, hEntryBlock⟩
+              simp [hBlock] at hElab
+              cases hPop : popIdentifierScope.run blockState with
+              | error err =>
+                  simp [hPop] at hElab
+              | ok popResult =>
+                  rcases popResult with ⟨_, poppedState⟩
+                  have hEntryFinal :
+                      (generated, localFn) ∈
+                        poppedState.hoistedFunctions :=
+                    popIdentifierScope_preserves_hoistedFunction_mem
+                      hPop hEntryBlock
+                  simp [hPop] at hElab
+                  rcases hElab with ⟨_hFn, hFinal⟩
+                  cases hFinal
+                  exact ⟨generated, localFn, hEntryFinal⟩
 
 def collectTopFunctions : List Raw.Stmt → ElabM (List (Name × Name))
   | [] => pure []

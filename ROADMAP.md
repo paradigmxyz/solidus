@@ -249,6 +249,10 @@ Next raw frontend layer:
   expression/list argument elaboration now also preserves the active function
   scope stack, so the source-call bridge requires only the pre-argument active
   local scope and derives the post-argument resolver scope internally.
+  Successful `FunctionDef.elaborate` now also realizes source local-function
+  declarations in the raw function body as generated hoisted callee entries in
+  the final elaborator state, without exposing the block's internal scope
+  construction witnesses.
   Successful
   ordered-Yul conversion now also
   exposes a checked
