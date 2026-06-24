@@ -1,5 +1,21 @@
 # Progress Log
 
+- 2026-06-24 05:41:47 PDT - proof/raw-no-shadow-structural-body-wrappers -
+  Added checked no-shadow structural wrappers that carry incoming raw
+  statement-expression calls through recursive frontend statement positions:
+  `Elab.Stmt.elaborate_block_noShadow_resolved_source_stmt_list_call_incoming_mem`,
+  `Elab.Stmt.elaborate_ifBody_noShadow_resolved_source_stmt_list_call_incoming_mem`,
+  and
+  `Elab.Stmt.elaborate_switchDefault_noShadow_resolved_source_stmt_list_call_incoming_mem`.
+  These use the recursive `Raw.Source.StmtListCall` grammar plus the
+  resolver-stack theorem and `elaborateBlock true` no-shadow handoff, without
+  assuming that an outer source name survives a shadowing local declaration.
+  Focused validation passed so far: `lake build EvmCompiler.Solidity.RawAst`
+  and `lake build EvmCompiler.Verification`; new wrapper axiom audits report
+  `[propext, Classical.choice, Quot.sound]`. Remaining frontier: switch case
+  bodies and the full structural recursive statement/block/case theorem with
+  explicit shadow-aware resolver handoff.
+
 - 2026-06-24 05:35:15 PDT - proof/raw-recursive-statement-call-source-relation -
   Added the recursive raw source occurrence grammar
   `Raw.Source.StmtCall`, `Raw.Source.StmtListCall`, and

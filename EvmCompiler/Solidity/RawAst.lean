@@ -8191,6 +8191,157 @@ theorem elaborateBlock_true_noShadow_resolved_source_stmt_list_call_incoming_mem
 
 end Stmt.List
 
+theorem Stmt.elaborate_block_noShadow_resolved_source_stmt_list_call_incoming_mem
+    {stmts : List Raw.Stmt} {stmt : Raw.Stmt}
+    {state finalState : State} {front : Frontend.Stmt}
+    {name generated : Name} {args : List Raw.Expr}
+    (hNoShadow : Raw.Source.NoLocalFunctionNamed stmts name)
+    (hMem : stmt ∈ stmts)
+    (hOccurs :
+      Raw.Source.StmtExprCall.IncomingScope stmt name args)
+    (hNameOk : bindingNameOk? name = true)
+    (hResolve :
+      resolveFunctionIn name state.functionScopes = some generated)
+    (hElab :
+      (Stmt.elaborate (.block stmts)).run state =
+        .ok (front, finalState)) :
+    ∃ args',
+      FrontendOccurrence.StmtUserCall front generated args' := by
+  unfold Stmt.elaborate at hElab
+  simp [StateT.run_bind] at hElab
+  cases hBlock :
+      (Stmt.List.elaborateBlock stmts true).run state with
+  | error err =>
+      simp [hBlock] at hElab
+  | ok blockResult =>
+      rcases blockResult with ⟨frontStmts, blockState⟩
+      rcases
+        Stmt.List.elaborateBlock_true_noShadow_resolved_source_stmt_list_call_incoming_mem
+          hNoShadow hMem hOccurs hNameOk hResolve hBlock with
+        ⟨args', hOccurrence⟩
+      simp [hBlock] at hElab
+      rcases hElab with ⟨hFront, _hState⟩
+      rw [← hFront]
+      exact ⟨args', FrontendOccurrence.StmtUserCall.block hOccurrence⟩
+
+theorem Stmt.elaborate_ifBody_noShadow_resolved_source_stmt_list_call_incoming_mem
+    {condition : Raw.Expr} {body : List Raw.Stmt} {stmt : Raw.Stmt}
+    {state finalState : State} {front : Frontend.Stmt}
+    {name generated : Name} {args : List Raw.Expr}
+    (hNoShadow : Raw.Source.NoLocalFunctionNamed body name)
+    (hMem : stmt ∈ body)
+    (hOccurs :
+      Raw.Source.StmtExprCall.IncomingScope stmt name args)
+    (hNameOk : bindingNameOk? name = true)
+    (hResolve :
+      resolveFunctionIn name state.functionScopes = some generated)
+    (hElab :
+      (Stmt.elaborate (.ifThen condition body)).run state =
+        .ok (front, finalState)) :
+    ∃ args',
+      FrontendOccurrence.StmtUserCall front generated args' := by
+  unfold Stmt.elaborate at hElab
+  simp [StateT.run_bind] at hElab
+  cases hCondition :
+      (Expr.elaborate condition).run state with
+  | error err =>
+      simp [hCondition] at hElab
+  | ok conditionResult =>
+      rcases conditionResult with ⟨frontCondition, conditionState⟩
+      have hConditionScopes :
+          conditionState.functionScopes = state.functionScopes :=
+        Expr.elaborate_preserves_functionScopes condition hCondition
+      have hResolveBody :
+          resolveFunctionIn name conditionState.functionScopes =
+            some generated := by
+        rw [hConditionScopes]
+        exact hResolve
+      simp [hCondition] at hElab
+      cases hBody :
+          (Stmt.List.elaborateBlock body true).run conditionState with
+      | error err =>
+          simp [hBody] at hElab
+      | ok bodyResult =>
+          rcases bodyResult with ⟨frontBody, bodyState⟩
+          rcases
+            Stmt.List.elaborateBlock_true_noShadow_resolved_source_stmt_list_call_incoming_mem
+              hNoShadow hMem hOccurs hNameOk hResolveBody hBody with
+            ⟨args', hOccurrence⟩
+          simp [hBody] at hElab
+          rcases hElab with ⟨hFront, _hState⟩
+          rw [← hFront]
+          exact ⟨args', FrontendOccurrence.StmtUserCall.ifBody hOccurrence⟩
+
+theorem Stmt.elaborate_switchDefault_noShadow_resolved_source_stmt_list_call_incoming_mem
+    {scrutinee : Raw.Expr}
+    {cases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+    {defaultBody : List Raw.Stmt} {stmt : Raw.Stmt}
+    {state finalState : State} {front : Frontend.Stmt}
+    {name generated : Name} {args : List Raw.Expr}
+    (hNoShadow : Raw.Source.NoLocalFunctionNamed defaultBody name)
+    (hMem : stmt ∈ defaultBody)
+    (hOccurs :
+      Raw.Source.StmtExprCall.IncomingScope stmt name args)
+    (hNameOk : bindingNameOk? name = true)
+    (hResolve :
+      resolveFunctionIn name state.functionScopes = some generated)
+    (hElab :
+      (Stmt.elaborate (.switch scrutinee cases defaultBody)).run state =
+        .ok (front, finalState)) :
+    ∃ args',
+      FrontendOccurrence.StmtUserCall front generated args' := by
+  unfold Stmt.elaborate at hElab
+  simp [StateT.run_bind] at hElab
+  cases hScrutinee :
+      (Expr.elaborate scrutinee).run state with
+  | error err =>
+      simp [hScrutinee] at hElab
+  | ok scrutineeResult =>
+      rcases scrutineeResult with ⟨frontScrutinee, scrutineeState⟩
+      have hScrutineeScopes :
+          scrutineeState.functionScopes = state.functionScopes :=
+        Expr.elaborate_preserves_functionScopes scrutinee hScrutinee
+      have hResolveCases :
+          resolveFunctionIn name scrutineeState.functionScopes =
+            some generated := by
+        rw [hScrutineeScopes]
+        exact hResolve
+      simp [hScrutinee] at hElab
+      cases hCases :
+          (Stmt.CaseList.elaborate cases).run scrutineeState with
+      | error err =>
+          simp [hCases] at hElab
+      | ok casesResult =>
+          rcases casesResult with ⟨frontCases, casesState⟩
+          have hCasesScopes :
+              casesState.functionScopes =
+                scrutineeState.functionScopes :=
+            Stmt.CaseList.elaborate_preserves_functionScopes cases hCases
+          have hResolveDefault :
+              resolveFunctionIn name casesState.functionScopes =
+                some generated := by
+            rw [hCasesScopes]
+            exact hResolveCases
+          simp [hCases] at hElab
+          cases hDefault :
+              (Stmt.List.elaborateBlock defaultBody true).run
+                casesState with
+          | error err =>
+              simp [hDefault] at hElab
+          | ok defaultResult =>
+              rcases defaultResult with ⟨frontDefault, defaultState⟩
+              rcases
+                Stmt.List.elaborateBlock_true_noShadow_resolved_source_stmt_list_call_incoming_mem
+                  hNoShadow hMem hOccurs hNameOk hResolveDefault hDefault with
+                ⟨args', hOccurrence⟩
+              simp [hDefault] at hElab
+              rcases hElab with ⟨hFront, _hState⟩
+              rw [← hFront]
+              exact
+                ⟨args',
+                  FrontendOccurrence.StmtUserCall.switchDefault
+                    hOccurrence⟩
+
 theorem Stmt.sourceLocalFunction_forLoop_condition_stmtUserCall_entry
     {pre : List Raw.Stmt} {condition : Raw.Expr}
     {post body : List Raw.Stmt}
