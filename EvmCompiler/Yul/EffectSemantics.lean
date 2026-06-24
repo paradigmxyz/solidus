@@ -953,7 +953,7 @@ theorem exec_block_ok_parts
       final =
         model.withSource stateAfterBody
           ((model.source stateAfterBody).restrictStoreTo
-            (model.source state).store) := by
+                  (model.source state).store) := by
   cases fuel with
   | zero =>
       simp [exec, fail] at hRun
@@ -966,6 +966,26 @@ theorem exec_block_ok_parts
           simp [exec, hBody] at hRun
           subst final
           exact ⟨previous, stateAfterBody, rfl, hBody, rfl⟩
+
+/--
+Compose a successfully executed block body into the surrounding block
+statement.
+-/
+theorem exec_block_of_execSeq
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {body : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterBody : σ}
+    (hBody :
+      execSeq model prim fuel body codeOverride state =
+        .ok stateAfterBody) :
+    exec model prim (fuel + 1) (.Block body) codeOverride state =
+      .ok
+        (model.withSource stateAfterBody
+          ((model.source stateAfterBody).restrictStoreTo
+            (model.source state).store)) := by
+  simp [exec, hBody]
 
 theorem exec_if_ok_parts
     {σ : Type} (model : StateModel σ)
@@ -2340,6 +2360,117 @@ theorem execSeq_cons_of_checkpoint
         codeOverride state =
       .ok afterStmt := by
   simp [execSeq, hStmt, hSource]
+
+/--
+An out-of-fuel source statement makes the remaining source sequence
+unreachable.
+-/
+theorem execSeq_cons_of_outOfFuel
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {stmt : EvmYul.Yul.Ast.Stmt}
+    {rest : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state afterStmt : σ}
+    (hStmt :
+      exec model prim fuel stmt codeOverride state =
+        .ok afterStmt)
+    (hSource : model.source afterStmt = .OutOfFuel) :
+    execSeq model prim (fuel + 1) (stmt :: rest)
+        codeOverride state =
+      .ok afterStmt := by
+  simp [execSeq, hStmt, hSource]
+
+/--
+Compose a regularly completed head statement, the remaining source sequence,
+and the surrounding block.
+-/
+theorem exec_block_cons_of_regular
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {stmt : EvmYul.Yul.Ast.Stmt}
+    {rest : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state afterStmt afterRest : σ}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hStmt :
+      exec model prim fuel stmt codeOverride state =
+        .ok afterStmt)
+    (hSource : model.source afterStmt = .Ok shared vars)
+    (hRest :
+      execSeq model prim fuel rest codeOverride afterStmt =
+        .ok afterRest) :
+    exec model prim (fuel + 2) (.Block (stmt :: rest))
+        codeOverride state =
+      .ok
+        (model.withSource afterRest
+          ((model.source afterRest).restrictStoreTo
+            (model.source state).store)) := by
+  have hSeq :
+      execSeq model prim (fuel + 1) (stmt :: rest)
+          codeOverride state =
+        .ok afterRest :=
+    execSeq_cons_of_regular model prim hStmt hSource hRest
+  simpa [Nat.add_assoc] using
+    exec_block_of_execSeq model prim hSeq
+
+/--
+Compose an abruptly checkpointing head statement with the surrounding block.
+-/
+theorem exec_block_cons_of_checkpoint
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {stmt : EvmYul.Yul.Ast.Stmt}
+    {rest : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state afterStmt : σ}
+    {jump : EvmYul.Yul.Jump}
+    (hStmt :
+      exec model prim fuel stmt codeOverride state =
+        .ok afterStmt)
+    (hSource : model.source afterStmt = .Checkpoint jump) :
+    exec model prim (fuel + 2) (.Block (stmt :: rest))
+        codeOverride state =
+      .ok
+        (model.withSource afterStmt
+          ((model.source afterStmt).restrictStoreTo
+            (model.source state).store)) := by
+  have hSeq :
+      execSeq model prim (fuel + 1) (stmt :: rest)
+          codeOverride state =
+        .ok afterStmt :=
+    execSeq_cons_of_checkpoint model prim hStmt hSource
+  simpa [Nat.add_assoc] using
+    exec_block_of_execSeq model prim hSeq
+
+/--
+Compose an out-of-fuel head statement with the surrounding block.
+-/
+theorem exec_block_cons_of_outOfFuel
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {stmt : EvmYul.Yul.Ast.Stmt}
+    {rest : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state afterStmt : σ}
+    (hStmt :
+      exec model prim fuel stmt codeOverride state =
+        .ok afterStmt)
+    (hSource : model.source afterStmt = .OutOfFuel) :
+    exec model prim (fuel + 2) (.Block (stmt :: rest))
+        codeOverride state =
+      .ok
+        (model.withSource afterStmt
+          ((model.source afterStmt).restrictStoreTo
+            (model.source state).store)) := by
+  have hSeq :
+      execSeq model prim (fuel + 1) (stmt :: rest)
+          codeOverride state =
+        .ok afterStmt :=
+    execSeq_cons_of_outOfFuel model prim hStmt hSource
+  simpa [Nat.add_assoc] using
+    exec_block_of_execSeq model prim hSeq
 
 theorem evalArgs_append_ok_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ) :
