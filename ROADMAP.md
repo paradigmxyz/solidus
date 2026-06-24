@@ -222,8 +222,10 @@ Next raw frontend layer:
   preservation fact showing entries produced while elaborating the nested
   function body remain present after the generated entry is prepended. The
   declaration and assignment name-check loops are now structural helpers with
-  local hoisted-accumulator preservation lemmas, preparing the broader
-  recursive hoist monotonicity theorem.
+  local hoisted-accumulator preservation lemmas. Raw expression/list
+  elaboration now has checked hoisted-entry preservation, including user-call
+  resolution, `memoryguard`, and `clz` helper allocation, preparing the broader
+  recursive statement/block hoist monotonicity theorem.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call resolution, recursive tail-hoist
   accumulator preservation, and broader composition into the final source

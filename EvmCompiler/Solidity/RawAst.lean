@@ -2054,7 +2054,294 @@ theorem hoistFunctionEntry_preserves_hoistedFunction_mem
   cases hRun
   exact List.mem_cons_of_mem (generated, fn) hEntry
 
+theorem resolveFunction_preserves_hoistedFunction_mem (name : Name) :
+    PreservesHoisted (resolveFunction name) := by
+  intro state state' value entry hRun hEntry
+  unfold resolveFunction at hRun
+  simp [StateT.run_bind, StateT.run_get] at hRun
+  cases hResolve : resolveFunctionIn name state.functionScopes with
+  | none =>
+      simp [hResolve] at hRun
+      unfold EvmCompiler.Solidity.RawAst.Elab.throw at hRun
+      change (Except.error s!"unknown Yul function {name}" :
+        DecodeM (Name × State)) = .ok (value, state') at hRun
+      cases hRun
+  | some _ =>
+      simp [hResolve] at hRun
+      cases hRun
+      exact hEntry
+
+theorem freshGeneratedFunctionNameFrom_preserves_hoistedFunction_mem
+    (stem : Name) (fuel : Nat) :
+    PreservesHoisted (freshGeneratedFunctionNameFrom stem fuel) := by
+  induction fuel with
+  | zero =>
+      intro state state' value entry hRun hEntry
+      unfold freshGeneratedFunctionNameFrom at hRun
+      unfold EvmCompiler.Solidity.RawAst.Elab.throw at hRun
+      change (Except.error
+        "could not allocate fresh generated Yul function name" :
+          DecodeM (Name × State)) = .ok (value, state') at hRun
+      cases hRun
+  | succ fuel ih =>
+      intro state state' value entry hRun hEntry
+      unfold freshGeneratedFunctionNameFrom at hRun
+      simp [StateT.run_bind, StateT.run_get, StateT.run_set] at hRun
+      let candidate : Name :=
+        "__yul_gen_" ++ toString state.nextGeneratedFunctionId ++ "_" ++ stem
+      let bumpedState : State :=
+        { state with
+          nextGeneratedFunctionId := state.nextGeneratedFunctionId + 1 }
+      change StateT.run
+          (if candidate ∈ state.usedFunctionNames then
+            freshGeneratedFunctionNameFrom stem fuel
+          else
+            (fun _ => candidate) <$> set
+              { bumpedState with
+                usedFunctionNames := candidate :: state.usedFunctionNames })
+          bumpedState = .ok (value, state') at hRun
+      by_cases hContains : candidate ∈ state.usedFunctionNames
+      · simp [hContains] at hRun
+        exact ih hRun hEntry
+      · simp [hContains, StateT.run_map, StateT.run_set] at hRun
+        simp [pure, Except.pure] at hRun
+        rcases hRun with ⟨_hValue, hState⟩
+        subst state'
+        exact hEntry
+
+theorem freshGeneratedFunctionName_preserves_hoistedFunction_mem
+    (base : Name) :
+    PreservesHoisted (freshGeneratedFunctionName base) := by
+  unfold freshGeneratedFunctionName
+  exact
+    freshGeneratedFunctionNameFrom_preserves_hoistedFunction_mem
+      (generatedIdentifierPart base) maxDecodeFuel
+
+theorem freshNonFunctionBindingNameFrom_preserves_hoistedFunction_mem
+    (stem : Name) (index fuel : Nat) :
+    PreservesHoisted (freshNonFunctionBindingNameFrom stem index fuel) := by
+  induction fuel generalizing index with
+  | zero =>
+      intro state state' value entry hRun hEntry
+      unfold freshNonFunctionBindingNameFrom at hRun
+      unfold EvmCompiler.Solidity.RawAst.Elab.throw at hRun
+      change (Except.error
+        "could not allocate fresh generated Yul binding name" :
+          DecodeM (Name × State)) = .ok (value, state') at hRun
+      cases hRun
+  | succ fuel ih =>
+      intro state state' value entry hRun hEntry
+      unfold freshNonFunctionBindingNameFrom at hRun
+      simp [StateT.run_bind, StateT.run_get] at hRun
+      let candidate : Name :=
+        if index = 0 then "__yul_" ++ stem else
+          "__yul_" ++ stem ++ "_" ++ toString index
+      change StateT.run
+          (if candidate ∈ state.usedFunctionNames then
+            freshNonFunctionBindingNameFrom stem (index + 1) fuel
+          else
+            (fun _ => candidate) <$> set
+              { state with
+                usedFunctionNames := candidate :: state.usedFunctionNames })
+          state = .ok (value, state') at hRun
+      by_cases hContains : candidate ∈ state.usedFunctionNames
+      · simp [hContains] at hRun
+        exact ih (index + 1) hRun hEntry
+      · simp [hContains, StateT.run_map, StateT.run_set] at hRun
+        simp [pure, Except.pure] at hRun
+        rcases hRun with ⟨_hValue, hState⟩
+        subst state'
+        exact hEntry
+
+theorem freshNonFunctionBindingName_preserves_hoistedFunction_mem
+    (base : Name) :
+    PreservesHoisted (freshNonFunctionBindingName base) := by
+  unfold freshNonFunctionBindingName
+  exact
+    freshNonFunctionBindingNameFrom_preserves_hoistedFunction_mem
+      (generatedIdentifierPart base) 0 maxDecodeFuel
+
+theorem ensureClzHelper_preserves_hoistedFunction_mem :
+    PreservesHoisted ensureClzHelper := by
+  intro state state' value entry hRun hEntry
+  unfold ensureClzHelper at hRun
+  simp [StateT.run_bind, StateT.run_get] at hRun
+  cases hHelper : state.clzHelperName? with
+  | some _ =>
+      simp [hHelper] at hRun
+      cases hRun
+      exact hEntry
+  | none =>
+      simp [hHelper] at hRun
+      cases hFreshHelper :
+          (freshGeneratedFunctionName "clz").run state with
+      | error _ =>
+          simp [hFreshHelper] at hRun
+      | ok helperResult =>
+          rcases helperResult with ⟨helper, helperState⟩
+          have hEntryHelper :
+              entry ∈ helperState.hoistedFunctions :=
+            freshGeneratedFunctionName_preserves_hoistedFunction_mem
+              "clz" hFreshHelper hEntry
+          simp [hFreshHelper] at hRun
+          cases hFreshArg :
+              (freshNonFunctionBindingName "clz_arg").run helperState with
+          | error _ =>
+              simp [hFreshArg] at hRun
+          | ok argResult =>
+              rcases argResult with ⟨arg, argState⟩
+              have hEntryArg :
+                  entry ∈ argState.hoistedFunctions :=
+                freshNonFunctionBindingName_preserves_hoistedFunction_mem
+                  "clz_arg" hFreshArg hEntryHelper
+              simp [hFreshArg] at hRun
+              cases hFreshRet :
+                  (freshNonFunctionBindingName "clz_ret").run argState with
+              | error _ =>
+                  simp [hFreshRet] at hRun
+              | ok retResult =>
+                  rcases retResult with ⟨ret, retState⟩
+                  have hEntryRet :
+                      entry ∈ retState.hoistedFunctions :=
+                    freshNonFunctionBindingName_preserves_hoistedFunction_mem
+                      "clz_ret" hFreshRet hEntryArg
+                  simp [hFreshRet, StateT.run_modify] at hRun
+                  rcases hRun with ⟨_hValue, hState⟩
+                  subst state'
+                  simpa using hEntryRet
+
 namespace Expr
+
+mutual
+
+theorem elaborate_preserves_hoistedFunction_mem
+    (expr : Raw.Expr) : PreservesHoisted (Expr.elaborate expr) := by
+  intro state state' value entry hRun hEntry
+  cases expr with
+  | literal literal =>
+      cases literal <;>
+        simp [Expr.elaborate, Literal.elaborate] at hRun <;>
+        cases hRun <;>
+        exact hEntry
+  | identifier name =>
+      unfold Expr.elaborate at hRun
+      exact
+        PreservesHoisted.map (fun _ => Frontend.Expr.var name)
+          (requireIdentifierVisible_preserves_hoistedFunction_mem
+            name "expression") hRun hEntry
+  | functionCall name args =>
+      by_cases hMemoryguard : name = "memoryguard"
+      · subst name
+        cases args with
+        | nil =>
+            unfold Expr.elaborate at hRun
+            exact PreservesHoisted.throw
+              "memoryguard expects one argument" hRun hEntry
+        | cons arg rest =>
+            cases rest with
+            | nil =>
+                unfold Expr.elaborate at hRun
+                exact
+                  PreservesHoisted.map
+                    (fun arg =>
+                      Frontend.Expr.call .objectBuiltin "memoryguard" [arg])
+                    (elaborate_preserves_hoistedFunction_mem arg)
+                    hRun hEntry
+            | cons _ _ =>
+                unfold Expr.elaborate at hRun
+                exact PreservesHoisted.throw
+                  "memoryguard expects one argument" hRun hEntry
+      · by_cases hClz : name = "clz"
+        · subst name
+          cases args with
+          | nil =>
+              unfold Expr.elaborate at hRun
+              exact PreservesHoisted.throw "clz expects one argument"
+                hRun hEntry
+          | cons arg rest =>
+              cases rest with
+              | nil =>
+                  unfold Expr.elaborate at hRun
+                  exact
+                    PreservesHoisted.bind
+                      (elaborate_preserves_hoistedFunction_mem arg)
+                      (fun arg =>
+                        PreservesHoisted.bind
+                          ensureClzHelper_preserves_hoistedFunction_mem
+                          (fun helper => PreservesHoisted.pure
+                            (Frontend.Expr.call .user helper [arg])))
+                      hRun hEntry
+              | cons _ _ =>
+                  unfold Expr.elaborate at hRun
+                  exact PreservesHoisted.throw "clz expects one argument"
+                    hRun hEntry
+        · unfold Expr.elaborate at hRun
+          simp [hMemoryguard, hClz, StateT.run_bind] at hRun
+          cases hArgs : (Expr.List.elaborate args).run state with
+          | error _ =>
+              simp [hArgs] at hRun
+          | ok result =>
+              rcases result with ⟨args', argState⟩
+              have hEntryArgs :
+                  entry ∈ argState.hoistedFunctions :=
+                List.elaborate_preserves_hoistedFunction_mem
+                  args hArgs hEntry
+              simp [hArgs] at hRun
+              cases hClass : CallClass.classifyCall name with
+              | primitive =>
+                  simp [hClass] at hRun
+                  cases hRun
+                  exact hEntryArgs
+              | user =>
+                  simp [hClass] at hRun
+                  exact
+                    PreservesHoisted.map
+                      (fun callee =>
+                        Frontend.Expr.call .user callee args')
+                      (resolveFunction_preserves_hoistedFunction_mem name)
+                      hRun hEntryArgs
+              | objectBuiltin =>
+                  simp [hClass] at hRun
+                  cases hRun
+                  exact hEntryArgs
+              | dialectBuiltin =>
+                  simp [hClass] at hRun
+                  cases hRun
+                  exact hEntryArgs
+  termination_by 2 * sizeOf expr
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+theorem List.elaborate_preserves_hoistedFunction_mem
+    (exprs : List Raw.Expr) :
+    PreservesHoisted (Expr.List.elaborate exprs) := by
+  cases exprs with
+  | nil =>
+      intro state state' value entry hRun hEntry
+      unfold Expr.List.elaborate at hRun
+      simp [StateT.run_pure] at hRun
+      cases hRun
+      exact hEntry
+  | cons expr rest =>
+      intro state state' value entry hRun hEntry
+      unfold Expr.List.elaborate at hRun
+      exact
+        PreservesHoisted.bind
+          (elaborate_preserves_hoistedFunction_mem expr)
+          (fun head =>
+            PreservesHoisted.bind
+              (List.elaborate_preserves_hoistedFunction_mem rest)
+              (fun tail => PreservesHoisted.pure (head :: tail)))
+          hRun hEntry
+  termination_by 2 * sizeOf exprs + 1
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+end
 
 theorem elaborate_user_call_resolved
     {state argState : State} {name generated : Name}
