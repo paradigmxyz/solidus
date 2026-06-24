@@ -1075,6 +1075,367 @@ theorem resolveObjectBuiltinsIn?_nonObjectBuiltin_call
           cases hResolve
           exact ⟨args', by simpa using hArgs, rfl⟩
 
+mutual
+
+theorem resolveObjectBuiltinsIn?_occurrence
+    {expr expr' : Frontend.Expr} {generated : Name}
+    {args : List Frontend.Expr}
+    {context : Frontend.ObjectBuiltinContext}
+    (hResolve : Frontend.Expr.resolveObjectBuiltinsIn? expr context = some expr')
+    (hOccurrence : UserCall expr generated args) :
+    ∃ args',
+      Frontend.Expr.List.resolveObjectBuiltinsIn? args context = some args' ∧
+        UserCall expr' generated args' := by
+  cases expr with
+  | lit value =>
+      cases hOccurrence
+  | stringLit value =>
+      cases hOccurrence
+  | bytesLit bytes =>
+      cases hOccurrence
+  | var name =>
+      cases hOccurrence
+  | call kind callee callArgs =>
+      cases hOccurrence with
+      | here =>
+          rcases resolveObjectBuiltinsIn?_here hResolve with
+            ⟨args', hArgs, hEq, hOccurrence'⟩
+          subst expr'
+          exact ⟨args', hArgs, hOccurrence'⟩
+      | arg hMem hArg =>
+          cases kind with
+          | primitive =>
+              rcases
+                  resolveObjectBuiltinsIn?_nonObjectBuiltin_call
+                    (by intro h; cases h) hResolve with
+                ⟨callArgs', hArgsResolve, hExpr'⟩
+              subst expr'
+              rcases
+                  resolveObjectBuiltinsIn?_list_mem_occurrence
+                    hArgsResolve hMem hArg with
+                ⟨arg', args', _hArgResolve, hArgMem, hGeneratedArgs,
+                  hOccurrence'⟩
+              exact
+                ⟨args', hGeneratedArgs,
+                  UserCall.arg hArgMem hOccurrence'⟩
+          | user =>
+              rcases
+                  resolveObjectBuiltinsIn?_nonObjectBuiltin_call
+                    (by intro h; cases h) hResolve with
+                ⟨callArgs', hArgsResolve, hExpr'⟩
+              subst expr'
+              rcases
+                  resolveObjectBuiltinsIn?_list_mem_occurrence
+                    hArgsResolve hMem hArg with
+                ⟨arg', args', _hArgResolve, hArgMem, hGeneratedArgs,
+                  hOccurrence'⟩
+              exact
+                ⟨args', hGeneratedArgs,
+                  UserCall.arg hArgMem hOccurrence'⟩
+          | dialectBuiltin =>
+              rcases
+                  resolveObjectBuiltinsIn?_nonObjectBuiltin_call
+                    (by intro h; cases h) hResolve with
+                ⟨callArgs', hArgsResolve, hExpr'⟩
+              subst expr'
+              rcases
+                  resolveObjectBuiltinsIn?_list_mem_occurrence
+                    hArgsResolve hMem hArg with
+                ⟨arg', args', _hArgResolve, hArgMem, hGeneratedArgs,
+                  hOccurrence'⟩
+              exact
+                ⟨args', hGeneratedArgs,
+                  UserCall.arg hArgMem hOccurrence'⟩
+          | objectBuiltin =>
+              cases callArgs with
+              | nil =>
+                  simp at hMem
+              | cons first rest =>
+                  cases rest with
+                  | nil =>
+                      simp at hMem
+                      subst_vars
+                      by_cases hDatasize : callee = "datasize"
+                      · subst callee
+                        unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+                        cases hName :
+                            Frontend.Expr.objectBuiltinNameArg? first with
+                        | none =>
+                            simp [hName] at hResolve
+                        | some name =>
+                            have hNone := objectBuiltinNameArg?_none hArg
+                            rw [hName] at hNone
+                            simp at hNone
+                      · by_cases hDataoffset : callee = "dataoffset"
+                        · subst callee
+                          unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+                          cases hName :
+                              Frontend.Expr.objectBuiltinNameArg? first with
+                          | none =>
+                              simp [hName] at hResolve
+                          | some name =>
+                              have hNone := objectBuiltinNameArg?_none hArg
+                              rw [hName] at hNone
+                              simp at hNone
+                        · by_cases hLinker : callee = "linkersymbol"
+                          · subst callee
+                            unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+                            cases hName :
+                                Frontend.Expr.objectBuiltinNameArg? first with
+                            | none =>
+                                simp [hName] at hResolve
+                            | some name =>
+                                have hNone := objectBuiltinNameArg?_none hArg
+                                rw [hName] at hNone
+                                simp at hNone
+                          · by_cases hLoad : callee = "loadimmutable"
+                            · subst callee
+                              unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+                              cases hName :
+                                  Frontend.Expr.objectBuiltinNameArg? first with
+                              | none =>
+                                  simp [hName] at hResolve
+                              | some name =>
+                                  have hNone := objectBuiltinNameArg?_none hArg
+                                  rw [hName] at hNone
+                                  simp at hNone
+                            · by_cases hMemoryguard : callee = "memoryguard"
+                              · subst callee
+                                unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+                                cases hValue :
+                                    Frontend.Expr.resolveObjectBuiltinsIn?
+                                      first context with
+                                | none =>
+                                    simp [hValue] at hResolve
+                                | some value' =>
+                                    cases value' with
+                                    | lit size =>
+                                        rcases
+                                            resolveObjectBuiltinsIn?_occurrence
+                                              hValue hArg with
+                                          ⟨args', _hGeneratedArgs,
+                                            hOccurrence'⟩
+                                        exact False.elim
+                                          (not_lit hOccurrence')
+                                    | stringLit value =>
+                                        simp [hValue] at hResolve
+                                    | bytesLit bytes =>
+                                        simp [hValue] at hResolve
+                                    | var name =>
+                                        simp [hValue] at hResolve
+                                    | call kind callee callArgs =>
+                                        simp [hValue] at hResolve
+                              · unfold Frontend.Expr.resolveObjectBuiltinsIn?
+                                  at hResolve
+                                cases hArgsResolve :
+                                    Frontend.Expr.List.resolveObjectBuiltinsIn?
+                                      [first] context with
+                                | none =>
+                                    simp [hDatasize, hDataoffset, hLinker,
+                                      hLoad, hMemoryguard, hArgsResolve]
+                                      at hResolve
+                                | some callArgs' =>
+                                    simp [hDatasize, hDataoffset, hLinker,
+                                      hLoad, hMemoryguard, hArgsResolve]
+                                      at hResolve
+                                    cases hResolve
+                                    rcases
+                                        resolveObjectBuiltinsIn?_list_mem_occurrence
+                                          hArgsResolve (by simp) hArg with
+                                      ⟨arg', args', _hArgResolve, hArgMem,
+                                        hGeneratedArgs, hOccurrence'⟩
+                                    exact
+                                      ⟨args', hGeneratedArgs,
+                                        UserCall.arg hArgMem hOccurrence'⟩
+                  | cons second rest' =>
+                      cases rest' with
+                      | nil =>
+                          unfold Frontend.Expr.resolveObjectBuiltinsIn?
+                            at hResolve
+                          cases hArgsResolve :
+                              Frontend.Expr.List.resolveObjectBuiltinsIn?
+                                [first, second] context with
+                          | none =>
+                              simp [hArgsResolve] at hResolve
+                          | some callArgs' =>
+                              simp [hArgsResolve] at hResolve
+                              cases hResolve
+                              rcases
+                                  resolveObjectBuiltinsIn?_list_mem_occurrence
+                                    hArgsResolve hMem hArg with
+                                ⟨arg', args', _hArgResolve, hArgMem,
+                                  hGeneratedArgs, hOccurrence'⟩
+                              exact
+                                ⟨args', hGeneratedArgs,
+                                  UserCall.arg hArgMem hOccurrence'⟩
+                      | cons third rest'' =>
+                          cases rest'' with
+                          | nil =>
+                              by_cases hDatacopy : callee = "datacopy"
+                              · subst callee
+                                unfold Frontend.Expr.resolveObjectBuiltinsIn?
+                                  at hResolve
+                                cases hFirst :
+                                    Frontend.Expr.resolveObjectBuiltinsIn?
+                                      first context with
+                                | none =>
+                                    simp [hFirst] at hResolve
+                                | some first' =>
+                                    cases hSecond :
+                                        Frontend.Expr.resolveObjectBuiltinsIn?
+                                          second context with
+                                    | none =>
+                                        simp [hFirst, hSecond] at hResolve
+                                    | some second' =>
+                                        cases hThird :
+                                            Frontend.Expr.resolveObjectBuiltinsIn?
+                                              third context with
+                                        | none =>
+                                            simp [hFirst, hSecond, hThird]
+                                              at hResolve
+                                        | some third' =>
+                                            simp [hFirst, hSecond, hThird]
+                                              at hResolve
+                                            cases hResolve
+                                            simp at hMem
+                                            rcases hMem with hHere |
+                                              hSecondMem | hThirdMem
+                                            · subst_vars
+                                              rcases
+                                                  resolveObjectBuiltinsIn?_occurrence
+                                                    hFirst hArg with
+                                                ⟨args', hGeneratedArgs,
+                                                  hOccurrence'⟩
+                                              exact
+                                                ⟨args', hGeneratedArgs,
+                                                  UserCall.arg (by simp)
+                                                    hOccurrence'⟩
+                                            · subst_vars
+                                              rcases
+                                                  resolveObjectBuiltinsIn?_occurrence
+                                                    hSecond hArg with
+                                                ⟨args', hGeneratedArgs,
+                                                  hOccurrence'⟩
+                                              exact
+                                                ⟨args', hGeneratedArgs,
+                                                  UserCall.arg (by simp)
+                                                    hOccurrence'⟩
+                                            · subst_vars
+                                              rcases
+                                                  resolveObjectBuiltinsIn?_occurrence
+                                                    hThird hArg with
+                                                ⟨args', hGeneratedArgs,
+                                                  hOccurrence'⟩
+                                              exact
+                                                ⟨args', hGeneratedArgs,
+                                                  UserCall.arg (by simp)
+                                                    hOccurrence'⟩
+                              · unfold Frontend.Expr.resolveObjectBuiltinsIn?
+                                  at hResolve
+                                cases hArgsResolve :
+                                    Frontend.Expr.List.resolveObjectBuiltinsIn?
+                                      [first, second, third] context with
+                                | none =>
+                                    simp [hDatacopy, hArgsResolve] at hResolve
+                                | some callArgs' =>
+                                    simp [hDatacopy, hArgsResolve] at hResolve
+                                    cases hResolve
+                                    rcases
+                                        resolveObjectBuiltinsIn?_list_mem_occurrence
+                                          hArgsResolve hMem hArg with
+                                      ⟨arg', args', _hArgResolve, hArgMem,
+                                        hGeneratedArgs, hOccurrence'⟩
+                                    exact
+                                      ⟨args', hGeneratedArgs,
+                                        UserCall.arg hArgMem hOccurrence'⟩
+                          | cons fourth rest''' =>
+                              unfold Frontend.Expr.resolveObjectBuiltinsIn?
+                                at hResolve
+                              cases hArgsResolve :
+                                  Frontend.Expr.List.resolveObjectBuiltinsIn?
+                                    (first :: second :: third ::
+                                      fourth :: rest''') context with
+                              | none =>
+                                  simp [hArgsResolve] at hResolve
+                              | some callArgs' =>
+                                  simp [hArgsResolve] at hResolve
+                                  cases hResolve
+                                  rcases
+                                      resolveObjectBuiltinsIn?_list_mem_occurrence
+                                        hArgsResolve hMem hArg with
+                                    ⟨arg', args', _hArgResolve, hArgMem,
+                                      hGeneratedArgs, hOccurrence'⟩
+                                  exact
+                                    ⟨args', hGeneratedArgs,
+                                      UserCall.arg hArgMem hOccurrence'⟩
+termination_by sizeOf expr
+
+theorem resolveObjectBuiltinsIn?_list_mem_occurrence
+    {exprs exprs' : List Frontend.Expr} {expr : Frontend.Expr}
+    {generated : Name} {args : List Frontend.Expr}
+    {context : Frontend.ObjectBuiltinContext}
+    (hResolve :
+      Frontend.Expr.List.resolveObjectBuiltinsIn? exprs context = some exprs')
+    (hMem : expr ∈ exprs)
+    (hOccurrence : UserCall expr generated args) :
+    ∃ expr' args',
+      Frontend.Expr.resolveObjectBuiltinsIn? expr context = some expr' ∧
+        expr' ∈ exprs' ∧
+          Frontend.Expr.List.resolveObjectBuiltinsIn? args context =
+            some args' ∧
+            UserCall expr' generated args' := by
+  cases exprs with
+  | nil =>
+      simp at hMem
+  | cons head tail =>
+      unfold Frontend.Expr.List.resolveObjectBuiltinsIn? at hResolve
+      cases hHead :
+          Frontend.Expr.resolveObjectBuiltinsIn? head context with
+      | none =>
+          simp [hHead] at hResolve
+      | some head' =>
+          cases hTail :
+              Frontend.Expr.List.resolveObjectBuiltinsIn? tail context with
+          | none =>
+              simp [hHead, hTail] at hResolve
+          | some tail' =>
+              simp [hHead, hTail] at hResolve
+              cases hResolve
+              simp at hMem
+              rcases hMem with hHere | hTailMem
+              · subst expr
+                rcases
+                    resolveObjectBuiltinsIn?_occurrence hHead
+                      hOccurrence with
+                  ⟨args', hGeneratedArgs, hOccurrence'⟩
+                exact
+                  ⟨head', args', hHead, by simp, hGeneratedArgs,
+                    hOccurrence'⟩
+              · rcases
+                    resolveObjectBuiltinsIn?_list_mem_occurrence
+                      hTail hTailMem hOccurrence with
+                  ⟨expr', args', hExprResolve, hExprMem,
+                    hGeneratedArgs, hOccurrence'⟩
+                exact
+                  ⟨expr', args', hExprResolve, by simp [hExprMem],
+                    hGeneratedArgs, hOccurrence'⟩
+termination_by sizeOf exprs
+
+end
+
+theorem resolveObjectBuiltinsIn?_not_lit
+    {expr : Frontend.Expr} {value : Frontend.Word}
+    {generated : Name} {args : List Frontend.Expr}
+    {context : Frontend.ObjectBuiltinContext}
+    (hResolve :
+      Frontend.Expr.resolveObjectBuiltinsIn? expr context =
+        some (.lit value))
+    (hOccurrence : UserCall expr generated args) :
+    False := by
+  rcases resolveObjectBuiltinsIn?_occurrence hResolve hOccurrence with
+    ⟨args', _hArgs, hOccurrence'⟩
+  exact not_lit hOccurrence'
+
 end UserCall
 
 /-- Generated frontend user-call occurrence in a statement expression field. -/
