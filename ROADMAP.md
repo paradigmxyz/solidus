@@ -414,6 +414,12 @@ Next raw frontend layer:
   carries the validator through any supplied number of retained-stub hops,
   returning either a concrete generated Yul call occurrence in a lowered stub
   entry or a validated residual stub branch when the supplied fuel is exhausted.
+  The structural theorem
+  `FrontendOccurrence.StubBodyStmtListUserCall.lowered_function_entry_chase`
+  now removes that public fuel/residual shape by proving every validated
+  retained-stub hop decreases the frontend statement-list `sizeOf`, so the
+  chase reaches a concrete generated Yul call occurrence in an emitted lowered
+  function entry.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call execution/observation in caller context,
   including source argument evaluation and caller writeback, and broader
