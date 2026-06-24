@@ -391,6 +391,10 @@ Next raw frontend layer:
   `FrontendOccurrence.StmtIncomingUserCall.toYul?_occurrence`, proving that
   incoming generated frontend user-call occurrences lower to concrete generated
   Yul call occurrences with lowered argument lists.
+  `FrontendOccurrence.LowerableStmtListUserCall.toYul?_occurrence` lifts that
+  fact through lowerable frontend statement-list contexts, including blocks,
+  switches, loops, and if bodies, while still excluding erased `functionDef`
+  staging nodes from the current-body claim.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call execution/observation in caller context,
   including source argument evaluation and caller writeback, and broader

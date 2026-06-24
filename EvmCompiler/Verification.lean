@@ -79,8 +79,13 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.ResolvedLocalCall
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.UserCall
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.StmtIncomingUserCall
+#check EvmCompiler.Solidity.RawAst.YulOccurrence.StmtUserCall
+#check EvmCompiler.Solidity.RawAst.YulOccurrence.StmtListUserCall
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableStmtUserCall
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableStmtListUserCall
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.toYul?_occurrence
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.StmtIncomingUserCall.toYul?_occurrence
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableStmtListUserCall.toYul?_occurrence
 #check EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved
 #check EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_entries
 #check EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_callable_entries
@@ -562,6 +567,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_sourceLocalFunction_noShadow_alphaPreserved
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.toYul?_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.StmtIncomingUserCall.toYul?_occurrence
+#print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableStmtListUserCall.toYul?_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_entries
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_callable_entries
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decoded

@@ -1146,9 +1146,175 @@ inductive StmtIncomingUserCall :
       UserCall condition generated args →
         StmtIncomingUserCall (.If condition body) generated args
 
+mutual
+
+/-- Recursive generated Yul user-call occurrence in a lowered statement. -/
+inductive StmtUserCall : Frontend.AstStmt → Name → List Frontend.AstExpr → Prop where
+  | incoming {stmt generated args} :
+      StmtIncomingUserCall stmt generated args →
+        StmtUserCall stmt generated args
+  | block {stmts generated args} :
+      StmtListUserCall stmts generated args →
+        StmtUserCall (.Block stmts) generated args
+  | switchCase {scrutinee cases default generated args} :
+      CaseListUserCall cases generated args →
+        StmtUserCall (.Switch scrutinee cases default) generated args
+  | switchDefault {scrutinee cases default generated args} :
+      StmtListUserCall default generated args →
+        StmtUserCall (.Switch scrutinee cases default) generated args
+  | forCondition {condition post body generated args} :
+      UserCall condition generated args →
+        StmtUserCall (.For condition post body) generated args
+  | forPost {condition post body generated args} :
+      StmtListUserCall post generated args →
+        StmtUserCall (.For condition post body) generated args
+  | forBody {condition post body generated args} :
+      StmtListUserCall body generated args →
+        StmtUserCall (.For condition post body) generated args
+  | ifBody {condition body generated args} :
+      StmtListUserCall body generated args →
+        StmtUserCall (.If condition body) generated args
+
+/-- Recursive generated Yul user-call occurrence in a lowered statement list. -/
+inductive StmtListUserCall :
+    List Frontend.AstStmt → Name → List Frontend.AstExpr → Prop where
+  | head {stmt rest generated args} :
+      StmtUserCall stmt generated args →
+        StmtListUserCall (stmt :: rest) generated args
+  | tail {stmt rest generated args} :
+      StmtListUserCall rest generated args →
+        StmtListUserCall (stmt :: rest) generated args
+
+/-- Recursive generated Yul user-call occurrence in lowered switch case bodies. -/
+inductive CaseListUserCall :
+    List (Word × List Frontend.AstStmt) →
+      Name → List Frontend.AstExpr → Prop where
+  | head {value body rest generated args} :
+      StmtListUserCall body generated args →
+        CaseListUserCall ((value, body) :: rest) generated args
+  | tail {case rest generated args} :
+      CaseListUserCall rest generated args →
+        CaseListUserCall (case :: rest) generated args
+
+end
+
+namespace StmtUserCall
+
+theorem ofIncoming
+    {stmt : Frontend.AstStmt} {generated : Name}
+    {args : List Frontend.AstExpr}
+    (hOccurrence :
+      StmtIncomingUserCall stmt generated args) :
+    StmtUserCall stmt generated args :=
+  .incoming hOccurrence
+
+end StmtUserCall
+
+namespace StmtListUserCall
+
+theorem append_left
+    {left right : List Frontend.AstStmt}
+    {generated : Name} {args : List Frontend.AstExpr}
+    (hOccurrence : StmtListUserCall left generated args) :
+    StmtListUserCall (left ++ right) generated args := by
+  induction left with
+  | nil =>
+      cases hOccurrence
+  | cons stmt rest ih =>
+      cases hOccurrence with
+      | head hHead =>
+          exact .head hHead
+      | tail hTail =>
+          exact .tail (ih hTail)
+
+theorem append_right
+    (pre : List Frontend.AstStmt)
+    {suffix : List Frontend.AstStmt}
+    {generated : Name} {args : List Frontend.AstExpr}
+    (hOccurrence : StmtListUserCall suffix generated args) :
+    StmtListUserCall (pre ++ suffix) generated args := by
+  induction pre with
+  | nil =>
+      simpa using hOccurrence
+  | cons head rest ih =>
+      exact .tail ih
+
+theorem of_last
+    (pre : List Frontend.AstStmt)
+    {stmt : Frontend.AstStmt}
+    {generated : Name} {args : List Frontend.AstExpr}
+    (hOccurrence : StmtUserCall stmt generated args) :
+    StmtListUserCall (pre ++ [stmt]) generated args :=
+  append_right pre (StmtListUserCall.head hOccurrence)
+
+end StmtListUserCall
+
 end YulOccurrence
 
 namespace FrontendOccurrence
+
+mutual
+
+/--
+Generated frontend user-call occurrence that should lower into the current Yul
+statement body.
+
+Retained `functionDef` staging nodes are intentionally absent: their statement
+itself lowers to `Block []`, while the function body is emitted through the
+separate generated function entry.
+-/
+inductive LowerableStmtUserCall :
+    Frontend.Stmt → Name → List Frontend.Expr → Prop where
+  | incoming {stmt generated args} :
+      StmtIncomingUserCall stmt generated args →
+        LowerableStmtUserCall stmt generated args
+  | block {stmts generated args} :
+      LowerableStmtListUserCall stmts generated args →
+        LowerableStmtUserCall (.block stmts) generated args
+  | switchCase {scrutinee cases default generated args} :
+      LowerableCaseListUserCall cases generated args →
+        LowerableStmtUserCall (.switch scrutinee cases default) generated args
+  | switchDefault {scrutinee cases default generated args} :
+      LowerableStmtListUserCall default generated args →
+        LowerableStmtUserCall (.switch scrutinee cases default) generated args
+  | forCondition {pre condition post body generated args} :
+      UserCall condition generated args →
+        LowerableStmtUserCall (.forLoop pre condition post body) generated args
+  | forPre {pre condition post body generated args} :
+      LowerableStmtListUserCall pre generated args →
+        LowerableStmtUserCall (.forLoop pre condition post body) generated args
+  | forPost {pre condition post body generated args} :
+      LowerableStmtListUserCall post generated args →
+        LowerableStmtUserCall (.forLoop pre condition post body) generated args
+  | forBody {pre condition post body generated args} :
+      LowerableStmtListUserCall body generated args →
+        LowerableStmtUserCall (.forLoop pre condition post body) generated args
+  | ifBody {condition body generated args} :
+      LowerableStmtListUserCall body generated args →
+        LowerableStmtUserCall (.ifThen condition body) generated args
+
+/-- Recursive lowerable frontend user-call occurrence in a statement list. -/
+inductive LowerableStmtListUserCall :
+    List Frontend.Stmt → Name → List Frontend.Expr → Prop where
+  | head {stmt rest generated args} :
+      LowerableStmtUserCall stmt generated args →
+        LowerableStmtListUserCall (stmt :: rest) generated args
+  | tail {stmt rest generated args} :
+      LowerableStmtListUserCall rest generated args →
+        LowerableStmtListUserCall (stmt :: rest) generated args
+
+/-- Recursive lowerable frontend user-call occurrence in switch case bodies. -/
+inductive LowerableCaseListUserCall :
+    List (Frontend.SwitchCaseValue × List Frontend.Stmt) →
+      Name → List Frontend.Expr → Prop where
+  | head {value body rest generated args} :
+      LowerableStmtListUserCall body generated args →
+        LowerableCaseListUserCall ((value, body) :: rest) generated args
+  | tail {case rest generated args} :
+      LowerableCaseListUserCall rest generated args →
+        LowerableCaseListUserCall (case :: rest) generated args
+
+end
 
 namespace ExprListToYul
 
@@ -1355,6 +1521,362 @@ theorem toYul?_occurrence
                     hYulOccurrence⟩
 
 end StmtIncomingUserCall
+
+namespace LowerableStmtListUserCall
+
+theorem toYul?_occurrence
+    {front : List Frontend.Stmt}
+    {yul : List Frontend.AstStmt}
+    {generated : Name} {args : List Frontend.Expr}
+    (hOccurrence : LowerableStmtListUserCall front generated args)
+    (hYul : Frontend.Stmt.List.toYul? front = some yul) :
+    ∃ yulArgs,
+      Frontend.Expr.List.toYul? args = some yulArgs ∧
+        YulOccurrence.StmtListUserCall yul generated yulArgs :=
+  LowerableStmtListUserCall.rec
+    (motive_1 := fun stmt generated args _ =>
+      ∀ {yul : Frontend.AstStmt},
+        Frontend.Stmt.toYul? stmt = some yul →
+          ∃ yulArgs,
+            Frontend.Expr.List.toYul? args = some yulArgs ∧
+              YulOccurrence.StmtUserCall yul generated yulArgs)
+    (motive_2 := fun stmts generated args _ =>
+      ∀ {yul : List Frontend.AstStmt},
+        Frontend.Stmt.List.toYul? stmts = some yul →
+          ∃ yulArgs,
+            Frontend.Expr.List.toYul? args = some yulArgs ∧
+              YulOccurrence.StmtListUserCall yul generated yulArgs)
+    (motive_3 := fun cases generated args _ =>
+      ∀ {yul : List (Word × List Frontend.AstStmt)},
+        Frontend.Stmt.CaseList.toYul? cases = some yul →
+          ∃ yulArgs,
+            Frontend.Expr.List.toYul? args = some yulArgs ∧
+              YulOccurrence.CaseListUserCall yul generated yulArgs)
+    (incoming := by
+      intro stmt generated args hIncoming yul hYul
+      rcases StmtIncomingUserCall.toYul?_occurrence hIncoming hYul with
+        ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+      exact
+        ⟨yulArgs, hArgsYul,
+          YulOccurrence.StmtUserCall.incoming hYulOccurrence⟩)
+    (block := by
+      intro stmts generated args hBlock ih yul hYul
+      unfold Frontend.Stmt.toYul? at hYul
+      cases hStmts : Frontend.Stmt.List.toYul? stmts with
+      | none =>
+          simp [hStmts] at hYul
+      | some yulStmts =>
+          simp [hStmts] at hYul
+          cases hYul
+          rcases ih hStmts with
+            ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+          exact
+            ⟨yulArgs, hArgsYul,
+              YulOccurrence.StmtUserCall.block hYulOccurrence⟩)
+    (switchCase := by
+      intro scrutinee cases default generated args hCases ih yul hYul
+      unfold Frontend.Stmt.toYul? at hYul
+      cases hScrutinee : Frontend.Expr.toYul? scrutinee with
+      | none =>
+          simp [hScrutinee] at hYul
+      | some yulScrutinee =>
+          cases hCaseList : Frontend.Stmt.CaseList.toYul? cases with
+          | none =>
+              simp [hScrutinee, hCaseList] at hYul
+          | some yulCases =>
+              cases hDefault : Frontend.Stmt.List.toYul? default with
+              | none =>
+                  simp [hScrutinee, hCaseList, hDefault] at hYul
+              | some yulDefault =>
+                  simp [hScrutinee, hCaseList, hDefault] at hYul
+                  cases hYul
+                  rcases ih hCaseList with
+                    ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+                  exact
+                    ⟨yulArgs, hArgsYul,
+                      YulOccurrence.StmtUserCall.switchCase
+                        hYulOccurrence⟩)
+    (switchDefault := by
+      intro scrutinee cases default generated args hDefaultOccurrence ih yul hYul
+      unfold Frontend.Stmt.toYul? at hYul
+      cases hScrutinee : Frontend.Expr.toYul? scrutinee with
+      | none =>
+          simp [hScrutinee] at hYul
+      | some yulScrutinee =>
+          cases hCaseList : Frontend.Stmt.CaseList.toYul? cases with
+          | none =>
+              simp [hScrutinee, hCaseList] at hYul
+          | some yulCases =>
+              cases hDefault : Frontend.Stmt.List.toYul? default with
+              | none =>
+                  simp [hScrutinee, hCaseList, hDefault] at hYul
+              | some yulDefault =>
+                  simp [hScrutinee, hCaseList, hDefault] at hYul
+                  cases hYul
+                  rcases ih hDefault with
+                    ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+                  exact
+                    ⟨yulArgs, hArgsYul,
+                      YulOccurrence.StmtUserCall.switchDefault
+                        hYulOccurrence⟩)
+    (forCondition := by
+      intro pre condition post body generated args hCondition yul hYul
+      unfold Frontend.Stmt.toYul? at hYul
+      cases hPre : Frontend.Stmt.List.toYul? pre with
+      | none =>
+          simp [hPre] at hYul
+      | some yulPre =>
+          cases hConditionYul : Frontend.Expr.toYul? condition with
+          | none =>
+              simp [hPre, hConditionYul] at hYul
+          | some yulCondition =>
+              cases hPost : Frontend.Stmt.List.toYul? post with
+              | none =>
+                  simp [hPre, hConditionYul, hPost] at hYul
+              | some yulPost =>
+                  cases hBody : Frontend.Stmt.List.toYul? body with
+                  | none =>
+                      simp [hPre, hConditionYul, hPost, hBody] at hYul
+                  | some yulBody =>
+                      rcases UserCall.toYul?_occurrence hCondition
+                          hConditionYul with
+                        ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+                      cases yulPre with
+                      | nil =>
+                          simp [hPre, hConditionYul, hPost, hBody] at hYul
+                          cases hYul
+                          exact
+                            ⟨yulArgs, hArgsYul,
+                              YulOccurrence.StmtUserCall.forCondition
+                                hYulOccurrence⟩
+                      | cons head rest =>
+                          simp [hPre, hConditionYul, hPost, hBody] at hYul
+                          cases hYul
+                          exact
+                            ⟨yulArgs, hArgsYul,
+                              YulOccurrence.StmtUserCall.block
+                                (YulOccurrence.StmtListUserCall.of_last
+                                  (head :: rest)
+                                  (YulOccurrence.StmtUserCall.forCondition
+                                    hYulOccurrence))⟩)
+    (forPre := by
+      intro pre condition post body generated args hPreOccurrence ih yul hYul
+      unfold Frontend.Stmt.toYul? at hYul
+      cases hPre : Frontend.Stmt.List.toYul? pre with
+      | none =>
+          simp [hPre] at hYul
+      | some yulPre =>
+          cases hConditionYul : Frontend.Expr.toYul? condition with
+          | none =>
+              simp [hPre, hConditionYul] at hYul
+          | some yulCondition =>
+              cases hPost : Frontend.Stmt.List.toYul? post with
+              | none =>
+                  simp [hPre, hConditionYul, hPost] at hYul
+              | some yulPost =>
+                  cases hBody : Frontend.Stmt.List.toYul? body with
+                  | none =>
+                      simp [hPre, hConditionYul, hPost, hBody] at hYul
+                  | some yulBody =>
+                      rcases ih hPre with
+                        ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+                      cases yulPre with
+                      | nil =>
+                          simp [hPre, hConditionYul, hPost, hBody] at hYul
+                          cases hYul
+                          cases hYulOccurrence
+                      | cons head rest =>
+                          simp [hPre, hConditionYul, hPost, hBody] at hYul
+                          cases hYul
+                          exact
+                            ⟨yulArgs, hArgsYul,
+                              YulOccurrence.StmtUserCall.block
+                                (YulOccurrence.StmtListUserCall.append_left
+                                  hYulOccurrence)⟩)
+    (forPost := by
+      intro pre condition post body generated args hPostOccurrence ih yul hYul
+      unfold Frontend.Stmt.toYul? at hYul
+      cases hPre : Frontend.Stmt.List.toYul? pre with
+      | none =>
+          simp [hPre] at hYul
+      | some yulPre =>
+          cases hConditionYul : Frontend.Expr.toYul? condition with
+          | none =>
+              simp [hPre, hConditionYul] at hYul
+          | some yulCondition =>
+              cases hPost : Frontend.Stmt.List.toYul? post with
+              | none =>
+                  simp [hPre, hConditionYul, hPost] at hYul
+              | some yulPost =>
+                  cases hBody : Frontend.Stmt.List.toYul? body with
+                  | none =>
+                      simp [hPre, hConditionYul, hPost, hBody] at hYul
+                  | some yulBody =>
+                      rcases ih hPost with
+                        ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+                      cases yulPre with
+                      | nil =>
+                          simp [hPre, hConditionYul, hPost, hBody] at hYul
+                          cases hYul
+                          exact
+                            ⟨yulArgs, hArgsYul,
+                              YulOccurrence.StmtUserCall.forPost
+                                hYulOccurrence⟩
+                      | cons head rest =>
+                          simp [hPre, hConditionYul, hPost, hBody] at hYul
+                          cases hYul
+                          exact
+                            ⟨yulArgs, hArgsYul,
+                              YulOccurrence.StmtUserCall.block
+                                (YulOccurrence.StmtListUserCall.of_last
+                                  (head :: rest)
+                                  (YulOccurrence.StmtUserCall.forPost
+                                    hYulOccurrence))⟩)
+    (forBody := by
+      intro pre condition post body generated args hBodyOccurrence ih yul hYul
+      unfold Frontend.Stmt.toYul? at hYul
+      cases hPre : Frontend.Stmt.List.toYul? pre with
+      | none =>
+          simp [hPre] at hYul
+      | some yulPre =>
+          cases hConditionYul : Frontend.Expr.toYul? condition with
+          | none =>
+              simp [hPre, hConditionYul] at hYul
+          | some yulCondition =>
+              cases hPost : Frontend.Stmt.List.toYul? post with
+              | none =>
+                  simp [hPre, hConditionYul, hPost] at hYul
+              | some yulPost =>
+                  cases hBody : Frontend.Stmt.List.toYul? body with
+                  | none =>
+                      simp [hPre, hConditionYul, hPost, hBody] at hYul
+                  | some yulBody =>
+                      rcases ih hBody with
+                        ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+                      cases yulPre with
+                      | nil =>
+                          simp [hPre, hConditionYul, hPost, hBody] at hYul
+                          cases hYul
+                          exact
+                            ⟨yulArgs, hArgsYul,
+                              YulOccurrence.StmtUserCall.forBody
+                                hYulOccurrence⟩
+                      | cons head rest =>
+                          simp [hPre, hConditionYul, hPost, hBody] at hYul
+                          cases hYul
+                          exact
+                            ⟨yulArgs, hArgsYul,
+                              YulOccurrence.StmtUserCall.block
+                                (YulOccurrence.StmtListUserCall.of_last
+                                  (head :: rest)
+                                  (YulOccurrence.StmtUserCall.forBody
+                                    hYulOccurrence))⟩)
+    (ifBody := by
+      intro condition body generated args hBodyOccurrence ih yul hYul
+      unfold Frontend.Stmt.toYul? at hYul
+      cases hConditionYul : Frontend.Expr.toYul? condition with
+      | none =>
+          simp [hConditionYul] at hYul
+      | some yulCondition =>
+          cases hBody : Frontend.Stmt.List.toYul? body with
+          | none =>
+              simp [hConditionYul, hBody] at hYul
+          | some yulBody =>
+              simp [hConditionYul, hBody] at hYul
+              cases hYul
+              rcases ih hBody with
+                ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+              exact
+                ⟨yulArgs, hArgsYul,
+                  YulOccurrence.StmtUserCall.ifBody hYulOccurrence⟩)
+    (head := by
+      intro stmt rest generated args hHeadOccurrence ih yul hYul
+      unfold Frontend.Stmt.List.toYul? at hYul
+      cases hHead : Frontend.Stmt.toYul? stmt with
+      | none =>
+          simp [hHead] at hYul
+      | some yulHead =>
+          cases hRest : Frontend.Stmt.List.toYul? rest with
+          | none =>
+              simp [hHead, hRest] at hYul
+          | some yulRest =>
+              simp [hHead, hRest] at hYul
+              cases hYul
+              rcases ih hHead with
+                ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+              exact
+                ⟨yulArgs, hArgsYul,
+                  YulOccurrence.StmtListUserCall.head
+                    hYulOccurrence⟩)
+    (tail := by
+      intro stmt rest generated args hTailOccurrence ih yul hYul
+      unfold Frontend.Stmt.List.toYul? at hYul
+      cases hHead : Frontend.Stmt.toYul? stmt with
+      | none =>
+          simp [hHead] at hYul
+      | some yulHead =>
+          cases hRest : Frontend.Stmt.List.toYul? rest with
+          | none =>
+              simp [hHead, hRest] at hYul
+          | some yulRest =>
+              simp [hHead, hRest] at hYul
+              cases hYul
+              rcases ih hRest with
+                ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+              exact
+                ⟨yulArgs, hArgsYul,
+                  YulOccurrence.StmtListUserCall.tail
+                    hYulOccurrence⟩)
+    (by
+      intro value body rest generated args hBodyOccurrence ih yul hYul
+      unfold Frontend.Stmt.CaseList.toYul? at hYul
+      cases hValue : Frontend.SwitchCaseValue.toWord? value with
+      | none =>
+          simp [hValue] at hYul
+      | some yulValue =>
+          cases hBody : Frontend.Stmt.List.toYul? body with
+          | none =>
+              simp [hValue, hBody] at hYul
+          | some yulBody =>
+              cases hRest : Frontend.Stmt.CaseList.toYul? rest with
+              | none =>
+                  simp [hValue, hBody, hRest] at hYul
+              | some yulRest =>
+                  simp [hValue, hBody, hRest] at hYul
+                  cases hYul
+                  rcases ih hBody with
+                    ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+                  exact
+                    ⟨yulArgs, hArgsYul,
+                      YulOccurrence.CaseListUserCall.head
+                        hYulOccurrence⟩)
+    (by
+      intro caseEntry rest generated args hTailOccurrence ih yul hYul
+      unfold Frontend.Stmt.CaseList.toYul? at hYul
+      rcases caseEntry with ⟨value, body⟩
+      cases hValue : Frontend.SwitchCaseValue.toWord? value with
+      | none =>
+          simp [hValue] at hYul
+      | some yulValue =>
+          cases hBody : Frontend.Stmt.List.toYul? body with
+          | none =>
+              simp [hValue, hBody] at hYul
+          | some yulBody =>
+              cases hRest : Frontend.Stmt.CaseList.toYul? rest with
+              | none =>
+                  simp [hValue, hBody, hRest] at hYul
+              | some yulRest =>
+                  simp [hValue, hBody, hRest] at hYul
+                  cases hYul
+                  rcases ih hRest with
+                    ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+                  exact
+                    ⟨yulArgs, hArgsYul,
+                      YulOccurrence.CaseListUserCall.tail
+                        hYulOccurrence⟩)
+    hOccurrence hYul
+
+end LowerableStmtListUserCall
 
 /--
 Generated frontend realization of a raw source-local call.
