@@ -424,6 +424,9 @@ Next raw frontend layer:
   uses that structural chase with ordinary object Yul conversion, exposing the
   retained-stub generated Yul call occurrence plus the generated callee entry
   consumed by the backend.
+  `AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_call_occurrence_routes`
+  packages the lowerable and retained-stub ordered-occurrence routes behind
+  the source-facing alpha-preservation relation.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call execution/observation in caller context,
   including source argument evaluation and caller writeback, and broader

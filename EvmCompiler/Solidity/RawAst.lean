@@ -3129,6 +3129,88 @@ theorem toSolcYulOrderedProgram?_callable_entries
       hTopMem, hOccurrence, hCalleeMem, hTopYul, hLocalYul,
       hTopLookup, hCalleeLookup⟩
 
+theorem toSolcYulOrderedProgram?_call_occurrence_routes
+    {topBody : List Stmt}
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName name : Name}
+    {localParams localReturns : List Name}
+    {localBody : List Stmt}
+    {args : List Expr}
+    (hAlpha :
+      AlphaRenamedLocalCallPreserved topBody object.functions topName name
+        localParams localReturns localBody args)
+    (hConvert :
+      object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (generated : Name)
+        (localFn : Frontend.FunctionDef)
+        (frontArgs : List Frontend.Expr)
+        (localYulBody : List Frontend.AstStmt)
+        (yulArgs : List Frontend.AstExpr),
+      (generated, localFn) ∈ object.functions ∧
+        Frontend.Stmt.List.toYul? localFn.body = some localYulBody ∧
+        Frontend.Expr.List.toYul? frontArgs = some yulArgs ∧
+        (generated,
+          EvmYul.Yul.Ast.FunctionDefinition.Def
+            localFn.params localFn.returns localYulBody) ∈
+          ordered.functionEntries ∧
+        ((∃ (topFn : Frontend.FunctionDef)
+            (topYulBody : List Frontend.AstStmt),
+          (topName, topFn) ∈ object.functions ∧
+            FrontendOccurrence.LowerableStmtListUserCall
+              topFn.body generated frontArgs ∧
+            Frontend.Stmt.List.toYul? topFn.body = some topYulBody ∧
+            YulOccurrence.StmtListUserCall
+              topYulBody generated yulArgs ∧
+            (topName,
+              EvmYul.Yul.Ast.FunctionDefinition.Def
+                topFn.params topFn.returns topYulBody) ∈
+              ordered.functionEntries) ∨
+          ∃ (topFn : Frontend.FunctionDef)
+            (stubName : Name)
+            (params returns : List Name)
+            (body : List Frontend.Stmt)
+            (yulBody : List Frontend.AstStmt),
+          (topName, topFn) ∈ object.functions ∧
+            FrontendOccurrence.StubBodyStmtListUserCall
+              topFn.body generated frontArgs ∧
+            Frontend.Stmt.List.toYul? body = some yulBody ∧
+            ordered.functionEntries.contains
+              (stubName,
+                EvmYul.Yul.Ast.FunctionDefinition.Def
+                  params returns yulBody) = true ∧
+            YulOccurrence.StmtListUserCall
+              yulBody generated yulArgs) := by
+  rcases FrontendOccurrence.ResolvedLocalCall.lowerable_or_stubBody
+      hAlpha.resolved with
+    hLowerable | hStub
+  · rcases
+      FrontendOccurrence.LowerableResolvedLocalCall.toSolcYulOrderedProgram?_entries
+        hLowerable hConvert with
+      ⟨generated, localFn, frontArgs, topFn, topYulBody, localYulBody,
+        yulArgs, hTopMem, hOccurrence, hCalleeMem, hTopYul,
+        hLocalYul, hArgsYul, hYulOccurrence, hTopEntry, hLocalEntry⟩
+    exact
+      ⟨generated, localFn, frontArgs, localYulBody, yulArgs,
+        hCalleeMem, hLocalYul, hArgsYul, hLocalEntry,
+        Or.inl
+          ⟨topFn, topYulBody, hTopMem, hOccurrence, hTopYul,
+            hYulOccurrence, hTopEntry⟩⟩
+  · rcases
+      FrontendOccurrence.StubBodyResolvedLocalCall.toSolcYulOrderedProgram?_chase
+        hStub hConvert with
+      ⟨generated, localFn, frontArgs, topFn, stubName, params, returns,
+        body, yulBody, localYulBody, yulArgs, hTopMem, hOccurrence,
+        hCalleeMem, hBodyYul, hContains, hArgsYul, hYulOccurrence,
+        hLocalYul, hLocalEntry⟩
+    exact
+      ⟨generated, localFn, frontArgs, localYulBody, yulArgs,
+        hCalleeMem, hLocalYul, hArgsYul, hLocalEntry,
+        Or.inr
+          ⟨topFn, stubName, params, returns, body, yulBody,
+            hTopMem, hOccurrence, hBodyYul, hContains,
+            hYulOccurrence⟩⟩
+
 end AlphaRenamedLocalCallPreserved
 
 end Source
