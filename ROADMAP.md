@@ -466,6 +466,11 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_switchScrutinee_outerArg_call_occurrence_routes_succ`
   composes the same outer-call view through Yul `switch` scrutinee evaluation
   and selected case/default execution.
+  `alphaRenamedLocalCallPreserved_ifCondition_outerArg_seqHead_call_occurrence_routes_succ`
+  and
+  `alphaRenamedLocalCallPreserved_switchScrutinee_outerArg_seqHead_call_occurrence_routes_succ`
+  expose those outer control contexts in direct `execSeq` form for recursive
+  statement-list composition.
   `alphaRenamedLocalCallPreserved_assignLet_outerArg_call_occurrence_routes_succ`
   composes the same outer-call argument view through assignment and declaration
   statement writeback for both primitive and user-function outer calls.
