@@ -92,6 +92,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_preserves_hoistedFunction_mem
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_single_functionDefinition_resolved
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_lookup_functionDefinition
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_functionDefinition_entry
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_hoistLocalFunctions_lookup_entry
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_preserves_hoistedFunction_mem
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateForInitBlockWithScope_preserves_hoistedFunction_mem
@@ -254,6 +257,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_preserves_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_single_functionDefinition_resolved
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_lookup_functionDefinition
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_functionDefinition_entry
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_hoistLocalFunctions_lookup_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_preserves_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateForInitBlockWithScope_preserves_hoistedFunction_mem

@@ -227,7 +227,10 @@ Next raw frontend layer:
   resolution, `memoryguard`, and `clz` helper allocation. Raw statement,
   block, case-list, function-definition, and local-hoist elaboration now
   preserve accumulated hoisted entries through recursive tails, including
-  entries just added for generated nested functions.
+  entries just added for generated nested functions. Successful local scope
+  lookup now has checked witnesses back to a raw nested definition and forward
+  to the generated hoisted frontend function entry inserted by the production
+  hoist pass.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call resolution and broader composition into
   the final source theorem.
