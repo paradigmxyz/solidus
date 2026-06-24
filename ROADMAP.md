@@ -420,6 +420,10 @@ Next raw frontend layer:
   retained-stub hop decreases the frontend statement-list `sizeOf`, so the
   chase reaches a concrete generated Yul call occurrence in an emitted lowered
   function entry.
+  `FrontendOccurrence.StubBodyResolvedLocalCall.toSolcYulOrderedProgram?_chase`
+  uses that structural chase with ordinary object Yul conversion, exposing the
+  retained-stub generated Yul call occurrence plus the generated callee entry
+  consumed by the backend.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call execution/observation in caller context,
   including source argument evaluation and caller writeback, and broader

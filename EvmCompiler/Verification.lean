@@ -101,6 +101,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.StubBodyResolvedLocalCall
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.ResolvedLocalCall.lowerable_or_stubBody
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableResolvedLocalCall.toSolcYulOrderedProgram?_entries
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.StubBodyResolvedLocalCall.toSolcYulOrderedProgram?_chase
 #check EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved
 #check EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_entries
 #check EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_callable_entries
@@ -594,6 +595,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.StubBodyStmtListUserCall.lowered_function_entry_chaseFuel
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.StubBodyStmtListUserCall.lowered_function_entry_chase
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableResolvedLocalCall.toSolcYulOrderedProgram?_entries
+#print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.StubBodyResolvedLocalCall.toSolcYulOrderedProgram?_chase
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_entries
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_callable_entries
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decoded
