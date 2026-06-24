@@ -52,9 +52,11 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.Frontend.FunctionDefList.containsStub?_mem
 #check EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsRetained?_functionDef_entry
 #check EvmCompiler.Solidity.Frontend.Stmt.toYul?_functionDef_erases
+#check EvmCompiler.Solidity.Frontend.FunctionDef.List.toYul?_function_mem
 #check EvmCompiler.Solidity.Frontend.FunctionEntries.containsLoweredStub?_mem
 #check EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsLoweredToEntries?_functionDef_entry
 #check EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_functionDefStubsLoweredToEntries
+#check EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_function_entry
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_some
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_parts
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_objectParts
@@ -66,6 +68,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_clzHelperSpecOk
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_hoistedFunctionsRetained
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_frontendValidated
+#check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_hoistedFunction_ordered_entry
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperFunctionDef_spec
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperFunctionDef_toYul?_some
 #check EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.run_zero
@@ -219,9 +222,11 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.Frontend.FunctionDefList.containsStub?_mem
 #print axioms EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsRetained?_functionDef_entry
 #print axioms EvmCompiler.Solidity.Frontend.Stmt.toYul?_functionDef_erases
+#print axioms EvmCompiler.Solidity.Frontend.FunctionDef.List.toYul?_function_mem
 #print axioms EvmCompiler.Solidity.Frontend.FunctionEntries.containsLoweredStub?_mem
 #print axioms EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsLoweredToEntries?_functionDef_entry
 #print axioms EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_functionDefStubsLoweredToEntries
+#print axioms EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_function_entry
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_some
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_objectParts
@@ -233,6 +238,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_clzHelperSpecOk
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_hoistedFunctionsRetained
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_frontendValidated
+#print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_hoistedFunction_ordered_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.clzHelperFunctionDef_spec
 #print axioms EvmCompiler.Solidity.RawAst.Elab.clzHelperFunctionDef_toYul?_some
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzHelperModel.run_zero

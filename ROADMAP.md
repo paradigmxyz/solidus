@@ -232,7 +232,9 @@ Next raw frontend layer:
   to the generated hoisted frontend function entry inserted by the production
   hoist pass. Raw user-call elaboration through such a local scope now has a
   checked bridge to both the generated frontend call target and the generated
-  hoisted callee entry.
+  hoisted callee entry. Hoisted frontend function entries now also have a
+  checked path through `toSolcYulOrderedProgram?` to the emitted ordered Yul
+  function-entry list consumed by the backend.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call resolution and broader composition into
   the final source theorem.

@@ -1767,6 +1767,54 @@ mutual
         some ((name, fn') :: rest')
 end
 
+namespace FunctionDef.List
+
+theorem toYul?_function_mem
+    {functions : List (Name × FunctionDef)}
+    {entries : List (Name × AstFunctionDefinition)}
+    {name : Name} {fn : FunctionDef}
+    (hConvert : FunctionDef.List.toYul? functions = some entries)
+    (hMem : (name, fn) ∈ functions) :
+    ∃ yulBody,
+      Stmt.List.toYul? fn.body = some yulBody ∧
+        (name,
+          EvmYul.Yul.Ast.FunctionDefinition.Def
+            fn.params fn.returns yulBody) ∈ entries := by
+  induction functions generalizing entries with
+  | nil =>
+      cases hMem
+  | cons head rest ih =>
+      rcases head with ⟨headName, headFn⟩
+      unfold FunctionDef.List.toYul? at hConvert
+      cases hHead : FunctionDef.toYul? headFn with
+      | none =>
+          simp [hHead] at hConvert
+      | some headYul =>
+          cases hRest : FunctionDef.List.toYul? rest with
+          | none =>
+              simp [hHead, hRest] at hConvert
+          | some restEntries =>
+              simp [hHead, hRest] at hConvert
+              subst entries
+              have hMemCases :
+                  (name, fn) = (headName, headFn) ∨
+                    (name, fn) ∈ rest := by
+                simpa using hMem
+              rcases hMemCases with hHeadMem | hTailMem
+              · cases hHeadMem
+                unfold FunctionDef.toYul? at hHead
+                cases hBody : Stmt.List.toYul? fn.body with
+                | none =>
+                    simp [hBody] at hHead
+                | some yulBody =>
+                    simp [hBody] at hHead
+                    subst headYul
+                    exact ⟨yulBody, by simpa [hBody], by simp⟩
+              · rcases ih hRest hTailMem with ⟨yulBody, hBody, hEntry⟩
+                exact ⟨yulBody, hBody, by simp [hEntry]⟩
+
+end FunctionDef.List
+
 namespace Stmt
 
 theorem toYul?_functionDef_erases
@@ -2925,6 +2973,36 @@ theorem toSolcYulOrderedProgram?_functionDefStubsLoweredToEntries
       rcases hConvert with ⟨hStubs, _hSpelling, hConvert⟩
       subst ordered
       exact hStubs
+
+theorem toSolcYulOrderedProgram?_function_entry
+    {object : Object} {ordered : Yul.OrderedProgram}
+    {name : Name} {fn : FunctionDef}
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered)
+    (hMem : (name, fn) ∈ object.functions) :
+    ∃ yulBody,
+      Stmt.List.toYul? fn.body = some yulBody ∧
+        (name,
+          EvmYul.Yul.Ast.FunctionDefinition.Def
+            fn.params fn.returns yulBody) ∈ ordered.functionEntries := by
+  unfold toSolcYulOrderedProgram? toYulContractWithFunctionEntries? at hConvert
+  cases hDispatcher : Stmt.toYul? (.block object.dispatcher) with
+  | none =>
+      simp [hDispatcher] at hConvert
+  | some dispatcher =>
+      cases hFunctions : FunctionDef.List.toYul? object.functions with
+      | none =>
+          simp [hDispatcher, hFunctions] at hConvert
+      | some functions =>
+          cases hValid :
+              Yul.SolcValidation.ContractOkWithEntries?
+                object.dialectProfile
+                { dispatcher := dispatcher
+                  functions := functionMap functions }
+                functions <;>
+            simp [hDispatcher, hFunctions, hValid] at hConvert
+          rcases hConvert with ⟨_hStubs, _hSpelling, hConvert⟩
+          subst ordered
+          exact FunctionDef.List.toYul?_function_mem hFunctions hMem
 
 theorem toSolcYulOrderedProgram?_programOkWithEntries
     {object : Object} {ordered : Yul.OrderedProgram}

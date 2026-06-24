@@ -4110,6 +4110,38 @@ theorem Object.elaboratePreservingOrder?_frontendValidated
       Object.elaborate?_clzHelperSpecOk hObject,
       Object.elaborate?_hoistedFunctionsRetained hObject⟩
 
+theorem Object.elaboratePreservingOrder?_hoistedFunction_ordered_entry
+    {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
+    {frontend : Frontend.Object} {ordered : Yul.OrderedProgram}
+    {code : List Raw.Stmt} {coreDispatcher : List Frontend.Stmt}
+    {state : Elab.State} {name : Name} {fn : Frontend.FunctionDef}
+    (hElab :
+      Object.elaboratePreservingOrder? obj evmVersion = .ok frontend)
+    (hCode : obj.code? = some code)
+    (hCore :
+      Elab.elaborateCodeCore code = .ok (coreDispatcher, state))
+    (hHoisted : (name, fn) ∈ state.hoistedFunctions)
+    (hConvert : frontend.toSolcYulOrderedProgram? = some ordered) :
+    ∃ yulBody,
+      Frontend.Stmt.List.toYul? fn.body = some yulBody ∧
+        (name,
+          EvmYul.Yul.Ast.FunctionDefinition.Def
+            fn.params fn.returns yulBody) ∈ ordered.functionEntries := by
+  have hObject := (Object.elaboratePreservingOrder?_parts hElab).1
+  have hRetained := Object.elaborate?_hoistedFunctionsRetained hObject
+  unfold Object.HoistedFunctionsRetained at hRetained
+  rw [hCode] at hRetained
+  rcases hRetained with
+    ⟨coreDispatcher', state', helper?, arg?, ret?,
+      hCore', _hCodeElab, hKeep⟩
+  rw [hCore] at hCore'
+  cases hCore'
+  have hFrontendMem : (name, fn) ∈ frontend.functions :=
+    hKeep (name, fn) hHoisted
+  exact
+    Frontend.Object.toSolcYulOrderedProgram?_function_entry
+      hConvert hFrontendMem
+
 theorem Object.elaboratePreservingOrder?_clzHelper_exec_ret_eq_run
     {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
     {frontend : Frontend.Object} {code : List Raw.Stmt}
