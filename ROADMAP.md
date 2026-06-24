@@ -209,14 +209,15 @@ Next raw frontend layer:
   artifact-wrapper theorems expose
   `Frontend.Object.userCallsResolved? = true` for successful production raw
   elaboration. The raw elaborator now also exposes local alpha-resolution
-  equations: singleton nested-function scope construction creates the raw-name
-  to generated-name mapping, ordinary user-call elaboration rewrites a raw
-  source callee to the generated name returned by that active function-scope
-  resolver, and nested function-definition elaboration emits the retained
-  frontend stub under that same resolved generated name. The hoist pass also
-  exposes the corresponding single-definition equation: when the active local
-  function scope maps a raw nested name to a generated name, hoisting inserts
-  the elaborated function entry under that generated name in `hoistedFunctions`.
+  equations: singleton and cons-case nested-function scope construction create
+  the raw-name to generated-name mapping, ordinary user-call elaboration
+  rewrites a raw source callee to the generated name returned by that active
+  function-scope resolver, and nested function-definition elaboration emits the
+  retained frontend stub under that same resolved generated name. The hoist
+  pass also exposes the corresponding single-definition equation: when the
+  active local function scope maps a raw nested name to a generated name,
+  hoisting inserts the elaborated function entry under that generated name in
+  `hoistedFunctions`.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call resolution plus broader composition into
   the final source theorem.

@@ -1971,6 +1971,33 @@ theorem localFunctionScope_single_functionDefinition
   simp [Stmt.List.localFunctionScope, hDeclare, hFresh, StateT.run,
     StateT.instMonad, StateT.bind, StateT.pure, pure, Except.pure]
 
+theorem localFunctionScope_cons_functionDefinition
+    {state tailState declaredState state' : State}
+    {name generated : Name} {params returns : List Name}
+    {body rest : List Raw.Stmt} {tailScope : List (Name × Name)}
+    (hTail :
+      (Stmt.List.localFunctionScope rest).run state =
+        .ok (tailScope, tailState))
+    (hNoDuplicate :
+      (tailScope.any fun entry => entry.fst == name) = false)
+    (hDeclare :
+      (declareIdentifiers [name] "function").run tailState =
+        .ok ((), declaredState))
+    (hFresh :
+      (freshGeneratedFunctionName name).run declaredState =
+        .ok (generated, state')) :
+    (Stmt.List.localFunctionScope
+      (.functionDefinition name params returns body :: rest)).run state =
+        .ok ((name, generated) :: tailScope, state') := by
+  change Stmt.List.localFunctionScope rest state =
+    .ok (tailScope, tailState) at hTail
+  change declareIdentifiers [name] "function" tailState =
+    .ok ((), declaredState) at hDeclare
+  change freshGeneratedFunctionName name declaredState =
+    .ok (generated, state') at hFresh
+  simp [Stmt.List.localFunctionScope, hTail, hNoDuplicate, hDeclare, hFresh,
+    StateT.run, StateT.instMonad, StateT.bind, StateT.pure, pure, Except.pure]
+
 theorem hoistLocalFunctions_single_functionDefinition_resolved
     {state state' : State} {scope : List (Name × Name)}
     {name generated : Name} {params returns : List Name}
