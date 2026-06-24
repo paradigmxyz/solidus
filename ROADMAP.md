@@ -202,7 +202,13 @@ Next raw frontend layer:
   expose the local boolean evidence at the exact erased node: a retained
   `functionDef` staging node has a matching callable `FunctionDef` entry, and
   a staging node erased during Yul conversion has an ordered lowered Yul
-  function entry for its body.
+  function entry for its body. Raw production elaboration now also fail-closes
+  unless every frontend `.call .user` resolves to a function entry in the
+  current frontend object's function table, checking each child object against
+  its own function table. The raw object, raw JSON/string decode, and
+  artifact-wrapper theorems expose
+  `Frontend.Object.userCallsResolved? = true` for successful production raw
+  elaboration.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call resolution plus broader composition into
   the final source theorem.

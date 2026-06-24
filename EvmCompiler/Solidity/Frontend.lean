@@ -1334,6 +1334,82 @@ def noRawClzCall? (object : Object) : Bool :=
   !object.hasCallNamed? "clz"
 
 mutual
+  def Expr.userCallsResolved? (functionNames : List Name) : Expr → Bool
+    | .lit _ => true
+    | .stringLit _ => true
+    | .bytesLit _ => true
+    | .var _ => true
+    | .call .user callee args =>
+        functionNames.contains callee &&
+          Expr.List.userCallsResolved? functionNames args
+    | .call _ _ args =>
+        Expr.List.userCallsResolved? functionNames args
+
+  def Expr.List.userCallsResolved? (functionNames : List Name) :
+      List Expr → Bool
+    | [] => true
+    | expr :: rest =>
+        Expr.userCallsResolved? functionNames expr &&
+          Expr.List.userCallsResolved? functionNames rest
+end
+
+mutual
+  def Stmt.userCallsResolved? (functionNames : List Name) : Stmt → Bool
+    | .block stmts => Stmt.List.userCallsResolved? functionNames stmts
+    | .letDecl _ none => true
+    | .letDecl _ (some value) =>
+        Expr.userCallsResolved? functionNames value
+    | .assign _ value =>
+        Expr.userCallsResolved? functionNames value
+    | .exprStmt expr =>
+        Expr.userCallsResolved? functionNames expr
+    | .functionDef _ _ _ body =>
+        Stmt.List.userCallsResolved? functionNames body
+    | .switch scrutinee cases default =>
+        Expr.userCallsResolved? functionNames scrutinee &&
+          Stmt.CaseList.userCallsResolved? functionNames cases &&
+            Stmt.List.userCallsResolved? functionNames default
+    | .forLoop pre condition post body =>
+        Stmt.List.userCallsResolved? functionNames pre &&
+          Expr.userCallsResolved? functionNames condition &&
+            Stmt.List.userCallsResolved? functionNames post &&
+              Stmt.List.userCallsResolved? functionNames body
+    | .ifThen condition body =>
+        Expr.userCallsResolved? functionNames condition &&
+          Stmt.List.userCallsResolved? functionNames body
+    | .break => true
+    | .continue => true
+    | .leave => true
+
+  def Stmt.List.userCallsResolved? (functionNames : List Name) :
+      List Stmt → Bool
+    | [] => true
+    | stmt :: rest =>
+        Stmt.userCallsResolved? functionNames stmt &&
+          Stmt.List.userCallsResolved? functionNames rest
+
+  def Stmt.CaseList.userCallsResolved? (functionNames : List Name) :
+      List (SwitchCaseValue × List Stmt) → Bool
+    | [] => true
+    | (_value, body) :: rest =>
+        Stmt.List.userCallsResolved? functionNames body &&
+          Stmt.CaseList.userCallsResolved? functionNames rest
+end
+
+namespace Expr
+
+theorem userCallsResolved?_user_call
+    {functionNames : List Name} {callee : Name} {args : List Expr}
+    (h :
+      Expr.userCallsResolved? functionNames (.call .user callee args) =
+        true) :
+    functionNames.contains callee = true ∧
+      Expr.List.userCallsResolved? functionNames args = true := by
+  simpa [Expr.userCallsResolved?] using h
+
+end Expr
+
+mutual
   def functionDefStubsRetainedFuel? : Nat → Object → Bool
     | 0, _ => false
     | fuel + 1, object =>
@@ -1353,6 +1429,43 @@ end
 
 def functionDefStubsRetained? (object : Object) : Bool :=
   object.functionDefStubsRetainedFuel? callSearchFuel
+
+namespace FunctionDef
+
+def userCallsResolved? (functionNames : List Name) (fn : FunctionDef) : Bool :=
+  Stmt.List.userCallsResolved? functionNames fn.body
+
+namespace List
+
+def userCallsResolved? (functionNames : List Name) :
+    List (Name × FunctionDef) → Bool
+  | [] => true
+  | (_name, fn) :: rest =>
+      FunctionDef.userCallsResolved? functionNames fn &&
+        userCallsResolved? functionNames rest
+
+end List
+end FunctionDef
+
+mutual
+  def userCallsResolvedFuel? : Nat → Object → Bool
+    | 0, _ => false
+    | fuel + 1, object =>
+        let functionNames := object.functions.map Prod.fst
+        Stmt.List.userCallsResolved? functionNames object.dispatcher &&
+          FunctionDef.List.userCallsResolved? functionNames object.functions &&
+            Object.List.userCallsResolvedFuel? fuel object.objects
+
+  def List.userCallsResolvedFuel? : Nat → List Object → Bool
+    | 0, _ => false
+    | _fuel + 1, [] => true
+    | fuel + 1, object :: rest =>
+        object.userCallsResolvedFuel? fuel &&
+          List.userCallsResolvedFuel? fuel rest
+end
+
+def userCallsResolved? (object : Object) : Bool :=
+  object.userCallsResolvedFuel? callSearchFuel
 
 end Object
 

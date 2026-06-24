@@ -2479,9 +2479,10 @@ def Object.FrontendValidated (raw : Object)
     Object.clzHelperNamesDistinct? raw = true ∧
       Frontend.Object.noRawClzCall? frontend = true ∧
       Frontend.Object.functionDefStubsRetained? frontend = true ∧
-        Object.ClzExpansionOk raw frontend ∧
-          Object.ClzHelperSpecOk raw frontend ∧
-            Object.HoistedFunctionsRetained raw frontend
+        Frontend.Object.userCallsResolved? frontend = true ∧
+          Object.ClzExpansionOk raw frontend ∧
+            Object.ClzHelperSpecOk raw frontend ∧
+              Object.HoistedFunctionsRetained raw frontend
 
 def Object.elaboratePreservingOrder? (obj : Object)
     (evmVersion : Yul.SolcValidation.EvmVersion) :
@@ -2491,7 +2492,10 @@ def Object.elaboratePreservingOrder? (obj : Object)
     if Object.clzHelperNamesDistinct? obj then
       if Frontend.Object.noRawClzCall? frontend then
         if Frontend.Object.functionDefStubsRetained? frontend then
-          pure frontend
+          if Frontend.Object.userCallsResolved? frontend then
+            pure frontend
+          else
+            .error "unresolved Yul user function call"
         else
           .error "hoisted function stub mismatch"
       else
@@ -2532,10 +2536,16 @@ theorem Object.elaboratePreservingOrder?_parts
                       simp [hObject, hOrder, hNames, hNoRawClz, hStubs]
                         at hElab
                   | true =>
-                      simp [hObject, hOrder, hNames, hNoRawClz, hStubs, pure,
-                        Except.pure] at hElab
-                      subst object
-                      simp [hObject, hOrder]
+                      cases hResolved :
+                          Frontend.Object.userCallsResolved? object with
+                      | false =>
+                          simp [hObject, hOrder, hNames, hNoRawClz, hStubs,
+                            hResolved] at hElab
+                      | true =>
+                          simp [hObject, hOrder, hNames, hNoRawClz, hStubs,
+                            hResolved, pure, Except.pure] at hElab
+                          subst object
+                          simp [hObject, hOrder]
 
 theorem Object.elaboratePreservingOrder?_clzHelperNamesDistinct
     {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
@@ -2587,10 +2597,16 @@ theorem Object.elaboratePreservingOrder?_noRawClzCall
                       simp [hObject, hOrder, hNames, hNoRawClz, hStubs]
                         at hElab
                   | true =>
-                      simp [hObject, hOrder, hNames, hNoRawClz, hStubs, pure,
-                        Except.pure] at hElab
-                      subst frontend
-                      exact hNoRawClz
+                      cases hResolved :
+                          Frontend.Object.userCallsResolved? object with
+                      | false =>
+                          simp [hObject, hOrder, hNames, hNoRawClz, hStubs,
+                            hResolved] at hElab
+                      | true =>
+                          simp [hObject, hOrder, hNames, hNoRawClz, hStubs,
+                            hResolved, pure, Except.pure] at hElab
+                          subst frontend
+                          exact hNoRawClz
 
 theorem Object.elaboratePreservingOrder?_functionDefStubsRetained
     {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
@@ -2621,10 +2637,56 @@ theorem Object.elaboratePreservingOrder?_functionDefStubsRetained
                       simp [hObject, hOrder, hNames, hNoRawClz, hStubs]
                         at hElab
                   | true =>
-                      simp [hObject, hOrder, hNames, hNoRawClz, hStubs, pure,
-                        Except.pure] at hElab
-                      subst frontend
-                      exact hStubs
+                      cases hResolved :
+                          Frontend.Object.userCallsResolved? object with
+                      | false =>
+                          simp [hObject, hOrder, hNames, hNoRawClz, hStubs,
+                            hResolved] at hElab
+                      | true =>
+                          simp [hObject, hOrder, hNames, hNoRawClz, hStubs,
+                            hResolved, pure, Except.pure] at hElab
+                          subst frontend
+                          exact hStubs
+
+theorem Object.elaboratePreservingOrder?_userCallsResolved
+    {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
+    {frontend : Frontend.Object}
+    (hElab :
+      Object.elaboratePreservingOrder? obj evmVersion = .ok frontend) :
+    Frontend.Object.userCallsResolved? frontend = true := by
+  unfold Object.elaboratePreservingOrder? at hElab
+  cases hObject : Object.elaborate? obj evmVersion with
+  | error err =>
+      simp [hObject] at hElab
+  | ok object =>
+      cases hOrder : Object.itemRefsPreserveOrder? obj object with
+      | false =>
+          simp [hObject, hOrder] at hElab
+      | true =>
+          cases hNames : Object.clzHelperNamesDistinct? obj with
+          | false =>
+              simp [hObject, hOrder, hNames] at hElab
+          | true =>
+              cases hNoRawClz : Frontend.Object.noRawClzCall? object with
+              | false =>
+                  simp [hObject, hOrder, hNames, hNoRawClz] at hElab
+              | true =>
+                  cases hStubs :
+                      Frontend.Object.functionDefStubsRetained? object with
+                  | false =>
+                      simp [hObject, hOrder, hNames, hNoRawClz, hStubs]
+                        at hElab
+                  | true =>
+                      cases hResolved :
+                          Frontend.Object.userCallsResolved? object with
+                      | false =>
+                          simp [hObject, hOrder, hNames, hNoRawClz, hStubs,
+                            hResolved] at hElab
+                      | true =>
+                          simp [hObject, hOrder, hNames, hNoRawClz, hStubs,
+                            hResolved, pure, Except.pure] at hElab
+                          subst frontend
+                          exact hResolved
 
 theorem Object.elaboratePreservingOrder?_frontendValidated
     {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
@@ -2640,6 +2702,7 @@ theorem Object.elaboratePreservingOrder?_frontendValidated
       Object.elaboratePreservingOrder?_clzHelperNamesDistinct hElab,
       Object.elaboratePreservingOrder?_noRawClzCall hElab,
       Object.elaboratePreservingOrder?_functionDefStubsRetained hElab,
+      Object.elaboratePreservingOrder?_userCallsResolved hElab,
       Object.elaborate?_clzExpansionOk hObject,
       Object.elaborate?_clzHelperSpecOk hObject,
       Object.elaborate?_hoistedFunctionsRetained hObject⟩
@@ -2955,6 +3018,40 @@ theorem decodeAndElaborateSolcIrJson_functionDefStubsRetained
           · exact hParts.1
           · exact hStubs
 
+theorem decodeAndElaborateSolcIrJson_userCallsResolved
+    {json : Lean.Json} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIrJson json selection = .ok program) :
+    ∃ (selected : SelectedIr) (object : Frontend.Object),
+      decodeSelectedIr json selection = .ok selected ∧
+        selected.root.elaborate? selected.evmVersion = .ok object ∧
+          Frontend.Object.userCallsResolved? object = true ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } := by
+  unfold decodeAndElaborateSolcIrJson at hDecode
+  cases hSelected : decodeSelectedIr json selection with
+  | error err =>
+      simp [hSelected] at hDecode
+  | ok selected =>
+      cases hObject :
+          selected.root.elaboratePreservingOrder? selected.evmVersion with
+      | error err =>
+          simp [hSelected, hObject] at hDecode
+      | ok object =>
+          have hParts :=
+            Raw.Object.elaboratePreservingOrder?_parts hObject
+          have hResolved :=
+            Raw.Object.elaboratePreservingOrder?_userCallsResolved hObject
+          simp [hSelected, hObject] at hDecode
+          subst program
+          refine ⟨selected, object, ?_, ?_, ?_, rfl⟩
+          · simp [hSelected]
+          · exact hParts.1
+          · exact hResolved
+
 theorem decodeAndElaborateSolcIrJson_clzExpansionOk
     {json : Lean.Json} {selection : Selection}
     {program : Frontend.Program}
@@ -3211,6 +3308,29 @@ theorem decodeAndElaborateSolcIr?_functionDefStubsRetained
     ⟨selected, object, hSelected, hObject, hStubs, hProgram⟩
   exact
     ⟨json, selected, object, hParse, hSelected, hObject, hStubs,
+      hProgram⟩
+
+theorem decodeAndElaborateSolcIr?_userCallsResolved
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            Frontend.Object.userCallsResolved? object = true ∧
+              program =
+                { source := selected.source
+                  contract := selected.contract
+                  object := object } := by
+  rcases decodeAndElaborateSolcIr?_some hDecode with
+    ⟨json, hParse, hJsonDecode⟩
+  rcases decodeAndElaborateSolcIrJson_userCallsResolved hJsonDecode with
+    ⟨selected, object, hSelected, hObject, hResolved, hProgram⟩
+  exact
+    ⟨json, selected, object, hParse, hSelected, hObject, hResolved,
       hProgram⟩
 
 theorem decodeAndElaborateSolcIr?_clzExpansionOk
