@@ -99,11 +99,14 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.Expr.List.elaborate_preserves_functionScopes
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_functionDefinition_resolved_stub
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_preserves_hoistedFunction_mem
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_preserves_functionScopes
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_single_functionDefinition
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_cons_functionDefinition
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_preserves_hoistedFunction_mem
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_preserves_functionScopes
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_single_functionDefinition_resolved
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_preserves_functionScopes
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_lookup_functionDefinition
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_functionDefinition_lookup
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_sourceLocalFunction_lookup
@@ -128,10 +131,15 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_elaborateBlock_false_entry_of_run
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_elaborateBlock_true_entry_of_run
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_preserves_hoistedFunction_mem
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_preserves_functionScopes
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateBlock_preserves_functionScopes
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateForInitBlockWithScope_preserves_hoistedFunction_mem
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateForInitBlockWithScope_functionScopes
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.CaseList.elaborate_preserves_hoistedFunction_mem
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.CaseList.elaborate_preserves_functionScopes
 #check EvmCompiler.Solidity.RawAst.Elab.FunctionDef.elaborate_preserves_hoistedFunction_mem
+#check EvmCompiler.Solidity.RawAst.Elab.FunctionDef.elaborate_preserves_functionScopes
 #check EvmCompiler.Solidity.RawAst.Elab.FunctionDef.elaborate_sourceLocalFunction_entry
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.lookupFunctionInScope_cons_self
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.resolveFunctionIn_cons_scope_self
@@ -306,11 +314,14 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.List.elaborate_preserves_functionScopes
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_functionDefinition_resolved_stub
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_preserves_hoistedFunction_mem
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_preserves_functionScopes
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_single_functionDefinition
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_cons_functionDefinition
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_preserves_hoistedFunction_mem
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_preserves_functionScopes
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_single_functionDefinition_resolved
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_preserves_functionScopes
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_lookup_functionDefinition
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_functionDefinition_lookup
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_sourceLocalFunction_lookup
@@ -335,10 +346,15 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_elaborateBlock_false_entry_of_run
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_elaborateBlock_true_entry_of_run
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_preserves_hoistedFunction_mem
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_preserves_functionScopes
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateBlock_preserves_functionScopes
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateForInitBlockWithScope_preserves_hoistedFunction_mem
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateForInitBlockWithScope_functionScopes
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.CaseList.elaborate_preserves_hoistedFunction_mem
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.CaseList.elaborate_preserves_functionScopes
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FunctionDef.elaborate_preserves_hoistedFunction_mem
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FunctionDef.elaborate_preserves_functionScopes
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FunctionDef.elaborate_sourceLocalFunction_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.lookupFunctionInScope_cons_self
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.resolveFunctionIn_cons_scope_self

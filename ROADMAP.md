@@ -248,7 +248,11 @@ Next raw frontend layer:
   `CallClass.classifyCall name = .user` for those source names. Raw
   expression/list argument elaboration now also preserves the active function
   scope stack, so the source-call bridge requires only the pre-argument active
-  local scope and derives the post-argument resolver scope internally.
+  local scope and derives the post-argument resolver scope internally. Raw
+  statement, statement-list, block, local-hoist, for-init block, case-list, and
+  function-definition elaboration now preserve/restore the active
+  `functionScopes` stack, giving the source-call proof a checked way to carry
+  actual source-name local call scopes through production block elaboration.
   Successful `FunctionDef.elaborate` now also realizes source local-function
   declarations in the raw function body as generated hoisted callee entries in
   the final elaborator state, without exposing the block's internal scope

@@ -2211,6 +2211,22 @@ theorem requireIdentifiersVisible_preserves_hoistedFunction_mem
           (requireIdentifierVisible_preserves_hoistedFunction_mem name what)
           (fun _ => ih)
 
+theorem requireIdentifiersVisible_preserves_functionScopes
+    (names : List Name) (what : String) :
+    PreservesFunctionScopes (requireIdentifiersVisible names what) := by
+  induction names with
+  | nil =>
+      simp [requireIdentifiersVisible]
+      exact PreservesFunctionScopes.pure ()
+  | cons name rest ih =>
+      change PreservesFunctionScopes
+        (requireIdentifierVisible name what >>= fun _ =>
+          requireIdentifiersVisible rest what)
+      exact
+        PreservesFunctionScopes.bind
+          (requireIdentifierVisible_preserves_functionScopes name what)
+          (fun _ => ih)
+
 theorem declareIdentifiers_preserves_hoistedFunction_mem
     (names : List Name) (description : String) :
     PreservesHoisted (declareIdentifiers names description) := by
@@ -2244,6 +2260,39 @@ theorem declareIdentifiers_preserves_hoistedFunction_mem
           cases hRun
           exact hEntry
 
+theorem declareIdentifiers_preserves_functionScopes
+    (names : List Name) (description : String) :
+    PreservesFunctionScopes (declareIdentifiers names description) := by
+  intro state state' value hRun
+  unfold declareIdentifiers at hRun
+  simp [StateT.run_bind, StateT.run_get] at hRun
+  cases hScopes : state.identifierScopes with
+  | nil =>
+      cases hCollect : collectDeclaredIdentifiers names description [[]] with
+      | error err =>
+          simp [hScopes, hCollect] at hRun
+          unfold EvmCompiler.Solidity.RawAst.Elab.throw at hRun
+          change (Except.error err : DecodeM (Unit × State)) =
+            .ok (value, state') at hRun
+          cases hRun
+      | ok seen =>
+          simp [hScopes, hCollect, StateT.run_set] at hRun
+          cases hRun
+          rfl
+  | cons scope rest =>
+      cases hCollect :
+          collectDeclaredIdentifiers names description (scope :: rest) with
+      | error err =>
+          simp [hScopes, hCollect] at hRun
+          unfold EvmCompiler.Solidity.RawAst.Elab.throw at hRun
+          change (Except.error err : DecodeM (Unit × State)) =
+            .ok (value, state') at hRun
+          cases hRun
+      | ok seen =>
+          simp [hScopes, hCollect, StateT.run_set] at hRun
+          cases hRun
+          rfl
+
 theorem hoistFunctionEntry_preserves_hoistedFunction_mem
     (generated : Name) (fn : Frontend.FunctionDef) :
     PreservesHoisted (modify fun state =>
@@ -2254,6 +2303,16 @@ theorem hoistFunctionEntry_preserves_hoistedFunction_mem
   cases hRun
   exact List.mem_cons_of_mem (generated, fn) hEntry
 
+theorem hoistFunctionEntry_preserves_functionScopes
+    (generated : Name) (fn : Frontend.FunctionDef) :
+    PreservesFunctionScopes (modify fun state =>
+      { state with hoistedFunctions := (generated, fn) ::
+        state.hoistedFunctions }) := by
+  intro state state' value hRun
+  simp [StateT.run_modify] at hRun
+  cases hRun
+  rfl
+
 theorem pushIdentifierScope_preserves_hoistedFunction_mem :
     PreservesHoisted pushIdentifierScope := by
   intro state state' value entry hRun hEntry
@@ -2261,6 +2320,14 @@ theorem pushIdentifierScope_preserves_hoistedFunction_mem :
   simp [StateT.run_modify] at hRun
   cases hRun
   exact hEntry
+
+theorem pushIdentifierScope_preserves_functionScopes :
+    PreservesFunctionScopes pushIdentifierScope := by
+  intro state state' value hRun
+  unfold pushIdentifierScope at hRun
+  simp [StateT.run_modify] at hRun
+  cases hRun
+  rfl
 
 theorem popIdentifierScope_preserves_hoistedFunction_mem :
     PreservesHoisted popIdentifierScope := by
@@ -2280,6 +2347,24 @@ theorem popIdentifierScope_preserves_hoistedFunction_mem :
       cases hRun
       exact hEntry
 
+theorem popIdentifierScope_preserves_functionScopes :
+    PreservesFunctionScopes popIdentifierScope := by
+  intro state state' value hRun
+  unfold popIdentifierScope at hRun
+  simp [StateT.run_bind, StateT.run_get] at hRun
+  cases hScopes : state.identifierScopes with
+  | nil =>
+      simp [hScopes] at hRun
+      unfold EvmCompiler.Solidity.RawAst.Elab.throw at hRun
+      change (Except.error
+        "internal frontend error: no identifier scope to pop" :
+          DecodeM (Unit × State)) = .ok (value, state') at hRun
+      cases hRun
+  | cons _ rest =>
+      simp [hScopes, StateT.run_set] at hRun
+      cases hRun
+      rfl
+
 theorem pushFunctionScope_preserves_hoistedFunction_mem
     (scope : List (Name × Name)) :
     PreservesHoisted (pushFunctionScope scope) := by
@@ -2288,6 +2373,15 @@ theorem pushFunctionScope_preserves_hoistedFunction_mem
   simp [StateT.run_modify] at hRun
   cases hRun
   exact hEntry
+
+theorem pushFunctionScope_functionScopes
+    {scope : List (Name × Name)} {state state' : State}
+    (hRun : (pushFunctionScope scope).run state = .ok ((), state')) :
+    state'.functionScopes = scope :: state.functionScopes := by
+  unfold pushFunctionScope at hRun
+  simp [StateT.run_modify] at hRun
+  cases hRun
+  rfl
 
 theorem popFunctionScope_preserves_hoistedFunction_mem :
     PreservesHoisted popFunctionScope := by
@@ -2306,6 +2400,19 @@ theorem popFunctionScope_preserves_hoistedFunction_mem :
       simp [hScopes, StateT.run_set] at hRun
       cases hRun
       exact hEntry
+
+theorem popFunctionScope_functionScopes
+    {state state' : State} {scope : List (Name × Name)}
+    {outer : List (List (Name × Name))}
+    (hScopes : state.functionScopes = scope :: outer)
+    (hRun : popFunctionScope.run state = .ok ((), state')) :
+    state'.functionScopes = outer := by
+  unfold popFunctionScope at hRun
+  simp [StateT.run_bind, StateT.run_get] at hRun
+  rw [hScopes] at hRun
+  simp [StateT.run_set] at hRun
+  cases hRun
+  rfl
 
 theorem resolveFunction_preserves_hoistedFunction_mem (name : Name) :
     PreservesHoisted (resolveFunction name) := by
@@ -3040,6 +3147,76 @@ theorem localFunctionScope_preserves_hoistedFunction_mem
           change PreservesHoisted (Stmt.List.localFunctionScope rest)
           exact ih
 
+theorem localFunctionScope_preserves_functionScopes
+    (stmts : List Raw.Stmt) :
+    PreservesFunctionScopes (Stmt.List.localFunctionScope stmts) := by
+  induction stmts with
+  | nil =>
+      simp [Stmt.List.localFunctionScope]
+      exact PreservesFunctionScopes.pure []
+  | cons stmt rest ih =>
+      cases stmt with
+      | functionDefinition name params returns body =>
+          change PreservesFunctionScopes
+            (Stmt.List.localFunctionScope rest >>= fun tail =>
+              if tail.any fun entry => entry.fst == name then
+                throw s!"duplicate Yul function {name} in block"
+              else
+                declareIdentifiers [name] "function" >>= fun _ =>
+                  freshGeneratedFunctionName name >>= fun generated =>
+                    pure ((name, generated) :: tail))
+          exact
+            PreservesFunctionScopes.bind ih (fun tail => by
+              cases hDuplicate :
+                  (tail.any fun entry => entry.fst == name) with
+              | false =>
+                  simp [hDuplicate]
+                  exact
+                    PreservesFunctionScopes.bind
+                      (declareIdentifiers_preserves_functionScopes
+                        [name] "function")
+                      (fun _ =>
+                        PreservesFunctionScopes.bind
+                          (freshGeneratedFunctionName_preserves_functionScopes
+                            name)
+                          (fun generated =>
+                            PreservesFunctionScopes.pure
+                              ((name, generated) :: tail)))
+              | true =>
+                  simp [hDuplicate]
+                  exact PreservesFunctionScopes.throw
+                    s!"duplicate Yul function {name} in block")
+      | block stmts =>
+          change PreservesFunctionScopes (Stmt.List.localFunctionScope rest)
+          exact ih
+      | variableDeclaration names value? =>
+          change PreservesFunctionScopes (Stmt.List.localFunctionScope rest)
+          exact ih
+      | assignment names value =>
+          change PreservesFunctionScopes (Stmt.List.localFunctionScope rest)
+          exact ih
+      | expressionStatement expr =>
+          change PreservesFunctionScopes (Stmt.List.localFunctionScope rest)
+          exact ih
+      | switch scrutinee cases default =>
+          change PreservesFunctionScopes (Stmt.List.localFunctionScope rest)
+          exact ih
+      | forLoop pre condition post body =>
+          change PreservesFunctionScopes (Stmt.List.localFunctionScope rest)
+          exact ih
+      | ifThen condition body =>
+          change PreservesFunctionScopes (Stmt.List.localFunctionScope rest)
+          exact ih
+      | «break» =>
+          change PreservesFunctionScopes (Stmt.List.localFunctionScope rest)
+          exact ih
+      | «continue» =>
+          change PreservesFunctionScopes (Stmt.List.localFunctionScope rest)
+          exact ih
+      | «leave» =>
+          change PreservesFunctionScopes (Stmt.List.localFunctionScope rest)
+          exact ih
+
 theorem hoistLocalFunctions_single_functionDefinition_resolved
     {state state' : State} {scope : List (Name × Name)}
     {name generated : Name} {params returns : List Name}
@@ -3537,6 +3714,683 @@ theorem FunctionDef.elaborate_preserves_hoistedFunction_mem
                 PreservesHoisted.bind
                   popIdentifierScope_preserves_hoistedFunction_mem
                   (fun _ => PreservesHoisted.pure
+                    ({ params, returns, body } : Frontend.FunctionDef)))))
+  termination_by 20 * sizeOf body + 16
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+end
+
+mutual
+
+theorem Stmt.elaborate_preserves_functionScopes
+    (stmt : Raw.Stmt) : PreservesFunctionScopes (Stmt.elaborate stmt) := by
+  cases stmt with
+  | block stmts =>
+      simp only [Stmt.elaborate]
+      exact
+        PreservesFunctionScopes.bind
+          (Stmt.List.elaborateBlock_preserves_functionScopes stmts true)
+          (fun stmts => PreservesFunctionScopes.pure
+            (Frontend.Stmt.block stmts))
+  | variableDeclaration names value? =>
+      cases value? with
+      | none =>
+          simp only [Stmt.elaborate]
+          exact
+            PreservesFunctionScopes.bind
+              (declareIdentifiers_preserves_functionScopes names "variable")
+              (fun _ => PreservesFunctionScopes.pure
+                (Frontend.Stmt.letDecl names none))
+      | some value =>
+          simp only [Stmt.elaborate]
+          exact
+            PreservesFunctionScopes.bind
+              (PreservesFunctionScopes.map some
+                (Expr.elaborate_preserves_functionScopes value))
+              (fun value? =>
+                PreservesFunctionScopes.bind
+                  (declareIdentifiers_preserves_functionScopes
+                    names "variable")
+                  (fun _ => PreservesFunctionScopes.pure
+                    (Frontend.Stmt.letDecl names value?)))
+  | assignment names value =>
+      simp only [Stmt.elaborate]
+      exact
+        PreservesFunctionScopes.bind
+          (requireIdentifiersVisible_preserves_functionScopes
+            names "assignment")
+          (fun _ =>
+            PreservesFunctionScopes.bind
+              (Expr.elaborate_preserves_functionScopes value)
+              (fun value => PreservesFunctionScopes.pure
+                (Frontend.Stmt.assign names value)))
+  | expressionStatement expr =>
+      simp only [Stmt.elaborate]
+      exact
+        PreservesFunctionScopes.bind
+          (Expr.elaborate_preserves_functionScopes expr)
+          (fun expr => PreservesFunctionScopes.pure
+            (Frontend.Stmt.exprStmt expr))
+  | functionDefinition name params returns body =>
+      simp only [Stmt.elaborate]
+      exact
+        PreservesFunctionScopes.bind
+          (resolveFunction_preserves_functionScopes name)
+          (fun generated =>
+            PreservesFunctionScopes.bind
+              (FunctionDef.elaborate_preserves_functionScopes
+                params returns body)
+              (fun fn => PreservesFunctionScopes.pure
+                (Frontend.Stmt.functionDef generated params returns fn.body)))
+  | switch scrutinee cases defaultBody =>
+      simp only [Stmt.elaborate]
+      exact
+        PreservesFunctionScopes.bind
+          (Expr.elaborate_preserves_functionScopes scrutinee)
+          (fun scrutinee =>
+            PreservesFunctionScopes.bind
+              (Stmt.CaseList.elaborate_preserves_functionScopes cases)
+              (fun cases =>
+                PreservesFunctionScopes.bind
+                  (Stmt.List.elaborateBlock_preserves_functionScopes
+                    defaultBody true)
+                  (fun defaultBody => PreservesFunctionScopes.pure
+                    (Frontend.Stmt.switch scrutinee cases defaultBody))))
+  | forLoop pre condition post body =>
+      cases hPre : Stmt.List.hasImmediateFunctionDefinition pre with
+      | false =>
+          simp only [Stmt.elaborate, hPre, Bool.false_eq_true, ↓reduceIte]
+          exact
+            PreservesFunctionScopes.bind
+              pushIdentifierScope_preserves_functionScopes
+              (fun _ =>
+                PreservesFunctionScopes.bind
+                  (Stmt.List.elaborateBlock_preserves_functionScopes
+                    pre false)
+                  (fun pre =>
+                    PreservesFunctionScopes.bind
+                      (Expr.elaborate_preserves_functionScopes condition)
+                      (fun condition =>
+                        PreservesFunctionScopes.bind
+                          (Stmt.List.elaborateBlock_preserves_functionScopes
+                            post true)
+                          (fun post =>
+                            PreservesFunctionScopes.bind
+                              (Stmt.List.elaborateBlock_preserves_functionScopes
+                                body true)
+                              (fun body =>
+                                PreservesFunctionScopes.bind
+                                  popIdentifierScope_preserves_functionScopes
+                                  (fun _ => PreservesFunctionScopes.pure
+                                    (Frontend.Stmt.forLoop
+                                      pre condition post body)))))))
+      | true =>
+          intro state state' value hRun
+          simp only [Stmt.elaborate, hPre, Bool.true_eq_false, ↓reduceIte]
+            at hRun
+          simp [StateT.run_bind] at hRun
+          cases hPushIdentifier : pushIdentifierScope.run state with
+          | error err =>
+              simp [hPushIdentifier] at hRun
+          | ok pushIdentifierResult =>
+              rcases pushIdentifierResult with ⟨_, identifierPushedState⟩
+              have hPushIdentifierScopes :
+                  identifierPushedState.functionScopes =
+                    state.functionScopes :=
+                pushIdentifierScope_preserves_functionScopes
+                  hPushIdentifier
+              simp [hPushIdentifier] at hRun
+              cases hPreRun :
+                  (Stmt.List.elaborateForInitBlockWithScope pre).run
+                    identifierPushedState with
+              | error err =>
+                  simp [hPreRun] at hRun
+              | ok preResult =>
+                  rcases preResult with ⟨preFront, preState⟩
+                  rcases
+                      Stmt.List.elaborateForInitBlockWithScope_functionScopes
+                        hPreRun with
+                    ⟨scope, hPreScopes⟩
+                  simp [hPreRun] at hRun
+                  cases hCond :
+                      (Expr.elaborate condition).run preState with
+                  | error err =>
+                      simp [hCond] at hRun
+                  | ok condResult =>
+                      rcases condResult with ⟨conditionFront, condState⟩
+                      have hCondScopes :
+                          condState.functionScopes =
+                            preState.functionScopes :=
+                        Expr.elaborate_preserves_functionScopes
+                          condition hCond
+                      simp [hCond] at hRun
+                      cases hPost :
+                          (Stmt.List.elaborateBlock post true).run
+                            condState with
+                      | error err =>
+                          simp [hPost] at hRun
+                      | ok postResult =>
+                          rcases postResult with ⟨postFront, postState⟩
+                          have hPostScopes :
+                              postState.functionScopes =
+                                condState.functionScopes :=
+                            Stmt.List.elaborateBlock_preserves_functionScopes
+                              post true hPost
+                          simp [hPost] at hRun
+                          cases hBody :
+                              (Stmt.List.elaborateBlock body true).run
+                                postState with
+                          | error err =>
+                              simp [hBody] at hRun
+                          | ok bodyResult =>
+                              rcases bodyResult with ⟨bodyFront, bodyState⟩
+                              have hBodyScopes :
+                                  bodyState.functionScopes =
+                                    postState.functionScopes :=
+                                Stmt.List.elaborateBlock_preserves_functionScopes
+                                  body true hBody
+                              simp [hBody] at hRun
+                              have hBodyStack :
+                                  bodyState.functionScopes =
+                                    scope :: state.functionScopes := by
+                                rw [hBodyScopes, hPostScopes, hCondScopes,
+                                  hPreScopes, hPushIdentifierScopes]
+                              cases hPopFunction :
+                                  popFunctionScope.run bodyState with
+                              | error err =>
+                                  simp [hPopFunction] at hRun
+                              | ok popFunctionResult =>
+                                  rcases popFunctionResult with
+                                    ⟨_, functionPoppedState⟩
+                                  have hPopFunctionScopes :
+                                      functionPoppedState.functionScopes =
+                                        state.functionScopes :=
+                                    popFunctionScope_functionScopes
+                                      hBodyStack hPopFunction
+                                  simp [hPopFunction] at hRun
+                                  cases hPopIdentifier :
+                                      popIdentifierScope.run
+                                        functionPoppedState with
+                                  | error err =>
+                                      simp [hPopIdentifier] at hRun
+                                  | ok popIdentifierResult =>
+                                      rcases popIdentifierResult with
+                                        ⟨_, identifierPoppedState⟩
+                                      have hPopIdentifierScopes :
+                                          identifierPoppedState.functionScopes =
+                                            functionPoppedState.functionScopes :=
+                                        popIdentifierScope_preserves_functionScopes
+                                          hPopIdentifier
+                                      simp [hPopIdentifier] at hRun
+                                      rcases hRun with ⟨_hValue, hFinal⟩
+                                      cases hFinal
+                                      exact
+                                        hPopIdentifierScopes.trans
+                                          hPopFunctionScopes
+  | ifThen condition body =>
+      simp only [Stmt.elaborate]
+      exact
+        PreservesFunctionScopes.bind
+          (Expr.elaborate_preserves_functionScopes condition)
+          (fun condition =>
+            PreservesFunctionScopes.bind
+              (Stmt.List.elaborateBlock_preserves_functionScopes
+                body true)
+              (fun body => PreservesFunctionScopes.pure
+                (Frontend.Stmt.ifThen condition body)))
+  | «break» =>
+      simp only [Stmt.elaborate]
+      exact PreservesFunctionScopes.pure Frontend.Stmt.break
+  | «continue» =>
+      simp only [Stmt.elaborate]
+      exact PreservesFunctionScopes.pure Frontend.Stmt.continue
+  | «leave» =>
+      simp only [Stmt.elaborate]
+      exact PreservesFunctionScopes.pure Frontend.Stmt.leave
+  termination_by 20 * sizeOf stmt + 18
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+theorem Stmt.List.elaborate_preserves_functionScopes
+    (stmts : List Raw.Stmt) :
+    PreservesFunctionScopes (Stmt.List.elaborate stmts) := by
+  cases stmts with
+  | nil =>
+      simp [Stmt.List.elaborate]
+      exact PreservesFunctionScopes.pure []
+  | cons stmt rest =>
+      simp [Stmt.List.elaborate]
+      exact
+        PreservesFunctionScopes.bind
+          (Stmt.elaborate_preserves_functionScopes stmt)
+          (fun head =>
+            PreservesFunctionScopes.bind
+              (Stmt.List.elaborate_preserves_functionScopes rest)
+              (fun tail => PreservesFunctionScopes.pure (head :: tail)))
+  termination_by 20 * sizeOf stmts + 10
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+theorem Stmt.List.hoistLocalFunctions_preserves_functionScopes
+    (stmts : List Raw.Stmt) (scope : List (Name × Name)) :
+    PreservesFunctionScopes (Stmt.List.hoistLocalFunctions stmts scope) := by
+  cases stmts with
+  | nil =>
+      simp [Stmt.List.hoistLocalFunctions]
+      exact PreservesFunctionScopes.pure ()
+  | cons stmt rest =>
+      cases stmt with
+      | functionDefinition name params returns body =>
+          cases hLookup : lookupFunctionInScope name scope with
+          | none =>
+              simp [Stmt.List.hoistLocalFunctions, hLookup]
+              exact PreservesFunctionScopes.throw
+                s!"internal frontend error: missing generated name for {name}"
+          | some generated =>
+              simp [Stmt.List.hoistLocalFunctions, hLookup]
+              exact
+                PreservesFunctionScopes.bind
+                  (FunctionDef.elaborate_preserves_functionScopes
+                    params returns body)
+                  (fun fn =>
+                    PreservesFunctionScopes.bind
+                      (hoistFunctionEntry_preserves_functionScopes
+                        generated fn)
+                      (fun _ =>
+                        Stmt.List.hoistLocalFunctions_preserves_functionScopes
+                          rest scope))
+      | block stmts =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_functionScopes
+              rest scope
+      | variableDeclaration names value? =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_functionScopes
+              rest scope
+      | assignment names value =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_functionScopes
+              rest scope
+      | expressionStatement expr =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_functionScopes
+              rest scope
+      | switch scrutinee cases default =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_functionScopes
+              rest scope
+      | forLoop pre condition post body =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_functionScopes
+              rest scope
+      | ifThen condition body =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_functionScopes
+              rest scope
+      | «break» =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_functionScopes
+              rest scope
+      | «continue» =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_functionScopes
+              rest scope
+      | «leave» =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_functionScopes
+              rest scope
+  termination_by 20 * sizeOf stmts + 12
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+theorem Stmt.List.elaborateBlock_preserves_functionScopes
+    (stmts : List Raw.Stmt) (createsScope : Bool) :
+    PreservesFunctionScopes (Stmt.List.elaborateBlock stmts createsScope) := by
+  intro state state' value hRun
+  cases createsScope with
+  | false =>
+      unfold Stmt.List.elaborateBlock at hRun
+      simp [StateT.run_bind] at hRun
+      cases hScope :
+          (Stmt.List.localFunctionScope stmts).run state with
+      | error err =>
+          simp [hScope] at hRun
+      | ok scopeResult =>
+          rcases scopeResult with ⟨scope, scopeState⟩
+          have hScopeScopes :
+              scopeState.functionScopes = state.functionScopes :=
+            Stmt.List.localFunctionScope_preserves_functionScopes stmts hScope
+          simp [hScope] at hRun
+          cases hPush : (pushFunctionScope scope).run scopeState with
+          | error err =>
+              simp [hPush] at hRun
+          | ok pushResult =>
+              rcases pushResult with ⟨_, pushedState⟩
+              have hPushScopes :
+                  pushedState.functionScopes =
+                    scope :: scopeState.functionScopes :=
+                pushFunctionScope_functionScopes hPush
+              simp [hPush] at hRun
+              cases hHoist :
+                  (Stmt.List.hoistLocalFunctions stmts scope).run
+                    pushedState with
+              | error err =>
+                  simp [hHoist] at hRun
+              | ok hoistResult =>
+                  rcases hoistResult with ⟨_, hoistState⟩
+                  have hHoistScopes :
+                      hoistState.functionScopes =
+                        pushedState.functionScopes :=
+                    Stmt.List.hoistLocalFunctions_preserves_functionScopes
+                      stmts scope hHoist
+                  simp [hHoist] at hRun
+                  cases hElab :
+                      (Stmt.List.elaborate stmts).run hoistState with
+                  | error err =>
+                      simp [hElab] at hRun
+                  | ok elabResult =>
+                      rcases elabResult with ⟨front, elabState⟩
+                      have hElabScopes :
+                          elabState.functionScopes =
+                            hoistState.functionScopes :=
+                        Stmt.List.elaborate_preserves_functionScopes
+                          stmts hElab
+                      simp [hElab] at hRun
+                      have hStack :
+                          elabState.functionScopes =
+                            scope :: state.functionScopes := by
+                        rw [hElabScopes, hHoistScopes, hPushScopes,
+                          hScopeScopes]
+                      cases hPop : popFunctionScope.run elabState with
+                      | error err =>
+                          simp [hPop] at hRun
+                      | ok popResult =>
+                          rcases popResult with ⟨_, poppedState⟩
+                          have hPopScopes :
+                              poppedState.functionScopes =
+                                state.functionScopes :=
+                            popFunctionScope_functionScopes hStack hPop
+                          simp [hPop] at hRun
+                          rcases hRun with ⟨_hValue, hFinal⟩
+                          cases hFinal
+                          exact hPopScopes
+  | true =>
+      unfold Stmt.List.elaborateBlock at hRun
+      simp [StateT.run_bind] at hRun
+      cases hPushIdentifier : pushIdentifierScope.run state with
+      | error err =>
+          simp [hPushIdentifier] at hRun
+      | ok pushIdentifierResult =>
+          rcases pushIdentifierResult with ⟨_, identifierPushedState⟩
+          have hPushIdentifierScopes :
+              identifierPushedState.functionScopes =
+                state.functionScopes :=
+            pushIdentifierScope_preserves_functionScopes hPushIdentifier
+          simp [hPushIdentifier] at hRun
+          cases hScope :
+              (Stmt.List.localFunctionScope stmts).run
+                identifierPushedState with
+          | error err =>
+              simp [hScope] at hRun
+          | ok scopeResult =>
+              rcases scopeResult with ⟨scope, scopeState⟩
+              have hScopeScopes :
+                  scopeState.functionScopes =
+                    identifierPushedState.functionScopes :=
+                Stmt.List.localFunctionScope_preserves_functionScopes
+                  stmts hScope
+              simp [hScope] at hRun
+              cases hPushFunction :
+                  (pushFunctionScope scope).run scopeState with
+              | error err =>
+                  simp [hPushFunction] at hRun
+              | ok pushFunctionResult =>
+                  rcases pushFunctionResult with ⟨_, functionPushedState⟩
+                  have hPushFunctionScopes :
+                      functionPushedState.functionScopes =
+                        scope :: scopeState.functionScopes :=
+                    pushFunctionScope_functionScopes hPushFunction
+                  simp [hPushFunction] at hRun
+                  cases hHoist :
+                      (Stmt.List.hoistLocalFunctions stmts scope).run
+                        functionPushedState with
+                  | error err =>
+                      simp [hHoist] at hRun
+                  | ok hoistResult =>
+                      rcases hoistResult with ⟨_, hoistState⟩
+                      have hHoistScopes :
+                          hoistState.functionScopes =
+                            functionPushedState.functionScopes :=
+                        Stmt.List.hoistLocalFunctions_preserves_functionScopes
+                          stmts scope hHoist
+                      simp [hHoist] at hRun
+                      cases hElab :
+                          (Stmt.List.elaborate stmts).run hoistState with
+                      | error err =>
+                          simp [hElab] at hRun
+                      | ok elabResult =>
+                          rcases elabResult with ⟨front, elabState⟩
+                          have hElabScopes :
+                              elabState.functionScopes =
+                                hoistState.functionScopes :=
+                            Stmt.List.elaborate_preserves_functionScopes
+                              stmts hElab
+                          simp [hElab] at hRun
+                          have hStack :
+                              elabState.functionScopes =
+                                scope :: state.functionScopes := by
+                            rw [hElabScopes, hHoistScopes,
+                              hPushFunctionScopes, hScopeScopes,
+                              hPushIdentifierScopes]
+                          cases hPopFunction :
+                              popFunctionScope.run elabState with
+                          | error err =>
+                              simp [hPopFunction] at hRun
+                          | ok popFunctionResult =>
+                              rcases popFunctionResult with
+                                ⟨_, functionPoppedState⟩
+                              have hPopFunctionScopes :
+                                  functionPoppedState.functionScopes =
+                                    state.functionScopes :=
+                                popFunctionScope_functionScopes
+                                  hStack hPopFunction
+                              simp [hPopFunction] at hRun
+                              cases hPopIdentifier :
+                                  popIdentifierScope.run
+                                    functionPoppedState with
+                              | error err =>
+                                  simp [hPopIdentifier] at hRun
+                              | ok popIdentifierResult =>
+                                  rcases popIdentifierResult with
+                                    ⟨_, identifierPoppedState⟩
+                                  have hPopIdentifierScopes :
+                                      identifierPoppedState.functionScopes =
+                                        functionPoppedState.functionScopes :=
+                                    popIdentifierScope_preserves_functionScopes
+                                      hPopIdentifier
+                                  simp [hPopIdentifier] at hRun
+                                  rcases hRun with ⟨_hValue, hFinal⟩
+                                  cases hFinal
+                                  exact hPopIdentifierScopes.trans
+                                    hPopFunctionScopes
+  termination_by 20 * sizeOf stmts + 14
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+theorem Stmt.List.elaborateForInitBlockWithScope_functionScopes
+    {stmts : List Raw.Stmt} {state state' : State}
+    {front : List Frontend.Stmt}
+    (hRun :
+      (Stmt.List.elaborateForInitBlockWithScope stmts).run state =
+        .ok (front, state')) :
+    ∃ scope, state'.functionScopes = scope :: state.functionScopes := by
+  unfold Stmt.List.elaborateForInitBlockWithScope at hRun
+  simp [StateT.run_bind] at hRun
+  cases hScope :
+      (Stmt.List.localFunctionScope stmts).run state with
+  | error err =>
+      simp [hScope] at hRun
+  | ok scopeResult =>
+      rcases scopeResult with ⟨scope, scopeState⟩
+      have hScopeScopes :
+          scopeState.functionScopes = state.functionScopes :=
+        Stmt.List.localFunctionScope_preserves_functionScopes stmts hScope
+      simp [hScope] at hRun
+      cases hPush : (pushFunctionScope scope).run scopeState with
+      | error err =>
+          simp [hPush] at hRun
+      | ok pushResult =>
+          rcases pushResult with ⟨_, pushedState⟩
+          have hPushScopes :
+              pushedState.functionScopes =
+                scope :: scopeState.functionScopes :=
+            pushFunctionScope_functionScopes hPush
+          simp [hPush] at hRun
+          cases hHoist :
+              (Stmt.List.hoistLocalFunctions stmts scope).run
+                pushedState with
+          | error err =>
+              simp [hHoist] at hRun
+          | ok hoistResult =>
+              rcases hoistResult with ⟨_, hoistState⟩
+              have hHoistScopes :
+                  hoistState.functionScopes =
+                    pushedState.functionScopes :=
+                Stmt.List.hoistLocalFunctions_preserves_functionScopes
+                  stmts scope hHoist
+              simp [hHoist] at hRun
+              cases hElab :
+                  (Stmt.List.elaborate stmts).run hoistState with
+              | error err =>
+                  simp [hElab] at hRun
+              | ok elabResult =>
+                  rcases elabResult with ⟨front', elabState⟩
+                  have hElabScopes :
+                      elabState.functionScopes =
+                        hoistState.functionScopes :=
+                    Stmt.List.elaborate_preserves_functionScopes
+                      stmts hElab
+                  simp [hElab] at hRun
+                  rcases hRun with ⟨_hFront, hFinal⟩
+                  cases hFinal
+                  refine ⟨scope, ?_⟩
+                  rw [hElabScopes, hHoistScopes, hPushScopes, hScopeScopes]
+  termination_by 20 * sizeOf stmts + 14
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+theorem Stmt.CaseList.elaborate_preserves_functionScopes
+    (cases : List (Raw.SwitchCaseValue × List Raw.Stmt)) :
+    PreservesFunctionScopes (Stmt.CaseList.elaborate cases) := by
+  cases cases with
+  | nil =>
+      simp [Stmt.CaseList.elaborate]
+      exact PreservesFunctionScopes.pure []
+  | cons head rest =>
+      rcases head with ⟨value, body⟩
+      cases value with
+      | literal literal =>
+          cases literal with
+          | number value =>
+              simp [Stmt.CaseList.elaborate, SwitchCaseValue.elaborate]
+              exact
+                PreservesFunctionScopes.bind
+                  (Stmt.List.elaborateBlock_preserves_functionScopes
+                    body true)
+                  (fun body =>
+                    PreservesFunctionScopes.bind
+                      (Stmt.CaseList.elaborate_preserves_functionScopes
+                        rest)
+                      (fun rest => PreservesFunctionScopes.pure
+                        ((Frontend.SwitchCaseValue.word value, body) ::
+                          rest)))
+          | bool value =>
+              simp [Stmt.CaseList.elaborate, SwitchCaseValue.elaborate]
+              exact
+                PreservesFunctionScopes.bind
+                  (Stmt.List.elaborateBlock_preserves_functionScopes
+                    body true)
+                  (fun body =>
+                    PreservesFunctionScopes.bind
+                      (Stmt.CaseList.elaborate_preserves_functionScopes
+                        rest)
+                      (fun rest => PreservesFunctionScopes.pure
+                        ((Frontend.SwitchCaseValue.boolLit value, body) ::
+                          rest)))
+          | stringLit value =>
+              simp [Stmt.CaseList.elaborate, SwitchCaseValue.elaborate]
+              exact
+                PreservesFunctionScopes.bind
+                  (Stmt.List.elaborateBlock_preserves_functionScopes
+                    body true)
+                  (fun body =>
+                    PreservesFunctionScopes.bind
+                      (Stmt.CaseList.elaborate_preserves_functionScopes
+                        rest)
+                      (fun rest => PreservesFunctionScopes.pure
+                        ((Frontend.SwitchCaseValue.stringLit value, body) ::
+                          rest)))
+          | bytesLit bytes =>
+              simp [Stmt.CaseList.elaborate, SwitchCaseValue.elaborate]
+              exact
+                PreservesFunctionScopes.bind
+                  (Stmt.List.elaborateBlock_preserves_functionScopes
+                    body true)
+                  (fun body =>
+                    PreservesFunctionScopes.bind
+                      (Stmt.CaseList.elaborate_preserves_functionScopes
+                        rest)
+                      (fun rest => PreservesFunctionScopes.pure
+                        ((Frontend.SwitchCaseValue.bytesLit bytes, body) ::
+                          rest)))
+  termination_by 20 * sizeOf cases + 14
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+theorem FunctionDef.elaborate_preserves_functionScopes
+    (params returns : List Name) (body : List Raw.Stmt) :
+    PreservesFunctionScopes (FunctionDef.elaborate params returns body) := by
+  simp [FunctionDef.elaborate]
+  exact
+    PreservesFunctionScopes.bind
+      pushIdentifierScope_preserves_functionScopes
+      (fun _ =>
+        PreservesFunctionScopes.bind
+          (declareIdentifiers_preserves_functionScopes
+            (params ++ returns) "function parameter/result")
+          (fun _ =>
+            PreservesFunctionScopes.bind
+              (Stmt.List.elaborateBlock_preserves_functionScopes
+                body true)
+              (fun body =>
+                PreservesFunctionScopes.bind
+                  popIdentifierScope_preserves_functionScopes
+                  (fun _ => PreservesFunctionScopes.pure
                     ({ params, returns, body } : Frontend.FunctionDef)))))
   termination_by 20 * sizeOf body + 16
   decreasing_by
