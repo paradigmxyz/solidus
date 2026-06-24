@@ -860,6 +860,305 @@ theorem alphaRenamedLocalCallPreserved_switchScrutinee_call_occurrence_routes_su
     Yul.Source.Effectful.exec_switch_of_eval
       model prim hEvalCall hSelected
 
+/-- Block-head if-condition context for generated calls.
+
+This lifts the direct generated-call `if` condition theorem through the head
+of a surrounding Yul block, leaving the remaining statement sequence as the
+next compositional premise. -/
+theorem alphaRenamedLocalCallPreserved_ifCondition_blockHead_call_occurrence_routes_succ
+    {topBody : List Raw.Stmt}
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName name : Frontend.Name}
+    {localParams localReturns : List Frontend.Name}
+    {localBody : List Raw.Stmt}
+    {args : List Raw.Expr}
+    (hAlpha :
+      Raw.Source.AlphaRenamedLocalCallPreserved
+        topBody object.functions topName name
+          localParams localReturns localBody args)
+    (hConvert :
+      object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (generated : Frontend.Name)
+        (localFn : Frontend.FunctionDef)
+        (frontArgs : List Frontend.Expr)
+        (localYulBody : List Frontend.AstStmt)
+        (yulArgs : List Frontend.AstExpr),
+      (generated, localFn) ∈ object.functions ∧
+        Frontend.Stmt.List.toYul? localFn.body = some localYulBody ∧
+        Frontend.Expr.List.toYul? frontArgs = some yulArgs ∧
+        ordered.program.contract.functions.lookup generated =
+          some
+            (EvmYul.Yul.Ast.FunctionDefinition.Def
+              localFn.params localFn.returns localYulBody) ∧
+        ((∃ (topFn : Frontend.FunctionDef)
+            (topYulBody : List Frontend.AstStmt),
+          (topName, topFn) ∈ object.functions ∧
+            FrontendOccurrence.LowerableStmtListUserCall
+              topFn.body generated frontArgs ∧
+            Frontend.Stmt.List.toYul? topFn.body = some topYulBody ∧
+            YulOccurrence.StmtListUserCall
+              topYulBody generated yulArgs ∧
+            (topName,
+              EvmYul.Yul.Ast.FunctionDefinition.Def
+                topFn.params topFn.returns topYulBody) ∈
+              ordered.functionEntries) ∨
+          ∃ (topFn : Frontend.FunctionDef)
+            (stubName : Frontend.Name)
+            (params returns : List Frontend.Name)
+            (body : List Frontend.Stmt)
+            (yulBody : List Frontend.AstStmt),
+          (topName, topFn) ∈ object.functions ∧
+            FrontendOccurrence.StubBodyStmtListUserCall
+              topFn.body generated frontArgs ∧
+            Frontend.Stmt.List.toYul? body = some yulBody ∧
+            ordered.functionEntries.contains
+              (stubName,
+                EvmYul.Yul.Ast.FunctionDefinition.Def
+                  params returns yulBody) = true ∧
+            YulOccurrence.StmtListUserCall
+              yulBody generated yulArgs) ∧
+        (∀ {σ : Type}
+          (model : Yul.Source.Effectful.StateModel σ)
+          (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+          {bodyFuel : Nat}
+          {ifBody rest : List Frontend.AstStmt}
+          {state stateAfterArgs stateAfterBody afterRest : σ}
+          {shared : EvmYul.SharedState .Yul}
+          {vars : EvmYul.Yul.VarStore}
+          {reversedValues : List Frontend.Word},
+          Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+              yulArgs.reverse
+              (some ordered.program.contract) state =
+            .ok (stateAfterArgs, reversedValues) →
+          Yul.Source.Effectful.exec model prim bodyFuel
+              (.Block localYulBody)
+              (some ordered.program.contract)
+              (model.withSource stateAfterArgs
+                (EvmYul.Yul.State.mkOk
+                  ((model.source stateAfterArgs).initcall
+                    localFn.params localFn.returns
+                    reversedValues.reverse))) =
+            .ok stateAfterBody →
+          (List.map (model.source stateAfterBody).lookup!
+              localFn.returns).head! = EvmYul.UInt256.ofNat 0 →
+          model.source
+              (model.withSource stateAfterBody
+                (((model.source stateAfterBody).reviveJump.overwrite?
+                    (model.source stateAfterArgs)).setStore
+                      (model.source stateAfterArgs))) =
+            .Ok shared vars →
+          Yul.Source.Effectful.execSeq model prim (bodyFuel + 3)
+              rest
+              (some ordered.program.contract)
+              (model.withSource stateAfterBody
+                (((model.source stateAfterBody).reviveJump.overwrite?
+                    (model.source stateAfterArgs)).setStore
+                      (model.source stateAfterArgs))) =
+            .ok afterRest →
+          Yul.Source.Effectful.exec model prim (bodyFuel + 5)
+              (.Block ((.If (.Call (.inr generated) yulArgs) ifBody) ::
+                rest))
+              (some ordered.program.contract) state =
+            .ok
+              (model.withSource afterRest
+                ((model.source afterRest).restrictStoreTo
+                  (model.source state).store))) ∧
+        ∀ {σ : Type}
+          (model : Yul.Source.Effectful.StateModel σ)
+          (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+          {bodyFuel : Nat}
+          {ifBody rest : List Frontend.AstStmt}
+          {state stateAfterArgs stateAfterBody afterIf afterRest : σ}
+          {shared : EvmYul.SharedState .Yul}
+          {vars : EvmYul.Yul.VarStore}
+          {reversedValues : List Frontend.Word},
+          Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+              yulArgs.reverse
+              (some ordered.program.contract) state =
+            .ok (stateAfterArgs, reversedValues) →
+          Yul.Source.Effectful.exec model prim bodyFuel
+              (.Block localYulBody)
+              (some ordered.program.contract)
+              (model.withSource stateAfterArgs
+                (EvmYul.Yul.State.mkOk
+                  ((model.source stateAfterArgs).initcall
+                    localFn.params localFn.returns
+                    reversedValues.reverse))) =
+            .ok stateAfterBody →
+          (List.map (model.source stateAfterBody).lookup!
+              localFn.returns).head! ≠ EvmYul.UInt256.ofNat 0 →
+          Yul.Source.Effectful.exec model prim (bodyFuel + 2)
+              (.Block ifBody)
+              (some ordered.program.contract)
+              (model.withSource stateAfterBody
+                  (((model.source stateAfterBody).reviveJump.overwrite?
+                      (model.source stateAfterArgs)).setStore
+                        (model.source stateAfterArgs))) =
+            .ok afterIf →
+          model.source afterIf = .Ok shared vars →
+          Yul.Source.Effectful.execSeq model prim (bodyFuel + 3)
+              rest
+              (some ordered.program.contract) afterIf =
+            .ok afterRest →
+          Yul.Source.Effectful.exec model prim (bodyFuel + 5)
+              (.Block ((.If (.Call (.inr generated) yulArgs) ifBody) ::
+                rest))
+              (some ordered.program.contract) state =
+            .ok
+              (model.withSource afterRest
+                ((model.source afterRest).restrictStoreTo
+                  (model.source state).store)) := by
+  rcases alphaRenamedLocalCallPreserved_ifCondition_call_occurrence_routes_succ
+      hAlpha hConvert with
+    ⟨generated, localFn, frontArgs, localYulBody, yulArgs,
+      hCalleeMem, hLocalYul, hArgsYul, hCalleeLookup, hRoutes,
+      hIfFalse, hIfTrue⟩
+  refine
+    ⟨generated, localFn, frontArgs, localYulBody, yulArgs,
+      hCalleeMem, hLocalYul, hArgsYul, hCalleeLookup,
+      hRoutes, ?_, ?_⟩
+  · intro σ model prim bodyFuel ifBody rest state stateAfterArgs
+      stateAfterBody afterRest shared vars reversedValues
+      hArgs hBody hZero hSource hRest
+    have hStmt := hIfFalse (ifBody := ifBody) model prim hArgs hBody hZero
+    simpa [Nat.add_assoc] using
+      Yul.Source.Effectful.exec_block_cons_of_regular
+        model prim hStmt hSource hRest
+  · intro σ model prim bodyFuel ifBody rest state stateAfterArgs
+      stateAfterBody afterIf afterRest shared vars reversedValues
+      hArgs hBody hNonzero hIfBody hSource hRest
+    have hStmt := hIfTrue (ifBody := ifBody) model prim hArgs hBody
+      hNonzero hIfBody
+    simpa [Nat.add_assoc] using
+      Yul.Source.Effectful.exec_block_cons_of_regular
+        model prim hStmt hSource hRest
+
+/-- Block-head switch-scrutinee context for generated calls.
+
+This lifts the direct generated-call `switch` scrutinee theorem through the
+head of a surrounding Yul block, leaving the remaining statement sequence as
+the next compositional premise. -/
+theorem alphaRenamedLocalCallPreserved_switchScrutinee_blockHead_call_occurrence_routes_succ
+    {topBody : List Raw.Stmt}
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName name : Frontend.Name}
+    {localParams localReturns : List Frontend.Name}
+    {localBody : List Raw.Stmt}
+    {args : List Raw.Expr}
+    (hAlpha :
+      Raw.Source.AlphaRenamedLocalCallPreserved
+        topBody object.functions topName name
+          localParams localReturns localBody args)
+    (hConvert :
+      object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (generated : Frontend.Name)
+        (localFn : Frontend.FunctionDef)
+        (frontArgs : List Frontend.Expr)
+        (localYulBody : List Frontend.AstStmt)
+        (yulArgs : List Frontend.AstExpr),
+      (generated, localFn) ∈ object.functions ∧
+        Frontend.Stmt.List.toYul? localFn.body = some localYulBody ∧
+        Frontend.Expr.List.toYul? frontArgs = some yulArgs ∧
+        ordered.program.contract.functions.lookup generated =
+          some
+            (EvmYul.Yul.Ast.FunctionDefinition.Def
+              localFn.params localFn.returns localYulBody) ∧
+        ((∃ (topFn : Frontend.FunctionDef)
+            (topYulBody : List Frontend.AstStmt),
+          (topName, topFn) ∈ object.functions ∧
+            FrontendOccurrence.LowerableStmtListUserCall
+              topFn.body generated frontArgs ∧
+            Frontend.Stmt.List.toYul? topFn.body = some topYulBody ∧
+            YulOccurrence.StmtListUserCall
+              topYulBody generated yulArgs ∧
+            (topName,
+              EvmYul.Yul.Ast.FunctionDefinition.Def
+                topFn.params topFn.returns topYulBody) ∈
+              ordered.functionEntries) ∨
+          ∃ (topFn : Frontend.FunctionDef)
+            (stubName : Frontend.Name)
+            (params returns : List Frontend.Name)
+            (body : List Frontend.Stmt)
+            (yulBody : List Frontend.AstStmt),
+          (topName, topFn) ∈ object.functions ∧
+            FrontendOccurrence.StubBodyStmtListUserCall
+              topFn.body generated frontArgs ∧
+            Frontend.Stmt.List.toYul? body = some yulBody ∧
+            ordered.functionEntries.contains
+              (stubName,
+                EvmYul.Yul.Ast.FunctionDefinition.Def
+                  params returns yulBody) = true ∧
+            YulOccurrence.StmtListUserCall
+              yulBody generated yulArgs) ∧
+        ∀ {σ : Type}
+          (model : Yul.Source.Effectful.StateModel σ)
+          (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+          {bodyFuel : Nat}
+          {cases : List (Frontend.Word × List Frontend.AstStmt)}
+          {defaultBody rest : List Frontend.AstStmt}
+          {state stateAfterArgs stateAfterBody afterSwitch afterRest : σ}
+          {shared : EvmYul.SharedState .Yul}
+          {vars : EvmYul.Yul.VarStore}
+          {reversedValues : List Frontend.Word},
+          Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+              yulArgs.reverse
+              (some ordered.program.contract) state =
+            .ok (stateAfterArgs, reversedValues) →
+          Yul.Source.Effectful.exec model prim bodyFuel
+              (.Block localYulBody)
+              (some ordered.program.contract)
+              (model.withSource stateAfterArgs
+                (EvmYul.Yul.State.mkOk
+                  ((model.source stateAfterArgs).initcall
+                    localFn.params localFn.returns
+                    reversedValues.reverse))) =
+            .ok stateAfterBody →
+          Yul.Source.Effectful.exec model prim (bodyFuel + 2)
+              (.Block
+                (EvmYul.Yul.selectSwitchCase
+                  (List.map (model.source stateAfterBody).lookup!
+                    localFn.returns).head!
+                  defaultBody cases))
+              (some ordered.program.contract)
+              (model.withSource stateAfterBody
+                  (((model.source stateAfterBody).reviveJump.overwrite?
+                      (model.source stateAfterArgs)).setStore
+                        (model.source stateAfterArgs))) =
+            .ok afterSwitch →
+          model.source afterSwitch = .Ok shared vars →
+          Yul.Source.Effectful.execSeq model prim (bodyFuel + 3)
+              rest
+              (some ordered.program.contract) afterSwitch =
+            .ok afterRest →
+          Yul.Source.Effectful.exec model prim (bodyFuel + 5)
+              (.Block
+                ((.Switch (.Call (.inr generated) yulArgs) cases
+                  defaultBody) :: rest))
+              (some ordered.program.contract) state =
+            .ok
+              (model.withSource afterRest
+                ((model.source afterRest).restrictStoreTo
+                  (model.source state).store)) := by
+  rcases alphaRenamedLocalCallPreserved_switchScrutinee_call_occurrence_routes_succ
+      hAlpha hConvert with
+    ⟨generated, localFn, frontArgs, localYulBody, yulArgs,
+      hCalleeMem, hLocalYul, hArgsYul, hCalleeLookup, hRoutes,
+      hSwitch⟩
+  refine
+    ⟨generated, localFn, frontArgs, localYulBody, yulArgs,
+      hCalleeMem, hLocalYul, hArgsYul, hCalleeLookup,
+      hRoutes, ?_⟩
+  intro σ model prim bodyFuel cases defaultBody rest state stateAfterArgs
+    stateAfterBody afterSwitch afterRest shared vars reversedValues
+    hArgs hBody hSelected hSource hRest
+  have hStmt := hSwitch (cases := cases) (defaultBody := defaultBody)
+    model prim hArgs hBody hSelected
+  simpa [Nat.add_assoc] using
+    Yul.Source.Effectful.exec_block_cons_of_regular
+      model prim hStmt hSource hRest
+
 /-- Caller statement writeback for generated assignment/declaration calls.
 
 Once the generated call expression evaluates, ordinary Yul statement semantics

@@ -440,6 +440,11 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_ifCondition_call_occurrence_routes_succ` and
   `alphaRenamedLocalCallPreserved_switchScrutinee_call_occurrence_routes_succ`
   compose that view through direct Yul `if` and `switch` condition contexts.
+  `alphaRenamedLocalCallPreserved_ifCondition_blockHead_call_occurrence_routes_succ`
+  and
+  `alphaRenamedLocalCallPreserved_switchScrutinee_blockHead_call_occurrence_routes_succ`
+  lift those direct control contexts through the head of a surrounding Yul
+  block.
   `alphaRenamedLocalCallPreserved_assignLet_call_occurrence_routes_succ`
   adds the ordinary Yul statement writeback for assignment and declaration
   call contexts using `multifill`.
