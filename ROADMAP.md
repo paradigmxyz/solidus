@@ -282,7 +282,10 @@ Next raw frontend layer:
   such incoming-scope source occurrences, and
   `FrontendOccurrence.StmtUserCall`/`StmtListUserCall` provide the recursive
   frontend occurrence target needed to carry those calls through nested
-  statements. Raw expression/list occurrences now also have resolver-stack
+  statements. `Raw.Source.StmtCall`/`StmtListCall`/`CaseListCall` now provide
+  the matching recursive raw source occurrence grammar, and incoming
+  statement-expression leaves have checked transport into the recursive
+  frontend target. Raw expression/list occurrences now also have resolver-stack
   variants, so the source-call preservation theorem can follow
   `resolveFunctionIn name state.functionScopes = some generated` through
   shadowing nested scopes instead of assuming the callee is found in the head

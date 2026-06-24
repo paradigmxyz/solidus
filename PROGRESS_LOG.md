@@ -1,5 +1,27 @@
 # Progress Log
 
+- 2026-06-24 05:35:15 PDT - proof/raw-recursive-statement-call-source-relation -
+  Added the recursive raw source occurrence grammar
+  `Raw.Source.StmtCall`, `Raw.Source.StmtListCall`, and
+  `Raw.Source.CaseListCall`, mirroring the existing recursive frontend
+  occurrence target without baking resolver choices into source syntax.
+  Added checked incoming-leaf transport wrappers
+  `Elab.Stmt.elaborate_resolved_source_stmt_call_incoming_occurrence`,
+  `Elab.Stmt.List.elaborate_resolved_source_stmt_list_call_incoming_mem`,
+  and
+  `Elab.Stmt.List.elaborateBlock_true_noShadow_resolved_source_stmt_list_call_incoming_mem`,
+  so incoming statement-expression calls are already carried into the
+  recursive frontend occurrence target under the resolver-stack theorem and
+  no-shadow block wrapper. Validation passed:
+  `lake build EvmCompiler.Solidity.RawAst`,
+  `lake build EvmCompiler.Verification`, `lake build`,
+  `scripts/check_architecture.sh`, `scripts/test_raw_solc_frontend_smoke.sh`,
+  touched-file sorry/admit/axiom/unsafe/partial scans, and
+  `git diff --check`; new wrapper axiom audits report
+  `[propext, Classical.choice, Quot.sound]`. Remaining frontier: prove the
+  structural recursive statement/block/case traversal theorem, with explicit
+  shadow-aware resolver handoff.
+
 - 2026-06-24 05:11:47 PDT - proof/raw-for-post-body-no-shadow-handoff -
   Added the no-shadow `for` post/body handoff slice for raw nested-function
   call resolution. `Raw.Source.NoLocalFunctionNamed` records that a post/body

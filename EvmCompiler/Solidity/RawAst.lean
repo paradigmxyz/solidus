@@ -614,6 +614,100 @@ inductive IncomingScope : Stmt → Name → List Expr → Prop where
 
 end StmtExprCall
 
+mutual
+
+/-- Recursive source-facing raw call occurrence in a statement. -/
+inductive StmtCall : Stmt → Name → List Expr → Prop where
+  | incoming {stmt name args} :
+      StmtExprCall.IncomingScope stmt name args →
+        StmtCall stmt name args
+  | block {stmts name args} :
+      StmtListCall stmts name args →
+        StmtCall (.block stmts) name args
+  | functionBody {fn params returns body name args} :
+      StmtListCall body name args →
+        StmtCall (.functionDefinition fn params returns body) name args
+  | switchCase {scrutinee cases default name args} :
+      CaseListCall cases name args →
+        StmtCall (.switch scrutinee cases default) name args
+  | switchDefault {scrutinee cases default name args} :
+      StmtListCall default name args →
+        StmtCall (.switch scrutinee cases default) name args
+  | forCondition {pre condition post body name args} :
+      ExprCall.Occurs condition name args →
+        StmtCall (.forLoop pre condition post body) name args
+  | forPre {pre condition post body name args} :
+      StmtListCall pre name args →
+        StmtCall (.forLoop pre condition post body) name args
+  | forPost {pre condition post body name args} :
+      StmtListCall post name args →
+        StmtCall (.forLoop pre condition post body) name args
+  | forBody {pre condition post body name args} :
+      StmtListCall body name args →
+        StmtCall (.forLoop pre condition post body) name args
+  | ifBody {condition body name args} :
+      StmtListCall body name args →
+        StmtCall (.ifThen condition body) name args
+
+/-- Recursive source-facing raw call occurrence in a statement list. -/
+inductive StmtListCall : List Stmt → Name → List Expr → Prop where
+  | head {stmt rest name args} :
+      StmtCall stmt name args →
+        StmtListCall (stmt :: rest) name args
+  | tail {stmt rest name args} :
+      StmtListCall rest name args →
+        StmtListCall (stmt :: rest) name args
+
+/-- Recursive source-facing raw call occurrence in switch case bodies. -/
+inductive CaseListCall :
+    List (SwitchCaseValue × List Stmt) → Name → List Expr → Prop where
+  | head {value body rest name args} :
+      StmtListCall body name args →
+        CaseListCall ((value, body) :: rest) name args
+  | tail {case rest name args} :
+      CaseListCall rest name args →
+        CaseListCall (case :: rest) name args
+
+end
+
+namespace StmtCall
+
+theorem ofIncoming
+    {stmt : Stmt} {name : Name} {args : List Expr}
+    (hOccurrence : StmtExprCall.IncomingScope stmt name args) :
+    StmtCall stmt name args :=
+  .incoming hOccurrence
+
+end StmtCall
+
+namespace StmtListCall
+
+theorem of_mem_stmt
+    {stmts : List Stmt} {stmt : Stmt}
+    {name : Name} {args : List Expr}
+    (hMem : stmt ∈ stmts)
+    (hOccurrence : StmtCall stmt name args) :
+    StmtListCall stmts name args := by
+  induction stmts with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      simp at hMem
+      rcases hMem with hHead | hTail
+      · subst stmt
+        exact .head hOccurrence
+      · exact .tail (ih hTail)
+
+theorem of_mem_incoming
+    {stmts : List Stmt} {stmt : Stmt}
+    {name : Name} {args : List Expr}
+    (hMem : stmt ∈ stmts)
+    (hOccurrence : StmtExprCall.IncomingScope stmt name args) :
+    StmtListCall stmts name args :=
+  of_mem_stmt hMem (StmtCall.ofIncoming hOccurrence)
+
+end StmtListCall
+
 end Source
 
 end Raw
@@ -4474,6 +4568,25 @@ theorem elaborate_resolved_incoming_scope_source_user_call_occurrence
                   FrontendOccurrence.StmtIncomingUserCall.ifCondition
                     hOccurrence⟩
 
+theorem elaborate_resolved_source_stmt_call_incoming_occurrence
+    {stmt : Raw.Stmt} {state finalState : State}
+    {front : Frontend.Stmt}
+    {name generated : Name} {args : List Raw.Expr}
+    (hOccurs : Raw.Source.StmtExprCall.IncomingScope stmt name args)
+    (hNameOk : bindingNameOk? name = true)
+    (hResolve :
+      resolveFunctionIn name state.functionScopes = some generated)
+    (hElab : (Stmt.elaborate stmt).run state = .ok (front, finalState)) :
+    ∃ args',
+      FrontendOccurrence.StmtUserCall front generated args' := by
+  rcases
+    elaborate_resolved_incoming_scope_source_user_call_occurrence
+      hOccurs hNameOk hResolve hElab with
+    ⟨args', hOccurrence⟩
+  exact
+    ⟨args',
+      FrontendOccurrence.StmtUserCall.ofIncoming hOccurrence⟩
+
 end Stmt
 
 namespace Stmt.List
@@ -5991,6 +6104,31 @@ theorem elaborate_resolved_incoming_scope_source_user_call_occurrence
                   rw [← hElab.1]
                   exact List.mem_cons_of_mem _ hMemTail
                 exact ⟨args', front, hMemFront, hOccurrence⟩
+
+theorem elaborate_resolved_source_stmt_list_call_incoming_mem
+    {stmts : List Raw.Stmt} {stmt : Raw.Stmt}
+    {state finalState : State} {fronts : List Frontend.Stmt}
+    {name generated : Name} {args : List Raw.Expr}
+    (hMem : stmt ∈ stmts)
+    (hOccurs : Raw.Source.StmtExprCall.IncomingScope stmt name args)
+    (hNameOk : bindingNameOk? name = true)
+    (hResolve :
+      resolveFunctionIn name state.functionScopes = some generated)
+    (hElab : (Stmt.List.elaborate stmts).run state =
+      .ok (fronts, finalState)) :
+    ∃ args',
+      FrontendOccurrence.StmtListUserCall fronts generated args' := by
+  have _hSourceList :
+      Raw.Source.StmtListCall stmts name args :=
+    Raw.Source.StmtListCall.of_mem_incoming hMem hOccurs
+  rcases
+    elaborate_resolved_incoming_scope_source_user_call_occurrence
+      hMem hOccurs hNameOk hResolve hElab with
+    ⟨args', front, hMemFront, hOccurrence⟩
+  exact
+    ⟨args',
+      FrontendOccurrence.StmtListUserCall.of_mem_incoming
+        hMemFront hOccurrence⟩
 
 theorem localFunctionScope_lookup_functionDefinition
     {stmts : List Raw.Stmt} {state scopeState : State}
@@ -8027,6 +8165,29 @@ theorem elaborateBlock_true_noShadow_resolved_incoming_call_mem
                                 ⟨args',
                                   FrontendOccurrence.StmtListUserCall.of_mem_incoming
                                     hMemFront hOccurrence⟩
+
+theorem elaborateBlock_true_noShadow_resolved_source_stmt_list_call_incoming_mem
+    {stmts : List Raw.Stmt} {stmt : Raw.Stmt}
+    {state finalState : State} {front : List Frontend.Stmt}
+    {name generated : Name} {args : List Raw.Expr}
+    (hNoShadow : Raw.Source.NoLocalFunctionNamed stmts name)
+    (hMem : stmt ∈ stmts)
+    (hOccurs :
+      Raw.Source.StmtExprCall.IncomingScope stmt name args)
+    (hNameOk : bindingNameOk? name = true)
+    (hResolveOuter :
+      resolveFunctionIn name state.functionScopes = some generated)
+    (hBlock :
+      (Stmt.List.elaborateBlock stmts true).run state =
+        .ok (front, finalState)) :
+    ∃ args',
+      FrontendOccurrence.StmtListUserCall front generated args' := by
+  have _hSourceList :
+      Raw.Source.StmtListCall stmts name args :=
+    Raw.Source.StmtListCall.of_mem_incoming hMem hOccurs
+  exact
+    elaborateBlock_true_noShadow_resolved_incoming_call_mem
+      hNoShadow hMem hOccurs hNameOk hResolveOuter hBlock
 
 end Stmt.List
 

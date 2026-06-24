@@ -75,6 +75,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_clzHelperSpecOk
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_hoistedFunctionsRetained
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_frontendValidated
+#check EvmCompiler.Solidity.RawAst.Raw.Source.StmtCall
+#check EvmCompiler.Solidity.RawAst.Raw.Source.StmtListCall
+#check EvmCompiler.Solidity.RawAst.Raw.Source.CaseListCall
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_hoistedFunction_ordered_entry
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperFunctionDef_spec
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperFunctionDef_toYul?_some
@@ -113,8 +116,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_resolved_incoming_scope_source_user_call_occurrence
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_preserves_hoistedFunction_mem
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_preserves_functionScopes
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_resolved_source_stmt_call_incoming_occurrence
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_incoming_scope_source_user_call_occurrence
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_resolved_incoming_scope_source_user_call_occurrence
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_resolved_source_stmt_list_call_incoming_mem
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_single_functionDefinition
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_cons_functionDefinition
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_preserves_hoistedFunction_mem
@@ -140,6 +145,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_elaborateForInitBlockWithScope_entry
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.sourceLocalFunction_forLoop_condition_stmtUserCall_entry
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateBlock_true_noShadow_resolved_incoming_call_mem
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateBlock_true_noShadow_resolved_source_stmt_list_call_incoming_mem
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.sourceLocalFunction_forLoop_post_stmtUserCall_entry
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.sourceLocalFunction_forLoop_body_stmtUserCall_entry
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_elaborateBlock_false_lookup_entry
@@ -359,8 +365,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_resolved_incoming_scope_source_user_call_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_preserves_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_preserves_functionScopes
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_resolved_source_stmt_call_incoming_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_incoming_scope_source_user_call_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_resolved_incoming_scope_source_user_call_occurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_resolved_source_stmt_list_call_incoming_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_single_functionDefinition
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_cons_functionDefinition
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_preserves_hoistedFunction_mem
@@ -386,6 +394,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.sourceLocalFunction_elaborateForInitBlockWithScope_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.sourceLocalFunction_forLoop_condition_stmtUserCall_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateBlock_true_noShadow_resolved_incoming_call_mem
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateBlock_true_noShadow_resolved_source_stmt_list_call_incoming_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.sourceLocalFunction_forLoop_post_stmtUserCall_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.sourceLocalFunction_forLoop_body_stmtUserCall_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_elaborateBlock_false_lookup_entry
