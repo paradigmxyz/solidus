@@ -502,6 +502,48 @@ theorem compileArtifactFromRawSolcIr?_sourceLocalFunction_noShadow_program_entri
         hProgramCompile,
       hTopEntry, hOccurrence, hLocalEntry⟩
 
+theorem compileArtifactFromRawSolcIr?_sourceLocalFunction_noShadow_alphaPreserved
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {json : Lean.Json} {selected : SelectedIr}
+    {code : List Raw.Stmt}
+    {topName : Frontend.Name} {topParams topReturns : List Frontend.Name}
+    {topBody : List Raw.Stmt}
+    {name : Frontend.Name} {localParams localReturns : List Frontend.Name}
+    {localBody : List Raw.Stmt} {args : List Raw.Expr}
+    (hCompile :
+      compileArtifactFromRawSolcIr? rawJson selection = some artifact)
+    (hParse : Lean.Json.parse rawJson = .ok json)
+    (hSelected : decodeSelectedIr json selection = .ok selected)
+    (hCode : selected.root.code? = some code)
+    (hTop :
+      .functionDefinition topName topParams topReturns topBody ∈ code)
+    (hLocal :
+      Raw.Source.LocalFunction topBody
+        name localParams localReturns localBody)
+    (hOccurs : Raw.Source.NoShadowStmtListCall topBody name args) :
+    ∃ (program : Frontend.Program)
+        (linkerSymbols : List (Frontend.Name × Frontend.Word)),
+      decodeAndElaborateSolcIr? rawJson selection = some program ∧
+        decodeLinkerSymbols? rawJson selection = some linkerSymbols ∧
+        program.compileArtifactWithLinkerSymbols? linkerSymbols =
+          some artifact ∧
+        Frontend.Object.VerifiedStackObjectArtifact.ValidFor
+          linkerSymbols program.object artifact ∧
+        Raw.Source.AlphaRenamedLocalCallPreserved
+          topBody program.object.functions topName name
+            localParams localReturns localBody args := by
+  rcases
+      compileArtifactFromRawSolcIr?_sourceLocalFunction_noShadow_program_entries
+        hCompile hParse hSelected hCode hTop hLocal hOccurs with
+    ⟨program, linkerSymbols, generated, localFn, frontArgs, topFn,
+      hDecode, hLinker, hProgramCompile, hValid,
+      hTopEntry, hOccurrence, hCalleeEntry⟩
+  exact
+    ⟨program, linkerSymbols, hDecode, hLinker, hProgramCompile, hValid,
+      Raw.Source.AlphaRenamedLocalCallPreserved.of_entries
+        hLocal hOccurs hTopEntry hOccurrence hCalleeEntry⟩
+
 theorem compileArtifactFromRawSolcIr?_decodingCorrect
     {rawJson : String} {selection : Selection}
     {artifact : Frontend.Program.Artifact}
@@ -834,6 +876,48 @@ theorem compileArtifactFromRawSolcIrWithLinkerSymbols?_sourceLocalFunction_noSha
           Frontend.Program.compileArtifactWithLinkerSymbols?_valid
             hProgramCompile,
           hTopEntry, hOccurrence, hLocalEntry⟩
+
+theorem compileArtifactFromRawSolcIrWithLinkerSymbols?_sourceLocalFunction_noShadow_alphaPreserved
+    {rawJson : String} {selection : Selection}
+    {linkerSymbols : List (Frontend.Name × Frontend.Word)}
+    {artifact : Frontend.Program.Artifact}
+    {json : Lean.Json} {selected : SelectedIr}
+    {code : List Raw.Stmt}
+    {topName : Frontend.Name} {topParams topReturns : List Frontend.Name}
+    {topBody : List Raw.Stmt}
+    {name : Frontend.Name} {localParams localReturns : List Frontend.Name}
+    {localBody : List Raw.Stmt} {args : List Raw.Expr}
+    (hCompile :
+      compileArtifactFromRawSolcIrWithLinkerSymbols? rawJson selection
+        linkerSymbols = some artifact)
+    (hParse : Lean.Json.parse rawJson = .ok json)
+    (hSelected : decodeSelectedIr json selection = .ok selected)
+    (hCode : selected.root.code? = some code)
+    (hTop :
+      .functionDefinition topName topParams topReturns topBody ∈ code)
+    (hLocal :
+      Raw.Source.LocalFunction topBody
+        name localParams localReturns localBody)
+    (hOccurs : Raw.Source.NoShadowStmtListCall topBody name args) :
+    ∃ (program : Frontend.Program),
+      decodeAndElaborateSolcIr? rawJson selection = some program ∧
+        program.compileArtifactWithLinkerSymbols? linkerSymbols =
+          some artifact ∧
+        Frontend.Object.VerifiedStackObjectArtifact.ValidFor
+          linkerSymbols program.object artifact ∧
+        Raw.Source.AlphaRenamedLocalCallPreserved
+          topBody program.object.functions topName name
+            localParams localReturns localBody args := by
+  rcases
+      compileArtifactFromRawSolcIrWithLinkerSymbols?_sourceLocalFunction_noShadow_program_entries
+        hCompile hParse hSelected hCode hTop hLocal hOccurs with
+    ⟨program, generated, localFn, frontArgs, topFn,
+      hDecode, hProgramCompile, hValid,
+      hTopEntry, hOccurrence, hCalleeEntry⟩
+  exact
+    ⟨program, hDecode, hProgramCompile, hValid,
+      Raw.Source.AlphaRenamedLocalCallPreserved.of_entries
+        hLocal hOccurs hTopEntry hOccurrence hCalleeEntry⟩
 
 theorem compileArtifactFromRawSolcIrWithLinkerSymbols?_decodingCorrect
     {rawJson : String} {selection : Selection}

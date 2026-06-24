@@ -1116,6 +1116,88 @@ end CaseListUserCall
 
 end FrontendOccurrence
 
+namespace FrontendOccurrence
+
+/--
+Generated frontend realization of a raw source-local call.
+
+The relation deliberately hides the generated alpha-renamed callee from the
+source-facing API while still requiring both sides of resolution: the caller
+function contains the generated `.user` call and the generated callee is a
+callable entry in the same frontend function table.
+-/
+def ResolvedLocalCall
+    (functions : List (Name × Frontend.FunctionDef))
+    (topName : Name) : Prop :=
+  ∃ (generated : Name)
+      (localFn : Frontend.FunctionDef)
+      (args : List Frontend.Expr)
+      (topFn : Frontend.FunctionDef),
+    (topName, topFn) ∈ functions ∧
+      StmtListUserCall topFn.body generated args ∧
+        (generated, localFn) ∈ functions
+
+end FrontendOccurrence
+
+namespace Raw
+namespace Source
+
+/--
+Source-facing alpha-renaming preservation for a raw local function call.
+
+This is the frontend theorem boundary for solc-emitted nested functions: a raw
+block declares a local function under the source spelling `name`, a resolver-safe
+source call to that spelling occurs in the same body, and checked elaboration
+realizes that source fact as a generated frontend caller/callee resolution.
+-/
+structure AlphaRenamedLocalCallPreserved
+    (topBody : List Stmt)
+    (functions : List (Name × Frontend.FunctionDef))
+    (topName name : Name)
+    (localParams localReturns : List Name)
+    (localBody : List Stmt)
+    (args : List Expr) : Prop where
+  source_local :
+    LocalFunction topBody name localParams localReturns localBody
+  source_call :
+    NoShadowStmtListCall topBody name args
+  resolved :
+    FrontendOccurrence.ResolvedLocalCall functions topName
+
+namespace AlphaRenamedLocalCallPreserved
+
+theorem of_entries
+    {topBody : List Stmt}
+    {functions : List (Name × Frontend.FunctionDef)}
+    {topName name : Name}
+    {localParams localReturns : List Name}
+    {localBody : List Stmt}
+    {args : List Expr}
+    {generated : Name}
+    {localFn : Frontend.FunctionDef}
+    {frontArgs : List Frontend.Expr}
+    {topFn : Frontend.FunctionDef}
+    (hLocal :
+      LocalFunction topBody name localParams localReturns localBody)
+    (hOccurs : NoShadowStmtListCall topBody name args)
+    (hTop : (topName, topFn) ∈ functions)
+    (hOccurrence :
+      FrontendOccurrence.StmtListUserCall
+        topFn.body generated frontArgs)
+    (hCallee : (generated, localFn) ∈ functions) :
+    AlphaRenamedLocalCallPreserved topBody functions topName name
+      localParams localReturns localBody args :=
+  { source_local := hLocal
+    source_call := hOccurs
+    resolved :=
+      ⟨generated, localFn, frontArgs, topFn,
+        hTop, hOccurrence, hCallee⟩ }
+
+end AlphaRenamedLocalCallPreserved
+
+end Source
+end Raw
+
 namespace CallClass
 
 def objectBuiltins : List Name :=
@@ -14567,6 +14649,37 @@ theorem decodeAndElaborateSolcIr?_sourceLocalFunction_noShadow_function_entries
   exact
     decodeAndElaborateSolcIrJson_sourceLocalFunction_noShadow_function_entries
       hSelected hCode hTop hLocal hOccurs hJsonDecode
+
+theorem decodeAndElaborateSolcIr?_sourceLocalFunction_noShadow_alphaPreserved
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {json : Lean.Json}
+    {selected : SelectedIr} {code : List Raw.Stmt}
+    {topName : Name} {topParams topReturns : List Name}
+    {topBody : List Raw.Stmt}
+    {name : Name} {localParams localReturns : List Name}
+    {localBody : List Raw.Stmt} {args : List Raw.Expr}
+    (hParse : Lean.Json.parse rawJson = .ok json)
+    (hSelected : decodeSelectedIr json selection = .ok selected)
+    (hCode : selected.root.code? = some code)
+    (hTop :
+      .functionDefinition topName topParams topReturns topBody ∈ code)
+    (hLocal :
+      Raw.Source.LocalFunction topBody
+        name localParams localReturns localBody)
+    (hOccurs : Raw.Source.NoShadowStmtListCall topBody name args)
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program) :
+    Raw.Source.AlphaRenamedLocalCallPreserved
+      topBody program.object.functions topName name
+        localParams localReturns localBody args := by
+  rcases
+      decodeAndElaborateSolcIr?_sourceLocalFunction_noShadow_function_entries
+        hParse hSelected hCode hTop hLocal hOccurs hDecode with
+    ⟨generated, localFn, frontArgs, topFn,
+      hTopEntry, hOccurrence, hCalleeEntry⟩
+  exact
+    Raw.Source.AlphaRenamedLocalCallPreserved.of_entries
+      hLocal hOccurs hTopEntry hOccurrence hCalleeEntry
 
 end RawAst
 end Solidity

@@ -369,10 +369,16 @@ Next raw frontend layer:
   resolution into the artifact's production ordered Yul function entries.
   The public raw end-to-end theorem now also has source-local no-shadow
   variants that compose caller/callee occurrence-entry evidence with both the
-  finite-prefix and `hFinished` bytecode preservation results.
+  finite-prefix and `hFinished` bytecode preservation results. The same public
+  boundary now also exposes
+  `Raw.Source.AlphaRenamedLocalCallPreserved`, a source-facing relation that
+  bundles the raw local declaration, resolver-safe source call, and generated
+  frontend caller/callee resolution without exposing the generated alpha name
+  as separate public plumbing.
   The remaining raw frontend semantic gap is source-level preservation for
-  alpha-renamed nested-function call resolution and broader composition into
-  the final source theorem.
+  alpha-renamed nested-function call execution/observation, beyond this
+  resolution-preservation relation, and broader composition into the final
+  source theorem.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose
