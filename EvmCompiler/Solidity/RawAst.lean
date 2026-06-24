@@ -1912,6 +1912,43 @@ mutual
     pure { params, returns, body }
 end
 
+namespace Expr
+
+theorem elaborate_user_call_resolved
+    {state argState : State} {name generated : Name}
+    {args : List Raw.Expr} {args' : List Frontend.Expr}
+    (hNotMemoryguard : name ≠ "memoryguard")
+    (hNotClz : name ≠ "clz")
+    (hArgs :
+      (Expr.List.elaborate args).run state = .ok (args', argState))
+    (hClass : CallClass.classifyCall name = .user)
+    (hResolve :
+      resolveFunctionIn name argState.functionScopes = some generated) :
+    (Expr.elaborate (.functionCall name args)).run state =
+      .ok (.call .user generated args', argState) := by
+  simp [Expr.elaborate, hNotMemoryguard, hNotClz, hArgs, hClass,
+    resolveFunction, hResolve]
+  rfl
+
+end Expr
+
+namespace Stmt
+
+theorem elaborate_functionDefinition_resolved_stub
+    {state state' : State} {name : Name} {params returns : List Name}
+    {generated : Name} {body : List Raw.Stmt} {fn : Frontend.FunctionDef}
+    (hResolve :
+      resolveFunctionIn name state.functionScopes = some generated)
+    (hFn :
+      (FunctionDef.elaborate params returns body).run state =
+        .ok (fn, state')) :
+    (Stmt.elaborate (.functionDefinition name params returns body)).run
+      state =
+        .ok (.functionDef generated params returns fn.body, state') := by
+  simp [Stmt.elaborate, resolveFunction, hResolve, hFn]
+
+end Stmt
+
 def collectTopFunctions : List Raw.Stmt → ElabM (List (Name × Name))
   | [] => pure []
   | stmt :: rest => do

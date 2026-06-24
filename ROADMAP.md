@@ -208,7 +208,11 @@ Next raw frontend layer:
   its own function table. The raw object, raw JSON/string decode, and
   artifact-wrapper theorems expose
   `Frontend.Object.userCallsResolved? = true` for successful production raw
-  elaboration.
+  elaboration. The raw elaborator now also exposes local alpha-resolution
+  equations: ordinary user-call elaboration rewrites a raw source callee to the
+  generated name returned by the active function-scope resolver, and nested
+  function-definition elaboration emits the retained frontend stub under that
+  same resolved generated name.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call resolution plus broader composition into
   the final source theorem.
