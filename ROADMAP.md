@@ -308,8 +308,9 @@ Next raw frontend layer:
   initializer does not shadow the callee name, and the `Stmt.elaborate`
   wrappers now carry such initializer statement occurrences to frontend
   `forPre` user-call occurrences and condition expression occurrences to
-  frontend `forCondition` user-call occurrences. Recursive source-side nested
-  block/body occurrence
+  frontend `forCondition` user-call occurrences. Post-block occurrences now
+  also have a no-shadow wrapper when neither the initializer nor the post block
+  shadows the callee. Recursive source-side nested block/body occurrence
   traversal, including fully shadow-aware post/body wrapper composition,
   remains the next statement/control-layer proof work.
   Successful `FunctionDef.elaborate` now also realizes source local-function
