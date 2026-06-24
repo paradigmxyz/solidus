@@ -8622,6 +8622,80 @@ theorem elaborateForInitBlockWithScope_noShadow_resolved_incoming_call_mem
                       FrontendOccurrence.StmtListUserCall.of_mem_incoming
                         hMemFront hOccurrence⟩
 
+theorem elaborateForInitBlockWithScope_noShadow_resolves_outer
+    {stmts : List Raw.Stmt}
+    {state finalState : State} {front : List Frontend.Stmt}
+    {name generated : Name}
+    (hNoShadow : Raw.Source.NoLocalFunctionNamed stmts name)
+    (hResolveOuter :
+      resolveFunctionIn name state.functionScopes = some generated)
+    (hBlock :
+      (Stmt.List.elaborateForInitBlockWithScope stmts).run state =
+        .ok (front, finalState)) :
+    resolveFunctionIn name finalState.functionScopes = some generated := by
+  unfold Stmt.List.elaborateForInitBlockWithScope at hBlock
+  simp [StateT.run_bind] at hBlock
+  cases hScope :
+      (Stmt.List.localFunctionScope stmts).run state with
+  | error err =>
+      simp [hScope] at hBlock
+  | ok scopeResult =>
+      rcases scopeResult with ⟨scope, scopeState⟩
+      have hLookupNone :
+          lookupFunctionInScope name scope = none :=
+        localFunctionScope_noLocalFunctionNamed_lookup_none
+          hScope hNoShadow
+      have hScopePres :
+          scopeState.functionScopes = state.functionScopes :=
+        Stmt.List.localFunctionScope_preserves_functionScopes
+          stmts hScope
+      simp [hScope] at hBlock
+      cases hPushFunction :
+          (pushFunctionScope scope).run scopeState with
+      | error err =>
+          simp [hPushFunction] at hBlock
+      | ok pushFunctionResult =>
+          rcases pushFunctionResult with ⟨_, functionPushedState⟩
+          have hPushFunctionScopes :
+              functionPushedState.functionScopes =
+                scope :: scopeState.functionScopes :=
+            pushFunctionScope_functionScopes hPushFunction
+          simp [hPushFunction] at hBlock
+          cases hHoist :
+              (Stmt.List.hoistLocalFunctions stmts scope).run
+                functionPushedState with
+          | error err =>
+              simp [hHoist] at hBlock
+          | ok hoistResult =>
+              rcases hoistResult with ⟨_, hoistState⟩
+              have hHoistScopes :
+                  hoistState.functionScopes =
+                    functionPushedState.functionScopes :=
+                Stmt.List.hoistLocalFunctions_preserves_functionScopes
+                  stmts scope hHoist
+              have hResolveHoist :
+                  resolveFunctionIn name hoistState.functionScopes =
+                    some generated := by
+                rw [hHoistScopes, hPushFunctionScopes, hScopePres]
+                simp [resolveFunctionIn, hLookupNone, hResolveOuter]
+              simp [hHoist] at hBlock
+              cases hElab :
+                  (Stmt.List.elaborate stmts).run hoistState with
+              | error err =>
+                  simp [hElab] at hBlock
+              | ok elabResult =>
+                  rcases elabResult with ⟨front', elabState⟩
+                  have hElabScopes :
+                      elabState.functionScopes =
+                        hoistState.functionScopes :=
+                    Stmt.List.elaborate_preserves_functionScopes
+                      stmts hElab
+                  simp [hElab] at hBlock
+                  rcases hBlock with ⟨_hFront, hFinal⟩
+                  cases hFinal
+                  rw [hElabScopes]
+                  exact hResolveHoist
+
 end Stmt.List
 
 theorem Stmt.elaborate_block_noShadow_resolved_source_stmt_list_call_incoming_mem
@@ -8921,6 +8995,177 @@ theorem Stmt.elaborate_switchCase_noShadow_resolved_source_case_body_incoming_me
                 ⟨args',
                   FrontendOccurrence.StmtUserCall.switchCase
                     hCaseOccurrence⟩
+
+theorem Stmt.elaborate_forLoop_condition_noShadow_resolved_source_expr_call
+    {pre : List Raw.Stmt} {condition : Raw.Expr}
+    {post body : List Raw.Stmt}
+    {state finalState : State} {front : Frontend.Stmt}
+    {name generated : Name} {args : List Raw.Expr}
+    (hNoShadow : Raw.Source.NoLocalFunctionNamed pre name)
+    (hOccurs : Raw.Source.ExprCall.Occurs condition name args)
+    (hNameOk : bindingNameOk? name = true)
+    (hResolve :
+      resolveFunctionIn name state.functionScopes = some generated)
+    (hElab :
+      (Stmt.elaborate (.forLoop pre condition post body)).run state =
+        .ok (front, finalState)) :
+    ∃ args',
+      FrontendOccurrence.StmtUserCall front generated args' := by
+  unfold Stmt.elaborate at hElab
+  cases hPreHas : Stmt.List.hasImmediateFunctionDefinition pre with
+  | false =>
+      simp [hPreHas, StateT.run_bind] at hElab
+      cases hPushIdentifier : pushIdentifierScope.run state with
+      | error err =>
+          simp [hPushIdentifier] at hElab
+      | ok pushIdentifierResult =>
+          rcases pushIdentifierResult with ⟨_, identifierPushedState⟩
+          have hPushScopes :
+              identifierPushedState.functionScopes =
+                state.functionScopes :=
+            pushIdentifierScope_preserves_functionScopes hPushIdentifier
+          simp [hPushIdentifier] at hElab
+          cases hPre :
+              (Stmt.List.elaborateBlock pre false).run
+                identifierPushedState with
+          | error err =>
+              simp [hPre] at hElab
+          | ok preResult =>
+              rcases preResult with ⟨frontPre, preState⟩
+              have hPreScopes :
+                  preState.functionScopes =
+                    identifierPushedState.functionScopes :=
+                Stmt.List.elaborateBlock_preserves_functionScopes
+                  pre false hPre
+              have hResolveCondition :
+                  resolveFunctionIn name preState.functionScopes =
+                    some generated := by
+                rw [hPreScopes, hPushScopes]
+                exact hResolve
+              simp [hPre] at hElab
+              cases hCondition :
+                  (Expr.elaborate condition).run preState with
+              | error err =>
+                  simp [hCondition] at hElab
+              | ok conditionResult =>
+                  rcases conditionResult with
+                    ⟨frontCondition, conditionState⟩
+                  rcases
+                    Expr.elaborate_resolved_source_user_call_occurrence
+                      hOccurs hNameOk hResolveCondition hCondition with
+                    ⟨args', hOccurrence⟩
+                  simp [hCondition] at hElab
+                  cases hPost :
+                      (Stmt.List.elaborateBlock post true).run
+                        conditionState with
+                  | error err =>
+                      simp [hPost] at hElab
+                  | ok postResult =>
+                      rcases postResult with ⟨frontPost, postState⟩
+                      simp [hPost] at hElab
+                      cases hBody :
+                          (Stmt.List.elaborateBlock body true).run
+                            postState with
+                      | error err =>
+                          simp [hBody] at hElab
+                      | ok bodyResult =>
+                          rcases bodyResult with ⟨frontBody, bodyState⟩
+                          simp [hBody] at hElab
+                          cases hPopIdentifier :
+                              popIdentifierScope.run bodyState with
+                          | error err =>
+                              simp [hPopIdentifier] at hElab
+                          | ok popIdentifierResult =>
+                              rcases popIdentifierResult with
+                                ⟨_, identifierPoppedState⟩
+                              simp [hPopIdentifier] at hElab
+                              rcases hElab with ⟨hFront, _hFinal⟩
+                              rw [← hFront]
+                              exact
+                                ⟨args',
+                                  FrontendOccurrence.StmtUserCall.forCondition
+                                    hOccurrence⟩
+  | true =>
+      simp [hPreHas, StateT.run_bind] at hElab
+      cases hPushIdentifier : pushIdentifierScope.run state with
+      | error err =>
+          simp [hPushIdentifier] at hElab
+      | ok pushIdentifierResult =>
+          rcases pushIdentifierResult with ⟨_, identifierPushedState⟩
+          have hPushScopes :
+              identifierPushedState.functionScopes =
+                state.functionScopes :=
+            pushIdentifierScope_preserves_functionScopes hPushIdentifier
+          have hResolvePre :
+              resolveFunctionIn name identifierPushedState.functionScopes =
+                some generated := by
+            rw [hPushScopes]
+            exact hResolve
+          simp [hPushIdentifier] at hElab
+          cases hPre :
+              (Stmt.List.elaborateForInitBlockWithScope pre).run
+                identifierPushedState with
+          | error err =>
+              simp [hPre] at hElab
+          | ok preResult =>
+              rcases preResult with ⟨frontPre, preState⟩
+              have hResolveCondition :
+                  resolveFunctionIn name preState.functionScopes =
+                    some generated :=
+                Stmt.List.elaborateForInitBlockWithScope_noShadow_resolves_outer
+                  hNoShadow hResolvePre hPre
+              simp [hPre] at hElab
+              cases hCondition :
+                  (Expr.elaborate condition).run preState with
+              | error err =>
+                  simp [hCondition] at hElab
+              | ok conditionResult =>
+                  rcases conditionResult with
+                    ⟨frontCondition, conditionState⟩
+                  rcases
+                    Expr.elaborate_resolved_source_user_call_occurrence
+                      hOccurs hNameOk hResolveCondition hCondition with
+                    ⟨args', hOccurrence⟩
+                  simp [hCondition] at hElab
+                  cases hPost :
+                      (Stmt.List.elaborateBlock post true).run
+                        conditionState with
+                  | error err =>
+                      simp [hPost] at hElab
+                  | ok postResult =>
+                      rcases postResult with ⟨frontPost, postState⟩
+                      simp [hPost] at hElab
+                      cases hBody :
+                          (Stmt.List.elaborateBlock body true).run
+                            postState with
+                      | error err =>
+                          simp [hBody] at hElab
+                      | ok bodyResult =>
+                          rcases bodyResult with ⟨frontBody, bodyState⟩
+                          simp [hBody] at hElab
+                          cases hPopFunction :
+                              popFunctionScope.run bodyState with
+                          | error err =>
+                              simp [hPopFunction] at hElab
+                          | ok popFunctionResult =>
+                              rcases popFunctionResult with
+                                ⟨_, functionPoppedState⟩
+                              simp [hPopFunction] at hElab
+                              cases hPopIdentifier :
+                                  popIdentifierScope.run
+                                    functionPoppedState with
+                              | error err =>
+                                  simp [hPopIdentifier] at hElab
+                              | ok popIdentifierResult =>
+                                  rcases popIdentifierResult with
+                                    ⟨_, identifierPoppedState⟩
+                                  simp [hPopIdentifier] at hElab
+                                  rcases hElab with ⟨hFront, _hFinal⟩
+                                  rw [← hFront]
+                                  exact
+                                    ⟨args',
+                                      FrontendOccurrence.StmtUserCall.forCondition
+                                        hOccurrence⟩
 
 theorem Stmt.elaborate_forLoop_pre_noShadow_resolved_incoming_call_mem
     {pre : List Raw.Stmt} {condition : Raw.Expr}
