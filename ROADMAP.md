@@ -445,6 +445,12 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_switchScrutinee_seqHead_call_occurrence_routes_succ`
   expose those direct control contexts in `execSeq` form for recursive
   statement-list composition.
+  `alphaRenamedLocalCallPreserved_ifCondition_seqPrefix_call_occurrence_routes_succ`
+  and
+  `alphaRenamedLocalCallPreserved_switchScrutinee_seqPrefix_call_occurrence_routes_succ`
+  compose those control-context sequence-head facts after arbitrary regularly
+  executed prefixes, giving checked tail-occurrence bridges for branches and
+  switches.
   `alphaRenamedLocalCallPreserved_ifCondition_blockHead_call_occurrence_routes_succ`
   and
   `alphaRenamedLocalCallPreserved_switchScrutinee_blockHead_call_occurrence_routes_succ`
@@ -456,6 +462,9 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_assignLet_seqHead_call_occurrence_routes_succ`
   exposes those returned-value writeback contexts in direct `execSeq` form for
   recursive statement-list composition.
+  `alphaRenamedLocalCallPreserved_assignLet_seqPrefix_call_occurrence_routes_succ`
+  composes the assignment/declaration sequence-head facts after arbitrary
+  regularly executed prefixes.
   `alphaRenamedLocalCallPreserved_assignLet_blockHead_call_occurrence_routes_succ`
   lifts those returned-value writeback contexts through the head of a
   surrounding Yul block.
