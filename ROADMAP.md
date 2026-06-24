@@ -239,7 +239,10 @@ Next raw frontend layer:
   blocks. Raw blocks now also have a source-facing `Raw.Source.LocalFunction`
   declaration relation, independent of generated names, and successful local
   scope construction/block elaboration realizes each such source declaration
-  as a generated hoisted entry. Successful ordered-Yul conversion now also
+  as a generated hoisted entry. Source-name user-call elaboration under that
+  local scope now also has checked evidence for the generated frontend call
+  target and the corresponding hoisted callee entry after production block
+  elaboration and scope popping. Successful ordered-Yul conversion now also
   exposes a checked
   function entry for every name present in `object.functions.map Prod.fst`,
   giving resolved user-call names a concrete emitted callee entry at the

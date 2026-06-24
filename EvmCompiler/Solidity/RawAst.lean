@@ -3496,6 +3496,38 @@ theorem localFunctionScope_hoistLocalFunctions_elaborate_user_call_entry
       localFunctionScope_hoistLocalFunctions_lookup_entry
         hScope hHoist hLookup
 
+theorem sourceLocalFunction_hoistLocalFunctions_elaborate_user_call_entry
+    {stmts : List Raw.Stmt}
+    {scopeInit scopeState hoistState callState argState : State}
+    {scope : List (Name × Name)} {outer : List (List (Name × Name))}
+    {name : Name} {params returns : List Name} {body : List Raw.Stmt}
+    {args : List Raw.Expr} {args' : List Frontend.Expr}
+    (hLocal :
+      Raw.Source.LocalFunction stmts name params returns body)
+    (hNotMemoryguard : name ≠ "memoryguard")
+    (hNotClz : name ≠ "clz")
+    (hScope :
+      (Stmt.List.localFunctionScope stmts).run scopeInit =
+        .ok (scope, scopeState))
+    (hHoist :
+      (Stmt.List.hoistLocalFunctions stmts scope).run scopeState =
+        .ok ((), hoistState))
+    (hArgs :
+      (Expr.List.elaborate args).run callState = .ok (args', argState))
+    (hArgScopes : argState.functionScopes = scope :: outer)
+    (hClass : CallClass.classifyCall name = .user) :
+    ∃ generated fn,
+      (Expr.elaborate (.functionCall name args)).run callState =
+          .ok (.call .user generated args', argState) ∧
+        (generated, fn) ∈ hoistState.hoistedFunctions := by
+  rcases localFunctionScope_sourceLocalFunction_lookup hScope hLocal with
+    ⟨generated, hLookup⟩
+  rcases localFunctionScope_hoistLocalFunctions_elaborate_user_call_entry
+      hNotMemoryguard hNotClz hScope hHoist hLookup hArgs hArgScopes
+      hClass with
+    ⟨hCall, _params, _returns, _body, fn, _hRawMem, hEntry⟩
+  exact ⟨generated, fn, hCall, hEntry⟩
+
 theorem localFunctionScope_elaborateBlock_false_lookup_entry
     {stmts : List Raw.Stmt}
     {state scopeState finalState : State}
@@ -3654,6 +3686,44 @@ theorem sourceLocalFunction_elaborateBlock_false_entry
     ⟨_params, _returns, _body, fn, _hMem, hEntry⟩
   exact ⟨generated, fn, hLookup, hEntry⟩
 
+theorem sourceLocalFunction_elaborateBlock_false_elaborate_user_call_entry
+    {stmts : List Raw.Stmt}
+    {state scopeState finalState callState argState : State}
+    {scope : List (Name × Name)} {outer : List (List (Name × Name))}
+    {name : Name} {params returns : List Name} {body : List Raw.Stmt}
+    {front : List Frontend.Stmt}
+    {args : List Raw.Expr} {args' : List Frontend.Expr}
+    (hLocal :
+      Raw.Source.LocalFunction stmts name params returns body)
+    (hNotMemoryguard : name ≠ "memoryguard")
+    (hNotClz : name ≠ "clz")
+    (hScope :
+      (Stmt.List.localFunctionScope stmts).run state =
+        .ok (scope, scopeState))
+    (hBlock :
+      (Stmt.List.elaborateBlock stmts false).run state =
+        .ok (front, finalState))
+    (hArgs :
+      (Expr.List.elaborate args).run callState = .ok (args', argState))
+    (hArgScopes : argState.functionScopes = scope :: outer)
+    (hClass : CallClass.classifyCall name = .user) :
+    ∃ generated fn,
+      (Expr.elaborate (.functionCall name args)).run callState =
+          .ok (.call .user generated args', argState) ∧
+        (generated, fn) ∈ finalState.hoistedFunctions := by
+  rcases sourceLocalFunction_elaborateBlock_false_entry
+      hLocal hScope hBlock with
+    ⟨generated, fn, hLookup, hEntry⟩
+  have hResolve :
+      resolveFunctionIn name argState.functionScopes = some generated := by
+    rw [hArgScopes]
+    exact resolveFunctionIn_of_scope_lookup hLookup
+  exact
+    ⟨generated, fn,
+      Expr.elaborate_user_call_resolved
+        hNotMemoryguard hNotClz hArgs hClass hResolve,
+      hEntry⟩
+
 theorem sourceLocalFunction_elaborateBlock_true_entry
     {stmts : List Raw.Stmt}
     {state pushedState scopeState finalState : State}
@@ -3678,6 +3748,45 @@ theorem sourceLocalFunction_elaborateBlock_true_entry
       hPushScope hScope hBlock hLookup with
     ⟨_params, _returns, _body, fn, _hMem, hEntry⟩
   exact ⟨generated, fn, hLookup, hEntry⟩
+
+theorem sourceLocalFunction_elaborateBlock_true_elaborate_user_call_entry
+    {stmts : List Raw.Stmt}
+    {state pushedState scopeState finalState callState argState : State}
+    {scope : List (Name × Name)} {outer : List (List (Name × Name))}
+    {name : Name} {params returns : List Name} {body : List Raw.Stmt}
+    {front : List Frontend.Stmt}
+    {args : List Raw.Expr} {args' : List Frontend.Expr}
+    (hLocal :
+      Raw.Source.LocalFunction stmts name params returns body)
+    (hNotMemoryguard : name ≠ "memoryguard")
+    (hNotClz : name ≠ "clz")
+    (hPushScope : pushIdentifierScope.run state = .ok ((), pushedState))
+    (hScope :
+      (Stmt.List.localFunctionScope stmts).run pushedState =
+        .ok (scope, scopeState))
+    (hBlock :
+      (Stmt.List.elaborateBlock stmts true).run state =
+        .ok (front, finalState))
+    (hArgs :
+      (Expr.List.elaborate args).run callState = .ok (args', argState))
+    (hArgScopes : argState.functionScopes = scope :: outer)
+    (hClass : CallClass.classifyCall name = .user) :
+    ∃ generated fn,
+      (Expr.elaborate (.functionCall name args)).run callState =
+          .ok (.call .user generated args', argState) ∧
+        (generated, fn) ∈ finalState.hoistedFunctions := by
+  rcases sourceLocalFunction_elaborateBlock_true_entry
+      hLocal hPushScope hScope hBlock with
+    ⟨generated, fn, hLookup, hEntry⟩
+  have hResolve :
+      resolveFunctionIn name argState.functionScopes = some generated := by
+    rw [hArgScopes]
+    exact resolveFunctionIn_of_scope_lookup hLookup
+  exact
+    ⟨generated, fn,
+      Expr.elaborate_user_call_resolved
+        hNotMemoryguard hNotClz hArgs hClass hResolve,
+      hEntry⟩
 
 end Stmt.List
 
