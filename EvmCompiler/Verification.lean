@@ -63,6 +63,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_function_entry
 #check EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_function_name_entry
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_function_entry
+#check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_function_name_entry
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_some
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_parts
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_objectParts
@@ -242,6 +243,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_function_entry
 #print axioms EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_function_name_entry
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_function_entry
+#print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_function_name_entry
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_some
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_objectParts

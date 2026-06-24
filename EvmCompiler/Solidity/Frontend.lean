@@ -3463,6 +3463,41 @@ theorem compileVerifiedStackCodeArtifactIn?_function_entry
     ⟨memoryContract, resolvedFn, yulBody, hMemory, hFnResolve,
       hResolvedMem, hParams, hReturns, hBodyYul, hEntry⟩
 
+theorem compileVerifiedStackCodeArtifactIn?_function_name_entry
+    {object : Object} {context : ObjectBuiltinContext}
+    {artifact : VerifiedStackCodeArtifact}
+    {name : Name}
+    (hCompile :
+      object.compileVerifiedStackCodeArtifactIn? context = some artifact)
+    (hContains : (object.functions.map Prod.fst).contains name = true) :
+    ∃ fn memoryContract resolvedFn yulBody,
+      (name, fn) ∈ object.functions ∧
+        MemoryGuard.Object.inferredContract? object = some memoryContract ∧
+          FunctionDef.resolveObjectBuiltinsIn? fn
+              { context with memoryContract := memoryContract } =
+            some resolvedFn ∧
+          (name, resolvedFn) ∈ artifact.resolved.functions ∧
+            resolvedFn.params = fn.params ∧
+              resolvedFn.returns = fn.returns ∧
+                Stmt.List.toYul? resolvedFn.body = some yulBody ∧
+                  (name,
+                    EvmYul.Yul.Ast.FunctionDefinition.Def
+                      resolvedFn.params resolvedFn.returns yulBody) ∈
+                    artifact.ordered.functionEntries := by
+  have hNameMem : name ∈ object.functions.map Prod.fst := by
+    simpa using hContains
+  rcases List.mem_map.mp hNameMem with ⟨entry, hEntryMem, hEntryName⟩
+  rcases entry with ⟨entryName, fn⟩
+  simp at hEntryName
+  subst entryName
+  rcases compileVerifiedStackCodeArtifactIn?_function_entry
+      hCompile hEntryMem with
+    ⟨memoryContract, resolvedFn, yulBody, hMemory, hFnResolve,
+      hResolvedMem, hParams, hReturns, hBodyYul, hYulEntry⟩
+  exact
+    ⟨fn, memoryContract, resolvedFn, yulBody, hEntryMem, hMemory,
+      hFnResolve, hResolvedMem, hParams, hReturns, hBodyYul, hYulEntry⟩
+
 theorem compileVerifiedStackCodeArtifactIn?_decodingCorrect
     {object : Object} {context : ObjectBuiltinContext}
     {artifact : VerifiedStackCodeArtifact}
