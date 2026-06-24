@@ -378,7 +378,10 @@ Next raw frontend layer:
   lowering theorem:
   `AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_entries` proves the
   alpha-preserved caller and generated callee are both emitted as exact ordered
-  Yul function entries consumed by the backend.
+  Yul function entries consumed by the backend, and
+  `AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_callable_entries`
+  proves those same entries populate the ordered program's function map, which
+  is the lookup used by `Yul.InteractionSemantics.call`.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call execution/observation, beyond this
   resolution-preservation relation, and broader composition into the final

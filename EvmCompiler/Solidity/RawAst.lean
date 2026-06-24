@@ -1166,6 +1166,56 @@ structure AlphaRenamedLocalCallPreserved
 
 namespace AlphaRenamedLocalCallPreserved
 
+private theorem lookup_foldl_insert_of_not_mem
+    (entries : List (Name × Frontend.AstFunctionDefinition))
+    (state :
+      Finmap (fun (_ : Name) => Frontend.AstFunctionDefinition))
+    (name : Name)
+    (hNotMem : name ∉ entries.map Prod.fst) :
+    (entries.foldl
+        (fun acc entry => acc.insert entry.fst entry.snd) state).lookup name =
+      state.lookup name := by
+  induction entries generalizing state with
+  | nil => rfl
+  | cons entry rest ih =>
+      rcases entry with ⟨headName, headFn⟩
+      simp only [List.map_cons, List.mem_cons, not_or] at hNotMem
+      rw [List.foldl_cons, ih _ hNotMem.2]
+      exact Finmap.lookup_insert_of_ne state hNotMem.1
+
+private theorem lookup_foldl_insert_of_mem
+    {entries : List (Name × Frontend.AstFunctionDefinition)}
+    (hNames : (entries.map Prod.fst).Nodup)
+    {name : Name} {fn : Frontend.AstFunctionDefinition}
+    (hMem : (name, fn) ∈ entries)
+    (state :
+      Finmap (fun (_ : Name) => Frontend.AstFunctionDefinition)) :
+    (entries.foldl
+        (fun acc entry => acc.insert entry.fst entry.snd) state).lookup name =
+      some fn := by
+  induction entries generalizing state with
+  | nil =>
+      simp at hMem
+  | cons entry rest ih =>
+      rcases entry with ⟨headName, headFn⟩
+      simp only [List.map_cons, List.nodup_cons] at hNames
+      simp only [List.mem_cons, Prod.mk.injEq] at hMem
+      rcases hMem with hHere | hTail
+      · rcases hHere with ⟨rfl, rfl⟩
+        rw [List.foldl_cons,
+          lookup_foldl_insert_of_not_mem rest _ name hNames.1]
+        exact Finmap.lookup_insert _
+      · rw [List.foldl_cons]
+        exact ih hNames.2 hTail _
+
+private theorem lookup_functionMap_of_mem
+    {entries : List (Name × Frontend.AstFunctionDefinition)}
+    (hNames : (entries.map Prod.fst).Nodup)
+    {name : Name} {fn : Frontend.AstFunctionDefinition}
+    (hMem : (name, fn) ∈ entries) :
+    (Yul.FunctionList.functionMap entries).lookup name = some fn := by
+  exact lookup_foldl_insert_of_mem hNames hMem _
+
 theorem of_entries
     {topBody : List Stmt}
     {functions : List (Name × Frontend.FunctionDef)}
@@ -1238,6 +1288,63 @@ theorem toSolcYulOrderedProgram?_entries
     ⟨generated, localFn, frontArgs, topFn, topYulBody, localYulBody,
       hTopMem, hOccurrence, hCalleeMem, hTopYul, hLocalYul,
       hTopEntry, hLocalEntry⟩
+
+theorem toSolcYulOrderedProgram?_callable_entries
+    {topBody : List Stmt}
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName name : Name}
+    {localParams localReturns : List Name}
+    {localBody : List Stmt}
+    {args : List Expr}
+    (hAlpha :
+      AlphaRenamedLocalCallPreserved topBody object.functions topName name
+        localParams localReturns localBody args)
+    (hConvert :
+      object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (generated : Name)
+        (localFn : Frontend.FunctionDef)
+        (frontArgs : List Frontend.Expr)
+        (topFn : Frontend.FunctionDef)
+        (topYulBody localYulBody : List Frontend.AstStmt),
+      (topName, topFn) ∈ object.functions ∧
+        FrontendOccurrence.StmtListUserCall
+          topFn.body generated frontArgs ∧
+        (generated, localFn) ∈ object.functions ∧
+        Frontend.Stmt.List.toYul? topFn.body = some topYulBody ∧
+        Frontend.Stmt.List.toYul? localFn.body = some localYulBody ∧
+        ordered.program.contract.functions.lookup topName =
+          some
+            (EvmYul.Yul.Ast.FunctionDefinition.Def
+              topFn.params topFn.returns topYulBody) ∧
+        ordered.program.contract.functions.lookup generated =
+          some
+            (EvmYul.Yul.Ast.FunctionDefinition.Def
+              localFn.params localFn.returns localYulBody) := by
+  rcases toSolcYulOrderedProgram?_entries hAlpha hConvert with
+    ⟨generated, localFn, frontArgs, topFn, topYulBody, localYulBody,
+      hTopMem, hOccurrence, hCalleeMem, hTopYul, hLocalYul,
+      hTopEntry, hLocalEntry⟩
+  rcases Frontend.Object.toSolcYulOrderedProgram?_source hConvert with
+    ⟨hRepresents, hNames, _hProgramOk, _hMemory⟩
+  have hTopLookup :
+      ordered.program.contract.functions.lookup topName =
+        some
+          (EvmYul.Yul.Ast.FunctionDefinition.Def
+            topFn.params topFn.returns topYulBody) := by
+    rw [hRepresents]
+    exact lookup_functionMap_of_mem hNames hTopEntry
+  have hCalleeLookup :
+      ordered.program.contract.functions.lookup generated =
+        some
+          (EvmYul.Yul.Ast.FunctionDefinition.Def
+            localFn.params localFn.returns localYulBody) := by
+    rw [hRepresents]
+    exact lookup_functionMap_of_mem hNames hLocalEntry
+  exact
+    ⟨generated, localFn, frontArgs, topFn, topYulBody, localYulBody,
+      hTopMem, hOccurrence, hCalleeMem, hTopYul, hLocalYul,
+      hTopLookup, hCalleeLookup⟩
 
 end AlphaRenamedLocalCallPreserved
 
