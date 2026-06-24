@@ -400,6 +400,59 @@ theorem compileArtifactFromRawSolcIr?_frontendValidated
     ⟨json, selected, object, program, linkerSymbols, hParse, hSelected,
       hObject, hValidated, hProgram, hLinker, hValid⟩
 
+theorem compileArtifactFromRawSolcIr?_function_name_entry
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {program : Frontend.Program} {name : Frontend.Name}
+    (hCompile :
+      compileArtifactFromRawSolcIr? rawJson selection = some artifact)
+    (hDecode : decodeAndElaborateSolcIr? rawJson selection = some program)
+    (hContains :
+      (program.object.functions.map Prod.fst).contains name = true) :
+    ∃ (linkerSymbols : List (Frontend.Name × Frontend.Word))
+        (context : Frontend.ObjectBuiltinContext)
+        (fn resolvedFn : Frontend.FunctionDef)
+        (memoryContract : EvmCompiler.MemoryContract.Contract)
+        (yulBody : List Frontend.AstStmt),
+      decodeLinkerSymbols? rawJson selection = some linkerSymbols ∧
+        program.compileArtifactWithLinkerSymbols? linkerSymbols =
+          some artifact ∧
+        program.object.compileVerifiedStackCodeArtifactIn? context =
+          some artifact.codeArtifact ∧
+        (name, fn) ∈ program.object.functions ∧
+        Frontend.MemoryGuard.Object.inferredContract? program.object =
+          some memoryContract ∧
+        Frontend.FunctionDef.resolveObjectBuiltinsIn? fn
+            { context with memoryContract := memoryContract } =
+          some resolvedFn ∧
+        (name, resolvedFn) ∈ artifact.codeArtifact.resolved.functions ∧
+        resolvedFn.params = fn.params ∧
+        resolvedFn.returns = fn.returns ∧
+        Frontend.Stmt.List.toYul? resolvedFn.body = some yulBody ∧
+        (name,
+          EvmYul.Yul.Ast.FunctionDefinition.Def
+            resolvedFn.params resolvedFn.returns yulBody) ∈
+          artifact.codeArtifact.ordered.functionEntries := by
+  rcases compileArtifactFromRawSolcIr?_decoded hCompile with
+    ⟨decodedProgram, linkerSymbols, hDecoded, hLinker, hProgramCompile⟩
+  rw [hDecode] at hDecoded
+  cases hDecoded
+  rcases
+      Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+        hProgramCompile with
+    ⟨_childArtifacts, plan, _codeArtifact, _hChildren, _hPlan, _hFinish,
+      hCodeArtifact, _hArtifactChildren, _hContext, _hChildImages,
+      _hPayload, _hImage⟩
+  rcases
+      Frontend.Object.compileVerifiedStackCodeArtifactIn?_function_name_entry
+        hCodeArtifact hContains with
+    ⟨fn, memoryContract, resolvedFn, yulBody, hMem, hMemory, hFnResolve,
+      hResolvedMem, hParams, hReturns, hBodyYul, hYulEntry⟩
+  exact
+    ⟨linkerSymbols, plan.context, fn, resolvedFn, memoryContract, yulBody,
+      hLinker, hProgramCompile, hCodeArtifact, hMem, hMemory, hFnResolve,
+      hResolvedMem, hParams, hReturns, hBodyYul, hYulEntry⟩
+
 theorem compileArtifactFromRawSolcIr?_decodingCorrect
     {rawJson : String} {selection : Selection}
     {artifact : Frontend.Program.Artifact}

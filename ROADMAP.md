@@ -241,7 +241,9 @@ Next raw frontend layer:
   giving resolved user-call names a concrete emitted callee entry at the
   frontend/Yul boundary, and stack-code artifact construction carries such
   names through object-builtin resolution to artifact-level function entries.
-  Hoisted frontend function entries now also have a
+  The raw compiler wrapper now exposes that artifact-level evidence for
+  decoded programs produced by `decodeAndElaborateSolcIr?`. Hoisted frontend
+  function entries now also have a
   checked path through `toSolcYulOrderedProgram?` to the emitted ordered Yul
   function-entry list consumed by the backend, and successful raw artifact
   compilation now carries hoisted raw callees through object-builtin
