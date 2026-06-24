@@ -128,6 +128,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_switchDefault_noShadow_resolved_source_stmt_list_call_incoming_mem
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.CaseList.elaborate_noShadow_resolved_source_case_body_incoming_mem
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_switchCase_noShadow_resolved_source_case_body_incoming_mem
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_forLoop_pre_noShadow_resolved_incoming_call_mem
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_incoming_scope_source_user_call_occurrence
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_resolved_incoming_scope_source_user_call_occurrence
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_resolved_source_stmt_list_call_incoming_mem
@@ -387,6 +388,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_switchDefault_noShadow_resolved_source_stmt_list_call_incoming_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.CaseList.elaborate_noShadow_resolved_source_case_body_incoming_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_switchCase_noShadow_resolved_source_case_body_incoming_mem
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_forLoop_pre_noShadow_resolved_incoming_call_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_incoming_scope_source_user_call_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_resolved_incoming_scope_source_user_call_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_resolved_source_stmt_list_call_incoming_mem
