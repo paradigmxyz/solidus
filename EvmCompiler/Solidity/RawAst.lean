@@ -1247,7 +1247,54 @@ theorem of_last
     StmtListUserCall (pre ++ [stmt]) generated args :=
   append_right pre (StmtListUserCall.head hOccurrence)
 
+theorem exists_split_stmt
+    {stmts : List Frontend.AstStmt}
+    {generated : Name} {args : List Frontend.AstExpr}
+    (hOccurrence : StmtListUserCall stmts generated args) :
+    ∃ (pre : List Frontend.AstStmt)
+        (stmt : Frontend.AstStmt)
+        (rest : List Frontend.AstStmt),
+      stmts = pre ++ stmt :: rest ∧
+        StmtUserCall stmt generated args := by
+  induction stmts with
+  | nil =>
+      cases hOccurrence
+  | cons head tail ih =>
+      cases hOccurrence with
+      | head hHead =>
+          exact ⟨[], head, tail, rfl, hHead⟩
+      | tail hTail =>
+          rcases ih hTail with
+            ⟨pre, focus, suffix, hEq, hFocus⟩
+          exact ⟨head :: pre, focus, suffix, by simp [hEq], hFocus⟩
+
 end StmtListUserCall
+
+namespace CaseListUserCall
+
+theorem exists_split_body
+    {cases : List (Word × List Frontend.AstStmt)}
+    {generated : Name} {args : List Frontend.AstExpr}
+    (hOccurrence : CaseListUserCall cases generated args) :
+    ∃ (pre : List (Word × List Frontend.AstStmt))
+        (value : Word)
+        (body : List Frontend.AstStmt)
+        (rest : List (Word × List Frontend.AstStmt)),
+      cases = pre ++ (value, body) :: rest ∧
+        StmtListUserCall body generated args := by
+  induction cases with
+  | nil =>
+      cases hOccurrence
+  | cons headCase tail ih =>
+      cases hOccurrence with
+      | head hBody =>
+          exact ⟨[], _, _, _, rfl, hBody⟩
+      | tail hTail =>
+          rcases ih hTail with
+            ⟨pre, value, body, rest, hEq, hBody⟩
+          exact ⟨headCase :: pre, value, body, rest, by simp [hEq], hBody⟩
+
+end CaseListUserCall
 
 end YulOccurrence
 

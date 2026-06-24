@@ -427,6 +427,11 @@ Next raw frontend layer:
   `AlphaRenamedLocalCallPreserved.toSolcYulOrderedProgram?_call_occurrence_routes`
   packages the lowerable and retained-stub ordered-occurrence routes behind
   the source-facing alpha-preservation relation.
+  `YulOccurrence.StmtListUserCall.exists_split_stmt` and
+  `YulOccurrence.CaseListUserCall.exists_split_body` now decompose recursive
+  lowered Yul occurrences into the concrete focused statement or switch case
+  body plus its surrounding prefix/suffix, preparing the recursive semantic
+  composition to consume the sequence-prefix lemmas.
   `alphaRenamedLocalCallPreserved_call_occurrence_routes_succ` composes that
   route split with the Yul `Effectful.call` rule, so both occurrence routes now
   share the exact generated callee lookup used by the interpreter.
