@@ -1116,7 +1116,245 @@ end CaseListUserCall
 
 end FrontendOccurrence
 
+namespace YulOccurrence
+
+/-- Occurrence of a generated Yul user call in a lowered Yul expression. -/
+inductive UserCall : Frontend.AstExpr → Name → List Frontend.AstExpr → Prop where
+  | here {generated args} :
+      UserCall (.Call (.inr generated) args) generated args
+  | arg {callee args arg generated generatedArgs} :
+      arg ∈ args →
+        UserCall arg generated generatedArgs →
+          UserCall (.Call callee args) generated generatedArgs
+
+/-- Generated Yul user-call occurrence in a lowered statement expression field. -/
+inductive StmtIncomingUserCall :
+    Frontend.AstStmt → Name → List Frontend.AstExpr → Prop where
+  | letValue {names value generated args} :
+      UserCall value generated args →
+        StmtIncomingUserCall (.Let names (some value)) generated args
+  | assignmentValue {names value generated args} :
+      UserCall value generated args →
+        StmtIncomingUserCall (.Assign names value) generated args
+  | expressionStatement {expr generated args} :
+      UserCall expr generated args →
+        StmtIncomingUserCall (.ExprStmtCall expr) generated args
+  | switchScrutinee {scrutinee cases default generated args} :
+      UserCall scrutinee generated args →
+        StmtIncomingUserCall (.Switch scrutinee cases default) generated args
+  | ifCondition {condition body generated args} :
+      UserCall condition generated args →
+        StmtIncomingUserCall (.If condition body) generated args
+
+end YulOccurrence
+
 namespace FrontendOccurrence
+
+namespace ExprListToYul
+
+theorem mem
+    {exprs : List Frontend.Expr} {yulExprs : List Frontend.AstExpr}
+    {expr : Frontend.Expr}
+    (hYul : Frontend.Expr.List.toYul? exprs = some yulExprs)
+    (hMem : expr ∈ exprs) :
+    ∃ yulExpr,
+      Frontend.Expr.toYul? expr = some yulExpr ∧
+        yulExpr ∈ yulExprs := by
+  induction exprs generalizing yulExprs with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      unfold Frontend.Expr.List.toYul? at hYul
+      cases hHead : Frontend.Expr.toYul? head with
+      | none =>
+          simp [hHead] at hYul
+      | some yulHead =>
+          cases hRest : Frontend.Expr.List.toYul? rest with
+          | none =>
+              simp [hHead, hRest] at hYul
+          | some yulRest =>
+              simp [hHead, hRest] at hYul
+              subst yulExprs
+              simp at hMem
+              rcases hMem with hHere | hTail
+              · subst expr
+                exact ⟨yulHead, hHead, by simp⟩
+              · rcases ih hRest hTail with
+                  ⟨yulExpr, hExprYul, hYulMem⟩
+                exact ⟨yulExpr, hExprYul, by simp [hYulMem]⟩
+
+end ExprListToYul
+
+namespace UserCall
+
+theorem toYul?_occurrence
+    {front : Frontend.Expr} {yul : Frontend.AstExpr}
+    {generated : Name} {args : List Frontend.Expr}
+    (hOccurrence : UserCall front generated args)
+    (hYul : Frontend.Expr.toYul? front = some yul) :
+    ∃ yulArgs,
+      Frontend.Expr.List.toYul? args = some yulArgs ∧
+        YulOccurrence.UserCall yul generated yulArgs := by
+  induction hOccurrence generalizing yul with
+  | here =>
+      rename_i _generated callArgs
+      unfold Frontend.Expr.toYul? at hYul
+      cases hArgs : Frontend.Expr.List.toYul? callArgs with
+      | none =>
+          simp [hArgs] at hYul
+      | some yulArgs =>
+          simp [hArgs] at hYul
+          cases hYul
+          exact
+            ⟨yulArgs, by simpa [hArgs],
+              YulOccurrence.UserCall.here⟩
+  | arg hArgMem hArgOccurrence ih =>
+      rename_i kind callee callArgs _arg _generated _generatedArgs
+      unfold Frontend.Expr.toYul? at hYul
+      cases kind with
+      | primitive =>
+        cases hArgsYul : Frontend.Expr.List.toYul? callArgs with
+        | none =>
+            simp [hArgsYul] at hYul
+        | some yulArgs =>
+            cases hPrim : Frontend.Primitive.ofName? callee with
+            | none =>
+                simp [hPrim, hArgsYul] at hYul
+            | some prim =>
+                simp [hPrim, hArgsYul] at hYul
+                cases hYul
+                rcases ExprListToYul.mem hArgsYul hArgMem with
+                  ⟨yulArg, hArgYul, hArgYulMem⟩
+                rcases ih hArgYul with
+                  ⟨generatedYulArgs, hGeneratedArgsYul, hYulOccurrence⟩
+                exact
+                  ⟨generatedYulArgs, hGeneratedArgsYul,
+                    YulOccurrence.UserCall.arg hArgYulMem
+                      hYulOccurrence⟩
+      | user =>
+        cases hArgsYul : Frontend.Expr.List.toYul? callArgs with
+        | none =>
+            simp [hArgsYul] at hYul
+        | some yulArgs =>
+            simp [hArgsYul] at hYul
+            cases hYul
+            rcases ExprListToYul.mem hArgsYul hArgMem with
+              ⟨yulArg, hArgYul, hArgYulMem⟩
+            rcases ih hArgYul with
+              ⟨generatedYulArgs, hGeneratedArgsYul, hYulOccurrence⟩
+            exact
+              ⟨generatedYulArgs, hGeneratedArgsYul,
+                YulOccurrence.UserCall.arg hArgYulMem
+                  hYulOccurrence⟩
+      | objectBuiltin =>
+          simp at hYul
+      | dialectBuiltin =>
+          simp at hYul
+
+end UserCall
+
+namespace StmtIncomingUserCall
+
+theorem toYul?_occurrence
+    {front : Frontend.Stmt} {yul : Frontend.AstStmt}
+    {generated : Name} {args : List Frontend.Expr}
+    (hOccurrence : StmtIncomingUserCall front generated args)
+    (hYul : Frontend.Stmt.toYul? front = some yul) :
+    ∃ yulArgs,
+      Frontend.Expr.List.toYul? args = some yulArgs ∧
+        YulOccurrence.StmtIncomingUserCall yul generated yulArgs := by
+  cases hOccurrence with
+  | letValue hExprOccurrence =>
+      rename_i _names value
+      unfold Frontend.Stmt.toYul? at hYul
+      cases hValue : Frontend.Expr.toYul? value with
+      | none =>
+          simp [hValue] at hYul
+      | some yulValue =>
+          simp [hValue] at hYul
+          cases hYul
+          rcases UserCall.toYul?_occurrence hExprOccurrence hValue with
+            ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+          exact
+            ⟨yulArgs, hArgsYul,
+              YulOccurrence.StmtIncomingUserCall.letValue
+                hYulOccurrence⟩
+  | assignmentValue hExprOccurrence =>
+      rename_i _names value
+      unfold Frontend.Stmt.toYul? at hYul
+      cases hValue : Frontend.Expr.toYul? value with
+      | none =>
+          simp [hValue] at hYul
+      | some yulValue =>
+          simp [hValue] at hYul
+          cases hYul
+          rcases UserCall.toYul?_occurrence hExprOccurrence hValue with
+            ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+          exact
+            ⟨yulArgs, hArgsYul,
+              YulOccurrence.StmtIncomingUserCall.assignmentValue
+                hYulOccurrence⟩
+  | expressionStatement hExprOccurrence =>
+      rename_i expr
+      unfold Frontend.Stmt.toYul? at hYul
+      cases hExpr : Frontend.Expr.toYul? expr with
+      | none =>
+          simp [hExpr] at hYul
+      | some yulExpr =>
+          simp [hExpr] at hYul
+          cases hYul
+          rcases UserCall.toYul?_occurrence hExprOccurrence hExpr with
+            ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+          exact
+            ⟨yulArgs, hArgsYul,
+              YulOccurrence.StmtIncomingUserCall.expressionStatement
+                hYulOccurrence⟩
+  | switchScrutinee hExprOccurrence =>
+      rename_i scrutinee cases default
+      unfold Frontend.Stmt.toYul? at hYul
+      cases hScrutinee : Frontend.Expr.toYul? scrutinee with
+      | none =>
+          simp [hScrutinee] at hYul
+      | some yulScrutinee =>
+          cases hCases : Frontend.Stmt.CaseList.toYul? cases with
+          | none =>
+              simp [hScrutinee, hCases] at hYul
+          | some yulCases =>
+              cases hDefault : Frontend.Stmt.List.toYul? default with
+              | none =>
+                  simp [hScrutinee, hCases, hDefault] at hYul
+              | some yulDefault =>
+                  simp [hScrutinee, hCases, hDefault] at hYul
+                  cases hYul
+                  rcases UserCall.toYul?_occurrence hExprOccurrence
+                      hScrutinee with
+                    ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+                  exact
+                    ⟨yulArgs, hArgsYul,
+                      YulOccurrence.StmtIncomingUserCall.switchScrutinee
+                        hYulOccurrence⟩
+  | ifCondition hExprOccurrence =>
+      rename_i condition body
+      unfold Frontend.Stmt.toYul? at hYul
+      cases hCondition : Frontend.Expr.toYul? condition with
+      | none =>
+          simp [hCondition] at hYul
+      | some yulCondition =>
+          cases hBody : Frontend.Stmt.List.toYul? body with
+          | none =>
+              simp [hCondition, hBody] at hYul
+          | some yulBody =>
+              simp [hCondition, hBody] at hYul
+              cases hYul
+              rcases UserCall.toYul?_occurrence hExprOccurrence
+                  hCondition with
+                ⟨yulArgs, hArgsYul, hYulOccurrence⟩
+              exact
+                ⟨yulArgs, hArgsYul,
+                  YulOccurrence.StmtIncomingUserCall.ifCondition
+                    hYulOccurrence⟩
+
+end StmtIncomingUserCall
 
 /--
 Generated frontend realization of a raw source-local call.

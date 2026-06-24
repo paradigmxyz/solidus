@@ -386,7 +386,11 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_call_succ_of_local_body`, a semantic
   corollary showing that, once the generated callee body executes from the
   initialized call frame, the generic Yul call rule returns exactly through
-  that generated callee body.
+  that generated callee body. The frontend/Yul boundary now also exposes
+  `FrontendOccurrence.UserCall.toYul?_occurrence` and
+  `FrontendOccurrence.StmtIncomingUserCall.toYul?_occurrence`, proving that
+  incoming generated frontend user-call occurrences lower to concrete generated
+  Yul call occurrences with lowered argument lists.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call execution/observation in caller context,
   including source argument evaluation and caller writeback, and broader
