@@ -464,6 +464,9 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_exprStmt_seqHead_call_occurrence_routes_succ`
   exposes the same expression-statement case in direct `execSeq` form, which
   is the recursive statement-list interface needed for tail occurrences.
+  `alphaRenamedLocalCallPreserved_exprStmt_seqPrefix_call_occurrence_routes_succ`
+  composes that expression-statement sequence-head fact after an arbitrary
+  regularly executed prefix, giving the first checked tail-occurrence bridge.
   `alphaRenamedLocalCallPreserved_exprStmt_blockHead_call_occurrence_routes_succ`
   lifts that expression-statement context through the head of a surrounding
   Yul block, leaving the remaining sequence as the next composition premise.

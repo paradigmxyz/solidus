@@ -2382,6 +2382,74 @@ theorem execSeq_cons_of_outOfFuel
   simp [execSeq, hStmt, hSource]
 
 /--
+Compose a regularly completed statement prefix with a remaining source
+sequence.
+-/
+theorem execSeq_append_of_regular_prefix
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ) :
+    ∀ {fuel : Nat}
+      {pre suffix : List EvmYul.Yul.Ast.Stmt}
+      {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+      {state afterPrefix final : σ}
+      {shared : EvmYul.SharedState .Yul}
+      {vars : EvmYul.Yul.VarStore},
+      execSeq model prim (fuel + pre.length) pre
+          codeOverride state =
+        .ok afterPrefix →
+      model.source afterPrefix = .Ok shared vars →
+      execSeq model prim fuel suffix codeOverride afterPrefix =
+        .ok final →
+      execSeq model prim (fuel + pre.length) (pre ++ suffix)
+          codeOverride state =
+        .ok final
+  | fuel, [], suffix, codeOverride, state, afterPrefix, final,
+      shared, vars, hPrefix, _hSource, hSuffix => by
+      rcases execSeq_nil_ok_parts model prim hPrefix with
+        ⟨_previous, _hFuel, hAfter⟩
+      subst afterPrefix
+      simpa using hSuffix
+  | fuel, stmt :: rest, suffix, codeOverride, state, afterPrefix, final,
+      shared, vars, hPrefix, hPrefixSource, hSuffix => by
+      rcases execSeq_cons_ok_parts model prim hPrefix with
+        ⟨previous, stateAfterStmt, hFuel, hStmt, hTail⟩
+      have hPrevious : previous = fuel + rest.length := by
+        have hFuel' : fuel + rest.length + 1 = previous + 1 := by
+          simpa [Nat.add_assoc] using hFuel
+        omega
+      subst previous
+      cases hSourceStmt : model.source stateAfterStmt with
+      | Ok sharedStmt varsStmt =>
+          have hRestPrefix :
+              execSeq model prim (fuel + rest.length) rest codeOverride
+                  stateAfterStmt =
+                .ok afterPrefix := by
+            simpa [hSourceStmt] using hTail
+          have hRestApp :
+              execSeq model prim (fuel + rest.length) (rest ++ suffix)
+                  codeOverride stateAfterStmt =
+                .ok final :=
+            execSeq_append_of_regular_prefix
+              model prim
+              (fuel := fuel) (pre := rest) (suffix := suffix)
+              (codeOverride := codeOverride)
+              (state := stateAfterStmt) (afterPrefix := afterPrefix)
+              (final := final) (shared := shared) (vars := vars)
+              hRestPrefix hPrefixSource hSuffix
+          simpa [Nat.add_assoc] using
+            execSeq_cons_of_regular model prim hStmt hSourceStmt hRestApp
+      | OutOfFuel =>
+          have hAfter : afterPrefix = stateAfterStmt := by
+            simpa [hSourceStmt] using hTail
+          subst afterPrefix
+          simp [hSourceStmt] at hPrefixSource
+      | Checkpoint jump =>
+          have hAfter : afterPrefix = stateAfterStmt := by
+            simpa [hSourceStmt] using hTail
+          subst afterPrefix
+          simp [hSourceStmt] at hPrefixSource
+
+/--
 Compose a regularly completed head statement, the remaining source sequence,
 and the surrounding block.
 -/
