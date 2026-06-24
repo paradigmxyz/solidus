@@ -11813,6 +11813,107 @@ theorem FunctionDef.elaborate_sourceLocalFunction_entry
                   cases hFinal
                   exact ⟨generated, localFn, hEntryFinal⟩
 
+theorem FunctionDef.elaborate_sourceLocalFunction_noShadow_stmtUserCall_entry
+    {params returns : List Name} {body : List Raw.Stmt}
+    {state finalState : State} {fn : Frontend.FunctionDef}
+    {name : Name} {localParams localReturns : List Name}
+    {localBody : List Raw.Stmt} {args : List Raw.Expr}
+    (hLocal :
+      Raw.Source.LocalFunction body name localParams localReturns localBody)
+    (hOccurs : Raw.Source.NoShadowStmtListCall body name args)
+    (hElab :
+      (FunctionDef.elaborate params returns body).run state =
+        .ok (fn, finalState)) :
+    ∃ generated localFn args',
+      FrontendOccurrence.StmtListUserCall fn.body generated args' ∧
+        (generated, localFn) ∈ finalState.hoistedFunctions := by
+  unfold FunctionDef.elaborate at hElab
+  simp [StateT.run_bind] at hElab
+  cases hPush : pushIdentifierScope.run state with
+  | error err =>
+      simp [hPush] at hElab
+  | ok pushResult =>
+      rcases pushResult with ⟨_, pushedState⟩
+      simp [hPush] at hElab
+      cases hDeclare :
+          (declareIdentifiers (params ++ returns)
+            "function parameter/result").run pushedState with
+      | error err =>
+          simp [hDeclare] at hElab
+      | ok declareResult =>
+          rcases declareResult with ⟨_, declaredState⟩
+          simp [hDeclare] at hElab
+          cases hBlock :
+              (Stmt.List.elaborateBlock body true).run declaredState with
+          | error err =>
+              simp [hBlock] at hElab
+          | ok blockResult =>
+              rcases blockResult with ⟨frontBody, blockState⟩
+              rcases
+                Stmt.List.sourceLocalFunction_elaborateBlock_true_noShadow_stmtUserCall_entry
+                  hLocal hOccurs hBlock with
+                ⟨generated, localFn, args', hOccurrence, hEntryBlock⟩
+              simp [hBlock] at hElab
+              cases hPop : popIdentifierScope.run blockState with
+              | error err =>
+                  simp [hPop] at hElab
+              | ok popResult =>
+                  rcases popResult with ⟨_, poppedState⟩
+                  have hEntryFinal :
+                      (generated, localFn) ∈
+                        poppedState.hoistedFunctions :=
+                    popIdentifierScope_preserves_hoistedFunction_mem
+                      hPop hEntryBlock
+                  simp [hPop] at hElab
+                  rcases hElab with ⟨hFn, hFinal⟩
+                  cases hFinal
+                  rw [← hFn]
+                  exact
+                    ⟨generated, localFn, args', hOccurrence, hEntryFinal⟩
+
+theorem Stmt.elaborate_functionDefinition_sourceLocalFunction_noShadow_stmtUserCall_entry
+    {fnName : Name} {params returns : List Name}
+    {body : List Raw.Stmt}
+    {state finalState : State} {front : Frontend.Stmt}
+    {name : Name} {localParams localReturns : List Name}
+    {localBody : List Raw.Stmt} {args : List Raw.Expr}
+    (hLocal :
+      Raw.Source.LocalFunction body name localParams localReturns localBody)
+    (hOccurs : Raw.Source.NoShadowStmtListCall body name args)
+    (hElab :
+      (Stmt.elaborate (.functionDefinition fnName params returns body)).run
+        state = .ok (front, finalState)) :
+    ∃ generated localFn args',
+      FrontendOccurrence.StmtUserCall front generated args' ∧
+        (generated, localFn) ∈ finalState.hoistedFunctions := by
+  unfold Stmt.elaborate at hElab
+  simp [StateT.run_bind] at hElab
+  cases hResolveFn : (resolveFunction fnName).run state with
+  | error err =>
+      simp [hResolveFn] at hElab
+  | ok resolveResult =>
+      rcases resolveResult with ⟨frontFnName, resolvedState⟩
+      simp [hResolveFn] at hElab
+      cases hFn :
+          (FunctionDef.elaborate params returns body).run
+            resolvedState with
+      | error err =>
+          simp [hFn] at hElab
+      | ok fnResult =>
+          rcases fnResult with ⟨frontFn, fnState⟩
+          rcases
+            FunctionDef.elaborate_sourceLocalFunction_noShadow_stmtUserCall_entry
+              hLocal hOccurs hFn with
+            ⟨generated, localFn, args', hOccurrence, hEntry⟩
+          simp [hFn] at hElab
+          rcases hElab with ⟨hFront, hFinal⟩
+          cases hFinal
+          rw [← hFront]
+          exact
+            ⟨generated, localFn, args',
+              FrontendOccurrence.StmtUserCall.functionBody hOccurrence,
+              hEntry⟩
+
 def collectTopFunctions : List Raw.Stmt → ElabM (List (Name × Name))
   | [] => pure []
   | stmt :: rest => do

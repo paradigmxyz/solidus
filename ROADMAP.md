@@ -335,7 +335,11 @@ Next raw frontend layer:
   `Elab.Stmt.List.sourceLocalFunction_elaborateForInitBlockWithScope_noShadow_stmtUserCall_entry`
   prove that a block declaring the source local function and containing a
   resolver-safe recursive call elaborates to the generated frontend user-call
-  occurrence while retaining the generated callee entry.
+  occurrence while retaining the generated callee entry. Function bodies and
+  retained `functionDef` staging statements now lift that same evidence through
+  `Elab.FunctionDef.elaborate_sourceLocalFunction_noShadow_stmtUserCall_entry`
+  and
+  `Elab.Stmt.elaborate_functionDefinition_sourceLocalFunction_noShadow_stmtUserCall_entry`.
   Successful `FunctionDef.elaborate` now also realizes source local-function
   declarations in the raw function body as generated hoisted callee entries in
   the final elaborator state, without exposing the block's internal scope
