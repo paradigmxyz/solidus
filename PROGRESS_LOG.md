@@ -1,5 +1,22 @@
 # Progress Log
 
+- 2026-06-24 05:49:16 PDT - proof/raw-switch-case-body-no-shadow-wrapper -
+  Added checked no-shadow switch-case body transport. Source/frontend helper
+  constructors now build `Raw.Source.CaseListCall` and
+  `FrontendOccurrence.CaseListUserCall` from a member case body. The new
+  theorem
+  `Elab.Stmt.CaseList.elaborate_noShadow_resolved_source_case_body_incoming_mem`
+  recursively carries a selected case-body incoming statement-expression call
+  through earlier case bodies while proving the resolver stack is preserved;
+  `Elab.Stmt.elaborate_switchCase_noShadow_resolved_source_case_body_incoming_mem`
+  lifts that result through full raw `switch` statement elaboration to
+  `StmtUserCall.switchCase`. Focused validation passed so far:
+  `lake build EvmCompiler.Solidity.RawAst` and
+  `lake build EvmCompiler.Verification`; new wrapper axiom audits report
+  `[propext, Classical.choice, Quot.sound]`. Remaining frontier: compose the
+  individual no-shadow wrappers into the full structural recursive
+  statement/block/case theorem with explicit shadow-aware resolver handoff.
+
 - 2026-06-24 05:41:47 PDT - proof/raw-no-shadow-structural-body-wrappers -
   Added checked no-shadow structural wrappers that carry incoming raw
   statement-expression calls through recursive frontend statement positions:

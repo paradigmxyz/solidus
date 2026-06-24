@@ -708,6 +708,38 @@ theorem of_mem_incoming
 
 end StmtListCall
 
+namespace CaseListCall
+
+theorem of_mem_body
+    {cases : List (SwitchCaseValue × List Stmt)}
+    {value : SwitchCaseValue} {body : List Stmt}
+    {name : Name} {args : List Expr}
+    (hMem : (value, body) ∈ cases)
+    (hOccurrence : StmtListCall body name args) :
+    CaseListCall cases name args := by
+  induction cases with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      simp at hMem
+      rcases hMem with hHead | hTail
+      · cases hHead
+        exact .head hOccurrence
+      · exact .tail (ih hTail)
+
+theorem of_mem_body_incoming
+    {cases : List (SwitchCaseValue × List Stmt)}
+    {value : SwitchCaseValue} {body : List Stmt}
+    {stmt : Stmt} {name : Name} {args : List Expr}
+    (hCaseMem : (value, body) ∈ cases)
+    (hStmtMem : stmt ∈ body)
+    (hOccurrence : StmtExprCall.IncomingScope stmt name args) :
+    CaseListCall cases name args :=
+  of_mem_body hCaseMem
+    (StmtListCall.of_mem_incoming hStmtMem hOccurrence)
+
+end CaseListCall
+
 end Source
 
 end Raw
@@ -852,6 +884,27 @@ theorem of_mem_incoming
   of_mem_stmt hMem (StmtUserCall.ofIncoming hOccurrence)
 
 end StmtListUserCall
+
+namespace CaseListUserCall
+
+theorem of_mem_body
+    {cases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+    {value : Frontend.SwitchCaseValue} {body : List Frontend.Stmt}
+    {generated : Name} {args : List Frontend.Expr}
+    (hMem : (value, body) ∈ cases)
+    (hOccurrence : StmtListUserCall body generated args) :
+    CaseListUserCall cases generated args := by
+  induction cases with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      simp at hMem
+      rcases hMem with hHead | hTail
+      · cases hHead
+        exact .head hOccurrence
+      · exact .tail (ih hTail)
+
+end CaseListUserCall
 
 end FrontendOccurrence
 
@@ -8341,6 +8394,153 @@ theorem Stmt.elaborate_switchDefault_noShadow_resolved_source_stmt_list_call_inc
                 ⟨args',
                   FrontendOccurrence.StmtUserCall.switchDefault
                     hOccurrence⟩
+
+theorem Stmt.CaseList.elaborate_noShadow_resolved_source_case_body_incoming_mem
+    {cases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+    {caseValue : Raw.SwitchCaseValue} {body : List Raw.Stmt}
+    {stmt : Raw.Stmt}
+    {state finalState : State}
+    {frontCases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+    {name generated : Name} {args : List Raw.Expr}
+    (hCaseMem : (caseValue, body) ∈ cases)
+    (hNoShadow : Raw.Source.NoLocalFunctionNamed body name)
+    (hStmtMem : stmt ∈ body)
+    (hOccurs :
+      Raw.Source.StmtExprCall.IncomingScope stmt name args)
+    (hNameOk : bindingNameOk? name = true)
+    (hResolve :
+      resolveFunctionIn name state.functionScopes = some generated)
+    (hElab :
+      (Stmt.CaseList.elaborate cases).run state =
+        .ok (frontCases, finalState)) :
+    ∃ args',
+      FrontendOccurrence.CaseListUserCall frontCases generated args' := by
+  induction cases generalizing state finalState frontCases with
+  | nil =>
+      simp at hCaseMem
+  | cons head rest ih =>
+      rcases head with ⟨headValue, headBody⟩
+      simp at hCaseMem
+      unfold Stmt.CaseList.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hValue : SwitchCaseValue.elaborate headValue with
+      | error err =>
+          simp [hValue] at hElab
+          unfold EvmCompiler.Solidity.RawAst.Elab.throw at hElab
+          cases hElab
+      | ok frontValue =>
+          simp [hValue] at hElab
+          cases hHeadBody :
+              (Stmt.List.elaborateBlock headBody true).run state with
+          | error err =>
+              simp [hHeadBody] at hElab
+          | ok headBodyResult =>
+              rcases headBodyResult with ⟨frontHeadBody, headBodyState⟩
+              have hHeadBodyScopes :
+                  headBodyState.functionScopes = state.functionScopes :=
+                Stmt.List.elaborateBlock_preserves_functionScopes
+                  headBody true hHeadBody
+              have hResolveRest :
+                  resolveFunctionIn name headBodyState.functionScopes =
+                    some generated := by
+                rw [hHeadBodyScopes]
+                exact hResolve
+              simp [hHeadBody] at hElab
+              cases hRest :
+                  (Stmt.CaseList.elaborate rest).run headBodyState with
+              | error err =>
+                  simp [hRest] at hElab
+              | ok restResult =>
+                  rcases restResult with ⟨frontRest, restState⟩
+                  simp [hRest] at hElab
+                  rcases hCaseMem with hHeadCase | hTailCase
+                  · rcases hHeadCase with ⟨hCaseValue, hBodyEq⟩
+                    subst caseValue
+                    subst body
+                    rcases
+                      Stmt.List.elaborateBlock_true_noShadow_resolved_source_stmt_list_call_incoming_mem
+                        hNoShadow hStmtMem hOccurs hNameOk
+                        hResolve hHeadBody with
+                      ⟨args', hOccurrence⟩
+                    rcases hElab with ⟨hFront, _hState⟩
+                    rw [← hFront]
+                    exact
+                      ⟨args',
+                        FrontendOccurrence.CaseListUserCall.head
+                          hOccurrence⟩
+                  · rcases
+                      ih hTailCase hResolveRest hRest with
+                    ⟨args', hOccurrence⟩
+                    rcases hElab with ⟨hFront, _hState⟩
+                    rw [← hFront]
+                    exact
+                      ⟨args',
+                        FrontendOccurrence.CaseListUserCall.tail
+                          hOccurrence⟩
+
+theorem Stmt.elaborate_switchCase_noShadow_resolved_source_case_body_incoming_mem
+    {scrutinee : Raw.Expr}
+    {cases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+    {defaultBody : List Raw.Stmt}
+    {caseValue : Raw.SwitchCaseValue} {body : List Raw.Stmt}
+    {stmt : Raw.Stmt}
+    {state finalState : State} {front : Frontend.Stmt}
+    {name generated : Name} {args : List Raw.Expr}
+    (hCaseMem : (caseValue, body) ∈ cases)
+    (hNoShadow : Raw.Source.NoLocalFunctionNamed body name)
+    (hStmtMem : stmt ∈ body)
+    (hOccurs :
+      Raw.Source.StmtExprCall.IncomingScope stmt name args)
+    (hNameOk : bindingNameOk? name = true)
+    (hResolve :
+      resolveFunctionIn name state.functionScopes = some generated)
+    (hElab :
+      (Stmt.elaborate (.switch scrutinee cases defaultBody)).run state =
+        .ok (front, finalState)) :
+    ∃ args',
+      FrontendOccurrence.StmtUserCall front generated args' := by
+  unfold Stmt.elaborate at hElab
+  simp [StateT.run_bind] at hElab
+  cases hScrutinee :
+      (Expr.elaborate scrutinee).run state with
+  | error err =>
+      simp [hScrutinee] at hElab
+  | ok scrutineeResult =>
+      rcases scrutineeResult with ⟨frontScrutinee, scrutineeState⟩
+      have hScrutineeScopes :
+          scrutineeState.functionScopes = state.functionScopes :=
+        Expr.elaborate_preserves_functionScopes scrutinee hScrutinee
+      have hResolveCases :
+          resolveFunctionIn name scrutineeState.functionScopes =
+            some generated := by
+        rw [hScrutineeScopes]
+        exact hResolve
+      simp [hScrutinee] at hElab
+      cases hCases :
+          (Stmt.CaseList.elaborate cases).run scrutineeState with
+      | error err =>
+          simp [hCases] at hElab
+      | ok casesResult =>
+          rcases casesResult with ⟨frontCases, casesState⟩
+          rcases
+            Stmt.CaseList.elaborate_noShadow_resolved_source_case_body_incoming_mem
+              hCaseMem hNoShadow hStmtMem hOccurs hNameOk hResolveCases
+              hCases with
+            ⟨args', hCaseOccurrence⟩
+          simp [hCases] at hElab
+          cases hDefault :
+              (Stmt.List.elaborateBlock defaultBody true).run casesState with
+          | error err =>
+              simp [hDefault] at hElab
+          | ok defaultResult =>
+              rcases defaultResult with ⟨frontDefault, defaultState⟩
+              simp [hDefault] at hElab
+              rcases hElab with ⟨hFront, _hState⟩
+              rw [← hFront]
+              exact
+                ⟨args',
+                  FrontendOccurrence.StmtUserCall.switchCase
+                    hCaseOccurrence⟩
 
 theorem Stmt.sourceLocalFunction_forLoop_condition_stmtUserCall_entry
     {pre : List Raw.Stmt} {condition : Raw.Expr}
