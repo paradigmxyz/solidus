@@ -448,6 +448,9 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_assignLet_call_occurrence_routes_succ`
   adds the ordinary Yul statement writeback for assignment and declaration
   call contexts using `multifill`.
+  `alphaRenamedLocalCallPreserved_assignLet_seqHead_call_occurrence_routes_succ`
+  exposes those returned-value writeback contexts in direct `execSeq` form for
+  recursive statement-list composition.
   `alphaRenamedLocalCallPreserved_assignLet_blockHead_call_occurrence_routes_succ`
   lifts those returned-value writeback contexts through the head of a
   surrounding Yul block.
