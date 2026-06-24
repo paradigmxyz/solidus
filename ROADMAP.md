@@ -367,6 +367,9 @@ Next raw frontend layer:
   function-entry list consumed by the backend, and successful raw artifact
   compilation now carries hoisted raw callees through object-builtin
   resolution into the artifact's production ordered Yul function entries.
+  The public raw end-to-end theorem now also has source-local no-shadow
+  variants that compose caller/callee occurrence-entry evidence with both the
+  finite-prefix and `hFinished` bytecode preservation results.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call resolution and broader composition into
   the final source theorem.
