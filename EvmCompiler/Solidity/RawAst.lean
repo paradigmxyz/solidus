@@ -591,6 +591,12 @@ def requireIdentifierVisible (name : Name) (what : String) : ElabM Unit := do
   else
     throw s!"unknown Yul identifier {name} in {what}"
 
+def requireIdentifiersVisible : List Name → String → ElabM Unit
+  | [], _ => pure ()
+  | name :: rest, what => do
+      requireIdentifierVisible name what
+      requireIdentifiersVisible rest what
+
 def asciiAlpha (n : Nat) : Bool :=
   (65 ≤ n && n ≤ 90) || (97 ≤ n && n ≤ 122)
 
@@ -630,31 +636,35 @@ def bindingNameOk? (name : Name) : Bool :=
     !CallClass.reservedBindingName? name &&
     !name.startsWith "verbatim"
 
+def collectDeclaredIdentifiers (names : List Name) (description : String)
+    (scopes : List (List Name)) : DecodeM (List Name) :=
+  let rec loop : List Name → List Name → DecodeM (List Name)
+    | [], seen => .ok seen.reverse
+    | name :: rest, seen => do
+        if !bindingNameOk? name then
+          .error s!"invalid Yul {description} name {name}"
+        if seen.contains name then
+          .error s!"duplicate Yul {description} name {name}"
+        if identifierVisibleIn name scopes then
+          .error s!"Yul {description} name {name} already taken in this scope"
+        loop rest (name :: seen)
+  loop names []
+
 def declareIdentifiers (names : List Name) (description : String) :
     ElabM Unit := do
   let state ← get
-  let state ←
+  let scopes :=
     match state.identifierScopes with
-    | [] =>
-        let state := { state with identifierScopes := [[]] }
-        set state
-        pure state
-    | _ => pure state
-  let mut seen : List Name := []
-  for name in names do
-    if !bindingNameOk? name then
-      throw s!"invalid Yul {description} name {name}"
-    if seen.contains name then
-      throw s!"duplicate Yul {description} name {name}"
-    let state ← get
-    if identifierVisibleIn name state.identifierScopes then
-      throw s!"Yul {description} name {name} already taken in this scope"
-    seen := name :: seen
-  let state ← get
+    | [] => [[]]
+    | scopes => scopes
+  let seen ←
+    match collectDeclaredIdentifiers names description scopes with
+    | .ok seen => pure seen
+    | .error err => throw err
   match state.identifierScopes with
-  | [] => set { state with identifierScopes := [seen.reverse] }
+  | [] => set { state with identifierScopes := [seen] }
   | scope :: rest =>
-      set { state with identifierScopes := (seen.reverse ++ scope) :: rest }
+      set { state with identifierScopes := (seen ++ scope) :: rest }
 
 def lookupFunctionInScope (name : Name) :
     List (Name × Name) → Option Name
@@ -1787,8 +1797,7 @@ mutual
         declareIdentifiers names "variable"
         pure (.letDecl names value?)
     | .assignment names value => do
-        for name in names do
-          requireIdentifierVisible name "assignment"
+        requireIdentifiersVisible names "assignment"
         let value ← Expr.elaborate value
         pure (.assign names value)
     | .expressionStatement expr => do
@@ -1912,6 +1921,139 @@ mutual
     pure { params, returns, body }
 end
 
+def PreservesHoisted {α : Type} (action : ElabM α) : Prop :=
+  ∀ {state state' : State} {value : α}
+      {entry : Name × Frontend.FunctionDef},
+    action.run state = .ok (value, state') →
+      entry ∈ state.hoistedFunctions →
+        entry ∈ state'.hoistedFunctions
+
+theorem PreservesHoisted.bind {α β : Type}
+    {action : ElabM α} {next : α → ElabM β}
+    (hAction : PreservesHoisted action)
+    (hNext : ∀ value, PreservesHoisted (next value)) :
+    PreservesHoisted (action >>= next) := by
+  intro state state' value entry hRun hEntry
+  simp [StateT.run_bind] at hRun
+  cases hActionRun : action.run state with
+  | error _ =>
+      simp [hActionRun] at hRun
+  | ok result =>
+      rcases result with ⟨midValue, midState⟩
+      have hMid : entry ∈ midState.hoistedFunctions :=
+        hAction hActionRun hEntry
+      simp [hActionRun] at hRun
+      exact hNext midValue hRun hMid
+
+theorem PreservesHoisted.map {α β : Type} {action : ElabM α}
+    (f : α → β) (hAction : PreservesHoisted action) :
+    PreservesHoisted (f <$> action) := by
+  intro state state' value entry hRun hEntry
+  simp [StateT.run_map] at hRun
+  cases hActionRun : action.run state with
+  | error _ =>
+      simp [hActionRun] at hRun
+  | ok result =>
+      rcases result with ⟨_midValue, midState⟩
+      have hMid : entry ∈ midState.hoistedFunctions :=
+        hAction hActionRun hEntry
+      simp [hActionRun] at hRun
+      rcases hRun with ⟨_hValue, hState⟩
+      subst state'
+      exact hMid
+
+theorem PreservesHoisted.pure {α : Type} (value : α) :
+    PreservesHoisted (pure value : ElabM α) := by
+  intro state state' result entry hRun hEntry
+  simp [StateT.run_pure] at hRun
+  cases hRun
+  exact hEntry
+
+theorem PreservesHoisted.throw {α : Type} (message : String) :
+    PreservesHoisted (throw message : ElabM α) := by
+  intro state state' value entry hRun hEntry
+  unfold EvmCompiler.Solidity.RawAst.Elab.throw at hRun
+  change (Except.error message : DecodeM (α × State)) =
+    .ok (value, state') at hRun
+  cases hRun
+
+theorem requireIdentifierVisible_preserves_hoistedFunction_mem
+    (name : Name) (what : String) :
+    PreservesHoisted (requireIdentifierVisible name what) := by
+  intro state state' value entry hRun hEntry
+  unfold requireIdentifierVisible identifierVisible at hRun
+  simp [StateT.run_bind, StateT.run_get] at hRun
+  cases hVisible : identifierVisibleIn name state.identifierScopes with
+  | false =>
+      simp [hVisible] at hRun
+      unfold EvmCompiler.Solidity.RawAst.Elab.throw at hRun
+      change (Except.error s!"unknown Yul identifier {name} in {what}" :
+        DecodeM (Unit × State)) = .ok (value, state') at hRun
+      cases hRun
+  | true =>
+      simp [hVisible] at hRun
+      cases hRun
+      exact hEntry
+
+theorem requireIdentifiersVisible_preserves_hoistedFunction_mem
+    (names : List Name) (what : String) :
+    PreservesHoisted (requireIdentifiersVisible names what) := by
+  induction names with
+  | nil =>
+      simp [requireIdentifiersVisible]
+      exact PreservesHoisted.pure ()
+  | cons name rest ih =>
+      change PreservesHoisted
+        (requireIdentifierVisible name what >>= fun _ =>
+          requireIdentifiersVisible rest what)
+      exact
+        PreservesHoisted.bind
+          (requireIdentifierVisible_preserves_hoistedFunction_mem name what)
+          (fun _ => ih)
+
+theorem declareIdentifiers_preserves_hoistedFunction_mem
+    (names : List Name) (description : String) :
+    PreservesHoisted (declareIdentifiers names description) := by
+  intro state state' value entry hRun hEntry
+  unfold declareIdentifiers at hRun
+  simp [StateT.run_bind, StateT.run_get] at hRun
+  cases hScopes : state.identifierScopes with
+  | nil =>
+      cases hCollect : collectDeclaredIdentifiers names description [[]] with
+      | error err =>
+          simp [hScopes, hCollect] at hRun
+          unfold EvmCompiler.Solidity.RawAst.Elab.throw at hRun
+          change (Except.error err : DecodeM (Unit × State)) =
+            .ok (value, state') at hRun
+          cases hRun
+      | ok seen =>
+          simp [hScopes, hCollect, StateT.run_set] at hRun
+          cases hRun
+          exact hEntry
+  | cons scope rest =>
+      cases hCollect :
+          collectDeclaredIdentifiers names description (scope :: rest) with
+      | error err =>
+          simp [hScopes, hCollect] at hRun
+          unfold EvmCompiler.Solidity.RawAst.Elab.throw at hRun
+          change (Except.error err : DecodeM (Unit × State)) =
+            .ok (value, state') at hRun
+          cases hRun
+      | ok seen =>
+          simp [hScopes, hCollect, StateT.run_set] at hRun
+          cases hRun
+          exact hEntry
+
+theorem hoistFunctionEntry_preserves_hoistedFunction_mem
+    (generated : Name) (fn : Frontend.FunctionDef) :
+    PreservesHoisted (modify fun state =>
+      { state with hoistedFunctions := (generated, fn) ::
+        state.hoistedFunctions }) := by
+  intro state state' value entry hRun hEntry
+  simp [StateT.run_modify] at hRun
+  cases hRun
+  exact List.mem_cons_of_mem (generated, fn) hEntry
+
 namespace Expr
 
 theorem elaborate_user_call_resolved
@@ -2016,6 +2158,42 @@ theorem hoistLocalFunctions_single_functionDefinition_resolved
     StateT.instMonad, StateT.bind, StateT.pure, modify, MonadStateOf.modifyGet,
     MonadState.modifyGet, instMonadStateOfMonadStateOf,
     instMonadStateOfStateTOfMonad, StateT.modifyGet, pure, Except.pure]
+
+theorem lookupFunctionInScope_cons_self
+    (name generated : Name) (tail : List (Name × Name)) :
+    lookupFunctionInScope name ((name, generated) :: tail) = some generated := by
+  simp [lookupFunctionInScope]
+
+theorem resolveFunctionIn_cons_scope_self
+    (name generated : Name) (tail : List (Name × Name))
+    (outer : List (List (Name × Name))) :
+    resolveFunctionIn name (((name, generated) :: tail) :: outer) =
+      some generated := by
+  simp [resolveFunctionIn, lookupFunctionInScope_cons_self]
+
+theorem hoistLocalFunctions_single_functionDefinition_preserves_body_entry
+    {state bodyState finalState : State} {scope : List (Name × Name)}
+    {name generated : Name} {params returns : List Name}
+    {body : List Raw.Stmt} {fn : Frontend.FunctionDef}
+    {entry : Name × Frontend.FunctionDef}
+    (hLookup : lookupFunctionInScope name scope = some generated)
+    (hFn :
+      (FunctionDef.elaborate params returns body).run state =
+        .ok (fn, bodyState))
+    (hHoist :
+      (Stmt.List.hoistLocalFunctions
+        [.functionDefinition name params returns body] scope).run state =
+        .ok ((), finalState))
+    (hEntry : entry ∈ bodyState.hoistedFunctions) :
+    entry ∈ finalState.hoistedFunctions := by
+  have hEq :=
+    hoistLocalFunctions_single_functionDefinition_resolved
+      (state := state) (state' := bodyState) (scope := scope)
+      (name := name) (generated := generated) (params := params)
+      (returns := returns) (body := body) (fn := fn) hLookup hFn
+  rw [hEq] at hHoist
+  cases hHoist
+  exact List.mem_cons_of_mem (generated, fn) hEntry
 
 end Stmt.List
 

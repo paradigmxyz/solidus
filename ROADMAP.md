@@ -217,10 +217,17 @@ Next raw frontend layer:
   pass also exposes the corresponding single-definition equation: when the
   active local function scope maps a raw nested name to a generated name,
   hoisting inserts the elaborated function entry under that generated name in
-  `hoistedFunctions`.
+  `hoistedFunctions`. The active pushed scope now has checked lookup/resolve
+  facts for that head mapping, and singleton hoist insertion has a local
+  preservation fact showing entries produced while elaborating the nested
+  function body remain present after the generated entry is prepended. The
+  declaration and assignment name-check loops are now structural helpers with
+  local hoisted-accumulator preservation lemmas, preparing the broader
+  recursive hoist monotonicity theorem.
   The remaining raw frontend semantic gap is source-level preservation for
-  alpha-renamed nested-function call resolution plus broader composition into
-  the final source theorem.
+  alpha-renamed nested-function call resolution, recursive tail-hoist
+  accumulator preservation, and broader composition into the final source
+  theorem.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose
