@@ -2581,6 +2581,13 @@ theorem resolveFunctionIn_cons_scope_self
       some generated := by
   simp [resolveFunctionIn, lookupFunctionInScope_cons_self]
 
+theorem resolveFunctionIn_of_scope_lookup
+    {name generated : Name} {scope : List (Name × Name)}
+    {outer : List (List (Name × Name))}
+    (hLookup : lookupFunctionInScope name scope = some generated) :
+    resolveFunctionIn name (scope :: outer) = some generated := by
+  simp [resolveFunctionIn, hLookup]
+
 theorem hoistLocalFunctions_single_functionDefinition_preserves_body_entry
     {state bodyState finalState : State} {scope : List (Name × Name)}
     {name generated : Name} {params returns : List Name}
@@ -3269,6 +3276,42 @@ theorem localFunctionScope_hoistLocalFunctions_lookup_entry
   rcases hoistLocalFunctions_functionDefinition_entry
       hMem hLookup hHoist with ⟨fn, hEntry⟩
   exact ⟨params, returns, body, fn, hMem, hEntry⟩
+
+theorem localFunctionScope_hoistLocalFunctions_elaborate_user_call_entry
+    {stmts : List Raw.Stmt}
+    {scopeInit scopeState hoistState callState argState : State}
+    {scope : List (Name × Name)} {outer : List (List (Name × Name))}
+    {name generated : Name}
+    {args : List Raw.Expr} {args' : List Frontend.Expr}
+    (hNotMemoryguard : name ≠ "memoryguard")
+    (hNotClz : name ≠ "clz")
+    (hScope :
+      (Stmt.List.localFunctionScope stmts).run scopeInit =
+        .ok (scope, scopeState))
+    (hHoist :
+      (Stmt.List.hoistLocalFunctions stmts scope).run scopeState =
+        .ok ((), hoistState))
+    (hLookup : lookupFunctionInScope name scope = some generated)
+    (hArgs :
+      (Expr.List.elaborate args).run callState = .ok (args', argState))
+    (hArgScopes : argState.functionScopes = scope :: outer)
+    (hClass : CallClass.classifyCall name = .user) :
+    (Expr.elaborate (.functionCall name args)).run callState =
+        .ok (.call .user generated args', argState) ∧
+      ∃ params returns body fn,
+        .functionDefinition name params returns body ∈ stmts ∧
+          (generated, fn) ∈ hoistState.hoistedFunctions := by
+  have hResolve :
+      resolveFunctionIn name argState.functionScopes = some generated := by
+    rw [hArgScopes]
+    exact resolveFunctionIn_of_scope_lookup hLookup
+  constructor
+  · exact
+      Expr.elaborate_user_call_resolved
+        hNotMemoryguard hNotClz hArgs hClass hResolve
+  · exact
+      localFunctionScope_hoistLocalFunctions_lookup_entry
+        hScope hHoist hLookup
 
 end Stmt.List
 

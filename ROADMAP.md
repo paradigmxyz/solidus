@@ -230,7 +230,9 @@ Next raw frontend layer:
   entries just added for generated nested functions. Successful local scope
   lookup now has checked witnesses back to a raw nested definition and forward
   to the generated hoisted frontend function entry inserted by the production
-  hoist pass.
+  hoist pass. Raw user-call elaboration through such a local scope now has a
+  checked bridge to both the generated frontend call target and the generated
+  hoisted callee entry.
   The remaining raw frontend semantic gap is source-level preservation for
   alpha-renamed nested-function call resolution and broader composition into
   the final source theorem.
