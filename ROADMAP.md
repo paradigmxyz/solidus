@@ -313,7 +313,10 @@ Next raw frontend layer:
   shadows the callee, and body-block occurrences have a wrapper when the
   initializer and body do not shadow the callee; post-local functions are
   allowed because the post block restores the function-scope stack before body
-  elaboration. Recursive source-side nested block/body occurrence
+  elaboration. Function-definition bodies now also have no-shadow wrappers
+  through `FunctionDef.elaborate` and the enclosing statement elaboration,
+  carrying body occurrences to frontend `functionBody` user-call occurrences.
+  Recursive source-side nested block/body occurrence
   traversal, including fully shadow-aware post/body wrapper composition,
   remains the next statement/control-layer proof work.
   Successful `FunctionDef.elaborate` now also realizes source local-function
