@@ -2918,6 +2918,162 @@ def focusedStmt
 
 end ForPostContextRun
 
+/-- Semantic interface for one executed nested statement/control context that
+contains the focused generated-call occurrence. -/
+inductive ContextStmtRun
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    (state : σ) :
+    Nat → Frontend.AstStmt → σ → Prop where
+  | block
+      {prefixFuel : Nat}
+      {body : List Frontend.AstStmt}
+      (hRun :
+        BlockContextRun hEvidence model prim prefixFuel body state) :
+      ContextStmtRun hEvidence model prim state
+        (((prefixFuel + 1) + hRun.bodyRun.pre.length) + 1)
+        (.Block body) hRun.afterBlock
+  | switch
+      {prefixFuel : Nat}
+      {scrutinee : Frontend.AstExpr}
+      {cases : List (Frontend.Word × List Frontend.AstStmt)}
+      {defaultBody selectedBody : List Frontend.AstStmt}
+      (hRun :
+        SwitchContextRun hEvidence model prim prefixFuel
+          scrutinee cases defaultBody selectedBody state) :
+      ContextStmtRun hEvidence model prim state
+        ((((prefixFuel + 1) + hRun.bodyRun.pre.length) + 1) + 1)
+        (.Switch scrutinee cases defaultBody) hRun.afterSwitch
+  | ifBody
+      {prefixFuel : Nat}
+      {condition : Frontend.AstExpr}
+      {body : List Frontend.AstStmt}
+      (hRun :
+        IfContextRun hEvidence model prim prefixFuel condition body state) :
+      ContextStmtRun hEvidence model prim state
+        ((((prefixFuel + 1) + hRun.bodyRun.pre.length) + 1) + 1)
+        (.If condition body) hRun.afterIf
+  | forCondition
+      {conditionFuel : Nat}
+      {condition : Frontend.AstExpr}
+      {post body : List Frontend.AstStmt}
+      (hRun :
+        ForConditionContextRun hEvidence model prim conditionFuel
+          condition post body state) :
+      ContextStmtRun hEvidence model prim state
+        ((conditionFuel + 1 + 1) + 1)
+        (.For condition post body) hRun.afterFor
+  | forBody
+      {prefixFuel : Nat}
+      {condition : Frontend.AstExpr}
+      {post body : List Frontend.AstStmt}
+      (hRun :
+        ForBodyContextRun hEvidence model prim prefixFuel
+          condition post body state) :
+      ContextStmtRun hEvidence model prim state
+        ((((((prefixFuel + 1) + hRun.bodyRun.pre.length) + 1) + 1) + 1) + 1)
+        (.For condition post body) hRun.afterFor
+  | forPost
+      {prefixFuel : Nat}
+      {condition : Frontend.AstExpr}
+      {post body : List Frontend.AstStmt}
+      (hRun :
+        ForPostContextRun hEvidence model prim prefixFuel
+          condition post body state) :
+      ContextStmtRun hEvidence model prim state
+        ((((((prefixFuel + 1) + hRun.postRun.pre.length) + 1) + 1) + 1) + 1)
+        (.For condition post body) hRun.afterFor
+
+namespace ContextStmtRun
+
+theorem context
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {state : σ}
+    {fuel : Nat}
+    {stmt : Frontend.AstStmt}
+    {afterStmt : σ}
+    (hRun :
+      ContextStmtRun hEvidence model prim state
+        fuel stmt afterStmt) :
+    YulOccurrence.StmtUserCall.Context stmt
+      hEvidence.generated hEvidence.yulArgs := by
+  cases hRun with
+  | block hBlock =>
+      exact hBlock.context
+  | switch hSwitch =>
+      exact hSwitch.context
+  | ifBody hIf =>
+      exact hIf.context
+  | forCondition hFor =>
+      exact hFor.context
+  | forBody hFor =>
+      exact hFor.context
+  | forPost hFor =>
+      exact hFor.context
+
+theorem exec
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {state : σ}
+    {fuel : Nat}
+    {stmt : Frontend.AstStmt}
+    {afterStmt : σ}
+    (hRun :
+      ContextStmtRun hEvidence model prim state
+        fuel stmt afterStmt) :
+    Yul.Source.Effectful.exec model prim fuel stmt
+        (some ordered.program.contract) state =
+      .ok afterStmt := by
+  cases hRun with
+  | block hBlock =>
+      exact hBlock.exec
+  | switch hSwitch =>
+      exact hSwitch.exec
+  | ifBody hIf =>
+      exact hIf.exec
+  | forCondition hFor =>
+      exact hFor.exec
+  | forBody hFor =>
+      exact hFor.exec
+  | forPost hFor =>
+      exact hFor.exec
+
+def focusedStmt
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {state : σ}
+    {fuel : Nat}
+    {stmt : Frontend.AstStmt}
+    {afterStmt : σ}
+    (hRun :
+      ContextStmtRun hEvidence model prim state
+        fuel stmt afterStmt) :
+    FocusedStmtRun hEvidence model prim state fuel stmt afterStmt :=
+  .context hRun.context hRun.exec
+
+end ContextStmtRun
+
 /-- Direct assignment statement execution for a generated alpha-renamed call
 from the bundled Yul evidence. -/
 theorem assign_succ
