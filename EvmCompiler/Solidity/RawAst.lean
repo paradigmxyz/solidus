@@ -3313,6 +3313,140 @@ theorem localFunctionScope_hoistLocalFunctions_elaborate_user_call_entry
       localFunctionScope_hoistLocalFunctions_lookup_entry
         hScope hHoist hLookup
 
+theorem localFunctionScope_elaborateBlock_false_lookup_entry
+    {stmts : List Raw.Stmt}
+    {state scopeState finalState : State}
+    {scope : List (Name × Name)} {name generated : Name}
+    {front : List Frontend.Stmt}
+    (hScope :
+      (Stmt.List.localFunctionScope stmts).run state =
+        .ok (scope, scopeState))
+    (hBlock :
+      (Stmt.List.elaborateBlock stmts false).run state =
+        .ok (front, finalState))
+    (hLookup : lookupFunctionInScope name scope = some generated) :
+    ∃ params returns body fn,
+      .functionDefinition name params returns body ∈ stmts ∧
+        (generated, fn) ∈ finalState.hoistedFunctions := by
+  rcases localFunctionScope_lookup_functionDefinition hScope hLookup with
+    ⟨params, returns, body, hRawMem⟩
+  unfold Stmt.List.elaborateBlock at hBlock
+  simp [hScope, StateT.run_bind] at hBlock
+  cases hPush : (pushFunctionScope scope).run scopeState with
+  | error err =>
+      simp [hPush] at hBlock
+  | ok pushResult =>
+      rcases pushResult with ⟨_, pushedState⟩
+      simp [hPush] at hBlock
+      cases hHoist :
+          (Stmt.List.hoistLocalFunctions stmts scope).run pushedState with
+      | error err =>
+          simp [hHoist] at hBlock
+      | ok hoistResult =>
+          rcases hoistResult with ⟨_, hoistState⟩
+          simp [hHoist] at hBlock
+          rcases hoistLocalFunctions_functionDefinition_entry
+              hRawMem hLookup hHoist with ⟨fn, hEntryHoist⟩
+          cases hElab : (Stmt.List.elaborate stmts).run hoistState with
+          | error err =>
+              simp [hElab] at hBlock
+          | ok elabResult =>
+              rcases elabResult with ⟨front', elabState⟩
+              have hEntryElab :
+                  (generated, fn) ∈ elabState.hoistedFunctions :=
+                Stmt.List.elaborate_preserves_hoistedFunction_mem
+                  stmts hElab hEntryHoist
+              simp [hElab] at hBlock
+              cases hPop : popFunctionScope.run elabState with
+              | error err =>
+                  simp [hPop] at hBlock
+              | ok popResult =>
+                  rcases popResult with ⟨_, poppedState⟩
+                  have hEntryFinal :
+                      (generated, fn) ∈ poppedState.hoistedFunctions :=
+                    popFunctionScope_preserves_hoistedFunction_mem
+                      hPop hEntryElab
+                  simp [hPop] at hBlock
+                  rcases hBlock with ⟨_hFront, hFinal⟩
+                  cases hFinal
+                  exact ⟨params, returns, body, fn, hRawMem, hEntryFinal⟩
+
+theorem localFunctionScope_elaborateBlock_true_lookup_entry
+    {stmts : List Raw.Stmt}
+    {state pushedState scopeState finalState : State}
+    {scope : List (Name × Name)} {name generated : Name}
+    {front : List Frontend.Stmt}
+    (hPushScope : pushIdentifierScope.run state = .ok ((), pushedState))
+    (hScope :
+      (Stmt.List.localFunctionScope stmts).run pushedState =
+        .ok (scope, scopeState))
+    (hBlock :
+      (Stmt.List.elaborateBlock stmts true).run state =
+        .ok (front, finalState))
+    (hLookup : lookupFunctionInScope name scope = some generated) :
+    ∃ params returns body fn,
+      .functionDefinition name params returns body ∈ stmts ∧
+        (generated, fn) ∈ finalState.hoistedFunctions := by
+  rcases localFunctionScope_lookup_functionDefinition hScope hLookup with
+    ⟨params, returns, body, hRawMem⟩
+  unfold Stmt.List.elaborateBlock at hBlock
+  simp [hPushScope, hScope, StateT.run_bind] at hBlock
+  cases hPushFunction : (pushFunctionScope scope).run scopeState with
+  | error err =>
+      simp [hPushFunction] at hBlock
+  | ok pushResult =>
+      rcases pushResult with ⟨_, functionPushedState⟩
+      simp [hPushFunction] at hBlock
+      cases hHoist :
+          (Stmt.List.hoistLocalFunctions stmts scope).run
+            functionPushedState with
+      | error err =>
+          simp [hHoist] at hBlock
+      | ok hoistResult =>
+          rcases hoistResult with ⟨_, hoistState⟩
+          simp [hHoist] at hBlock
+          rcases hoistLocalFunctions_functionDefinition_entry
+              hRawMem hLookup hHoist with ⟨fn, hEntryHoist⟩
+          cases hElab : (Stmt.List.elaborate stmts).run hoistState with
+          | error err =>
+              simp [hElab] at hBlock
+          | ok elabResult =>
+              rcases elabResult with ⟨front', elabState⟩
+              have hEntryElab :
+                  (generated, fn) ∈ elabState.hoistedFunctions :=
+                Stmt.List.elaborate_preserves_hoistedFunction_mem
+                  stmts hElab hEntryHoist
+              simp [hElab] at hBlock
+              cases hPopFunction : popFunctionScope.run elabState with
+              | error err =>
+                  simp [hPopFunction] at hBlock
+              | ok popFunctionResult =>
+                  rcases popFunctionResult with ⟨_, functionPoppedState⟩
+                  have hEntryFunctionPopped :
+                      (generated, fn) ∈
+                        functionPoppedState.hoistedFunctions :=
+                    popFunctionScope_preserves_hoistedFunction_mem
+                      hPopFunction hEntryElab
+                  simp [hPopFunction] at hBlock
+                  cases hPopIdentifier :
+                      popIdentifierScope.run functionPoppedState with
+                  | error err =>
+                      simp [hPopIdentifier] at hBlock
+                  | ok popIdentifierResult =>
+                      rcases popIdentifierResult with
+                        ⟨_, identifierPoppedState⟩
+                      have hEntryFinalState :
+                          (generated, fn) ∈
+                            identifierPoppedState.hoistedFunctions :=
+                        popIdentifierScope_preserves_hoistedFunction_mem
+                          hPopIdentifier hEntryFunctionPopped
+                      simp [hPopIdentifier] at hBlock
+                      rcases hBlock with ⟨_hFront, hFinal⟩
+                      cases hFinal
+                      exact
+                        ⟨params, returns, body, fn, hRawMem,
+                          hEntryFinalState⟩
+
 end Stmt.List
 
 def collectTopFunctions : List Raw.Stmt → ElabM (List (Name × Name))

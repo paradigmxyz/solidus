@@ -232,7 +232,11 @@ Next raw frontend layer:
   to the generated hoisted frontend function entry inserted by the production
   hoist pass. Raw user-call elaboration through such a local scope now has a
   checked bridge to both the generated frontend call target and the generated
-  hoisted callee entry. Hoisted frontend function entries now also have a
+  hoisted callee entry. Full block elaboration now carries successful local
+  generated-name lookups through production nested-function hoisting,
+  statement elaboration, and scope popping to a generated hoisted callee entry
+  in the block final state, for both scope-creating and non-scope-creating
+  blocks. Hoisted frontend function entries now also have a
   checked path through `toSolcYulOrderedProgram?` to the emitted ordered Yul
   function-entry list consumed by the backend, and successful raw artifact
   compilation now carries hoisted raw callees through object-builtin
