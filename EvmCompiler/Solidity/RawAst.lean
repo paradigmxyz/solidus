@@ -740,6 +740,211 @@ theorem of_mem_body_incoming
 
 end CaseListCall
 
+mutual
+
+/--
+Source-facing raw call occurrence along a path where nested local-function
+scopes do not shadow the selected source name.
+
+This is the resolver-safe refinement of `StmtCall`: it keeps source syntax
+separate from generated names, while recording the no-shadow facts needed for
+an outer resolver entry to remain valid through nested block-like statements.
+-/
+inductive NoShadowStmtCall : Stmt → Name → List Expr → Prop where
+  | incoming {stmt name args} :
+      StmtExprCall.IncomingScope stmt name args →
+        NoShadowStmtCall stmt name args
+  | block {stmts name args} :
+      NoLocalFunctionNamed stmts name →
+        NoShadowStmtListCall stmts name args →
+          NoShadowStmtCall (.block stmts) name args
+  | functionBody {fn params returns body name args} :
+      NoLocalFunctionNamed body name →
+        NoShadowStmtListCall body name args →
+          NoShadowStmtCall
+            (.functionDefinition fn params returns body) name args
+  | switchCase {scrutinee cases default name args} :
+      NoShadowCaseListCall cases name args →
+        NoShadowStmtCall (.switch scrutinee cases default) name args
+  | switchDefault {scrutinee cases default name args} :
+      NoLocalFunctionNamed default name →
+        NoShadowStmtListCall default name args →
+          NoShadowStmtCall (.switch scrutinee cases default) name args
+  | forCondition {pre condition post body name args} :
+      ExprCall.Occurs condition name args →
+        NoShadowStmtCall (.forLoop pre condition post body) name args
+  | forPre {pre condition post body name args} :
+      NoLocalFunctionNamed pre name →
+        NoShadowStmtListCall pre name args →
+          NoShadowStmtCall (.forLoop pre condition post body) name args
+  | forPost {pre condition post body name args} :
+      NoLocalFunctionNamed post name →
+        NoShadowStmtListCall post name args →
+          NoShadowStmtCall (.forLoop pre condition post body) name args
+  | forBody {pre condition post body name args} :
+      NoLocalFunctionNamed body name →
+        NoShadowStmtListCall body name args →
+          NoShadowStmtCall (.forLoop pre condition post body) name args
+  | ifBody {condition body name args} :
+      NoLocalFunctionNamed body name →
+        NoShadowStmtListCall body name args →
+          NoShadowStmtCall (.ifThen condition body) name args
+
+/-- Resolver-safe recursive source-facing raw call occurrence in a statement list. -/
+inductive NoShadowStmtListCall : List Stmt → Name → List Expr → Prop where
+  | head {stmt rest name args} :
+      NoShadowStmtCall stmt name args →
+        NoShadowStmtListCall (stmt :: rest) name args
+  | tail {stmt rest name args} :
+      NoShadowStmtListCall rest name args →
+        NoShadowStmtListCall (stmt :: rest) name args
+
+/-- Resolver-safe recursive source-facing raw call occurrence in switch cases. -/
+inductive NoShadowCaseListCall :
+    List (SwitchCaseValue × List Stmt) → Name → List Expr → Prop where
+  | head {value body rest name args} :
+      NoLocalFunctionNamed body name →
+        NoShadowStmtListCall body name args →
+          NoShadowCaseListCall ((value, body) :: rest) name args
+  | tail {case rest name args} :
+      NoShadowCaseListCall rest name args →
+        NoShadowCaseListCall (case :: rest) name args
+
+end
+
+namespace NoShadowStmtCall
+
+theorem ofIncoming
+    {stmt : Stmt} {name : Name} {args : List Expr}
+    (hOccurrence : StmtExprCall.IncomingScope stmt name args) :
+    NoShadowStmtCall stmt name args :=
+  .incoming hOccurrence
+
+end NoShadowStmtCall
+
+namespace NoShadowStmtListCall
+
+theorem of_mem_stmt
+    {stmts : List Stmt} {stmt : Stmt}
+    {name : Name} {args : List Expr}
+    (hMem : stmt ∈ stmts)
+    (hOccurrence : NoShadowStmtCall stmt name args) :
+    NoShadowStmtListCall stmts name args := by
+  induction stmts with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      simp at hMem
+      rcases hMem with hHead | hTail
+      · subst stmt
+        exact .head hOccurrence
+      · exact .tail (ih hTail)
+
+theorem of_mem_incoming
+    {stmts : List Stmt} {stmt : Stmt}
+    {name : Name} {args : List Expr}
+    (hMem : stmt ∈ stmts)
+    (hOccurrence : StmtExprCall.IncomingScope stmt name args) :
+    NoShadowStmtListCall stmts name args :=
+  of_mem_stmt hMem (NoShadowStmtCall.ofIncoming hOccurrence)
+
+end NoShadowStmtListCall
+
+namespace NoShadowCaseListCall
+
+theorem of_mem_body
+    {cases : List (SwitchCaseValue × List Stmt)}
+    {value : SwitchCaseValue} {body : List Stmt}
+    {name : Name} {args : List Expr}
+    (hMem : (value, body) ∈ cases)
+    (hNoShadow : NoLocalFunctionNamed body name)
+    (hOccurrence : NoShadowStmtListCall body name args) :
+    NoShadowCaseListCall cases name args := by
+  induction cases with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      simp at hMem
+      rcases hMem with hHead | hTail
+      · cases hHead
+        exact .head hNoShadow hOccurrence
+      · exact .tail (ih hTail)
+
+theorem of_mem_body_incoming
+    {cases : List (SwitchCaseValue × List Stmt)}
+    {value : SwitchCaseValue} {body : List Stmt}
+    {stmt : Stmt} {name : Name} {args : List Expr}
+    (hCaseMem : (value, body) ∈ cases)
+    (hNoShadow : NoLocalFunctionNamed body name)
+    (hStmtMem : stmt ∈ body)
+    (hOccurrence : StmtExprCall.IncomingScope stmt name args) :
+    NoShadowCaseListCall cases name args :=
+  of_mem_body hCaseMem hNoShadow
+    (NoShadowStmtListCall.of_mem_incoming hStmtMem hOccurrence)
+
+end NoShadowCaseListCall
+
+mutual
+
+def noShadowStmtCallToStmtCall (name : Name) (args : List Expr) :
+    {stmt : Stmt} → NoShadowStmtCall stmt name args →
+      StmtCall stmt name args
+  | _, .incoming hIncoming => .incoming hIncoming
+  | _, .block _ hList =>
+      .block (noShadowStmtListCallToStmtListCall name args hList)
+  | _, .functionBody _ hList =>
+      .functionBody (noShadowStmtListCallToStmtListCall name args hList)
+  | _, .switchCase hCases =>
+      .switchCase (noShadowCaseListCallToCaseListCall name args hCases)
+  | _, .switchDefault _ hList =>
+      .switchDefault (noShadowStmtListCallToStmtListCall name args hList)
+  | _, .forCondition hCondition => .forCondition hCondition
+  | _, .forPre _ hList =>
+      .forPre (noShadowStmtListCallToStmtListCall name args hList)
+  | _, .forPost _ hList =>
+      .forPost (noShadowStmtListCallToStmtListCall name args hList)
+  | _, .forBody _ hList =>
+      .forBody (noShadowStmtListCallToStmtListCall name args hList)
+  | _, .ifBody _ hList =>
+      .ifBody (noShadowStmtListCallToStmtListCall name args hList)
+
+def noShadowCaseListCallToCaseListCall (name : Name) (args : List Expr) :
+    {cases : List (SwitchCaseValue × List Stmt)} →
+      NoShadowCaseListCall cases name args → CaseListCall cases name args
+  | _, .head _ hBody =>
+      .head (noShadowStmtListCallToStmtListCall name args hBody)
+  | _, .tail hTail =>
+      .tail (noShadowCaseListCallToCaseListCall name args hTail)
+
+def noShadowStmtListCallToStmtListCall (name : Name) (args : List Expr) :
+    {stmts : List Stmt} → NoShadowStmtListCall stmts name args →
+      StmtListCall stmts name args
+  | _, .head hHead =>
+      .head (noShadowStmtCallToStmtCall name args hHead)
+  | _, .tail hTail =>
+      .tail (noShadowStmtListCallToStmtListCall name args hTail)
+
+end
+
+theorem NoShadowStmtCall.toStmtCall
+    {stmt : Stmt} {name : Name} {args : List Expr}
+    (hOccurrence : NoShadowStmtCall stmt name args) :
+    StmtCall stmt name args :=
+  noShadowStmtCallToStmtCall name args hOccurrence
+
+theorem NoShadowStmtListCall.toStmtListCall
+    {stmts : List Stmt} {name : Name} {args : List Expr}
+    (hOccurrence : NoShadowStmtListCall stmts name args) :
+    StmtListCall stmts name args :=
+  noShadowStmtListCallToStmtListCall name args hOccurrence
+
+theorem NoShadowCaseListCall.toCaseListCall
+    {cases : List (SwitchCaseValue × List Stmt)}
+    {name : Name} {args : List Expr}
+    (hOccurrence : NoShadowCaseListCall cases name args) :
+    CaseListCall cases name args :=
+  noShadowCaseListCallToCaseListCall name args hOccurrence
+
 end Source
 
 end Raw

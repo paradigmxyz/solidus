@@ -285,11 +285,14 @@ Next raw frontend layer:
   statements. `Raw.Source.StmtCall`/`StmtListCall`/`CaseListCall` now provide
   the matching recursive raw source occurrence grammar, and incoming
   statement-expression leaves have checked transport into the recursive
-  frontend target. No-shadow structural wrappers now carry those incoming
-  leaves through raw block statements, `if` bodies, switch case bodies, and
-  switch defaults into the recursive frontend target. Raw expression/list
-  occurrences now also have resolver-stack variants, so the source-call
-  preservation theorem can follow
+  frontend target. `Raw.Source.NoShadowStmtCall`/`NoShadowStmtListCall`/
+  `NoShadowCaseListCall` now refine that grammar with the no-shadow path facts
+  required for an outer resolver entry to remain valid through nested
+  block-like scopes, and erase back to the plain source occurrence grammar.
+  No-shadow structural wrappers now carry those incoming leaves through raw
+  block statements, `if` bodies, switch case bodies, and switch defaults into
+  the recursive frontend target. Raw expression/list occurrences now also have
+  resolver-stack variants, so the source-call preservation theorem can follow
   `resolveFunctionIn name state.functionScopes = some generated` through
   shadowing nested scopes instead of assuming the callee is found in the head
   scope. Incoming statement expression fields and statement lists have matching

@@ -78,6 +78,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.Source.StmtCall
 #check EvmCompiler.Solidity.RawAst.Raw.Source.StmtListCall
 #check EvmCompiler.Solidity.RawAst.Raw.Source.CaseListCall
+#check EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowStmtCall
+#check EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowStmtListCall
+#check EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowCaseListCall
+#check EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowStmtCall.toStmtCall
+#check EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowStmtListCall.toStmtListCall
+#check EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowCaseListCall.toCaseListCall
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_hoistedFunction_ordered_entry
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperFunctionDef_spec
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperFunctionDef_toYul?_some
@@ -332,6 +338,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_clzHelperSpecOk
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_hoistedFunctionsRetained
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_frontendValidated
+#print axioms EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowStmtCall.toStmtCall
+#print axioms EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowStmtListCall.toStmtListCall
+#print axioms EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowCaseListCall.toCaseListCall
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_hoistedFunction_ordered_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.clzHelperFunctionDef_spec
 #print axioms EvmCompiler.Solidity.RawAst.Elab.clzHelperFunctionDef_toYul?_some

@@ -1,5 +1,22 @@
 # Progress Log
 
+- 2026-06-24 05:57:16 PDT - theorem-boundary/raw-no-shadow-source-call-relation -
+  Added resolver-safe source occurrence relations
+  `Raw.Source.NoShadowStmtCall`, `NoShadowStmtListCall`, and
+  `NoShadowCaseListCall`. These refine the plain recursive raw source
+  occurrence grammar with exactly the no-shadow path facts needed for an
+  outer `resolveFunctionIn` entry to remain valid across nested block-like
+  scopes, avoiding the false theorem shape that would try to transport every
+  arbitrary `Raw.Source.StmtCall` under an outer resolver through shadowing.
+  Proved erasure wrappers
+  `NoShadowStmtCall.toStmtCall`, `NoShadowStmtListCall.toStmtListCall`, and
+  `NoShadowCaseListCall.toCaseListCall`; verification reports that all three
+  are axiom-free. Focused validation passed so far:
+  `lake build EvmCompiler.Solidity.RawAst` and
+  `lake build EvmCompiler.Verification`. Remaining frontier: use this
+  resolver-safe relation as the statement of the full structural recursive
+  statement/block/case transport theorem.
+
 - 2026-06-24 05:49:16 PDT - proof/raw-switch-case-body-no-shadow-wrapper -
   Added checked no-shadow switch-case body transport. Source/frontend helper
   constructors now build `Raw.Source.CaseListCall` and
