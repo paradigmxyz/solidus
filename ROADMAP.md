@@ -282,9 +282,14 @@ Next raw frontend layer:
   such incoming-scope source occurrences, and
   `FrontendOccurrence.StmtUserCall`/`StmtListUserCall` provide the recursive
   frontend occurrence target needed to carry those calls through nested
-  statements. Recursive source-side nested block/body occurrence traversal and
-  `for` initializer scope handoff remain the next statement/control-layer proof
-  work.
+  statements. Raw expression/list occurrences now also have resolver-stack
+  variants, so the source-call preservation theorem can follow
+  `resolveFunctionIn name state.functionScopes = some generated` through
+  shadowing nested scopes instead of assuming the callee is found in the head
+  scope. Incoming statement expression fields and statement lists have matching
+  resolver-stack occurrence theorems. Recursive source-side nested block/body
+  occurrence traversal and `for` initializer scope handoff remain the next
+  statement/control-layer proof work.
   Successful `FunctionDef.elaborate` now also realizes source local-function
   declarations in the raw function body as generated hoisted callee entries in
   the final elaborator state, without exposing the block's internal scope

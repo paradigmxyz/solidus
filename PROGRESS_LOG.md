@@ -1,5 +1,31 @@
 # Progress Log
 
+- 2026-06-24 03:22:09 PDT - proof/raw-resolver-stack-call-occurrence -
+  Generalized raw source-call occurrence preservation from head-scope lookup
+  to the full function resolver stack. Added expression/list theorems
+  `Elab.Expr.elaborate_resolved_source_user_call_occurrence` and
+  `Elab.Expr.List.elaborate_resolved_source_user_call_occurrence`, plus
+  direct/member helpers, then lifted incoming statement expression fields and
+  statement lists with
+  `Elab.Stmt.elaborate_resolved_incoming_scope_source_user_call_occurrence`
+  and
+  `Elab.Stmt.List.elaborate_resolved_incoming_scope_source_user_call_occurrence`.
+  These remove the false head-scope premise needed before recursive nested
+  block/body traversal and `for` scope handoff. Validation passed:
+  `lake build EvmCompiler.Solidity.RawAst`,
+  `lake build EvmCompiler.Verification`, `lake build`,
+  `scripts/check_architecture.sh`, `scripts/test_raw_solc_frontend_smoke.sh`,
+  `PYTHON=/tmp/evm-compiler-jsonschema-venv-bundled/bin/python
+  scripts/test_solidity_frontend_decode_smokes.sh`, touched-file
+  sorry/admit/axiom scans, and `git diff --check`; new theorem axiom audits
+  report only `[propext, Classical.choice, Quot.sound]`.
+
+- 2026-06-24 02:26:42 PDT - compaction-resume/raw-frontend-status -
+  Resumed under `$verifiable-compiler` to answer completion distance for the
+  raw solc frontend migration; current checkpoint is commit `d93d0dfa` with
+  recursive frontend call-occurrence targets proved and source-side recursive
+  nested block/body traversal still open.
+
 - 2026-06-24 01:36:37 PDT - compaction-resume/raw-frontend-proof-distance -
   Resumed under `$verifiable-compiler` to answer completion distance for the
   raw solc frontend migration; current checkpoint is the local raw expression

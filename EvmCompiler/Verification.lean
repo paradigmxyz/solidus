@@ -98,15 +98,23 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_direct_argument_source_user_call_occurrence
 #check EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_source_user_call_occurrence
 #check EvmCompiler.Solidity.RawAst.Elab.Expr.List.elaborate_source_user_call_occurrence
+#check EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_direct_resolved_source_user_call_occurrence
+#check EvmCompiler.Solidity.RawAst.Elab.Expr.List.elaborate_direct_resolved_source_user_call_occurrence
+#check EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_direct_argument_resolved_source_user_call_occurrence
+#check EvmCompiler.Solidity.RawAst.Elab.Expr.List.elaborate_member_resolved_source_user_call_occurrence
+#check EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_resolved_source_user_call_occurrence
+#check EvmCompiler.Solidity.RawAst.Elab.Expr.List.elaborate_resolved_source_user_call_occurrence
 #check EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_preserves_hoistedFunction_mem
 #check EvmCompiler.Solidity.RawAst.Elab.Expr.List.elaborate_preserves_hoistedFunction_mem
 #check EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_preserves_functionScopes
 #check EvmCompiler.Solidity.RawAst.Elab.Expr.List.elaborate_preserves_functionScopes
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_functionDefinition_resolved_stub
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_incoming_scope_source_user_call_occurrence
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_resolved_incoming_scope_source_user_call_occurrence
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_preserves_hoistedFunction_mem
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_preserves_functionScopes
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_incoming_scope_source_user_call_occurrence
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_resolved_incoming_scope_source_user_call_occurrence
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_single_functionDefinition
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_cons_functionDefinition
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_preserves_hoistedFunction_mem
@@ -329,15 +337,23 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_direct_argument_source_user_call_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_source_user_call_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.List.elaborate_source_user_call_occurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_direct_resolved_source_user_call_occurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.List.elaborate_direct_resolved_source_user_call_occurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_direct_argument_resolved_source_user_call_occurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.List.elaborate_member_resolved_source_user_call_occurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_resolved_source_user_call_occurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.List.elaborate_resolved_source_user_call_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_preserves_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.List.elaborate_preserves_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_preserves_functionScopes
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.List.elaborate_preserves_functionScopes
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_functionDefinition_resolved_stub
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_incoming_scope_source_user_call_occurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_resolved_incoming_scope_source_user_call_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_preserves_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.elaborate_preserves_functionScopes
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_incoming_scope_source_user_call_occurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborate_resolved_incoming_scope_source_user_call_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_single_functionDefinition
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_cons_functionDefinition
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_preserves_hoistedFunction_mem
