@@ -1949,6 +1949,29 @@ theorem elaborate_functionDefinition_resolved_stub
 
 end Stmt
 
+namespace Stmt.List
+
+theorem hoistLocalFunctions_single_functionDefinition_resolved
+    {state state' : State} {scope : List (Name × Name)}
+    {name generated : Name} {params returns : List Name}
+    {body : List Raw.Stmt} {fn : Frontend.FunctionDef}
+    (hLookup : lookupFunctionInScope name scope = some generated)
+    (hFn :
+      (FunctionDef.elaborate params returns body).run state =
+        .ok (fn, state')) :
+    (Stmt.List.hoistLocalFunctions
+      [.functionDefinition name params returns body] scope).run state =
+        .ok ((), { state' with
+          hoistedFunctions := (generated, fn) :: state'.hoistedFunctions }) := by
+  change FunctionDef.elaborate params returns body state =
+    .ok (fn, state') at hFn
+  simp [Stmt.List.hoistLocalFunctions, hLookup, hFn, StateT.run,
+    StateT.instMonad, StateT.bind, StateT.pure, modify, MonadStateOf.modifyGet,
+    MonadState.modifyGet, instMonadStateOfMonadStateOf,
+    instMonadStateOfStateTOfMonad, StateT.modifyGet, pure, Except.pure]
+
+end Stmt.List
+
 def collectTopFunctions : List Raw.Stmt → ElabM (List (Name × Name))
   | [] => pure []
   | stmt :: rest => do
