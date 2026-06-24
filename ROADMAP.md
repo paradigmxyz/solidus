@@ -347,10 +347,10 @@ Next raw frontend layer:
   structural helper with preservation/source-local-entry theorems; its
   no-shadow caller/callee wrappers now carry both the top-level caller function
   containing the generated frontend user-call occurrence and the generated
-  hoisted callee entry through raw code and checked object elaboration. Raw
-  object elaboration carries source local-function declarations through the
-  returned frontend function table to the ordered Yul function-entry list
-  consumed by the backend.
+  hoisted callee entry through raw code, checked object elaboration, and the
+  checked JSON/raw-string decode interface. Raw object elaboration carries
+  source local-function declarations through the returned frontend function
+  table to the ordered Yul function-entry list consumed by the backend.
   Successful
   ordered-Yul conversion now also
   exposes a checked

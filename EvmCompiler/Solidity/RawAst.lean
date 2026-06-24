@@ -14232,6 +14232,39 @@ theorem decodeAndElaborateSolcIrJson_objectParts
     ⟨selected, itemFuel, dispatcher, functions, helper?, arg?, ret?,
       data, objects, items, hSelected, hFuel, hCode, hItems, rfl⟩
 
+theorem decodeAndElaborateSolcIrJson_sourceLocalFunction_noShadow_function_entries
+    {json : Lean.Json} {selection : Selection}
+    {program : Frontend.Program} {selected : SelectedIr}
+    {code : List Raw.Stmt}
+    {topName : Name} {topParams topReturns : List Name}
+    {topBody : List Raw.Stmt}
+    {name : Name} {localParams localReturns : List Name}
+    {localBody : List Raw.Stmt} {args : List Raw.Expr}
+    (hSelected : decodeSelectedIr json selection = .ok selected)
+    (hCode : selected.root.code? = some code)
+    (hTop :
+      .functionDefinition topName topParams topReturns topBody ∈ code)
+    (hLocal :
+      Raw.Source.LocalFunction topBody
+        name localParams localReturns localBody)
+    (hOccurs : Raw.Source.NoShadowStmtListCall topBody name args)
+    (hDecode :
+      decodeAndElaborateSolcIrJson json selection = .ok program) :
+    ∃ generated localFn args' topFn,
+      (topName, topFn) ∈ program.object.functions ∧
+        FrontendOccurrence.StmtListUserCall topFn.body generated args' ∧
+          (generated, localFn) ∈ program.object.functions := by
+  rcases decodeAndElaborateSolcIrJson_parts hDecode with
+    ⟨selected', object, hSelected', hObject, hProgram⟩
+  have hSelectedEq : selected' = selected := by
+    cases hSelected.symm.trans hSelected'
+    rfl
+  subst selected'
+  subst program
+  exact
+    Raw.Object.elaborate?_sourceLocalFunction_noShadow_function_entries
+      hCode hTop hLocal hOccurs hObject
+
 def decodeLinkerSymbolsJson (json : Lean.Json)
     (selection : Selection) : DecodeM (List (Name × Word)) :=
   decodeSelectedLinkerSymbolsJson json selection
@@ -14501,6 +14534,39 @@ theorem decodeAndElaborateSolcIr?_objectParts
   exact
     ⟨json, selected, itemFuel, dispatcher, functions, helper?, arg?, ret?,
       data, objects, items, hParse, hSelected, hFuel, hCode, hItems, hProgram⟩
+
+theorem decodeAndElaborateSolcIr?_sourceLocalFunction_noShadow_function_entries
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {json : Lean.Json}
+    {selected : SelectedIr} {code : List Raw.Stmt}
+    {topName : Name} {topParams topReturns : List Name}
+    {topBody : List Raw.Stmt}
+    {name : Name} {localParams localReturns : List Name}
+    {localBody : List Raw.Stmt} {args : List Raw.Expr}
+    (hParse : Lean.Json.parse rawJson = .ok json)
+    (hSelected : decodeSelectedIr json selection = .ok selected)
+    (hCode : selected.root.code? = some code)
+    (hTop :
+      .functionDefinition topName topParams topReturns topBody ∈ code)
+    (hLocal :
+      Raw.Source.LocalFunction topBody
+        name localParams localReturns localBody)
+    (hOccurs : Raw.Source.NoShadowStmtListCall topBody name args)
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program) :
+    ∃ generated localFn args' topFn,
+      (topName, topFn) ∈ program.object.functions ∧
+        FrontendOccurrence.StmtListUserCall topFn.body generated args' ∧
+          (generated, localFn) ∈ program.object.functions := by
+  rcases decodeAndElaborateSolcIr?_some hDecode with
+    ⟨json', hParse', hJsonDecode⟩
+  have hJsonEq : json' = json := by
+    cases hParse.symm.trans hParse'
+    rfl
+  subst json'
+  exact
+    decodeAndElaborateSolcIrJson_sourceLocalFunction_noShadow_function_entries
+      hSelected hCode hTop hLocal hOccurs hJsonDecode
 
 end RawAst
 end Solidity

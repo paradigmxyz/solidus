@@ -75,6 +75,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_clzHelperSpecOk
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_hoistedFunctionsRetained
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_frontendValidated
+#check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_sourceLocalFunction_noShadow_function_entries
 #check EvmCompiler.Solidity.RawAst.Raw.Source.StmtCall
 #check EvmCompiler.Solidity.RawAst.Raw.Source.StmtListCall
 #check EvmCompiler.Solidity.RawAst.Raw.Source.CaseListCall
@@ -257,6 +258,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_clzHelperSpecOk
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_hoistedFunctionsRetained
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_frontendValidated
+#check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_sourceLocalFunction_noShadow_function_entries
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decoded
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_valid
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_rawParts
@@ -365,6 +367,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_clzHelperSpecOk
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_hoistedFunctionsRetained
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_frontendValidated
+#print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_sourceLocalFunction_noShadow_function_entries
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowStmtCall.toStmtCall
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowStmtListCall.toStmtListCall
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Source.NoShadowCaseListCall.toCaseListCall
@@ -541,6 +544,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_clzHelperSpecOk
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_hoistedFunctionsRetained
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_frontendValidated
+#print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_sourceLocalFunction_noShadow_function_entries
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decoded
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_valid
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_rawParts
