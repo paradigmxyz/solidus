@@ -453,6 +453,39 @@ theorem compileArtifactFromRawSolcIr?_function_name_entry
       hLinker, hProgramCompile, hCodeArtifact, hMem, hMemory, hFnResolve,
       hResolvedMem, hParams, hReturns, hBodyYul, hYulEntry⟩
 
+theorem compileArtifactFromRawSolcIr?_resolved_ordered
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (hCompile :
+      compileArtifactFromRawSolcIr? rawJson selection = some artifact) :
+    ∃ (program : Frontend.Program)
+        (linkerSymbols : List (Frontend.Name × Frontend.Word))
+        (context : Frontend.ObjectBuiltinContext),
+      decodeAndElaborateSolcIr? rawJson selection = some program ∧
+        decodeLinkerSymbols? rawJson selection = some linkerSymbols ∧
+        program.compileArtifactWithLinkerSymbols? linkerSymbols =
+          some artifact ∧
+        program.object.compileVerifiedStackCodeArtifactIn? context =
+          some artifact.codeArtifact ∧
+        program.object.resolveObjectBuiltinsIn? context =
+          some artifact.codeArtifact.resolved ∧
+        artifact.codeArtifact.resolved.toSolcYulOrderedProgram? =
+          some artifact.codeArtifact.ordered := by
+  rcases compileArtifactFromRawSolcIr?_decoded hCompile with
+    ⟨program, linkerSymbols, hDecode, hLinker, hProgramCompile⟩
+  rcases
+      Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+        hProgramCompile with
+    ⟨_childArtifacts, plan, _codeArtifact, _hChildren, _hPlan, _hFinish,
+      hCodeArtifact, _hArtifactChildren, _hContext, _hChildImages,
+      _hPayload, _hImage⟩
+  obtain ⟨hResolved, hOrdered, _hLower, _hStack, _pushPlan, _hPlan,
+      _hCompact, _hBytes, _hMarker⟩ :=
+    Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts hCodeArtifact
+  exact
+    ⟨program, linkerSymbols, plan.context, hDecode, hLinker, hProgramCompile,
+      hCodeArtifact, hResolved, hOrdered⟩
+
 theorem compileArtifactFromRawSolcIr?_sourceLocalFunction_noShadow_program_entries
     {rawJson : String} {selection : Selection}
     {artifact : Frontend.Program.Artifact}
