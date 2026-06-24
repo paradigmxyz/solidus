@@ -1127,6 +1127,53 @@ inductive UserCall : Frontend.AstExpr → Name → List Frontend.AstExpr → Pro
         UserCall arg generated generatedArgs →
           UserCall (.Call callee args) generated generatedArgs
 
+namespace UserCall
+
+theorem headArg
+    {callee : Sum (EvmYul.Operation .Yul) Name}
+    {arg : Frontend.AstExpr} {args : List Frontend.AstExpr}
+    {generated : Name} {generatedArgs : List Frontend.AstExpr}
+    (hArg : UserCall arg generated generatedArgs) :
+    UserCall (.Call callee (arg :: args)) generated generatedArgs :=
+  .arg (by simp) hArg
+
+private theorem mem_split
+    {args : List Frontend.AstExpr} {arg : Frontend.AstExpr}
+    (hMem : arg ∈ args) :
+    ∃ (left right : List Frontend.AstExpr),
+      args = left ++ arg :: right := by
+  induction args with
+  | nil =>
+      simp at hMem
+  | cons head tail ih =>
+      simp at hMem
+      rcases hMem with hHere | hTail
+      · subst head
+        exact ⟨[], tail, rfl⟩
+      · rcases ih hTail with ⟨left, right, hEq⟩
+        exact ⟨head :: left, right, by simp [hEq]⟩
+
+theorem direct_or_arg_split
+    {expr : Frontend.AstExpr} {generated : Name}
+    {generatedArgs : List Frontend.AstExpr}
+    (hOccurrence : UserCall expr generated generatedArgs) :
+    expr = .Call (.inr generated) generatedArgs ∨
+      ∃ (callee : Sum (EvmYul.Operation .Yul) Name)
+          (left : List Frontend.AstExpr)
+          (focus : Frontend.AstExpr)
+          (right : List Frontend.AstExpr),
+        expr = .Call callee (left ++ focus :: right) ∧
+          UserCall focus generated generatedArgs := by
+  cases hOccurrence with
+  | here =>
+      exact Or.inl rfl
+  | arg hMem hArg =>
+      rename_i callee _args arg
+      rcases mem_split hMem with ⟨left, right, hEq⟩
+      exact Or.inr ⟨callee, left, arg, right, by simp [hEq], hArg⟩
+
+end UserCall
+
 /-- Generated Yul user-call occurrence in a lowered statement expression field. -/
 inductive StmtIncomingUserCall :
     Frontend.AstStmt → Name → List Frontend.AstExpr → Prop where

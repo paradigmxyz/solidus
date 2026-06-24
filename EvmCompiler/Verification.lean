@@ -78,6 +78,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_sourceLocalFunction_noShadow_function_entries
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.ResolvedLocalCall
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.UserCall
+#check EvmCompiler.Solidity.RawAst.YulOccurrence.UserCall.headArg
+#check EvmCompiler.Solidity.RawAst.YulOccurrence.UserCall.direct_or_arg_split
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.StmtIncomingUserCall
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.StmtUserCall
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.StmtListUserCall
@@ -604,6 +606,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_frontendValidated
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_sourceLocalFunction_noShadow_function_entries
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_sourceLocalFunction_noShadow_alphaPreserved
+#print axioms EvmCompiler.Solidity.RawAst.YulOccurrence.UserCall.headArg
+#print axioms EvmCompiler.Solidity.RawAst.YulOccurrence.UserCall.direct_or_arg_split
 #print axioms EvmCompiler.Solidity.RawAst.YulOccurrence.StmtListUserCall.exists_split_stmt
 #print axioms EvmCompiler.Solidity.RawAst.YulOccurrence.CaseListUserCall.exists_split_body
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.toYul?_occurrence
