@@ -768,6 +768,33 @@ theorem bindingNameOk_ne_clz
   subst name
   simp [bindingNameOk?, CallClass.reservedBindingName?] at hOk
 
+theorem bindingNameOk_classifyCall_user
+    {name : Name} (hOk : bindingNameOk? name = true) :
+    CallClass.classifyCall name = .user := by
+  have hReserved : CallClass.reservedBindingName? name = false := by
+    cases hReserved : CallClass.reservedBindingName? name with
+    | false => rfl
+    | true =>
+        simp [bindingNameOk?, hReserved] at hOk
+  unfold CallClass.classifyCall
+  cases hPrim : Frontend.Primitive.ofName? name with
+  | some prim =>
+      unfold CallClass.reservedBindingName? at hReserved
+      simp [hPrim] at hReserved
+  | none =>
+      simp [hPrim]
+      unfold CallClass.reservedBindingName? at hReserved
+      simp [hPrim] at hReserved
+      by_cases hObject : name ∈ CallClass.objectBuiltins
+      · exact False.elim (hReserved.1.1 hObject)
+      · simp [hObject]
+        cases hDialect : CallClass.unsupportedDialectBuiltin? name with
+        | true =>
+            rw [hDialect] at hReserved
+            cases hReserved.1.2
+        | false =>
+            simp [hObject, hDialect]
+
 def lookupFunctionInScope (name : Name) :
     List (Name × Name) → Option Name
   | [] => none
@@ -3507,6 +3534,20 @@ theorem localFunctionScope_sourceLocalFunction_bindingNameOk
     ⟨generated, hLookup⟩
   exact localFunctionScope_lookup_bindingNameOk hScope hLookup
 
+theorem localFunctionScope_sourceLocalFunction_classifyCall_user
+    {stmts : List Raw.Stmt} {state scopeState : State}
+    {scope : List (Name × Name)} {name : Name}
+    {params returns : List Name} {body : List Raw.Stmt}
+    (hScope :
+      (Stmt.List.localFunctionScope stmts).run state =
+        .ok (scope, scopeState))
+    (hLocal :
+      Raw.Source.LocalFunction stmts name params returns body) :
+    CallClass.classifyCall name = .user := by
+  exact
+    bindingNameOk_classifyCall_user
+      (localFunctionScope_sourceLocalFunction_bindingNameOk hScope hLocal)
+
 theorem hoistLocalFunctions_functionDefinition_entry
     {stmts : List Raw.Stmt} {scope : List (Name × Name)}
     {state finalState : State}
@@ -3710,14 +3751,15 @@ theorem sourceLocalFunction_hoistLocalFunctions_elaborate_user_call_entry_failCl
         .ok ((), hoistState))
     (hArgs :
       (Expr.List.elaborate args).run callState = .ok (args', argState))
-    (hArgScopes : argState.functionScopes = scope :: outer)
-    (hClass : CallClass.classifyCall name = .user) :
+    (hArgScopes : argState.functionScopes = scope :: outer) :
     ∃ generated fn,
       (Expr.elaborate (.functionCall name args)).run callState =
           .ok (.call .user generated args', argState) ∧
         (generated, fn) ∈ hoistState.hoistedFunctions := by
   have hNameOk :=
     localFunctionScope_sourceLocalFunction_bindingNameOk hScope hLocal
+  have hClass :=
+    bindingNameOk_classifyCall_user hNameOk
   exact
     sourceLocalFunction_hoistLocalFunctions_elaborate_user_call_entry
       hLocal (bindingNameOk_ne_memoryguard hNameOk)
@@ -3937,14 +3979,15 @@ theorem sourceLocalFunction_elaborateBlock_false_elaborate_user_call_entry_failC
         .ok (front, finalState))
     (hArgs :
       (Expr.List.elaborate args).run callState = .ok (args', argState))
-    (hArgScopes : argState.functionScopes = scope :: outer)
-    (hClass : CallClass.classifyCall name = .user) :
+    (hArgScopes : argState.functionScopes = scope :: outer) :
     ∃ generated fn,
       (Expr.elaborate (.functionCall name args)).run callState =
           .ok (.call .user generated args', argState) ∧
         (generated, fn) ∈ finalState.hoistedFunctions := by
   have hNameOk :=
     localFunctionScope_sourceLocalFunction_bindingNameOk hScope hLocal
+  have hClass :=
+    bindingNameOk_classifyCall_user hNameOk
   exact
     sourceLocalFunction_elaborateBlock_false_elaborate_user_call_entry
       hLocal (bindingNameOk_ne_memoryguard hNameOk)
@@ -4033,14 +4076,15 @@ theorem sourceLocalFunction_elaborateBlock_true_elaborate_user_call_entry_failCl
         .ok (front, finalState))
     (hArgs :
       (Expr.List.elaborate args).run callState = .ok (args', argState))
-    (hArgScopes : argState.functionScopes = scope :: outer)
-    (hClass : CallClass.classifyCall name = .user) :
+    (hArgScopes : argState.functionScopes = scope :: outer) :
     ∃ generated fn,
       (Expr.elaborate (.functionCall name args)).run callState =
           .ok (.call .user generated args', argState) ∧
         (generated, fn) ∈ finalState.hoistedFunctions := by
   have hNameOk :=
     localFunctionScope_sourceLocalFunction_bindingNameOk hScope hLocal
+  have hClass :=
+    bindingNameOk_classifyCall_user hNameOk
   exact
     sourceLocalFunction_elaborateBlock_true_elaborate_user_call_entry
       hLocal (bindingNameOk_ne_memoryguard hNameOk)

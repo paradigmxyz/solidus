@@ -244,7 +244,9 @@ Next raw frontend layer:
   target and the corresponding hoisted callee entry after production block
   elaboration and scope popping; the bridge derives reserved-name exclusions
   from successful scope construction rather than exposing them as caller
-  premises. Successful ordered-Yul conversion now also
+  premises, and successful source local-function validation now also derives
+  `CallClass.classifyCall name = .user` for those source names. Successful
+  ordered-Yul conversion now also
   exposes a checked
   function entry for every name present in `object.functions.map Prod.fst`,
   giving resolved user-call names a concrete emitted callee entry at the
