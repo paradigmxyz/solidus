@@ -224,12 +224,13 @@ Next raw frontend layer:
   declaration and assignment name-check loops are now structural helpers with
   local hoisted-accumulator preservation lemmas. Raw expression/list
   elaboration now has checked hoisted-entry preservation, including user-call
-  resolution, `memoryguard`, and `clz` helper allocation, preparing the broader
-  recursive statement/block hoist monotonicity theorem.
+  resolution, `memoryguard`, and `clz` helper allocation. Raw statement,
+  block, case-list, function-definition, and local-hoist elaboration now
+  preserve accumulated hoisted entries through recursive tails, including
+  entries just added for generated nested functions.
   The remaining raw frontend semantic gap is source-level preservation for
-  alpha-renamed nested-function call resolution, recursive tail-hoist
-  accumulator preservation, and broader composition into the final source
-  theorem.
+  alpha-renamed nested-function call resolution and broader composition into
+  the final source theorem.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose

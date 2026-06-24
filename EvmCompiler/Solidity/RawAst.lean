@@ -2054,6 +2054,59 @@ theorem hoistFunctionEntry_preserves_hoistedFunction_mem
   cases hRun
   exact List.mem_cons_of_mem (generated, fn) hEntry
 
+theorem pushIdentifierScope_preserves_hoistedFunction_mem :
+    PreservesHoisted pushIdentifierScope := by
+  intro state state' value entry hRun hEntry
+  unfold pushIdentifierScope at hRun
+  simp [StateT.run_modify] at hRun
+  cases hRun
+  exact hEntry
+
+theorem popIdentifierScope_preserves_hoistedFunction_mem :
+    PreservesHoisted popIdentifierScope := by
+  intro state state' value entry hRun hEntry
+  unfold popIdentifierScope at hRun
+  simp [StateT.run_bind, StateT.run_get] at hRun
+  cases hScopes : state.identifierScopes with
+  | nil =>
+      simp [hScopes] at hRun
+      unfold EvmCompiler.Solidity.RawAst.Elab.throw at hRun
+      change (Except.error
+        "internal frontend error: no identifier scope to pop" :
+          DecodeM (Unit × State)) = .ok (value, state') at hRun
+      cases hRun
+  | cons _ rest =>
+      simp [hScopes, StateT.run_set] at hRun
+      cases hRun
+      exact hEntry
+
+theorem pushFunctionScope_preserves_hoistedFunction_mem
+    (scope : List (Name × Name)) :
+    PreservesHoisted (pushFunctionScope scope) := by
+  intro state state' value entry hRun hEntry
+  unfold pushFunctionScope at hRun
+  simp [StateT.run_modify] at hRun
+  cases hRun
+  exact hEntry
+
+theorem popFunctionScope_preserves_hoistedFunction_mem :
+    PreservesHoisted popFunctionScope := by
+  intro state state' value entry hRun hEntry
+  unfold popFunctionScope at hRun
+  simp [StateT.run_bind, StateT.run_get] at hRun
+  cases hScopes : state.functionScopes with
+  | nil =>
+      simp [hScopes] at hRun
+      unfold EvmCompiler.Solidity.RawAst.Elab.throw at hRun
+      change (Except.error
+        "internal frontend error: no function scope to pop" :
+          DecodeM (Unit × State)) = .ok (value, state') at hRun
+      cases hRun
+  | cons _ rest =>
+      simp [hScopes, StateT.run_set] at hRun
+      cases hRun
+      exact hEntry
+
 theorem resolveFunction_preserves_hoistedFunction_mem (name : Name) :
     PreservesHoisted (resolveFunction name) := by
   intro state state' value entry hRun hEntry
@@ -2427,6 +2480,76 @@ theorem localFunctionScope_cons_functionDefinition
   simp [Stmt.List.localFunctionScope, hTail, hNoDuplicate, hDeclare, hFresh,
     StateT.run, StateT.instMonad, StateT.bind, StateT.pure, pure, Except.pure]
 
+theorem localFunctionScope_preserves_hoistedFunction_mem
+    (stmts : List Raw.Stmt) :
+    PreservesHoisted (Stmt.List.localFunctionScope stmts) := by
+  induction stmts with
+  | nil =>
+      simp [Stmt.List.localFunctionScope]
+      exact PreservesHoisted.pure []
+  | cons stmt rest ih =>
+      cases stmt with
+      | functionDefinition name params returns body =>
+          change PreservesHoisted
+            (Stmt.List.localFunctionScope rest >>= fun tail =>
+              if tail.any fun entry => entry.fst == name then
+                throw s!"duplicate Yul function {name} in block"
+              else
+                declareIdentifiers [name] "function" >>= fun _ =>
+                  freshGeneratedFunctionName name >>= fun generated =>
+                    pure ((name, generated) :: tail))
+          exact
+            PreservesHoisted.bind ih (fun tail => by
+              cases hDuplicate :
+                  (tail.any fun entry => entry.fst == name) with
+              | false =>
+                  simp [hDuplicate]
+                  exact
+                    PreservesHoisted.bind
+                      (declareIdentifiers_preserves_hoistedFunction_mem
+                        [name] "function")
+                      (fun _ =>
+                        PreservesHoisted.bind
+                          (freshGeneratedFunctionName_preserves_hoistedFunction_mem
+                            name)
+                          (fun generated =>
+                            PreservesHoisted.pure
+                              ((name, generated) :: tail)))
+              | true =>
+                  simp [hDuplicate]
+                  exact PreservesHoisted.throw
+                    s!"duplicate Yul function {name} in block")
+      | block stmts =>
+          change PreservesHoisted (Stmt.List.localFunctionScope rest)
+          exact ih
+      | variableDeclaration names value? =>
+          change PreservesHoisted (Stmt.List.localFunctionScope rest)
+          exact ih
+      | assignment names value =>
+          change PreservesHoisted (Stmt.List.localFunctionScope rest)
+          exact ih
+      | expressionStatement expr =>
+          change PreservesHoisted (Stmt.List.localFunctionScope rest)
+          exact ih
+      | switch scrutinee cases default =>
+          change PreservesHoisted (Stmt.List.localFunctionScope rest)
+          exact ih
+      | forLoop pre condition post body =>
+          change PreservesHoisted (Stmt.List.localFunctionScope rest)
+          exact ih
+      | ifThen condition body =>
+          change PreservesHoisted (Stmt.List.localFunctionScope rest)
+          exact ih
+      | «break» =>
+          change PreservesHoisted (Stmt.List.localFunctionScope rest)
+          exact ih
+      | «continue» =>
+          change PreservesHoisted (Stmt.List.localFunctionScope rest)
+          exact ih
+      | «leave» =>
+          change PreservesHoisted (Stmt.List.localFunctionScope rest)
+          exact ih
+
 theorem hoistLocalFunctions_single_functionDefinition_resolved
     {state state' : State} {scope : List (Name × Name)}
     {name generated : Name} {params returns : List Name}
@@ -2483,6 +2606,448 @@ theorem hoistLocalFunctions_single_functionDefinition_preserves_body_entry
   exact List.mem_cons_of_mem (generated, fn) hEntry
 
 end Stmt.List
+
+mutual
+
+theorem Stmt.elaborate_preserves_hoistedFunction_mem
+    (stmt : Raw.Stmt) : PreservesHoisted (Stmt.elaborate stmt) := by
+  cases stmt with
+  | block stmts =>
+      simp only [Stmt.elaborate]
+      exact
+        PreservesHoisted.bind
+          (Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+            stmts true)
+          (fun stmts => PreservesHoisted.pure (Frontend.Stmt.block stmts))
+  | variableDeclaration names value? =>
+      cases value? with
+      | none =>
+          simp only [Stmt.elaborate]
+          exact
+            PreservesHoisted.map
+              (fun _ => Frontend.Stmt.letDecl names none)
+              (declareIdentifiers_preserves_hoistedFunction_mem
+                names "variable")
+      | some value =>
+          simp only [Stmt.elaborate]
+          exact
+            PreservesHoisted.bind
+              (PreservesHoisted.map some
+                (Expr.elaborate_preserves_hoistedFunction_mem value))
+              (fun value? =>
+                PreservesHoisted.bind
+                  (declareIdentifiers_preserves_hoistedFunction_mem
+                    names "variable")
+                  (fun _ => PreservesHoisted.pure
+                    (Frontend.Stmt.letDecl names value?)))
+  | assignment names value =>
+      simp only [Stmt.elaborate]
+      exact
+        PreservesHoisted.bind
+          (requireIdentifiersVisible_preserves_hoistedFunction_mem
+            names "assignment")
+          (fun _ =>
+            PreservesHoisted.bind
+              (Expr.elaborate_preserves_hoistedFunction_mem value)
+              (fun value => PreservesHoisted.pure
+                (Frontend.Stmt.assign names value)))
+  | expressionStatement expr =>
+      simp only [Stmt.elaborate]
+      exact
+        PreservesHoisted.bind
+          (Expr.elaborate_preserves_hoistedFunction_mem expr)
+          (fun expr => PreservesHoisted.pure
+            (Frontend.Stmt.exprStmt expr))
+  | functionDefinition name params returns body =>
+      simp only [Stmt.elaborate]
+      exact
+        PreservesHoisted.bind
+          (resolveFunction_preserves_hoistedFunction_mem name)
+          (fun generated =>
+            PreservesHoisted.bind
+              (FunctionDef.elaborate_preserves_hoistedFunction_mem
+                params returns body)
+              (fun fn => PreservesHoisted.pure
+                (Frontend.Stmt.functionDef generated params returns fn.body)))
+  | switch scrutinee cases defaultBody =>
+      simp only [Stmt.elaborate]
+      exact
+        PreservesHoisted.bind
+          (Expr.elaborate_preserves_hoistedFunction_mem scrutinee)
+          (fun scrutinee =>
+            PreservesHoisted.bind
+              (Stmt.CaseList.elaborate_preserves_hoistedFunction_mem cases)
+              (fun cases =>
+                PreservesHoisted.bind
+                  (Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+                    defaultBody true)
+                  (fun defaultBody => PreservesHoisted.pure
+                    (Frontend.Stmt.switch scrutinee cases defaultBody))))
+  | forLoop pre condition post body =>
+      cases hPre : Stmt.List.hasImmediateFunctionDefinition pre with
+      | false =>
+          simp only [Stmt.elaborate, hPre, Bool.false_eq_true, ↓reduceIte]
+          exact
+            PreservesHoisted.bind
+              pushIdentifierScope_preserves_hoistedFunction_mem
+              (fun _ =>
+                PreservesHoisted.bind
+                  (Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+                    pre false)
+                  (fun pre =>
+                    PreservesHoisted.bind
+                      (Expr.elaborate_preserves_hoistedFunction_mem condition)
+                      (fun condition =>
+                        PreservesHoisted.bind
+                          (Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+                            post true)
+                          (fun post =>
+                            PreservesHoisted.bind
+                              (Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+                                body true)
+                              (fun body =>
+                                PreservesHoisted.bind
+                                  popIdentifierScope_preserves_hoistedFunction_mem
+                                  (fun _ => PreservesHoisted.pure
+                                    (Frontend.Stmt.forLoop
+                                      pre condition post body)))))))
+      | true =>
+          simp only [Stmt.elaborate, hPre, Bool.true_eq_false, ↓reduceIte]
+          exact
+            PreservesHoisted.bind
+              pushIdentifierScope_preserves_hoistedFunction_mem
+              (fun _ =>
+                PreservesHoisted.bind
+                  (Stmt.List.elaborateForInitBlockWithScope_preserves_hoistedFunction_mem
+                    pre)
+                  (fun pre =>
+                    PreservesHoisted.bind
+                      (Expr.elaborate_preserves_hoistedFunction_mem condition)
+                      (fun condition =>
+                        PreservesHoisted.bind
+                          (Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+                            post true)
+                          (fun post =>
+                            PreservesHoisted.bind
+                              (Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+                                body true)
+                              (fun body =>
+                                PreservesHoisted.bind
+                                  popFunctionScope_preserves_hoistedFunction_mem
+                                  (fun _ =>
+                                    PreservesHoisted.bind
+                                      popIdentifierScope_preserves_hoistedFunction_mem
+                                      (fun _ => PreservesHoisted.pure
+                                        (Frontend.Stmt.forLoop
+                                          pre condition post body))))))))
+  | ifThen condition body =>
+      simp only [Stmt.elaborate]
+      exact
+        PreservesHoisted.bind
+          (Expr.elaborate_preserves_hoistedFunction_mem condition)
+          (fun condition =>
+            PreservesHoisted.bind
+              (Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+                body true)
+              (fun body => PreservesHoisted.pure
+                (Frontend.Stmt.ifThen condition body)))
+  | «break» =>
+      simp only [Stmt.elaborate]
+      exact PreservesHoisted.pure Frontend.Stmt.break
+  | «continue» =>
+      simp only [Stmt.elaborate]
+      exact PreservesHoisted.pure Frontend.Stmt.continue
+  | «leave» =>
+      simp only [Stmt.elaborate]
+      exact PreservesHoisted.pure Frontend.Stmt.leave
+  termination_by 20 * sizeOf stmt + 18
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+theorem Stmt.List.elaborate_preserves_hoistedFunction_mem
+    (stmts : List Raw.Stmt) :
+    PreservesHoisted (Stmt.List.elaborate stmts) := by
+  cases stmts with
+  | nil =>
+      simp [Stmt.List.elaborate]
+      exact PreservesHoisted.pure []
+  | cons stmt rest =>
+      simp [Stmt.List.elaborate]
+      exact
+        PreservesHoisted.bind
+          (Stmt.elaborate_preserves_hoistedFunction_mem stmt)
+          (fun head =>
+            PreservesHoisted.bind
+              (Stmt.List.elaborate_preserves_hoistedFunction_mem rest)
+              (fun tail => PreservesHoisted.pure (head :: tail)))
+  termination_by 20 * sizeOf stmts + 10
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+theorem Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+    (stmts : List Raw.Stmt) (scope : List (Name × Name)) :
+    PreservesHoisted (Stmt.List.hoistLocalFunctions stmts scope) := by
+  cases stmts with
+  | nil =>
+      simp [Stmt.List.hoistLocalFunctions]
+      exact PreservesHoisted.pure ()
+  | cons stmt rest =>
+      cases stmt with
+      | functionDefinition name params returns body =>
+          cases hLookup : lookupFunctionInScope name scope with
+          | none =>
+              simp [Stmt.List.hoistLocalFunctions, hLookup]
+              exact PreservesHoisted.throw
+                s!"internal frontend error: missing generated name for {name}"
+          | some generated =>
+              simp [Stmt.List.hoistLocalFunctions, hLookup]
+              exact
+                PreservesHoisted.bind
+                  (FunctionDef.elaborate_preserves_hoistedFunction_mem
+                    params returns body)
+                  (fun fn =>
+                    PreservesHoisted.bind
+                      (hoistFunctionEntry_preserves_hoistedFunction_mem
+                        generated fn)
+                      (fun _ =>
+                        Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+                          rest scope))
+      | block stmts =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+              rest scope
+      | variableDeclaration names value? =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+              rest scope
+      | assignment names value =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+              rest scope
+      | expressionStatement expr =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+              rest scope
+      | switch scrutinee cases default =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+              rest scope
+      | forLoop pre condition post body =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+              rest scope
+      | ifThen condition body =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+              rest scope
+      | «break» =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+              rest scope
+      | «continue» =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+              rest scope
+      | «leave» =>
+          simp [Stmt.List.hoistLocalFunctions]
+          exact
+            Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+              rest scope
+  termination_by 20 * sizeOf stmts + 12
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+theorem Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+    (stmts : List Raw.Stmt) (createsScope : Bool) :
+    PreservesHoisted (Stmt.List.elaborateBlock stmts createsScope) := by
+  cases createsScope with
+  | false =>
+      simp [Stmt.List.elaborateBlock]
+      exact
+        PreservesHoisted.bind
+          (Stmt.List.localFunctionScope_preserves_hoistedFunction_mem stmts)
+          (fun scope =>
+            PreservesHoisted.bind
+              (pushFunctionScope_preserves_hoistedFunction_mem scope)
+              (fun _ =>
+                PreservesHoisted.bind
+                  (Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+                    stmts scope)
+                  (fun _ =>
+                    PreservesHoisted.bind
+                      (Stmt.List.elaborate_preserves_hoistedFunction_mem stmts)
+                      (fun result =>
+                        PreservesHoisted.bind
+                          popFunctionScope_preserves_hoistedFunction_mem
+                          (fun _ => PreservesHoisted.pure result)))))
+  | true =>
+      simp [Stmt.List.elaborateBlock]
+      exact
+        PreservesHoisted.bind
+          pushIdentifierScope_preserves_hoistedFunction_mem
+          (fun _ =>
+            PreservesHoisted.bind
+              (Stmt.List.localFunctionScope_preserves_hoistedFunction_mem
+                stmts)
+              (fun scope =>
+                PreservesHoisted.bind
+                  (pushFunctionScope_preserves_hoistedFunction_mem scope)
+                  (fun _ =>
+                    PreservesHoisted.bind
+                      (Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+                        stmts scope)
+                      (fun _ =>
+                        PreservesHoisted.bind
+                          (Stmt.List.elaborate_preserves_hoistedFunction_mem
+                            stmts)
+                          (fun result =>
+                            PreservesHoisted.bind
+                              popFunctionScope_preserves_hoistedFunction_mem
+                              (fun _ =>
+                                PreservesHoisted.bind
+                                  popIdentifierScope_preserves_hoistedFunction_mem
+                                  (fun _ =>
+                                    PreservesHoisted.pure result)))))))
+  termination_by 20 * sizeOf stmts + 14
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+theorem Stmt.List.elaborateForInitBlockWithScope_preserves_hoistedFunction_mem
+    (stmts : List Raw.Stmt) :
+    PreservesHoisted (Stmt.List.elaborateForInitBlockWithScope stmts) := by
+  simp [Stmt.List.elaborateForInitBlockWithScope]
+  exact
+    PreservesHoisted.bind
+      (Stmt.List.localFunctionScope_preserves_hoistedFunction_mem stmts)
+      (fun scope =>
+        PreservesHoisted.bind
+          (pushFunctionScope_preserves_hoistedFunction_mem scope)
+          (fun _ =>
+            PreservesHoisted.bind
+              (Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
+                stmts scope)
+              (fun _ =>
+                Stmt.List.elaborate_preserves_hoistedFunction_mem stmts)))
+  termination_by 20 * sizeOf stmts + 14
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+theorem Stmt.CaseList.elaborate_preserves_hoistedFunction_mem
+    (cases : List (Raw.SwitchCaseValue × List Raw.Stmt)) :
+    PreservesHoisted (Stmt.CaseList.elaborate cases) := by
+  cases cases with
+  | nil =>
+      simp [Stmt.CaseList.elaborate]
+      exact PreservesHoisted.pure []
+  | cons head rest =>
+      rcases head with ⟨value, body⟩
+      cases value with
+      | literal literal =>
+          cases literal with
+          | number value =>
+              simp [Stmt.CaseList.elaborate, SwitchCaseValue.elaborate]
+              exact
+                PreservesHoisted.bind
+                  (Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+                    body true)
+                  (fun body =>
+                    PreservesHoisted.bind
+                      (Stmt.CaseList.elaborate_preserves_hoistedFunction_mem
+                        rest)
+                      (fun rest => PreservesHoisted.pure
+                        ((Frontend.SwitchCaseValue.word value, body) ::
+                          rest)))
+          | bool value =>
+              simp [Stmt.CaseList.elaborate, SwitchCaseValue.elaborate]
+              exact
+                PreservesHoisted.bind
+                  (Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+                    body true)
+                  (fun body =>
+                    PreservesHoisted.bind
+                      (Stmt.CaseList.elaborate_preserves_hoistedFunction_mem
+                        rest)
+                      (fun rest => PreservesHoisted.pure
+                        ((Frontend.SwitchCaseValue.boolLit value, body) ::
+                          rest)))
+          | stringLit value =>
+              simp [Stmt.CaseList.elaborate, SwitchCaseValue.elaborate]
+              exact
+                PreservesHoisted.bind
+                  (Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+                    body true)
+                  (fun body =>
+                    PreservesHoisted.bind
+                      (Stmt.CaseList.elaborate_preserves_hoistedFunction_mem
+                        rest)
+                      (fun rest => PreservesHoisted.pure
+                        ((Frontend.SwitchCaseValue.stringLit value, body) ::
+                          rest)))
+          | bytesLit bytes =>
+              simp [Stmt.CaseList.elaborate, SwitchCaseValue.elaborate]
+              exact
+                PreservesHoisted.bind
+                  (Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+                    body true)
+                  (fun body =>
+                    PreservesHoisted.bind
+                      (Stmt.CaseList.elaborate_preserves_hoistedFunction_mem
+                        rest)
+                      (fun rest => PreservesHoisted.pure
+                        ((Frontend.SwitchCaseValue.bytesLit bytes, body) ::
+                          rest)))
+  termination_by 20 * sizeOf cases + 14
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+theorem FunctionDef.elaborate_preserves_hoistedFunction_mem
+    (params returns : List Name) (body : List Raw.Stmt) :
+    PreservesHoisted (FunctionDef.elaborate params returns body) := by
+  simp [FunctionDef.elaborate]
+  exact
+    PreservesHoisted.bind
+      pushIdentifierScope_preserves_hoistedFunction_mem
+      (fun _ =>
+        PreservesHoisted.bind
+          (declareIdentifiers_preserves_hoistedFunction_mem
+            (params ++ returns) "function parameter/result")
+          (fun _ =>
+            PreservesHoisted.bind
+              (Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+                body true)
+              (fun body =>
+                PreservesHoisted.bind
+                  popIdentifierScope_preserves_hoistedFunction_mem
+                  (fun _ => PreservesHoisted.pure
+                    ({ params, returns, body } : Frontend.FunctionDef)))))
+  termination_by 20 * sizeOf body + 16
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp_wf
+    all_goals omega
+
+end
 
 def collectTopFunctions : List Raw.Stmt → ElabM (List (Name × Name))
   | [] => pure []
