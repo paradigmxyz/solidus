@@ -242,7 +242,9 @@ Next raw frontend layer:
   as a generated hoisted entry. Source-name user-call elaboration under that
   local scope now also has checked evidence for the generated frontend call
   target and the corresponding hoisted callee entry after production block
-  elaboration and scope popping. Successful ordered-Yul conversion now also
+  elaboration and scope popping; the bridge derives reserved-name exclusions
+  from successful scope construction rather than exposing them as caller
+  premises. Successful ordered-Yul conversion now also
   exposes a checked
   function entry for every name present in `object.functions.map Prod.fst`,
   giving resolved user-call names a concrete emitted callee entry at the

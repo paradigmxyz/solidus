@@ -702,6 +702,72 @@ def declareIdentifiers (names : List Name) (description : String) :
   | scope :: rest =>
       set { state with identifierScopes := (seen ++ scope) :: rest }
 
+theorem collectDeclaredIdentifiers_single_bindingNameOk
+    {name : Name} {description : String} {scopes : List (List Name)}
+    {seen : List Name}
+    (hCollect :
+      collectDeclaredIdentifiers [name] description scopes = .ok seen) :
+    bindingNameOk? name = true := by
+  cases hOk : bindingNameOk? name with
+  | false =>
+      simp [collectDeclaredIdentifiers, collectDeclaredIdentifiers.loop,
+        hOk] at hCollect
+  | true =>
+      rfl
+
+theorem declareIdentifiers_single_bindingNameOk
+    {name : Name} {description : String} {state state' : State}
+    (hDeclare :
+      (declareIdentifiers [name] description).run state =
+        .ok ((), state')) :
+    bindingNameOk? name = true := by
+  unfold declareIdentifiers at hDeclare
+  simp [StateT.run_bind, StateT.run_get] at hDeclare
+  cases hScopes : state.identifierScopes with
+  | nil =>
+      simp [hScopes] at hDeclare
+      cases hCollect :
+          collectDeclaredIdentifiers [name] description [[]] with
+      | error err =>
+          unfold EvmCompiler.Solidity.RawAst.Elab.throw at hDeclare
+          simp [hCollect, StateT.run_map, Functor.map] at hDeclare
+          change Except.map
+              (fun a : List Name × State => (PUnit.unit,
+                { state with identifierScopes := [a.1] }))
+              (Except.error err) = Except.ok ((), state') at hDeclare
+          cases hDeclare
+      | ok seen =>
+          exact collectDeclaredIdentifiers_single_bindingNameOk hCollect
+  | cons scope rest =>
+      simp [hScopes] at hDeclare
+      cases hCollect :
+          collectDeclaredIdentifiers [name] description (scope :: rest) with
+      | error err =>
+          unfold EvmCompiler.Solidity.RawAst.Elab.throw at hDeclare
+          simp [hCollect, StateT.run_map, Functor.map] at hDeclare
+          change Except.map
+              (fun a : List Name × State => (PUnit.unit,
+                { state with identifierScopes := (a.1 ++ scope) :: rest }))
+              (Except.error err) = Except.ok ((), state') at hDeclare
+          cases hDeclare
+      | ok seen =>
+          exact collectDeclaredIdentifiers_single_bindingNameOk hCollect
+
+theorem bindingNameOk_ne_memoryguard
+    {name : Name} (hOk : bindingNameOk? name = true) :
+    name ≠ "memoryguard" := by
+  intro hName
+  subst name
+  simp [bindingNameOk?, CallClass.reservedBindingName?,
+    CallClass.objectBuiltins] at hOk
+
+theorem bindingNameOk_ne_clz
+    {name : Name} (hOk : bindingNameOk? name = true) :
+    name ≠ "clz" := by
+  intro hName
+  subst name
+  simp [bindingNameOk?, CallClass.reservedBindingName?] at hOk
+
 def lookupFunctionInScope (name : Name) :
     List (Name × Name) → Option Name
   | [] => none
@@ -3212,6 +3278,92 @@ theorem lookupFunctionInScope_any_eq_true
           (rest.any fun entry => entry.fst == name)) = true)
         simp [hName, hTailAny]
 
+theorem localFunctionScope_lookup_bindingNameOk
+    {stmts : List Raw.Stmt} {state scopeState : State}
+    {scope : List (Name × Name)} {name generated : Name}
+    (hScope :
+      (Stmt.List.localFunctionScope stmts).run state =
+        .ok (scope, scopeState))
+    (hLookup : lookupFunctionInScope name scope = some generated) :
+    bindingNameOk? name = true := by
+  induction stmts generalizing state scopeState scope with
+  | nil =>
+      simp [Stmt.List.localFunctionScope, lookupFunctionInScope] at hScope
+      cases hScope
+      simp [lookupFunctionInScope] at hLookup
+  | cons stmt rest ih =>
+      cases stmt with
+      | functionDefinition head headParams headReturns headBody =>
+          unfold Stmt.List.localFunctionScope at hScope
+          simp [StateT.run_bind] at hScope
+          cases hTail : (Stmt.List.localFunctionScope rest).run state with
+          | error err =>
+              simp [hTail] at hScope
+          | ok tailResult =>
+              rcases tailResult with ⟨tailScope, tailState⟩
+              simp [hTail] at hScope
+              cases hDuplicate :
+                  (tailScope.any fun entry => entry.fst == head) with
+              | true =>
+                  simp [hDuplicate] at hScope
+                  unfold EvmCompiler.Solidity.RawAst.Elab.throw at hScope
+                  cases hScope
+              | false =>
+                  simp [hDuplicate] at hScope
+                  cases hDeclare :
+                      (declareIdentifiers [head] "function").run tailState with
+                  | error err =>
+                      simp [hDeclare] at hScope
+                  | ok declareResult =>
+                      rcases declareResult with ⟨_, declaredState⟩
+                      simp [hDeclare] at hScope
+                      cases hFresh :
+                          (freshGeneratedFunctionName head).run declaredState with
+                      | error err =>
+                          simp [hFresh] at hScope
+                      | ok freshResult =>
+                          rcases freshResult with ⟨headGenerated, freshState⟩
+                          simp [hFresh] at hScope
+                          rcases hScope with ⟨hScopeEq, _hStateEq⟩
+                          subst scope
+                          by_cases hName : head = name
+                          · subst name
+                            exact
+                              declareIdentifiers_single_bindingNameOk
+                                hDeclare
+                          · simp [lookupFunctionInScope, hName] at hLookup
+                            exact ih hTail hLookup
+      | block stmts =>
+          unfold Stmt.List.localFunctionScope at hScope
+          exact ih hScope hLookup
+      | variableDeclaration names value? =>
+          unfold Stmt.List.localFunctionScope at hScope
+          exact ih hScope hLookup
+      | assignment names value =>
+          unfold Stmt.List.localFunctionScope at hScope
+          exact ih hScope hLookup
+      | expressionStatement expr =>
+          unfold Stmt.List.localFunctionScope at hScope
+          exact ih hScope hLookup
+      | switch scrutinee cases default =>
+          unfold Stmt.List.localFunctionScope at hScope
+          exact ih hScope hLookup
+      | forLoop pre condition post body =>
+          unfold Stmt.List.localFunctionScope at hScope
+          exact ih hScope hLookup
+      | ifThen condition body =>
+          unfold Stmt.List.localFunctionScope at hScope
+          exact ih hScope hLookup
+      | «break» =>
+          unfold Stmt.List.localFunctionScope at hScope
+          exact ih hScope hLookup
+      | «continue» =>
+          unfold Stmt.List.localFunctionScope at hScope
+          exact ih hScope hLookup
+      | «leave» =>
+          unfold Stmt.List.localFunctionScope at hScope
+          exact ih hScope hLookup
+
 theorem localFunctionScope_functionDefinition_lookup
     {stmts : List Raw.Stmt} {state scopeState : State}
     {scope : List (Name × Name)} {name : Name}
@@ -3340,6 +3492,20 @@ theorem localFunctionScope_sourceLocalFunction_lookup
   exact
     localFunctionScope_functionDefinition_lookup hScope
       (Raw.Source.LocalFunction.mem hLocal)
+
+theorem localFunctionScope_sourceLocalFunction_bindingNameOk
+    {stmts : List Raw.Stmt} {state scopeState : State}
+    {scope : List (Name × Name)} {name : Name}
+    {params returns : List Name} {body : List Raw.Stmt}
+    (hScope :
+      (Stmt.List.localFunctionScope stmts).run state =
+        .ok (scope, scopeState))
+    (hLocal :
+      Raw.Source.LocalFunction stmts name params returns body) :
+    bindingNameOk? name = true := by
+  rcases localFunctionScope_sourceLocalFunction_lookup hScope hLocal with
+    ⟨generated, hLookup⟩
+  exact localFunctionScope_lookup_bindingNameOk hScope hLookup
 
 theorem hoistLocalFunctions_functionDefinition_entry
     {stmts : List Raw.Stmt} {scope : List (Name × Name)}
@@ -3527,6 +3693,36 @@ theorem sourceLocalFunction_hoistLocalFunctions_elaborate_user_call_entry
       hClass with
     ⟨hCall, _params, _returns, _body, fn, _hRawMem, hEntry⟩
   exact ⟨generated, fn, hCall, hEntry⟩
+
+theorem sourceLocalFunction_hoistLocalFunctions_elaborate_user_call_entry_failClosed
+    {stmts : List Raw.Stmt}
+    {scopeInit scopeState hoistState callState argState : State}
+    {scope : List (Name × Name)} {outer : List (List (Name × Name))}
+    {name : Name} {params returns : List Name} {body : List Raw.Stmt}
+    {args : List Raw.Expr} {args' : List Frontend.Expr}
+    (hLocal :
+      Raw.Source.LocalFunction stmts name params returns body)
+    (hScope :
+      (Stmt.List.localFunctionScope stmts).run scopeInit =
+        .ok (scope, scopeState))
+    (hHoist :
+      (Stmt.List.hoistLocalFunctions stmts scope).run scopeState =
+        .ok ((), hoistState))
+    (hArgs :
+      (Expr.List.elaborate args).run callState = .ok (args', argState))
+    (hArgScopes : argState.functionScopes = scope :: outer)
+    (hClass : CallClass.classifyCall name = .user) :
+    ∃ generated fn,
+      (Expr.elaborate (.functionCall name args)).run callState =
+          .ok (.call .user generated args', argState) ∧
+        (generated, fn) ∈ hoistState.hoistedFunctions := by
+  have hNameOk :=
+    localFunctionScope_sourceLocalFunction_bindingNameOk hScope hLocal
+  exact
+    sourceLocalFunction_hoistLocalFunctions_elaborate_user_call_entry
+      hLocal (bindingNameOk_ne_memoryguard hNameOk)
+      (bindingNameOk_ne_clz hNameOk) hScope hHoist hArgs hArgScopes
+      hClass
 
 theorem localFunctionScope_elaborateBlock_false_lookup_entry
     {stmts : List Raw.Stmt}
@@ -3724,6 +3920,37 @@ theorem sourceLocalFunction_elaborateBlock_false_elaborate_user_call_entry
         hNotMemoryguard hNotClz hArgs hClass hResolve,
       hEntry⟩
 
+theorem sourceLocalFunction_elaborateBlock_false_elaborate_user_call_entry_failClosed
+    {stmts : List Raw.Stmt}
+    {state scopeState finalState callState argState : State}
+    {scope : List (Name × Name)} {outer : List (List (Name × Name))}
+    {name : Name} {params returns : List Name} {body : List Raw.Stmt}
+    {front : List Frontend.Stmt}
+    {args : List Raw.Expr} {args' : List Frontend.Expr}
+    (hLocal :
+      Raw.Source.LocalFunction stmts name params returns body)
+    (hScope :
+      (Stmt.List.localFunctionScope stmts).run state =
+        .ok (scope, scopeState))
+    (hBlock :
+      (Stmt.List.elaborateBlock stmts false).run state =
+        .ok (front, finalState))
+    (hArgs :
+      (Expr.List.elaborate args).run callState = .ok (args', argState))
+    (hArgScopes : argState.functionScopes = scope :: outer)
+    (hClass : CallClass.classifyCall name = .user) :
+    ∃ generated fn,
+      (Expr.elaborate (.functionCall name args)).run callState =
+          .ok (.call .user generated args', argState) ∧
+        (generated, fn) ∈ finalState.hoistedFunctions := by
+  have hNameOk :=
+    localFunctionScope_sourceLocalFunction_bindingNameOk hScope hLocal
+  exact
+    sourceLocalFunction_elaborateBlock_false_elaborate_user_call_entry
+      hLocal (bindingNameOk_ne_memoryguard hNameOk)
+      (bindingNameOk_ne_clz hNameOk) hScope hBlock hArgs hArgScopes
+      hClass
+
 theorem sourceLocalFunction_elaborateBlock_true_entry
     {stmts : List Raw.Stmt}
     {state pushedState scopeState finalState : State}
@@ -3787,6 +4014,38 @@ theorem sourceLocalFunction_elaborateBlock_true_elaborate_user_call_entry
       Expr.elaborate_user_call_resolved
         hNotMemoryguard hNotClz hArgs hClass hResolve,
       hEntry⟩
+
+theorem sourceLocalFunction_elaborateBlock_true_elaborate_user_call_entry_failClosed
+    {stmts : List Raw.Stmt}
+    {state pushedState scopeState finalState callState argState : State}
+    {scope : List (Name × Name)} {outer : List (List (Name × Name))}
+    {name : Name} {params returns : List Name} {body : List Raw.Stmt}
+    {front : List Frontend.Stmt}
+    {args : List Raw.Expr} {args' : List Frontend.Expr}
+    (hLocal :
+      Raw.Source.LocalFunction stmts name params returns body)
+    (hPushScope : pushIdentifierScope.run state = .ok ((), pushedState))
+    (hScope :
+      (Stmt.List.localFunctionScope stmts).run pushedState =
+        .ok (scope, scopeState))
+    (hBlock :
+      (Stmt.List.elaborateBlock stmts true).run state =
+        .ok (front, finalState))
+    (hArgs :
+      (Expr.List.elaborate args).run callState = .ok (args', argState))
+    (hArgScopes : argState.functionScopes = scope :: outer)
+    (hClass : CallClass.classifyCall name = .user) :
+    ∃ generated fn,
+      (Expr.elaborate (.functionCall name args)).run callState =
+          .ok (.call .user generated args', argState) ∧
+        (generated, fn) ∈ finalState.hoistedFunctions := by
+  have hNameOk :=
+    localFunctionScope_sourceLocalFunction_bindingNameOk hScope hLocal
+  exact
+    sourceLocalFunction_elaborateBlock_true_elaborate_user_call_entry
+      hLocal (bindingNameOk_ne_memoryguard hNameOk)
+      (bindingNameOk_ne_clz hNameOk) hPushScope hScope hBlock hArgs
+      hArgScopes hClass
 
 end Stmt.List
 
