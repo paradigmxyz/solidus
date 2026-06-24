@@ -437,6 +437,9 @@ Next raw frontend layer:
   the single-value `eval` view used by condition-like expression contexts,
   returning the generated call's head value after argument evaluation and
   generated callee execution.
+  `alphaRenamedLocalCallPreserved_ifCondition_call_occurrence_routes_succ` and
+  `alphaRenamedLocalCallPreserved_switchScrutinee_call_occurrence_routes_succ`
+  compose that view through direct Yul `if` and `switch` condition contexts.
   `alphaRenamedLocalCallPreserved_assignLet_call_occurrence_routes_succ`
   adds the ordinary Yul statement writeback for assignment and declaration
   call contexts using `multifill`.
