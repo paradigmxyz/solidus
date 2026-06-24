@@ -433,6 +433,10 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_evalValues_call_occurrence_routes_succ`
   extends this through lowered Yul argument evaluation for the generated call
   expression itself.
+  `alphaRenamedLocalCallPreserved_eval_call_occurrence_routes_succ` exposes
+  the single-value `eval` view used by condition-like expression contexts,
+  returning the generated call's head value after argument evaluation and
+  generated callee execution.
   `alphaRenamedLocalCallPreserved_assignLet_call_occurrence_routes_succ`
   adds the ordinary Yul statement writeback for assignment and declaration
   call contexts using `multifill`.
