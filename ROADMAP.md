@@ -460,6 +460,9 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_assignLet_outerArg_call_occurrence_routes_succ`
   composes the same outer-call argument view through assignment and declaration
   statement writeback for both primitive and user-function outer calls.
+  `alphaRenamedLocalCallPreserved_exprStmt_outerArg_call_occurrence_routes_succ`
+  covers the no-target expression-statement sibling, including the extra fuel
+  step in Yul's user-function expression-statement rule.
   `alphaRenamedLocalCallPreserved_ifCondition_call_occurrence_routes_succ` and
   `alphaRenamedLocalCallPreserved_switchScrutinee_call_occurrence_routes_succ`
   compose that view through direct Yul `if` and `switch` condition contexts.
