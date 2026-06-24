@@ -370,6 +370,294 @@ theorem alphaRenamedLocalCallPreserved_yulEvidence
        calleeLookup := hCalleeLookup
        routes := hRoutes }⟩
 
+namespace AlphaRenamedLocalCallYulEvidence
+
+/-- The bundled generated callee lookup is enough to run the ordinary Yul
+call rule once the generated callee body has executed from the initialized
+call frame. -/
+theorem call_succ
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {fuel : Nat} {callArgs : List Frontend.Word}
+    {state stateAfterBody : σ}
+    (hBody :
+      Yul.Source.Effectful.exec model prim fuel
+          (.Block hEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource state
+            (EvmYul.Yul.State.mkOk
+              ((model.source state).initcall
+                hEvidence.localFn.params hEvidence.localFn.returns
+                callArgs))) =
+        .ok stateAfterBody) :
+    Yul.Source.Effectful.call model prim (fuel + 1)
+        callArgs (some hEvidence.generated)
+        (some ordered.program.contract) state =
+      .ok
+        (model.withSource stateAfterBody
+            (((model.source stateAfterBody).reviveJump.overwrite?
+                (model.source state)).setStore (model.source state)),
+          List.map (model.source stateAfterBody).lookup!
+            hEvidence.localFn.returns) :=
+  Yul.Source.Effectful.call_succ_of_explicit_parts
+    model prim hEvidence.calleeLookup hBody
+
+/-- Multi-value evaluation of the generated alpha-renamed call from the bundled
+Yul evidence. -/
+theorem evalValues_succ
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat}
+    {state stateAfterArgs stateAfterBody : σ}
+    {reversedValues : List Frontend.Word}
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          hEvidence.yulArgs.reverse
+          (some ordered.program.contract) state =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hEvidence.localFn.params hEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody) :
+    Yul.Source.Effectful.evalValues model prim (bodyFuel + 2)
+        (.Call (.inr hEvidence.generated) hEvidence.yulArgs)
+        (some ordered.program.contract) state =
+      .ok
+        (model.withSource stateAfterBody
+            (((model.source stateAfterBody).reviveJump.overwrite?
+                (model.source stateAfterArgs)).setStore
+                  (model.source stateAfterArgs)),
+          List.map (model.source stateAfterBody).lookup!
+            hEvidence.localFn.returns) := by
+  have hCall :
+      Yul.Source.Effectful.call model prim (bodyFuel + 1)
+          reversedValues.reverse (some hEvidence.generated)
+          (some ordered.program.contract) stateAfterArgs =
+        .ok
+          (model.withSource stateAfterBody
+              (((model.source stateAfterBody).reviveJump.overwrite?
+                  (model.source stateAfterArgs)).setStore
+                    (model.source stateAfterArgs)),
+            List.map (model.source stateAfterBody).lookup!
+              hEvidence.localFn.returns) :=
+    hEvidence.call_succ model prim hBody
+  simp [Yul.Source.Effectful.evalValues, hArgs, hCall]
+
+/-- Single-value evaluation view of the generated alpha-renamed call from the
+bundled Yul evidence. -/
+theorem eval_succ
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat}
+    {state stateAfterArgs stateAfterBody : σ}
+    {reversedValues : List Frontend.Word}
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          hEvidence.yulArgs.reverse
+          (some ordered.program.contract) state =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hEvidence.localFn.params hEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody) :
+    Yul.Source.Effectful.eval model prim (bodyFuel + 2)
+        (.Call (.inr hEvidence.generated) hEvidence.yulArgs)
+        (some ordered.program.contract) state =
+      .ok
+        (model.withSource stateAfterBody
+            (((model.source stateAfterBody).reviveJump.overwrite?
+                (model.source stateAfterArgs)).setStore
+                  (model.source stateAfterArgs)),
+          (List.map (model.source stateAfterBody).lookup!
+            hEvidence.localFn.returns).head!) := by
+  have hCall :
+      Yul.Source.Effectful.call model prim (bodyFuel + 1)
+          reversedValues.reverse (some hEvidence.generated)
+          (some ordered.program.contract) stateAfterArgs =
+        .ok
+          (model.withSource stateAfterBody
+              (((model.source stateAfterBody).reviveJump.overwrite?
+                  (model.source stateAfterArgs)).setStore
+                    (model.source stateAfterArgs)),
+            List.map (model.source stateAfterBody).lookup!
+              hEvidence.localFn.returns) :=
+    hEvidence.call_succ model prim hBody
+  exact Yul.Source.Effectful.eval_function_of_parts model prim hArgs hCall
+
+/-- Direct assignment statement execution for a generated alpha-renamed call
+from the bundled Yul evidence. -/
+theorem assign_succ
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat} {names : List Frontend.Name}
+    {state stateAfterArgs stateAfterBody : σ}
+    {reversedValues : List Frontend.Word}
+    (hCheck :
+      EvmYul.Yul.checkAssignment (model.source state) names = .ok ())
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          hEvidence.yulArgs.reverse
+          (some ordered.program.contract) state =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hEvidence.localFn.params hEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody) :
+    Yul.Source.Effectful.exec model prim (bodyFuel + 3)
+        (.Assign names (.Call (.inr hEvidence.generated)
+          hEvidence.yulArgs))
+        (some ordered.program.contract) state =
+      .ok
+        (model.multifill names
+          (model.withSource stateAfterBody
+            (((model.source stateAfterBody).reviveJump.overwrite?
+                (model.source stateAfterArgs)).setStore
+                  (model.source stateAfterArgs)))
+          (List.map (model.source stateAfterBody).lookup!
+            hEvidence.localFn.returns)) :=
+  Yul.Source.Effectful.exec_assign_of_evalValues model prim hCheck
+    (hEvidence.evalValues_succ model prim hArgs hBody)
+
+/-- Direct declaration statement execution for a generated alpha-renamed call
+from the bundled Yul evidence. -/
+theorem let_succ
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat} {names : List Frontend.Name}
+    {state stateAfterArgs stateAfterBody : σ}
+    {reversedValues : List Frontend.Word}
+    (hCheck :
+      EvmYul.Yul.checkDeclaration (model.source state) names = .ok ())
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          hEvidence.yulArgs.reverse
+          (some ordered.program.contract) state =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hEvidence.localFn.params hEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody) :
+    Yul.Source.Effectful.exec model prim (bodyFuel + 3)
+        (.Let names (some (.Call (.inr hEvidence.generated)
+          hEvidence.yulArgs)))
+        (some ordered.program.contract) state =
+      .ok
+        (model.multifill names
+          (model.withSource stateAfterBody
+            (((model.source stateAfterBody).reviveJump.overwrite?
+                (model.source stateAfterArgs)).setStore
+                  (model.source stateAfterArgs)))
+          (List.map (model.source stateAfterBody).lookup!
+            hEvidence.localFn.returns)) :=
+  Yul.Source.Effectful.exec_let_some_of_evalValues model prim hCheck
+    (hEvidence.evalValues_succ model prim hArgs hBody)
+
+/-- Direct expression-statement execution for a generated alpha-renamed call
+from the bundled Yul evidence. -/
+theorem exprStmt_succ
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat}
+    {state stateAfterArgs stateAfterBody : σ}
+    {reversedValues : List Frontend.Word}
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 2)
+          hEvidence.yulArgs.reverse
+          (some ordered.program.contract) state =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hEvidence.localFn.params hEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody) :
+    Yul.Source.Effectful.exec model prim (bodyFuel + 3)
+        (.ExprStmtCall (.Call (.inr hEvidence.generated)
+          hEvidence.yulArgs))
+        (some ordered.program.contract) state =
+      .ok
+        (model.multifill []
+          (model.withSource stateAfterBody
+            (((model.source stateAfterBody).reviveJump.overwrite?
+                (model.source stateAfterArgs)).setStore
+                  (model.source stateAfterArgs)))
+          (List.map (model.source stateAfterBody).lookup!
+            hEvidence.localFn.returns)) := by
+  have hCall :
+      Yul.Source.Effectful.call model prim (bodyFuel + 1)
+          reversedValues.reverse (some hEvidence.generated)
+          (some ordered.program.contract) stateAfterArgs =
+        .ok
+          (model.withSource stateAfterBody
+              (((model.source stateAfterBody).reviveJump.overwrite?
+                  (model.source stateAfterArgs)).setStore
+                    (model.source stateAfterArgs)),
+            List.map (model.source stateAfterBody).lookup!
+              hEvidence.localFn.returns) :=
+    hEvidence.call_succ model prim hBody
+  exact
+    Yul.Source.Effectful.exec_expr_function_of_parts model prim hArgs hCall
+
+end AlphaRenamedLocalCallYulEvidence
+
 /-- Semantic call corollary that also exposes the concrete generated Yul call
 occurrence route.
 

@@ -431,6 +431,9 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_yulEvidence` bundle the generated callee
   entry, lowered arguments, lookup proof, and occurrence route split behind one
   proof interface for the upcoming statement-context semantic dispatcher.
+  The evidence interface now owns the generated call/evaluation semantic facts
+  and direct assignment/declaration/expression-statement execution facts,
+  preparing the incoming-statement dispatcher to consume one checked bundle.
   `YulOccurrence.UserCall.direct_or_arg_split` now separates a lowered
   expression occurrence into either the direct generated call or an outer call
   with the recursive occurrence isolated inside its argument list, matching

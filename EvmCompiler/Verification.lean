@@ -335,6 +335,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_call_succ_of_local_body
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence
 #check EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_yulEvidence
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.call_succ
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.evalValues_succ
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.eval_succ
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.assign_succ
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.let_succ
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.exprStmt_succ
 #check EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_call_occurrence_routes_succ
 #check EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_evalValues_call_occurrence_routes_succ
 #check EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_eval_call_occurrence_routes_succ
@@ -692,6 +698,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecodeFinished_sourceLocalFunction_noShadow
 #print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_call_succ_of_local_body
 #print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_yulEvidence
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.call_succ
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.evalValues_succ
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.eval_succ
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.assign_succ
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.let_succ
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.exprStmt_succ
 #print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_call_occurrence_routes_succ
 #print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_evalValues_call_occurrence_routes_succ
 #print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_eval_call_occurrence_routes_succ
