@@ -434,6 +434,10 @@ Next raw frontend layer:
   `YulOccurrence.StmtIncomingUserCall.direct_or_outerArg` lifts that split to
   statement expression fields, classifying incoming let/assign/expr/switch/if
   occurrences while keeping deeper focused expression occurrences explicit.
+  `YulOccurrence.StmtUserCall.direct_or_outerArg_or_context` and
+  `YulOccurrence.StmtListUserCall.exists_split_direct_or_outerArg_or_context`
+  connect statement-list splitting to direct incoming, one-step outer-argument,
+  or nested control/list contexts for the recursive semantic dispatcher.
   `Yul.Source.Effectful.evalArgs_split_focus_of_parts` now composes right-side
   argument evaluation, focused generated-call evaluation, and left-side
   argument evaluation for the reversed Yul argument order used by

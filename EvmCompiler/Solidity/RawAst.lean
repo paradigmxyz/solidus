@@ -1346,6 +1346,60 @@ theorem ofIncoming
     StmtUserCall stmt generated args :=
   .incoming hOccurrence
 
+/-- Focused statement occurrences whose generated call remains in a nested
+statement/control context rather than in the statement's incoming expression
+field. -/
+inductive Context : Frontend.AstStmt → Name → List Frontend.AstExpr → Prop where
+  | block {stmts generated args} :
+      StmtListUserCall stmts generated args →
+        Context (.Block stmts) generated args
+  | switchCase {scrutinee cases default generated args} :
+      CaseListUserCall cases generated args →
+        Context (.Switch scrutinee cases default) generated args
+  | switchDefault {scrutinee cases default generated args} :
+      StmtListUserCall default generated args →
+        Context (.Switch scrutinee cases default) generated args
+  | forCondition {condition post body generated args} :
+      UserCall condition generated args →
+        Context (.For condition post body) generated args
+  | forPost {condition post body generated args} :
+      StmtListUserCall post generated args →
+        Context (.For condition post body) generated args
+  | forBody {condition post body generated args} :
+      StmtListUserCall body generated args →
+        Context (.For condition post body) generated args
+  | ifBody {condition body generated args} :
+      StmtListUserCall body generated args →
+        Context (.If condition body) generated args
+
+theorem direct_or_outerArg_or_context
+    {stmt : Frontend.AstStmt} {generated : Name}
+    {args : List Frontend.AstExpr}
+    (hOccurrence : StmtUserCall stmt generated args) :
+    StmtIncomingUserCall.Direct stmt generated args ∨
+      StmtIncomingUserCall.OuterArg stmt generated args ∨
+        Context stmt generated args := by
+  cases hOccurrence with
+  | incoming hIncoming =>
+      rcases StmtIncomingUserCall.direct_or_outerArg hIncoming with
+        hDirect | hOuter
+      · exact Or.inl hDirect
+      · exact Or.inr (Or.inl hOuter)
+  | block hBody =>
+      exact Or.inr (Or.inr (Context.block hBody))
+  | switchCase hCases =>
+      exact Or.inr (Or.inr (Context.switchCase hCases))
+  | switchDefault hDefault =>
+      exact Or.inr (Or.inr (Context.switchDefault hDefault))
+  | forCondition hCondition =>
+      exact Or.inr (Or.inr (Context.forCondition hCondition))
+  | forPost hPost =>
+      exact Or.inr (Or.inr (Context.forPost hPost))
+  | forBody hBody =>
+      exact Or.inr (Or.inr (Context.forBody hBody))
+  | ifBody hBody =>
+      exact Or.inr (Or.inr (Context.ifBody hBody))
+
 end StmtUserCall
 
 namespace StmtListUserCall
@@ -1405,6 +1459,23 @@ theorem exists_split_stmt
           rcases ih hTail with
             ⟨pre, focus, suffix, hEq, hFocus⟩
           exact ⟨head :: pre, focus, suffix, by simp [hEq], hFocus⟩
+
+theorem exists_split_direct_or_outerArg_or_context
+    {stmts : List Frontend.AstStmt}
+    {generated : Name} {args : List Frontend.AstExpr}
+    (hOccurrence : StmtListUserCall stmts generated args) :
+    ∃ (pre : List Frontend.AstStmt)
+        (stmt : Frontend.AstStmt)
+        (rest : List Frontend.AstStmt),
+      stmts = pre ++ stmt :: rest ∧
+        (StmtIncomingUserCall.Direct stmt generated args ∨
+          StmtIncomingUserCall.OuterArg stmt generated args ∨
+            StmtUserCall.Context stmt generated args) := by
+  rcases exists_split_stmt hOccurrence with
+    ⟨pre, stmt, rest, hEq, hStmt⟩
+  exact
+    ⟨pre, stmt, rest, hEq,
+      StmtUserCall.direct_or_outerArg_or_context hStmt⟩
 
 end StmtListUserCall
 

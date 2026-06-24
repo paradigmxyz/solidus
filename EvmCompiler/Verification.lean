@@ -85,8 +85,11 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.StmtIncomingUserCall.OuterArg
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.StmtIncomingUserCall.direct_or_outerArg
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.StmtUserCall
+#check EvmCompiler.Solidity.RawAst.YulOccurrence.StmtUserCall.Context
+#check EvmCompiler.Solidity.RawAst.YulOccurrence.StmtUserCall.direct_or_outerArg_or_context
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.StmtListUserCall
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.StmtListUserCall.exists_split_stmt
+#check EvmCompiler.Solidity.RawAst.YulOccurrence.StmtListUserCall.exists_split_direct_or_outerArg_or_context
 #check EvmCompiler.Solidity.RawAst.YulOccurrence.CaseListUserCall.exists_split_body
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableStmtUserCall
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.LowerableStmtListUserCall
@@ -629,7 +632,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.YulOccurrence.UserCall.headArg
 #print axioms EvmCompiler.Solidity.RawAst.YulOccurrence.UserCall.direct_or_arg_split
 #print axioms EvmCompiler.Solidity.RawAst.YulOccurrence.StmtIncomingUserCall.direct_or_outerArg
+#print axioms EvmCompiler.Solidity.RawAst.YulOccurrence.StmtUserCall.direct_or_outerArg_or_context
 #print axioms EvmCompiler.Solidity.RawAst.YulOccurrence.StmtListUserCall.exists_split_stmt
+#print axioms EvmCompiler.Solidity.RawAst.YulOccurrence.StmtListUserCall.exists_split_direct_or_outerArg_or_context
 #print axioms EvmCompiler.Solidity.RawAst.YulOccurrence.CaseListUserCall.exists_split_body
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.toYul?_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.FrontendOccurrence.StmtIncomingUserCall.toYul?_occurrence
