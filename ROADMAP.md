@@ -471,6 +471,9 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_switchScrutinee_outerArg_seqHead_call_occurrence_routes_succ`
   expose those outer control contexts in direct `execSeq` form for recursive
   statement-list composition.
+  `alphaRenamedLocalCallPreserved_ifCondition_outerArg_seqPrefix_call_occurrence_routes_succ`
+  composes the outer if-condition sequence-head facts after arbitrary
+  regularly executed prefixes.
   `alphaRenamedLocalCallPreserved_switchScrutinee_outerArg_seqPrefix_call_occurrence_routes_succ`
   composes the outer switch sequence-head fact after arbitrary regularly
   executed prefixes.
