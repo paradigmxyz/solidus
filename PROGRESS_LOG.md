@@ -1,5 +1,26 @@
 # Progress Log
 
+- 2026-06-24 01:36:37 PDT - compaction-resume/raw-frontend-proof-distance -
+  Resumed under `$verifiable-compiler` to answer completion distance for the
+  raw solc frontend migration; current checkpoint is the local raw expression
+  call-occurrence proof frontier after commit `6421912b`.
+
+- 2026-06-24 01:44:36 PDT - proof/raw-recursive-expression-call-occurrence -
+  Added recursive `Raw.Source.ExprCall.Occurs`/`ListOccurs` transport through
+  raw expression/list elaboration:
+  `Elab.Expr.elaborate_source_user_call_occurrence` and
+  `Elab.Expr.List.elaborate_source_user_call_occurrence` now prove successful
+  elaboration carries nested raw source local-call occurrences to generated
+  frontend `.user` call occurrences under the active checked function scope,
+  including ordinary calls and the one-argument `memoryguard`/`clz` special
+  paths. Validation passed: `lake build EvmCompiler.Solidity.RawAst`,
+  `lake build EvmCompiler.Verification`, `lake build`,
+  `scripts/check_architecture.sh`, `scripts/test_raw_solc_frontend_smoke.sh`,
+  `PYTHON=/tmp/evm-compiler-jsonschema-venv-bundled/bin/python
+  scripts/test_solidity_frontend_decode_smokes.sh`, touched-file trust scans,
+  and `git diff --check`; new theorem axiom audits report only
+  `[propext, Classical.choice, Quot.sound]`.
+
 - 2026-06-23 10:12 PDT - compaction-resume/raw-frontend-status - Resumed
   under `$verifiable-compiler` to report the raw solc frontend migration
   status from the clean `codex/lean-solc-raw-frontend` checkpoint.

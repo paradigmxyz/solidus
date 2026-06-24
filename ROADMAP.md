@@ -267,6 +267,11 @@ Next raw frontend layer:
   generated frontend `.user` call occurrence, and
   `Expr.elaborate_direct_source_user_call_occurrence` proves successful
   expression elaboration connects the two under the checked local scope.
+  `Raw.Source.ExprCall.Occurs` and `ListOccurs` now lift that handle through
+  recursive raw function-call argument occurrences; successful expression/list
+  elaboration carries those source occurrences to generated frontend user-call
+  occurrences, including through ordinary calls and the one-argument
+  `memoryguard`/`clz` special elaboration paths.
   Successful `FunctionDef.elaborate` now also realizes source local-function
   declarations in the raw function body as generated hoisted callee entries in
   the final elaborator state, without exposing the block's internal scope

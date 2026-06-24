@@ -559,6 +559,25 @@ inductive Direct : Expr → Name → List Expr → Prop where
   | here {name args} :
       Direct (.functionCall name args) name args
 
+/-- Recursive source-facing occurrence of a raw function-call expression. -/
+inductive Occurs : Expr → Name → List Expr → Prop where
+  | direct {expr name args} :
+      Direct expr name args →
+        Occurs expr name args
+  | arg {callee callArgs arg name args} :
+      arg ∈ callArgs →
+        Occurs arg name args →
+          Occurs (.functionCall callee callArgs) name args
+
+/-- Recursive source-facing occurrence inside a raw expression list. -/
+inductive ListOccurs : List Expr → Name → List Expr → Prop where
+  | head {expr rest name args} :
+      Occurs expr name args →
+        ListOccurs (expr :: rest) name args
+  | tail {expr rest name args} :
+      ListOccurs rest name args →
+        ListOccurs (expr :: rest) name args
+
 end ExprCall
 
 end Source
@@ -3112,6 +3131,422 @@ theorem elaborate_direct_source_user_call_occurrence
       simp [hArgs, hClass, resolveFunction, hResolve] at hElab
       cases hElab
       exact ⟨args', .here⟩
+
+theorem List.elaborate_direct_source_user_call_occurrence
+    {exprs : List Raw.Expr} {state finalState : State}
+    {fronts : List Frontend.Expr} {scope : List (Name × Name)}
+    {outer : List (List (Name × Name))}
+    {expr : Raw.Expr} {name generated : Name} {args : List Raw.Expr}
+    (hMem : expr ∈ exprs)
+    (hCall : Raw.Source.ExprCall.Direct expr name args)
+    (hNameOk : bindingNameOk? name = true)
+    (hLookup : lookupFunctionInScope name scope = some generated)
+    (hScopes : state.functionScopes = scope :: outer)
+    (hElab : (Expr.List.elaborate exprs).run state =
+      .ok (fronts, finalState)) :
+    ∃ args' front,
+      front ∈ fronts ∧
+        FrontendOccurrence.UserCall front generated args' := by
+  induction exprs generalizing state finalState fronts outer with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      unfold Expr.List.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      simp at hMem
+      rcases hMem with hHeadMem | hTailMem
+      · subst expr
+        cases hHead : (Expr.elaborate head).run state with
+        | error err =>
+            simp [hHead] at hElab
+        | ok headResult =>
+            rcases headResult with ⟨headFront, headState⟩
+            rcases
+              EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_direct_source_user_call_occurrence
+                (expr := head) (state := state)
+                (finalState := headState) (front := headFront)
+                (scope := scope) (outer := outer)
+                (name := name) (generated := generated)
+                (args := args) hCall hNameOk hLookup hScopes hHead with
+              ⟨args', hOccurrence⟩
+            simp [hHead] at hElab
+            cases hTail : (Expr.List.elaborate rest).run headState with
+            | error err =>
+                simp [hTail] at hElab
+            | ok tailResult =>
+                rcases tailResult with ⟨tailFronts, tailState⟩
+                simp [hTail] at hElab
+                have hMemFront : headFront ∈ fronts := by
+                  rw [← hElab.1]
+                  simp
+                exact ⟨args', headFront, hMemFront, hOccurrence⟩
+      · cases hHead : (Expr.elaborate head).run state with
+        | error err =>
+            simp [hHead] at hElab
+        | ok headResult =>
+            rcases headResult with ⟨headFront, headState⟩
+            have hHeadScopes :
+                headState.functionScopes = scope :: outer := by
+              rw [Expr.elaborate_preserves_functionScopes head hHead,
+                hScopes]
+            simp [hHead] at hElab
+            cases hTail : (Expr.List.elaborate rest).run headState with
+            | error err =>
+                simp [hTail] at hElab
+            | ok tailResult =>
+                rcases tailResult with ⟨tailFronts, tailState⟩
+                simp [hTail] at hElab
+                rcases ih hTailMem hHeadScopes hTail with
+                  ⟨args', front, hMemTail, hOccurrence⟩
+                have hMemFront : front ∈ fronts := by
+                  rw [← hElab.1]
+                  exact List.mem_cons_of_mem _ hMemTail
+                exact ⟨args', front, hMemFront, hOccurrence⟩
+
+theorem elaborate_direct_argument_source_user_call_occurrence
+    {callee : Name} {callArgs : List Raw.Expr}
+    {state finalState : State} {front : Frontend.Expr}
+    {scope : List (Name × Name)} {outer : List (List (Name × Name))}
+    {expr : Raw.Expr} {name generated : Name} {args : List Raw.Expr}
+    (hOuterNotMemoryguard : callee ≠ "memoryguard")
+    (hOuterNotClz : callee ≠ "clz")
+    (hMem : expr ∈ callArgs)
+    (hCall : Raw.Source.ExprCall.Direct expr name args)
+    (hNameOk : bindingNameOk? name = true)
+    (hLookup : lookupFunctionInScope name scope = some generated)
+    (hScopes : state.functionScopes = scope :: outer)
+    (hElab : (Expr.elaborate (.functionCall callee callArgs)).run state =
+      .ok (front, finalState)) :
+    ∃ args',
+      FrontendOccurrence.UserCall front generated args' := by
+  unfold Expr.elaborate at hElab
+  simp [hOuterNotMemoryguard, hOuterNotClz, StateT.run_bind] at hElab
+  cases hArgs : (Expr.List.elaborate callArgs).run state with
+  | error err =>
+      simp [hArgs] at hElab
+  | ok argResult =>
+      rcases argResult with ⟨frontArgs, argState⟩
+      rcases
+        List.elaborate_direct_source_user_call_occurrence
+          (exprs := callArgs) (state := state)
+          (finalState := argState) (fronts := frontArgs)
+          (scope := scope) (outer := outer)
+          (expr := expr) (name := name) (generated := generated)
+          (args := args) hMem hCall hNameOk hLookup hScopes hArgs with
+        ⟨generatedArgs, frontArg, hFrontArgMem, hOccurrence⟩
+      simp [hArgs] at hElab
+      cases hClass : CallClass.classifyCall callee with
+      | primitive =>
+          simp [hClass] at hElab
+          cases hElab
+          exact
+            ⟨generatedArgs,
+              FrontendOccurrence.UserCall.arg hFrontArgMem hOccurrence⟩
+      | user =>
+          simp [hClass] at hElab
+          cases hResolve : (resolveFunction callee).run argState with
+          | error err =>
+              simp [hResolve] at hElab
+          | ok resolveResult =>
+              rcases resolveResult with ⟨resolved, resolvedState⟩
+              simp [hResolve] at hElab
+              rcases hElab with ⟨hFront, _hState⟩
+              rw [← hFront]
+              exact
+                ⟨generatedArgs,
+                  FrontendOccurrence.UserCall.arg hFrontArgMem hOccurrence⟩
+      | objectBuiltin =>
+          simp [hClass] at hElab
+          cases hElab
+          exact
+            ⟨generatedArgs,
+              FrontendOccurrence.UserCall.arg hFrontArgMem hOccurrence⟩
+      | dialectBuiltin =>
+          simp [hClass] at hElab
+          cases hElab
+          exact
+            ⟨generatedArgs,
+              FrontendOccurrence.UserCall.arg hFrontArgMem hOccurrence⟩
+
+theorem List.elaborate_member_source_user_call_occurrence
+    {exprs : List Raw.Expr} {target : Raw.Expr}
+    {state finalState : State} {fronts : List Frontend.Expr}
+    {scope : List (Name × Name)}
+    {outer : List (List (Name × Name))}
+    {generated : Name}
+    (hMem : target ∈ exprs)
+    (hTarget :
+      ∀ {state finalState : State} {front : Frontend.Expr}
+        {outer : List (List (Name × Name))},
+        state.functionScopes = scope :: outer →
+          (Expr.elaborate target).run state = .ok (front, finalState) →
+            ∃ args',
+              FrontendOccurrence.UserCall front generated args')
+    (hScopes : state.functionScopes = scope :: outer)
+    (hElab : (Expr.List.elaborate exprs).run state =
+      .ok (fronts, finalState)) :
+    ∃ args' front,
+      front ∈ fronts ∧
+        FrontendOccurrence.UserCall front generated args' := by
+  induction exprs generalizing state finalState fronts outer with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      unfold Expr.List.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      simp at hMem
+      rcases hMem with hHeadMem | hTailMem
+      · subst target
+        cases hHead : (Expr.elaborate head).run state with
+        | error err =>
+            simp [hHead] at hElab
+        | ok headResult =>
+            rcases headResult with ⟨headFront, headState⟩
+            rcases hTarget hScopes hHead with
+              ⟨args', hOccurrence⟩
+            simp [hHead] at hElab
+            cases hTail : (Expr.List.elaborate rest).run headState with
+            | error err =>
+                simp [hTail] at hElab
+            | ok tailResult =>
+                rcases tailResult with ⟨tailFronts, tailState⟩
+                simp [hTail] at hElab
+                have hMemFront : headFront ∈ fronts := by
+                  rw [← hElab.1]
+                  simp
+                exact ⟨args', headFront, hMemFront, hOccurrence⟩
+      · cases hHead : (Expr.elaborate head).run state with
+        | error err =>
+            simp [hHead] at hElab
+        | ok headResult =>
+            rcases headResult with ⟨headFront, headState⟩
+            have hHeadScopes :
+                headState.functionScopes = scope :: outer := by
+              rw [Expr.elaborate_preserves_functionScopes head hHead,
+                hScopes]
+            simp [hHead] at hElab
+            cases hTail : (Expr.List.elaborate rest).run headState with
+            | error err =>
+                simp [hTail] at hElab
+            | ok tailResult =>
+                rcases tailResult with ⟨tailFronts, tailState⟩
+                simp [hTail] at hElab
+                rcases ih hTailMem hHeadScopes hTail with
+                  ⟨args', front, hMemTail, hOccurrence⟩
+                have hMemFront : front ∈ fronts := by
+                  rw [← hElab.1]
+                  exact List.mem_cons_of_mem _ hMemTail
+                exact ⟨args', front, hMemFront, hOccurrence⟩
+
+theorem elaborate_source_user_call_occurrence
+    {expr : Raw.Expr} {state finalState : State}
+    {front : Frontend.Expr} {scope : List (Name × Name)}
+    {outer : List (List (Name × Name))}
+    {name generated : Name} {args : List Raw.Expr}
+    (hOccurs : Raw.Source.ExprCall.Occurs expr name args)
+    (hNameOk : bindingNameOk? name = true)
+    (hLookup : lookupFunctionInScope name scope = some generated)
+    (hScopes : state.functionScopes = scope :: outer)
+    (hElab : (Expr.elaborate expr).run state = .ok (front, finalState)) :
+    ∃ args',
+      FrontendOccurrence.UserCall front generated args' := by
+  induction hOccurs generalizing state finalState front outer with
+  | direct hDirect =>
+      exact
+        elaborate_direct_source_user_call_occurrence
+          hDirect hNameOk hLookup hScopes hElab
+  | @arg callee callArgs arg name args hMem hArgOccurs ih =>
+      by_cases hMemoryguard : callee = "memoryguard"
+      · subst callee
+        unfold Expr.elaborate at hElab
+        cases callArgs with
+        | nil =>
+            simp at hMem
+        | cons head rest =>
+            cases rest with
+            | nil =>
+                simp at hMem
+                subst arg
+                simp [StateT.run_bind] at hElab
+                cases hHead : (Expr.elaborate head).run state with
+                | error err =>
+                    simp [hHead] at hElab
+                | ok headResult =>
+                    rcases headResult with ⟨headFront, headState⟩
+                    rcases ih hNameOk hLookup hScopes hHead with
+                      ⟨args', hOccurrence⟩
+                    simp [hHead] at hElab
+                    rcases hElab with ⟨hFront, _hState⟩
+                    rw [← hFront]
+                    exact
+                      ⟨args',
+                        FrontendOccurrence.UserCall.arg (by simp)
+                          hOccurrence⟩
+            | cons second more =>
+                unfold EvmCompiler.Solidity.RawAst.Elab.throw at hElab
+                change (Except.error
+                  "memoryguard expects one argument" :
+                    DecodeM (Frontend.Expr × State)) =
+                  .ok (front, finalState) at hElab
+                cases hElab
+      · by_cases hClz : callee = "clz"
+        · subst callee
+          unfold Expr.elaborate at hElab
+          cases callArgs with
+          | nil =>
+              simp at hMem
+          | cons head rest =>
+              cases rest with
+              | nil =>
+                  simp at hMem
+                  subst arg
+                  simp [StateT.run_bind] at hElab
+                  cases hHead : (Expr.elaborate head).run state with
+                  | error err =>
+                      simp [hHead] at hElab
+                  | ok headResult =>
+                      rcases headResult with ⟨headFront, headState⟩
+                      rcases ih hNameOk hLookup hScopes hHead with
+                        ⟨args', hOccurrence⟩
+                      simp [hHead] at hElab
+                      cases hHelper : ensureClzHelper.run headState with
+                      | error err =>
+                          simp [hHelper] at hElab
+                      | ok helperResult =>
+                          rcases helperResult with ⟨helper, helperState⟩
+                          simp [hHelper] at hElab
+                          rcases hElab with ⟨hFront, _hState⟩
+                          rw [← hFront]
+                          exact
+                            ⟨args',
+                              FrontendOccurrence.UserCall.arg (by simp)
+                                hOccurrence⟩
+              | cons second more =>
+                  unfold EvmCompiler.Solidity.RawAst.Elab.throw at hElab
+                  change (Except.error
+                    "clz expects one argument" :
+                      DecodeM (Frontend.Expr × State)) =
+                    .ok (front, finalState) at hElab
+                  cases hElab
+        · unfold Expr.elaborate at hElab
+          simp [hMemoryguard, hClz, StateT.run_bind] at hElab
+          cases hArgs : (Expr.List.elaborate callArgs).run state with
+          | error err =>
+              simp [hArgs] at hElab
+          | ok argResult =>
+              rcases argResult with ⟨frontArgs, argState⟩
+              rcases
+                List.elaborate_member_source_user_call_occurrence
+                  (exprs := callArgs) (target := arg)
+                  (state := state) (finalState := argState)
+                  (fronts := frontArgs) (scope := scope)
+                  (outer := outer) (generated := generated)
+                  hMem
+                  (fun {state finalState front outer} hScopes hElab =>
+                    ih hNameOk hLookup hScopes hElab)
+                  hScopes hArgs with
+                ⟨generatedArgs, frontArg, hFrontArgMem, hOccurrence⟩
+              simp [hArgs] at hElab
+              cases hClass : CallClass.classifyCall callee with
+              | primitive =>
+                  simp [hClass] at hElab
+                  cases hElab
+                  exact
+                    ⟨generatedArgs,
+                      FrontendOccurrence.UserCall.arg hFrontArgMem
+                        hOccurrence⟩
+              | user =>
+                  simp [hClass] at hElab
+                  cases hResolve : (resolveFunction callee).run argState with
+                  | error err =>
+                      simp [hResolve] at hElab
+                  | ok resolveResult =>
+                      rcases resolveResult with ⟨resolved, resolvedState⟩
+                      simp [hResolve] at hElab
+                      rcases hElab with ⟨hFront, _hState⟩
+                      rw [← hFront]
+                      exact
+                        ⟨generatedArgs,
+                          FrontendOccurrence.UserCall.arg hFrontArgMem
+                            hOccurrence⟩
+              | objectBuiltin =>
+                  simp [hClass] at hElab
+                  cases hElab
+                  exact
+                    ⟨generatedArgs,
+                      FrontendOccurrence.UserCall.arg hFrontArgMem
+                        hOccurrence⟩
+              | dialectBuiltin =>
+                  simp [hClass] at hElab
+                  cases hElab
+                  exact
+                    ⟨generatedArgs,
+                      FrontendOccurrence.UserCall.arg hFrontArgMem
+                        hOccurrence⟩
+
+theorem List.elaborate_source_user_call_occurrence
+    {exprs : List Raw.Expr} {state finalState : State}
+    {fronts : List Frontend.Expr} {scope : List (Name × Name)}
+    {outer : List (List (Name × Name))}
+    {name generated : Name} {args : List Raw.Expr}
+    (hOccurs : Raw.Source.ExprCall.ListOccurs exprs name args)
+    (hNameOk : bindingNameOk? name = true)
+    (hLookup : lookupFunctionInScope name scope = some generated)
+    (hScopes : state.functionScopes = scope :: outer)
+    (hElab : (Expr.List.elaborate exprs).run state =
+      .ok (fronts, finalState)) :
+    ∃ args' front,
+      front ∈ fronts ∧
+        FrontendOccurrence.UserCall front generated args' := by
+  induction hOccurs generalizing state finalState fronts outer with
+  | @head expr rest name args hExprOccurs =>
+      unfold Expr.List.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hHead : (Expr.elaborate expr).run state with
+      | error err =>
+          simp [hHead] at hElab
+      | ok headResult =>
+          rcases headResult with ⟨headFront, headState⟩
+          rcases
+            EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_source_user_call_occurrence
+              hExprOccurs hNameOk hLookup hScopes hHead with
+            ⟨args', hOccurrence⟩
+          simp [hHead] at hElab
+          cases hTail : (Expr.List.elaborate rest).run headState with
+          | error err =>
+              simp [hTail] at hElab
+          | ok tailResult =>
+              rcases tailResult with ⟨tailFronts, tailState⟩
+              simp [hTail] at hElab
+              have hMemFront : headFront ∈ fronts := by
+                rw [← hElab.1]
+                simp
+              exact ⟨args', headFront, hMemFront, hOccurrence⟩
+  | @tail expr rest name args hTailOccurs ih =>
+      unfold Expr.List.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hHead : (Expr.elaborate expr).run state with
+      | error err =>
+          simp [hHead] at hElab
+      | ok headResult =>
+          rcases headResult with ⟨headFront, headState⟩
+          have hHeadScopes :
+              headState.functionScopes = scope :: outer := by
+            rw [Expr.elaborate_preserves_functionScopes expr hHead,
+              hScopes]
+          simp [hHead] at hElab
+          cases hTail : (Expr.List.elaborate rest).run headState with
+          | error err =>
+              simp [hTail] at hElab
+          | ok tailResult =>
+              rcases tailResult with ⟨tailFronts, tailState⟩
+              simp [hTail] at hElab
+              rcases ih hNameOk hLookup hHeadScopes hTail with
+                ⟨args', front, hMemTail, hOccurrence⟩
+              have hMemFront : front ∈ fronts := by
+                rw [← hElab.1]
+                exact List.mem_cons_of_mem _ hMemTail
+              exact ⟨args', front, hMemFront, hOccurrence⟩
 
 end Expr
 
