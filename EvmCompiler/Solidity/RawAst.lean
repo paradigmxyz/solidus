@@ -549,9 +549,46 @@ theorem mem
 
 end LocalCall
 
+namespace ExprCall
+
+/-- Source-facing occurrence of an exact raw function-call expression.
+
+This is the expression-level counterpart of `LocalCall`: it names the source
+callee spelling and argument list independently of generated frontend names. -/
+inductive Direct : Expr → Name → List Expr → Prop where
+  | here {name args} :
+      Direct (.functionCall name args) name args
+
+end ExprCall
+
 end Source
 
 end Raw
+
+namespace FrontendOccurrence
+
+/-- Occurrence of a generated frontend user call in a frontend expression. -/
+inductive UserCall : Frontend.Expr → Name → List Frontend.Expr → Prop where
+  | here {generated args} :
+      UserCall (.call .user generated args) generated args
+  | arg {kind callee args arg generated generatedArgs} :
+      arg ∈ args →
+        UserCall arg generated generatedArgs →
+          UserCall (.call kind callee args) generated generatedArgs
+
+namespace UserCall
+
+theorem headArg
+    {kind : Frontend.CallKind} {callee : Name}
+    {arg : Frontend.Expr} {args : List Frontend.Expr}
+    {generated : Name} {generatedArgs : List Frontend.Expr}
+    (hArg : UserCall arg generated generatedArgs) :
+    UserCall (.call kind callee (arg :: args)) generated generatedArgs :=
+  .arg (by simp) hArg
+
+end UserCall
+
+end FrontendOccurrence
 
 namespace CallClass
 
@@ -3037,6 +3074,44 @@ theorem elaborate_user_call_resolved
   simp [Expr.elaborate, hNotMemoryguard, hNotClz, hArgs, hClass,
     resolveFunction, hResolve]
   rfl
+
+theorem elaborate_direct_source_user_call_occurrence
+    {expr : Raw.Expr} {state finalState : State}
+    {front : Frontend.Expr} {scope : List (Name × Name)}
+    {outer : List (List (Name × Name))}
+    {name generated : Name} {args : List Raw.Expr}
+    (hCall : Raw.Source.ExprCall.Direct expr name args)
+    (hNameOk : bindingNameOk? name = true)
+    (hLookup : lookupFunctionInScope name scope = some generated)
+    (hScopes : state.functionScopes = scope :: outer)
+    (hElab : (Expr.elaborate expr).run state = .ok (front, finalState)) :
+    ∃ args',
+      FrontendOccurrence.UserCall front generated args' := by
+  cases hCall
+  have hNotMemoryguard : name ≠ "memoryguard" :=
+    bindingNameOk_ne_memoryguard hNameOk
+  have hNotClz : name ≠ "clz" :=
+    bindingNameOk_ne_clz hNameOk
+  have hClass : CallClass.classifyCall name = .user :=
+    bindingNameOk_classifyCall_user hNameOk
+  unfold Expr.elaborate at hElab
+  simp [hNotMemoryguard, hNotClz, StateT.run_bind] at hElab
+  cases hArgs : (Expr.List.elaborate args).run state with
+  | error err =>
+      simp [hArgs] at hElab
+  | ok argResult =>
+      rcases argResult with ⟨args', argState⟩
+      have hArgScopes :
+          argState.functionScopes = scope :: outer := by
+        rw [Expr.List.elaborate_preserves_functionScopes args hArgs,
+          hScopes]
+      have hResolve :
+          resolveFunctionIn name argState.functionScopes = some generated := by
+        rw [hArgScopes]
+        simp [resolveFunctionIn, hLookup]
+      simp [hArgs, hClass, resolveFunction, hResolve] at hElab
+      cases hElab
+      exact ⟨args', .here⟩
 
 end Expr
 

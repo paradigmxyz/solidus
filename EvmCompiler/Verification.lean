@@ -93,6 +93,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.ClzCallReplacement.evalHelperCallExpr_eq_clzModel
 #check EvmCompiler.Solidity.RawAst.Elab.ClzCallReplacement.evalHelperCallExpr_eq_reference
 #check EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_user_call_resolved
+#check EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_direct_source_user_call_occurrence
 #check EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_preserves_hoistedFunction_mem
 #check EvmCompiler.Solidity.RawAst.Elab.Expr.List.elaborate_preserves_hoistedFunction_mem
 #check EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_preserves_functionScopes
@@ -313,6 +314,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzCallReplacement.evalHelperCallExpr_eq_clzModel
 #print axioms EvmCompiler.Solidity.RawAst.Elab.ClzCallReplacement.evalHelperCallExpr_eq_reference
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_user_call_resolved
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_direct_source_user_call_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_preserves_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.List.elaborate_preserves_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Expr.elaborate_preserves_functionScopes

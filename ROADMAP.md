@@ -261,7 +261,12 @@ Next raw frontend layer:
   records the source occurrence, `elaborate_source_local_call_mem` carries it
   through statement-list elaboration under the active generated function scope,
   and block wrappers expose the generated frontend call occurrence plus the
-  retained generated callee entry.
+  retained generated callee entry. The expression layer now also has a
+  source/target occurrence handle: `Raw.Source.ExprCall.Direct` records an
+  exact raw function-call expression, `FrontendOccurrence.UserCall` records the
+  generated frontend `.user` call occurrence, and
+  `Expr.elaborate_direct_source_user_call_occurrence` proves successful
+  expression elaboration connects the two under the checked local scope.
   Successful `FunctionDef.elaborate` now also realizes source local-function
   declarations in the raw function body as generated hoisted callee entries in
   the final elaborator state, without exposing the block's internal scope
