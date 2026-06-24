@@ -3423,6 +3423,205 @@ def ofContext
 
 end StmtListOccurrenceRun
 
+/-- A lowered Yul statement-list body selected by the occurrence route stored
+in `AlphaRenamedLocalCallYulEvidence`.
+
+The lowerable route is the ordinary caller body. The stub route is a retained
+nested-function body whose lowered Yul function entry is emitted separately.
+Both cases carry the concrete statement-list occurrence needed by the generic
+semantic statement-list interface. -/
+inductive BodyRoute
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName) :
+    List Frontend.AstStmt → Prop where
+  | lowerable
+      {topFn : Frontend.FunctionDef}
+      {topYulBody : List Frontend.AstStmt}
+      (hTopMem : (topName, topFn) ∈ object.functions)
+      (hLowerable :
+        FrontendOccurrence.LowerableStmtListUserCall
+          topFn.body hEvidence.generated hEvidence.frontArgs)
+      (hTopYul :
+        Frontend.Stmt.List.toYul? topFn.body = some topYulBody)
+      (hOccurrence :
+        YulOccurrence.StmtListUserCall topYulBody
+          hEvidence.generated hEvidence.yulArgs)
+      (hEntry :
+        (topName,
+          EvmYul.Yul.Ast.FunctionDefinition.Def
+            topFn.params topFn.returns topYulBody) ∈
+          ordered.functionEntries) :
+      BodyRoute hEvidence topYulBody
+  | stub
+      {topFn : Frontend.FunctionDef}
+      {stubName : Frontend.Name}
+      {params returns : List Frontend.Name}
+      {body : List Frontend.Stmt}
+      {yulBody : List Frontend.AstStmt}
+      (hTopMem : (topName, topFn) ∈ object.functions)
+      (hStub :
+        FrontendOccurrence.StubBodyStmtListUserCall
+          topFn.body hEvidence.generated hEvidence.frontArgs)
+      (hYul :
+        Frontend.Stmt.List.toYul? body = some yulBody)
+      (hEntry :
+        ordered.functionEntries.contains
+          (stubName,
+            EvmYul.Yul.Ast.FunctionDefinition.Def
+              params returns yulBody) = true)
+      (hOccurrence :
+        YulOccurrence.StmtListUserCall yulBody
+          hEvidence.generated hEvidence.yulArgs) :
+      BodyRoute hEvidence yulBody
+
+namespace BodyRoute
+
+theorem exists_of_routes
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName) :
+    ∃ (yulBody : List Frontend.AstStmt),
+      BodyRoute hEvidence yulBody := by
+  rcases hEvidence.routes with hLowerable | hStub
+  · rcases hLowerable with
+      ⟨topFn, topYulBody, hTopMem, hLowerable, hTopYul,
+        hOccurrence, hEntry⟩
+    exact
+      ⟨topYulBody,
+        BodyRoute.lowerable
+          hTopMem hLowerable hTopYul hOccurrence hEntry⟩
+  · rcases hStub with
+      ⟨topFn, stubName, params, returns, body, yulBody,
+        hTopMem, hStubBody, hYul, hEntry, hOccurrence⟩
+    exact
+      ⟨yulBody,
+        BodyRoute.stub
+          hTopMem hStubBody hYul hEntry hOccurrence⟩
+
+theorem occurrence
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {yulBody : List Frontend.AstStmt}
+    (hRoute : BodyRoute hEvidence yulBody) :
+    YulOccurrence.StmtListUserCall yulBody
+      hEvidence.generated hEvidence.yulArgs := by
+  cases hRoute with
+  | lowerable _ _ _ hOccurrence _ =>
+      exact hOccurrence
+  | stub _ _ _ _ hOccurrence =>
+      exact hOccurrence
+
+end BodyRoute
+
+/-- Semantic execution package for the concrete route body selected by
+`AlphaRenamedLocalCallYulEvidence.routes`.
+
+This is the route-level bridge from frontend/Yul occurrence evidence to the
+generic statement-list run interface; later public theorems can consume this
+single package rather than reopening lowerable and retained-stub routes. -/
+structure BodyRouteRun
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    (prefixFuel : Nat)
+    (state : σ) where
+  yulBody : List Frontend.AstStmt
+  route : BodyRoute hEvidence yulBody
+  run :
+    StmtListOccurrenceRun hEvidence model prim
+      prefixFuel yulBody state
+
+namespace BodyRouteRun
+
+theorem occurrence
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {state : σ}
+    (hRun :
+      BodyRouteRun hEvidence model prim prefixFuel state) :
+    YulOccurrence.StmtListUserCall hRun.yulBody
+      hEvidence.generated hEvidence.yulArgs :=
+  hRun.run.occurrence
+
+theorem route_occurrence
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {state : σ}
+    (hRun :
+      BodyRouteRun hEvidence model prim prefixFuel state) :
+    YulOccurrence.StmtListUserCall hRun.yulBody
+      hEvidence.generated hEvidence.yulArgs :=
+  hRun.route.occurrence
+
+theorem execSeq
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {state : σ}
+    (hRun :
+      BodyRouteRun hEvidence model prim prefixFuel state) :
+    Yul.Source.Effectful.execSeq model prim
+        ((prefixFuel + 1) + hRun.run.pre.length) hRun.yulBody
+        (some ordered.program.contract) state =
+      .ok hRun.run.afterRest :=
+  hRun.run.execSeq
+
+theorem classified_split_execSeq
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {state : σ}
+    (hRun :
+      BodyRouteRun hEvidence model prim prefixFuel state) :
+    ∃ (pre : List Frontend.AstStmt)
+        (stmt : Frontend.AstStmt)
+        (rest : List Frontend.AstStmt),
+      hRun.yulBody = pre ++ stmt :: rest ∧
+        (YulOccurrence.StmtIncomingUserCall.Direct stmt
+            hEvidence.generated hEvidence.yulArgs ∨
+          YulOccurrence.StmtIncomingUserCall.OuterArg stmt
+              hEvidence.generated hEvidence.yulArgs ∨
+            YulOccurrence.StmtUserCall.Context stmt
+              hEvidence.generated hEvidence.yulArgs) ∧
+        Yul.Source.Effectful.execSeq model prim
+            ((prefixFuel + 1) + pre.length) hRun.yulBody
+            (some ordered.program.contract) state =
+          .ok hRun.run.afterRest :=
+  hRun.run.classified_split_execSeq
+
+end BodyRouteRun
+
 /-- Direct assignment statement execution for a generated alpha-renamed call
 from the bundled Yul evidence. -/
 theorem assign_succ

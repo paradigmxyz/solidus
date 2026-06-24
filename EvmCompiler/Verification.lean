@@ -416,6 +416,14 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ContextStmtListOccurrenceRun
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ContextStmtListOccurrenceRun.execSeq
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.StmtListOccurrenceRun.ofContext
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRoute
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRoute.exists_of_routes
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRoute.occurrence
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.occurrence
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.route_occurrence
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.execSeq
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.classified_split_execSeq
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.assign_succ
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.let_succ
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.exprStmt_succ
@@ -870,6 +878,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ContextStmtRun.focusedStmt
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.ContextStmtListOccurrenceRun.execSeq
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.StmtListOccurrenceRun.ofContext
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRoute.exists_of_routes
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRoute.occurrence
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.occurrence
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.route_occurrence
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.execSeq
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.classified_split_execSeq
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.assign_succ
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.let_succ
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.exprStmt_succ
