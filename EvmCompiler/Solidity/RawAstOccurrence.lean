@@ -4175,6 +4175,131 @@ theorem hoistLocalFunctions_function_mem
           · cases hHere
           · exact ih hRun hRest hLookup
 
+theorem hoistLocalFunctions_function_route_mem
+    {rawStmts : List Raw.Stmt} {scope : List (Name × Name)}
+    {state state' : Elab.State}
+    (hRun :
+      (Elab.Stmt.List.hoistLocalFunctions rawStmts scope).run state =
+        .ok ((), state'))
+    {name generated : Name} {params returns : List Name}
+    {body : List Raw.Stmt}
+    (hMem :
+      Raw.Stmt.functionDefinition name params returns body ∈ rawStmts)
+    (hLookup : Elab.lookupFunctionInScope name scope = some generated) :
+    ∃ (fn : Frontend.FunctionDef) (stateBefore stateAfter : Elab.State),
+      (Elab.FunctionDef.elaborate params returns body).run stateBefore =
+        .ok (fn, stateAfter) ∧
+        (generated, fn) ∈ state'.hoistedFunctions ∧
+          ∀ {entry : Name × Frontend.FunctionDef},
+            entry ∈ stateAfter.hoistedFunctions →
+              entry ∈ state'.hoistedFunctions := by
+  induction rawStmts generalizing state state' generated hLookup with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      unfold Elab.Stmt.List.hoistLocalFunctions at hRun
+      simp only [List.mem_cons] at hMem
+      cases head with
+      | functionDefinition headName headParams headReturns headBody =>
+          cases hHeadLookup :
+              Elab.lookupFunctionInScope headName scope with
+          | none =>
+              simp [hHeadLookup] at hRun
+              unfold Elab.throw at hRun
+              cases hRun
+          | some headGenerated =>
+              cases hFn :
+                  (Elab.FunctionDef.elaborate headParams headReturns
+                    headBody).run state with
+              | error err =>
+                  simp [hHeadLookup, hFn] at hRun
+              | ok fnResult =>
+                  rcases fnResult with ⟨headFn, stateAfterFn⟩
+                  let stateAfterStore : Elab.State :=
+                    { stateAfterFn with
+                      hoistedFunctions :=
+                        (headGenerated, headFn) ::
+                          stateAfterFn.hoistedFunctions }
+                  cases hTail :
+                      (Elab.Stmt.List.hoistLocalFunctions rest scope).run
+                        stateAfterStore with
+                  | error err =>
+                      simp [hHeadLookup, hFn, stateAfterStore, hTail]
+                        at hRun
+                  | ok tailResult =>
+                      rcases tailResult with ⟨unitTail, stateAfterTail⟩
+                      simp [hHeadLookup, hFn, stateAfterStore, hTail]
+                        at hRun
+                      rcases hRun with ⟨_hUnit, rfl⟩
+                      rcases hMem with hHere | hRest
+                      · cases hHere
+                        have hGenerated : generated = headGenerated := by
+                          cases hLookup.symm.trans hHeadLookup
+                          rfl
+                        subst generated
+                        have hStoreMem :
+                            (headGenerated, headFn) ∈
+                              stateAfterStore.hoistedFunctions := by
+                          simp [stateAfterStore]
+                        have hFinalMem :=
+                          hoistLocalFunctions_retains_hoisted hTail
+                            hStoreMem
+                        have hRetain :
+                            ∀ {entry : Name × Frontend.FunctionDef},
+                              entry ∈ stateAfterFn.hoistedFunctions →
+                                entry ∈ state'.hoistedFunctions := by
+                          intro entry hEntry
+                          have hStoreEntry :
+                              entry ∈ stateAfterStore.hoistedFunctions := by
+                            simp [stateAfterStore, hEntry]
+                          exact
+                            hoistLocalFunctions_retains_hoisted hTail
+                              hStoreEntry
+                        exact
+                          ⟨headFn, state, stateAfterFn, hFn, hFinalMem,
+                            hRetain⟩
+                      · exact ih hTail hRest hLookup
+      | block blockBody =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest hLookup
+      | variableDeclaration names value? =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest hLookup
+      | assignment names value =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest hLookup
+      | expressionStatement value =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest hLookup
+      | switch scrutinee cases defaultBody =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest hLookup
+      | forLoop pre condition post body =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest hLookup
+      | ifThen condition body =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest hLookup
+      | «break» =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest hLookup
+      | «continue» =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest hLookup
+      | «leave» =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest hLookup
+
 namespace Stmt
 
 theorem elaborate_retains_hoisted
