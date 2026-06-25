@@ -30,6 +30,30 @@ private theorem bool_eq_false_of_not_true {value : Bool}
     value = false := by
   cases value <;> simp at h ⊢
 
+private theorem clzHelper_word_beq_eq_true_iff_eq (left right : Word) :
+    (left == right) = true ↔ left = right := by
+  cases left with
+  | mk leftVal =>
+      cases right with
+      | mk rightVal =>
+          constructor
+          · intro hEq
+            have hVal : leftVal = rightVal := eq_of_beq hEq
+            cases hVal
+            rfl
+          · intro hEq
+            cases hEq
+            simp [EvmYul.instBEqUInt256, EvmYul.instBEqUInt256.beq]
+
+private theorem clzHelper_word_ne_of_beq_false (left right : Word)
+    (hEq : (left == right) = false) :
+    left ≠ right := by
+  intro hSame
+  have hTrue : (left == right) = true :=
+    (clzHelper_word_beq_eq_true_iff_eq left right).2 hSame
+  rw [hTrue] at hEq
+  contradiction
+
 private theorem ClzHelperFrame.insert_ret
     (arg ret : Name) (hArgRet : arg ≠ ret)
     (argValue retValue newRet : Word)
@@ -173,6 +197,21 @@ private theorem clzHelperAstValue_evalValues_succ
   simp [clzHelperAstValue, Yul.InteractionSemantics.evalValues,
     Yul.Source.Canonical.evalValues, Yul.Source.Effectful.evalValues,
     Yul.InteractionSemantics.stateModel, hLookup]
+
+private theorem clzHelperAstValue_eval_succ
+    (fuel : Nat) (name : Name) (value : Word)
+    (code : Option Yul.AstContract)
+    (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore)
+    (hLookup : (EvmYul.Yul.State.Ok shared vars).lookup? name =
+      some value) :
+    Yul.InteractionSemantics.eval (fuel + 1)
+        (clzHelperAstValue name) code (.Ok shared vars) =
+      pure ((.Ok shared vars : Yul.InteractionSemantics.State), value) := by
+  rw [Yul.InteractionSemantics.eval_eq_bind]
+  rw [clzHelperAstValue_evalValues_succ
+    fuel name value code shared vars hLookup]
+  rfl
 
 private theorem clzHelperEvalArgs_value_word_succ
     (fuel wordValue : Nat) (name : Name) (value : Word)
@@ -1141,6 +1180,130 @@ private theorem clzHelperAstNonzeroBody_block_exec_succ
   · exact
       ClzHelperFrame.restrict_to_scope arg ret argValue retValue
         result.snd result.fst shared vars rawVars hFrame hRawFrame
+
+private theorem clzHelperAstBody_block_exec_succ
+    (fuel : Nat) (arg ret : Name) (hArgRet : arg ≠ ret)
+    (argValue retValue : Word) (code : Option Yul.AstContract)
+    (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore)
+    (hFrame : ClzHelperFrame arg ret argValue retValue shared vars) :
+    ∃ finalArg finalVars,
+      Yul.InteractionSemantics.exec
+          (fuel + clzHelperStepSchedule.length + 50)
+          (.Block (clzHelperAstBody arg ret)) code (.Ok shared vars) =
+        pure (.Ok shared finalVars : Yul.InteractionSemantics.State) ∧
+      ClzHelperFrame arg ret finalArg (clzHelperValue argValue)
+        shared finalVars := by
+  let retInit := EvmYul.UInt256.ofNat 256
+  have hFrameAfterRet :
+      ClzHelperFrame arg ret argValue retInit
+        shared (vars.insert ret retInit) :=
+    ClzHelperFrame.insert_ret arg ret hArgRet
+      argValue retValue retInit shared vars hFrame
+  by_cases hArgZero :
+      (argValue == EvmYul.UInt256.ofNat 0) = true
+  · have hArgEq :
+        argValue = EvmYul.UInt256.ofNat 0 :=
+      (clzHelper_word_beq_eq_true_iff_eq
+        argValue (EvmYul.UInt256.ofNat 0)).1 hArgZero
+    let finalVars :=
+      EvmYul.Yul.State.restrictVarStore (vars.insert ret retInit) vars
+    refine ⟨argValue, finalVars, ?_, ?_⟩
+    · rw [show fuel + clzHelperStepSchedule.length + 50 =
+        (fuel + clzHelperStepSchedule.length + 49) + 1 by omega]
+      rw [Yul.InteractionSemantics.Exec.block_succ]
+      simp only [clzHelperAstBody, List.singleton_append]
+      rw [show fuel + clzHelperStepSchedule.length + 49 =
+        (fuel + clzHelperStepSchedule.length + 48) + 1 by omega]
+      rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
+      rw [show fuel + clzHelperStepSchedule.length + 48 =
+        (fuel + clzHelperStepSchedule.length + 46) + 2 by omega]
+      rw [clzHelperAssignRetWord_exec_succ
+        (fuel + clzHelperStepSchedule.length + 46) 256 ret code shared
+        vars retValue hFrame.2]
+      rw [open_bind_pure_left]
+      simp [EvmYul.Yul.State.insert, retInit]
+      rw [show fuel + clzHelperStepSchedule.length + 48 =
+        (fuel + clzHelperStepSchedule.length + 47) + 1 by omega]
+      rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
+      rw [show fuel + clzHelperStepSchedule.length + 47 =
+        (fuel + clzHelperStepSchedule.length + 46) + 1 by omega]
+      rw [Yul.InteractionSemantics.Exec.if_succ]
+      rw [show fuel + clzHelperStepSchedule.length + 46 =
+        (fuel + clzHelperStepSchedule.length + 45) + 1 by omega]
+      rw [clzHelperAstValue_eval_succ
+        (fuel + clzHelperStepSchedule.length + 45) arg argValue code shared
+        (vars.insert ret retInit) hFrameAfterRet.1]
+      rw [open_bind_pure_left]
+      simp [hArgEq]
+      rw [show fuel + clzHelperStepSchedule.length + 47 =
+        (fuel + clzHelperStepSchedule.length + 46) + 1 by omega]
+      rw [Yul.InteractionSemantics.ExecSeq.nil_succ]
+      rw [open_bind_pure_left]
+      simp [EvmYul.Yul.State.restrictStoreTo, EvmYul.Yul.State.store,
+        EvmYul.Yul.State.insert, finalVars, retInit]
+    · have hRestricted :
+          ClzHelperFrame arg ret argValue retInit shared finalVars :=
+        ClzHelperFrame.restrict_to_scope arg ret argValue retValue
+          argValue retInit shared vars (vars.insert ret retInit)
+          hFrame hFrameAfterRet
+      simpa [clzHelperValue, hArgZero, retInit] using hRestricted
+  · have hArgZeroFalse :
+        (argValue == EvmYul.UInt256.ofNat 0) = false :=
+      bool_eq_false_of_not_true hArgZero
+    have hArgNe :
+        argValue ≠ EvmYul.UInt256.ofNat 0 :=
+      clzHelper_word_ne_of_beq_false
+        argValue (EvmYul.UInt256.ofNat 0) hArgZeroFalse
+    rcases clzHelperAstNonzeroBody_block_exec_succ
+        (fuel + 4) arg ret hArgRet argValue retInit code shared
+        (vars.insert ret retInit) hFrameAfterRet with
+      ⟨innerVars, hInnerExec, hInnerFrame⟩
+    let result :=
+      clzHelperStepSchedule.foldl clzHelperValueStep
+        (EvmYul.UInt256.ofNat 0, argValue)
+    let finalVars := EvmYul.Yul.State.restrictVarStore innerVars vars
+    refine ⟨result.snd, finalVars, ?_, ?_⟩
+    · rw [show fuel + clzHelperStepSchedule.length + 50 =
+        (fuel + clzHelperStepSchedule.length + 49) + 1 by omega]
+      rw [Yul.InteractionSemantics.Exec.block_succ]
+      simp only [clzHelperAstBody, List.singleton_append]
+      rw [show fuel + clzHelperStepSchedule.length + 49 =
+        (fuel + clzHelperStepSchedule.length + 48) + 1 by omega]
+      rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
+      rw [show fuel + clzHelperStepSchedule.length + 48 =
+        (fuel + clzHelperStepSchedule.length + 46) + 2 by omega]
+      rw [clzHelperAssignRetWord_exec_succ
+        (fuel + clzHelperStepSchedule.length + 46) 256 ret code shared
+        vars retValue hFrame.2]
+      rw [open_bind_pure_left]
+      simp [EvmYul.Yul.State.insert, retInit]
+      rw [show fuel + clzHelperStepSchedule.length + 48 =
+        (fuel + clzHelperStepSchedule.length + 47) + 1 by omega]
+      rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
+      rw [show fuel + clzHelperStepSchedule.length + 47 =
+        (fuel + clzHelperStepSchedule.length + 46) + 1 by omega]
+      rw [Yul.InteractionSemantics.Exec.if_succ]
+      rw [show fuel + clzHelperStepSchedule.length + 46 =
+        (fuel + clzHelperStepSchedule.length + 45) + 1 by omega]
+      rw [clzHelperAstValue_eval_succ
+        (fuel + clzHelperStepSchedule.length + 45) arg argValue code shared
+        (vars.insert ret retInit) hFrameAfterRet.1]
+      rw [open_bind_pure_left]
+      simp [hArgNe]
+      rw [show fuel + clzHelperStepSchedule.length + 46 =
+        (fuel + 4) + clzHelperStepSchedule.length + 42 by omega]
+      rw [hInnerExec]
+      rw [open_bind_pure_left]
+      rw [Yul.InteractionSemantics.ExecSeq.nil_succ]
+      rw [open_bind_pure_left]
+      simp [EvmYul.Yul.State.restrictStoreTo, EvmYul.Yul.State.store,
+        finalVars]
+    · have hRestricted :
+          ClzHelperFrame arg ret result.snd result.fst shared finalVars :=
+        ClzHelperFrame.restrict_to_scope arg ret argValue retValue
+          result.snd result.fst shared vars innerVars hFrame hInnerFrame
+      simpa [clzHelperValue, hArgZeroFalse, result] using hRestricted
 
 theorem clzHelperZeroEntry_insertRet_lookupArg
     (arg ret : Name) (hArgRet : arg ≠ ret)
