@@ -46,7 +46,8 @@ Gasful EVM bridge checkpoint:
 - [x] Prove the first successful-step slice for `JUMPDEST`: actual `EVM.X`
   precheck-to-`EVM.step` recursion, open raw-bytecode execution with an empty
   transcript after gas charges, and the gas/control-erased charged-step
-  relation.
+  relation. Add the matching gasful `STOP` successful-halt slice at the same
+  checked precheck/`EVM.step` boundary.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.

@@ -581,6 +581,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.x_jumpdest_continues_after_charges
 #check EvmCompiler.Assembly.GasfulBridge.raw_jumpdest_executes_after_charges
 #check EvmCompiler.Assembly.GasfulBridge.jumpdest_chargedStepRel_after_charges
+#check EvmCompiler.Assembly.GasfulBridge.x_stop_success_after_charges
 #check EvmCompiler.Assembly.GasfulBridge.CallBoundaryAccounting
 #check EvmCompiler.Assembly.GasfulBridge.CreateBoundaryAccounting
 
@@ -1065,5 +1066,6 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_jumpdest_continues_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.raw_jumpdest_executes_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.jumpdest_chargedStepRel_after_charges
+#print axioms EvmCompiler.Assembly.GasfulBridge.x_stop_success_after_charges
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedLegacy

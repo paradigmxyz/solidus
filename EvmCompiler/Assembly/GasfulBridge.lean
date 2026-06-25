@@ -1032,6 +1032,94 @@ theorem jumpdest_chargedStepRel_after_charges
     cases state
     rfl
 
+/-- `STOP` is a successful halting frame result after the same checked gas and
+exception prefix. The theorem leaves the concrete `EVM.step` result explicit,
+so it does not unfold the imported opcode dispatcher or introduce finalization
+semantics beyond the current frame. -/
+theorem x_stop_success_after_charges
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hStop : decodedOperationAt state = EvmYul.Operation.STOP)
+    {gasfulFinal : EVMState}
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.STOP,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) = .ok gasfulFinal) :
+    EvmYul.EVM.X (fuel + 1) validJumps state =
+      .ok (.success gasfulFinal ByteArray.empty) := by
+  have hOp' :
+      ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+        (EvmYul.Operation.STOP, none)).1 =
+        EvmYul.Operation.STOP := by
+    simpa [decodedOperationAt] using hStop
+  have hMemoryGas' :
+      ¬ state.gasAvailable.toNat <
+        EvmYul.EVM.memoryExpansionCost state EvmYul.Operation.STOP := by
+    simpa [hOp'] using
+      hPrefix.static.stackLimit.memoryAccess.jumps.stack.gas.memoryGas_raw
+  have hDynamicGas' :
+      ¬ (state.gasAvailable -
+          EvmYul.UInt256.ofNat
+            (EvmYul.EVM.memoryExpansionCost state
+              EvmYul.Operation.STOP)).toNat <
+        EvmYul.EVM.C'
+          { state with
+            gasAvailable :=
+              state.gasAvailable -
+                EvmYul.UInt256.ofNat
+                  (EvmYul.EVM.memoryExpansionCost state
+                    EvmYul.Operation.STOP) }
+          EvmYul.Operation.STOP := by
+    simpa [hOp'] using
+      hPrefix.static.stackLimit.memoryAccess.jumps.stack.gas.dynamicGas_raw
+  have hOpcodeValid' :
+      EvmYul.EVM.δ EvmYul.Operation.STOP ≠ none := by
+    simpa [hOp'] using
+      hPrefix.static.stackLimit.memoryAccess.jumps.stack.opcodeValid_raw
+  have hStackEnough' :
+      ¬ state.stack.length <
+        (EvmYul.EVM.δ EvmYul.Operation.STOP).getD 0 := by
+    simpa [hOp'] using
+      hPrefix.static.stackLimit.memoryAccess.jumps.stack.stackEnough_raw
+  have hStackLimitOk' :
+      ¬ 1024 <
+        state.stack.length -
+          (EvmYul.EVM.δ EvmYul.Operation.STOP).getD 0 +
+          (EvmYul.EVM.α EvmYul.Operation.STOP).getD 0 := by
+    simpa [stackOverflowAt, decodedOperationAt, hOp'] using
+      hPrefix.static.stackLimit.stackLimitOk
+  have hStep' :
+      EvmYul.EVM.step fuel
+          (EvmYul.EVM.C'
+            { state with
+              gasAvailable :=
+                state.gasAvailable -
+                  EvmYul.UInt256.ofNat
+                    (EvmYul.EVM.memoryExpansionCost state
+                      EvmYul.Operation.STOP) }
+            EvmYul.Operation.STOP)
+          (some
+            (EvmYul.Operation.STOP,
+              ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+                (EvmYul.Operation.STOP, none)).2))
+          { state with
+            gasAvailable :=
+              state.gasAvailable -
+                EvmYul.UInt256.ofNat
+                  (EvmYul.EVM.memoryExpansionCost state
+                    EvmYul.Operation.STOP) } =
+        .ok gasfulFinal := by
+    simpa [dynamicGasCostAt, afterMemoryChargeAt, memoryExpansionCostAt,
+      decodedOperationAt, hOp', chargeGas] using hStep
+  simp [EvmYul.EVM.X, hOp', hMemoryGas', hDynamicGas',
+    hOpcodeValid', hStackEnough', hStackLimitOk',
+    hStep', EvmYul.Operation.isCreate,
+    afterMemoryChargeAt, dynamicGasCostAt,
+    memoryExpansionCostAt, decodedOperationAt, chargeGas]
+
 def callTargetAddress (operands : CallOperands) : EvmYul.AccountAddress :=
   EvmYul.AccountAddress.ofUInt256 operands.address
 
