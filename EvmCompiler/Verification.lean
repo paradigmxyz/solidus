@@ -118,6 +118,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectRunEquivalent.preserved
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectPositiveRunEquivalent.preserved
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.CodePositiveRunEquivalent.preserved
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.CodePositivePreserved.of_scope_dispatcher_seq
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.CodePositivePreserved.toObjectPositive
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.nonempty_of_compile

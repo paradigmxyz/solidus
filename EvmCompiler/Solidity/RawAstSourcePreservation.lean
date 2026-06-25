@@ -280,6 +280,24 @@ end CodePositiveRunEquivalent
 
 namespace CodePositivePreserved
 
+theorem of_scope_dispatcher_seq
+    {context : Frontend.ObjectBuiltinContext}
+    {scope : Raw.SourceSemantics.FunctionScope}
+    {code : List Raw.Stmt} {ordered : Yul.OrderedProgram}
+    (hScope : Raw.SourceSemantics.functionScope? code = some scope)
+    (hSeq :
+      ∀ (rawFuel : Nat) (state : State),
+        ∃ orderedFuel,
+          DispatcherSeqRunForward rawFuel orderedFuel
+            context scope code ordered state) :
+    CodePositivePreserved context code ordered where
+  forward := by
+    intro rawFuel state
+    rcases hSeq rawFuel state with ⟨orderedFuel, hForward⟩
+    exact
+      ⟨orderedFuel,
+        blockRunForward_of_scope_seq hScope hForward⟩
+
 theorem toObjectPositive
     {context : Frontend.ObjectBuiltinContext}
     {object : Raw.Object} {ordered : Yul.OrderedProgram}
