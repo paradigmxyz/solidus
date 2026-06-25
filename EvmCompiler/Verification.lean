@@ -91,6 +91,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtElaborationOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListElaborationOccurrence
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtElaborationRoute
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationRoute
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListElaborationRoute
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Expr.List.elaborate_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.assignment_elaborate_value_exists
@@ -110,6 +113,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtUserCall.elaborate
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.elaborate
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListUserCall.elaborate
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtElaborationOccurrence.route
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationOccurrence.route
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListElaborationOccurrence.route
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtUserCall.elaborate_route
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.elaborate_route
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListUserCall.elaborate_route
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzExpansionOk
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_hoistedFunctionsRetained
@@ -266,6 +275,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtUserCall.elaborate
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.elaborate
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListUserCall.elaborate
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtElaborationOccurrence.route
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationOccurrence.route
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListElaborationOccurrence.route
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtUserCall.elaborate_route
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.elaborate_route
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListUserCall.elaborate_route
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzExpansionOk
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_hoistedFunctionsRetained

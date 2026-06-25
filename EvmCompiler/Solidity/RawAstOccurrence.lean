@@ -193,6 +193,164 @@ mutual
           CaseListElaborationOccurrence functionName args (head :: rest)
 end
 
+mutual
+  inductive StmtElaborationRoute (functionName : Name)
+      (args : List Frontend.Expr) : Frontend.Stmt → Prop where
+    | current {stmt : Frontend.Stmt} :
+        FrontendOccurrence.StmtUserCall functionName args stmt →
+          StmtElaborationRoute functionName args stmt
+    | functionBody
+        {stmt : Frontend.Stmt}
+        {body : List Frontend.Stmt} :
+        FrontendOccurrence.StmtListUserCall functionName args body →
+          StmtElaborationRoute functionName args stmt
+
+  inductive StmtListElaborationRoute (functionName : Name)
+      (args : List Frontend.Expr) : List Frontend.Stmt → Prop where
+    | current {stmts : List Frontend.Stmt} :
+        FrontendOccurrence.StmtListUserCall functionName args stmts →
+          StmtListElaborationRoute functionName args stmts
+    | functionBody
+        {stmts : List Frontend.Stmt}
+        {body : List Frontend.Stmt} :
+        FrontendOccurrence.StmtListUserCall functionName args body →
+          StmtListElaborationRoute functionName args stmts
+
+  inductive CaseListElaborationRoute (functionName : Name)
+      (args : List Frontend.Expr) :
+      List (Frontend.SwitchCaseValue × List Frontend.Stmt) → Prop where
+    | current {cases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)} :
+        FrontendOccurrence.CaseListUserCall functionName args cases →
+          CaseListElaborationRoute functionName args cases
+    | functionBody
+        {cases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+        {body : List Frontend.Stmt} :
+        FrontendOccurrence.StmtListUserCall functionName args body →
+          CaseListElaborationRoute functionName args cases
+end
+
+mutual
+  theorem StmtElaborationOccurrence.route
+      {functionName : Name} {args : List Frontend.Expr}
+      {stmt : Frontend.Stmt}
+      (hOccurrence :
+        StmtElaborationOccurrence functionName args stmt) :
+      StmtElaborationRoute functionName args stmt := by
+    cases hOccurrence with
+    | executable hStmt =>
+        exact StmtElaborationRoute.current hStmt
+    | block hBody =>
+        cases StmtListElaborationOccurrence.route hBody with
+        | current hCurrent =>
+            exact
+              StmtElaborationRoute.current
+                (FrontendOccurrence.StmtUserCall.block hCurrent)
+        | functionBody hFunctionBody =>
+            exact StmtElaborationRoute.functionBody hFunctionBody
+    | functionBody hBody =>
+        cases StmtListElaborationOccurrence.route hBody with
+        | current hCurrent =>
+            exact StmtElaborationRoute.functionBody hCurrent
+        | functionBody hFunctionBody =>
+            exact StmtElaborationRoute.functionBody hFunctionBody
+    | switchCase hCases =>
+        cases CaseListElaborationOccurrence.route hCases with
+        | current hCurrent =>
+            exact
+              StmtElaborationRoute.current
+                (FrontendOccurrence.StmtUserCall.switchCase hCurrent)
+        | functionBody hFunctionBody =>
+            exact StmtElaborationRoute.functionBody hFunctionBody
+    | switchDefault hDefault =>
+        cases StmtListElaborationOccurrence.route hDefault with
+        | current hCurrent =>
+            exact
+              StmtElaborationRoute.current
+                (FrontendOccurrence.StmtUserCall.switchDefault hCurrent)
+        | functionBody hFunctionBody =>
+            exact StmtElaborationRoute.functionBody hFunctionBody
+    | forPre hPre =>
+        cases StmtListElaborationOccurrence.route hPre with
+        | current hCurrent =>
+            exact
+              StmtElaborationRoute.current
+                (FrontendOccurrence.StmtUserCall.forPre hCurrent)
+        | functionBody hFunctionBody =>
+            exact StmtElaborationRoute.functionBody hFunctionBody
+    | forPost hPost =>
+        cases StmtListElaborationOccurrence.route hPost with
+        | current hCurrent =>
+            exact
+              StmtElaborationRoute.current
+                (FrontendOccurrence.StmtUserCall.forPost hCurrent)
+        | functionBody hFunctionBody =>
+            exact StmtElaborationRoute.functionBody hFunctionBody
+    | forBody hBody =>
+        cases StmtListElaborationOccurrence.route hBody with
+        | current hCurrent =>
+            exact
+              StmtElaborationRoute.current
+                (FrontendOccurrence.StmtUserCall.forBody hCurrent)
+        | functionBody hFunctionBody =>
+            exact StmtElaborationRoute.functionBody hFunctionBody
+    | ifBody hBody =>
+        cases StmtListElaborationOccurrence.route hBody with
+        | current hCurrent =>
+            exact
+              StmtElaborationRoute.current
+                (FrontendOccurrence.StmtUserCall.ifBody hCurrent)
+        | functionBody hFunctionBody =>
+            exact StmtElaborationRoute.functionBody hFunctionBody
+
+  theorem StmtListElaborationOccurrence.route
+      {functionName : Name} {args : List Frontend.Expr}
+      {stmts : List Frontend.Stmt}
+      (hOccurrence :
+        StmtListElaborationOccurrence functionName args stmts) :
+      StmtListElaborationRoute functionName args stmts := by
+    cases hOccurrence with
+    | head hStmt =>
+        cases StmtElaborationOccurrence.route hStmt with
+        | current hCurrent =>
+            exact
+              StmtListElaborationRoute.current
+                (FrontendOccurrence.StmtListUserCall.head hCurrent)
+        | functionBody hFunctionBody =>
+            exact StmtListElaborationRoute.functionBody hFunctionBody
+    | tail hTail =>
+        cases StmtListElaborationOccurrence.route hTail with
+        | current hCurrent =>
+            exact
+              StmtListElaborationRoute.current
+                (FrontendOccurrence.StmtListUserCall.tail hCurrent)
+        | functionBody hFunctionBody =>
+            exact StmtListElaborationRoute.functionBody hFunctionBody
+
+  theorem CaseListElaborationOccurrence.route
+      {functionName : Name} {args : List Frontend.Expr}
+      {cases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+      (hOccurrence :
+        CaseListElaborationOccurrence functionName args cases) :
+      CaseListElaborationRoute functionName args cases := by
+    cases hOccurrence with
+    | head hBody =>
+        cases StmtListElaborationOccurrence.route hBody with
+        | current hCurrent =>
+            exact
+              CaseListElaborationRoute.current
+                (FrontendOccurrence.CaseListUserCall.head hCurrent)
+        | functionBody hFunctionBody =>
+            exact CaseListElaborationRoute.functionBody hFunctionBody
+    | tail hTail =>
+        cases CaseListElaborationOccurrence.route hTail with
+        | current hCurrent =>
+            exact
+              CaseListElaborationRoute.current
+                (FrontendOccurrence.CaseListUserCall.tail hCurrent)
+        | functionBody hFunctionBody =>
+            exact CaseListElaborationRoute.functionBody hFunctionBody
+end
+
 namespace StmtListUserCall
 
 theorem exists_split_stmt
@@ -1533,6 +1691,79 @@ mutual
                         CaseListElaborationOccurrence.tail
                           hFrontendTail⟩
 end
+
+namespace StmtUserCall
+
+theorem elaborate_route
+    {functionName : Name} {rawArgs : List Raw.Expr}
+    {rawStmt : Raw.Stmt} {frontendStmt : Frontend.Stmt}
+    {state state' : Elab.State}
+    (hOccurrence : StmtUserCall functionName rawArgs rawStmt)
+    (hNotMemoryguard : functionName ≠ "memoryguard")
+    (hNotClz : functionName ≠ "clz")
+    (hKind : CallClass.classifyCall functionName = .user)
+    (hElab :
+      (Elab.Stmt.elaborate rawStmt).run state =
+        .ok (frontendStmt, state')) :
+    ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+      StmtElaborationRoute generated frontendArgs frontendStmt := by
+  rcases StmtUserCall.elaborate hOccurrence hNotMemoryguard hNotClz
+      hKind hElab with
+    ⟨generated, frontendArgs, hFrontend⟩
+  exact
+    ⟨generated, frontendArgs,
+      StmtElaborationOccurrence.route hFrontend⟩
+
+end StmtUserCall
+
+namespace StmtListUserCall
+
+theorem elaborate_route
+    {functionName : Name} {rawArgs : List Raw.Expr}
+    {rawStmts : List Raw.Stmt} {frontendStmts : List Frontend.Stmt}
+    {state state' : Elab.State}
+    (hOccurrence : StmtListUserCall functionName rawArgs rawStmts)
+    (hNotMemoryguard : functionName ≠ "memoryguard")
+    (hNotClz : functionName ≠ "clz")
+    (hKind : CallClass.classifyCall functionName = .user)
+    (hElab :
+      (Elab.Stmt.List.elaborate rawStmts).run state =
+        .ok (frontendStmts, state')) :
+    ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+      StmtListElaborationRoute generated frontendArgs frontendStmts := by
+  rcases StmtListUserCall.elaborate hOccurrence hNotMemoryguard hNotClz
+      hKind hElab with
+    ⟨generated, frontendArgs, hFrontend⟩
+  exact
+    ⟨generated, frontendArgs,
+      StmtListElaborationOccurrence.route hFrontend⟩
+
+end StmtListUserCall
+
+namespace CaseListUserCall
+
+theorem elaborate_route
+    {functionName : Name} {rawArgs : List Raw.Expr}
+    {rawCases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+    {frontendCases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+    {state state' : Elab.State}
+    (hOccurrence : CaseListUserCall functionName rawArgs rawCases)
+    (hNotMemoryguard : functionName ≠ "memoryguard")
+    (hNotClz : functionName ≠ "clz")
+    (hKind : CallClass.classifyCall functionName = .user)
+    (hElab :
+      (Elab.Stmt.CaseList.elaborate rawCases).run state =
+        .ok (frontendCases, state')) :
+    ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+      CaseListElaborationRoute generated frontendArgs frontendCases := by
+  rcases CaseListUserCall.elaborate hOccurrence hNotMemoryguard hNotClz
+      hKind hElab with
+    ⟨generated, frontendArgs, hFrontend⟩
+  exact
+    ⟨generated, frontendArgs,
+      CaseListElaborationOccurrence.route hFrontend⟩
+
+end CaseListUserCall
 
 end RawOccurrence
 end RawAst
