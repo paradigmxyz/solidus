@@ -159,6 +159,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.CompiledFunctionScope
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.CompiledFunctionScopes.resolve
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.CompiledFunctionBinding.block_parts
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectBuiltinContextsAgree
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectBuiltinContextsAgree.withMemoryContract
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectBuiltinContextsAgree.findImmutableReferences?_eq
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.CompiledContext
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ExprElaborationRunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ScopedExprElaborationRunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ScopedBlockElaborationRunForward
@@ -1056,6 +1060,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprRunForward_of_values
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.CompiledFunctionScopes.resolve
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.CompiledFunctionBinding.block_parts
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectBuiltinContextsAgree.withMemoryContract
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectBuiltinContextsAgree.size?_eq
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectBuiltinContextsAgree.offset?_eq
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectBuiltinContextsAgree.findLinkerSymbol?_eq
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectBuiltinContextsAgree.findImmutableValue?_eq
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectBuiltinContextsAgree.findImmutableReferences?_eq
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.argsRunForward_cons
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.argsRunForward_cons_one
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ExprListCompiled.of_elaboration

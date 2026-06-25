@@ -1128,6 +1128,79 @@ theorem resolve
 
 end CompiledFunctionScopes
 
+/-- Raw object-builtin execution and frontend normalization share every
+metadata field. The frontend may replace only `memoryContract`, which raw
+source execution never inspects. -/
+def ObjectBuiltinContextsAgree
+    (source target : Frontend.ObjectBuiltinContext) : Prop :=
+  { source with memoryContract := target.memoryContract } = target
+
+namespace ObjectBuiltinContextsAgree
+
+theorem withMemoryContract
+    (source : Frontend.ObjectBuiltinContext)
+    (memoryContract : MemoryContract.Contract) :
+    ObjectBuiltinContextsAgree source
+      { source with memoryContract := memoryContract } := by
+  rfl
+
+theorem size?_eq
+    {source target : Frontend.ObjectBuiltinContext}
+    (hAgree : ObjectBuiltinContextsAgree source target)
+    (name : Name) :
+    source.size? name = target.size? name := by
+  unfold ObjectBuiltinContextsAgree at hAgree
+  rw [← hAgree]
+
+theorem offset?_eq
+    {source target : Frontend.ObjectBuiltinContext}
+    (hAgree : ObjectBuiltinContextsAgree source target)
+    (name : Name) :
+    source.offset? name = target.offset? name := by
+  unfold ObjectBuiltinContextsAgree at hAgree
+  rw [← hAgree]
+
+theorem findLinkerSymbol?_eq
+    {source target : Frontend.ObjectBuiltinContext}
+    (hAgree : ObjectBuiltinContextsAgree source target)
+    (name : Name) :
+    source.findLinkerSymbol? name = target.findLinkerSymbol? name := by
+  unfold ObjectBuiltinContextsAgree at hAgree
+  rw [← hAgree]
+
+theorem findImmutableValue?_eq
+    {source target : Frontend.ObjectBuiltinContext}
+    (hAgree : ObjectBuiltinContextsAgree source target)
+    (name : Name) :
+    source.findImmutableValue? name = target.findImmutableValue? name := by
+  unfold ObjectBuiltinContextsAgree at hAgree
+  rw [← hAgree]
+
+theorem findImmutableReferences?_eq
+    {source target : Frontend.ObjectBuiltinContext}
+    (hAgree : ObjectBuiltinContextsAgree source target)
+    (name : Name) :
+    source.findImmutableReferences? name =
+      target.findImmutableReferences? name := by
+  unfold ObjectBuiltinContextsAgree at hAgree
+  rw [← hAgree]
+
+end ObjectBuiltinContextsAgree
+
+/-- All frontend context needed to simulate one raw expression or block. The
+object metadata is shared exactly, while lexical function names are related to
+their generated frontend names by checked elaboration evidence. -/
+structure CompiledContext
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract)
+    (rawContext : Raw.SourceSemantics.Context)
+    (generatedScopes : List (List (Name × Name))) : Prop where
+  objectBuiltins :
+    ObjectBuiltinContextsAgree rawContext.objectBuiltins builtinContext
+  functionScopes :
+    CompiledFunctionScopes builtinContext contract
+      rawContext.functionScopes generatedScopes
+
 namespace CompiledFunctionBinding
 
 /-- Peel the checked function elaboration down to the lexical block run used
@@ -1438,8 +1511,8 @@ def ScopedExprElaborationRunForward
     {rawExpr : Raw.Expr} {front : Frontend.Expr}
     {ordered : Frontend.AstExpr}
     {elabState finalElabState : Elab.State} {state : State},
-    CompiledFunctionScopes builtinContext contract
-        rawContext.functionScopes elabState.functionScopes →
+    CompiledContext builtinContext contract
+        rawContext elabState.functionScopes →
       (Elab.Expr.elaborate rawExpr).run elabState =
           .ok (front, finalElabState) →
         ExprNormalized builtinContext front ordered →
@@ -1459,8 +1532,8 @@ def ScopedBlockElaborationRunForward
     {rawCode : List Raw.Stmt} {front : List Frontend.Stmt}
     {ordered : List Frontend.AstStmt}
     {elabState finalElabState : Elab.State} {state : State},
-    CompiledFunctionScopes builtinContext contract
-        rawContext.functionScopes elabState.functionScopes →
+    CompiledContext builtinContext contract
+        rawContext elabState.functionScopes →
       (Elab.Stmt.List.elaborateBlock rawCode true).run elabState =
           .ok (front, finalElabState) →
         StmtListNormalized builtinContext front ordered →
@@ -1723,8 +1796,7 @@ theorem argsRunForward_of_scoped_compiled
     ∀ {rawContext : Raw.SourceSemantics.Context}
       {generatedScopes : List (List (Name × Name))}
       {rawExprs : List Raw.Expr} {ordered : List Frontend.AstExpr},
-      CompiledFunctionScopes builtinContext contract
-          rawContext.functionScopes generatedScopes →
+      CompiledContext builtinContext contract rawContext generatedScopes →
         ScopedExprListCompiled builtinContext generatedScopes
           rawExprs ordered →
           ∀ (rawBase : Nat) (state : State),
@@ -1732,7 +1804,7 @@ theorem argsRunForward_of_scoped_compiled
               (rawBase + 2 * rawExprs.length + 1)
               ((rawBase + slack) + 2 * rawExprs.length + 1)
               rawContext rawExprs ordered contract state := by
-  intro rawContext generatedScopes rawExprs ordered hFunctionScopes hCompiled
+  intro rawContext generatedScopes rawExprs ordered hContext hCompiled
   induction hCompiled with
   | nil =>
       intro rawBase state
@@ -1745,12 +1817,14 @@ theorem argsRunForward_of_scoped_compiled
       intro rawBase state
       let rawTailFuel := rawBase + 2 * rawTail.length + 1
       let orderedTailFuel := rawTailFuel + slack
-      have hHeadFunctionScopes :
-          CompiledFunctionScopes builtinContext contract
-            rawContext.functionScopes elabState.functionScopes := by
-        simpa [hScopes] using hFunctionScopes
+      have hHeadContext :
+          CompiledContext builtinContext contract rawContext
+            elabState.functionScopes :=
+        { objectBuiltins := hContext.objectBuiltins
+          functionScopes := by
+            simpa [hScopes] using hContext.functionScopes }
       have hHeadValues :=
-        hExpr (rawTailFuel + 1) hHeadFunctionScopes
+        hExpr (rawTailFuel + 1) hHeadContext
           (state := state) hElab hNormalized
       have hHeadRun := exprRunForward_of_values hHeadValues
       have hHeadRun' :
@@ -1783,9 +1857,9 @@ theorem argsRunForward_reverse_of_scoped_elaboration
     {rawExprs : List Raw.Expr} {fronts : List Frontend.Expr}
     {ordered : List Frontend.AstExpr}
     {elabState finalElabState : Elab.State}
-    (hFunctionScopes :
-      CompiledFunctionScopes builtinContext contract
-        rawContext.functionScopes elabState.functionScopes)
+    (hContext :
+      CompiledContext builtinContext contract
+        rawContext elabState.functionScopes)
     (hElab :
       (Elab.Expr.List.elaborate rawExprs).run elabState =
         .ok (fronts, finalElabState))
@@ -1799,7 +1873,7 @@ theorem argsRunForward_reverse_of_scoped_elaboration
     ScopedExprListCompiled.of_elaboration hElab hNormalized
   have hReversed := ScopedExprListCompiled.reverse hCompiled
   simpa using
-    argsRunForward_of_scoped_compiled hExpr hFunctionScopes hReversed
+    argsRunForward_of_scoped_compiled hExpr hContext hReversed
       rawBase state
 
 /-- Argument-list preservation at every source fuel. The two-step source
@@ -1815,9 +1889,8 @@ theorem argsRunForward_of_scoped_compiled_fuel
     {rawContext : Raw.SourceSemantics.Context}
     {generatedScopes : List (List (Name × Name))}
     {rawExprs : List Raw.Expr} {ordered : List Frontend.AstExpr}
-    (hFunctionScopes :
-      CompiledFunctionScopes builtinContext contract
-        rawContext.functionScopes generatedScopes)
+    (hContext :
+      CompiledContext builtinContext contract rawContext generatedScopes)
     (hCompiled :
       ScopedExprListCompiled builtinContext generatedScopes
         rawExprs ordered) :
@@ -1862,13 +1935,14 @@ theorem argsRunForward_of_scoped_compiled_fuel
                       (state := state))
               | @cons rawHead orderedHead rawTail orderedTail frontHead
                   elabState finalElabState hElab hScopes hNormalized hTail =>
-                  have hHeadFunctionScopes :
-                      CompiledFunctionScopes builtinContext contract
-                        rawContext.functionScopes
-                        elabState.functionScopes := by
-                    simpa [hScopes] using hFunctionScopes
+                  have hHeadContext :
+                      CompiledContext builtinContext contract rawContext
+                        elabState.functionScopes :=
+                    { objectBuiltins := hContext.objectBuiltins
+                      functionScopes := by
+                        simpa [hScopes] using hContext.functionScopes }
                   have hHeadValues :=
-                    hExpr (residual + 1) hHeadFunctionScopes
+                    hExpr (residual + 1) hHeadContext
                       (state := state) hElab hNormalized
                   have hHead := exprRunForward_of_values hHeadValues
                   have hTailRun :
@@ -1903,9 +1977,9 @@ theorem argsRunForward_reverse_of_scoped_elaboration_fuel
     {rawExprs : List Raw.Expr} {fronts : List Frontend.Expr}
     {ordered : List Frontend.AstExpr}
     {elabState finalElabState : Elab.State}
-    (hFunctionScopes :
-      CompiledFunctionScopes builtinContext contract
-        rawContext.functionScopes elabState.functionScopes)
+    (hContext :
+      CompiledContext builtinContext contract
+        rawContext elabState.functionScopes)
     (hElab :
       (Elab.Expr.List.elaborate rawExprs).run elabState =
         .ok (fronts, finalElabState))
@@ -1918,7 +1992,7 @@ theorem argsRunForward_reverse_of_scoped_elaboration_fuel
   have hReversed := ScopedExprListCompiled.reverse hCompiled
   exact
     argsRunForward_of_scoped_compiled_fuel
-      hExpr hFunctionScopes hReversed rawFuel state
+      hExpr hContext hReversed rawFuel state
 
 theorem argsRunForward_of_compiled
     {slack : Nat}
@@ -2146,9 +2220,9 @@ theorem exprValuesRunForward_of_scoped_elaborated_primitiveCall
     {contract : Frontend.AstContract} {state : State}
     (hExpr :
       ScopedExprElaborationRunForward slack builtinContext contract)
-    (hFunctionScopes :
-      CompiledFunctionScopes builtinContext contract
-        rawContext.functionScopes elabState.functionScopes)
+    (hContext :
+      CompiledContext builtinContext contract
+        rawContext elabState.functionScopes)
     (hNotMemoryguard : name ≠ "memoryguard")
     (hNotClz : name ≠ "clz")
     (hClass : CallClass.classifyCall name = .primitive)
@@ -2179,7 +2253,7 @@ theorem exprValuesRunForward_of_scoped_elaborated_primitiveCall
         ⟨op, orderedArgs, hOp, rfl, ⟨hArgsNormalized⟩⟩
       have hArgsRun :=
         argsRunForward_reverse_of_scoped_elaboration_fuel
-          hExpr hFunctionScopes hArgs hArgsNormalized
+          hExpr hContext hArgs hArgsNormalized
           (rawFuel := argsFuel) state
       have hCall :=
         exprValuesRunForward_primitiveCall_of_runs
@@ -2316,9 +2390,9 @@ theorem exprValuesRunForward_of_scoped_elaborated_userCall
       ScopedExprElaborationRunForward slack builtinContext contract)
     (hBlock :
       ScopedBlockElaborationRunForward slack builtinContext contract)
-    (hFunctionScopes :
-      CompiledFunctionScopes builtinContext contract
-        rawContext.functionScopes elabState.functionScopes)
+    (hContext :
+      CompiledContext builtinContext contract
+        rawContext elabState.functionScopes)
     (hNotMemoryguard : name ≠ "memoryguard")
     (hNotClz : name ≠ "clz")
     (hClass : CallClass.classifyCall name = .user)
@@ -2339,10 +2413,12 @@ theorem exprValuesRunForward_of_scoped_elaborated_userCall
       have hArgsScopes :
           argsState.functionScopes = elabState.functionScopes :=
         Elab.Expr.List.elaborate_preserves_functionScopes rawArgs hArgs
-      have hArgsFunctionScopes :
-          CompiledFunctionScopes builtinContext contract
-            rawContext.functionScopes argsState.functionScopes := by
-        simpa [hArgsScopes] using hFunctionScopes
+      have hArgsContext :
+          CompiledContext builtinContext contract rawContext
+            argsState.functionScopes :=
+        { objectBuiltins := hContext.objectBuiltins
+          functionScopes := by
+            simpa [hArgsScopes] using hContext.functionScopes }
       simp [hArgs, hClass] at hElab
       cases hResolve :
           Elab.resolveFunctionIn name argsState.functionScopes with
@@ -2360,20 +2436,24 @@ theorem exprValuesRunForward_of_scoped_elaborated_userCall
           rcases ExprNormalized.user_call_parts hNormalized with
             ⟨orderedArgs, rfl, ⟨hArgsNormalized⟩⟩
           rcases CompiledFunctionScopes.resolve
-              hArgsFunctionScopes hResolve with
+              hArgsContext.functionScopes hResolve with
             ⟨rawFn, rawLexical, generatedLexical,
               hRawResolve, ⟨hBinding⟩, hLexicalScopes⟩
           rcases CompiledFunctionBinding.block_parts hBinding with
             ⟨bodyElabState, finalBodyElabState, frontBody, orderedBody,
               hBodyScopes, hBodyElab, ⟨hBodyNormalized⟩,
               hOrderedLookup⟩
-          have hBodyFunctionScopes :
-              CompiledFunctionScopes builtinContext contract
-                rawLexical bodyElabState.functionScopes := by
-            simpa [hBodyScopes] using hLexicalScopes
+          have hBodyContext :
+              CompiledContext builtinContext contract
+                { rawContext with functionScopes := rawLexical }
+                bodyElabState.functionScopes :=
+            { objectBuiltins := by
+                simpa using hContext.objectBuiltins
+              functionScopes := by
+                simpa [hBodyScopes] using hLexicalScopes }
           have hArgsRun :=
             argsRunForward_reverse_of_scoped_elaboration_fuel
-              hExpr hFunctionScopes hArgs hArgsNormalized
+              hExpr hContext hArgs hArgsNormalized
               (rawFuel := callFuel + 1) state
           have hRawLookup :
               Raw.SourceSemantics.lookupFunctionWithLexicalScopes
@@ -2399,7 +2479,7 @@ theorem exprValuesRunForward_of_scoped_elaborated_userCall
                   hBlock callFuel
                     (rawContext :=
                       { rawContext with functionScopes := rawLexical })
-                    hBodyFunctionScopes
+                    hBodyContext
                     (state :=
                       Yul.InteractionSemantics.stateModel.withSource
                         stateAfterArgs
@@ -2759,7 +2839,8 @@ theorem exprValuesRunForward_of_scoped_elaborated_datasize
     {elabState finalElabState : Elab.State}
     {front : Frontend.Expr} {ordered : Frontend.AstExpr}
     {contract : Frontend.AstContract} {state : State}
-    (hBuiltins : rawContext.objectBuiltins = builtinContext)
+    (hBuiltins :
+      ObjectBuiltinContextsAgree rawContext.objectBuiltins builtinContext)
     (hElab :
       (Elab.Expr.elaborate (.functionCall "datasize" rawArgs)).run
         elabState = .ok (front, finalElabState))
@@ -2779,7 +2860,9 @@ theorem exprValuesRunForward_of_scoped_elaborated_datasize
   simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
     (exprValuesRunForward_datasize_succ
       (rawFuel := rawFuel) (orderedFuel := rawFuel + slack + 1)
-      hRawName (by simpa [hBuiltins] using hSize))
+      hRawName (by
+        rw [ObjectBuiltinContextsAgree.size?_eq hBuiltins]
+        exact hSize))
 
 theorem exprValuesRunForward_dataoffset_succ
     {rawFuel orderedFuel : Nat}
@@ -2815,7 +2898,8 @@ theorem exprValuesRunForward_of_scoped_elaborated_dataoffset
     {elabState finalElabState : Elab.State}
     {front : Frontend.Expr} {ordered : Frontend.AstExpr}
     {contract : Frontend.AstContract} {state : State}
-    (hBuiltins : rawContext.objectBuiltins = builtinContext)
+    (hBuiltins :
+      ObjectBuiltinContextsAgree rawContext.objectBuiltins builtinContext)
     (hElab :
       (Elab.Expr.elaborate (.functionCall "dataoffset" rawArgs)).run
         elabState = .ok (front, finalElabState))
@@ -2835,7 +2919,9 @@ theorem exprValuesRunForward_of_scoped_elaborated_dataoffset
   simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
     (exprValuesRunForward_dataoffset_succ
       (rawFuel := rawFuel) (orderedFuel := rawFuel + slack + 1)
-      hRawName (by simpa [hBuiltins] using hOffset))
+      hRawName (by
+        rw [ObjectBuiltinContextsAgree.offset?_eq hBuiltins]
+        exact hOffset))
 
 theorem exprValuesRunForward_linkersymbol_succ
     {rawFuel orderedFuel : Nat}
@@ -2872,7 +2958,8 @@ theorem exprValuesRunForward_of_scoped_elaborated_linkersymbol
     {elabState finalElabState : Elab.State}
     {front : Frontend.Expr} {ordered : Frontend.AstExpr}
     {contract : Frontend.AstContract} {state : State}
-    (hBuiltins : rawContext.objectBuiltins = builtinContext)
+    (hBuiltins :
+      ObjectBuiltinContextsAgree rawContext.objectBuiltins builtinContext)
     (hElab :
       (Elab.Expr.elaborate (.functionCall "linkersymbol" rawArgs)).run
         elabState = .ok (front, finalElabState))
@@ -2892,7 +2979,9 @@ theorem exprValuesRunForward_of_scoped_elaborated_linkersymbol
   simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
     (exprValuesRunForward_linkersymbol_succ
       (rawFuel := rawFuel) (orderedFuel := rawFuel + slack + 1)
-      hRawName (by simpa [hBuiltins] using hValue))
+      hRawName (by
+        rw [ObjectBuiltinContextsAgree.findLinkerSymbol?_eq hBuiltins]
+        exact hValue))
 
 theorem exprValuesRunForward_loadimmutable_succ
     {rawFuel orderedFuel : Nat}
@@ -2930,7 +3019,8 @@ theorem exprValuesRunForward_of_scoped_elaborated_loadimmutable
     {elabState finalElabState : Elab.State}
     {front : Frontend.Expr} {ordered : Frontend.AstExpr}
     {contract : Frontend.AstContract} {state : State}
-    (hBuiltins : rawContext.objectBuiltins = builtinContext)
+    (hBuiltins :
+      ObjectBuiltinContextsAgree rawContext.objectBuiltins builtinContext)
     (hElab :
       (Elab.Expr.elaborate (.functionCall "loadimmutable" rawArgs)).run
         elabState = .ok (front, finalElabState))
@@ -2950,7 +3040,9 @@ theorem exprValuesRunForward_of_scoped_elaborated_loadimmutable
   simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
     (exprValuesRunForward_loadimmutable_succ
       (rawFuel := rawFuel) (orderedFuel := rawFuel + slack + 1)
-      hRawName (by simpa [hBuiltins] using hValue))
+      hRawName (by
+        rw [ObjectBuiltinContextsAgree.findImmutableValue?_eq hBuiltins]
+        exact hValue))
 
 theorem exprValuesRunForward_datacopy_succ
     {rawFuel orderedFuel : Nat}
@@ -3004,9 +3096,9 @@ theorem exprValuesRunForward_of_scoped_elaborated_datacopy
     (hExpr :
       ScopedExprElaborationRunForward (slack + 1)
         builtinContext contract)
-    (hFunctionScopes :
-      CompiledFunctionScopes builtinContext contract
-        rawContext.functionScopes elabState.functionScopes)
+    (hContext :
+      CompiledContext builtinContext contract
+        rawContext elabState.functionScopes)
     (hElab :
       (Elab.Expr.elaborate (.functionCall "datacopy" rawArgs)).run
         elabState = .ok (front, finalElabState))
@@ -3023,7 +3115,7 @@ theorem exprValuesRunForward_of_scoped_elaborated_datacopy
   rw [hFrontArgs] at hArgs
   have hArgsRun :=
     argsRunForward_reverse_of_scoped_elaboration_fuel
-      hExpr hFunctionScopes hArgs hArgsNormalized
+      hExpr hContext hArgs hArgsNormalized
       (rawFuel := argsFuel) state
   have hRun :=
     exprValuesRunForward_datacopy_succ
@@ -3089,9 +3181,9 @@ theorem exprValuesRunForward_of_scoped_elaborated_memoryguard
     (hExpr :
       ScopedExprElaborationRunForward (slack + 2)
         builtinContext contract)
-    (hFunctionScopes :
-      CompiledFunctionScopes builtinContext contract
-        rawContext.functionScopes elabState.functionScopes)
+    (hContext :
+      CompiledContext builtinContext contract
+        rawContext elabState.functionScopes)
     (hElab :
       (Elab.Expr.elaborate (.functionCall "memoryguard" rawArgs)).run
         elabState = .ok (front, finalElabState))
@@ -3106,7 +3198,7 @@ theorem exprValuesRunForward_of_scoped_elaborated_memoryguard
   rcases List.cons.inj hFrontArgs with ⟨hFrontValue, _⟩
   subst normalizedValue
   have hValueValues :=
-    hExpr valueFuel hFunctionScopes (state := state)
+    hExpr valueFuel hContext (state := state)
       hValueElab hValueNormalized
   have hValueRun := exprRunForward_of_values hValueValues
   have hRun :=
