@@ -67,6 +67,13 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperYulInterface_orderedLookup
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperAstBody_zero_exec
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperYulInterface_call_succ
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.of_yulOccurrence
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.dispatcher_of_frontend
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.functionBody_of_frontend
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.call_succ
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.evalValues_succ
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.eval_succ
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtElaborationOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListElaborationOccurrence
@@ -183,6 +190,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallOccurrence.call_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallOccurrence.evalValues_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallOccurrence.eval_succ
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.of_yulOccurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.dispatcher_of_frontend
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.functionBody_of_frontend
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.call_succ
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.evalValues_succ
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.eval_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_focusedGeneratedCallOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_focusedGeneratedCallOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_focusedGeneratedCallOccurrence

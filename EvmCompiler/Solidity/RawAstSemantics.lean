@@ -1,4 +1,4 @@
-import EvmCompiler.Solidity.RawAst
+import EvmCompiler.Solidity.RawAstOccurrence
 import EvmCompiler.Yul.InteractionSemantics
 
 /-!
@@ -1682,6 +1682,107 @@ structure FocusedGeneratedCallOccurrence
     ordered.program.contract.functions.lookup generated =
       some (.Def params returns body)
 
+def FocusedGeneratedStmtListCallPrefix
+    (state : State) (ordered : Yul.OrderedProgram)
+    (generated : Name) (fn : Frontend.FunctionDef)
+    (params returns : List Name) (body : List Yul.AstStmt)
+    (args : List Yul.AstExpr) (stmts : List Yul.AstStmt)
+    (fuel : Nat) (code : Option Yul.AstContract)
+    (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore) : Prop :=
+    FocusedGeneratedCallOccurrence state ordered generated fn
+      params returns body args ∧
+      ∃ (pre : List Yul.AstStmt) (stmt : Yul.AstStmt)
+        (suffix : List Yul.AstStmt),
+        stmts = pre ++ stmt :: suffix ∧
+          Yul.YulOccurrence.StmtUserCall generated args stmt ∧
+            Yul.InteractionSemantics.execSeq
+              (fuel + pre.length + 1) stmts code (.Ok shared vars) =
+              Simulation.Interaction.bind
+                (Yul.InteractionSemantics.execSeq
+                  (fuel + pre.length + 1) pre code (.Ok shared vars))
+                (fun stateAfterPre =>
+                  Yul.YulOccurrence.StmtListUserCall.continueAfterPrefix
+                    (fuel + 1) (stmt :: suffix) code stateAfterPre)
+
+namespace FocusedGeneratedStmtListCallPrefix
+
+theorem of_yulOccurrence
+    {state : State} {ordered : Yul.OrderedProgram}
+    {generated : Name} {fn : Frontend.FunctionDef}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {fuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hFocused :
+      FocusedGeneratedCallOccurrence state ordered generated fn
+        params returns body args)
+    (hOccurrence :
+      Yul.YulOccurrence.StmtListUserCall generated args stmts) :
+    FocusedGeneratedStmtListCallPrefix state ordered generated fn
+      params returns body args stmts fuel code shared vars := by
+  rcases
+      Yul.YulOccurrence.StmtListUserCall.exists_split_stmt_execSeq_prefix
+        hOccurrence fuel code shared vars with
+    ⟨pre, stmt, suffix, hSplit, hStmt, hPrefix⟩
+  exact
+    ⟨hFocused, pre, stmt, suffix, hSplit, hStmt, hPrefix⟩
+
+theorem dispatcher_of_frontend
+    {state : State} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {generated : Name} {fn : Frontend.FunctionDef}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {frontendArgs : List Frontend.Expr} {yulArgs : List Yul.AstExpr}
+    {fuel : Nat} {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hFocused :
+      FocusedGeneratedCallOccurrence state ordered generated fn
+        params returns body yulArgs)
+    (hOccurrence :
+      FrontendOccurrence.StmtListUserCall generated frontendArgs
+        object.dispatcher)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered)
+    (hArgs : Frontend.Expr.List.toYul? frontendArgs = some yulArgs) :
+    FocusedGeneratedStmtListCallPrefix state ordered generated fn
+      params returns body yulArgs
+      [ordered.program.contract.dispatcher] fuel
+      (some ordered.program.contract) shared vars := by
+  exact
+    of_yulOccurrence hFocused
+      (FrontendOccurrence.Object.dispatcherOccurrence_toOrdered?
+        hOccurrence hConvert hArgs)
+
+theorem functionBody_of_frontend
+    {state : State} {ordered : Yul.OrderedProgram}
+    {generated : Name} {calleeFn contextFn : Frontend.FunctionDef}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {contextParams contextReturns : List Name}
+    {contextBody : List Yul.AstStmt}
+    {frontendArgs : List Frontend.Expr} {yulArgs : List Yul.AstExpr}
+    {fuel : Nat} {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hFocused :
+      FocusedGeneratedCallOccurrence state ordered generated calleeFn
+        params returns body yulArgs)
+    (hOccurrence :
+      FrontendOccurrence.StmtListUserCall generated frontendArgs
+        contextFn.body)
+    (hContext :
+      contextFn.toYul? =
+        some (.Def contextParams contextReturns contextBody))
+    (hArgs : Frontend.Expr.List.toYul? frontendArgs = some yulArgs) :
+    FocusedGeneratedStmtListCallPrefix state ordered generated calleeFn
+      params returns body yulArgs contextBody fuel
+      (some ordered.program.contract) shared vars := by
+  exact
+    of_yulOccurrence hFocused
+      (FrontendOccurrence.FunctionDef.bodyOccurrence_toYul?
+        hOccurrence hContext hArgs)
+
+end FocusedGeneratedStmtListCallPrefix
+
 theorem FocusedGeneratedCallOccurrence.call_succ
     {state : State} {ordered : Yul.OrderedProgram}
     {generated : Name} {fn : Frontend.FunctionDef}
@@ -1775,6 +1876,108 @@ theorem FocusedGeneratedCallOccurrence.eval_succ
         (fun result => pure (result.1, result.2.head!)) := by
   rw [Yul.InteractionSemantics.eval_eq_bind]
   rw [FocusedGeneratedCallOccurrence.evalValues_succ hOccurrence fuel source]
+
+namespace FocusedGeneratedStmtListCallPrefix
+
+theorem call_succ
+    {state : State} {ordered : Yul.OrderedProgram}
+    {generated : Name} {fn : Frontend.FunctionDef}
+    {params returns : List Name} {body stmts : List Yul.AstStmt}
+    {argExprs : List Yul.AstExpr}
+    {stmtFuel prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hPrefix :
+      FocusedGeneratedStmtListCallPrefix state ordered generated fn
+        params returns body argExprs stmts prefixFuel code shared vars)
+    (args : List Word) (source : Yul.InteractionSemantics.State) :
+    Yul.InteractionSemantics.call (stmtFuel + 1) args
+        (some generated) (some ordered.program.contract) source =
+      Simulation.Interaction.bind
+        (Yul.InteractionSemantics.exec stmtFuel
+          (.Block body) (some ordered.program.contract)
+          (EvmYul.Yul.State.mkOk
+            (source.initcall params returns args)))
+        (fun stateAfterBody =>
+          pure
+            ((stateAfterBody.reviveJump.overwrite? source).setStore
+              source,
+              List.map stateAfterBody.lookup! returns)) := by
+  rcases hPrefix with ⟨hFocused, _hSplit⟩
+  exact FocusedGeneratedCallOccurrence.call_succ
+    hFocused stmtFuel args source
+
+theorem evalValues_succ
+    {state : State} {ordered : Yul.OrderedProgram}
+    {generated : Name} {fn : Frontend.FunctionDef}
+    {params returns : List Name} {body stmts : List Yul.AstStmt}
+    {argExprs : List Yul.AstExpr}
+    {stmtFuel prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hPrefix :
+      FocusedGeneratedStmtListCallPrefix state ordered generated fn
+        params returns body argExprs stmts prefixFuel code shared vars)
+    (source : Yul.InteractionSemantics.State) :
+    Yul.InteractionSemantics.evalValues (stmtFuel + 2)
+        (.Call (.inr generated) argExprs)
+        (some ordered.program.contract) source =
+      Simulation.Interaction.bind
+        (Yul.InteractionSemantics.evalArgs (stmtFuel + 1)
+          argExprs.reverse (some ordered.program.contract) source)
+        (fun argsResult =>
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.exec stmtFuel
+              (.Block body) (some ordered.program.contract)
+              (EvmYul.Yul.State.mkOk
+                (argsResult.1.initcall params returns
+                  argsResult.2.reverse)))
+            (fun stateAfterBody =>
+              pure
+                ((stateAfterBody.reviveJump.overwrite?
+                    argsResult.1).setStore argsResult.1,
+                  List.map stateAfterBody.lookup! returns))) := by
+  rcases hPrefix with ⟨hFocused, _hSplit⟩
+  exact FocusedGeneratedCallOccurrence.evalValues_succ
+    hFocused stmtFuel source
+
+theorem eval_succ
+    {state : State} {ordered : Yul.OrderedProgram}
+    {generated : Name} {fn : Frontend.FunctionDef}
+    {params returns : List Name} {body stmts : List Yul.AstStmt}
+    {argExprs : List Yul.AstExpr}
+    {stmtFuel prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hPrefix :
+      FocusedGeneratedStmtListCallPrefix state ordered generated fn
+        params returns body argExprs stmts prefixFuel code shared vars)
+    (source : Yul.InteractionSemantics.State) :
+    Yul.InteractionSemantics.eval (stmtFuel + 2)
+        (.Call (.inr generated) argExprs)
+        (some ordered.program.contract) source =
+      Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Yul.InteractionSemantics.evalArgs (stmtFuel + 1)
+            argExprs.reverse (some ordered.program.contract) source)
+          (fun argsResult =>
+            Simulation.Interaction.bind
+              (Yul.InteractionSemantics.exec stmtFuel
+                (.Block body) (some ordered.program.contract)
+                (EvmYul.Yul.State.mkOk
+                  (argsResult.1.initcall params returns
+                    argsResult.2.reverse)))
+              (fun stateAfterBody =>
+                pure
+                  ((stateAfterBody.reviveJump.overwrite?
+                      argsResult.1).setStore argsResult.1,
+                    List.map stateAfterBody.lookup! returns))))
+        (fun result => pure (result.1, result.2.head!)) := by
+  rcases hPrefix with ⟨hFocused, _hSplit⟩
+  exact FocusedGeneratedCallOccurrence.eval_succ
+    hFocused stmtFuel source
+
+end FocusedGeneratedStmtListCallPrefix
 
 theorem codeGeneratedNormalizationEvidence_hoistedCallSemantics
     {code : List Raw.Stmt} {object : Frontend.Object}
