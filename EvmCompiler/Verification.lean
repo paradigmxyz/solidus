@@ -120,12 +120,17 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.CodePositiveRunEquivalent.preserved
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.CodePositivePreserved.of_scope_dispatcher_seq
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.CodePositivePreserved.toObjectPositive
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.FunctionScopeNameRel
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.collectTopFunctions_rawFunctionScope
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.elaborateCode_rawFunctionScope
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.nonempty_of_compile
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.code_elaborates
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.code_functionScope
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.withSourceRun
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.withSourcePreserved
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.withSourceCodePreserved
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.sourcePreserved_of_dispatcherSeq
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceEquivalent
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourcePreserved
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceEquivalent.preserved

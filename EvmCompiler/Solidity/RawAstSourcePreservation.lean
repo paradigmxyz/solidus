@@ -315,6 +315,209 @@ theorem toObjectPositive
 
 end CodePositivePreserved
 
+/-- The raw source scope and the elaborator's top-function scope may carry
+different payloads, but they must expose the same function names. -/
+def FunctionScopeNameRel
+    (rawScope : Raw.SourceSemantics.FunctionScope)
+    (topScope : List (Name × Name)) : Prop :=
+  ∀ name,
+    rawScope.any (fun entry => entry.fst == name) =
+      topScope.any (fun entry => entry.fst == name)
+
+theorem collectTopFunctions_rawFunctionScope
+    {stmts : List Raw.Stmt}
+    {state finalState : Elab.State}
+    {topScope : List (Name × Name)}
+    (hCollect :
+      (Elab.collectTopFunctions stmts).run state =
+        .ok (topScope, finalState)) :
+    ∃ rawScope,
+      Raw.SourceSemantics.functionScope? stmts = some rawScope ∧
+        FunctionScopeNameRel rawScope topScope := by
+  induction stmts generalizing state finalState topScope with
+  | nil =>
+      unfold Elab.collectTopFunctions at hCollect
+      simp [StateT.run_pure] at hCollect
+      cases hCollect
+      refine ⟨[], rfl, ?_⟩
+      intro name
+      simp
+  | cons stmt rest ih =>
+      cases stmt with
+      | functionDefinition name params returns body =>
+          unfold Elab.collectTopFunctions at hCollect
+          simp [StateT.run_bind] at hCollect
+          cases hTail : (Elab.collectTopFunctions rest).run state with
+          | error err =>
+              simp [hTail] at hCollect
+          | ok tailResult =>
+              rcases tailResult with ⟨topTail, tailState⟩
+              simp [hTail] at hCollect
+              cases hDuplicate :
+                  topTail.any (fun entry => entry.fst == name) with
+              | true =>
+                  rw [hDuplicate] at hCollect
+                  unfold Elab.throw at hCollect
+                  dsimp at hCollect
+                  change
+                    (Except.bind
+                        ((fun _ : Elab.State =>
+                            Except.error
+                              (toString "duplicate top-level Yul function " ++
+                                toString name)) tailState)
+                        ?cont) =
+                      Except.ok (topScope, finalState) at hCollect
+                  change
+                    (Except.error
+                      (toString "duplicate top-level Yul function " ++
+                        toString name) :
+                      Except String (List (Name × Name) × Elab.State)) =
+                      Except.ok (topScope, finalState) at hCollect
+                  cases hCollect
+              | false =>
+                  cases hDeclare :
+                      (Elab.declareIdentifiers [name] "function").run
+                        tailState with
+                  | error err =>
+                      simp [hDuplicate, hDeclare] at hCollect
+                  | ok declareResult =>
+                      rcases declareResult with ⟨_, declaredState⟩
+                      simp [hDuplicate, hDeclare, StateT.run_bind] at hCollect
+                      rcases hCollect with ⟨hTopScope, _hFinalState⟩
+                      cases hTopScope
+                      rcases ih hTail with
+                        ⟨rawTail, hRawTail, hNameRel⟩
+                      have hRawDuplicate :
+                          rawTail.any (fun entry => entry.fst == name) =
+                            false := by
+                        rw [hNameRel name, hDuplicate]
+                      refine
+                        ⟨(name, { params, returns, body }) :: rawTail,
+                          ?_, ?_⟩
+                      · simp [Raw.SourceSemantics.functionScope?,
+                          hRawTail, hRawDuplicate]
+                      · intro query
+                        simp [hNameRel query]
+      | block stmts =>
+          have hTail :
+              (Elab.collectTopFunctions rest).run state =
+                .ok (topScope, finalState) := by
+            simpa [Elab.collectTopFunctions] using hCollect
+          rcases ih hTail with ⟨rawTail, hRawTail, hNameRel⟩
+          refine ⟨rawTail, ?_, hNameRel⟩
+          simp [Raw.SourceSemantics.functionScope?, hRawTail]
+      | variableDeclaration names value? =>
+          have hTail :
+              (Elab.collectTopFunctions rest).run state =
+                .ok (topScope, finalState) := by
+            simpa [Elab.collectTopFunctions] using hCollect
+          rcases ih hTail with ⟨rawTail, hRawTail, hNameRel⟩
+          refine ⟨rawTail, ?_, hNameRel⟩
+          simp [Raw.SourceSemantics.functionScope?, hRawTail]
+      | assignment names value =>
+          have hTail :
+              (Elab.collectTopFunctions rest).run state =
+                .ok (topScope, finalState) := by
+            simpa [Elab.collectTopFunctions] using hCollect
+          rcases ih hTail with ⟨rawTail, hRawTail, hNameRel⟩
+          refine ⟨rawTail, ?_, hNameRel⟩
+          simp [Raw.SourceSemantics.functionScope?, hRawTail]
+      | expressionStatement expr =>
+          have hTail :
+              (Elab.collectTopFunctions rest).run state =
+                .ok (topScope, finalState) := by
+            simpa [Elab.collectTopFunctions] using hCollect
+          rcases ih hTail with ⟨rawTail, hRawTail, hNameRel⟩
+          refine ⟨rawTail, ?_, hNameRel⟩
+          simp [Raw.SourceSemantics.functionScope?, hRawTail]
+      | switch scrutinee cases default =>
+          have hTail :
+              (Elab.collectTopFunctions rest).run state =
+                .ok (topScope, finalState) := by
+            simpa [Elab.collectTopFunctions] using hCollect
+          rcases ih hTail with ⟨rawTail, hRawTail, hNameRel⟩
+          refine ⟨rawTail, ?_, hNameRel⟩
+          simp [Raw.SourceSemantics.functionScope?, hRawTail]
+      | forLoop pre condition post body =>
+          have hTail :
+              (Elab.collectTopFunctions rest).run state =
+                .ok (topScope, finalState) := by
+            simpa [Elab.collectTopFunctions] using hCollect
+          rcases ih hTail with ⟨rawTail, hRawTail, hNameRel⟩
+          refine ⟨rawTail, ?_, hNameRel⟩
+          simp [Raw.SourceSemantics.functionScope?, hRawTail]
+      | ifThen condition body =>
+          have hTail :
+              (Elab.collectTopFunctions rest).run state =
+                .ok (topScope, finalState) := by
+            simpa [Elab.collectTopFunctions] using hCollect
+          rcases ih hTail with ⟨rawTail, hRawTail, hNameRel⟩
+          refine ⟨rawTail, ?_, hNameRel⟩
+          simp [Raw.SourceSemantics.functionScope?, hRawTail]
+      | «break» =>
+          have hTail :
+              (Elab.collectTopFunctions rest).run state =
+                .ok (topScope, finalState) := by
+            simpa [Elab.collectTopFunctions] using hCollect
+          rcases ih hTail with ⟨rawTail, hRawTail, hNameRel⟩
+          refine ⟨rawTail, ?_, hNameRel⟩
+          simp [Raw.SourceSemantics.functionScope?, hRawTail]
+      | «continue» =>
+          have hTail :
+              (Elab.collectTopFunctions rest).run state =
+                .ok (topScope, finalState) := by
+            simpa [Elab.collectTopFunctions] using hCollect
+          rcases ih hTail with ⟨rawTail, hRawTail, hNameRel⟩
+          refine ⟨rawTail, ?_, hNameRel⟩
+          simp [Raw.SourceSemantics.functionScope?, hRawTail]
+      | «leave» =>
+          have hTail :
+              (Elab.collectTopFunctions rest).run state =
+                .ok (topScope, finalState) := by
+            simpa [Elab.collectTopFunctions] using hCollect
+          rcases ih hTail with ⟨rawTail, hRawTail, hNameRel⟩
+          refine ⟨rawTail, ?_, hNameRel⟩
+          simp [Raw.SourceSemantics.functionScope?, hRawTail]
+
+theorem elaborateCodeCore_rawFunctionScope
+    {stmts : List Raw.Stmt}
+    {dispatcher : List Frontend.Stmt} {state : Elab.State}
+    (hCore :
+      Elab.elaborateCodeCore stmts = .ok (dispatcher, state)) :
+    ∃ rawScope,
+      Raw.SourceSemantics.functionScope? stmts = some rawScope := by
+  unfold Elab.elaborateCodeCore Elab.elaborateCodeAction at hCore
+  simp [StateT.run_bind] at hCore
+  cases hPush : Elab.pushIdentifierScope.run {} with
+  | error err =>
+      simp [hPush] at hCore
+  | ok pushResult =>
+      rcases pushResult with ⟨_, pushedState⟩
+      simp [hPush] at hCore
+      cases hCollect :
+          (Elab.collectTopFunctions stmts).run pushedState with
+      | error err =>
+          simp [hCollect] at hCore
+      | ok collectResult =>
+          rcases collectResult with ⟨topScope, collectState⟩
+          rcases collectTopFunctions_rawFunctionScope hCollect with
+            ⟨rawScope, hRawScope, _hNameRel⟩
+          exact ⟨rawScope, hRawScope⟩
+
+theorem elaborateCode_rawFunctionScope
+    {stmts : List Raw.Stmt}
+    {dispatcher : List Frontend.Stmt}
+    {functions : List (Name × Frontend.FunctionDef)}
+    {helper? arg? ret? : Option Name}
+    (hElab :
+      Elab.elaborateCode stmts =
+        .ok (dispatcher, functions, helper?, arg?, ret?)) :
+    ∃ rawScope,
+      Raw.SourceSemantics.functionScope? stmts = some rawScope := by
+  rcases Elab.elaborateCode_parts hElab with
+    ⟨state, hCore, _hFunctions, _hHelper, _hArg, _hRet⟩
+  exact elaborateCodeCore_rawFunctionScope hCore
+
 structure ArtifactRawSourceContext
     (rawJson : String) (selection : Selection)
     (artifact : Frontend.Program.Artifact) where
@@ -404,6 +607,18 @@ theorem code_elaborates
   rw [hDispatcher, hFunctions]
   exact hElab
 
+theorem code_functionScope
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    {code : List Raw.Stmt}
+    (hCode : ctx.selected.root.code? = some code) :
+    ∃ rawScope,
+      Raw.SourceSemantics.functionScope? code = some rawScope := by
+  rcases ctx.code_elaborates hCode with
+    ⟨helper?, arg?, ret?, hElab⟩
+  exact elaborateCode_rawFunctionScope hElab
+
 end ArtifactRawSourceContext
 
 def RawSourceBytecodePrefixDoneRel
@@ -468,6 +683,26 @@ def withSourceCodePreserved
         artifact.codeArtifact.ordered) :
     ArtifactRawSourcePreserved rawJson selection artifact :=
   ctx.withSourcePreserved (sourceRun.toObjectPositive hCode)
+
+theorem sourcePreserved_of_dispatcherSeq
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    {code : List Raw.Stmt}
+    (hCode : ctx.selected.root.code? = some code)
+    (hSeq :
+      ∀ rawScope,
+        Raw.SourceSemantics.functionScope? code = some rawScope →
+          ∀ (rawFuel : Nat) (state : State),
+            ∃ orderedFuel,
+              DispatcherSeqRunForward rawFuel orderedFuel
+                ctx.context rawScope code artifact.codeArtifact.ordered state) :
+    Nonempty (ArtifactRawSourcePreserved rawJson selection artifact) := by
+  rcases ctx.code_functionScope hCode with ⟨rawScope, hScope⟩
+  exact ⟨
+    ctx.withSourceCodePreserved hCode
+      (CodePositivePreserved.of_scope_dispatcher_seq
+        hScope (hSeq rawScope hScope))⟩
 
 end ArtifactRawSourceContext
 
