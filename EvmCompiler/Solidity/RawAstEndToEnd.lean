@@ -2294,6 +2294,28 @@ structure BlockContextRun
 
 namespace BlockContextRun
 
+def ofSplitFocused
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {body : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      StmtListOccurrenceRun.SplitFocusedRun hEvidence model prim
+        prefixFuel body state) :
+    BlockContextRun hEvidence model prim prefixFuel body state where
+  bodyRun := hRun.toStmtListOccurrenceRun
+  afterBlock :=
+    model.withSource hRun.afterRest
+      ((model.source hRun.afterRest).restrictStoreTo
+        (model.source state).store)
+  hAfterBlock := rfl
+
 theorem context
     {object : Frontend.Object}
     {ordered : Yul.OrderedProgram}
@@ -3987,6 +4009,46 @@ structure BodyRouteRun
       prefixFuel yulBody state
 
 namespace BodyRouteRun
+
+def ofSplitFocused
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {state : σ}
+    {yulBody : List Frontend.AstStmt}
+    (route : BodyRoute hEvidence yulBody)
+    (hRun :
+      StmtListOccurrenceRun.SplitFocusedRun hEvidence model prim
+        prefixFuel yulBody state) :
+    BodyRouteRun hEvidence model prim prefixFuel state where
+  yulBody := yulBody
+  route := route
+  run := hRun.toStmtListOccurrenceRun
+
+def ofFocusedGeneratedSplit
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {bodyFuel prefixFuel : Nat}
+    {state generatedState : σ}
+    (hFocused :
+      FocusedGeneratedCallRun (object := object) (ordered := ordered)
+        (topName := topName) model prim bodyFuel generatedState)
+    (hRun :
+      StmtListOccurrenceRun.SplitFocusedRun
+        hFocused.routeEvidence.yulEvidence model prim
+        prefixFuel hFocused.routeEvidence.yulBody state) :
+    BodyRouteRun hFocused.routeEvidence.yulEvidence
+      model prim prefixFuel state :=
+  ofSplitFocused hFocused.routeEvidence.route hRun
 
 theorem occurrence
     {object : Frontend.Object}
