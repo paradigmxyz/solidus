@@ -801,21 +801,22 @@ theorem exprRunForward_of_values
   | error error => exact Simulation.Interaction.ForwardRel.done rfl
   | ok result => exact Simulation.Interaction.ForwardRel.done rfl
 
-/-- Semantic compiler interface for one expression under arbitrary residual
-source/target fuels. The recursive frontend theorem will construct this by
-source-fuel induction; argument-list traversal consumes it structurally. -/
+/-- Semantic compiler interface for one expression under a constant target
+fuel slack. The successor shape is stable under recursive argument traversal,
+while the slack absorbs fixed frontend expansion depth. -/
 def ExprElaborationRunForward
+    (slack : Nat)
     (rawContext : Raw.SourceSemantics.Context)
     (builtinContext : Frontend.ObjectBuiltinContext)
     (contract : Frontend.AstContract) : Prop :=
-  ∀ (rawFuel orderedFuel : Nat)
+  ∀ (rawFuel : Nat)
     {rawExpr : Raw.Expr} {front : Frontend.Expr}
     {ordered : Frontend.AstExpr}
     {elabState finalElabState : Elab.State} {state : State},
     (Elab.Expr.elaborate rawExpr).run elabState =
         .ok (front, finalElabState) →
       ExprNormalized builtinContext front ordered →
-        ExprValuesRunForward rawFuel orderedFuel
+        ExprValuesRunForward rawFuel (rawFuel + slack)
           rawContext rawExpr ordered contract state
 
 /-- Pointwise checked expression compilation, independent of the order in
@@ -952,53 +953,63 @@ theorem argsRunForward_cons
           exact Simulation.Interaction.ForwardRel.done rfl
 
 theorem argsRunForward_of_compiled
+    {slack : Nat}
     {rawContext : Raw.SourceSemantics.Context}
     {builtinContext : Frontend.ObjectBuiltinContext}
     {contract : Frontend.AstContract}
     (hExpr :
-      ExprElaborationRunForward rawContext builtinContext contract) :
+      ExprElaborationRunForward slack rawContext builtinContext contract) :
     ∀ {rawExprs : List Raw.Expr} {ordered : List Frontend.AstExpr},
       ExprListCompiled builtinContext rawExprs ordered →
-        ∀ (rawBase orderedBase : Nat) (state : State),
+        ∀ (rawBase : Nat) (state : State),
           ArgsRunForward
             (rawBase + 2 * rawExprs.length + 1)
-            (orderedBase + 2 * rawExprs.length + 1)
+            ((rawBase + slack) + 2 * rawExprs.length + 1)
             rawContext rawExprs ordered contract state := by
   intro rawExprs ordered hCompiled
   induction hCompiled with
   | nil =>
-      intro rawBase orderedBase state
+      intro rawBase state
       simpa using
         (argsRunForward_nil_succ
-          (rawFuel := rawBase) (orderedFuel := orderedBase)
+          (rawFuel := rawBase) (orderedFuel := rawBase + slack)
           (context := rawContext) (contract := contract) (state := state))
   | @cons rawHead orderedHead rawTail orderedTail frontHead
       elabState finalElabState hElab hNormalized hTail ih =>
-      intro rawBase orderedBase state
+      intro rawBase state
       let rawTailFuel := rawBase + 2 * rawTail.length + 1
-      let orderedTailFuel := orderedBase + 2 * rawTail.length + 1
+      let orderedTailFuel := rawTailFuel + slack
       have hHeadValues :=
-        hExpr (rawTailFuel + 1) (orderedTailFuel + 1)
+        hExpr (rawTailFuel + 1)
           (state := state) hElab hNormalized
       have hHeadRun := exprRunForward_of_values hHeadValues
+      have hHeadRun' :
+          ExprRunForward (rawTailFuel + 1) (orderedTailFuel + 1)
+            rawContext rawHead orderedHead contract state := by
+        simpa [orderedTailFuel, Nat.add_assoc, Nat.add_comm,
+          Nat.add_left_comm] using hHeadRun
       have hCons :=
         argsRunForward_cons
           (rawFuel := rawTailFuel) (orderedFuel := orderedTailFuel)
           (context := rawContext) (rawArg := rawHead)
           (rawRest := rawTail) (orderedArg := orderedHead)
           (orderedRest := orderedTail) (contract := contract)
-          (state := state) hHeadRun
+          (state := state) hHeadRun'
           (fun stateAfterHead =>
-            ih rawBase orderedBase stateAfterHead)
+            by
+              simpa [rawTailFuel, orderedTailFuel, Nat.add_assoc,
+                Nat.add_comm, Nat.add_left_comm] using
+                (ih rawBase stateAfterHead))
       simpa [rawTailFuel, orderedTailFuel, Nat.mul_add,
         Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hCons
 
 theorem argsRunForward_reverse_of_elaboration
+    {slack : Nat}
     {rawContext : Raw.SourceSemantics.Context}
     {builtinContext : Frontend.ObjectBuiltinContext}
     {contract : Frontend.AstContract}
     (hExpr :
-      ExprElaborationRunForward rawContext builtinContext contract)
+      ExprElaborationRunForward slack rawContext builtinContext contract)
     {rawExprs : List Raw.Expr} {fronts : List Frontend.Expr}
     {ordered : List Frontend.AstExpr}
     {elabState finalElabState : Elab.State}
@@ -1006,88 +1017,39 @@ theorem argsRunForward_reverse_of_elaboration
       (Elab.Expr.List.elaborate rawExprs).run elabState =
         .ok (fronts, finalElabState))
     (hNormalized : ExprListNormalized builtinContext fronts ordered)
-    (rawBase orderedBase : Nat) (state : State) :
+    (rawBase : Nat) (state : State) :
     ArgsRunForward
       (rawBase + 2 * rawExprs.length + 1)
-      (orderedBase + 2 * rawExprs.length + 1)
+      ((rawBase + slack) + 2 * rawExprs.length + 1)
       rawContext rawExprs.reverse ordered.reverse contract state := by
   have hCompiled :=
     ExprListCompiled.of_elaboration hElab hNormalized
   have hReversed := ExprListCompiled.reverse hCompiled
   simpa using
     (argsRunForward_of_compiled hExpr hReversed
-      rawBase orderedBase state)
+      rawBase state)
 
 theorem argsRunForward_of_elaboration
+    {slack : Nat}
     {rawContext : Raw.SourceSemantics.Context}
     {builtinContext : Frontend.ObjectBuiltinContext}
     {contract : Frontend.AstContract}
     (hExpr :
-      ExprElaborationRunForward rawContext builtinContext contract) :
-    ∀ {rawExprs : List Raw.Expr} {fronts : List Frontend.Expr}
-      {ordered : List Frontend.AstExpr}
-      {elabState finalElabState : Elab.State},
+      ExprElaborationRunForward slack rawContext builtinContext contract)
+    {rawExprs : List Raw.Expr} {fronts : List Frontend.Expr}
+    {ordered : List Frontend.AstExpr}
+    {elabState finalElabState : Elab.State}
+    (hElab :
       (Elab.Expr.List.elaborate rawExprs).run elabState =
-          .ok (fronts, finalElabState) →
-        ExprListNormalized builtinContext fronts ordered →
-          ∀ (rawBase orderedBase : Nat) (state : State),
-            ArgsRunForward
-              (rawBase + 2 * rawExprs.length + 1)
-              (orderedBase + 2 * rawExprs.length + 1)
-              rawContext rawExprs ordered contract state := by
-  intro rawExprs
-  induction rawExprs with
-  | nil =>
-      intro fronts ordered elabState finalElabState hElab hNormalized
-        rawBase orderedBase state
-      simp [Elab.Expr.List.elaborate] at hElab
-      rcases hElab with ⟨rfl, rfl⟩
-      have hOrdered := ExprListNormalized.nil_ordered hNormalized
-      subst ordered
-      simpa using
-        (argsRunForward_nil_succ
-          (rawFuel := rawBase) (orderedFuel := orderedBase)
-          (context := rawContext) (contract := contract) (state := state))
-  | cons rawHead rawTail ih =>
-      intro fronts ordered elabState finalElabState hElab hNormalized
-        rawBase orderedBase state
-      unfold Elab.Expr.List.elaborate at hElab
-      simp [StateT.run_bind] at hElab
-      cases hHead : (Elab.Expr.elaborate rawHead).run elabState with
-      | error err => simp [hHead] at hElab
-      | ok headResult =>
-          rcases headResult with ⟨frontHead, headElabState⟩
-          simp [hHead] at hElab
-          cases hTail :
-              (Elab.Expr.List.elaborate rawTail).run headElabState with
-          | error err => simp [hTail] at hElab
-          | ok tailResult =>
-              rcases tailResult with ⟨frontTail, tailElabState⟩
-              simp [hTail] at hElab
-              rcases hElab with ⟨rfl, rfl⟩
-              rcases ExprListNormalized.cons_parts hNormalized with
-                ⟨orderedHead, orderedTail, rfl,
-                  ⟨hHeadNormalized⟩, ⟨hTailNormalized⟩⟩
-              let rawTailFuel := rawBase + 2 * rawTail.length + 1
-              let orderedTailFuel :=
-                orderedBase + 2 * rawTail.length + 1
-              have hHeadValues :=
-                hExpr (rawTailFuel + 1) (orderedTailFuel + 1)
-                  (state := state) hHead hHeadNormalized
-              have hHeadRun := exprRunForward_of_values hHeadValues
-              have hCons :=
-                argsRunForward_cons
-                  (rawFuel := rawTailFuel)
-                  (orderedFuel := orderedTailFuel)
-                  (context := rawContext) (rawArg := rawHead)
-                  (rawRest := rawTail) (orderedArg := orderedHead)
-                  (orderedRest := orderedTail) (contract := contract)
-                  (state := state) hHeadRun
-                  (fun stateAfterHead =>
-                    ih hTail hTailNormalized rawBase orderedBase
-                      stateAfterHead)
-              simpa [rawTailFuel, orderedTailFuel, Nat.mul_add,
-                Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hCons
+        .ok (fronts, finalElabState))
+    (hNormalized : ExprListNormalized builtinContext fronts ordered)
+    (rawBase : Nat) (state : State) :
+    ArgsRunForward
+      (rawBase + 2 * rawExprs.length + 1)
+      ((rawBase + slack) + 2 * rawExprs.length + 1)
+      rawContext rawExprs ordered contract state :=
+  argsRunForward_of_compiled hExpr
+    (ExprListCompiled.of_elaboration hElab hNormalized) rawBase state
 
 theorem exprValuesRunForward_primitiveCall_of_runs
     {rawFuel orderedFuel : Nat}
@@ -1148,7 +1110,7 @@ theorem exprValuesRunForward_primitiveCall_succ
           fuel stateAfterArgs op values.reverse))
 
 theorem exprValuesRunForward_of_elaborated_primitiveCall
-    {rawBase orderedBase : Nat}
+    {slack rawBase : Nat}
     {rawContext : Raw.SourceSemantics.Context}
     {builtinContext : Frontend.ObjectBuiltinContext}
     {name : Name} {rawArgs : List Raw.Expr}
@@ -1156,7 +1118,7 @@ theorem exprValuesRunForward_of_elaborated_primitiveCall
     {front : Frontend.Expr} {ordered : Frontend.AstExpr}
     {contract : Frontend.AstContract} {state : State}
     (hExpr :
-      ExprElaborationRunForward rawContext builtinContext contract)
+      ExprElaborationRunForward slack rawContext builtinContext contract)
     (hNotMemoryguard : name ≠ "memoryguard")
     (hNotClz : name ≠ "clz")
     (hClass : CallClass.classifyCall name = .primitive)
@@ -1170,11 +1132,11 @@ theorem exprValuesRunForward_of_elaborated_primitiveCall
           ∀ (stateAfterArgs : State) (values : List Frontend.Word),
             PrimitiveRunForward
               (rawBase + 2 * rawArgs.length + 1)
-              (orderedBase + 2 * rawArgs.length + 1)
+              ((rawBase + slack) + 2 * rawArgs.length + 1)
               stateAfterArgs op values.reverse) :
     ExprValuesRunForward
       (rawBase + 2 * rawArgs.length + 2)
-      (orderedBase + 2 * rawArgs.length + 2)
+      ((rawBase + slack) + 2 * rawArgs.length + 2)
       rawContext (.functionCall name rawArgs) ordered contract state := by
   unfold Elab.Expr.elaborate at hElab
   simp at hElab
@@ -1187,10 +1149,11 @@ theorem exprValuesRunForward_of_elaborated_primitiveCall
       rcases ExprNormalized.primitive_call_parts hNormalized with
         ⟨op, orderedArgs, hOp, rfl, ⟨hArgsNormalized⟩⟩
       let rawArgsFuel := rawBase + 2 * rawArgs.length + 1
-      let orderedArgsFuel := orderedBase + 2 * rawArgs.length + 1
+      let orderedArgsFuel :=
+        (rawBase + slack) + 2 * rawArgs.length + 1
       have hArgsRun :=
         argsRunForward_reverse_of_elaboration hExpr hArgs hArgsNormalized
-          rawBase orderedBase state
+          rawBase state
       have hCall :=
         exprValuesRunForward_primitiveCall_of_runs
           hNotClz hClass hOp hArgsRun (hPrimitive op hOp)
@@ -1199,8 +1162,8 @@ theorem exprValuesRunForward_of_elaborated_primitiveCall
             (rawBase + 2 * rawArgs.length + 1) + 1 := by
         omega
       have hOrderedFuel :
-          orderedBase + 2 * rawArgs.length + 2 =
-            (orderedBase + 2 * rawArgs.length + 1) + 1 := by
+          (rawBase + slack) + 2 * rawArgs.length + 2 =
+            ((rawBase + slack) + 2 * rawArgs.length + 1) + 1 := by
         omega
       rw [hRawFuel, hOrderedFuel]
       exact hCall
@@ -1721,17 +1684,18 @@ theorem stmtRunForward_functionDefinition_stub_succ
   exact Simulation.Interaction.ForwardRel.done rfl
 
 def BlockElaborationRunForward
+    (slack : Nat)
     (rawContext : Raw.SourceSemantics.Context)
     (builtinContext : Frontend.ObjectBuiltinContext)
     (contract : Frontend.AstContract) : Prop :=
-  ∀ (rawFuel orderedFuel : Nat)
+  ∀ (rawFuel : Nat)
     {rawCode : List Raw.Stmt} {front : List Frontend.Stmt}
     {ordered : List Frontend.AstStmt}
     {elabState finalElabState : Elab.State} {state : State},
     (Elab.Stmt.List.elaborateBlock rawCode true).run elabState =
         .ok (front, finalElabState) →
       StmtListNormalized builtinContext front ordered →
-        BlockCodeRunForward rawFuel orderedFuel
+        BlockCodeRunForward rawFuel (rawFuel + slack)
           rawContext rawCode ordered contract state
 
 theorem stmtRunForward_of_elaborated_variableDeclaration_none
@@ -1763,7 +1727,7 @@ theorem stmtRunForward_of_elaborated_variableDeclaration_none
       exact stmtRunForward_variableDeclaration_none_succ
 
 theorem stmtRunForward_of_elaborated_variableDeclaration_some
-    {rawFuel orderedFuel : Nat}
+    {slack rawFuel : Nat}
     {rawContext : Raw.SourceSemantics.Context}
     {builtinContext : Frontend.ObjectBuiltinContext}
     {names : List Name} {rawValue : Raw.Expr}
@@ -1771,13 +1735,13 @@ theorem stmtRunForward_of_elaborated_variableDeclaration_some
     {front : Frontend.Stmt} {ordered : Frontend.AstStmt}
     {contract : Frontend.AstContract} {state : State}
     (hExpr :
-      ExprElaborationRunForward rawContext builtinContext contract)
+      ExprElaborationRunForward slack rawContext builtinContext contract)
     (hElab :
       (Elab.Stmt.elaborate
         (.variableDeclaration names (some rawValue))).run elabState =
           .ok (front, finalElabState))
     (hNormalized : StmtNormalized builtinContext front ordered) :
-    StmtRunForward (rawFuel + 1) (orderedFuel + 1)
+    StmtRunForward (rawFuel + 1) ((rawFuel + slack) + 1)
       rawContext (.variableDeclaration names (some rawValue))
       ordered contract state := by
   unfold Elab.Stmt.elaborate at hElab
@@ -1798,11 +1762,11 @@ theorem stmtRunForward_of_elaborated_variableDeclaration_some
             ⟨orderedValue, rfl, ⟨hValueNormalized⟩⟩
           exact
             stmtRunForward_variableDeclaration_some_succ
-              (hExpr rawFuel orderedFuel (state := state)
+              (hExpr rawFuel (state := state)
                 hValue hValueNormalized)
 
 theorem stmtRunForward_of_elaborated_assignment
-    {rawFuel orderedFuel : Nat}
+    {slack rawFuel : Nat}
     {rawContext : Raw.SourceSemantics.Context}
     {builtinContext : Frontend.ObjectBuiltinContext}
     {names : List Name} {rawValue : Raw.Expr}
@@ -1810,12 +1774,12 @@ theorem stmtRunForward_of_elaborated_assignment
     {front : Frontend.Stmt} {ordered : Frontend.AstStmt}
     {contract : Frontend.AstContract} {state : State}
     (hExpr :
-      ExprElaborationRunForward rawContext builtinContext contract)
+      ExprElaborationRunForward slack rawContext builtinContext contract)
     (hElab :
       (Elab.Stmt.elaborate (.assignment names rawValue)).run elabState =
         .ok (front, finalElabState))
     (hNormalized : StmtNormalized builtinContext front ordered) :
-    StmtRunForward (rawFuel + 1) (orderedFuel + 1)
+    StmtRunForward (rawFuel + 1) ((rawFuel + slack) + 1)
       rawContext (.assignment names rawValue) ordered contract state := by
   unfold Elab.Stmt.elaborate at hElab
   simp [StateT.run_bind] at hElab
@@ -1835,7 +1799,7 @@ theorem stmtRunForward_of_elaborated_assignment
             ⟨orderedValue, rfl, ⟨hValueNormalized⟩⟩
           exact
             stmtRunForward_assignment_succ
-              (hExpr rawFuel orderedFuel (state := state)
+              (hExpr rawFuel (state := state)
                 hValue hValueNormalized)
 
 theorem stmtRunForward_of_elaborated_break
@@ -1893,7 +1857,7 @@ theorem stmtRunForward_of_elaborated_leave
   exact stmtRunForward_leave_succ
 
 theorem stmtRunForward_of_elaborated_block
-    {rawFuel orderedFuel : Nat}
+    {slack rawFuel : Nat}
     {rawContext : Raw.SourceSemantics.Context}
     {builtinContext : Frontend.ObjectBuiltinContext}
     {rawBody : List Raw.Stmt}
@@ -1901,12 +1865,12 @@ theorem stmtRunForward_of_elaborated_block
     {front : Frontend.Stmt} {ordered : Frontend.AstStmt}
     {contract : Frontend.AstContract} {state : State}
     (hBlock :
-      BlockElaborationRunForward rawContext builtinContext contract)
+      BlockElaborationRunForward slack rawContext builtinContext contract)
     (hElab :
       (Elab.Stmt.elaborate (.block rawBody)).run elabState =
         .ok (front, finalElabState))
     (hNormalized : StmtNormalized builtinContext front ordered) :
-    StmtRunForward (rawFuel + 1) orderedFuel
+    StmtRunForward (rawFuel + 1) (rawFuel + slack)
       rawContext (.block rawBody) ordered contract state := by
   unfold Elab.Stmt.elaborate at hElab
   simp at hElab
@@ -1921,11 +1885,11 @@ theorem stmtRunForward_of_elaborated_block
         ⟨orderedBody, rfl, ⟨hBodyNormalized⟩⟩
       exact
         stmtRunForward_block_succ
-          (hBlock rawFuel orderedFuel (state := state)
+          (hBlock rawFuel (state := state)
             hBody hBodyNormalized)
 
 theorem stmtRunForward_of_elaborated_ifThen
-    {rawFuel orderedFuel : Nat}
+    {slack rawFuel : Nat}
     {rawContext : Raw.SourceSemantics.Context}
     {builtinContext : Frontend.ObjectBuiltinContext}
     {rawCondition : Raw.Expr} {rawBody : List Raw.Stmt}
@@ -1933,14 +1897,14 @@ theorem stmtRunForward_of_elaborated_ifThen
     {front : Frontend.Stmt} {ordered : Frontend.AstStmt}
     {contract : Frontend.AstContract} {state : State}
     (hExpr :
-      ExprElaborationRunForward rawContext builtinContext contract)
+      ExprElaborationRunForward slack rawContext builtinContext contract)
     (hBlock :
-      BlockElaborationRunForward rawContext builtinContext contract)
+      BlockElaborationRunForward slack rawContext builtinContext contract)
     (hElab :
       (Elab.Stmt.elaborate (.ifThen rawCondition rawBody)).run elabState =
         .ok (front, finalElabState))
     (hNormalized : StmtNormalized builtinContext front ordered) :
-    StmtRunForward (rawFuel + 1) (orderedFuel + 1)
+    StmtRunForward (rawFuel + 1) ((rawFuel + slack) + 1)
       rawContext (.ifThen rawCondition rawBody) ordered contract state := by
   unfold Elab.Stmt.elaborate at hElab
   simp [StateT.run_bind] at hElab
@@ -1963,11 +1927,11 @@ theorem stmtRunForward_of_elaborated_ifThen
           apply stmtRunForward_ifThen_succ
           · exact
               exprRunForward_of_values
-                (hExpr rawFuel orderedFuel (state := state)
+                (hExpr rawFuel (state := state)
                   hCondition hConditionNormalized)
           · intro stateAfterCondition value _hTruthy
             exact
-              hBlock rawFuel orderedFuel
+              hBlock rawFuel
                 (state := stateAfterCondition) hBody hBodyNormalized
 
 /-- Semantic compiler interface for one statement under arbitrary residual
