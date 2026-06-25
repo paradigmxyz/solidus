@@ -62,6 +62,10 @@ Gasful EVM bridge checkpoint:
   composition from actual charged `JUMPDEST` execution to the open raw-bytecode
   run, and `GasfulBridge.runRefinesOpen_stop_success` as the first successful
   halt composition for charged `STOP`.
+- [x] Add a generic ordinary-step relation for non-resource
+  `PrimOp.continuingStep?` primitives: a successful primitive step on the
+  actual post-charge gasful state yields an open raw-bytecode one-step success
+  on the charged open state with `SameData` output after gas/control erasure.
 - [x] Add the matching terminal `RETURN`/`REVERT` compositions:
   stack-pop-aware actual `EVM.step` lemmas, gas/control-erased output-state
   relations, open raw-bytecode halt execution with concrete return bytes, and
@@ -71,8 +75,8 @@ Gasful EVM bridge checkpoint:
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
 - [ ] Prove the full `EVM.X` simulation that discharges the bridge premise for
-  charged ordinary steps beyond the current one-step slices and CALL/CREATE
-  open-strategy responses with EIP-150/returned gas.
+  actual `EVM.step` delegation to the ordinary primitive families and
+  CALL/CREATE open-strategy responses with EIP-150/returned gas.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object

@@ -1080,6 +1080,15 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_jumpdest_continues_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.raw_jumpdest_executes_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.jumpdest_chargedStepRel_after_charges
+#print axioms EvmCompiler.Assembly.GasfulBridge.sameRuntimeData_afterEVMInstructionCharge_afterDynamic
+#print axioms EvmCompiler.Assembly.GasfulBridge.continuingStep_stackArity?_exists
+#print axioms EvmCompiler.Assembly.GasfulBridge.continuingStep_not_pc
+#print axioms EvmCompiler.Assembly.GasfulBridge.continuingStep_not_gas
+#print axioms EvmCompiler.Assembly.GasfulBridge.continuingStep_not_externalCallCreate
+#print axioms EvmCompiler.Assembly.GasfulBridge.continuingStep_haltKind?_none
+#print axioms EvmCompiler.Assembly.GasfulBridge.continuingPrim_open_success_after_charges
+#print axioms EvmCompiler.Assembly.GasfulBridge.raw_continuing_prim_executes_after_charges
+#print axioms EvmCompiler.Assembly.GasfulBridge.raw_continuing_prim_refines_step_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_stop_success_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_stop_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.sameData_gasful_open_stop_after_charges

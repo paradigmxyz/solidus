@@ -1293,6 +1293,139 @@ theorem jumpdest_chargedStepRel_after_charges
     cases state
     rfl
 
+theorem sameRuntimeData_afterEVMInstructionCharge_afterDynamic
+    (state : EVMState) :
+    SameRuntimeData (afterEVMInstructionChargeAt state)
+      (afterDynamicChargeAt state) := by
+  cases state
+  rfl
+
+theorem continuingStep_stackArity?_exists
+    {op : PrimOp} {step : PrimStep}
+    (hStep : op.continuingStep? = some step) :
+    ∃ arity, op.stackArity? = some arity := by
+  cases op <;>
+    simp [PrimOp.continuingStep?, PrimOp.stackArity?] at hStep ⊢
+
+theorem continuingStep_not_pc
+    {op : PrimOp} {step : PrimStep}
+    (hStep : op.continuingStep? = some step) :
+    op ≠ .pc := by
+  intro hPc
+  subst op
+  simp [PrimOp.continuingStep?] at hStep
+
+theorem continuingStep_not_gas
+    {op : PrimOp} {step : PrimStep}
+    (hStep : op.continuingStep? = some step) :
+    op ≠ .gas := by
+  intro hGas
+  subst op
+  simp [PrimOp.continuingStep?] at hStep
+
+theorem continuingStep_not_externalCallCreate
+    {op : PrimOp} {step : PrimStep}
+    (hStep : op.continuingStep? = some step) :
+    op.isExternalCallCreate = false := by
+  cases op <;>
+    simp [PrimOp.continuingStep?, PrimOp.isExternalCallCreate] at hStep ⊢
+
+theorem continuingStep_haltKind?_none
+    {op : PrimOp} {step : PrimStep}
+    (hStep : op.continuingStep? = some step) :
+    op.haltKind? = none := by
+  cases op <;>
+    simp [PrimOp.continuingStep?, PrimOp.haltKind?] at hStep ⊢
+
+theorem continuingPrim_open_success_after_charges
+    {op : PrimOp} {step : PrimStep} {state gasfulNext : EVMState}
+    (hStep : op.continuingStep? = some step)
+    (hMsize : op ≠ .msize)
+    (hGasful :
+      op.step (afterEVMInstructionChargeAt state) = .ok gasfulNext) :
+    ∃ openNext,
+      op.step (afterDynamicChargeAt state) = .ok openNext ∧
+        SameData gasfulNext openNext := by
+  have hRel :=
+    sameRuntimeData_afterEVMInstructionCharge_afterDynamic state
+  have hMap :=
+    PrimOp.step_map_eraseRuntimeControl
+      (op := op)
+      (target := afterEVMInstructionChargeAt state)
+      (source := afterDynamicChargeAt state)
+      (continuingStep_stackArity?_exists hStep)
+      (continuingStep_not_pc hStep)
+      (continuingStep_not_externalCallCreate hStep)
+      hRel
+  rw [hGasful] at hMap
+  cases hOpen : op.step (afterDynamicChargeAt state) with
+  | error err =>
+      simp [hOpen, Except.map] at hMap
+  | ok openNext =>
+      have hSameRuntime : SameRuntimeData gasfulNext openNext := by
+        simpa [hOpen, Except.map] using hMap
+      exact ⟨openNext, rfl, SameRuntimeData.sameData hSameRuntime⟩
+
+theorem raw_continuing_prim_executes_after_charges
+    {op : PrimOp} {step : PrimStep}
+    {bytes : ByteArray} {pc : Nat} {state openNext : EVMState}
+    (hStep : op.continuingStep? = some step)
+    (hMsize : op ≠ .msize)
+    (hDecode : Compact.decodeAt bytes pc (.prim op))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc)
+    (hOpen : op.step (afterDynamicChargeAt state) = .ok openNext) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult
+        bytes 1 (afterDynamicChargeAt state))
+      []
+      (.ok (.running openNext)) := by
+  have hGas := continuingStep_not_gas hStep
+  have hClosed :
+      Assembly.InteractionSemantics.PrimOp.openStep op
+          (afterDynamicChargeAt state) =
+        Simulation.Interaction.done (.ok openNext) := by
+    rw [Assembly.InteractionSemantics.PrimOp.openStep_closed
+      (Assembly.InteractionSemantics.PrimOp.externalKind_none_of_continuingStep
+        hStep)
+      hGas hMsize]
+    simp [hOpen]
+  have hHalt := continuingStep_haltKind?_none hStep
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .prim op) trivial hDecode hPc]
+  simpa [Compact.Instr.openStepResult, Compact.Instr.openStep,
+    Assembly.InteractionSemantics.Target.openStepInstrResult,
+    Assembly.Target.stepInstrResultWith,
+    Assembly.InteractionSemantics.Target.openStepInstr,
+    Assembly.Target.stepInstrWith, hClosed, hHalt,
+    Simulation.Interaction.bind, Simulation.Interaction.pure,
+    Compact.Instr.haltKind?] using
+    (Interaction.Executes.done (.ok (StepResult.running openNext)))
+
+theorem raw_continuing_prim_refines_step_after_charges
+    {op : PrimOp} {step : PrimStep}
+    {bytes : ByteArray} {pc : Nat} {state gasfulNext : EVMState}
+    (hStep : op.continuingStep? = some step)
+    (hMsize : op ≠ .msize)
+    (hDecode : Compact.decodeAt bytes pc (.prim op))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc)
+    (hGasful :
+      op.step (afterEVMInstructionChargeAt state) = .ok gasfulNext) :
+    ∃ openNext,
+      Interaction.Executes
+        (Compact.InteractionSemantics.openRunNResult
+          bytes 1 (afterDynamicChargeAt state))
+        []
+        (.ok (.running openNext)) ∧
+      SameData gasfulNext openNext := by
+  rcases continuingPrim_open_success_after_charges
+      hStep hMsize hGasful with
+    ⟨openNext, hOpen, hSame⟩
+  exact
+    ⟨openNext,
+      raw_continuing_prim_executes_after_charges
+        hStep hMsize hDecode hPc hOpen,
+      hSame⟩
+
 def openStopStateAt (state : EVMState) : EVMState :=
   { afterDynamicChargeAt state with
     toMachineState :=
