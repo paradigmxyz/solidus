@@ -3669,6 +3669,76 @@ theorem raw_call_staticModeViolation_executes_after_charges
       (.error EvmYul.EVM.ExecutionException.StaticModeViolation :
         Except EVMException StepResult))
 
+def gasfulSelfdestructNext (state : EVMState)
+    (recipient : Word) (rest : EvmYul.Stack Word) : EVMState :=
+  EvmYul.EVM.selfdestructState
+    (afterEVMInstructionChargeAt state) recipient rest
+
+def openSelfdestructNext (state : EVMState)
+    (recipient : Word) (rest : EvmYul.Stack Word) : EVMState :=
+  EvmYul.EVM.selfdestructState
+    (afterDynamicChargeAt state) recipient rest
+
+theorem evm_step_selfdestruct_eq_next
+    (fuel : Nat) (state : EVMState)
+    (recipient : Word) (rest : EvmYul.Stack Word)
+    (hStack : state.stack = recipient :: rest) :
+    EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+        (some (EvmYul.Operation.SELFDESTRUCT, none))
+        (afterMemoryChargeAt state) =
+      .ok (gasfulSelfdestructNext state recipient rest) := by
+  simp [EvmYul.EVM.step, gasfulSelfdestructNext,
+    afterEVMInstructionChargeAt, afterMemoryChargeAt,
+    afterDynamicChargeAt, chargeGas, hStack,
+    EvmYul.EVM.step_selfdestruct_of_stack]
+  exact EvmYul.EVM.step_selfdestruct_of_stack _ recipient rest rfl
+
+theorem raw_selfdestruct_success_executes_after_charges
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    {recipient : Word} {rest : EvmYul.Stack Word}
+    (hPerm : state.executionEnv.perm = true)
+    (hStack : state.stack = recipient :: rest)
+    (hDecode : Compact.decodeAt bytes pc (.prim .selfdestruct))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult
+        bytes 1 (afterDynamicChargeAt state))
+      []
+      (.ok
+        (.halted
+          { kind := .selfdestruct
+            state := openSelfdestructNext state recipient rest
+            output := ByteArray.empty })) := by
+  have hPermCharged :
+      (afterDynamicChargeAt state).executionEnv.perm = true := by
+    simpa [afterDynamicChargeAt, afterMemoryChargeAt, chargeGas] using hPerm
+  have hStackCharged :
+      (afterDynamicChargeAt state).stack = recipient :: rest := by
+    simpa [afterDynamicChargeAt, afterMemoryChargeAt, chargeGas] using hStack
+  have hPrim :
+      Assembly.PrimOp.selfdestruct.step (afterDynamicChargeAt state) =
+        .ok (openSelfdestructNext state recipient rest) := by
+    rw [Assembly.PrimOp.step_selfdestruct_of_permitted _ hPermCharged]
+    exact EvmYul.EVM.step_selfdestruct_of_stack _ recipient rest hStackCharged
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .prim .selfdestruct) trivial hDecode hPc]
+  simp [Compact.Instr.openStepResult, Compact.Instr.openStep,
+    Assembly.InteractionSemantics.Target.openStepInstr,
+    Assembly.Target.stepInstrWith,
+    Assembly.InteractionSemantics.PrimOp.openStep,
+    Assembly.PrimOp.toEVM,
+    Simulation.ExternalKind.ofEVMOperation?, hPrim,
+    Assembly.PrimOp.haltKind?, Compact.Instr.haltKind?,
+    Assembly.HaltKind.output, Simulation.Interaction.bind]
+  exact Interaction.Executes.done _
+
+theorem selfdestructNext_sameData
+    (state : EVMState) (recipient : Word) (rest : EvmYul.Stack Word) :
+    SameData (gasfulSelfdestructNext state recipient rest)
+      (openSelfdestructNext state recipient rest) := by
+  cases state
+  rfl
+
 theorem raw_selfdestruct_staticModeViolation_executes_after_charges
     {bytes : ByteArray} {pc : Nat} {state : EVMState}
     (hPerm : state.executionEnv.perm = false)
@@ -7506,6 +7576,80 @@ theorem runRefinesOpen_selfdestruct_staticModeViolation_after_stack_limit_checks
   apply RunRefinesOpen.completed
   · simpa [Nat.add_comm] using hExec
   · exact DoneRel.sameError
+
+theorem runRefinesOpen_selfdestruct_success
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    {recipient : Word} {rest : EvmYul.Stack Word}
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hDecodedPair :
+      ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+        (EvmYul.Operation.STOP, none)) =
+          (EvmYul.Operation.SELFDESTRUCT, none))
+    (hPerm : state.executionEnv.perm = true)
+    (hStack : state.stack = recipient :: rest)
+    (hDecode : Compact.decodeAt bytes pc (.prim .selfdestruct))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1 + 1) validJumps state)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1 + 1) (afterDynamicChargeAt state))
+      [] := by
+  have hDecodedOp :
+      decodedOperationAt state = EvmYul.Operation.SELFDESTRUCT := by
+    simpa [decodedOperationAt, hDecodedPair]
+  have hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt state) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          state.stack[2]?.getD (EvmYul.UInt256.ofNat 0)) := by
+    simp [hDecodedOp, EvmYul.Operation.isCreate]
+  have hOne :=
+    raw_selfdestruct_success_executes_after_charges
+      (bytes := bytes) (pc := pc) (state := state)
+      (recipient := recipient) (rest := rest)
+      hPerm hStack hDecode hPc
+  have hExec :
+      Interaction.Executes
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (fuel + 1 + 1) (afterDynamicChargeAt state))
+        []
+        (.ok
+          (.halted
+            { kind := .selfdestruct
+              state := openSelfdestructNext state recipient rest
+              output := ByteArray.empty })) := by
+    have hExtended :=
+      Compact.InteractionSemantics.openRunNResult_halted_add_executes
+        (extra := fuel + 1) hOne
+    simpa [show 1 + (fuel + 1) = fuel + 1 + 1 by omega] using hExtended
+  have hPostBridge :
+      RunRefinesOpen
+        (xPostStepExceptResult (fuel + 1) validJumps
+          (decodedOperationAt state)
+          (.ok (gasfulSelfdestructNext state recipient rest)))
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (fuel + 1 + 1) (afterDynamicChargeAt state))
+        [] := by
+    apply RunRefinesOpen.completed hExec
+    simpa [xPostStepExceptResult, xPostStepResult, hDecodedOp,
+      haltOutputAt] using
+      (DoneRel.success
+        (selfdestructNext_sameData state recipient rest)
+        (output := ByteArray.empty) (haltKind := Assembly.HaltKind.selfdestruct))
+  have hStepActual :
+      EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+        (some
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt state) =
+          .ok (gasfulSelfdestructNext state recipient rest) := by
+    simpa [hDecodedPair] using
+      evm_step_selfdestruct_eq_next fuel state recipient rest hStack
+  exact
+    runRefinesOpen_of_x_after_prechecks_step_result
+      (fuel := fuel + 1) (validJumps := validJumps) (state := state)
+      (stepResult := .ok (gasfulSelfdestructNext state recipient rest))
+      hPrefix hCreateOk hStepActual hPostBridge
 
 theorem runRefinesOpen_return_success
     {fuel : Nat} {validJumps : Array Word}

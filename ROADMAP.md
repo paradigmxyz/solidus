@@ -165,6 +165,9 @@ Gasful EVM bridge checkpoint:
 - [x] Compose successful charged `PC` and compact `PUSH1..PUSH32` execution
   into `RunRefinesOpen`: both use exact concrete values and related successor
   PCs/stacks without introducing open observations or replay data.
+- [x] Complete charged `SELFDESTRUCT` outcome coverage: permitted execution
+  now refines the same account/substate mutation and empty terminal output,
+  alongside the existing stack-underflow and static-mode branches.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
