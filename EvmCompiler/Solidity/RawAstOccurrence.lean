@@ -1191,6 +1191,195 @@ end FunctionDef
 
 namespace Elab
 
+theorem pushIdentifierScope_retains_hoisted
+    {state state' : Elab.State}
+    (hRun : Elab.pushIdentifierScope.run state = .ok ((), state'))
+    {entry : Name × Frontend.FunctionDef}
+    (hMem : entry ∈ state.hoistedFunctions) :
+    entry ∈ state'.hoistedFunctions := by
+  simp [Elab.pushIdentifierScope] at hRun
+  rcases hRun with ⟨_hUnit, rfl⟩
+  exact hMem
+
+theorem popIdentifierScope_retains_hoisted
+    {state state' : Elab.State}
+    (hRun : Elab.popIdentifierScope.run state = .ok ((), state'))
+    {entry : Name × Frontend.FunctionDef}
+    (hMem : entry ∈ state.hoistedFunctions) :
+    entry ∈ state'.hoistedFunctions := by
+  rcases state with
+    ⟨functionScopes, identifierScopes, hoistedFunctions, usedFunctionNames,
+      nextGeneratedFunctionId, clzHelperName?, clzArgName?, clzReturnName?⟩
+  unfold Elab.popIdentifierScope at hRun
+  cases identifierScopes with
+  | nil =>
+      unfold Elab.throw at hRun
+      simp at hRun
+      change Except.error "internal frontend error: no identifier scope to pop" =
+        Except.ok ((), state') at hRun
+      cases hRun
+  | cons scope rest =>
+      simp at hRun
+      rcases hRun with ⟨_hUnit, rfl⟩
+      exact hMem
+
+theorem pushFunctionScope_retains_hoisted
+    {scope : List (Name × Name)}
+    {state state' : Elab.State}
+    (hRun : (Elab.pushFunctionScope scope).run state = .ok ((), state'))
+    {entry : Name × Frontend.FunctionDef}
+    (hMem : entry ∈ state.hoistedFunctions) :
+    entry ∈ state'.hoistedFunctions := by
+  simp [Elab.pushFunctionScope] at hRun
+  rcases hRun with ⟨_hUnit, rfl⟩
+  exact hMem
+
+theorem popFunctionScope_retains_hoisted
+    {state state' : Elab.State}
+    (hRun : Elab.popFunctionScope.run state = .ok ((), state'))
+    {entry : Name × Frontend.FunctionDef}
+    (hMem : entry ∈ state.hoistedFunctions) :
+    entry ∈ state'.hoistedFunctions := by
+  rcases state with
+    ⟨functionScopes, identifierScopes, hoistedFunctions, usedFunctionNames,
+      nextGeneratedFunctionId, clzHelperName?, clzArgName?, clzReturnName?⟩
+  unfold Elab.popFunctionScope at hRun
+  cases functionScopes with
+  | nil =>
+      unfold Elab.throw at hRun
+      simp at hRun
+      change Except.error "internal frontend error: no function scope to pop" =
+        Except.ok ((), state') at hRun
+      cases hRun
+  | cons scope rest =>
+      simp at hRun
+      rcases hRun with ⟨_hUnit, rfl⟩
+      exact hMem
+
+theorem declareIdentifiersLoop_retains_hoisted
+    {description : String} {names seen seenOut : List Name}
+    {state state' : Elab.State}
+    (hRun :
+      (Elab.declareIdentifiersLoop description names seen).run state =
+        .ok (seenOut, state'))
+    {entry : Name × Frontend.FunctionDef}
+    (hMem : entry ∈ state.hoistedFunctions) :
+    entry ∈ state'.hoistedFunctions := by
+  induction names generalizing seen seenOut state state' with
+  | nil =>
+      simp [Elab.declareIdentifiersLoop] at hRun
+      rcases hRun with ⟨_hSeen, rfl⟩
+      exact hMem
+  | cons name rest ih =>
+      unfold Elab.declareIdentifiersLoop at hRun
+      cases hBinding : Elab.bindingNameOk? name with
+      | false =>
+          unfold Elab.throw at hRun
+          simp [hBinding] at hRun
+          change Except.error
+              (toString "invalid Yul " ++ toString description ++
+                toString " name " ++ toString name) =
+            Except.ok (seenOut, state') at hRun
+          cases hRun
+      | true =>
+          cases hSeen : seen.contains name with
+          | true =>
+              have hSeenMem : name ∈ seen := by
+                simpa using hSeen
+              unfold Elab.throw at hRun
+              simp [hBinding, hSeenMem] at hRun
+              change Except.error
+                  (toString "duplicate Yul " ++ toString description ++
+                    toString " name " ++ toString name) =
+                Except.ok (seenOut, state') at hRun
+              cases hRun
+          | false =>
+              have hSeenNot : name ∉ seen := by
+                simpa using hSeen
+              cases hVisible :
+                  Elab.identifierVisibleIn name state.identifierScopes with
+              | true =>
+                  unfold Elab.throw at hRun
+                  simp [hBinding, hSeenNot, hVisible] at hRun
+                  change Except.error
+                      (toString "Yul " ++ toString description ++
+                        toString " name " ++ toString name ++
+                          toString " already taken in this scope") =
+                    Except.ok (seenOut, state') at hRun
+                  cases hRun
+              | false =>
+                  simp [hBinding, hSeenNot, hVisible] at hRun
+                  exact ih hRun hMem
+
+theorem declareIdentifiers_retains_hoisted
+    {names : List Name} {description : String}
+    {state state' : Elab.State}
+    (hRun :
+      (Elab.declareIdentifiers names description).run state =
+        .ok ((), state'))
+    {entry : Name × Frontend.FunctionDef}
+    (hMem : entry ∈ state.hoistedFunctions) :
+    entry ∈ state'.hoistedFunctions := by
+  rcases state with
+    ⟨functionScopes, identifierScopes, hoistedFunctions, usedFunctionNames,
+      nextGeneratedFunctionId, clzHelperName?, clzArgName?, clzReturnName?⟩
+  unfold Elab.declareIdentifiers at hRun
+  cases identifierScopes with
+  | nil =>
+      cases hLoop :
+          (Elab.declareIdentifiersLoop description names []).run
+            { functionScopes := functionScopes
+              identifierScopes := [[]]
+              hoistedFunctions := hoistedFunctions
+              usedFunctionNames := usedFunctionNames
+              nextGeneratedFunctionId := nextGeneratedFunctionId
+              clzHelperName? := clzHelperName?
+              clzArgName? := clzArgName?
+              clzReturnName? := clzReturnName? } with
+      | error err =>
+          simp [hLoop] at hRun
+      | ok loopResult =>
+          rcases loopResult with ⟨seen, stateAfterLoop⟩
+          have hLoopMem :
+              entry ∈ stateAfterLoop.hoistedFunctions :=
+            declareIdentifiersLoop_retains_hoisted hLoop hMem
+          cases hScopes : stateAfterLoop.identifierScopes with
+          | nil =>
+              simp [hLoop, hScopes] at hRun
+              rcases hRun with ⟨_hUnit, rfl⟩
+              exact hLoopMem
+          | cons scope rest =>
+              simp [hLoop, hScopes] at hRun
+              rcases hRun with ⟨_hUnit, rfl⟩
+              exact hLoopMem
+  | cons initialScope initialRest =>
+      cases hLoop :
+          (Elab.declareIdentifiersLoop description names []).run
+            { functionScopes := functionScopes
+              identifierScopes := initialScope :: initialRest
+              hoistedFunctions := hoistedFunctions
+              usedFunctionNames := usedFunctionNames
+              nextGeneratedFunctionId := nextGeneratedFunctionId
+              clzHelperName? := clzHelperName?
+              clzArgName? := clzArgName?
+              clzReturnName? := clzReturnName? } with
+      | error err =>
+          simp [hLoop] at hRun
+      | ok loopResult =>
+          rcases loopResult with ⟨seen, stateAfterLoop⟩
+          have hLoopMem :
+              entry ∈ stateAfterLoop.hoistedFunctions :=
+            declareIdentifiersLoop_retains_hoisted hLoop hMem
+          cases hScopes : stateAfterLoop.identifierScopes with
+          | nil =>
+              simp [hLoop, hScopes] at hRun
+              rcases hRun with ⟨_hUnit, rfl⟩
+              exact hLoopMem
+          | cons scope rest =>
+              simp [hLoop, hScopes] at hRun
+              rcases hRun with ⟨_hUnit, rfl⟩
+              exact hLoopMem
+
 theorem elaborateCodeStmts_retains_dispatcher
     {rawStmts : List Raw.Stmt}
     {dispatcherAcc dispatcherOut : List Frontend.Stmt}

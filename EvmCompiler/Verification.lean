@@ -100,6 +100,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListElaborationRoute
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationRoute.toCodeRoute
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.pushIdentifierScope_retains_hoisted
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.popIdentifierScope_retains_hoisted
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.pushFunctionScope_retains_hoisted
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.popFunctionScope_retains_hoisted
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.declareIdentifiersLoop_retains_hoisted
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.declareIdentifiers_retains_hoisted
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_retains_dispatcher
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_retains_topFunctions
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_function_mem
@@ -299,6 +305,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.elaborate_route
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListUserCall.elaborate_route
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationRoute.toCodeRoute
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.pushIdentifierScope_retains_hoisted
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.popIdentifierScope_retains_hoisted
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.pushFunctionScope_retains_hoisted
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.popFunctionScope_retains_hoisted
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.declareIdentifiersLoop_retains_hoisted
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.declareIdentifiers_retains_hoisted
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_retains_dispatcher
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_retains_topFunctions
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_function_mem

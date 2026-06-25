@@ -636,6 +636,24 @@ def bindingNameOk? (name : Name) : Bool :=
     !CallClass.reservedBindingName? name &&
     !name.startsWith "verbatim"
 
+def declareIdentifiersLoop (description : String) :
+    List Name → List Name → ElabM (List Name)
+  | [], seen => pure seen
+  | name :: rest, seen => do
+    match bindingNameOk? name with
+    | false => throw s!"invalid Yul {description} name {name}"
+    | true =>
+        match seen.contains name with
+        | true => throw s!"duplicate Yul {description} name {name}"
+        | false =>
+            let state ← get
+            match identifierVisibleIn name state.identifierScopes with
+            | true =>
+                throw
+                  s!"Yul {description} name {name} already taken in this scope"
+            | false =>
+                declareIdentifiersLoop description rest (name :: seen)
+
 def declareIdentifiers (names : List Name) (description : String) :
     ElabM Unit := do
   let state ← get
@@ -646,16 +664,7 @@ def declareIdentifiers (names : List Name) (description : String) :
         set state
         pure state
     | _ => pure state
-  let mut seen : List Name := []
-  for name in names do
-    if !bindingNameOk? name then
-      throw s!"invalid Yul {description} name {name}"
-    if seen.contains name then
-      throw s!"duplicate Yul {description} name {name}"
-    let state ← get
-    if identifierVisibleIn name state.identifierScopes then
-      throw s!"Yul {description} name {name} already taken in this scope"
-    seen := name :: seen
+  let seen ← declareIdentifiersLoop description names []
   let state ← get
   match state.identifierScopes with
   | [] => set { state with identifierScopes := [seen.reverse] }
