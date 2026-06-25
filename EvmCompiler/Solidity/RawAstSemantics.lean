@@ -2565,6 +2565,133 @@ mutual
           CaseListContext hInterface (head :: rest)
 end
 
+inductive StmtExprSlot
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars) :
+    Yul.AstStmt → Yul.AstExpr → Prop where
+  | letValue {names : List Name} {value : Yul.AstExpr} :
+      ExprContext hInterface value →
+        StmtExprSlot hInterface (.Let names (some value)) value
+  | assignValue {names : List Name} {value : Yul.AstExpr} :
+      ExprContext hInterface value →
+        StmtExprSlot hInterface (.Assign names value) value
+  | exprStmt {value : Yul.AstExpr} :
+      ExprContext hInterface value →
+        StmtExprSlot hInterface (.ExprStmtCall value) value
+  | switchScrutinee
+      {scrutinee : Yul.AstExpr} {cases : List (Word × List Yul.AstStmt)}
+      {defaultBody : List Yul.AstStmt} :
+      ExprContext hInterface scrutinee →
+        StmtExprSlot hInterface (.Switch scrutinee cases defaultBody)
+          scrutinee
+  | forCondition {condition : Yul.AstExpr}
+      {post body : List Yul.AstStmt} :
+      ExprContext hInterface condition →
+        StmtExprSlot hInterface (.For condition post body) condition
+  | ifCondition {condition : Yul.AstExpr} {body : List Yul.AstStmt} :
+      ExprContext hInterface condition →
+        StmtExprSlot hInterface (.If condition body) condition
+
+inductive StmtListSlot
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars) :
+    Yul.AstStmt → List Yul.AstStmt → Prop where
+  | block {blockBody : List Yul.AstStmt} :
+      StmtListContext hInterface blockBody →
+        StmtListSlot hInterface (.Block blockBody) blockBody
+  | switchDefault
+      {scrutinee : Yul.AstExpr} {cases : List (Word × List Yul.AstStmt)}
+      {defaultBody : List Yul.AstStmt} :
+      StmtListContext hInterface defaultBody →
+        StmtListSlot hInterface (.Switch scrutinee cases defaultBody)
+          defaultBody
+  | forPost {condition : Yul.AstExpr} {post body : List Yul.AstStmt} :
+      StmtListContext hInterface post →
+        StmtListSlot hInterface (.For condition post body) post
+  | forBody {condition : Yul.AstExpr} {post body : List Yul.AstStmt} :
+      StmtListContext hInterface body →
+        StmtListSlot hInterface (.For condition post body) body
+  | ifBody {condition : Yul.AstExpr} {body : List Yul.AstStmt} :
+      StmtListContext hInterface body →
+        StmtListSlot hInterface (.If condition body) body
+
+inductive StmtCaseListSlot
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars) :
+    Yul.AstStmt → List (Word × List Yul.AstStmt) → Prop where
+  | switchCase
+      {scrutinee : Yul.AstExpr} {cases : List (Word × List Yul.AstStmt)}
+      {defaultBody : List Yul.AstStmt} :
+      CaseListContext hInterface cases →
+        StmtCaseListSlot hInterface (.Switch scrutinee cases defaultBody)
+          cases
+
+theorem StmtContext.toSlot
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    {stmt : Yul.AstStmt}
+    {hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars}
+    (hContext : StmtContext hInterface stmt) :
+    (∃ expr, StmtExprSlot hInterface stmt expr) ∨
+      (∃ stmtList, StmtListSlot hInterface stmt stmtList) ∨
+        (∃ cases, StmtCaseListSlot hInterface stmt cases) := by
+  cases hContext with
+  | block hBody =>
+      exact Or.inr (Or.inl ⟨_, StmtListSlot.block hBody⟩)
+  | letValue hValue =>
+      exact Or.inl ⟨_, StmtExprSlot.letValue hValue⟩
+  | assignValue hValue =>
+      exact Or.inl ⟨_, StmtExprSlot.assignValue hValue⟩
+  | exprStmt hValue =>
+      exact Or.inl ⟨_, StmtExprSlot.exprStmt hValue⟩
+  | switchScrutinee hScrutinee =>
+      exact Or.inl ⟨_, StmtExprSlot.switchScrutinee hScrutinee⟩
+  | switchCase hCases =>
+      exact Or.inr (Or.inr ⟨_, StmtCaseListSlot.switchCase hCases⟩)
+  | switchDefault hDefault =>
+      exact Or.inr (Or.inl ⟨_, StmtListSlot.switchDefault hDefault⟩)
+  | forCondition hCondition =>
+      exact Or.inl ⟨_, StmtExprSlot.forCondition hCondition⟩
+  | forPost hPost =>
+      exact Or.inr (Or.inl ⟨_, StmtListSlot.forPost hPost⟩)
+  | forBody hBody =>
+      exact Or.inr (Or.inl ⟨_, StmtListSlot.forBody hBody⟩)
+  | ifCondition hCondition =>
+      exact Or.inl ⟨_, StmtExprSlot.ifCondition hCondition⟩
+  | ifBody hBody =>
+      exact Or.inr (Or.inl ⟨_, StmtListSlot.ifBody hBody⟩)
+
 mutual
   theorem StmtContext.ofOccurrence
       {ordered : Yul.OrderedProgram}

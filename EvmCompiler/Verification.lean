@@ -86,6 +86,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.ExprContext.directOrCallArgPrefix
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext.ofOccurrence
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext.toSlot
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtExprSlot
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListSlot
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtCaseListSlot
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListContext
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListContext.ofOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListContext.exists_split_stmt
@@ -352,6 +356,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.ExprContext.ofOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.ExprContext.directOrCallArgPrefix
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext.ofOccurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext.toSlot
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListContext.ofOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListContext.exists_split_stmt
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListContext.exists_split_stmt_execSeq_prefix
