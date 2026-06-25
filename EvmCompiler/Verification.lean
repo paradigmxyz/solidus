@@ -117,6 +117,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ExprValuesRunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ExprRunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArgsRunForward
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.PrimitiveRunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.BlockCodeRunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.SwitchCasesRunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.GeneratedUserCallRun
@@ -128,11 +129,14 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprRunForward_of_values
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.argsRunForward_cons
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_primitiveCall_succ
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_primitiveCall_of_runs
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_userCall_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_datasize_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_dataoffset_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_linkersymbol_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_loadimmutable_succ
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_datacopy_succ
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_memoryguard_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.StmtRunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.stmtRunForward_variableDeclaration_none_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.stmtRunForward_variableDeclaration_some_succ
@@ -965,11 +969,14 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprRunForward_of_values
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.argsRunForward_cons
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_primitiveCall_succ
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_primitiveCall_of_runs
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_userCall_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_datasize_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_dataoffset_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_linkersymbol_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_loadimmutable_succ
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_datacopy_succ
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_memoryguard_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.stmtRunForward_variableDeclaration_none_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.stmtRunForward_variableDeclaration_some_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.stmtRunForward_assignment_succ
