@@ -81,6 +81,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_hoistedFunctionsRetained
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_frontendValidated
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_sourceLocalFunction_noShadow_function_entries
+#check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_raw_source_ordered_context
 #check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.execCode
 #check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.execObjectCode
 #check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.evalObjectBuiltin

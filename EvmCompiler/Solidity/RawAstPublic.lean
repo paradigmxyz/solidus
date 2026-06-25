@@ -1,4 +1,4 @@
-import EvmCompiler.Solidity.RawAst
+import EvmCompiler.Solidity.RawAstSourceSemantics
 import EvmCompiler.Solidity.Public
 
 /-!
@@ -95,7 +95,7 @@ theorem compileArtifactFromRawSolcIr?_valid
                     some artifact := by
                 simpa [hParse, hDecode, hLinker] using hCompile
               refine ⟨json, program, linkerSymbols, ?_, ?_, ?_, ?_⟩
-              · simp [hParse]
+              · rfl
               · simp [hDecode]
               · simp [hLinker]
               · exact
@@ -485,6 +485,60 @@ theorem compileArtifactFromRawSolcIr?_resolved_ordered
   exact
     ⟨program, linkerSymbols, plan.context, hDecode, hLinker, hProgramCompile,
       hCodeArtifact, hResolved, hOrdered⟩
+
+/-- Boundary package for the future raw-source theorem.
+
+Successful raw compilation internally fixes the selected raw solc object and the
+checked object-builtin context whose resolution produced the ordered Yul
+artifact.  Consumers should use this package instead of passing a public
+context/certificate premise.
+-/
+theorem compileArtifactFromRawSolcIr?_raw_source_ordered_context
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (hCompile :
+      compileArtifactFromRawSolcIr? rawJson selection = some artifact) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (program : Frontend.Program)
+        (linkerSymbols : List (Frontend.Name × Frontend.Word))
+        (context : Frontend.ObjectBuiltinContext),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+        decodeAndElaborateSolcIr? rawJson selection = some program ∧
+        selected.root.elaborate? selected.evmVersion =
+          .ok program.object ∧
+        decodeLinkerSymbols? rawJson selection = some linkerSymbols ∧
+        program.compileArtifactWithLinkerSymbols? linkerSymbols =
+          some artifact ∧
+        program.object.compileVerifiedStackCodeArtifactIn? context =
+          some artifact.codeArtifact ∧
+        program.object.resolveObjectBuiltinsIn? context =
+          some artifact.codeArtifact.resolved ∧
+        artifact.codeArtifact.resolved.toSolcYulOrderedProgram? =
+          some artifact.codeArtifact.ordered ∧
+        Raw.SourceSemantics.contextForObject context =
+          { objectBuiltins := context } := by
+  rcases compileArtifactFromRawSolcIr?_decoded hCompile with
+    ⟨program, linkerSymbols, hDecode, hLinker, hProgramCompile⟩
+  rcases decodeAndElaborateSolcIr?_parts hDecode with
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram⟩
+  subst program
+  rcases
+      Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+        hProgramCompile with
+    ⟨_childArtifacts, plan, _codeArtifact, _hChildren, _hPlan, _hFinish,
+      hCodeArtifact, _hArtifactChildren, _hContext, _hChildImages,
+      _hPayload, _hImage⟩
+  obtain ⟨hResolved, hOrdered, _hLower, _hStack, _pushPlan, _hPlan,
+      _hCompact, _hBytes, _hMarker⟩ :=
+    Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts hCodeArtifact
+  exact
+    ⟨json, selected,
+      { source := selected.source, contract := selected.contract,
+        object := object },
+      linkerSymbols, plan.context, hParse, hSelected,
+      by simpa using hDecode, hObject, hLinker,
+      hProgramCompile, hCodeArtifact, hResolved, hOrdered, rfl⟩
 
 theorem compileArtifactFromRawSolcIr?_sourceLocalFunction_noShadow_program_entries
     {rawJson : String} {selection : Selection}
