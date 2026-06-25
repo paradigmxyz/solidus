@@ -184,6 +184,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.codeRouteBelow_stmtListAfterHoist_succ
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.codeRouteBelow_block_succ
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.codeRouteBelow_forInit_succ
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.codeRouteBelow_stmt_succ
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.codeRouteBelow_succ
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.codeRouteBelow
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.FunctionDef.elaborate_retains_hoisted
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_retains_dispatcher
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_retains_topFunctions
@@ -471,6 +474,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.codeRouteBelow_stmtListAfterHoist_succ
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.codeRouteBelow_block_succ
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.codeRouteBelow_forInit_succ
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.codeRouteBelow_stmt_succ
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.codeRouteBelow_succ
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.codeRouteBelow
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.FunctionDef.elaborate_retains_hoisted
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_retains_dispatcher
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_retains_topFunctions
