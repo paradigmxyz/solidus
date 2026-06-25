@@ -118,18 +118,7 @@ structure ObjectPositiveRunEquivalent
         rawObjectRun (rawFuel + 1) context object state =
           orderedRun (orderedFuel + 1) ordered state
 
-def RawSourceBytecodePrefixDoneRel
-    (artifact : Frontend.Program.Artifact) :
-    Except Failure State →
-      Except Assembly.EVMException Assembly.StepResult →
-        Prop :=
-  fun rawDone bytecodeDone =>
-    ∃ orderedDone,
-      SameDoneRel rawDone orderedDone ∧
-        Compiler.OpenInteractionComposition.VerifiedStackObjectPrefixDoneRel
-          artifact orderedDone bytecodeDone
-
-structure ArtifactRawSourceEquivalent
+structure ArtifactRawSourceContext
     (rawJson : String) (selection : Selection)
     (artifact : Frontend.Program.Artifact) where
   json : Lean.Json
@@ -158,9 +147,74 @@ structure ArtifactRawSourceEquivalent
   ordered :
     artifact.codeArtifact.resolved.toSolcYulOrderedProgram? =
       some artifact.codeArtifact.ordered
+  sourceContext :
+    Raw.SourceSemantics.contextForObject context =
+      { objectBuiltins := context }
+
+namespace ArtifactRawSourceContext
+
+theorem nonempty_of_compile
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (hCompile :
+      compileArtifactFromRawSolcIr? rawJson selection = some artifact) :
+    Nonempty (ArtifactRawSourceContext rawJson selection artifact) := by
+  rcases compileArtifactFromRawSolcIr?_raw_source_ordered_context hCompile with
+    ⟨json, selected, program, linkerSymbols, context,
+      hParse, hSelected, hDecode, hRawElab, hLinker, hProgramCompile,
+      hCodeArtifact, hResolved, hOrdered, hSourceContext⟩
+  exact ⟨
+    { json := json
+      selected := selected
+      program := program
+      linkerSymbols := linkerSymbols
+      context := context
+      parse := hParse
+      selected_ok := hSelected
+      decode := hDecode
+      raw_elaborates := hRawElab
+      linker := hLinker
+      compile := hProgramCompile
+      codeArtifact := hCodeArtifact
+      resolved := hResolved
+      ordered := hOrdered
+      sourceContext := hSourceContext }⟩
+
+end ArtifactRawSourceContext
+
+def RawSourceBytecodePrefixDoneRel
+    (artifact : Frontend.Program.Artifact) :
+    Except Failure State →
+      Except Assembly.EVMException Assembly.StepResult →
+        Prop :=
+  fun rawDone bytecodeDone =>
+    ∃ orderedDone,
+      SameDoneRel rawDone orderedDone ∧
+        Compiler.OpenInteractionComposition.VerifiedStackObjectPrefixDoneRel
+          artifact orderedDone bytecodeDone
+
+structure ArtifactRawSourceEquivalent
+    (rawJson : String) (selection : Selection)
+    (artifact : Frontend.Program.Artifact)
+    extends ArtifactRawSourceContext rawJson selection artifact where
   sourceRun :
     ObjectPositiveRunEquivalent context selected.root
       artifact.codeArtifact.ordered
+
+namespace ArtifactRawSourceContext
+
+def withSourceRun
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    (sourceRun :
+      ObjectPositiveRunEquivalent ctx.context ctx.selected.root
+        artifact.codeArtifact.ordered) :
+    ArtifactRawSourceEquivalent rawJson selection artifact :=
+  { ctx with
+    sourceRun := sourceRun }
+
+end ArtifactRawSourceContext
 
 theorem rawSourceEquivalentToRawBytecode
     {rawJson : String} {selection : Selection}
