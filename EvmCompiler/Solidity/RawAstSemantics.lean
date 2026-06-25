@@ -2654,6 +2654,77 @@ mutual
         exact CaseListContext.tail (CaseListContext.ofOccurrence hTail)
 end
 
+namespace StmtListContext
+
+theorem exists_split_stmt
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    {stmtList : List Yul.AstStmt}
+    {hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars}
+    (hContext : StmtListContext hInterface stmtList) :
+    ∃ (pre : List Yul.AstStmt) (stmt : Yul.AstStmt)
+        (suffix : List Yul.AstStmt),
+      stmtList = pre ++ stmt :: suffix ∧
+        StmtContext hInterface stmt := by
+  induction stmtList with
+  | nil =>
+      cases hContext
+  | cons head rest ih =>
+      cases hContext with
+      | head hStmt =>
+          exact ⟨[], head, rest, rfl, hStmt⟩
+      | tail hTail =>
+          rcases ih hTail with ⟨pre, stmt, suffix, hSplit, hStmt⟩
+          exact ⟨head :: pre, stmt, suffix, by simp [hSplit], hStmt⟩
+
+theorem exists_split_stmt_execSeq_prefix
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    {stmtList : List Yul.AstStmt}
+    {hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars}
+    (hContext : StmtListContext hInterface stmtList)
+    (fuel : Nat) (codeOverride : Option Yul.AstContract)
+    (entryShared : EvmYul.SharedState .Yul)
+    (entryVars : EvmYul.Yul.VarStore) :
+    ∃ (pre : List Yul.AstStmt) (stmt : Yul.AstStmt)
+        (suffix : List Yul.AstStmt),
+      stmtList = pre ++ stmt :: suffix ∧
+        StmtContext hInterface stmt ∧
+          Yul.InteractionSemantics.execSeq
+            (fuel + pre.length + 1) stmtList codeOverride
+            (.Ok entryShared entryVars) =
+            Simulation.Interaction.bind
+              (Yul.InteractionSemantics.execSeq
+                (fuel + pre.length + 1) pre codeOverride
+                (.Ok entryShared entryVars))
+              (fun stateAfterPre =>
+                Yul.YulOccurrence.StmtListUserCall.continueAfterPrefix
+                  (fuel + 1) (stmt :: suffix) codeOverride
+                  stateAfterPre) := by
+  rcases exists_split_stmt hContext with
+    ⟨pre, stmt, suffix, hSplit, hStmt⟩
+  subst stmtList
+  exact
+    ⟨pre, stmt, suffix, rfl, hStmt,
+      Yul.YulOccurrence.StmtListUserCall.execSeq_prefix_cons_succ
+        fuel pre stmt suffix codeOverride entryShared entryVars⟩
+
+end StmtListContext
+
 theorem stmtListContext
     {ordered : Yul.OrderedProgram}
     {generated : Name}
