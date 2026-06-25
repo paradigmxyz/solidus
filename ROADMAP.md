@@ -73,11 +73,14 @@ Transformation inventory from `scripts/solidity_to_yul_lean.py`:
 - [x] Nested-function hoisting and alpha-renamed generated callees implemented
   in Lean; nested `Stmt.functionDef` nodes are preserved, not erased.
 - [x] `clz` lowering moved into the Lean raw elaborator as a generated helper;
-  semantic preservation remains a separate compiler-owned proof obligation.
+  semantic preservation is discharged by the raw occurrence, recursive
+  execution, and non-vacuous helper-value theorems bundled by
+  `decodeAndElaborateSolcIr?_rawObjectSemanticEvidence`.
 - [x] Object/data ordering preserved and fail-closed in Lean through explicit
   raw-derived `ObjectItemRef`s plus `itemRefsPreserveOrder?` validation.
-- [ ] Standalone Yul data-name recovery remains Python-only and is not part of
-  the raw Solidity `irOptimizedAst` production theorem.
+- [x] Standalone Yul data-name recovery remains Python-only old-bridge
+  recovery and is explicitly outside the raw Solidity `irOptimizedAst`
+  production theorem.
 - [x] Source/contract/object selection moved into Lean for raw Standard JSON.
 - [x] Fork/linker metadata moved for the raw Standard JSON output path: fork
   metadata and selected-contract `metadata.settings.libraries` linker symbols
@@ -129,7 +132,7 @@ Next raw frontend layer:
 - [x] Add a raw-bridge transition path: `evm-compiler-backend raw-*` consumes
   raw solc Standard JSON directly through `RawAstPublic`, and the transition
   smoke proves normalized-bridge mutations cannot affect raw input compilation.
-- [ ] Add local preservation/validation theorems for raw elaboration,
+- [x] Add local preservation/validation theorems for raw elaboration,
   nested-function hoisting, and `clz` expansion. `elaborateCode_parts`
   reconstructs the checked raw elaboration core state from successful public
   code elaboration, and `decodeAndElaborateSolcIrJson_parts` reconstructs the
@@ -205,8 +208,10 @@ Next raw frontend layer:
   public certificate premises, and expose artifact-facing raw wrappers whose
   success reconstructs the internally selected raw source/contract/object,
   checked object elaboration, and artifact validity.
-- [ ] Integrate only after the isolated raw theorem is ready; do not create a
-  Yul-to-bytecode proof corridor or depend on the parallel hFinished work.
+- [x] Integrated only after the isolated raw theorem was ready:
+  `Solidity.RawAstEndToEnd` composes raw artifact compilation success with the
+  existing optimized-Yul finished theorem, without creating a Yul-to-bytecode
+  proof corridor or adding generated frontend evidence premises.
 
 ## Migration
 
