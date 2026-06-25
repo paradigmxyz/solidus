@@ -109,6 +109,40 @@ mutual
           CaseListUserCall functionName args (head :: rest)
 end
 
+namespace StmtListUserCall
+
+theorem exists_split_stmt
+    {functionName : Frontend.Name} {args : List Frontend.Expr}
+    {stmts : List Frontend.Stmt}
+    (hOccurrence : StmtListUserCall functionName args stmts) :
+    ∃ (pre : List Frontend.Stmt) (stmt : Frontend.Stmt)
+      (suffix : List Frontend.Stmt),
+      stmts = pre ++ stmt :: suffix ∧
+        StmtUserCall functionName args stmt := by
+  induction stmts with
+  | nil =>
+      cases hOccurrence
+  | cons head rest ih =>
+      cases hOccurrence with
+      | head hStmt =>
+          exact ⟨[], head, rest, rfl, hStmt⟩
+      | tail hTail =>
+          rcases ih hTail with ⟨pre, stmt, suffix, hSplit, hStmt⟩
+          exact ⟨head :: pre, stmt, suffix, by simp [hSplit], hStmt⟩
+
+theorem of_split_stmt
+    {functionName : Frontend.Name} {args : List Frontend.Expr}
+    {pre suffix : List Frontend.Stmt} {stmt : Frontend.Stmt}
+    (hStmt : StmtUserCall functionName args stmt) :
+    StmtListUserCall functionName args (pre ++ stmt :: suffix) := by
+  induction pre with
+  | nil =>
+      exact StmtListUserCall.head hStmt
+  | cons _ _ ih =>
+      exact StmtListUserCall.tail ih
+
+end StmtListUserCall
+
 namespace Expr
 namespace List
 
@@ -197,6 +231,228 @@ theorem toYul?
           simp [Frontend.Expr.toYul?] at hExpr
 
 end ExprUserCall
+
+mutual
+  theorem StmtUserCall.toYul?
+      {functionName : Frontend.Name} {args : List Frontend.Expr}
+      {stmt : Frontend.Stmt} {yulArgs : List Yul.AstExpr}
+      {yulStmt : Yul.AstStmt}
+      (hOccurrence : StmtUserCall functionName args stmt)
+      (hStmt : Frontend.Stmt.toYul? stmt = some yulStmt)
+      (hArgs : Frontend.Expr.List.toYul? args = some yulArgs) :
+      Yul.YulOccurrence.StmtUserCall functionName yulArgs yulStmt := by
+    cases hOccurrence with
+    | block hBody =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with ⟨yulBody, hBodyConvert, hEq⟩
+        subst yulStmt
+        exact
+          Yul.YulOccurrence.StmtUserCall.block
+            (StmtListUserCall.toYul? hBody hBodyConvert hArgs)
+    | letValue hValue =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with ⟨yulValue, hValueConvert, hEq⟩
+        subst yulStmt
+        exact
+          Yul.YulOccurrence.StmtUserCall.letValue
+            (ExprUserCall.toYul? hValue hValueConvert hArgs)
+    | assignValue hValue =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with ⟨yulValue, hValueConvert, hEq⟩
+        subst yulStmt
+        exact
+          Yul.YulOccurrence.StmtUserCall.assignValue
+            (ExprUserCall.toYul? hValue hValueConvert hArgs)
+    | exprStmt hValue =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with ⟨yulValue, hValueConvert, hEq⟩
+        subst yulStmt
+        exact
+          Yul.YulOccurrence.StmtUserCall.exprStmt
+            (ExprUserCall.toYul? hValue hValueConvert hArgs)
+    | switchScrutinee hScrutinee =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulScrutinee, hScrutineeConvert, yulCases, hCasesConvert,
+            yulDefault, hDefaultConvert, hEq⟩
+        subst yulStmt
+        exact
+          Yul.YulOccurrence.StmtUserCall.switchScrutinee
+            (ExprUserCall.toYul? hScrutinee hScrutineeConvert hArgs)
+    | switchCase hCases =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulScrutinee, hScrutineeConvert, yulCases, hCasesConvert,
+            yulDefault, hDefaultConvert, hEq⟩
+        subst yulStmt
+        exact
+          Yul.YulOccurrence.StmtUserCall.switchCase
+            (CaseListUserCall.toYul? hCases hCasesConvert hArgs)
+    | switchDefault hDefault =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulScrutinee, hScrutineeConvert, yulCases, hCasesConvert,
+            yulDefault, hDefaultConvert, hEq⟩
+        subst yulStmt
+        exact
+          Yul.YulOccurrence.StmtUserCall.switchDefault
+            (StmtListUserCall.toYul? hDefault hDefaultConvert hArgs)
+    | forPre hPre =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulPre, hPreConvert, yulCondition, hConditionConvert,
+            yulPost, hPostConvert, yulBody, hBodyConvert, hEq⟩
+        have hPreOccurrence :
+            Yul.YulOccurrence.StmtListUserCall functionName yulArgs yulPre :=
+          StmtListUserCall.toYul? hPre hPreConvert hArgs
+        cases yulPre with
+        | nil =>
+            cases hPreOccurrence
+        | cons head tail =>
+            simp at hEq
+            subst yulStmt
+            exact
+              Yul.YulOccurrence.StmtUserCall.block
+                (Yul.YulOccurrence.StmtListUserCall.append_right
+                  [EvmYul.Yul.Ast.Stmt.For yulCondition yulPost yulBody]
+                  hPreOccurrence)
+    | forCondition hCondition =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulPre, hPreConvert, yulCondition, hConditionConvert,
+            yulPost, hPostConvert, yulBody, hBodyConvert, hEq⟩
+        have hYulCondition :
+            Yul.YulOccurrence.ExprUserCall functionName yulArgs yulCondition :=
+          ExprUserCall.toYul? hCondition hConditionConvert hArgs
+        cases yulPre with
+        | nil =>
+            simp at hEq
+            subst yulStmt
+            exact Yul.YulOccurrence.StmtUserCall.forCondition hYulCondition
+        | cons head tail =>
+            simp at hEq
+            subst yulStmt
+            exact
+              Yul.YulOccurrence.StmtUserCall.block
+                (Yul.YulOccurrence.StmtListUserCall.of_split_stmt
+                  (pre := head :: tail) (suffix := [])
+                  (Yul.YulOccurrence.StmtUserCall.forCondition hYulCondition))
+    | forPost hPost =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulPre, hPreConvert, yulCondition, hConditionConvert,
+            yulPost, hPostConvert, yulBody, hBodyConvert, hEq⟩
+        have hYulPost :
+            Yul.YulOccurrence.StmtListUserCall functionName yulArgs yulPost :=
+          StmtListUserCall.toYul? hPost hPostConvert hArgs
+        cases yulPre with
+        | nil =>
+            simp at hEq
+            subst yulStmt
+            exact Yul.YulOccurrence.StmtUserCall.forPost hYulPost
+        | cons head tail =>
+            simp at hEq
+            subst yulStmt
+            exact
+              Yul.YulOccurrence.StmtUserCall.block
+                (Yul.YulOccurrence.StmtListUserCall.of_split_stmt
+                  (pre := head :: tail) (suffix := [])
+                  (Yul.YulOccurrence.StmtUserCall.forPost hYulPost))
+    | forBody hBody =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulPre, hPreConvert, yulCondition, hConditionConvert,
+            yulPost, hPostConvert, yulBody, hBodyConvert, hEq⟩
+        have hYulBody :
+            Yul.YulOccurrence.StmtListUserCall functionName yulArgs yulBody :=
+          StmtListUserCall.toYul? hBody hBodyConvert hArgs
+        cases yulPre with
+        | nil =>
+            simp at hEq
+            subst yulStmt
+            exact Yul.YulOccurrence.StmtUserCall.forBody hYulBody
+        | cons head tail =>
+            simp at hEq
+            subst yulStmt
+            exact
+              Yul.YulOccurrence.StmtUserCall.block
+                (Yul.YulOccurrence.StmtListUserCall.of_split_stmt
+                  (pre := head :: tail) (suffix := [])
+                  (Yul.YulOccurrence.StmtUserCall.forBody hYulBody))
+    | ifCondition hCondition =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulCondition, hConditionConvert, yulBody, hBodyConvert, hEq⟩
+        subst yulStmt
+        exact
+          Yul.YulOccurrence.StmtUserCall.ifCondition
+            (ExprUserCall.toYul? hCondition hConditionConvert hArgs)
+    | ifBody hBody =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulCondition, hConditionConvert, yulBody, hBodyConvert, hEq⟩
+        subst yulStmt
+        exact
+          Yul.YulOccurrence.StmtUserCall.ifBody
+            (StmtListUserCall.toYul? hBody hBodyConvert hArgs)
+
+  theorem StmtListUserCall.toYul?
+      {functionName : Frontend.Name} {args : List Frontend.Expr}
+      {stmts : List Frontend.Stmt} {yulArgs : List Yul.AstExpr}
+      {yulStmts : List Yul.AstStmt}
+      (hOccurrence : StmtListUserCall functionName args stmts)
+      (hStmts : Frontend.Stmt.List.toYul? stmts = some yulStmts)
+      (hArgs : Frontend.Expr.List.toYul? args = some yulArgs) :
+      Yul.YulOccurrence.StmtListUserCall functionName yulArgs yulStmts := by
+    cases hOccurrence with
+    | head hStmtOccurrence =>
+        simp [Frontend.Stmt.List.toYul?, Option.bind_eq_some_iff] at hStmts
+        rcases hStmts with
+          ⟨yulStmt, hStmtConvert, yulRest, hRestConvert, hEq⟩
+        subst yulStmts
+        exact
+          Yul.YulOccurrence.StmtListUserCall.head
+            (StmtUserCall.toYul? hStmtOccurrence hStmtConvert hArgs)
+    | tail hTail =>
+        simp [Frontend.Stmt.List.toYul?, Option.bind_eq_some_iff] at hStmts
+        rcases hStmts with
+          ⟨yulStmt, hStmtConvert, yulRest, hRestConvert, hEq⟩
+        subst yulStmts
+        exact
+          Yul.YulOccurrence.StmtListUserCall.tail
+            (StmtListUserCall.toYul? hTail hRestConvert hArgs)
+
+  theorem CaseListUserCall.toYul?
+      {functionName : Frontend.Name} {args : List Frontend.Expr}
+      {cases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+      {yulArgs : List Yul.AstExpr}
+      {yulCases : List (Yul.Word × List Yul.AstStmt)}
+      (hOccurrence : CaseListUserCall functionName args cases)
+      (hCases : Frontend.Stmt.CaseList.toYul? cases = some yulCases)
+      (hArgs : Frontend.Expr.List.toYul? args = some yulArgs) :
+      Yul.YulOccurrence.CaseListUserCall functionName yulArgs yulCases := by
+    cases hOccurrence with
+    | head hBody =>
+        simp [Frontend.Stmt.CaseList.toYul?, Option.bind_eq_some_iff]
+          at hCases
+        rcases hCases with
+          ⟨yulValue, hValueConvert, yulBody, hBodyConvert,
+            yulRest, hRestConvert, hEq⟩
+        subst yulCases
+        exact
+          Yul.YulOccurrence.CaseListUserCall.head
+            (StmtListUserCall.toYul? hBody hBodyConvert hArgs)
+    | tail hTail =>
+        simp [Frontend.Stmt.CaseList.toYul?, Option.bind_eq_some_iff]
+          at hCases
+        rcases hCases with
+          ⟨yulValue, hValueConvert, yulBody, hBodyConvert,
+            yulRest, hRestConvert, hEq⟩
+        subst yulCases
+        exact
+          Yul.YulOccurrence.CaseListUserCall.tail
+            (CaseListUserCall.toYul? hTail hRestConvert hArgs)
+end
 
 end FrontendOccurrence
 end Solidity

@@ -164,10 +164,15 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_focusedGeneratedCallOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_focusedGeneratedCallOccurrence
 #print axioms EvmCompiler.Yul.YulOccurrence.StmtListUserCall.exists_split_stmt
+#print axioms EvmCompiler.Yul.YulOccurrence.StmtListUserCall.append_right
 #print axioms EvmCompiler.Yul.YulOccurrence.StmtListUserCall.execSeq_prefix_cons_succ
 #print axioms EvmCompiler.Yul.YulOccurrence.StmtListUserCall.exists_split_stmt_execSeq_prefix
+#print axioms EvmCompiler.Solidity.FrontendOccurrence.StmtListUserCall.exists_split_stmt
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.Expr.List.toYul?_mem
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.ExprUserCall.toYul?
+#print axioms EvmCompiler.Solidity.FrontendOccurrence.StmtUserCall.toYul?
+#print axioms EvmCompiler.Solidity.FrontendOccurrence.StmtListUserCall.toYul?
+#print axioms EvmCompiler.Solidity.FrontendOccurrence.CaseListUserCall.toYul?
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzExpansionOk
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_hoistedFunctionsRetained

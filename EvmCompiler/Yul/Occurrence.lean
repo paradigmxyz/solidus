@@ -127,6 +127,21 @@ theorem of_split_stmt
   | cons head rest ih =>
       exact StmtListUserCall.tail ih
 
+theorem append_right
+    {functionName : Name} {args : List AstExpr}
+    {pre : List AstStmt} (suffix : List AstStmt)
+    (hOccurrence : StmtListUserCall functionName args pre) :
+    StmtListUserCall functionName args (pre ++ suffix) := by
+  induction pre with
+  | nil =>
+      cases hOccurrence
+  | cons head rest ih =>
+      cases hOccurrence with
+      | head hStmt =>
+          exact StmtListUserCall.head hStmt
+      | tail hTail =>
+          exact StmtListUserCall.tail (ih hTail)
+
 theorem execSeq_prefix_cons_succ
     (fuel : Nat) (pre : List AstStmt) (stmt : AstStmt)
     (suffix : List AstStmt) (code : Option AstContract)
