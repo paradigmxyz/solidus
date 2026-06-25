@@ -3097,6 +3097,71 @@ theorem raw_selfdestruct_staticModeViolation_executes_after_charges
       (.error EvmYul.EVM.ExecutionException.StaticModeViolation :
         Except EVMException StepResult))
 
+theorem evm_step_selfdestruct_stackUnderflow_of_pop_none
+    (state : EVMState) (hPop : state.stack.pop = none) :
+    EvmYul.step (τ := .EVM) .SELFDESTRUCT none state =
+      .error EvmYul.EVM.ExecutionException.StackUnderflow := by
+  cases state with
+  | mk shared pc stack execLength =>
+      cases stack with
+      | nil => rfl
+      | cons recipient tail =>
+          simp [EvmYul.Stack.pop] at hPop
+
+theorem raw_selfdestruct_stackUnderflow_executes_after_charges
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hPerm : state.executionEnv.perm = true)
+    (hShort : state.stack.length < 1)
+    (hDecode : Compact.decodeAt bytes pc (.prim .selfdestruct))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult
+        bytes 1 (afterDynamicChargeAt state))
+      []
+      (.error EvmYul.EVM.ExecutionException.StackUnderflow) := by
+  have hPermCharged :
+      (afterDynamicChargeAt state).executionEnv.perm = true := by
+    simpa [afterDynamicChargeAt, afterMemoryChargeAt, chargeGas] using hPerm
+  have hShortCharged :
+      (afterDynamicChargeAt state).stack.length < 1 := by
+    simpa [afterDynamicChargeAt, afterMemoryChargeAt, chargeGas] using hShort
+  have hPop : (afterDynamicChargeAt state).stack.pop = none :=
+    stack_pop_none_of_length_lt_one hShortCharged
+  have hEvm :
+      EvmYul.step (τ := .EVM) .SELFDESTRUCT none
+          (afterDynamicChargeAt state) =
+        .error EvmYul.EVM.ExecutionException.StackUnderflow := by
+    exact evm_step_selfdestruct_stackUnderflow_of_pop_none
+      (afterDynamicChargeAt state) hPop
+  have hPrim :
+      Assembly.PrimOp.selfdestruct.step (afterDynamicChargeAt state) =
+        .error EvmYul.EVM.ExecutionException.StackUnderflow := by
+    rw [Assembly.PrimOp.step_selfdestruct_of_permitted _ hPermCharged]
+    exact hEvm
+  have hOpen :
+      Assembly.InteractionSemantics.PrimOp.openStep
+          .selfdestruct (afterDynamicChargeAt state) =
+        Simulation.Interaction.done
+          (.error EvmYul.EVM.ExecutionException.StackUnderflow) := by
+    simp [Assembly.InteractionSemantics.PrimOp.openStep,
+      Assembly.PrimOp.toEVM,
+      Simulation.ExternalKind.ofEVMOperation?,
+      Simulation.CallKind.ofEVMOperation?,
+      Simulation.CreateKind.ofEVMOperation?, hPrim]
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .prim .selfdestruct) trivial hDecode hPc]
+  simpa [Compact.Instr.openStepResult, Compact.Instr.openStep,
+    Assembly.InteractionSemantics.Target.openStepInstrResult,
+    Assembly.Target.stepInstrResultWith,
+    Assembly.InteractionSemantics.Target.openStepInstr,
+    Assembly.Target.stepInstrWith, hOpen,
+    Simulation.Interaction.bind,
+    Simulation.Interaction.bind_done_error,
+    Assembly.PrimOp.haltKind?, Compact.Instr.haltKind?] using
+    (Interaction.Executes.done
+      (.error EvmYul.EVM.ExecutionException.StackUnderflow :
+        Except EVMException StepResult))
+
 theorem raw_return_stackUnderflow_executes_after_charges
     {bytes : ByteArray} {pc : Nat} {state : EVMState}
     (hShort : state.stack.length < 2)
@@ -4331,6 +4396,42 @@ theorem runRefinesOpen_staticcall_stackUnderflow_after_gas_checks
     raw_staticcall_stackUnderflow_executes_after_charges
       (bytes := bytes) (pc := pc) (state := state)
       hShort hDecode hPc
+  have hExec :=
+    Compact.InteractionSemantics.openRunNResult_error_add_executes
+      (extra := fuel) hOne
+  apply RunRefinesOpen.completed
+  · simpa [Nat.add_comm] using hExec
+  · exact DoneRel.sameError
+
+theorem runRefinesOpen_selfdestruct_stackUnderflow_after_gas_checks
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hGas : XGasChecksPass state)
+    (hSelfdestruct :
+      decodedOperationAt state = EvmYul.Operation.SELFDESTRUCT)
+    (hPerm : state.executionEnv.perm = true)
+    (hShort : state.stack.length < 1)
+    (hDecode : Compact.decodeAt bytes pc (.prim .selfdestruct))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1) (afterDynamicChargeAt state))
+      [] := by
+  have hOpcodeValid :
+      EvmYul.EVM.δ (decodedOperationAt state) ≠ none := by
+    simp [hSelfdestruct, EvmYul.EVM.δ]
+  have hShortDecoded :
+      state.stack.length <
+        (EvmYul.EVM.δ (decodedOperationAt state)).getD 0 := by
+    simpa [hSelfdestruct, EvmYul.EVM.δ] using hShort
+  rw [x_stack_underflow_after_gas_opcode_check
+    (fuel := fuel) (validJumps := validJumps) (state := state)
+    hGas hOpcodeValid hShortDecoded]
+  have hOne :=
+    raw_selfdestruct_stackUnderflow_executes_after_charges
+      (bytes := bytes) (pc := pc) (state := state)
+      hPerm hShort hDecode hPc
   have hExec :=
     Compact.InteractionSemantics.openRunNResult_error_add_executes
       (extra := fuel) hOne

@@ -107,6 +107,10 @@ Gasful EVM bridge checkpoint:
   short-stack CREATE/CREATE2/CALL/CALLCODE/DELEGATECALL/STATICCALL open
   raw-bytecode execution returns `StackUnderflow` before static checks or any
   external strategy request.
+- [x] Compose permitted `SELFDESTRUCT` stack underflow into `RunRefinesOpen`:
+  with static permission true, open raw-bytecode execution delegates to
+  EVMYulLean's `SELFDESTRUCT` stack pop and returns the same `StackUnderflow`
+  as the gasful `EVM.X` stack precheck.
 - [x] Add the matching terminal `RETURN`/`REVERT` compositions:
   stack-pop-aware actual `EVM.step` lemmas, gas/control-erased output-state
   relations, open raw-bytecode halt execution with concrete return bytes, and
@@ -118,8 +122,7 @@ Gasful EVM bridge checkpoint:
 - [ ] Prove the full `EVM.X` simulation that discharges the bridge premise for
   remaining special `EVM.step` helpers (`LOG0..4`), CALL/CREATE open-strategy
   responses with EIP-150/returned gas, and the remaining non-OOG exceptional
-  composition cases: residual `SELFDESTRUCT` stack underflow, stack overflow,
-  and bad jump destinations.
+  composition cases: stack overflow and bad jump destinations.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object
