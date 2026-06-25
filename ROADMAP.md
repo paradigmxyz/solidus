@@ -33,6 +33,19 @@ optimized solc Yul
   -> raw bytecode
 ```
 
+Gasful EVM bridge checkpoint:
+
+- [x] Add `Assembly.GasfulBridge` as the explicit `EVM.X`-to-open-raw-bytecode
+  boundary, including charged `GAS`/`MSIZE` raw-bytecode lemmas, checked
+  `EVM.X` OOG lemmas for memory and dynamic gas charges, OOG-inclusive outcome
+  relation, and CALL/CREATE gas-accounting records.
+- [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
+  gasful target bridge premise in
+  `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
+- [ ] Prove the full `EVM.X` simulation that discharges the bridge premise for
+  charged ordinary steps, jump/static/stack exceptional behavior, and
+  CALL/CREATE open-strategy responses with EIP-150/returned gas.
+
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object
 artifact. Compilation fails closed when stack-only scheduling fails. The

@@ -14,6 +14,7 @@ import EvmCompiler.Structured.TypedCfgPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.TypedCfg.InteractionPrefixPreservation
 import EvmCompiler.TypedCfg.InteractionFuelSafety
+import EvmCompiler.Assembly.GasfulBridge
 import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Assembly.InteractionFuelSafety
 import EvmCompiler.Assembly.Compact
@@ -22,6 +23,7 @@ import EvmCompiler.Solidity.RawAstPublic
 import EvmCompiler.Solidity.RawAstEndToEnd
 import EvmCompiler.Yul.FunctionsInteractionProgram
 import EvmCompiler.Yul.EndToEnd
+import EvmCompiler.Yul.GasfulEndToEnd
 
 /-!
 Production verification root for the optimized-solc-Yul stack-only backend.
@@ -550,8 +552,15 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackCodeToRawBytecode
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
 #check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecode
+#check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge
 #check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
 #check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedLegacy
+#check EvmCompiler.Assembly.GasfulBridge.raw_gas_observation_executes_after_charge
+#check EvmCompiler.Assembly.GasfulBridge.raw_msize_observation_executes_after_charge
+#check EvmCompiler.Assembly.GasfulBridge.x_outOfGas_before_memory_charge
+#check EvmCompiler.Assembly.GasfulBridge.x_outOfGas_before_dynamic_charge
+#check EvmCompiler.Assembly.GasfulBridge.CallBoundaryAccounting
+#check EvmCompiler.Assembly.GasfulBridge.CreateBoundaryAccounting
 
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyForward
@@ -1017,5 +1026,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.Compact.InteractionSemantics.compile?_source_openRunNResult_finished_rel
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.stackAssemblyToCompactBytecodeFinished
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecode
+#print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge
+#print axioms EvmCompiler.Assembly.GasfulBridge.raw_gas_observation_executes_after_charge
+#print axioms EvmCompiler.Assembly.GasfulBridge.raw_msize_observation_executes_after_charge
+#print axioms EvmCompiler.Assembly.GasfulBridge.x_outOfGas_before_memory_charge
+#print axioms EvmCompiler.Assembly.GasfulBridge.x_outOfGas_before_dynamic_charge
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedLegacy
