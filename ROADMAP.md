@@ -145,12 +145,14 @@ Gasful EVM bridge checkpoint:
   projection plus frame-local data, and
   `runRefinesOpen_call_external_success_actual` existentially supplies the
   concrete response, parent gas credit, return data, and post-call world
-  without a caller-provided response-relation premise.
+  without a caller-provided response-relation premise; the response relation
+  also preserves the exact caller continuation PC.
 - [x] Derive the CREATE/CREATE2 response relation from actual `EVM.step` and
   child-`Lambda` results: `runRefinesOpen_create_external_success_actual`
   existentially supplies the concrete address/status, return data, post-create
   world, EIP-150 withholding, and returned child gas without a
-  caller-provided response-relation premise.
+  caller-provided response-relation premise, while preserving the exact caller
+  continuation PC.
 - [x] Add the matching terminal `RETURN`/`REVERT` compositions:
   stack-pop-aware actual `EVM.step` lemmas, gas/control-erased output-state
   relations, open raw-bytecode halt execution with concrete return bytes, and

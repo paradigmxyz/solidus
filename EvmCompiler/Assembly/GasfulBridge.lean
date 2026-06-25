@@ -4234,6 +4234,55 @@ theorem call_result_status_bool
       · simp at hCall
         exact ⟨false, hCall.1.symm⟩
 
+theorem call_result_pc
+    {fuel gasCost : Nat}
+    {blobVersionedHashes : List ByteArray}
+    {gas source recipient target value apparentValue inputOffset inputSize
+      outputOffset outputSize status : EvmYul.UInt256}
+    {permission : Bool} {state result : EVMState}
+    (hCall :
+      EvmYul.EVM.call fuel gasCost blobVersionedHashes gas source recipient
+        target value apparentValue inputOffset inputSize outputOffset outputSize
+        permission state = .ok (status, result)) :
+    result.pc = state.pc := by
+  cases fuel with
+  | zero =>
+      simp [EvmYul.EVM.call] at hCall
+  | succ fuel =>
+      simp only [EvmYul.EVM.call] at hCall
+      split at hCall
+      · generalize hTheta :
+          EvmYul.EVM.Θ fuel blobVersionedHashes state.createdAccounts
+            state.genesisBlockHeader state.blocks state.accountMap state.σ₀
+            { totalGasUsedInBlock := state.totalGasUsedInBlock
+              transactionReceipts := state.transactionReceipts }
+            (state.addAccessedAccount
+              (EvmYul.AccountAddress.ofUInt256 target)).substate
+            (EvmYul.AccountAddress.ofUInt256 source)
+            state.executionEnv.sender
+            (EvmYul.AccountAddress.ofUInt256 recipient)
+            (EvmYul.toExecute .EVM state.accountMap
+              (EvmYul.AccountAddress.ofUInt256 target))
+            (EvmYul.UInt256.ofNat
+              (EvmYul.EVM.Ccallgas
+                (EvmYul.AccountAddress.ofUInt256 target)
+                (EvmYul.AccountAddress.ofUInt256 recipient)
+                value gas state.accountMap state.toMachineState
+                state.substate))
+            (EvmYul.UInt256.ofNat state.executionEnv.gasPrice)
+            value apparentValue
+            (state.memory.readWithPadding inputOffset.toNat inputSize.toNat)
+            (state.executionEnv.depth + 1) state.executionEnv.header
+            permission = thetaResult at hCall
+        cases thetaResult with
+        | error error => simp_all
+        | ok resultTheta =>
+            simp at hCall
+            split at hCall <;> rcases hCall with ⟨_, rfl⟩ <;> rfl
+      · simp at hCall
+        rcases hCall with ⟨_, rfl⟩
+        rfl
+
 def callReturnedGasFromResult
     (kind : CallKind) (preCostState : EVMState)
     (operands : CallOperands) (result : EVMState) : EvmYul.UInt256 :=
@@ -4389,6 +4438,7 @@ structure CallResponseStateRel
     (operands : CallOperands) (response : CallResponse)
     (gasfulState openState : EVMState) : Prop where
   openData : OpenSameData gasfulState openState
+  pc_eq : gasfulState.pc = openState.pc
   gasAccounting :
     CallResponseGasAccounting kind preCostState operands response
       gasfulState.gasAvailable
@@ -4398,12 +4448,13 @@ theorem callResponseStateRel_of_openSameData
     {operands : CallOperands} {response : CallResponse}
     {gasfulState openState : EVMState}
     (hOpen : OpenSameData gasfulState openState)
+    (hPc : gasfulState.pc = openState.pc)
     (hGas :
       gasfulState.gasAvailable =
         callResponseFinalGas kind preCostState operands response) :
     CallResponseStateRel kind preCostState operands response
       gasfulState openState := by
-  refine ⟨hOpen, ?_⟩
+  refine ⟨hOpen, hPc, ?_⟩
   rw [hGas]
   exact
     callResponseGasAccounting_canonical kind preCostState operands
@@ -4414,6 +4465,7 @@ theorem callResponseStateRel_of_sameData
     {operands : CallOperands} {response : CallResponse}
     {gasfulState openState : EVMState}
     (hSame : SameData gasfulState openState)
+    (hPc : gasfulState.pc = openState.pc)
     (hGas :
       gasfulState.gasAvailable =
         callResponseFinalGas kind preCostState operands response) :
@@ -4421,7 +4473,7 @@ theorem callResponseStateRel_of_sameData
       gasfulState openState := by
   exact
     callResponseStateRel_of_openSameData
-      (OpenSameData.of_sameData hSame) hGas
+      (OpenSameData.of_sameData hSame) hPc hGas
 
 theorem callResponseStateRel_of_call_result
     {fuel gasCost : Nat}
@@ -4454,6 +4506,10 @@ theorem callResponseStateRel_of_call_result
         (returnedGas :=
           callReturnedGasFromResult kind state operands result)
         hCall hStatus)
+  · simp [InteractionSemantics.EVMState.finishCall,
+      InteractionSemantics.EVMState.installWorld,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, chargeGas, call_result_pc hCall]
   · simpa [EvmYul.EVM.State.replaceStackAndIncrPC,
       EvmYul.EVM.State.incrPC] using
       (callResponseFromResult_finalGas
@@ -4714,6 +4770,15 @@ theorem evm_step_call_responseStateRel_at
           (afterDynamicChargeAt state) rest operands.callLocal response) := by
     simpa [afterDynamicChargeAt] using
       hOpenResponse.trans hOpenControl
+  have hPc :
+      gasfulNext.pc =
+        (InteractionSemantics.EVMState.finishCall
+          (afterDynamicChargeAt state) rest operands.callLocal response).pc := by
+    simpa [hParentCost, afterDynamicChargeAt,
+      InteractionSemantics.EVMState.finishCall,
+      InteractionSemantics.EVMState.installWorld,
+      EvmYul.EVM.State.incrPC, chargeGas, callInputState] using
+      hResponse.pc_eq
   have hGasInput :=
     callResponseGasAccounting_finalGas_eq hResponse.gasAccounting
   have hGas :
@@ -4723,7 +4788,7 @@ theorem evm_step_call_responseStateRel_at
     simpa [callResponseFinalGas, callInputState, hParentMemory] using
       hGasInput
   exact
-    ⟨response, callResponseStateRel_of_openSameData hOpen hGas⟩
+    ⟨response, callResponseStateRel_of_openSameData hOpen hPc hGas⟩
 
 def callPrimOp : CallKind → PrimOp
   | .call => .call
@@ -5032,6 +5097,7 @@ structure CreateResponseStateRel
     (operands : CreateOperands) (response : CreateResponse)
     (gasfulState openState : EVMState) : Prop where
   openData : OpenSameData gasfulState openState
+  pc_eq : gasfulState.pc = openState.pc
   gasAccounting :
     CreateResponseGasAccounting kind preCostState operands response
       gasfulState.gasAvailable
@@ -5041,12 +5107,13 @@ theorem createResponseStateRel_of_openSameData
     {operands : CreateOperands} {response : CreateResponse}
     {gasfulState openState : EVMState}
     (hOpen : OpenSameData gasfulState openState)
+    (hPc : gasfulState.pc = openState.pc)
     (hGas :
       gasfulState.gasAvailable =
         createResponseFinalGas kind preCostState operands response) :
     CreateResponseStateRel kind preCostState operands response
       gasfulState openState := by
-  refine ⟨hOpen, ?_⟩
+  refine ⟨hOpen, hPc, ?_⟩
   rw [hGas]
   exact
     createResponseGasAccounting_canonical kind preCostState operands
@@ -5057,6 +5124,7 @@ theorem createResponseStateRel_of_sameData
     {operands : CreateOperands} {response : CreateResponse}
     {gasfulState openState : EVMState}
     (hSame : SameData gasfulState openState)
+    (hPc : gasfulState.pc = openState.pc)
     (hGas :
       gasfulState.gasAvailable =
         createResponseFinalGas kind preCostState operands response) :
@@ -5064,7 +5132,7 @@ theorem createResponseStateRel_of_sameData
       gasfulState openState := by
   exact
     createResponseStateRel_of_openSameData
-      (OpenSameData.of_sameData hSame) hGas
+      (OpenSameData.of_sameData hSame) hPc hGas
 
 abbrev ConcreteCreateResult :=
   EvmYul.AccountAddress × EVMState × EvmYul.UInt256 × Bool ×
@@ -5364,6 +5432,40 @@ theorem concreteCreate_result_openSameData
           OpenWorld.installEVMShared, OpenWorld.installEVM,
           EvmYul.Stack.push]
 
+theorem concreteCreate_result_pc
+    {kind : CreateKind} {fuel gasCost : Nat}
+    {state result : EVMState} {operands : CreateOperands}
+    {address : EvmYul.AccountAddress} {returnedGas : EvmYul.UInt256}
+    {success : Bool} {returnData : ByteArray}
+    (hCreate :
+      concreteCreate kind fuel gasCost state operands =
+        (address, result, returnedGas, success, returnData)) :
+    result.pc = state.pc := by
+  unfold concreteCreate at hCreate
+  dsimp only at hCreate
+  split at hCreate
+  · simp at hCreate
+    rcases hCreate with ⟨rfl, rfl, rfl, rfl, rfl⟩
+    rfl
+  · split at hCreate
+    · generalize hLambda :
+        createLambda kind fuel (chargeGas state gasCost) operands = lambdaResult
+          at hCreate
+      cases lambdaResult with
+      | error error =>
+          simp at hCreate
+          rcases hCreate with ⟨rfl, rfl, rfl, rfl, rfl⟩
+          rfl
+      | ok value =>
+          rcases value with ⟨childAddress, createdAccounts, accountMap,
+            childReturnedGas, substate, childSuccess, childReturnData⟩
+          simp at hCreate
+          rcases hCreate with ⟨rfl, rfl, rfl, rfl, rfl⟩
+          rfl
+    · simp at hCreate
+      rcases hCreate with ⟨rfl, rfl, rfl, rfl, rfl⟩
+      rfl
+
 theorem createResponseFromConcrete_finalGas
     (kind : CreateKind) (state result : EVMState)
     (operands : CreateOperands) (gasCost : Nat)
@@ -5423,6 +5525,12 @@ theorem concreteCreate_responseStateRel
           address returnedGas success returnData)) := by
   apply createResponseStateRel_of_openSameData
   · simpa [hParentCost] using concreteCreate_result_openSameData hCreate
+  · simp [finishConcreteCreate,
+      InteractionSemantics.EVMState.finishCreate,
+      InteractionSemantics.EVMState.installWorld,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, chargeGas,
+      concreteCreate_result_pc hCreate]
   · exact
       (createResponseFromConcrete_finalGas kind state result operands gasCost
         address returnedGas success returnData rest hParentCost).symm
@@ -5518,6 +5626,15 @@ theorem evm_step_create_responseStateRel_at
           (afterDynamicChargeAt state) rest operands.createLocal response) := by
     simpa [afterDynamicChargeAt] using
       hOpenResponse.trans hOpenControl
+  have hPc :
+      gasfulNext.pc =
+        (InteractionSemantics.EVMState.finishCreate
+          (afterDynamicChargeAt state) rest operands.createLocal response).pc := by
+    simpa [hParentCost, afterDynamicChargeAt,
+      InteractionSemantics.EVMState.finishCreate,
+      InteractionSemantics.EVMState.installWorld,
+      EvmYul.EVM.State.incrPC, chargeGas, callInputState] using
+      hResponse.pc_eq
   have hGasInput :=
     createResponseGasAccounting_finalGas_eq hResponse.gasAccounting
   have hGas :
@@ -5526,7 +5643,7 @@ theorem evm_step_create_responseStateRel_at
           operands response := by
     simpa [createResponseFinalGas, callInputState] using hGasInput
   exact
-    ⟨response, createResponseStateRel_of_openSameData hOpen hGas⟩
+    ⟨response, createResponseStateRel_of_openSameData hOpen hPc hGas⟩
 
 def createPrimOp : CreateKind → PrimOp
   | .create => .create

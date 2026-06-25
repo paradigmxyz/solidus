@@ -672,6 +672,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.callResponseStateRel_of_openSameData
 #check EvmCompiler.Assembly.GasfulBridge.callResponseStateRel_of_sameData
 #check EvmCompiler.Assembly.GasfulBridge.call_result_status_bool
+#check EvmCompiler.Assembly.GasfulBridge.call_result_pc
 #check EvmCompiler.Assembly.GasfulBridge.callResponseFromResult
 #check EvmCompiler.Assembly.GasfulBridge.callResponseFromResult_finalGas
 #check EvmCompiler.Assembly.GasfulBridge.call_result_openSameData
@@ -693,6 +694,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.CreateKind.canonicalOperands_eq_of_evmOperands
 #check EvmCompiler.Assembly.GasfulBridge.evm_step_create_eq_concreteCreateStep
 #check EvmCompiler.Assembly.GasfulBridge.concreteCreate_result_openSameData
+#check EvmCompiler.Assembly.GasfulBridge.concreteCreate_result_pc
 #check EvmCompiler.Assembly.GasfulBridge.createResponseFromConcrete_finalGas
 #check EvmCompiler.Assembly.GasfulBridge.concreteCreate_responseStateRel
 #check EvmCompiler.Assembly.GasfulBridge.evm_step_create_responseStateRel
@@ -1317,6 +1319,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.callResponseStateRel_of_openSameData
 #print axioms EvmCompiler.Assembly.GasfulBridge.callResponseStateRel_of_sameData
 #print axioms EvmCompiler.Assembly.GasfulBridge.call_result_status_bool
+#print axioms EvmCompiler.Assembly.GasfulBridge.call_result_pc
 #print axioms EvmCompiler.Assembly.GasfulBridge.callResponseFromResult_finalGas
 #print axioms EvmCompiler.Assembly.GasfulBridge.call_result_openSameData
 #print axioms EvmCompiler.Assembly.GasfulBridge.callResponseStateRel_of_call_result
@@ -1333,6 +1336,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.CreateKind.canonicalOperands_eq_of_evmOperands
 #print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_create_eq_concreteCreateStep
 #print axioms EvmCompiler.Assembly.GasfulBridge.concreteCreate_result_openSameData
+#print axioms EvmCompiler.Assembly.GasfulBridge.concreteCreate_result_pc
 #print axioms EvmCompiler.Assembly.GasfulBridge.createResponseFromConcrete_finalGas
 #print axioms EvmCompiler.Assembly.GasfulBridge.concreteCreate_responseStateRel
 #print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_create_responseStateRel
