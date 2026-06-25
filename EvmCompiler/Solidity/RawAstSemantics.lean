@@ -2692,6 +2692,88 @@ theorem StmtContext.toSlot
   | ifBody hBody =>
       exact Or.inr (Or.inl ⟨_, StmtListSlot.ifBody hBody⟩)
 
+namespace StmtExprSlot
+
+theorem exprContext
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    {stmt : Yul.AstStmt} {expr : Yul.AstExpr}
+    {hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars}
+    (hSlot : StmtExprSlot hInterface stmt expr) :
+    ExprContext hInterface expr := by
+  cases hSlot with
+  | letValue hExpr => exact hExpr
+  | assignValue hExpr => exact hExpr
+  | exprStmt hExpr => exact hExpr
+  | switchScrutinee hExpr => exact hExpr
+  | forCondition hExpr => exact hExpr
+  | ifCondition hExpr => exact hExpr
+
+theorem directOrCallArgPrefix
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    {stmt : Yul.AstStmt} {expr : Yul.AstExpr}
+    {hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars}
+    (hSlot : StmtExprSlot hInterface stmt expr) :
+    expr = .Call (.inr generated) args ∨
+      ∃ (callee : EvmYul.Operation .Yul ⊕ Name)
+          (outerArgs before : List Yul.AstExpr) (arg : Yul.AstExpr)
+          (after : List Yul.AstExpr),
+        expr = .Call callee outerArgs ∧
+          outerArgs.reverse = before ++ arg :: after ∧
+            ExprContext hInterface arg ∧
+              ∀ (fuel : Nat) (source : Yul.InteractionSemantics.State),
+                Yul.InteractionSemantics.evalValues
+                    (fuel + 2 * before.length + 3)
+                    expr (some ordered.program.contract) source =
+                  Simulation.Interaction.bind
+                    (Yul.InteractionSemantics.evalArgs
+                      (fuel + 2 * before.length + 2) before
+                      (some ordered.program.contract) source)
+                    (fun beforeResult =>
+                      Simulation.Interaction.bind
+                        (Yul.InteractionSemantics.evalValues (fuel + 1)
+                          arg (some ordered.program.contract)
+                          beforeResult.1)
+                        (fun argResult =>
+                          Simulation.Interaction.bind
+                            (Yul.InteractionSemantics.evalArgs fuel after
+                              (some ordered.program.contract) argResult.1)
+                            (fun afterResult =>
+                              let evaluatedArgs :=
+                                beforeResult.2 ++
+                                  argResult.2.head! :: afterResult.2
+                              match callee with
+                              | .inl prim =>
+                                  Yul.InteractionSemantics.primitiveSemantics.eval
+                                    (fuel + 2 * before.length + 2)
+                                    afterResult.1 prim
+                                    evaluatedArgs.reverse
+                              | .inr functionName =>
+                                  Yul.InteractionSemantics.call
+                                    (fuel + 2 * before.length + 2)
+                                    evaluatedArgs.reverse
+                                    (some functionName)
+                                    (some ordered.program.contract)
+                                    afterResult.1))) := by
+  exact ExprContext.directOrCallArgPrefix (exprContext hSlot)
+
+end StmtExprSlot
+
 mutual
   theorem StmtContext.ofOccurrence
       {ordered : Yul.OrderedProgram}
@@ -2887,6 +2969,132 @@ theorem exists_split_case
               by simp [hSplit], hBody⟩
 
 end CaseListContext
+
+namespace StmtListSlot
+
+theorem stmtListContext
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    {stmt : Yul.AstStmt} {stmtList : List Yul.AstStmt}
+    {hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars}
+    (hSlot : StmtListSlot hInterface stmt stmtList) :
+    StmtListContext hInterface stmtList := by
+  cases hSlot with
+  | block hList => exact hList
+  | switchDefault hList => exact hList
+  | forPost hList => exact hList
+  | forBody hList => exact hList
+  | ifBody hList => exact hList
+
+theorem exists_split_stmt_execSeq_prefix
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    {stmt : Yul.AstStmt} {stmtList : List Yul.AstStmt}
+    {hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars}
+    (hSlot : StmtListSlot hInterface stmt stmtList)
+    (fuel : Nat) (codeOverride : Option Yul.AstContract)
+    (entryShared : EvmYul.SharedState .Yul)
+    (entryVars : EvmYul.Yul.VarStore) :
+    ∃ (pre : List Yul.AstStmt) (focused : Yul.AstStmt)
+        (suffix : List Yul.AstStmt),
+      stmtList = pre ++ focused :: suffix ∧
+        StmtContext hInterface focused ∧
+          Yul.InteractionSemantics.execSeq
+            (fuel + pre.length + 1) stmtList codeOverride
+            (.Ok entryShared entryVars) =
+            Simulation.Interaction.bind
+              (Yul.InteractionSemantics.execSeq
+                (fuel + pre.length + 1) pre codeOverride
+                (.Ok entryShared entryVars))
+              (fun stateAfterPre =>
+                Yul.YulOccurrence.StmtListUserCall.continueAfterPrefix
+                  (fuel + 1) (focused :: suffix) codeOverride
+                  stateAfterPre) := by
+  exact
+    StmtListContext.exists_split_stmt_execSeq_prefix
+      (stmtListContext hSlot) fuel codeOverride entryShared entryVars
+
+end StmtListSlot
+
+namespace StmtCaseListSlot
+
+theorem caseListContext
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    {stmt : Yul.AstStmt} {cases : List (Word × List Yul.AstStmt)}
+    {hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars}
+    (hSlot : StmtCaseListSlot hInterface stmt cases) :
+    CaseListContext hInterface cases := by
+  cases hSlot with
+  | switchCase hCases => exact hCases
+
+theorem exists_split_case_stmt_execSeq_prefix
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    {stmt : Yul.AstStmt} {cases : List (Word × List Yul.AstStmt)}
+    {hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars}
+    (hSlot : StmtCaseListSlot hInterface stmt cases)
+    (fuel : Nat) (codeOverride : Option Yul.AstContract)
+    (entryShared : EvmYul.SharedState .Yul)
+    (entryVars : EvmYul.Yul.VarStore) :
+    ∃ (casePre : List (Word × List Yul.AstStmt)) (value : Word)
+        (caseBody : List Yul.AstStmt)
+        (caseSuffix : List (Word × List Yul.AstStmt))
+        (pre : List Yul.AstStmt) (focused : Yul.AstStmt)
+        (suffix : List Yul.AstStmt),
+      cases = casePre ++ (value, caseBody) :: caseSuffix ∧
+        caseBody = pre ++ focused :: suffix ∧
+          StmtContext hInterface focused ∧
+            Yul.InteractionSemantics.execSeq
+              (fuel + pre.length + 1) caseBody codeOverride
+              (.Ok entryShared entryVars) =
+              Simulation.Interaction.bind
+                (Yul.InteractionSemantics.execSeq
+                  (fuel + pre.length + 1) pre codeOverride
+                  (.Ok entryShared entryVars))
+                (fun stateAfterPre =>
+                  Yul.YulOccurrence.StmtListUserCall.continueAfterPrefix
+                    (fuel + 1) (focused :: suffix) codeOverride
+                    stateAfterPre) := by
+  rcases CaseListContext.exists_split_case (caseListContext hSlot) with
+    ⟨casePre, value, caseBody, caseSuffix, hCases, hBody⟩
+  rcases
+      StmtListContext.exists_split_stmt_execSeq_prefix hBody fuel
+        codeOverride entryShared entryVars with
+    ⟨pre, focused, suffix, hBodySplit, hFocused, hPrefix⟩
+  exact
+    ⟨casePre, value, caseBody, caseSuffix, pre, focused, suffix,
+      hCases, hBodySplit, hFocused, hPrefix⟩
+
+end StmtCaseListSlot
 
 theorem stmtListContext
     {ordered : Yul.OrderedProgram}

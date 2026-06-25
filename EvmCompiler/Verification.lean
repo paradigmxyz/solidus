@@ -88,8 +88,14 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext.ofOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext.toSlot
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtExprSlot
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtExprSlot.exprContext
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtExprSlot.directOrCallArgPrefix
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListSlot
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListSlot.stmtListContext
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListSlot.exists_split_stmt_execSeq_prefix
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtCaseListSlot
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtCaseListSlot.caseListContext
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtCaseListSlot.exists_split_case_stmt_execSeq_prefix
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListContext
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListContext.ofOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListContext.exists_split_stmt
@@ -357,6 +363,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.ExprContext.directOrCallArgPrefix
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext.ofOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext.toSlot
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtExprSlot.exprContext
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtExprSlot.directOrCallArgPrefix
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListSlot.stmtListContext
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListSlot.exists_split_stmt_execSeq_prefix
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtCaseListSlot.caseListContext
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtCaseListSlot.exists_split_case_stmt_execSeq_prefix
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListContext.ofOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListContext.exists_split_stmt
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListContext.exists_split_stmt_execSeq_prefix
