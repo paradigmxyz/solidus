@@ -162,6 +162,9 @@ Gasful EVM bridge checkpoint:
   `RunRefinesOpen`: exact imported-step equations, closed open raw-bytecode
   steps, related successor PCs/stacks, and recursive continuation wrappers now
   complement the existing underflow and bad-destination branches.
+- [x] Compose successful charged `PC` and compact `PUSH1..PUSH32` execution
+  into `RunRefinesOpen`: both use exact concrete values and related successor
+  PCs/stacks without introducing open observations or replay data.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
