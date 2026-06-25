@@ -1565,6 +1565,66 @@ theorem elaborate_bodyBlock_exists
                     ⟨frontendBody, stateAfterDeclare, stateAfterBody,
                       hBody, rfl⟩
 
+theorem elaborate_codeRoute_of_body
+    {params returns : List Name} {rawBody : List Raw.Stmt}
+    {fn : Frontend.FunctionDef} {state state' : Elab.State}
+    {functionName : Name} {args : List Frontend.Expr}
+    (hElab :
+      (Elab.FunctionDef.elaborate params returns rawBody).run state =
+        .ok (fn, state'))
+    (hBodyRoute :
+      ∀ {frontendBody : List Frontend.Stmt}
+        {stateBeforeBody stateAfterBody : Elab.State},
+        (Elab.Stmt.List.elaborateBlock rawBody true).run
+          stateBeforeBody =
+          .ok (frontendBody, stateAfterBody) →
+        fn.body = frontendBody →
+          CodeElaborationRoute stateAfterBody functionName args
+            frontendBody) :
+    CodeElaborationRoute state' functionName args fn.body := by
+  unfold Elab.FunctionDef.elaborate at hElab
+  cases hPush : Elab.pushIdentifierScope.run state with
+  | error err =>
+      simp [hPush] at hElab
+  | ok pushResult =>
+      rcases pushResult with ⟨unitPush, stateAfterPush⟩
+      cases hDeclare :
+          (Elab.declareIdentifiers (params ++ returns)
+            "function parameter/result").run stateAfterPush with
+      | error err =>
+          simp [hPush, hDeclare] at hElab
+      | ok declareResult =>
+          rcases declareResult with ⟨unitDeclare, stateAfterDeclare⟩
+          cases hBody :
+              (Elab.Stmt.List.elaborateBlock rawBody true).run
+                stateAfterDeclare with
+          | error err =>
+              simp [hPush, hDeclare, hBody] at hElab
+          | ok bodyResult =>
+              rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+              cases hPop :
+                  Elab.popIdentifierScope.run stateAfterBody with
+              | error err =>
+                  simp [hPush, hDeclare, hBody, hPop] at hElab
+              | ok popResult =>
+                  rcases popResult with ⟨unitPop, stateAfterPop⟩
+                  simp [hPush, hDeclare, hBody, hPop] at hElab
+                  rcases hElab with ⟨rfl, rfl⟩
+                  exact
+                    CodeElaborationRoute.retain
+                      (hBodyRoute hBody rfl)
+                      (fun {entry} hMem => by
+                        cases hScopes :
+                            stateAfterBody.identifierScopes with
+                        | nil =>
+                            simp [Elab.popIdentifierScope, hScopes] at hPop
+                            unfold Elab.throw at hPop
+                            cases hPop
+                        | cons head rest =>
+                            simp [Elab.popIdentifierScope, hScopes] at hPop
+                            rcases hPop with ⟨_hUnit, rfl⟩
+                            exact hMem)
+
 end FunctionDef
 
 namespace Elab
