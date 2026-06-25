@@ -4214,6 +4214,145 @@ def switchOfFocusedGenerated
 
 end DirectIncomingStmtRun
 
+namespace FocusedStmtRun
+
+def assignOfFocusedGenerated
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {bodyFuel : Nat}
+    {state : σ}
+    {names : List Frontend.Name}
+    (hRun :
+      FocusedGeneratedCallRun (object := object) (ordered := ordered)
+        (topName := topName) model prim bodyFuel state)
+    (hCheck :
+      EvmYul.Yul.checkAssignment (model.source state) names = .ok ()) :
+    FocusedStmtRun hRun.routeEvidence.yulEvidence model prim state
+      ((bodyFuel + 2) + 1)
+      (.Assign names
+        (.Call (.inr hRun.routeEvidence.yulEvidence.generated)
+          hRun.routeEvidence.yulEvidence.yulArgs))
+      (model.multifill names hRun.run.postState hRun.run.returns) :=
+  .direct .assignmentValue
+    (DirectIncomingStmtRun.assignOfFocusedGenerated hRun hCheck)
+
+def letOfFocusedGenerated
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {bodyFuel : Nat}
+    {state : σ}
+    {names : List Frontend.Name}
+    (hRun :
+      FocusedGeneratedCallRun (object := object) (ordered := ordered)
+        (topName := topName) model prim bodyFuel state)
+    (hCheck :
+      EvmYul.Yul.checkDeclaration (model.source state) names = .ok ()) :
+    FocusedStmtRun hRun.routeEvidence.yulEvidence model prim state
+      ((bodyFuel + 2) + 1)
+      (.Let names
+        (some (.Call (.inr hRun.routeEvidence.yulEvidence.generated)
+          hRun.routeEvidence.yulEvidence.yulArgs)))
+      (model.multifill names hRun.run.postState hRun.run.returns) :=
+  .direct .letValue
+    (DirectIncomingStmtRun.letOfFocusedGenerated hRun hCheck)
+
+def ifFalseOfFocusedGenerated
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {bodyFuel : Nat}
+    {state : σ}
+    {ifBody : List Frontend.AstStmt}
+    (hRun :
+      FocusedGeneratedCallRun (object := object) (ordered := ordered)
+        (topName := topName) model prim bodyFuel state)
+    (hZero :
+      hRun.run.returns.head! = EvmYul.UInt256.ofNat 0) :
+    FocusedStmtRun hRun.routeEvidence.yulEvidence model prim state
+      ((bodyFuel + 2) + 1)
+      (.If
+        (.Call (.inr hRun.routeEvidence.yulEvidence.generated)
+          hRun.routeEvidence.yulEvidence.yulArgs)
+        ifBody)
+      hRun.run.postState :=
+  .direct .ifCondition
+    (DirectIncomingStmtRun.ifFalseOfFocusedGenerated hRun hZero)
+
+def ifTrueOfFocusedGenerated
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {bodyFuel : Nat}
+    {state final : σ}
+    {ifBody : List Frontend.AstStmt}
+    (hRun :
+      FocusedGeneratedCallRun (object := object) (ordered := ordered)
+        (topName := topName) model prim bodyFuel state)
+    (hNonzero :
+      hRun.run.returns.head! ≠ EvmYul.UInt256.ofNat 0)
+    (hIfBody :
+      Yul.Source.Effectful.exec model prim (bodyFuel + 2)
+          (.Block ifBody)
+          (some ordered.program.contract) hRun.run.postState =
+        .ok final) :
+    FocusedStmtRun hRun.routeEvidence.yulEvidence model prim state
+      ((bodyFuel + 2) + 1)
+      (.If
+        (.Call (.inr hRun.routeEvidence.yulEvidence.generated)
+          hRun.routeEvidence.yulEvidence.yulArgs)
+        ifBody)
+      final :=
+  .direct .ifCondition
+    (DirectIncomingStmtRun.ifTrueOfFocusedGenerated
+      hRun hNonzero hIfBody)
+
+def switchOfFocusedGenerated
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {bodyFuel : Nat}
+    {state final : σ}
+    {cases : List (Frontend.Word × List Frontend.AstStmt)}
+    {defaultBody : List Frontend.AstStmt}
+    (hRun :
+      FocusedGeneratedCallRun (object := object) (ordered := ordered)
+        (topName := topName) model prim bodyFuel state)
+    (hSelected :
+      Yul.Source.Effectful.exec model prim (bodyFuel + 2)
+          (.Block
+            (EvmYul.Yul.selectSwitchCase
+              hRun.run.returns.head! defaultBody cases))
+          (some ordered.program.contract) hRun.run.postState =
+        .ok final) :
+    FocusedStmtRun hRun.routeEvidence.yulEvidence model prim state
+      ((bodyFuel + 2) + 1)
+      (.Switch
+        (.Call (.inr hRun.routeEvidence.yulEvidence.generated)
+          hRun.routeEvidence.yulEvidence.yulArgs)
+        cases defaultBody)
+      final :=
+  .direct .switchScrutinee
+    (DirectIncomingStmtRun.switchOfFocusedGenerated hRun hSelected)
+
+end FocusedStmtRun
+
 /-- Semantic execution package for the concrete route body selected by
 `AlphaRenamedLocalCallYulEvidence.routes`.
 

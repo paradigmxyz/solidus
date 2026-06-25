@@ -1025,6 +1025,11 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedGeneratedCallRun.evalValues
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedGeneratedCallRun.eval
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedGeneratedCallRun.focusedExpr
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedStmtRun.assignOfFocusedGenerated
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedStmtRun.letOfFocusedGenerated
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedStmtRun.ifFalseOfFocusedGenerated
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedStmtRun.ifTrueOfFocusedGenerated
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedStmtRun.switchOfFocusedGenerated
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.ofSplitFocused
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.ofFocusedGeneratedSplit
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.occurrence
