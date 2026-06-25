@@ -103,6 +103,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Loop.one
 #check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Loop.succ_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.BlockRunForward
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.DispatcherSeqRunForward
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.blockRunForward_of_scope_seq
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_none_code
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_some_code
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_some_code_succ

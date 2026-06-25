@@ -48,6 +48,49 @@ def BlockRunForward (rawFuel orderedFuel : Nat)
       (Raw.SourceSemantics.contextForObject context) code state)
     (orderedRun orderedFuel ordered state)
 
+/-- Raw block-body sequence preservation against the ordered dispatcher
+sequence, before both sides apply their lexical block store restriction. -/
+def DispatcherSeqRunForward (rawFuel orderedFuel : Nat)
+    (context : Frontend.ObjectBuiltinContext)
+    (scope : Raw.SourceSemantics.FunctionScope)
+    (code : List Raw.Stmt) (ordered : Yul.OrderedProgram)
+    (state : State) : Prop :=
+  Simulation.Interaction.ForwardRel
+    Yul.FunctionsInteractionPrimitive.Truncated
+    SameDoneRel
+    (Raw.SourceSemantics.execSeq rawFuel
+      ((Raw.SourceSemantics.contextForObject context).withFunctionScope scope)
+      code state)
+    (Yul.InteractionSemantics.execSeq orderedFuel
+      [ordered.program.contract.dispatcher]
+      (some ordered.program.contract) state)
+
+theorem blockRunForward_of_scope_seq
+    {rawFuel orderedFuel : Nat}
+    {context : Frontend.ObjectBuiltinContext}
+    {scope : Raw.SourceSemantics.FunctionScope}
+    {code : List Raw.Stmt} {ordered : Yul.OrderedProgram}
+    {state : State}
+    (hScope : Raw.SourceSemantics.functionScope? code = some scope)
+    (hSeq :
+      DispatcherSeqRunForward rawFuel orderedFuel
+        context scope code ordered state) :
+    BlockRunForward (rawFuel + 1) (orderedFuel + 1)
+      context code ordered state := by
+  unfold BlockRunForward DispatcherSeqRunForward orderedRun at *
+  rw [Raw.SourceSemantics.ExecBlock.succ]
+  rw [Yul.InteractionSemantics.Exec.block_succ]
+  simp only [hScope]
+  refine Simulation.Interaction.ForwardRel.bind_custom hSeq ?_
+  intro leftDone rightDone hDone
+  unfold SameDoneRel at hDone
+  subst rightDone
+  cases leftDone with
+  | error error =>
+      exact Simulation.Interaction.ForwardRel.done rfl
+  | ok value =>
+      exact Simulation.Interaction.ForwardRel.done rfl
+
 theorem rawObjectRun_none_code
     {fuel : Nat} {context : Frontend.ObjectBuiltinContext}
     {object : Raw.Object} {state : State}
