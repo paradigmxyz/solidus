@@ -559,6 +559,22 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.raw_msize_observation_executes_after_charge
 #check EvmCompiler.Assembly.GasfulBridge.x_outOfGas_before_memory_charge
 #check EvmCompiler.Assembly.GasfulBridge.x_outOfGas_before_dynamic_charge
+#check EvmCompiler.Assembly.GasfulBridge.XGasChecksPass
+#check EvmCompiler.Assembly.GasfulBridge.XOpcodeStackChecksPass
+#check EvmCompiler.Assembly.GasfulBridge.XJumpChecksPass
+#check EvmCompiler.Assembly.GasfulBridge.XMemoryAccessChecksPass
+#check EvmCompiler.Assembly.GasfulBridge.XStackLimitChecksPass
+#check EvmCompiler.Assembly.GasfulBridge.XStaticChecksPass
+#check EvmCompiler.Assembly.GasfulBridge.XSstoreStipendChecksPass
+#check EvmCompiler.Assembly.GasfulBridge.x_invalid_instruction_after_gas_checks
+#check EvmCompiler.Assembly.GasfulBridge.x_stack_underflow_after_gas_opcode_check
+#check EvmCompiler.Assembly.GasfulBridge.x_bad_jump_destination_after_stack_check
+#check EvmCompiler.Assembly.GasfulBridge.x_bad_jumpi_destination_after_stack_check
+#check EvmCompiler.Assembly.GasfulBridge.x_invalid_returndatacopy_after_jump_checks
+#check EvmCompiler.Assembly.GasfulBridge.x_stack_overflow_after_memory_access_checks
+#check EvmCompiler.Assembly.GasfulBridge.x_static_mode_violation_after_stack_limit_checks
+#check EvmCompiler.Assembly.GasfulBridge.x_sstore_stipend_outOfGas_after_static_check
+#check EvmCompiler.Assembly.GasfulBridge.x_create_initcode_outOfGas_after_sstore_check
 #check EvmCompiler.Assembly.GasfulBridge.CallBoundaryAccounting
 #check EvmCompiler.Assembly.GasfulBridge.CreateBoundaryAccounting
 
@@ -1031,5 +1047,14 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.raw_msize_observation_executes_after_charge
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_outOfGas_before_memory_charge
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_outOfGas_before_dynamic_charge
+#print axioms EvmCompiler.Assembly.GasfulBridge.x_invalid_instruction_after_gas_checks
+#print axioms EvmCompiler.Assembly.GasfulBridge.x_stack_underflow_after_gas_opcode_check
+#print axioms EvmCompiler.Assembly.GasfulBridge.x_bad_jump_destination_after_stack_check
+#print axioms EvmCompiler.Assembly.GasfulBridge.x_bad_jumpi_destination_after_stack_check
+#print axioms EvmCompiler.Assembly.GasfulBridge.x_invalid_returndatacopy_after_jump_checks
+#print axioms EvmCompiler.Assembly.GasfulBridge.x_stack_overflow_after_memory_access_checks
+#print axioms EvmCompiler.Assembly.GasfulBridge.x_static_mode_violation_after_stack_limit_checks
+#print axioms EvmCompiler.Assembly.GasfulBridge.x_sstore_stipend_outOfGas_after_static_check
+#print axioms EvmCompiler.Assembly.GasfulBridge.x_create_initcode_outOfGas_after_sstore_check
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedLegacy

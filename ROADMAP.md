@@ -39,12 +39,16 @@ Gasful EVM bridge checkpoint:
   boundary, including charged `GAS`/`MSIZE` raw-bytecode lemmas, checked
   `EVM.X` OOG lemmas for memory and dynamic gas charges, OOG-inclusive outcome
   relation, and CALL/CREATE gas-accounting records.
+- [x] Prove the ordered `EVM.X` exceptional-precheck slice after gas checks:
+  invalid opcode, stack underflow, bad `JUMP`/`JUMPI`, invalid
+  `RETURNDATACOPY`, stack overflow, static-mode violation, SSTORE stipend OOG,
+  and CREATE/CREATE2 init-code-size OOG.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
 - [ ] Prove the full `EVM.X` simulation that discharges the bridge premise for
-  charged ordinary steps, jump/static/stack exceptional behavior, and
-  CALL/CREATE open-strategy responses with EIP-150/returned gas.
+  charged ordinary steps, successful halts/reverts, and CALL/CREATE
+  open-strategy responses with EIP-150/returned gas.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object

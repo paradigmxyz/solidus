@@ -196,6 +196,64 @@ def afterMemoryChargeAt (state : EVMState) : EVMState :=
 def dynamicGasCostAt (state : EVMState) : Nat :=
   EvmYul.EVM.C' (afterMemoryChargeAt state) (decodedOperationAt state)
 
+structure XGasChecksPass (state : EVMState) : Prop where
+  memoryGas :
+    ¬ state.gasAvailable.toNat < memoryExpansionCostAt state
+  dynamicGas :
+    ¬ (afterMemoryChargeAt state).gasAvailable.toNat <
+      dynamicGasCostAt state
+
+theorem XGasChecksPass.memoryGas_raw {state : EVMState}
+    (hGas : XGasChecksPass state) :
+    ¬ state.gasAvailable.toNat <
+      EvmYul.EVM.memoryExpansionCost state
+        ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+          (EvmYul.Operation.STOP, none)).1 := by
+  simpa [decodedOperationAt, memoryExpansionCostAt] using hGas.memoryGas
+
+theorem XGasChecksPass.dynamicGas_raw {state : EVMState}
+    (hGas : XGasChecksPass state) :
+    ¬ (state.gasAvailable -
+        EvmYul.UInt256.ofNat
+          (EvmYul.EVM.memoryExpansionCost state
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).1)).toNat <
+      EvmYul.EVM.C'
+        { state with
+          gasAvailable :=
+            state.gasAvailable -
+              EvmYul.UInt256.ofNat
+                (EvmYul.EVM.memoryExpansionCost state
+                  ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+                    (EvmYul.Operation.STOP, none)).1) }
+        ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+          (EvmYul.Operation.STOP, none)).1 := by
+  simpa [decodedOperationAt, memoryExpansionCostAt, afterMemoryChargeAt,
+    dynamicGasCostAt, chargeGas] using hGas.dynamicGas
+
+structure XOpcodeStackChecksPass (state : EVMState) : Prop where
+  gas : XGasChecksPass state
+  opcodeValid :
+    EvmYul.EVM.δ (decodedOperationAt state) ≠ none
+  stackEnough :
+    ¬ state.stack.length <
+      (EvmYul.EVM.δ (decodedOperationAt state)).getD 0
+
+theorem XOpcodeStackChecksPass.opcodeValid_raw {state : EVMState}
+    (hPrefix : XOpcodeStackChecksPass state) :
+    EvmYul.EVM.δ
+      ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+        (EvmYul.Operation.STOP, none)).1 ≠ none := by
+  simpa [decodedOperationAt] using hPrefix.opcodeValid
+
+theorem XOpcodeStackChecksPass.stackEnough_raw {state : EVMState}
+    (hPrefix : XOpcodeStackChecksPass state) :
+    ¬ state.stack.length <
+      (EvmYul.EVM.δ
+        ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+          (EvmYul.Operation.STOP, none)).1).getD 0 := by
+  simpa [decodedOperationAt] using hPrefix.stackEnough
+
 /-- `EVM.X` raises out-of-gas before the instruction dynamic charge when the
 actual memory-expansion charge cannot be paid. -/
 theorem x_outOfGas_before_memory_charge
@@ -247,6 +305,599 @@ theorem x_outOfGas_before_dynamic_charge
     simpa [decodedOperationAt, memoryExpansionCostAt, afterMemoryChargeAt,
       dynamicGasCostAt, chargeGas] using hDynamicGas
   simp [EvmYul.EVM.X, hMemoryGas', hDynamicGas']
+
+theorem x_invalid_instruction_after_gas_checks
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    (hGas : XGasChecksPass state)
+    (hInvalid : EvmYul.EVM.δ (decodedOperationAt state) = none) :
+    EvmYul.EVM.X (fuel + 1) validJumps state =
+      .error EvmYul.EVM.ExecutionException.InvalidInstruction := by
+  have hInvalid' :
+      EvmYul.EVM.δ
+        ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+          (EvmYul.Operation.STOP, none)).1 = none := by
+    simpa [decodedOperationAt] using hInvalid
+  simp [EvmYul.EVM.X, hGas.memoryGas_raw, hGas.dynamicGas_raw, hInvalid']
+
+theorem x_stack_underflow_after_gas_opcode_check
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    (hGas : XGasChecksPass state)
+    (hOpcodeValid : EvmYul.EVM.δ (decodedOperationAt state) ≠ none)
+    (hStack :
+      state.stack.length <
+        (EvmYul.EVM.δ (decodedOperationAt state)).getD 0) :
+    EvmYul.EVM.X (fuel + 1) validJumps state =
+      .error EvmYul.EVM.ExecutionException.StackUnderflow := by
+  have hOpcodeValid' :
+      EvmYul.EVM.δ
+        ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+          (EvmYul.Operation.STOP, none)).1 ≠ none := by
+    simpa [decodedOperationAt] using hOpcodeValid
+  have hStack' :
+      state.stack.length <
+        (EvmYul.EVM.δ
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)).1).getD 0 := by
+    simpa [decodedOperationAt] using hStack
+  simp [EvmYul.EVM.X, hGas.memoryGas_raw, hGas.dynamicGas_raw,
+    hOpcodeValid', hStack']
+
+theorem x_bad_jump_destination_after_stack_check
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    (hPrefix : XOpcodeStackChecksPass state)
+    (hBadJump :
+      decodedOperationAt state = EvmYul.Operation.JUMP ∧
+        EvmYul.EVM.X.notIn state.stack[0]? validJumps = true) :
+    EvmYul.EVM.X (fuel + 1) validJumps state =
+      .error EvmYul.EVM.ExecutionException.BadJumpDestination := by
+  have hBadJump' :
+      ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+        (EvmYul.Operation.STOP, none)).1 = EvmYul.Operation.JUMP ∧
+        EvmYul.EVM.X.notIn state.stack[0]? validJumps = true := by
+    simpa [decodedOperationAt] using hBadJump
+  have hMemoryGas' :
+      ¬ state.gasAvailable.toNat <
+        EvmYul.EVM.memoryExpansionCost state EvmYul.Operation.JUMP := by
+    simpa [hBadJump'.1] using hPrefix.gas.memoryGas_raw
+  have hDynamicGas' :
+      ¬ (state.gasAvailable -
+          EvmYul.UInt256.ofNat
+            (EvmYul.EVM.memoryExpansionCost state EvmYul.Operation.JUMP)).toNat <
+        EvmYul.EVM.C'
+          { state with
+            gasAvailable :=
+              state.gasAvailable -
+                EvmYul.UInt256.ofNat
+                  (EvmYul.EVM.memoryExpansionCost state
+                    EvmYul.Operation.JUMP) }
+          EvmYul.Operation.JUMP := by
+    simpa [hBadJump'.1] using hPrefix.gas.dynamicGas_raw
+  have hOpcodeValid' :
+      EvmYul.EVM.δ EvmYul.Operation.JUMP ≠ none := by
+    simpa [hBadJump'.1] using hPrefix.opcodeValid_raw
+  have hStackEnough' :
+      ¬ state.stack.length <
+        (EvmYul.EVM.δ EvmYul.Operation.JUMP).getD 0 := by
+    simpa [hBadJump'.1] using hPrefix.stackEnough_raw
+  simp [EvmYul.EVM.X, hBadJump'.1, hBadJump'.2, hMemoryGas',
+    hDynamicGas', hOpcodeValid', hStackEnough']
+
+theorem x_bad_jumpi_destination_after_stack_check
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    (hPrefix : XOpcodeStackChecksPass state)
+    (hBadJumpi :
+      decodedOperationAt state = EvmYul.Operation.JUMPI ∧
+        state.stack[1]? ≠ some (EvmYul.UInt256.ofNat 0) ∧
+        EvmYul.EVM.X.notIn state.stack[0]? validJumps = true) :
+    EvmYul.EVM.X (fuel + 1) validJumps state =
+      .error EvmYul.EVM.ExecutionException.BadJumpDestination := by
+  have hBadJumpi' :
+      ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+        (EvmYul.Operation.STOP, none)).1 = EvmYul.Operation.JUMPI ∧
+        state.stack[1]? ≠ some (EvmYul.UInt256.ofNat 0) ∧
+        EvmYul.EVM.X.notIn state.stack[0]? validJumps = true := by
+    simpa [decodedOperationAt] using hBadJumpi
+  have hMemoryGas' :
+      ¬ state.gasAvailable.toNat <
+        EvmYul.EVM.memoryExpansionCost state EvmYul.Operation.JUMPI := by
+    simpa [hBadJumpi'.1] using hPrefix.gas.memoryGas_raw
+  have hDynamicGas' :
+      ¬ (state.gasAvailable -
+          EvmYul.UInt256.ofNat
+            (EvmYul.EVM.memoryExpansionCost state EvmYul.Operation.JUMPI)).toNat <
+        EvmYul.EVM.C'
+          { state with
+            gasAvailable :=
+              state.gasAvailable -
+                EvmYul.UInt256.ofNat
+                  (EvmYul.EVM.memoryExpansionCost state
+                    EvmYul.Operation.JUMPI) }
+          EvmYul.Operation.JUMPI := by
+    simpa [hBadJumpi'.1] using hPrefix.gas.dynamicGas_raw
+  have hOpcodeValid' :
+      EvmYul.EVM.δ EvmYul.Operation.JUMPI ≠ none := by
+    simpa [hBadJumpi'.1] using hPrefix.opcodeValid_raw
+  have hStackEnough' :
+      ¬ state.stack.length <
+        (EvmYul.EVM.δ EvmYul.Operation.JUMPI).getD 0 := by
+    simpa [hBadJumpi'.1] using hPrefix.stackEnough_raw
+  have hCondNonzero' :
+      ¬ state.stack[1]? = some ({ val := 0 } : Word) := by
+    simpa using hBadJumpi'.2.1
+  simp [EvmYul.EVM.X, hBadJumpi'.1, hBadJumpi'.2.1,
+    hBadJumpi'.2.2, hCondNonzero', hMemoryGas', hDynamicGas',
+    hOpcodeValid', hStackEnough']
+
+def badJumpAt (validJumps : Array Word) (state : EVMState) : Prop :=
+  decodedOperationAt state = EvmYul.Operation.JUMP ∧
+    EvmYul.EVM.X.notIn state.stack[0]? validJumps = true
+
+def badJumpiAt (validJumps : Array Word) (state : EVMState) : Prop :=
+  decodedOperationAt state = EvmYul.Operation.JUMPI ∧
+    state.stack[1]? ≠ some (EvmYul.UInt256.ofNat 0) ∧
+    EvmYul.EVM.X.notIn state.stack[0]? validJumps = true
+
+def invalidReturnDataCopyAt (state : EVMState) : Prop :=
+  decodedOperationAt state = EvmYul.Operation.RETURNDATACOPY ∧
+    state.returnData.size <
+      (state.stack[1]?.getD (EvmYul.UInt256.ofNat 0)).toNat +
+        (state.stack[2]?.getD (EvmYul.UInt256.ofNat 0)).toNat
+
+def stackOverflowAt (state : EVMState) : Prop :=
+  1024 <
+    state.stack.length -
+      (EvmYul.EVM.δ (decodedOperationAt state)).getD 0 +
+      (EvmYul.EVM.α (decodedOperationAt state)).getD 0
+
+def staticModeViolationAt (state : EVMState) : Prop :=
+  state.executionEnv.perm = false ∧
+    (decodedOperationAt state = EvmYul.Operation.CREATE ∨
+      decodedOperationAt state = EvmYul.Operation.CREATE2 ∨
+      decodedOperationAt state = EvmYul.Operation.SSTORE ∨
+      decodedOperationAt state = EvmYul.Operation.SELFDESTRUCT ∨
+      decodedOperationAt state = EvmYul.Operation.LOG0 ∨
+      decodedOperationAt state = EvmYul.Operation.LOG1 ∨
+      decodedOperationAt state = EvmYul.Operation.LOG2 ∨
+      decodedOperationAt state = EvmYul.Operation.LOG3 ∨
+      decodedOperationAt state = EvmYul.Operation.LOG4 ∨
+      decodedOperationAt state = EvmYul.Operation.TSTORE ∨
+      decodedOperationAt state = EvmYul.Operation.CALL ∧
+        state.stack[2]? ≠ some (EvmYul.UInt256.ofNat 0))
+
+def sstoreStipendOutOfGasAt (state : EVMState) : Prop :=
+  decodedOperationAt state = EvmYul.Operation.SSTORE ∧
+    (afterMemoryChargeAt state).gasAvailable.toNat ≤
+      GasConstants.Gcallstipend
+
+structure XJumpChecksPass
+    (validJumps : Array Word) (state : EVMState) : Prop where
+  stack : XOpcodeStackChecksPass state
+  notBadJump : ¬ badJumpAt validJumps state
+  notBadJumpi : ¬ badJumpiAt validJumps state
+
+structure XMemoryAccessChecksPass
+    (validJumps : Array Word) (state : EVMState) : Prop where
+  jumps : XJumpChecksPass validJumps state
+  returnDataCopyOk : ¬ invalidReturnDataCopyAt state
+
+structure XStackLimitChecksPass
+    (validJumps : Array Word) (state : EVMState) : Prop where
+  memoryAccess : XMemoryAccessChecksPass validJumps state
+  stackLimitOk : ¬ stackOverflowAt state
+
+structure XStaticChecksPass
+    (validJumps : Array Word) (state : EVMState) : Prop where
+  stackLimit : XStackLimitChecksPass validJumps state
+  staticOk : ¬ staticModeViolationAt state
+
+structure XSstoreStipendChecksPass
+    (validJumps : Array Word) (state : EVMState) : Prop where
+  static : XStaticChecksPass validJumps state
+  sstoreStipendOk : ¬ sstoreStipendOutOfGasAt state
+
+theorem x_invalid_returndatacopy_after_jump_checks
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    (hPrefix : XJumpChecksPass validJumps state)
+    (hInvalid : invalidReturnDataCopyAt state) :
+    EvmYul.EVM.X (fuel + 1) validJumps state =
+      .error EvmYul.EVM.ExecutionException.InvalidMemoryAccess := by
+  rcases hInvalid with ⟨hOp, hBounds⟩
+  have hOp' :
+      ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+        (EvmYul.Operation.STOP, none)).1 =
+        EvmYul.Operation.RETURNDATACOPY := by
+    simpa [decodedOperationAt] using hOp
+  have hBounds' :
+      state.returnData.size <
+        (state.stack[1]?.getD ({ val := 0 } : Word)).toNat +
+          (state.stack[2]?.getD ({ val := 0 } : Word)).toNat := by
+    simpa using hBounds
+  have hMemoryGas' :
+      ¬ state.gasAvailable.toNat <
+        EvmYul.EVM.memoryExpansionCost state
+          EvmYul.Operation.RETURNDATACOPY := by
+    simpa [hOp'] using hPrefix.stack.gas.memoryGas_raw
+  have hDynamicGas' :
+      ¬ (state.gasAvailable -
+          EvmYul.UInt256.ofNat
+            (EvmYul.EVM.memoryExpansionCost state
+              EvmYul.Operation.RETURNDATACOPY)).toNat <
+        EvmYul.EVM.C'
+          { state with
+            gasAvailable :=
+              state.gasAvailable -
+                EvmYul.UInt256.ofNat
+                  (EvmYul.EVM.memoryExpansionCost state
+                    EvmYul.Operation.RETURNDATACOPY) }
+          EvmYul.Operation.RETURNDATACOPY := by
+    simpa [hOp'] using hPrefix.stack.gas.dynamicGas_raw
+  have hOpcodeValid' :
+      EvmYul.EVM.δ EvmYul.Operation.RETURNDATACOPY ≠ none := by
+    simpa [hOp'] using hPrefix.stack.opcodeValid_raw
+  have hStackEnough' :
+      ¬ state.stack.length <
+        (EvmYul.EVM.δ EvmYul.Operation.RETURNDATACOPY).getD 0 := by
+    simpa [hOp'] using hPrefix.stack.stackEnough_raw
+  simp [EvmYul.EVM.X, hOp', hBounds', hMemoryGas', hDynamicGas',
+    hOpcodeValid', hStackEnough']
+
+theorem x_stack_overflow_after_memory_access_checks
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    (hPrefix : XMemoryAccessChecksPass validJumps state)
+    (hOverflow : stackOverflowAt state) :
+    EvmYul.EVM.X (fuel + 1) validJumps state =
+      .error EvmYul.EVM.ExecutionException.StackOverflow := by
+  have hNoBadJump' :
+      ¬ (((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+          (EvmYul.Operation.STOP, none)).1 = EvmYul.Operation.JUMP ∧
+        EvmYul.EVM.X.notIn state.stack[0]? validJumps = true) := by
+    simpa [badJumpAt, decodedOperationAt] using
+      hPrefix.jumps.notBadJump
+  have hNoBadJumpi' :
+      ¬ (((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+          (EvmYul.Operation.STOP, none)).1 = EvmYul.Operation.JUMPI ∧
+        state.stack[1]? ≠ some (EvmYul.UInt256.ofNat 0) ∧
+        EvmYul.EVM.X.notIn state.stack[0]? validJumps = true) := by
+    simpa [badJumpiAt, decodedOperationAt] using
+      hPrefix.jumps.notBadJumpi
+  have hNoBadJumpiExact' :
+      ¬ (((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+          (EvmYul.Operation.STOP, none)).1 = EvmYul.Operation.JUMPI ∧
+        ¬ state.stack[1]? = some ({ val := 0 } : Word) ∧
+        EvmYul.EVM.X.notIn state.stack[0]? validJumps = true) := by
+    intro h
+    exact hNoBadJumpi'
+      ⟨h.1, by simpa using h.2.1, h.2.2⟩
+  have hReturnDataOk' :
+      ¬ (((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+          (EvmYul.Operation.STOP, none)).1 =
+            EvmYul.Operation.RETURNDATACOPY ∧
+        state.returnData.size <
+          (state.stack[1]?.getD ({ val := 0 } : Word)).toNat +
+            (state.stack[2]?.getD ({ val := 0 } : Word)).toNat) := by
+    simpa [invalidReturnDataCopyAt, decodedOperationAt] using
+      hPrefix.returnDataCopyOk
+  have hOverflow' :
+      1024 <
+        state.stack.length -
+          (EvmYul.EVM.δ
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).1).getD 0 +
+          (EvmYul.EVM.α
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).1).getD 0 := by
+    simpa [stackOverflowAt, decodedOperationAt] using hOverflow
+  simp [EvmYul.EVM.X, hPrefix.jumps.stack.gas.memoryGas_raw,
+    hPrefix.jumps.stack.gas.dynamicGas_raw,
+    hPrefix.jumps.stack.opcodeValid_raw,
+    hPrefix.jumps.stack.stackEnough_raw, hNoBadJump', hNoBadJumpiExact',
+    hReturnDataOk', hOverflow']
+
+theorem x_static_mode_violation_after_stack_limit_checks
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    (hPrefix : XStackLimitChecksPass validJumps state)
+    (hStatic : staticModeViolationAt state) :
+    EvmYul.EVM.X (fuel + 1) validJumps state =
+      .error EvmYul.EVM.ExecutionException.StaticModeViolation := by
+  have hNoBadJump' :
+      ¬ (((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+          (EvmYul.Operation.STOP, none)).1 = EvmYul.Operation.JUMP ∧
+        EvmYul.EVM.X.notIn state.stack[0]? validJumps = true) := by
+    simpa [badJumpAt, decodedOperationAt] using
+      hPrefix.memoryAccess.jumps.notBadJump
+  have hNoBadJumpi' :
+      ¬ (((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+          (EvmYul.Operation.STOP, none)).1 = EvmYul.Operation.JUMPI ∧
+        state.stack[1]? ≠ some (EvmYul.UInt256.ofNat 0) ∧
+        EvmYul.EVM.X.notIn state.stack[0]? validJumps = true) := by
+    simpa [badJumpiAt, decodedOperationAt] using
+      hPrefix.memoryAccess.jumps.notBadJumpi
+  have hNoBadJumpiExact' :
+      ¬ (((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+          (EvmYul.Operation.STOP, none)).1 = EvmYul.Operation.JUMPI ∧
+        ¬ state.stack[1]? = some ({ val := 0 } : Word) ∧
+        EvmYul.EVM.X.notIn state.stack[0]? validJumps = true) := by
+    intro h
+    exact hNoBadJumpi'
+      ⟨h.1, by simpa using h.2.1, h.2.2⟩
+  have hReturnDataOk' :
+      ¬ (((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+          (EvmYul.Operation.STOP, none)).1 =
+            EvmYul.Operation.RETURNDATACOPY ∧
+        state.returnData.size <
+          (state.stack[1]?.getD ({ val := 0 } : Word)).toNat +
+            (state.stack[2]?.getD ({ val := 0 } : Word)).toNat) := by
+    simpa [invalidReturnDataCopyAt, decodedOperationAt] using
+      hPrefix.memoryAccess.returnDataCopyOk
+  have hStackLimitOk' :
+      ¬ 1024 <
+        state.stack.length -
+          (EvmYul.EVM.δ
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).1).getD 0 +
+          (EvmYul.EVM.α
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).1).getD 0 := by
+    simpa [stackOverflowAt, decodedOperationAt] using
+      hPrefix.stackLimitOk
+  have hStatic' :
+      state.executionEnv.perm = false ∧
+        (((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).1 =
+            EvmYul.Operation.CREATE ∨
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).1 =
+            EvmYul.Operation.CREATE2 ∨
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).1 =
+            EvmYul.Operation.SSTORE ∨
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).1 =
+            EvmYul.Operation.SELFDESTRUCT ∨
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).1 =
+            EvmYul.Operation.LOG0 ∨
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).1 =
+            EvmYul.Operation.LOG1 ∨
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).1 =
+            EvmYul.Operation.LOG2 ∨
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).1 =
+            EvmYul.Operation.LOG3 ∨
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).1 =
+            EvmYul.Operation.LOG4 ∨
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).1 =
+            EvmYul.Operation.TSTORE ∨
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).1 =
+            EvmYul.Operation.CALL ∧
+          state.stack[2]? ≠ some (EvmYul.UInt256.ofNat 0)) := by
+    simpa [staticModeViolationAt, decodedOperationAt] using hStatic
+  have hStaticCond' :
+      (((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)).1 =
+          EvmYul.Operation.CREATE ∨
+        ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)).1 =
+          EvmYul.Operation.CREATE2 ∨
+        ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)).1 =
+          EvmYul.Operation.SSTORE ∨
+        ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)).1 =
+          EvmYul.Operation.SELFDESTRUCT ∨
+        ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)).1 =
+          EvmYul.Operation.LOG0 ∨
+        ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)).1 =
+          EvmYul.Operation.LOG1 ∨
+        ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)).1 =
+          EvmYul.Operation.LOG2 ∨
+        ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)).1 =
+          EvmYul.Operation.LOG3 ∨
+        ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)).1 =
+          EvmYul.Operation.LOG4 ∨
+        ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)).1 =
+          EvmYul.Operation.TSTORE) ∨
+        ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)).1 =
+          EvmYul.Operation.CALL ∧
+        ¬ state.stack[2]? = some ({ val := 0 } : Word) := by
+    simpa [or_assoc] using hStatic'.2
+  simp [EvmYul.EVM.X, hPrefix.memoryAccess.jumps.stack.gas.memoryGas_raw,
+    hPrefix.memoryAccess.jumps.stack.gas.dynamicGas_raw,
+    hPrefix.memoryAccess.jumps.stack.opcodeValid_raw,
+    hPrefix.memoryAccess.jumps.stack.stackEnough_raw, hNoBadJump',
+    hNoBadJumpiExact', hReturnDataOk', hStackLimitOk', hStatic'.1,
+    hStaticCond']
+
+theorem x_sstore_stipend_outOfGas_after_static_check
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    (hPrefix : XStaticChecksPass validJumps state)
+    (hSstore : sstoreStipendOutOfGasAt state) :
+    EvmYul.EVM.X (fuel + 1) validJumps state =
+      .error EvmYul.EVM.ExecutionException.OutOfGass := by
+  rcases hSstore with ⟨hOp, hStipend⟩
+  have hOp' :
+      ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+        (EvmYul.Operation.STOP, none)).1 = EvmYul.Operation.SSTORE := by
+    simpa [decodedOperationAt] using hOp
+  have hNoStatic : ¬ state.executionEnv.perm = false := by
+    intro hPerm
+    exact hPrefix.staticOk
+      ⟨hPerm, by simp [staticModeViolationAt, hOp]⟩
+  have hStackLimitOk' :
+      ¬ 1024 <
+        state.stack.length -
+          (EvmYul.EVM.δ EvmYul.Operation.SSTORE).getD 0 +
+          (EvmYul.EVM.α EvmYul.Operation.SSTORE).getD 0 := by
+    simpa [stackOverflowAt, decodedOperationAt, hOp'] using
+      hPrefix.stackLimit.stackLimitOk
+  have hStipend' :
+      (state.gasAvailable -
+          EvmYul.UInt256.ofNat
+            (EvmYul.EVM.memoryExpansionCost state
+              EvmYul.Operation.SSTORE)).toNat ≤
+        GasConstants.Gcallstipend := by
+    simpa [afterMemoryChargeAt, memoryExpansionCostAt,
+      decodedOperationAt, chargeGas, hOp'] using hStipend
+  have hMemoryGas' :
+      ¬ state.gasAvailable.toNat <
+        EvmYul.EVM.memoryExpansionCost state EvmYul.Operation.SSTORE := by
+    simpa [hOp'] using
+      hPrefix.stackLimit.memoryAccess.jumps.stack.gas.memoryGas_raw
+  have hDynamicGas' :
+      ¬ (state.gasAvailable -
+          EvmYul.UInt256.ofNat
+            (EvmYul.EVM.memoryExpansionCost state
+              EvmYul.Operation.SSTORE)).toNat <
+        EvmYul.EVM.C'
+          { state with
+            gasAvailable :=
+              state.gasAvailable -
+                EvmYul.UInt256.ofNat
+                  (EvmYul.EVM.memoryExpansionCost state
+                    EvmYul.Operation.SSTORE) }
+          EvmYul.Operation.SSTORE := by
+    simpa [hOp'] using
+      hPrefix.stackLimit.memoryAccess.jumps.stack.gas.dynamicGas_raw
+  have hOpcodeValid' :
+      EvmYul.EVM.δ EvmYul.Operation.SSTORE ≠ none := by
+    simpa [hOp'] using
+      hPrefix.stackLimit.memoryAccess.jumps.stack.opcodeValid_raw
+  have hStackEnough' :
+      ¬ state.stack.length <
+        (EvmYul.EVM.δ EvmYul.Operation.SSTORE).getD 0 := by
+    simpa [hOp'] using
+      hPrefix.stackLimit.memoryAccess.jumps.stack.stackEnough_raw
+  simp [EvmYul.EVM.X, hOp', hNoStatic, hStackLimitOk', hStipend',
+    hMemoryGas', hDynamicGas', hOpcodeValid', hStackEnough']
+
+theorem x_create_initcode_outOfGas_after_sstore_check
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hCreate :
+      decodedOperationAt state = EvmYul.Operation.CREATE ∨
+        decodedOperationAt state = EvmYul.Operation.CREATE2)
+    (hTooLarge :
+      (EvmYul.UInt256.ofNat 49152) <
+        state.stack[2]?.getD (EvmYul.UInt256.ofNat 0)) :
+    EvmYul.EVM.X (fuel + 1) validJumps state =
+      .error EvmYul.EVM.ExecutionException.OutOfGass := by
+  rcases hCreate with hCreate | hCreate
+  · have hCreate' :
+        ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+          (EvmYul.Operation.STOP, none)).1 = EvmYul.Operation.CREATE := by
+      simpa [decodedOperationAt] using hCreate
+    have hNoStatic : ¬ state.executionEnv.perm = false := by
+      intro hPerm
+      exact hPrefix.static.staticOk
+        ⟨hPerm, by simp [staticModeViolationAt, hCreate]⟩
+    have hStackLimitOk' :
+        ¬ 1024 <
+          state.stack.length -
+            (EvmYul.EVM.δ EvmYul.Operation.CREATE).getD 0 +
+            (EvmYul.EVM.α EvmYul.Operation.CREATE).getD 0 := by
+      simpa [stackOverflowAt, decodedOperationAt, hCreate'] using
+        hPrefix.static.stackLimit.stackLimitOk
+    have hTooLarge' :
+        ({ val := 49152 } : Word) <
+          state.stack[2]?.getD ({ val := 0 } : Word) := by
+      simpa using hTooLarge
+    have hMemoryGas' :
+        ¬ state.gasAvailable.toNat <
+          EvmYul.EVM.memoryExpansionCost state
+            EvmYul.Operation.CREATE := by
+      simpa [hCreate'] using
+        hPrefix.static.stackLimit.memoryAccess.jumps.stack.gas.memoryGas_raw
+    have hDynamicGas' :
+        ¬ (state.gasAvailable -
+            EvmYul.UInt256.ofNat
+              (EvmYul.EVM.memoryExpansionCost state
+                EvmYul.Operation.CREATE)).toNat <
+          EvmYul.EVM.C'
+            { state with
+              gasAvailable :=
+                state.gasAvailable -
+                  EvmYul.UInt256.ofNat
+                    (EvmYul.EVM.memoryExpansionCost state
+                      EvmYul.Operation.CREATE) }
+            EvmYul.Operation.CREATE := by
+      simpa [hCreate'] using
+        hPrefix.static.stackLimit.memoryAccess.jumps.stack.gas.dynamicGas_raw
+    have hOpcodeValid' :
+        EvmYul.EVM.δ EvmYul.Operation.CREATE ≠ none := by
+      simpa [hCreate'] using
+        hPrefix.static.stackLimit.memoryAccess.jumps.stack.opcodeValid_raw
+    have hStackEnough' :
+        ¬ state.stack.length <
+          (EvmYul.EVM.δ EvmYul.Operation.CREATE).getD 0 := by
+      simpa [hCreate'] using
+        hPrefix.static.stackLimit.memoryAccess.jumps.stack.stackEnough_raw
+    simp [EvmYul.EVM.X, EvmYul.Operation.isCreate, hCreate',
+      hNoStatic, hStackLimitOk',
+      hTooLarge', hMemoryGas', hDynamicGas', hOpcodeValid', hStackEnough']
+  · have hCreate' :
+        ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+          (EvmYul.Operation.STOP, none)).1 = EvmYul.Operation.CREATE2 := by
+      simpa [decodedOperationAt] using hCreate
+    have hNoStatic : ¬ state.executionEnv.perm = false := by
+      intro hPerm
+      exact hPrefix.static.staticOk
+        ⟨hPerm, by simp [staticModeViolationAt, hCreate]⟩
+    have hStackLimitOk' :
+        ¬ 1024 <
+          state.stack.length -
+            (EvmYul.EVM.δ EvmYul.Operation.CREATE2).getD 0 +
+            (EvmYul.EVM.α EvmYul.Operation.CREATE2).getD 0 := by
+      simpa [stackOverflowAt, decodedOperationAt, hCreate'] using
+        hPrefix.static.stackLimit.stackLimitOk
+    have hTooLarge' :
+        ({ val := 49152 } : Word) <
+          state.stack[2]?.getD ({ val := 0 } : Word) := by
+      simpa using hTooLarge
+    have hMemoryGas' :
+        ¬ state.gasAvailable.toNat <
+          EvmYul.EVM.memoryExpansionCost state
+            EvmYul.Operation.CREATE2 := by
+      simpa [hCreate'] using
+        hPrefix.static.stackLimit.memoryAccess.jumps.stack.gas.memoryGas_raw
+    have hDynamicGas' :
+        ¬ (state.gasAvailable -
+            EvmYul.UInt256.ofNat
+              (EvmYul.EVM.memoryExpansionCost state
+                EvmYul.Operation.CREATE2)).toNat <
+          EvmYul.EVM.C'
+            { state with
+              gasAvailable :=
+                state.gasAvailable -
+                  EvmYul.UInt256.ofNat
+                    (EvmYul.EVM.memoryExpansionCost state
+                      EvmYul.Operation.CREATE2) }
+            EvmYul.Operation.CREATE2 := by
+      simpa [hCreate'] using
+        hPrefix.static.stackLimit.memoryAccess.jumps.stack.gas.dynamicGas_raw
+    have hOpcodeValid' :
+        EvmYul.EVM.δ EvmYul.Operation.CREATE2 ≠ none := by
+      simpa [hCreate'] using
+        hPrefix.static.stackLimit.memoryAccess.jumps.stack.opcodeValid_raw
+    have hStackEnough' :
+        ¬ state.stack.length <
+          (EvmYul.EVM.δ EvmYul.Operation.CREATE2).getD 0 := by
+      simpa [hCreate'] using
+        hPrefix.static.stackLimit.memoryAccess.jumps.stack.stackEnough_raw
+    simp [EvmYul.EVM.X, EvmYul.Operation.isCreate, hCreate',
+      hNoStatic, hStackLimitOk',
+      hTooLarge', hMemoryGas', hDynamicGas', hOpcodeValid', hStackEnough']
 
 def callTargetAddress (operands : CallOperands) : EvmYul.AccountAddress :=
   EvmYul.AccountAddress.ofUInt256 operands.address
