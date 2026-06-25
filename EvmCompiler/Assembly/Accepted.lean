@@ -377,7 +377,7 @@ theorem compileExecutable?_eq_compile? (program : Program) :
   simp [compileExecutable?, compile?, assembleExecutable?_eq_assemble? program]
 
 /--
-Out-of-gas policy boundary for the full EVM runner.
+Out-of-gas policy boundary for refinement to the gasful EVM runner.
 
 The checked gasless theorem proves preservation for successful source runs.
 When related to gas-aware EVM execution, out-of-gas is an additional behavior:
@@ -385,15 +385,16 @@ it can interrupt the deployed bytecode before the gasless run finishes unless a
 sufficient-gas premise is provided by a later theorem.
 
 This record is currently only a documentation marker: its field is `True`, so
-possessing it imposes no out-of-gas condition. A production EVM refinement must
-replace the marker with a substantive execution relation or premise.
+possessing it imposes no out-of-gas condition. The gasful-target refinement
+must replace the marker with a substantive outcome relation or an honest
+source-facing sufficient-resource premise.
 -/
 structure OutOfGasPolicyAssumption
     (_program : Program) (_initial : EvmYul.EVM.State) : Prop where
   outOfGasMayInterruptFullEVMExecution : True
 
 /--
-Projection boundary for observations of full EVM state.
+Projection boundary for observations of gasful EVM frame state.
 
 The current theorem compares EVM states after erasing gas accounting fields.
 External-facing state remains part of the compared EVM state; it is not
@@ -423,10 +424,10 @@ def trivial {program : Program} {initial : EvmYul.EVM.State} :
 end CurrentContractProjectionAssumption
 
 /--
-Markers for the extra obligations needed when moving from the gasless AST
-theorem to a gas-aware EVM execution theorem. They make the missing boundary
-visible in signatures, but their current `True` fields do not discharge or
-enforce any gas, out-of-gas, or projection property.
+Markers for the extra obligations needed when moving from the open gas-erased
+AST theorem to a gasful EVM frame-execution theorem. They make the missing
+target-refinement boundary visible in signatures, but their current `True`
+fields do not discharge or enforce any gas, out-of-gas, or projection property.
 -/
 structure EVMExecutionAssumptions (program : Program) (initial : EvmYul.EVM.State) : Prop where
   accepted : Accepted program

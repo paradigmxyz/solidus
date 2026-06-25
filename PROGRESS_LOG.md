@@ -1,5 +1,9 @@
 # Progress Log
 
+This is append-only implementation history, so older entries intentionally
+describe gaps that have since closed or changed shape. Current gap status is
+authoritative only in `ROADMAP.md` and `PRODUCTION_ASSUMPTIONS.md`.
+
 - 2026-06-24 06:01:18 PDT - theorem-boundary/raw-for-initializer-no-shadow -
   Strengthened `Raw.Source.NoShadowStmtCall` for `for` condition/post/body
   paths to require that the initializer statement list does not declare a
@@ -33886,3 +33890,5 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
 - 2026-06-24 16:53:32 PDT - validation/setimmutable-fail-closed-patch-occurrence - `lake build EvmCompiler.Solidity.Frontend`, `lake env lean EvmCompiler/Solidity/RawAst.lean -DmaxErrors=20`, `lake build EvmCompiler.Solidity.RawAst`, `lake build EvmCompiler.Verification`, `scripts/check_architecture.sh`, `git diff --check`, and tight frontend/raw proof-hole/trust scan pass. Patch statement theorem footprints are `[propext]`; patch list theorem footprints are `[propext, Quot.sound]`.
 - 2026-06-25 07:05:43 PDT - audit/raw-frontend-history-merge - merged `codex/lean-solc-raw-frontend` history into `/Users/dan/Projects/evm-compiler` `main` with main's stronger finite-prefix `optimizedRawSolcIrToRawBytecode` theorem as the public spine; the older branch theorem requiring `hFinished` is superseded by main's no-`hFinished` raw theorem.
 - 2026-06-25 07:33:01 PDT - validation/statement-object-builtin-occurrence - fixed `StmtIncomingUserCall.resolveObjectBuiltinsIn?_occurrence` by naming statement-field resolver equations explicitly and deleting an unreachable direct-user-call branch for `setimmutable`; `lake env lean EvmCompiler/Solidity/RawAst.lean -DmaxErrors=20`, `lake build EvmCompiler.Solidity.RawAst`, `lake build EvmCompiler.Verification`, `scripts/check_architecture.sh`, tight RawAst proof-hole/trust scan, and `git diff --check` passed.
+- 2026-06-25 09:31:57 PDT - audit/compiler-preservation-gap-boundary - narrowed the authoritative gap list to semantic preservation from the declared Yul source to the actual gasful EVM runner. Remaining compiler work is whole-source raw/frontend preservation where that source boundary is claimed, gasful-target refinement supplying actual GAS/MSIZE observations and handling charged/OOG/stack/jump/static/CALL-CREATE behavior, and public composition. Open external responses are the intended contextual semantics; external/precompile implementation, transaction processing, artifact/deployment policy, compiler totality/coverage, and general model/FFI/Lean trust are no longer described as compiler-preservation gaps. Archived the obsolete no-CALL and open-effects implementation roadmaps behind the current `ROADMAP.md` and `PRODUCTION_ASSUMPTIONS.md` boundary.
+- 2026-06-25 09:38:34 PDT - validation/compiler-preservation-gap-boundary - `lake build EvmCompiler.Verification` completed successfully (1269 jobs); `scripts/check_architecture.sh`, scoped proof-hole scan, and `git diff --check` passed.

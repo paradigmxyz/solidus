@@ -1,9 +1,17 @@
 # Production Assumptions
 
 This document states the trust and model boundary of the stack-only optimized
-Yul backend. It distinguishes facts computed by the checked compiler from
-conditions on an execution and from semantics that are not yet refined to a
-full production EVM.
+Yul backend. Its primary question is compiler preservation: whether execution
+of the declared Yul source semantics is preserved by execution of the emitted
+bytes in the declared EVM semantics. Transaction processing, external-program
+correctness, artifact compatibility, deployability policy, and toolchain trust
+are recorded separately; they are not silently counted as compiler-preservation
+obligations.
+
+This file and `ROADMAP.md` are the only authoritative current gap descriptions.
+`PROGRESS_LOG.md` is append-only history; oracle contexts, Aristotle prompts,
+proof requests, and archived roadmap files describe the checkpoint at which
+they were written and must not be read as current status.
 
 ## Public Theorem
 
@@ -60,8 +68,9 @@ Successful artifact construction internally derives all of the following:
 - primitive availability for the bridge-declared London, Paris, Shanghai, or
   Cancun target, propagated through every recursive frontend object;
 - Functions normalization and its preservation theorem;
-- liveness, symbolic layouts, schedules, joins, dormant frames, stack depth,
-  and top-16 accessibility;
+- liveness, symbolic layouts, schedules, joins, dormant frames, symbolic stack
+  depth, and top-16 accessibility; this is not yet a global proof of the real
+  EVM's 1024-word stack headroom on every recursive trace;
 - stack-only lowering with no compiler memory access or scratch reservation;
 - `memoryguard(size) = size` for the stack-only backend;
 - canonical Yul-to-Functions and Functions-to-Expressions initial relations;
@@ -87,66 +96,135 @@ counters, stack layouts, and private locals is related at its owning layer.
 
 At a terminal halt, the relation intentionally omits scratch return-data
 bookkeeping and dead control/stack data that no continuation can observe. It
-retains output, memory, active words, available gas in the parameterized model,
-the execution environment, and the open world. Therefore the claim is
-observational state equivalence, not literal equality of every record field.
+retains output, memory, active words, the available-gas field in the
+parameterized model, the execution environment, and the open world. This does
+not claim that the field has been updated by gasful EVM charging. Therefore the
+claim is observational state equivalence, not literal equality of every record
+field.
 
-## Trusted Frontend
+## Source Boundary And Frontend
 
-The theorem starts at the parsed optimized Yul object. The following remain
-trusted:
+The normalized entry point accepts a checked `Solidity.Frontend.Object`. Its
+execution-side source in the public theorem is the canonical ordered Yul
+contract retained in the successful artifact. The backend preservation spine
+from that ordered Yul program through emitted bytes is checked.
 
-- the selected pinned solc binary and its Solidity-to-optimized-Yul lowering;
-- Standard JSON handling and `irOptimizedAst` production by solc;
-- the Python adapter that normalizes solc JSON into checked bridge JSON;
-- source-file, remapping, linker-symbol, and requested-fork inputs supplied to
-  that adapter.
+The raw entry point decodes and elaborates selected Standard JSON
+`irOptimizedAst` in Lean and then invokes the same checked compiler. Python may
+invoke solc, transport JSON, and run differential tests, but it no longer
+constructs the raw theorem's `Solidity.Frontend.Program`. The legacy normalized
+bridge and standalone-Yul recovery paths still use Python and are not the raw
+theorem boundary.
 
-The Lean frontend validates the normalized object and fails closed, but there
-is not yet a proof that the Python normalization preserves arbitrary solc JSON.
-The requested fork is therefore still an external compilation input, but its
-consequences are checked rather than trusted: missing metadata is rejected, and
-an object containing instructions unavailable in its declared fork cannot
-produce a checked artifact.
+For a Yul-to-EVM claim, Solidity-to-Yul lowering, source/remapping selection,
+and correctness of solc itself are upstream of the declared source language.
+They matter only for a broader Solidity-to-EVM or textual-toolchain claim. The
+requested fork and linker values remain compilation inputs, while successful
+Lean compilation checks their structural consequences: missing metadata is
+rejected, and an object containing instructions unavailable in its declared
+fork cannot produce an artifact.
+
+One compiler-preservation obligation remains if the claimed source is the raw
+selected Yul AST rather than the canonical ordered Yul program: the local
+decoding/elaboration facts, especially nested-function hoisting and
+alpha-renaming through complete caller/control contexts, must be composed into
+a whole-source same-observation theorem. The current raw theorem executes the
+elaborated ordered source; successful raw decoding by itself is not that
+semantic bridge.
+
 The raw frontend additionally checks solc's `difficulty()`/`prevrandao()` split
 before both spellings lower to opcode `0x44`; successful conversion derives
 that check internally.
 
 ## Open World
 
-`GAS` and `MSIZE` are ordered resource queries. CALL-, CREATE-, and LOG-family
-operations are ordered open effects. The theorem preserves their arguments,
+`GAS` and `MSIZE` are ordered resource queries. CALL- and CREATE-family
+operations are ordered open effects. Logs, storage writes, and other local
+world effects update the shared `OpenWorld`, so their order is visible in the
+next request and in terminal outcomes. The theorem preserves requests,
 answers, state updates, and interleaving for every related open world. External
 accounts carry executable bytes and mutable account data, not Yul ASTs or
 compiler provenance.
 
-This does not verify an implementation of external contracts or Ethereum
-precompiles. The corpus executes real precompiles and self-reentrant calls as
-differential tests, while the formal theorem quantifies over their related open
-responses.
+Universal quantification over a shared response is the intended compiler
+semantics, not an unfinished implementation of external contracts. A real
+callee, reentrant contract, or precompile can instantiate the same response;
+the compiler does not need to verify that external program. What remains is a
+target-side contextual/refinement theorem showing that a gasful EVM frame can
+be decomposed into these requests and responses while preserving the caller's
+observable result.
 
-## Unfinished Full-EVM Refinements
+## Remaining Compiler-Preservation Obligations
 
-The following are deliberately outside the current theorem and must be closed
-before describing the backend as a drop-in, fork-accurate solc replacement:
+Only the following are current gaps in a preservation theorem from the claimed
+Yul source to the actual gasful EVM runner:
 
-- instruction gas charging, EIP-150 forwarding, refunds, and out-of-gas
-  interruption;
-- a theorem connecting ordered `GAS`/`MSIZE` answers to a concrete gas-metered
-  EVM run;
-- concrete nested call/create execution, precompile implementations, and
-  transaction-level commit/revert refinement;
-- proof that the host-bounded memory representation agrees with every relevant
-  mathematical EVM memory access;
-- validation beyond the explicitly accepted London, Paris, Shanghai, and
-  Cancun targets;
-- cryptographic/FFI and any remaining imported EVM implementation trust;
-- standard solc artifact compatibility such as source maps and metadata.
+1. **Source-facing frontend preservation, when that is the declared source.**
+   Complete and compose the remaining raw-Yul elaboration and object-resolution
+   preservation facts so the theorem starts from execution of the selected
+   source AST rather than only execution of its elaborated ordered program. The
+   known active frontier is nested-function hoisting/alpha-renaming through full
+   caller and control contexts.
+2. **Gasful target refinement.** Relate EVMYulLean's gasful execution of the
+   emitted byte image to the public open bytecode interaction after erasing
+   target-only gas/control data. This bridge must:
+   - use the gasful run's actual `GAS` and `MSIZE` observations to resolve the
+     already-matched resource queries;
+   - relate runner fuel, byte decoding, PC advance, termination, the supplied
+     valid-jump table, and the decoder-window representation bound;
+   - account for ordinary and dynamic charging, including memory expansion,
+     warm/cold account and storage access, copy/log/hash/storage/create costs,
+     EIP-150 effective forwarding, stipends, and returned gas, without adding a
+     cost semantics to Yul;
+   - treat out-of-gas and real EVM exceptional conditions, including stack
+     underflow/overflow, invalid opcodes/jumps, return-data copy bounds, static
+     restrictions, and intrinsic CALL/CREATE failures, either through an
+     honest outcome relation or explicit source-facing resource premises;
+   - decompose successful CALL/CREATE execution, including caller-local
+     memory/returndata/gas effects and child commit/revert selection, through
+     the existing shared external strategy rather than requiring verified
+     external programs or precompiles.
+3. **Public composition.** Compose that target refinement with
+   `optimizedSolcYulToRawBytecode` so the final theorem names the actual gasful
+   EVM runner and contains no compiler-generated oracle or certificate premise.
+
+For the deliberately narrower source boundary consisting of the already-
+elaborated canonical ordered Yul contract, item 1 is out of scope and item 2 is
+the only missing semantic bridge. A claim beginning at the selected raw Yul
+object requires both items.
+
+The existing open theorem has already completed the compiler-side part of
+target-derived gas observations: for every answer, source and target expose the
+same resource query and use the same value. The missing theorem proves that the
+gasful target execution supplies the answers and related outcome.
+
+## Not Compiler-Preservation Gaps
+
+The following may matter for a larger product, chain-integration, language-
+coverage, or trusted-specification claim, but they are not prerequisites for a
+formally verified lowering from the declared Yul AST semantics to the declared
+EVM frame semantics:
+
+- implementing or verifying external contracts and Ethereum precompiles;
+- top-level intrinsic gas, fees, sender-nonce processing, transaction receipts,
+  refund settlement, transaction-final transient-storage clearing, and final
+  `SELFDESTRUCT` processing;
+- source maps, ABI/metadata compatibility, deployment-size optimization, and
+  EIP-170/EIP-3860 admission checks;
+- compiler totality, acceptance of every valid Yul program, support for every
+  fork or dialect, and optimization quality;
+- verification of solc's upstream Solidity-to-Yul transformation when Yul is
+  the declared source boundary;
+- adequacy of the chosen EVM model to an external prose specification,
+  host-memory/cryptographic/FFI implementation trust, and the ordinary Lean,
+  native-code, OS, and hardware trusted computing base;
+- a backward-equivalence theorem or a transaction-wrapper theorem
+  when the claimed result is forward preservation of frame execution.
 
 `Assembly.OutOfGasPolicyAssumption` and
 `Assembly.CurrentContractProjectionAssumption` are documentation markers with
-`True` fields. They do not discharge these refinements and are not used to
-inflate the optimized-Yul end-to-end theorem.
+`True` fields. They do not discharge the gasful target-refinement obligation
+and are not used to inflate the optimized-Yul end-to-end theorem.
 
 ## Release Evidence
 

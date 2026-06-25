@@ -3,12 +3,18 @@
 The exact release trust and semantic boundary is maintained in
 [`PRODUCTION_ASSUMPTIONS.md`](PRODUCTION_ASSUMPTIONS.md).
 
-## Production Boundary
+## Declared Source Boundary
 
-The trusted frontend is a supported pinned `solc` producing optimized Yul
-through `irOptimizedAst`. Solidity lowering, source optimization,
-rematerialization, and source-level memory spilling belong to that frontend.
-The checked backend starts at the resulting Yul program.
+The compiler-correctness source is optimized Yul, not Solidity. Solidity
+lowering, source optimization, rematerialization, and source-level memory
+spilling are upstream when the claim is Yul-to-EVM preservation.
+
+The normalized public theorem executes the canonical ordered Yul contract
+retained by successful `Solidity.Frontend.Object` compilation. The raw Standard
+JSON route decodes and elaborates `irOptimizedAst` in Lean, but its final
+same-observation theorem still needs to relate execution of the selected raw
+source through the remaining elaboration transformations to execution of that
+ordered contract.
 
 The executable raw-frontend adapter matrix currently pins solc 0.8.26 and
 0.8.35 to Cancun because those pins emit structured `irOptimizedAst` for the
@@ -38,12 +44,50 @@ optimized solc Yul
 artifact. Compilation fails closed when stack-only scheduling fails. The
 backend performs no compiler-owned memory access.
 
-## Raw solc Frontend Migration
+## Remaining Compiler-Preservation Work
 
-Goal: remove Python semantic normalization from the trusted production path.
+There are two semantic boundaries left before the project can claim forward
+preservation from its full declared Yul source to the actual gasful EVM runner:
+
+- [ ] **Finish the source-facing frontend theorem.** Compose the remaining raw
+  elaboration and object-resolution facts, especially nested-function
+  hoisting/alpha-renaming through complete caller and control contexts, so the
+  source execution in the public raw theorem is the selected raw Yul AST rather
+  than only the elaborated ordered Yul contract.
+- [ ] **Refine open bytecode execution to gasful EVM execution.** Prove that
+  EVMYulLean's gasful execution of the emitted bytes resolves the already-
+  matched `GAS`/`MSIZE` queries with its actual observations and agrees after
+  erasing target-only resource/control state. The bridge must cover runner
+  fuel, byte decoding/PC/termination, the valid-jump table and decoder window,
+  the target runner's ordinary and dynamic charges (including memory expansion
+  and warm/cold access), EIP-150/stipends/returned call gas, and all target-only
+  exceptional checks such as out-of-gas, stack underflow/overflow, invalid
+  opcode/jump, return-data bounds, static mode, and intrinsic CALL/CREATE
+  failure. Successful CALL/CREATE behavior stays behind the existing shared
+  external-strategy interface.
+- [ ] **Compose both boundaries into the public theorem.** The final result
+  should name the actual gasful target runner and retain only genuine source-
+  facing execution/resource premises, never compiler-generated evidence.
+
+If the declared source is intentionally narrowed to the already-elaborated
+canonical ordered Yul contract, the first item is outside that boundary and the
+gasful-target refinement is the only remaining semantic bridge. Claiming the
+selected raw/optimized Yul object as source requires both.
+
+The open-world design is already the intended compiler semantics. It does not
+require verified external contracts, precompile implementations, transaction
+fee/receipt processing, or transaction-final state processing. Compiler
+totality, broader fork/dialect coverage, source maps, deployability limits,
+optimization quality, and general EVM-model/FFI/Lean trust are separate scope or
+product concerns, not missing preservation steps.
+
+## Raw solc Frontend
+
+Python semantic normalization has been removed from the raw production theorem:
 Python may invoke solc, transport Standard JSON, and run differential tests,
-but the checked compiler source program must be derived in Lean from raw solc
-Standard JSON `irOptimizedAst`.
+while Lean derives the checked compiler source program from raw solc Standard
+JSON `irOptimizedAst`. The remaining compiler task is semantic preservation of
+the source-facing elaboration, not transport ownership.
 
 Current split:
 
@@ -56,9 +100,10 @@ Current split:
 - Source normalization: existing `Solidity.Frontend` still owns memoryguard
   inference, object-builtin resolution, local data/object layout, linker and
   immutable resolution, fork spelling validation, and object image planning.
-- Orchestration: Python remains temporarily as solc transport and old-bridge
-  differential tooling; it must stop constructing the theorem's
-  `Solidity.Frontend.Program` before this migration is complete.
+- Orchestration: Python invokes solc, transports Standard JSON, and runs legacy
+  bridge differential tooling. The raw theorem's `Solidity.Frontend.Program` is
+  constructed by Lean; Python normalization remains only on legacy/standalone
+  routes.
 
 Transformation inventory from `scripts/solidity_to_yul_lean.py`:
 
@@ -602,16 +647,19 @@ Next raw frontend layer:
 - [x] Ensure no generated schedule, layout, certificate, spill plan, replay
   witness, or semantic oracle appears as a public premise.
 
-## Preserved Semantics
+## Preserved Open Semantics
 
-- [x] Honest ordered `GAS` and `MSIZE` observations.
+- [x] Exact ordered `GAS` and `MSIZE` query preservation for every shared
+  answer; the unchecked item above is target-side instantiation with the actual
+  values produced by gasful EVM execution.
 - [x] Ordered logs and open-world CALL/CREATE-family effects.
 - [x] Generic source `MLOAD`/`MSTORE`, dynamic memory, and solc-generated
   explicit memory spills.
 - [x] Liveness, next-use scheduling, joins, dormant caller frames, internal
   calls, and pressure normalization.
-- [x] Legitimate gas/OOG, host-memory, fork, initial-state, and trusted-frontend
-  assumptions remain explicit.
+- [x] Initial-state and declared-source boundaries remain explicit; target gas,
+  OOG, stack/jump/static resource behavior is isolated as the gasful refinement
+  theorem above rather than hidden in compiler acceptance.
 - [x] Carry the requested EVM version through recursive frontend objects and
   validate primitive availability against that exact profile in Lean; bridge
   inputs without metadata and Cancun operations relabeled as London fail closed.
@@ -629,7 +677,7 @@ Next raw frontend layer:
 - [x] Record honest rejection when memory-unsafe pressure prevents solc from
   producing stack-schedulable optimized output.
 
-## Completion Gates
+## Current Open-Backend Gates
 
 - [x] Raw-capable pinned corpus gates pass through checked raw-byte artifacts,
   including linked Aave Pool, PoolManager on its compatible exact 0.8.26 pin,
@@ -643,9 +691,10 @@ Next raw frontend layer:
 - [x] `git diff --check` passes.
 - [x] Green commits exist at coherent deletion and theorem boundaries.
 
-Deployment-size optimization, source maps, and full gas-aware refinement remain
-separate production-hardening goals; they are not prerequisites for this
-stack-only correctness boundary.
+Deployment-size optimization and source maps remain separate product-hardening
+goals. In contrast, refinement to the actual gasful EVM runner is a remaining
+compiler-preservation obligation; the existing theorem is complete only for the
+open gas-erased target semantics.
 
 ## Release Hardening
 

@@ -7,11 +7,12 @@ namespace InteractionConcreteResources
 open Simulation
 
 /-
-These observers are concrete relative to the current gas-erased Assembly
-machine state: `MSIZE` reads that state's active-memory field and `GAS` reads
-its stored gas field. This module does not charge instruction gas or prove a
-refinement from fork-specific, out-of-gas-aware EVM execution. That outer
-bridge is a separate production obligation.
+These observers are concrete relative to the current open Assembly machine
+state: `MSIZE` reads that state's active-memory field and `GAS` reads its stored
+gas field. EVMYulLean already supplies a gasful runner that computes the actual
+values; this module neither charges instructions nor proves that the gasful run
+resolves this interaction with those values. That target-refinement composition
+is the remaining compiler-preservation obligation.
 -/
 
 /-- Re-emit every open request while also retaining its ordered exchange in

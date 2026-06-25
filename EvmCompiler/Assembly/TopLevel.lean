@@ -5,15 +5,17 @@ namespace Assembly
 
 /--
 Runtime assumptions added when the verified AST-level compiler theorem is used
-as a claim about deployed EVM bytecode.
+as a claim about actual gasful EVM frame execution.
 
-`decodeWindow` is a resource/code-size bound; the actual `DecodeSafety` facts
-are derived from the checked assembler layout. `jumpdestCorrect` remains a
+`decodeWindow` is a decoder-resource bound, not a deployment-size policy; the
+actual `DecodeSafety` facts are derived from the checked assembler layout.
+`jumpdestCorrect` remains a
 bytecode/EVMYulLean scanner boundary because the imported jumpdest scanner is
 opaque. The remaining fields name the semantic choices intentionally not
-  modeled by the gasless source language or not yet derived from the source step
-  relation: gas accounting, possible out-of-gas interruption, and the gas-erased
-  state projection.
+modeled by the cost-free source language or not yet derived by the gasful-target
+refinement: gas accounting, possible out-of-gas interruption, and the gas-erased
+state projection. Transaction processing and external-program correctness are
+not fields of this compiler boundary.
 -/
 structure RuntimeAssumptions
     (program : Program) (target : TargetProgram) (initial : EVMState) :
@@ -58,7 +60,7 @@ Public whole-program compiler theorem for the minimal assembly layer.
 
 There is no parser in this theorem: the verified compiler input is the
 `Program` AST.  The bytecode component is a one-way encoder proof showing that
-the compiled target program produces deployable bytes whose EVMYulLean
+the compiled target program produces raw bytes whose EVMYulLean
 decoder/fetch behavior matches the target instructions.  The observable
 semantic claim is the gas-erased whole-run block trace.
 -/

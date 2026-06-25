@@ -457,9 +457,9 @@ Use `--format lean-backend-check` when decode succeeds but executable bytecode
 generation returns `none`.  It runs through the cached native
 `evm-compiler-backend` executable over the same normalized bridge JSON and
 reports whether `solc_validation` or `object_image` first failed, without
-treating an expected current-backend gap as malformed bridge input. The more
-detailed legacy stage trace remains a failure-only diagnostic for object-image
-generation. With
+treating an expected fail-closed backend rejection as malformed bridge input.
+The more detailed legacy stage trace remains a failure-only diagnostic for
+object-image generation. With
 `--input-format bridge-json-manifest`, or with solc/Standard JSON input plus
 `--all-contracts`, it emits a JSON package report with per-object status counts
 and `firstNoneCounts`; those package reports also retain the per-object solc
@@ -799,11 +799,12 @@ Another front-half decode smoke covers low-level external-call lowering.  It
 packages `ExternalCallBox`, validates/replays the manifest through Lean, runs
 the Lean backend-check preflight, and asserts that the runtime bridge summary
 preserves `call`, `staticcall`, `delegatecall`, `returndatasize`, and
-`returndatacopy`.  Solc-emitted `gas()` is executable through the unchecked
-bytecode lowering path and remains a theorem-boundary observer rather than a
-summary blocker.  The summary compatibility classifier treats the CALL-family
-primitives as supported open-boundary operations, separate from exact
-resource-observer preservation.  Backend-check output may still report a later
+`returndatacopy`. Solc-emitted `gas()` is preserved by the checked compiler as
+an ordered open resource query rather than treated as a summary blocker. The
+remaining theorem is target-side: instantiate that query with the actual value
+observed by gasful EVM execution. The summary compatibility classifier treats
+the CALL-family primitives as supported open-boundary operations. Backend-check
+output may still report a later
 first failing stage for a concrete executable artifact, but the CALL-family
 primitive surface itself is no longer classified as unsupported:
 
@@ -1515,10 +1516,12 @@ Current bridge limits are intentionally explicit:
   `extcodehash`) are recognized by the frontend and covered through
   state/query plus code-image preservation, not by adding new suspending
   external-boundary events.
-- Direct resource observer primitives `gas()` and `msize()` are executable in
-  unchecked bytecode/object-image lowering through their EVM opcodes.  Exact
-  preservation of those observer values is not part of the current verified
-  theorem boundary.
+- Direct resource observer primitives `gas()` and `msize()` are covered by the
+  verified open theorem: source and emitted bytecode expose the same ordered
+  query and use the same answer for every value. What remains unproved is the
+  separate refinement showing that gasful EVM execution supplies those answers
+  and agrees with the open bytecode run after erasing target-only gas/control
+  state.
 - The position observer primitive `pc()` remains an explicit dialect/raw-EVM
   exclusion before executable core-Yul lowering.
 - Raw EVM opcode-style calls such as `jump`, `jumpi`, `jumpdest`, `push*`,
