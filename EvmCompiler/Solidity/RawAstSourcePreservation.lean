@@ -37,6 +37,17 @@ def orderedRun (fuel : Nat) (ordered : Yul.OrderedProgram)
     (.Block [ordered.program.contract.dispatcher])
     (some ordered.program.contract) state
 
+def BlockRunForward (rawFuel orderedFuel : Nat)
+    (context : Frontend.ObjectBuiltinContext)
+    (code : List Raw.Stmt) (ordered : Yul.OrderedProgram)
+    (state : State) : Prop :=
+  Simulation.Interaction.ForwardRel
+    Yul.FunctionsInteractionPrimitive.Truncated
+    SameDoneRel
+    (Raw.SourceSemantics.execBlock rawFuel
+      (Raw.SourceSemantics.contextForObject context) code state)
+    (orderedRun orderedFuel ordered state)
+
 theorem rawObjectRun_none_code
     {fuel : Nat} {context : Frontend.ObjectBuiltinContext}
     {object : Raw.Object} {state : State}
@@ -120,6 +131,22 @@ theorem runForward_of_eq
     forward_refl Yul.FunctionsInteractionPrimitive.Truncated
       (orderedRun orderedFuel ordered state)
 
+theorem blockRunForward_of_eq
+    {rawFuel orderedFuel : Nat}
+    {context : Frontend.ObjectBuiltinContext}
+    {code : List Raw.Stmt} {ordered : Yul.OrderedProgram}
+    {state : State}
+    (hRun :
+      Raw.SourceSemantics.execBlock rawFuel
+          (Raw.SourceSemantics.contextForObject context) code state =
+        orderedRun orderedFuel ordered state) :
+    BlockRunForward rawFuel orderedFuel context code ordered state := by
+  unfold BlockRunForward
+  rw [hRun]
+  exact
+    forward_refl Yul.FunctionsInteractionPrimitive.Truncated
+      (orderedRun orderedFuel ordered state)
+
 structure ObjectRunEquivalent
     (context : Frontend.ObjectBuiltinContext)
     (object : Raw.Object) (ordered : Yul.OrderedProgram) : Prop where
@@ -161,6 +188,25 @@ structure ObjectPositivePreserved
         RunForward (rawFuel + 1) (orderedFuel + 1)
           context object ordered state
 
+structure CodePositiveRunEquivalent
+    (context : Frontend.ObjectBuiltinContext)
+    (code : List Raw.Stmt) (ordered : Yul.OrderedProgram) : Prop where
+  run_eq :
+    ∀ (rawFuel : Nat) (state : State),
+      ∃ orderedFuel,
+        Raw.SourceSemantics.execBlock (rawFuel + 1)
+            (Raw.SourceSemantics.contextForObject context) code state =
+          orderedRun (orderedFuel + 1) ordered state
+
+structure CodePositivePreserved
+    (context : Frontend.ObjectBuiltinContext)
+    (code : List Raw.Stmt) (ordered : Yul.OrderedProgram) : Prop where
+  forward :
+    ∀ (rawFuel : Nat) (state : State),
+      ∃ orderedFuel,
+        BlockRunForward (rawFuel + 1) (orderedFuel + 1)
+          context code ordered state
+
 namespace ObjectPositiveRunEquivalent
 
 theorem preserved
@@ -174,6 +220,39 @@ theorem preserved
     exact ⟨orderedFuel, runForward_of_eq hRun⟩
 
 end ObjectPositiveRunEquivalent
+
+namespace CodePositiveRunEquivalent
+
+theorem preserved
+    {context : Frontend.ObjectBuiltinContext}
+    {code : List Raw.Stmt} {ordered : Yul.OrderedProgram}
+    (hEq : CodePositiveRunEquivalent context code ordered) :
+    CodePositivePreserved context code ordered where
+  forward := by
+    intro rawFuel state
+    rcases hEq.run_eq rawFuel state with ⟨orderedFuel, hRun⟩
+    exact ⟨orderedFuel, blockRunForward_of_eq hRun⟩
+
+end CodePositiveRunEquivalent
+
+namespace CodePositivePreserved
+
+theorem toObjectPositive
+    {context : Frontend.ObjectBuiltinContext}
+    {object : Raw.Object} {ordered : Yul.OrderedProgram}
+    {code : List Raw.Stmt}
+    (hCodeRun : CodePositivePreserved context code ordered)
+    (hCode : object.code? = some code) :
+    ObjectPositivePreserved context object ordered where
+  forward := by
+    intro rawFuel state
+    rcases hCodeRun.forward rawFuel state with ⟨orderedFuel, hForward⟩
+    refine ⟨orderedFuel, ?_⟩
+    unfold RunForward BlockRunForward at *
+    rw [rawObjectRun_some_code_succ hCode]
+    exact hForward
+
+end CodePositivePreserved
 
 structure ArtifactRawSourceContext
     (rawJson : String) (selection : Selection)
@@ -237,6 +316,33 @@ theorem nonempty_of_compile
       ordered := hOrdered
       sourceContext := hSourceContext }⟩
 
+theorem code_elaborates
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    {code : List Raw.Stmt}
+    (hCode : ctx.selected.root.code? = some code) :
+    ∃ helper? arg? ret?,
+      Elab.elaborateCode code =
+        .ok (ctx.program.object.dispatcher, ctx.program.object.functions,
+          helper?, arg?, ret?) := by
+  rcases Raw.Object.elaborate?_parts ctx.raw_elaborates with
+    ⟨_itemFuel, dispatcher, functions, helper?, arg?, ret?,
+      _data, _objects, _items, _hFuel, hCodeElab, _hItems, hFrontend⟩
+  have hElab :
+      Elab.elaborateCode code =
+        .ok (dispatcher, functions, helper?, arg?, ret?) := by
+    simpa [hCode] using hCodeElab
+  refine ⟨helper?, arg?, ret?, ?_⟩
+  have hDispatcher :
+      ctx.program.object.dispatcher = dispatcher := by
+    rw [hFrontend]
+  have hFunctions :
+      ctx.program.object.functions = functions := by
+    rw [hFrontend]
+  rw [hDispatcher, hFunctions]
+  exact hElab
+
 end ArtifactRawSourceContext
 
 def RawSourceBytecodePrefixDoneRel
@@ -289,6 +395,18 @@ def withSourcePreserved
     ArtifactRawSourcePreserved rawJson selection artifact :=
   { ctx with
     sourceRun := sourceRun }
+
+def withSourceCodePreserved
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    {code : List Raw.Stmt}
+    (hCode : ctx.selected.root.code? = some code)
+    (sourceRun :
+      CodePositivePreserved ctx.context code
+        artifact.codeArtifact.ordered) :
+    ArtifactRawSourcePreserved rawJson selection artifact :=
+  ctx.withSourcePreserved (sourceRun.toObjectPositive hCode)
 
 end ArtifactRawSourceContext
 

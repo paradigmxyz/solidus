@@ -94,20 +94,27 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.EvalObjectBuiltin.datacopy_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.ExecBlock.succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Exec.assignment_succ
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.BlockRunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_none_code
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_some_code
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_some_code_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.RunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectPreserved
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectPositivePreserved
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.CodePositivePreserved
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.forward_refl
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.runForward_of_eq
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.blockRunForward_of_eq
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectRunEquivalent.preserved
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectPositiveRunEquivalent.preserved
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.CodePositiveRunEquivalent.preserved
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.CodePositivePreserved.toObjectPositive
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.nonempty_of_compile
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.code_elaborates
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.withSourceRun
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.withSourcePreserved
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.withSourceCodePreserved
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceEquivalent
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourcePreserved
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceEquivalent.preserved
@@ -848,6 +855,11 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.ExecObjectCode.code_some_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_some_code
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_some_code_succ
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.blockRunForward_of_eq
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.CodePositiveRunEquivalent.preserved
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.CodePositivePreserved.toObjectPositive
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.code_elaborates
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.withSourceCodePreserved
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_objectParts
