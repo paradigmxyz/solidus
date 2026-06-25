@@ -253,6 +253,75 @@ theorem sameData_afterEVMInstructionCharge_afterDynamic
   cases state
   rfl
 
+def resourcePrimOp : ResourceQuery → PrimOp
+  | .gas => .gas
+  | .msize => .msize
+
+def gasfulResourceNext (kind : ResourceQuery) (state : EVMState) : EVMState :=
+  let charged := afterEVMInstructionChargeAt state
+  charged.replaceStackAndIncrPC
+    (charged.stack.push
+      (InteractionConcreteResources.resourceValue kind
+        (afterDynamicChargeAt state)))
+
+def openResourceNext (kind : ResourceQuery) (state : EVMState) : EVMState :=
+  (afterDynamicChargeAt state).replaceStackAndIncrPC
+    ((afterDynamicChargeAt state).stack.push
+      (InteractionConcreteResources.resourceValue kind
+        (afterDynamicChargeAt state)))
+
+@[simp] theorem resourceResult_eq_running
+    (kind : ResourceQuery) (state : EVMState) :
+    InteractionConcreteResources.resourceResult kind
+        (afterDynamicChargeAt state) =
+      .running (openResourceNext kind state) := by
+  rfl
+
+@[simp] theorem afterMemoryChargeAt_execLength (state : EVMState) :
+    (afterMemoryChargeAt state).execLength = state.execLength := rfl
+
+theorem evmyul_step_gas
+    (state : EVMState) (arg : Option (Word × Nat)) :
+    EvmYul.step (τ := .EVM) EvmYul.Operation.GAS arg state =
+      .ok
+        (state.replaceStackAndIncrPC
+          (state.stack.push (EvmYul.MachineState.gas state.toMachineState))) := by
+  rfl
+
+theorem evmyul_step_msize
+    (state : EVMState) (arg : Option (Word × Nat)) :
+    EvmYul.step (τ := .EVM) EvmYul.Operation.MSIZE arg state =
+      .ok
+        (state.replaceStackAndIncrPC
+          (state.stack.push
+            (EvmYul.MachineState.msize state.toMachineState))) := by
+  rfl
+
+theorem evm_step_resource_eq
+    (kind : ResourceQuery) (fuel : Nat) (state : EVMState)
+    (arg : Option (Word × Nat)) :
+    EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+        (some ((resourcePrimOp kind).toEVM, arg))
+        (afterMemoryChargeAt state) =
+      .ok (gasfulResourceNext kind state) := by
+  cases kind <;>
+    simp [EvmYul.EVM.step, resourcePrimOp, gasfulResourceNext,
+      afterEVMInstructionChargeAt, afterDynamicChargeAt, chargeGas,
+      PrimOp.toEVM, evmyul_step_gas, evmyul_step_msize,
+      InteractionConcreteResources.resourceValue,
+      EvmYul.MachineState.gas, EvmYul.MachineState.msize]
+
+theorem gasfulResourceNext_sameData
+    (kind : ResourceQuery) (state : EVMState) :
+    SameData (gasfulResourceNext kind state)
+      (openResourceNext kind state) := by
+  cases kind <;> cases state <;> rfl
+
+theorem gasfulResourceNext_pc
+    (kind : ResourceQuery) (state : EVMState) :
+    (gasfulResourceNext kind state).pc = (openResourceNext kind state).pc := by
+  cases kind <;> cases state <;> rfl
+
 structure XGasChecksPass (state : EVMState) : Prop where
   memoryGas :
     ¬ state.gasAvailable.toNat < memoryExpansionCostAt state
@@ -5721,6 +5790,125 @@ theorem runRefinesOpen_of_x_after_prechecks_step_error_executes
     (fuel := fuel) (validJumps := validJumps) (state := state)
     (stepResult := .error err) hPrefix hCreateOk hStep
   exact runRefinesOpen_of_executes hExec DoneRel.sameError
+
+/-- Compose one actual charged `GAS` or `MSIZE` step. The first transcript
+exchange is the concrete value observed after memory and dynamic gas charges. -/
+theorem runRefinesOpen_resource_success
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    {arg : Option (Word × Nat)}
+    {tailTranscript : Interaction.Transcript}
+    (kind : ResourceQuery)
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hDecodedPair :
+      ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+        (EvmYul.Operation.STOP, none)) =
+          ((resourcePrimOp kind).toEVM, arg))
+    (hDecode :
+      Compact.decodeAt bytes pc (.prim (resourcePrimOp kind)))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc)
+    (hCont :
+      RunRefinesOpen
+        (EvmYul.EVM.X (fuel + 1) validJumps
+          (gasfulResourceNext kind state))
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (fuel + 1) (openResourceNext kind state))
+        tailTranscript) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1 + 1) validJumps state)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1 + 1) (afterDynamicChargeAt state))
+      (InteractionConcreteResources.resourceExchange kind
+          (InteractionConcreteResources.resourceValue kind
+            (afterDynamicChargeAt state)) :: tailTranscript) := by
+  have hDecodedOp :
+      decodedOperationAt state = (resourcePrimOp kind).toEVM := by
+    simpa [decodedOperationAt, hDecodedPair]
+  have hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt state) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          state.stack[2]?.getD (EvmYul.UInt256.ofNat 0)) := by
+    intro hBad
+    cases kind <;>
+      simp [resourcePrimOp, PrimOp.toEVM, hDecodedOp,
+        EvmYul.Operation.isCreate] at hBad
+  have hFirst :
+      Interaction.Executes
+        (Compact.InteractionSemantics.openRunNResult
+          bytes 1 (afterDynamicChargeAt state))
+        [InteractionConcreteResources.resourceExchange kind
+          (InteractionConcreteResources.resourceValue kind
+            (afterDynamicChargeAt state))]
+        (.ok (.running (openResourceNext kind state))) := by
+    cases kind with
+    | gas =>
+        simpa [afterDynamicChargeAt, resourceResult_eq_running] using
+          (raw_gas_observation_executes_after_charge
+            (bytes := bytes) (pc := pc)
+            (state := afterMemoryChargeAt state)
+            (cost := dynamicGasCostAt state) hDecode hPc)
+    | msize =>
+        simpa [afterDynamicChargeAt, resourceResult_eq_running] using
+          (raw_msize_observation_executes_after_charge
+            (bytes := bytes) (pc := pc)
+            (state := afterMemoryChargeAt state)
+            (cost := dynamicGasCostAt state) hDecode hPc)
+  have hPostRun :
+      RunRefinesOpen
+        (EvmYul.EVM.X (fuel + 1) validJumps
+          (gasfulResourceNext kind state))
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (fuel + 1 + 1) (afterDynamicChargeAt state))
+        (InteractionConcreteResources.resourceExchange kind
+            (InteractionConcreteResources.resourceValue kind
+              (afterDynamicChargeAt state)) :: tailTranscript) := by
+    rw [show fuel + 1 + 1 = 1 + (fuel + 1) by omega]
+    rw [Compact.InteractionSemantics.openRunNResult_add]
+    simpa using
+      (runRefinesOpen_bind_running_prefix
+        (gasful := EvmYul.EVM.X (fuel + 1) validJumps
+          (gasfulResourceNext kind state))
+        (tailGasful := EvmYul.EVM.X (fuel + 1) validJumps
+          (gasfulResourceNext kind state))
+        (first := Compact.InteractionSemantics.openRunNResult
+          bytes 1 (afterDynamicChargeAt state))
+        (nextState := openResourceNext kind state)
+        (tail := fun openNext =>
+          Compact.InteractionSemantics.openRunNResult
+            bytes (fuel + 1) openNext)
+        (firstTranscript :=
+          [InteractionConcreteResources.resourceExchange kind
+            (InteractionConcreteResources.resourceValue kind
+              (afterDynamicChargeAt state))])
+        (tailTranscript := tailTranscript)
+        rfl hFirst hCont)
+  have hPostBridge :
+      RunRefinesOpen
+        (xPostStepExceptResult (fuel + 1) validJumps
+          (decodedOperationAt state)
+          (.ok (gasfulResourceNext kind state)))
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (fuel + 1 + 1) (afterDynamicChargeAt state))
+        (InteractionConcreteResources.resourceExchange kind
+            (InteractionConcreteResources.resourceValue kind
+              (afterDynamicChargeAt state)) :: tailTranscript) := by
+    cases kind <;>
+      simpa [xPostStepExceptResult, xPostStepResult, hDecodedOp,
+        resourcePrimOp, PrimOp.toEVM, haltOutputAt] using hPostRun
+  have hStepActual :
+      EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+        (some
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt state) =
+          .ok (gasfulResourceNext kind state) := by
+    simpa [hDecodedPair] using
+      evm_step_resource_eq kind fuel state arg
+  exact
+    runRefinesOpen_of_x_after_prechecks_step_result
+      (fuel := fuel + 1) (validJumps := validJumps) (state := state)
+      (stepResult := .ok (gasfulResourceNext kind state))
+      hPrefix hCreateOk hStepActual hPostBridge
 
 theorem runRefinesOpen_jumpdest_step
     {fuel : Nat} {validJumps : Array Word}

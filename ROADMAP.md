@@ -39,6 +39,9 @@ Gasful EVM bridge checkpoint:
   boundary, including charged `GAS`/`MSIZE` raw-bytecode lemmas, checked
   `EVM.X` OOG lemmas for memory and dynamic gas charges, OOG-inclusive outcome
   relation, and CALL/CREATE gas-accounting records.
+- [x] Compose charged `GAS`/`MSIZE` into `RunRefinesOpen`: the actual
+  post-charge resource value is emitted as the next ordered exchange, and the
+  concrete/open successor states agree after gas/control erasure and at PC.
 - [x] Prove the ordered `EVM.X` exceptional-precheck slice after gas checks:
   invalid opcode, stack underflow, bad `JUMP`/`JUMPI`, invalid
   `RETURNDATACOPY`, stack overflow, static-mode violation, SSTORE stipend OOG,

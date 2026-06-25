@@ -557,6 +557,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedLegacy
 #check EvmCompiler.Assembly.GasfulBridge.raw_gas_observation_executes_after_charge
 #check EvmCompiler.Assembly.GasfulBridge.raw_msize_observation_executes_after_charge
+#check EvmCompiler.Assembly.GasfulBridge.evm_step_resource_eq
+#check EvmCompiler.Assembly.GasfulBridge.gasfulResourceNext_sameData
+#check EvmCompiler.Assembly.GasfulBridge.gasfulResourceNext_pc
+#check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_resource_success
 #check EvmCompiler.Assembly.GasfulBridge.afterDynamicChargeAt
 #check EvmCompiler.Assembly.GasfulBridge.afterEVMInstructionChargeAt
 #check EvmCompiler.Assembly.GasfulBridge.sameData_afterEVMInstructionCharge_afterDynamic
@@ -1167,6 +1171,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge
 #print axioms EvmCompiler.Assembly.GasfulBridge.raw_gas_observation_executes_after_charge
 #print axioms EvmCompiler.Assembly.GasfulBridge.raw_msize_observation_executes_after_charge
+#print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_resource_eq
+#print axioms EvmCompiler.Assembly.GasfulBridge.gasfulResourceNext_sameData
+#print axioms EvmCompiler.Assembly.GasfulBridge.gasfulResourceNext_pc
+#print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_resource_success
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_outOfGas_before_memory_charge
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_outOfGas_before_dynamic_charge
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_outOfGas_before_memory_charge
