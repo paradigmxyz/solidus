@@ -526,6 +526,272 @@ theorem elaborate_mem
 end CaseList
 end Stmt
 
+namespace Stmt
+
+theorem assignment_elaborate_value_exists
+    {names : List Name} {value : Raw.Expr}
+    {frontendStmt : Frontend.Stmt} {state state' : Elab.State}
+    (hElab :
+      (Elab.Stmt.elaborate (.assignment names value)).run state =
+        .ok (frontendStmt, state')) :
+    ∃ (frontendValue : Frontend.Expr)
+      (stateBeforeValue stateAfterValue : Elab.State),
+      (Elab.Expr.elaborate value).run stateBeforeValue =
+        .ok (frontendValue, stateAfterValue) ∧
+        frontendStmt = .assign names frontendValue := by
+  unfold Elab.Stmt.elaborate at hElab
+  cases hVisible :
+      (Elab.requireIdentifiersVisible names "assignment").run state with
+  | error err =>
+      simp [hVisible] at hElab
+  | ok visibleResult =>
+      rcases visibleResult with ⟨unitVisible, stateAfterVisible⟩
+      cases hValue :
+          (Elab.Expr.elaborate value).run stateAfterVisible with
+      | error err =>
+          simp [hVisible, hValue] at hElab
+      | ok valueResult =>
+          rcases valueResult with ⟨frontendValue, stateAfterValue⟩
+          simp [hVisible, hValue] at hElab
+          rcases hElab with ⟨rfl, _hState⟩
+          exact
+            ⟨frontendValue, stateAfterVisible, stateAfterValue,
+              hValue, rfl⟩
+
+theorem switch_elaborate_parts
+    {scrutinee : Raw.Expr}
+    {cases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+    {defaultBody : List Raw.Stmt}
+    {frontendStmt : Frontend.Stmt} {state state' : Elab.State}
+    (hElab :
+      (Elab.Stmt.elaborate (.switch scrutinee cases defaultBody)).run state =
+        .ok (frontendStmt, state')) :
+    ∃ (frontendScrutinee : Frontend.Expr)
+      (frontendCases : List (Frontend.SwitchCaseValue × List Frontend.Stmt))
+      (frontendDefault : List Frontend.Stmt)
+      (stateAfterScrutinee stateAfterCases stateAfterDefault : Elab.State),
+      (Elab.Expr.elaborate scrutinee).run state =
+        .ok (frontendScrutinee, stateAfterScrutinee) ∧
+        (Elab.Stmt.CaseList.elaborate cases).run stateAfterScrutinee =
+          .ok (frontendCases, stateAfterCases) ∧
+        (Elab.Stmt.List.elaborateBlock defaultBody true).run
+          stateAfterCases =
+          .ok (frontendDefault, stateAfterDefault) ∧
+        frontendStmt =
+          .switch frontendScrutinee frontendCases frontendDefault := by
+  unfold Elab.Stmt.elaborate at hElab
+  cases hScrutinee : (Elab.Expr.elaborate scrutinee).run state with
+  | error err =>
+      simp [hScrutinee] at hElab
+  | ok scrutineeResult =>
+      rcases scrutineeResult with
+        ⟨frontendScrutinee, stateAfterScrutinee⟩
+      cases hCases :
+          (Elab.Stmt.CaseList.elaborate cases).run
+            stateAfterScrutinee with
+      | error err =>
+          simp [hScrutinee, hCases] at hElab
+      | ok caseResult =>
+          rcases caseResult with ⟨frontendCases, stateAfterCases⟩
+          cases hDefault :
+              (Elab.Stmt.List.elaborateBlock defaultBody true).run
+                stateAfterCases with
+          | error err =>
+              simp [hScrutinee, hCases, hDefault] at hElab
+          | ok defaultResult =>
+              rcases defaultResult with
+                ⟨frontendDefault, stateAfterDefault⟩
+              simp [hScrutinee, hCases, hDefault] at hElab
+              rcases hElab with ⟨rfl, _hState⟩
+              exact
+                ⟨frontendScrutinee, frontendCases, frontendDefault,
+                  stateAfterScrutinee, stateAfterCases, stateAfterDefault,
+                  rfl, hCases, hDefault, rfl⟩
+
+theorem ifThen_elaborate_parts
+    {condition : Raw.Expr} {body : List Raw.Stmt}
+    {frontendStmt : Frontend.Stmt} {state state' : Elab.State}
+    (hElab :
+      (Elab.Stmt.elaborate (.ifThen condition body)).run state =
+        .ok (frontendStmt, state')) :
+    ∃ (frontendCondition : Frontend.Expr)
+      (frontendBody : List Frontend.Stmt)
+      (stateAfterCondition stateAfterBody : Elab.State),
+      (Elab.Expr.elaborate condition).run state =
+        .ok (frontendCondition, stateAfterCondition) ∧
+        (Elab.Stmt.List.elaborateBlock body true).run
+          stateAfterCondition =
+          .ok (frontendBody, stateAfterBody) ∧
+        frontendStmt = .ifThen frontendCondition frontendBody := by
+  unfold Elab.Stmt.elaborate at hElab
+  cases hCondition : (Elab.Expr.elaborate condition).run state with
+  | error err =>
+      simp [hCondition] at hElab
+  | ok conditionResult =>
+      rcases conditionResult with
+        ⟨frontendCondition, stateAfterCondition⟩
+      cases hBody :
+          (Elab.Stmt.List.elaborateBlock body true).run
+            stateAfterCondition with
+      | error err =>
+          simp [hCondition, hBody] at hElab
+      | ok bodyResult =>
+          rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+          simp [hCondition, hBody] at hElab
+          rcases hElab with ⟨rfl, _hState⟩
+          exact
+            ⟨frontendCondition, frontendBody, stateAfterCondition,
+              stateAfterBody, rfl, hBody, rfl⟩
+
+theorem forLoop_elaborate_parts
+    {pre post body : List Raw.Stmt} {condition : Raw.Expr}
+    {frontendStmt : Frontend.Stmt} {state state' : Elab.State}
+    (hElab :
+      (Elab.Stmt.elaborate (.forLoop pre condition post body)).run state =
+        .ok (frontendStmt, state')) :
+    ∃ (frontendPre : List Frontend.Stmt)
+      (frontendCondition : Frontend.Expr)
+      (frontendPost frontendBody : List Frontend.Stmt)
+      (stateBeforePre stateAfterPre stateAfterCondition stateAfterPost
+        stateAfterBody : Elab.State),
+      (if Elab.Stmt.List.hasImmediateFunctionDefinition pre then
+          (Elab.Stmt.List.elaborateForInitBlockWithScope pre).run
+            stateBeforePre
+        else
+          (Elab.Stmt.List.elaborateBlock pre false).run stateBeforePre) =
+        .ok (frontendPre, stateAfterPre) ∧
+        (Elab.Expr.elaborate condition).run stateAfterPre =
+          .ok (frontendCondition, stateAfterCondition) ∧
+        (Elab.Stmt.List.elaborateBlock post true).run
+          stateAfterCondition =
+          .ok (frontendPost, stateAfterPost) ∧
+        (Elab.Stmt.List.elaborateBlock body true).run stateAfterPost =
+          .ok (frontendBody, stateAfterBody) ∧
+        frontendStmt =
+          .forLoop frontendPre frontendCondition frontendPost frontendBody := by
+  unfold Elab.Stmt.elaborate at hElab
+  cases hPush : Elab.pushIdentifierScope.run state with
+  | error err =>
+      simp [hPush] at hElab
+  | ok pushResult =>
+      rcases pushResult with ⟨unitPush, stateAfterPush⟩
+      cases hPreHas :
+          Elab.Stmt.List.hasImmediateFunctionDefinition pre
+      · cases hPre :
+            (Elab.Stmt.List.elaborateBlock pre false).run
+              stateAfterPush with
+        | error err =>
+            simp [hPush, hPreHas, hPre] at hElab
+        | ok preResult =>
+            rcases preResult with ⟨frontendPre, stateAfterPre⟩
+            cases hCondition :
+                (Elab.Expr.elaborate condition).run stateAfterPre with
+            | error err =>
+                simp [hPush, hPreHas, hPre, hCondition] at hElab
+            | ok conditionResult =>
+                rcases conditionResult with
+                  ⟨frontendCondition, stateAfterCondition⟩
+                cases hPost :
+                    (Elab.Stmt.List.elaborateBlock post true).run
+                      stateAfterCondition with
+                | error err =>
+                    simp [hPush, hPreHas, hPre, hCondition, hPost]
+                      at hElab
+                | ok postResult =>
+                    rcases postResult with
+                      ⟨frontendPost, stateAfterPost⟩
+                    cases hBody :
+                        (Elab.Stmt.List.elaborateBlock body true).run
+                          stateAfterPost with
+                    | error err =>
+                        simp [hPush, hPreHas, hPre, hCondition, hPost,
+                          hBody] at hElab
+                    | ok bodyResult =>
+                        rcases bodyResult with
+                          ⟨frontendBody, stateAfterBody⟩
+                        cases hPop :
+                            Elab.popIdentifierScope.run stateAfterBody with
+                        | error err =>
+                            simp [hPush, hPreHas, hPre, hCondition, hPost,
+                              hBody, hPop] at hElab
+                        | ok popResult =>
+                            rcases popResult with
+                              ⟨unitPop, stateAfterPop⟩
+                            simp [hPush, hPreHas, hPre, hCondition, hPost,
+                              hBody, hPop] at hElab
+                            rcases hElab with ⟨rfl, _hState⟩
+                            exact
+                              ⟨frontendPre, frontendCondition, frontendPost,
+                                frontendBody, stateAfterPush, stateAfterPre,
+                                stateAfterCondition, stateAfterPost,
+                                stateAfterBody,
+                                by simpa [hPreHas] using hPre,
+                                hCondition, hPost, hBody, rfl⟩
+      · cases hPre :
+            (Elab.Stmt.List.elaborateForInitBlockWithScope pre).run
+              stateAfterPush with
+        | error err =>
+            simp [hPush, hPreHas, hPre] at hElab
+        | ok preResult =>
+            rcases preResult with ⟨frontendPre, stateAfterPre⟩
+            cases hCondition :
+                (Elab.Expr.elaborate condition).run stateAfterPre with
+            | error err =>
+                simp [hPush, hPreHas, hPre, hCondition] at hElab
+            | ok conditionResult =>
+                rcases conditionResult with
+                  ⟨frontendCondition, stateAfterCondition⟩
+                cases hPost :
+                    (Elab.Stmt.List.elaborateBlock post true).run
+                      stateAfterCondition with
+                | error err =>
+                    simp [hPush, hPreHas, hPre, hCondition, hPost]
+                      at hElab
+                | ok postResult =>
+                    rcases postResult with
+                      ⟨frontendPost, stateAfterPost⟩
+                    cases hBody :
+                        (Elab.Stmt.List.elaborateBlock body true).run
+                          stateAfterPost with
+                    | error err =>
+                        simp [hPush, hPreHas, hPre, hCondition, hPost,
+                          hBody] at hElab
+                    | ok bodyResult =>
+                        rcases bodyResult with
+                          ⟨frontendBody, stateAfterBody⟩
+                        cases hPopFunction :
+                            Elab.popFunctionScope.run stateAfterBody with
+                        | error err =>
+                            simp [hPush, hPreHas, hPre, hCondition, hPost,
+                              hBody, hPopFunction] at hElab
+                        | ok popFunctionResult =>
+                            rcases popFunctionResult with
+                              ⟨unitPopFunction, stateAfterPopFunction⟩
+                            cases hPop :
+                                Elab.popIdentifierScope.run
+                                  stateAfterPopFunction with
+                            | error err =>
+                                simp [hPush, hPreHas, hPre, hCondition,
+                                  hPost, hBody, hPopFunction, hPop]
+                                  at hElab
+                            | ok popResult =>
+                                rcases popResult with
+                                  ⟨unitPop, stateAfterPop⟩
+                                simp [hPush, hPreHas, hPre, hCondition,
+                                  hPost, hBody, hPopFunction, hPop]
+                                  at hElab
+                                rcases hElab with ⟨rfl, _hState⟩
+                                exact
+                                  ⟨frontendPre, frontendCondition,
+                                    frontendPost, frontendBody,
+                                    stateAfterPush, stateAfterPre,
+                                    stateAfterCondition, stateAfterPost,
+                                    stateAfterBody,
+                                    by simpa [hPreHas] using hPre,
+                                    hCondition, hPost, hBody, rfl⟩
+
+end Stmt
+
 namespace StmtListUserCall
 
 theorem elaborate_exists_stmt
@@ -650,6 +916,53 @@ theorem elaborate_exists_case
       hFrontendMem⟩
 
 end CaseListUserCall
+
+namespace FunctionDef
+
+theorem elaborate_bodyBlock_exists
+    {params returns : List Name} {rawBody : List Raw.Stmt}
+    {fn : Frontend.FunctionDef} {state state' : Elab.State}
+    (hElab :
+      (Elab.FunctionDef.elaborate params returns rawBody).run state =
+        .ok (fn, state')) :
+    ∃ (frontendBody : List Frontend.Stmt)
+      (stateBeforeBody stateAfterBody : Elab.State),
+      (Elab.Stmt.List.elaborateBlock rawBody true).run stateBeforeBody =
+        .ok (frontendBody, stateAfterBody) ∧
+        fn.body = frontendBody := by
+  unfold Elab.FunctionDef.elaborate at hElab
+  cases hPush : Elab.pushIdentifierScope.run state with
+  | error err =>
+      simp [hPush] at hElab
+  | ok pushResult =>
+      rcases pushResult with ⟨unitPush, stateAfterPush⟩
+      cases hDeclare :
+          (Elab.declareIdentifiers (params ++ returns)
+            "function parameter/result").run stateAfterPush with
+      | error err =>
+          simp [hPush, hDeclare] at hElab
+      | ok declareResult =>
+          rcases declareResult with ⟨unitDeclare, stateAfterDeclare⟩
+          cases hBody :
+              (Elab.Stmt.List.elaborateBlock rawBody true).run
+                stateAfterDeclare with
+          | error err =>
+              simp [hPush, hDeclare, hBody] at hElab
+          | ok bodyResult =>
+              rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+              cases hPop :
+                  Elab.popIdentifierScope.run stateAfterBody with
+              | error err =>
+                  simp [hPush, hDeclare, hBody, hPop] at hElab
+              | ok popResult =>
+                  rcases popResult with ⟨unitPop, stateAfterPop⟩
+                  simp [hPush, hDeclare, hBody, hPop] at hElab
+                  rcases hElab with ⟨rfl, _hState⟩
+                  exact
+                    ⟨frontendBody, stateAfterDeclare, stateAfterBody,
+                      hBody, rfl⟩
+
+end FunctionDef
 
 namespace ExprUserCall
 
@@ -821,6 +1134,405 @@ theorem elaborate
                           hFrontendMem hInner⟩
 
 end ExprUserCall
+
+mutual
+  theorem StmtUserCall.elaborate
+      {functionName : Name} {rawArgs : List Raw.Expr}
+      {rawStmt : Raw.Stmt} {frontendStmt : Frontend.Stmt}
+      {state state' : Elab.State}
+      (hOccurrence : StmtUserCall functionName rawArgs rawStmt)
+      (hNotMemoryguard : functionName ≠ "memoryguard")
+      (hNotClz : functionName ≠ "clz")
+      (hKind : CallClass.classifyCall functionName = .user)
+      (hElab :
+        (Elab.Stmt.elaborate rawStmt).run state =
+          .ok (frontendStmt, state')) :
+      ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+        StmtElaborationOccurrence generated frontendArgs frontendStmt := by
+    cases hOccurrence with
+    | @block body hBody =>
+        cases hBodyElab :
+            (Elab.Stmt.List.elaborateBlock body true).run state with
+        | error err =>
+            simp [Elab.Stmt.elaborate, hBodyElab] at hElab
+        | ok bodyResult =>
+            rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+            simp [Elab.Stmt.elaborate, hBodyElab] at hElab
+            rcases hElab with ⟨rfl, _hState⟩
+            rcases Stmt.List.elaborateBlock_elaborate_exists
+                hBodyElab with
+              ⟨stateBeforeList, stateAfterList, hList⟩
+            rcases StmtListUserCall.elaborate hBody hNotMemoryguard
+                hNotClz hKind hList with
+              ⟨generated, frontendArgs, hFrontendBody⟩
+            exact
+              ⟨generated, frontendArgs,
+                StmtElaborationOccurrence.block hFrontendBody⟩
+    | @variableDeclarationValue names value hValue =>
+        cases hValueElab : (Elab.Expr.elaborate value).run state with
+        | error err =>
+            simp [Elab.Stmt.elaborate, hValueElab] at hElab
+        | ok valueResult =>
+            rcases valueResult with ⟨frontendValue, stateAfterValue⟩
+            cases hDeclare :
+                (Elab.declareIdentifiers names "variable").run
+                  stateAfterValue with
+            | error err =>
+                simp [Elab.Stmt.elaborate, hValueElab, hDeclare]
+                  at hElab
+            | ok declareResult =>
+                rcases declareResult with
+                  ⟨unitDeclare, stateAfterDeclare⟩
+                simp [Elab.Stmt.elaborate, hValueElab, hDeclare]
+                  at hElab
+                rcases hElab with ⟨rfl, _hState⟩
+                rcases ExprUserCall.elaborate hValue hNotMemoryguard
+                    hNotClz hKind hValueElab with
+                  ⟨generated, frontendArgs, hFrontendExpr⟩
+                exact
+                  ⟨generated, frontendArgs,
+                    StmtElaborationOccurrence.executable
+                      (FrontendOccurrence.StmtUserCall.letValue
+                        hFrontendExpr)⟩
+    | @assignmentValue names value hValue =>
+        rcases Stmt.assignment_elaborate_value_exists hElab with
+          ⟨frontendValue, stateBeforeValue, stateAfterValue,
+            hValueElab, hStmtEq⟩
+        subst frontendStmt
+        rcases ExprUserCall.elaborate hValue hNotMemoryguard hNotClz
+            hKind hValueElab with
+          ⟨generated, frontendArgs, hFrontendExpr⟩
+        exact
+          ⟨generated, frontendArgs,
+            StmtElaborationOccurrence.executable
+              (FrontendOccurrence.StmtUserCall.assignValue
+                hFrontendExpr)⟩
+    | @expressionStatement value hValue =>
+        cases hValueElab : (Elab.Expr.elaborate value).run state with
+        | error err =>
+            simp [Elab.Stmt.elaborate, hValueElab] at hElab
+        | ok valueResult =>
+            rcases valueResult with ⟨frontendValue, stateAfterValue⟩
+            simp [Elab.Stmt.elaborate, hValueElab] at hElab
+            rcases hElab with ⟨rfl, _hState⟩
+            rcases ExprUserCall.elaborate hValue hNotMemoryguard hNotClz
+                hKind hValueElab with
+              ⟨generated, frontendArgs, hFrontendExpr⟩
+            exact
+              ⟨generated, frontendArgs,
+                StmtElaborationOccurrence.executable
+                  (FrontendOccurrence.StmtUserCall.exprStmt
+                    hFrontendExpr)⟩
+    | @functionBody name params returns body hBody =>
+        cases hFn :
+            (Elab.FunctionDef.elaborate params returns body).run state with
+        | error err =>
+            simp [Elab.Stmt.elaborate, hFn] at hElab
+        | ok fnResult =>
+            rcases fnResult with ⟨fn, stateAfterFn⟩
+            simp [Elab.Stmt.elaborate, hFn] at hElab
+            rcases hElab with ⟨rfl, _hState⟩
+            rcases FunctionDef.elaborate_bodyBlock_exists hFn with
+              ⟨frontendBody, stateBeforeBody, stateAfterBody,
+                hBodyBlock, hFnBody⟩
+            rcases Stmt.List.elaborateBlock_elaborate_exists
+                hBodyBlock with
+              ⟨stateBeforeList, stateAfterList, hList⟩
+            rcases StmtListUserCall.elaborate hBody hNotMemoryguard
+                hNotClz hKind hList with
+              ⟨generated, frontendArgs, hFrontendBody⟩
+            rw [hFnBody]
+            exact
+              ⟨generated, frontendArgs,
+                StmtElaborationOccurrence.functionBody
+                  hFrontendBody⟩
+    | @switchScrutinee scrutinee cases defaultBody hScrutinee =>
+        rcases Stmt.switch_elaborate_parts hElab with
+          ⟨frontendScrutinee, frontendCases, frontendDefault,
+            stateAfterScrutinee, stateAfterCases, stateAfterDefault,
+            hScrutineeElab, hCasesElab, hDefaultElab, hStmtEq⟩
+        subst frontendStmt
+        rcases ExprUserCall.elaborate hScrutinee hNotMemoryguard
+            hNotClz hKind hScrutineeElab with
+          ⟨generated, frontendArgs, hFrontendExpr⟩
+        exact
+          ⟨generated, frontendArgs,
+            StmtElaborationOccurrence.executable
+              (FrontendOccurrence.StmtUserCall.switchScrutinee
+                hFrontendExpr)⟩
+    | @switchCase scrutinee cases defaultBody hCases =>
+        rcases Stmt.switch_elaborate_parts hElab with
+          ⟨frontendScrutinee, frontendCases, frontendDefault,
+            stateAfterScrutinee, stateAfterCases, stateAfterDefault,
+            hScrutineeElab, hCasesElab, hDefaultElab, hStmtEq⟩
+        subst frontendStmt
+        rcases CaseListUserCall.elaborate hCases hNotMemoryguard
+            hNotClz hKind hCasesElab with
+          ⟨generated, frontendArgs, hFrontendCases⟩
+        exact
+          ⟨generated, frontendArgs,
+            StmtElaborationOccurrence.switchCase hFrontendCases⟩
+    | @switchDefault scrutinee cases defaultBody hDefault =>
+        rcases Stmt.switch_elaborate_parts hElab with
+          ⟨frontendScrutinee, frontendCases, frontendDefault,
+            stateAfterScrutinee, stateAfterCases, stateAfterDefault,
+            hScrutineeElab, hCasesElab, hDefaultElab, hStmtEq⟩
+        subst frontendStmt
+        rcases Stmt.List.elaborateBlock_elaborate_exists hDefaultElab with
+          ⟨stateBeforeList, stateAfterList, hList⟩
+        rcases StmtListUserCall.elaborate hDefault hNotMemoryguard
+            hNotClz hKind hList with
+          ⟨generated, frontendArgs, hFrontendDefault⟩
+        exact
+          ⟨generated, frontendArgs,
+            StmtElaborationOccurrence.switchDefault hFrontendDefault⟩
+    | @forPre pre post body condition hPreOccurrence =>
+        rcases Stmt.forLoop_elaborate_parts hElab with
+          ⟨frontendPre, frontendCondition, frontendPost, frontendBody,
+            stateBeforePre, stateAfterPre, stateAfterCondition,
+            stateAfterPost, stateAfterBody, hPreElab, hConditionElab,
+            hPostElab, hBodyElab, hStmtEq⟩
+        subst frontendStmt
+        have hPreList :
+            ∃ (stateBeforeList stateAfterList : Elab.State),
+              (Elab.Stmt.List.elaborate pre).run stateBeforeList =
+                .ok (frontendPre, stateAfterList) := by
+          cases hPreHas :
+              Elab.Stmt.List.hasImmediateFunctionDefinition pre
+          · have hBlock :
+                (Elab.Stmt.List.elaborateBlock pre false).run
+                  stateBeforePre =
+                  .ok (frontendPre, stateAfterPre) := by
+              simpa [hPreHas] using hPreElab
+            exact Stmt.List.elaborateBlock_elaborate_exists hBlock
+          · have hForInit :
+                (Elab.Stmt.List.elaborateForInitBlockWithScope pre).run
+                  stateBeforePre =
+                  .ok (frontendPre, stateAfterPre) := by
+              simpa [hPreHas] using hPreElab
+            exact
+              Stmt.List.elaborateForInitBlockWithScope_elaborate_exists
+                hForInit
+        rcases hPreList with ⟨stateBeforeList, stateAfterList, hList⟩
+        rcases StmtListUserCall.elaborate hPreOccurrence hNotMemoryguard
+            hNotClz hKind hList with
+          ⟨generated, frontendArgs, hFrontendPre⟩
+        exact
+          ⟨generated, frontendArgs,
+            StmtElaborationOccurrence.forPre hFrontendPre⟩
+    | @forCondition pre post body condition hConditionOccurrence =>
+        rcases Stmt.forLoop_elaborate_parts hElab with
+          ⟨frontendPre, frontendCondition, frontendPost, frontendBody,
+            stateBeforePre, stateAfterPre, stateAfterCondition,
+            stateAfterPost, stateAfterBody, hPreElab, hConditionElab,
+            hPostElab, hBodyElab, hStmtEq⟩
+        subst frontendStmt
+        rcases ExprUserCall.elaborate hConditionOccurrence hNotMemoryguard
+            hNotClz hKind hConditionElab with
+          ⟨generated, frontendArgs, hFrontendExpr⟩
+        exact
+          ⟨generated, frontendArgs,
+            StmtElaborationOccurrence.executable
+              (FrontendOccurrence.StmtUserCall.forCondition
+                hFrontendExpr)⟩
+    | @forPost pre post body condition hPostOccurrence =>
+        rcases Stmt.forLoop_elaborate_parts hElab with
+          ⟨frontendPre, frontendCondition, frontendPost, frontendBody,
+            stateBeforePre, stateAfterPre, stateAfterCondition,
+            stateAfterPost, stateAfterBody, hPreElab, hConditionElab,
+            hPostElab, hBodyElab, hStmtEq⟩
+        subst frontendStmt
+        rcases Stmt.List.elaborateBlock_elaborate_exists hPostElab with
+          ⟨stateBeforeList, stateAfterList, hList⟩
+        rcases StmtListUserCall.elaborate hPostOccurrence hNotMemoryguard
+            hNotClz hKind hList with
+          ⟨generated, frontendArgs, hFrontendPost⟩
+        exact
+          ⟨generated, frontendArgs,
+            StmtElaborationOccurrence.forPost hFrontendPost⟩
+    | @forBody pre post body condition hBodyOccurrence =>
+        rcases Stmt.forLoop_elaborate_parts hElab with
+          ⟨frontendPre, frontendCondition, frontendPost, frontendBody,
+            stateBeforePre, stateAfterPre, stateAfterCondition,
+            stateAfterPost, stateAfterBody, hPreElab, hConditionElab,
+            hPostElab, hBodyElab, hStmtEq⟩
+        subst frontendStmt
+        rcases Stmt.List.elaborateBlock_elaborate_exists hBodyElab with
+          ⟨stateBeforeList, stateAfterList, hList⟩
+        rcases StmtListUserCall.elaborate hBodyOccurrence hNotMemoryguard
+            hNotClz hKind hList with
+          ⟨generated, frontendArgs, hFrontendBody⟩
+        exact
+          ⟨generated, frontendArgs,
+            StmtElaborationOccurrence.forBody hFrontendBody⟩
+    | @ifCondition condition body hConditionOccurrence =>
+        rcases Stmt.ifThen_elaborate_parts hElab with
+          ⟨frontendCondition, frontendBody, stateAfterCondition,
+            stateAfterBody, hConditionElab, hBodyElab, hStmtEq⟩
+        subst frontendStmt
+        rcases ExprUserCall.elaborate hConditionOccurrence hNotMemoryguard
+            hNotClz hKind hConditionElab with
+          ⟨generated, frontendArgs, hFrontendExpr⟩
+        exact
+          ⟨generated, frontendArgs,
+            StmtElaborationOccurrence.executable
+              (FrontendOccurrence.StmtUserCall.ifCondition
+                hFrontendExpr)⟩
+    | @ifBody condition body hBodyOccurrence =>
+        rcases Stmt.ifThen_elaborate_parts hElab with
+          ⟨frontendCondition, frontendBody, stateAfterCondition,
+            stateAfterBody, hConditionElab, hBodyElab, hStmtEq⟩
+        subst frontendStmt
+        rcases Stmt.List.elaborateBlock_elaborate_exists hBodyElab with
+          ⟨stateBeforeList, stateAfterList, hList⟩
+        rcases StmtListUserCall.elaborate hBodyOccurrence hNotMemoryguard
+            hNotClz hKind hList with
+          ⟨generated, frontendArgs, hFrontendBody⟩
+        exact
+          ⟨generated, frontendArgs,
+            StmtElaborationOccurrence.ifBody hFrontendBody⟩
+
+  theorem StmtListUserCall.elaborate
+      {functionName : Name} {rawArgs : List Raw.Expr}
+      {rawStmts : List Raw.Stmt} {frontendStmts : List Frontend.Stmt}
+      {state state' : Elab.State}
+      (hOccurrence : StmtListUserCall functionName rawArgs rawStmts)
+      (hNotMemoryguard : functionName ≠ "memoryguard")
+      (hNotClz : functionName ≠ "clz")
+      (hKind : CallClass.classifyCall functionName = .user)
+      (hElab :
+        (Elab.Stmt.List.elaborate rawStmts).run state =
+          .ok (frontendStmts, state')) :
+      ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+        StmtListElaborationOccurrence generated frontendArgs frontendStmts := by
+    cases hOccurrence with
+    | @head stmt rest hStmtOccurrence =>
+        simp only [Elab.Stmt.List.elaborate] at hElab
+        cases hHead : (Elab.Stmt.elaborate stmt).run state with
+        | error err =>
+            simp [hHead] at hElab
+        | ok headResult =>
+            rcases headResult with ⟨frontendStmt, stateAfterHead⟩
+            cases hTail :
+                (Elab.Stmt.List.elaborate rest).run stateAfterHead with
+            | error err =>
+                simp [hHead, hTail] at hElab
+            | ok tailResult =>
+                rcases tailResult with ⟨frontendRest, stateAfterTail⟩
+                simp [hHead, hTail] at hElab
+                rcases hElab with ⟨rfl, _hState⟩
+                rcases StmtUserCall.elaborate hStmtOccurrence
+                    hNotMemoryguard hNotClz hKind hHead with
+                  ⟨generated, frontendArgs, hFrontendStmt⟩
+                exact
+                  ⟨generated, frontendArgs,
+                    StmtListElaborationOccurrence.head
+                      hFrontendStmt⟩
+    | @tail stmt rest hTailOccurrence =>
+        simp only [Elab.Stmt.List.elaborate] at hElab
+        cases hHead : (Elab.Stmt.elaborate stmt).run state with
+        | error err =>
+            simp [hHead] at hElab
+        | ok headResult =>
+            rcases headResult with ⟨frontendStmt, stateAfterHead⟩
+            cases hTail :
+                (Elab.Stmt.List.elaborate rest).run stateAfterHead with
+            | error err =>
+                simp [hHead, hTail] at hElab
+            | ok tailResult =>
+                rcases tailResult with ⟨frontendRest, stateAfterTail⟩
+                simp [hHead, hTail] at hElab
+                rcases hElab with ⟨rfl, _hState⟩
+                rcases StmtListUserCall.elaborate hTailOccurrence
+                    hNotMemoryguard hNotClz hKind hTail with
+                  ⟨generated, frontendArgs, hFrontendTail⟩
+                exact
+                  ⟨generated, frontendArgs,
+                    StmtListElaborationOccurrence.tail
+                      hFrontendTail⟩
+
+  theorem CaseListUserCall.elaborate
+      {functionName : Name} {rawArgs : List Raw.Expr}
+      {rawCases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+      {frontendCases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+      {state state' : Elab.State}
+      (hOccurrence : CaseListUserCall functionName rawArgs rawCases)
+      (hNotMemoryguard : functionName ≠ "memoryguard")
+      (hNotClz : functionName ≠ "clz")
+      (hKind : CallClass.classifyCall functionName = .user)
+      (hElab :
+        (Elab.Stmt.CaseList.elaborate rawCases).run state =
+          .ok (frontendCases, state')) :
+      ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+        CaseListElaborationOccurrence generated frontendArgs frontendCases := by
+    cases hOccurrence with
+    | @head value body rest hBodyOccurrence =>
+        simp only [Elab.Stmt.CaseList.elaborate] at hElab
+        cases hValue : Elab.SwitchCaseValue.elaborate value with
+        | error err =>
+            simp [hValue] at hElab
+            unfold Elab.throw at hElab
+            cases hElab
+        | ok frontendValue =>
+            cases hBody :
+                (Elab.Stmt.List.elaborateBlock body true).run state with
+            | error err =>
+                simp [hValue, hBody] at hElab
+            | ok bodyResult =>
+                rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+                cases hTail :
+                    (Elab.Stmt.CaseList.elaborate rest).run
+                      stateAfterBody with
+                | error err =>
+                    simp [hValue, hBody, hTail] at hElab
+                | ok tailResult =>
+                    rcases tailResult with
+                      ⟨frontendRest, stateAfterTail⟩
+                    simp [hValue, hBody, hTail] at hElab
+                    rcases hElab with ⟨rfl, _hState⟩
+                    rcases Stmt.List.elaborateBlock_elaborate_exists
+                        hBody with
+                      ⟨stateBeforeList, stateAfterList, hList⟩
+                    rcases StmtListUserCall.elaborate hBodyOccurrence
+                        hNotMemoryguard hNotClz hKind hList with
+                      ⟨generated, frontendArgs, hFrontendBody⟩
+                    exact
+                      ⟨generated, frontendArgs,
+                        CaseListElaborationOccurrence.head
+                          hFrontendBody⟩
+    | @tail head rest hTailOccurrence =>
+        rcases head with ⟨value, body⟩
+        simp only [Elab.Stmt.CaseList.elaborate] at hElab
+        cases hValue : Elab.SwitchCaseValue.elaborate value with
+        | error err =>
+            simp [hValue] at hElab
+            unfold Elab.throw at hElab
+            cases hElab
+        | ok frontendValue =>
+            cases hBody :
+                (Elab.Stmt.List.elaborateBlock body true).run state with
+            | error err =>
+                simp [hValue, hBody] at hElab
+            | ok bodyResult =>
+                rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+                cases hTail :
+                    (Elab.Stmt.CaseList.elaborate rest).run
+                      stateAfterBody with
+                | error err =>
+                    simp [hValue, hBody, hTail] at hElab
+                | ok tailResult =>
+                    rcases tailResult with
+                      ⟨frontendRest, stateAfterTail⟩
+                    simp [hValue, hBody, hTail] at hElab
+                    rcases hElab with ⟨rfl, _hState⟩
+                    rcases CaseListUserCall.elaborate hTailOccurrence
+                        hNotMemoryguard hNotClz hKind hTail with
+                      ⟨generated, frontendArgs, hFrontendTail⟩
+                    exact
+                      ⟨generated, frontendArgs,
+                        CaseListElaborationOccurrence.tail
+                          hFrontendTail⟩
+end
 
 end RawOccurrence
 end RawAst

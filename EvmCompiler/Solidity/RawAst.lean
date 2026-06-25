@@ -591,6 +591,12 @@ def requireIdentifierVisible (name : Name) (what : String) : ElabM Unit := do
   else
     throw s!"unknown Yul identifier {name} in {what}"
 
+def requireIdentifiersVisible : List Name → String → ElabM Unit
+  | [], _ => pure ()
+  | name :: rest, what => do
+      requireIdentifierVisible name what
+      requireIdentifiersVisible rest what
+
 def asciiAlpha (n : Nat) : Bool :=
   (65 ≤ n && n ≤ 90) || (97 ≤ n && n ≤ 122)
 
@@ -967,8 +973,7 @@ mutual
         declareIdentifiers names "variable"
         pure (.letDecl names value?)
     | .assignment names value => do
-        for name in names do
-          requireIdentifierVisible name "assignment"
+        requireIdentifiersVisible names "assignment"
         let value ← Expr.elaborate value
         pure (.assign names value)
     | .expressionStatement expr => do
