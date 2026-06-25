@@ -196,6 +196,23 @@ def afterMemoryChargeAt (state : EVMState) : EVMState :=
 def dynamicGasCostAt (state : EVMState) : Nat :=
   EvmYul.EVM.C' (afterMemoryChargeAt state) (decodedOperationAt state)
 
+def afterDynamicChargeAt (state : EVMState) : EVMState :=
+  chargeGas (afterMemoryChargeAt state) (dynamicGasCostAt state)
+
+/-- The state passed to `EvmYul.step` by `EVM.X` after the memory charge, the
+interpreter-owned `execLength` increment, and the dynamic gas charge. -/
+def afterEVMInstructionChargeAt (state : EVMState) : EVMState :=
+  chargeGas
+    { afterMemoryChargeAt state with execLength := state.execLength + 1 }
+    (dynamicGasCostAt state)
+
+theorem sameData_afterEVMInstructionCharge_afterDynamic
+    (state : EVMState) :
+    SameData (afterEVMInstructionChargeAt state)
+      (afterDynamicChargeAt state) := by
+  cases state
+  rfl
+
 structure XGasChecksPass (state : EVMState) : Prop where
   memoryGas :
     ¬ state.gasAvailable.toNat < memoryExpansionCostAt state
@@ -898,6 +915,122 @@ theorem x_create_initcode_outOfGas_after_sstore_check
     simp [EvmYul.EVM.X, EvmYul.Operation.isCreate, hCreate',
       hNoStatic, hStackLimitOk',
       hTooLarge', hMemoryGas', hDynamicGas', hOpcodeValid', hStackEnough']
+
+/-- `JUMPDEST` is the smallest successful charged step: after all gas and
+exception prechecks pass, `EVM.X` recurses on the interpreter's charged
+fallthrough state. -/
+theorem x_jumpdest_continues_after_charges
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hJumpdest : decodedOperationAt state = EvmYul.Operation.JUMPDEST)
+    {gasfulNext : EVMState}
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.JUMPDEST,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) = .ok gasfulNext) :
+    EvmYul.EVM.X (fuel + 1) validJumps state =
+      EvmYul.EVM.X fuel validJumps gasfulNext := by
+  have hOp' :
+      ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+        (EvmYul.Operation.STOP, none)).1 =
+        EvmYul.Operation.JUMPDEST := by
+    simpa [decodedOperationAt] using hJumpdest
+  have hMemoryGas' :
+      ¬ state.gasAvailable.toNat <
+        EvmYul.EVM.memoryExpansionCost state
+          EvmYul.Operation.JUMPDEST := by
+    simpa [hOp'] using
+      hPrefix.static.stackLimit.memoryAccess.jumps.stack.gas.memoryGas_raw
+  have hDynamicGas' :
+      ¬ (state.gasAvailable -
+          EvmYul.UInt256.ofNat
+            (EvmYul.EVM.memoryExpansionCost state
+              EvmYul.Operation.JUMPDEST)).toNat <
+        EvmYul.EVM.C'
+          { state with
+            gasAvailable :=
+              state.gasAvailable -
+                EvmYul.UInt256.ofNat
+                  (EvmYul.EVM.memoryExpansionCost state
+                    EvmYul.Operation.JUMPDEST) }
+          EvmYul.Operation.JUMPDEST := by
+    simpa [hOp'] using
+      hPrefix.static.stackLimit.memoryAccess.jumps.stack.gas.dynamicGas_raw
+  have hOpcodeValid' :
+      EvmYul.EVM.δ EvmYul.Operation.JUMPDEST ≠ none := by
+    simpa [hOp'] using
+      hPrefix.static.stackLimit.memoryAccess.jumps.stack.opcodeValid_raw
+  have hStackEnough' :
+      ¬ state.stack.length <
+        (EvmYul.EVM.δ EvmYul.Operation.JUMPDEST).getD 0 := by
+    simpa [hOp'] using
+      hPrefix.static.stackLimit.memoryAccess.jumps.stack.stackEnough_raw
+  have hStackLimitOk' :
+      ¬ 1024 <
+        state.stack.length -
+          (EvmYul.EVM.δ EvmYul.Operation.JUMPDEST).getD 0 +
+          (EvmYul.EVM.α EvmYul.Operation.JUMPDEST).getD 0 := by
+    simpa [stackOverflowAt, decodedOperationAt, hOp'] using
+      hPrefix.static.stackLimit.stackLimitOk
+  have hStep' :
+      EvmYul.EVM.step fuel
+          (EvmYul.EVM.C'
+            { state with
+              gasAvailable :=
+                state.gasAvailable -
+                  EvmYul.UInt256.ofNat
+                    (EvmYul.EVM.memoryExpansionCost state
+                      EvmYul.Operation.JUMPDEST) }
+            EvmYul.Operation.JUMPDEST)
+          (some
+            (EvmYul.Operation.JUMPDEST,
+              ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+                (EvmYul.Operation.STOP, none)).2))
+          { state with
+            gasAvailable :=
+              state.gasAvailable -
+                EvmYul.UInt256.ofNat
+                  (EvmYul.EVM.memoryExpansionCost state
+                    EvmYul.Operation.JUMPDEST) } =
+        .ok gasfulNext := by
+    simpa [dynamicGasCostAt, afterMemoryChargeAt, memoryExpansionCostAt,
+      decodedOperationAt, hOp', chargeGas] using hStep
+  simp [EvmYul.EVM.X, hOp', hMemoryGas', hDynamicGas',
+    hOpcodeValid', hStackEnough', hStackLimitOk',
+    hStep', EvmYul.Operation.isCreate,
+    afterMemoryChargeAt, dynamicGasCostAt,
+    memoryExpansionCostAt, decodedOperationAt, chargeGas]
+
+/-- The open raw-bytecode `JUMPDEST` step is closed and emits no external or
+resource observations when run from the actual post-charge erased state. -/
+theorem raw_jumpdest_executes_after_charges
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hDecode : Compact.decodeAt bytes pc .jumpdest)
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult
+        bytes 1 (afterDynamicChargeAt state))
+      []
+      (.ok (.running (afterDynamicChargeAt state).incrPC)) := by
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .jumpdest) trivial hDecode hPc]
+  exact Interaction.Executes.done _
+
+theorem jumpdest_chargedStepRel_after_charges
+    (state : EVMState) :
+    ChargedStepRel state
+      (memoryExpansionCostAt state + dynamicGasCostAt state)
+      (afterEVMInstructionChargeAt state).incrPC
+      (afterDynamicChargeAt state).incrPC where
+  gasfulErasesToOpen := by
+    cases state
+    rfl
+  openErasesToCharged := by
+    cases state
+    rfl
 
 def callTargetAddress (operands : CallOperands) : EvmYul.AccountAddress :=
   EvmYul.AccountAddress.ofUInt256 operands.address

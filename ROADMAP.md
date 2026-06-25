@@ -43,6 +43,10 @@ Gasful EVM bridge checkpoint:
   invalid opcode, stack underflow, bad `JUMP`/`JUMPI`, invalid
   `RETURNDATACOPY`, stack overflow, static-mode violation, SSTORE stipend OOG,
   and CREATE/CREATE2 init-code-size OOG.
+- [x] Prove the first successful-step slice for `JUMPDEST`: actual `EVM.X`
+  precheck-to-`EVM.step` recursion, open raw-bytecode execution with an empty
+  transcript after gas charges, and the gas/control-erased charged-step
+  relation.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
