@@ -181,6 +181,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_function_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_stmt_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Expr.List.elaborate_mem
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.RawStmtNotFunctionDefinition
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.CodeRouteBelow
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.codeRouteBelow_zero
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.assignment_elaborate_value_exists
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.switch_elaborate_parts
@@ -347,6 +350,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.Object.dispatcherOccurrence_args_toYul?
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.exists_split_stmt
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Expr.List.elaborate_mem
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.RawStmtNotFunctionDefinition
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.CodeRouteBelow
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.codeRouteBelow_zero
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate_direct_user
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.assignment_elaborate_value_exists

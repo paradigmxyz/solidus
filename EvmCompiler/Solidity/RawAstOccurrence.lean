@@ -2336,6 +2336,111 @@ mutual
         rawStmtListSize body + rawCaseListSize rest + 1
 end
 
+def RawStmtNotFunctionDefinition (stmt : Raw.Stmt) : Prop :=
+  ∀ {name : Name} {params returns : List Name} {body : List Raw.Stmt},
+    stmt ≠ Raw.Stmt.functionDefinition name params returns body
+
+structure CodeRouteBelow (fuel : Nat) : Prop where
+  stmt :
+    ∀ {functionName : Name} {rawArgs : List Raw.Expr}
+      {rawStmt : Raw.Stmt} {frontendStmt : Frontend.Stmt}
+      {state state' : Elab.State},
+      rawStmtSize rawStmt < fuel →
+      RawStmtNotFunctionDefinition rawStmt →
+      StmtUserCall functionName rawArgs rawStmt →
+      functionName ≠ "memoryguard" →
+      functionName ≠ "clz" →
+      CallClass.classifyCall functionName = .user →
+      (Elab.Stmt.elaborate rawStmt).run state =
+        .ok (frontendStmt, state') →
+      ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+        StmtCodeElaborationRoute state' generated frontendArgs
+          frontendStmt
+  stmtListAfterHoist :
+    ∀ {functionName : Name} {rawArgs : List Raw.Expr}
+      {rawStmts : List Raw.Stmt} {scope : List (Name × Name)}
+      {stateBeforeHoist stateAfterHoist state' : Elab.State}
+      {frontendStmts : List Frontend.Stmt},
+      rawStmtListSize rawStmts < fuel →
+      StmtListUserCall functionName rawArgs rawStmts →
+      functionName ≠ "memoryguard" →
+      functionName ≠ "clz" →
+      CallClass.classifyCall functionName = .user →
+      (Elab.Stmt.List.hoistLocalFunctions rawStmts scope).run
+        stateBeforeHoist =
+        .ok ((), stateAfterHoist) →
+      (Elab.Stmt.List.elaborate rawStmts).run stateAfterHoist =
+        .ok (frontendStmts, state') →
+      ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+        CodeElaborationRoute state' generated frontendArgs frontendStmts
+  block :
+    ∀ {functionName : Name} {rawArgs : List Raw.Expr}
+      {rawStmts : List Raw.Stmt}
+      {frontendStmts : List Frontend.Stmt}
+      {createsScope : Bool} {state state' : Elab.State},
+      rawStmtListSize rawStmts < fuel →
+      StmtListUserCall functionName rawArgs rawStmts →
+      functionName ≠ "memoryguard" →
+      functionName ≠ "clz" →
+      CallClass.classifyCall functionName = .user →
+      (Elab.Stmt.List.elaborateBlock rawStmts createsScope).run state =
+        .ok (frontendStmts, state') →
+      ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+        CodeElaborationRoute state' generated frontendArgs frontendStmts
+  forInit :
+    ∀ {functionName : Name} {rawArgs : List Raw.Expr}
+      {rawStmts : List Raw.Stmt}
+      {frontendStmts : List Frontend.Stmt} {state state' : Elab.State},
+      rawStmtListSize rawStmts < fuel →
+      StmtListUserCall functionName rawArgs rawStmts →
+      functionName ≠ "memoryguard" →
+      functionName ≠ "clz" →
+      CallClass.classifyCall functionName = .user →
+      (Elab.Stmt.List.elaborateForInitBlockWithScope rawStmts).run state =
+        .ok (frontendStmts, state') →
+      ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+        CodeElaborationRoute state' generated frontendArgs frontendStmts
+  caseList :
+    ∀ {functionName : Name} {rawArgs : List Raw.Expr}
+      {rawCases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+      {frontendCases :
+        List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+      {state state' : Elab.State},
+      rawCaseListSize rawCases < fuel →
+      CaseListUserCall functionName rawArgs rawCases →
+      functionName ≠ "memoryguard" →
+      functionName ≠ "clz" →
+      CallClass.classifyCall functionName = .user →
+      (Elab.Stmt.CaseList.elaborate rawCases).run state =
+        .ok (frontendCases, state') →
+      ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+        CaseListCodeElaborationRoute state' generated frontendArgs
+          frontendCases
+
+theorem codeRouteBelow_zero : CodeRouteBelow 0 := by
+  exact
+    { stmt := by
+        intro functionName rawArgs rawStmt frontendStmt state state' hSize
+          hNotFunction hOccurrence hNotMemoryguard hNotClz hKind hRun
+        omega
+      stmtListAfterHoist := by
+        intro functionName rawArgs rawStmts scope stateBeforeHoist
+          stateAfterHoist state' frontendStmts hSize hOccurrence
+          hNotMemoryguard hNotClz hKind hHoist hRun
+        omega
+      block := by
+        intro functionName rawArgs rawStmts frontendStmts createsScope state
+          state' hSize hOccurrence hNotMemoryguard hNotClz hKind hRun
+        omega
+      forInit := by
+        intro functionName rawArgs rawStmts frontendStmts state state' hSize
+          hOccurrence hNotMemoryguard hNotClz hKind hRun
+        omega
+      caseList := by
+        intro functionName rawArgs rawCases frontendCases state state' hSize
+          hOccurrence hNotMemoryguard hNotClz hKind hRun
+        omega }
+
 mutual
   theorem Expr.elaborate_retains_hoisted
       {rawExpr : Raw.Expr} {frontendExpr : Frontend.Expr}
