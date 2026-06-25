@@ -7289,6 +7289,79 @@ theorem alphaRenamedLocalCallPreserved_bodyRouteEvidence
     AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence.ofYulEvidence
       hEvidence
 
+/-- Source-facing expression-statement focused run for an alpha-renamed local
+call.
+
+This packages the generated name, callee lookup, argument lowering, local body,
+and selected caller/stub route inside `BodyRouteEvidence`, then exposes only the
+ordinary focused-statement execution interface needed by recursive
+statement-list proofs. -/
+theorem alphaRenamedLocalCallPreserved_exprStmt_focusedRun
+    {topBody : List Raw.Stmt}
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName name : Frontend.Name}
+    {localParams localReturns : List Frontend.Name}
+    {localBody : List Raw.Stmt}
+    {args : List Raw.Expr}
+    (hAlpha :
+      Raw.Source.AlphaRenamedLocalCallPreserved
+        topBody object.functions topName name
+          localParams localReturns localBody args)
+    (hConvert :
+      object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ routeEvidence :
+        AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence
+          object ordered topName,
+      ∀ {σ : Type}
+        (model : Yul.Source.Effectful.StateModel σ)
+        (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+        {bodyFuel : Nat}
+        {state stateAfterArgs stateAfterBody : σ}
+        {reversedValues : List Frontend.Word},
+        Yul.Source.Effectful.evalArgs model prim (bodyFuel + 2)
+            routeEvidence.yulEvidence.yulArgs.reverse
+            (some ordered.program.contract) state =
+          .ok (stateAfterArgs, reversedValues) →
+        Yul.Source.Effectful.exec model prim bodyFuel
+            (.Block routeEvidence.yulEvidence.localYulBody)
+            (some ordered.program.contract)
+            (model.withSource stateAfterArgs
+              (EvmYul.Yul.State.mkOk
+                ((model.source stateAfterArgs).initcall
+                  routeEvidence.yulEvidence.localFn.params
+                  routeEvidence.yulEvidence.localFn.returns
+                  reversedValues.reverse))) =
+          .ok stateAfterBody →
+        AlphaRenamedLocalCallYulEvidence.FocusedStmtRun
+          routeEvidence.yulEvidence model prim state
+          ((bodyFuel + 1) + 2)
+          (.ExprStmtCall
+            (.Call (.inr routeEvidence.yulEvidence.generated)
+              routeEvidence.yulEvidence.yulArgs))
+          (model.multifill []
+            (model.withSource stateAfterBody
+              (((model.source stateAfterBody).reviveJump.overwrite?
+                  (model.source stateAfterArgs)).setStore
+                    (model.source stateAfterArgs)))
+            (List.map (model.source stateAfterBody).lookup!
+              routeEvidence.yulEvidence.localFn.returns)) := by
+  rcases alphaRenamedLocalCallPreserved_bodyRouteEvidence
+      hAlpha hConvert with
+    ⟨routeEvidence⟩
+  refine ⟨routeEvidence, ?_⟩
+  intro σ model prim bodyFuel state stateAfterArgs stateAfterBody
+    reversedValues hArgs hBody
+  let hRun :
+      AlphaRenamedLocalCallYulEvidence.FocusedGeneratedExprStmtRun
+        (object := object) (ordered := ordered) (topName := topName)
+        model prim bodyFuel state :=
+    AlphaRenamedLocalCallYulEvidence.FocusedGeneratedExprStmtRun.of_parts
+      model prim routeEvidence hArgs hBody
+  simpa [hRun.postState_eq, hRun.returns_eq] using
+    AlphaRenamedLocalCallYulEvidence.FocusedStmtRun.exprStmtOfFocusedGenerated
+      hRun
+
 /-- Raw-solc finite-prefix theorem with internally derived body-route evidence
 for a source-local nested call.
 

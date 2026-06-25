@@ -512,6 +512,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence.ofYulEvidence
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence.occurrence
 #check EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_bodyRouteEvidence
+#check EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_exprStmt_focusedRun
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedGeneratedCallRun
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedGeneratedCallRun.of_parts
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedGeneratedCallRun.route_occurrence
@@ -1049,6 +1050,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence.ofYulEvidence
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence.occurrence
 #print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_bodyRouteEvidence
+#print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_exprStmt_focusedRun
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedGeneratedCallRun.of_parts
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedGeneratedCallRun.route_occurrence
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedGeneratedCallRun.evalValues
