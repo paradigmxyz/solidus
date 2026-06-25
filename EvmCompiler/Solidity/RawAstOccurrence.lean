@@ -476,6 +476,15 @@ theorem toCodeRoute_of_mem
         CodeElaborationRoute.functionBody contextName contextFn
           hContext hBody
 
+theorem toCodeRoute_of_split
+    {state : Elab.State} {functionName : Name}
+    {args : List Frontend.Expr} {stmt : Frontend.Stmt}
+    {pre suffix : List Frontend.Stmt}
+    (hRoute : StmtCodeElaborationRoute state functionName args stmt) :
+    CodeElaborationRoute state functionName args
+      (pre ++ stmt :: suffix) := by
+  exact toCodeRoute_of_mem (by simp) hRoute
+
 end StmtCodeElaborationRoute
 
 namespace CaseListCodeElaborationRoute
@@ -4388,6 +4397,39 @@ theorem elaborate_retains_hoisted
   have hBelow := retainsHoistedBelow (rawStmtListSize rawStmts + 1)
   exact hBelow.stmtList (Nat.lt_succ_self _) hRun hMem
 
+theorem elaborate_codeRoute_of_split
+    {pre suffix : List Raw.Stmt} {stmt : Raw.Stmt}
+    {frontendStmts : List Frontend.Stmt}
+    {state state' : Elab.State}
+    {functionName : Name} {args : List Frontend.Expr}
+    (hRun :
+      (Elab.Stmt.List.elaborate (pre ++ stmt :: suffix)).run state =
+        .ok (frontendStmts, state'))
+    (hStmtRoute :
+      ∀ {frontendStmt : Frontend.Stmt}
+        {stateBeforeStmt stateAfterStmt : Elab.State},
+        (Elab.Stmt.elaborate stmt).run stateBeforeStmt =
+          .ok (frontendStmt, stateAfterStmt) →
+        StmtCodeElaborationRoute stateAfterStmt functionName args
+          frontendStmt) :
+    CodeElaborationRoute state' functionName args frontendStmts := by
+  rcases
+      _root_.EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.List.elaborate_split
+        hRun with
+    ⟨frontendPre, frontendStmt, frontendSuffix, stateBeforeStmt,
+      stateAfterStmt, hPre, hStmt, hSuffix, hFrontend⟩
+  have hRouteAtStmt :
+      StmtCodeElaborationRoute stateAfterStmt functionName args
+        frontendStmt :=
+    hStmtRoute hStmt
+  have hRouteAtEnd :
+      StmtCodeElaborationRoute state' functionName args frontendStmt :=
+    StmtCodeElaborationRoute.retain hRouteAtStmt
+      (fun {entry} hMem =>
+        elaborate_retains_hoisted hSuffix hMem)
+  rw [hFrontend]
+  exact StmtCodeElaborationRoute.toCodeRoute_of_split hRouteAtEnd
+
 theorem elaborateBlock_retains_hoisted
     {rawStmts : List Raw.Stmt} {createsScope : Bool}
     {frontendStmts : List Frontend.Stmt} {state state' : Elab.State}
@@ -4533,6 +4575,52 @@ theorem elaborateForInitBlockWithScope_retains_hoisted
     entry ∈ state'.hoistedFunctions := by
   have hBelow := retainsHoistedBelow (rawStmtListSize rawStmts + 1)
   exact hBelow.forInit (Nat.lt_succ_self _) hRun hMem
+
+theorem elaborateForInitBlockWithScope_codeRoute_of_list
+    {rawStmts : List Raw.Stmt} {frontendStmts : List Frontend.Stmt}
+    {state state' : Elab.State}
+    {functionName : Name} {args : List Frontend.Expr}
+    (hRun :
+      (Elab.Stmt.List.elaborateForInitBlockWithScope rawStmts).run state =
+        .ok (frontendStmts, state'))
+    (hListRoute :
+      ∀ {stateBeforeList stateAfterList : Elab.State},
+        (Elab.Stmt.List.elaborate rawStmts).run stateBeforeList =
+          .ok (frontendStmts, stateAfterList) →
+          CodeElaborationRoute stateAfterList functionName args
+            frontendStmts) :
+    CodeElaborationRoute state' functionName args frontendStmts := by
+  unfold Elab.Stmt.List.elaborateForInitBlockWithScope at hRun
+  cases hScope :
+      (Elab.Stmt.List.localFunctionScope rawStmts).run state with
+  | error err =>
+      simp [hScope] at hRun
+  | ok scopeResult =>
+      rcases scopeResult with ⟨scope, stateAfterScope⟩
+      cases hPush :
+          (Elab.pushFunctionScope scope).run stateAfterScope with
+      | error err =>
+          simp [hScope, hPush] at hRun
+      | ok pushResult =>
+          rcases pushResult with ⟨unitPush, stateAfterPush⟩
+          cases hHoist :
+              (Elab.Stmt.List.hoistLocalFunctions rawStmts scope).run
+                stateAfterPush with
+          | error err =>
+              simp [hScope, hPush, hHoist] at hRun
+          | ok hoistResult =>
+              rcases hoistResult with ⟨unitHoist, stateAfterHoist⟩
+              cases hList :
+                  (Elab.Stmt.List.elaborate rawStmts).run
+                    stateAfterHoist with
+              | error err =>
+                  simp [hScope, hPush, hHoist, hList] at hRun
+              | ok listResult =>
+                  rcases listResult with
+                    ⟨frontendStmts', stateAfterList⟩
+                  simp [hScope, hPush, hHoist, hList] at hRun
+                  rcases hRun with ⟨rfl, rfl⟩
+                  exact hListRoute hList
 
 end List
 
