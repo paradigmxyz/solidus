@@ -168,6 +168,10 @@ Gasful EVM bridge checkpoint:
 - [x] Complete charged `SELFDESTRUCT` outcome coverage: permitted execution
   now refines the same account/substate mutation and empty terminal output,
   alongside the existing stack-underflow and static-mode branches.
+- [x] Begin relational recursive lifting: `OpenStateRel` is preserved by
+  interpreter charging and stack/PC replacement, and GAS/MSIZE now execute
+  from an arbitrary related open state while consuming the actual gasful
+  observation before the related continuation.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
