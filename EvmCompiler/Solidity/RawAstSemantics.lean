@@ -1754,6 +1754,39 @@ theorem dispatcher_of_frontend
       (FrontendOccurrence.Object.dispatcherOccurrence_toOrdered?
         hOccurrence hConvert hArgs)
 
+theorem dispatcher_of_frontend_existsArgs
+    {state : State} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {generated : Name} {fn : Frontend.FunctionDef}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {argExprs : List Yul.AstExpr}
+    {frontendArgs : List Frontend.Expr}
+    {fuel : Nat} {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hFocused :
+      FocusedGeneratedCallOccurrence state ordered generated fn
+        params returns body argExprs)
+    (hOccurrence :
+      FrontendOccurrence.StmtListUserCall generated frontendArgs
+        object.dispatcher)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ yulArgs,
+      FocusedGeneratedStmtListCallPrefix state ordered generated fn
+        params returns body yulArgs
+        [ordered.program.contract.dispatcher] fuel
+        (some ordered.program.contract) shared vars := by
+  rcases
+      FrontendOccurrence.Object.dispatcherOccurrence_args_toYul?
+        hOccurrence hConvert with
+    ⟨yulArgs, hArgs⟩
+  have hFocusedArgs :
+      FocusedGeneratedCallOccurrence state ordered generated fn
+        params returns body yulArgs := by
+    exact ⟨hFocused.hoisted, hFocused.toYul?, hFocused.lookup⟩
+  exact
+    ⟨yulArgs,
+      dispatcher_of_frontend hFocusedArgs hOccurrence hConvert hArgs⟩
+
 theorem functionBody_of_frontend
     {state : State} {ordered : Yul.OrderedProgram}
     {generated : Name} {calleeFn contextFn : Frontend.FunctionDef}
@@ -1780,6 +1813,41 @@ theorem functionBody_of_frontend
     of_yulOccurrence hFocused
       (FrontendOccurrence.FunctionDef.bodyOccurrence_toYul?
         hOccurrence hContext hArgs)
+
+theorem functionBody_of_frontend_existsArgs
+    {state : State} {ordered : Yul.OrderedProgram}
+    {generated : Name} {calleeFn contextFn : Frontend.FunctionDef}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {contextParams contextReturns : List Name}
+    {contextBody : List Yul.AstStmt}
+    {argExprs : List Yul.AstExpr}
+    {frontendArgs : List Frontend.Expr}
+    {fuel : Nat} {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hFocused :
+      FocusedGeneratedCallOccurrence state ordered generated calleeFn
+        params returns body argExprs)
+    (hOccurrence :
+      FrontendOccurrence.StmtListUserCall generated frontendArgs
+        contextFn.body)
+    (hContext :
+      contextFn.toYul? =
+        some (.Def contextParams contextReturns contextBody)) :
+    ∃ yulArgs,
+      FocusedGeneratedStmtListCallPrefix state ordered generated calleeFn
+        params returns body yulArgs contextBody fuel
+        (some ordered.program.contract) shared vars := by
+  rcases
+      FrontendOccurrence.FunctionDef.bodyOccurrence_args_toYul?
+        hOccurrence hContext with
+    ⟨yulArgs, hArgs⟩
+  have hFocusedArgs :
+      FocusedGeneratedCallOccurrence state ordered generated calleeFn
+        params returns body yulArgs := by
+    exact ⟨hFocused.hoisted, hFocused.toYul?, hFocused.lookup⟩
+  exact
+    ⟨yulArgs,
+      functionBody_of_frontend hFocusedArgs hOccurrence hContext hArgs⟩
 
 end FocusedGeneratedStmtListCallPrefix
 
@@ -2148,6 +2216,44 @@ theorem codeGeneratedNormalizationEvidence_dispatcherPrefix
     FocusedGeneratedStmtListCallPrefix.dispatcher_of_frontend
       (hFocused hHoisted hFn) hOccurrence hConvert hArgs
 
+theorem codeGeneratedNormalizationEvidence_dispatcherPrefixOfFrontendOccurrence
+    {code : List Raw.Stmt} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    (hEvidence :
+      Raw.Object.CodeGeneratedNormalizationEvidence code object)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+        (helper? arg? ret? : Option Name),
+      elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+        elaborateCode code =
+          .ok (object.dispatcher, object.functions,
+            helper?, arg?, ret?) ∧
+          ∀ {generated : Name} {fn : Frontend.FunctionDef}
+              {params returns : List Name} {body : List Yul.AstStmt}
+              {frontendArgs : List Frontend.Expr}
+              {fuel : Nat} {shared : EvmYul.SharedState .Yul}
+              {vars : EvmYul.Yul.VarStore},
+            (generated, fn) ∈ state.hoistedFunctions →
+              fn.toYul? = some (.Def params returns body) →
+                FrontendOccurrence.StmtListUserCall generated frontendArgs
+                  object.dispatcher →
+                  ∃ yulArgs,
+                    FocusedGeneratedStmtListCallPrefix state ordered
+                      generated fn params returns body yulArgs
+                      [ordered.program.contract.dispatcher] fuel
+                      (some ordered.program.contract) shared vars := by
+  rcases
+      codeGeneratedNormalizationEvidence_focusedGeneratedCallOccurrence
+        hEvidence hConvert with
+    ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
+      hFocused⟩
+  refine ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+  intro generated fn params returns body frontendArgs fuel shared vars
+    hHoisted hFn hOccurrence
+  exact
+    FocusedGeneratedStmtListCallPrefix.dispatcher_of_frontend_existsArgs
+      (hFocused (argExprs := []) hHoisted hFn) hOccurrence hConvert
+
 theorem codeGeneratedNormalizationEvidence_functionBodyPrefix
     {code : List Raw.Stmt} {object : Frontend.Object}
     {ordered : Yul.OrderedProgram}
@@ -2224,6 +2330,80 @@ theorem codeGeneratedNormalizationEvidence_functionBodyPrefix
         (hFocusedEvidence hCalleeHoisted hCalleeFn)
         hOccurrence hContextFn hArgs⟩
 
+theorem codeGeneratedNormalizationEvidence_functionBodyPrefixOfFrontendOccurrence
+    {code : List Raw.Stmt} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    (hEvidence :
+      Raw.Object.CodeGeneratedNormalizationEvidence code object)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+        (helper? arg? ret? : Option Name),
+      elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+        elaborateCode code =
+          .ok (object.dispatcher, object.functions,
+            helper?, arg?, ret?) ∧
+          ∀ {generated contextGenerated : Name}
+              {calleeFn contextFn : Frontend.FunctionDef}
+              {params returns : List Name} {body : List Yul.AstStmt}
+              {contextParams contextReturns : List Name}
+              {contextBody : List Yul.AstStmt}
+              {frontendArgs : List Frontend.Expr}
+              {fuel : Nat} {shared : EvmYul.SharedState .Yul}
+              {vars : EvmYul.Yul.VarStore},
+            (generated, calleeFn) ∈ state.hoistedFunctions →
+              calleeFn.toYul? = some (.Def params returns body) →
+                (contextGenerated, contextFn) ∈ state.hoistedFunctions →
+                  contextFn.toYul? =
+                    some (.Def contextParams contextReturns contextBody) →
+                    FrontendOccurrence.StmtListUserCall generated frontendArgs
+                      contextFn.body →
+                      ordered.program.contract.functions.lookup
+                          contextGenerated =
+                        some (.Def contextParams contextReturns
+                          contextBody) ∧
+                      ∃ yulArgs,
+                        FocusedGeneratedStmtListCallPrefix state ordered
+                          generated calleeFn params returns body yulArgs
+                          contextBody fuel (some ordered.program.contract)
+                          shared vars := by
+  rcases hEvidence with
+    ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
+      _hFunctions, _hHelper, _hArg, _hRet, _hDistinct, _hClz,
+      _hInterface, hHoistedRetained⟩
+  have hFocusedEvidence :
+      ∀ {generated : Name} {fn : Frontend.FunctionDef}
+          {params returns : List Name} {body : List Yul.AstStmt}
+          {argExprs : List Yul.AstExpr},
+        (generated, fn) ∈ state.hoistedFunctions →
+          fn.toYul? = some (.Def params returns body) →
+            FocusedGeneratedCallOccurrence state ordered generated fn
+              params returns body argExprs := by
+    intro generated fn params returns body argExprs hHoisted hFn
+    have hMem : (generated, fn) ∈ object.functions :=
+      hHoistedRetained (generated, fn) hHoisted
+    have hLookup :
+        ordered.program.contract.functions.lookup generated =
+          some (.Def params returns body) :=
+      Frontend.Object.toSolcYulOrderedProgram?_functionLookup_of_mem
+        hConvert hMem hFn
+    exact ⟨hHoisted, hFn, hLookup⟩
+  refine ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+  intro generated contextGenerated calleeFn contextFn params returns body
+    contextParams contextReturns contextBody frontendArgs fuel shared vars
+    hCalleeHoisted hCalleeFn hContextHoisted hContextFn hOccurrence
+  have hContextMem : (contextGenerated, contextFn) ∈ object.functions :=
+    hHoistedRetained (contextGenerated, contextFn) hContextHoisted
+  have hContextLookup :
+      ordered.program.contract.functions.lookup contextGenerated =
+        some (.Def contextParams contextReturns contextBody) :=
+    Frontend.Object.toSolcYulOrderedProgram?_functionLookup_of_mem
+      hConvert hContextMem hContextFn
+  exact
+    ⟨hContextLookup,
+      FocusedGeneratedStmtListCallPrefix.functionBody_of_frontend_existsArgs
+        (hFocusedEvidence (argExprs := []) hCalleeHoisted hCalleeFn)
+        hOccurrence hContextFn⟩
+
 theorem generatedNormalizationEvidence_focusedGeneratedCallOccurrence
     {raw : Raw.Object} {object : Frontend.Object}
     {ordered : Yul.OrderedProgram}
@@ -2298,6 +2478,46 @@ theorem generatedNormalizationEvidence_dispatcherPrefix
         codeGeneratedNormalizationEvidence_dispatcherPrefix
           hCodeEvidence hConvert
 
+theorem generatedNormalizationEvidence_dispatcherPrefixOfFrontendOccurrence
+    {raw : Raw.Object} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    (hEvidence : Raw.Object.GeneratedNormalizationEvidence raw object)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    match raw.code? with
+    | none => True
+    | some code =>
+        ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+            (helper? arg? ret? : Option Name),
+          elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+            elaborateCode code =
+              .ok (object.dispatcher, object.functions,
+                helper?, arg?, ret?) ∧
+              ∀ {generated : Name} {fn : Frontend.FunctionDef}
+                  {params returns : List Name} {body : List Yul.AstStmt}
+                  {frontendArgs : List Frontend.Expr}
+                  {fuel : Nat} {shared : EvmYul.SharedState .Yul}
+                  {vars : EvmYul.Yul.VarStore},
+                (generated, fn) ∈ state.hoistedFunctions →
+                  fn.toYul? = some (.Def params returns body) →
+                    FrontendOccurrence.StmtListUserCall generated
+                      frontendArgs object.dispatcher →
+                    ∃ yulArgs,
+                      FocusedGeneratedStmtListCallPrefix state ordered
+                        generated fn params returns body yulArgs
+                        [ordered.program.contract.dispatcher] fuel
+                        (some ordered.program.contract) shared vars := by
+  cases hRawCode : raw.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      have hCodeEvidence :
+          Raw.Object.CodeGeneratedNormalizationEvidence code object := by
+        simpa [Raw.Object.GeneratedNormalizationEvidence, hRawCode]
+          using hEvidence.2.2.2
+      exact
+        codeGeneratedNormalizationEvidence_dispatcherPrefixOfFrontendOccurrence
+          hCodeEvidence hConvert
+
 theorem generatedNormalizationEvidence_functionBodyPrefix
     {raw : Raw.Object} {object : Frontend.Object}
     {ordered : Yul.OrderedProgram}
@@ -2346,6 +2566,59 @@ theorem generatedNormalizationEvidence_functionBodyPrefix
           using hEvidence.2.2.2
       exact
         codeGeneratedNormalizationEvidence_functionBodyPrefix
+          hCodeEvidence hConvert
+
+theorem generatedNormalizationEvidence_functionBodyPrefixOfFrontendOccurrence
+    {raw : Raw.Object} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    (hEvidence : Raw.Object.GeneratedNormalizationEvidence raw object)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    match raw.code? with
+    | none => True
+    | some code =>
+        ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+            (helper? arg? ret? : Option Name),
+          elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+            elaborateCode code =
+              .ok (object.dispatcher, object.functions,
+                helper?, arg?, ret?) ∧
+              ∀ {generated contextGenerated : Name}
+                  {calleeFn contextFn : Frontend.FunctionDef}
+                  {params returns : List Name} {body : List Yul.AstStmt}
+                  {contextParams contextReturns : List Name}
+                  {contextBody : List Yul.AstStmt}
+                  {frontendArgs : List Frontend.Expr}
+                  {fuel : Nat} {shared : EvmYul.SharedState .Yul}
+                  {vars : EvmYul.Yul.VarStore},
+                (generated, calleeFn) ∈ state.hoistedFunctions →
+                  calleeFn.toYul? =
+                    some (.Def params returns body) →
+                    (contextGenerated, contextFn) ∈
+                      state.hoistedFunctions →
+                    contextFn.toYul? =
+                      some (.Def contextParams contextReturns
+                        contextBody) →
+                    FrontendOccurrence.StmtListUserCall generated
+                      frontendArgs contextFn.body →
+                    ordered.program.contract.functions.lookup
+                        contextGenerated =
+                      some (.Def contextParams contextReturns
+                        contextBody) ∧
+                    ∃ yulArgs,
+                      FocusedGeneratedStmtListCallPrefix state ordered
+                        generated calleeFn params returns body yulArgs
+                        contextBody fuel (some ordered.program.contract)
+                        shared vars := by
+  cases hRawCode : raw.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      have hCodeEvidence :
+          Raw.Object.CodeGeneratedNormalizationEvidence code object := by
+        simpa [Raw.Object.GeneratedNormalizationEvidence, hRawCode]
+          using hEvidence.2.2.2
+      exact
+        codeGeneratedNormalizationEvidence_functionBodyPrefixOfFrontendOccurrence
           hCodeEvidence hConvert
 
 theorem decodeAndElaborateSolcIr?_focusedGeneratedCallOccurrence
@@ -2446,6 +2719,58 @@ theorem decodeAndElaborateSolcIr?_dispatcherPrefix
       generatedNormalizationEvidence_dispatcherPrefix
         hEvidence hObjectConvert⟩
 
+theorem decodeAndElaborateSolcIr?_dispatcherPrefixOfFrontendOccurrence
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {ordered : Yul.OrderedProgram}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program)
+    (hConvert : program.object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              match selected.root.code? with
+              | none => True
+              | some code =>
+                  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+                      (helper? arg? ret? : Option Name),
+                    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+                      elaborateCode code =
+                        .ok (object.dispatcher, object.functions,
+                          helper?, arg?, ret?) ∧
+                        ∀ {generated : Name} {fn : Frontend.FunctionDef}
+                            {params returns : List Name}
+                            {body : List Yul.AstStmt}
+                            {frontendArgs : List Frontend.Expr}
+                            {fuel : Nat}
+                            {shared : EvmYul.SharedState .Yul}
+                            {vars : EvmYul.Yul.VarStore},
+                          (generated, fn) ∈ state.hoistedFunctions →
+                            fn.toYul? = some (.Def params returns body) →
+                            FrontendOccurrence.StmtListUserCall generated
+                              frontendArgs object.dispatcher →
+                            ∃ yulArgs,
+                              FocusedGeneratedStmtListCallPrefix state ordered
+                                generated fn params returns body yulArgs
+                                [ordered.program.contract.dispatcher] fuel
+                                (some ordered.program.contract) shared vars := by
+  rcases decodeAndElaborateSolcIr?_generatedNormalizationEvidence
+      hDecode with
+    ⟨json, selected, object, hParse, hSelected, hObject, hEvidence,
+      hProgram⟩
+  have hObjectConvert :
+      object.toSolcYulOrderedProgram? = some ordered := by
+    simpa [hProgram] using hConvert
+  exact
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
+      generatedNormalizationEvidence_dispatcherPrefixOfFrontendOccurrence
+        hEvidence hObjectConvert⟩
+
 theorem decodeAndElaborateSolcIr?_functionBodyPrefix
     {rawJson : String} {selection : Selection}
     {program : Frontend.Program} {ordered : Yul.OrderedProgram}
@@ -2511,6 +2836,71 @@ theorem decodeAndElaborateSolcIr?_functionBodyPrefix
   exact
     ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
       generatedNormalizationEvidence_functionBodyPrefix
+        hEvidence hObjectConvert⟩
+
+theorem decodeAndElaborateSolcIr?_functionBodyPrefixOfFrontendOccurrence
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {ordered : Yul.OrderedProgram}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program)
+    (hConvert : program.object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              match selected.root.code? with
+              | none => True
+              | some code =>
+                  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+                      (helper? arg? ret? : Option Name),
+                    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+                      elaborateCode code =
+                        .ok (object.dispatcher, object.functions,
+                          helper?, arg?, ret?) ∧
+                        ∀ {generated contextGenerated : Name}
+                            {calleeFn contextFn : Frontend.FunctionDef}
+                            {params returns : List Name}
+                            {body : List Yul.AstStmt}
+                            {contextParams contextReturns : List Name}
+                            {contextBody : List Yul.AstStmt}
+                            {frontendArgs : List Frontend.Expr}
+                            {fuel : Nat}
+                            {shared : EvmYul.SharedState .Yul}
+                            {vars : EvmYul.Yul.VarStore},
+                          (generated, calleeFn) ∈ state.hoistedFunctions →
+                            calleeFn.toYul? =
+                              some (.Def params returns body) →
+                            (contextGenerated, contextFn) ∈
+                              state.hoistedFunctions →
+                            contextFn.toYul? =
+                              some (.Def contextParams contextReturns
+                                contextBody) →
+                            FrontendOccurrence.StmtListUserCall generated
+                              frontendArgs contextFn.body →
+                            ordered.program.contract.functions.lookup
+                                contextGenerated =
+                              some (.Def contextParams contextReturns
+                                contextBody) ∧
+                            ∃ yulArgs,
+                              FocusedGeneratedStmtListCallPrefix state ordered
+                                generated calleeFn params returns body yulArgs
+                                contextBody fuel
+                                (some ordered.program.contract) shared vars := by
+  rcases decodeAndElaborateSolcIr?_generatedNormalizationEvidence
+      hDecode with
+    ⟨json, selected, object, hParse, hSelected, hObject, hEvidence,
+      hProgram⟩
+  have hObjectConvert :
+      object.toSolcYulOrderedProgram? = some ordered := by
+    simpa [hProgram] using hConvert
+  exact
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
+      generatedNormalizationEvidence_functionBodyPrefixOfFrontendOccurrence
         hEvidence hObjectConvert⟩
 
 end Elab

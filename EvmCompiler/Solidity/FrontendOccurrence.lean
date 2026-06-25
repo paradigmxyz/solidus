@@ -454,6 +454,174 @@ mutual
             (CaseListUserCall.toYul? hTail hRestConvert hArgs)
 end
 
+namespace ExprUserCall
+
+theorem args_toYul?
+    {functionName : Frontend.Name} {args : List Frontend.Expr}
+    {expr : Frontend.Expr} {yulExpr : Yul.AstExpr}
+    (hOccurrence : ExprUserCall functionName args expr)
+    (hExpr : Frontend.Expr.toYul? expr = some yulExpr) :
+    ∃ yulArgs, Frontend.Expr.List.toYul? args = some yulArgs := by
+  induction hOccurrence generalizing yulExpr with
+  | here =>
+      cases hArgs : Frontend.Expr.List.toYul? args with
+      | none =>
+          simp [Frontend.Expr.toYul?, hArgs] at hExpr
+      | some yulArgs =>
+          exact ⟨yulArgs, by simpa [hArgs]⟩
+  | @callArg kind callee outerArgs arg hMem _ ih =>
+      cases kind with
+      | primitive =>
+          cases hOp : Frontend.Primitive.ofName? callee with
+          | none =>
+              simp [Frontend.Expr.toYul?, hOp] at hExpr
+          | some op =>
+              cases hOuter :
+                  Frontend.Expr.List.toYul? outerArgs with
+              | none =>
+                  simp [Frontend.Expr.toYul?, hOp, hOuter] at hExpr
+              | some yulOuterArgs =>
+                  simp [Frontend.Expr.toYul?, hOp, hOuter] at hExpr
+                  rcases Expr.List.toYul?_mem hOuter hMem with
+                    ⟨yulArg, hArg, _hYulMem⟩
+                  exact ih hArg
+      | user =>
+          cases hOuter : Frontend.Expr.List.toYul? outerArgs with
+          | none =>
+              simp [Frontend.Expr.toYul?, hOuter] at hExpr
+          | some yulOuterArgs =>
+              simp [Frontend.Expr.toYul?, hOuter] at hExpr
+              rcases Expr.List.toYul?_mem hOuter hMem with
+                ⟨yulArg, hArg, _hYulMem⟩
+              exact ih hArg
+      | objectBuiltin =>
+          simp [Frontend.Expr.toYul?] at hExpr
+      | dialectBuiltin =>
+          simp [Frontend.Expr.toYul?] at hExpr
+
+end ExprUserCall
+
+mutual
+  theorem StmtUserCall.args_toYul?
+      {functionName : Frontend.Name} {args : List Frontend.Expr}
+      {stmt : Frontend.Stmt} {yulStmt : Yul.AstStmt}
+      (hOccurrence : StmtUserCall functionName args stmt)
+      (hStmt : Frontend.Stmt.toYul? stmt = some yulStmt) :
+      ∃ yulArgs, Frontend.Expr.List.toYul? args = some yulArgs := by
+    cases hOccurrence with
+    | block hBody =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with ⟨yulBody, hBodyConvert, _hEq⟩
+        exact StmtListUserCall.args_toYul? hBody hBodyConvert
+    | letValue hValue =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with ⟨yulValue, hValueConvert, _hEq⟩
+        exact ExprUserCall.args_toYul? hValue hValueConvert
+    | assignValue hValue =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with ⟨yulValue, hValueConvert, _hEq⟩
+        exact ExprUserCall.args_toYul? hValue hValueConvert
+    | exprStmt hValue =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with ⟨yulValue, hValueConvert, _hEq⟩
+        exact ExprUserCall.args_toYul? hValue hValueConvert
+    | switchScrutinee hScrutinee =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulScrutinee, hScrutineeConvert, yulCases, hCasesConvert,
+            yulDefault, hDefaultConvert, _hEq⟩
+        exact ExprUserCall.args_toYul? hScrutinee hScrutineeConvert
+    | switchCase hCases =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulScrutinee, hScrutineeConvert, yulCases, hCasesConvert,
+            yulDefault, hDefaultConvert, _hEq⟩
+        exact CaseListUserCall.args_toYul? hCases hCasesConvert
+    | switchDefault hDefault =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulScrutinee, hScrutineeConvert, yulCases, hCasesConvert,
+            yulDefault, hDefaultConvert, _hEq⟩
+        exact StmtListUserCall.args_toYul? hDefault hDefaultConvert
+    | forPre hPre =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulPre, hPreConvert, yulCondition, hConditionConvert,
+            yulPost, hPostConvert, yulBody, hBodyConvert, _hEq⟩
+        exact StmtListUserCall.args_toYul? hPre hPreConvert
+    | forCondition hCondition =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulPre, hPreConvert, yulCondition, hConditionConvert,
+            yulPost, hPostConvert, yulBody, hBodyConvert, _hEq⟩
+        exact ExprUserCall.args_toYul? hCondition hConditionConvert
+    | forPost hPost =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulPre, hPreConvert, yulCondition, hConditionConvert,
+            yulPost, hPostConvert, yulBody, hBodyConvert, _hEq⟩
+        exact StmtListUserCall.args_toYul? hPost hPostConvert
+    | forBody hBody =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulPre, hPreConvert, yulCondition, hConditionConvert,
+            yulPost, hPostConvert, yulBody, hBodyConvert, _hEq⟩
+        exact StmtListUserCall.args_toYul? hBody hBodyConvert
+    | ifCondition hCondition =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulCondition, hConditionConvert, yulBody, hBodyConvert, _hEq⟩
+        exact ExprUserCall.args_toYul? hCondition hConditionConvert
+    | ifBody hBody =>
+        simp [Frontend.Stmt.toYul?, Option.bind_eq_some_iff] at hStmt
+        rcases hStmt with
+          ⟨yulCondition, hConditionConvert, yulBody, hBodyConvert, _hEq⟩
+        exact StmtListUserCall.args_toYul? hBody hBodyConvert
+
+  theorem StmtListUserCall.args_toYul?
+      {functionName : Frontend.Name} {args : List Frontend.Expr}
+      {stmts : List Frontend.Stmt} {yulStmts : List Yul.AstStmt}
+      (hOccurrence : StmtListUserCall functionName args stmts)
+      (hStmts : Frontend.Stmt.List.toYul? stmts = some yulStmts) :
+      ∃ yulArgs, Frontend.Expr.List.toYul? args = some yulArgs := by
+    cases hOccurrence with
+    | head hStmtOccurrence =>
+        simp [Frontend.Stmt.List.toYul?, Option.bind_eq_some_iff]
+          at hStmts
+        rcases hStmts with
+          ⟨yulStmt, hStmtConvert, yulRest, hRestConvert, _hEq⟩
+        exact StmtUserCall.args_toYul? hStmtOccurrence hStmtConvert
+    | tail hTail =>
+        simp [Frontend.Stmt.List.toYul?, Option.bind_eq_some_iff]
+          at hStmts
+        rcases hStmts with
+          ⟨yulStmt, hStmtConvert, yulRest, hRestConvert, _hEq⟩
+        exact StmtListUserCall.args_toYul? hTail hRestConvert
+
+  theorem CaseListUserCall.args_toYul?
+      {functionName : Frontend.Name} {args : List Frontend.Expr}
+      {cases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+      {yulCases : List (Yul.Word × List Yul.AstStmt)}
+      (hOccurrence : CaseListUserCall functionName args cases)
+      (hCases : Frontend.Stmt.CaseList.toYul? cases = some yulCases) :
+      ∃ yulArgs, Frontend.Expr.List.toYul? args = some yulArgs := by
+    cases hOccurrence with
+    | head hBody =>
+        simp [Frontend.Stmt.CaseList.toYul?, Option.bind_eq_some_iff]
+          at hCases
+        rcases hCases with
+          ⟨yulValue, hValueConvert, yulBody, hBodyConvert,
+            yulRest, hRestConvert, _hEq⟩
+        exact StmtListUserCall.args_toYul? hBody hBodyConvert
+    | tail hTail =>
+        simp [Frontend.Stmt.CaseList.toYul?, Option.bind_eq_some_iff]
+          at hCases
+        rcases hCases with
+          ⟨yulValue, hValueConvert, yulBody, hBodyConvert,
+            yulRest, hRestConvert, _hEq⟩
+        exact CaseListUserCall.args_toYul? hTail hRestConvert
+end
+
 namespace FunctionDef
 
 theorem bodyOccurrence_toYul?
@@ -468,6 +636,18 @@ theorem bodyOccurrence_toYul?
   simp [Frontend.FunctionDef.toYul?, Option.bind_eq_some_iff] at hFn
   rcases hFn with ⟨hBody, _hParams, _hReturns⟩
   exact StmtListUserCall.toYul? hOccurrence hBody hArgs
+
+theorem bodyOccurrence_args_toYul?
+    {functionName : Frontend.Name} {args : List Frontend.Expr}
+    {fn : Frontend.FunctionDef} {params returns : List Frontend.Name}
+    {body : List Yul.AstStmt}
+    (hOccurrence : StmtListUserCall functionName args fn.body)
+    (hFn : Frontend.FunctionDef.toYul? fn =
+      some (.Def params returns body)) :
+    ∃ yulArgs, Frontend.Expr.List.toYul? args = some yulArgs := by
+  simp [Frontend.FunctionDef.toYul?, Option.bind_eq_some_iff] at hFn
+  rcases hFn with ⟨hBody, _hParams, _hReturns⟩
+  exact StmtListUserCall.args_toYul? hOccurrence hBody
 
 end FunctionDef
 
@@ -512,6 +692,41 @@ theorem dispatcherOccurrence_toOrdered?
                 Yul.YulOccurrence.StmtListUserCall.head
                   (StmtUserCall.toYul?
                     (StmtUserCall.block hOccurrence) hDispatcher hArgs)
+
+theorem dispatcherOccurrence_args_toYul?
+    {functionName : Frontend.Name} {args : List Frontend.Expr}
+    {object : Frontend.Object} {ordered : Yul.OrderedProgram}
+    (hOccurrence :
+      StmtListUserCall functionName args object.dispatcher)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ yulArgs, Frontend.Expr.List.toYul? args = some yulArgs := by
+  unfold Frontend.Object.toSolcYulOrderedProgram? at hConvert
+  cases hContract : object.toYulContractWithFunctionEntries? with
+  | none =>
+      simp [hContract] at hConvert
+  | some result =>
+      rcases result with ⟨contract, functions⟩
+      cases hValid :
+          Yul.SolcValidation.ContractOkWithEntries?
+            object.dialectProfile contract functions <;>
+        simp [hContract, hValid] at hConvert
+      rcases hConvert with ⟨_hSpelling, hConvert⟩
+      subst ordered
+      unfold Frontend.Object.toYulContractWithFunctionEntries? at hContract
+      cases hDispatcher :
+          Frontend.Stmt.toYul? (.block object.dispatcher) with
+      | none =>
+          simp [hDispatcher] at hContract
+      | some dispatcher =>
+          cases hFunctions :
+              Frontend.FunctionDef.List.toYul? object.functions with
+          | none =>
+              simp [hDispatcher, hFunctions] at hContract
+          | some entries =>
+              simp [hDispatcher, hFunctions] at hContract
+              exact
+                StmtUserCall.args_toYul?
+                  (StmtUserCall.block hOccurrence) hDispatcher
 
 end Object
 

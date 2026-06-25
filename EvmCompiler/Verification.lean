@@ -70,16 +70,24 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.of_yulOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.dispatcher_of_frontend
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.dispatcher_of_frontend_existsArgs
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.functionBody_of_frontend
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.functionBody_of_frontend_existsArgs
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.call_succ
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.evalValues_succ
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.eval_succ
 #check EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_dispatcherPrefix
+#check EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_dispatcherPrefixOfFrontendOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_functionBodyPrefix
+#check EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_functionBodyPrefixOfFrontendOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_dispatcherPrefix
+#check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_dispatcherPrefixOfFrontendOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_functionBodyPrefix
+#check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_functionBodyPrefixOfFrontendOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_dispatcherPrefix
+#check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_dispatcherPrefixOfFrontendOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_functionBodyPrefix
+#check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_functionBodyPrefixOfFrontendOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtElaborationOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListElaborationOccurrence
@@ -198,16 +206,24 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallOccurrence.eval_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.of_yulOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.dispatcher_of_frontend
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.dispatcher_of_frontend_existsArgs
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.functionBody_of_frontend
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.functionBody_of_frontend_existsArgs
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.call_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.evalValues_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.eval_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_dispatcherPrefix
+#print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_dispatcherPrefixOfFrontendOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_functionBodyPrefix
+#print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_functionBodyPrefixOfFrontendOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_dispatcherPrefix
+#print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_dispatcherPrefixOfFrontendOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_functionBodyPrefix
+#print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_functionBodyPrefixOfFrontendOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_dispatcherPrefix
+#print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_dispatcherPrefixOfFrontendOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_functionBodyPrefix
+#print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_functionBodyPrefixOfFrontendOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_focusedGeneratedCallOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_focusedGeneratedCallOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_focusedGeneratedCallOccurrence
@@ -218,11 +234,17 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.StmtListUserCall.exists_split_stmt
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.Expr.List.toYul?_mem
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.ExprUserCall.toYul?
+#print axioms EvmCompiler.Solidity.FrontendOccurrence.ExprUserCall.args_toYul?
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.StmtUserCall.toYul?
+#print axioms EvmCompiler.Solidity.FrontendOccurrence.StmtUserCall.args_toYul?
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.StmtListUserCall.toYul?
+#print axioms EvmCompiler.Solidity.FrontendOccurrence.StmtListUserCall.args_toYul?
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.CaseListUserCall.toYul?
+#print axioms EvmCompiler.Solidity.FrontendOccurrence.CaseListUserCall.args_toYul?
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.FunctionDef.bodyOccurrence_toYul?
+#print axioms EvmCompiler.Solidity.FrontendOccurrence.FunctionDef.bodyOccurrence_args_toYul?
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.Object.dispatcherOccurrence_toOrdered?
+#print axioms EvmCompiler.Solidity.FrontendOccurrence.Object.dispatcherOccurrence_args_toYul?
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.exists_split_stmt
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Expr.List.elaborate_mem
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate_direct_user
