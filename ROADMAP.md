@@ -120,6 +120,10 @@ Gasful EVM bridge checkpoint:
   jump destinations or the 1024-stack postcondition, so gasful
   `BadJumpDestination` and `StackOverflow` now refine an open transcript prefix
   rather than a nonexistent matching open error.
+- [x] Tighten CALL/CREATE gas-accounting records: checked canonical-stack
+  lemmas show CALL-family `dynamicGasCostAt` is exactly EVMYulLean `Ccall`
+  parent gas, and CREATE/CREATE2 parent gas is recorded explicitly beside the
+  existing EIP-150 forwarded/returned-gas formulas.
 - [x] Add the matching terminal `RETURN`/`REVERT` compositions:
   stack-pop-aware actual `EVM.step` lemmas, gas/control-erased output-state
   relations, open raw-bytecode halt execution with concrete return bytes, and

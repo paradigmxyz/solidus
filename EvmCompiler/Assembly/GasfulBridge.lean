@@ -3867,6 +3867,21 @@ def callFinalGas (preCostState : EVMState) (parentGasCost : Nat)
   (preCostState.gasAvailable - EvmYul.UInt256.ofNat parentGasCost) +
     returnedGas
 
+theorem dynamicGasCostAt_call_args_eq_parentGasCost
+    (kind : CallKind) (state : EVMState) (operands : CallOperands)
+    (rest : EvmYul.Stack Word)
+    (hOp : decodedOperationAt state = kind.toEVMOperation)
+    (hStack : state.stack = kind.args operands ++ rest) :
+    dynamicGasCostAt state =
+      callParentGasCost kind (afterMemoryChargeAt state)
+        (kind.canonicalOperands operands) := by
+  cases kind <;>
+    simp [dynamicGasCostAt, callParentGasCost, callTargetAddress,
+      callRecipientAddress, callValue, hOp, hStack, CallKind.args,
+      CallKind.canonicalOperands, CallKind.toEVMOperation, EvmYul.EVM.C',
+      afterMemoryChargeAt, chargeGas, EvmYul.UInt256.ofNat]
+  all_goals rfl
+
 /-- Gas accounting for a CALL-family external boundary. The child execution is
 not verified here; `returnedGas` is supplied by the open strategy response that
 models the child frame. -/
@@ -3894,6 +3909,17 @@ theorem callBoundaryAccounting_canonical
   forwardedGas_eq := rfl
   finalGas_eq := rfl
 
+def createParentGasCost (kind : CreateKind)
+    (operands : CreateOperands) : Nat :=
+  match kind with
+  | .create =>
+      GasConstants.Gcreate + EvmYul.EVM.R operands.initSize.toNat
+  | .create2 =>
+      GasConstants.Gcreate +
+        GasConstants.Gkeccak256word *
+          ((operands.initSize.toNat + 31) / 32) +
+        EvmYul.EVM.R operands.initSize.toNat
+
 def createForwardedGas (preCostState : EVMState)
     (parentGasCost : Nat) : Word :=
   EvmYul.UInt256.ofNat
@@ -3910,24 +3936,42 @@ def createFinalGas (preCostState : EVMState) (parentGasCost : Nat)
           EvmYul.UInt256.ofNat parentGasCost).toNat +
       returnedGas.toNat)
 
+theorem dynamicGasCostAt_create_args_eq_parentGasCost
+    (kind : CreateKind) (state : EVMState) (operands : CreateOperands)
+    (rest : EvmYul.Stack Word)
+    (hOp : decodedOperationAt state = kind.toEVMOperation)
+    (hStack : state.stack = kind.args operands ++ rest) :
+    dynamicGasCostAt state =
+      createParentGasCost kind (kind.canonicalOperands operands) := by
+  cases kind <;>
+    simp [dynamicGasCostAt, createParentGasCost, hOp, hStack,
+      CreateKind.args, CreateKind.canonicalOperands, EvmYul.EVM.C',
+      CreateKind.toEVMOperation, afterMemoryChargeAt, chargeGas]
+
 /-- Gas accounting for CREATE/CREATE2 external creation. The child init-code
 execution remains the open strategy response; this records EIP-150 parent gas
 withholding and returned gas. -/
 structure CreateBoundaryAccounting
-    (preCostState : EVMState) (parentGasCost : Nat)
+    (kind : CreateKind) (preCostState : EVMState)
+    (operands : CreateOperands) (parentGasCost : Nat)
     (forwardedGas returnedGas finalGas : Word) : Prop where
+  parentGasCost_eq :
+    parentGasCost = createParentGasCost kind operands
   forwardedGas_eq :
     forwardedGas = createForwardedGas preCostState parentGasCost
   finalGas_eq :
     finalGas = createFinalGas preCostState parentGasCost returnedGas
 
 theorem createBoundaryAccounting_canonical
-    (preCostState : EVMState) (parentGasCost : Nat)
-    (returnedGas : Word) :
-    CreateBoundaryAccounting preCostState parentGasCost
-      (createForwardedGas preCostState parentGasCost)
+    (kind : CreateKind) (preCostState : EVMState)
+    (operands : CreateOperands) (returnedGas : Word) :
+    CreateBoundaryAccounting kind preCostState operands
+      (createParentGasCost kind operands)
+      (createForwardedGas preCostState (createParentGasCost kind operands))
       returnedGas
-      (createFinalGas preCostState parentGasCost returnedGas) where
+      (createFinalGas preCostState
+        (createParentGasCost kind operands) returnedGas) where
+  parentGasCost_eq := rfl
   forwardedGas_eq := rfl
   finalGas_eq := rfl
 
