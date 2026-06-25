@@ -20,6 +20,7 @@ import EvmCompiler.Solidity.FrontendOccurrence
 import EvmCompiler.Solidity.RawAstOccurrence
 import EvmCompiler.Solidity.RawAstPublic
 import EvmCompiler.Solidity.RawAstSemantics
+import EvmCompiler.Solidity.RawAstEndToEnd
 import EvmCompiler.Yul.Occurrence
 import EvmCompiler.Yul.FunctionsInteractionProgram
 import EvmCompiler.Yul.EndToEnd
@@ -406,6 +407,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
 #check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecode
 #check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
+#check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_finished
+#check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_finished
 
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyForward
@@ -762,3 +765,5 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.stackAssemblyToCompactBytecodeFinished
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecode
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
+#print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_finished
+#print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_finished

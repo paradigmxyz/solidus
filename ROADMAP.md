@@ -5,10 +5,12 @@ The exact release trust and semantic boundary is maintained in
 
 ## Production Boundary
 
-The trusted frontend is a supported pinned `solc` producing optimized Yul
-through `irOptimizedAst`. Solidity lowering, source optimization,
-rematerialization, and source-level memory spilling belong to that frontend.
-The checked backend starts at the resulting Yul program.
+The trusted frontend is a supported pinned `solc` lowering Solidity to
+optimized Yul through Standard JSON `irOptimizedAst`. Solidity lowering, source
+optimization, rematerialization, and source-level memory spilling belong to
+that frontend. The checked production path consumes the raw solc JSON, decodes
+and elaborates it in Lean, and then composes with the checked optimized-Yul
+backend.
 
 The executable raw-frontend adapter matrix currently pins solc 0.8.26 and
 0.8.35 to Cancun because those pins emit structured `irOptimizedAst` for the
@@ -194,8 +196,10 @@ Next raw frontend layer:
   user-call recursive execution theorem, nested function-body recursive
   execution theorem, raw `clz` recursive execution theorem, and non-vacuous
   raw `clz` helper-value theorem behind one decode-derived Prop evidence
-  boundary. Remaining work is release/corpus validation and final integration
-  audit before updating production assumptions.
+  boundary. `compileArtifactFromRawSolcIr?_finished` and the explicit-linker
+  variant now compose raw JSON artifact compilation success with the public
+  finished optimized-Yul theorem, and `PRODUCTION_ASSUMPTIONS.md` records the
+  raw production boundary.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose
@@ -315,7 +319,8 @@ stack-only correctness boundary.
   duplicate declarations, and obsolete unsupported failures internally.
 - [x] Current release sweep keeps exact Permit2, Aave Pool, PoolManager,
   adversarial pressure, broad corpus, Lean, architecture, frontend, and diff
-  gates green. Final trust/production-assumptions audit remains separate.
+  gates green. The trust/production-assumptions audit is updated for the raw
+  production theorem.
 
 Pinned solc 0.8.26 rejects explicit `msize()` whenever its Yul optimizer is
 enabled. This is an honest trusted-frontend limitation, not a backend semantic

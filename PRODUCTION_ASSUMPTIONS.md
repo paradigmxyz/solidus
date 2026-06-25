@@ -7,29 +7,48 @@ full production EVM.
 
 ## Public Theorem
 
-The primary theorem is
-`Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished`. Its explicit hypotheses
-are:
+The primary raw-input production theorem is
+`Solidity.RawAst.compileArtifactFromRawSolcIr?_finished`. The explicit-linker
+variant is
+`Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_finished`.
+These compose the checked raw solc Standard JSON decoder/elaborator with the
+existing optimized-Yul theorem
+`Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished`. Their explicit
+hypotheses are:
 
-1. `hObject`: running the checked recursive object compiler produced the named
-   artifact.
+1. `hCompile`: running the checked raw Standard JSON compiler path produced
+   the named artifact.
 2. `hFinished`: the canonical parameterized Yul execution reached only genuine
    terminal or runtime-error leaves, rather than a structurally truncated
    source-semantics leaf.
 
-`hObject` is an executable compiler equation, not externally supplied proof
-evidence. `hFinished` is an execution condition: every open-world branch must
-reach a halt/revert or supported runtime error without exhausting source proof
-fuel. Arbitrary recursive Yul need not terminate, so no sound compiler can
-derive this uniformly from syntax. Malformed-source exclusion is no longer
-part of this premise: `truncated_iff_outOfFuel` proves that public truncation is
-exactly source `OutOfFuel`, while checked validation and scoped preservation
-derive missing-name, arity, expression, and contract/function facts internally.
+`hCompile` is an executable compiler equation over raw solc JSON, selection,
+and optional linker symbols, not externally supplied proof evidence. It
+internally derives the selected source/contract/object, checked raw
+`irOptimizedAst` decoding, frontend elaboration, object/data ordering, linker
+metadata, fork checks, generated helper/function evidence, and the checked
+recursive object artifact. `hFinished` is an execution condition: every
+open-world branch must reach a halt/revert or supported runtime error without
+exhausting source proof fuel. Arbitrary recursive Yul need not terminate, so no
+sound compiler can derive this uniformly from syntax. Malformed-source
+exclusion is no longer part of this premise: `truncated_iff_outOfFuel` proves
+that public truncation is exactly source `OutOfFuel`, while checked validation
+and scoped preservation derive missing-name, arity, expression, and
+contract/function facts internally.
 
 ## Derived Facts
 
 Successful artifact construction internally derives all of the following:
 
+- raw solc Standard JSON parsing, source/contract/object selection, and
+  checked `irOptimizedAst` decoding/elaboration into `Solidity.Frontend`;
+- preservation of mixed raw object/data order and Lean-decoded linker metadata;
+- Lean-owned call classification, lexical scope/name checks, nested-function
+  hoisting/alpha-renaming evidence, and `clz` helper expansion evidence;
+- `decodeAndElaborateSolcIr?_rawObjectSemanticEvidence`, which bundles raw
+  user-call recursive execution, nested function-body recursive execution, raw
+  `clz` recursive execution, and the non-vacuous raw `clz` helper-value
+  theorem;
 - optimized-Yul validation, source well-formedness, scoping, and supported
   primitive checks;
 - primitive availability for the bridge-declared London, Paris, Shanghai, or
@@ -68,24 +87,24 @@ observational state equivalence, not literal equality of every record field.
 
 ## Trusted Frontend
 
-The theorem starts at the parsed optimized Yul object. The following remain
-trusted:
+The raw theorem starts at solc Standard JSON text and a checked Lean selection
+of source, contract, creation/runtime object, fork metadata, and linker
+metadata. The following remain trusted:
 
 - the selected pinned solc binary and its Solidity-to-optimized-Yul lowering;
-- Standard JSON handling and `irOptimizedAst` production by solc;
-- the Python adapter that normalizes solc JSON into checked bridge JSON;
-- source-file, remapping, linker-symbol, and requested-fork inputs supplied to
-  that adapter.
+- Standard JSON emission and `irOptimizedAst` production by solc for the
+  supported pinned versions;
+- source-file contents, remappings, linker-symbol values, and the user's
+  requested source/contract/object selection.
 
-The Lean frontend validates the normalized object and fails closed, but there
-is not yet a proof that the Python normalization preserves arbitrary solc JSON.
-The requested fork is therefore still an external compilation input, but its
-consequences are checked rather than trusted: missing metadata is rejected, and
-an object containing instructions unavailable in its declared fork cannot
-produce a checked artifact.
-The raw frontend additionally checks solc's `difficulty()`/`prevrandao()` split
-before both spellings lower to opcode `0x44`; successful conversion derives
-that check internally.
+The Python bridge is no longer trusted to semantically normalize solc JSON for
+the production theorem. Python may still invoke solc, transport Standard JSON,
+and run differential/regression tooling, but the theorem's source program is
+constructed by Lean raw decoding and elaboration. Malformed, unknown, ill-scoped,
+unsupported-fork, missing-metadata, or unsupported-version raw inputs fail
+closed before producing a checked artifact. The raw frontend also checks solc's
+`difficulty()`/`prevrandao()` split before both spellings lower to opcode
+`0x44`; successful conversion derives that check internally.
 
 ## Open World
 
