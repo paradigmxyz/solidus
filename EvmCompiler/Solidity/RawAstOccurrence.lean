@@ -18,6 +18,23 @@ inductive ExprUserCall (functionName : Name)
           ExprUserCall functionName args (.functionCall callee outerArgs)
 
 mutual
+  inductive ExprClzCall (arg : Raw.Expr) : Raw.Expr → Prop where
+    | here :
+        ExprClzCall arg (.functionCall "clz" [arg])
+    | callArg {callee : Name} {outerArgs : List Raw.Expr} :
+        ExprListClzCall arg outerArgs →
+          ExprClzCall arg (.functionCall callee outerArgs)
+
+  inductive ExprListClzCall (arg : Raw.Expr) : List Raw.Expr → Prop where
+    | head {head : Raw.Expr} {rest : List Raw.Expr} :
+        ExprClzCall arg head →
+          ExprListClzCall arg (head :: rest)
+    | tail {head : Raw.Expr} {rest : List Raw.Expr} :
+        ExprListClzCall arg rest →
+          ExprListClzCall arg (head :: rest)
+end
+
+mutual
   inductive StmtUserCall (functionName : Name)
       (args : List Raw.Expr) : Raw.Stmt → Prop where
     | block {body : List Raw.Stmt} :
@@ -2118,6 +2135,201 @@ theorem ensureClzHelper_helperName
                   rcases hRun with ⟨rfl, rfl⟩
                   simp
 
+theorem ensureClzHelper_existing
+    {helper helper' : Name} {state state' : Elab.State}
+    (hHelperName : state.clzHelperName? = some helper)
+    (hRun : Elab.ensureClzHelper.run state = .ok (helper', state')) :
+    helper' = helper ∧ state' = state := by
+  unfold Elab.ensureClzHelper at hRun
+  cases hClz : state.clzHelperName? with
+  | none =>
+      rw [hHelperName] at hClz
+      cases hClz
+  | some existing =>
+      have hExisting : existing = helper := by
+        simpa [hClz] using hHelperName
+      simp [hClz] at hRun
+      rcases hRun with ⟨rfl, rfl⟩
+      exact ⟨hExisting, rfl⟩
+
+theorem requireIdentifierVisible_preserves_existing_clzHelperName
+    {name : Name} {what : String} {state state' : Elab.State}
+    {helper : Name}
+    (hRun :
+      (Elab.requireIdentifierVisible name what).run state =
+        .ok ((), state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  unfold Elab.requireIdentifierVisible at hRun
+  cases hVisible : Elab.identifierVisibleIn name state.identifierScopes with
+  | false =>
+      simp [Elab.identifierVisible, hVisible, Elab.throw] at hRun
+      cases hRun
+  | true =>
+      simp [Elab.identifierVisible, hVisible] at hRun
+      rcases hRun with ⟨rfl, rfl⟩
+      exact hHelperName
+
+mutual
+  theorem Expr.elaborate_preserves_existing_clzHelperName
+      {rawExpr : Raw.Expr} {frontendExpr : Frontend.Expr}
+      {state state' : Elab.State} {helper : Name}
+      (hRun :
+        (Elab.Expr.elaborate rawExpr).run state =
+          .ok (frontendExpr, state'))
+      (hHelperName : state.clzHelperName? = some helper) :
+      state'.clzHelperName? = some helper := by
+    cases rawExpr with
+    | literal literal =>
+        cases literal <;>
+          simp [Elab.Expr.elaborate, Elab.Literal.elaborate] at hRun
+        all_goals
+          rcases hRun with ⟨rfl, rfl⟩
+          exact hHelperName
+    | identifier name =>
+        cases hRequire :
+            (Elab.requireIdentifierVisible name "expression").run state with
+        | error err =>
+            simp [Elab.Expr.elaborate, hRequire] at hRun
+        | ok requireResult =>
+            rcases requireResult with ⟨unitRequire, stateAfterRequire⟩
+            have hRequireHelper :
+                stateAfterRequire.clzHelperName? = some helper :=
+              requireIdentifierVisible_preserves_existing_clzHelperName
+                hRequire hHelperName
+            simp [Elab.Expr.elaborate, hRequire] at hRun
+            rcases hRun with ⟨rfl, rfl⟩
+            exact hRequireHelper
+    | functionCall callee args =>
+        by_cases hMemoryguard : callee = "memoryguard"
+        · subst callee
+          cases args with
+          | nil =>
+              simp [Elab.Expr.elaborate] at hRun
+              unfold Elab.throw at hRun
+              cases hRun
+          | cons only rest =>
+              cases rest with
+              | nil =>
+                  cases hArg :
+                      (Elab.Expr.elaborate only).run state with
+                  | error err =>
+                      simp [Elab.Expr.elaborate, hArg] at hRun
+                  | ok argResult =>
+                      rcases argResult with ⟨frontendArg, stateAfterArg⟩
+                      simp [Elab.Expr.elaborate, hArg] at hRun
+                      rcases hRun with ⟨rfl, rfl⟩
+                      exact
+                        Expr.elaborate_preserves_existing_clzHelperName
+                          hArg hHelperName
+              | cons second rest =>
+                  simp [Elab.Expr.elaborate] at hRun
+                  unfold Elab.throw at hRun
+                  cases hRun
+        · by_cases hClz : callee = "clz"
+          · subst callee
+            cases args with
+            | nil =>
+                simp [Elab.Expr.elaborate] at hRun
+                unfold Elab.throw at hRun
+                cases hRun
+            | cons only rest =>
+                cases rest with
+                | nil =>
+                    cases hArg :
+                        (Elab.Expr.elaborate only).run state with
+                    | error err =>
+                        simp [Elab.Expr.elaborate, hArg] at hRun
+                    | ok argResult =>
+                        rcases argResult with ⟨frontendArg, stateAfterArg⟩
+                        cases hHelper :
+                            Elab.ensureClzHelper.run stateAfterArg with
+                        | error err =>
+                            simp [Elab.Expr.elaborate, hArg, hHelper] at hRun
+                        | ok helperResult =>
+                            rcases helperResult with
+                              ⟨generatedHelper, stateAfterHelper⟩
+                            have hArgHelper :
+                                stateAfterArg.clzHelperName? = some helper :=
+                              Expr.elaborate_preserves_existing_clzHelperName
+                                hArg hHelperName
+                            rcases ensureClzHelper_existing hArgHelper hHelper with
+                              ⟨rfl, rfl⟩
+                            simp [Elab.Expr.elaborate, hArg, hHelper] at hRun
+                            rcases hRun with ⟨rfl, rfl⟩
+                            exact hArgHelper
+                | cons second rest =>
+                    simp [Elab.Expr.elaborate] at hRun
+                    unfold Elab.throw at hRun
+                    cases hRun
+          · cases hArgs :
+                (Elab.Expr.List.elaborate args).run state with
+            | error err =>
+                simp [Elab.Expr.elaborate, hMemoryguard, hClz, hArgs] at hRun
+            | ok argsResult =>
+                rcases argsResult with ⟨frontendArgs, stateAfterArgs⟩
+                have hArgsHelper :
+                    stateAfterArgs.clzHelperName? = some helper :=
+                  Expr.List.elaborate_preserves_existing_clzHelperName
+                    hArgs hHelperName
+                cases hKind : CallClass.classifyCall callee <;>
+                  try
+                    (simp [Elab.Expr.elaborate, hMemoryguard, hClz, hArgs,
+                      hKind] at hRun
+                     rcases hRun with ⟨rfl, rfl⟩
+                     exact hArgsHelper)
+                · cases hResolve :
+                      Elab.resolveFunctionIn callee
+                        stateAfterArgs.functionScopes with
+                  | none =>
+                      simp [Elab.Expr.elaborate, hMemoryguard, hClz, hArgs,
+                        hKind, Elab.resolveFunction, hResolve] at hRun
+                      unfold Elab.throw at hRun
+                      cases hRun
+                  | some resolved =>
+                      simp [Elab.Expr.elaborate, hMemoryguard, hClz, hArgs,
+                        hKind, Elab.resolveFunction, hResolve] at hRun
+                      rcases hRun with ⟨rfl, rfl⟩
+                      exact hArgsHelper
+
+  theorem Expr.List.elaborate_preserves_existing_clzHelperName
+      {rawExprs : List Raw.Expr} {frontendExprs : List Frontend.Expr}
+      {state state' : Elab.State} {helper : Name}
+      (hRun :
+        (Elab.Expr.List.elaborate rawExprs).run state =
+          .ok (frontendExprs, state'))
+      (hHelperName : state.clzHelperName? = some helper) :
+      state'.clzHelperName? = some helper := by
+    cases rawExprs with
+    | nil =>
+        simp [Elab.Expr.List.elaborate] at hRun
+        rcases hRun with ⟨rfl, rfl⟩
+        exact hHelperName
+    | cons head rest =>
+        simp only [Elab.Expr.List.elaborate] at hRun
+        cases hHead :
+            (Elab.Expr.elaborate head).run state with
+        | error err =>
+            simp [hHead] at hRun
+        | ok headResult =>
+            rcases headResult with ⟨frontendHead, stateAfterHead⟩
+            cases hTail :
+                (Elab.Expr.List.elaborate rest).run stateAfterHead with
+            | error err =>
+                simp [hHead, hTail] at hRun
+            | ok tailResult =>
+                rcases tailResult with ⟨frontendTail, stateAfterTail⟩
+                simp [hHead, hTail] at hRun
+                rcases hRun with ⟨rfl, rfl⟩
+                have hHeadHelper :
+                    stateAfterHead.clzHelperName? = some helper :=
+                  Expr.elaborate_preserves_existing_clzHelperName
+                    hHead hHelperName
+                exact
+                  Expr.List.elaborate_preserves_existing_clzHelperName
+                    hTail hHeadHelper
+end
+
 theorem Expr.elaborate_clz_direct
     {rawArg : Raw.Expr} {frontendExpr : Frontend.Expr}
     {state state' : Elab.State}
@@ -2145,6 +2357,197 @@ theorem Expr.elaborate_clz_direct
           exact
             ⟨helper, frontendArg, ensureClzHelper_helperName hHelper,
               FrontendOccurrence.ExprUserCall.here⟩
+
+mutual
+  theorem ExprClzCall.elaborate
+      {rawArg rawExpr : Raw.Expr} {frontendExpr : Frontend.Expr}
+      {state state' : Elab.State}
+      (hOccurrence : ExprClzCall rawArg rawExpr)
+      (hElab :
+        (Elab.Expr.elaborate rawExpr).run state =
+          .ok (frontendExpr, state')) :
+      ∃ (helper : Name) (frontendArg : Frontend.Expr),
+        state'.clzHelperName? = some helper ∧
+          FrontendOccurrence.ExprUserCall helper [frontendArg]
+            frontendExpr := by
+    cases hOccurrence with
+    | here =>
+        exact Expr.elaborate_clz_direct hElab
+    | @callArg callee outerArgs hList =>
+        by_cases hMemoryguard : callee = "memoryguard"
+        · subst callee
+          cases outerArgs with
+          | nil =>
+              simp [Elab.Expr.elaborate] at hElab
+              unfold Elab.throw at hElab
+              cases hElab
+          | cons only rest =>
+              cases rest with
+              | nil =>
+                  cases hArg :
+                      (Elab.Expr.elaborate only).run state with
+                  | error err =>
+                      simp [Elab.Expr.elaborate, hArg] at hElab
+                  | ok argResult =>
+                      rcases argResult with ⟨frontendOnly, stateAfterArg⟩
+                      have hListElab :
+                          (Elab.Expr.List.elaborate [only]).run state =
+                            .ok ([frontendOnly], stateAfterArg) := by
+                        simp [Elab.Expr.List.elaborate, hArg]
+                      rcases ExprListClzCall.elaborate hList hListElab with
+                        ⟨helper, frontendArg, _frontendOccurrenceExpr,
+                          hHelperName, hMem, hInner⟩
+                      simp [Elab.Expr.elaborate, hArg] at hElab
+                      rcases hElab with ⟨rfl, rfl⟩
+                      exact
+                        ⟨helper, frontendArg, hHelperName,
+                          FrontendOccurrence.ExprUserCall.callArg
+                            hMem hInner⟩
+              | cons second rest =>
+                  simp [Elab.Expr.elaborate] at hElab
+                  unfold Elab.throw at hElab
+                  cases hElab
+        · by_cases hClz : callee = "clz"
+          · subst callee
+            cases outerArgs with
+            | nil =>
+                simp [Elab.Expr.elaborate] at hElab
+                unfold Elab.throw at hElab
+                cases hElab
+            | cons only rest =>
+                cases rest with
+                | nil =>
+                    cases hArg :
+                        (Elab.Expr.elaborate only).run state with
+                    | error err =>
+                        simp [Elab.Expr.elaborate, hArg] at hElab
+                    | ok argResult =>
+                        rcases argResult with ⟨frontendOnly, stateAfterArg⟩
+                        cases hHelper :
+                            Elab.ensureClzHelper.run stateAfterArg with
+                        | error err =>
+                            simp [Elab.Expr.elaborate, hArg, hHelper] at hElab
+                        | ok helperResult =>
+                            rcases helperResult with
+                              ⟨generatedHelper, stateAfterHelper⟩
+                            have hListElab :
+                                (Elab.Expr.List.elaborate [only]).run state =
+                                  .ok ([frontendOnly], stateAfterArg) := by
+                              simp [Elab.Expr.List.elaborate, hArg]
+                            rcases ExprListClzCall.elaborate hList hListElab with
+                              ⟨helper, frontendArg, _frontendOccurrenceExpr,
+                                hHelperName, hMem, hInner⟩
+                            rcases ensureClzHelper_existing hHelperName hHelper with
+                              ⟨hGenerated, hState⟩
+                            subst generatedHelper
+                            subst stateAfterHelper
+                            simp [Elab.Expr.elaborate, hArg, hHelper] at hElab
+                            rcases hElab with ⟨rfl, rfl⟩
+                            exact
+                              ⟨helper, frontendArg, hHelperName,
+                                FrontendOccurrence.ExprUserCall.callArg
+                                  hMem hInner⟩
+                | cons second rest =>
+                    simp [Elab.Expr.elaborate] at hElab
+                    unfold Elab.throw at hElab
+                    cases hElab
+          · cases hArgs :
+                (Elab.Expr.List.elaborate outerArgs).run state with
+            | error err =>
+                simp [Elab.Expr.elaborate, hMemoryguard, hClz, hArgs] at hElab
+            | ok argsResult =>
+                rcases argsResult with ⟨frontendArgs, stateAfterArgs⟩
+                rcases ExprListClzCall.elaborate hList hArgs with
+                  ⟨helper, frontendArg, _frontendOccurrenceExpr,
+                    hHelperName, hMem, hInner⟩
+                cases hKind : CallClass.classifyCall callee <;>
+                  try
+                    (simp [Elab.Expr.elaborate, hMemoryguard, hClz, hArgs,
+                      hKind] at hElab
+                     rcases hElab with ⟨rfl, rfl⟩
+                     exact
+                      ⟨helper, frontendArg, hHelperName,
+                        FrontendOccurrence.ExprUserCall.callArg hMem
+                          hInner⟩)
+                · cases hResolve :
+                      Elab.resolveFunctionIn callee
+                        stateAfterArgs.functionScopes with
+                  | none =>
+                      simp [Elab.Expr.elaborate, hMemoryguard, hClz, hArgs,
+                        hKind, Elab.resolveFunction, hResolve] at hElab
+                      unfold Elab.throw at hElab
+                      cases hElab
+                  | some resolved =>
+                      simp [Elab.Expr.elaborate, hMemoryguard, hClz, hArgs,
+                        hKind, Elab.resolveFunction, hResolve] at hElab
+                      rcases hElab with ⟨rfl, rfl⟩
+                      exact
+                        ⟨helper, frontendArg, hHelperName,
+                          FrontendOccurrence.ExprUserCall.callArg hMem
+                            hInner⟩
+
+  theorem ExprListClzCall.elaborate
+      {rawArg : Raw.Expr} {rawExprs : List Raw.Expr}
+      {frontendExprs : List Frontend.Expr}
+      {state state' : Elab.State}
+      (hOccurrence : ExprListClzCall rawArg rawExprs)
+      (hElab :
+        (Elab.Expr.List.elaborate rawExprs).run state =
+          .ok (frontendExprs, state')) :
+      ∃ (helper : Name) (frontendArg frontendOccurrenceExpr : Frontend.Expr),
+        state'.clzHelperName? = some helper ∧
+          frontendOccurrenceExpr ∈ frontendExprs ∧
+            FrontendOccurrence.ExprUserCall helper [frontendArg]
+              frontendOccurrenceExpr := by
+    cases hOccurrence with
+    | @head head rest hHead =>
+        simp only [Elab.Expr.List.elaborate] at hElab
+        cases hHeadElab :
+            (Elab.Expr.elaborate head).run state with
+        | error err =>
+            simp [hHeadElab] at hElab
+        | ok headResult =>
+            rcases headResult with ⟨frontendHead, stateAfterHead⟩
+            cases hTailElab :
+                (Elab.Expr.List.elaborate rest).run stateAfterHead with
+            | error err =>
+                simp [hHeadElab, hTailElab] at hElab
+            | ok tailResult =>
+                rcases tailResult with ⟨frontendTail, stateAfterTail⟩
+                simp [hHeadElab, hTailElab] at hElab
+                rcases hElab with ⟨rfl, rfl⟩
+                rcases ExprClzCall.elaborate hHead hHeadElab with
+                  ⟨helper, frontendArg, hHeadHelper, hInner⟩
+                have hTailHelper :
+                    stateAfterTail.clzHelperName? = some helper :=
+                  Expr.List.elaborate_preserves_existing_clzHelperName
+                    hTailElab hHeadHelper
+                exact
+                  ⟨helper, frontendArg, frontendHead, hTailHelper,
+                    by simp, hInner⟩
+    | @tail head rest hTail =>
+        simp only [Elab.Expr.List.elaborate] at hElab
+        cases hHeadElab :
+            (Elab.Expr.elaborate head).run state with
+        | error err =>
+            simp [hHeadElab] at hElab
+        | ok headResult =>
+            rcases headResult with ⟨frontendHead, stateAfterHead⟩
+            cases hTailElab :
+                (Elab.Expr.List.elaborate rest).run stateAfterHead with
+            | error err =>
+                simp [hHeadElab, hTailElab] at hElab
+            | ok tailResult =>
+                rcases tailResult with ⟨frontendTail, stateAfterTail⟩
+                simp [hHeadElab, hTailElab] at hElab
+                rcases hElab with ⟨rfl, rfl⟩
+                rcases ExprListClzCall.elaborate hTail hTailElab with
+                  ⟨helper, frontendArg, frontendOccurrenceExpr,
+                    hHelperName, hMem, hInner⟩
+                exact
+                  ⟨helper, frontendArg, frontendOccurrenceExpr,
+                    hHelperName, by simp [hMem], hInner⟩
+end
 
 theorem localFunctionScope_retains_hoisted
     {rawStmts : List Raw.Stmt} {scope : List (Name × Name)}

@@ -172,10 +172,12 @@ Next raw frontend layer:
   256 and skips the nonzero schedule when the helper argument is zero.
   `Elab.clzHelperYulInterface_call_value_succ` proves the full scheduled
   helper call returns `clzHelperValue argValue`, and
-  `RawOccurrence.Elab.Expr.elaborate_clz_direct` proves direct raw `clz(arg)`
-  elaboration exposes the generated helper as a frontend user-call occurrence.
-  Full contextual raw-`clz` source preservation and nested
-  hoist/alpha-renaming semantic preservation remain open.
+  `RawOccurrence.Elab.ExprClzCall.elaborate` proves raw `clz(arg)` expression
+  occurrences, including nested call-argument occurrences, elaborate to
+  frontend user-call occurrences of the generated helper while preserving the
+  recorded helper name. Full statement/list-level raw-`clz` source
+  preservation and nested hoist/alpha-renaming semantic preservation remain
+  open.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose
