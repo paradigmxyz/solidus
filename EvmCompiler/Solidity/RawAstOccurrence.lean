@@ -1,3 +1,4 @@
+import EvmCompiler.Solidity.FrontendOccurrence
 import EvmCompiler.Solidity.RawAst
 
 namespace EvmCompiler
@@ -149,6 +150,33 @@ theorem of_split_stmt
       exact StmtListUserCall.tail ih
 
 end StmtListUserCall
+
+namespace ExprUserCall
+
+theorem elaborate_direct_user
+    {functionName generated : Name} {rawArgs : List Raw.Expr}
+    {frontendArgs : List Frontend.Expr}
+    {frontendExpr : Frontend.Expr}
+    {state stateAfterArgs state' : Elab.State}
+    (hNotMemoryguard : functionName ≠ "memoryguard")
+    (hNotClz : functionName ≠ "clz")
+    (hKind : CallClass.classifyCall functionName = .user)
+    (hArgs :
+      (Elab.Expr.List.elaborate rawArgs).run state =
+        .ok (frontendArgs, stateAfterArgs))
+    (hResolve :
+      Elab.resolveFunctionIn functionName stateAfterArgs.functionScopes =
+        some generated)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall functionName rawArgs)).run state =
+        .ok (frontendExpr, state')) :
+    FrontendOccurrence.ExprUserCall generated frontendArgs frontendExpr := by
+  simp [Elab.Expr.elaborate, hNotMemoryguard, hNotClz, hArgs,
+    hKind, Elab.resolveFunction, hResolve] at hElab
+  rcases hElab with ⟨rfl, _hState⟩
+  exact FrontendOccurrence.ExprUserCall.here
+
+end ExprUserCall
 
 end RawOccurrence
 end RawAst
