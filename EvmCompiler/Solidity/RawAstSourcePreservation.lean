@@ -1264,6 +1264,23 @@ theorem stmtRunForward_functionDefinition_stub_succ
   rw [Yul.VarStoreRestriction.restrict_self]
   exact Simulation.Interaction.ForwardRel.done rfl
 
+/-- Semantic compiler interface for one statement under arbitrary residual
+fuel. The full frontend proof constructs this from expression, block, switch,
+loop, and generated-call preservation; list traversal is generic below. -/
+def StmtElaborationRunForward
+    (rawContext : Raw.SourceSemantics.Context)
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract) : Prop :=
+  ∀ (rawFuel orderedFuel : Nat)
+    {rawStmt : Raw.Stmt} {front : Frontend.Stmt}
+    {ordered : Frontend.AstStmt}
+    {elabState finalElabState : Elab.State} {state : State},
+    (Elab.Stmt.elaborate rawStmt).run elabState =
+        .ok (front, finalElabState) →
+      StmtNormalized builtinContext front ordered →
+        StmtRunForward rawFuel orderedFuel
+          rawContext rawStmt ordered contract state
+
 /-- Exact pre-block statement-list preservation. Both sides still carry the
 same lexical store; the dispatcher adapter below accounts for the ordered
 dispatcher's additional block boundary. -/
@@ -1335,6 +1352,75 @@ theorem seqRunForward_cons
       | Ok shared vars => exact hTail shared vars
       | OutOfFuel => exact Simulation.Interaction.ForwardRel.done rfl
       | Checkpoint jump => exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem seqRunForward_of_elaboration
+    {rawContext : Raw.SourceSemantics.Context}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hStmt :
+      StmtElaborationRunForward rawContext builtinContext contract) :
+    ∀ {rawCode : List Raw.Stmt} {front : List Frontend.Stmt}
+      {ordered : List Frontend.AstStmt}
+      {elabState finalElabState : Elab.State},
+      (Elab.Stmt.List.elaborate rawCode).run elabState =
+          .ok (front, finalElabState) →
+        StmtListNormalized builtinContext front ordered →
+          ∀ (rawBase orderedBase : Nat) (state : State),
+            SeqRunForward
+              (rawBase + rawCode.length + 1)
+              (orderedBase + rawCode.length + 1)
+              rawContext rawCode ordered contract state := by
+  intro rawCode
+  induction rawCode with
+  | nil =>
+      intro front ordered elabState finalElabState hElab hNormalized
+        rawBase orderedBase state
+      simp [Elab.Stmt.List.elaborate] at hElab
+      rcases hElab with ⟨rfl, rfl⟩
+      have hOrdered := StmtListNormalized.nil_ordered hNormalized
+      subst ordered
+      simpa using
+        (seqRunForward_nil_succ
+          (rawFuel := rawBase) (orderedFuel := orderedBase)
+          (context := rawContext) (contract := contract) (state := state))
+  | cons rawHead rawTail ih =>
+      intro front ordered elabState finalElabState hElab hNormalized
+        rawBase orderedBase state
+      unfold Elab.Stmt.List.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hHead : (Elab.Stmt.elaborate rawHead).run elabState with
+      | error err => simp [hHead] at hElab
+      | ok headResult =>
+          rcases headResult with ⟨frontHead, headElabState⟩
+          simp [hHead] at hElab
+          cases hTail :
+              (Elab.Stmt.List.elaborate rawTail).run headElabState with
+          | error err => simp [hTail] at hElab
+          | ok tailResult =>
+              rcases tailResult with ⟨frontTail, tailElabState⟩
+              simp [hTail] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              rcases StmtListNormalized.cons_parts hNormalized with
+                ⟨orderedHead, orderedTail, rfl,
+                  ⟨hHeadNormalized⟩, ⟨hTailNormalized⟩⟩
+              let rawTailFuel := rawBase + rawTail.length + 1
+              let orderedTailFuel := orderedBase + rawTail.length + 1
+              have hHeadRun :=
+                hStmt rawTailFuel orderedTailFuel
+                  (state := state) hHead hHeadNormalized
+              have hCons :=
+                seqRunForward_cons
+                  (rawFuel := rawTailFuel)
+                  (orderedFuel := orderedTailFuel)
+                  (context := rawContext) (rawStmt := rawHead)
+                  (rawRest := rawTail) (orderedStmt := orderedHead)
+                  (orderedRest := orderedTail) (contract := contract)
+                  (state := state) hHeadRun
+                  (fun shared vars =>
+                    ih hTail hTailNormalized rawBase orderedBase
+                      (.Ok shared vars))
+              simpa [rawTailFuel, orderedTailFuel, Nat.add_assoc,
+                Nat.add_comm, Nat.add_left_comm] using hCons
 
 theorem seqRunForward_cons_functionDefinition_omitted_ok
     {fuel orderedFuel : Nat}
