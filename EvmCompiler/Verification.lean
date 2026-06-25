@@ -67,6 +67,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperYulInterface_orderedLookup
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperAstBody_zero_exec
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperYulInterface_call_succ
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Expr.List.elaborate_mem
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzExpansionOk
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_hoistedFunctionsRetained
@@ -177,7 +179,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.FunctionDef.bodyOccurrence_toYul?
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.Object.dispatcherOccurrence_toOrdered?
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.exists_split_stmt
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Expr.List.elaborate_mem
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate_direct_user
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzExpansionOk
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_hoistedFunctionsRetained
