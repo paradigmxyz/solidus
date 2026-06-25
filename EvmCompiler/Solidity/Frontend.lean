@@ -1442,6 +1442,45 @@ mutual
         some ((name, fn') :: rest')
 end
 
+namespace FunctionDef
+namespace List
+
+theorem toYul?_mem
+    {functions : List (Name × FunctionDef)}
+    {entries : List (Name × AstFunctionDefinition)}
+    {name : Name} {fn : FunctionDef} {yulFn : AstFunctionDefinition}
+    (hConvert : FunctionDef.List.toYul? functions = some entries)
+    (hMem : (name, fn) ∈ functions)
+    (hFn : FunctionDef.toYul? fn = some yulFn) :
+    (name, yulFn) ∈ entries := by
+  induction functions generalizing entries with
+  | nil =>
+      simp at hMem
+  | cons entry rest ih =>
+      rcases entry with ⟨headName, headFn⟩
+      simp only [FunctionDef.List.toYul?] at hConvert
+      cases hHead : FunctionDef.toYul? headFn with
+      | none =>
+          simp [hHead] at hConvert
+      | some headYul =>
+          cases hRest : FunctionDef.List.toYul? rest with
+          | none =>
+              simp [hHead, hRest] at hConvert
+          | some restEntries =>
+              simp [hHead, hRest] at hConvert
+              subst entries
+              simp only [List.mem_cons, Prod.mk.injEq] at hMem ⊢
+              rcases hMem with hHere | hTail
+              · rcases hHere with ⟨rfl, rfl⟩
+                rw [hFn] at hHead
+                injection hHead with hYul
+                subst headYul
+                exact Or.inl ⟨rfl, rfl⟩
+              · exact Or.inr (ih hRest hTail)
+
+end List
+end FunctionDef
+
 mutual
   def Expr.resolveObjectBuiltinsIn? (expr : Expr)
       (context : ObjectBuiltinContext) : Option Expr :=

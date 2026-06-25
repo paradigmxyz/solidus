@@ -1120,6 +1120,22 @@ theorem clzExpansionOk_yulInterface
     ⟨clzHelperFunctionDef arg ret, hClz,
       clzHelperFunctionDef_toYul? arg ret⟩
 
+theorem clzHelperYulInterface_functionEntry
+    {functions : List (Name × Frontend.FunctionDef)}
+    {entries : List (Name × Yul.AstFunctionDefinition)}
+    {helper? arg? ret? : Option Name}
+    (hInterface : ClzHelperYulInterface functions helper? arg? ret?)
+    (hConvert : Frontend.FunctionDef.List.toYul? functions = some entries) :
+    match helper?, arg?, ret? with
+    | some helper, some arg, some ret =>
+        (helper, clzHelperAstFunctionDef arg ret) ∈ entries
+    | _, _, _ => True := by
+  unfold ClzHelperYulInterface at hInterface
+  cases helper? <;> cases arg? <;> cases ret? <;> simp at hInterface ⊢
+  rename_i helper arg ret
+  rcases hInterface with ⟨fn, hMem, hFn⟩
+  exact Frontend.FunctionDef.List.toYul?_mem hConvert hMem hFn
+
 theorem finalFunctions_clzExpansionOk (state : State) :
     ClzExpansionOk (finalFunctions state) state.clzHelperName?
       state.clzArgName? state.clzReturnName? := by

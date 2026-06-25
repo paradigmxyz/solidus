@@ -158,6 +158,10 @@ Next raw frontend layer:
   bundle now also proves that the generated `clz` helper converts to a
   canonical Yul function built from the checked primitive table, and names the
   corresponding primitive-step value function for the later semantic theorem.
+  `Frontend.FunctionDef.List.toYul?_mem` and
+  `Elab.clzHelperYulInterface_functionEntry` carry that helper through
+  frontend-to-Yul function-entry conversion, positioning the later semantics
+  proof at the actual callee-lookup boundary.
   Semantic preservation of the helper and nested
   hoist/alpha-renaming passes remains open.
 - [x] Expose the production interface
