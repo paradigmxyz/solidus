@@ -52,6 +52,9 @@ Gasful EVM bridge checkpoint:
   `GasfulBridge.x_after_prechecks_of_step`, a generic post-precheck theorem
   that delegates to the actual `EVM.step` parent-frame result and then applies
   the `EVM.X` continuation/halt rule without closing CALL/CREATE children.
+  Extend it with `x_after_prechecks_of_step_result` and
+  `x_after_prechecks_of_step_error`, so actual post-precheck `EVM.step` errors
+  are not silently assumed away.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.

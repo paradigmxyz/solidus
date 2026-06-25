@@ -936,13 +936,21 @@ def xPostStepResult (fuel : Nat) (validJumps : Array Word)
       else
         .ok (.success state output)
 
+def xPostStepExceptResult (fuel : Nat) (validJumps : Array Word)
+    (op : EvmYul.Operation .EVM) :
+    Except EVMException EVMState →
+      Except EVMException (EvmYul.EVM.ExecutionResult EVMState)
+  | .error err => .error err
+  | .ok state => xPostStepResult fuel validJumps op state
+
 /-- Once every checked exceptional branch has been ruled out, `EVM.X` delegates
 to the actual gasful `EVM.step` result and then applies the frame-level
 continuation/halt rule. For CALL/CREATE this preserves the existing strategy
 boundary: the child-frame behavior is exactly whatever the concrete `EVM.step`
 returned to the parent. -/
-theorem x_after_prechecks_of_step
-    {fuel : Nat} {validJumps : Array Word} {state gasfulNext : EVMState}
+theorem x_after_prechecks_of_step_result
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    {stepResult : Except EVMException EVMState}
     (hPrefix : XSstoreStipendChecksPass validJumps state)
     (hCreateOk :
       ¬ (EvmYul.Operation.isCreate (decodedOperationAt state) = true ∧
@@ -953,9 +961,10 @@ theorem x_after_prechecks_of_step
         (some
           ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
             (EvmYul.Operation.STOP, none)))
-        (afterMemoryChargeAt state) = .ok gasfulNext) :
+        (afterMemoryChargeAt state) = stepResult) :
     EvmYul.EVM.X (fuel + 1) validJumps state =
-      xPostStepResult fuel validJumps (decodedOperationAt state) gasfulNext := by
+      xPostStepExceptResult fuel validJumps
+        (decodedOperationAt state) stepResult := by
   have hNoBadJump' :
       ¬ (((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
           (EvmYul.Operation.STOP, none)).1 = EvmYul.Operation.JUMP ∧
@@ -1115,7 +1124,7 @@ theorem x_after_prechecks_of_step
                   (EvmYul.EVM.memoryExpansionCost state
                     ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
                       (EvmYul.Operation.STOP, none)).1) } =
-        .ok gasfulNext := by
+        stepResult := by
     simpa [dynamicGasCostAt, afterMemoryChargeAt, memoryExpansionCostAt,
       decodedOperationAt, chargeGas] using hStep
   simp [EvmYul.EVM.X, hPrefix.static.stackLimit.memoryAccess.jumps.stack.gas.memoryGas_raw,
@@ -1124,9 +1133,49 @@ theorem x_after_prechecks_of_step
     hPrefix.static.stackLimit.memoryAccess.jumps.stack.stackEnough_raw,
     hNoBadJump', hNoBadJumpiExact', hReturnDataOk', hStackLimitOk',
     hStaticOkExact', hSstoreOk', hCreateOk', hStep', xPostStepResult,
-    haltOutputAt, dynamicGasCostAt, afterMemoryChargeAt, memoryExpansionCostAt,
-    decodedOperationAt, chargeGas]
-  rfl
+    xPostStepExceptResult, haltOutputAt, dynamicGasCostAt,
+    afterMemoryChargeAt, memoryExpansionCostAt, decodedOperationAt, chargeGas]
+  cases stepResult <;> rfl
+
+theorem x_after_prechecks_of_step
+    {fuel : Nat} {validJumps : Array Word} {state gasfulNext : EVMState}
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt state) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          state.stack[2]?.getD (EvmYul.UInt256.ofNat 0)))
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt state) = .ok gasfulNext) :
+    EvmYul.EVM.X (fuel + 1) validJumps state =
+      xPostStepResult fuel validJumps (decodedOperationAt state) gasfulNext := by
+  simpa [xPostStepExceptResult] using
+    (x_after_prechecks_of_step_result
+      (fuel := fuel) (validJumps := validJumps) (state := state)
+      (stepResult := .ok gasfulNext) hPrefix hCreateOk hStep)
+
+theorem x_after_prechecks_of_step_error
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    {err : EVMException}
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt state) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          state.stack[2]?.getD (EvmYul.UInt256.ofNat 0)))
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt state) = .error err) :
+    EvmYul.EVM.X (fuel + 1) validJumps state = .error err := by
+  simpa [xPostStepExceptResult] using
+    (x_after_prechecks_of_step_result
+      (fuel := fuel) (validJumps := validJumps) (state := state)
+      (stepResult := .error err) hPrefix hCreateOk hStep)
 
 /-- `JUMPDEST` is the smallest successful charged step: after all gas and
 exception prechecks pass, `EVM.X` recurses on the interpreter's charged
