@@ -55,6 +55,9 @@ Gasful EVM bridge checkpoint:
   Extend it with `x_after_prechecks_of_step_result` and
   `x_after_prechecks_of_step_error`, so actual post-precheck `EVM.step` errors
   are not silently assumed away.
+- [x] Compose post-precheck gasful step results into `RunRefinesOpen` via
+  checked lemmas, reducing the remaining full bridge premise to open refinement
+  of the actual parent-frame `EVM.step` result.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.

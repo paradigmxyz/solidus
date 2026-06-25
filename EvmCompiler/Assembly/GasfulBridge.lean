@@ -1527,6 +1527,61 @@ theorem runRefinesOpen_of_executes
     RunRefinesOpen gasful openRun transcript :=
   .completed hExec hDone
 
+theorem runRefinesOpen_of_x_after_prechecks_step_result
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    {stepResult : Except EVMException EVMState}
+    {openRun : Interaction EVMException StepResult}
+    {transcript : Interaction.Transcript}
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt state) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          state.stack[2]?.getD (EvmYul.UInt256.ofNat 0)))
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt state) = stepResult)
+    (hBridge :
+      RunRefinesOpen
+        (xPostStepExceptResult fuel validJumps
+          (decodedOperationAt state) stepResult)
+        openRun transcript) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      openRun transcript := by
+  rw [x_after_prechecks_of_step_result
+    (fuel := fuel) (validJumps := validJumps) (state := state)
+    (stepResult := stepResult) hPrefix hCreateOk hStep]
+  exact hBridge
+
+theorem runRefinesOpen_of_x_after_prechecks_step_error_executes
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    {err : EVMException}
+    {openRun : Interaction EVMException StepResult}
+    {transcript : Interaction.Transcript}
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt state) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          state.stack[2]?.getD (EvmYul.UInt256.ofNat 0)))
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt state) = .error err)
+    (hExec :
+      Interaction.Executes openRun transcript (.error err)) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      openRun transcript := by
+  apply runRefinesOpen_of_x_after_prechecks_step_result
+    (fuel := fuel) (validJumps := validJumps) (state := state)
+    (stepResult := .error err) hPrefix hCreateOk hStep
+  exact runRefinesOpen_of_executes hExec DoneRel.sameError
+
 theorem runRefinesOpen_outOfGas_prefix
     {openRun : Interaction EVMException StepResult}
     {transcript : Interaction.Transcript}
