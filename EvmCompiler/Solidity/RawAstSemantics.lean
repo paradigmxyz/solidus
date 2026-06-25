@@ -1539,6 +1539,117 @@ theorem clzHelperYulInterface_call_value_succ
     simp [EvmYul.Yul.State.lookup!, hFinalFrame.2]
   simp [finalState, hLookupRet]
 
+theorem codeGeneratedNormalizationEvidence_clzHelper_call_value_succ
+    {code : List Raw.Stmt} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    (hEvidence :
+      Raw.Object.CodeGeneratedNormalizationEvidence code object)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (helper? : Option Name) (arg? : Option Name) (ret? : Option Name),
+      match helper?, arg?, ret? with
+      | some helper, some arg, some ret =>
+          ∀ (fuel : Nat) (argValue : Word)
+            (shared : EvmYul.SharedState .Yul)
+            (vars : EvmYul.Yul.VarStore),
+            ∃ finalState,
+              Yul.InteractionSemantics.call
+                  (fuel + clzHelperStepSchedule.length + 51)
+                  [argValue] (some helper)
+                  (some ordered.program.contract) (.Ok shared vars) =
+                pure (finalState, [clzHelperValue argValue])
+      | _, _, _ => True := by
+  rcases hEvidence with
+    ⟨_coreDispatcher, _state, helper?, arg?, ret?, _hCore,
+      _hElab, _hFunctions, _hHelper, _hArg, _hRet, hDistinct,
+      _hClz, hInterface, _hHoisted⟩
+  refine ⟨helper?, arg?, ret?, ?_⟩
+  cases helper? <;> cases arg? <;> cases ret? <;>
+    simp [ClzNamesDistinct] at hDistinct hInterface ⊢
+  rename_i helper arg ret
+  intro fuel argValue shared vars
+  exact
+    clzHelperYulInterface_call_value_succ
+      hInterface hConvert hDistinct fuel argValue shared vars
+
+theorem generatedNormalizationEvidence_clzHelper_call_value_succ
+    {raw : Raw.Object} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    (hEvidence : Raw.Object.GeneratedNormalizationEvidence raw object)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    match raw.code? with
+    | none => True
+    | some code =>
+        ∃ (helper? : Option Name) (arg? : Option Name)
+            (ret? : Option Name),
+          match helper?, arg?, ret? with
+          | some helper, some arg, some ret =>
+              ∀ (fuel : Nat) (argValue : Word)
+                (shared : EvmYul.SharedState .Yul)
+                (vars : EvmYul.Yul.VarStore),
+                ∃ finalState,
+                  Yul.InteractionSemantics.call
+                      (fuel + clzHelperStepSchedule.length + 51)
+                      [argValue] (some helper)
+                      (some ordered.program.contract) (.Ok shared vars) =
+                    pure (finalState, [clzHelperValue argValue])
+          | _, _, _ => True := by
+  cases hRawCode : raw.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      have hCodeEvidence :
+          Raw.Object.CodeGeneratedNormalizationEvidence code object := by
+        simpa [Raw.Object.GeneratedNormalizationEvidence, hRawCode]
+          using hEvidence.2.2.2
+      exact
+        codeGeneratedNormalizationEvidence_clzHelper_call_value_succ
+          hCodeEvidence hConvert
+
+theorem decodeAndElaborateSolcIr?_clzHelper_call_value_succ
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {ordered : Yul.OrderedProgram}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program)
+    (hConvert : program.object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              match selected.root.code? with
+              | none => True
+              | some code =>
+                  ∃ (helper? : Option Name) (arg? : Option Name)
+                      (ret? : Option Name),
+                    match helper?, arg?, ret? with
+                    | some helper, some arg, some ret =>
+                        ∀ (fuel : Nat) (argValue : Word)
+                          (shared : EvmYul.SharedState .Yul)
+                          (vars : EvmYul.Yul.VarStore),
+                          ∃ finalState,
+                            Yul.InteractionSemantics.call
+                                (fuel + clzHelperStepSchedule.length + 51)
+                                [argValue] (some helper)
+                                (some ordered.program.contract)
+                                (.Ok shared vars) =
+                              pure (finalState, [clzHelperValue argValue])
+                    | _, _, _ => True := by
+  rcases decodeAndElaborateSolcIr?_generatedNormalizationEvidence
+      hDecode with
+    ⟨json, selected, object, hParse, hSelected, hObject, hEvidence,
+      hProgram⟩
+  have hObjectConvert :
+      object.toSolcYulOrderedProgram? = some ordered := by
+    simpa [hProgram] using hConvert
+  exact
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
+      generatedNormalizationEvidence_clzHelper_call_value_succ
+        hEvidence hObjectConvert⟩
+
 end Elab
 end RawAst
 end Solidity
