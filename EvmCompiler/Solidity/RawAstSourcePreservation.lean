@@ -105,6 +105,50 @@ def ArgsRunForward (rawFuel orderedFuel : Nat)
     (Yul.InteractionSemantics.evalArgs orderedFuel orderedArgs
       (some contract) state)
 
+/-- Generic lexical-block preservation under an explicit raw function context
+and active ordered contract. -/
+def BlockCodeRunForward (rawFuel orderedFuel : Nat)
+    (context : Raw.SourceSemantics.Context)
+    (rawCode : List Raw.Stmt) (orderedCode : List Frontend.AstStmt)
+    (contract : Frontend.AstContract) (state : State) : Prop :=
+  Simulation.Interaction.ForwardRel
+    Yul.FunctionsInteractionPrimitive.Truncated
+    SameDoneRel
+    (Raw.SourceSemantics.execBlock rawFuel context rawCode state)
+    (Yul.InteractionSemantics.exec orderedFuel (.Block orderedCode)
+      (some contract) state)
+
+/-- Bundled semantic evidence for one elaborated raw user call. The frontend
+derivation supplies the generated callee lookup; recursive preservation
+supplies the callee body for every argument result. -/
+structure GeneratedUserCallRun (rawFuel orderedFuel : Nat)
+    (context : Raw.SourceSemantics.Context)
+    (rawName : Name) (rawArgs : List Raw.Expr)
+    (generated : Name) (orderedArgs : List Frontend.AstExpr)
+    (contract : Frontend.AstContract) (state : State) where
+  fn : Raw.SourceSemantics.FunctionDef
+  lexicalScopes : List Raw.SourceSemantics.FunctionScope
+  orderedBody : List Frontend.AstStmt
+  notClz : rawName ≠ "clz"
+  callClass : CallClass.classifyCall rawName = .user
+  rawLookup :
+    Raw.SourceSemantics.lookupFunctionWithLexicalScopes context rawName =
+      some (fn, lexicalScopes)
+  orderedLookup :
+    contract.functions.lookup generated =
+      some (.Def fn.params fn.returns orderedBody)
+  argsForward :
+    ArgsRunForward (rawFuel + 1) (orderedFuel + 1)
+      context rawArgs.reverse orderedArgs.reverse contract state
+  bodyForward :
+    ∀ (stateAfterArgs : State) (values : List Frontend.Word),
+      BlockCodeRunForward rawFuel orderedFuel
+        { context with functionScopes := lexicalScopes }
+        fn.body orderedBody contract
+        (Yul.InteractionSemantics.stateModel.withSource stateAfterArgs
+          (EvmYul.Yul.State.mkOk
+            (stateAfterArgs.initcall fn.params fn.returns values.reverse)))
+
 theorem exprValuesRunForward_zero
     {orderedFuel : Nat} {context : Raw.SourceSemantics.Context}
     {rawExpr : Raw.Expr} {orderedExpr : Frontend.AstExpr}
@@ -266,6 +310,64 @@ theorem exprValuesRunForward_primitiveCall_succ
         forward_refl Yul.FunctionsInteractionPrimitive.Truncated
           (Yul.InteractionSemantics.primitiveSemantics.eval
             fuel result.1 op result.2.reverse)
+
+theorem exprValuesRunForward_userCall_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawName : Name} {rawArgs : List Raw.Expr}
+    {generated : Name} {orderedArgs : List Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hRun : GeneratedUserCallRun rawFuel orderedFuel context
+      rawName rawArgs generated orderedArgs contract state) :
+    ExprValuesRunForward (rawFuel + 2) (orderedFuel + 2)
+      context (.functionCall rawName rawArgs)
+      (.Call (.inr generated) orderedArgs) contract state := by
+  unfold ExprValuesRunForward
+  rw [Raw.SourceSemantics.EvalValues.functionCall_succ_of_ne_clz
+    (rawFuel + 1) context rawName rawArgs state hRun.notClz]
+  simp only [hRun.callClass]
+  rw [Yul.InteractionSemantics.EvalValues.internal_succ]
+  have hArgsForward := hRun.argsForward
+  unfold ArgsRunForward at hArgsForward
+  refine
+    Simulation.Interaction.ForwardRel.bind_custom hArgsForward ?_
+  intro rawArgsDone orderedArgsDone hArgsDone
+  unfold SameDoneRel at hArgsDone
+  subst orderedArgsDone
+  cases rawArgsDone with
+  | error error =>
+      exact Simulation.Interaction.ForwardRel.done rfl
+  | ok argsResult =>
+      rcases argsResult with ⟨stateAfterArgs, reversedValues⟩
+      change
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+          (Raw.SourceSemantics.call (rawFuel + 1) context
+            reversedValues.reverse rawName stateAfterArgs)
+          (Yul.InteractionSemantics.call (orderedFuel + 1)
+            reversedValues.reverse (some generated) (some contract)
+            stateAfterArgs)
+      rw [Raw.SourceSemantics.Call.explicit_succ
+        rawFuel context reversedValues.reverse rawName stateAfterArgs
+        hRun.fn hRun.lexicalScopes hRun.rawLookup]
+      rw [Yul.InteractionSemantics.Call.explicit_succ
+        orderedFuel reversedValues.reverse generated contract
+        hRun.fn.params hRun.fn.returns hRun.orderedBody stateAfterArgs
+        hRun.orderedLookup]
+      have hBodyForward :=
+        hRun.bodyForward stateAfterArgs reversedValues
+      unfold BlockCodeRunForward at hBodyForward
+      refine
+        Simulation.Interaction.ForwardRel.bind_custom
+          hBodyForward ?_
+      intro rawBodyDone orderedBodyDone hBodyDone
+      unfold SameDoneRel at hBodyDone
+      subst orderedBodyDone
+      cases rawBodyDone with
+      | error error =>
+          exact Simulation.Interaction.ForwardRel.done rfl
+      | ok stateAfterBody =>
+          exact Simulation.Interaction.ForwardRel.done rfl
 
 theorem exprValuesRunForward_datasize_succ
     {rawFuel orderedFuel : Nat}
@@ -484,6 +586,20 @@ theorem stmtRunForward_assignment_succ
       | error error => exact Simulation.Interaction.ForwardRel.done rfl
       | ok result => exact Simulation.Interaction.ForwardRel.done rfl
 
+theorem stmtRunForward_block_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawCode : List Raw.Stmt} {orderedCode : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State}
+    (hBlock :
+      BlockCodeRunForward rawFuel orderedFuel
+        context rawCode orderedCode contract state) :
+    StmtRunForward (rawFuel + 1) orderedFuel
+      context (.block rawCode) (.Block orderedCode) contract state := by
+  unfold StmtRunForward BlockCodeRunForward at *
+  rw [Raw.SourceSemantics.Exec.block_succ]
+  exact hBlock
+
 /-- Exact pre-block statement-list preservation. Both sides still carry the
 same lexical store; the dispatcher adapter below accounts for the ordered
 dispatcher's additional block boundary. -/
@@ -574,6 +690,36 @@ theorem seqRunForward_cons_functionDefinition_omitted_ok
   rw [Raw.SourceSemantics.ExecSeq.cons_succ]
   rw [Raw.SourceSemantics.Exec.functionDefinition_succ]
   simpa [Simulation.Interaction.bind_pure]
+
+/-- Generic lexical-block constructor. A recursively preserved statement list
+under the block's raw function scope yields exact block outcomes because both
+semantics apply the same entry-store restriction. -/
+theorem blockCodeRunForward_of_scope_seq
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {scope : Raw.SourceSemantics.FunctionScope}
+    {rawCode : List Raw.Stmt} {orderedCode : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State}
+    (hScope : Raw.SourceSemantics.functionScope? rawCode = some scope)
+    (hSeq :
+      SeqRunForward rawFuel orderedFuel
+        (context.withFunctionScope scope)
+        rawCode orderedCode contract state) :
+    BlockCodeRunForward (rawFuel + 1) (orderedFuel + 1)
+      context rawCode orderedCode contract state := by
+  unfold BlockCodeRunForward SeqRunForward at *
+  rw [Raw.SourceSemantics.ExecBlock.succ]
+  rw [Yul.InteractionSemantics.Exec.block_succ]
+  simp only [hScope]
+  refine Simulation.Interaction.ForwardRel.bind_custom hSeq ?_
+  intro rawDone orderedDone hDone
+  unfold SameDoneRel at hDone
+  subst orderedDone
+  cases rawDone with
+  | error error =>
+      exact Simulation.Interaction.ForwardRel.done rfl
+  | ok stateAfterBody =>
+      exact Simulation.Interaction.ForwardRel.done rfl
 
 /-- Raw block-body sequence preservation against the ordered dispatcher
 sequence, before both sides apply their lexical block store restriction. -/
