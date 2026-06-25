@@ -4182,6 +4182,152 @@ def focusedExpr
 
 end FocusedGeneratedCallRun
 
+/-- Bundled semantic interface for a generated local call used as an
+expression statement.
+
+Expression statements run the callee call one fuel step above the callee body
+and evaluate arguments at the corresponding caller fuel, so they cannot consume
+`FocusedGeneratedCallRun` directly without shifting its internal split.  This
+keeps that shifted split in the same frontend-owned generated-call interface
+instead of extending the bespoke expression-statement theorem matrix. -/
+structure FocusedGeneratedExprStmtRun
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    (bodyFuel : Nat)
+    (state : σ) where
+  routeEvidence : BodyRouteEvidence object ordered topName
+  stateAfterArgs : σ
+  stateAfterBody : σ
+  reversedValues : List Frontend.Word
+  hArgs :
+    Yul.Source.Effectful.evalArgs model prim (bodyFuel + 2)
+        routeEvidence.yulEvidence.yulArgs.reverse
+        (some ordered.program.contract) state =
+      .ok (stateAfterArgs, reversedValues)
+  hBody :
+    Yul.Source.Effectful.exec model prim bodyFuel
+        (.Block routeEvidence.yulEvidence.localYulBody)
+        (some ordered.program.contract)
+        (model.withSource stateAfterArgs
+          (EvmYul.Yul.State.mkOk
+            ((model.source stateAfterArgs).initcall
+              routeEvidence.yulEvidence.localFn.params
+              routeEvidence.yulEvidence.localFn.returns
+              reversedValues.reverse))) =
+      .ok stateAfterBody
+  postState : σ
+  returns : List Frontend.Word
+  postState_eq :
+    postState =
+      model.withSource stateAfterBody
+        (((model.source stateAfterBody).reviveJump.overwrite?
+            (model.source stateAfterArgs)).setStore
+              (model.source stateAfterArgs))
+  returns_eq :
+    returns =
+      List.map (model.source stateAfterBody).lookup!
+        routeEvidence.yulEvidence.localFn.returns
+
+namespace FocusedGeneratedExprStmtRun
+
+def of_parts
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat}
+    {state stateAfterArgs stateAfterBody : σ}
+    {reversedValues : List Frontend.Word}
+    (routeEvidence : BodyRouteEvidence object ordered topName)
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 2)
+          routeEvidence.yulEvidence.yulArgs.reverse
+          (some ordered.program.contract) state =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block routeEvidence.yulEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                routeEvidence.yulEvidence.localFn.params
+                routeEvidence.yulEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody) :
+    FocusedGeneratedExprStmtRun (object := object) (ordered := ordered)
+      (topName := topName) model prim bodyFuel state where
+  routeEvidence := routeEvidence
+  stateAfterArgs := stateAfterArgs
+  stateAfterBody := stateAfterBody
+  reversedValues := reversedValues
+  hArgs := hArgs
+  hBody := hBody
+  postState :=
+    model.withSource stateAfterBody
+      (((model.source stateAfterBody).reviveJump.overwrite?
+          (model.source stateAfterArgs)).setStore
+            (model.source stateAfterArgs))
+  returns :=
+    List.map (model.source stateAfterBody).lookup!
+      routeEvidence.yulEvidence.localFn.returns
+  postState_eq := rfl
+  returns_eq := rfl
+
+theorem call
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {bodyFuel : Nat}
+    {state : σ}
+    (hRun :
+      FocusedGeneratedExprStmtRun (object := object)
+        (ordered := ordered) (topName := topName)
+        model prim bodyFuel state) :
+    Yul.Source.Effectful.call model prim (bodyFuel + 1)
+        hRun.reversedValues.reverse
+        (some hRun.routeEvidence.yulEvidence.generated)
+        (some ordered.program.contract) hRun.stateAfterArgs =
+      .ok (hRun.postState, hRun.returns) := by
+  have hCall :=
+    hRun.routeEvidence.yulEvidence.call_succ
+      model prim hRun.hBody
+  rw [hRun.postState_eq, hRun.returns_eq]
+  exact hCall
+
+theorem exec
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {bodyFuel : Nat}
+    {state : σ}
+    (hRun :
+      FocusedGeneratedExprStmtRun (object := object)
+        (ordered := ordered) (topName := topName)
+        model prim bodyFuel state) :
+    Yul.Source.Effectful.exec model prim ((bodyFuel + 1) + 2)
+        (.ExprStmtCall
+          (.Call (.inr hRun.routeEvidence.yulEvidence.generated)
+            hRun.routeEvidence.yulEvidence.yulArgs))
+        (some ordered.program.contract) state =
+      .ok (model.multifill [] hRun.postState hRun.returns) :=
+  Yul.Source.Effectful.exec_expr_function_of_parts
+    model prim hRun.hArgs hRun.call
+
+end FocusedGeneratedExprStmtRun
+
 namespace DirectIncomingStmtRun
 
 def assignOfFocusedGenerated
@@ -4229,6 +4375,26 @@ def letOfFocusedGenerated
           hRun.routeEvidence.yulEvidence.yulArgs)))
       (model.multifill names hRun.run.postState hRun.run.returns) :=
   .letValue hCheck hRun.evalValues
+
+def exprStmtOfFocusedGenerated
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {bodyFuel : Nat}
+    {state : σ}
+    (hRun :
+      FocusedGeneratedExprStmtRun (object := object) (ordered := ordered)
+        (topName := topName) model prim bodyFuel state) :
+    DirectIncomingStmtRun hRun.routeEvidence.yulEvidence model prim state
+      ((bodyFuel + 1) + 2)
+      (.ExprStmtCall
+        (.Call (.inr hRun.routeEvidence.yulEvidence.generated)
+          hRun.routeEvidence.yulEvidence.yulArgs))
+      (model.multifill [] hRun.postState hRun.returns) :=
+  .exprStmt hRun.hArgs hRun.call
 
 def ifFalseOfFocusedGenerated
     {object : Frontend.Object}
@@ -4364,6 +4530,27 @@ def letOfFocusedGenerated
       (model.multifill names hRun.run.postState hRun.run.returns) :=
   .direct .letValue
     (DirectIncomingStmtRun.letOfFocusedGenerated hRun hCheck)
+
+def exprStmtOfFocusedGenerated
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {bodyFuel : Nat}
+    {state : σ}
+    (hRun :
+      FocusedGeneratedExprStmtRun (object := object) (ordered := ordered)
+        (topName := topName) model prim bodyFuel state) :
+    FocusedStmtRun hRun.routeEvidence.yulEvidence model prim state
+      ((bodyFuel + 1) + 2)
+      (.ExprStmtCall
+        (.Call (.inr hRun.routeEvidence.yulEvidence.generated)
+          hRun.routeEvidence.yulEvidence.yulArgs))
+      (model.multifill [] hRun.postState hRun.returns) :=
+  .direct .expressionStatement
+    (DirectIncomingStmtRun.exprStmtOfFocusedGenerated hRun)
 
 def ifFalseOfFocusedGenerated
     {object : Frontend.Object}
