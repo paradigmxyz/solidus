@@ -17,6 +17,7 @@ import EvmCompiler.Assembly.InteractionFuelSafety
 import EvmCompiler.Assembly.Compact
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
 import EvmCompiler.Solidity.FrontendOccurrence
+import EvmCompiler.Solidity.RawAstOccurrence
 import EvmCompiler.Solidity.RawAstPublic
 import EvmCompiler.Solidity.RawAstSemantics
 import EvmCompiler.Yul.Occurrence
@@ -175,6 +176,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.CaseListUserCall.toYul?
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.FunctionDef.bodyOccurrence_toYul?
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.Object.dispatcherOccurrence_toOrdered?
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.exists_split_stmt
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzExpansionOk
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_hoistedFunctionsRetained
