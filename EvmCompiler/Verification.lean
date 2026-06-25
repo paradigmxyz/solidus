@@ -99,11 +99,23 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationRoute
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListElaborationRoute
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtCodeElaborationRoute
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListCodeElaborationRoute
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.frontendStmtListUserCall_of_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.retain
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_of_stmt_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_head
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_tail
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.toStmtRoute_block
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.toStmtRoute_switchDefault
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.toStmtRoute_forPre
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.toStmtRoute_forPost
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.toStmtRoute_forBody
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.toStmtRoute_ifBody
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtCodeElaborationRoute.retain
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtCodeElaborationRoute.toCodeRoute_of_mem
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListCodeElaborationRoute.retain
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListCodeElaborationRoute.toStmtRoute_switchCase
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationRoute.toCodeRoute
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.pushIdentifierScope_retains_hoisted
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.popIdentifierScope_retains_hoisted
@@ -348,6 +360,16 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_of_stmt_mem
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_head
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_tail
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.toStmtRoute_block
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.toStmtRoute_switchDefault
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.toStmtRoute_forPre
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.toStmtRoute_forPost
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.toStmtRoute_forBody
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.toStmtRoute_ifBody
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtCodeElaborationRoute.retain
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtCodeElaborationRoute.toCodeRoute_of_mem
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListCodeElaborationRoute.retain
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListCodeElaborationRoute.toStmtRoute_switchCase
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationRoute.toCodeRoute
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.pushIdentifierScope_retains_hoisted
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.popIdentifierScope_retains_hoisted
