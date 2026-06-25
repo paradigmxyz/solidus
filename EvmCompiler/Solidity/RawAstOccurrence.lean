@@ -1514,6 +1514,360 @@ theorem ensureClzHelper_retains_hoisted
                     freshNonFunctionBindingName_retains_hoisted hRet hArgMem
                   exact hRetMem
 
+theorem localFunctionScope_retains_hoisted
+    {rawStmts : List Raw.Stmt} {scope : List (Name × Name)}
+    {state state' : Elab.State}
+    (hRun :
+      (Elab.Stmt.List.localFunctionScope rawStmts).run state =
+        .ok (scope, state'))
+    {entry : Name × Frontend.FunctionDef}
+    (hMem : entry ∈ state.hoistedFunctions) :
+    entry ∈ state'.hoistedFunctions := by
+  induction rawStmts generalizing scope state state' with
+  | nil =>
+      simp [Elab.Stmt.List.localFunctionScope] at hRun
+      rcases hRun with ⟨_hScope, rfl⟩
+      exact hMem
+  | cons head rest ih =>
+      unfold Elab.Stmt.List.localFunctionScope at hRun
+      cases head with
+      | functionDefinition name params returns body =>
+          cases hTail :
+              (Elab.Stmt.List.localFunctionScope rest).run state with
+          | error err =>
+              simp [hTail] at hRun
+          | ok tailResult =>
+              rcases tailResult with ⟨tail, stateAfterTail⟩
+              cases hDuplicate :
+                  tail.any (fun entry => entry.fst == name) with
+              | true =>
+                  unfold Elab.throw at hRun
+                  simp [hTail, hDuplicate] at hRun
+                  change Except.error
+                      (toString "duplicate Yul function " ++
+                        toString name ++ toString " in block") =
+                    Except.ok (scope, state') at hRun
+                  cases hRun
+              | false =>
+                  cases hDeclare :
+                      (Elab.declareIdentifiers [name] "function").run
+                        stateAfterTail with
+                  | error err =>
+                      simp [hTail, hDuplicate, hDeclare] at hRun
+                  | ok declareResult =>
+                      rcases declareResult with ⟨unitDecl, stateAfterDeclare⟩
+                      cases hFresh :
+                          (Elab.freshGeneratedFunctionName name).run
+                            stateAfterDeclare with
+                      | error err =>
+                          simp [hTail, hDuplicate, hDeclare, hFresh] at hRun
+                      | ok freshResult =>
+                          rcases freshResult with
+                            ⟨generated, stateAfterFresh⟩
+                          simp [hTail, hDuplicate, hDeclare, hFresh] at hRun
+                          rcases hRun with ⟨rfl, rfl⟩
+                          have hTailMem :
+                              entry ∈ stateAfterTail.hoistedFunctions :=
+                            ih hTail hMem
+                          have hDeclareMem :
+                              entry ∈ stateAfterDeclare.hoistedFunctions :=
+                            declareIdentifiers_retains_hoisted hDeclare
+                              hTailMem
+                          exact
+                            freshGeneratedFunctionName_retains_hoisted
+                              hFresh hDeclareMem
+      | block body =>
+          exact ih hRun hMem
+      | variableDeclaration names value? =>
+          exact ih hRun hMem
+      | assignment names value =>
+          exact ih hRun hMem
+      | expressionStatement expr =>
+          exact ih hRun hMem
+      | switch scrutinee cases defaultBody =>
+          exact ih hRun hMem
+      | forLoop pre condition post body =>
+          exact ih hRun hMem
+      | ifThen condition body =>
+          exact ih hRun hMem
+      | «break» =>
+          exact ih hRun hMem
+      | «continue» =>
+          exact ih hRun hMem
+      | «leave» =>
+          exact ih hRun hMem
+
+theorem requireIdentifierVisible_retains_hoisted
+    {name : Name} {what : String} {state state' : Elab.State}
+    (hRun :
+      (Elab.requireIdentifierVisible name what).run state =
+        .ok ((), state'))
+    {entry : Name × Frontend.FunctionDef}
+    (hMem : entry ∈ state.hoistedFunctions) :
+    entry ∈ state'.hoistedFunctions := by
+  unfold Elab.requireIdentifierVisible Elab.identifierVisible at hRun
+  cases hVisible :
+      Elab.identifierVisibleIn name state.identifierScopes with
+  | true =>
+      simp [hVisible] at hRun
+      rcases hRun with ⟨_hUnit, rfl⟩
+      exact hMem
+  | false =>
+      simp [hVisible] at hRun
+      unfold Elab.throw at hRun
+      change Except.error
+          (toString "unknown Yul identifier " ++ toString name ++
+            toString " in " ++ toString what) =
+        Except.ok ((), state') at hRun
+      cases hRun
+
+theorem requireIdentifiersVisible_retains_hoisted
+    {names : List Name} {what : String} {state state' : Elab.State}
+    (hRun :
+      (Elab.requireIdentifiersVisible names what).run state =
+        .ok ((), state'))
+    {entry : Name × Frontend.FunctionDef}
+    (hMem : entry ∈ state.hoistedFunctions) :
+    entry ∈ state'.hoistedFunctions := by
+  induction names generalizing state state' with
+  | nil =>
+      simp [Elab.requireIdentifiersVisible] at hRun
+      rcases hRun with ⟨_hUnit, rfl⟩
+      exact hMem
+  | cons name rest ih =>
+      unfold Elab.requireIdentifiersVisible at hRun
+      cases hHead :
+          (Elab.requireIdentifierVisible name what).run state with
+      | error err =>
+          simp [hHead] at hRun
+      | ok headResult =>
+          rcases headResult with ⟨unitHead, stateAfterHead⟩
+          cases hTail :
+              (Elab.requireIdentifiersVisible rest what).run
+                stateAfterHead with
+          | error err =>
+              simp [hHead, hTail] at hRun
+          | ok tailResult =>
+              rcases tailResult with ⟨unitTail, stateAfterTail⟩
+              simp [hHead, hTail] at hRun
+              rcases hRun with ⟨_hUnit, rfl⟩
+              have hHeadMem :
+                  entry ∈ stateAfterHead.hoistedFunctions :=
+                requireIdentifierVisible_retains_hoisted hHead hMem
+              exact ih hTail hHeadMem
+
+theorem resolveFunction_retains_hoisted
+    {name resolved : Name} {state state' : Elab.State}
+    (hRun : (Elab.resolveFunction name).run state = .ok (resolved, state'))
+    {entry : Name × Frontend.FunctionDef}
+    (hMem : entry ∈ state.hoistedFunctions) :
+    entry ∈ state'.hoistedFunctions := by
+  unfold Elab.resolveFunction at hRun
+  cases hResolve :
+      Elab.resolveFunctionIn name state.functionScopes with
+  | some actual =>
+      simp [hResolve] at hRun
+      rcases hRun with ⟨rfl, rfl⟩
+      exact hMem
+  | none =>
+      simp [hResolve] at hRun
+      unfold Elab.throw at hRun
+      change Except.error
+          (toString "unknown Yul function " ++ toString name) =
+        Except.ok (resolved, state') at hRun
+      cases hRun
+
+mutual
+  def rawExprSize : Raw.Expr → Nat
+    | .literal _ => 1
+    | .identifier _ => 1
+    | .functionCall _ args => rawExprListSize args + 1
+
+  def rawExprListSize : List Raw.Expr → Nat
+    | [] => 0
+    | expr :: rest => rawExprSize expr + rawExprListSize rest + 1
+end
+
+mutual
+  theorem Expr.elaborate_retains_hoisted
+      {rawExpr : Raw.Expr} {frontendExpr : Frontend.Expr}
+      {state state' : Elab.State}
+      (hRun :
+        (Elab.Expr.elaborate rawExpr).run state =
+          .ok (frontendExpr, state'))
+      {entry : Name × Frontend.FunctionDef}
+      (hMem : entry ∈ state.hoistedFunctions) :
+      entry ∈ state'.hoistedFunctions := by
+    cases rawExpr with
+    | literal literal =>
+        cases literal <;>
+          simp [Elab.Expr.elaborate, Elab.Literal.elaborate] at hRun
+        all_goals
+          rcases hRun with ⟨rfl, rfl⟩
+          exact hMem
+    | identifier name =>
+        cases hRequire :
+            (Elab.requireIdentifierVisible name "expression").run state with
+        | error err =>
+            simp [Elab.Expr.elaborate, hRequire] at hRun
+        | ok requireResult =>
+            rcases requireResult with ⟨unitRequire, stateAfterRequire⟩
+            simp [Elab.Expr.elaborate, hRequire] at hRun
+            rcases hRun with ⟨rfl, rfl⟩
+            exact
+              requireIdentifierVisible_retains_hoisted hRequire hMem
+    | functionCall callee args =>
+        by_cases hMemoryguard : callee = "memoryguard"
+        · subst callee
+          cases args with
+          | nil =>
+              simp [Elab.Expr.elaborate] at hRun
+              unfold Elab.throw at hRun
+              cases hRun
+          | cons only rest =>
+              cases rest with
+              | nil =>
+                  cases hArg :
+                      (Elab.Expr.elaborate only).run state with
+                  | error err =>
+                      simp [Elab.Expr.elaborate, hArg] at hRun
+                  | ok argResult =>
+                      rcases argResult with ⟨frontendArg, stateAfterArg⟩
+                      simp [Elab.Expr.elaborate, hArg] at hRun
+                      rcases hRun with ⟨rfl, rfl⟩
+                      exact Expr.elaborate_retains_hoisted hArg hMem
+              | cons second rest =>
+                  simp [Elab.Expr.elaborate] at hRun
+                  unfold Elab.throw at hRun
+                  cases hRun
+        · by_cases hClz : callee = "clz"
+          · subst callee
+            cases args with
+            | nil =>
+                simp [Elab.Expr.elaborate] at hRun
+                unfold Elab.throw at hRun
+                cases hRun
+            | cons only rest =>
+                cases rest with
+                | nil =>
+                    cases hArg :
+                        (Elab.Expr.elaborate only).run state with
+                    | error err =>
+                        simp [Elab.Expr.elaborate, hArg] at hRun
+                    | ok argResult =>
+                        rcases argResult with ⟨frontendArg, stateAfterArg⟩
+                        cases hHelper :
+                            Elab.ensureClzHelper.run stateAfterArg with
+                        | error err =>
+                            simp [Elab.Expr.elaborate, hArg, hHelper]
+                              at hRun
+                        | ok helperResult =>
+                            rcases helperResult with
+                              ⟨helper, stateAfterHelper⟩
+                            simp [Elab.Expr.elaborate, hArg, hHelper]
+                              at hRun
+                            rcases hRun with ⟨rfl, rfl⟩
+                            have hArgMem :
+                                entry ∈ stateAfterArg.hoistedFunctions :=
+                              Expr.elaborate_retains_hoisted hArg hMem
+                            exact
+                              ensureClzHelper_retains_hoisted hHelper
+                                hArgMem
+                | cons second rest =>
+                    simp [Elab.Expr.elaborate] at hRun
+                    unfold Elab.throw at hRun
+                    cases hRun
+          · cases hArgs :
+                (Elab.Expr.List.elaborate args).run state with
+            | error err =>
+                simp [Elab.Expr.elaborate, hMemoryguard, hClz, hArgs]
+                  at hRun
+            | ok argsResult =>
+                rcases argsResult with ⟨frontendArgs, stateAfterArgs⟩
+                have hArgsMem :
+                    entry ∈ stateAfterArgs.hoistedFunctions :=
+                  Expr.List.elaborate_retains_hoisted hArgs hMem
+                cases hKind : CallClass.classifyCall callee with
+                | primitive =>
+                    simp [Elab.Expr.elaborate, hMemoryguard, hClz, hArgs,
+                      hKind] at hRun
+                    rcases hRun with ⟨rfl, rfl⟩
+                    exact hArgsMem
+                | objectBuiltin =>
+                    simp [Elab.Expr.elaborate, hMemoryguard, hClz, hArgs,
+                      hKind] at hRun
+                    rcases hRun with ⟨rfl, rfl⟩
+                    exact hArgsMem
+                | dialectBuiltin =>
+                    simp [Elab.Expr.elaborate, hMemoryguard, hClz, hArgs,
+                      hKind] at hRun
+                    rcases hRun with ⟨rfl, rfl⟩
+                    exact hArgsMem
+                | user =>
+                    cases hResolve :
+                        (Elab.resolveFunction callee).run
+                          stateAfterArgs with
+                    | error err =>
+                        simp [Elab.Expr.elaborate, hMemoryguard, hClz,
+                          hArgs, hKind, hResolve] at hRun
+                    | ok resolveResult =>
+                        rcases resolveResult with
+                          ⟨resolved, stateAfterResolve⟩
+                        simp [Elab.Expr.elaborate, hMemoryguard, hClz,
+                          hArgs, hKind, hResolve] at hRun
+                        rcases hRun with ⟨rfl, rfl⟩
+                        exact
+                          resolveFunction_retains_hoisted hResolve
+                            hArgsMem
+  termination_by rawExprSize rawExpr
+  decreasing_by
+    all_goals simp_wf
+    all_goals try subst_vars
+    all_goals try simp [rawExprSize, rawExprListSize]
+    all_goals omega
+
+  theorem Expr.List.elaborate_retains_hoisted
+      {rawExprs : List Raw.Expr} {frontendExprs : List Frontend.Expr}
+      {state state' : Elab.State}
+      (hRun :
+        (Elab.Expr.List.elaborate rawExprs).run state =
+          .ok (frontendExprs, state'))
+      {entry : Name × Frontend.FunctionDef}
+      (hMem : entry ∈ state.hoistedFunctions) :
+      entry ∈ state'.hoistedFunctions := by
+    cases rawExprs with
+    | nil =>
+        simp [Elab.Expr.List.elaborate] at hRun
+        rcases hRun with ⟨rfl, rfl⟩
+        exact hMem
+    | cons head rest =>
+        simp only [Elab.Expr.List.elaborate] at hRun
+        cases hHead : (Elab.Expr.elaborate head).run state with
+        | error err =>
+            simp [hHead] at hRun
+        | ok headResult =>
+            rcases headResult with ⟨frontendHead, stateAfterHead⟩
+            cases hTail :
+                (Elab.Expr.List.elaborate rest).run stateAfterHead with
+            | error err =>
+                simp [hHead, hTail] at hRun
+            | ok tailResult =>
+                rcases tailResult with ⟨frontendTail, stateAfterTail⟩
+                simp [hHead, hTail] at hRun
+                rcases hRun with ⟨rfl, rfl⟩
+                have hHeadMem :
+                    entry ∈ stateAfterHead.hoistedFunctions :=
+                  Expr.elaborate_retains_hoisted hHead hMem
+                exact
+                  Expr.List.elaborate_retains_hoisted hTail hHeadMem
+  termination_by rawExprListSize rawExprs
+  decreasing_by
+    all_goals simp_wf
+    all_goals try subst_vars
+    all_goals try simp [rawExprSize, rawExprListSize]
+    all_goals omega
+end
+
 theorem elaborateCodeStmts_retains_dispatcher
     {rawStmts : List Raw.Stmt}
     {dispatcherAcc dispatcherOut : List Frontend.Stmt}

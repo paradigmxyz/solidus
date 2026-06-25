@@ -111,6 +111,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.freshNonFunctionBindingNameFrom_retains_hoisted
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.freshNonFunctionBindingName_retains_hoisted
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.ensureClzHelper_retains_hoisted
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.localFunctionScope_retains_hoisted
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.requireIdentifierVisible_retains_hoisted
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.requireIdentifiersVisible_retains_hoisted
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.resolveFunction_retains_hoisted
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Expr.elaborate_retains_hoisted
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Expr.List.elaborate_retains_hoisted
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_retains_dispatcher
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_retains_topFunctions
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_function_mem
@@ -321,6 +327,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.freshNonFunctionBindingNameFrom_retains_hoisted
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.freshNonFunctionBindingName_retains_hoisted
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.ensureClzHelper_retains_hoisted
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.localFunctionScope_retains_hoisted
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.requireIdentifierVisible_retains_hoisted
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.requireIdentifiersVisible_retains_hoisted
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.resolveFunction_retains_hoisted
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Expr.elaborate_retains_hoisted
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Expr.List.elaborate_retains_hoisted
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_retains_dispatcher
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_retains_topFunctions
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_function_mem
