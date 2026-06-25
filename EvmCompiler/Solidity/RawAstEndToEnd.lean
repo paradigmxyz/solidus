@@ -2124,6 +2124,39 @@ def toStmtListOccurrenceRun
     hRun.hSplit hRun.hPrefix hRun.hPrefixSource hRun.hStmt
     hRun.hStmtSource hRun.hRest
 
+def ofStmtListOccurrenceRun
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {stmts : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      StmtListOccurrenceRun hEvidence model prim prefixFuel stmts state) :
+    SplitFocusedRun hEvidence model prim prefixFuel stmts state where
+  hListOccurrence := hRun.occurrence
+  pre := hRun.pre
+  stmt := hRun.stmt
+  rest := hRun.rest
+  hSplit := hRun.hSplit
+  hStmtOccurrence := hRun.hOccurrence
+  stateBeforeStmt := hRun.stateBeforeStmt
+  afterStmt := hRun.afterStmt
+  afterRest := hRun.afterRest
+  prefixShared := hRun.prefixShared
+  prefixVars := hRun.prefixVars
+  stmtShared := hRun.stmtShared
+  stmtVars := hRun.stmtVars
+  hPrefix := hRun.hPrefix
+  hPrefixSource := hRun.hPrefixSource
+  hStmt := hRun.hStmt
+  hStmtSource := hRun.hStmtSource
+  hRest := hRun.hRest
+
 theorem execSeq
     {object : Frontend.Object}
     {ordered : Yul.OrderedProgram}
@@ -4244,6 +4277,22 @@ def ofFocusedGeneratedSplit
     BodyRouteRun hFocused.routeEvidence.yulEvidence
       model prim prefixFuel state :=
   ofSplitFocused hFocused.routeEvidence.route hRun
+
+def splitFocused
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {state : σ}
+    (hRun :
+      BodyRouteRun hEvidence model prim prefixFuel state) :
+    StmtListOccurrenceRun.SplitFocusedRun hEvidence model prim
+      prefixFuel hRun.yulBody state :=
+  StmtListOccurrenceRun.SplitFocusedRun.ofStmtListOccurrenceRun hRun.run
 
 theorem occurrence
     {object : Frontend.Object}
