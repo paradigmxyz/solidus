@@ -99,6 +99,11 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationRoute
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListElaborationRoute
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.frontendStmtListUserCall_of_mem
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.retain
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_of_stmt_mem
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_head
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_tail
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationRoute.toCodeRoute
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.pushIdentifierScope_retains_hoisted
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.popIdentifierScope_retains_hoisted
@@ -337,6 +342,11 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtUserCall.elaborate_route
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.elaborate_route
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListUserCall.elaborate_route
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.frontendStmtListUserCall_of_mem
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.retain
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_of_stmt_mem
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_head
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_tail
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationRoute.toCodeRoute
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.pushIdentifierScope_retains_hoisted
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.popIdentifierScope_retains_hoisted

@@ -395,6 +395,79 @@ inductive CodeElaborationRoute (state : Elab.State)
           contextFn.body →
           CodeElaborationRoute state functionName args dispatcher
 
+theorem frontendStmtListUserCall_of_mem
+    {functionName : Frontend.Name} {args : List Frontend.Expr}
+    {stmt : Frontend.Stmt} {stmts : List Frontend.Stmt}
+    (hMem : stmt ∈ stmts)
+    (hStmt :
+      FrontendOccurrence.StmtUserCall functionName args stmt) :
+    FrontendOccurrence.StmtListUserCall functionName args stmts := by
+  induction stmts with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      simp only [List.mem_cons] at hMem
+      rcases hMem with hHere | hTail
+      · subst head
+        exact FrontendOccurrence.StmtListUserCall.head hStmt
+      · exact FrontendOccurrence.StmtListUserCall.tail (ih hTail)
+
+namespace CodeElaborationRoute
+
+theorem retain
+    {state state' : Elab.State} {functionName : Name}
+    {args : List Frontend.Expr} {dispatcher : List Frontend.Stmt}
+    (hRoute : CodeElaborationRoute state functionName args dispatcher)
+    (hRetain :
+      ∀ {entry : Name × Frontend.FunctionDef},
+        entry ∈ state.hoistedFunctions →
+          entry ∈ state'.hoistedFunctions) :
+    CodeElaborationRoute state' functionName args dispatcher := by
+  cases hRoute with
+  | dispatcher hDispatcher =>
+      exact CodeElaborationRoute.dispatcher hDispatcher
+  | functionBody contextName contextFn hContext hBody =>
+      exact
+        CodeElaborationRoute.functionBody contextName contextFn
+          (hRetain hContext) hBody
+
+theorem dispatcher_of_stmt_mem
+    {state : Elab.State} {functionName : Name}
+    {args : List Frontend.Expr} {stmt : Frontend.Stmt}
+    {dispatcher : List Frontend.Stmt}
+    (hMem : stmt ∈ dispatcher)
+    (hStmt : FrontendOccurrence.StmtUserCall functionName args stmt) :
+  CodeElaborationRoute state functionName args dispatcher :=
+  CodeElaborationRoute.dispatcher
+    (frontendStmtListUserCall_of_mem hMem hStmt)
+
+theorem dispatcher_head
+    {state : Elab.State} {functionName : Name}
+    {args : List Frontend.Expr} {stmt : Frontend.Stmt}
+    {rest : List Frontend.Stmt}
+    (hStmt : FrontendOccurrence.StmtUserCall functionName args stmt) :
+    CodeElaborationRoute state functionName args (stmt :: rest) :=
+  CodeElaborationRoute.dispatcher
+    (FrontendOccurrence.StmtListUserCall.head hStmt)
+
+theorem dispatcher_tail
+    {state : Elab.State} {functionName : Name}
+    {args : List Frontend.Expr} {stmt : Frontend.Stmt}
+    {rest : List Frontend.Stmt}
+    (hRoute : CodeElaborationRoute state functionName args rest) :
+    CodeElaborationRoute state functionName args (stmt :: rest) := by
+  cases hRoute with
+  | dispatcher hDispatcher =>
+      exact
+        CodeElaborationRoute.dispatcher
+          (FrontendOccurrence.StmtListUserCall.tail hDispatcher)
+  | functionBody contextName contextFn hContext hBody =>
+      exact
+        CodeElaborationRoute.functionBody contextName contextFn
+          hContext hBody
+
+end CodeElaborationRoute
+
 namespace StmtListElaborationRoute
 
 theorem toCodeRoute
