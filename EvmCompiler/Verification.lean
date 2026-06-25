@@ -578,6 +578,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.x_static_mode_violation_after_stack_limit_checks
 #check EvmCompiler.Assembly.GasfulBridge.x_sstore_stipend_outOfGas_after_static_check
 #check EvmCompiler.Assembly.GasfulBridge.x_create_initcode_outOfGas_after_sstore_check
+#check EvmCompiler.Assembly.GasfulBridge.x_after_prechecks_of_step
 #check EvmCompiler.Assembly.GasfulBridge.x_jumpdest_continues_after_charges
 #check EvmCompiler.Assembly.GasfulBridge.raw_jumpdest_executes_after_charges
 #check EvmCompiler.Assembly.GasfulBridge.jumpdest_chargedStepRel_after_charges
@@ -1063,6 +1064,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_static_mode_violation_after_stack_limit_checks
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_sstore_stipend_outOfGas_after_static_check
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_create_initcode_outOfGas_after_sstore_check
+#print axioms EvmCompiler.Assembly.GasfulBridge.x_after_prechecks_of_step
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_jumpdest_continues_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.raw_jumpdest_executes_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.jumpdest_chargedStepRel_after_charges

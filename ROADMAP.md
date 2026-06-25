@@ -48,6 +48,10 @@ Gasful EVM bridge checkpoint:
   transcript after gas charges, and the gas/control-erased charged-step
   relation. Add the matching gasful `STOP` successful-halt slice at the same
   checked precheck/`EVM.step` boundary.
+- [x] Factor the successful gasful side through
+  `GasfulBridge.x_after_prechecks_of_step`, a generic post-precheck theorem
+  that delegates to the actual `EVM.step` parent-frame result and then applies
+  the `EVM.X` continuation/halt rule without closing CALL/CREATE children.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
