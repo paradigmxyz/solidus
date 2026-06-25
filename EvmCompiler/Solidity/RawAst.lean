@@ -1110,21 +1110,26 @@ def collectTopFunctions : List Raw.Stmt → ElabM (List (Name × Name))
           pure ((name, name) :: tail)
       | _ => collectTopFunctions rest
 
+def elaborateCodeStmts :
+    List Raw.Stmt → List Frontend.Stmt →
+      List (Name × Frontend.FunctionDef) →
+        ElabM (List Frontend.Stmt × List (Name × Frontend.FunctionDef))
+  | [], dispatcher, topFunctions => pure (dispatcher, topFunctions)
+  | stmt :: rest, dispatcher, topFunctions => do
+      match stmt with
+      | .functionDefinition name params returns body =>
+          let fn ← FunctionDef.elaborate params returns body
+          elaborateCodeStmts rest dispatcher ((name, fn) :: topFunctions)
+      | _ =>
+          let stmt ← Stmt.elaborate stmt
+          elaborateCodeStmts rest (stmt :: dispatcher) topFunctions
+
 def elaborateCodeAction (stmts : List Raw.Stmt) :
     ElabM (List Frontend.Stmt) := do
   pushIdentifierScope
   let topScope ← collectTopFunctions stmts
   pushFunctionScope topScope
-  let mut dispatcher : List Frontend.Stmt := []
-  let mut topFunctions : List (Name × Frontend.FunctionDef) := []
-  for stmt in stmts do
-    match stmt with
-    | .functionDefinition name params returns body =>
-        let fn ← FunctionDef.elaborate params returns body
-        topFunctions := (name, fn) :: topFunctions
-    | _ =>
-        let stmt ← Stmt.elaborate stmt
-        dispatcher := stmt :: dispatcher
+  let (dispatcher, topFunctions) ← elaborateCodeStmts stmts [] []
   popFunctionScope
   popIdentifierScope
   modify fun state =>
