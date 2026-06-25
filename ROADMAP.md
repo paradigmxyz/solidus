@@ -175,9 +175,11 @@ Next raw frontend layer:
   `RawOccurrence.Elab.ExprClzCall.elaborate` proves raw `clz(arg)` expression
   occurrences, including nested call-argument occurrences, elaborate to
   frontend user-call occurrences of the generated helper while preserving the
-  recorded helper name. Full statement/list-level raw-`clz` source
-  preservation and nested hoist/alpha-renaming semantic preservation remain
-  open.
+  recorded helper name. `RawOccurrence.Elab.StmtClzCall.elaborate` extends the
+  same source-to-helper elaboration preservation through raw statements,
+  statement lists, switch cases, blocks, loops, and nested function bodies.
+  Code-core/decode-facing raw-`clz` semantic composition and nested
+  hoist/alpha-renaming semantic preservation remain open.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose

@@ -73,11 +73,17 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.ensureClzHelper_existing
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.ExprClzCall
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.ExprListClzCall
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtClzCall
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListClzCall
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListClzCall
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Expr.elaborate_preserves_existing_clzHelperName
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Expr.List.elaborate_preserves_existing_clzHelperName
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Expr.elaborate_clz_direct
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.ExprClzCall.elaborate
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.ExprListClzCall.elaborate
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.StmtClzCall.elaborate
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.StmtListClzCall.elaborate
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.CaseListClzCall.elaborate
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.of_yulOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.call_succ
@@ -376,6 +382,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Expr.elaborate_clz_direct
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.ExprClzCall.elaborate
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.ExprListClzCall.elaborate
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.StmtClzCall.elaborate
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.StmtListClzCall.elaborate
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.CaseListClzCall.elaborate
 #print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_clzHelper_call_value_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_clzHelper_call_value_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_clzHelper_call_value_succ
