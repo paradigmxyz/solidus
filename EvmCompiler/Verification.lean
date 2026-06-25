@@ -18,6 +18,7 @@ import EvmCompiler.Assembly.Compact
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
 import EvmCompiler.Solidity.RawAstPublic
 import EvmCompiler.Solidity.RawAstSemantics
+import EvmCompiler.Yul.Occurrence
 import EvmCompiler.Yul.FunctionsInteractionProgram
 import EvmCompiler.Yul.EndToEnd
 
@@ -161,6 +162,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_focusedGeneratedCallOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_focusedGeneratedCallOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_focusedGeneratedCallOccurrence
+#print axioms EvmCompiler.Yul.YulOccurrence.StmtListUserCall.exists_split_stmt
+#print axioms EvmCompiler.Yul.YulOccurrence.StmtListUserCall.execSeq_prefix_cons_succ
+#print axioms EvmCompiler.Yul.YulOccurrence.StmtListUserCall.exists_split_stmt_execSeq_prefix
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzExpansionOk
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_hoistedFunctionsRetained
