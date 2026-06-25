@@ -2482,6 +2482,294 @@ theorem machineBinaryResultCompatible_keccak256 :
   simp_all [EvmYul.MachineState.keccak256]
   exact ⟨rfl, rfl, rfl, rfl⟩
 
+structure StateDataRel
+    (left right : EvmYul.State EvmYul.OperationType.EVM) : Prop where
+  world : OpenWorld.ofEVMState left = OpenWorld.ofEVMState right
+  initialAccounts : left.σ₀ = right.σ₀
+  totalGasUsedInBlock : left.totalGasUsedInBlock = right.totalGasUsedInBlock
+  transactionReceipts : left.transactionReceipts = right.transactionReceipts
+  executionEnv : left.executionEnv = right.executionEnv
+  blocks : left.blocks = right.blocks
+  genesisBlockHeader : left.genesisBlockHeader = right.genesisBlockHeader
+
+theorem OpenStateRel.stateDataRel
+    {left right : EVMState} (hRel : OpenStateRel left right) :
+    StateDataRel left.toState right.toState := by
+  have hFrame := hRel.openData.frame
+  cases left
+  cases right
+  simp [eraseOpenWorldData, eraseControl, eraseGas] at hFrame
+  exact
+    { world := hRel.openData.world
+      initialAccounts := hFrame.1.1.1
+      totalGasUsedInBlock := hFrame.1.1.2.1
+      transactionReceipts := hFrame.1.1.2.2.1
+      executionEnv := hFrame.1.1.2.2.2.1
+      blocks := hFrame.1.1.2.2.2.2.1
+      genesisBlockHeader := hFrame.1.1.2.2.2.2.2 }
+
+theorem OpenStateRel.withState
+    {left right : EVMState}
+    {leftState rightState : EvmYul.State EvmYul.OperationType.EVM}
+    (hRel : OpenStateRel left right)
+    (hState : StateDataRel leftState rightState) :
+    OpenStateRel { left with toState := leftState }
+      { right with toState := rightState } := by
+  constructor
+  · constructor
+    · exact hState.world
+    · have hFrame := hRel.openData.frame
+      cases left
+      cases right
+      cases leftState
+      cases rightState
+      simp [eraseOpenWorldData, eraseControl, eraseGas] at hFrame ⊢
+      exact
+        ⟨⟨⟨hState.initialAccounts, hState.totalGasUsedInBlock,
+              hState.transactionReceipts, hState.executionEnv,
+              hState.blocks, hState.genesisBlockHeader⟩,
+            hFrame.1.2⟩,
+          hFrame.2⟩
+  · exact hRel.pc_eq
+
+def StateReadCompatible
+    (f : EvmYul.State EvmYul.OperationType.EVM → Word) : Prop :=
+  ∀ {left right}, StateDataRel left right → f left = f right
+
+def StateUnaryCompatible
+    (f : EvmYul.State EvmYul.OperationType.EVM → Word →
+      EvmYul.State EvmYul.OperationType.EVM × Word) : Prop :=
+  ∀ {left right} (a : Word),
+    StateDataRel left right →
+      StateDataRel (f left a).1 (f right a).1 ∧
+        (f left a).2 = (f right a).2
+
+def StateBinaryCompatible
+    (f : EvmYul.State EvmYul.OperationType.EVM → Word → Word →
+      EvmYul.State EvmYul.OperationType.EVM) : Prop :=
+  ∀ {left right} (a b : Word),
+    StateDataRel left right → StateDataRel (f left a b) (f right a b)
+
+theorem openCompatible_state
+    {f : EvmYul.State EvmYul.OperationType.EVM → Word}
+    (hCompatible : StateReadCompatible f) :
+    OpenCompatibleStep (.state f) := by
+  intro left right leftNext hRel hLeft
+  have hStack := hRel.stack_eq
+  have hResult := hCompatible hRel.stateDataRel
+  simp [PrimStep.run, EvmYul.EVM.stateOp] at hLeft
+  simp only [Id.run, Except.ok.injEq] at hLeft
+  subst leftNext
+  refine ⟨right.replaceStackAndIncrPC
+    (right.stack.push (f right.toState)), ?_, ?_⟩
+  · simp [PrimStep.run, EvmYul.EVM.stateOp]
+    rfl
+  · apply OpenStateRel.replaceStackAndIncrPC hRel
+    rw [hStack, hResult]
+
+theorem openCompatible_unaryState
+    {f : EvmYul.State EvmYul.OperationType.EVM → Word →
+      EvmYul.State EvmYul.OperationType.EVM × Word}
+    (hCompatible : StateUnaryCompatible f) :
+    OpenCompatibleStep (.unaryState f) := by
+  intro left right leftNext hRel hLeft
+  have hStack := hRel.stack_eq
+  cases hPop : right.stack.pop with
+  | none =>
+      have hLeftPop : left.stack.pop = none := by simpa [hStack]
+      simp [PrimStep.run, EvmYul.EVM.unaryStateOp, hLeftPop] at hLeft
+  | some values =>
+      rcases values with ⟨rest, a⟩
+      have hLeftPop : left.stack.pop = some (rest, a) := by
+        simpa [hStack] using hPop
+      simp [PrimStep.run, EvmYul.EVM.unaryStateOp, hLeftPop] at hLeft
+      simp only [Id.run, Except.ok.injEq] at hLeft
+      subst leftNext
+      let leftResult := f left.toState a
+      let rightResult := f right.toState a
+      have hResult := hCompatible a hRel.stateDataRel
+      have hState : StateDataRel leftResult.1 rightResult.1 := hResult.1
+      have hValue : leftResult.2 = rightResult.2 := hResult.2
+      let rightState : EVMState := { right with toState := rightResult.1 }
+      refine ⟨rightState.replaceStackAndIncrPC (rest.push rightResult.2), ?_, ?_⟩
+      · simp [PrimStep.run, EvmYul.EVM.unaryStateOp, hPop,
+          rightState, rightResult]
+        rfl
+      · apply OpenStateRel.replaceStackAndIncrPC (hRel.withState hState)
+        exact congrArg rest.push hValue
+
+theorem openCompatible_binaryState
+    {f : EvmYul.State EvmYul.OperationType.EVM → Word → Word →
+      EvmYul.State EvmYul.OperationType.EVM}
+    (hCompatible : StateBinaryCompatible f) :
+    OpenCompatibleStep (.binaryState f) := by
+  intro left right leftNext hRel hLeft
+  have hStack := hRel.stack_eq
+  have hEnv := hRel.stateDataRel.executionEnv
+  cases hPerm : right.executionEnv.perm with
+  | false =>
+      have hLeftPerm : left.executionEnv.perm = false := by simpa [hEnv]
+      simp [PrimStep.run, hLeftPerm] at hLeft
+  | true =>
+      have hLeftPerm : left.executionEnv.perm = true := by simpa [hEnv]
+      cases hPop : right.stack.pop2 with
+      | none =>
+          have hLeftPop : left.stack.pop2 = none := by simpa [hStack]
+          simp [PrimStep.run, EvmYul.EVM.binaryStateOp,
+            hLeftPerm, hLeftPop] at hLeft
+      | some values =>
+          rcases values with ⟨rest, a, b⟩
+          have hLeftPop : left.stack.pop2 = some (rest, a, b) := by
+            simpa [hStack] using hPop
+          simp [PrimStep.run, EvmYul.EVM.binaryStateOp,
+            hLeftPerm, hLeftPop] at hLeft
+          simp only [Id.run, Except.ok.injEq] at hLeft
+          subst leftNext
+          let leftState := f left.toState a b
+          let rightStateData := f right.toState a b
+          have hState : StateDataRel leftState rightStateData :=
+            hCompatible a b hRel.stateDataRel
+          let rightState : EVMState := { right with toState := rightStateData }
+          refine ⟨rightState.replaceStackAndIncrPC rest, ?_, ?_⟩
+          · simp [PrimStep.run, EvmYul.EVM.binaryStateOp, hPerm, hPop,
+              rightState, rightStateData]
+            rfl
+          · apply OpenStateRel.replaceStackAndIncrPC (hRel.withState hState)
+            rfl
+
+def StateUnaryReadCompatible
+    (f : EvmYul.State EvmYul.OperationType.EVM → Word → Word) : Prop :=
+  ∀ {left right} (a : Word),
+    StateDataRel left right → f left a = f right a
+
+theorem stateUnaryCompatible_of_read
+    {f : EvmYul.State EvmYul.OperationType.EVM → Word → Word}
+    (hCompatible : StateUnaryReadCompatible f) :
+    StateUnaryCompatible (fun state value => (state, f state value)) := by
+  intro left right a hRel
+  exact ⟨hRel, hCompatible a hRel⟩
+
+theorem stateReadCompatible_coinBase :
+    StateReadCompatible
+      (.ofNat ∘ Fin.val ∘ EvmYul.State.coinBase) := by
+  intro left right hRel
+  simp [Function.comp_def, EvmYul.State.coinBase, hRel.executionEnv]
+
+theorem stateReadCompatible_timeStamp :
+    StateReadCompatible EvmYul.State.timeStamp := by
+  intro left right hRel
+  simp [EvmYul.State.timeStamp, hRel.executionEnv]
+
+theorem stateReadCompatible_number :
+    StateReadCompatible EvmYul.State.number := by
+  intro left right hRel
+  simp [EvmYul.State.number, hRel.executionEnv]
+
+theorem stateReadCompatible_gasLimit :
+    StateReadCompatible EvmYul.State.gasLimit := by
+  intro left right hRel
+  simp [EvmYul.State.gasLimit, hRel.executionEnv]
+
+theorem stateReadCompatible_chainId :
+    StateReadCompatible EvmYul.State.chainId := by
+  intro left right hRel
+  rfl
+
+theorem stateUnaryReadCompatible_calldataload :
+    StateUnaryReadCompatible EvmYul.State.calldataload := by
+  intro left right a hRel
+  simp [EvmYul.State.calldataload, hRel.executionEnv]
+
+theorem stateUnaryReadCompatible_blockHash :
+    StateUnaryReadCompatible EvmYul.State.blockHash := by
+  intro left right a hRel
+  simp [EvmYul.State.blockHash, EvmYul.State.blockHashes,
+    hRel.executionEnv, hRel.blocks]
+
+structure SharedDataRel
+    (left right : EvmYul.SharedState EvmYul.OperationType.EVM) : Prop where
+  state : StateDataRel left.toState right.toState
+  machine : MachineDataRel left.toMachineState right.toMachineState
+
+theorem OpenStateRel.sharedDataRel
+    {left right : EVMState} (hRel : OpenStateRel left right) :
+    SharedDataRel left.toSharedState right.toSharedState :=
+  ⟨hRel.stateDataRel, hRel.machineDataRel⟩
+
+theorem OpenStateRel.withSharedState
+    {left right : EVMState}
+    {leftShared rightShared : EvmYul.SharedState EvmYul.OperationType.EVM}
+    (hRel : OpenStateRel left right)
+    (hShared : SharedDataRel leftShared rightShared) :
+    OpenStateRel { left with toSharedState := leftShared }
+      { right with toSharedState := rightShared } := by
+  have hState := hRel.withState hShared.state
+  have hMachine := hState.withMachineState hShared.machine
+  simpa using hMachine
+
+def SharedTernaryCompatible
+    (f : EvmYul.SharedState EvmYul.OperationType.EVM → Word → Word → Word →
+      EvmYul.SharedState EvmYul.OperationType.EVM) : Prop :=
+  ∀ {left right} (a b c : Word),
+    SharedDataRel left right → SharedDataRel (f left a b c) (f right a b c)
+
+theorem openCompatible_ternaryCopy
+    {f : EvmYul.SharedState EvmYul.OperationType.EVM → Word → Word → Word →
+      EvmYul.SharedState EvmYul.OperationType.EVM}
+    (hCompatible : SharedTernaryCompatible f) :
+    OpenCompatibleStep (.ternaryCopy f) := by
+  intro left right leftNext hRel hLeft
+  have hStack := hRel.stack_eq
+  cases hPop : right.stack.pop3 with
+  | none =>
+      have hLeftPop : left.stack.pop3 = none := by simpa [hStack]
+      simp [PrimStep.run, EvmYul.EVM.ternaryCopyOp, hLeftPop] at hLeft
+  | some values =>
+      rcases values with ⟨rest, a, b, c⟩
+      have hLeftPop : left.stack.pop3 = some (rest, a, b, c) := by
+        simpa [hStack] using hPop
+      simp [PrimStep.run, EvmYul.EVM.ternaryCopyOp, hLeftPop] at hLeft
+      simp only [Id.run, Except.ok.injEq] at hLeft
+      subst leftNext
+      let leftShared := f left.toSharedState a b c
+      let rightShared := f right.toSharedState a b c
+      have hShared : SharedDataRel leftShared rightShared :=
+        hCompatible a b c hRel.sharedDataRel
+      let rightState : EVMState := { right with toSharedState := rightShared }
+      refine ⟨rightState.replaceStackAndIncrPC rest, ?_, ?_⟩
+      · simp [PrimStep.run, EvmYul.EVM.ternaryCopyOp, hPop,
+          rightState, rightShared]
+        rfl
+      · apply OpenStateRel.replaceStackAndIncrPC
+          (hRel.withSharedState hShared)
+        rfl
+
+theorem sharedTernaryCompatible_calldatacopy :
+    SharedTernaryCompatible EvmYul.SharedState.calldatacopy := by
+  intro left right a b c hRel
+  constructor
+  · simpa [EvmYul.SharedState.calldatacopy] using hRel.state
+  · cases left
+    cases right
+    rcases hRel.machine with ⟨hActive, hMemory, hReturn, hHReturn⟩
+    have hEnv := hRel.state.executionEnv
+    simp [EvmYul.SharedState.calldatacopy] at hEnv ⊢
+    simp_all
+    exact ⟨rfl, rfl, rfl, rfl⟩
+
+theorem sharedTernaryCompatible_codeCopy :
+    SharedTernaryCompatible EvmYul.SharedState.codeCopy := by
+  intro left right a b c hRel
+  constructor
+  · simpa [EvmYul.SharedState.codeCopy] using hRel.state
+  · cases left
+    cases right
+    rcases hRel.machine with ⟨hActive, hMemory, hReturn, hHReturn⟩
+    have hEnv := hRel.state.executionEnv
+    simp [EvmYul.SharedState.codeCopy] at hEnv ⊢
+    simp_all
+    exact ⟨rfl, rfl, rfl, rfl⟩
+
 inductive FrameLocalStep : PrimStep → Prop where
   | pure {step : PrimStep} (hPure : PureStackStep step) :
       FrameLocalStep step
@@ -2491,6 +2779,23 @@ inductive FrameLocalStep : PrimStep → Prop where
   | unaryExecutionEnv
       (f : EvmYul.ExecutionEnv EvmYul.OperationType.EVM → Word → Word) :
       FrameLocalStep (.unaryExecutionEnv f)
+  | calldataload :
+      FrameLocalStep
+        (.unaryState
+          (fun state value => (state, EvmYul.State.calldataload state value)))
+  | calldatacopy :
+      FrameLocalStep (.ternaryCopy EvmYul.SharedState.calldatacopy)
+  | codecopy : FrameLocalStep (.ternaryCopy EvmYul.SharedState.codeCopy)
+  | blockhash :
+      FrameLocalStep
+        (.unaryState (fun state value => (state, EvmYul.State.blockHash state value)))
+  | coinbase :
+      FrameLocalStep
+        (.state (.ofNat ∘ Fin.val ∘ EvmYul.State.coinBase))
+  | timestamp : FrameLocalStep (.state EvmYul.State.timeStamp)
+  | number : FrameLocalStep (.state EvmYul.State.number)
+  | gaslimit : FrameLocalStep (.state EvmYul.State.gasLimit)
+  | chainid : FrameLocalStep (.state EvmYul.State.chainId)
   | returndatasize :
       FrameLocalStep (.machineState EvmYul.MachineState.returndatasize)
   | mload : FrameLocalStep .mload
@@ -2512,6 +2817,20 @@ theorem FrameLocalStep.openCompatible
   | pure hPure => exact hPure.openCompatible
   | executionEnv f => exact openCompatible_executionEnv f
   | unaryExecutionEnv f => exact openCompatible_unaryExecutionEnv f
+  | calldataload =>
+      exact openCompatible_unaryState
+        (stateUnaryCompatible_of_read stateUnaryReadCompatible_calldataload)
+  | calldatacopy =>
+      exact openCompatible_ternaryCopy sharedTernaryCompatible_calldatacopy
+  | codecopy => exact openCompatible_ternaryCopy sharedTernaryCompatible_codeCopy
+  | blockhash =>
+      exact openCompatible_unaryState
+        (stateUnaryCompatible_of_read stateUnaryReadCompatible_blockHash)
+  | coinbase => exact openCompatible_state stateReadCompatible_coinBase
+  | timestamp => exact openCompatible_state stateReadCompatible_timeStamp
+  | number => exact openCompatible_state stateReadCompatible_number
+  | gaslimit => exact openCompatible_state stateReadCompatible_gasLimit
+  | chainid => exact openCompatible_state stateReadCompatible_chainId
   | returndatasize =>
       exact openCompatible_machineState machineReadCompatible_returndatasize
   | mload => exact openCompatible_mload machineUnaryResultCompatible_mload
@@ -2532,10 +2851,11 @@ def FrameLocalPrimOp : PrimOp → Prop
   | .add | .mul | .sub | .div | .sdiv | .mod | .smod | .addmod | .mulmod
   | .exp | .signextend | .lt | .gt | .slt | .sgt | .eq | .iszero
   | .and | .or | .xor | .not | .byte | .shl | .shr | .sar
-  | .address | .origin | .caller | .callvalue | .calldatasize | .codesize
-  | .gasprice | .returndatasize | .returndatacopy | .prevrandao | .basefee
-  | .blobhash | .blobbasefee | .pop | .mload | .mstore | .mstore8 | .mcopy
-  | .keccak256
+  | .address | .origin | .caller | .callvalue | .calldataload | .calldatasize
+  | .calldatacopy | .codesize | .codecopy | .gasprice | .returndatasize
+  | .returndatacopy | .blockhash | .coinbase | .timestamp | .number
+  | .prevrandao | .gaslimit | .chainid | .basefee | .blobhash | .blobbasefee
+  | .pop | .mload | .mstore | .mstore8 | .mcopy | .keccak256
   | .dup1 | .dup2 | .dup3 | .dup4 | .dup5 | .dup6 | .dup7 | .dup8
   | .dup9 | .dup10 | .dup11 | .dup12 | .dup13 | .dup14 | .dup15 | .dup16
   | .swap1 | .swap2 | .swap3 | .swap4 | .swap5 | .swap6 | .swap7 | .swap8
@@ -2557,6 +2877,15 @@ theorem frameLocalStep_of_continuingStep
     | exact .pure (.tri _)
     | exact .executionEnv _
     | exact .unaryExecutionEnv _
+    | exact .calldataload
+    | exact .calldatacopy
+    | exact .codecopy
+    | exact .blockhash
+    | exact .coinbase
+    | exact .timestamp
+    | exact .number
+    | exact .gaslimit
+    | exact .chainid
     | exact .returndatasize
     | exact .returndatacopy
     | exact .pure .pop

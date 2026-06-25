@@ -179,9 +179,10 @@ Gasful EVM bridge checkpoint:
   ternary, `POP`, `DUP`, and `SWAP` charged successes now supply related open
   successors to the recursive continuation without requiring identical states.
 - [x] Lift gas-insensitive frame-local primitives over `OpenStateRel`:
-  execution-environment reads, memory load/store/copy/hash, return-data size
-  and copy, and their checked opcode classifier now compose charged recursive
-  continuations without a caller-provided compatibility witness.
+  execution-environment and protected block reads, calldata/code copies,
+  memory load/store/copy/hash, return-data size and copy, and their checked
+  opcode classifier now compose charged recursive continuations without a
+  caller-provided compatibility witness.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
