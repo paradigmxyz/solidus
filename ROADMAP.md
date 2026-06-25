@@ -128,6 +128,12 @@ Gasful EVM bridge checkpoint:
   response-gas bridge helpers: the open parent frame remains cost-model-free,
   while `GasfulBridge` relates `response.returnedGas` to the concrete
   post-CALL/CREATE parent gas and records the one-exchange open transcript.
+- [x] Compose successful CALL/CREATE external-response steps into
+  `RunRefinesOpen`: checked raw one-exchange bytecode lemmas plus
+  `GasfulBridge.runRefinesOpen_call_external_success` and
+  `GasfulBridge.runRefinesOpen_create_external_success` bind the actual gasful
+  parent-frame step to the open strategy response relation; the child response
+  relation, EIP-150 accounting, and returned gas remain explicit bridge data.
 - [x] Add the matching terminal `RETURN`/`REVERT` compositions:
   stack-pop-aware actual `EVM.step` lemmas, gas/control-erased output-state
   relations, open raw-bytecode halt execution with concrete return bytes, and
