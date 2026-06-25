@@ -192,9 +192,16 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_retains_dispatcher
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_retains_topFunctions
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_function_mem
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_function_mem_retains_hoisted
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_stmt_mem
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_stmt_mem_retains_hoisted
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_stmt_codeRoute_of_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_function_mem
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_function_mem_retains_hoisted
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_stmt_mem
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_stmt_codeRoute_of_mem
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_functionBody_codeRoute_of_mem
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_codeRoute
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Expr.List.elaborate_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.RawStmtNotFunctionDefinition
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.CodeRouteBelow
@@ -483,9 +490,16 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_retains_dispatcher
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_retains_topFunctions
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_function_mem
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_function_mem_retains_hoisted
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_stmt_mem
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_stmt_mem_retains_hoisted
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeStmts_stmt_codeRoute_of_mem
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_function_mem
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_function_mem_retains_hoisted
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_stmt_mem
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_stmt_codeRoute_of_mem
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_functionBody_codeRoute_of_mem
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_codeRoute
 #print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_prefixOfCodeRoute
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzExpansionOk
