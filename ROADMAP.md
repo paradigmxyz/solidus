@@ -158,6 +158,10 @@ Gasful EVM bridge checkpoint:
   relations, open raw-bytecode halt execution with concrete return bytes, and
   `GasfulBridge.runRefinesOpen_return_success` /
   `GasfulBridge.runRefinesOpen_revert_success`.
+- [x] Compose successful charged `JUMP`/`JUMPI` execution into
+  `RunRefinesOpen`: exact imported-step equations, closed open raw-bytecode
+  steps, related successor PCs/stacks, and recursive continuation wrappers now
+  complement the existing underflow and bad-destination branches.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
