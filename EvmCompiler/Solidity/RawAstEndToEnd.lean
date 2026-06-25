@@ -2157,6 +2157,63 @@ def ofStmtListOccurrenceRun
   hStmtSource := hRun.hStmtSource
   hRest := hRun.hRest
 
+def ofFocusedSplit
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {stmts pre rest : List Frontend.AstStmt}
+    {stmt : Frontend.AstStmt}
+    {state stateBeforeStmt afterStmt afterRest : σ}
+    {prefixShared stmtShared : EvmYul.SharedState .Yul}
+    {prefixVars stmtVars : EvmYul.Yul.VarStore}
+    (hListOccurrence :
+      YulOccurrence.StmtListUserCall stmts
+        hEvidence.generated hEvidence.yulArgs)
+    (hSplit : stmts = pre ++ stmt :: rest)
+    (hStmtOccurrence :
+      YulOccurrence.StmtUserCall stmt
+        hEvidence.generated hEvidence.yulArgs)
+    (hPrefix :
+      Yul.Source.Effectful.execSeq model prim
+          ((prefixFuel + 1) + pre.length) pre
+          (some ordered.program.contract) state =
+        .ok stateBeforeStmt)
+    (hPrefixSource :
+      model.source stateBeforeStmt = .Ok prefixShared prefixVars)
+    (hStmt :
+      FocusedStmtRun hEvidence model prim stateBeforeStmt
+        prefixFuel stmt afterStmt)
+    (hStmtSource :
+      model.source afterStmt = .Ok stmtShared stmtVars)
+    (hRest :
+      Yul.Source.Effectful.execSeq model prim prefixFuel rest
+          (some ordered.program.contract) afterStmt =
+        .ok afterRest) :
+    SplitFocusedRun hEvidence model prim prefixFuel stmts state where
+  hListOccurrence := hListOccurrence
+  pre := pre
+  stmt := stmt
+  rest := rest
+  hSplit := hSplit
+  hStmtOccurrence := hStmtOccurrence
+  stateBeforeStmt := stateBeforeStmt
+  afterStmt := afterStmt
+  afterRest := afterRest
+  prefixShared := prefixShared
+  prefixVars := prefixVars
+  stmtShared := stmtShared
+  stmtVars := stmtVars
+  hPrefix := hPrefix
+  hPrefixSource := hPrefixSource
+  hStmt := hStmt
+  hStmtSource := hStmtSource
+  hRest := hRest
+
 theorem execSeq
     {object : Frontend.Object}
     {ordered : Yul.OrderedProgram}
@@ -2175,6 +2232,50 @@ theorem execSeq
         (some ordered.program.contract) state =
       .ok hRun.afterRest :=
   hRun.toStmtListOccurrenceRun.execSeq
+
+theorem execSeq_of_focused_split
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {stmts pre rest : List Frontend.AstStmt}
+    {stmt : Frontend.AstStmt}
+    {state stateBeforeStmt afterStmt afterRest : σ}
+    {prefixShared stmtShared : EvmYul.SharedState .Yul}
+    {prefixVars stmtVars : EvmYul.Yul.VarStore}
+    (hListOccurrence :
+      YulOccurrence.StmtListUserCall stmts
+        hEvidence.generated hEvidence.yulArgs)
+    (hSplit : stmts = pre ++ stmt :: rest)
+    (hStmtOccurrence :
+      YulOccurrence.StmtUserCall stmt
+        hEvidence.generated hEvidence.yulArgs)
+    (hPrefix :
+      Yul.Source.Effectful.execSeq model prim
+          ((prefixFuel + 1) + pre.length) pre
+          (some ordered.program.contract) state =
+        .ok stateBeforeStmt)
+    (hPrefixSource :
+      model.source stateBeforeStmt = .Ok prefixShared prefixVars)
+    (hStmt :
+      FocusedStmtRun hEvidence model prim stateBeforeStmt
+        prefixFuel stmt afterStmt)
+    (hStmtSource :
+      model.source afterStmt = .Ok stmtShared stmtVars)
+    (hRest :
+      Yul.Source.Effectful.execSeq model prim prefixFuel rest
+          (some ordered.program.contract) afterStmt =
+        .ok afterRest) :
+    Yul.Source.Effectful.execSeq model prim
+        ((prefixFuel + 1) + pre.length) stmts
+        (some ordered.program.contract) state =
+      .ok afterRest :=
+  (ofFocusedSplit hListOccurrence hSplit hStmtOccurrence
+    hPrefix hPrefixSource hStmt hStmtSource hRest).execSeq
 
 theorem split
     {object : Frontend.Object}
