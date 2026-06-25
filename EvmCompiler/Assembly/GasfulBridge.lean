@@ -1426,6 +1426,139 @@ theorem raw_continuing_prim_refines_step_after_charges
         hStep hMsize hDecode hPc hOpen,
       hSame⟩
 
+def continuingPrimStaticSensitive : PrimOp → Prop
+  | .sstore | .tstore | .log0 | .log1 | .log2 | .log3 | .log4 => True
+  | _ => False
+
+def continuingPrimStaticPermits (state : EVMState) (op : PrimOp) : Prop :=
+  continuingPrimStaticSensitive op → state.executionEnv.perm = true
+
+/-- Continuing primitives whose imported `EvmYul.step` helper can currently be
+related exactly from this module.  The excluded opcodes go through special
+concrete branches (`POP`, `MLOAD`, `RETURNDATACOPY`) or EVMYulLean's private
+`evmLogOp` helper (`LOG0..4`); they need small upstream/public helper equalities
+before joining this exact-delegation theorem. -/
+def continuingPrimEVMStepTransparent : PrimOp → Prop
+  | .returndatacopy | .pop | .mload => False
+  | .log0 | .log1 | .log2 | .log3 | .log4 => False
+  | _ => True
+
+theorem continuingPrimStaticPermits_of_static_check
+    {validJumps : Array Word} {state : EVMState} {op : PrimOp}
+    (hStatic : XStaticChecksPass validJumps state)
+    (hOp : decodedOperationAt state = op.toEVM) :
+    continuingPrimStaticPermits state op := by
+  intro hSensitive
+  cases hPerm : state.executionEnv.perm
+  · exfalso
+    exact hStatic.staticOk
+      ⟨hPerm, by
+        cases op <;>
+          simp [continuingPrimStaticSensitive, PrimOp.toEVM] at hSensitive hOp
+        all_goals simp [hOp]⟩
+  · rfl
+
+theorem evm_step_continuing_prim_after_charges
+    {fuel : Nat} {state : EVMState} {op : PrimOp} {step : PrimStep}
+    {arg : Option (Word × Nat)}
+    (hStep : op.continuingStep? = some step)
+    (hTransparent : continuingPrimEVMStepTransparent op)
+    (hStaticPermits : continuingPrimStaticPermits state op) :
+    EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+        (some (op.toEVM, arg)) (afterMemoryChargeAt state) =
+      op.step (afterEVMInstructionChargeAt state) := by
+  cases op <;>
+    simp [PrimOp.continuingStep?] at hStep
+  case returndatacopy =>
+    cases hTransparent
+  case pop =>
+    cases hTransparent
+  case mload =>
+    cases hTransparent
+  case sstore =>
+    cases hStep
+    have hPerm := hStaticPermits (by simp [continuingPrimStaticSensitive])
+    have hPermCharged :
+        (afterEVMInstructionChargeAt state).executionEnv.perm = true := by
+      simpa [afterEVMInstructionChargeAt, afterMemoryChargeAt, chargeGas]
+        using hPerm
+    simp only [EvmYul.EVM.step, PrimOp.toEVM,
+      afterEVMInstructionChargeAt, afterMemoryChargeAt, dynamicGasCostAt,
+      chargeGas]
+    change
+      EvmYul.EVM.binaryStateOp EvmYul.State.sstore
+          (afterEVMInstructionChargeAt state) =
+        PrimOp.sstore.step (afterEVMInstructionChargeAt state)
+    rw [PrimOp.step_eq_continuingStep_run (op := .sstore)
+      (step := .binaryState EvmYul.State.sstore) rfl]
+    exact
+      (PrimStep.run_binaryState_of_permitted EvmYul.State.sstore
+        (afterEVMInstructionChargeAt state) hPermCharged).symm
+  case tstore =>
+    cases hStep
+    have hPerm := hStaticPermits (by simp [continuingPrimStaticSensitive])
+    have hPermCharged :
+        (afterEVMInstructionChargeAt state).executionEnv.perm = true := by
+      simpa [afterEVMInstructionChargeAt, afterMemoryChargeAt, chargeGas]
+        using hPerm
+    simp only [EvmYul.EVM.step, PrimOp.toEVM,
+      afterEVMInstructionChargeAt, afterMemoryChargeAt, dynamicGasCostAt,
+      chargeGas]
+    change
+      EvmYul.EVM.binaryStateOp EvmYul.State.tstore
+          (afterEVMInstructionChargeAt state) =
+        PrimOp.tstore.step (afterEVMInstructionChargeAt state)
+    rw [PrimOp.step_eq_continuingStep_run (op := .tstore)
+      (step := .binaryState EvmYul.State.tstore) rfl]
+    exact
+      (PrimStep.run_binaryState_of_permitted EvmYul.State.tstore
+        (afterEVMInstructionChargeAt state) hPermCharged).symm
+  case log0 =>
+    cases hTransparent
+  case log1 =>
+    cases hTransparent
+  case log2 =>
+    cases hTransparent
+  case log3 =>
+    cases hTransparent
+  case log4 =>
+    cases hTransparent
+  all_goals
+    cases hStep
+    rfl
+
+theorem raw_continuing_prim_refines_evm_step_after_charges
+    {fuel : Nat} {op : PrimOp} {step : PrimStep}
+    {bytes : ByteArray} {pc : Nat} {state gasfulNext : EVMState}
+    {arg : Option (Word × Nat)}
+    (hStep : op.continuingStep? = some step)
+    (hMsize : op ≠ .msize)
+    (hTransparent : continuingPrimEVMStepTransparent op)
+    (hStaticPermits : continuingPrimStaticPermits state op)
+    (hDecode : Compact.decodeAt bytes pc (.prim op))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc)
+    (hGasful :
+      EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+        (some (op.toEVM, arg)) (afterMemoryChargeAt state) =
+          .ok gasfulNext) :
+    ∃ openNext,
+      Interaction.Executes
+        (Compact.InteractionSemantics.openRunNResult
+          bytes 1 (afterDynamicChargeAt state))
+        []
+        (.ok (.running openNext)) ∧
+      SameData gasfulNext openNext := by
+  have hPrimStep :
+      op.step (afterEVMInstructionChargeAt state) = .ok gasfulNext := by
+    simpa [evm_step_continuing_prim_after_charges
+      (fuel := fuel) (state := state) (op := op) (step := step)
+      (arg := arg) hStep hTransparent hStaticPermits] using hGasful
+  exact
+    raw_continuing_prim_refines_step_after_charges
+      (op := op) (step := step) (bytes := bytes)
+      (pc := pc) (state := state) (gasfulNext := gasfulNext)
+      hStep hMsize hDecode hPc hPrimStep
+
 def openStopStateAt (state : EVMState) : EVMState :=
   { afterDynamicChargeAt state with
     toMachineState :=
