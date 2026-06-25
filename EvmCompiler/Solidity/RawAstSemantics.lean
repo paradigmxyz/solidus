@@ -2092,6 +2092,161 @@ theorem of_prefixEvidence
         exact
           FocusedGeneratedCallPrefixEvidence.eval_succ hEvidence fuel source }
 
+theorem exprStmtCall_succ
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars)
+    (fuel : Nat) (source : Yul.InteractionSemantics.State) :
+    Yul.InteractionSemantics.exec (fuel + 3)
+        (.ExprStmtCall (.Call (.inr generated) args))
+        (some ordered.program.contract) source =
+      Simulation.Interaction.bind
+        (Yul.InteractionSemantics.evalArgs (fuel + 2)
+          args.reverse (some ordered.program.contract) source)
+        (fun argsResult =>
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.exec fuel
+              (.Block body) (some ordered.program.contract)
+              (EvmYul.Yul.State.mkOk
+                (argsResult.1.initcall params returns
+                  argsResult.2.reverse)))
+            (fun stateAfterBody =>
+              pure
+                (Yul.InteractionSemantics.stateModel.multifill []
+                  ((stateAfterBody.reviveJump.overwrite?
+                      argsResult.1).setStore argsResult.1)
+                  (List.map stateAfterBody.lookup! returns)))) := by
+  rw [show fuel + 3 = (fuel + 1) + 2 by omega]
+  rw [Yul.InteractionSemantics.Exec.expr_internal_succ]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Yul.InteractionSemantics.evalArgs (fuel + 2)
+        args.reverse (some ordered.program.contract) source))
+  intro argsResult _hDone
+  rw [hInterface.call_succ fuel argsResult.2.reverse argsResult.1]
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Yul.InteractionSemantics.exec fuel
+        (.Block body) (some ordered.program.contract)
+        (EvmYul.Yul.State.mkOk
+          (argsResult.1.initcall params returns argsResult.2.reverse))))
+  intro stateAfterBody _hBodyDone
+  rfl
+
+theorem letCall_succ
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars)
+    (fuel : Nat) (names : List EvmYul.Identifier)
+    (source : Yul.InteractionSemantics.State)
+    (hCheck : EvmYul.Yul.checkDeclaration source names = .ok ()) :
+    Yul.InteractionSemantics.exec (fuel + 3)
+        (.Let names (some (.Call (.inr generated) args)))
+        (some ordered.program.contract) source =
+      Simulation.Interaction.bind
+        (Yul.InteractionSemantics.evalArgs (fuel + 1)
+          args.reverse (some ordered.program.contract) source)
+        (fun argsResult =>
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.exec fuel
+              (.Block body) (some ordered.program.contract)
+              (EvmYul.Yul.State.mkOk
+                (argsResult.1.initcall params returns
+                  argsResult.2.reverse)))
+            (fun stateAfterBody =>
+              pure
+                (Yul.InteractionSemantics.stateModel.multifill names
+                  ((stateAfterBody.reviveJump.overwrite?
+                      argsResult.1).setStore argsResult.1)
+                  (List.map stateAfterBody.lookup! returns)))) := by
+  rw [show fuel + 3 = (fuel + 2) + 1 by omega]
+  rw [Yul.InteractionSemantics.Exec.let_some_succ
+    (fuel + 2) names _ (some ordered.program.contract) source hCheck]
+  rw [hInterface.evalValues_succ fuel source]
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Yul.InteractionSemantics.evalArgs (fuel + 1)
+        args.reverse (some ordered.program.contract) source))
+  intro argsResult _hDone
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Yul.InteractionSemantics.exec fuel
+        (.Block body) (some ordered.program.contract)
+        (EvmYul.Yul.State.mkOk
+          (argsResult.1.initcall params returns argsResult.2.reverse))))
+  intro stateAfterBody _hBodyDone
+  rfl
+
+theorem assignCall_succ
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars)
+    (fuel : Nat) (names : List EvmYul.Identifier)
+    (source : Yul.InteractionSemantics.State)
+    (hCheck : EvmYul.Yul.checkAssignment source names = .ok ()) :
+    Yul.InteractionSemantics.exec (fuel + 3)
+        (.Assign names (.Call (.inr generated) args))
+        (some ordered.program.contract) source =
+      Simulation.Interaction.bind
+        (Yul.InteractionSemantics.evalArgs (fuel + 1)
+          args.reverse (some ordered.program.contract) source)
+        (fun argsResult =>
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.exec fuel
+              (.Block body) (some ordered.program.contract)
+              (EvmYul.Yul.State.mkOk
+                (argsResult.1.initcall params returns
+                  argsResult.2.reverse)))
+            (fun stateAfterBody =>
+              pure
+                (Yul.InteractionSemantics.stateModel.multifill names
+                  ((stateAfterBody.reviveJump.overwrite?
+                      argsResult.1).setStore argsResult.1)
+                  (List.map stateAfterBody.lookup! returns)))) := by
+  rw [show fuel + 3 = (fuel + 2) + 1 by omega]
+  rw [Yul.InteractionSemantics.Exec.assign_succ
+    (fuel + 2) names _ (some ordered.program.contract) source hCheck]
+  rw [hInterface.evalValues_succ fuel source]
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Yul.InteractionSemantics.evalArgs (fuel + 1)
+        args.reverse (some ordered.program.contract) source))
+  intro argsResult _hDone
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Yul.InteractionSemantics.exec fuel
+        (.Block body) (some ordered.program.contract)
+        (EvmYul.Yul.State.mkOk
+          (argsResult.1.initcall params returns argsResult.2.reverse))))
+  intro stateAfterBody _hBodyDone
+  rfl
+
 end FocusedGeneratedCallSemanticInterface
 
 def FocusedGeneratedStmtListCallPrefix
