@@ -88,6 +88,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_prefixOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_semanticInterfaceOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_codeRouteOfRawOccurrence
+#check EvmCompiler.Yul.YulOccurrence.ExprUserCall.EvalArgContext
+#check EvmCompiler.Yul.YulOccurrence.ExprUserCall.evalArgContext
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtElaborationOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListElaborationOccurrence
@@ -336,6 +338,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_codeRouteOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_prefixOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_semanticInterfaceOfRawOccurrence
+#print axioms EvmCompiler.Yul.YulOccurrence.ExprUserCall.evalArgContext
 #print axioms EvmCompiler.Yul.YulOccurrence.StmtListUserCall.exists_split_stmt
 #print axioms EvmCompiler.Yul.YulOccurrence.StmtListUserCall.append_right
 #print axioms EvmCompiler.Yul.YulOccurrence.StmtListUserCall.execSeq_prefix_cons_succ

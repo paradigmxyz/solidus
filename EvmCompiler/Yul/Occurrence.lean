@@ -15,6 +15,51 @@ inductive ExprUserCall (functionName : Name) (args : List AstExpr) :
         ExprUserCall functionName args arg →
           ExprUserCall functionName args (.Call callee outerArgs)
 
+namespace ExprUserCall
+
+private theorem list_reverse_split_of_mem
+    {α : Type} {value : α} {values : List α}
+    (hMem : value ∈ values) :
+    ∃ (before after : List α),
+      values.reverse = before ++ value :: after := by
+  induction values with
+  | nil =>
+      cases hMem
+  | cons head tail ih =>
+      simp only [List.mem_cons] at hMem
+      rcases hMem with hHead | hTail
+      · subst head
+        exact ⟨tail.reverse, [], by simp⟩
+      · rcases ih hTail with ⟨before, after, hSplit⟩
+        refine ⟨before, after ++ [head], ?_⟩
+        simp [List.reverse_cons, hSplit, List.append_assoc]
+
+inductive EvalArgContext (functionName : Name) (args : List AstExpr) :
+    AstExpr → Prop where
+  | here :
+      EvalArgContext functionName args (.Call (.inr functionName) args)
+  | callArg
+      {callee : EvmYul.Operation .Yul ⊕ Name}
+      {outerArgs : List AstExpr} {arg : AstExpr}
+      {before after : List AstExpr} :
+      outerArgs.reverse = before ++ arg :: after →
+        EvalArgContext functionName args arg →
+          EvalArgContext functionName args (.Call callee outerArgs)
+
+theorem evalArgContext
+    {functionName : Name} {args : List AstExpr} {expr : AstExpr}
+    (hOccurrence : ExprUserCall functionName args expr) :
+    EvalArgContext functionName args expr := by
+  induction hOccurrence with
+  | here =>
+      exact EvalArgContext.here
+  | @callArg callee outerArgs arg hMem _ ih =>
+      rcases list_reverse_split_of_mem hMem with
+        ⟨before, after, hSplit⟩
+      exact EvalArgContext.callArg hSplit ih
+
+end ExprUserCall
+
 mutual
   inductive StmtUserCall (functionName : Name) (args : List AstExpr) :
       AstStmt → Prop where

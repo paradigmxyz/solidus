@@ -8,6 +8,8 @@
 
 - 2026-06-25 02:47:12 PDT - proof/generated-call-branch-scrutinee-constructors - Added generic direct `if` and `switch` scrutinee consumers for `FocusedGeneratedCallSemanticInterface`, routing generated-call evaluation through branch selection and switch case selection without introducing dispatcher/function-body route siblings. Verification passed: focused raw semantics build, verification root build, architecture guard, touched-file hole/trust scan, axiom audit with only Lean foundations, and `git diff --check`.
 
+- 2026-06-25 02:52:01 PDT - proof/yul-expression-eval-order-context - Added `YulOccurrence.ExprUserCall.EvalArgContext` and `evalArgContext`, converting nested generated-call expression occurrences into an explicit reversed-argument split at each outer call boundary. This is the structural evaluator-order input for the recursive statement/context theorem. Verification passed: `lake build EvmCompiler.Yul.Occurrence`, `lake build EvmCompiler.Verification`, architecture guard, touched-file hole/trust scan, axiom audit with only Lean foundations, and `git diff --check`.
+
 - 2026-06-23 10:12 PDT - compaction-resume/raw-frontend-status - Resumed
   under `$verifiable-compiler` to report the raw solc frontend migration
   status from the clean `codex/lean-solc-raw-frontend` checkpoint.
