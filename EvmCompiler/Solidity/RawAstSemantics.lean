@@ -1671,6 +1671,111 @@ def HoistedCallSemantics (state : State)
                     source,
                     List.map stateAfterBody.lookup! yulFn.rets))
 
+structure FocusedGeneratedCallOccurrence
+    (state : State) (ordered : Yul.OrderedProgram)
+    (generated : Name) (fn : Frontend.FunctionDef)
+    (params returns : List Name) (body : List Yul.AstStmt)
+    (args : List Yul.AstExpr) : Prop where
+  hoisted : (generated, fn) ∈ state.hoistedFunctions
+  toYul? : fn.toYul? = some (.Def params returns body)
+  lookup :
+    ordered.program.contract.functions.lookup generated =
+      some (.Def params returns body)
+
+theorem FocusedGeneratedCallOccurrence.call_succ
+    {state : State} {ordered : Yul.OrderedProgram}
+    {generated : Name} {fn : Frontend.FunctionDef}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {argExprs : List Yul.AstExpr}
+    (hOccurrence :
+      FocusedGeneratedCallOccurrence state ordered generated fn
+        params returns body argExprs)
+    (fuel : Nat) (args : List Word)
+    (source : Yul.InteractionSemantics.State) :
+    Yul.InteractionSemantics.call (fuel + 1) args
+        (some generated) (some ordered.program.contract) source =
+      Simulation.Interaction.bind
+        (Yul.InteractionSemantics.exec fuel
+          (.Block body) (some ordered.program.contract)
+          (EvmYul.Yul.State.mkOk
+            (source.initcall params returns args)))
+        (fun stateAfterBody =>
+          pure
+            ((stateAfterBody.reviveJump.overwrite? source).setStore
+              source,
+              List.map stateAfterBody.lookup! returns)) := by
+  exact
+    Yul.InteractionSemantics.Call.explicit_succ
+      fuel args generated ordered.program.contract params returns body
+      source hOccurrence.lookup
+
+theorem FocusedGeneratedCallOccurrence.evalValues_succ
+    {state : State} {ordered : Yul.OrderedProgram}
+    {generated : Name} {fn : Frontend.FunctionDef}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {argExprs : List Yul.AstExpr}
+    (hOccurrence :
+      FocusedGeneratedCallOccurrence state ordered generated fn
+        params returns body argExprs)
+    (fuel : Nat) (source : Yul.InteractionSemantics.State) :
+    Yul.InteractionSemantics.evalValues (fuel + 2)
+        (.Call (.inr generated) argExprs)
+        (some ordered.program.contract) source =
+      Simulation.Interaction.bind
+        (Yul.InteractionSemantics.evalArgs (fuel + 1)
+          argExprs.reverse (some ordered.program.contract) source)
+        (fun argsResult =>
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.exec fuel
+              (.Block body) (some ordered.program.contract)
+              (EvmYul.Yul.State.mkOk
+                (argsResult.1.initcall params returns
+                  argsResult.2.reverse)))
+            (fun stateAfterBody =>
+              pure
+                ((stateAfterBody.reviveJump.overwrite?
+                    argsResult.1).setStore argsResult.1,
+                  List.map stateAfterBody.lookup! returns))) := by
+  rw [show fuel + 2 = (fuel + 1) + 1 by omega]
+  rw [Yul.InteractionSemantics.EvalValues.internal_succ
+    (fuel + 1) generated argExprs (some ordered.program.contract) source]
+  apply congrArg
+  funext argsResult
+  exact FocusedGeneratedCallOccurrence.call_succ
+    hOccurrence fuel argsResult.2.reverse argsResult.1
+
+theorem FocusedGeneratedCallOccurrence.eval_succ
+    {state : State} {ordered : Yul.OrderedProgram}
+    {generated : Name} {fn : Frontend.FunctionDef}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {argExprs : List Yul.AstExpr}
+    (hOccurrence :
+      FocusedGeneratedCallOccurrence state ordered generated fn
+        params returns body argExprs)
+    (fuel : Nat) (source : Yul.InteractionSemantics.State) :
+    Yul.InteractionSemantics.eval (fuel + 2)
+        (.Call (.inr generated) argExprs)
+        (some ordered.program.contract) source =
+      Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Yul.InteractionSemantics.evalArgs (fuel + 1)
+            argExprs.reverse (some ordered.program.contract) source)
+          (fun argsResult =>
+            Simulation.Interaction.bind
+              (Yul.InteractionSemantics.exec fuel
+                (.Block body) (some ordered.program.contract)
+                (EvmYul.Yul.State.mkOk
+                  (argsResult.1.initcall params returns
+                    argsResult.2.reverse)))
+              (fun stateAfterBody =>
+                pure
+                  ((stateAfterBody.reviveJump.overwrite?
+                      argsResult.1).setStore argsResult.1,
+                    List.map stateAfterBody.lookup! returns))))
+        (fun result => pure (result.1, result.2.head!)) := by
+  rw [Yul.InteractionSemantics.eval_eq_bind]
+  rw [FocusedGeneratedCallOccurrence.evalValues_succ hOccurrence fuel source]
+
 theorem codeGeneratedNormalizationEvidence_hoistedCallSemantics
     {code : List Raw.Stmt} {object : Frontend.Object}
     {ordered : Yul.OrderedProgram}
@@ -1765,6 +1870,117 @@ theorem decodeAndElaborateSolcIr?_hoistedCallSemantics
   exact
     ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
       generatedNormalizationEvidence_hoistedCallSemantics
+        hEvidence hObjectConvert⟩
+
+theorem codeGeneratedNormalizationEvidence_focusedGeneratedCallOccurrence
+    {code : List Raw.Stmt} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    (hEvidence :
+      Raw.Object.CodeGeneratedNormalizationEvidence code object)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+        (helper? arg? ret? : Option Name),
+      elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+        elaborateCode code =
+          .ok (object.dispatcher, object.functions,
+            helper?, arg?, ret?) ∧
+          ∀ {generated : Name} {fn : Frontend.FunctionDef}
+              {params returns : List Name} {body : List Yul.AstStmt}
+              {argExprs : List Yul.AstExpr},
+            (generated, fn) ∈ state.hoistedFunctions →
+              fn.toYul? = some (.Def params returns body) →
+                FocusedGeneratedCallOccurrence state ordered generated fn
+                  params returns body argExprs := by
+  rcases hEvidence with
+    ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
+      _hFunctions, _hHelper, _hArg, _hRet, _hDistinct, _hClz,
+      _hInterface, hHoistedRetained⟩
+  refine ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+  intro generated fn params returns body argExprs hHoisted hFn
+  have hMem : (generated, fn) ∈ object.functions :=
+    hHoistedRetained (generated, fn) hHoisted
+  have hLookup :
+      ordered.program.contract.functions.lookup generated =
+        some (.Def params returns body) :=
+    Frontend.Object.toSolcYulOrderedProgram?_functionLookup_of_mem
+      hConvert hMem hFn
+  exact ⟨hHoisted, hFn, hLookup⟩
+
+theorem generatedNormalizationEvidence_focusedGeneratedCallOccurrence
+    {raw : Raw.Object} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    (hEvidence : Raw.Object.GeneratedNormalizationEvidence raw object)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    match raw.code? with
+    | none => True
+    | some code =>
+        ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+            (helper? arg? ret? : Option Name),
+          elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+            elaborateCode code =
+              .ok (object.dispatcher, object.functions,
+                helper?, arg?, ret?) ∧
+              ∀ {generated : Name} {fn : Frontend.FunctionDef}
+                  {params returns : List Name} {body : List Yul.AstStmt}
+                  {argExprs : List Yul.AstExpr},
+                (generated, fn) ∈ state.hoistedFunctions →
+                  fn.toYul? = some (.Def params returns body) →
+                    FocusedGeneratedCallOccurrence state ordered generated fn
+                      params returns body argExprs := by
+  cases hRawCode : raw.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      have hCodeEvidence :
+          Raw.Object.CodeGeneratedNormalizationEvidence code object := by
+        simpa [Raw.Object.GeneratedNormalizationEvidence, hRawCode]
+          using hEvidence.2.2.2
+      exact
+        codeGeneratedNormalizationEvidence_focusedGeneratedCallOccurrence
+          hCodeEvidence hConvert
+
+theorem decodeAndElaborateSolcIr?_focusedGeneratedCallOccurrence
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {ordered : Yul.OrderedProgram}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program)
+    (hConvert : program.object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              match selected.root.code? with
+              | none => True
+              | some code =>
+                  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+                      (helper? arg? ret? : Option Name),
+                    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+                      elaborateCode code =
+                        .ok (object.dispatcher, object.functions,
+                          helper?, arg?, ret?) ∧
+                        ∀ {generated : Name} {fn : Frontend.FunctionDef}
+                            {params returns : List Name}
+                            {body : List Yul.AstStmt}
+                            {argExprs : List Yul.AstExpr},
+                          (generated, fn) ∈ state.hoistedFunctions →
+                            fn.toYul? = some (.Def params returns body) →
+                              FocusedGeneratedCallOccurrence state ordered
+                                generated fn params returns body argExprs := by
+  rcases decodeAndElaborateSolcIr?_generatedNormalizationEvidence
+      hDecode with
+    ⟨json, selected, object, hParse, hSelected, hObject, hEvidence,
+      hProgram⟩
+  have hObjectConvert :
+      object.toSolcYulOrderedProgram? = some ordered := by
+    simpa [hProgram] using hConvert
+  exact
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
+      generatedNormalizationEvidence_focusedGeneratedCallOccurrence
         hEvidence hObjectConvert⟩
 
 end Elab
