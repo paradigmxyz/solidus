@@ -2052,6 +2052,147 @@ theorem execSeq_of_focused_split
       .ok afterRest :=
   (ofFocusedSplit hSplit hPrefix hPrefixSource hStmt hStmtSource hRest).execSeq
 
+/-- Generic execution package for a statement-list occurrence after applying
+`YulOccurrence.StmtListUserCall.exists_split_stmt`.
+
+This is the semantic shape the recursive caller/context theorem should target:
+the splitter chooses `pre ++ stmt :: rest`, the prefix executes regularly to
+the focused statement, the focused statement is discharged by `FocusedStmtRun`,
+and the suffix executes from the focused post-state. -/
+structure SplitFocusedRun
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName)
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    (prefixFuel : Nat)
+    (stmts : List Frontend.AstStmt)
+    (state : σ) where
+  hListOccurrence :
+    YulOccurrence.StmtListUserCall stmts
+      hEvidence.generated hEvidence.yulArgs
+  pre : List Frontend.AstStmt
+  stmt : Frontend.AstStmt
+  rest : List Frontend.AstStmt
+  hSplit : stmts = pre ++ stmt :: rest
+  hStmtOccurrence :
+    YulOccurrence.StmtUserCall stmt
+      hEvidence.generated hEvidence.yulArgs
+  stateBeforeStmt : σ
+  afterStmt : σ
+  afterRest : σ
+  prefixShared : EvmYul.SharedState .Yul
+  prefixVars : EvmYul.Yul.VarStore
+  stmtShared : EvmYul.SharedState .Yul
+  stmtVars : EvmYul.Yul.VarStore
+  hPrefix :
+    Yul.Source.Effectful.execSeq model prim
+        ((prefixFuel + 1) + pre.length) pre
+        (some ordered.program.contract) state =
+      .ok stateBeforeStmt
+  hPrefixSource :
+    model.source stateBeforeStmt = .Ok prefixShared prefixVars
+  hStmt :
+    FocusedStmtRun hEvidence model prim stateBeforeStmt
+      prefixFuel stmt afterStmt
+  hStmtSource :
+    model.source afterStmt = .Ok stmtShared stmtVars
+  hRest :
+    Yul.Source.Effectful.execSeq model prim prefixFuel rest
+        (some ordered.program.contract) afterStmt =
+      .ok afterRest
+
+namespace SplitFocusedRun
+
+def toStmtListOccurrenceRun
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {stmts : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      SplitFocusedRun hEvidence model prim prefixFuel stmts state) :
+    StmtListOccurrenceRun hEvidence model prim prefixFuel stmts state :=
+  ofFocusedSplit
+    hRun.hSplit hRun.hPrefix hRun.hPrefixSource hRun.hStmt
+    hRun.hStmtSource hRun.hRest
+
+theorem execSeq
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {stmts : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      SplitFocusedRun hEvidence model prim prefixFuel stmts state) :
+    Yul.Source.Effectful.execSeq model prim
+        ((prefixFuel + 1) + hRun.pre.length) stmts
+        (some ordered.program.contract) state =
+      .ok hRun.afterRest :=
+  hRun.toStmtListOccurrenceRun.execSeq
+
+theorem split
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {stmts : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      SplitFocusedRun hEvidence model prim prefixFuel stmts state) :
+    ∃ (pre : List Frontend.AstStmt)
+        (stmt : Frontend.AstStmt)
+        (rest : List Frontend.AstStmt),
+      stmts = pre ++ stmt :: rest ∧
+        YulOccurrence.StmtUserCall stmt
+          hEvidence.generated hEvidence.yulArgs :=
+  ⟨hRun.pre, hRun.stmt, hRun.rest, hRun.hSplit,
+    hRun.hStmtOccurrence⟩
+
+theorem classified_split_execSeq
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {stmts : List Frontend.AstStmt}
+    {state : σ}
+    (hRun :
+      SplitFocusedRun hEvidence model prim prefixFuel stmts state) :
+    ∃ (pre : List Frontend.AstStmt)
+        (stmt : Frontend.AstStmt)
+        (rest : List Frontend.AstStmt),
+      stmts = pre ++ stmt :: rest ∧
+        YulOccurrence.StmtUserCall stmt
+          hEvidence.generated hEvidence.yulArgs ∧
+        Yul.Source.Effectful.execSeq model prim
+            ((prefixFuel + 1) + pre.length) stmts
+            (some ordered.program.contract) state =
+          .ok hRun.afterRest :=
+  ⟨hRun.pre, hRun.stmt, hRun.rest, hRun.hSplit,
+    hRun.hStmtOccurrence, hRun.execSeq⟩
+
+end SplitFocusedRun
+
 def ofDirect
     {object : Frontend.Object}
     {ordered : Yul.OrderedProgram}
