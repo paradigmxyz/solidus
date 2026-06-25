@@ -2247,6 +2247,122 @@ theorem assignCall_succ
   intro stateAfterBody _hBodyDone
   rfl
 
+theorem ifConditionCall_succ
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars)
+    (fuel : Nat) (ifBody : List Yul.AstStmt)
+    (source : Yul.InteractionSemantics.State) :
+    Yul.InteractionSemantics.exec (fuel + 3)
+        (.If (.Call (.inr generated) args) ifBody)
+        (some ordered.program.contract) source =
+      Simulation.Interaction.bind
+        (Yul.InteractionSemantics.evalArgs (fuel + 1)
+          args.reverse (some ordered.program.contract) source)
+        (fun argsResult =>
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.exec fuel
+              (.Block body) (some ordered.program.contract)
+              (EvmYul.Yul.State.mkOk
+                (argsResult.1.initcall params returns
+                  argsResult.2.reverse)))
+            (fun stateAfterBody =>
+              let stateAfterCall :=
+                ((stateAfterBody.reviveJump.overwrite?
+                    argsResult.1).setStore argsResult.1)
+              let values := List.map stateAfterBody.lookup! returns
+              if values.head! ≠ EvmYul.UInt256.ofNat 0 then
+                Yul.InteractionSemantics.exec (fuel + 2)
+                  (.Block ifBody) (some ordered.program.contract)
+                  stateAfterCall
+              else
+                pure stateAfterCall)) := by
+  rw [show fuel + 3 = (fuel + 2) + 1 by omega]
+  rw [Yul.InteractionSemantics.Exec.if_succ]
+  rw [hInterface.eval_succ fuel source]
+  rw [Simulation.Interaction.bind_assoc]
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Yul.InteractionSemantics.evalArgs (fuel + 1)
+        args.reverse (some ordered.program.contract) source))
+  intro argsResult _hDone
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Yul.InteractionSemantics.exec fuel
+        (.Block body) (some ordered.program.contract)
+        (EvmYul.Yul.State.mkOk
+          (argsResult.1.initcall params returns argsResult.2.reverse))))
+  intro stateAfterBody _hBodyDone
+  rw [open_bind_pure_left]
+  rfl
+
+theorem switchScrutineeCall_succ
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars)
+    (fuel : Nat) (cases : List (Word × List Yul.AstStmt))
+    (defaultBody : List Yul.AstStmt)
+    (source : Yul.InteractionSemantics.State) :
+    Yul.InteractionSemantics.exec (fuel + 3)
+        (.Switch (.Call (.inr generated) args) cases defaultBody)
+        (some ordered.program.contract) source =
+      Simulation.Interaction.bind
+        (Yul.InteractionSemantics.evalArgs (fuel + 1)
+          args.reverse (some ordered.program.contract) source)
+        (fun argsResult =>
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.exec fuel
+              (.Block body) (some ordered.program.contract)
+              (EvmYul.Yul.State.mkOk
+                (argsResult.1.initcall params returns
+                  argsResult.2.reverse)))
+            (fun stateAfterBody =>
+              let stateAfterCall :=
+                ((stateAfterBody.reviveJump.overwrite?
+                    argsResult.1).setStore argsResult.1)
+              let values := List.map stateAfterBody.lookup! returns
+              Yul.InteractionSemantics.exec (fuel + 2)
+                (.Block
+                  (EvmYul.Yul.selectSwitchCase values.head! defaultBody
+                    cases))
+                (some ordered.program.contract) stateAfterCall)) := by
+  rw [show fuel + 3 = (fuel + 2) + 1 by omega]
+  rw [Yul.InteractionSemantics.Exec.switch_succ]
+  rw [hInterface.eval_succ fuel source]
+  rw [Simulation.Interaction.bind_assoc]
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Yul.InteractionSemantics.evalArgs (fuel + 1)
+        args.reverse (some ordered.program.contract) source))
+  intro argsResult _hDone
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Yul.InteractionSemantics.exec fuel
+        (.Block body) (some ordered.program.contract)
+        (EvmYul.Yul.State.mkOk
+          (argsResult.1.initcall params returns argsResult.2.reverse))))
+  intro stateAfterBody _hBodyDone
+  rw [open_bind_pure_left]
+  rfl
+
 end FocusedGeneratedCallSemanticInterface
 
 def FocusedGeneratedStmtListCallPrefix

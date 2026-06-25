@@ -6,6 +6,8 @@
 
 - 2026-06-25 02:42:25 PDT - proof/generated-call-direct-stmt-constructors - Added generic direct statement consumers for `FocusedGeneratedCallSemanticInterface`: `exprStmtCall_succ`, `letCall_succ`, and `assignCall_succ`, exposing argument evaluation, generated callee-body execution, caller-frame revive/store restoration, and final destination writeback through Yul constructors without hoisted-function premises. Verification passed: focused raw semantics build, verification root build, architecture guard, touched-file hole/trust scan, axiom audit with only Lean foundations, and `git diff --check`.
 
+- 2026-06-25 02:47:12 PDT - proof/generated-call-branch-scrutinee-constructors - Added generic direct `if` and `switch` scrutinee consumers for `FocusedGeneratedCallSemanticInterface`, routing generated-call evaluation through branch selection and switch case selection without introducing dispatcher/function-body route siblings. Verification passed: focused raw semantics build, verification root build, architecture guard, touched-file hole/trust scan, axiom audit with only Lean foundations, and `git diff --check`.
+
 - 2026-06-23 10:12 PDT - compaction-resume/raw-frontend-status - Resumed
   under `$verifiable-compiler` to report the raw solc frontend migration
   status from the clean `codex/lean-solc-raw-frontend` checkpoint.
